@@ -12,17 +12,19 @@ owns installation and representative physical evidence. The originals in
 old host for manual return until separately authorized
 [retirement](https://github.com/jimmie-potts/agent-device-hub/issues/839).
 
-The module writes two background installations through Tidbyt's cloud, each in
+The module writes two background installations through the one backend its section
+selects, Tidbyt's cloud by default or a [Tronbyt server](#the-tronbyt-backend), each in
 the device's normal rotation:
 - the **status tile** follows the module's synced copy of the core's sessions;
 - the **now-playing tile** follows its synced copy of the playback module's
   `playback` record ([#929](../playback/README.md#the-playback-record)).
 
-It is the one writer for the cloud device. Each tile pushes only when what it
+It is the one writer for the device. Each tile pushes only when what it
 shows changes, at most once every 15 seconds, and pushes an unchanged frame
 again after 10 minutes. Frames render in a worker thread. The module publishes
-the Tidbyt's `device/2.0` record with every control unsupported, as the old
-controller declared every controller v1 capability unsupported.
+the Tidbyt's `device/2.0` record. On the cloud every control is unsupported, as the old
+controller declared every controller v1 capability unsupported; a server declares
+[its controls](#the-displays-controls).
 
 ## Reusable dashboard card
 
@@ -38,7 +40,8 @@ Disconnected or failed copies keep saved evidence marked stale until a complete
 replacement sync succeeds. Retry records repeats only the read. Content explains
 automatic agent status and optional now playing; it does not list configured
 installations. No power, brightness, content-selection or push/removal controls
-are offered. The wooden 64×32 illustration stays mounted across keyboard-accessible
+are offered on either backend. With a Tronbyt server selected, the labels name the server
+instead of the cloud. The wooden 64×32 illustration stays mounted across keyboard-accessible
 Status/Content tabs and is explicitly illustrative, never an exact preview or a
 physical observation. Existing cloud behavior and private state are unchanged.
 
@@ -97,8 +100,10 @@ The module's section of the runtime's
 - `nowPlaying` is optional. `playback` is the routing ID of the `playback` record
   to show; `installation` is the card's own installation, `nowplaying` by default,
   and differs from the status tile's.
-- `secrets.token` names the file that holds the cloud's API key, one token used
-  whole. The module reads it once, at start.
+- `secrets.token` names the file that holds the selected backend's API key, one token
+  used whole. The module reads it once, at start.
+- `backend` is optional: `cloud` by default, or `tronbyt`. See
+  [The Tronbyt backend](#the-tronbyt-backend).
 
 Any other section is refused with `invalid-request` and a fixed detail that
 repeats no value; without a section the module is refused with `not-found`. The
@@ -128,14 +133,113 @@ and does not run the converter.
 A runner configuration or credentials file the runner would refuse is refused
 with fixed text.
 
+## The Tronbyt backend
+
+Selected by the section, never by a failure ([Hub #23](https://github.com/jimmie-potts/agent-device-hub/issues/23)):
+
+```json
+"tidbyt": {
+  "id": "tidbyt",
+  "backend": "tronbyt",
+  "tronbyt": {"url": "http://192.0.2.10:8000", "deviceId": "<the server's device ID>"},
+  "statusInstallation": "agentdevicehub",
+  "nowPlaying": {"playback": "living-room", "installation": "nowplaying"},
+  "secrets": {"token": "<private file holding the server's API key>"}
+}
+```
+
+- `url` is the server's origin. It takes no credentials, path, query or fragment, and
+  plain `http` only to a loopback, private or single-label host or a `.local`, `.internal`,
+  `.lan` or `.home.arpa` name, since each request carries the key.
+- `deviceId` is 1 to 128 letters, digits, underscores or hyphens.
+- `minIntervalMs` and `refreshMs` are optional, 1 s to a day. They default to the cloud's
+  15 s and 10 minutes, which stay fixed on the cloud. See the record below for what has
+  been qualified.
+- A section holds only the selected backend's settings: `cloudDeviceId` with `tronbyt` is
+  refused. Keep the previous section privately for rollback.
+
+Source configuration here deploys nothing: hosting is
+[#1406](https://github.com/jimmie-potts/agent-device-hub/issues/1406) and the device
+transition is [#24](https://github.com/jimmie-potts/agent-device-hub/issues/24).
+
+### Compatibility record
+
+Checked 2026-11-03. Neither project had released since the pins below.
+
+| Item | Pinned | Evidence |
+| --- | --- | --- |
+| Server | v2.5.2 (`linux/arm64` image published) | Source read at v2.5.2. Exercised on a disposable v2.5.1 server (`sha256:b266da13…`), with synthetic credentials and no network; v2.5.1 to v2.5.2 changes no API handler, the auth middleware or `API.md`. |
+| Firmware | v1.7.4, target `tidbyt-gen1` | Not exercised: #24 owns the flash. |
+| API | `/v0` | The table below, and `tests/tronbyt-server.test.ts`. |
+
+What differs from the cloud, each exercised on that server:
+
+| Server behavior | What the module does |
+| --- | --- |
+| `background` defaults to false, which interrupts the display | States it on every push |
+| A push with no installation joins a queue kept up to a day, so it could show an expired frame later | Always names one, which replaces its own file |
+| The list carries the server's own numeric IDs, never the ID a push chose | Reads presence with `GET /installations/<name>` |
+| A missing installation answers 404 `App not found`; a missing device `Device not found` | Removal counts as done for the first, and the Tidbyt turns `unavailable` for the second |
+| Brightness is stored unchecked: 101 and -1 were accepted and served | Scales 0 to 100 percent to `BRIGHTNESS_CEILING`, 50, the top of the server's own Gen 1 scale |
+| Deleting a pinned installation leaves `pinnedApp` set until `/next` next runs, and a re-pushed one gets a new ID | Clears the pin with the tile and sets it again on return |
+| A push returns 200 with no device connected, and without checking the image | A 200 is a transmission, never evidence of the panel |
+| No rate limit; writes 1 s apart were all answered | Takes a gate down to 1 s. This qualifies the server, not what the device renders; #24 selects the value |
+
+Run the optional check against a disposable server after a build: its device's
+installations, pin and brightness change.
+
+```bash
+TRONBYT_QUALIFY_URL=<origin> TRONBYT_QUALIFY_DEVICE=<id> TRONBYT_QUALIFY_KEY=<key> node --test modules/tidbyt/dist/tests/tronbyt-server.test.js
+```
+
+### The display's controls
+
+The record declares `brightness` from 0 to 100, and these native modes in
+`capabilities.modes`. Without a now-playing tile, its two modes are left out.
+
+| Mode | Effect |
+| --- | --- |
+| `rotation` | The default. Each tile takes its turn, and a push waits for it, as on the cloud. |
+| `interrupt` | A tile's push interrupts the display at once. |
+| `pin-status`, `pin-now-playing` | The server shows only that tile while it stands, and the rotation when it does not. The pin follows the tile. |
+| `hide-status`, `hide-now-playing` | The module removes that tile and writes it no frame until another mode. |
+
+`brightness-set` and `device-mode-set` are tracked: stored before they are accepted, one
+write in the queue's turn, never sent again. `desired` carries what was asked and
+`observed` stays `unknown`, because the server knows what it served, never what the panel
+shows, so a success is `transmitted` at most. A lost answer or a 5xx is `uncertain`. At most
+8 commands wait. Mode and brightness survive a restart; a command a stop or a crash left
+without an outcome is reported at the next start, `uncertain` if its write may have begun,
+and never runs again. A pin write that failed is a fresh write for the current mode after
+60 s.
+
+### Changing backend
+
+The runtime stops the module, which ends any call in flight, before starting it with
+another section. At that start the module:
+
+1. reports commands left without an outcome, as above;
+2. logs `operation.failed` with `bunny.code` `uncertain-result` once if a tile's last write
+   never got its answer;
+3. drops what the tiles remember and the display's stored state, and logs
+   `operation.completed` with `bunny.reason` `backend-changed`;
+4. writes the current frame fresh once its gate allows. No frame is stored, so none can
+   replay.
+
+The old backend hears nothing more, and keeps whatever it last showed. Going back works the
+same way: restore the previous section and restart. A database from before this record
+counts as the cloud's, so upgrading on the cloud pushes nothing while a tile stands. Older
+code ignores the new tables; it would trust the tiles' last rows until its 10-minute refresh.
+
 ## The device record
 
 The module serves its one `device` record through sync and publishes it on
 `bunny.state.device.<id>` (`org.bunny.device.updated`, `device/2.0`, kind
 `tidbyt`):
 
-- every capability `{supported: false}`; desired, observed, the last outcome and
-  external control `unknown`; `pending` 0, because the Tidbyt answers no command;
+- on the cloud, every capability `{supported: false}`; desired, observed, the last outcome
+  and external control `unknown`; `pending` 0, because the cloud answers no command. A
+  server's record differs as [its controls](#the-displays-controls) state;
 - `availability`: `unknown` until the cloud first answers; `available` once it
   accepted a write or listed the installations; `degraded` while it rate limits,
   refuses a request or answers with a server error; `unavailable` while it does
@@ -370,6 +474,11 @@ do not establish visible-device acceptance.
 - `configuration.test.ts`: the section, the conversion and the copied credentials
   cases.
 - `simulated.test.ts`: the simulated cloud and its picture.
+- `tronbyt.test.ts`: the server's wire form and classification, the section, identical frames
+  through both backends, the gate, commands, modes, the pin, a restart, the handoff in both
+  directions, and secrecy, on `SimulatedTronbyt`.
+- `tronbyt-server.test.ts`: the optional check against a real server. It skips unless one is
+  named.
 - `module.test.ts`: both tiles from synced records, the gate under bursts and
   for a push that reaches the cloud late or never answers, the refresh, removal,
   a lost or slow copy, failed, uncertain and held writes, a cloud that does not

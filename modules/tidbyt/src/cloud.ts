@@ -20,7 +20,7 @@ export class CloudConfigurationError extends Error {
 
 /** What the module's transport does: one HTTPS request to the cloud, as `fetch` makes it. */
 export type CloudFetch = (url: string, init: {
-  method: 'GET' | 'POST' | 'DELETE'; redirect: 'error'; signal: AbortSignal; headers: Record<string, string>; body?: string;
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; redirect: 'error'; signal: AbortSignal; headers: Record<string, string>; body?: string;
 }) => Promise<Response>;
 
 export type CloudFailure = 'unauthenticated' | 'forbidden' | 'unknown-device' | 'invalid-request' | 'transport-failure';
@@ -63,7 +63,7 @@ const REFUSED: WriteResult = Object.freeze({outcome: Outcome.failed, failure: 'i
 // Failures raised before any request bytes can have left this host.
 const PRE_SEND: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EAI_NONAME', 'UND_ERR_CONNECT_TIMEOUT']);
 
-async function boundedText(response: Response, limit: number): Promise<string | undefined> {
+export async function boundedText(response: Response, limit: number): Promise<string | undefined> {
   if (response.body === null) return '';
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -85,7 +85,7 @@ async function boundedText(response: Response, limit: number): Promise<string | 
   return Buffer.concat(chunks).toString('utf8');
 }
 
-function retryAfterMs(header: string | null, now: number): number {
+export function retryAfterMs(header: string | null, now: number): number {
   let ms = DEFAULT_RETRY_MS;
   const value = header?.trim() ?? '';
   if (/^\d+$/.test(value)) ms = Number(value) * 1000;
@@ -126,14 +126,24 @@ async function rejection(response: Response): Promise<CloudFailure | 'capacity' 
  * Whether a failed fetch sent nothing: undici reports a refused connection or a failed lookup as its cause's `code`. Only
  * that code is read, to choose the result; the error's text is never read or kept.
  */
-function sentNothing(failure: unknown): boolean {
+export function sentNothing(failure: unknown): boolean {
   const cause = typeof failure === 'object' && failure !== null && 'cause' in failure ? failure.cause : undefined;
   const code = typeof cause === 'object' && cause !== null && 'code' in cause ? cause.code : undefined;
   return typeof code === 'string' && PRE_SEND.has(code);
 }
 
+/**
+ * What the module's queue asks of the backend it selected: the cloud or a Tronbyt server (Hub #23). Exactly one exists in
+ * a run, and nothing falls back to the other. `immediate` asks to interrupt the display, which only a Tronbyt server does.
+ */
+export type TidbytConnection = {
+  push(webp: Uint8Array, signal: AbortSignal, installation?: string, immediate?: boolean): Promise<WriteResult>;
+  remove(signal: AbortSignal, installation?: string): Promise<WriteResult>;
+  list(signal: AbortSignal, installation?: string): Promise<ListResult>;
+};
+
 /** Background pushes, removals and listings for one cloud device and its configured installations. */
-export class TidbytCloudConnection {
+export class TidbytCloudConnection implements TidbytConnection {
   readonly #deviceId: string;
   readonly #apiKey: string;
   readonly #installationId: string;
