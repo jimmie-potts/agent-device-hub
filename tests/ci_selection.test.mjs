@@ -50,6 +50,14 @@ test('a narrow module change selects its suites and known consumers, and omits u
   assert.deepEqual(pr(['apps/bb8-windows/src/link.ts']).groups, []);
 });
 
+test('a change to the Volcano collector alone runs its adapter tests in the modules group', () => {
+  for (const path of ['apps/runtime/src/collector/volcano.ts', 'apps/runtime/bin/volcano-collector.mjs']) {
+    assert.deepEqual(pr([path]).groups, ['runtime', 'maintenance', 'modules'], path);
+  }
+  assert.deepEqual(pr(['apps/volcano-collector/src/noble-transport.ts']).groups.toSorted(), ['modules', 'runtime']);
+  assert.deepEqual(pr(['apps/runtime/src/collector/codex-desktop.ts']).groups, ['runtime', 'maintenance'], 'another collector stays with the runtime');
+});
+
 test('a runtime dashboard change selects the runtime and its maintenance consumer only', () => {
   const result = pr(['apps/runtime/dashboard/src/music.css', 'apps/runtime/dashboard/src/card-chrome.css']);
   assert.deepEqual(result.groups, ['runtime', 'maintenance']);

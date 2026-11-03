@@ -29,6 +29,9 @@ const RULES = Object.freeze([
   ['apps/bb8-windows/**', [], 'hibernated BB-8 helper source'],
   ['scripts/package-bb8.mjs.hibernated', [], 'hibernated BB-8 packaging source'],
   // The runtime composes active modules, and maintenance imports the runtime.
+  // The collector's allowlist and entry, which the adapter's tests in the Volcano suite depend on.
+  ['apps/runtime/src/collector/volcano.ts', ['modules', 'runtime', 'maintenance'], 'the Volcano collector, which the modules group tests with its adapter'],
+  ['apps/runtime/bin/volcano-collector.mjs', ['modules', 'runtime', 'maintenance'], 'the Volcano collector, which the modules group tests with its adapter'],
   ['apps/runtime/**', ['runtime', 'maintenance'], 'the runtime and its maintenance consumer'],
   ['modules/**', ['modules', 'runtime', 'maintenance'], 'a module, the runtime that composes it and maintenance'],
   // The collector's Bluetooth binding: the Volcano suite holds its tests, and its interface is the runtime's.
