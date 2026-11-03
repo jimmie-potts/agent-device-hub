@@ -60,7 +60,7 @@ export const READ_DEADLINE_MS = 5000;
 export const PUBLISH_TIMEOUT_MS = 4000;
 export const BACKOFF_FIRST_MS = 2000;
 export const BACKOFF_MAX_MS = 60_000;
-/** How long a counter that does not move forward must hold before a poll believes it: shorter than the poll, so the next poll does. */
+/** How long a counter that does not move forward must hold before a poll believes it: shorter than the poll, so a real reset takes at most two polls. */
 export const COUNTER_CONFIRM_MS = 4000;
 /** How far behind the last stamp a reading may fall and still be held just past it: a same-millisecond or slewed clock. */
 export const SAME_INSTANT_MS = 1000;

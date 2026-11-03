@@ -138,6 +138,20 @@ void test('a connect settling after its disconnect runs no discovery, keeps no c
   assert.equal(calls.filter(call => call === 'peripheral.disconnectAsync').length, closes + 1, 'the late link is closed');
 });
 
+void test('a connect settling behind a newer connect to the same peripheral leaves that link open', async () => {
+  let settle: () => void = () => {};
+  const {noble, calls} = world(['S&B VOLCANO H'], false, new Promise<void>(resolve => { settle = resolve; }));
+  const transport = nobleTransport(noble);
+  await transport.scan('S&B VOLCANO H', never);
+  const givenUp = transport.connect(() => {}, never);
+  const newer = transport.connect(() => {}, never);
+  settle();
+  await assert.rejects(givenUp, /after it was given up/);
+  await newer;
+  assert.equal(calls.filter(call => call === 'peripheral.disconnectAsync').length, 0, 'the newer connection keeps the link');
+  assert.deepEqual(await transport.read(VOLCANO_REGISTERS.status1, never), Uint8Array.of(1, 2));
+});
+
 void test('no call the adapter made through a whole session is write-shaped', async () => {
   const {noble, calls} = world();
   const transport = nobleTransport(noble);

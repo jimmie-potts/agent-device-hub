@@ -131,6 +131,23 @@ the device's routing ID. No usage, serial, raw host ID or raw source ID reaches 
 The runtime's own message records may carry the routing key, whose last token is the
 hashed feed ID, as for the other feeds.
 
+## Accepted limits
+
+The owner accepted these on 2026-11-03 as rare enough not to change the timing code.
+Revisit them if one shows up in the installed history. Facts are never rewritten, so
+what these cases store stays.
+
+- **A clock stepped forward.** The host cannot tell the step from real silence, so it
+  stores a gap as long as the step, facts stamped during it can land on a later day in
+  the totals, and the time allowed for a counter gain widens. A real upward counter
+  jump in that window can be stored as credit. The corrected clock records a
+  `clock-step`, and no credit crosses it.
+- **A clock stepped back by just over a second.** Under busy publishing this can record
+  a false `clock-step`, which closes the open stretch with no end time.
+- **A collector restarted exactly on an hour boundary.** A new process has no last good
+  counter, so a first read torn across the boundary is taken as read and can record
+  false discontinuities. It cannot create a wrong credit.
+
 ## Simulation
 
 `SimulatedVolcano` has no radio. Its actions, for the scenario harnesses, are

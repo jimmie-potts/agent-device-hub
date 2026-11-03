@@ -45,6 +45,10 @@ A snapshot repeating its `(collectorEpoch, sequence)`, or whose `observedAtMs` i
 - **WHEN** the clock steps back an hour, or forward and is then corrected, and the heater then runs for ten minutes
 - **THEN** the collector's stamps follow the clock, one `clock-step` is recorded, and the heater's stretch is ten minutes, not milliseconds
 
+#### Scenario: A forward step is an accepted limit
+- **WHEN** the clock steps forward while connected
+- **THEN** a gap as long as the step is stored, because the host cannot tell it from silence, and a real upward counter jump in that window may be stored as credit, which the owner accepted on 2026-11-03 as a rare limit
+
 ### Requirement: Read-time sessions
 
 Sessions SHALL be derived when read: heater-on stretches separated by less than the threshold, 15 minutes by default, SHALL form one session, and changing the threshold SHALL regroup all history without rewriting a fact. A stretch first seen on SHALL be `startedBeforeObservation` from the time first seen, with no earlier start. An unobserved interval SHALL create no boundary inside it. An end hidden in a gap SHALL have no end time, only the time last seen on and the time first seen off. A session SHALL mean heater activity, and no document SHALL have a field for consumption, dose or inhalation.
