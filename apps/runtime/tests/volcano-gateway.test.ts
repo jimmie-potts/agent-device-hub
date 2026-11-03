@@ -10,6 +10,8 @@ import {prepareMessage, publishOnce, type Reply} from '@jimmie-potts/sdk';
 import {createVolcanoModule, volcanoSchemas, type VolcanoStatus} from '@jimmie-potts/volcano';
 import {VOLCANO_REGISTERS, VOLCANO_SERIAL, runCollector, type ReadUuid, type SubscribeUuid, type VolcanoTransport} from '../src/collector/volcano.js';
 import {kept} from '../src/core/history.js';
+import {checkProducerIdentity, checkVolcanoFeedIdentity} from '../src/gateway/producer-admission.js';
+import {observation as lifecycle, turnEnded} from './fixtures/agents.js';
 import {producerCredentialId, producerSource} from '../src/hook/index.js';
 import {createCoreModule} from '../src/index.js';
 import {edgeConfig, fixture, it, run, waitFor} from './support.js';
@@ -59,6 +61,20 @@ it('only the derived collector credential of the feed publishes its observations
   await refusedAs(collector, {key: `bunny.event.desktop-metadata.${volcanoFeedId(FEED)}`, message: own.message});
   assert.deepEqual(await send(collector, own), {status: 'published'});
   await waitFor(async () => (await (await read('/modules/volcano/content/status', reader)).json() as VolcanoStatus).availability === 'available', 5000, 'the module took it');
+});
+
+it('what a Volcano collector credential can publish: its feed only, and a lifecycle observation on the loopback entry alone', async context => {
+  const {collector, runtime} = await world(context);
+  const send = (key: string, message: Message) => publishOnce({url: runtime.url, source: collector.source, token: collector.token, timeoutMs: 2000}, key, message);
+  const {key, draft} = lifecycle(turnEnded, Date.now());
+  const message = prepareMessage(collector.source, draft);
+  // The loopback entry keeps released local producers working, so this binding is not checked there.
+  assert.deepEqual(await send(key, message), {status: 'published'});
+  assert.equal(checkProducerIdentity(message)?.error.code, 'forbidden', 'the private entry refuses the same message');
+  assert.equal(checkVolcanoFeedIdentity(message), undefined, 'this check is about Volcano observations only');
+  const other = await send(`bunny.event.moment-ended.wall`, prepareMessage(collector.source, {kind: 'occurrence', type: 'org.bunny.moment.ended', subject: 'wall',
+    dataschema: 'https://bunny.invalid/events/moment-ended/2.0', data: {requestId: 'req-moment-1', momentId: 'moment-1', ending: 'preempted', endedAtMs: Date.now()}}));
+  assert.equal(other.status === 'rejected' && other.error.error.code, 'forbidden', 'and any other family stays refused');
 });
 
 it('the raw observation is no history row, and the status reads only with a read grant, on this route only', async context => {
