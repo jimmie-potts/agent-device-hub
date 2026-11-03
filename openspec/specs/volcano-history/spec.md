@@ -75,7 +75,7 @@ The module SHALL publish `bunny.state.device.<id>`, kind `volcano` with every ca
 
 ### Requirement: Durable and bounded reads
 
-Facts and threshold SHALL survive an ordinary restart, and there SHALL be no delete or release control. Facts, continuity and state messages SHALL commit in one transaction through the outbox. A full disk SHALL refuse before anything is accepted, and recording SHALL resume when a commit succeeds. Reads SHALL be the fixed projections `status`, `timeline`, `sessions`, `totals` and `gaps`, each closed, checked against its schema, bounded by page and at most 256 KiB, each taking only its own validated query fields, under the gateway's existing read authorization, plus a `status` MCP tool. No log record SHALL carry usage, serial or a host or feed identifier.
+Facts and threshold SHALL survive an ordinary restart, and there SHALL be no delete or release control. Facts, continuity and state messages SHALL commit in one transaction through the outbox. A full disk SHALL refuse before anything is accepted, and recording SHALL resume when a commit succeeds. Reads SHALL be the fixed projections `status`, `timeline`, `sessions`, `totals` and `gaps`, each closed, checked against its schema, bounded by page and at most 256 KiB, each taking only its own validated query fields, under the gateway's existing read authorization, plus a `status` MCP tool. No log record SHALL carry usage, serial or a raw host or source ID; a routing key carrying the hashed feed ID is the same as for other feeds. A connection, a collector restart and a discontinuity SHALL each leave one private record of registered fields.
 
 #### Scenario: Restart
 - **WHEN** the module restarts, including between a commit and its publication

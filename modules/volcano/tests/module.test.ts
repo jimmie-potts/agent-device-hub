@@ -208,6 +208,24 @@ void test('a snapshot from another producer shape, feed or kind is refused and l
   assert.equal(refused[0]?.fields['bunny.code'], 'forbidden');
 });
 
+void test('first connection, collector restart and discontinuity each leave one private feed record', async t => {
+  const world = await rig(t);
+  const records = () => world.host.logs.filter(entry => entry.event === 'feed.changed').map(({level, fields}) => [level, fields['bunny.operation'], fields['bunny.outcome'], fields['bunny.reason'], fields['bunny.device.id']]);
+  await world.send({reading: reading({status1: HEATING})});
+  assert.deepEqual(records(), [['info', 'feed', 'current', undefined, 'volcano']], 'the first connection');
+  await world.after(1000, {reading: reading({status1: HEATING})});
+  assert.equal(records().length, 1, 'a steady feed adds none');
+  world.epoch = 'epoch-b';
+  world.sequence = 0;
+  await world.after(1000, {reading: reading({status1: HEATING})});
+  assert.deepEqual(records().at(-1), ['info', 'startup', 'current', undefined, 'volcano'], 'the collector restart');
+  await world.after(1000, {reading: reading({status1: HEATING, heatingHours: 1, heatingMinutes: 0})});
+  assert.deepEqual(records().at(-1), ['info', 'feed', 'stale', 'invalid-input', 'volcano'], 'a counter decrease');
+  await world.after(1000, {link: 'identity-mismatch', reading: null});
+  assert.deepEqual(records().at(-1), ['info', 'feed', 'stale', 'unauthorized', 'volcano'], 'another device');
+  assert.equal(world.host.logs.some(entry => entry.fields['bunny.code'] === 'revision-conflict'), false);
+});
+
 void test('logs carry no usage, serial or identifier', async t => {
   const world = await rig(t);
   await world.send({reading: reading({status1: HEATING})});

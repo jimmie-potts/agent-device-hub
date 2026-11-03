@@ -17,6 +17,8 @@ import {VolcanoStore, type Meta} from './store.js';
 
 /** How often a synthetic feed reports when nothing changed, as a collector does. */
 export const FEED_HEARTBEAT_MS = 5000;
+/** How a discontinuity reads in a private record: the registered reason nearest its cause, and never a value. */
+const DISCONTINUITY_REASON = {'counter-decrease': 'invalid-input', 'counter-jump': 'invalid-input', 'identity-mismatch': 'unauthorized', 'clock-step': 'invalid-context'} as const;
 const PART_SOURCE = /^bunny\/parts\/[a-z0-9][a-z0-9-]*$/;
 
 /** A synthetic device for harnesses, in place of a collector: never part of a real build's manifest, gateway or configuration. */
@@ -186,8 +188,11 @@ class Owner {
   #report(snapshot: VolcanoObservation, facts: readonly Fact[]): void {
     if (snapshot.link === 'connected' && snapshot.reading !== null) this.#availability.reached(this.#config.id);
     else this.#availability.unreachable(this.#config.id, snapshot.link === 'identity-mismatch' ? 'forbidden' : 'unavailable');
-    if (facts.some(fact => fact.kind === 'discontinuity')) {
-      recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'feed', 'bunny.outcome': Outcome.failed, 'bunny.code': 'revision-conflict', 'bunny.device.id': this.#config.id});
+    const device = {'bunny.device.id': this.#config.id};
+    for (const fact of facts) {
+      if (fact.kind === 'link' && fact.state === 'connected') recordLog(this.#context.log, 'feed.changed', {...device, 'bunny.operation': 'feed', 'bunny.outcome': 'current'});
+      else if (fact.kind === 'collector-restart') recordLog(this.#context.log, 'feed.changed', {...device, 'bunny.operation': 'startup', 'bunny.outcome': 'current'});
+      else if (fact.kind === 'discontinuity') recordLog(this.#context.log, 'feed.changed', {...device, 'bunny.operation': 'feed', 'bunny.outcome': 'stale', 'bunny.reason': DISCONTINUITY_REASON[fact.reason]});
     }
   }
 

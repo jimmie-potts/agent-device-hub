@@ -118,9 +118,15 @@ through the core's tracked dispatcher (`POST /api/v2/commands/volcano-session-ga
 
 ## Diagnostics
 
-Link changes are `device.unavailable` and `device.available`; a discontinuity and a
-refused commit are `operation.failed`. Records carry registry codes and the device's
-routing ID. No usage, serial, host or feed identifier reaches a log.
+Link changes are `device.unavailable` and `device.available`. A connection, a collector
+restart and a discontinuity are each one `feed.changed`: a connection has `bunny.operation`
+`feed` and `bunny.outcome` `current`, a restart `startup` and `current`, and a
+discontinuity `feed`, `stale` and the nearest `bunny.reason` (`invalid-input` for the
+counter, `unauthorized` for another device, `invalid-context` for a stepped clock). A
+refused commit is `operation.failed`. The module's records carry registered codes and
+the device's routing ID. No usage, serial, raw host ID or raw source ID reaches a log.
+The runtime's own message records may carry the routing key, whose last token is the
+hashed feed ID, as for the other feeds.
 
 ## Simulation
 
