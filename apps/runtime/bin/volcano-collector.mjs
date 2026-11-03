@@ -37,8 +37,9 @@ async function main() {
   try {
     const {loadTransport} = await import('../../volcano-collector/dist/src/index.js');
     transport = await loadTransport();
-  } catch {
-    transport = undefined;
+  } catch (error) {
+    // Only a package that was never built or installed is a missing binding; any other fault ends with the exit below.
+    if (error?.code !== 'ERR_MODULE_NOT_FOUND') throw error;
   }
   if (transport === undefined) {
     process.stderr.write(`${REFUSAL_TEXT.binding}\n`);

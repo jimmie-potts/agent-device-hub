@@ -302,6 +302,6 @@ void test('a threshold command that expired while it waited changes nothing', as
   const answer = world.gap({gapMinutes: 45}, 'gap-late', 100);
   world.clock.advance(101);
   const replied = await answer;
-  assert.notEqual(replied.status, 'accepted');
+  assert.equal(replied.status === 'rejected' && replied.error.error.code, 'expired');
   assert.equal((await world.status()).gapMinutes, 15);
 });

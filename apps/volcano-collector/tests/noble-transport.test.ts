@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {READABLE, VOLCANO_REGISTERS, VOLCANO_SERIAL, VOLCANO_SERVICES, type ReadUuid, type SubscribeUuid} from '@jimmie-potts/runtime/volcano-collector';
-import {nobleTransport, type Noble, type NobleCharacteristic, type NoblePeripheral} from '../src/noble-transport.js';
+import {loadTransport, nobleTransport, type Noble, type NobleCharacteristic, type NoblePeripheral} from '../src/noble-transport.js';
 
 const never = new AbortController().signal;
 const noDashes = (uuid: string): string => uuid.replaceAll('-', '');
@@ -105,6 +105,13 @@ void test('a lost link tells the collector, and disconnect forgets the device', 
   assert.ok(calls.includes('peripheral.disconnectAsync'));
   await assert.rejects(transport.read(VOLCANO_REGISTERS.status1, never));
   await transport.disconnect();
+});
+
+void test('only a missing binding reads as missing: any other fault in loading it escapes', async () => {
+  assert.equal(await loadTransport(() => Promise.reject(Object.assign(new Error('synthetic'), {code: 'ERR_MODULE_NOT_FOUND'}))), undefined);
+  await assert.rejects(loadTransport(() => Promise.reject(new Error('synthetic native fault'))), /synthetic native fault/);
+  const {noble} = world();
+  assert.notEqual(await loadTransport(() => Promise.resolve({default: noble})), undefined);
 });
 
 void test('a failed connect leaves no disconnect listener behind', async () => {

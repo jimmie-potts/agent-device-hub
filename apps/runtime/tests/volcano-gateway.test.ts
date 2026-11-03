@@ -6,13 +6,13 @@ import {createHash, randomBytes} from 'node:crypto';
 import type {TestContext} from 'node:test';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {VOLCANO_OBSERVATION_SCHEMA, volcanoFeedId, volcanoObservationKey, type VolcanoFeed, type VolcanoObservation, type VolcanoReading} from '@jimmie-potts/event-contracts/v2/families';
-import {prepareMessage, publishOnce} from '@jimmie-potts/sdk';
+import {prepareMessage, publishOnce, type Reply} from '@jimmie-potts/sdk';
 import {createVolcanoModule, volcanoSchemas, type VolcanoStatus} from '@jimmie-potts/volcano';
 import {VOLCANO_REGISTERS, VOLCANO_SERIAL, runCollector, type ReadUuid, type SubscribeUuid, type VolcanoTransport} from '../src/collector/volcano.js';
 import {kept} from '../src/core/history.js';
 import {producerCredentialId, producerSource} from '../src/hook/index.js';
 import {createCoreModule} from '../src/index.js';
-import {edgeConfig, it, run, waitFor} from './support.js';
+import {edgeConfig, fixture, it, run, waitFor} from './support.js';
 
 const feedOf = (hostId: string): VolcanoFeed => ({provider: 'storz-bickel', client: 'volcano', hostId, sourceId: 'volcano-sim'});
 const collectorConfiguration = (feed: VolcanoFeed) => ({...feed, feed: 'volcano-observation'});
@@ -135,6 +135,23 @@ it('a threshold goes through the dispatcher as a tracked action, and a reader or
   await waitFor(async () => (await outcomes('gap-999')).some(row => row.result === 'failed'), 5000, 'the failed outcome');
   assert.equal((await post(operator, {target: 'volcano', data: {gapMinutes: 1.5}})).status, 400, 'a malformed one fails the family\'s schema');
   assert.equal(((await (await read('/modules/volcano/content/status', reader)).json()) as VolcanoStatus).gapMinutes, 30);
+});
+
+it('a threshold whose reply is lost ends uncertain through the dispatcher, and is never sent again', async context => {
+  const operator = {id: 'operator', source: 'bunny/parts/operator', token: token()};
+  const files = await edgeConfig(context, [{...operator, scopes: ['read', 'control']}]);
+  let received = 0;
+  let release: () => void = () => {};
+  const held = new Promise<Reply>(resolve => { release = () => { resolve({status: 'accepted'}); }; });
+  const silent = fixture('volcano', async ({sdk}) => { await sdk.respond('bunny.cmd.volcano-session-gap.volcano', () => { received += 1; return held; }); });
+  context.after(() => { release(); });
+  const {runtime} = await run(context, {modules: [createCoreModule(), silent], configFile: files.config, edge: {schemas: volcanoSchemas}});
+  const reply = await fetch(`${runtime.url}/api/v2/commands/volcano-session-gap`, {method: 'POST', headers: {authorization: `Bearer ${operator.token}`, 'content-type': 'application/json'}, body: JSON.stringify({target: 'volcano', requestId: 'gap-lost', data: {gapMinutes: 30}})});
+  assert.equal(((await reply.json()) as {error?: {code?: string}}).error?.code, 'uncertain-result');
+  const family = await (await fetch(`${runtime.url}/api/v2/families/operation`, {headers: {authorization: `Bearer ${operator.token}`}})).json() as {records: {requestId: string; status: string; result?: string}[]};
+  const operation = family.records.find(record => record.requestId === 'gap-lost');
+  assert.deepEqual([operation?.status, operation?.result], ['uncertain', 'uncertain']);
+  assert.equal(received, 1);
 });
 
 it('a real collector loop on a fake radio reaches the authenticated reads with no command sent', async context => {

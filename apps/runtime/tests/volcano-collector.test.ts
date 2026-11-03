@@ -2,10 +2,15 @@
 // and when, identity, backoff, and that no operation outside the allowlist exists. Synthetic values only; no radio.
 import assert from 'node:assert/strict';
 import {createHash, randomBytes} from 'node:crypto';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {existsSync} from 'node:fs';
 import {chmod, mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
+import {fileURLToPath, pathToFileURL} from 'node:url';
+import {parseRecord} from '@jimmie-potts/bunny-observability';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, type VolcanoObservation} from '@jimmie-potts/event-contracts/v2/families';
 import type {Logger, PublishOnceResult} from '@jimmie-potts/sdk';
@@ -361,6 +366,9 @@ void test('a producer names exactly the Volcano feed', () => {
   }
 });
 
+const BIN = fileURLToPath(new URL('../../bin/volcano-collector.mjs', import.meta.url));
+const BINDING_INSTALLED = existsSync(fileURLToPath(new URL('../../../volcano-collector/node_modules', import.meta.url)));
+
 async function scratch(context: TestContext): Promise<string> {
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'gh615-collector-')));
   await chmod(directory, 0o700);
@@ -399,4 +407,89 @@ void test('the collector and producer files are refused unless private and exact
   assert.ok(typeof loaded === 'object');
   assert.deepEqual(loaded.feed, FEED);
   assert.equal(loaded.publisher.source, SOURCE);
+});
+
+/** A private producer and collector file for the real entry point, pointing at an edge nothing listens on. */
+async function entryFiles(directory: string, advertisedName = 'S&B VOLCANO H'): Promise<string> {
+  const producerDirectory = join(directory, 'producer');
+  await mkdir(producerDirectory, {mode: 0o700});
+  const producer = join(producerDirectory, 'producer.json');
+  const token = randomBytes(32).toString('base64url');
+  const endpoint = 'http://127.0.0.1:1/api/monitor/v1/events';
+  await writeFile(producer, JSON.stringify({enabled: true, qualified: true, source: CONFIGURATION, token, endpoint}), {mode: 0o600});
+  await writeFile(join(producerDirectory, 'receipt.json'), JSON.stringify({version: 1, state: 'installed', token, input: {directory: producerDirectory, source: CONFIGURATION, endpoint, qualified: true}}), {mode: 0o600});
+  const path = join(directory, 'collector.json');
+  await writeFile(path, JSON.stringify({producer, advertisedName, serialSha256: SERIAL_HASH}), {mode: 0o600});
+  return path;
+}
+
+/** Runs the real entry point. `binding` is the text of a stand-in for the Bluetooth binding, so no run can reach a radio. */
+async function entry(directory: string, args: readonly string[], binding?: string, onStarted?: (child: ReturnType<typeof spawn>, output: () => string) => Promise<void>): Promise<{code: number | null; stdout: string; stderr: string}> {
+  const options: string[] = [];
+  if (binding !== undefined) {
+    const fake = join(directory, 'fake-binding.mjs'), hook = join(directory, 'hook.mjs');
+    await writeFile(fake, binding, {mode: 0o600});
+    await writeFile(hook, `import {registerHooks} from 'node:module';
+registerHooks({resolve(specifier, context, next) { return specifier === '@stoprocent/noble' ? {url: ${JSON.stringify(pathToFileURL(fake).href)}, shortCircuit: true} : next(specifier, context); }});
+`, {mode: 0o600});
+    options.push('--import', pathToFileURL(hook).href);
+  }
+  const child = spawn(process.execPath, [...options, BIN, ...args], {stdio: ['ignore', 'pipe', 'pipe']});
+  let stdout = '', stderr = '';
+  child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+  child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+  const exited = once(child, 'exit') as Promise<[number | null]>;
+  await onStarted?.(child, () => stderr);
+  const [code] = await exited;
+  return {code, stdout, stderr};
+}
+const SILENT_NOBLE = 'export default {waitForPoweredOnAsync: async () => {}, startScanningAsync: async () => {}, stopScanningAsync: async () => {}, on() {}, removeListener() {}};\n';
+
+void test('the entry point refuses a bad command line or file with exit 2, one fixed line and no path', async t => {
+  const directory = await scratch(t);
+  const good = await entryFiles(directory);
+  const badCollector = join(directory, 'bad-collector.json');
+  await writeFile(badCollector, JSON.stringify({producer: '/absent', advertisedName: 'x', serialSha256: SERIAL_HASH}), {mode: 0o644});
+  await chmod(badCollector, 0o644);
+  const noProducer = join(directory, 'no-producer.json');
+  await writeFile(noProducer, JSON.stringify({producer: join(directory, 'absent.json'), advertisedName: 'x', serialSha256: SERIAL_HASH}), {mode: 0o600});
+  for (const [args, expected] of [[[], /usage/], [[good, 'extra'], /usage/], [[badCollector], /the collector file is missing/], [[noProducer], /the producer file is missing/]] as const) {
+    const {code, stdout, stderr} = await entry(directory, args);
+    assert.equal(code, 2);
+    assert.equal(stdout, '');
+    assert.match(stderr, expected);
+    assert.equal(stderr.trim().split('\n').length, 1, 'one line');
+    assert.equal(stderr.includes(directory), false, 'no path');
+  }
+});
+
+void test('the entry point says so when the Bluetooth binding is not installed', {skip: BINDING_INSTALLED && 'the binding is installed here, and this test never loads it'}, async t => {
+  const directory = await scratch(t);
+  const {code, stdout, stderr} = await entry(directory, [await entryFiles(directory)]);
+  assert.equal(code, 2);
+  assert.equal(stdout, '');
+  assert.equal(stderr, 'volcano-collector: the Bluetooth binding is not installed; run npm ci in apps/volcano-collector\n');
+});
+
+void test('a binding that loads but faults is an unexpected fault: exit 1, one fixed line and nothing of the fault', async t => {
+  const directory = await scratch(t);
+  const {code, stdout, stderr} = await entry(directory, [await entryFiles(directory)], "throw new Error('synthetic native fault text');\n");
+  assert.equal(code, 1);
+  assert.equal(stdout, '');
+  assert.equal(stderr, 'volcano-collector: an unexpected fault ended the collector\n');
+});
+
+void test('the running entry point writes contract records to stderr only, with no identifier, and SIGTERM ends it with 0', async t => {
+  const directory = await scratch(t);
+  const {code, stdout, stderr} = await entry(directory, [await entryFiles(directory)], SILENT_NOBLE, async (child, output) => {
+    // The edge is absent, so the first publication fails and is recorded once.
+    await until(() => output().includes('operation.failed'), 'the first refused publication', 8000);
+    child.kill('SIGTERM');
+  });
+  assert.equal(code, 0);
+  assert.equal(stdout, '');
+  const records = stderr.trim().split('\n').map(line => parseRecord(line));
+  assert.ok(records.every(record => record.ok), stderr);
+  for (const value of ['mac-sim', 'volcano-sim', SERIAL_HASH, 'S&B VOLCANO H', directory]) assert.equal(stderr.includes(value), false, value);
+  assert.ok(stderr.includes('"bunny.module":"volcano"'));
 });

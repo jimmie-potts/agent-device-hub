@@ -104,14 +104,17 @@ export function nobleTransport(noble: Noble): VolcanoTransport {
   };
 }
 
-/** The transport on the installed binding, or undefined when `npm ci` has not been run in this package. */
-export async function loadTransport(): Promise<VolcanoTransport | undefined> {
+/**
+ * The transport on the installed binding, or undefined when `npm ci` has not been run in this package. Any other fault in
+ * loading it, such as a native build that does not load, is not a missing binding, and escapes.
+ */
+export async function loadTransport(load: (name: string) => Promise<unknown> = name => import(name)): Promise<VolcanoTransport | undefined> {
   // A computed name, so the root build, which does not install this binding, compiles without it.
-  const binding: string = '@stoprocent/noble';
   try {
-    const {default: noble} = await import(binding) as {default: Noble};
+    const {default: noble} = await load('@stoprocent/noble') as {default: Noble};
     return nobleTransport(noble);
-  } catch {
-    return undefined;
+  } catch (error) {
+    if ((error as {code?: unknown}).code === 'ERR_MODULE_NOT_FOUND') return undefined;
+    throw error;
   }
 }
