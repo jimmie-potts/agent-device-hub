@@ -552,13 +552,16 @@ test('a refused reload is retried at the writer\'s pace, and the tile it left on
   await until(() => server.state().served.includes(STATUS), 'the retry');
   await until(() => h.device().availability === 'available', 'the record recovering');
 
-  server.answerNextReload(500);
-  await h.core?.set(relabel(working(), 'changed'));
-  const pushes = server.state().installations[STATUS]?.pushes ?? 0;
-  await h.advance(16 * SECOND);
-  await until(() => (server.state().installations[STATUS]?.pushes ?? 0) > pushes, 'the next frame');
+  // From absent, a refused reload must not leave the writer sure the tile is still absent, or it would never delete it.
   await send(h, 'device-mode-set', {requestId: 'hide', mode: 'hide-status'});
-  await h.advance(32 * SECOND);
+  await h.advance(16 * SECOND);
+  await until(() => server.state().installations[STATUS] === undefined, 'the first removal');
+  server.answerNextReload(401);
+  await send(h, 'device-mode-set', {requestId: 'back', mode: 'rotation'});
+  await h.advance(16 * SECOND);
+  await until(() => server.state().installations[STATUS] !== undefined, 'the frame, with its reload refused');
+  await send(h, 'device-mode-set', {requestId: 'again', mode: 'hide-status'});
+  await h.advance(60 * SECOND);
   await until(() => server.state().installations[STATUS] === undefined, 'the removal the writer must not skip');
 });
 
