@@ -11,25 +11,33 @@ acceptance remain separate.
 ## Selected route
 
 The owner replaced the subscription route with API credits on 2026-11-03. A new
-shipped `modules/art` calls OpenAI's Image API with its own fetch, the way
-`modules/companions` calls Anthropic. It needs no Mac worker, CLI or sign-in, and
-it runs wherever the core runs. Claude may write the idea through the Messages API
-with a separate named key. Providers sit behind one small interface, so either can
-be replaced.
+shipped `modules/art`, owned by
+[#680](https://github.com/jimmie-potts/agent-device-hub/issues/680), calls OpenAI's
+Image API with its own fetch, the way `modules/companions` calls Anthropic. It needs
+no Mac worker, CLI or sign-in, and it runs wherever the core runs. Claude may write
+the idea through the Messages API. The module's private section names the same key
+file that companions already uses, under `secrets.anthropic-api-key`. Providers sit
+behind one small interface, so either can be replaced.
 
-| Candidate | Authentication | Unattended | Output | Cancellation | Call accounting | Decision |
-| --- | --- | --- | --- | --- | --- | --- |
-| OpenAI Image API, direct | API key file | Yes | Native raster bytes in the response | Abort the request; an effect may stand | One HTTP request per image request; usage to confirm in the trial | **Selected** |
-| Anthropic Messages API, direct | API key file, already in the core's secrets | Yes | Text and structured JSON, no images | Abort the request | Reported tokens per request (`modules/companions/src/assistant/anthropic.ts`) | **Selected for ideas only** |
-| Codex CLI `image_gen` on the ChatGPT login | Host login | Yes, from a Mac worker | Native raster, saved under `$CODEX_HOME` | Stop the process | Per-call item in the app-server schema; unobserved at runtime | Rejected: uses the plan rather than the selected credits, and needs a host worker and a new byte path to the core |
-| Claude Code on the Max plan | Host login | Yes, from a Mac worker | Code and text; no image tool found in its CLI help | Stop the process | Turns only in the existing worker (`apps/runtime/src/worker/coding-worker.ts`) | Rejected: no native image output |
-| Codex CLI logged in with an API key | Replaces the host login | Yes | Native raster | Stop the process | As the first Codex row | Rejected: changes the login other Codex work uses |
+A route must report what each request consumed. A route whose calls cannot be
+observed or bounded is unsuitable, however good its images are.
 
-OpenAI requires
-[API Organization Verification](https://developers.openai.com/api/docs/guides/image-generation)
-before GPT Image models work, and the owner completes it in the developer console.
-Blocked prompts return `moderation_blocked`, which is never retried automatically.
-A complex prompt may take up to two minutes.
+| Candidate | Authentication | Unattended | Output | Cancellation | Limits | Call accounting | Decision |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [OpenAI Image API](https://developers.openai.com/api/docs/guides/image-generation), direct | API key file | Yes | Native raster bytes in the response | Abort the request; an effect may stand | Credit balance and the organization's rate tier; the tier was not read | `usage` on each response, observed in the trial | **Selected** |
+| Anthropic Messages API, direct | The existing API key file | Yes | Text and structured JSON, no images | Abort the request; an effect may stand | Credit balance and the organization's rate tier; the tier was not read | Reported tokens per request (`modules/companions/src/assistant/anthropic.ts`) | **Selected for ideas only** |
+| Codex CLI `image_gen` on the ChatGPT login | Host login | Yes, from a Mac worker | Native raster, saved under `$CODEX_HOME` | Stop the process | Plan usage; not stated by the CLI | Per-call item in the `codex app-server generate-json-schema` output; unobserved at runtime | Rejected: uses the plan rather than the selected credits, and needs a host worker and a new byte path to the core |
+| Claude Code on the Max plan | Host login | Yes, from a Mac worker | Code and text; `claude --help` shows no image tool | Stop the process | Plan usage; not stated by the CLI | Turns, cost and duration from the final envelope (`apps/runtime/src/worker/coding-worker.ts`), with no per-request count | Rejected: no native image output, and requests are not observed |
+| Codex CLI logged in with an API key | Replaces the host login | Yes | Native raster | Stop the process | Credit balance | As the first Codex row | Rejected: changes the login other Codex work uses |
+
+Third-party image tools were not considered, because the owner selected these two
+accounts. Procedural art is local code, not a provider: it costs nothing and needs
+no route.
+
+OpenAI requires API Organization Verification before GPT Image models work, and the
+owner completes it in the developer console. Blocked prompts return
+`moderation_blocked`, which is never retried automatically. A complex prompt may take
+up to two minutes.
 
 ## Art jobs and results
 
@@ -41,65 +49,98 @@ provider call and is never re-run after a restart.
   "requestId": "req-1",
   "purpose": "request | ambient | appearance | variation",
   "origin": {"kind": "owner | schedule | weather", "reference": "optional"},
-  "context": {"time": "evening", "season": "autumn", "weather": "rain, 48°F"},
+  "text": "the owner's typed request, when there is one",
+  "context": {"time": "evening", "season": "autumn", "weather": "cold rain"},
   "targets": ["ui", "tidbyt", "pixoo"],
   "variationOf": "optional artwork id"
 }
 ```
 
 The location, personal data and credentials never appear in this row or a prompt.
+Weather reaches a prompt as condition words only.
 
-A result is one artwork with separate provider calls and renditions:
+A result is one **artwork**, which is one idea. The module mints its `artworkId`. Each
+target gets its own **composition**, whose immutable `compositionId` is the SHA-256 of
+that composition's original bytes. Each composition has local **renditions**. Three
+image calls for one idea therefore give one artwork and three compositions. A
+device refers to a composition, never to an artwork alone.
 
 ```json
 {
-  "artworkId": "sha256 of the original bytes",
-  "calls": [{"callId": "call-1", "provider": "openai", "model": "gpt-image-2", "status": "settled", "costMicros": 53000}],
-  "renditions": [{"target": "tidbyt", "renditionId": "sha256", "width": 64, "height": 32, "frames": 1, "durationMs": 0, "format": "webp", "bytes": 1840}],
+  "artworkId": "art-1",
+  "outcome": "succeeded | partial | failed | uncertain | rejected | cancelled",
+  "palette": ["#101828", "#F4A261"],
+  "calls": [{"callId": "call-1", "provider": "openai", "model": "gpt-image-2", "status": "settled", "reservedMicros": 90000, "costMicros": 3000}],
+  "compositions": [{
+    "target": "tidbyt",
+    "compositionId": "sha256",
+    "outcome": "succeeded",
+    "renditions": [{"renditionId": "sha256", "width": 64, "height": 32, "frames": 1, "durationMs": 0, "format": "webp", "bytes": 1840}]
+  }],
   "provenance": {"generatedBy": "openai", "promptHash": "sha256", "factual": false}
 }
 ```
 
-Provider calls never change an artwork's identity. Local renditions cost nothing.
+Each target succeeds or fails alone. A failure on one keeps the others and makes the
+artwork `partial`. Local renditions and playback cost nothing. Palette values are
+validated data for [#683](https://github.com/jimmie-potts/agent-device-hub/issues/683).
 
 | Case | Refusal or outcome | Spend | Effect |
 | --- | --- | --- | --- |
-| No key or unverified organization | Refused before any call, or `failed` with `unavailable` | None or settled from evidence | Saved art keeps playing |
-| Over the daily pace or monthly ceiling | `rejected` before any call | None | Saved art keeps playing; the owner sees why |
-| Moderation block or rate limit | `failed`, never re-sent | Settled at zero unless usage is reported | Nothing stored |
+| No key | Refused before any call | None | Saved art keeps playing |
+| Over a spending limit | `rejected` before any call | None | Saved art keeps playing; the owner sees why |
+| Cancelled before dispatch | `cancelled` | Reservation released | Nothing stored |
+| Cancelled or timed out after dispatch | `uncertain` | Reservation kept | Late bytes are discarded; no resend |
+| 4xx answer: unverified organization, moderation, rate limit | `failed`, never re-sent | Reported usage, otherwise zero | Nothing stored for that target |
+| 5xx answer without usage | `uncertain` | Reservation kept | Nothing stored; no resend |
 | Lost response or restart mid-call | `uncertain` | Reservation kept | Nothing stored; no resend |
-| Invalid, missing or oversized output | `failed` before storage | Settled from usage, or reservation kept | Nothing stored |
+| Invalid, missing or oversized output | `failed` before storage | Reported usage, otherwise reservation kept | Nothing stored for that target |
 | Extra model call for styling or an idea | Its own call row | Counted separately | Same artwork |
 | A provider without image output | Refused by capability check | None | Nothing stored |
+| One of three targets fails | `partial` | Each call on its own terms | The others are stored |
 
 Codes come from the registry, records follow the
-[diagnostic contract](observability-contract.md), and every provider call has a
-span. Prompts and responses stay out of logs.
+[diagnostic contract](observability-contract.md), and #680 registers the provider
+call's span name there. Prompts and responses stay out of logs.
 
 ## Spending limits
 
-The module owns one ledger in integer micro-dollars, per provider, per host-local
-calendar month.
+The module owns one ledger in integer micro-dollars and one limit set, per host-local
+calendar month. Calls to both providers draw on the same limits, and each row names
+its provider for the dashboard's totals.
 
-1. Before each call, reserve the worst-case cost of its model, quality and size
-   from a price table in the module. An unknown price refuses the call.
-2. Refuse when the reservation would pass the monthly ceiling ($150 by default,
+1. Bound each call before sending it: at most 4,000 characters of prompt, at most one
+   input image, and a fixed `max_tokens` for text.
+2. Reserve its worst case from a price table in the module, keyed by provider, model,
+   quality and size. Each entry is twice the largest output observed for that
+   entry, plus its bounded input at the listed price. An unknown entry refuses the
+   call, so a size or quality no one has observed cannot run until it is added.
+3. Refuse when the reservation would pass the monthly ceiling ($150 by default,
    editable). Automatic work is also refused past the daily pace (about $5).
-3. Refuse automatic work past about 30 images an hour.
-4. Settle from the response's reported usage. A lost answer keeps its reservation
-   as `uncertain`, and a later month starts new without erasing it.
-5. Nothing retries automatically.
+4. Refuse automatic work past 30 dispatched calls in any rolling 60 minutes, counting
+   failed and uncertain ones. Owner requests are not limited by this guard.
+5. Settle from the response's reported usage. A kept reservation stays as `uncertain`
+   spend and is not refunded; a later month starts new without erasing it.
+6. A settlement above its reservation records the true cost. The ceiling can therefore
+   be passed by one call's excess at most per concurrent call, and everything is then
+   refused until the next month. The excess is shown and logged as a price table fault.
+7. Nothing retries automatically.
 
 The reservation commits in one transaction, so concurrent requests cannot pass a
-limit. Worked traces, each a required test:
+limit. The dashboard reads spent, reserved, uncertain and remaining amounts from the
+module's state. Worked traces, each a required test in #680:
 
 | Trace | Result |
 | --- | --- |
 | Two concurrent requests with room for one | One reserves; the other is refused before any call |
-| Idea call, then image call | Two rows and two costs |
-| Provider failure after dispatch | Settled from evidence, with no resend |
+| Idea call, then three image calls | Four rows and four costs against one limit set, one artwork, three compositions |
+| Claude and OpenAI spend near the ceiling | Their sum decides; the next call from either is refused |
+| Second target refused at the ceiling after the first succeeds | `partial`; the first composition is kept |
+| Provider failure after dispatch | Settled as in the case table, with no resend |
 | Restart with a call in flight | `uncertain`, reservation kept, no resend |
 | Daily pace reached at noon | Automatic refused; owner requests continue; saved art plays |
+| A thirty-first automatic call in 60 minutes | Refused; it succeeds once the window has room and the pace allows |
+| Settlement above its reservation near the ceiling | True cost recorded, fault logged, later calls refused |
 | Monthly ceiling reached | All generation refused; saved art plays |
 | Next local month | Limits restart; earlier uncertain rows remain visible |
 
@@ -108,23 +149,34 @@ limit. Worked traces, each a required test:
 The closed `moment-play/2.0` schema carries mood and palette, and no image. A module
 may import only the SDK and contracts, so no module reads another's content, and
 there is no shared asset store. The core already forwards allowlisted commands for
-one named module (`apps/runtime/src/core/companion-part.ts`). The smallest handoff
-uses that shape:
+one named module (`apps/runtime/src/core/companion-part.ts`). The handoff reuses that
+shape, and the core's validator must know each forwarded family, so the families
+below live in `packages/event-contracts`.
+
+Devices do not report native IDs back. Each device maps the art module's
+`compositionId` to its own media. Pixoo's rendition IDs come from its renderer, so
+they never leave the module.
 
 | Step | Producer | Consumer | Owner of the delta |
 | --- | --- | --- | --- |
-| Stage on Pixoo | `art` sends a core-forwarded `pixoo-asset-change` `import`, up to the existing 160 KiB inline limit | Pixoo library; no display effect; duplicates reuse the asset | [#1288](https://github.com/jimmie-potts/agent-device-hub/issues/1288) returns the native IDs |
-| Stage on Tidbyt | `art` sends a new `tidbyt-art-stage` with a bounded WebP | Tidbyt store; no push | [#681](https://github.com/jimmie-potts/agent-device-hub/issues/681) |
-| Show | `moment-play/2.1` adds an optional `art: {artworkId, renditionId}` | A device that cannot resolve it refuses before any effect | [#679](https://github.com/jimmie-potts/agent-device-hub/issues/679) |
-| Ambient | `art` asks the owning module to replace its art tile | Tidbyt rotation; no takeover | [#681](https://github.com/jimmie-potts/agent-device-hub/issues/681) |
-| Browser | Authenticated `content` refs on `art` | Dashboard | [#682](https://github.com/jimmie-potts/agent-device-hub/issues/682) |
+| Contracts and forwarding | | Core part forwards `art-dispatch`, from `bunny/modules/art` only, as tracked `art-stage`, `art-ambient-set` and `moment-play` commands | [#679](https://github.com/jimmie-potts/agent-device-hub/issues/679) |
+| Stage | `modules/art` sends `art-stage`: `compositionId`, format, dimensions, frames, hash, up to 160 KiB of bytes, lifetime | Pixoo or Tidbyt validates and keeps a private copy; no display effect; duplicates reuse it | Pixoo [#1288](https://github.com/jimmie-potts/agent-device-hub/issues/1288), Tidbyt [#681](https://github.com/jimmie-potts/agent-device-hub/issues/681) |
+| Stage finished | Core operation record for that `requestId` | `modules/art` shows nothing until it reads `succeeded`; #679's fixture proves a module can read it | #679 |
+| Show | [#684](https://github.com/jimmie-potts/agent-device-hub/issues/684) decides with core arbitration; the core sends `moment-play/2.1` with optional `art: {compositionId}` | The device plays its private copy, or refuses an unknown or expired reference before any effect | Schema #679; playback Pixoo [#1287](https://github.com/jimmie-potts/agent-device-hub/issues/1287) and #1288, Tidbyt [#337](https://github.com/jimmie-potts/agent-device-hub/issues/337) and #681 |
+| Capability | Each device declares `moments.art` in its `device` record | `commandSupported` refuses a moment with `art` for a device without it, so Nanoleaf does not play its mood instead | #679 |
+| Ambient | `modules/art` sends `art-ambient-set` with a `compositionId`, or clears it | Tidbyt's art tile in its rotation; no takeover | #681 |
+| Browser and theme | Authenticated `content` refs and an `art` state record | Dashboard widget, gallery, spend and theme palette | #680 supplies; [#682](https://github.com/jimmie-potts/agent-device-hub/issues/682) and #683 consume |
 
-Consumers of `moment-play/2.0` keep their behavior, because a moment without `art`
-is unchanged and each module declares its support in its capabilities. Tracked
-operations keep their payload, so inline art bytes would grow the tracker. #679 must
-keep those bytes out of the stored operation, reusing ONN's omitted-payload approach
-if it fits. An artwork referenced by an in-flight moment or a favorite cannot be
-deleted, following Pixoo's existing `asset-referenced` refusal.
+Consumers of `moment-play/2.0` keep their behavior, because a moment without `art` is
+unchanged. Staged copies have a bounded lifetime and do not enter Pixoo's permanent
+library; saving a favorite is an explicit, separate import. A device holds its own
+copy, so deleting an artwork cannot remove media from an in-flight moment. An expired
+reference is refused truthfully.
+
+Tracked operations keep their payload, and art bytes must not grow the tracker. #679
+generalizes the omitted-payload path that ONN text uses in
+`apps/runtime/src/core/tracker.ts`. An omitted command cannot be resent from the inbox,
+so a person requests the art again as a new command.
 
 ## Compositions
 
@@ -137,8 +189,11 @@ pixels, so device art is always downscaled locally.
 - **Browser:** a richer, wide composition of the same idea that also suits a narrow
   card.
 
-Gentle animation is generated locally from a still, costs nothing, and stays within
-each device profile. The trial decides each surface's quality setting.
+The API returns stills only, and OpenAI's Videos API shut down on 2026-09-24. Animated
+art uses one image request for a sprite sheet, cut into frames locally. #680 validates
+each sheet and rejects misaligned cells or excess frame-to-frame change; a rejected
+sheet still costs its call, and the art falls back to a still or local motion. Local
+motion costs nothing and stays within each device profile.
 
 ## Live trial
 
@@ -152,8 +207,8 @@ each device profile. The trial decides each surface's quality setting.
   trial reaches $2.
 - **Evidence:** this record states the findings; images stay private.
 
-**Result, 2026-11-03:** five `gpt-image-2` requests all succeeded, none blocked, for
-about $0.13.
+**Result, 2026-11-03:** six `gpt-image-2` requests all succeeded, none blocked, for
+about $0.17.
 
 | Purpose | Size | Quality | Latency | Output tokens | Output cost |
 | --- | --- | --- | --- | --- | --- |
@@ -162,16 +217,23 @@ about $0.13.
 | Tidbyt | 1536×768 | low | 14 s | 102 | $0.003 |
 | Tidbyt | 1536×768 | medium | 24 s | 916 | $0.027 |
 | Browser | 1536×1024 | medium | 32 s | 1,372 | $0.041 |
+| Six-frame sprite sheet | 1536×1024 | medium | 27 s | 1,372 | $0.041 |
 
 - **Accounting holds:** each response reports `usage` with input and output token
   counts split into text and image. One request produced one image, so spend can be
-  settled per call. Input text adds about $0.0004 per request at $5 per million.
+  settled per call. Input text adds about $0.0006 per request at $5 per million.
 - **Quality:** low is enough for both displays. At 64×64 and 64×32, reduced with
   Lanczos to a 32-color palette, the low images read as well as the medium ones, and
   the subject stays recognizable. Nearest-neighbor reduction adds speckle, so it is
   not selected. Medium suits the browser composition.
 - **Cost per idea:** about $0.05 for browser, Pixoo and Tidbyt together, before the
-  idea call. Moderation behavior was not exercised.
-- **Not established:** how these look on the physical panels, which
-  [#687](https://github.com/jimmie-potts/agent-device-hub/issues/687) owns, and
-  behavior at or beyond a rate limit.
+  idea call.
+- **Animation:** the sheet gave a 22 KB, six-frame, 64×64 GIF with a stable scene and
+  visible motion. Between frames, 93 to 257 of 4,096 pixels changed noticeably. This
+  is one sample, so #680 measures the rejection rate.
+- **Not established:**
+  - Moderation and rate-limit answers were not exercised. They do not block #680:
+    the case table treats them as failures with no resend, and #680 tests them with a
+    fake provider.
+  - The physical panels, including animated WebP on the Tronbyt firmware, belong to
+    [#687](https://github.com/jimmie-potts/agent-device-hub/issues/687).
