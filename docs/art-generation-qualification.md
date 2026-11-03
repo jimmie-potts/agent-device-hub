@@ -152,4 +152,26 @@ each device profile. The trial decides each surface's quality setting.
   trial reaches $2.
 - **Evidence:** this record states the findings; images stay private.
 
-**Status:** not run. The key is not yet available.
+**Result, 2026-11-03:** five `gpt-image-2` requests all succeeded, none blocked, for
+about $0.13.
+
+| Purpose | Size | Quality | Latency | Output tokens | Output cost |
+| --- | --- | --- | --- | --- | --- |
+| Pixoo | 1024×1024 | low | 16 s | 196 | $0.006 |
+| Pixoo | 1024×1024 | medium | 39 s | 1,756 | $0.053 |
+| Tidbyt | 1536×768 | low | 14 s | 102 | $0.003 |
+| Tidbyt | 1536×768 | medium | 24 s | 916 | $0.027 |
+| Browser | 1536×1024 | medium | 32 s | 1,372 | $0.041 |
+
+- **Accounting holds:** each response reports `usage` with input and output token
+  counts split into text and image. One request produced one image, so spend can be
+  settled per call. Input text adds about $0.0004 per request at $5 per million.
+- **Quality:** low is enough for both displays. At 64×64 and 64×32, reduced with
+  Lanczos to a 32-color palette, the low images read as well as the medium ones, and
+  the subject stays recognizable. Nearest-neighbor reduction adds speckle, so it is
+  not selected. Medium suits the browser composition.
+- **Cost per idea:** about $0.05 for browser, Pixoo and Tidbyt together, before the
+  idea call. Moderation behavior was not exercised.
+- **Not established:** how these look on the physical panels, which
+  [#687](https://github.com/jimmie-potts/agent-device-hub/issues/687) owns, and
+  behavior at or beyond a rate limit.
