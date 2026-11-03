@@ -172,11 +172,15 @@ Checked 2026-11-03. Neither project had released since the pins below.
 
 | Item | Pinned | Evidence |
 | --- | --- | --- |
-| Server | v2.5.2 (`linux/arm64` image published) | Source read at v2.5.2. Exercised on a disposable v2.5.1 server (`sha256:b266da13…`), with synthetic credentials and no network; v2.5.1 to v2.5.2 changes no API handler, the auth middleware or `API.md`. |
+| Server | v2.5.2 (`linux/arm64` image published) | Source read at v2.5.2. `tests/tronbyt-server.test.ts` passed on a disposable v2.5.2 server (`sha256:fb0c08e9…`) with no device connected. First exercised on a disposable v2.5.1 server (`sha256:b266da13…`), with synthetic credentials and no network; v2.5.1 to v2.5.2 changes no API handler, the auth middleware or `API.md`. |
 | Firmware | v1.7.4, target `tidbyt-gen1` | Not exercised: #24 owns the flash. |
 | API | `/v0` | The table below, and `tests/tronbyt-server.test.ts`. |
 
-What differs from the cloud, each exercised on that server:
+What differs from the cloud, each exercised on the v2.5.1 server. The v2.5.2 run asserts
+only part of this: a named push replacing its own installation, server IDs that differ from
+the chosen name, presence found by name, the two 404s as outcomes, a pin outliving its
+installation, brightness at the ceiling and a 200 with no device connected. The rest of the
+table, including the rate row, rests on the v2.5.1 run and the unchanged API source:
 
 | Server behavior | What the module does |
 | --- | --- |
