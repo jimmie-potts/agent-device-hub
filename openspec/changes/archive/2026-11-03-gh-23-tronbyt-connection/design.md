@@ -34,8 +34,8 @@ The module writes two tiles through one queue, behind a lease, to the Tidbyt clo
 - **Entry points:** `configure`; tile evaluations; `bunny.cmd.brightness-set.<id>` and `bunny.cmd.device-mode-set.<id>`.
 - **Refusals (no effect):** other families and modes `unsupported-capability`; stale guards `revision-conflict`; reused ID `duplicate-conflict`; no lease or stopping `unavailable`; more than 8 waiting `capacity`.
 - **Outcomes:** `succeeded`/`transmitted` on a 2xx; `failed`/`none` on a refusal, a hold, a pre-send failure or expiry; `uncertain`/`none` when the write went out unanswered or the server answered 5xx. `observed` is never claimed.
-- **Retry:** no command is sent again. A pin that failed or is uncertain is a fresh write for the current mode after 60 s. Device hold (`device/2.1`) is not adopted: the record stays `device/2.0`, tile writes stay independent of brightness, and the next tile write is already a fresh one for the current state.
-- **Diagnostics:** `command.executing`, `command.completed`, `operation.failed` and `operation.completed` with `bunny.operation` `mode`, `brightness` or `startup`; `bunny.device.call` spans. No server, device ID or key in any of them, and no trace context to the server.
+- **Retry:** no command is sent again. A pin that failed or is uncertain is a fresh write for the current mode after 60 s, or at the next start's first evaluation after a stop or crash. Device hold (`device/2.1`) is not adopted: the record stays `device/2.0`, tile writes stay independent of brightness, and the next tile write is already a fresh one for the current state.
+- **Diagnostics:** `command.executing`, `command.completed`, `operation.failed` and `operation.completed` with `bunny.operation` `mode`, `brightness` or, for a handoff, `setup`; `bunny.device.call` spans. No server, device ID or key in any of them, and no trace context to the server.
 - **Fault cases:** tested in `tests/tronbyt.test.ts`: server silent, connection refused, lost answer, 401/403/404/429/5xx, stop or crash during a write, and a database that refuses a commit through the existing paths.
 
 ## Risks / Trade-offs
@@ -46,9 +46,9 @@ The module writes two tiles through one queue, behind a lease, to the Tidbyt clo
 
 ## Migration and recovery
 
-**Storage.** `tidbyt_connection`, `tidbyt_display` and `tidbyt_requests` are created when missing. A database with no connection row belongs to the cloud, so an upgrade on the cloud keeps tile memory and pushes nothing. Selecting another backend deletes `tidbyt_tiles` and `tidbyt_display` rows: both are recomputed, and the next start reads presence by name. No frame is stored.
+**Storage.** `tidbyt_connection`, `tidbyt_display` and `tidbyt_requests` are created when missing. A database with no connection row belongs to the cloud, so an upgrade on the cloud keeps tile memory and pushes nothing. Selecting another backend deletes `tidbyt_tiles` and `tidbyt_display` rows: both are recomputed, and the next start reads presence by name. On a server, the pin starts unknown, so the first evaluation clears any pin it holds. No frame is stored.
 
-**Rollback.** Restore the previous section and restart: the handoff runs the other way, and the cloud's first write is fresh. Rolling back the code itself leaves the new tables ignored; older code then trusts `tidbyt_tiles` rows written for the server until its 10-minute refresh, which is cosmetic.
+**Rollback.** Restore the previous section and restart: the handoff runs the other way, and the cloud's first write is fresh. Rolling back the code itself leaves the new tables ignored; older code then trusts `tidbyt_tiles` rows written for the server until its next push or removal, which is cosmetic.
 
 **Writer handoff.** The runtime stops a module before starting it with another section, and stop ends the call in flight. The cloud keeps its last tiles and hears nothing more. Each backend has its own lease, under the same module database that one runtime keeps to itself.
 

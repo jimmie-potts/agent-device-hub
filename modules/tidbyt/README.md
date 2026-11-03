@@ -157,6 +157,10 @@ Selected by the section, never by a failure ([Hub #23](https://github.com/jimmie
   been qualified.
 - A section holds only the selected backend's settings: `cloudDeviceId` with `tronbyt` is
   refused. Keep the previous section privately for rollback.
+- **Change `secrets.token` with `backend`.** Nothing ties a key file to a backend, so a stale
+  path would send the cloud's key to the server.
+- An installation here must not be all digits. The server looks one up by its own numeric ID
+  first, so such a name could reach an unrelated app.
 
 Source configuration here deploys nothing: hosting is
 [#1406](https://github.com/jimmie-potts/agent-device-hub/issues/1406) and the device
@@ -210,8 +214,9 @@ write in the queue's turn, never sent again. `desired` carries what was asked an
 shows, so a success is `transmitted` at most. A lost answer or a 5xx is `uncertain`. At most
 8 commands wait. Mode and brightness survive a restart; a command a stop or a crash left
 without an outcome is reported at the next start, `uncertain` if its write may have begun,
-and never runs again. A pin write that failed is a fresh write for the current mode after
-60 s.
+and never runs again. A pin write that failed or went unanswered is a fresh write for the
+current mode after 60 s, or at the next start's first evaluation. `transmitted` covers the
+mode's one write: a `hide-<tile>` tile's removal follows at its gate and can fail on its own.
 
 ### Changing backend
 
@@ -219,17 +224,23 @@ The runtime stops the module, which ends any call in flight, before starting it 
 another section. At that start the module:
 
 1. reports commands left without an outcome, as above;
-2. logs `operation.failed` with `bunny.code` `uncertain-result` once if a tile's last write
-   never got its answer;
+2. logs `operation.failed` with `bunny.operation` `setup` and `bunny.code` `uncertain-result`
+   once if a tile's last write left its presence unknown;
 3. drops what the tiles remember and the display's stored state, and logs
-   `operation.completed` with `bunny.reason` `backend-changed`;
-4. writes the current frame fresh once its gate allows. No frame is stored, so none can
+   `operation.completed` with `bunny.operation` `setup`;
+4. on a server, clears any pin it holds, since the module owns the pin and the mode starts at
+   `rotation`, which also clears a pin set by hand before the selection;
+5. writes the current frame fresh once its gate allows. No frame is stored, so none can
    replay.
 
-The old backend hears nothing more, and keeps whatever it last showed. Going back works the
+If the database refuses any of this, that run writes nothing, and the next start hands off
+again. The old backend hears nothing more, and
+keeps whatever it last showed. Going back works the
 same way: restore the previous section and restart. A database from before this record
 counts as the cloud's, so upgrading on the cloud pushes nothing while a tile stands. Older
-code ignores the new tables; it would trust the tiles' last rows until its 10-minute refresh.
+code ignores the new tables and trusts the tiles' last rows: a stale tile is cosmetic and
+corrects at the next push or removal. A first start on a completely full disk cannot create
+the new tables, so the module waits for space and a restart.
 
 ## The device record
 
@@ -258,8 +269,8 @@ lease.
 `bunny/modules/tidbyt`, as its copy's owner
 ([#967](https://github.com/jimmie-potts/agent-device-hub/issues/967)).
 
-Every general command (#918) on `bunny.cmd.<family>.<id>` is refused with
-`unsupported-capability`. One whose subject is another device never reaches the
+On the cloud, every general command (#918) on `bunny.cmd.<family>.<id>` is refused with
+`unsupported-capability`; a server takes two, as [its controls](#the-displays-controls) state. One whose subject is another device never reaches the
 module: the SDK's bus refuses it with `invalid-message` (the profile's routing-ID
 rule, Hub #835). Nothing is accepted, so the module has no outcome to report.
 

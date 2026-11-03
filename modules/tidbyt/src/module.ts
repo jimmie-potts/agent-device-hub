@@ -10,9 +10,9 @@
 //
 // Under policy A (ADR 0012, "Failure isolation"), start opens only local resources: the database, the private folder
 // with the lease, the API key's secret file and the bus. The module reaches the cloud afterwards, and the cloud's
-// errors and timeouts become device state and records, never a module failure. Nothing it sends is a command, so it
+// errors and timeouts become device state and records, never a module failure. A tile's write is not a command, so it
 // has no outcome to report: a write that failed is not sent again, and a later write is a fresh one for the current
-// state.
+// state. A server's commands report theirs in `control.ts`.
 import {join} from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
@@ -23,7 +23,7 @@ import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, errorType, ty
   type StateDraft, type SyncChange, type SyncedCopy, type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import {TidbytCloudConnection, type CloudFetch, type ListResult, type TidbytConnection, type WriteResult} from './cloud.js';
 import {API_KEY_SECRET, configureTidbyt, type TidbytConfig} from './configuration.js';
-import {ControlStore, DisplayControl, isControlFamily, settleRequests, type TileName} from './control.js';
+import {ControlStore, DEFAULT_MODE, DisplayControl, isControlFamily, settleRequests, type TileName} from './control.js';
 import {acquireLease, type Lease, type LeaseRefusal} from './lease.js';
 import {PLAYBACK_LOST_MS, nowPlayingView} from './nowplaying.js';
 import {SIMULATED_API_KEY, SIMULATED_DEVICE, SimulatedCloud} from './simulated.js';
@@ -165,7 +165,7 @@ class TidbytRun {
   readonly #tiles: Tile[] = [];
   readonly #sessions: Copy;
   readonly #playback: Copy;
-  /** The device's generation epoch for this start. The Tidbyt answers no command, so its generation never moves. */
+  /** The device's generation epoch for this start. No command replaces the writer, so its generation never moves. */
   readonly #epoch = randomUUID();
   #queue: CloudQueue | undefined;
   #lease: Lease | undefined;
@@ -336,20 +336,27 @@ class TidbytRun {
     const {log} = this.#context;
     db.exec('CREATE TABLE IF NOT EXISTS tidbyt_connection (id TEXT PRIMARY KEY, identity TEXT NOT NULL) STRICT');
     const identity = createHash('sha256').update(JSON.stringify(tronbyt === undefined ? ['cloud', cloudDeviceId] : ['tronbyt', tronbyt.url, tronbyt.deviceId])).digest('hex');
-    const stored = db.prepare('SELECT identity FROM tidbyt_connection WHERE id = ?').get(id) as {identity: string} | undefined;
+    // One row, whatever the device's routing ID: renaming the device changes no backend.
+    const stored = db.prepare('SELECT identity FROM tidbyt_connection WHERE id = \'selected\'').get() as {identity: string} | undefined;
     try {
       if (store.unfinished().length > 0) await outbox.transaction(add => { settleRequests(store, id, add); });
       if (stored?.identity === identity) return;
       if (stored !== undefined || tronbyt !== undefined) {
         const uncertain = db.prepare('SELECT COUNT(*) AS count FROM tidbyt_tiles WHERE presence = \'unknown\' AND last_write_at_ms IS NOT NULL').get() as {count: number};
-        if (uncertain.count > 0) recordLog(log, 'operation.failed', {...this.#deviceField(), 'bunny.operation': 'startup', 'bunny.code': 'uncertain-result'});
+        if (uncertain.count > 0) recordLog(log, 'operation.failed', {...this.#deviceField(), 'bunny.operation': 'setup', 'bunny.code': 'uncertain-result'});
         db.exec('DELETE FROM tidbyt_tiles');
         store.clearDisplay();
-        recordLog(log, 'operation.completed', {...this.#deviceField(), 'bunny.operation': 'startup', 'bunny.outcome': Outcome.succeeded, 'bunny.reason': 'backend-changed'});
+        // The module owns the pin, and the server may already hold one: the same server under a new address, or one left
+        // from an earlier run on it. The next evaluation writes the pin for the default mode.
+        if (tronbyt !== undefined) store.setDisplay(id, {mode: DEFAULT_MODE, brightness: undefined, pin: 'dirty', configurationRevision: 0});
+        recordLog(log, 'operation.completed', {...this.#deviceField(), 'bunny.operation': 'setup', 'bunny.outcome': Outcome.succeeded});
       }
-      db.prepare('INSERT INTO tidbyt_connection (id, identity) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET identity = excluded.identity').run(id, identity);
+      db.prepare('INSERT INTO tidbyt_connection (id, identity) VALUES (\'selected\', ?) ON CONFLICT (id) DO UPDATE SET identity = excluded.identity').run(identity);
     } catch (error) {
+      // The tiles' memory may still be the old backend's, so this run writes nothing: a later start hands off again.
       this.#storageFailed(storageCode(error));
+      this.#lease?.release();
+      this.#lease = undefined;
     }
   }
 

@@ -91,6 +91,9 @@ export function configureTidbyt(section: unknown): Configured<TidbytConfig> | Er
     if (tronbyt === undefined) {
       return refuse('tronbyt must be {url, deviceId, minIntervalMs?, refreshMs?}: an origin, http only on a private host, a device ID, and times from 1 s to a day');
     }
+    // The server looks an installation up by its own numeric ID first, so an all-digit name could reach an unrelated app.
+    const named = [section.statusInstallation, isObject(section.nowPlaying) ? section.nowPlaying.installation : undefined];
+    if (named.some(name => typeof name === 'string' && /^\d+$/.test(name))) return refuse('an installation on the tronbyt backend must not be all digits');
     selected = {tronbyt};
   }
   const statusInstallation = section.statusInstallation ?? DEFAULT_STATUS_INSTALLATION;

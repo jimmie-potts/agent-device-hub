@@ -99,7 +99,8 @@ export class TronbytConnection implements TidbytConnection {
       new Set(additional).size !== additional.length ||
       typeof config.deviceId !== 'string' || !CLOUD_DEVICE_ID.test(config.deviceId) ||
       typeof config.apiKey !== 'string' || !API_KEY.test(config.apiKey) ||
-      typeof config.installationId !== 'string' || !INSTALLATION_ID.test(config.installationId)) {
+      typeof config.installationId !== 'string' || !INSTALLATION_ID.test(config.installationId) ||
+      [config.installationId, ...additional as string[]].some(id => /^\d+$/.test(id))) {
       throw new CloudConfigurationError();
     }
     this.#origin = origin;

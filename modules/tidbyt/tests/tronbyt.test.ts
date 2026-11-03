@@ -2,6 +2,7 @@
 // on the simulated server beside the simulated cloud: identical frames through both, the backend's differences, the
 // write gate, commands, the pin, the handoff between backends, and what never reaches a message.
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
@@ -138,6 +139,8 @@ test('the section selects one backend, and refuses the other\'s settings', () =>
     {id: 'tidbyt', backend: 'tronbyt', tronbyt: {...TRONBYT, refreshMs: 86_400_001}, secrets},
     {id: 'tidbyt', backend: 'tronbyt', tronbyt: {...TRONBYT, extra: true}, secrets},
     {id: 'tidbyt', backend: 'tronbyt', tronbyt: {...TRONBYT, deviceId: 'bad id'}, secrets},
+    {id: 'tidbyt', backend: 'tronbyt', tronbyt: TRONBYT, statusInstallation: '100', secrets},
+    {id: 'tidbyt', backend: 'tronbyt', tronbyt: TRONBYT, nowPlaying: {playback: 'living-room', installation: '100'}, secrets},
   ];
   for (const body of refused) {
     const answer = configureTidbyt(body);
@@ -188,7 +191,7 @@ test('a backend\'s own gate and refresh apply on a server, and the cloud\'s are 
   const options = onServer(server, {minIntervalMs: 2000, refreshMs: 5 * MINUTE});
   const session = working();
   const h = await host(context, {sessions: [session], playback: 'absent', ...options, section: {...options.section, nowPlaying: undefined}});
-  await until(() => server.state().installations[STATUS]?.pushes === 1, 'the first push');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
   await h.core?.set(relabel(session, 'changed'));
   await until(() => h.harness.runningWorkers() === 0, 'its render');
   await h.advance(1999);
@@ -234,7 +237,7 @@ const outcomes = (h: Hosted): {result: string; evidence: string; requestId: stri
 test('brightness goes out once, in percent of the ceiling, and its outcome says it was transmitted, never observed', async context => {
   const server = new SimulatedTronbyt();
   const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1, 'the first push');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
   const before = h.device().configurationRevision;
   assert.deepEqual(await send(h, 'brightness-set', {requestId: 'b1', percent: 100}), {status: 'accepted'});
   await until(() => outcomes(h).length === 1, 'the outcome');
@@ -248,7 +251,7 @@ test('brightness goes out once, in percent of the ceiling, and its outcome says 
   assert.deepEqual(device.lastOutcome, {status: 'known', outcome: outcomes(h)[0]});
   assert.ok(device.lastTransmission.status === 'known' && device.lastTransmission.requestId === 'b1');
 
-  const writes = (): number => server.state().calls.filter(call => call.method === 'PATCH').length;
+  const writes = (): number => server.state().brightnessWrites;
   const sent = writes();
   assert.deepEqual(await send(h, 'brightness-set', {requestId: 'b1', percent: 100}), {status: 'accepted'}, 'a repeat changes nothing');
   await h.advance(SECOND);
@@ -263,16 +266,17 @@ test('brightness goes out once, in percent of the ceiling, and its outcome says 
 test('an unanswered command is uncertain and never sent again, and a refused key holds every later write', async context => {
   const server = new SimulatedTronbyt();
   const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1, 'the first push');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  const patched = server.state().calls.filter(call => call.method === 'PATCH' && !call.path.includes('/installations')).length;
   server.loseNextAnswer();
   assert.deepEqual(await send(h, 'brightness-set', {requestId: 'lost', percent: 50}), {status: 'accepted'});
-  await until(() => server.state().calls.some(call => call.method === 'PATCH'), 'the write');
+  await until(() => server.state().brightnessWrites === 1, 'the write');
   await h.advance(10 * SECOND + 1);
   await until(() => outcomes(h).length === 1, 'its outcome');
   assert.equal(outcomes(h)[0]?.result, 'uncertain');
   assert.equal(outcomes(h)[0]?.evidence, 'none');
   assert.equal(outcomes(h)[0]?.error?.code, 'uncertain-result');
-  assert.equal(server.state().calls.filter(call => call.method === 'PATCH').length, 1, 'it is not sent again');
+  assert.equal(server.state().brightnessWrites, 1, 'it is not sent again');
 
   server.answerNext(401);
   assert.deepEqual(await send(h, 'brightness-set', {requestId: 'refused', percent: 50}), {status: 'accepted'});
@@ -282,20 +286,20 @@ test('an unanswered command is uncertain and never sent again, and a refused key
   assert.deepEqual(await send(h, 'brightness-set', {requestId: 'held', percent: 50}), {status: 'accepted'});
   await until(() => outcomes(h).length === 3, 'the hold');
   assert.equal(outcomes(h)[2]?.error?.code, 'unauthenticated');
-  assert.equal(server.state().calls.filter(call => call.method === 'PATCH').length, 2, 'the hold sends nothing');
+  assert.equal(server.state().calls.filter(call => call.method === 'PATCH' && !call.path.includes('/installations')).length, patched + 2, 'the hold sends nothing');
 });
 
 test('a command the database cannot store is refused before anything goes out', async context => {
   const server = new SimulatedTronbyt();
   let failing = false;
   const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server), wrapDatabase: database => withWriteFailure(database, () => failing ? new Error('disk I/O error') : undefined)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1, 'the first push');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
   await until(() => h.device().availability === 'available', 'the record');
   const revision = h.device().configurationRevision;
   failing = true;
   assert.deepEqual(await send(h, 'brightness-set', {requestId: 'unstored', percent: 10}), {status: 'rejected', code: 'unavailable'});
   failing = false;
-  assert.equal(server.state().calls.filter(call => call.method === 'PATCH').length, 0, 'nothing went out');
+  assert.equal(server.state().brightnessWrites, 0, 'nothing went out');
   assert.equal(h.device().configurationRevision, revision, 'the record stands');
   assert.deepEqual(await send(h, 'brightness-set', {requestId: 'stored', percent: 10}), {status: 'accepted'}, 'the same command works once the database does');
   await until(() => outcomes(h).length === 1, 'its outcome');
@@ -306,7 +310,7 @@ test('a command the database cannot store is refused before anything goes out', 
 test('a command that waited past its deadline never goes out', async context => {
   const server = new SimulatedTronbyt();
   const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1, 'the first push');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
   server.answerNext(429);
   await send(h, 'brightness-set', {requestId: 'limited', percent: 10});
   await until(() => outcomes(h).length === 1, 'the rate limit');
@@ -314,14 +318,14 @@ test('a command that waited past its deadline never goes out', async context => 
   await h.advance(61 * SECOND);
   await until(() => outcomes(h).length === 2, 'the expiry');
   assert.equal(outcomes(h)[1]?.error?.code, 'expired');
-  assert.equal(server.state().calls.filter(call => call.method === 'PATCH').length, 1);
+  assert.equal(server.state().brightnessWrites, 0, 'the late command never reached the server');
 });
 
 test('the modes: interrupt sets a tile\'s pushes to interrupt, and a hidden tile leaves and stays out until another mode returns it', async context => {
   const server = new SimulatedTronbyt();
   const session = working();
   const h = await host(context, {sessions: [session], playback: playback('playing'), ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1, 'the first push');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
   assert.deepEqual(await send(h, 'device-mode-set', {requestId: 'm1', mode: 'interrupt'}), {status: 'accepted'});
   await until(() => outcomes(h).length === 1, 'the mode');
   assert.deepEqual(outcomes(h)[0], {requestId: 'm1', result: 'succeeded', evidence: 'transmitted'});
@@ -351,7 +355,7 @@ test('a pin follows its tile: it is set while the tile stands, cleared when the 
   const server = new SimulatedTronbyt();
   const done = finished();
   const h = await host(context, {sessions: [done], playback: 'absent', ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1, 'the first push');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
   const first = server.state().installations[STATUS]?.serverId;
   assert.deepEqual(await send(h, 'device-mode-set', {requestId: 'pin', mode: 'pin-status'}), {status: 'accepted'});
   await until(() => outcomes(h).length === 1, 'the mode');
@@ -378,7 +382,7 @@ test('a pin write that fails is a fresh one later, and it is reported once', asy
   const server = new SimulatedTronbyt();
   const done = finished();
   const h = await host(context, {sessions: [done], playback: 'absent', ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1, 'the first push');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
   await send(h, 'device-mode-set', {requestId: 'pin', mode: 'pin-status'});
   await until(() => outcomes(h).length === 1, 'the mode');
   server.answerNextPatch(500);
@@ -394,19 +398,21 @@ test('a pin write that fails is a fresh one later, and it is reported once', asy
 test('a restart keeps the mode and brightness, and a command the runtime stopped during is reported, never run again', async context => {
   const server = new SimulatedTronbyt();
   const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1, 'the first push');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
   await send(h, 'device-mode-set', {requestId: 'mode', mode: 'pin-status'});
   await send(h, 'brightness-set', {requestId: 'dim', percent: 30});
   await until(() => outcomes(h).length === 2, 'both');
   server.offline();
+  const patches = (): number => server.state().calls.filter(call => call.method === 'PATCH').length;
+  const before = patches();
   await send(h, 'brightness-set', {requestId: 'caught', percent: 90});
-  await until(() => server.state().calls.filter(call => call.method === 'PATCH').length === 3, 'the write under way');
+  await until(() => patches() === before + 1, 'the write under way');
   await h.restart();
   server.online();
   await until(() => outcomes(h).length === 3, 'the report of the unfinished command');
   assert.equal(outcomes(h)[2]?.result, 'uncertain');
   assert.equal(outcomes(h)[2]?.requestId, 'caught');
-  assert.equal(server.state().calls.filter(call => call.method === 'PATCH').length, 3, 'it is not sent again');
+  assert.equal(server.state().brightnessWrites, 1, 'it is not sent again');
   const device = h.device();
   assert.deepEqual(device.desired.mode, {status: 'known', value: 'pin-status'});
   assert.deepEqual(device.desired.brightness, {status: 'known', value: 90});
@@ -414,7 +420,158 @@ test('a restart keeps the mode and brightness, and a command the runtime stopped
   assert.deepEqual(h.problems(), []);
 });
 
+test('a pin write a stop left unanswered is written again for the current mode at the next start, and the command is not', async context => {
+  const server = new SimulatedTronbyt();
+  const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server)});
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  server.loseNextAnswer();
+  await send(h, 'device-mode-set', {requestId: 'caught', mode: 'pin-status'});
+  await until(() => server.state().pinnedApp !== null, 'the pin taking effect, its answer lost');
+  await h.restart();
+  await until(() => outcomes(h).some(outcome => outcome.requestId === 'caught'), 'its report');
+  assert.equal(outcomes(h).find(outcome => outcome.requestId === 'caught')?.result, 'uncertain');
+  assert.deepEqual(h.device().desired.mode, {status: 'known', value: 'rotation'}, 'the mode stays as it was');
+  await h.advance(31 * SECOND);
+  await until(() => server.state().pinnedApp === null, 'the display back in the rotation the record shows');
+  assert.equal(server.state().calls.filter(call => call.method === 'PATCH' && call.path.endsWith(`/installations/${STATUS}`)).length, 1, 'the pin is not sent again');
+});
+
+test('a command whose start cannot be stored ends with no effect, and later work goes on', async context => {
+  const server = new SimulatedTronbyt();
+  let armed = false;
+  const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server), wrapDatabase: database => new Proxy(database, {
+    get(target, property) {
+      if (property !== 'prepare') {
+        const value: unknown = Reflect.get(target, property, target);
+        return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+      }
+      return (sql: string) => {
+        const statement = target.prepare(sql);
+        if (!sql.startsWith('UPDATE tidbyt_requests SET state')) return statement;
+        const run = statement.run.bind(statement);
+        return new Proxy(statement, {get(inner, key) {
+          if (key !== 'run') return (Reflect.get(inner, key, inner) as (...args: unknown[]) => unknown).bind(inner);
+          return (...parameters: Parameters<typeof run>) => {
+            if (armed && (parameters as unknown[])[0] === 'started') throw new Error('disk I/O error');
+            return run(...parameters);
+          };
+        }});
+      };
+    },
+  })});
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  armed = true;
+  assert.deepEqual(await send(h, 'brightness-set', {requestId: 'unmarked', percent: 10}), {status: 'accepted'});
+  await until(() => outcomes(h).length === 1, 'its outcome');
+  armed = false;
+  assert.equal(outcomes(h)[0]?.result, 'failed');
+  assert.equal(outcomes(h)[0]?.evidence, 'none');
+  assert.equal(server.state().brightnessWrites, 0, 'nothing went out');
+  assert.equal(h.device().pending, 0, 'nothing stays pending');
+  assert.deepEqual(await send(h, 'brightness-set', {requestId: 'next', percent: 10}), {status: 'accepted'});
+  await until(() => outcomes(h).length === 2, 'the next command');
+  assert.equal(server.state().brightnessWrites, 1);
+});
+
 // Handoff
+
+test('a return to a server clears the pin it left, since the record starts at the rotation again', async context => {
+  const server = new SimulatedTronbyt();
+  const options: HostOptions = {sessions: [working()], playback: 'absent', ...onServer(server)};
+  const h = await host(context, options);
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await send(h, 'device-mode-set', {requestId: 'pin', mode: 'pin-status'});
+  await until(() => outcomes(h).length === 1, 'the pin');
+  assert.notEqual(server.state().pinnedApp, null);
+  await h.stop();
+  const cloud = new SimulatedCloud();
+  Object.assign(options, {section: undefined, module: {transport: cloud.fetch}});
+  await h.start();
+  await until(() => cloud.state().installations[STATUS]?.pushes === 1, 'the cloud\'s tile');
+  await h.stop();
+  Object.assign(options, onServer(server));
+  await h.start();
+  await h.advance(31 * SECOND);
+  await until(() => server.state().pinnedApp === null, 'the old pin cleared');
+  assert.deepEqual(h.device().desired.mode, {status: 'known', value: 'rotation'});
+});
+
+test('a handoff the database refuses writes nothing in that run, and the next start hands off', async context => {
+  const server = new SimulatedTronbyt();
+  let failing = false;
+  const options: HostOptions = {sessions: [working()], playback: 'absent', wrapDatabase: database => withWriteFailure(database, () => failing ? new Error('disk I/O error') : undefined)};
+  const h = await host(context, options);
+  await until(() => shown(h, STATUS).pushes === 1, 'the cloud\'s tile');
+  await h.stop();
+  Object.assign(options, onServer(server));
+  failing = true;
+  await h.start();
+  failing = false;
+  await h.advance(16 * SECOND);
+  assert.equal(server.state().calls.length, 0, 'no write goes out with the old backend\'s memory');
+  await h.restart();
+  await until(() => server.state().installations[STATUS]?.pushes === 1, 'the fresh write');
+});
+
+test('every record of a handoff and a command takes values the diagnostic contract registers, which the real log path enforces', async context => {
+  const schema = JSON.parse(readFileSync(new URL('../../../../packages/observability/src/record.schema.json', import.meta.url), 'utf8')) as unknown;
+  const enumOf = (node: unknown, key: string): string[] | undefined => {
+    if (typeof node !== 'object' || node === null) return undefined;
+    for (const [name, value] of Object.entries(node)) {
+      if (name === key) return (value as {enum?: string[]}).enum;
+      const found = enumOf(value, key);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  const server = new SimulatedTronbyt();
+  const options: HostOptions = {sessions: [working()], playback: 'absent'};
+  const h = await host(context, options);
+  await until(() => shown(h, STATUS).pushes === 1, 'the cloud\'s tile');
+  h.cloud.offline();
+  await h.stop();
+  Object.assign(options, onServer(server));
+  await h.start();
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the fresh write');
+  await send(h, 'brightness-set', {requestId: 'b', percent: 10});
+  await until(() => outcomes(h).length === 1, 'the outcome');
+  for (const key of ['bunny.operation', 'bunny.reason']) {
+    const allowed = enumOf(schema, key);
+    assert.ok(allowed !== undefined, key);
+    for (const entry of h.logs()) {
+      const value = entry.fields[key];
+      if (value !== undefined) assert.ok(allowed.includes(String(value)), `${entry.event}: ${key} ${String(value)}`);
+    }
+  }
+});
+
+test('a handoff to a server that already holds a pin clears it for the default mode', async context => {
+  const server = new SimulatedTronbyt({installations: ['someone']});
+  const options: HostOptions = {sessions: [working()], playback: 'absent'};
+  const h = await host(context, options);
+  await until(() => shown(h, STATUS).pushes === 1, 'the cloud\'s tile');
+  await h.stop();
+  const preset = await server.fetch(`${TRONBYT_ORIGIN}/v0/devices/${SIMULATED_DEVICE}/installations/someone`, {method: 'PATCH', redirect: 'error', signal: signal(), headers: {authorization: `Bearer ${SIMULATED_API_KEY}`}, body: '{"pinned":true}'});
+  assert.equal(preset.status, 200);
+  assert.notEqual(server.state().pinnedApp, null);
+  Object.assign(options, onServer(server));
+  await h.start();
+  await until(() => server.state().pinnedApp === null, 'the old pin cleared');
+  assert.deepEqual(h.device().desired.mode, {status: 'known', value: 'rotation'});
+});
+
+test('renaming the device hands nothing off', async context => {
+  const server = new SimulatedTronbyt();
+  const options: HostOptions = {sessions: [working()], playback: 'absent', ...onServer(server)};
+  const h = await host(context, options);
+  await until(() => server.state().installations[STATUS]?.pushes === 1, 'the tile');
+  await h.stop();
+  options.section = {...onServer(server).section, id: 'renamed'};
+  await h.start();
+  await h.advance(16 * SECOND);
+  assert.equal(server.state().installations[STATUS]?.pushes, 1, 'the tile stands');
+  assert.equal(h.logs().filter(entry => entry.fields['bunny.operation'] === 'setup').length, 1, 'only the first start selected a backend');
+});
 
 test('selecting a server drops what the cloud\'s tiles remembered, reports an uncertain write once and writes the current frame fresh', async context => {
   const server = new SimulatedTronbyt();
@@ -434,9 +591,9 @@ test('selecting a server drops what the cloud\'s tiles remembered, reports an un
   await h.start();
   await until(() => server.state().installations[STATUS]?.pushes === 1, 'the fresh write on the server');
   assert.equal(h.cloud.state().calls.filter(call => call.method === 'POST').length, cloudPushes, 'the cloud hears nothing more: no failover and no second writer');
-  const startup = h.logs().filter(entry => entry.fields['bunny.operation'] === 'startup');
-  assert.deepEqual(startup.map(entry => [entry.event, entry.fields['bunny.code'] ?? entry.fields['bunny.reason']]),
-    [['operation.failed', 'uncertain-result'], ['operation.completed', 'backend-changed']]);
+  const handoff = h.logs().filter(entry => entry.fields['bunny.operation'] === 'setup');
+  assert.deepEqual(handoff.map(entry => [entry.event, entry.fields['bunny.code'] ?? entry.fields['bunny.outcome']]),
+    [['operation.failed', 'uncertain-result'], ['operation.completed', 'succeeded']]);
   assert.deepEqual(h.device().capabilities.brightness, {supported: true, minimum: 0, maximum: 100});
   assert.deepEqual(h.problems(), []);
 });
@@ -456,7 +613,7 @@ test('a restart on the same backend hands nothing off, and a database from befor
   await h.restart();
   await h.advance(16 * SECOND);
   assert.equal(shown(h, STATUS).pushes, 1);
-  assert.ok(!h.logs().some(entry => entry.fields['bunny.reason'] === 'backend-changed'));
+  assert.ok(!h.logs().some(entry => entry.fields['bunny.operation'] === 'setup'));
 });
 
 test('going back to the cloud drops the server\'s state too, and the cloud refuses the controls again', async context => {
@@ -481,7 +638,7 @@ test('no message, record or log carries the server, its device or its key', asyn
   const server = new SimulatedTronbyt({origin: url, device: 'private-device-id'});
   const options = onServer(server);
   const h = await host(context, {sessions: [working()], playback: 'absent', ...options, section: {...options.section, tronbyt: {url, deviceId: 'private-device-id'}}});
-  await until(() => server.state().installations[STATUS]?.pushes === 1, 'the first push');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
   server.answerNext(500);
   await send(h, 'brightness-set', {requestId: 'b', percent: 10});
   await until(() => outcomes(h).length === 1, 'the outcome');

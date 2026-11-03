@@ -81,6 +81,7 @@ export class ControlStore {
   readonly #display: StatementSync;
   readonly #setDisplay: StatementSync;
   readonly #clearDisplay: StatementSync;
+  readonly #markPinUnknown: StatementSync;
   readonly #request: StatementSync;
   readonly #accept: StatementSync;
   readonly #setState: StatementSync;
@@ -97,6 +98,7 @@ export class ControlStore {
     this.#setDisplay = database.prepare(`INSERT INTO tidbyt_display (id, mode, brightness, pin, configuration_revision) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET mode = excluded.mode, brightness = excluded.brightness, pin = excluded.pin, configuration_revision = excluded.configuration_revision`);
     this.#clearDisplay = database.prepare('DELETE FROM tidbyt_display');
+    this.#markPinUnknown = database.prepare('UPDATE tidbyt_display SET pin = \'dirty\' WHERE id = ?');
     this.#request = database.prepare('SELECT source, request_id, digest, family, state, traceparent FROM tidbyt_requests WHERE source = ? AND request_id = ?');
     this.#accept = database.prepare('INSERT INTO tidbyt_requests (source, request_id, digest, family, state, traceparent) VALUES (?, ?, ?, ?, \'accepted\', ?)');
     this.#setState = database.prepare('UPDATE tidbyt_requests SET state = ? WHERE source = ? AND request_id = ?');
@@ -120,6 +122,11 @@ export class ControlStore {
   /** Forgets the display's stored state, as a handoff to another backend does: none of it is true of the next one. */
   clearDisplay(): void {
     this.#clearDisplay.run();
+  }
+
+  /** A pin write may have taken effect unanswered, so the pin is written again for the current mode. */
+  markPinUnknown(id: string): void {
+    this.#markPinUnknown.run(id);
   }
 
   request(source: string, requestId: string): RequestRow | undefined {
@@ -153,6 +160,7 @@ export function settleRequests(store: ControlStore, device: string, add: AddMess
   for (const row of store.unfinished()) {
     store.setState(row.source, row.requestId, 'done');
     if (!isControlFamily(row.family)) continue;
+    if (row.family === 'device-mode-set' && row.state === 'started') store.markPinUnknown(device);
     const outcome: CompletedOutcome = row.state === 'started'
       ? {requestId: row.requestId, result: Outcome.uncertain, evidence: Outcome.none, error: errorBody('uncertain-result', {detail: 'the runtime stopped while the write was under way'}).error}
       : {requestId: row.requestId, result: Outcome.failed, evidence: Outcome.none, error: errorBody('cancelled', {detail: 'the runtime stopped before the command reached the server'}).error};
@@ -266,11 +274,11 @@ export class DisplayControl {
     this.#display.configurationRevision += 1;
     if (family === 'brightness-set') this.#display.brightness = Number(data.percent);
     this.#pending.set(key, family);
-    const stored = await commit(command, () => {
+    const accepted = await commit(command, () => {
       store.accept(command.source, requestId, digest, family, command.traceparent);
       store.setDisplay(device, this.#display);
     });
-    if (!stored) {
+    if (!accepted) {
       Object.assign(this.#display, before);
       this.#pending.delete(key);
       return errorBody('unavailable', {detail: 'the module could not store the command'});
@@ -302,12 +310,19 @@ export class DisplayControl {
     };
     const mode = family === 'device-mode-set' ? String(command.data.mode) : undefined;
     let pinning = false;
-    const result = await writes.queue.control(signal => {
-      if (family === 'brightness-set') return writes.connection.setBrightness(Number(command.data.percent), signal);
-      const tile = mode === undefined ? undefined : pinnedTile(mode);
-      pinning = tile !== undefined && this.#options.presence(tile) === 'present';
-      return tile !== undefined && pinning ? writes.connection.pin(signal, this.#options.installationOf(tile)) : writes.connection.unpin(signal);
-    }, sending, current);
+    let result: WriteResult | NotSent;
+    try {
+      result = await writes.queue.control(signal => {
+        if (family === 'brightness-set') return writes.connection.setBrightness(Number(command.data.percent), signal);
+        const tile = mode === undefined ? undefined : pinnedTile(mode);
+        pinning = tile !== undefined && this.#options.presence(tile) === 'present';
+        return tile !== undefined && pinning ? writes.connection.pin(signal, this.#options.installationOf(tile)) : writes.connection.unpin(signal);
+      }, sending, current);
+    } catch (error) {
+      // The store refused to mark the write begun, so it never went out: the command ends with no effect.
+      this.#options.storageFailed(error);
+      result = {outcome: Outcome.failed, failure: 'transport-failure'};
+    }
     span?.end(result.outcome === 'sent' ? 'unset' : 'error');
     // A stop leaves the command to the next start, which reports what its stored state proves.
     if (stopping()) return;
@@ -318,20 +333,23 @@ export class DisplayControl {
         this.#display.pin = pinning ? 'pinned' : 'none';
       } else if (result.outcome === Outcome.uncertain) {
         this.#display.pin = 'dirty';
+        this.#retryPinAtMs = clock.now() + PIN_RETRY_MS;
       }
     }
     const outcome = outcomeOf(requestId, result, expired);
+    const previousOutcome = this.#lastOutcome;
     this.#pending.delete(key);
     this.#lastOutcome = outcome;
     recordLog(log, 'command.completed', {...fields, 'bunny.outcome': outcome.result, ...(outcome.error === undefined ? {} : {'bunny.code': outcome.error.code})}, command);
     // Not stored: the record stays as committed, and the next start reports the command from its stored state.
-    await this.#options.commit(command, add => {
+    const stored = await this.#options.commit(command, add => {
       store.setState(command.source, requestId, 'done');
       store.setDisplay(device, this.#display);
       add(`bunny.event.${family}.${device}`, {
         kind: 'outcome', type: `${spec.entity}.completed`, subject: device, dataschema: OUTCOME_SCHEMA, data: outcome,
       }, {parent: command});
     });
+    if (!stored) this.#lastOutcome = previousOutcome;
     if (mode !== undefined && result.outcome === 'sent') this.#options.changed(command);
   }
 

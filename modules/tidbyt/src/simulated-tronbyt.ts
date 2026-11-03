@@ -17,6 +17,8 @@ export type TronbytState = {
   /** Pushes that named no installation, which the server queues for the device. The module must never make one. */
   anonymous: number;
   brightness: number;
+  /** How many writes set the brightness, apart from the pin's. */
+  brightnessWrites: number;
   /** The server's own ID of the pinned installation, or null. It can point at one already deleted. */
   pinnedApp: string | null;
   calls: {method: string; path: string; answer: number | 'none' | 'refused-connection'}[];
@@ -49,6 +51,7 @@ export class SimulatedTronbyt {
   #nextId = 100;
   #anonymous = 0;
   #brightness = 25;
+  #brightnessWrites = 0;
   #pinned: string | null = null;
   #online = true;
   #refuse = false;
@@ -94,7 +97,7 @@ export class SimulatedTronbyt {
   state(): TronbytState {
     const installations: TronbytState['installations'] = {};
     for (const [name, entry] of this.#installations) installations[name] = {...entry, picture: [...entry.picture], pushedAtMs: [...entry.pushedAtMs]};
-    return {installations, anonymous: this.#anonymous, brightness: this.#brightness, pinnedApp: this.#pinned, calls: this.#calls.map(call => ({...call}))};
+    return {installations, anonymous: this.#anonymous, brightness: this.#brightness, brightnessWrites: this.#brightnessWrites, pinnedApp: this.#pinned, calls: this.#calls.map(call => ({...call}))};
   }
 
   #add(name: string): Installation {
@@ -136,7 +139,10 @@ export class SimulatedTronbyt {
 
   #patchDevice(body: string | undefined): Response {
     const update = JSON.parse(body ?? '{}') as {brightness?: number; pinnedApp?: string};
-    if (update.brightness !== undefined) this.#brightness = update.brightness;
+    if (update.brightness !== undefined) {
+      this.#brightness = update.brightness;
+      this.#brightnessWrites += 1;
+    }
     if (update.pinnedApp !== undefined) this.#pinned = update.pinnedApp === '' ? null : update.pinnedApp;
     return json({id: this.#device, brightness: this.#brightness, pinnedApp: this.#pinned});
   }
