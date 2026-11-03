@@ -1,7 +1,7 @@
 import {MessageValidator, SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  CHANGED_SCHEMA, CHANGED_TYPE, CHANGES, CONDITIONS, DAY_PARTS, FORECAST_HOURS, MAX_ALERTS, REASONS, SEVERITIES, STATE_SCHEMA, STATE_TYPE, WEATHER_ID,
+  ALERT_EVENTS, CHANGED_SCHEMA, CHANGED_TYPE, CHANGES, CONDITIONS, DAY_PARTS, FORECAST_HOURS, GENERIC_ALERT, MAX_ALERTS, REASONS, SEVERITIES, STATE_SCHEMA, STATE_TYPE, WEATHER_ID,
   type WeatherChanged, type WeatherState,
 } from './contracts.js';
 
@@ -15,7 +15,7 @@ const hour = closed({
   temperatureF: {type: 'integer', minimum: -130, maximum: 150}, precipitationPercent: nullable({type: 'integer', minimum: 0, maximum: 100}),
   windMph: nullable({type: 'integer', minimum: 0, maximum: 300}), isDaytime: {type: 'boolean'}, dayPart: {enum: DAY_PARTS},
 });
-const alert = closed({event: {type: 'string', pattern: '^[A-Za-z][A-Za-z -]{0,63}$'}, severity: {enum: SEVERITIES}, endsAtMs: nullable(block('instantMs'))});
+const alert = closed({event: {enum: [...ALERT_EVENTS, GENERIC_ALERT]}, severity: {enum: SEVERITIES}, endsAtMs: nullable(block('instantMs'))});
 const identity = {id: {const: WEATHER_ID}, revision: block('revision')};
 const body = {
   [STATE_SCHEMA]: {oneOf: [

@@ -7,12 +7,16 @@ The module SHALL take one latitude, longitude and contact from its private secti
 - **WHEN** the service returns a city, a grid path, an alert area, a headline and a sender
 - **THEN** no message, sync answer, log record or stored row carries any of them or the coordinates
 
+#### Scenario: An alert names a place
+- **WHEN** an alert's event is not on the closed list of national event names, such as one naming a place
+- **THEN** the record carries the generic `Weather Alert` and never quotes it
+
 #### Scenario: A malformed section
 - **WHEN** a section has an out-of-range coordinate, an unsafe contact or an unknown member
 - **THEN** configuration refuses it with a fixed sentence that quotes no value
 
 ### Requirement: One synced weather record with its freshness
-The module SHALL publish `weather-state/2.0` for entity `local` and serve it by sync. An available record SHALL carry the current hour, up to twelve following hours, active alerts, its observed time, stale time and age, and condition words. Words SHALL come only from a closed vocabulary, a whole temperature and a part of day.
+The module SHALL publish `weather-state/2.0` for entity `local` and serve it by sync. An available record SHALL carry the current hour, up to twelve following hours, active alerts, its observed time, stale time and age, and condition words. Words SHALL come only from a closed vocabulary, a whole temperature and a part of day, and SHALL be available for the current hour and each forecast hour.
 
 #### Scenario: A healthy read
 - **WHEN** the points, hourly and alert reads all succeed
@@ -20,7 +24,7 @@ The module SHALL publish `weather-state/2.0` for entity `local` and serve it by 
 
 #### Scenario: A stale copy
 - **WHEN** a consumer asks for prompt words at or after the record's stale time
-- **THEN** it receives none
+- **THEN** it receives none, for the current hour or any forecast hour
 
 ### Requirement: Vendor faults are truthful unavailable state
 An outage, a timeout, rate limiting, a location outside coverage, a malformed response or a forecast that does not cover now SHALL publish `unavailable` with its reason and the last observation's time and age, and no weather value. None SHALL fail the module. One polling loop SHALL back off to a cap, honour the service's wait within it, publish a repeated fault once and summarize it in logs.
@@ -38,7 +42,7 @@ An outage, a timeout, rate limiting, a location outside coverage, a malformed re
 - **THEN** the record is `unavailable`, because an empty list would claim no alerts
 
 ### Requirement: One signal per real change
-The module SHALL publish one `weather-changed/2.0` occurrence when the condition, the alert events or the temperature by 10°F or more differ from the last signalled conditions. The first observation, repeated polling, an outage and a restart SHALL signal nothing.
+The module SHALL publish one `weather-changed/2.0` occurrence when the condition, the alert events or the temperature by 10°F or more differ from the last signalled conditions. The first observation, repeated polling, an outage, a restart and wording outside the vocabulary SHALL signal nothing.
 
 #### Scenario: Rain arrives
 - **WHEN** the current condition changes from clear to rain and later polls repeat rain
@@ -49,7 +53,7 @@ The module SHALL publish one `weather-changed/2.0` occurrence when the condition
 - **THEN** no occurrence is published, and a later real change publishes one
 
 ### Requirement: Weather takes no device or command authority
-The module SHALL take no command, name no device and declare no device simulation. Without a section it SHALL report the ordinary absent state and contact nothing.
+The module SHALL take no command, configure no device and declare no device simulation. Without a section it SHALL report the ordinary absent state and contact nothing.
 
 #### Scenario: A host-local container section
 - **WHEN** the private profile starts with a weather section

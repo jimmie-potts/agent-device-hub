@@ -44,18 +44,22 @@ is the age when the record was written or a sync served it; `observedAtMs` gives
 age at any later time. An hour's `condition` comes from a closed vocabulary (`clear`,
 `clouds`, `fog`, `haze`, `rain`, `thunderstorm`, `snow`, `mixed`, `wind`, `other`), and
 `likely` is false when the forecast gives only a chance of it. An alert carries its
-national event name, severity and end, never its area, headline, sender or description.
+event, severity and end, never its area, headline, sender or description. The event
+comes from a closed list of the service's national names, and an unlisted name is
+published as `Weather Alert` rather than quoted.
 
 Build a prompt only from `promptWords(state, nowMs)`, which returns words such as
-`rain`, `48°F`, `evening`, and nothing for an unavailable or stale record. No words
-means no factual claim: art labels what it invents as fiction.
+`rain`, `48°F`, `evening` for this hour, and `forecastWords(state, nowMs)`, which
+returns the same words for each forecast hour. Both return nothing for an unavailable
+or stale record. No words means no factual claim: art labels what it invents as
+fiction.
 
 When the conditions really change, the module also publishes one occurrence on
 `bunny.event.weather-changed.local`, schema
 `https://bunny.invalid/events/weather-changed/2.0`, naming which of `condition`,
 `temperature` (10°F or more since the last signal) and `alerts` changed, with the
-current words. Polling the same conditions, an outage, a restart and the first
-observation signal nothing. Occurrences are not replayed, so a consumer that was down
+current words. Polling the same conditions, an outage, a restart, the first observation
+and wording outside the vocabulary signal nothing. Occurrences are not replayed, so a consumer that was down
 reads the current state instead.
 
 ## Polling and failures

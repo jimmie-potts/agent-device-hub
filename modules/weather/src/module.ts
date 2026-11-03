@@ -28,7 +28,8 @@ const baselineOf = ({current, alerts}: Observation): Baseline => ({condition: cu
 /** What differs enough from the baseline to deserve one signal. */
 export function changesFrom(before: Baseline, after: Baseline): Change[] {
   return [
-    ...(before.condition !== after.condition || before.likely !== after.likely ? ['condition' as const] : []),
+    // Wording outside the vocabulary says nothing about the sky, so it is no change on its own.
+    ...(after.condition !== 'other' && (before.condition !== after.condition || before.likely !== after.likely) ? ['condition' as const] : []),
     ...(Math.abs(before.temperatureF - after.temperatureF) >= TEMPERATURE_CHANGE_F ? ['temperature' as const] : []),
     ...(before.alerts.join('\n') !== after.alerts.join('\n') ? ['alerts' as const] : []),
   ];
@@ -66,7 +67,8 @@ class Owner {
     this.#availability = new DeviceAvailability(context);
     const {revision, observedAtMs, baseline} = this.#store.read();
     this.#baseline = baseline;
-    this.#state = {id: WEATHER_ID, revision, status: 'unavailable', reason: 'starting', observedAtMs, ageMs: this.#age(observedAtMs)};
+    // A new revision, so a copy that outlives this restart takes `starting` over its last `available` record.
+    this.#state = {id: WEATHER_ID, revision: revision + 1, status: 'unavailable', reason: 'starting', observedAtMs, ageMs: this.#age(observedAtMs)};
   }
 
   async start(): Promise<void> {

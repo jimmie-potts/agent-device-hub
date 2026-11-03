@@ -10,7 +10,7 @@ ADR 0012 lets a vendor adapter that must poll publish what it observes. The modu
 
 ## Decisions
 
-- **Reduce vendor text at the client.** Every field is a number, a time or a closed-vocabulary value. Free text such as `areaDesc`, `headline`, `relativeLocation` and `shortForecast` stops in `client.ts`. Alert `event` is the one vendor string published, limited to letters, spaces and hyphens. This closes both the location leak and prompt injection from a vendor response. The alternative, publishing `shortForecast`, gains nuance that art does not need.
+- **Reduce vendor text at the client.** Every field is a number, a time or a closed-vocabulary value. Free text such as `areaDesc`, `headline`, `relativeLocation` and `shortForecast` stops in `client.ts`. Alert `event` comes from a closed list of national names, and an unlisted name is published as the generic `Weather Alert`, which also keeps one unexpected name from losing all the weather. This closes both the location leak and prompt injection from a vendor response. The alternative, publishing `shortForecast`, gains nuance that art does not need.
 - **No facts when unavailable.** An `unavailable` record has no weather fields, so a consumer cannot state a fact from it by accident. A stale `available` record yields no words through `promptWords`, which covers a consumer holding a copy across a suspended host.
 - **`current` is the hourly forecast.** The issue names the points, hourly and alerts reads. The record states that `current` is a forecast, not a measurement.
 - **A failed alert read fails the whole read.** An empty list would claim no alerts exist.
@@ -21,6 +21,7 @@ ADR 0012 lets a vendor adapter that must poll publish what it observes. The modu
 ## Risks / Trade-offs
 
 - The module has not read the real service: its parsing rests on the documented response shape and synthetic responses. #687 owns the real check, and a shape mismatch would appear as truthful `malformed` state.
+- The event list is written from the service's published types, not read from it. A name it misses is less specific, never wrong or leaked.
 - Condition flapping between `clear` and `clouds` can signal repeatedly. Art's own hourly and spend limits bound the effect, so the module adds no separate limit.
 
 ## Migration Plan

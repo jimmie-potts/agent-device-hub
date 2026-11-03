@@ -2,7 +2,7 @@
 // only to the fixed origin, never follow a redirect and carry no trace context. A response is reduced to the published
 // vocabulary here, so a place name in `relativeLocation`, `areaDesc`, a headline or a grid path stops at this file.
 import {
-  FORECAST_HOURS, MAX_ALERTS, SEVERITIES, wordsOf,
+  ALERT_EVENTS, FORECAST_HOURS, GENERIC_ALERT, MAX_ALERTS, SEVERITIES, wordsOf,
   type Alert, type Condition, type DayPart, type Hour, type Severity, type UnavailableReason,
 } from './contracts.js';
 import type {WeatherConfig} from './configuration.js';
@@ -15,7 +15,6 @@ const MAX_BYTES = 2 * 1024 * 1024;
 export const STALE_FORECAST_MS = 24 * 3_600_000;
 const HOURLY_PATH = /^\/gridpoints\/[A-Z]{3}\/\d{1,4},\d{1,4}\/forecast\/hourly$/;
 const LOCAL_TIME = /^\d{4}-\d{2}-\d{2}T(\d{2}):\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
-const EVENT = /^[A-Za-z][A-Za-z -]{0,63}$/;
 
 /** Why a read gave no observation. `retryAfterMs` is the service's own request to wait. */
 export class WeatherFault extends Error {
@@ -67,6 +66,7 @@ function hourOf(value: Record<string, unknown>, startAtMs: number, endAtMs: numb
   return {startAtMs, endAtMs, condition, likely: !(PRECIPITATION.includes(condition) && tentative(text)), temperatureF: temperature,
     precipitationPercent: chance, windMph: wind === undefined ? null : Math.min(300, Number(wind)), isDaytime, dayPart: dayPartOf(startTime as string)};
 }
+const eventOf = (value: string): Alert['event'] => ALERT_EVENTS.find(event => event === value) ?? GENERIC_ALERT;
 const severityOf = (value: unknown): Severity => SEVERITIES.find(severity => severity === value) ?? 'Unknown';
 
 export function parseHourly(body: unknown, nowMs: number): Omit<Observation, 'alerts'> {
@@ -90,9 +90,9 @@ export function parseAlerts(body: unknown): Alert[] {
   if (!Array.isArray(features)) throw malformed();
   const alerts = (features as unknown[]).map(feature => {
     const {event, severity, ends, expires, status} = record(record(feature).properties);
-    if (typeof event !== 'string' || !EVENT.test(event)) throw malformed();
+    if (typeof event !== 'string') throw malformed();
     const end = ends ?? expires;
-    return {status, alert: {event, severity: severityOf(severity), endsAtMs: end === undefined || end === null ? null : instant(end)}};
+    return {status, alert: {event: eventOf(event), severity: severityOf(severity), endsAtMs: end === undefined || end === null ? null : instant(end)}};
   }).filter(({status}) => status === undefined || status === 'Actual').map(({alert}) => alert);
   const rank = (alert: Alert): number => SEVERITIES.indexOf(alert.severity);
   return alerts.sort((a, b) => rank(a) !== rank(b) ? rank(a) - rank(b) : a.event < b.event ? -1 : a.event > b.event ? 1 : 0).slice(0, MAX_ALERTS);
@@ -106,8 +106,9 @@ export class NwsClient {
   #hourly: string | undefined;
 
   constructor(config: WeatherConfig, fetchLike: FetchLike) {
-    // The service redirects a coordinate with more than four decimals, and this client follows no redirect.
-    this.#point = `${config.latitude.toFixed(4)},${config.longitude.toFixed(4)}`;
+    // The service redirects a coordinate with more than four decimals or trailing zeros, and this client follows no redirect.
+    const coordinate = (value: number): string => String(Number(value.toFixed(4)));
+    this.#point = `${coordinate(config.latitude)},${coordinate(config.longitude)}`;
     this.#headers = {'User-Agent': `bunny-weather/0.1 (${config.contact})`, Accept: 'application/geo+json'};
     this.#fetch = fetchLike;
   }
