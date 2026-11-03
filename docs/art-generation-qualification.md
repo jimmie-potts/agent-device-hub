@@ -69,8 +69,9 @@ device refers to a composition, never to an artwork alone.
 The module decides whether a job is the owner's or automatic from the command family
 that admitted it, never from `origin` or `purpose`. Every tracked command reaches a
 module from the core, so its source cannot tell them apart. `art-request` is the
-owner's. `art-auto` is automatic, and only the core can send it, so a mislabelled
-request cannot escape the automatic limits.
+owner's, and the tracker accepts it only when `requestedBy` is the dashboard's source.
+`art-auto` is automatic, and only the core can send it. A mislabelled request or
+another client therefore cannot escape the automatic limits.
 
 ```json
 {
@@ -92,9 +93,10 @@ request cannot escape the automatic limits.
 Each target succeeds or fails alone. An artwork is `partial` when at least one target
 succeeded and another did not, whether that one failed or is uncertain. It is
 `uncertain` when none succeeded and any is uncertain, and `failed` when none succeeded
-and none is uncertain.
-These are the art job's own results. The `art-request` command that admitted the job
-has already completed with its own outcome.
+and none is uncertain, unless the next rule applies.
+An artwork is `rejected` or `cancelled` only when every target was. These are the art
+job's own results. The command that admitted the job has already completed with its own
+outcome.
 Local renditions and playback cost nothing. Palette values are
 validated data for [#683](https://github.com/jimmie-potts/agent-device-hub/issues/683).
 
@@ -158,6 +160,7 @@ module's state. Worked traces, each a required test in #680:
 | Settlement above its reservation near the ceiling | True cost recorded, fault logged, later calls refused |
 | `art-auto` with an owner label in its payload | Treated as automatic; the pace and guard apply |
 | A client sends `art-auto` | Refused by the gateway; nothing is admitted |
+| A client other than the dashboard sends `art-request` | Refused by the tracker; nothing is admitted |
 | Monthly ceiling reached | All generation refused; saved art plays |
 | Next local month | Limits restart; earlier uncertain rows remain visible |
 
@@ -177,7 +180,7 @@ they never leave the module.
 | Step | Producer | Consumer | Owner of the delta |
 | --- | --- | --- | --- |
 | Contracts and forwarding | `modules/art` sends `art-dispatch` | Core part accepts it from `bunny/modules/art` only and forwards tracked `art-stage` and `art-ambient-set` commands, never `moment-play` | [#679](https://github.com/jimmie-potts/agent-device-hub/issues/679) |
-| Request | The dashboard sends `art-request` for the owner, and the core automation path under #684 sends `art-auto` for ambient and appearance art, each through the tracked command route, to start or cancel a job | `modules/art` commits the row and a `succeeded` outcome with `observed` evidence in one transaction, as `assistant-input` does (`modules/companions/src/assistant/engine.ts`). The tracked effect is durable admission, because a provider call can outlast the 30 s device deadline; job results appear in its `art` state | #679 family, #680 handler |
+| Request | The dashboard sends `art-request` for the owner, and the core automation path under #684 sends `art-auto` for ambient and appearance art, each through the tracked command route. The owner cancels any job, automatic or not, with `art-request`; a cancel admits no work | `modules/art` commits the row and a `succeeded` outcome with `observed` evidence in one transaction, as `assistant-input` does (`modules/companions/src/assistant/engine.ts`). The tracked effect is durable admission, because a provider call can outlast the 30 s device deadline; job results appear in its `art` state | #679 family, #680 handler |
 | Stage | `modules/art` sends `art-stage`: `compositionId`, format (PNG or GIF), dimensions, frames, hash, up to 160 KiB of bytes, lifetime | Pixoo or Tidbyt validates and keeps a private copy, in its own format; no display effect; duplicates reuse it | Pixoo [#1288](https://github.com/jimmie-potts/agent-device-hub/issues/1288), Tidbyt [#681](https://github.com/jimmie-potts/agent-device-hub/issues/681) |
 | Stage finished | Core operation record for that `requestId` | `modules/art` shows nothing until it reads `succeeded`; #679's fixture proves a module can read it | #679 |
 | Show | Only the core automation path sends it, after arbitration, owned by [#684](https://github.com/jimmie-potts/agent-device-hub/issues/684): `moment-play/2.1` with optional `art: {compositionId}`. `modules/art` offers candidates in its state and cannot start a takeover. An owner's "show now" enters this same path, ahead of the schedule, and still yields to attention and to a pin the owner set | The device plays its private copy, or refuses an unknown or expired reference before any effect | Schema #679; playback Pixoo [#1287](https://github.com/jimmie-potts/agent-device-hub/issues/1287) and #1288, Tidbyt [#337](https://github.com/jimmie-potts/agent-device-hub/issues/337) and #681 |
@@ -212,8 +215,9 @@ instead.
   amendment to ADR 0012, which sends failed and uncertain device commands to the inbox.
   Per-target results appear in the `art` state.
 - **Direct access:** the gateway refuses these three families from any client, as it
-  does `reachy-auto`, and the tracker accepts them only from the core itself, as it
-  does for speech.
+  does `reachy-auto`. The tracker also checks `requestedBy`, as it does for speech:
+  `bunny/core` for `art-auto`, and `bunny/modules/art` for the forwarded `art-stage`
+  and `art-ambient-set`.
 
 ## Compositions
 
