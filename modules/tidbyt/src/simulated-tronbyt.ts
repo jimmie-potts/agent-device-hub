@@ -2,8 +2,10 @@
 // answered them on a disposable run: a push names its installation or joins an anonymous queue, `background` defaults to
 // false, the list carries the server's own numeric IDs, asking for or deleting an installation by the name a push chose
 // works, a missing one answers 404 "App not found" and a missing device "Device not found", both as plain text,
-// brightness is stored unchecked, and deleting a pinned installation leaves the pin. Like the simulated cloud, it can stop
-// answering, refuse connections, answer the next call with a status of its choice, or lose the next answer.
+// brightness is stored unchecked, and deleting a pinned installation leaves the pin. The loop serving a connected device
+// keeps its own copy of the installations, as server v2.5.2's does: a delete, a PATCH or an interrupting push reloads it,
+// and a background push that creates an installation does not (Hub #1411). Like the simulated cloud, it can stop answering,
+// refuse connections, answer the next call with a status of its choice, or lose the next answer.
 import type {CloudFetch} from './cloud.js';
 import {decodeLossless, picture} from './picture.js';
 import {SIMULATED_API_KEY, SIMULATED_DEVICE} from './simulated.js';
@@ -21,6 +23,8 @@ export type TronbytState = {
   brightnessWrites: number;
   /** The server's own ID of the pinned installation, or null. It can point at one already deleted. */
   pinnedApp: string | null;
+  /** The installations the loop serving a connected device would rotate through. */
+  served: string[];
   calls: {method: string; path: string; answer: number | 'none' | 'refused-connection'}[];
 };
 export type SimulatedTronbytOptions = {
@@ -53,6 +57,7 @@ export class SimulatedTronbyt {
   #brightness = 25;
   #brightnessWrites = 0;
   #pinned: string | null = null;
+  #served: string[] = [];
   #online = true;
   #refuse = false;
   #loseAnswers = 0;
@@ -65,6 +70,7 @@ export class SimulatedTronbyt {
     this.#origin = origin;
     this.#now = now;
     for (const name of installations) this.#add(name);
+    this.#reload();
   }
 
   readonly fetch: CloudFetch = async (url, init) => {
@@ -97,7 +103,12 @@ export class SimulatedTronbyt {
   state(): TronbytState {
     const installations: TronbytState['installations'] = {};
     for (const [name, entry] of this.#installations) installations[name] = {...entry, picture: [...entry.picture], pushedAtMs: [...entry.pushedAtMs]};
-    return {installations, anonymous: this.#anonymous, brightness: this.#brightness, brightnessWrites: this.#brightnessWrites, pinnedApp: this.#pinned, calls: this.#calls.map(call => ({...call}))};
+    return {installations, anonymous: this.#anonymous, brightness: this.#brightness, brightnessWrites: this.#brightnessWrites, pinnedApp: this.#pinned, served: [...this.#served], calls: this.#calls.map(call => ({...call}))};
+  }
+
+  /** What every write but a background push tells the loop serving a connected device. */
+  #reload(): void {
+    this.#served = [...this.#installations.keys()];
   }
 
   #add(name: string): Installation {
@@ -127,10 +138,12 @@ export class SimulatedTronbyt {
       if (init.method === 'GET') return json(this.#payload(entry));
       if (init.method === 'DELETE') {
         this.#installations.delete(name);
+        this.#reload();
         return text(200, 'App deleted.');
       }
       if (init.method === 'PATCH') {
         if ((JSON.parse(init.body ?? '{}') as {pinned?: boolean}).pinned === true) this.#pinned = entry.serverId;
+        this.#reload();
         return json(this.#payload(entry));
       }
     }
@@ -144,6 +157,7 @@ export class SimulatedTronbyt {
       this.#brightnessWrites += 1;
     }
     if (update.pinnedApp !== undefined) this.#pinned = update.pinnedApp === '' ? null : update.pinnedApp;
+    this.#reload();
     return json({id: this.#device, brightness: this.#brightness, pinnedApp: this.#pinned});
   }
 
@@ -159,7 +173,10 @@ export class SimulatedTronbyt {
     const entry = this.#installations.get(request.installationID) ?? this.#add(request.installationID);
     entry.picture = picture(decoded.rgb, decoded.width, decoded.height);
     entry.pushes += 1;
-    if (request.background !== true) entry.immediate += 1;
+    if (request.background !== true) {
+      entry.immediate += 1;
+      this.#reload();
+    }
     entry.pushedAtMs.push(this.#now());
     return text(200, 'WebP received.');
   }

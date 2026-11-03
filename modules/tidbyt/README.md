@@ -173,10 +173,10 @@ Checked 2026-11-03. Neither project had released since the pins below.
 | Item | Pinned | Evidence |
 | --- | --- | --- |
 | Server | v2.5.2 (`linux/arm64` image published) | Source read at v2.5.2. `tests/tronbyt-server.test.ts` passed on a disposable v2.5.2 server (`sha256:fb0c08e9…`) with no device connected, then with a device key on the hosted server of [#1406](https://github.com/jimmie-potts/agent-device-hub/issues/1406), the same image, before any device had connected. First exercised on a disposable v2.5.1 server (`sha256:b266da13…`), with synthetic credentials and no network; v2.5.1 to v2.5.2 changes no API handler, the auth middleware or `API.md`. |
-| Firmware | v1.7.4, target `tidbyt-gen1` | Not exercised: #24 owns the flash. |
+| Firmware | v1.7.4, target `tidbyt-gen1` | Flashed on the owner's Gen 1 under [#24](https://github.com/jimmie-potts/agent-device-hub/issues/24), which holds its acceptance. |
 | API | `/v0` | The table below, and `tests/tronbyt-server.test.ts`. |
 
-What differs from the cloud, each exercised on the v2.5.1 server. The disposable v2.5.2 run
+What differs from the cloud, each exercised on the v2.5.1 server unless its row says otherwise. The disposable v2.5.2 run
 asserts only part of this: a named push replacing its own installation, server IDs that differ from
 the chosen name, presence found by name, the two 404s as outcomes, a pin outliving its
 installation, brightness at the ceiling and a 200 with no device connected. The rest of the
@@ -190,6 +190,7 @@ table, including the rate row, rests on the v2.5.1 run and the unchanged API sou
 | A missing installation answers 404 `App not found`; a missing device `Device not found` | Removal counts as done for the first, and the Tidbyt turns `unavailable` for the second |
 | Brightness is stored unchecked: 101 and -1 were accepted and served | Scales 0 to 100 percent to `BRIGHTNESS_CEILING`, 50, the top of the server's own Gen 1 scale |
 | Deleting a pinned installation leaves `pinnedApp` set until `/next` next runs, and a re-pushed one gets a new ID | Clears the pin with the tile and sets it again on return |
+| With a device connected over WebSocket, a background push that creates an installation does not refresh the list the server serves it from, so the tile stays off the panel (found on v2.5.2 with a device, [#1411](https://github.com/jimmie-potts/agent-device-hub/issues/1411)) | After a tile's first background push since a start or a removal, sends one empty device `PATCH`, which refreshes the list and changes nothing. A failed one leaves the push `sent`, and the next push tries again |
 | A push returns 200 with no device connected, and without checking the image | A 200 is a transmission, never evidence of the panel |
 | No rate limit; writes 1 s apart were all answered | Takes a gate down to 1 s. This qualifies the server, not what the device renders; #24 selects the value |
 

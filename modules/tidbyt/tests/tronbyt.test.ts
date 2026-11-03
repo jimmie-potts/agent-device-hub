@@ -10,9 +10,11 @@ import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CloudFetch} from '../src/cloud.js';
 import {configureTidbyt} from '../src/configuration.js';
 import {NO_CONTROLS, SIMULATED_SECTION} from '../src/module.js';
+import {FRAME_BYTES, FRAME_HEIGHT, FRAME_WIDTH} from '../src/render.js';
 import {SIMULATED_API_KEY, SIMULATED_DEVICE, SimulatedCloud} from '../src/simulated.js';
 import {SimulatedTronbyt, TRONBYT_ORIGIN} from '../src/simulated-tronbyt.js';
 import {BRIGHTNESS_CEILING, TronbytConnection, privateServerUrl} from '../src/tronbyt.js';
+import {encodeLosslessRgb} from '../src/webp.js';
 import {MINUTE, SECOND, asking, finished, host, notice, playback, shown, test, until, withWriteFailure, working, type HostOptions, type Hosted} from './support.js';
 
 const STATUS = 'agentdevicehub';
@@ -44,6 +46,71 @@ const connect = (fetch: CloudFetch): TronbytConnection =>
 
 // The connection's wire form
 
+const realFrame = (): Uint8Array => encodeLosslessRgb(FRAME_WIDTH, FRAME_HEIGHT, new Uint8Array(FRAME_BYTES));
+const onSimulated = (server: SimulatedTronbyt): TronbytConnection =>
+  new TronbytConnection({url: TRONBYT_ORIGIN, deviceId: SIMULATED_DEVICE, apiKey: SERVER_KEY, installationId: STATUS, additionalInstallationIds: [NOW_PLAYING], fetch: server.fetch});
+const reloads = (server: SimulatedTronbyt): number => server.state().calls.filter(call => call.method === 'PATCH').length;
+
+test('a background push that creates an installation reaches the connected device, by one write that changes nothing', async () => {
+  const server = new SimulatedTronbyt();
+  const connection = onSimulated(server);
+  assert.deepEqual(await connection.push(realFrame(), signal()), {outcome: 'sent'});
+  assert.deepEqual(server.state().served, [STATUS]);
+  assert.equal(server.state().brightnessWrites, 0);
+  assert.equal(server.state().pinnedApp, null);
+  assert.equal(reloads(server), 1);
+  // Further frames change the installation's file, which the loop reads each turn, so they need no reload.
+  await connection.push(realFrame(), signal());
+  assert.equal(reloads(server), 1);
+  await connection.push(realFrame(), signal(), NOW_PLAYING);
+  assert.deepEqual(server.state().served, [STATUS, NOW_PLAYING]);
+  assert.equal(reloads(server), 2);
+});
+
+test('a tile removed and pushed again reaches the connected device again', async () => {
+  const server = new SimulatedTronbyt();
+  const connection = onSimulated(server);
+  await connection.push(realFrame(), signal());
+  await connection.remove(signal());
+  assert.deepEqual(server.state().served, []);
+  await connection.push(realFrame(), signal());
+  assert.deepEqual(server.state().served, [STATUS]);
+});
+
+test('an installation the server already has is announced once after a start, since the connection cannot know who was told', async () => {
+  const server = new SimulatedTronbyt({installations: [STATUS]});
+  await onSimulated(server).push(realFrame(), signal());
+  assert.equal(reloads(server), 1);
+});
+
+test('an interrupting push needs no reload, because it reloads the list itself', async () => {
+  const server = new SimulatedTronbyt();
+  const connection = onSimulated(server);
+  await connection.push(realFrame(), signal(), undefined, true);
+  assert.deepEqual(server.state().served, [STATUS]);
+  assert.equal(reloads(server), 0);
+  await connection.push(realFrame(), signal());
+  assert.equal(reloads(server), 0);
+});
+
+test('a failed reload leaves the push sent, and the next push tries again', async () => {
+  const server = new SimulatedTronbyt();
+  const connection = onSimulated(server);
+  server.answerNextPatch(500);
+  assert.deepEqual(await connection.push(realFrame(), signal()), {outcome: 'sent'});
+  assert.deepEqual(server.state().served, []);
+  assert.deepEqual(await connection.push(realFrame(), signal()), {outcome: 'sent'});
+  assert.deepEqual(server.state().served, [STATUS]);
+  assert.equal(reloads(server), 2);
+});
+
+test('a push that failed asks for no reload', async () => {
+  const server = new SimulatedTronbyt();
+  server.answerNext(500);
+  assert.deepEqual(await onSimulated(server).push(realFrame(), signal()), {outcome: 'uncertain', answered: true});
+  assert.equal(reloads(server), 0);
+});
+
 test('a push names its installation and always says whether it is in the background', async () => {
   const {fetch, calls} = recording(() => plain(200, 'WebP received.'));
   const connection = connect(fetch);
@@ -55,7 +122,10 @@ test('a push names its installation and always says whether it is in the backgro
   assert.equal(calls[0]?.headers.authorization, `Bearer ${KEY}`);
   // The server's own default is false, which would interrupt the display on every tile's write.
   assert.deepEqual(JSON.parse(calls[0]?.body ?? ''), {image: Buffer.from(WEBP).toString('base64'), installationID: STATUS, background: true});
-  assert.deepEqual(JSON.parse(calls[1]?.body ?? ''), {image: Buffer.from(WEBP).toString('base64'), installationID: NOW_PLAYING, background: false});
+  assert.equal(calls[1]?.method, 'PATCH');
+  assert.equal(calls[1]?.url, 'http://192.168.1.50:8000/v0/devices/abcd1234');
+  assert.equal(calls[1]?.body, '{}');
+  assert.deepEqual(JSON.parse(calls[2]?.body ?? ''), {image: Buffer.from(WEBP).toString('base64'), installationID: NOW_PLAYING, background: false});
 });
 
 test('presence is read by asking for the installation by name, and a server ID in the list never counts', async () => {

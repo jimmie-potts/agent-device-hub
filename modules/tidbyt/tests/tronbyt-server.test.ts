@@ -37,7 +37,9 @@ void nodeTest('the connection\'s every call against a real server, with what the
   assert.deepEqual(await connection.remove(signal()), {outcome: 'sent'}, 'removing one that is gone');
   assert.deepEqual(await connection.pin(signal()), {outcome: 'failed', failure: 'invalid-request'}, 'pinning one that is gone');
 
+  const untouched = await server<Device>();
   assert.deepEqual(await connection.push(FRAME, signal()), {outcome: 'sent'});
+  assert.deepEqual(await server<Device>(), untouched, 'the push\'s reload changes nothing on the device');
   assert.deepEqual(await connection.list(signal()), {ok: true, present: true}, 'found by the name a push chose');
   const first = await server<Installation>(`/installations/${STATUS}`);
   assert.ok(first.pushed && first.id !== STATUS, 'the server gives it its own ID');

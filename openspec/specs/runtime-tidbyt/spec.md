@@ -226,6 +226,14 @@ A section with `backend: "tronbyt"` SHALL name `tronbyt: {url, deviceId, minInte
 - **WHEN** a tile is removed and the server answers 404 `App not found`
 - **THEN** the tile counts as removed, while `Device not found` makes the Tidbyt `unavailable`
 
+#### Scenario: A tile a connected device has not been told about
+- **WHEN** a tile's first background push since a start or a removal is answered with success
+- **THEN** the connection sends one empty device `PATCH`, so the server's loop for a connected device reloads its installations; nothing on the device changes, and an interrupting push sends none because it reloads them itself
+
+#### Scenario: A reload that fails
+- **WHEN** that `PATCH` fails or goes unanswered
+- **THEN** the push's result stays as it was, and the tile's next successful background push sends it again
+
 ### Requirement: Tronbyt display controls
 
 The Tronbyt backend's record SHALL declare brightness from 0 to 100 and the native modes `rotation`, `interrupt`, `pin-status`, `hide-status` and, with a now-playing tile, `pin-now-playing` and `hide-now-playing`, and every other capability unsupported. It SHALL answer `brightness-set` and `device-mode-set` as tracked commands: stored before accepted, one write in the queue's turn behind its holds, never sent again, with an outcome stored with the record it changes and at most `transmitted` evidence; `observed` SHALL stay unknown. A repeat of an accepted command SHALL change nothing. Brightness SHALL scale its percent to the server's Gen 1 ceiling. `interrupt` SHALL make a tile's pushes interrupt the display. `hide-<tile>` SHALL remove that tile and write it no frame until another mode. `pin-<tile>` SHALL pin that tile while it stands and leave the rotation when it does not, following the tile across a removal and a new server ID. Mode and brightness SHALL survive a restart. A command a stop or a crash left without a stored outcome SHALL be reported at the next start, `uncertain` when its write may have begun and `failed` with `cancelled` otherwise, and never run again; a mode command whose write may have begun SHALL leave the pin unknown, so it is written again for the current mode. A command whose begun write cannot be stored SHALL end `failed` with no effect and say nothing about the server.
@@ -265,6 +273,10 @@ The module SHALL record which backend its stored tiles belong to. When a start s
 ### Requirement: Simulated Tronbyt server
 
 The module SHALL provide `SimulatedTronbyt` beside `SimulatedCloud`, answering as a disposable real server did: server-generated IDs in the list, by-name lookup and removal, plain-text 404s, `background` defaulting to false, an anonymous-push count, brightness stored unchecked and a pin that outlives its installation. It SHALL offer the same faults as the simulated cloud. An optional test SHALL run the same calls against a real server named by environment variables, and skip otherwise.
+
+#### Scenario: The list a connected device is served from
+- **WHEN** a background push creates an installation on the simulated server
+- **THEN** its `served` list omits that installation until a delete, a `PATCH` or an interrupting push reloads it
 
 #### Scenario: The optional check without a server
 - **WHEN** the module's tests run with no server named
