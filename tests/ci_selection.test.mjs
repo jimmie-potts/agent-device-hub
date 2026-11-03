@@ -461,7 +461,7 @@ test('Checks selects jobs and steps only through the selection outputs, and the 
   // Every test suite and the Python setup are selected; setup, build, typecheck and lint always run.
   for (const step of checks.jobs.core.steps) {
     const always = step.uses?.startsWith('actions/checkout') || step.uses?.startsWith('actions/setup-node')
-      || ['npm ci', 'npm run build', 'npm run typecheck', 'npm run lint:js','node scripts/ci-selection/run-standalone.mjs'].includes(step.run);
+      || ['npm ci', 'npm run build', 'npm run typecheck', 'npm run lint:js', 'npm run test:workspace-audit', 'node scripts/ci-selection/run-standalone.mjs'].includes(step.run);
     assert.equal(step.if === undefined, Boolean(always), JSON.stringify(step));
   }
 });

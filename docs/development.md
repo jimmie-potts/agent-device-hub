@@ -415,10 +415,11 @@ rename) and maps it to check groups with the small explicit table in
 | chompi | The CHOMPI bridge, `packages/chompi-protocol/**` and `firmware/**` | The bridge's suites, verification steps and browser check, and the Firmware job |
 | shared | Only full coverage | The shared packages' and contracts' suites, the Python consumers, the old dashboard's tests, the app-verify core and the observability browser check |
 
-Build, typecheck and lint always run for ready candidates. Ordinary Markdown,
-`openspec/**` and documentation tooling select no product group. Delivery and
-validation policy paths, `AGENTS.md`, `docs/sdlc.md`, `docs/development.md` and
-the admission capability spec, retain full coverage. Every other path selects
+Build, typecheck, lint and the workspace-audit tests always run for ready
+candidates. Ordinary Markdown, `openspec/**` and documentation tooling select
+no product group. Delivery and validation policy paths, `AGENTS.md`,
+`docs/sdlc.md`, `docs/development.md` and the admission capability spec, retain
+full coverage. Every other path selects
 full coverage: shared packages and contracts, root manifests, the lockfile and
 toolchain files, `.github/**`, `scripts/**` (including the selector and the
 delivery preflight), other root `tests/**`, the old system, `docs/skins/**` and
@@ -1154,12 +1155,36 @@ deadline bounds the checks independently of the host caller. Host interruption
 may leave that invocation's container until its deadline;
 inspect and remove only its `bunny-runtime-check-` identity. This finite test
 container is separate from a managed preview lease. No broad prune or installed-service action is needed.
+The prepared `bunny-runtime-check-tools:<hash>` images are caches keyed by the
+manifests and recipe, shared by every run of the same lockfile across tasks and
+sessions; [Cleanup after delivery](sdlc.md#cleanup-after-delivery) keeps them,
+and only the owner removes a cache no live lockfile produces.
 
 The wrapper's fixed-suite, source-isolation and failure-propagation checks are
 `node --test scripts/tests/runtime-container.test.mjs`, included in core CI.
 Hosted runtime suites remain unchanged.
 
 See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs) for the authoritative procedure.
+
+### Workspace audit
+
+`npm run audit:workspace` prints the read-only report that
+[Workspace audit](sdlc.md#workspace-audit) acts on: a verdict per registered
+worktree from `git worktree list`, `git status` without optional locks and `gh pr list`,
+stopped task containers and unreferenced task images older than the window,
+container-less task-named volumes, and the shared launcher caches and untagged
+images listed for the owner. Images named by the private batch records under
+`~/.local/state/bunny-operations/` (the current and previous installed image,
+the latter kept for return) or by a `compose*` file at the root of a release
+directory under `~/.local/share/bunny/releases/` are never reported as stale;
+release inputs below that root, such as `private-inputs/`, are not read, so an
+older release's own image can still be listed. The audit reads only image IDs
+from those files and prints nothing else from them. Pass `-- --hours <n>` to
+change the 48-hour window and `-- --json` for the raw report. It needs `gh` for
+PR states and Docker Desktop for the Docker sections; a missing tool, a PR older
+than the newest 300, or no record naming an image is reported as a note, not a
+failure. Its classification and collection tests are
+`npm run test:workspace-audit`, run in core CI.
 
 ## Runtime dashboard checks
 
