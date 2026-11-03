@@ -36,9 +36,10 @@ Use the same explicit project and Compose selection for every operation. The
 fresh-volume examples below are setup/rehearsal examples, not a daily startup
 procedure for an existing instance.
 
-1. After a Mac restart, unlock FileVault, sign in and start Docker Desktop's Linux
-   engine. Waiting for the operator is accepted downtime; this procedure installs
-   no unattended pre-login startup or automatic restart.
+1. After a Mac restart, unlock FileVault, sign in and confirm Docker Desktop's Linux
+   engine is running; it starts at sign-in if that setting is on. Waiting for the
+   operator is accepted downtime; this procedure installs no unattended pre-login
+   startup or automatic restart of the core.
 2. Select the existing owned instance and inspect its process state with the
    operator's `status`. Confirm the selected image and mounts before `start`.
    Never rerun fresh provisioning or create replacement empty volumes as a way
@@ -88,8 +89,8 @@ the device transition; hosting changes neither.
 | Device key | One device-scoped API key, in a private file outside Git |
 | Health | `/health` and `/metrics` |
 
-Keep the Compose file, data, backups, key and the device ID private. Its own `backup.sh`
-stops the server, copies the data directory and starts it again. Take a backup before
+Keep the Compose file, data, backups, key and the device ID private. The private
+`backup.sh` beside the Compose file stops the server, copies the data directory and starts it again. Take a backup before
 changing the image, and keep the previous image for rollback.
 
 After a Mac restart and sign-in the server returns by itself; a reboot on 2026-11-03

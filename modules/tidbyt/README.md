@@ -176,8 +176,8 @@ Checked 2026-11-03. Neither project had released since the pins below.
 | Firmware | v1.7.4, target `tidbyt-gen1` | Not exercised: #24 owns the flash. |
 | API | `/v0` | The table below, and `tests/tronbyt-server.test.ts`. |
 
-What differs from the cloud, each exercised on the v2.5.1 server. The v2.5.2 run asserts
-only part of this: a named push replacing its own installation, server IDs that differ from
+What differs from the cloud, each exercised on the v2.5.1 server. The disposable v2.5.2 run
+asserts only part of this: a named push replacing its own installation, server IDs that differ from
 the chosen name, presence found by name, the two 404s as outcomes, a pin outliving its
 installation, brightness at the ceiling and a 200 with no device connected. The rest of the
 table, including the rate row, rests on the v2.5.1 run and the unchanged API source:
@@ -194,10 +194,10 @@ table, including the rate row, rests on the v2.5.1 run and the unchanged API sou
 | No rate limit; writes 1 s apart were all answered | Takes a gate down to 1 s. This qualifies the server, not what the device renders; #24 selects the value |
 
 Run the optional check against a disposable server after a build: its device's
-installations, pin and brightness change. It takes a user key or a device key. A device key
-is scoped to its device, so use one for the module; only the check's refusal for another
-device differs, 403 where a user key hears 404. The server's device listing returns the
-owner's devices for either key.
+installations, pin and brightness change. It takes a user key, or a device key with
+`TRONBYT_QUALIFY_KEY_KIND=device`. A device key is scoped to its device, so use one for the
+module; only the check's refusal for another device differs, 403 where a user key hears 404.
+The server's device listing returns the owner's devices for either key.
 
 ```bash
 TRONBYT_QUALIFY_URL=<origin> TRONBYT_QUALIFY_DEVICE=<id> TRONBYT_QUALIFY_KEY=<key> node --test modules/tidbyt/dist/tests/tronbyt-server.test.js

@@ -10,6 +10,7 @@ import {SECOND, finished, host, notice, until} from './support.js';
 const url = process.env.TRONBYT_QUALIFY_URL;
 const device = process.env.TRONBYT_QUALIFY_DEVICE;
 const key = process.env.TRONBYT_QUALIFY_KEY;
+const deviceKey = process.env.TRONBYT_QUALIFY_KEY_KIND === 'device';
 const skip = url === undefined || device === undefined || key === undefined ? 'no disposable server is named' : false;
 const signal = (): AbortSignal => AbortSignal.timeout(5000);
 const STATUS = 'qualifystatus';
@@ -61,9 +62,9 @@ void nodeTest('the connection\'s every call against a real server, with what the
   assert.deepEqual(await wrongKey.push(FRAME, signal()), {outcome: 'failed', failure: 'unauthenticated'});
   const wrongDevice = new TronbytConnection({url: url ?? '', deviceId: 'nosuchdevice', apiKey: key ?? '', installationId: STATUS, fetch: realFetch});
   // A user key hears 404 for a device that does not exist, and a device key 403 for any device but its own.
-  const refusal = await wrongDevice.push(FRAME, signal());
-  assert.deepEqual(refusal, {outcome: 'failed', failure: refusal.outcome === 'failed' && refusal.failure === 'forbidden' ? 'forbidden' : 'unknown-device'});
-  assert.deepEqual(await wrongDevice.remove(signal()), refusal, 'a missing device is not a missing installation');
+  const refusal = {outcome: 'failed', failure: deviceKey ? 'forbidden' : 'unknown-device'};
+  assert.deepEqual(await wrongDevice.push(FRAME, signal()), refusal);
+  assert.deepEqual(await wrongDevice.remove(signal()), refusal, deviceKey ? 'a device key reaches only its device' : 'a missing device is not a missing installation');
 });
 
 void nodeTest('the module draws its status tile on a real server at a shorter gate, and its pin follows the tile', {skip, timeout: 60_000}, async context => {
