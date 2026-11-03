@@ -286,7 +286,7 @@ it('waits for its start, and a start window it misses ends it with no write and 
 function slowCapture(s:Setup){
  const capture=s.store.capture.bind(s.store);let release=()=>{};
  const gate=new Promise<void>(resolve=>{release=resolve;});
- s.store.capture=(async(...args:Parameters<typeof capture>)=>{await gate;return capture(...args);}) as typeof s.store.capture;
+ s.store.capture=async(...args:Parameters<typeof capture>)=>{await gate;return capture(...args);};
  return ()=>{s.store.capture=capture;release();};
 }
 it('a moment that ends while a manual start captures never cancels the start by resuming',async()=>{
