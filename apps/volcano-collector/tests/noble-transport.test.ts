@@ -22,7 +22,7 @@ function spied<T extends object>(target: T, calls: string[], name: string): T {
   }});
 }
 
-function world(names: readonly string[] = ['Other device', 'S&B VOLCANO H'], connectFails = false) {
+function world(names: readonly string[] = ['Other device', 'S&B VOLCANO H'], connectFails = false, connecting: Promise<void> = Promise.resolve()) {
   const calls: string[] = [];
   const disconnectListeners = new Set<() => void>();
   const data = new Map<string, (bytes: Uint8Array) => void>();
@@ -33,7 +33,7 @@ function world(names: readonly string[] = ['Other device', 'S&B VOLCANO H'], con
   }, calls, `characteristic(${uuid.slice(0, 8)})`);
   const peripheralOf = (localName: string): NoblePeripheral => spied<NoblePeripheral>({
     advertisement: {localName}, once: (_event, listener) => { lost = listener; disconnectListeners.add(listener); return undefined; }, removeListener: (_event, listener) => { disconnectListeners.delete(listener); return undefined; },
-    connectAsync: () => (connectFails ? Promise.reject(new Error('synthetic')) : Promise.resolve()), disconnectAsync: () => Promise.resolve(),
+    connectAsync: () => (connectFails ? Promise.reject(new Error('synthetic')) : connecting), disconnectAsync: () => Promise.resolve(),
     discoverSomeServicesAndCharacteristicsAsync: (services, characteristics) => {
       discovery.services = services;
       discovery.characteristics = characteristics;
@@ -120,6 +120,22 @@ void test('a failed connect leaves no disconnect listener behind', async () => {
   await transport.scan('S&B VOLCANO H', never);
   await assert.rejects(transport.connect(() => {}, never));
   assert.equal(disconnectListeners.size, 0);
+});
+
+void test('a connect settling after its disconnect runs no discovery, keeps no characteristics and closes what it opened', async () => {
+  let settle: () => void = () => {};
+  const {noble, calls, discovery, disconnectListeners} = world(['S&B VOLCANO H'], false, new Promise<void>(resolve => { settle = resolve; }));
+  const transport = nobleTransport(noble);
+  await transport.scan('S&B VOLCANO H', never);
+  const connecting = transport.connect(() => {}, never);
+  await transport.disconnect();
+  const closes = calls.filter(call => call === 'peripheral.disconnectAsync').length;
+  settle();
+  await assert.rejects(connecting, /after it was given up/);
+  assert.equal(discovery.characteristics, undefined, 'no discovery ran');
+  await assert.rejects(transport.read(VOLCANO_REGISTERS.status1, never), 'no characteristic was kept');
+  assert.equal(disconnectListeners.size, 0);
+  assert.equal(calls.filter(call => call === 'peripheral.disconnectAsync').length, closes + 1, 'the late link is closed');
 });
 
 void test('no call the adapter made through a whole session is write-shaped', async () => {

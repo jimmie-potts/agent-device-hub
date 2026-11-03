@@ -38,6 +38,8 @@ const refused = (): Error => new Error('volcano-collector: this characteristic i
 export function nobleTransport(noble: Noble): VolcanoTransport {
   let peripheral: NoblePeripheral | undefined;
   let characteristics = new Map<string, NobleCharacteristic>();
+  /** Counts connects and disconnects, so a connect can tell it is no longer the current one. */
+  let attempts = 0;
   const characteristic = (uuid: string): NobleCharacteristic => {
     const found = characteristics.get(nobleUuid(uuid));
     if (found === undefined) throw new Error('volcano-collector: the characteristic was not found');
@@ -74,10 +76,21 @@ export function nobleTransport(noble: Noble): VolcanoTransport {
       if (peripheral === undefined) throw new Error('volcano-collector: nothing was found to connect to');
       characteristics = new Map();
       const target = peripheral;
+      const attempt = ++attempts;
       target.once('disconnect', lost);
+      // A connect the collector gave up on can still settle later: it must not run discovery or replace what a newer
+      // connection found, and a link it opened must not stay open behind the collector's back.
+      const late = (): boolean => {
+        if (attempt === attempts) return false;
+        target.removeListener('disconnect', lost);
+        if (peripheral !== target) void target.disconnectAsync().catch(() => {});
+        return true;
+      };
       try {
         await target.connectAsync();
+        if (late()) throw new Error('volcano-collector: the connect settled after it was given up');
         const discovered = await target.discoverSomeServicesAndCharacteristicsAsync(VOLCANO_SERVICES.map(nobleUuid), READABLE.map(nobleUuid));
+        if (late()) throw new Error('volcano-collector: the connect settled after it was given up');
         characteristics = new Map(discovered.characteristics.map(found => [found.uuid, found]));
       } catch (error) {
         // Noble keeps one peripheral across connections, so a listener left here would tell a later connection of this failure.
@@ -97,6 +110,7 @@ export function nobleTransport(noble: Noble): VolcanoTransport {
     },
     async disconnect() {
       const current = peripheral;
+      attempts += 1;
       peripheral = undefined;
       characteristics = new Map();
       await current?.disconnectAsync();
