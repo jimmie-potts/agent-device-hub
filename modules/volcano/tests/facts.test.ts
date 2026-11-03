@@ -108,6 +108,18 @@ void test('a stale feed lets an out-of-order stamp reset the baseline, and only 
   assert.equal(after.latestMs, next.observedAtMs);
 });
 
+void test('a second delayed snapshot after a moved baseline is taken, but only behind a clock-step that nothing crosses', () => {
+  const {state} = play([{at: 0, reading: {status1: HEATING, heatingMinutes: 5}}]);
+  const old = (seconds: number, epoch: string): VolcanoObservation => ({feed: FEED, observedAtMs: START - seconds * 1000, collectorEpoch: epoch, sequence: 1, link: 'connected', reading: reading({status1: IDLE, heatingMinutes: 9})});
+  const first = admit(state, old(60, 'old-epoch'), START + STALE_MS + 25);
+  assert.equal(first.take, false, 'the one that moves the baseline gives no evidence');
+  const moved: Continuity = {...state, baselineMs: first.take ? null : first.baselineMs};
+  assert.deepEqual(admit(moved, old(55, 'old-epoch'), START + STALE_MS + 26), {take: true});
+  const {facts} = reduce(moved, old(55, 'old-epoch'), START + STALE_MS + 26);
+  assert.deepEqual(only(facts, 'discontinuity').map(fact => fact.reason), ['clock-step']);
+  assert.equal(only(facts, 'gap').length, 0);
+});
+
 void test('first connection mid-session records what it saw, with no earlier start', () => {
   const {facts} = play([{at: 600_000, reading: {status1: HEATING}}]);
   assert.deepEqual(only(facts, 'heater').map(({on, edge, observedAtMs}) => [on, edge, observedAtMs]), [[true, 'first-observation', START + 600_000]]);

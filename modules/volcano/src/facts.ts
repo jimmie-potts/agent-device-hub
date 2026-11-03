@@ -70,7 +70,9 @@ export const counterOf = (reading: VolcanoReading): number | null =>
  * Whether a snapshot may be taken, and otherwise what is left of the state. A repeat of an epoch's sequence is dropped with
  * no effect. A snapshot not newer than the baseline is dropped too and renews nothing; once the feed has gone stale it
  * moves the baseline to its own stamp instead, so that a clock that stepped back or a snapshot stamped in the future holds
- * the feed for one freshness window and one cycle, never for good, while a delayed old snapshot still gives no evidence.
+ * the feed for one freshness window and one cycle, never for good. The snapshot that moves the baseline gives no evidence.
+ * One that follows it and is newer is taken, even if it too was delayed: `reduce` then records a `clock-step` when it is
+ * older than the last one taken, so no interval or counter gain crosses it, but its reading stands as evidence.
  */
 export function admit(state: Continuity, snapshot: Pick<VolcanoObservation, 'collectorEpoch' | 'sequence' | 'observedAtMs'>, nowMs: number): {take: true} | {take: false; baselineMs: number | null; reason: 'duplicate' | 'stale'} {
   if (snapshot.collectorEpoch === state.epoch && snapshot.sequence <= state.sequence) return {take: false, baselineMs: state.baselineMs, reason: 'duplicate'};
