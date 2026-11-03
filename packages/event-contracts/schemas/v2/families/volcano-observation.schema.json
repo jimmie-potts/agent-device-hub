@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/volcano-observation/2.0",
+  "description": "Occurrence: one bounded snapshot of what a source-bound host-local collector observes of one enrolled VOLCANO HYBRID, which only the Volcano module consumes; the core ignores it (Hub #615). `collectorEpoch` names one collector process and `sequence` counts its snapshots. `reading` is null unless `link` is `connected`; temperatures are degrees Celsius times ten whatever the device displays. No serial, Bluetooth address or firmware travels here. The envelope subject is `volcanoFeedId(feed)`, and the validator also refuses a reading on a link that is not connected (families.ts).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["feed", "observedAtMs", "collectorEpoch", "sequence", "link", "reading"],
+  "properties": {
+    "feed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "client", "hostId", "sourceId"],
+      "properties": {
+        "provider": {"const": "storz-bickel"},
+        "client": {"const": "volcano"},
+        "hostId": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/identity/properties/hostId"},
+        "sourceId": {"$ref": "https://bunny.invalid/events/session/2.0#/$defs/identity/properties/sourceId"}
+      }
+    },
+    "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "collectorEpoch": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "sequence": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "link": {"enum": ["connected", "disconnected", "unavailable", "identity-mismatch"]},
+    "reading": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status1", "status2", "currentDeciC", "targetDeciC", "heatingHours", "heatingMinutes"],
+          "properties": {
+            "status1": {"type": "integer", "minimum": 0, "maximum": 65535},
+            "status2": {"type": "integer", "minimum": 0, "maximum": 65535},
+            "currentDeciC": {"oneOf": [{"type": "null"}, {"type": "integer", "minimum": -32768, "maximum": 65535}]},
+            "targetDeciC": {"oneOf": [{"type": "null"}, {"type": "integer", "minimum": -32768, "maximum": 65535}]},
+            "heatingHours": {"oneOf": [{"type": "null"}, {"type": "integer", "minimum": 0, "maximum": 65535}]},
+            "heatingMinutes": {"oneOf": [{"type": "null"}, {"type": "integer", "minimum": 0, "maximum": 65535}]}
+          }
+        }
+      ]
+    }
+  }
+}
