@@ -240,7 +240,9 @@ is a bounded takeover. It changes no mode and no configuration revision:
    (`unsupported-capability`), its start window has passed (`expired`), a command or another
    moment is in hand (`capacity`), the last moment has not been released (`unavailable`), its
    moment ID was accepted before, or it is blocked (`invalid-state`).
-2. Its frame is made once. A failure, or 30 s without one, ends it `failed` with nothing sent.
+2. Its frame is made once. A failure, or 30 s without one, ends it `failed` with nothing sent:
+   `expired` if its start window has passed by then, and otherwise the failure's code, or
+   `unavailable` for the 30 s.
 3. At its start, one queue turn reads the server's pin, pushes the frame in the foreground to
    the installation `bunnymoment`, which no tile may take, and pins it. If a pin stands,
    nothing is written and it ends `failed` with `invalid-state`.
@@ -278,6 +280,10 @@ A release waits behind the queue's holds like any write, so **the frame can outl
   ID stays spent. A start on the cloud, or a rollback to code from before moments, sends no
   release, and a handoff to another server releases nothing on the old one, so clear that pin on
   the server's own page.
+
+If the database also refuses a moment's outcome, the command stays pending until the next start
+reports it, as any command's does. The frame is still released, but new moments are refused with
+`capacity` and the mode's pin waits until that start.
 
 The server has no conditional pin. A pin set by hand in the moment between the read and the
 moment's pin is overwritten, and the release then clears it.

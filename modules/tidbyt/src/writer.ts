@@ -17,7 +17,7 @@
 //   the clock was set back, counts as now, so a clock set back delays a write by at most its own wait.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, type Cancel, type ModuleScheduler, Outcome} from '@jimmie-potts/sdk';
-import type {ListResult, TidbytConnection, WriteResult} from './cloud.js';
+import {MAX_RETRY_MS, type ListResult, type TidbytConnection, type WriteResult} from './cloud.js';
 import type {TileRequest} from './tiles.js';
 
 export type CurrentTarget = () => boolean;
@@ -106,6 +106,8 @@ export class CloudQueue {
     for (;;) {
       if (this.closed || current?.() === false) return {outcome: 'cancelled'};
       if (this.#authentication !== undefined) return {outcome: 'held', failure: this.#authentication};
+      // A wall clock set back cannot stretch a hold past the longest one the queue takes.
+      if (this.#rateLimitedUntilMs !== undefined) this.#rateLimitedUntilMs = Math.min(this.#rateLimitedUntilMs, this.#now() + MAX_RETRY_MS);
       const wait = (this.#rateLimitedUntilMs ?? 0) - this.#now();
       if (wait <= 0) break;
       await this.#sleep(wait);

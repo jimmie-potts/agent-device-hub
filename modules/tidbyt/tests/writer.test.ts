@@ -3,7 +3,7 @@
 // main 627e3fe3. The controller v1 envelope's admission, tickets and replays are not copied: no message carries a frame.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {TidbytCloudConnection, type CloudFetch} from '../src/cloud.js';
+import {MAX_RETRY_MS, TidbytCloudConnection, type CloudFetch} from '../src/cloud.js';
 import {CloudQueue, TileWriter, type TileCall, type TileMemory, type TileTarget, type TileWriterOptions} from '../src/writer.js';
 import {flush, manualClock} from './support.js';
 
@@ -28,6 +28,27 @@ function queueOn(fetch: CloudFetch, clock = manualClock()): {queue: CloudQueue; 
   return {queue: new CloudQueue({connection, scheduler: clock.scheduler, now: clock.now, timeoutMs: 10_000}), clock};
 }
 const WEBP = Uint8Array.from([1, 2, 3]);
+
+void test('a wall clock set back cannot hold the queue past the longest rate limit', async () => {
+  const cloud = heldCloud();
+  const clock = manualClock();
+  let setBack = 0;
+  const connection = new TidbytCloudConnection({deviceId: 'device', apiKey: 'key', installationId: 'status', fetch: cloud.fetch});
+  const queue = new CloudQueue({connection, scheduler: clock.scheduler, now: () => clock.now() - setBack, timeoutMs: 10_000});
+  const limited = queue.push(WEBP, undefined);
+  await flush();
+  cloud.answer(429, {}, {'retry-after': '60'});
+  await limited;
+  setBack = 86_400_000;
+  const next = queue.push(WEBP, undefined);
+  await flush();
+  assert.equal(cloud.pending.length, 0, 'the hold stands');
+  clock.advance(MAX_RETRY_MS + 1);
+  await flush();
+  assert.equal(cloud.pending.length, 1, 'it ends within the longest hold, not a day later');
+  cloud.answer(200);
+  await next;
+});
 
 void test('calls go out one at a time, in the order they were made', async () => {
   const cloud = heldCloud();

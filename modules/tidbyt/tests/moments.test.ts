@@ -485,6 +485,27 @@ test('what arrives during the pin read keeps the frame from going out', async co
   assert.deepEqual(momentCalls(server), []);
 });
 
+test('what arrives during the push keeps the frame from being pinned, and it is released at once', async context => {
+  const server = new SimulatedTronbyt();
+  let during: (() => Promise<void>) | undefined;
+  const transport: CloudFetch = async (url, init) => {
+    if (init.method === 'POST') await during?.();
+    return await server.fetch(url, init);
+  };
+  const h = await onIdle(context, server, {module: {transport}});
+  const pins = server.state().pinWrites;
+  during = async () => {
+    during = undefined;
+    await h.core?.set(asking());
+  };
+  assert.deepEqual(await play(h), {status: 'accepted'});
+  await until(() => outcomes(h).length === 1, 'the outcome');
+  assert.equal(outcomes(h)[0]?.evidence, 'transmitted');
+  assert.equal(outcomes(h)[0]?.error?.code, 'cancelled');
+  assert.equal(server.state().pinWrites, pins, 'no pin went out');
+  assert.ok(!cardStands(server));
+});
+
 test('a command during the release does not make a moment that held its time one that ended early', async context => {
   const server = new SimulatedTronbyt();
   let during: (() => Promise<void>) | undefined;

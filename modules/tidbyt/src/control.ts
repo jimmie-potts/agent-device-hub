@@ -684,11 +684,11 @@ export class DisplayControl {
     this.#options.reached(result, 'moment', parent);
     if (result.outcome === 'sent') {
       this.#standsNot();
-      if (this.#releaseFailing) recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': Outcome.succeeded});
+      if (this.#releaseFailing) recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': Outcome.succeeded}, parent);
       this.#releaseFailing = false;
     } else {
       this.#retryPinAtMs = clock.now() + PIN_RETRY_MS;
-      if (!this.#releaseFailing) recordLog(log, 'operation.failed', {...fields, 'bunny.code': codeOf(result)});
+      if (!this.#releaseFailing) recordLog(log, 'operation.failed', {...fields, 'bunny.code': codeOf(result)}, parent);
       this.#releaseFailing = true;
     }
     return result;

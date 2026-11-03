@@ -17,6 +17,6 @@ A row marks a takeover that may stand, written before the first request and clea
 
 ## Risks
 
-- A long runtime outage during a hold leaves the card pinned on the server. Only a server-side expiry could bound that, and the API has none. The window is at most 60 s per moment, and the next start clears it.
+- A long runtime outage during a hold leaves the card pinned on the server. Only a server-side expiry could bound that, and the API has none. It can only begin during a hold, which lasts at most 60 s per moment. The frame then stays for as long as the outage does, and the next start clears it.
 - A release waits behind the queue's holds like any write: up to 15 minutes under a rate limit and until the next start under a refused key. The server records no rate limit of its own, so a 429 would come from a proxy.
 - `pendingKinds` shows `moment-play` for the whole hold. That is true of a command whose outcome follows its release.
