@@ -61,9 +61,14 @@ Weather reaches a prompt as condition words only.
 
 A result is one **artwork**, which is one idea. The module mints its `artworkId`. Each
 target gets its own **composition**, whose immutable `compositionId` is the SHA-256 of
-that composition's original bytes. Each composition has local **renditions**. Three
+the bytes that define it: the generated image, the sprite sheet, or a locally animated
+result. Each composition has local **renditions**. Three
 image calls for one idea therefore give one artwork and three compositions. A
 device refers to a composition, never to an artwork alone.
+
+The module decides whether a job is the owner's or automatic from the authenticated
+command source, never from `origin` or `purpose`, so a mislabelled request cannot
+escape the automatic limits.
 
 ```json
 {
@@ -76,7 +81,7 @@ device refers to a composition, never to an artwork alone.
     "compositionId": "sha256",
     "outcome": "succeeded",
     "promptHash": "sha256",
-    "renditions": [{"renditionId": "sha256", "width": 64, "height": 32, "frames": 1, "durationMs": 0, "format": "webp", "bytes": 1840}]
+    "renditions": [{"renditionId": "sha256", "width": 64, "height": 32, "frames": 1, "durationMs": 0, "format": "png", "bytes": 1840}]
   }],
   "provenance": {"generatedBy": "openai", "factual": false}
 }
@@ -84,8 +89,9 @@ device refers to a composition, never to an artwork alone.
 
 Each target succeeds or fails alone. An artwork is `partial` when at least one target
 succeeded and another did not, whether that one failed or is uncertain. It is
-`uncertain` when none succeeded and any is uncertain. These are the art job's own
-results, not ADR 0012 command outcomes, because a request is not a tracked command.
+`uncertain` when none succeeded and any is uncertain, and `failed` when all failed.
+These are the art job's own results. The `art-request` command that admitted the job
+has already completed with its own outcome.
 Local renditions and playback cost nothing. Palette values are
 validated data for [#683](https://github.com/jimmie-potts/agent-device-hub/issues/683).
 
@@ -147,6 +153,7 @@ module's state. Worked traces, each a required test in #680:
 | Daily pace reached at noon | Automatic refused; owner requests continue; saved art plays |
 | A thirty-first automatic call in 60 minutes | Refused; it succeeds once the window has room and the pace allows |
 | Settlement above its reservation near the ceiling | True cost recorded, fault logged, later calls refused |
+| Automatic source with an owner label in its payload | Treated as automatic; the pace and guard apply |
 | Monthly ceiling reached | All generation refused; saved art plays |
 | Next local month | Limits restart; earlier uncertain rows remain visible |
 
@@ -166,10 +173,10 @@ they never leave the module.
 | Step | Producer | Consumer | Owner of the delta |
 | --- | --- | --- | --- |
 | Contracts and forwarding | `modules/art` sends `art-dispatch` | Core part accepts it from `bunny/modules/art` only and forwards tracked `art-stage` and `art-ambient-set` commands, never `moment-play` | [#679](https://github.com/jimmie-potts/agent-device-hub/issues/679) |
-| Request | Dashboard sends `art-request`, an untracked module command | `modules/art` answers `accepted` once the row is durable, and the result appears in its `art` state. A provider call can outlast the tracker's 30 s device deadline, so this is not a tracked device operation | #679 family, #680 handler |
-| Stage | `modules/art` sends `art-stage`: `compositionId`, format, dimensions, frames, hash, up to 160 KiB of bytes, lifetime | Pixoo or Tidbyt validates and keeps a private copy; no display effect; duplicates reuse it | Pixoo [#1288](https://github.com/jimmie-potts/agent-device-hub/issues/1288), Tidbyt [#681](https://github.com/jimmie-potts/agent-device-hub/issues/681) |
+| Request | The dashboard for the owner, or the core automation path under #684 for ambient and appearance art, sends `art-request` through the tracked command route, to start or cancel a job | `modules/art` commits the row and a `succeeded` outcome with `observed` evidence in one transaction, as `assistant-input` does (`modules/companions/src/assistant/engine.ts`). The tracked effect is durable admission, because a provider call can outlast the 30 s device deadline; job results appear in its `art` state | #679 family, #680 handler |
+| Stage | `modules/art` sends `art-stage`: `compositionId`, format (PNG or GIF), dimensions, frames, hash, up to 160 KiB of bytes, lifetime | Pixoo or Tidbyt validates and keeps a private copy, in its own format; no display effect; duplicates reuse it | Pixoo [#1288](https://github.com/jimmie-potts/agent-device-hub/issues/1288), Tidbyt [#681](https://github.com/jimmie-potts/agent-device-hub/issues/681) |
 | Stage finished | Core operation record for that `requestId` | `modules/art` shows nothing until it reads `succeeded`; #679's fixture proves a module can read it | #679 |
-| Show | Only the core automation path sends it, after arbitration, owned by [#684](https://github.com/jimmie-potts/agent-device-hub/issues/684): `moment-play/2.1` with optional `art: {compositionId}`. `modules/art` offers candidates in its state and cannot start a takeover | The device plays its private copy, or refuses an unknown or expired reference before any effect | Schema #679; playback Pixoo [#1287](https://github.com/jimmie-potts/agent-device-hub/issues/1287) and #1288, Tidbyt [#337](https://github.com/jimmie-potts/agent-device-hub/issues/337) and #681 |
+| Show | Only the core automation path sends it, after arbitration, owned by [#684](https://github.com/jimmie-potts/agent-device-hub/issues/684): `moment-play/2.1` with optional `art: {compositionId}`. `modules/art` offers candidates in its state and cannot start a takeover. An owner's "show now" enters this same path, ahead of the schedule, and still yields to attention | The device plays its private copy, or refuses an unknown or expired reference before any effect | Schema #679; playback Pixoo [#1287](https://github.com/jimmie-potts/agent-device-hub/issues/1287) and #1288, Tidbyt [#337](https://github.com/jimmie-potts/agent-device-hub/issues/337) and #681 |
 | Capability | Each device declares `moments.art` in its `device` record | `commandSupported` refuses a moment with `art` for a device without it, so Nanoleaf does not play its mood instead | #679 |
 | Ambient | `modules/art` sends `art-ambient-set` with a `compositionId`, or clears it | Tidbyt's art tile in its rotation; no takeover | #681 |
 | Browser and theme | Authenticated `content` refs and an `art` state record | Dashboard widget, gallery, spend and theme palette | #680 supplies; [#682](https://github.com/jimmie-potts/agent-device-hub/issues/682) and #683 consume |
@@ -190,10 +197,16 @@ This replaces the native rendition IDs that #1288's text asks to return. #1288 k
 its validation, provenance and reference safety, and takes the `compositionId` mapping
 instead.
 
-Tracked operations keep their payload, and art bytes must not grow the tracker. #679
-generalizes the omitted-payload path that ONN text uses in
-`apps/runtime/src/core/tracker.ts`. An omitted command cannot be resent from the inbox,
-so a person requests the art again as a new command.
+#679 also owns three protections for the forwarded families:
+
+- **Tracker size:** tracked operations keep their payload, and art bytes must not grow
+  the tracker. #679 generalizes the omitted-payload path that ONN text uses in
+  `apps/runtime/src/core/tracker.ts`. An omitted command cannot be resent.
+- **Inbox:** `art-stage` and `art-ambient-set` are routine background work, so their
+  failures do not raise shared inbox items, the way operator actions do not in
+  `apps/runtime/src/core/inbox.ts`. Per-target results appear in the `art` state.
+- **Direct access:** the gateway refuses both families from any client, and the tracker
+  accepts them only from the core part that forwards them, as it does for speech.
 
 ## Compositions
 
@@ -212,8 +225,9 @@ its Videos API shut down on 2026-09-24. Animated art uses one image request for 
 sprite sheet, cut into frames locally. #680 validates each sheet and rejects misaligned
 cells or excess frame-to-frame change; a rejected sheet still costs its call, and the
 art falls back to a still or local motion. Local motion costs nothing and stays within
-each device profile. #680 assembles a GIF for Pixoo, which #1288 admits under Pixoo's
-existing limits, and #681 builds the Tidbyt's animated WebP.
+each device profile. #680 assembles the GIF for both displays. #1288 admits it under
+Pixoo's existing limits, and the Tidbyt module, under #681, converts it to animated
+WebP with its own encoder.
 
 ## Live trial
 
