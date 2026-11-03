@@ -108,7 +108,7 @@ it('attention during the moment\'s write lets it finish, keeps Monitor on the di
   const results:MomentResult[]=[];
   void monitor.playMoment({momentId:'m1',coversStatus:true,durationMs:3000,startAtMs:clock.now(),toleranceMs:10000,frames:()=>Promise.resolve([RGB(7)])}).then(result=>results.push(result));
   await flush(clock);
-  for(let t=0;t<2000&&!monitor.momentSummary().playing;t+=100){clock.advance(100);monitor.tick();await flush(clock);}
+  for(let t=0;t<2000&&monitor.momentSummary().playing===null;t+=100){clock.advance(100);monitor.tick();await flush(clock);}
   clock.advance(100);monitor.tick();await flush(clock);
   expect(monitor.momentSummary().playing).toBe('m1');
   monitor.submit(attentionView);await run(2000);
