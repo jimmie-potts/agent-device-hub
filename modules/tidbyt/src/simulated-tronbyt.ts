@@ -2,9 +2,11 @@
 // answered them on a disposable run: a push names its installation or joins an anonymous queue, `background` defaults to
 // false, the list carries the server's own numeric IDs, asking for or deleting an installation by the name a push chose
 // works, a missing one answers 404 "App not found" and a missing device "Device not found", both as plain text,
-// brightness is stored unchecked, deleting a pinned installation leaves the pin, and unpinning an installation clears only its
-// own pin, as server v2.5.2's source reads. Like the simulated cloud, it can stop
-// answering, refuse connections, answer the next call with a status of its choice, or lose the next answer.
+// brightness is stored unchecked, deleting a pinned installation leaves the pin, and unpinning an installation clears only
+// its own pin. The loop serving a connected device keeps its own copy of the installations, as server v2.5.2's does: a
+// delete, a PATCH, an interrupting push or showing one of them reloads it, so a background push that creates an installation
+// while it has none to show does not (Hub #1411). Like the simulated cloud, it can stop answering, refuse connections,
+// answer the next call with a status of its choice, or lose the next answer.
 import type {CloudFetch} from './cloud.js';
 import {decodeLossless, picture} from './picture.js';
 import {SIMULATED_API_KEY, SIMULATED_DEVICE} from './simulated.js';
@@ -20,8 +22,12 @@ export type TronbytState = {
   brightness: number;
   /** How many writes set the brightness, apart from the pin's. */
   brightnessWrites: number;
+  /** How many writes pinned an installation, apart from the empty ones that only reload the list. */
+  pinWrites: number;
   /** The server's own ID of the pinned installation, or null. It can point at one already deleted. */
   pinnedApp: string | null;
+  /** The installations the loop serving a connected device would rotate through; empty is the server's setup screen. */
+  served: string[];
   calls: {method: string; path: string; answer: number | 'none' | 'refused-connection'}[];
 };
 export type SimulatedTronbytOptions = {
@@ -53,12 +59,15 @@ export class SimulatedTronbyt {
   #anonymous = 0;
   #brightness = 25;
   #brightnessWrites = 0;
+  #pinWrites = 0;
   #pinned: string | null = null;
+  #served: string[] = [];
   #online = true;
   #refuse = false;
   #loseAnswers = 0;
   readonly #answers: number[] = [];
   readonly #patchAnswers: number[] = [];
+  readonly #reloadAnswers: number[] = [];
 
   constructor({key = SIMULATED_API_KEY, device = SIMULATED_DEVICE, origin = TRONBYT_ORIGIN, installations = [], now = Date.now}: SimulatedTronbytOptions = {}) {
     this.#key = key;
@@ -66,6 +75,7 @@ export class SimulatedTronbyt {
     this.#origin = origin;
     this.#now = now;
     for (const name of installations) this.#add(name);
+    this.#reload();
   }
 
   readonly fetch: CloudFetch = async (url, init) => {
@@ -93,6 +103,8 @@ export class SimulatedTronbyt {
   answerNext(status: number): void { this.#answers.push(status); }
   /** The next PATCH is answered with this status, whatever calls come before it. */
   answerNextPatch(status: number): void { this.#patchAnswers.push(status); }
+  /** The next empty PATCH of an installation, which only reloads the list, is answered with this status. */
+  answerNextReload(status: number): void { this.#reloadAnswers.push(status); }
   loseNextAnswer(): void { this.#loseAnswers += 1; }
   /** Pins an installation as a person does on the server's own page. */
   pinByHand(name: string): void { this.#pinned = this.#installations.get(name)?.serverId ?? null; }
@@ -100,7 +112,12 @@ export class SimulatedTronbyt {
   state(): TronbytState {
     const installations: TronbytState['installations'] = {};
     for (const [name, entry] of this.#installations) installations[name] = {...entry, picture: [...entry.picture], pushedAtMs: [...entry.pushedAtMs]};
-    return {installations, anonymous: this.#anonymous, brightness: this.#brightness, brightnessWrites: this.#brightnessWrites, pinnedApp: this.#pinned, calls: this.#calls.map(call => ({...call}))};
+    return {installations, anonymous: this.#anonymous, brightness: this.#brightness, brightnessWrites: this.#brightnessWrites, pinWrites: this.#pinWrites, pinnedApp: this.#pinned, served: [...this.#served], calls: this.#calls.map(call => ({...call}))};
+  }
+
+  /** What a loop serving a connected device learns from every write but a background push into an empty list. */
+  #reload(): void {
+    this.#served = [...this.#installations.keys()];
   }
 
   #add(name: string): Installation {
@@ -115,7 +132,8 @@ export class SimulatedTronbyt {
 
   #reply(path: string, init: Parameters<CloudFetch>[1]): Response {
     if (init.headers.authorization !== `Bearer ${this.#key}`) return text(401, 'Unauthorized');
-    const status = (init.method === 'PATCH' ? this.#patchAnswers.shift() : undefined) ?? this.#answers.shift();
+    const reloading = init.method === 'PATCH' && path.includes('/installations/') && init.body === '{}';
+    const status = (reloading ? this.#reloadAnswers.shift() : undefined) ?? (init.method === 'PATCH' ? this.#patchAnswers.shift() : undefined) ?? this.#answers.shift();
     if (status !== undefined) return text(status, 'Simulated');
     const match = /^\/v0\/devices\/([^/]+)(?:\/(push|installations)(?:\/([^/]+))?)?$/.exec(path);
     if (match === null) return text(404, 'Not Found');
@@ -131,12 +149,18 @@ export class SimulatedTronbyt {
       if (init.method === 'GET') return json(this.#payload(entry));
       if (init.method === 'DELETE') {
         this.#installations.delete(name);
+        this.#reload();
         return text(200, 'App deleted.');
       }
       if (init.method === 'PATCH') {
         const {pinned} = JSON.parse(init.body ?? '{}') as {pinned?: boolean};
-        if (pinned === true) this.#pinned = entry.serverId;
-        else if (pinned === false && this.#pinned === entry.serverId) this.#pinned = null;
+        if (pinned === true) {
+          this.#pinned = entry.serverId;
+          this.#pinWrites += 1;
+        } else if (pinned === false && this.#pinned === entry.serverId) {
+          this.#pinned = null;
+        }
+        this.#reload();
         return json(this.#payload(entry));
       }
     }
@@ -150,6 +174,7 @@ export class SimulatedTronbyt {
       this.#brightnessWrites += 1;
     }
     if (update.pinnedApp !== undefined) this.#pinned = update.pinnedApp === '' ? null : update.pinnedApp;
+    this.#reload();
     return json({id: this.#device, brightness: this.#brightness, pinnedApp: this.#pinned});
   }
 
@@ -163,9 +188,14 @@ export class SimulatedTronbyt {
     const decoded = decodeLossless(new Uint8Array(Buffer.from(request.image, 'base64')));
     if (decoded === undefined) return text(400, 'Invalid image');
     const entry = this.#installations.get(request.installationID) ?? this.#add(request.installationID);
+    // A loop showing an installation reloads its copy at the device's next acknowledgment.
+    if (this.#served.length > 0) this.#reload();
     entry.picture = picture(decoded.rgb, decoded.width, decoded.height);
     entry.pushes += 1;
-    if (request.background !== true) entry.immediate += 1;
+    if (request.background !== true) {
+      entry.immediate += 1;
+      this.#reload();
+    }
     entry.pushedAtMs.push(this.#now());
     return text(200, 'WebP received.');
   }

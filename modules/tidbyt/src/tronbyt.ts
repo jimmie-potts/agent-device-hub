@@ -133,7 +133,15 @@ export class TronbytConnection implements TidbytConnection {
   async push(webp: Uint8Array, signal: AbortSignal, installation?: string, immediate = false): Promise<WriteResult> {
     const target = this.#target(installation);
     if (target === undefined) return REFUSED;
-    return await this.#write(() => this.#request('/push', signal, 'POST', {image: Buffer.from(webp).toString('base64'), installationID: target, background: !immediate}));
+    const pushed = await this.#write(() => this.#request('/push', signal, 'POST', {image: Buffer.from(webp).toString('base64'), installationID: target, background: !immediate}));
+    // The server's loop for a connected device keeps its own copy of the installations, and refreshes it after showing one.
+    // With none to show, a background push that creates one leaves the setup screen up, so the tile never appears (Hub
+    // #1411). An empty PATCH of the installation refreshes it and changes nothing; an interrupting push refreshes it itself.
+    if (immediate || pushed.outcome !== 'sent') return pushed;
+    const reloaded = await this.#write(() => this.#request(`/installations/${target}`, signal, 'PATCH', {}));
+    if (reloaded.outcome !== Outcome.failed) return reloaded;
+    // The server took the frame, so this is never "no effect": the writer must not trust what it last stored about the tile.
+    return {outcome: Outcome.uncertain, answered: reloaded.failure !== 'transport-failure'};
   }
 
   /** Deletes the installation. One already gone counts as removed, as the cloud answers it. */
