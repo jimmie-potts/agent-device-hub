@@ -211,10 +211,21 @@ below. Do not restart the shared core solely to replace these host files. Other
 runtime changes still follow the owning installation procedure.
 
 Correlation expires after 30 seconds. Per connection, collection stops on an
-invalid frame, reused request ID, a frame above 1 MiB, more than 128 pending
+invalid ordinary frame, reused request ID, more than 128 pending
 requests, 256 selected threads or 65,536 distinct request IDs. A chunk with
 more than 256 frames also stops collection. These limits preserve native
 forwarding and require a new controlled connection before collection resumes.
+A frame above 1 MiB discards all pending read evidence. The observer drains
+the oversized line to its newline without accumulating its payload. A frame
+overlapping that gap cannot contribute evidence. Only a new unread snapshot,
+completed turn selection and successful read after the gap can qualify.
+
+For oversized client traffic, duplicate detection still needs the outer
+request ID. The observer inspects a bounded outer envelope (4 KiB, up to 128
+levels of nesting), ignoring nested payload contents. If it cannot establish
+the envelope, finds an ambiguous ID or encounters another initialization during
+the gap, collection ends for that connection. Native bytes still pass through.
+
 Publication has at most four calls in flight and a 2.4-second deadline, with no
 queue or retry. A refused or uncertain publication records no local claim of
 success. Collection failures never request agent permissions or wait for a
