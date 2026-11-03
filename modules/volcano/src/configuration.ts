@@ -16,6 +16,7 @@ export const configureVolcano: Configure<VolcanoConfig> = section => {
   if (typeof id !== 'string' || id.length > 128 || !ROUTING_ID.test(id)) return invalid();
   if (typeof hostId !== 'string' || !FEED_ID.test(hostId) || typeof sourceId !== 'string' || !FEED_ID.test(sourceId)) return invalid();
   if (label !== undefined && (typeof label !== 'string' || label.trim().length === 0 || label.length > 80 || [...label].some(c => (c.codePointAt(0) ?? 0) < 32))) return invalid();
-  // It names no device for control: nothing here is a mode participant or an automation target, and a host with device control disabled may admit it.
+  // It names no device for control, so nothing here is a mode participant or an automation target, and the host-local
+  // profile's refusal of a named device leaves it to the registration's `hostLocal` admission.
   return {config: {id, ...(label === undefined ? {} : {label}), hostId, sourceId}, devices: []};
 };
