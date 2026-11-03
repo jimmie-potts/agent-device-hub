@@ -555,13 +555,15 @@ Current core-family registration SHALL include session/2.1 for consumers. Lifecy
 
 The profile SHALL define the command families `art-request` (`org.bunny.art.request.requested`), `art-auto` (`org.bunny.art.auto.requested`), `art-dispatch` (`org.bunny.art.dispatch.requested`), `art-stage` (`org.bunny.art.stage.requested`) and `art-ambient-set` (`org.bunny.art-ambient.set.requested`), each at version 2.0 and registered with the core families. Payloads SHALL be closed, and none SHALL have a member for a location, path or credential.
 
-`art-request` and `art-auto` SHALL have the subject `art`, and each SHALL start a job or cancel one by `jobRequestId`. A start SHALL carry `purpose`, `origin` and `targets`, and may carry `context` as bounded condition words and `variationOf`, exactly when the purpose is `variation`. Only `art-request` SHALL carry typed `text`, at most 2,000 characters, not blank and in Unicode scalar values. An owner label in `art-auto`'s `origin` or `purpose` SHALL validate, because the command family decides whose job it is.
+`art-request` and `art-auto` SHALL have the subject `art`. `art-request` SHALL start a job or cancel any job, automatic or not, by `jobRequestId`, and `art-auto` SHALL only start one. A start SHALL carry `purpose`, `origin` and `targets`, and may carry `context` as bounded condition words and `variationOf`, exactly when the purpose is `variation`. Only `art-request` SHALL carry typed `text`, at most 2,000 characters, not blank and in Unicode scalar values. An owner label in `art-auto`'s `origin` or `purpose` SHALL validate, because the command family decides whose job it is.
 
 `art-stage` SHALL have a device as its subject and carry `requestId`, `compositionId`, `format` (`png` or `gif`), `width`, `height`, `frames`, `durationMs`, `sha256`, `base64` of at most 160 KiB decoded, and `lifetimeMs`. The validator SHALL refuse bytes that are not canonical base64, are over that size, or disagree with `sha256`, `format`, `width` or `height`, reading only their headers. A PNG SHALL have one frame and duration 0, and several frames SHALL have a non-zero duration. `art-ambient-set` SHALL have a device as its subject and name a `compositionId` or null to clear it.
 
 `art-dispatch` SHALL have the subject `art` and carry `requestId`, `target`, and `family` with its `data`, which is that family's payload without `requestId`. Its family SHALL be `art-stage` or `art-ambient-set` only.
 
-The package SHALL export `artStageDecision` and `artReferenceRefusal` for a device's private copy, and `artStageSupported` for a stage against `moments.art`.
+The package SHALL export `artStageDecision` and `artReferenceRefusal` for a device's private copy, `artStageSupported` for a stage against `moments.art`, and `artCommandRefusal` for a responder's sender. `artReferenceRefusal` SHALL answer `not-found` for an unknown or lapsed copy, with a detail that a lapsed copy must be staged again, and never `expired`, which the tracker reads as a command that did not reach its owner. Each responder of `art-stage`, `art-ambient-set`, a moment naming art, `art-request` and `art-auto` SHALL refuse any source other than `bunny/core` with `forbidden`. The in-process bus checks no sender, so this rule binds at the responder as well as at the gateway and tracker.
+
+A display SHALL report a stage's result as one outcome on `bunny.event.art-stage.<device>` with type `org.bunny.art.stage.completed`, and an ambient set's on `bunny.event.art-ambient-set.<device>` with type `org.bunny.art-ambient.set.completed`.
 
 #### Scenario: The largest stage fits
 - **WHEN** a stage of exactly 160 KiB decoded, and its dispatch, are validated, and a stage one byte larger is validated
@@ -577,11 +579,19 @@ The package SHALL export `artStageDecision` and `artReferenceRefusal` for a devi
 
 #### Scenario: A device's private copy
 - **WHEN** a device stages a composition, stages the same ID and hash again, stages the same ID with another hash, and refers to an unknown or expired composition
-- **THEN** the first stores the copy, the second reuses it and renews its lifetime, the third is `duplicate-conflict` with the copy unchanged, and the references are `not-found` and `expired` before any transport
+- **THEN** the first stores the copy, the second reuses it and renews its lifetime, the third is `duplicate-conflict` with the copy unchanged, and an unknown or lapsed reference is `not-found` before any transport
 
 #### Scenario: Expiry during a moment
 - **WHEN** a composition's lifetime passes while a moment that admitted it is under way
 - **THEN** the moment keeps its copy, a later moment's reference is refused and the first show is not repeated
+
+#### Scenario: Deletion during a moment
+- **WHEN** a composition is deleted while a moment that admitted it is under way, and stages, moments, renewal, expiry and deletion interleave
+- **THEN** each admitted moment keeps its copy and shows once, and a reference after deletion or lapse is `not-found`
+
+#### Scenario: A responder refuses another sender
+- **WHEN** any source but `bunny/core` sends an art responder a stage, an ambient set, a moment naming art, an `art-request` or an `art-auto`
+- **THEN** it answers `forbidden` before validating, with no transport
 
 ### Requirement: Moment with an exact composition
 

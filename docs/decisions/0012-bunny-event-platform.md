@@ -710,10 +710,12 @@ generation and its display handoff routine background work, up to about 30 image
 hour, and nothing retries it. A person has nothing to decide for one missed tile, and a
 stage's bytes cannot be sent again anyway. The tracked families `art-auto`, `art-stage` and
 `art-ambient-set` therefore raise no inbox item, whatever their result
-([#679](https://github.com/jimmie-potts/agent-device-hub/issues/679)). The tracker still
-records and logs each one, its `operation` record still shows the result, and the `art`
-state from [#680](https://github.com/jimmie-potts/agent-device-hub/issues/680) reports
-per-target results. `art-request` keeps its inbox item, because the owner asked for that
+([#679](https://github.com/jimmie-potts/agent-device-hub/issues/679)). The durable evidence
+is the tracker row and history, and the core logs each step. The `operation` record shows
+the result until it is retired, which can happen once 256 newer records have settled, so it
+is not a lasting record. The `art` state from
+[#680](https://github.com/jimmie-potts/agent-device-hub/issues/680) reports per-target
+results. `art-request` keeps its inbox item, because the owner asked for that
 work. `moment-play`, with or without `art`, is also unchanged. The trade-off is that a
 failed or uncertain automatic job, including one that may have spent money, appears only on
 the dashboard's art surfaces and in the logs, so nothing holds it until someone handles it.

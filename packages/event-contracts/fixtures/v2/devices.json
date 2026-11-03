@@ -572,6 +572,95 @@
     }
    }
   },
+  "device-tidbyt-art": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-device-tidbyt-art",
+   "source": "bunny/modules/tidbyt",
+   "type": "org.bunny.device.updated",
+   "subject": "tidbyt-art",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/device/2.2",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "tidbyt-art",
+    "revision": 9,
+    "kind": "tidbyt",
+    "availability": "degraded",
+    "configurationRevision": 3,
+    "generation": {
+     "epoch": "generation-1",
+     "sequence": 4
+    },
+    "capabilities": {
+     "power": {
+      "supported": false
+     },
+     "brightness": {
+      "supported": false
+     },
+     "modes": {
+      "supported": false
+     },
+     "moments": {
+      "supported": true,
+      "moods": [
+       "celebrate",
+       "setback",
+       "reminder"
+      ],
+      "maxDurationMs": 60000,
+      "coversStatus": false,
+      "art": {
+       "formats": [
+        "png",
+        "gif"
+       ],
+       "maxBytes": 163840
+      }
+     },
+     "media": {
+      "supported": false
+     },
+     "scenes": {
+      "supported": false
+     },
+     "zones": {
+      "supported": false
+     },
+     "preview": {
+      "supported": false
+     }
+    },
+    "desired": {
+     "power": {
+      "status": "unknown"
+     },
+     "brightness": {
+      "status": "unknown"
+     },
+     "mode": {
+      "status": "unknown"
+     }
+    },
+    "observed": {
+     "status": "unknown"
+    },
+    "pending": 0,
+    "pendingKinds": [],
+    "lastOutcome": {
+     "status": "unknown"
+    },
+    "lastTransmission": {
+     "status": "unknown"
+    },
+    "externalControl": {
+     "status": "unknown"
+    }
+   }
+  },
   "device-removed": {
    "specversion": "1.0",
    "bunnyprofile": "2.0",

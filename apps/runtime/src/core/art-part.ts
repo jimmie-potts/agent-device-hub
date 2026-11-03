@@ -1,6 +1,7 @@
 // The core forwards the art module's staged compositions and ambient choices to their displays (Hub #679): only the
-// families below, only from that module, each as one tracked operation the module requested. It never forwards a moment,
-// so the art module cannot start a takeover; only the core's automation path sends `moment-play/2.1` (#684).
+// families below, only from that module, each as one tracked operation the module requested. This part never forwards a
+// moment. The in-process bus checks no sender, so a module could address a display's key directly: the rule binds here,
+// at the tracker and gateway, and at each responder, which refuses any source but `bunny/core` (`artCommandRefusal`).
 import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
 import {ART_FORWARDED, ART_MODULE_SOURCE, ART_SUBJECT, type ArtDispatch} from '@jimmie-potts/event-contracts/v2/art';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';

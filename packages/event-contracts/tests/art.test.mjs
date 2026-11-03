@@ -7,9 +7,9 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {MessageValidator} from '../dist/v2/index.js';
 import {artStageSupported, commandSupported, deviceFamilies, registerDeviceFamilies} from '../dist/v2/devices.js';
-import {coreFamilies, registerCoreFamilies} from '../dist/v2/families.js';
+import {CORE_SOURCE, coreFamilies, registerCoreFamilies} from '../dist/v2/families.js';
 import {
-  ART_MODULE_SOURCE, ART_SUBJECT, MAX_ART_BYTES, artFamilies, artReferenceRefusal, artSchemas, artStageDecision, registerArtFamilies,
+  ART_MODULE_SOURCE, ART_SUBJECT, MAX_ART_BYTES, artCommandRefusal, artFamilies, artReferenceRefusal, artSchemas, artStageDecision, registerArtFamilies,
 } from '../dist/v2/art.js';
 
 const families = JSON.parse(readFileSync(new URL('../fixtures/v2/families.json', import.meta.url), 'utf8'));
@@ -101,11 +101,11 @@ test('art-request starts a bounded job or cancels one, and a cancel carries noth
   invalid({...family('art-request'), subject: 'tidbyt'}, /subject/);
 });
 
-test('art-auto starts or cancels an automatic job; an owner label still validates, because the family decides, and it has no typed text', () => {
+test('art-auto only starts an automatic job; an owner label still validates, because the family decides, and it has no typed text', () => {
   const start = family('art-auto').data;
   valid(withData('art-auto', {...start, origin: {kind: 'owner'}, purpose: 'request'}));
   invalid(withData('art-auto', {...start, text: 'typed by no one'}));
-  valid(withData('art-auto', {requestId: 'cancel-2', action: 'cancel', jobRequestId: 'req-auto-1'}));
+  invalid(withData('art-auto', {requestId: 'cancel-2', action: 'cancel', jobRequestId: 'req-auto-1'}));
   invalid(withData('art-auto', {requestId: 'cancel-2', action: 'cancel'}));
   invalid({...family('art-auto'), subject: 'tidbyt'}, /subject/);
 });
@@ -248,6 +248,8 @@ function fakeDevice(capabilities, clock) {
   const copies = new Map(), transport = [], playing = new Map(), v = new MessageValidator();
   registerCoreFamilies(v); registerDeviceFamilies(v);
   const admit = message => {
+    const unauthorized = artCommandRefusal(message.source);
+    if (unauthorized !== undefined) return unauthorized;
     const checked = v.validate(message, {nowMs: Date.parse(message.time)});
     if (!checked.ok) return {error: checked.error};
     const supported = message.type === 'org.bunny.art.stage.requested' ? artStageSupported(capabilities, message.data)
@@ -274,6 +276,21 @@ function fakeDevice(capabilities, clock) {
       transport.push(['show', compositionId]);
       return {status: 'accepted'};
     },
+    ambient(message) {
+      const unauthorized = artCommandRefusal(message.source);
+      if (unauthorized !== undefined) return unauthorized;
+      const checked = v.validate(message, {nowMs: Date.parse(message.time)});
+      if (!checked.ok) return {error: checked.error};
+      const {compositionId} = message.data;
+      if (compositionId !== null) {
+        const reference = artReferenceRefusal(copies.get(compositionId), clock());
+        if (reference !== undefined) return reference;
+      }
+      transport.push(['tile', compositionId]);
+      return {status: 'accepted'};
+    },
+    /** A person or the art module deletes the art: the store loses it, and a moment under way keeps its own copy. */
+    remove(compositionId) { copies.delete(compositionId); },
     expire() {
       for (const [id, copy] of copies) if (copy.expiresAtMs <= clock()) copies.delete(id);
     },
@@ -284,6 +301,8 @@ const worldOf = () => {
   return {clock: () => now, advance: ms => { now += ms; }, at: () => new Date(now).toISOString()};
 };
 const stageMessage = (world, data = stageBody()) => ({...family('art-stage'), time: world.at(), expiresat: new Date(world.clock() + 5000).toISOString(), data});
+const ambientMessage = (world, compositionId) => ({...family('art-ambient-set'), time: world.at(), expiresat: new Date(world.clock() + 5000).toISOString(),
+  data: {requestId: 'req-ambient-1', compositionId}});
 const playMessage = (world, compositionId) => ({...family('moment-play'), dataschema: 'https://bunny.invalid/events/moment-play/2.1', subject: 'pixoo-art', time: world.at(),
   expiresat: new Date(world.clock() + 5000).toISOString(),
   data: {...family('moment-play').data, mood: 'celebrate', durationMs: 8000, startAtMs: world.clock(), art: {compositionId}}});
@@ -298,8 +317,10 @@ test('a consumer refuses an unknown, expired or incompatible reference before it
   assert.equal(fake.transport.length, 1);
 
   world.advance(stage.lifetimeMs);
-  assert.equal(fake.play(playMessage(world, stage.compositionId)).error.code, 'expired', 'expired');
-  assert.equal(fake.transport.length, 1, 'an expired reference reaches no transport');
+  const lapsed = fake.play(playMessage(world, stage.compositionId));
+  assert.equal(lapsed.error.code, 'not-found', 'a lapsed copy says so, and never claims the command failed to arrive');
+  assert.match(lapsed.error.detail, /lapsed.*stag/);
+  assert.equal(fake.transport.length, 1, 'a lapsed reference reaches no transport');
 
   // A device with moments and no moments.art, as Nanoleaf's record is, plays neither a stage nor its mood in place of art.
   const moodOnly = fakeDevice(devices.valid['device-pixoo'].data.capabilities, world.clock);
@@ -347,4 +368,77 @@ test('expiry cannot remove media from a moment under way, and a lost answer send
   assert.equal(fake.playing.get(message.data.momentId).sha256, stage.sha256, 'the moment keeps its own copy');
   assert.equal(fake.play(playMessage(world, stage.compositionId)).error.code, 'not-found', 'a later moment is refused truthfully');
   assert.equal(fake.transport.length, 1, 'no consumer step replays the first show');
+});
+
+test('every art responder refuses any source but the core, before validation and before transport', () => {
+  assert.equal(artCommandRefusal(CORE_SOURCE), undefined);
+  const world = worldOf(), fake = fakeDevice(device('pixoo-art').capabilities, world.clock), stage = stageBody();
+  // The fake art owner uses the same rule for the two job families.
+  const owner = message => artCommandRefusal(message.source) ?? {status: 'accepted'};
+  assert.deepEqual(fake.stage({...stageMessage(world)}).action, 'store');
+  const before = fake.transport.length;
+  for (const source of [ART_MODULE_SOURCE, 'bunny/parts/dashboard', 'bunny/modules/tidbyt']) {
+    const asSource = message => ({...message, source});
+    assert.equal(fake.stage(asSource(stageMessage(world))).error.code, 'forbidden', `stage from ${source}`);
+    assert.equal(fake.play(asSource(playMessage(world, stage.compositionId))).error.code, 'forbidden', `moment from ${source}`);
+    assert.equal(fake.ambient(asSource(ambientMessage(world, stage.compositionId))).error.code, 'forbidden', `ambient from ${source}`);
+    assert.equal(owner(asSource(family('art-request'))).error.code, 'forbidden', `art-request from ${source}`);
+    assert.equal(owner(asSource(family('art-auto'))).error.code, 'forbidden', `art-auto from ${source}`);
+  }
+  assert.equal(fake.transport.length, before);
+  assert.deepEqual(owner(family('art-request')), {status: 'accepted'});
+  assert.deepEqual(owner(family('art-auto')), {status: 'accepted'});
+});
+
+test('deleting art during a moment keeps the device\'s copy for that moment and refuses the next', () => {
+  const world = worldOf(), fake = fakeDevice(device('pixoo-art').capabilities, world.clock), stage = stageBody();
+  fake.stage(stageMessage(world));
+  const message = playMessage(world, stage.compositionId);
+  assert.deepEqual(fake.play(message), {status: 'accepted'});
+  fake.remove(stage.compositionId);
+  assert.equal(fake.copies.has(stage.compositionId), false);
+  assert.equal(fake.playing.get(message.data.momentId).sha256, stage.sha256, 'the moment under way keeps its copy');
+  assert.equal(fake.play(playMessage(world, stage.compositionId)).error.code, 'not-found');
+  assert.equal(fake.transport.length, 1);
+});
+
+test('stage, moment, renewal, expiry and deletion interleave without losing media or replaying a show', () => {
+  const world = worldOf(), fake = fakeDevice(device('pixoo-art').capabilities, world.clock), stage = stageBody();
+  const play = id => {
+    const message = playMessage(world, stage.compositionId);
+    return [message.data.momentId, fake.play({...message, data: {...message.data, requestId: `req-${id}`, momentId: id}})];
+  };
+  assert.equal(fake.stage(stageMessage(world)).action, 'store');
+  assert.deepEqual(play('first')[1], {status: 'accepted'});
+  world.advance(stage.lifetimeMs - MINUTE);
+  assert.equal(fake.stage(stageMessage(world)).action, 'reuse', 'a stage during a moment renews the same copy');
+  world.advance(2 * MINUTE);
+  fake.expire();
+  assert.equal(fake.copies.has(stage.compositionId), true, 'the renewal outlived the first lifetime');
+  assert.deepEqual(play('second')[1], {status: 'accepted'});
+  fake.remove(stage.compositionId);
+  assert.equal(play('third')[1].error.code, 'not-found', 'deletion between moments');
+  assert.equal(fake.stage(stageMessage(world)).action, 'store', 'staging again after deletion');
+  world.advance(stage.lifetimeMs);
+  assert.equal(play('fourth')[1].error.code, 'not-found', 'lapsed');
+  fake.expire();
+  assert.deepEqual([...fake.playing.keys()], ['first', 'second']);
+  for (const id of ['first', 'second']) assert.equal(fake.playing.get(id).sha256, stage.sha256, `${id} kept its copy throughout`);
+  assert.deepEqual(fake.transport, [['show', stage.compositionId], ['show', stage.compositionId]], 'each admitted moment showed once');
+});
+
+test('a Tidbyt declares art at 64 by 32, stages it, shows a tile and clears it, and refuses what it does not declare', () => {
+  const declared = device('tidbyt-art');
+  assert.equal(declared.kind, 'tidbyt');
+  const world = worldOf(), fake = fakeDevice(declared.capabilities, world.clock), stage = stageBody();
+  assert.deepEqual([stage.format, stage.width, stage.height], ['png', 64, 32]);
+  const onTidbyt = message => ({...message, subject: 'tidbyt-art'});
+  assert.equal(fake.ambient(onTidbyt(ambientMessage(world, stage.compositionId))).error.code, 'not-found', 'a tile needs a staged copy');
+  assert.equal(fake.stage(onTidbyt(stageMessage(world))).action, 'store');
+  assert.deepEqual(fake.ambient(onTidbyt(ambientMessage(world, stage.compositionId))), {status: 'accepted'});
+  assert.deepEqual(fake.play(onTidbyt(playMessage(world, stage.compositionId))), {status: 'accepted'});
+  assert.deepEqual(fake.ambient(onTidbyt(ambientMessage(world, null))), {status: 'accepted'});
+  assert.deepEqual(fake.transport, [['tile', stage.compositionId], ['show', stage.compositionId], ['tile', null]]);
+  const small = {...declared.capabilities, moments: {...declared.capabilities.moments, art: {formats: ['gif'], maxBytes: 10}}};
+  assert.equal(artStageSupported(small, stage), false);
 });

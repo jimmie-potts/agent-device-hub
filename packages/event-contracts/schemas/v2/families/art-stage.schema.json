@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/art-stage/2.0",
-  "description": "Command: a device validates one composition's bytes and keeps a private copy, with no display effect (Hub #679). The envelope subject names the device. Only the core forwards it, for `bunny/modules/art`. `compositionId` is the device's key: staging the same ID and hash reuses the copy and renews `lifetimeMs` from then, and the same ID with another hash is refused. The tracked operation keeps none of this payload, so it cannot be resent from the inbox. `base64` is at most 160 KiB decoded. The validator refuses bytes that are not canonical base64, are over that size or do not match `sha256`, `format`, `width` or `height` (art.ts). It never decodes the image.",
+  "description": "Command: a device validates one composition's bytes and keeps a private copy, with no display effect (Hub #679). The envelope subject names the device. The core forwards it for `bunny/modules/art`. The in-process bus checks no sender: the rule binds at the gateway and tracker, and at each responder, which refuses any source but `bunny/core`. `compositionId` is the device's key: staging the same ID and hash reuses the copy and renews `lifetimeMs` from then, and the same ID with another hash is refused. The tracked operation keeps none of this payload, so it cannot be resent from the inbox. `base64` is at most 160 KiB decoded. The validator refuses bytes that are not canonical base64, are over that size or do not match `sha256`, `format`, `width` or `height` (art.ts). It never decodes the image.",
   "type": "object",
   "$ref": "#/$defs/content",
   "required": ["requestId"],

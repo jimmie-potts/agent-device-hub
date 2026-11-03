@@ -1,7 +1,8 @@
 // The exact-artwork handoff (Hub #679, docs/art-generation-qualification.md). `modules/art` may import only the SDK and
 // the contracts, so it asks the core to forward its commands to the display modules. A job starts from `art-request`, for
-// the owner, or `art-auto`, which only the core sends; the family decides, never `origin` or `purpose`. A display keeps
-// its own private copy of a staged composition and later plays it by `compositionId` under `moment-play/2.1`.
+// the owner, or `art-auto`, which the core's automation sends; the family decides, never `origin` or `purpose`. A display
+// keeps its own private copy of a staged composition and later plays it by `compositionId` under `moment-play/2.1`. The
+// in-process bus checks no sender, so who may send each family binds at the gateway, the tracker and each responder.
 import {createHash} from 'node:crypto';
 import {errorBody, type ErrorBody} from './errors.js';
 import type {Message, MessageValidator, PayloadCheck} from './index.js';
@@ -25,8 +26,8 @@ export type ArtAutoStart = {requestId: string; action: 'start'; purpose: ArtPurp
 export type ArtCancel = {requestId: string; action: 'cancel'; jobRequestId: string};
 /** `org.bunny.art.request.requested`: the owner starts a job, or cancels any job, automatic or not. A cancel admits no work. */
 export type ArtRequest = (ArtAutoStart & {text?: string}) | ArtCancel;
-/** `org.bunny.art.auto.requested`: the core starts or cancels an automatic job. The automatic limits always apply to it. */
-export type ArtAuto = ArtAutoStart | ArtCancel;
+/** `org.bunny.art.auto.requested`: the core starts an automatic job. The automatic limits always apply. The owner cancels with `art-request`. */
+export type ArtAuto = ArtAutoStart;
 /** What a stage says about the one rendition it carries. */
 export type ArtStageContent = {
   compositionId: string; format: ArtFormat; width: number; height: number; frames: number; durationMs: number;
@@ -65,12 +66,20 @@ export function artStageDecision(held: ArtCopy | undefined, stage: Pick<ArtStage
   return held.sha256 === stage.sha256 ? {action: 'reuse', copy} : errorBody('duplicate-conflict', {detail: 'this device holds that composition with other bytes'});
 }
 /**
- * Why a device refuses a reference, before any effect: `not-found` for a copy it does not hold, `expired` for one past its
- * lifetime. Undefined admits it. Admission is the only check: once a moment starts, the device keeps its copy for it.
+ * Why a device refuses a reference, before any effect: `not-found` for a copy it does not hold or one past its lifetime,
+ * whose detail says so. Never `expired`: the tracker reads that code as a command that did not reach its owner, and this
+ * one did. Undefined admits it. Admission is the only check: once a moment starts, the device keeps its copy for it.
  */
 export function artReferenceRefusal(held: ArtCopy | undefined, nowMs: number): ErrorBody | undefined {
   if (held === undefined) return errorBody('not-found', {detail: 'this device holds no copy of that composition'});
-  return held.expiresAtMs <= nowMs ? errorBody('expired', {detail: 'this device\'s copy of that composition has expired'}) : undefined;
+  return held.expiresAtMs <= nowMs ? errorBody('not-found', {detail: 'this device\'s copy of that composition has lapsed; stage it again'}) : undefined;
+}
+/**
+ * Why an art responder refuses a command's sender: `art-stage`, `art-ambient-set`, a moment naming art, `art-request` and
+ * `art-auto` come only from the core's dispatcher, whatever `requestedBy` the tracker recorded. Undefined admits it.
+ */
+export function artCommandRefusal(source: string): ErrorBody | undefined {
+  return source === 'bunny/core' ? undefined : errorBody('forbidden', {detail: 'art commands reach a responder only from the core'});
 }
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);

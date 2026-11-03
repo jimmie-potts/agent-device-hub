@@ -1,14 +1,15 @@
 // The exact-artwork handoff in the running core (Hub #679): the art part's forwarding, the tracker's and gateway's
 // refusals, the omitted payload and the inbox exemption, with a fake art module and a fake display on real validators.
 import assert from 'node:assert/strict';
-import {createHash} from 'node:crypto';
-import {readFileSync} from 'node:fs';
+import {createHash, createHmac} from 'node:crypto';
+import {chmodSync, mkdtempSync, readFileSync, rmSync, unlinkSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
-import type {DatabaseSync} from 'node:sqlite';
-import type {BunnyModule, Command, Sdk} from '@jimmie-potts/sdk';
+import {DatabaseSync} from 'node:sqlite';
+import {PrivateRequestDigest, type BunnyModule, type Command, type Sdk} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {ART_FORWARDED, ART_MODULE_SOURCE, MAX_ART_BYTES, type ArtStageContent} from '@jimmie-potts/event-contracts/v2/art';
+import {ART_FORWARDED, ART_MODULE_SOURCE, MAX_ART_BYTES, artReferenceRefusal, type ArtStageContent} from '@jimmie-potts/event-contracts/v2/art';
 import {operationEntityId, type InboxItem, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {createCoreModule, type CoreHandle} from '../src/index.js';
 import {contextOf, edgeConfig, fixture, it, run, stateDir, waitFor} from './support.js';
@@ -328,6 +329,160 @@ it('moment-play/2.1 is tracked as a moment, its reference reaches the device, an
   assert.equal(w.seen[0]?.dataschema, 'https://bunny.invalid/events/moment-play/2.1');
   assert.deepEqual(await send('2.0', moment, 'moment-plain'), accepted('moment-plain'));
   assert.deepEqual(w.seen[1]?.data, {...moment, requestId: 'moment-plain'});
+});
+
+const MOMENT = {momentId: 'm', mood: 'celebrate', durationMs: 8000, priorityClass: 'event', coversStatus: false, toleranceMs: 1000};
+const momentAction = (requestId: string, art?: {compositionId: string}) => ({key: 'bunny.cmd.moment-play.panel', requestedBy: CORE, requestId,
+  draft: {type: 'org.bunny.moment.play.requested', subject: 'panel', dataschema: `https://bunny.invalid/events/moment-play/${art === undefined ? '2.0' : '2.1'}`,
+    data: {...MOMENT, startAtMs: Date.now(), ...(art === undefined ? {} : {art})}}});
+const sendAgain = (sdk: Sdk, item: InboxItem, requestId: string) => sdk.request(`bunny.cmd.inbox-handle.${item.id}`, {type: 'org.bunny.inbox.handle.requested', subject: item.id,
+  dataschema: 'https://bunny.invalid/events/inbox-handle/2.0', data: {action: 'send-again', expectedRevision: item.revision}}, {timeoutMs: 3000, requestId});
+
+it('inbox Send again refuses a moment naming art, because a fresh one must pass arbitration; a plain moment is unchanged', async context => {
+  const w = await world(context, () => errorBody('unavailable', {detail: 'synthetic refusal'}));
+  assert.equal(codeOf(await w.core.actions.dispatch(momentAction('moment-art', {compositionId: COMPOSITION}))), 'unavailable');
+  assert.equal(codeOf(await w.core.actions.dispatch(momentAction('moment-plain'))), 'unavailable');
+  const items = await inboxOf(w.art);
+  const of = (requestId: string): InboxItem => { const item = items.find(each => each.item.requestId === requestId); assert.ok(item !== undefined); return item; };
+  assert.equal(w.seen.length, 2);
+  const refused = await sendAgain(w.other, of('moment-art'), 'resend-art');
+  assert.equal('error' in refused && refused.error.error.code, 'forbidden');
+  assert.equal(w.seen.length, 2, 'nothing was sent');
+  assert.ok((await inboxOf(w.art)).some(item => item.item.requestId === 'moment-art'), 'the item stays for a person');
+  await sendAgain(w.other, of('moment-plain'), 'resend-plain');
+  assert.equal(w.seen.length, 3, 'a moment without art is sent again as before');
+  assert.equal((w.seen[2]?.data as {art?: unknown}).art, undefined);
+});
+
+it('a device refusing a lapsed copy leaves the operation rejected, never claiming the command failed to reach its owner', async context => {
+  const lapsed = artReferenceRefusal({compositionId: COMPOSITION, sha256: 'd'.repeat(64), expiresAtMs: 1000}, 2000);
+  assert.ok(lapsed !== undefined);
+  const w = await world(context, command => command.type === 'org.bunny.moment.play.requested' ? lapsed : {status: 'accepted'});
+  const answer = await w.core.actions.dispatch(momentAction('moment-lapsed', {compositionId: COMPOSITION}));
+  assert.equal(codeOf(answer), 'not-found');
+  assert.equal(w.seen.length, 1, 'the command reached its owner');
+  const operation = w.handle.operation('moment-lapsed');
+  assert.equal(operation?.status, 'rejected');
+  assert.equal(operation?.reply, 'not-found');
+  assert.equal(operation?.result, 'failed');
+  assert.equal(operation?.evidence, 'none');
+  assert.match(operation?.error?.detail ?? '', /lapsed.*stag/);
+});
+
+it('a cancel through the dashboard admits no work and causes no display transport; another client cannot cancel', async context => {
+  const operator = {id: 'operator', source: 'bunny/parts/operator', token: 'synthetic-art-cancel', scopes: ['read', 'control'] as const};
+  const files = await edgeConfig(context, [operator], {browserAccess: 'trusted-loopback'});
+  const seen: Command<Record<string, unknown>>[] = [];
+  // A fake art owner: a start adds a job, a cancel takes it away, and finishing stages what remains.
+  const jobs = new Map<string, string>(), admitted: string[] = [];
+  const answer = (command: Command<Record<string, unknown>>): Answer => {
+    if (command.source !== CORE) return errorBody('forbidden');
+    const {action, requestId, jobRequestId} = command.data as {action?: string; requestId: string; jobRequestId?: string};
+    if (action === 'start') { jobs.set(requestId, command.type); admitted.push(requestId); }
+    if (action === 'cancel') jobs.delete(String(jobRequestId));
+    return {status: 'accepted'};
+  };
+  let handle: CoreHandle | undefined;
+  const core = createCoreModule({parts: [{start: given => { handle = given; return Promise.resolve(); }}]});
+  const art = fixture('art');
+  const {runtime} = await run(context, {modules: [core, responder(seen, answer), art], configFile: files.config, edge: {schemas: {}}});
+  const post = async (body: object, headers: Record<string, string>) => {
+    const response = await fetch(new URL('/api/v2/commands/art-request', runtime.url), {method: 'POST', headers: {'content-type': 'application/json', ...headers}, body: JSON.stringify(body)});
+    return await response.json() as {error?: {code: string}; status?: string};
+  };
+  const browser = {origin: runtime.url, 'bunny-request': '1', 'content-type': 'application/json'};
+  const signed = await fetch(new URL('/api/v2/browser/session', runtime.url), {method: 'POST', headers: browser, body: '{}'});
+  const cookie = signed.headers.get('set-cookie')?.split(';')[0];
+  assert.ok(cookie !== undefined);
+  const dashboard = {...browser, cookie};
+  const start = {...START, purpose: 'request'};
+  assert.equal((await post({target: 'art', requestId: 'job-cancelled', data: start}, dashboard)).status, 'accepted');
+  assert.equal((await post({target: 'art', requestId: 'job-kept', data: start}, dashboard)).status, 'accepted');
+  // An automatic job is the owner's to cancel too.
+  assert.deepEqual(await core.actions.dispatch(artAction('art-auto', CORE, 'job-auto')), accepted('job-auto'));
+
+  const cancel = (requestId: string, jobRequestId: string) => ({target: 'art', requestId, data: {action: 'cancel', jobRequestId}});
+  const stranger = await post(cancel('cancel-stranger', 'job-kept'), {authorization: `Bearer ${operator.token}`});
+  assert.equal(stranger.error?.code, 'forbidden');
+  assert.equal(handle?.operation('cancel-stranger'), undefined);
+  assert.equal(jobs.has('job-kept'), true, 'a refused cancel changes nothing');
+
+  const delivered = seen.length;
+  assert.equal((await post(cancel('cancel-1', 'job-cancelled'), dashboard)).status, 'accepted');
+  assert.equal((await post(cancel('cancel-2', 'job-auto'), dashboard)).status, 'accepted');
+  assert.equal(handle?.operation('cancel-1')?.requestedBy, DASHBOARD);
+  assert.equal(seen.length, delivered + 2);
+  assert.deepEqual(admitted, ['job-cancelled', 'job-kept', 'job-auto'], 'a cancel admits no work');
+  const displayed = (): number => seen.filter(command => !['org.bunny.art.request.requested', 'org.bunny.art.auto.requested'].includes(command.type)).length;
+  assert.equal(displayed(), 0, 'and reaches no display');
+  // The owner finishes what remains: only that job stages, which shows the empty case above is not an idle fake.
+  for (const requestId of jobs.keys()) {
+    assert.equal((await contextOf(art).sdk.request('bunny.cmd.art-dispatch.art', stageDispatch(), {requestId: `stage-${requestId}`, timeoutMs: 8000})).status, 'accepted');
+  }
+  assert.equal(displayed(), 1);
+  assert.deepEqual([...jobs.keys()], ['job-kept']);
+});
+
+it('an art-only store refuses a replacement key, so a lost key cannot turn a retry into a false conflict', async context => {
+  const dir = await stateDir(context);
+  const w = await world(context, undefined, dir);
+  assert.equal((await w.art.request('bunny.cmd.art-dispatch.art', stageDispatch(), {requestId: 'fenced', timeoutMs: 8000})).status, 'accepted');
+  w.database.exec('DELETE FROM bunny_private_request_key');
+  unlinkSync(join(dir, 'modules/core/request-digest.key'));
+  const before = w.seen.length;
+  const answer = await w.art.request('bunny.cmd.art-dispatch.art', stageDispatch(), {requestId: 'after-loss', timeoutMs: 8000});
+  assert.equal('error' in answer && answer.error.error.code, 'unavailable');
+  assert.equal(w.handle.operation('after-loss'), undefined);
+  assert.equal(w.seen.length, before);
+});
+
+it('routine digests ask nothing about old fences once a key is pinned', context => {
+  const folder = mkdtempSync(join(tmpdir(), 'bunny-digest-'));
+  chmodSync(folder, 0o700);
+  const database = new DatabaseSync(':memory:');
+  context.after(() => { database.close(); rmSync(folder, {recursive: true, force: true}); });
+  const digest = new PrivateRequestDigest(database, () => folder);
+  let asked = 0;
+  const fence = (): boolean => { asked += 1; return true; };
+  database.exec('BEGIN');
+  const first = digest.digest('domain', 'input', fence);
+  assert.equal(asked, 1, 'the first admission proves no old fence exists');
+  assert.equal(digest.digest('domain', 'input', fence), first);
+  assert.equal(asked, 1, 'a pinned key needs no proof');
+  database.exec('COMMIT');
+});
+
+it('ONN\'s stored digest keeps its domain and canonical input, so existing fences stay valid', async context => {
+  const dir = await stateDir(context);
+  let handle: CoreHandle | undefined;
+  const core = createCoreModule({parts: [{start: given => { handle = given; return Promise.resolve(); }}]});
+  const onn: BunnyModule = {manifest: {name: 'onn', apiVersion: '1.3'}, async start({sdk}) { await sdk.respond('bunny.cmd.onn-text.onn', () => ({status: 'accepted'})); }, stop() {}};
+  await run(context, {stateDir: dir, modules: [core, onn]});
+  assert.deepEqual(await core.actions.dispatch({key: 'bunny.cmd.onn-text.onn', requestId: 'onn-golden', requestedBy: 'bunny/parts/operator',
+    draft: {type: 'org.bunny.onn.text.requested', subject: 'onn', dataschema: 'https://bunny.invalid/events/onn-text/2.0', data: {text: 'golden', expectedConfigurationRevision: 1}}}), accepted('onn-golden'));
+  const key = readFileSync(join(dir, 'modules/core/request-digest.key'));
+  const expected = createHmac('sha256', key).update('bunny/onn-text-admission/1').update('\0')
+    .update('{"data":{"expectedConfigurationRevision":1,"text":"golden"},"key":"bunny.cmd.onn-text.onn","requestId":"onn-golden","requestedBy":"bunny/parts/operator","schema":"https://bunny.invalid/events/onn-text/2.0","target":"onn","type":"org.bunny.onn.text.requested"}')
+    .digest('hex');
+  assert.equal(handle?.operation('onn-golden')?.payload?.hmac, expected);
+});
+
+it('a command that claims only part of the stage identity is refused before anything is stored', async context => {
+  const w = await world(context);
+  const good = forwarded('art-stage', ART_MODULE_SOURCE, 'identity');
+  const type = ART_FORWARDED['art-stage'].type, schema = ART_FORWARDED['art-stage'].dataschema;
+  const cases = [
+    {...good, requestId: 'wrong-type', draft: {...good.draft, type: 'org.bunny.art.other.requested'}},
+    {...good, requestId: 'wrong-schema', draft: {...good.draft, dataschema: 'https://bunny.invalid/events/art-ambient-set/2.0'}},
+    {...good, requestId: 'wrong-family-type', key: 'bunny.cmd.art-ambient-set.panel', draft: {...good.draft, type}},
+    {...good, requestId: 'wrong-family-schema', key: 'bunny.cmd.art-ambient-set.panel', draft: {...good.draft, type: ART_FORWARDED['art-ambient-set'].type, dataschema: schema}},
+    {...good, requestId: 'unrelated-family', key: 'bunny.cmd.power-set.panel', draft: {...good.draft}},
+  ];
+  for (const action of cases) {
+    assert.equal(codeOf(await w.core.actions.dispatch(action)), 'invalid-request', action.requestId);
+    assert.equal(w.handle.operation(action.requestId), undefined, action.requestId);
+  }
+  assert.equal(w.seen.length, 0);
 });
 
 /** The shared inbox as a sync reads it. */

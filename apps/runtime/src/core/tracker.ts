@@ -377,13 +377,13 @@ export class Tracker {
         const known = this.#read(requestId);
         if (omitted !== undefined) {
           if (this.#options.files === undefined) throw new Refused('unavailable', 'the private request identity is unavailable');
-          // Every family's fence uses one key, so any stored digest forbids creating a replacement key.
-          const count = tx.database.prepare("SELECT COUNT(*) AS count FROM core_operations WHERE json_extract(record, '$.payload.status') = 'omitted'").get() as {count: number};
+          // Every family's fence uses one key, so any stored digest forbids creating a replacement key. Asked only when no key is pinned.
+          const unfenced = (): boolean => (tx.database.prepare("SELECT EXISTS(SELECT 1 FROM core_operations WHERE json_extract(record, '$.payload.status') = 'omitted') AS fenced").get() as {fenced: number}).fenced === 0;
           try {
             // Create sensitive storage only inside its first admission transaction. A rolled-back initialization can retry safely.
             const privateDigest = new PrivateRequestDigest(tx.database, this.#options.files);
             sent.payload = {status: 'omitted', hmac: privateDigest.digest(omitted.domain,
-              canonical({requestedBy: action.requestedBy, requestId, key: action.key, target, type: draft.type, schema: draft.dataschema, data}), count.count === 0)};
+              canonical({requestedBy: action.requestedBy, requestId, key: action.key, target, type: draft.type, schema: draft.dataschema, data}), unfenced)};
           } catch (error) {
             throw new Refused(error instanceof SdkError ? error.body.error.code : 'unavailable', 'the private request identity is unavailable');
           }

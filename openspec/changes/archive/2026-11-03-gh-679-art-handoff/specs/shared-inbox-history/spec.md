@@ -16,11 +16,11 @@ The families `art-auto`, `art-stage` and `art-ambient-set` are routine backgroun
 
 #### Scenario: Routine art raises no item
 - **WHEN** an `art-auto`, an `art-stage` and an `art-ambient-set` are refused, and an `art-request` is refused
-- **THEN** each operation records its failure, and only the `art-request` opens an item
+- **THEN** each operation records its failure, and only the `art-request` opens an item; the tracker row and history stay as durable evidence, and the `operation` record can be retired after 256 settled records
 
 ### Requirement: Explicit handling and send-again
 
-The bounded core handling command, gateway, MCP and dashboard SHALL use one handling path that records its actor and publishes a deleted removal. Send-again SHALL use saved operation data and a new request ID for ordinary commands. An omitted payload, ONN focused text or an art stage, SHALL be refused before handling the original item; the owner can enter fresh text, or the art module can stage again, with a new request ID. Its initial tracked sent row and original handling SHALL commit together before transmission. No restart, reload, reconnect or timeout SHALL resend a command automatically.
+The bounded core handling command, gateway, MCP and dashboard SHALL use one handling path that records its actor and publishes a deleted removal. Send-again SHALL use saved operation data and a new request ID for ordinary commands. An omitted payload, ONN focused text or an art stage, SHALL be refused before handling the original item; the owner can enter fresh text, or the art module can stage again, with a new request ID. A moment naming art SHALL be refused with `forbidden` before handling the original item, because a fresh one must pass the core's arbitration. Its initial tracked sent row and original handling SHALL commit together before transmission. No restart, reload, reconnect or timeout SHALL resend a command automatically.
 
 #### Scenario: Atomic explicit resend
 - **WHEN** two callers handle the same revision or the initial resend commit fails

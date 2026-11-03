@@ -95,6 +95,9 @@ export class InboxRecords {
         if (operation.command.startsWith('org.bunny.microduck.')) return errorBody('forbidden', {
           detail: 'MicroDuck requires a fresh explicit request from its dashboard controls',
         });
+        if (operation.family === 'moment-play' && operation.data.art !== undefined) return errorBody('forbidden', {
+          detail: 'a moment naming art needs a fresh request through the core\'s automation, which arbitrates it',
+        });
         if (operation.payload?.status === 'omitted') return errorBody('unsupported-capability', {
           detail: operation.family === 'onn-text' ? 'this input was not retained; enter fresh text as a new request'
             : 'this command\'s payload was not retained; make a new request',

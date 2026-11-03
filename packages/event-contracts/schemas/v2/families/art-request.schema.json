@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/art-request/2.0",
-  "description": "Command: the owner starts an art job or cancels any job, automatic or not (Hub #679). The envelope subject is `art`. The tracker admits it only when `requestedBy` is the dashboard's source, and the art module treats it as the owner's whatever `origin` or `purpose` say. A cancel names the job's `requestId` and admits no work. Weather reaches a prompt as condition words only, and nothing here carries a location, path or credential. The validator refuses blank text, lone surrogates, and `variationOf` without the purpose `variation` or the reverse (art.ts).",
+  "description": "Command: the owner starts an art job or cancels any job, automatic or not (Hub #679). The envelope subject is `art`. The tracker admits it only when `requestedBy` is the dashboard's source, and the art module treats it as the owner's whatever `origin` or `purpose` say. It reaches the art module from `bunny/core`; its responder refuses any other source, because the in-process bus checks none. A cancel names the job's `requestId` and admits no work. Weather reaches a prompt as condition words only, and nothing here carries a location, path or credential. The validator refuses blank text, lone surrogates, and `variationOf` without the purpose `variation` or the reverse (art.ts).",
   "type": "object",
   "oneOf": [{"$ref": "#/$defs/start"}, {"$ref": "#/$defs/cancel"}],
   "$defs": {

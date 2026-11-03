@@ -12,6 +12,10 @@
 - [x] 2.4 Generalize the omitted-payload path to `art-stage`
 - [x] 2.5 Inbox exemption and the ADR 0012 amendment
 - [x] 2.6 Nanoleaf refuses a moment that names art
+- [x] 2.7 Inbox send-again refuses a moment naming art
+- [x] 2.8 A lapsed copy answers `not-found`, and responders refuse any source but the core
+- [x] 2.9 Cancel, deletion and interleaving examples
+- [x] 2.10 Ask about old fences only when no key is pinned
 
 ## 3. Validation
 

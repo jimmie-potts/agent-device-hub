@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/art-dispatch/2.0",
-  "description": "Command: `bunny/modules/art` asks the core to forward one tracked `art-stage` or `art-ambient-set` to the device named by `target` (Hub #679). The envelope subject is `art`. `data` is that family's payload without its `requestId`, which the forwarded command takes from here. No other family can be forwarded, so the art module cannot start a moment. The validator checks a stage's bytes as `art-stage` does (art.ts).",
+  "description": "Command: `bunny/modules/art` asks the core to forward one tracked `art-stage` or `art-ambient-set` to the device named by `target` (Hub #679). The envelope subject is `art`. `data` is that family's payload without its `requestId`, which the forwarded command takes from here. The core forwards no other family, so this command cannot start a moment. The validator checks a stage's bytes as `art-stage` does (art.ts).",
   "type": "object",
   "oneOf": [
     {

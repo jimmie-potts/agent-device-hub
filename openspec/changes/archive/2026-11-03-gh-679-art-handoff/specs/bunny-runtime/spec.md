@@ -16,7 +16,7 @@ The operation's state machine SHALL be: `sent`, then `accepted` on the owner's `
 
 The exact ONN focused-text family SHALL omit plaintext from durable operations and retain an omitted-payload marker plus a domain-separated private HMAC over canonical caller, request ID, target/key, type, schema, guards and input. Transport time and trace SHALL be excluded. One independently stored private key SHALL have a pinned identity; a missing, replaced or unsafe key SHALL refuse sensitive effects without erasing prior fences. Private identity storage exhaustion SHALL refuse with `capacity` before sending. This exception SHALL preserve normal action tracking and outcome/history semantics for all other commands.
 
-The exact `art-stage` family SHALL omit its payload from durable operations in the same way, under its own digest domain, so a stage's bytes never grow the tracker or enter history. The bytes SHALL still reach the command's responder. Any stored omitted payload, of either family, SHALL forbid creating a replacement private key. The dispatcher SHALL refuse, with `forbidden` and no operation, `art-request` unless `requestedBy` is `bunny/parts/dashboard`, `art-auto` unless it is `bunny/core`, and `art-stage` and `art-ambient-set` unless it is `bunny/modules/art`.
+The exact `art-stage` family SHALL omit its payload from durable operations in the same way, under its own digest domain, so a stage's bytes never grow the tracker or enter history. The bytes SHALL still reach the command's responder. Any stored omitted payload, of either family, SHALL forbid creating a replacement private key, and the core SHALL look for one only when no key is pinned. The dispatcher SHALL refuse, with `forbidden` and no operation, `art-request` unless `requestedBy` is `bunny/parts/dashboard`, `art-auto` unless it is `bunny/core`, and `art-stage` and `art-ambient-set` unless it is `bunny/modules/art`.
 
 #### Scenario: Sent, accepted, completed
 - **WHEN** an operator's action reaches a module that accepts it and reports its outcome
@@ -81,6 +81,14 @@ A core part SHALL answer `bunny.cmd.art-dispatch.art`. It SHALL refuse any sourc
 #### Scenario: A lost answer
 - **WHEN** a display's handler fails after it took a stage, and the art module repeats the dispatch
 - **THEN** each answer is `uncertain-result`, the operation is uncertain, and the stage is delivered once
+
+#### Scenario: A lapsed copy through the tracker
+- **WHEN** a display refuses a moment because its copy lapsed
+- **THEN** the operation is `rejected` with reply `not-found`, failed with evidence `none`, and is not `expired`
+
+#### Scenario: A cancel admits no work
+- **WHEN** a dashboard session cancels a job through `art-request`, including an automatic one, and a control credential sends the same cancel
+- **THEN** the session's reaches the art owner, admits no new job and causes no display command, and the credential's is `forbidden` with no operation
 
 #### Scenario: A module follows its stage
 - **WHEN** the art module syncs `operation`, dispatches a stage, and the display reports its outcome
