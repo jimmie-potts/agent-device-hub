@@ -1,0 +1,28 @@
+// The core forwards the art module's staged compositions and ambient choices to their displays (Hub #679): only the
+// families below, only from that module, each as one tracked operation the module requested. It never forwards a moment,
+// so the art module cannot start a takeover; only the core's automation path sends `moment-play/2.1` (#684).
+import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
+import {ART_FORWARDED, ART_MODULE_SOURCE, ART_SUBJECT, type ArtDispatch} from '@jimmie-potts/event-contracts/v2/art';
+import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import type {CoreHandle, CorePart} from './core.js';
+
+export class ArtPart implements CorePart {
+  #closed = false;
+  async start(core: CoreHandle): Promise<void> {
+    const validator = new MessageValidator(); registerCoreFamilies(validator);
+    await core.sdk.respond<ArtDispatch>(`bunny.cmd.art-dispatch.${ART_SUBJECT}`, async command => {
+      if (this.#closed) return errorBody('unavailable');
+      if (command.source !== ART_MODULE_SOURCE) return errorBody('forbidden');
+      const checked = validator.validate(command, {nowMs: core.clock.now()});
+      if (!checked.ok) return {error: checked.error};
+      const {requestId, family, target, data} = command.data;
+      // The schema closes the family; this lookup keeps the allowlist explicit where the dispatch happens.
+      if (!Object.hasOwn(ART_FORWARDED, family)) return errorBody('invalid-request', {detail: 'the art module may dispatch only a stage or an ambient set'});
+      const {type, dataschema} = ART_FORWARDED[family];
+      const answer = await core.dispatch({key: `bunny.cmd.${family}.${target}`, requestedBy: command.source, requestId, parent: command,
+        draft: {type, subject: target, dataschema, data}});
+      return 'error' in answer ? answer : {status: 'accepted'};
+    });
+  }
+  close(): void {this.#closed = true;}
+}

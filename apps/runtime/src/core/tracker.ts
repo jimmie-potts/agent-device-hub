@@ -24,10 +24,12 @@
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MessageValidator, compareDelivery, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import {ART_MODULE_SOURCE} from '@jimmie-potts/event-contracts/v2/art';
+import {CORE_SOURCE, registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {PrivateRequestDigest, SdkError,
   acknowledgmentOf, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
   type Sdk, type TraceContext, type Tracing, Outcome} from '@jimmie-potts/sdk';
+import {DASHBOARD_SOURCE} from '../credentials.js';
 import {REGISTRY_REASONS} from '../diagnostics.js';
 import {kept, type OperationStep} from './history.js';
 import {DEADLINES, advance, kindOf, type Operation, type OperationEvent, type TakenOutcome} from './operations.js';
@@ -42,6 +44,21 @@ import type {CoreStore, CoreTransaction} from './store.js';
 export const DIRECT_COMMANDS: readonly string[] = Object.freeze(['approval-recover', 'notice-acknowledge', 'inbox-handle']);
 /** Tracked actions admitted only by the authenticated gateway's dedicated capability. */
 export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['session-label-set', 'notice-clear', 'lighting-layout-set', 'playback-layout-set', 'home-layout-set']);
+/** Routine background art (ADR 0012's 2026-11-03 amendment): a failure raises no inbox item, and the art state reports it. */
+export const BACKGROUND_ACTIONS: readonly string[] = Object.freeze(['art-auto', 'art-stage', 'art-ambient-set']);
+/** Each art family's only requester. The dashboard's source is a browser session's, which no client credential can take. */
+const ART_REQUESTERS: Readonly<Record<string, string>> = Object.freeze({
+  'art-request': DASHBOARD_SOURCE, 'art-auto': CORE_SOURCE, 'art-stage': ART_MODULE_SOURCE, 'art-ambient-set': ART_MODULE_SOURCE,
+});
+/**
+ * The commands whose payload stays in memory: the operation keeps a private digest for duplicate detection and no
+ * payload, so it cannot be sent again. ONN text is private; a stage's bytes would grow the tracker. Each identity and
+ * digest domain is fixed: a stored digest compares only under its own domain.
+ */
+const OMITTED_PAYLOADS: readonly {family: string; type: string; dataschema: string; domain: string}[] = Object.freeze([
+  {family: 'onn-text', type: 'org.bunny.onn.text.requested', dataschema: 'https://bunny.invalid/events/onn-text/2.0', domain: 'bunny/onn-text-admission/1'},
+  {family: 'art-stage', type: 'org.bunny.art.stage.requested', dataschema: 'https://bunny.invalid/events/art-stage/2.0', domain: 'bunny/art-stage-admission/1'},
+]);
 
 /** One action for the dispatcher: a command, as `request` takes it, and who asks for it. */
 export type Action = {
@@ -327,14 +344,17 @@ export class Tracker {
     if (family.startsWith('companion-speech-') && (family !== 'companion-speech-play' || action.requestedBy !== 'bunny/modules/companions')) {
       return refuse('forbidden', 'speech is dispatched only by its companions owner');
     }
+    if (Object.hasOwn(ART_REQUESTERS, family) && action.requestedBy !== ART_REQUESTERS[family]) {
+      return refuse('forbidden', 'this art command has one requester');
+    }
     if (!ID.test(requestId)) return refuse('invalid-request', 'a request ID is 1 to 128 letters, digits, underscores, dots or hyphens');
     if (draft.subject !== target) return refuse('invalid-message', 'a command\'s subject is its key\'s last token');
     if (!COMMAND_TYPE.test(draft.type) || typeof draft.dataschema !== 'string' || typeof draft.data !== 'object' || draft.data === null || Array.isArray(draft.data)) {
       return refuse('invalid-request', 'an action is a command: a type org.bunny.<entity>.<verb>.requested, a dataschema and an object payload');
     }
-    const sensitive = family === 'onn-text' || draft.type === 'org.bunny.onn.text.requested' || draft.dataschema === 'https://bunny.invalid/events/onn-text/2.0';
-    if (sensitive && (family !== 'onn-text' || draft.type !== 'org.bunny.onn.text.requested' || draft.dataschema !== 'https://bunny.invalid/events/onn-text/2.0')) {
-      return refuse('invalid-request', 'the focused text command identity is invalid');
+    const omitted = OMITTED_PAYLOADS.find(each => each.family === family || each.type === draft.type || each.dataschema === draft.dataschema);
+    if (omitted !== undefined && (omitted.family !== family || omitted.type !== draft.type || omitted.dataschema !== draft.dataschema)) {
+      return refuse('invalid-request', 'the identity of a command with an omitted payload is invalid');
     }
     await ready;
     if (this.#stopped || this.#statements === undefined || !store.open) return refuse('unavailable', 'the core is not taking actions now');
@@ -355,13 +375,14 @@ export class Tracker {
     try {
       earlier = await this.#transaction(tx => {
         const known = this.#read(requestId);
-        if (sensitive) {
+        if (omitted !== undefined) {
           if (this.#options.files === undefined) throw new Refused('unavailable', 'the private request identity is unavailable');
-          const count = tx.database.prepare("SELECT COUNT(*) AS count FROM core_operations WHERE json_extract(record, '$.family') = 'onn-text'").get() as {count: number};
+          // Every family's fence uses one key, so any stored digest forbids creating a replacement key.
+          const count = tx.database.prepare("SELECT COUNT(*) AS count FROM core_operations WHERE json_extract(record, '$.payload.status') = 'omitted'").get() as {count: number};
           try {
             // Create sensitive storage only inside its first admission transaction. A rolled-back initialization can retry safely.
             const privateDigest = new PrivateRequestDigest(tx.database, this.#options.files);
-            sent.payload = {status: 'omitted', hmac: privateDigest.digest('bunny/onn-text-admission/1',
+            sent.payload = {status: 'omitted', hmac: privateDigest.digest(omitted.domain,
               canonical({requestedBy: action.requestedBy, requestId, key: action.key, target, type: draft.type, schema: draft.dataschema, data}), count.count === 0)};
           } catch (error) {
             throw new Refused(error instanceof SdkError ? error.body.error.code : 'unavailable', 'the private request identity is unavailable');

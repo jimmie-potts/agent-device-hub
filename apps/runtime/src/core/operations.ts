@@ -68,9 +68,9 @@ export type Operation = {
   dataschema: string;
   /** The device or owner the command addressed: its key's routing ID and its subject. */
   target: string;
-  /** The command's payload without its `requestId`, kept so a person can send it again as a new command (#923). */
+  /** The command's payload without its `requestId`, kept so a person can send it again as a new command (#923). Empty when omitted. */
   data: Record<string, unknown>;
-  /** Private identity of omitted ONN text; never an input to replay or a public operation record. */
+  /** Private identity of an omitted payload, ONN text or art bytes; never an input to replay or a public operation record. */
   payload?: {status: 'omitted'; hmac: string};
   /** Who asked for the action: an authenticated caller's source, or the core part that dispatched it. */
   requestedBy: string;

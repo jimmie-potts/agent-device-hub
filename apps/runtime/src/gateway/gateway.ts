@@ -938,6 +938,7 @@ export class Gateway {
     if (family.startsWith('companion-speech-')) return errorBody('forbidden', {detail: 'speech requires its current browser endpoint and companions owner'});
     if (family === 'reachy-auto' || family === 'reachy-dispatch') return errorBody('forbidden', {detail: 'automatic Reachy dispatch belongs to its module'});
     if (family === 'microduck-auto' || family === 'microduck-dispatch') return errorBody('forbidden', {detail: 'automatic MicroDuck dispatch belongs to its module'});
+    if (family === 'art-auto' || family === 'art-dispatch' || family === 'art-stage' || family === 'art-ambient-set') return errorBody('forbidden', {detail: 'automatic art and its forwarded commands belong to the core and the art module'});
     if (family.startsWith('coding-')) return errorBody('forbidden', {detail: 'coding delegation goes through the companions owner and its worker endpoint'});
     if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
     if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});

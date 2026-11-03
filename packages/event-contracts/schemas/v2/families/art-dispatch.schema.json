@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-dispatch/2.0",
+  "description": "Command: `bunny/modules/art` asks the core to forward one tracked `art-stage` or `art-ambient-set` to the device named by `target` (Hub #679). The envelope subject is `art`. `data` is that family's payload without its `requestId`, which the forwarded command takes from here. No other family can be forwarded, so the art module cannot start a moment. The validator checks a stage's bytes as `art-stage` does (art.ts).",
+  "type": "object",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "family", "target", "data"],
+      "properties": {
+        "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+        "family": {"const": "art-stage"},
+        "target": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+        "data": {"type": "object", "$ref": "https://bunny.invalid/events/art-stage/2.0#/$defs/content", "unevaluatedProperties": false}
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "family", "target", "data"],
+      "properties": {
+        "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+        "family": {"const": "art-ambient-set"},
+        "target": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+        "data": {"type": "object", "$ref": "https://bunny.invalid/events/art-ambient-set/2.0#/$defs/content", "unevaluatedProperties": false}
+      }
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 # ADR 0012: One event and messaging platform for every component
 
-Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-17 and
-2026-10-30 (see [Amendments](#amendments)).
+Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-17,
+2026-10-30 and 2026-11-03 (see [Amendments](#amendments)).
 Supersedes [ADR 0010](0010-shared-event-contracts.md).
 This decision implements and installs nothing by itself. The children of
 [epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) own
@@ -701,3 +701,20 @@ in one `telemetry.dropped` record a minute at most, and totaled in
 and its data is diagnostic data the owner may lose; the stderr journal stays and
 is not scraped. Trade-off: a second copy of each record leaves the process,
 over the owned Collector origin only.
+
+**2026-11-03, routine art leaves the inbox.** "High-impact messages" sends failed and
+uncertain results to the shared inbox, which holds results a person must decide on. The
+owner's art decisions of 2026-11-03 on
+[epic #677](https://github.com/jimmie-potts/agent-device-hub/issues/677) make automatic
+generation and its display handoff routine background work, up to about 30 images an
+hour, and nothing retries it. A person has nothing to decide for one missed tile, and a
+stage's bytes cannot be sent again anyway. The tracked families `art-auto`, `art-stage` and
+`art-ambient-set` therefore raise no inbox item, whatever their result
+([#679](https://github.com/jimmie-potts/agent-device-hub/issues/679)). The tracker still
+records and logs each one, its `operation` record still shows the result, and the `art`
+state from [#680](https://github.com/jimmie-potts/agent-device-hub/issues/680) reports
+per-target results. `art-request` keeps its inbox item, because the owner asked for that
+work. `moment-play`, with or without `art`, is also unchanged. The trade-off is that a
+failed or uncertain automatic job, including one that may have spent money, appears only on
+the dashboard's art surfaces and in the logs, so nothing holds it until someone handles it.
+A stale or uncertain ambient tile is not raised either; saved art keeps playing.

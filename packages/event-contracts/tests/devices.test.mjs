@@ -72,7 +72,7 @@ test('each device family has one kind and one type, named after the family, and 
   const types = new Map();
   for (const {family, kind, type, dataschema, schema} of deviceFamilies) {
     assert.equal(schema.$id, dataschema, family);
-    assert.match(dataschema, new RegExp(`^https://bunny\\.invalid/events/${family}/2\\.[01]$`));
+    assert.match(dataschema, new RegExp(`^https://bunny\\.invalid/events/${family}/2\\.[012]$`));
     assert.ok(usesBlocks(schema), `${family} uses the blocks`);
     for (const uri of refs(schema)) assert.ok(profile(uri) || known(uri), `${family}: ${uri}`);
     // org.bunny.<entity>.<verb>.requested: the family's last hyphenated word is the verb, as for mode-set and moment-play.
@@ -83,7 +83,7 @@ test('each device family has one kind and one type, named after the family, and 
     types.set(type, family);
   }
   assert.deepEqual(deviceFamilies.map(({dataschema}) => dataschema.replace('https://bunny.invalid/events/', '')),
-    ['device/2.0', 'device/2.1', 'power-set/2.0', 'brightness-set/2.0', 'scene-activate/2.0', 'zone-power-set/2.0', 'media-start/2.0',
+    ['device/2.0', 'device/2.1', 'device/2.2', 'power-set/2.0', 'brightness-set/2.0', 'scene-activate/2.0', 'zone-power-set/2.0', 'media-start/2.0',
       'media-control/2.0', 'device-mode-set/2.0']);
   assert.throws(() => registerDeviceFamilies(v), /already registered/);
   assert.throws(() => registerDeviceFamilies(new MessageValidator()), /session\/2\.0/, 'the device label uses the session display text');

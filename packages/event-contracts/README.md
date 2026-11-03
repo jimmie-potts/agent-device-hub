@@ -400,7 +400,7 @@ such as LIFX color, Pixoo media or Nanoleaf edits, belong to each module.
 
 | Kind | Family | Type |
 | --- | --- | --- |
-| state | `device` (2.0, and 2.1 with `held`) | `org.bunny.device.updated` |
+| state | `device` (2.0, 2.1 with `held`, and 2.2 with `moments.art`) | `org.bunny.device.updated` |
 | command | `power-set`, `brightness-set`, `scene-activate`, `zone-power-set`, `media-start`, `media-control`, `device-mode-set` | `org.bunny.power.set.requested`, `.brightness.set.requested`, `.scene.activate.requested`, `.zone-power.set.requested`, `.media.start.requested`, `.media.control.requested`, `.device-mode.set.requested` |
 
 `media-start` and `media-control` take an optional `requireMode`
@@ -597,6 +597,48 @@ codes. They go in `detail` or in the module's own payload fields.
 including a command. `invalid-request` covers a well-formed request whose values
 the owner does not accept, a command included, and a malformed request that is
 not a profile message, such as an HTTP or MCP body.
+
+## Exact-artwork payloads
+
+The additive `./v2/art` entry supplies the art families, registered with the core
+families. [The qualification record](../../docs/art-generation-qualification.md#exact-artwork-handoff)
+owns the handoff and its policy.
+
+| Family | Type | Sender and purpose |
+| --- | --- | --- |
+| `art-request` | `org.bunny.art.request.requested` | The dashboard, for the owner. Starts a job, or cancels any job by its `jobRequestId`. Subject `art`. |
+| `art-auto` | `org.bunny.art.auto.requested` | `bunny/core`. Starts or cancels an automatic job, with no typed text. Subject `art`. |
+| `art-dispatch` | `org.bunny.art.dispatch.requested` | `bunny/modules/art`, to the core: forward one `art-stage` or `art-ambient-set` to `target`. Never a moment. Subject `art`. |
+| `art-stage` | `org.bunny.art.stage.requested` | The core, for the art module. The device keeps a private copy, with no display effect. Subject: the device. |
+| `art-ambient-set` | `org.bunny.art-ambient.set.requested` | The core, for the art module. The device's ambient tile shows `compositionId`, or none when it is null. Subject: the device. |
+
+- **Who decides ownership.** The command family decides whether a job is the
+  owner's. `origin` and `purpose` are descriptive, so `art-auto` with an owner label
+  validates and stays automatic.
+- **Bounds.** `text` is at most 2,000 characters, and weather is at most 64
+  characters of lowercase condition words. Payloads are closed: none has a member for
+  a location, path or credential.
+- **A stage's bytes.** `art-stage` carries `compositionId`, `format` (`png` or `gif`),
+  `width`, `height`, `frames`, `durationMs`, `sha256`, `base64` and `lifetimeMs`, from
+  one minute to thirty days. `base64` is at most `MAX_ART_BYTES` (160 KiB) decoded. The
+  validator checks the encoding, size, hash, format and header dimensions, and never
+  decodes the image. A PNG has one frame and `durationMs` 0. The largest stage and its
+  dispatch fit the 256 KiB message cap.
+- **A device's copy.** `artStageDecision(held, stage, nowMs)` answers `store` or `reuse`
+  with the renewed record, and `duplicate-conflict` for the same ID with other bytes.
+  `artReferenceRefusal(held, nowMs)` answers `not-found` or `expired`, or nothing to
+  admit it. A device keeps its copy for a moment under way, so expiry cannot take it
+  from one.
+- **Capability.** `device/2.2` is `device/2.1` with an optional
+  `capabilities.moments.art: {formats, maxBytes}`. `commandSupported` refuses a moment
+  with `art` for a device without it, so the device does not play its mood instead, and
+  `artStageSupported(capabilities, stage)` checks a stage's format and size.
+- **Playing it.** `moment-play/2.1` is `moment-play/2.0` with an optional
+  `art: {compositionId}`. The gateway builds every client's moment as 2.0, which refuses
+  `art`. `moment-play/2.0`, `device/2.0` and `device/2.1` are unchanged.
+- **Reading the result.** A module learns that a stage finished from the core's
+  `operation` record for its `requestId`, found with `operationEntityId`. It shows
+  nothing until that record says `succeeded`. `accepted` proves no effect.
 
 ## Companion payloads
 
