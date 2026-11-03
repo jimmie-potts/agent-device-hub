@@ -172,11 +172,13 @@ Checked 2026-11-03. Neither project had released since the pins below.
 
 | Item | Pinned | Evidence |
 | --- | --- | --- |
-| Server | v2.5.2 (`linux/arm64` image published) | Source read at v2.5.2. Exercised on a disposable v2.5.1 server (`sha256:b266da13…`), with synthetic credentials and no network; v2.5.1 to v2.5.2 changes no API handler, the auth middleware or `API.md`. |
+| Server | v2.5.2 (`linux/arm64` image published) | Source read at v2.5.2. `tests/tronbyt-server.test.ts` passed on a disposable v2.5.2 server (`sha256:fb0c08e9…`) with no device connected. First exercised on a disposable v2.5.1 server (`sha256:b266da13…`), with synthetic credentials and no network; v2.5.1 to v2.5.2 changes no API handler, the auth middleware or `API.md`. |
 | Firmware | v1.7.4, target `tidbyt-gen1` | Not exercised: #24 owns the flash. |
 | API | `/v0` | The table below, and `tests/tronbyt-server.test.ts`. |
 
-What differs from the cloud, each exercised on that server:
+What differs from the cloud, each exercised on the v2.5.1 server. The v2.5.2 run repeats
+what the test asserts, which leaves out the `background` default, the anonymous queue,
+out-of-range brightness, a re-pushed installation's new ID and the unchecked image:
 
 | Server behavior | What the module does |
 | --- | --- |
