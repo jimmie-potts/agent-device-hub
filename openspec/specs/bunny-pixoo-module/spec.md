@@ -270,7 +270,7 @@ Over Monitor a moment SHALL be admitted only while Monitor participates, the req
 
 Over Media the moment SHALL pause the player through the Now Playing takeover and SHALL resume it only while the generation its own pause produced, the paused intent and the screen request are unchanged. No other restore path SHALL exist. Over Monitor the moment SHALL write under Monitor's generation and the next picture SHALL be the current dashboard.
 
-A moment SHALL end when its duration has passed since its first acknowledged write. Attention SHALL end it at once on either base, and a session source that stops being current SHALL end it over Monitor; either ending is `preempted`. An explicit command that changes what plays, turning the setting off over Monitor, or a Monitor view change SHALL end it as `interrupted`. A pause, stop or new start, including a start still capturing its selection, SHALL never be resumed over; a next or previous SHALL keep the playlist playing; a view change in Media SHALL resume the playlist. A moment SHALL NOT pause over a start still capturing. When a moment's picture was confirmed on the device and no dashboard, card or playlist follows, one blank frame SHALL replace it, never retried, and an uncertain write SHALL NOT be rolled back. A song that wants a whole takeover when the moment ends SHALL take the display with the player still paused.
+A moment SHALL end when its duration has passed since its first acknowledged write. Attention SHALL end it at once on either base, and a session source that stops being current SHALL end it over Monitor; either ending is `preempted`. An explicit command that changes what plays, turning the setting off over Monitor, or a Monitor view change SHALL end it as `interrupted`. A pause, stop or new start, including a start still capturing its selection, SHALL never be resumed over; a next or previous SHALL keep the playlist playing; a view change in Media SHALL resume the playlist. A moment SHALL NOT pause over a start still capturing. When a moment's picture was confirmed on the device and no dashboard, card or playlist follows, one blank frame SHALL replace it, never retried, and it SHALL be dropped after an uncertain write, or once the device was offline or under external control. A song that wants a whole takeover when the moment ends SHALL take the display with the player still paused.
 
 What a moment shows SHALL be chosen in one function from its request and drawn in a render worker before the player or the device is touched. A failed render SHALL complete `failed` and change nothing.
 
@@ -294,7 +294,7 @@ A moment that reached the device SHALL complete `succeeded` with `transmitted` a
 
 #### Scenario: A manual command during a moment over Media
 - **WHEN** a pause, stop or start arrives while a moment plays over Media
-- **THEN** the moment ends with `interrupted` and the moment does not resume the player over that command
+- **THEN** the moment ends with `interrupted`, the moment does not resume the player over that command, and after a pause or stop one blank frame replaces its picture
 
 #### Scenario: A song during a moment over Media
 - **WHEN** Now Playing wants the whole display and a song starts during a moment over Media

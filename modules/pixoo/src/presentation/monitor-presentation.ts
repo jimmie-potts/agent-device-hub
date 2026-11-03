@@ -41,7 +41,7 @@ type Moment=MomentPlay&{
  /** The base it covers, chosen at its start. */
  over:'monitor'|'media';
  rgb:readonly Uint8Array[];generation:number;until:number;resolve:(result:MomentResult)=>void;
- upload?:OperationResult<UploadResult>|undefined;writing?:Promise<void>|undefined;missed?:boolean;rejected?:boolean;
+ upload?:OperationResult<UploadResult>|undefined;writing?:Promise<void>|undefined;writtenAt?:number;missed?:boolean;rejected?:boolean;
 };
 interface Options {
  configuration?:PresentationConfiguration;save:(value:PresentationConfiguration)=>Promise<void>;clock?:()=>number;renderCadenceMs?:number;
@@ -177,7 +177,15 @@ export class MonitorPresentation {
   return null;
  }
  /** Whether a moment holds a playlist paused, so that a manual next or previous still means to keep playing. */
- momentHoldsMedia():boolean{return this.takeover?.kind==='moment';}
+ momentHoldsMedia():boolean{return this.takeover?.kind==='moment'||this.moment?.phase==='holding';}
+ /**
+  * Runs a manual next or previous that a moment's pause would otherwise leave paused, then resumes under the takeover's
+  * guard: against the generation this action produced, so a later command is never resumed over.
+  */
+ keepPlaying(action:()=>Promise<void>):Promise<void>{
+  const pending=action(),takeover:Takeover={kind:'moment',generation:this.player.getState().generation,until:Infinity};
+  return pending.then(()=>this.giveBack(takeover)).then(()=>undefined);
+ }
  /** Whether a moment is being prepared, waits for its start or plays. There is one at a time. */
  momentBusy():boolean{return this.moment!==null;}
  /**
@@ -250,7 +258,8 @@ export class MonitorPresentation {
   }
   void Promise.all([moment.writing,released]).then(()=>{
    const {upload}=moment;
-   if(upload?.ok===true){this.artShown=true;moment.resolve({ending,upload,endedAtMs:this.clock()});return;}
+   // Only while its write is still the latest: a base that followed it has already replaced the picture, or failed on its own terms.
+   if(upload?.ok===true){if(this.lastStart===moment.writtenAt)this.artShown=true;moment.resolve({ending,upload,endedAtMs:this.clock()});return;}
    // Nothing it wrote is known to have shown, so it has no ending: its outcome says why.
    const superseded=upload===undefined||(upload.priorEffects==='none'&&(upload.code==='cancelled'||upload.code==='stale-generation'));
    moment.resolve({ending:null,refused:moment.rejected===true?'unknown':moment.missed===true?'expired':superseded?'cancelled':'upload',upload});
@@ -402,14 +411,15 @@ export class MonitorPresentation {
  /**
   * Replaces a moment's picture when nothing else will: a manual pause, stop or mode change owns what comes next, and the
   * art must not stay on as if it were that choice. Whatever owns the display next replaces it instead, so this waits for
-  * a dashboard or card still rendering. One write, never retried; an uncertain write never reaches here, since unknown
-  * artwork is not rolled back.
+  * a dashboard or card still rendering. One write, never retried. It is dropped after an uncertain write of any kind,
+  * since unknown artwork is not rolled back, and once the device was offline or under external control, since what it
+  * shows by then may be the owner's.
   */
  private clearArt(frame:Frame|null,gap:number):boolean{
   if(!this.artShown)return false;
   const state=this.player.getState();
-  if(frame!==null||state.intent==='active'){this.artShown=false;return false;}
-  if(this.active||this.takeover!==null||this.takeoverPending||this.pendingMode!==null||!state.requestedScreenOn||state.availability==='offline'||this.inFlight||this.clock()-this.lastStart<gap)return false;
+  if(frame!==null||state.intent==='active'||state.availability==='offline'||state.lastError?.priorEffects==='possible'||state.lastError?.code==='external-control'){this.artShown=false;return false;}
+  if(this.active||this.takeover!==null||this.takeoverPending||this.pendingMode!==null||this.player.startPending()||!state.requestedScreenOn||this.inFlight||this.clock()-this.lastStart<gap)return false;
   this.artShown=false;this.inFlight=true;this.lastStart=this.clock();this.lastFrame='';
   void this.player.uploadDashboard([BLANK],state.generation,{whileStopped:true}).catch(()=>{}).finally(()=>{this.inFlight=false;this.onChange();});
   return true;
@@ -483,6 +493,7 @@ export class MonitorPresentation {
   this.inFlight=true;this.lastStart=this.clock();this.lastFrame=frame.key;this.onChange();
   const upload=this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration,moment!==undefined?{current}:write===null?{}:{signal:abort.signal,current});
   if(moment!==undefined){
+   moment.writtenAt=this.lastStart;
    moment.writing=upload.then(result=>{this.momentUploaded(moment,result);},()=>{moment.rejected=true;this.momentUploaded(moment,undefined);}).finally(()=>{this.inFlight=false;this.onChange();});
    return;
   }

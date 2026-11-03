@@ -163,8 +163,8 @@ export class PixooControl {
         case 'pause': return this.#player.pause();
         case 'resume': return this.#player.resume();
         case 'stop': return this.#player.stop();
-        case 'next': return held ? this.#player.next().then(() => this.#player.resume()) : this.#player.next();
-        case 'previous': return held ? this.#player.previous().then(() => this.#player.resume()) : this.#player.previous();
+        case 'next': return held ? this.#monitor.keepPlaying(() => this.#player.next()) : this.#player.next();
+        case 'previous': return held ? this.#monitor.keepPlaying(() => this.#player.previous()) : this.#player.previous();
         case 'restart-with-changes': return this.#player.restartWithChanges();
         case 'clear': return this.#player.clear();
       }

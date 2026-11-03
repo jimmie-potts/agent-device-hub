@@ -1,8 +1,9 @@
 // Hub #1287: a moment plays over the current base and gives it back, under the takeover's resume guard over Media.
-import {expect,it} from 'vitest';
+import {expect,it,vi} from 'vitest';
 import {present} from '../helpers/present.js';
 import {Player} from '../../src/playback/index.js';
 import {FakeDeviceAdapter} from '../../src/device/index.js';
+import {PixooControl} from '../../src/module/control.js';
 import {MonitorPresentation,type MomentPlay,type MomentResult} from '../../src/presentation/monitor-presentation.js';
 import {MOMENT_MOODS,momentContent,renderMomentContent} from '../../src/presentation/moment-content.js';
 import {renderNowPlaying} from '../../src/presentation/now-playing.js';
@@ -211,13 +212,12 @@ it('a new start during a moment over Media takes the display and nothing resumes
  try{
   await mediaPlaying(s);
   const results=s.play();await s.run(1300);
+  const resume=vi.spyOn(s.player,'resume');
   await s.settle(s.monitor.media(()=>s.player.start(s.store.playlist.id),true));await s.run(200);
   ended(results,'interrupted');
-  const generation=s.player.getState().generation,session=s.player.getState().sessionId;
   await s.run(4000);
-  // Nothing retires the new start: the moment's end owes the player no resume, so only its own traversal may move it on.
-  expect(s.player.getState()).toMatchObject({intent:'active',sessionId:session});
-  expect(s.player.getState().generation-generation).toBeLessThanOrEqual(s.device.operations.filter(op=>op.kind==='uploadAnimation').length);
+  expect(resume).not.toHaveBeenCalled();
+  expect(s.player.getState().intent).toBe('active');
   expect(s.monitor.momentBusy()).toBe(false);
  }finally{await s.close();}
 });
@@ -282,6 +282,13 @@ it('waits for its start, and a start window it misses ends it with no write and 
   expect(s.frames().length).toBe(count);
  }finally{await s.close();}
 });
+/** Holds the player's saves until `release`, as a busy library does. */
+function slowSave(s:Setup){
+ const save=s.store.save.bind(s.store);let release=()=>{};
+ const gate=new Promise<void>(resolve=>{release=resolve;});
+ s.store.save=async(...args:Parameters<typeof save>)=>{await gate;return save(...args);};
+ return ()=>{s.store.save=save;release();};
+}
 /** Holds the next capture until `release`, as a busy library does. */
 function slowCapture(s:Setup){
  const capture=s.store.capture.bind(s.store);let release=()=>{};
@@ -363,11 +370,68 @@ it('attention during the moment\'s hold never shows it and gives the playlist ba
  const s=await setup();
  try{
   await mediaPlaying(s);
-  const results=s.play();await flush(s.clock);
+  const release=slowSave(s),results=s.play();await flush(s.clock);
   s.clock.advance(100);s.monitor.tick();await flush(s.clock);
-  s.monitor.submit(attentionView);await s.run(1500);
+  expect(s.monitor.momentHoldsMedia()).toBe(true);
+  s.monitor.submit(attentionView);await flush(s.clock);
+  release();await flush(s.clock);await s.run(1500);
   expect(results).toEqual([expect.objectContaining({ending:null,refused:'cancelled'})]);
   expect(s.player.getState().intent).toBe('active');expect(s.frames()).not.toContainEqual(art);
+ }finally{await s.close();}
+});
+it('a pause right after next during a moment is never resumed over',async()=>{
+ for(const later of ['pause','stop'] as const){
+  const s=await setup();
+  try{
+   await mediaPlaying(s);
+   const control=new PixooControl({player:s.player,monitor:s.monitor});
+   const results=s.play();await s.run(1300);
+   const release=slowSave(s);
+   const next=control.control('next');await flush(s.clock);
+   const manual=control.control(later);await flush(s.clock);
+   release();await s.settle(Promise.all([next,manual]));await s.run(500);
+   ended(results,'interrupted');
+   expect(s.player.getState().intent).toBe(later==='pause'?'paused':'stopped');
+   control.close();
+  }finally{await s.close();}
+ }
+});
+it('next during the moment\'s pause keeps the playlist playing',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);
+  const control=new PixooControl({player:s.player,monitor:s.monitor});
+  const release=slowSave(s),results=s.play();await flush(s.clock);
+  s.clock.advance(100);s.monitor.tick();await flush(s.clock);
+  const next=control.control('next');await flush(s.clock);
+  release();await s.settle(next);await s.run(500);
+  expect(results).toEqual([{ending:null,refused:'blocked'}]);
+  expect(s.player.getState().intent).toBe('active');
+  control.close();
+ }finally{await s.close();}
+});
+it('no blank follows a base write that failed uncertainly, even within one tick of the moment\'s end',async()=>{
+ const s=await setup({pauseOnUncertain:true});
+ try{
+  await monitorMode(s);
+  const results=s.play();await s.run(1300);
+  s.device.failNextUpload(1);
+  s.monitor.submit(attentionView);await s.run(2500);
+  ended(results,'preempted');
+  expect(s.player.getState().lastError).toMatchObject({priorEffects:'possible'});
+  expect(s.frames()).not.toContainEqual(blank);
+ }finally{await s.close();}
+});
+it('drops the blank once the device has been offline: what it shows by then may be the owner\'s',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);
+  const results=s.play();await s.run(1300);
+  s.device.setOnline(false);await s.settle(s.player.probe());
+  s.monitor.interrupt();await s.settle(s.player.pause());await s.run(1200);
+  ended(results,'interrupted');
+  s.device.setOnline(true);await s.settle(s.player.probe());await s.run(1200);
+  expect(s.frames().at(-1)).toEqual(art);
  }finally{await s.close();}
 });
 it('a rejected write is unknown, never reported as unsent',async()=>{
@@ -395,16 +459,23 @@ it('an uncertain write is not rolled back: no blank follows it',async()=>{
  const s=await setup({pauseOnUncertain:true});
  try{
   await monitorMode(s);
-  s.play({frames:()=>Promise.resolve([RGB(7),RGB(8)])});
+  const results=s.play({frames:()=>Promise.resolve([RGB(7),RGB(8)])});
   s.device.failNextUpload(1);await s.run(1300);await s.run(2000);
-  expect(s.frames()).not.toContainEqual(blank);
+  expect(results).toEqual([expect.objectContaining({ending:null,refused:'upload'})]);
+  expect(results[0]).toMatchObject({upload:{ok:false,priorEffects:'possible'}});
+  expect(s.frames()).toContainEqual(art);expect(s.frames().at(-1)).toEqual(art);
  }finally{await s.close();}
 });
 it('a Now Playing pop-up still lasts its full ten seconds from its pause',async()=>{
  const s=await setup({media:'popup'});
  try{
   await mediaPlaying(s);
-  s.monitor.submitPlayback(song);await s.run(9500);
+  // A pause the library holds up for three seconds does not come out of the pop-up.
+  const release=slowSave(s);
+  s.monitor.submitPlayback(song);await s.run(3000);
+  release();await flush(s.clock);
+  expect(s.monitor.nowPlayingSummary().takeover).toBe('popup');
+  await s.run(9500);
   expect(s.monitor.nowPlayingSummary().takeover).toBe('popup');
   await s.run(800);expect(s.monitor.nowPlayingSummary().takeover).toBeNull();
  }finally{await s.close();}
