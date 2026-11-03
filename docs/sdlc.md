@@ -468,10 +468,12 @@ still uses the worktree. Clean up only what this delivery created:
    `docker volume rm` and `docker network rm` of named artifacts, never a
    prune. Keep the installed stacks (`bunny-mac-personal*`, `bunny-tronbyt*`
    and `bunny-diagnostics*` containers, volumes and networks), every image a
-   container still uses, the current and previous installed images that the
-   private batch records under `~/.local/state/bunny-operations/` and the
-   installed Compose files name (the previous image is the return target the
-   [container guide](bunny-container.md#replace-an-image) keeps), qualified
+   container still uses, the images that the private batch records under
+   `~/.local/state/bunny-operations/` name (the current and previous installed
+   image; the previous one is the return target the
+   [container guide](bunny-container.md#replace-an-image) keeps) and the
+   images named by the `compose*` files at the root of each retained release
+   directory, qualified
    `bunny-core:release-*` images, third-party images, the shared
    `bunny-runtime-check-tools` caches, which every
    `npm run test:runtime:container` run of the same manifests reuses, and the
@@ -498,10 +500,12 @@ its PR is merged at the worktree's exact head and the tree is clean; otherwise
 tool-managed, dirty, locked, prunable, open PR, closed PR, merged at another
 head, no PR, detached or unknown state, each named for the decision it needs.
 It also lists stopped task containers and unreferenced task images older than
-the window (48 hours by default, `-- --hours <n>`), container-less volumes
-whose names mark them as task runs (an issue number, the launcher's identity or
-an acceptance exercise, never data volumes), the shared launcher caches and
-untagged images for the owner's decision, and `docker system df`. Act on it
+the window (48 hours by default, `-- --hours <n>`), the images the batch
+records and root-level release Compose files name (kept, listed by ID),
+container-less volumes whose names mark them as task runs (an issue number, the
+launcher's identity or an acceptance exercise, never data volumes), the shared
+launcher caches and untagged images for the owner's decision, and
+`docker system df`. Act on it
 under the steps above: remove only what the report marks removable or what this
 task created, ask the owner about closed-PR and detached worktrees, and leave
 tool-managed worktrees to their tools. Never prune images, containers, volumes

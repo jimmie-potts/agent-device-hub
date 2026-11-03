@@ -180,8 +180,11 @@ test('collection normalizes docker output, skips prunable and unreadable worktre
     if (key.startsWith('docker system')) return 'TYPE SIZE\n';
     throw new Error(`unexpected ${key}`);
   };
-  const report = collect('/repo', {hours: 48, json: false}, now, run);
+  const report = collect('/repo', {hours: 48, json: false}, now, run, new Set(['b'.repeat(64)]));
   assert.deepEqual(report.worktrees.map(worktree => worktree.verdict), ['removable: PR #400 merged at this head', 'prunable, directory missing: git worktree prune after the owner confirms', 'state unknown: inspect']);
+  assert.deepEqual(report.docker.installed, ['b'.repeat(64)]);
+  assert.equal(report.notes.length, 1, 'an injected installed set adds no note');
+  assert.match(collect('/repo', {hours: 48, json: false}, now, run, new Set()).notes.at(-1), /no deployment record or installed Compose file named an image/);
   assert.ok(calls.some(call => call[0] === 'git' && call[1] === '--no-optional-locks' && call.includes('/repo/.local/worktrees/done')));
   assert.equal(calls.some(call => call.includes('/repo/.local/worktrees/gone')), false);
   assert.deepEqual(report.docker.containers.map(container => container.name), ['bunny-gh9-old']);

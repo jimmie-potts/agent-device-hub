@@ -1173,10 +1173,12 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 worktree from `git worktree list`, `git status` without optional locks and `gh pr list`,
 stopped task containers and unreferenced task images older than the window,
 container-less task-named volumes, and the shared launcher caches and untagged
-images listed for the owner. Images that the private batch records under
-`~/.local/state/bunny-operations/` or the installed Compose files under
-`~/.local/share/bunny/releases/` name, including the previous installed image
-kept for return, are never reported as stale; the audit reads only image IDs
+images listed for the owner. Images named by the private batch records under
+`~/.local/state/bunny-operations/` (the current and previous installed image,
+the latter kept for return) or by a `compose*` file at the root of a release
+directory under `~/.local/share/bunny/releases/` are never reported as stale;
+release inputs below that root, such as `private-inputs/`, are not read, so an
+older release's own image can still be listed. The audit reads only image IDs
 from those files and prints nothing else from them. Pass `-- --hours <n>` to
 change the 48-hour window and `-- --json` for the raw report. It needs `gh` for
 PR states and Docker Desktop for the Docker sections; a missing tool, a PR older

@@ -127,8 +127,9 @@ const protectedImage = image => !image.Repository.startsWith('bunny') || image.R
 
 /**
  * Image IDs the installation names: `previousImage`, `targetImage` and the observed image of every batch
- * record under the operation root, and the `image` of every installed Compose file or batch replacement
- * under the releases root. The previous image is the return target docs/bunny-container.md says to keep.
+ * record under the operation root, and the `image` of every `compose*` file (installed Compose files and
+ * batch replacements) at the root of each release directory. Release inputs below that root, such as
+ * `private-inputs/`, are not read. The previous image is the return target docs/bunny-container.md keeps.
  * Only IDs are read; nothing else in those private files is retained. Unreadable roots yield no IDs.
  */
 export function installedImageIds(roots = installedRoots, read = {readdir: readdirSync, readFile: path => readFileSync(path, 'utf8')}) {
@@ -208,8 +209,8 @@ export function render(report) {
 const defaultRun = (program, args) => execFileSync(program, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024});
 const jsonLines = text => text.split('\n').filter(Boolean).map(line => JSON.parse(line));
 
-/** The report. `run(program, args)` returns a command's stdout or throws; tests inject it. */
-export function collect(root, options, now = new Date(), run = defaultRun) {
+/** The report. `run(program, args)` returns a command's stdout or throws; tests inject it and `installed`. */
+export function collect(root, options, now = new Date(), run = defaultRun, installed = installedImageIds()) {
   const notes = [];
   const worktrees = parseWorktrees(run('git', ['-C', root, 'worktree', 'list', '--porcelain']));
   const dirty = new Map();
@@ -228,7 +229,6 @@ export function collect(root, options, now = new Date(), run = defaultRun) {
     const containers = jsonLines(run('docker', ['container', 'ls', '--all', '--no-trunc', '--format', '{{json .}}']));
     const images = jsonLines(run('docker', ['image', 'ls', '--no-trunc', '--format', '{{json .}}']));
     const volumes = jsonLines(run('docker', ['volume', 'ls', '--filter', 'dangling=true', '--format', '{{json .}}']));
-    const installed = installedImageIds();
     if (installed.size === 0) notes.push('no deployment record or installed Compose file named an image: the previous installed image, if any, is not protected by name');
     docker = {containers: staleContainers(containers, now, options.hours), images: staleImages(images, containers, now, options.hours, installed), volumes: staleVolumes(volumes), shared: sharedImages(images, containers), installed: [...installed].sort(), usage: run('docker', ['system', 'df']).trim()};
   } catch {notes.push('docker is unavailable');}
