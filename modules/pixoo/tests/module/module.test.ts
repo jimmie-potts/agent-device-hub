@@ -10,12 +10,15 @@ import {join} from 'node:path';
 import {DatabaseSync, type SQLInputValue, type StatementResultingChanges, type StatementSync} from 'node:sqlite';
 import {describe, it} from 'node:test';
 import {MAX_MESSAGE_BYTES, type Message} from '@jimmie-potts/event-contracts/v2';
+import type {MomentEnded} from '@jimmie-potts/event-contracts/v2/families';
+import type {RequestResult} from '@jimmie-potts/sdk';
 import {checkModuleRecord} from '@jimmie-potts/sdk/testing';
 import sharp from 'sharp';
 import {DEFAULT_LIMITS, DEFAULT_TRANSFORM, MediaStore, SIMULATOR_PROFILE} from '../../src/media/index.js';
 import {runWorker} from '../../src/media/worker-client.js';
 import {DashboardPager} from '../../src/presentation/agent-dashboard.js';
 import {renderDashboard} from '../../src/presentation/dashboard-pixels.js';
+import {momentContent, renderMomentContent} from '../../src/presentation/moment-content.js';
 import {nowPlayingView, renderNowPlaying} from '../../src/presentation/now-playing.js';
 import {monitorView} from '../../src/presentation/sources.js';
 import {HOSTED_PROFILE} from '../../src/module/configuration.js';
@@ -412,6 +415,160 @@ void describe('Now Playing', () => {
   });
 });
 
+async function readyPlaylist(world: World): Promise<{list: PlaylistRecord; rendition: RenditionRecord}> {
+  const rendition = await importSolid(world, [10, 20, 30], 'Teal');
+  await world.outcome(await accepted(playlist(world, {operation: 'create', name: 'Desk'})));
+  const list = await waitFor(() => records<PlaylistRecord>(world, FAMILIES.playlist).find(item => item.name === 'Desk'), 'the playlist');
+  await world.outcome(await accepted(playlist(world, {operation: 'items', playlistId: list.id, revision: list.playlistRevision, items: [{renditionId: rendition.id}]})));
+  await waitFor(() => {
+    const media = world.deviceRecord()?.capabilities.media;
+    return media?.supported === true && media.playlistIds.includes(list.id) ? true : undefined;
+  }, 'the listed playlist');
+  return {list, rendition};
+}
+
+void describe('moments', () => {
+  const MOMENT = 'org.bunny.moment.play.requested';
+  const moment = (id: string, patch: object = {}): object => ({momentId: id, mood: 'celebrate', durationMs: 1000, priorityClass: 'event', coversStatus: true, startAtMs: Date.now(), toleranceMs: 10_000, ...patch});
+  const momentFrame = (): string => frameDigest(renderMomentContent(momentContent({mood: 'celebrate'}))[0] ?? new Uint8Array());
+  const ended = (world: World, requestId: string): MomentEnded | undefined =>
+    world.seen.find(message => message.type === 'org.bunny.moment.ended' && (message.data as MomentEnded).requestId === requestId)?.data as MomentEnded | undefined;
+  const refusal = async (pending: Promise<RequestResult>): Promise<string | undefined> => {
+    const result = await pending;
+    return result.status === 'rejected' ? result.error.error.code : result.status;
+  };
+
+  void it('declares the moods and bound, and plays over Monitor without changing its mode, then returns and reports its ending', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      const capabilities = await waitFor(() => world.deviceRecord()?.capabilities.moments, 'the capability');
+      assert.deepEqual(capabilities, {supported: true, moods: ['celebrate', 'setback', 'reminder'], maxDurationMs: 10_000, coversStatus: true});
+      await world.outcome(await mode(world, 'monitor'));
+      await world.publishSession();
+      const dashboard = await waitFor(() => world.device.state().shown?.digests[0], 'the dashboard on the device');
+      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-monitor')));
+      await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device');
+      const showing = await waitFor(() => world.display()?.showing === 'moment' ? world.display() : undefined, 'the moment in the display record');
+      assert.equal(showing.mode, 'monitor');
+      assert.deepEqual(showing.moments, {overMonitor: true, playing: 'm-monitor'});
+      const outcome = await world.outcome(requestId);
+      assert.equal(outcome.data.result, 'succeeded');
+      assert.equal(outcome.data.evidence, 'transmitted');
+      assert.deepEqual({...ended(world, requestId), endedAtMs: 0}, {requestId, momentId: 'm-monitor', ending: 'completed', endedAtMs: 0});
+      await waitFor(() => world.device.state().shown?.digests[0] === dashboard ? true : undefined, 'the dashboard back on the device');
+      assert.equal(world.display()?.participating, true);
+    });
+  });
+
+  void it('refuses what the device does not offer, what Monitor does not admit, and a moment it has seen, across a restart', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      const send = (id: string, patch: object = {}): Promise<RequestResult> => world.request('moment-play', MOMENT, moment(id, patch));
+      assert.equal(await refusal(send('m-mood', {mood: 'unknown-mood'})), 'unsupported-capability');
+      assert.equal(await refusal(send('m-long', {durationMs: 10_001})), 'unsupported-capability');
+      await world.outcome(await mode(world, 'monitor'));
+      await world.publishSession();
+      await waitFor(() => world.device.state().shown, 'the dashboard on the device');
+      assert.equal(await refusal(send('m-flourish', {priorityClass: 'flourish', coversStatus: false})), 'invalid-state');
+      assert.equal(await refusal(send('m-late', {startAtMs: Date.now() - 5000, toleranceMs: 1000})), 'expired');
+      const off = await accepted(world.request(FAMILIES.moments, 'org.bunny.pixoo-moments.set.requested', {overMonitor: false}));
+      assert.deepEqual((await world.outcome(off)).data, {requestId: off, result: 'succeeded', evidence: 'observed'});
+      await waitFor(() => {
+        const moments = world.deviceRecord()?.capabilities.moments;
+        return moments?.supported === true && !moments.coversStatus ? true : undefined;
+      }, 'the capability follows the setting');
+      assert.equal(await refusal(send('m-off')), 'invalid-state');
+      const on = await accepted(world.request(FAMILIES.moments, 'org.bunny.pixoo-moments.set.requested', {overMonitor: true}));
+      await world.outcome(on);
+      await world.publishSession({attention: [{id: {status: 'known', id: 'approve-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}]});
+      await waitFor(() => world.display()?.monitor.attention === 1 ? true : undefined, 'the attention');
+      assert.equal(await refusal(send('m-attention')), 'invalid-state');
+      await world.publishSession({attention: []});
+      await waitFor(() => world.display()?.monitor.attention === 0 ? true : undefined, 'the attention resolved');
+      const played = await accepted(send('m-once'));
+      assert.equal(await refusal(send('m-busy')), 'capacity');
+      await world.outcome(played);
+      assert.equal(await refusal(send('m-once')), 'invalid-state');
+      await world.restart();
+      await waitFor(() => world.display(), 'the display after the restart');
+      assert.equal(await refusal(send('m-once')), 'invalid-state');
+    });
+  });
+
+  void it('ends over Monitor when attention arrives, with no replay', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      await world.outcome(await mode(world, 'monitor'));
+      await world.publishSession();
+      await waitFor(() => world.device.state().shown, 'the dashboard on the device');
+      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-attention', {durationMs: 10_000})));
+      await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device');
+      await world.publishSession({attention: [{id: {status: 'known', id: 'approve-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}]});
+      const outcome = await world.outcome(requestId);
+      assert.equal(outcome.data.result, 'succeeded');
+      assert.equal(ended(world, requestId)?.ending, 'preempted');
+      await waitFor(() => world.device.state().shown !== null && world.device.state().shown?.digests[0] !== momentFrame() ? true : undefined, 'the dashboard back on the device');
+      const uploads = world.device.state().uploads;
+      await world.publishSession({attention: []});
+      await sleep(1200);
+      assert.notEqual(world.device.state().shown?.digests[0], momentFrame());
+      assert.ok(world.device.state().uploads >= uploads);
+    });
+  });
+
+  void it('plays over Media and gives the playlist back at the same item', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      const {list} = await readyPlaylist(world);
+      const started = await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id}));
+      await world.outcome(started);
+      const playing = await waitFor(() => world.display()?.player.intent === 'active' ? world.display() : undefined, 'the playing playlist');
+      const picture = world.device.state().shown?.digests[0];
+      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-media', {priorityClass: 'flourish', coversStatus: false})));
+      await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device');
+      const showing = await waitFor(() => world.display()?.showing === 'moment' ? world.display() : undefined, 'the moment in the display record');
+      assert.equal(showing.mode, 'media');
+      assert.equal(showing.player.intent, 'paused');
+      assert.equal((await world.outcome(requestId)).data.result, 'succeeded');
+      assert.equal(ended(world, requestId)?.ending, 'completed');
+      await waitFor(() => world.device.state().shown?.digests[0] === picture ? true : undefined, 'the playlist\'s picture back');
+      const back = await waitFor(() => world.display()?.player.intent === 'active' ? world.display() : undefined, 'the playlist back');
+      assert.equal(back.player.itemId, playing.player.itemId);
+      assert.equal(back.mode, 'media');
+    });
+  });
+
+  void it('refuses over Media with nothing playing to return to', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      assert.equal(await refusal(world.request('moment-play', MOMENT, moment('m-idle'))), 'invalid-state');
+      assert.equal(world.device.state().uploads, 0);
+    });
+  });
+
+  void it('reports a moment cut off by a restart as uncertain and never plays it again', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      await world.outcome(await mode(world, 'monitor'));
+      await world.publishSession();
+      await waitFor(() => world.device.state().shown, 'the dashboard on the device');
+      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-restart', {startAtMs: Date.now() + 200, durationMs: 10_000})));
+      await world.restart();
+      const outcome = await world.outcome(requestId);
+      assert.equal(outcome.data.result, 'uncertain');
+      await sleep(600);
+      assert.notEqual(world.device.state().shown?.digests[0], momentFrame());
+      assert.equal(ended(world, requestId), undefined);
+    });
+  });
+});
+
 void describe('the device', () => {
   void it('starts while the Pixoo is offline, reports it unavailable, and logs one degradation and one recovery', async () => {
     const world = await World.open({mode: 'offline'});
@@ -746,17 +903,6 @@ void describe('commands and the catalog', () => {
 void describe('Media-mode precondition', () => {
   const requireMedia = {requireMode: 'media'} as const;
   /** One imported picture in one playlist that the device lists, with the device record showing the playlist. */
-  async function readyPlaylist(world: World): Promise<{list: PlaylistRecord; rendition: RenditionRecord}> {
-    const rendition = await importSolid(world, [10, 20, 30], 'Teal');
-    await world.outcome(await accepted(playlist(world, {operation: 'create', name: 'Desk'})));
-    const list = await waitFor(() => records<PlaylistRecord>(world, FAMILIES.playlist).find(item => item.name === 'Desk'), 'the playlist');
-    await world.outcome(await accepted(playlist(world, {operation: 'items', playlistId: list.id, revision: list.playlistRevision, items: [{renditionId: rendition.id}]})));
-    await waitFor(() => {
-      const media = world.deviceRecord()?.capabilities.media;
-      return media?.supported === true && media.playlistIds.includes(list.id) ? true : undefined;
-    }, 'the listed playlist');
-    return {list, rendition};
-  }
   const refusals = (world: World): number => world.logs().filter(entry => entry.event === 'command.rejected' && entry.fields['bunny.code'] === 'invalid-state').length;
 
   void it('applies a start that requires Media while Media shows, with the unchanged reply, and refuses it while Monitor shows before any device write', async () => {

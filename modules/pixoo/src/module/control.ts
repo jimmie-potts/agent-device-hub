@@ -4,12 +4,13 @@
 // the module (`module.ts`) admits a command, replies, and reports the completion this file returns through its outbox.
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {errorBody, type ErrorCode, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
+import type {MomentEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {IntegrationAction, NowPlayingMedia} from '../core/index.js';
 import type {OperationResult} from '../device/index.js';
 import {LibraryError, type ItemInput, type Library, type PlaybackPolicy} from '../library/index.js';
 import {MediaError, type MediaProfile, type Transform} from '../media/index.js';
 import {PlaybackError, type MediaOperationEvent, type Player} from '../playback/index.js';
-import {ApiError, type MonitorPresentation} from '../presentation/index.js';
+import {ApiError, type MomentPlay, type MonitorPresentation} from '../presentation/index.js';
 import {Outcome} from '@jimmie-potts/sdk';
 
 /** A command's completed result, as the outcome payload reports it, and what reached the device for it. */
@@ -19,6 +20,8 @@ export type Completion = {
   error?: ErrorDetail;
   /** The send that reached the device's transport, for a transmitted completion: when, and which operations. */
   transmission?: {transmittedAtMs: number; operationIds: string[]};
+  /** How a moment that reached the device ended: the `moment-ended` occurrence that commits with this outcome. */
+  ended?: Pick<MomentEnded, 'ending' | 'endedAtMs'>;
 };
 
 /** The player actions of the general `media-control` command. */
@@ -207,6 +210,33 @@ export class PixooControl {
       return OBSERVED;
     } catch (error) {
       return errorCompletion(error);
+    }
+  }
+
+  /** Sets whether moments may cover Monitor (`pixoo-moments-set`), saved before the completion. */
+  async moments(overMonitor: boolean): Promise<Completion> {
+    try {
+      await this.#monitor.setMoments(overMonitor);
+      return OBSERVED;
+    } catch (error) {
+      return errorCompletion(error);
+    }
+  }
+
+  /**
+   * Plays one moment (`moment-play`). It completes after the moment ended and its base came back. A moment that reached
+   * the device succeeds with its transmission, however it ended, and carries its ending. One that never did has no ending:
+   * a failed write completes as that write, and otherwise nothing was sent.
+   */
+  async moment(play: MomentPlay): Promise<Completion> {
+    const result = await this.#monitor.playMoment(play);
+    if (result.ending !== null) return {...deviceCompletion(result.upload, 'moment'), ended: {ending: result.ending, endedAtMs: result.endedAtMs}};
+    switch (result.refused) {
+      case 'expired': return failed('expired', 'the moment missed its start window');
+      case 'blocked': return failed('invalid-state', 'the current presentation no longer admits the moment');
+      case 'cancelled': return failed('cancelled', 'a newer request or attention ended the moment before it was sent');
+      case 'content': return failed('internal', 'the moment could not be drawn');
+      case 'upload': return deviceCompletion(result.upload, 'moment');
     }
   }
 
