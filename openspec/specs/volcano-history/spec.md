@@ -59,7 +59,11 @@ Sessions SHALL be derived when read: heater-on stretches separated by less than 
 
 ### Requirement: Observed state and freshness
 
-The module SHALL publish `bunny.state.device.<id>`, kind `volcano` with every capability unsupported and observed unknown, and `bunny.state.volcano-status.<id>` under `volcano-status/2.0`. A feed stale for 15 s, a link not connected or a start with no snapshot yet SHALL make availability `unavailable` and heater and pump `unknown`, never off. Repeated snapshots SHALL publish nothing new.
+The module SHALL publish `bunny.state.device.<id>`, kind `volcano` with every capability unsupported and observed unknown, and `bunny.state.volcano-status.<id>` under `volcano-status/2.0`. A feed stale for 15 s, a link not connected or a start with no snapshot yet SHALL make availability `unavailable` and heater and pump `unknown`, never off. Repeated snapshots SHALL publish nothing new. Core history SHALL keep neither the raw snapshot nor `volcano-status`, so the module stays the only owner of usage history; the device record SHALL stay in core history, and its rows SHALL follow availability, never temperature, heater, pump or counter.
+
+#### Scenario: No usage in core history
+- **WHEN** snapshots change the temperature, heater, pump and counter
+- **THEN** core history gains no row and no usage field, and its device rows still show availability changing
 
 #### Scenario: Collector absent
 - **WHEN** snapshots stop while the heater was on

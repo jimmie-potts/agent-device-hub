@@ -85,6 +85,12 @@ availability `unavailable` and heater and pump `unknown`, never off. Repeated
 snapshots publish nothing. A running module takes no state from its store: until the
 next snapshot it reads unavailable.
 
+This module is the only owner of usage history. Core history keeps neither the raw
+snapshot nor `volcano-status`, so the dashboard's Timeline shows no heater, pump,
+temperature or counter. It does keep the device record, whose fields move only with
+availability, so its rows say when the device became available or unavailable. A
+threshold change stays in core history as the tracked action it is.
+
 All reads are fixed projections with closed, checked documents, at most 256 KiB, at
 `/modules/volcano/content/<ref>` under the gateway's existing read authorization.
 

@@ -22,6 +22,8 @@ The container has no radio, so the Mac Mini's Bluetooth is reached by a host-loc
 
 **Availability is read at the moment.** A published state holds what its commit knew, and a timer publishes staleness at 15 s. A read computes freshness from this process's last taken snapshot, so a store from an earlier run proves nothing until the next snapshot.
 
+**Usage stays out of core history.** The core's history keeps most state changes, so `volcano-status` is excluded along with the raw snapshot; otherwise it would hold an undeletable temperature series. The device record stays, because its fields other than its revision move only with availability and history skips a change that changes nothing. Corrected in review on 2026-11-03.
+
 **Publication stays in the transaction.** Facts, continuity and state messages commit together through the outbox, which handles a restart between commit and publication. The one exception: while the store refuses every commit, staleness is announced unstored, because a full disk must not leave consumers reading available. The module keeps retrying the marker.
 
 **A refused commit fences nothing.** Unlike a device writer, no effect is at stake, so the next snapshot simply tries again, and `recording` says `refused` meanwhile.

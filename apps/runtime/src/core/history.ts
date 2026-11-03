@@ -49,11 +49,14 @@ export const MAX_REFUSED = 1000;
 const SCHEMA_BASE = 'https://bunny.invalid/events/';
 /**
  * Messages history never keeps: a hook's raw observation, which the core reduces into the changes it keeps, a collector's
- * Desktop snapshot, which the Codex Desktop module reduces into observations (Hub #567), and the acknowledgments.
+ * Desktop snapshot, which the Codex Desktop module reduces into observations (Hub #567), a Volcano snapshot and Volcano
+ * status, whose usage the Volcano module alone keeps (Hub #615), and the acknowledgments. The Volcano device record stays:
+ * it says only whether the device is available, so its rows follow availability and never its temperature.
  */
 const LIFECYCLE_TYPE = 'org.bunny.lifecycle.observed';
 const DESKTOP_METADATA_TYPE = 'org.bunny.desktop-metadata.observed';
 const VOLCANO_OBSERVATION_TYPE = 'org.bunny.volcano-observation.observed';
+const VOLCANO_STATUS_TYPE = 'org.bunny.volcano-status.updated';
 
 /** The family a state's `dataschema` names, or undefined. */
 export const familyOf = (dataschema: string): string | undefined => {
@@ -63,9 +66,9 @@ export const familyOf = (dataschema: string): string | undefined => {
   return family === '' ? undefined : family;
 };
 
-/** Whether history keeps `message`: every state, removal, occurrence and outcome but a raw observation, a Desktop or Volcano snapshot and an acknowledgment. */
+/** Whether history keeps `message`: every state, removal, occurrence and outcome but a raw observation, a Desktop or Volcano snapshot, Volcano status and an acknowledgment. */
 export const kept = (message: Pick<Message<unknown>, 'kind' | 'type'>): boolean =>
-  ['state', 'removal', 'occurrence', 'outcome'].includes(message.kind) && message.type !== LIFECYCLE_TYPE && message.type !== DESKTOP_METADATA_TYPE && message.type !== VOLCANO_OBSERVATION_TYPE && message.type !== OUTCOME_RECORDED_TYPE;
+  ['state', 'removal', 'occurrence', 'outcome'].includes(message.kind) && message.type !== LIFECYCLE_TYPE && message.type !== DESKTOP_METADATA_TYPE && message.type !== VOLCANO_OBSERVATION_TYPE && message.type !== VOLCANO_STATUS_TYPE && message.type !== OUTCOME_RECORDED_TYPE;
 
 export type HistoryFilter = {fromAtMs?: number; toAtMs?: number; kind?: HistoryKind; source?: string; session?: string; limit?: number};
 export type HistoryRow = {seq: number; atMs: number; revision: number; kind: HistoryKind; source: string; messageId: string | null;

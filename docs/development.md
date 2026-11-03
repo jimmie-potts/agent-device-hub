@@ -53,7 +53,7 @@ store, reads and module conformance), the fake-noble adapter in
 built suite. `npm run test:volcano:consumer:built` checks the shipped registration,
 the read schemas under a strict standalone compiler and that the root lockfile has
 no Bluetooth binding; the runtime CI group runs it. The edge admission, gateway
-reads and tracked threshold are `apps/runtime/dist/tests/volcano-gateway.test.js`
+reads, tracked threshold and the absence of usage from core history are `apps/runtime/dist/tests/volcano-gateway.test.js`
 and the `volcano-physical-use` catalog scenario, under
 `npm run test:runtime:built`, which read an edge configuration file and so run in
 Linux. All of these use synthetic values and no radio. They do not qualify the

@@ -63,6 +63,8 @@ it('only the derived collector credential of the feed publishes its observations
 
 it('the raw observation is no history row, and the status reads only with a read grant, on this route only', async context => {
   assert.equal(kept({kind: 'occurrence', type: 'org.bunny.volcano-observation.observed'}), false);
+  assert.equal(kept({kind: 'state', type: 'org.bunny.volcano-status.updated'}), false);
+  assert.equal(kept({kind: 'state', type: 'org.bunny.device.updated'}), true, 'availability stays in history');
   const {collector, reader, operator, runtime, read, logs} = await world(context);
   assert.deepEqual(await publishOnce({url: runtime.url, source: collector.source, token: collector.token, timeoutMs: 2000}, ...(({key, message}) => [key, message] as const)(observation(collector.source, FEED, 1, {reading: reading({status1: 0x0623})}))), {status: 'published'});
   await waitFor(async () => (await (await read('/modules/volcano/content/status', reader)).json() as VolcanoStatus).heater === 'on', 5000, 'the heater reads on');
@@ -76,6 +78,41 @@ it('the raw observation is no history row, and the status reads only with a read
   assert.equal(JSON.stringify(history).includes('volcano-observation'), false);
   const text = JSON.stringify(logs.filter(record => record.attributes['bunny.routing.key'] === undefined));
   for (const value of ['mac-sim', 'volcano-sim']) assert.equal(text.includes(value), false, `${value} reached a record`);
+});
+
+it('core history holds no usage: temperature changes add no row, and only availability moves the device record', async context => {
+  const {collector, reader, operator, runtime, read} = await world(context);
+  let sequence = 0;
+  const say = async (fields: Partial<VolcanoObservation>): Promise<void> => {
+    sequence += 1;
+    const {key, message} = observation(collector.source, FEED, sequence, fields);
+    assert.deepEqual(await publishOnce({url: runtime.url, source: collector.source, token: collector.token, timeoutMs: 2000}, key, message), {status: 'published'});
+  };
+  const status = async (): Promise<VolcanoStatus> => await (await read('/modules/volcano/content/status', reader)).json() as VolcanoStatus;
+  const rows = async (): Promise<{source?: string; record: {family?: string; changed?: Record<string, unknown>}}[]> => {
+    // The core's intake commits in groups of about 50 ms.
+    await new Promise(resolve => { setTimeout(resolve, 200); });
+    const body = await (await read('/api/v2/history?kind=change', operator)).json() as {rows: {source?: string; record: {family?: string; changed?: Record<string, unknown>}}[]};
+    return body.rows.filter(row => row.source === 'bunny/modules/volcano');
+  };
+  await say({reading: reading({status1: 0x0623, currentDeciC: 500})});
+  await waitFor(async () => (await status()).currentDeciC === 500, 5000, 'the first reading');
+  const before = await rows();
+  for (const currentDeciC of [600, 700, 800, 900]) {
+    await say({reading: reading({status1: 0x0623, currentDeciC, heatingMinutes: 6})});
+    await waitFor(async () => (await status()).currentDeciC === currentDeciC, 5000, 'the next reading');
+  }
+  await say({reading: reading({status1: 0x3623, currentDeciC: 900, heatingMinutes: 6})});
+  await waitFor(async () => (await status()).pump === 'on', 5000, 'a pump run');
+  const after = await rows();
+  assert.equal(after.length, before.length, 'the row count does not grow with temperature, heater, pump or counter');
+  const text = JSON.stringify(after);
+  for (const field of ['currentDeciC', 'targetDeciC', 'status1', 'heatingCounterMinutes', 'heater', 'pump', 'volcano-status']) assert.equal(text.includes(field), false, `${field} reached core history`);
+  assert.ok(after.every(row => row.record.family === 'device'));
+  assert.ok(after.some(row => row.record.changed?.availability === 'available'), 'availability stays visible');
+  await say({link: 'disconnected', reading: null});
+  await waitFor(async () => (await status()).availability === 'unavailable', 5000, 'the disconnect');
+  assert.ok((await rows()).some(row => row.record.changed?.availability === 'unavailable'), 'and so does losing it');
 });
 
 it('a threshold goes through the dispatcher as a tracked action, and a reader or collector cannot send it', async context => {
