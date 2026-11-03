@@ -19,7 +19,7 @@ import {requireUpgradeLock} from '../dist/src/upgrade-lock.js';
 const maximum = 256 * 1024;
 const refused = () => {throw new Error('runtime-upgrade-preflight-refused');};
 const parse = bytes => JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
-const knownModules = ['bb8', 'companions', 'core', 'codex-desktop', 'lifx', 'nanoleaf', 'onn', 'pixoo', 'playback', 'roborock', 'tidbyt', 'wispr', 'wemo'];
+const knownModules = ['bb8', 'companions', 'core', 'codex-desktop', 'lifx', 'nanoleaf', 'onn', 'pixoo', 'playback', 'roborock', 'tidbyt', 'weather', 'wispr', 'wemo'];
 
 // The delivered companion registration always starts. Its fixed package path
 // in a verified artifact is conservative evidence of that ownership; missing
@@ -66,9 +66,9 @@ function requireHealth(health, configured, lagLimitMs, companions) {
   let absentModuleException = false;
   for (const row of health.modules) {
     // #840 qualifies absent Wispr; current-runtime qualification also covers absent
-    // BB8, ONN, Roborock and Wemo. Configured ownership and retained
+    // BB8, ONN, Roborock, Wemo and Weather. Configured ownership and retained
     // state are inspected separately before health observation.
-    if (['wispr', 'bb8', 'onn', 'roborock', 'wemo'].includes(row.name) && !configured.includes(row.name)) {
+    if (['wispr', 'bb8', 'onn', 'roborock', 'wemo', 'weather'].includes(row.name) && !configured.includes(row.name)) {
       if (row.state !== 'refused' || row.healthy !== false || row.reasonCode !== 'not-found') refused();
       absentModuleException = true;
     } else if ((row.name !== 'core' && !configured.includes(row.name)
