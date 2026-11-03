@@ -598,6 +598,16 @@ including a command. `invalid-request` covers a well-formed request whose values
 the owner does not accept, a command included, and a malformed request that is
 not a profile message, such as an HTTP or MCP body.
 
+## Art state
+
+`art/2.0` (`v2/art-state`) is the art module's complete record, on
+`bunny.state.art.art`: spent, reserved, uncertain and remaining micro-dollars per
+provider, the loop guard, recent jobs and artworks by reference, staged candidates and
+what retention holds. It carries no prompt, key, location or image bytes. Read bytes
+through the module's content references, `artContentRef`. The module registers the family
+itself, so it is not a core family. [#679](https://github.com/jimmie-potts/agent-device-hub/issues/679)
+owns the art command and handoff families.
+
 ## Companion payloads
 
 The additive `./v2/companions` entry supplies the `companion-opportunity`,

@@ -169,7 +169,7 @@ test('the host-local profile over the real shipped list starts admitted modules 
   const edge = {credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback', launcher: false, mcp: false};
   const listed = runtimeModules.shippedModules.slice(1);
   // The container guide names this admissible set; a new module that declares no simulation must update it.
-  assert.deepEqual(listed.filter(registration => registration.simulation === undefined).map(({name}) => name).sort(), ['companions', 'wispr']);
+  assert.deepEqual(listed.filter(registration => registration.simulation === undefined).map(({name}) => name).sort(), ['art', 'companions', 'wispr']);
   const devices = listed.filter(registration => registration.simulation !== undefined);
   assert.ok(devices.some(({name}) => name === 'playback'));
   for (const {name} of devices) {

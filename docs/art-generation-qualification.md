@@ -120,9 +120,10 @@ call's span name there. Prompts and responses stay out of logs.
 
 ## Spending limits
 
-The module owns one ledger in integer micro-dollars and one limit set, per host-local
-calendar month. Calls to both providers draw on the same limits, and each row names
-its provider for the dashboard's totals.
+The module owns one ledger in integer micro-dollars, per host-local calendar month.
+OpenAI and Claude each have their own limit set (owner decision, 2026-11-03), and each
+row names its provider. One provider reaching a limit does not stop the other. The
+loop guard stays a single count across both.
 
 1. Bound each call before sending it: at most 4,000 characters of prompt, and a fixed
    `max_tokens` for text. A variation's input image has a fixed size.
@@ -132,8 +133,9 @@ its provider for the dashboard's totals.
    and its bounded input at the listed price, which needs no observation. An unknown
    entry refuses the call, so an image size, quality or input image no one has observed
    cannot run until it is added.
-3. Refuse when the reservation would pass the monthly ceiling ($150 by default,
-   editable). Automatic work is also refused past the daily pace (about $5).
+3. Refuse when the reservation would pass its provider's monthly ceiling ($150 by
+   default, editable). Automatic work is also refused past that provider's daily pace
+   (about $5). The pace counts everything the provider's calls hold that day.
 4. Refuse automatic work past 30 dispatched calls in any rolling 60 minutes, counting
    failed and uncertain ones. Owner requests are not limited by this guard.
 5. Settle from the response's reported usage. A kept reservation stays as `uncertain`
@@ -144,14 +146,14 @@ its provider for the dashboard's totals.
 7. Nothing retries automatically.
 
 The reservation commits in one transaction, so concurrent reservations cannot pass a
-limit. The dashboard reads spent, reserved, uncertain and remaining amounts from the
-module's state. Worked traces, each a required test in #680:
+limit. The dashboard reads spent, reserved, uncertain and remaining amounts per provider
+from the module's state. Worked traces, each a required test in #680:
 
 | Trace | Result |
 | --- | --- |
 | Two concurrent requests with room for one | One reserves; the other is refused before any call |
-| Idea call, then three image calls | Four rows and four costs against one limit set, one artwork, three compositions |
-| Claude and OpenAI spend near the ceiling | Their sum decides; the next call from either is refused |
+| Idea call, then three image calls | Four rows and four costs, each against its own provider's limits; one artwork, three compositions |
+| Claude and OpenAI spend near their ceilings | Each decides alone; the provider at its ceiling refuses, and the other keeps working |
 | Second target refused at the ceiling after the first succeeds | `partial`; the first composition is kept |
 | Provider failure after dispatch | Settled as in the case table, with no resend |
 | Restart with a call in flight | `uncertain`, reservation kept, no resend |

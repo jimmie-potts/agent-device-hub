@@ -57,6 +57,10 @@ Its [guide](../../modules/wispr/README.md) documents the separate browser exposu
 and text-sharing choices. All authenticated read-scoped clients may read its
 analytics routes; browser exposure remains off until explicitly enabled.
 
+The [art module](../../modules/art/README.md) generates art through OpenAI's Image
+API and Claude under separate spending limits per provider, and keeps a private
+catalog. It admits no command until #679's families are wired.
+
 The [Wemo module](../../modules/wemo/README.md) controls up to two explicitly
 qualified local F7C063 plugs. It supplies power/observations only; schedules and
 maximum-on enforcement stay in the core.

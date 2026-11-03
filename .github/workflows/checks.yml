@@ -170,6 +170,9 @@ jobs:
         run: npm run test:onn:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:wemo:built
+      - name: Art module
+        if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:art:built
       - name: Reachy simulator module
         if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:reachy:built

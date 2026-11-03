@@ -15,7 +15,7 @@ build time and works without `unsafe-eval`. Python 3.14 consumers add the
 artifact's `python` directory to their module path and install the pinned
 `requirements-contracts.txt` in their own environment.
 
-Artifact 1.7.0 holds profiles 1.0 to 1.7. Profile 1.2 registers the
+Artifact 1.8.0 holds profiles 1.0 to 1.8. Profile 1.2 registers the
 B.U.N.N.Y. runtime: the `runtime` service, its `bunny.runtime` and
 `bunny.module` scopes, their events and attributes (see "The runtime's records"
 in `CONTRACT.md`). Profile 1.3 adds the runtime's decision records, the outbox's
@@ -29,7 +29,7 @@ runtime gateway's `http.route` and `http.request.method` and its
 `runtime.edge.reloaded` record (see "The gateway's records"). Profile 1.5 adds
 a store's `storage.cost.high` and `storage.cost.normal` module records, with
 `bunny.state.bytes` and `bunny.save.duration_ms` (see "Costly saves"). Producers
-still default to profile 1.1; a producer of profile 1.2 to 1.7 sets
+still default to profile 1.1; a producer of profile 1.2 to 1.8 sets
 `schema_version` itself. Profile 1.6 adds assistant run/call events,
 run/model/tool spans and bounded task/run/effect identifiers. These records
 contain no conversation text and use the existing host adapter. Profile 1.7

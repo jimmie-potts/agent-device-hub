@@ -76,6 +76,12 @@ must reflect the actual older reader on latest state. Do not clear settings,
 fences or holds, omit retained ownership or restore an older snapshot to make
 a recovery appear eligible.
 
+Art adds private `art.sqlite`, which holds its job rows, the spending ledger, the
+catalog and its bytes. It is a durable owner: favorites and spend cannot be rebuilt, so
+configured Art requires its primary store and ordinary healthy running state, and a
+retained store stays when its section is gone. A restart leaves every in-flight call
+uncertain with its reservation kept, and resends nothing.
+
 ## Routine operation checklist
 
 1. Verify reviewed merged source, applicable CI and release integrity. Assess
@@ -374,7 +380,7 @@ configuration or silent hook retargeting. The existing readers verify exact
 bytes and resolutions. An empty list still needs accepted completeness evidence.
 
 Configured modules require running, healthy, null-reason health. Unconfigured
-Wispr, BB-8, ONN, Roborock and Wemo may report only the exact absent-module
+Wispr, BB-8, ONN, Roborock, Wemo and Art may report only the exact absent-module
 `refused`/`not-found`/`healthy: false` row and corresponding degraded aggregate.
 Retained inactive files do not convert absence into healthy active ownership.
 Unknown owners and unsafe files still refuse. The always-started companions
