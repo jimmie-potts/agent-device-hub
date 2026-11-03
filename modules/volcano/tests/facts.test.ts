@@ -120,6 +120,15 @@ void test('a second delayed snapshot after a moved baseline is taken, but only b
   assert.equal(only(facts, 'gap').length, 0);
 });
 
+void test('a stale marker or a host clock behind the last receipt lets a non-newer stamp move the baseline at once', () => {
+  const {state} = play([{at: 0, reading: {status1: HEATING}}]);
+  const old: VolcanoObservation = {feed: FEED, observedAtMs: START - 3_600_000, collectorEpoch: 'epoch-a', sequence: state.sequence + 1, link: 'connected', reading: reading()};
+  assert.deepEqual(admit(state, old, START + 1000), {take: false, baselineMs: state.baselineMs, reason: 'stale'}, 'a fresh feed keeps its baseline');
+  assert.deepEqual(admit(state, old, START - 3_600_000), {take: false, baselineMs: old.observedAtMs, reason: 'stale'}, 'the host clock stepped back too');
+  assert.deepEqual(admit(state, old, START - 500), {take: false, baselineMs: state.baselineMs, reason: 'stale'}, 'a slewed clock does not count');
+  assert.deepEqual(admit(stale(state, START + STALE_MS).state, old, START + 5), {take: false, baselineMs: old.observedAtMs, reason: 'stale'}, 'the marker says so whatever the clock says');
+});
+
 void test('first connection mid-session records what it saw, with no earlier start', () => {
   const {facts} = play([{at: 600_000, reading: {status1: HEATING}}]);
   assert.deepEqual(only(facts, 'heater').map(({on, edge, observedAtMs}) => [on, edge, observedAtMs]), [[true, 'first-observation', START + 600_000]]);

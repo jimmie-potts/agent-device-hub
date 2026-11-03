@@ -18,6 +18,8 @@ export const FAHRENHEIT_BIT = 0x0200;
 export const STALE_MS = 15_000;
 /** At most one temperature sample in this time while the heater is on, besides those at a transition. */
 export const SAMPLE_MS = 30_000;
+/** How far the host's clock may seem to run backward before a snapshot's receipt says it stepped. */
+const CLOCK_TOLERANCE_MS = 1000;
 export const DEFAULT_GAP_MINUTES = 15;
 export const MIN_GAP_MINUTES = 1;
 export const MAX_GAP_MINUTES = 240;
@@ -80,7 +82,9 @@ export const counterOf = (reading: VolcanoReading): number | null =>
 export function admit(state: Continuity, snapshot: Pick<VolcanoObservation, 'collectorEpoch' | 'sequence' | 'observedAtMs'>, nowMs: number): {take: true} | {take: false; baselineMs: number | null; reason: 'duplicate' | 'stale'} {
   if (snapshot.collectorEpoch === state.epoch && snapshot.sequence <= state.sequence) return {take: false, baselineMs: state.baselineMs, reason: 'duplicate'};
   if (state.baselineMs !== null && snapshot.observedAtMs <= state.baselineMs) {
-    const stale = state.takenAtMs === null || nowMs - state.takenAtMs >= STALE_MS;
+    // A host clock that stepped back leaves `takenAtMs` in the future, which is no reason to wait for it to catch up.
+    const age = state.takenAtMs === null ? null : nowMs - state.takenAtMs;
+    const stale = age === null || age >= STALE_MS || age < -CLOCK_TOLERANCE_MS || state.link === 'stale';
     return {take: false, baselineMs: stale ? snapshot.observedAtMs : state.baselineMs, reason: 'stale'};
   }
   return {take: true};

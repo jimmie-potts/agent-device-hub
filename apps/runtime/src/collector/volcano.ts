@@ -62,6 +62,8 @@ export const BACKOFF_FIRST_MS = 2000;
 export const BACKOFF_MAX_MS = 60_000;
 /** How long a counter that does not move forward must hold before it is believed. One poll is enough, and one notification is not. */
 export const COUNTER_CONFIRM_MS = 4000;
+/** How far behind the last stamp a reading may fall and still be held just past it: a same-millisecond or slewed clock. */
+export const SAME_INSTANT_MS = 1000;
 export const MAX_COLLECTOR_BYTES = 8192;
 /** Status register 2's bit that flips by itself every 10 to 15 s. It is never a change. */
 const SELF_FLIPPING_BIT = 0x2000;
@@ -192,9 +194,11 @@ export class CounterGate {
     };
     if (this.#taken === undefined) return take();
     const gain = hours * 60 + minutes - (this.#taken.hours * 60 + this.#taken.minutes);
-    if (gain >= 0 && gain <= Math.ceil((atMs - this.#taken.atMs) / 60_000) + 1) return take();
+    // A wall clock that stepped back allows no time, but an unchanged pair needs none.
+    if (gain >= 0 && gain <= Math.ceil(Math.max(0, atMs - this.#taken.atMs) / 60_000) + 1) return take();
     if (this.#suspect?.hours === hours && this.#suspect.minutes === minutes) {
       if (atMs - this.#suspect.atMs >= this.#confirmMs) return take();
+      if (atMs < this.#suspect.atMs) this.#suspect.atMs = atMs;
     } else {
       this.#suspect = {hours, minutes, atMs};
     }
@@ -281,7 +285,7 @@ class Publisher {
     if (this.#sending) return;
     // Nothing newer to say of a connected device: the next evidence schedules the next publication.
     const reading = this.#link === 'connected' && this.#reading !== null;
-    if (reading && this.#readingAtMs <= this.#sentReadingAtMs) return;
+    if (reading && this.#readingAtMs === this.#sentReadingAtMs) return;
     if (reading) this.#sentReadingAtMs = this.#readingAtMs;
     this.#sending = true;
     this.#said = this.#signature();
@@ -385,9 +389,14 @@ export async function runCollector(collector: Collector, options: RunOptions): P
       }
       const registers: Registers = first;
       let duringPoll: Set<keyof Registers> | undefined;
-      // Evidence moves forward even when the wall clock does not, so a change at one millisecond is never lost to the last.
+      let heardAtMs = 0;
+      // A change in the same millisecond as the last, or under a clock slewed back a little, is stamped just past it, so
+      // it is not lost. A larger regression is a stepped clock, and it passes as it is: a floor would stamp real time as
+      // milliseconds for as long as the clock takes to catch up, and the module would store that. Passed on, the module
+      // drops the snapshots until its stale path runs and records a clock-step.
       const evidence = (atMs: number): void => {
-        readingAtMs = Math.max(atMs, readingAtMs + 1);
+        const behind = readingAtMs - atMs;
+        readingAtMs = behind >= 0 && behind <= SAME_INSTANT_MS ? readingAtMs + 1 : atMs;
         const {hours, minutes} = counter.take(registers, now());
         if (open) publisher.update('connected', {status1: registers.status1, status2: registers.status2, currentDeciC: registers.current, targetDeciC: registers.target, heatingHours: hours, heatingMinutes: minutes}, readingAtMs);
       };
@@ -398,7 +407,8 @@ export async function runCollector(collector: Collector, options: RunOptions): P
         if (value === null && (name === 'status1' || name === 'status2')) return;
         (registers as Record<keyof Registers, number | null>)[name] = value;
         duringPoll?.add(name);
-        evidence(now());
+        heardAtMs = now();
+        evidence(heardAtMs);
       };
       for (const name of Object.keys(VOLCANO_REGISTERS) as (keyof typeof VOLCANO_REGISTERS)[]) {
         const subscribed = await bounded(deadline => transport.subscribe(VOLCANO_REGISTERS[name], listener(name), deadline), readMs, live);
@@ -419,7 +429,8 @@ export async function runCollector(collector: Collector, options: RunOptions): P
         if (polled === undefined) break;
         // A notification during the poll is newer than what the poll read.
         for (const name of Object.keys(polled) as (keyof Registers)[]) if (!heard.has(name)) (registers as Record<keyof Registers, number | null>)[name] = polled[name];
-        evidence(polledAt);
+        // The poll began before a notification it heard, so that notification is the newest evidence it has.
+        evidence(heard.size === 0 ? polledAt : heardAtMs);
       }
       if (!signal.aborted) {
         publisher.update('disconnected', null);

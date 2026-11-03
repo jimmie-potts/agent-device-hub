@@ -52,8 +52,9 @@ one reaching this module is a real change. A gap that ends with no counter has n
 credit, and neither does the next one if no counter has been read between them.
 
 A snapshot repeating its epoch and sequence is dropped, and so is one whose
-`observedAtMs` is not newer than the last. Once the feed has been stale for 15 s, such
-a snapshot moves the ordering baseline instead, so a clock that stepped back holds the
+`observedAtMs` is not newer than the last. Once the feed has been stale for 15 s, or has
+a stale marker, or the host's clock is over a second behind the last receipt, such a
+snapshot moves the ordering baseline instead, so a clock that stepped back holds the
 feed for one freshness window and one cycle; the next snapshot taken records a
 `clock-step` discontinuity. Facts, continuity and the state messages commit in one
 transaction through the outbox, so a restart repeats no fact, and one between a commit

@@ -746,7 +746,9 @@ root lockfile and the container image. It keeps no history.
   at most once a second, and a heartbeat every 5 s. A connected reading's
   `observedAtMs` is when its evidence arrived, the start of a poll or a
   notification, so a heartbeat with no newer evidence publishes nothing and the
-  module's freshness runs out honestly. A change to status register 2's bit 13
+  module's freshness runs out honestly. A stamp is held just past the last only
+  within 1 s of it; a larger regression is a stepped clock, passed on as it is, so
+  the module's stale path runs and records a `clock-step`. A change to status register 2's bit 13
   alone, which flips by itself every 10 to 15 s, publishes nothing before the
   heartbeat. A failed publication is never retried: the next snapshot is a new one
   with the next `sequence`.

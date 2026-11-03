@@ -372,6 +372,70 @@ for (const [name, hours, minutes, reason] of [['reset', 3, 0, 'counter-decrease'
   });
 }
 
+void test('a wall clock stepped back makes a clock-step through the module, and heater time stays what it was', async t => {
+  const device = new FakeDevice();
+  let clock = 1_800_000_000_000;
+  const run = start(t, device, {timing: {minPublishMs: 1, heartbeatMs: 5, pollMs: 60_000}, now: () => clock});
+  await until(() => connected(run).length > 0, 'the first reading');
+  clock -= 3_600_000;
+  device.notify('current', 500);
+  await sleepFor(20);
+  clock += 1000;
+  device.notify('status1', 0x0623);
+  await sleepFor(20);
+  clock += 600_000;
+  device.notify('status1', 0x0603);
+  await until(() => connected(run).at(-1)?.reading?.status1 === 0x0603, 'the heater off');
+  await run.stop();
+  const facts = factsOf(run);
+  assert.deepEqual(discontinuities(run), ['clock-step']);
+  const heater = facts.filter(fact => fact.kind === 'heater');
+  const on = heater.find(fact => fact.on), off = heater.at(-1);
+  assert.equal(off?.on, false);
+  assert.equal((off?.observedAtMs ?? 0) - (on?.observedAtMs ?? 0), 600_000, 'ten minutes of heating, not milliseconds');
+});
+
+void test('a wall clock stepped forward and corrected makes one clock-step when it comes back, and no stretch collapses', async t => {
+  const device = new FakeDevice();
+  let clock = 1_800_000_000_000;
+  const run = start(t, device, {timing: {minPublishMs: 1, heartbeatMs: 5, pollMs: 60_000}, now: () => clock});
+  await until(() => connected(run).length > 0, 'the first reading');
+  clock += 3_600_000;
+  device.notify('current', 500);
+  await sleepFor(20);
+  clock -= 3_600_000;
+  clock += 1000;
+  device.notify('current', 510);
+  await sleepFor(20);
+  clock += 1000;
+  device.notify('status1', 0x0623);
+  await sleepFor(20);
+  clock += 600_000;
+  device.notify('status1', 0x0603);
+  await until(() => connected(run).at(-1)?.reading?.status1 === 0x0603, 'the heater off');
+  await run.stop();
+  const facts = factsOf(run);
+  assert.deepEqual(discontinuities(run), ['clock-step']);
+  const heater = facts.filter(fact => fact.kind === 'heater');
+  assert.equal((heater.at(-1)?.observedAtMs ?? 0) - (heater.find(fact => fact.on)?.observedAtMs ?? 0), 600_000);
+});
+
+void test('a small clock regression keeps stamps moving, and the same pair stays taken whichever way the clock moves', async t => {
+  const device = new FakeDevice();
+  let clock = 1_800_000_000_000;
+  const run = start(t, device, {timing: {minPublishMs: 1, heartbeatMs: 5, pollMs: 60_000}, now: () => clock});
+  await until(() => connected(run).length > 0, 'the first reading');
+  const stamp = connected(run)[0]?.observedAtMs ?? 0;
+  clock -= 500;
+  device.notify('current', 500);
+  await until(() => connected(run).length > 1, 'the next reading');
+  assert.equal(connected(run)[1]?.observedAtMs, stamp + 1, 'held just past the last stamp, within a second of the wall clock');
+  assert.deepEqual(discontinuities(run), []);
+  const gate = new CounterGate(1000);
+  gate.take({hours: 1, minutes: 5}, 3_600_000);
+  assert.deepEqual(gate.take({hours: 1, minutes: 5}, 0), {hours: 1, minutes: 5}, 'an unchanged pair is never suspect');
+});
+
 void test('the gate takes a normal tick and passes unread registers through', () => {
   const gate = new CounterGate(1000);
   assert.deepEqual(gate.take({hours: 1, minutes: 5}, 0), {hours: 1, minutes: 5});
