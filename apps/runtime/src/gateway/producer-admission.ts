@@ -1,23 +1,23 @@
 import {READ_RECEIPT_SCHEMA, type Lifecycle21Observation} from '@jimmie-potts/event-contracts/v2/read-receipts';
 import {isReadReceipt, receiptQualification} from '../read-receipts/qualification.js';
 import {SCHEMA_BASE, errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {DESKTOP_METADATA_SCHEMA, type DesktopMetadataSnapshot, type LifecycleObservation} from '@jimmie-potts/event-contracts/v2/families';
+import {DESKTOP_METADATA_SCHEMA, VOLCANO_OBSERVATION_SCHEMA, type DesktopMetadataSnapshot, type LifecycleObservation, type VolcanoObservation} from '@jimmie-potts/event-contracts/v2/families';
 import {LIFECYCLE_SCHEMA} from '../hook/observation.js';
 import {producerSource} from '../hook/producer.js';
 
 const PRODUCER = /^bunny\/parts\/hub-[0-9a-f]{32}$/;
 /** The families an `ingest` credential publishes, each only on its own `bunny.event.<family>.` keys. */
-const INGESTED = ['lifecycle', 'desktop-metadata'] as const;
+const INGESTED = ['lifecycle', 'desktop-metadata', 'volcano-observation'] as const;
 
 /**
- * Admission on every entry (Hub #567): a lifecycle observation or Desktop snapshot travels only on its own family's
- * routing key, so neither reaches the other family's subscribers. The SDK edge matches the message's family to the grant
+ * Admission on every entry (Hub #567, #615): a lifecycle observation, Desktop snapshot or Volcano observation travels only
+ * on its own family's routing key, so none reaches another family's subscribers. The SDK edge matches the message's family to the grant
  * and its subject to the key's last token, but not the key's family to the message's.
  */
 export function checkKeyFamily(message: Message, key: string): ErrorBody | undefined {
   const family = INGESTED.find(name => message.dataschema.startsWith(`${SCHEMA_BASE}${name}/`));
   return family === undefined || key.startsWith(`bunny.event.${family}.`) ? undefined
-    : errorBody('forbidden', {detail: 'a lifecycle observation or Desktop snapshot must use its own family\'s routing key'});
+    : errorBody('forbidden', {detail: family === 'volcano-observation' ? 'a Volcano observation must use its own family\'s routing key' : 'a lifecycle observation or Desktop snapshot must use its own family\'s routing key'});
 }
 
 /** Additional private-ingress admission; released local producer configuration stays unchanged. */
@@ -41,6 +41,19 @@ export function checkDesktopFeedIdentity(message: Message): ErrorBody | undefine
   const {provider, client, hostId, sourceId} = (message.data as DesktopMetadataSnapshot).feed;
   return PRODUCER.test(message.source) && message.source === producerSource({provider, client, hostId, sourceId, feed: 'desktop-metadata'}) ? undefined
     : errorBody('forbidden', {detail: 'the producer credential does not own this Desktop feed'});
+}
+
+/**
+ * Admission of a Volcano observation on every entry (Hub #615): only the derived collector credential of the snapshot's
+ * feed publishes it, whose configuration names the feed and `feed: 'volcano-observation'`. Any other caller is `forbidden`
+ * before the bus.
+ */
+export function checkVolcanoFeedIdentity(message: Message): ErrorBody | undefined {
+  if (message.dataschema !== VOLCANO_OBSERVATION_SCHEMA) return undefined;
+  // The SDK has validated this family and authenticated the envelope's source.
+  const {provider, client, hostId, sourceId} = (message.data as VolcanoObservation).feed;
+  return PRODUCER.test(message.source) && message.source === producerSource({provider, client, hostId, sourceId, feed: 'volcano-observation'}) ? undefined
+    : errorBody('forbidden', {detail: 'the producer credential does not own this Volcano feed'});
 }
 
 /** Receipt qualification applies on both loopback and private entries, before publication reaches the bus. */

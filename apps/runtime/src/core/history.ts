@@ -53,6 +53,7 @@ const SCHEMA_BASE = 'https://bunny.invalid/events/';
  */
 const LIFECYCLE_TYPE = 'org.bunny.lifecycle.observed';
 const DESKTOP_METADATA_TYPE = 'org.bunny.desktop-metadata.observed';
+const VOLCANO_OBSERVATION_TYPE = 'org.bunny.volcano-observation.observed';
 
 /** The family a state's `dataschema` names, or undefined. */
 export const familyOf = (dataschema: string): string | undefined => {
@@ -62,9 +63,9 @@ export const familyOf = (dataschema: string): string | undefined => {
   return family === '' ? undefined : family;
 };
 
-/** Whether history keeps `message`: every state, removal, occurrence and outcome but a raw observation, a Desktop snapshot and an acknowledgment. */
+/** Whether history keeps `message`: every state, removal, occurrence and outcome but a raw observation, a Desktop or Volcano snapshot and an acknowledgment. */
 export const kept = (message: Pick<Message<unknown>, 'kind' | 'type'>): boolean =>
-  ['state', 'removal', 'occurrence', 'outcome'].includes(message.kind) && message.type !== LIFECYCLE_TYPE && message.type !== DESKTOP_METADATA_TYPE && message.type !== OUTCOME_RECORDED_TYPE;
+  ['state', 'removal', 'occurrence', 'outcome'].includes(message.kind) && message.type !== LIFECYCLE_TYPE && message.type !== DESKTOP_METADATA_TYPE && message.type !== VOLCANO_OBSERVATION_TYPE && message.type !== OUTCOME_RECORDED_TYPE;
 
 export type HistoryFilter = {fromAtMs?: number; toAtMs?: number; kind?: HistoryKind; source?: string; session?: string; limit?: number};
 export type HistoryRow = {seq: number; atMs: number; revision: number; kind: HistoryKind; source: string; messageId: string | null;
