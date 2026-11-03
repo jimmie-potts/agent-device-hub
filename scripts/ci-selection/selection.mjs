@@ -31,6 +31,8 @@ const RULES = Object.freeze([
   // The runtime composes active modules, and maintenance imports the runtime.
   ['apps/runtime/**', ['runtime', 'maintenance'], 'the runtime and its maintenance consumer'],
   ['modules/**', ['modules', 'runtime', 'maintenance'], 'a module, the runtime that composes it and maintenance'],
+  // The collector's Bluetooth binding: the Volcano suite holds its tests, and its interface is the runtime's.
+  ['apps/volcano-collector/**', ['modules', 'runtime'], 'the Volcano collector binding'],
   ['apps/maintenance/**', ['maintenance'], 'maintenance, which nothing imports'],
   // The bridge, its protocol fixtures and the controller firmware use only one another.
   ['apps/chompi-bridge/**', ['chompi'], 'the CHOMPI bridge'],
@@ -39,6 +41,7 @@ const RULES = Object.freeze([
   // These Roborock consumer tests import the built runtime registry.
   ['tests/roborock_consumer.test.mjs', ['runtime'], 'a runtime consumer test'],
   ['tests/roborock_transport_consumer.test.mjs', ['runtime'], 'a runtime consumer test'],
+  ['tests/volcano_consumer.test.mjs', ['runtime'], 'a runtime consumer test'],
   ['docs/skins/**', FULL, 'shared by both dashboards'],
   // The retained documentation checks in the Workflow workflow, which runs for every change, read these.
   ['docs/**', [], 'documentation tooling that only the Workflow workflow reads'],

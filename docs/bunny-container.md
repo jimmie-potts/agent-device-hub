@@ -218,7 +218,9 @@ section refuses startup as before. The collector's own ingest credential and its
 remote ingress need the [private-access profile](../apps/runtime/PRIVATE-ACCESS.md):
 the host-local profile admits exactly one ingest credential, the selected local
 hook's, and no remote entry, so a collector on another computer cannot reach it
-and a second ingest grant is refused there.
+and a second ingest grant is refused there. The Volcano module's section is admitted
+the same way (Hub #615), because the module reaches no device, and its collector's
+credential has the same limit.
 
 A future module that sends device commands without declaring a simulation needs
 review against this rule before it ships. Device modules on the Mac wait for the

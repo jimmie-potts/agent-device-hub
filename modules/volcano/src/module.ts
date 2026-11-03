@@ -113,7 +113,8 @@ class Owner {
       return {revision: this.#meta.revision, states: this.#drafts().filter(draft => request.data.families.includes(draft.dataschema.includes('/device/') ? 'device' : STATUS_FAMILY))};
     });
     await this.#outbox.republish();
-    await this.#transaction(add => { this.#publish(add); });
+    // A full disk at a start is the store's to report: the module still serves its reads and tries again with each snapshot.
+    await this.#transaction(add => { this.#publish(add); }).catch(() => {});
     await sdk.subscribe<VolcanoObservation>(volcanoObservationKey(this.#feed), message => { this.#delivered(message); });
     this.#armStale();
     if (this.#synthetic !== undefined) {

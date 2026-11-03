@@ -43,6 +43,25 @@ addresses. Runtime maximum-on, management and scheduling integration use
 `apps/runtime/DEVELOPMENT.md`. Build/type/lint, shared contract/workflow checks,
 independent review, installed qualification and named physical trials remain separate.
 
+## Volcano checks
+
+Use Node 24. Run `npm run test:volcano`, or build once and run
+`npm run test:volcano:built`, for `modules/volcano` (the facts, session derivation,
+store, reads and module conformance), the fake-noble adapter in
+`apps/volcano-collector` and the collector's fake-transport suite
+`apps/runtime/dist/tests/volcano-collector.test.js`. The modules CI group runs the
+built suite. `npm run test:volcano:consumer:built` checks the shipped registration,
+the read schemas under a strict standalone compiler and that the root lockfile has
+no Bluetooth binding; the runtime CI group runs it. The edge admission, gateway
+reads and tracked threshold are `apps/runtime/dist/tests/volcano-gateway.test.js`
+and the `volcano-physical-use` catalog scenario, under
+`npm run test:runtime:built`, which read an edge configuration file and so run in
+Linux. All of these use synthetic values and no radio. They do not qualify the
+binding, the macOS launch path, or the owner's firmware; that is #617.
+`apps/volcano-collector` is not a workspace, so `npm ci` at the root installs no
+native dependency and the root build compiles its adapter against its own types of
+noble.
+
 ## Current architecture diagram
 
 The current runtime view is authored in `docs/runtime-architecture.json` and

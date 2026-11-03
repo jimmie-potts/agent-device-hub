@@ -3,6 +3,7 @@
 // run's supervisor so that it outlives a runtime restart as a real one would.
 import type {VolcanoObservation} from '@jimmie-potts/event-contracts/v2/families';
 import type {DeviceAction, DeviceLink, DeviceSimulation, ModuleRegistration} from '@jimmie-potts/sdk';
+import {configureVolcano} from './configuration.js';
 import {registerVolcanoFamilies, volcanoSchemas} from './families.js';
 import {createVolcanoModule, type SyntheticFeed} from './module.js';
 import {SIMULATION_ACTIONS, SimulatedVolcano, type SimulationAction} from './simulated.js';
@@ -48,5 +49,5 @@ const simulation: DeviceSimulation<SimulatedVolcano, SimulatedVolcano> = {
 
 export const registration: ModuleRegistration = {
   name: 'volcano', shipped: true, order: 860, create: () => createVolcanoModule(), simulate: () => createVolcanoModule({feed: new SimulatedVolcano()}),
-  schemas: volcanoSchemas, registerFamilies: registerVolcanoFamilies, simulatedSection: {config: VOLCANO_SIMULATED_SECTION}, simulation, hostLocal: () => true,
+  schemas: volcanoSchemas, registerFamilies: registerVolcanoFamilies, simulatedSection: {config: VOLCANO_SIMULATED_SECTION}, simulation, hostLocal: section => 'config' in configureVolcano(section),
 };

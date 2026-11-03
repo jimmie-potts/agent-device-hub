@@ -76,6 +76,10 @@ must reflect the actual older reader on latest state. Do not clear settings,
 fences or holds, omit retained ownership or restore an older snapshot to make
 a recovery appear eligible.
 
+Volcano adds private `volcano.sqlite`, which holds usage facts that nothing deletes,
+the gap threshold and threshold request fences. Configured Volcano requires its
+primary store. Preserve a retained store when its section goes.
+
 ## Routine operation checklist
 
 1. Verify reviewed merged source, applicable CI and release integrity. Assess
@@ -374,7 +378,7 @@ configuration or silent hook retargeting. The existing readers verify exact
 bytes and resolutions. An empty list still needs accepted completeness evidence.
 
 Configured modules require running, healthy, null-reason health. Unconfigured
-Wispr, BB-8, ONN, Roborock and Wemo may report only the exact absent-module
+Wispr, BB-8, ONN, Roborock, Wemo and Volcano may report only the exact absent-module
 `refused`/`not-found`/`healthy: false` row and corresponding degraded aggregate.
 Retained inactive files do not convert absence into healthy active ownership.
 Unknown owners and unsafe files still refuse. The always-started companions

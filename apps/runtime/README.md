@@ -57,6 +57,10 @@ Its [guide](../../modules/wispr/README.md) documents the separate browser exposu
 and text-sharing choices. All authenticated read-scoped clients may read its
 analytics routes; browser exposure remains off until explicitly enabled.
 
+The [Volcano module](../../modules/volcano/README.md) keeps private usage facts for
+one VOLCANO HYBRID from a host-local collector, derives sessions when they are read
+and reaches no device.
+
 The [Wemo module](../../modules/wemo/README.md) controls up to two explicitly
 qualified local F7C063 plugs. It supplies power/observations only; schedules and
 maximum-on enforcement stay in the core.
@@ -719,6 +723,57 @@ the Mac, so the core never reads another host's files. The code is
 
 Installation (the collector's service unit, its private files and its
 credential grant on each host) is separate from this source.
+
+## Volcano collector
+
+`bin/volcano-collector.mjs` is the host-local collector for one enrolled VOLCANO
+HYBRID (#615): `node bin/volcano-collector.mjs <collector.json>`. The runtime's
+container has no radio, so the collector holds the Bluetooth connection on the
+Mac Mini. The code is `src/collector/volcano.ts`, which the package exports as
+`@jimmie-potts/runtime/volcano-collector`. The Bluetooth binding is the separate
+[`apps/volcano-collector`](../volcano-collector/README.md) package, outside the
+root lockfile and the container image. It keeps no history.
+
+- **What it may do.** The transport has five operations, scan, connect, read,
+  subscribe and disconnect, and no write. Reads and subscriptions are limited to
+  status registers `1010000c` and `1010000d`, current and target temperature
+  `10110001` and `10110003` and the counters `10110015` and `10110016`, each on
+  the base `-5354-4f52-5a26-4249434b454c`. The serial `10100008` is read once per
+  connection and never subscribed to. Subscribing is the only write the Bluetooth
+  stack makes on its behalf.
+- **What it publishes.** One `org.bunny.volcano-observation.observed` occurrence
+  on `bunny.event.volcano-observation.<feed ID>`, with `publishOnce`: on a change
+  at most once a second, and a heartbeat every 5 s whatever the link's state. A
+  change to status register 2's bit 13 alone, which flips by itself every 10 to
+  15 s, publishes nothing before the heartbeat. A failed publication is never
+  retried: the next snapshot is a new one with the next `sequence`.
+- **What it reads.** It stays connected on notifications plus a read of every
+  register each 5 s, because one counter tick in the live trial arrived only
+  through the poll. A failed read ends the connection.
+- **Identity.** The serial's SHA-256 is compared with `serialSha256`. A different
+  device publishes `identity-mismatch` and disconnects. The serial is not
+  published, logged or kept.
+- **Reconnection.** Backoff starts at 2 s and doubles to 60 s, starting over after
+  a connection that reached the device. A device that does not advertise is
+  `unavailable`, which is unknown: its Bluetooth may simply be off.
+- **`collector.json`.** A private file under the producer file's rules with
+  exactly `{"producer": "<absolute path>", "advertisedName": "<exact name>",
+  "serialSha256": "<64 hex digits>"}`.
+- **The producer.** The [hook's producer file and receipt](#agent-hooks), whose
+  `source` is exactly `{"provider": "storz-bickel", "client": "volcano",
+  "hostId": "<id>", "sourceId": "<id>", "feed": "volcano-observation"}`. The
+  gateway admits an observation only from that derived credential, and refuses
+  anyone else with `forbidden` before the bus.
+- **Records.** Diagnostic contract records on stderr as the `volcano` module:
+  `device.unavailable` and `device.available` for the link, and the publication
+  records as for the Codex Desktop collector, with registry codes only.
+- **Exit.** SIGTERM or SIGINT ends it with 0 within 1 s. An unusable command line,
+  file or binding ends it with 2 and one fixed line. An unexpected fault ends it
+  with 1.
+
+Installation, the macOS Bluetooth launch path and physical acceptance belong to
+#617. See [the module guide](../../modules/volcano/README.md) for what happens to
+a snapshot.
 
 ## Run
 
