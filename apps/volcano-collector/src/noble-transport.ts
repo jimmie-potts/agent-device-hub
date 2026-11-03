@@ -61,7 +61,8 @@ export function nobleTransport(noble: Noble): VolcanoTransport {
         noble.on('discover', discovered);
         signal.addEventListener('abort', ended, {once: true});
         if (signal.aborted) { ended(); return; }
-        noble.startScanningAsync([], false).catch((error: unknown) => {
+        // Duplicates, so a device seen before a reconnect, or first seen without its scan response, is seen again.
+        noble.startScanningAsync([], true).catch((error: unknown) => {
           noble.removeListener('discover', discovered);
           signal.removeEventListener('abort', ended);
           reject(error instanceof Error ? error : new Error('volcano-collector: the scan did not start'));
