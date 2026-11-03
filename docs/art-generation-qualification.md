@@ -70,19 +70,23 @@ device refers to a composition, never to an artwork alone.
   "artworkId": "art-1",
   "outcome": "succeeded | partial | failed | uncertain | rejected | cancelled",
   "palette": ["#101828", "#F4A261"],
-  "calls": [{"callId": "call-1", "provider": "openai", "model": "gpt-image-2", "status": "settled", "reservedMicros": 90000, "costMicros": 3000}],
+  "calls": [{"callId": "call-1", "target": "tidbyt", "provider": "openai", "model": "gpt-image-2", "status": "settled", "reservedMicros": 90000, "costMicros": 3000}],
   "compositions": [{
     "target": "tidbyt",
     "compositionId": "sha256",
     "outcome": "succeeded",
+    "promptHash": "sha256",
     "renditions": [{"renditionId": "sha256", "width": 64, "height": 32, "frames": 1, "durationMs": 0, "format": "webp", "bytes": 1840}]
   }],
-  "provenance": {"generatedBy": "openai", "promptHash": "sha256", "factual": false}
+  "provenance": {"generatedBy": "openai", "factual": false}
 }
 ```
 
-Each target succeeds or fails alone. A failure on one keeps the others and makes the
-artwork `partial`. Local renditions and playback cost nothing. Palette values are
+Each target succeeds or fails alone. An artwork is `partial` when at least one target
+succeeded and another did not, whether that one failed or is uncertain. It is
+`uncertain` when none succeeded and any is uncertain. These are the art job's own
+results, not ADR 0012 command outcomes, because a request is not a tracked command.
+Local renditions and playback cost nothing. Palette values are
 validated data for [#683](https://github.com/jimmie-potts/agent-device-hub/issues/683).
 
 | Case | Refusal or outcome | Spend | Effect |
@@ -109,12 +113,14 @@ The module owns one ledger in integer micro-dollars and one limit set, per host-
 calendar month. Calls to both providers draw on the same limits, and each row names
 its provider for the dashboard's totals.
 
-1. Bound each call before sending it: at most 4,000 characters of prompt, at most one
-   input image, and a fixed `max_tokens` for text.
+1. Bound each call before sending it: at most 4,000 characters of prompt, and a fixed
+   `max_tokens` for text. A variation's input image has a fixed size.
 2. Reserve its worst case from a price table in the module, keyed by provider, model,
-   quality and size. Each entry is twice the largest output observed for that
-   entry, plus its bounded input at the listed price. An unknown entry refuses the
-   call, so a size or quality no one has observed cannot run until it is added.
+   quality and size. An image entry is twice the largest output observed for that
+   entry, plus its bounded input at the listed price. A text entry is its `max_tokens`
+   and its bounded input at the listed price, which needs no observation. An unknown
+   entry refuses the call, so an image size, quality or input image no one has observed
+   cannot run until it is added.
 3. Refuse when the reservation would pass the monthly ceiling ($150 by default,
    editable). Automatic work is also refused past the daily pace (about $5).
 4. Refuse automatic work past 30 dispatched calls in any rolling 60 minutes, counting
@@ -126,7 +132,7 @@ its provider for the dashboard's totals.
    refused until the next month. The excess is shown and logged as a price table fault.
 7. Nothing retries automatically.
 
-The reservation commits in one transaction, so concurrent requests cannot pass a
+The reservation commits in one transaction, so concurrent reservations cannot pass a
 limit. The dashboard reads spent, reserved, uncertain and remaining amounts from the
 module's state. Worked traces, each a required test in #680:
 
@@ -159,10 +165,11 @@ they never leave the module.
 
 | Step | Producer | Consumer | Owner of the delta |
 | --- | --- | --- | --- |
-| Contracts and forwarding | | Core part forwards `art-dispatch`, from `bunny/modules/art` only, as tracked `art-stage`, `art-ambient-set` and `moment-play` commands | [#679](https://github.com/jimmie-potts/agent-device-hub/issues/679) |
+| Contracts and forwarding | `modules/art` sends `art-dispatch` | Core part accepts it from `bunny/modules/art` only and forwards tracked `art-stage` and `art-ambient-set` commands, never `moment-play` | [#679](https://github.com/jimmie-potts/agent-device-hub/issues/679) |
+| Request | Dashboard sends `art-request`, an untracked module command | `modules/art` answers `accepted` once the row is durable, and the result appears in its `art` state. A provider call can outlast the tracker's 30 s device deadline, so this is not a tracked device operation | #679 family, #680 handler |
 | Stage | `modules/art` sends `art-stage`: `compositionId`, format, dimensions, frames, hash, up to 160 KiB of bytes, lifetime | Pixoo or Tidbyt validates and keeps a private copy; no display effect; duplicates reuse it | Pixoo [#1288](https://github.com/jimmie-potts/agent-device-hub/issues/1288), Tidbyt [#681](https://github.com/jimmie-potts/agent-device-hub/issues/681) |
 | Stage finished | Core operation record for that `requestId` | `modules/art` shows nothing until it reads `succeeded`; #679's fixture proves a module can read it | #679 |
-| Show | [#684](https://github.com/jimmie-potts/agent-device-hub/issues/684) decides with core arbitration; the core sends `moment-play/2.1` with optional `art: {compositionId}` | The device plays its private copy, or refuses an unknown or expired reference before any effect | Schema #679; playback Pixoo [#1287](https://github.com/jimmie-potts/agent-device-hub/issues/1287) and #1288, Tidbyt [#337](https://github.com/jimmie-potts/agent-device-hub/issues/337) and #681 |
+| Show | Only the core automation path sends it, after arbitration, owned by [#684](https://github.com/jimmie-potts/agent-device-hub/issues/684): `moment-play/2.1` with optional `art: {compositionId}`. `modules/art` offers candidates in its state and cannot start a takeover | The device plays its private copy, or refuses an unknown or expired reference before any effect | Schema #679; playback Pixoo [#1287](https://github.com/jimmie-potts/agent-device-hub/issues/1287) and #1288, Tidbyt [#337](https://github.com/jimmie-potts/agent-device-hub/issues/337) and #681 |
 | Capability | Each device declares `moments.art` in its `device` record | `commandSupported` refuses a moment with `art` for a device without it, so Nanoleaf does not play its mood instead | #679 |
 | Ambient | `modules/art` sends `art-ambient-set` with a `compositionId`, or clears it | Tidbyt's art tile in its rotation; no takeover | #681 |
 | Browser and theme | Authenticated `content` refs and an `art` state record | Dashboard widget, gallery, spend and theme palette | #680 supplies; [#682](https://github.com/jimmie-potts/agent-device-hub/issues/682) and #683 consume |
@@ -170,8 +177,18 @@ they never leave the module.
 Consumers of `moment-play/2.0` keep their behavior, because a moment without `art` is
 unchanged. Staged copies have a bounded lifetime and do not enter Pixoo's permanent
 library; saving a favorite is an explicit, separate import. A device holds its own
-copy, so deleting an artwork cannot remove media from an in-flight moment. An expired
-reference is refused truthfully.
+copy and never expires it during a moment, so neither deletion nor expiry can remove
+media from an in-flight moment. An expired reference is refused truthfully.
+
+A display composition has exactly one rendition, and `compositionId` is the device's
+key. An animated version is its own composition. Staging the same ID and hash again
+reuses the copy and renews its lifetime; the same ID with a different hash is refused.
+Staging is local and free, so `modules/art` stages saved art again before offering it
+and renews an ambient tile's copy, and saved art keeps working when generation pauses.
+
+This replaces the native rendition IDs that #1288's text asks to return. #1288 keeps
+its validation, provenance and reference safety, and takes the `compositionId` mapping
+instead.
 
 Tracked operations keep their payload, and art bytes must not grow the tracker. #679
 generalizes the omitted-payload path that ONN text uses in
@@ -189,11 +206,14 @@ pixels, so device art is always downscaled locally.
 - **Browser:** a richer, wide composition of the same idea that also suits a narrow
   card.
 
-The API returns stills only, and OpenAI's Videos API shut down on 2026-09-24. Animated
-art uses one image request for a sprite sheet, cut into frames locally. #680 validates
-each sheet and rejects misaligned cells or excess frame-to-frame change; a rejected
-sheet still costs its call, and the art falls back to a still or local motion. Local
-motion costs nothing and stays within each device profile.
+The API returns stills only, and
+[OpenAI's guide](https://developers.openai.com/api/docs/guides/video-generation) says
+its Videos API shut down on 2026-09-24. Animated art uses one image request for a
+sprite sheet, cut into frames locally. #680 validates each sheet and rejects misaligned
+cells or excess frame-to-frame change; a rejected sheet still costs its call, and the
+art falls back to a still or local motion. Local motion costs nothing and stays within
+each device profile. #680 assembles a GIF for Pixoo, which #1288 admits under Pixoo's
+existing limits, and #681 builds the Tidbyt's animated WebP.
 
 ## Live trial
 
