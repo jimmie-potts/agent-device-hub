@@ -743,13 +743,17 @@ root lockfile and the container image. It keeps no history.
   stack makes on its behalf.
 - **What it publishes.** One `org.bunny.volcano-observation.observed` occurrence
   on `bunny.event.volcano-observation.<feed ID>`, with `publishOnce`: on a change
-  at most once a second, and a heartbeat every 5 s whatever the link's state. A
-  change to status register 2's bit 13 alone, which flips by itself every 10 to
-  15 s, publishes nothing before the heartbeat. A failed publication is never
-  retried: the next snapshot is a new one with the next `sequence`.
+  at most once a second, and a heartbeat every 5 s. A connected reading's
+  `observedAtMs` is when its evidence arrived, the start of a poll or a
+  notification, so a heartbeat with no newer evidence publishes nothing and the
+  module's freshness runs out honestly. A change to status register 2's bit 13
+  alone, which flips by itself every 10 to 15 s, publishes nothing before the
+  heartbeat. A failed publication is never retried: the next snapshot is a new one
+  with the next `sequence`.
 - **What it reads.** It stays connected on notifications plus a read of every
   register each 5 s, because one counter tick in the live trial arrived only
-  through the poll. A failed read ends the connection.
+  through the poll. A notification during a poll wins over what the poll read. A
+  failed read ends the connection, and a lost link ends any read under way.
 - **Identity.** The serial's SHA-256 is compared with `serialSha256`. A different
   device publishes `identity-mismatch` and disconnects. The serial is not
   published, logged or kept.

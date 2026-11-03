@@ -161,6 +161,11 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
 
 const FAILED = Symbol('failed');
 
+/** The device's registers as last known. */
+type Registers = {status1: number; status2: number; current: number | null; target: number | null; hours: number | null; minutes: number | null};
+const readingOf = ({status1, status2, current, target, hours, minutes}: Registers): VolcanoReading =>
+  ({status1, status2, currentDeciC: current, targetDeciC: target, heatingHours: hours, heatingMinutes: minutes});
+
 /** One bounded transport call: its answer, or `FAILED` when it threw, outlasted `ms` or `signal` ended. Its own signal aborts then. */
 async function bounded<T>(work: (signal: AbortSignal) => Promise<T>, ms: number, signal: AbortSignal): Promise<T | typeof FAILED> {
   const deadline = AbortSignal.any([signal, AbortSignal.timeout(ms)]);
@@ -179,7 +184,11 @@ async function bounded<T>(work: (signal: AbortSignal) => Promise<T>, ms: number,
   }
 }
 
-/** What the collector last knows, and when to say it: on a change at most once a second, and at the heartbeat regardless. */
+/**
+ * What the collector last knows, and when to say it: on a change at most once a second, and at the heartbeat when there is
+ * newer evidence. A reading's `observedAtMs` is the time of the evidence for it, never the time it was sent, so a heartbeat
+ * with nothing newer sends nothing and the module's freshness runs out honestly.
+ */
 class Publisher {
   readonly #collector: Collector;
   readonly #options: RunOptions;
@@ -192,6 +201,8 @@ class Publisher {
   #sequence = 0;
   #link: VolcanoLink = 'unavailable';
   #reading: VolcanoReading | null = null;
+  #readingAtMs = 0;
+  #sentReadingAtMs = 0;
   #said: string | undefined;
   #lastAt = Number.NEGATIVE_INFINITY;
   #timer: ReturnType<typeof setTimeout> | undefined;
@@ -212,10 +223,11 @@ class Publisher {
     return JSON.stringify([this.#link, this.#reading === null ? null : {...this.#reading, status2: this.#reading.status2 & ~SELF_FLIPPING_BIT}]);
   }
 
-  /** Takes what is known now and schedules the next publication. */
-  update(link: VolcanoLink, reading: VolcanoReading | null): void {
+  /** Takes what is known now, with the time of the evidence for a reading, and schedules the next publication. */
+  update(link: VolcanoLink, reading: VolcanoReading | null, readingAtMs = 0): void {
     this.#link = link;
     this.#reading = link === 'connected' ? reading : null;
+    this.#readingAtMs = readingAtMs;
     this.#schedule();
   }
 
@@ -231,12 +243,16 @@ class Publisher {
   async #send(): Promise<void> {
     if (this.#options.signal.aborted) return;
     if (this.#sending) return;
+    // Nothing newer to say of a connected device: the next evidence schedules the next publication.
+    const reading = this.#link === 'connected' && this.#reading !== null;
+    if (reading && this.#readingAtMs <= this.#sentReadingAtMs) return;
+    if (reading) this.#sentReadingAtMs = this.#readingAtMs;
     this.#sending = true;
     this.#said = this.#signature();
     this.#lastAt = performance.now();
     this.#sequence += 1;
     const snapshot: VolcanoObservation = {
-      feed: {...this.#collector.feed}, observedAtMs: this.#now(), collectorEpoch: this.#epoch, sequence: this.#sequence, link: this.#link,
+      feed: {...this.#collector.feed}, observedAtMs: reading ? this.#readingAtMs : this.#now(), collectorEpoch: this.#epoch, sequence: this.#sequence, link: this.#link,
       reading: this.#reading === null ? null : {...this.#reading},
     };
     const {key, message} = observationMessage(this.#collector.publisher.source, snapshot);
@@ -279,13 +295,16 @@ export async function runCollector(collector: Collector, options: RunOptions): P
   const publisher = new Publisher(collector, options);
   publisher.update('unavailable', null);
 
-  const readRegisters = async (): Promise<VolcanoReading | undefined> => {
-    const values = await Promise.all(SUBSCRIBABLE.map(uuid => bounded(deadline => transport.read(uuid as SubscribeUuid, deadline), readMs, signal)));
-    if (values.includes(FAILED)) return undefined;
+  /** The registers once, each bounded, or undefined when one failed or the link ended meanwhile. */
+  const readRegisters = async (live: AbortSignal): Promise<Registers | undefined> => {
+    const values = await Promise.all(SUBSCRIBABLE.map(uuid => bounded(deadline => transport.read(uuid as SubscribeUuid, deadline), readMs, live)));
+    if (values.includes(FAILED) || live.aborted) return undefined;
     const [status1, status2, current, target, hours, minutes] = (values as Uint8Array[]).map(uint16);
     if (status1 === null || status1 === undefined || status2 === null || status2 === undefined) return undefined;
-    return {status1, status2, currentDeciC: current ?? null, targetDeciC: target ?? null, heatingHours: hours ?? null, heatingMinutes: minutes ?? null};
+    return {status1, status2, current: current ?? null, target: target ?? null, hours: hours ?? null, minutes: minutes ?? null};
   };
+
+  let readingAtMs = 0;
 
   /** One connection, until its link ends. True when it reached the point of reading the device. */
   const session = async (): Promise<boolean> => {
@@ -296,18 +315,19 @@ export async function runCollector(collector: Collector, options: RunOptions): P
       availability.unreachable(LINK_DEVICE, 'unavailable');
       return false;
     }
-    let lost: () => void = () => {};
-    const ended = new Promise<void>(resolve => { lost = resolve; });
-    const connected = await bounded(deadline => transport.connect(lost, deadline), connectMs, signal);
+    // Everything of this connection ends with its link or the process, so nothing waits on a promise that outlives a wait.
+    const link = new AbortController();
+    const live = AbortSignal.any([signal, link.signal]);
+    const connected = await bounded(deadline => transport.connect(() => { link.abort(); }, deadline), connectMs, signal);
     if (connected === FAILED) {
       publisher.update('unavailable', null);
       availability.unreachable(LINK_DEVICE, 'unavailable');
       await bounded(() => transport.disconnect(), readMs, new AbortController().signal);
       return false;
     }
-    let live = true;
+    let open = true;
     try {
-      const serial = await bounded(deadline => transport.read(VOLCANO_SERIAL, deadline), readMs, signal);
+      const serial = await bounded(deadline => transport.read(VOLCANO_SERIAL, deadline), readMs, live);
       if (serial === FAILED) {
         publisher.update('disconnected', null);
         availability.unreachable(LINK_DEVICE, 'unavailable');
@@ -318,40 +338,49 @@ export async function runCollector(collector: Collector, options: RunOptions): P
         availability.unreachable(LINK_DEVICE, 'forbidden');
         return false;
       }
-      const first = await readRegisters();
+      const started = now();
+      const first = await readRegisters(live);
       if (first === undefined) {
         publisher.update('disconnected', null);
         availability.unreachable(LINK_DEVICE, 'unavailable');
         return false;
       }
-      let reading: VolcanoReading = first;
-      const say = (): void => { if (live) publisher.update('connected', reading); };
-      say();
+      const registers: Registers = first;
+      let duringPoll: Set<keyof Registers> | undefined;
+      // Evidence moves forward even when the wall clock does not, so a change at one millisecond is never lost to the last.
+      const evidence = (atMs: number): void => {
+        readingAtMs = Math.max(atMs, readingAtMs + 1);
+        if (open) publisher.update('connected', readingOf(registers), readingAtMs);
+      };
+      evidence(started);
       availability.reached(LINK_DEVICE);
-      const listeners: {[K in keyof typeof VOLCANO_REGISTERS]: (bytes: Uint8Array) => void} = {
-        status1: bytes => { const value = uint16(bytes); if (value !== null) { reading = {...reading, status1: value}; say(); } },
-        status2: bytes => { const value = uint16(bytes); if (value !== null) { reading = {...reading, status2: value}; say(); } },
-        current: bytes => { reading = {...reading, currentDeciC: uint16(bytes)}; say(); },
-        target: bytes => { reading = {...reading, targetDeciC: uint16(bytes)}; say(); },
-        hours: bytes => { reading = {...reading, heatingHours: uint16(bytes)}; say(); },
-        minutes: bytes => { reading = {...reading, heatingMinutes: uint16(bytes)}; say(); },
+      const listener = (name: keyof Registers) => (bytes: Uint8Array): void => {
+        const value = uint16(bytes);
+        if (value === null && (name === 'status1' || name === 'status2')) return;
+        (registers as Record<keyof Registers, number | null>)[name] = value;
+        duringPoll?.add(name);
+        evidence(now());
       };
       for (const name of Object.keys(VOLCANO_REGISTERS) as (keyof typeof VOLCANO_REGISTERS)[]) {
-        const subscribed = await bounded(deadline => transport.subscribe(VOLCANO_REGISTERS[name], listeners[name], deadline), readMs, signal);
+        const subscribed = await bounded(deadline => transport.subscribe(VOLCANO_REGISTERS[name], listener(name), deadline), readMs, live);
         if (subscribed === FAILED) {
           publisher.update('disconnected', null);
           availability.unreachable(LINK_DEVICE, 'unavailable');
           return true;
         }
       }
-      const stopped = new Promise<void>(resolve => { if (signal.aborted) resolve(); else signal.addEventListener('abort', () => { resolve(); }, {once: true}); });
       for (;;) {
-        const tick = await Promise.race([ended.then(() => 'ended' as const), stopped.then(() => 'ended' as const), wait(pollMs, signal).then(() => 'poll' as const)]);
-        if (tick === 'ended' || signal.aborted) break;
-        const polled = await readRegisters();
+        await wait(pollMs, live);
+        if (live.aborted) break;
+        const polledAt = now();
+        const heard = new Set<keyof Registers>();
+        duringPoll = heard;
+        const polled = await readRegisters(live);
+        duringPoll = undefined;
         if (polled === undefined) break;
-        reading = polled;
-        say();
+        // A notification during the poll is newer than what the poll read.
+        for (const name of Object.keys(polled) as (keyof Registers)[]) if (!heard.has(name)) (registers as Record<keyof Registers, number | null>)[name] = polled[name];
+        evidence(polledAt);
       }
       if (!signal.aborted) {
         publisher.update('disconnected', null);
@@ -359,7 +388,7 @@ export async function runCollector(collector: Collector, options: RunOptions): P
       }
       return true;
     } finally {
-      live = false;
+      open = false;
       await bounded(() => transport.disconnect(), readMs, new AbortController().signal);
     }
   };

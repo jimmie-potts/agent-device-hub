@@ -37,6 +37,8 @@ class FakeDevice implements VolcanoTransport {
   connectFails = false;
   lost: (() => void) | undefined;
   readFails = false;
+  /** While set, register reads wait for it. */
+  readsHeld: Promise<void> | undefined;
 
   scan(advertisedName: string): Promise<boolean> {
     this.operations.push(`scan ${advertisedName}`);
@@ -53,7 +55,8 @@ class FakeDevice implements VolcanoTransport {
     if (this.readFails) return Promise.reject(new Error('synthetic'));
     if (uuid === VOLCANO_SERIAL) return Promise.resolve(Buffer.from(`${this.serial}\0\0`));
     const name = Object.entries(VOLCANO_REGISTERS).find(([, value]) => value === uuid)?.[0] ?? '';
-    return Promise.resolve(le(this.registers[name] ?? 0));
+    const value = this.registers[name] ?? 0;
+    return (this.readsHeld ?? Promise.resolve()).then(() => le(value));
   }
   subscribe(uuid: SubscribeUuid, listener: (bytes: Uint8Array) => void): Promise<void> {
     assert.ok(SUBSCRIBABLE.includes(uuid), 'subscription to a characteristic outside the allowlist');
@@ -76,12 +79,17 @@ const log: Logger = Object.fromEntries((['debug', 'info', 'warn', 'error'] as co
 const sleepFor = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
 
 type Run = {published: {key: string; message: Message<VolcanoObservation>}[]; stop: () => Promise<void>; waits: number[]};
-function start(context: TestContext, device: VolcanoTransport, options: {timing?: Parameters<typeof runCollector>[1]['timing']; result?: () => PublishOnceResult} = {}): Run {
+const deferred = (): {promise: Promise<void>; resolve: () => void} => {
+  let resolve: () => void = () => {};
+  const promise = new Promise<void>(given => { resolve = given; });
+  return {promise, resolve};
+};
+function start(context: TestContext, device: VolcanoTransport, options: {timing?: Parameters<typeof runCollector>[1]['timing']; result?: () => PublishOnceResult; now?: () => number} = {}): Run {
   const published: Run['published'] = [];
   const waits: number[] = [];
   const controller = new AbortController();
   const running = runCollector(collector, {
-    log, signal: controller.signal, transport: device,
+    log, signal: controller.signal, transport: device, ...(options.now === undefined ? {} : {now: options.now}),
     timing: {pollMs: 40, heartbeatMs: 60, minPublishMs: 15, scanMs: 200, connectMs: 200, readMs: 200, ...options.timing},
     publish: (_options, key, message) => {
       published.push({key, message: message as Message<VolcanoObservation>});
@@ -148,7 +156,7 @@ void test('a notification publishes at most once per minimum interval, and a pol
   assert.equal(new Set(snapshots(run).map(item => item.collectorEpoch)).size, 1, 'one epoch per process');
 });
 
-void test('status2 bit 13 alone publishes nothing before the heartbeat, which publishes regardless', async t => {
+void test('status2 bit 13 alone publishes nothing before the heartbeat, which carries it as newer evidence', async t => {
   const device = new FakeDevice();
   const run = start(t, device, {timing: {minPublishMs: 1, heartbeatMs: 150, pollMs: 10_000}});
   await until(() => connected(run).length === 1, 'the first snapshot');
@@ -158,6 +166,58 @@ void test('status2 bit 13 alone publishes nothing before the heartbeat, which pu
   await sleepFor(50);
   assert.equal(run.published.length, before, 'no publication for the flipping bit');
   await until(() => run.published.length > before, 'the heartbeat');
+});
+
+void test('a heartbeat with no newer evidence publishes nothing: an old reading is never restamped as current', async t => {
+  const device = new FakeDevice();
+  const run = start(t, device, {timing: {minPublishMs: 1, heartbeatMs: 20, pollMs: 60_000}});
+  await until(() => connected(run).length === 1, 'the first snapshot');
+  const [first] = connected(run);
+  await sleepFor(120);
+  assert.equal(connected(run).length, 1, 'six heartbeats passed with nothing to say');
+  device.notify('current', 700);
+  await until(() => connected(run).length === 2, 'the next evidence');
+  assert.ok((connected(run)[1]?.observedAtMs ?? 0) > (first?.observedAtMs ?? 0));
+});
+
+void test('a poll stamps its reading with when it began, and a notification during it wins over what it read', async t => {
+  const device = new FakeDevice();
+  let clock = 1_800_000_000_000;
+  const run = start(t, device, {timing: {minPublishMs: 1, heartbeatMs: 10, pollMs: 15}, now: () => clock});
+  await until(() => connected(run).length > 0, 'the first snapshot');
+  const release = deferred();
+  device.readsHeld = release.promise;
+  clock += 10_000;
+  const before = device.operations.filter(operation => operation.startsWith('read')).length;
+  await until(() => device.operations.filter(operation => operation.startsWith('read')).length > before, 'a poll to begin');
+  const pollBeganBy = clock;
+  clock += 3000;
+  device.notify('status1', 0x0623);
+  await until(() => connected(run).at(-1)?.reading?.status1 === 0x0623, 'the notification');
+  const heard = connected(run).length;
+  device.registers.status1 = 0x0603;
+  device.readsHeld = undefined;
+  clock += 3000;
+  release.resolve();
+  await until(() => connected(run).length > heard, 'the poll to land');
+  assert.equal(connected(run)[heard]?.reading?.status1, 0x0623, 'the older read lost to the notification');
+  assert.ok((connected(run)[heard]?.observedAtMs ?? 0) <= pollBeganBy + 3000 + 1, 'stamped at its evidence, not when it landed');
+});
+
+void test('a link lost during a register read ends the connection at once, and the late answer publishes nothing', async t => {
+  const device = new FakeDevice();
+  const run = start(t, device, {timing: {minPublishMs: 1, heartbeatMs: 10, pollMs: 5, readMs: 60_000}});
+  await until(() => connected(run).length > 0, 'the first snapshot');
+  const release = deferred();
+  device.readsHeld = release.promise;
+  await sleepFor(30);
+  const before = connected(run).length;
+  device.connectFails = true;
+  device.lost?.();
+  await until(() => snapshots(run).some(item => item.link === 'disconnected'), 'the disconnect, within a 60 s read deadline');
+  release.resolve();
+  await sleepFor(30);
+  assert.equal(connected(run).length, before, 'no reading from the late answer');
 });
 
 void test('a publication that fails is never retried: the next snapshot is a new one', async t => {
