@@ -20,7 +20,8 @@ disconnect is never off.
 The section names one feed, whose collector credential is derived from those two
 identifiers. It has no serial, Bluetooth identifier or path. The module is fixed in
 the shipped list and `hostLocal`, because it touches nothing on its host but its own
-database.
+database. Its section names no device for control, so it is no mode participant or
+automation target.
 
 ## Stored facts
 

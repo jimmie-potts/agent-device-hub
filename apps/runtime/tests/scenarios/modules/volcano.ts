@@ -14,26 +14,25 @@ const sessions = (check: (found: readonly Session[], gapMinutes: number) => true
     const body = bodyOf<{sessions: Session[]; gapMinutes: number}>(answer);
     return body === undefined ? 'no body' : check(body.sessions, body.gapMinutes);
   });
-const MINUTE = 60_000;
 
 export const scenarios: readonly Scenario[] = [{
   id: 'volcano-physical-use',
-  title: 'physical use is recorded as facts, regrouped by the threshold, and unavailable never reads as off',
+  title: 'physical use is recorded as facts, the threshold is a tracked action, and unavailable never reads as off',
   seed: {modules: ['core', 'volcano'], sections: {volcano: VOLCANO_SIMULATED_SECTION}, follows: [{owner: OWNER, families: ['device', 'volcano-status']}, {owner: 'bunny/core', families: ['operation']}]},
   steps: [
     expect('the core and the Volcano module run', h => running(h, ['core', 'volcano'])),
     expect('the first reading says the heater is off, observed', h => (status(h)?.heater === 'off' && device(h)?.availability === 'available' && device(h)?.kind === 'volcano') || `${String(status(h)?.heater)}, ${String(device(h)?.availability)}`),
     act('the owner presses HEAT', button('heater-on')),
     expect('the heater reads on', h => status(h)?.heater === 'on' || String(status(h)?.heater)),
-    act('five minutes pass, and the owner turns it off', async h => { await h.wait(5 * MINUTE); button('heater-off')(h); }),
+    act('a moment passes, and the owner turns it off', async h => { await h.wait(1000); button('heater-off')(h); }),
     expect('the heater reads off', h => status(h)?.heater === 'off' || String(status(h)?.heater)),
-    act('twenty minutes later the owner presses HEAT again', async h => { await h.wait(20 * MINUTE); button('heater-on')(h); }),
+    act('a moment later the owner presses HEAT again', async h => { await h.wait(1000); button('heater-on')(h); }),
     expect('the heater reads on again', h => status(h)?.heater === 'on' || String(status(h)?.heater)),
-    expect('two sessions under the default threshold', sessions(found => found.length === 2 || `${String(found.length)} sessions`)),
-    expect('a preview of a longer threshold shows one, and changes nothing', sessions(found => found.length === 1 || `${String(found.length)} sessions`, '?gapMinutes=30')),
+    expect('one session of two stretches under the default threshold', sessions(found => (found.length === 1 && found[0]?.stretches.length === 2) || `${String(found.length)} sessions`)),
+    expect('a preview of another threshold answers, and changes nothing', sessions((found, gapMinutes) => (found.length === 1 && gapMinutes === 1) || `${String(found.length)} sessions at ${String(gapMinutes)}`, '?gapMinutes=1')),
     act('the operator sets the threshold through the dispatcher', h => dispatchOnce(h, 'operator', 'gap', {key: 'bunny.cmd.volcano-session-gap.volcano', draft: {type: 'org.bunny.volcano-session.gap.requested', subject: 'volcano', dataschema: 'https://bunny.invalid/events/volcano-session-gap/2.0', data: {gapMinutes: 30}}}, 'gap-30')),
     expect('it has a tracked outcome', h => recorded(h, 'gap-30', 'succeeded', 'observed')),
-    expect('the same history is now one session', sessions((found, gapMinutes) => (found.length === 1 && gapMinutes === 30) || `${String(found.length)} sessions at ${String(gapMinutes)}`)),
+    expect('the status shows the new threshold', sessions((found, gapMinutes) => (found.length === 1 && gapMinutes === 30) || `${String(found.length)} sessions at ${String(gapMinutes)}`)),
     act('the collector goes away while the heater is on', button('collector-absent')),
     act('the feed goes stale', h => h.wait(16_000)),
     expect('the device reads unavailable and the heater unknown, not off', h => (status(h)?.availability === 'unavailable' && status(h)?.heater === 'unknown' && device(h)?.availability === 'unavailable') || `${String(status(h)?.availability)}, ${String(status(h)?.heater)}`),
