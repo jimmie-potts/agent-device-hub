@@ -466,7 +466,9 @@ test('a command whose start cannot be stored ends with no effect, and later work
   armed = false;
   assert.equal(outcomes(h)[0]?.result, 'failed');
   assert.equal(outcomes(h)[0]?.evidence, 'none');
+  assert.equal(outcomes(h)[0]?.error?.code, 'internal');
   assert.equal(server.state().brightnessWrites, 0, 'nothing went out');
+  assert.equal(h.device().availability, 'available', 'a local fault says nothing about the server');
   assert.equal(h.device().pending, 0, 'nothing stays pending');
   assert.deepEqual(await send(h, 'brightness-set', {requestId: 'next', percent: 10}), {status: 'accepted'});
   await until(() => outcomes(h).length === 2, 'the next command');
@@ -509,8 +511,28 @@ test('a handoff the database refuses writes nothing in that run, and the next st
   failing = false;
   await h.advance(16 * SECOND);
   assert.equal(server.state().calls.length, 0, 'no write goes out with the old backend\'s memory');
+  assert.ok(h.logs().some(entry => entry.event === 'operation.failed' && entry.fields['bunny.operation'] === 'setup'), 'it says why');
   await h.restart();
   await until(() => server.state().installations[STATUS]?.pushes === 1, 'the fresh write');
+});
+
+test('a connection row the database refuses on an upgrade leaves the cloud\'s tiles writing, and the next start stores it', async context => {
+  let failing = false;
+  const session = working();
+  const options: HostOptions = {sessions: [session], playback: 'absent', wrapDatabase: database => withWriteFailure(database, () => failing ? new Error('disk I/O error') : undefined)};
+  const h = await host(context, options);
+  await until(() => shown(h, STATUS).pushes === 1, 'the tile');
+  await h.stop();
+  const database = new DatabaseSync(join(h.stateDir, 'tidbyt.sqlite'));
+  database.exec('DROP TABLE tidbyt_connection');
+  database.close();
+  failing = true;
+  await h.start();
+  failing = false;
+  await h.core?.set(relabel(session, 'changed'));
+  await h.advance(16 * SECOND);
+  await until(() => shown(h, STATUS).pushes === 2, 'the next write on the cloud');
+  assert.ok(!h.logs().some(entry => entry.fields['bunny.operation'] === 'setup'), 'nothing handed off');
 });
 
 test('every record of a handoff and a command takes values the diagnostic contract registers, which the real log path enforces', async context => {
@@ -564,13 +586,17 @@ test('renaming the device hands nothing off', async context => {
   const server = new SimulatedTronbyt();
   const options: HostOptions = {sessions: [working()], playback: 'absent', ...onServer(server)};
   const h = await host(context, options);
-  await until(() => server.state().installations[STATUS]?.pushes === 1, 'the tile');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the tile');
+  await send(h, 'device-mode-set', {requestId: 'pin', mode: 'pin-status'});
+  await until(() => outcomes(h).length === 1, 'the pin');
   await h.stop();
   options.section = {...onServer(server).section, id: 'renamed'};
   await h.start();
   await h.advance(16 * SECOND);
   assert.equal(server.state().installations[STATUS]?.pushes, 1, 'the tile stands');
   assert.equal(h.logs().filter(entry => entry.fields['bunny.operation'] === 'setup').length, 1, 'only the first start selected a backend');
+  assert.deepEqual(h.device().desired.mode, {status: 'known', value: 'pin-status'}, 'the mode stays, which the pin on the server still matches');
+  assert.equal(server.state().pinnedApp, server.state().installations[STATUS]?.serverId);
 });
 
 test('selecting a server drops what the cloud\'s tiles remembered, reports an uncertain write once and writes the current frame fresh', async context => {

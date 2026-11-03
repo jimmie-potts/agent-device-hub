@@ -338,23 +338,27 @@ class TidbytRun {
     const identity = createHash('sha256').update(JSON.stringify(tronbyt === undefined ? ['cloud', cloudDeviceId] : ['tronbyt', tronbyt.url, tronbyt.deviceId])).digest('hex');
     // One row, whatever the device's routing ID: renaming the device changes no backend.
     const stored = db.prepare('SELECT identity FROM tidbyt_connection WHERE id = \'selected\'').get() as {identity: string} | undefined;
+    const changing = stored === undefined ? tronbyt !== undefined : stored.identity !== identity;
     try {
       if (store.unfinished().length > 0) await outbox.transaction(add => { settleRequests(store, id, add); });
       if (stored?.identity === identity) return;
-      if (stored !== undefined || tronbyt !== undefined) {
+      if (changing) {
         const uncertain = db.prepare('SELECT COUNT(*) AS count FROM tidbyt_tiles WHERE presence = \'unknown\' AND last_write_at_ms IS NOT NULL').get() as {count: number};
         if (uncertain.count > 0) recordLog(log, 'operation.failed', {...this.#deviceField(), 'bunny.operation': 'setup', 'bunny.code': 'uncertain-result'});
         db.exec('DELETE FROM tidbyt_tiles');
         store.clearDisplay();
         // The module owns the pin, and the server may already hold one: the same server under a new address, or one left
         // from an earlier run on it. The next evaluation writes the pin for the default mode.
-        if (tronbyt !== undefined) store.setDisplay(id, {mode: DEFAULT_MODE, brightness: undefined, pin: 'dirty', configurationRevision: 0});
+        if (tronbyt !== undefined) store.setDisplay({mode: DEFAULT_MODE, brightness: undefined, pin: 'dirty', configurationRevision: 0});
         recordLog(log, 'operation.completed', {...this.#deviceField(), 'bunny.operation': 'setup', 'bunny.outcome': Outcome.succeeded});
       }
       db.prepare('INSERT INTO tidbyt_connection (id, identity) VALUES (\'selected\', ?) ON CONFLICT (id) DO UPDATE SET identity = excluded.identity').run(identity);
     } catch (error) {
+      const code = storageCode(error);
+      this.#storageFailed(code);
+      if (!changing) return;
       // The tiles' memory may still be the old backend's, so this run writes nothing: a later start hands off again.
-      this.#storageFailed(storageCode(error));
+      recordLog(log, 'operation.failed', {...this.#deviceField(), 'bunny.operation': 'setup', 'bunny.code': code});
       this.#lease?.release();
       this.#lease = undefined;
     }

@@ -44,7 +44,7 @@ The module SHALL serve `device` through sync and publish the Tidbyt's `device/2.
 
 ### Requirement: Selected Tronbyt backend
 
-A section with `backend: "tronbyt"` SHALL name `tronbyt: {url, deviceId, minIntervalMs?, refreshMs?}`: the server's origin with no credentials, path, query or fragment, over `https`, or over `http` only to a loopback, private or single-label host or a `.local`, `.internal`, `.lan` or `.home.arpa` name; a device ID of 1 to 128 letters, digits, underscores or hyphens; and a gate and refresh of 1 s to a day, which default to the cloud's 15 s and 10 minutes. The module SHALL build exactly one connection in a run, with no failover to the other backend. Each push SHALL state `background` and name its installation, and SHALL never be anonymous. Presence SHALL be read by asking for the installation by name. A 404 `App not found` SHALL count as no such installation, and any other 404 as an unknown device. The cloud's gate and refresh SHALL NOT be configurable.
+A section with `backend: "tronbyt"` SHALL name `tronbyt: {url, deviceId, minIntervalMs?, refreshMs?}`: the server's origin with no credentials, path, query or fragment, over `https`, or over `http` only to a loopback, private or single-label host or a `.local`, `.internal`, `.lan` or `.home.arpa` name; a device ID of 1 to 128 letters, digits, underscores or hyphens; and a gate and refresh of 1 s to a day, which default to the cloud's 15 s and 10 minutes. The module SHALL build exactly one connection in a run, with no failover to the other backend. Each push SHALL state `background` and name its installation, and SHALL never be anonymous. Presence SHALL be read by asking for the installation by name. A 404 `App not found` SHALL count as no such installation, and any other 404 as an unknown device. An all-digit installation SHALL be refused on this backend, because the server resolves its own numeric IDs first. The cloud's gate and refresh SHALL NOT be configurable.
 
 #### Scenario: Identical frames through both backends
 - **WHEN** the same sessions and playback reach the module on the simulated cloud and on the simulated server
@@ -64,7 +64,7 @@ A section with `backend: "tronbyt"` SHALL name `tronbyt: {url, deviceId, minInte
 
 ### Requirement: Tronbyt display controls
 
-The Tronbyt backend's record SHALL declare brightness from 0 to 100 and the native modes `rotation`, `interrupt`, `pin-status`, `hide-status` and, with a now-playing tile, `pin-now-playing` and `hide-now-playing`, and every other capability unsupported. It SHALL answer `brightness-set` and `device-mode-set` as tracked commands: stored before accepted, one write in the queue's turn behind its holds, never sent again, with an outcome stored with the record it changes and at most `transmitted` evidence; `observed` SHALL stay unknown. A repeat of an accepted command SHALL change nothing. Brightness SHALL scale its percent to the server's Gen 1 ceiling. `interrupt` SHALL make a tile's pushes interrupt the display. `hide-<tile>` SHALL remove that tile and write it no frame until another mode. `pin-<tile>` SHALL pin that tile while it stands and leave the rotation when it does not, following the tile across a removal and a new server ID. Mode and brightness SHALL survive a restart. A command a stop or a crash left without a stored outcome SHALL be reported at the next start, `uncertain` when its write may have begun and `failed` with `cancelled` otherwise, and never run again.
+The Tronbyt backend's record SHALL declare brightness from 0 to 100 and the native modes `rotation`, `interrupt`, `pin-status`, `hide-status` and, with a now-playing tile, `pin-now-playing` and `hide-now-playing`, and every other capability unsupported. It SHALL answer `brightness-set` and `device-mode-set` as tracked commands: stored before accepted, one write in the queue's turn behind its holds, never sent again, with an outcome stored with the record it changes and at most `transmitted` evidence; `observed` SHALL stay unknown. A repeat of an accepted command SHALL change nothing. Brightness SHALL scale its percent to the server's Gen 1 ceiling. `interrupt` SHALL make a tile's pushes interrupt the display. `hide-<tile>` SHALL remove that tile and write it no frame until another mode. `pin-<tile>` SHALL pin that tile while it stands and leave the rotation when it does not, following the tile across a removal and a new server ID. Mode and brightness SHALL survive a restart. A command a stop or a crash left without a stored outcome SHALL be reported at the next start, `uncertain` when its write may have begun and `failed` with `cancelled` otherwise, and never run again; a mode command whose write may have begun SHALL leave the pin unknown, so it is written again for the current mode. A command whose begun write cannot be stored SHALL end `failed` with no effect and say nothing about the server.
 
 #### Scenario: An unanswered command
 - **WHEN** a brightness write goes out and its answer is lost
@@ -80,11 +80,19 @@ The Tronbyt backend's record SHALL declare brightness from 0 to 100 and the nati
 
 ### Requirement: Backend handoff
 
-The module SHALL record which backend its stored tiles belong to. When a start selects another, it SHALL drop the tiles' memory and the display's stored state, report a write the old writer left uncertain once, settle commands left without an outcome, and write the current frame fresh on the new backend once its gate allows, reading presence first where a removal needs it. No frame SHALL be stored or replayed, and the old backend SHALL hear nothing more. A database from before this record SHALL count as the cloud's, so an upgrade on the cloud pushes nothing while a tile stands.
+The module SHALL record which backend its stored tiles belong to. When a start selects another, it SHALL drop the tiles' memory and the display's stored state, report a write the old writer left uncertain once, settle commands left without an outcome, and write the current frame fresh on the new backend once its gate allows, reading presence first where a removal needs it. No frame SHALL be stored or replayed, and the old backend SHALL hear nothing more. On a server, the pin SHALL start unknown, so the first evaluation clears any pin it holds, a manual one included. If the database refuses a handoff, that run SHALL write nothing and the next start SHALL hand off again. A refusal when no handoff is needed SHALL leave the tiles writing. A database from before this record SHALL count as the cloud's, so an upgrade on the cloud pushes nothing while a tile stands. Renaming the device SHALL keep the backend and the display's stored state.
 
 #### Scenario: From the cloud to a server with a write under way
 - **WHEN** the module stops during a cloud push that never answered, and starts selecting a server
 - **THEN** one `uncertain-result` record and one completed `setup` record appear, the server takes a fresh write of the current state, and the cloud hears nothing more
+
+#### Scenario: A return to a server that holds a pin
+- **WHEN** a section returns to a server whose tile is still pinned
+- **THEN** the first evaluation clears the pin, and the record shows `rotation`
+
+#### Scenario: A handoff the database refuses
+- **WHEN** the database refuses a write during a handoff
+- **THEN** a `setup` failure is logged, nothing goes out in that run, and the next start hands off
 
 #### Scenario: Back to the cloud
 - **WHEN** a section returns to the cloud

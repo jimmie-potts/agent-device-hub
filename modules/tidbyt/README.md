@@ -215,7 +215,8 @@ shows, so a success is `transmitted` at most. A lost answer or a 5xx is `uncerta
 8 commands wait. Mode and brightness survive a restart; a command a stop or a crash left
 without an outcome is reported at the next start, `uncertain` if its write may have begun,
 and never runs again. A pin write that failed or went unanswered is a fresh write for the
-current mode after 60 s, or at the next start's first evaluation. `transmitted` covers the
+current mode at the tile's next evaluation at least 60 s later, or at the next start's first
+evaluation. `transmitted` covers the
 mode's one write: a `hide-<tile>` tile's removal follows at its gate and can fail on its own.
 
 ### Changing backend
@@ -233,8 +234,8 @@ another section. At that start the module:
 5. writes the current frame fresh once its gate allows. No frame is stored, so none can
    replay.
 
-If the database refuses any of this, that run writes nothing, and the next start hands off
-again. The old backend hears nothing more, and
+If the database refuses any of this, that run logs a `setup` failure and writes nothing, and
+the next start hands off again. The old backend hears nothing more, and
 keeps whatever it last showed. Going back works the
 same way: restore the previous section and restart. A database from before this record
 counts as the cloud's, so upgrading on the cloud pushes nothing while a tile stands. Older

@@ -13,7 +13,7 @@ import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MessageValidator, SCHEMA_BASE, errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type Capabilities, type CompletedOutcome, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, type AddMessage, type Command, type LogFields, type ModuleContext, type Reply, type TraceContext, Outcome} from '@jimmie-potts/sdk';
+import {fullDisk, recordLog, type AddMessage, type Command, type LogFields, type ModuleContext, type Reply, type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import type {WriteResult} from './cloud.js';
 import type {TronbytConnection} from './tronbyt.js';
 import type {CloudQueue, NotSent} from './writer.js';
@@ -74,6 +74,8 @@ export function displayCapabilities(nowPlaying: boolean): Capabilities {
 /** How the display's pin stands on the server: set, clear, or not known since a write that may not have taken effect. */
 type PinState = 'pinned' | 'none' | 'dirty';
 type Display = {mode: string; brightness: number | undefined; pin: PinState; configurationRevision: number};
+/** The one display row: renaming the device changes neither the display nor its backend. */
+const DISPLAY_ROW = 'selected';
 type RequestRow = {source: string; requestId: string; digest: string; family: string; state: string; traceparent: string};
 
 /** The module's stored display and its record of each command it accepted, in its own SQLite file. */
@@ -107,16 +109,16 @@ export class ControlStore {
       SELECT seq FROM tidbyt_requests WHERE state = 'done' ORDER BY seq DESC LIMIT ${REMEMBERED})`);
   }
 
-  display(id: string, modes: readonly string[]): Display {
-    const row = this.#display.get(id) as {mode: string; brightness: number | null; pin: string; configuration_revision: number} | undefined;
+  display(modes: readonly string[]): Display {
+    const row = this.#display.get(DISPLAY_ROW) as {mode: string; brightness: number | null; pin: string; configuration_revision: number} | undefined;
     if (row === undefined) return {mode: DEFAULT_MODE, brightness: undefined, pin: 'none', configurationRevision: 0};
     // A mode the section no longer offers leaves the pin to the next evaluation to clear.
     const pin: PinState = row.pin === 'pinned' || row.pin === 'none' ? row.pin : 'dirty';
     return {mode: modes.includes(row.mode) ? row.mode : DEFAULT_MODE, brightness: row.brightness ?? undefined, pin, configurationRevision: row.configuration_revision};
   }
 
-  setDisplay(id: string, display: Display): void {
-    this.#setDisplay.run(id, display.mode, display.brightness ?? null, display.pin, display.configurationRevision);
+  setDisplay(display: Display): void {
+    this.#setDisplay.run(DISPLAY_ROW, display.mode, display.brightness ?? null, display.pin, display.configurationRevision);
   }
 
   /** Forgets the display's stored state, as a handoff to another backend does: none of it is true of the next one. */
@@ -125,8 +127,8 @@ export class ControlStore {
   }
 
   /** A pin write may have taken effect unanswered, so the pin is written again for the current mode. */
-  markPinUnknown(id: string): void {
-    this.#markPinUnknown.run(id);
+  markPinUnknown(): void {
+    this.#markPinUnknown.run(DISPLAY_ROW);
   }
 
   request(source: string, requestId: string): RequestRow | undefined {
@@ -160,7 +162,7 @@ export function settleRequests(store: ControlStore, device: string, add: AddMess
   for (const row of store.unfinished()) {
     store.setState(row.source, row.requestId, 'done');
     if (!isControlFamily(row.family)) continue;
-    if (row.family === 'device-mode-set' && row.state === 'started') store.markPinUnknown(device);
+    if (row.family === 'device-mode-set' && row.state === 'started') store.markPinUnknown();
     const outcome: CompletedOutcome = row.state === 'started'
       ? {requestId: row.requestId, result: Outcome.uncertain, evidence: Outcome.none, error: errorBody('uncertain-result', {detail: 'the runtime stopped while the write was under way'}).error}
       : {requestId: row.requestId, result: Outcome.failed, evidence: Outcome.none, error: errorBody('cancelled', {detail: 'the runtime stopped before the command reached the server'}).error};
@@ -207,7 +209,7 @@ export class DisplayControl {
   constructor(options: DisplayControlOptions) {
     this.#options = options;
     this.#modes = displayModes(options.nowPlaying);
-    this.#display = options.store.display(options.device, this.#modes);
+    this.#display = options.store.display(this.#modes);
   }
 
   /** The connection and the queue, once the module holds the writer lease. Without them, every command is refused. */
@@ -236,7 +238,7 @@ export class DisplayControl {
   }
 
   async handle(family: ControlFamily, command: Command<Record<string, unknown>>, epoch: string): Promise<Reply> {
-    const {store, device, commit, track} = this.#options;
+    const {store, commit, track} = this.#options;
     const spec = COMMANDS[family];
     // A refusal here proves no effect: nothing has been stored or sent.
     if (command.dataschema !== spec.dataschema) return errorBody('invalid-request', {detail: 'the command is not of the family its key names'});
@@ -276,7 +278,7 @@ export class DisplayControl {
     this.#pending.set(key, family);
     const accepted = await commit(command, () => {
       store.accept(command.source, requestId, digest, family, command.traceparent);
-      store.setDisplay(device, this.#display);
+      store.setDisplay(this.#display);
     });
     if (!accepted) {
       Object.assign(this.#display, before);
@@ -311,6 +313,7 @@ export class DisplayControl {
     const mode = family === 'device-mode-set' ? String(command.data.mode) : undefined;
     let pinning = false;
     let result: WriteResult | NotSent;
+    let unrecorded: ErrorCode | undefined;
     try {
       result = await writes.queue.control(signal => {
         if (family === 'brightness-set') return writes.connection.setBrightness(Number(command.data.percent), signal);
@@ -319,9 +322,11 @@ export class DisplayControl {
         return tile !== undefined && pinning ? writes.connection.pin(signal, this.#options.installationOf(tile)) : writes.connection.unpin(signal);
       }, sending, current);
     } catch (error) {
-      // The store refused to mark the write begun, so it never went out: the command ends with no effect.
+      // The store refused to mark the write begun, so it never went out: the command ends with no effect, and this says
+      // nothing about the server.
       this.#options.storageFailed(error);
-      result = {outcome: Outcome.failed, failure: 'transport-failure'};
+      unrecorded = fullDisk(error) ? 'capacity' : 'internal';
+      result = {outcome: 'cancelled'};
     }
     span?.end(result.outcome === 'sent' ? 'unset' : 'error');
     // A stop leaves the command to the next start, which reports what its stored state proves.
@@ -336,7 +341,9 @@ export class DisplayControl {
         this.#retryPinAtMs = clock.now() + PIN_RETRY_MS;
       }
     }
-    const outcome = outcomeOf(requestId, result, expired);
+    const outcome: CompletedOutcome = unrecorded !== undefined ?
+      {requestId, result: Outcome.failed, evidence: Outcome.none, error: errorBody(unrecorded, {detail: 'the module could not record the write before it began'}).error} :
+      outcomeOf(requestId, result, expired);
     const previousOutcome = this.#lastOutcome;
     this.#pending.delete(key);
     this.#lastOutcome = outcome;
@@ -344,12 +351,16 @@ export class DisplayControl {
     // Not stored: the record stays as committed, and the next start reports the command from its stored state.
     const stored = await this.#options.commit(command, add => {
       store.setState(command.source, requestId, 'done');
-      store.setDisplay(device, this.#display);
+      store.setDisplay(this.#display);
       add(`bunny.event.${family}.${device}`, {
         kind: 'outcome', type: `${spec.entity}.completed`, subject: device, dataschema: OUTCOME_SCHEMA, data: outcome,
       }, {parent: command});
     });
-    if (!stored) this.#lastOutcome = previousOutcome;
+    if (!stored) {
+      // The command stays pending in the module's records, and the next start reports it.
+      this.#lastOutcome = previousOutcome;
+      this.#pending.set(key, family);
+    }
     if (mode !== undefined && result.outcome === 'sent') this.#options.changed(command);
   }
 
@@ -363,6 +374,8 @@ export class DisplayControl {
     const {clock, log, trace} = this.#options.context;
     if (writes === undefined || this.#reconciling || this.#pending.size > 0 || this.#options.stopping() || writes.queue.held()) return;
     const now = clock.now();
+    // A time in the future, after the wall clock was set back, counts as now.
+    if (this.#retryPinAtMs > now + PIN_RETRY_MS) this.#retryPinAtMs = now;
     if (now < this.#retryPinAtMs) return;
     const tile = pinnedTile(this.#display.mode);
     const presence = tile === undefined ? 'absent' : this.#options.presence(tile);
@@ -392,7 +405,7 @@ export class DisplayControl {
         this.#pinFailing = true;
       }
       try {
-        this.#options.store.setDisplay(this.#options.device, this.#display);
+        this.#options.store.setDisplay(this.#display);
       } catch (error) {
         this.#options.storageFailed(error);
       }
