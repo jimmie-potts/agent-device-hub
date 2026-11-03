@@ -3,9 +3,10 @@
 // false, the list carries the server's own numeric IDs, asking for or deleting an installation by the name a push chose
 // works, a missing one answers 404 "App not found" and a missing device "Device not found", both as plain text,
 // brightness is stored unchecked, and deleting a pinned installation leaves the pin. The loop serving a connected device
-// keeps its own copy of the installations, as server v2.5.2's does: a delete, a PATCH or an interrupting push reloads it,
-// and a background push that creates an installation does not (Hub #1411). Like the simulated cloud, it can stop answering,
-// refuse connections, answer the next call with a status of its choice, or lose the next answer.
+// keeps its own copy of the installations, as server v2.5.2's does: a delete, a PATCH, an interrupting push or showing one
+// of them reloads it, so a background push that creates an installation while it has none to show does not (Hub #1411).
+// Like the simulated cloud, it can stop answering, refuse connections, answer the next call with a status of its choice,
+// or lose the next answer.
 import type {CloudFetch} from './cloud.js';
 import {decodeLossless, picture} from './picture.js';
 import {SIMULATED_API_KEY, SIMULATED_DEVICE} from './simulated.js';
@@ -21,9 +22,11 @@ export type TronbytState = {
   brightness: number;
   /** How many writes set the brightness, apart from the pin's. */
   brightnessWrites: number;
+  /** How many writes pinned an installation, apart from the empty ones that only reload the list. */
+  pinWrites: number;
   /** The server's own ID of the pinned installation, or null. It can point at one already deleted. */
   pinnedApp: string | null;
-  /** The installations the loop serving a connected device would rotate through. */
+  /** The installations the loop serving a connected device would rotate through; empty is the server's setup screen. */
   served: string[];
   calls: {method: string; path: string; answer: number | 'none' | 'refused-connection'}[];
 };
@@ -56,6 +59,7 @@ export class SimulatedTronbyt {
   #anonymous = 0;
   #brightness = 25;
   #brightnessWrites = 0;
+  #pinWrites = 0;
   #pinned: string | null = null;
   #served: string[] = [];
   #online = true;
@@ -103,10 +107,10 @@ export class SimulatedTronbyt {
   state(): TronbytState {
     const installations: TronbytState['installations'] = {};
     for (const [name, entry] of this.#installations) installations[name] = {...entry, picture: [...entry.picture], pushedAtMs: [...entry.pushedAtMs]};
-    return {installations, anonymous: this.#anonymous, brightness: this.#brightness, brightnessWrites: this.#brightnessWrites, pinnedApp: this.#pinned, served: [...this.#served], calls: this.#calls.map(call => ({...call}))};
+    return {installations, anonymous: this.#anonymous, brightness: this.#brightness, brightnessWrites: this.#brightnessWrites, pinWrites: this.#pinWrites, pinnedApp: this.#pinned, served: [...this.#served], calls: this.#calls.map(call => ({...call}))};
   }
 
-  /** What every write but a background push tells the loop serving a connected device. */
+  /** What a loop serving a connected device learns from every write but a background push into an empty list. */
   #reload(): void {
     this.#served = [...this.#installations.keys()];
   }
@@ -142,7 +146,10 @@ export class SimulatedTronbyt {
         return text(200, 'App deleted.');
       }
       if (init.method === 'PATCH') {
-        if ((JSON.parse(init.body ?? '{}') as {pinned?: boolean}).pinned === true) this.#pinned = entry.serverId;
+        if ((JSON.parse(init.body ?? '{}') as {pinned?: boolean}).pinned === true) {
+          this.#pinned = entry.serverId;
+          this.#pinWrites += 1;
+        }
         this.#reload();
         return json(this.#payload(entry));
       }
@@ -171,6 +178,8 @@ export class SimulatedTronbyt {
     const decoded = decodeLossless(new Uint8Array(Buffer.from(request.image, 'base64')));
     if (decoded === undefined) return text(400, 'Invalid image');
     const entry = this.#installations.get(request.installationID) ?? this.#add(request.installationID);
+    // A loop showing an installation reloads its copy at the device's next acknowledgment.
+    if (this.#served.length > 0) this.#reload();
     entry.picture = picture(decoded.rgb, decoded.width, decoded.height);
     entry.pushes += 1;
     if (request.background !== true) {

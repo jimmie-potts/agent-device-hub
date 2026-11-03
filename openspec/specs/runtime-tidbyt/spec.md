@@ -226,13 +226,13 @@ A section with `backend: "tronbyt"` SHALL name `tronbyt: {url, deviceId, minInte
 - **WHEN** a tile is removed and the server answers 404 `App not found`
 - **THEN** the tile counts as removed, while `Device not found` makes the Tidbyt `unavailable`
 
-#### Scenario: A tile a connected device has not been told about
-- **WHEN** a tile's first background push since a start or a removal is answered with success
-- **THEN** the connection sends one empty device `PATCH`, so the server's loop for a connected device reloads its installations; nothing on the device changes, and an interrupting push sends none because it reloads them itself
+#### Scenario: A background push the server's device loop may not see
+- **WHEN** a background push is answered with success
+- **THEN** the connection sends one empty `PATCH` of that installation, so the server's loop for a connected device reloads its installations, and nothing on the device changes; an interrupting push sends none, because it reloads them itself
 
 #### Scenario: A reload that fails
 - **WHEN** that `PATCH` fails or goes unanswered
-- **THEN** the push's result stays as it was, and the tile's next successful background push sends it again
+- **THEN** the write takes that outcome, though the frame reached the server, and the writer's holds and retry apply
 
 ### Requirement: Tronbyt display controls
 
@@ -275,8 +275,8 @@ The module SHALL record which backend its stored tiles belong to. When a start s
 The module SHALL provide `SimulatedTronbyt` beside `SimulatedCloud`, answering as a disposable real server did: server-generated IDs in the list, by-name lookup and removal, plain-text 404s, `background` defaulting to false, an anonymous-push count, brightness stored unchecked and a pin that outlives its installation. It SHALL offer the same faults as the simulated cloud. An optional test SHALL run the same calls against a real server named by environment variables, and skip otherwise.
 
 #### Scenario: The list a connected device is served from
-- **WHEN** a background push creates an installation on the simulated server
-- **THEN** its `served` list omits that installation until a delete, a `PATCH` or an interrupting push reloads it
+- **WHEN** a background push creates an installation while the simulated server's `served` list is empty
+- **THEN** that list omits it until a delete, a `PATCH` or an interrupting push reloads it
 
 #### Scenario: The optional check without a server
 - **WHEN** the module's tests run with no server named

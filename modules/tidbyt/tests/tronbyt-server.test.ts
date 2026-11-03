@@ -29,7 +29,13 @@ const installations = async (): Promise<Installation[]> => (await server<{instal
 const FRAME = Buffer.from('UklGRiIAAABXRUJQVlA4TAYAAAAvAAAAAAfQ//73v/+BiOh/AAA=', 'base64');
 
 void nodeTest('the connection\'s every call against a real server, with what the simulated server assumes', {skip, timeout: 60_000}, async () => {
-  const connection = new TronbytConnection({url: url ?? '', deviceId: device ?? '', apiKey: key ?? '', installationId: STATUS, additionalInstallationIds: [CARD], fetch: realFetch});
+  const answers: string[] = [];
+  const noting: CloudFetch = async (target, init) => {
+    const response = await realFetch(target, init);
+    answers.push(`${init.method} ${String(response.status)}`);
+    return response;
+  };
+  const connection = new TronbytConnection({url: url ?? '', deviceId: device ?? '', apiKey: key ?? '', installationId: STATUS, additionalInstallationIds: [CARD], fetch: noting});
   await connection.unpin(signal());
   await connection.remove(signal());
   await connection.remove(signal(), CARD);
@@ -39,7 +45,8 @@ void nodeTest('the connection\'s every call against a real server, with what the
 
   const untouched = await server<Device>();
   assert.deepEqual(await connection.push(FRAME, signal()), {outcome: 'sent'});
-  assert.deepEqual(await server<Device>(), untouched, 'the push\'s reload changes nothing on the device');
+  assert.deepEqual(answers.slice(-2), ['POST 200', 'PATCH 200'], 'a background push reloads the list');
+  assert.deepEqual(await server<Device>(), untouched, 'the reload changes nothing on the device');
   assert.deepEqual(await connection.list(signal()), {ok: true, present: true}, 'found by the name a push chose');
   const first = await server<Installation>(`/installations/${STATUS}`);
   assert.ok(first.pushed && first.id !== STATUS, 'the server gives it its own ID');

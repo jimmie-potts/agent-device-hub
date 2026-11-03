@@ -90,8 +90,6 @@ export class TronbytConnection implements TidbytConnection {
   readonly #additional: readonly string[];
   readonly #fetch: CloudFetch;
   readonly #now: () => number;
-  /** Installations a device connected now would rotate through, as far as this connection has told the server. */
-  readonly #announced = new Set<string>();
 
   constructor(config: TronbytConfig) {
     const origin = privateServerUrl(config.url);
@@ -130,27 +128,20 @@ export class TronbytConnection implements TidbytConnection {
   async push(webp: Uint8Array, signal: AbortSignal, installation?: string, immediate = false): Promise<WriteResult> {
     const target = this.#target(installation);
     if (target === undefined) return REFUSED;
-    const result = await this.#write(() => this.#request('/push', signal, 'POST', {image: Buffer.from(webp).toString('base64'), installationID: target, background: !immediate}));
-    if (result.outcome === 'sent' && !this.#announced.has(target) && (immediate || await this.#reload(signal))) this.#announced.add(target);
-    return result;
-  }
-
-  /**
-   * The server's loop for a connected device keeps its own copy of the installations, and a background push that creates
-   * one does not refresh it, so the tile stays off the panel (Hub #1411). A device PATCH refreshes it, and an empty one
-   * changes nothing. It does not change the push's result: the frame reached the server, and the next push tries again.
-   */
-  async #reload(signal: AbortSignal): Promise<boolean> {
-    return (await this.#write(() => this.#request('', signal, 'PATCH', {}))).outcome === 'sent';
+    const pushed = await this.#write(() => this.#request('/push', signal, 'POST', {image: Buffer.from(webp).toString('base64'), installationID: target, background: !immediate}));
+    // The server's loop for a connected device keeps its own copy of the installations, and refreshes it after showing one.
+    // With none to show, a background push that creates one leaves the setup screen up, so the tile never appears (Hub
+    // #1411). An empty PATCH of the installation refreshes it and changes nothing; an interrupting push refreshes it itself.
+    // It is part of this write: a tile the panel may never show is not sent, whatever became of the frame.
+    if (immediate || pushed.outcome !== 'sent') return pushed;
+    return await this.#write(() => this.#request(`/installations/${target}`, signal, 'PATCH', {}));
   }
 
   /** Deletes the installation. One already gone counts as removed, as the cloud answers it. */
   async remove(signal: AbortSignal, installation?: string): Promise<WriteResult> {
     const target = this.#target(installation);
     if (target === undefined) return REFUSED;
-    const result = await this.#write(() => this.#request(`/installations/${target}`, signal, 'DELETE'), {outcome: 'sent'});
-    if (result.outcome === 'sent') this.#announced.delete(target);
-    return result;
+    return await this.#write(() => this.#request(`/installations/${target}`, signal, 'DELETE'), {outcome: 'sent'});
   }
 
   /** Asks for the installation by name, since the list carries only the server's own IDs. It changes nothing. */

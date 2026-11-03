@@ -49,66 +49,77 @@ const connect = (fetch: CloudFetch): TronbytConnection =>
 const realFrame = (): Uint8Array => encodeLosslessRgb(FRAME_WIDTH, FRAME_HEIGHT, new Uint8Array(FRAME_BYTES));
 const onSimulated = (server: SimulatedTronbyt): TronbytConnection =>
   new TronbytConnection({url: TRONBYT_ORIGIN, deviceId: SIMULATED_DEVICE, apiKey: SERVER_KEY, installationId: STATUS, additionalInstallationIds: [NOW_PLAYING], fetch: server.fetch});
-const reloads = (server: SimulatedTronbyt): number => server.state().calls.filter(call => call.method === 'PATCH').length;
+const reloads = (server: SimulatedTronbyt): string[] => server.state().calls.filter(call => call.method === 'PATCH').map(call => call.path);
+const RELOAD_STATUS = `/v0/devices/${SIMULATED_DEVICE}/installations/${STATUS}`;
 
-test('a background push that creates an installation reaches the connected device, by one write that changes nothing', async () => {
+test('a background push into an empty list reaches the connected device, by a write that changes nothing', async () => {
   const server = new SimulatedTronbyt();
   const connection = onSimulated(server);
   assert.deepEqual(await connection.push(realFrame(), signal()), {outcome: 'sent'});
   assert.deepEqual(server.state().served, [STATUS]);
   assert.equal(server.state().brightnessWrites, 0);
   assert.equal(server.state().pinnedApp, null);
-  assert.equal(reloads(server), 1);
-  // Further frames change the installation's file, which the loop reads each turn, so they need no reload.
-  await connection.push(realFrame(), signal());
-  assert.equal(reloads(server), 1);
-  await connection.push(realFrame(), signal(), NOW_PLAYING);
-  assert.deepEqual(server.state().served, [STATUS, NOW_PLAYING]);
-  assert.equal(reloads(server), 2);
+  assert.deepEqual(reloads(server), [RELOAD_STATUS]);
 });
 
-test('a tile removed and pushed again reaches the connected device again', async () => {
+test('every background push reloads, so a tile removed behind the connection or by a lost answer still reaches the device', async () => {
   const server = new SimulatedTronbyt();
   const connection = onSimulated(server);
   await connection.push(realFrame(), signal());
-  await connection.remove(signal());
+  await onSimulated(server).remove(signal());
   assert.deepEqual(server.state().served, []);
   await connection.push(realFrame(), signal());
   assert.deepEqual(server.state().served, [STATUS]);
-});
 
-test('an installation the server already has is announced once after a start, since the connection cannot know who was told', async () => {
-  const server = new SimulatedTronbyt({installations: [STATUS]});
-  await onSimulated(server).push(realFrame(), signal());
-  assert.equal(reloads(server), 1);
+  // A delete that took effect with its answer lost.
+  const controller = new AbortController();
+  server.loseNextAnswer();
+  const removing = connection.remove(controller.signal);
+  controller.abort();
+  assert.equal((await removing).outcome, 'uncertain');
+  assert.deepEqual(server.state().served, []);
+  await connection.push(realFrame(), signal());
+  assert.deepEqual(server.state().served, [STATUS]);
 });
 
 test('an interrupting push needs no reload, because it reloads the list itself', async () => {
   const server = new SimulatedTronbyt();
-  const connection = onSimulated(server);
-  await connection.push(realFrame(), signal(), undefined, true);
+  await onSimulated(server).push(realFrame(), signal(), undefined, true);
   assert.deepEqual(server.state().served, [STATUS]);
-  assert.equal(reloads(server), 0);
-  await connection.push(realFrame(), signal());
-  assert.equal(reloads(server), 0);
+  assert.deepEqual(reloads(server), []);
 });
 
-test('a failed reload leaves the push sent, and the next push tries again', async () => {
+test('a reload that fails is the write\'s outcome, so the writer\'s holds and its retry apply', async () => {
   const server = new SimulatedTronbyt();
   const connection = onSimulated(server);
   server.answerNextPatch(500);
-  assert.deepEqual(await connection.push(realFrame(), signal()), {outcome: 'sent'});
+  assert.deepEqual(await connection.push(realFrame(), signal()), {outcome: 'uncertain', answered: true});
+  assert.deepEqual(server.state().served, []);
+  server.answerNextPatch(401);
+  assert.deepEqual(await connection.push(realFrame(), signal()), {outcome: 'failed', failure: 'unauthenticated'});
   assert.deepEqual(server.state().served, []);
   assert.deepEqual(await connection.push(realFrame(), signal()), {outcome: 'sent'});
   assert.deepEqual(server.state().served, [STATUS]);
-  assert.equal(reloads(server), 2);
+});
+
+test('a reload that goes unanswered or is ended by a stop leaves the write uncertain', async () => {
+  const connection = onSimulated(new SimulatedTronbyt());
+  const hanging = new TronbytConnection({url: TRONBYT_ORIGIN, deviceId: SIMULATED_DEVICE, apiKey: SERVER_KEY, installationId: STATUS, fetch: async (url, init) => {
+    if (init.method !== 'PATCH') return await connection.push(realFrame(), init.signal).then(() => plain(200, 'WebP received.'));
+    return await new Promise<Response>((_, reject) => { init.signal.addEventListener('abort', () => { reject(new DOMException('stopped', 'AbortError')); }, {once: true}); });
+  }});
+  const controller = new AbortController();
+  const pushing = hanging.push(realFrame(), controller.signal);
+  await new Promise(resolve => { setImmediate(resolve); });
+  controller.abort();
+  assert.deepEqual(await pushing, {outcome: 'uncertain', answered: false});
 });
 
 test('a push that failed asks for no reload', async () => {
   const server = new SimulatedTronbyt();
   server.answerNext(500);
   assert.deepEqual(await onSimulated(server).push(realFrame(), signal()), {outcome: 'uncertain', answered: true});
-  assert.equal(reloads(server), 0);
+  assert.deepEqual(reloads(server), []);
 });
 
 test('a push names its installation and always says whether it is in the background', async () => {
@@ -123,7 +134,7 @@ test('a push names its installation and always says whether it is in the backgro
   // The server's own default is false, which would interrupt the display on every tile's write.
   assert.deepEqual(JSON.parse(calls[0]?.body ?? ''), {image: Buffer.from(WEBP).toString('base64'), installationID: STATUS, background: true});
   assert.equal(calls[1]?.method, 'PATCH');
-  assert.equal(calls[1]?.url, 'http://192.168.1.50:8000/v0/devices/abcd1234');
+  assert.equal(calls[1]?.url, `http://192.168.1.50:8000/v0/devices/abcd1234/installations/${STATUS}`);
   assert.equal(calls[1]?.body, '{}');
   assert.deepEqual(JSON.parse(calls[2]?.body ?? ''), {image: Buffer.from(WEBP).toString('base64'), installationID: NOW_PLAYING, background: false});
 });
@@ -503,7 +514,21 @@ test('a pin write a stop left unanswered is written again for the current mode a
   assert.deepEqual(h.device().desired.mode, {status: 'known', value: 'rotation'}, 'the mode stays as it was');
   await h.advance(31 * SECOND);
   await until(() => server.state().pinnedApp === null, 'the display back in the rotation the record shows');
-  assert.equal(server.state().calls.filter(call => call.method === 'PATCH' && call.path.endsWith(`/installations/${STATUS}`)).length, 1, 'the pin is not sent again');
+  assert.equal(server.state().pinWrites, 1, 'the pin is not sent again');
+});
+
+test('a hidden tile returned to the rotation reaches a connected device with nothing else to show', async context => {
+  const server = new SimulatedTronbyt();
+  const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server)});
+  await until(() => server.state().served.includes(STATUS), 'the first push');
+  await send(h, 'device-mode-set', {requestId: 'hide', mode: 'hide-status'});
+  await h.advance(16 * SECOND);
+  await until(() => server.state().installations[STATUS] === undefined, 'the removal');
+  assert.deepEqual(server.state().served, []);
+  await send(h, 'device-mode-set', {requestId: 'back', mode: 'rotation'});
+  await h.advance(16 * SECOND);
+  await until(() => server.state().installations[STATUS] !== undefined, 'the push');
+  await until(() => server.state().served.includes(STATUS), 'the reload', 5 * SECOND);
 });
 
 test('a command whose start cannot be stored ends with no effect, and later work goes on', async context => {
