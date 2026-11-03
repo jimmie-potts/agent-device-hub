@@ -66,7 +66,7 @@
           "value": "$__all"
         },
         "datasource": null,
-        "query": "core,companions,codex-desktop,lifx,pixoo,nanoleaf,onn,wemo,tidbyt,playback,roborock,wispr",
+        "query": "core,companions,codex-desktop,lifx,pixoo,nanoleaf,onn,wemo,weather,tidbyt,playback,roborock,wispr",
         "options": []
       },
       {

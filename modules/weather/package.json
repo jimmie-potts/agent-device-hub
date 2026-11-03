@@ -1,0 +1,17 @@
+{
+  "name": "@jimmie-potts/weather",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "One owner-configured location's National Weather Service conditions for B.U.N.N.Y. art.",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "dependencies": {
+    "@jimmie-potts/event-contracts": "1.0.0",
+    "@jimmie-potts/sdk": "0.1.0"
+  }
+}
