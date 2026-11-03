@@ -271,10 +271,10 @@ const pixooNowPlaying: Scenario = {
  * A moment through the core's dispatcher, over Monitor and over Media (Hub #1287): it shows on the simulated Pixoo, ends
  * on its own, and gives back the base it covered, without a mode change. Attention ends one at once.
  */
-const momentOf = (id: string, patch: object = {}): {key: string; draft: CommandDraft<object>} => ({
+const momentOf = (h: Harness, id: string, patch: object = {}): {key: string; draft: CommandDraft<object>} => ({
   key: `bunny.cmd.moment-play.${PIXOO_ID}`,
   draft: {type: 'org.bunny.moment.play.requested', subject: PIXOO_ID, dataschema: 'https://bunny.invalid/events/moment-play/2.0',
-    data: {momentId: id, mood: 'celebrate', durationMs: 2000, priorityClass: 'event', coversStatus: true, startAtMs: Date.now(), toleranceMs: 10_000, ...patch}},
+    data: {momentId: id, mood: 'celebrate', durationMs: 2000, priorityClass: 'event', coversStatus: true, startAtMs: h.now(), toleranceMs: 10_000, ...patch}},
 });
 const momentEnding = (h: Harness, requestId: string, ending: string): Outcome => {
   const data = h.reader.heard().find(message => message.type === 'org.bunny.moment.ended' && (message.data as {requestId?: unknown}).requestId === requestId)?.data as {ending?: string} | undefined;
@@ -293,7 +293,7 @@ const pixooMoment: Scenario = {
     act('the operator selects Monitor', h => dispatchOnce(h, 'operator', 'pixoo-monitor', pixooMode('monitor'), 'pixoo-moment-mode')),
     act('the hook observes a session start', h => publish(h, sessionStarted)),
     expect('the Pixoo shows the session\'s dashboard', h => (pixooState(h).shown !== null && pixooDisplay(h)?.showing === 'dashboard') || `display ${show(pixooDisplay(h))}`, 5000),
-    act('a moment the hub allows to cover status arrives', h => dispatchOnce(h, 'operator', 'moment-monitor', momentOf('moment-monitor'), 'moment-monitor-1')),
+    act('a moment the hub allows to cover status arrives', h => dispatchOnce(h, 'operator', 'moment-monitor', momentOf(h, 'moment-monitor'), 'moment-monitor-1')),
     expect('the moment takes the display and Monitor stays selected', h => {
       const display = pixooDisplay(h);
       return (display?.showing === 'moment' && display.mode === 'monitor' && display.participating) || `display ${show(display)}`;
@@ -303,9 +303,7 @@ const pixooMoment: Scenario = {
       return done === true ? momentEnding(h, 'moment-monitor-1', 'completed') : done;
     }, 8000),
     expect('Monitor shows the dashboard again', h => (pixooDisplay(h)?.showing === 'dashboard' && pixooDisplay(h)?.moments?.playing === null) || `display ${show(pixooDisplay(h))}`, 5000),
-    act('a second moment starts, and an approval prompt arrives', async h => {
-      await dispatchOnce(h, 'operator', 'moment-attention', momentOf('moment-attention', {durationMs: 10_000}), 'moment-attention-1');
-    }),
+    act('a second moment starts', h => dispatchOnce(h, 'operator', 'moment-attention', momentOf(h, 'moment-attention', {durationMs: 10_000}), 'moment-attention-1')),
     expect('the moment takes the display', h => pixooDisplay(h)?.showing === 'moment' || `display ${show(pixooDisplay(h))}`, 5000),
     act('the hook observes an approval prompt', h => publish(h, approvalPrompt('approve-moment'))),
     expect('attention ends it at once with a preempted ending', h => momentEnding(h, 'moment-attention-1', 'preempted'), 5000),
@@ -316,7 +314,7 @@ const pixooMoment: Scenario = {
     act('the operator starts the playlist', h => startPlaylist(h, 'pixoo-start', 'pixoo-moment-start')),
     expect('the start completes', h => completedAs(h, 'pixoo-moment-start', 'succeeded', 'transmitted'), 8000),
     expect('the playlist plays', h => pixooDisplay(h)?.player.state === 'playing' || `display ${show(pixooDisplay(h))}`, 8000),
-    act('a flourish arrives over Media', h => dispatchOnce(h, 'operator', 'moment-media', momentOf('moment-media', {priorityClass: 'flourish', coversStatus: false}), 'moment-media-1')),
+    act('a flourish arrives over Media', h => dispatchOnce(h, 'operator', 'moment-media', momentOf(h, 'moment-media', {priorityClass: 'flourish', coversStatus: false}), 'moment-media-1')),
     expect('the moment pauses the playlist for the display without changing the mode', h => {
       const display = pixooDisplay(h);
       return (display?.showing === 'moment' && display.mode === 'media' && display.player.intent === 'paused') || `display ${show(display)}`;

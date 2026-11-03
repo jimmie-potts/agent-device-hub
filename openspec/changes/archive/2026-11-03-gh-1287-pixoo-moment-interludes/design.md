@@ -13,6 +13,7 @@
 - **A takeover refuses.** Layering over a card would need the card's expiry to wait for the moment. Refusing is smaller, and at 6 to 8 appearances a day a missed one costs little. The hub logs the refusal.
 - **The start and end writes skip Monitor's cadence, down to one write a second.** With a 10 s cadence a moment could otherwise miss its window or overstay its duration. Writes stay one at a time.
 - **The duration counts from the acknowledged write**, as Nanoleaf counts from its effect write, so a slow upload does not shorten what is seen.
+- **A moment's write stands once launched.** Aborting it when attention arrives could leave its result uncertain, and an uncertain write pauses the player on a real device, which would stop Monitor just as attention needs it. So only a newer player generation retires it, and the current base replaces it. The scenario over the remote transport found this.
 - **Frames are drawn before anything else happens.** A failed render reaches neither the player nor the device.
 - **The seam is `momentContent(request)`.** It returns a `MomentContent` union that `renderMomentContent` draws in the render worker. #679 adds a member for its art reference and a case for drawing it; the presentation receives frames and does not change. The player's picture write takes one or two frames, so a longer animation needs that widened separately.
 

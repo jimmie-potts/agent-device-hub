@@ -98,6 +98,26 @@ it('attention over Monitor ends the moment at once and it never comes back',asyn
   expect(s.frames().filter(frame=>frame[0]===7&&frame[1]===7).length).toBe(count);
  }finally{await s.close();}
 });
+it('attention during the moment\'s write lets it finish, keeps Monitor on the display and then shows the dashboard',async()=>{
+ const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock,latencyMs:300}),player=await Player.open({store,device,clock,pauseOnUncertain:true});
+ const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now()});
+ const run=async(ms:number)=>{for(let t=0;t<ms;t+=100){clock.advance(100);monitor.tick();await flush(clock);}};
+ const shown=()=>device.effects.filter(e=>e.kind==='frame').map(e=>Array.from(e.frame.rgb));
+ try{
+  monitor.submit(quietView);await flush(clock);await monitor.configure({operation:'mode',mode:'monitor'});await run(2000);
+  const results:MomentResult[]=[];
+  void monitor.playMoment({momentId:'m1',coversStatus:true,durationMs:3000,startAtMs:clock.now(),toleranceMs:10000,frames:()=>Promise.resolve([RGB(7)])}).then(result=>results.push(result));
+  await flush(clock);
+  for(let t=0;t<2000&&!monitor.momentSummary().playing;t+=100){clock.advance(100);monitor.tick();await flush(clock);}
+  clock.advance(100);monitor.tick();await flush(clock);
+  expect(monitor.momentSummary().playing).toBe('m1');
+  monitor.submit(attentionView);await run(2000);
+  ended(results,'preempted');
+  expect(monitor.status().participating).toBe(true);
+  expect(player.getState().lastError).toBeNull();
+  expect(shown().at(-1)).toEqual(present(present(monitor.rendition().rendition).frames.at(-1)));
+ }finally{await monitor.close();await player.close();}
+});
 it('over Monitor refuses attention, lost evidence, a moment the hub did not allow, and the setting off',async()=>{
  const s=await setup();
  try{

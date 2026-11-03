@@ -229,7 +229,9 @@ export class MonitorPresentation {
   */
  private endMoment(ending:MomentEnding,resume=true){
   const moment=this.moment;if(moment===null||moment.phase!=='showing')return;
-  this.moment=null;this.cancelCardWrite();this.lastFrame='';this.momentWrite=true;
+  // A write already on its way finishes and the base replaces it: aborting it could leave the result uncertain, and an
+  // uncertain write pauses the player, which would take Monitor away just as attention needs it.
+  this.moment=null;this.lastFrame='';this.momentWrite=true;
   const takeover=this.takeover?.kind==='moment'?this.takeover:null;
   let released:Promise<unknown>=Promise.resolve();
   if(takeover!==null){
@@ -450,15 +452,16 @@ export class MonitorPresentation {
   // being sent. Keep that upload valid; the changed render key schedules the
   // latest card afterward without cancelling a native write with possible effects.
   const observation=this.observation(),playback=JSON.stringify(this.playback),abort=new AbortController();
-  const current=moment!==undefined?()=>!this.closed&&this.moment===moment&&playerGeneration===this.player.getState().generation
+  // A moment's write stands once it is launched, even if the moment ends: only a newer player generation retires it.
+  const current=moment!==undefined?()=>!this.closed&&playerGeneration===this.player.getState().generation
    :()=>!this.closed&&generation===this.generation&&playerGeneration===this.player.getState().generation
    &&observation===this.observation()&&playback===JSON.stringify(this.playback)
    &&(this.active?this.popupUntil>this.clock()&&!this.attention():this.takeover===takeover&&takeover!==null&&this.clock()<takeover.until);
-  const write=frame.card||moment!==undefined?{abort,current,key:frame.key}:null;this.cardWrite=write;
+  const write=frame.card?{abort,current,key:frame.key}:null;this.cardWrite=write;
   this.inFlight=true;this.lastStart=this.clock();this.lastFrame=frame.key;this.onChange();
-  const upload=this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration,write===null?{}:{signal:abort.signal,current});
+  const upload=this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration,moment!==undefined?{current}:write===null?{}:{signal:abort.signal,current});
   if(moment!==undefined){
-   moment.writing=upload.then(result=>{this.momentUploaded(moment,result);},()=>{this.momentUploaded(moment,undefined);}).finally(()=>{if(this.cardWrite===write)this.cardWrite=null;this.inFlight=false;this.onChange();});
+   moment.writing=upload.then(result=>{this.momentUploaded(moment,result);},()=>{this.momentUploaded(moment,undefined);}).finally(()=>{this.inFlight=false;this.onChange();});
    return;
   }
   void upload.then(result=>{
