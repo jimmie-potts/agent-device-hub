@@ -9,8 +9,9 @@ import {test, type TestContext} from 'node:test';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, type VolcanoObservation} from '@jimmie-potts/event-contracts/v2/families';
 import type {Logger, PublishOnceResult} from '@jimmie-potts/sdk';
+import {admit, emptyContinuity, reduce} from '@jimmie-potts/volcano';
 import {
-  BACKOFF_FIRST_MS, BACKOFF_MAX_MS, READABLE, SUBSCRIBABLE, VOLCANO_REGISTERS, VOLCANO_SERIAL, loadCollector, readCollectorConfig, runCollector, serialDigest, volcanoFeedOf,
+  BACKOFF_FIRST_MS, BACKOFF_MAX_MS, CounterGate, READABLE, SUBSCRIBABLE, VOLCANO_REGISTERS, VOLCANO_SERIAL, loadCollector, readCollectorConfig, runCollector, serialDigest, volcanoFeedOf,
   type Collector, type ReadUuid, type SubscribeUuid, type VolcanoTransport,
 } from '../src/collector/volcano.js';
 import {producerSource} from '../src/hook/index.js';
@@ -277,6 +278,75 @@ void test('a read that fails ends the connection, and a stop ends the loop promp
   const started = performance.now();
   await run.stop();
   assert.ok(performance.now() - started < 500);
+});
+
+/** Every discontinuity the module would record from what was published. */
+function discontinuities(run: Run): string[] {
+  let state = emptyContinuity();
+  const reasons: string[] = [];
+  for (const snapshot of snapshots(run)) {
+    const received = snapshot.observedAtMs;
+    if (!admit(state, snapshot, received).take) continue;
+    const result = reduce(state, snapshot, received);
+    state = result.state;
+    for (const fact of result.facts) if (fact.kind === 'discontinuity') reasons.push(fact.reason);
+  }
+  return reasons;
+}
+const totals = (run: Run): number[] => connected(run).map(({reading}) => (reading?.heatingHours ?? 0) * 60 + (reading?.heatingMinutes ?? 0));
+
+for (const [name, first, second] of [['hours then minutes', ['hours', 13], ['minutes', 0]], ['minutes then hours', ['minutes', 0], ['hours', 13]]] as const) {
+  void test(`a rollover notified ${name} never publishes a torn counter or a discontinuity`, async t => {
+    const device = new FakeDevice();
+    device.registers.hours = 12;
+    device.registers.minutes = 59;
+    const run = start(t, device, {timing: {minPublishMs: 1, heartbeatMs: 10, pollMs: 60_000}});
+    await until(() => connected(run).length > 0, 'the first snapshot');
+    device.notify(first[0], first[1]);
+    await sleepFor(30);
+    assert.ok(totals(run).every(total => total === 779), `the first half publishes the last good pair: ${String(totals(run))}`);
+    device.notify(second[0], second[1]);
+    await until(() => totals(run).at(-1) === 780, 'the second half');
+    assert.deepEqual([...new Set(totals(run))], [779, 780]);
+    assert.deepEqual(discontinuities(run), []);
+  });
+}
+
+void test('a rollover whose second notification never comes is settled by the poll', async t => {
+  const device = new FakeDevice();
+  device.registers.hours = 12;
+  device.registers.minutes = 59;
+  const run = start(t, device, {timing: {minPublishMs: 1, heartbeatMs: 10, pollMs: 25}});
+  await until(() => connected(run).length > 0, 'the first snapshot');
+  device.registers.minutes = 0;
+  device.notify('hours', 13);
+  await until(() => totals(run).at(-1) === 780, 'the poll');
+  assert.deepEqual([...new Set(totals(run))], [779, 780]);
+  assert.deepEqual(discontinuities(run), []);
+});
+
+void test('a real counter reset is believed once a later read still says so, and the module records it', async t => {
+  const device = new FakeDevice();
+  device.registers.hours = 120;
+  device.registers.minutes = 5;
+  const run = start(t, device, {timing: {minPublishMs: 1, heartbeatMs: 10, pollMs: 25, counterConfirmMs: 20}});
+  await until(() => connected(run).length > 0, 'the first snapshot');
+  device.registers.hours = 3;
+  device.registers.minutes = 0;
+  await until(() => totals(run).at(-1) === 180, 'the reset');
+  assert.deepEqual([...new Set(totals(run))], [7205, 180]);
+  assert.deepEqual(discontinuities(run), ['counter-decrease']);
+});
+
+void test('the gate takes a normal tick and passes unread registers through', () => {
+  const gate = new CounterGate(1000);
+  assert.deepEqual(gate.take({hours: 1, minutes: 5}, 0), {hours: 1, minutes: 5});
+  assert.deepEqual(gate.take({hours: 1, minutes: 6}, 60_000), {hours: 1, minutes: 6});
+  assert.deepEqual(gate.take({hours: null, minutes: 6}, 60_001), {hours: null, minutes: 6});
+  assert.deepEqual(gate.take({hours: 5, minutes: 0}, 60_002), {hours: 1, minutes: 6}, 'held');
+  assert.deepEqual(gate.take({hours: 5, minutes: 0}, 60_500), {hours: 1, minutes: 6}, 'not yet confirmed');
+  assert.deepEqual(gate.take({hours: 5, minutes: 0}, 61_002), {hours: 5, minutes: 0}, 'confirmed');
+  assert.deepEqual(gate.take({hours: 6, minutes: 0}, 8 * 60 * 60_000), {hours: 6, minutes: 0}, 'time allows it after a long gap');
 });
 
 void test('serials are compared without trailing padding', () => {

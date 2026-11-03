@@ -99,11 +99,15 @@ Facts and threshold SHALL survive an ordinary restart, and there SHALL be no del
 
 ### Requirement: Read-only collector
 
-The runtime SHALL ship a host-local collector whose transport has only scan, connect, read, subscribe and disconnect, limited to the fixed allowlist of status, temperature and counter characteristics, plus the serial for reading only, and SHALL have no write path. The serial SHALL be compared with a private SHA-256 and SHALL never be published, logged or kept; a mismatch SHALL publish `identity-mismatch` and disconnect. It SHALL stay connected on notifications plus a 5 s poll, publish with `publishOnce` on change at most once a second and at a 5 s heartbeat when it has newer evidence, stamp a reading with the time of its evidence and never of its sending, never retry a publication and reconnect with bounded backoff from 2 s to 60 s. Temperatures SHALL be published in degrees Celsius times ten. The real binding SHALL live in a non-workspace package pinning `@stoprocent/noble` 2.8.0, so the root lockfile and container image gain no native dependency.
+The runtime SHALL ship a host-local collector whose transport has only scan, connect, read, subscribe and disconnect, limited to the fixed allowlist of status, temperature and counter characteristics, plus the serial for reading only, and SHALL have no write path. The serial SHALL be compared with a private SHA-256 and SHALL never be published, logged or kept; a mismatch SHALL publish `identity-mismatch` and disconnect. It SHALL stay connected on notifications plus a 5 s poll, publish with `publishOnce` on change at most once a second and at a 5 s heartbeat when it has newer evidence, stamp a reading with the time of its evidence and never of its sending, never retry a publication and reconnect with bounded backoff from 2 s to 60 s. Temperatures SHALL be published in degrees Celsius times ten. A publication SHALL never carry an hours and minutes pair torn across an hour boundary: a pair not moving forward by what the time allows SHALL be held back until a later read at least 4 s on confirms it. The real binding SHALL live in a non-workspace package pinning `@stoprocent/noble` 2.8.0, so the root lockfile and container image gain no native dependency.
 
 #### Scenario: No write can be expressed
 - **WHEN** a whole session runs against a fake noble and a fake transport that fail on any write-shaped call or other characteristic
 - **THEN** every call is among the permitted operations, and any other UUID is refused before the device
+
+#### Scenario: A rollover notified in two halves
+- **WHEN** the counter rolls from 12:59 to 13:00 and hours and minutes notify separately, in either order
+- **THEN** only 12:59 and 13:00 are published, and the module records no discontinuity
 
 #### Scenario: A tick only the poll saw
 - **WHEN** a register changes with no notification

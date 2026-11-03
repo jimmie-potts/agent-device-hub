@@ -46,8 +46,9 @@ Decoding follows the live trial on [#614](https://github.com/jimmie-potts/agent-
 `0x2000`. `status2` bit `0x0200` means the display is in Fahrenheit, exposed as
 `displayFahrenheit` for the card; temperatures are always stored as degrees Celsius
 times ten. `status2` bit 13 flips by itself and is never a change. Counter persistence
-across power-off and the minutes-to-hours rollover are not verified, so any decrease
-is a discontinuity.
+across power-off is not verified, so any decrease is a discontinuity. The hour rollover
+is not verified either: the collector holds back a pair torn across it, so one
+reaching this module is a real change.
 
 A snapshot repeating its epoch and sequence is dropped, and so is one whose
 `observedAtMs` is not newer than the last. Once the feed has been stale for 15 s, such

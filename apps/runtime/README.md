@@ -754,6 +754,11 @@ root lockfile and the container image. It keeps no history.
   register each 5 s, because one counter tick in the live trial arrived only
   through the poll. A notification during a poll wins over what the poll read. A
   failed read ends the connection, and a lost link ends any read under way.
+- **The counter.** The device notifies hours and minutes separately, so an hour
+  boundary can read 13:59 or 12:00 for a moment. A pair that does not move forward
+  by what the time allows is held back, with the last good pair published instead,
+  until a read at least 4 s later still says the same: then it is a real reset, which
+  the module records as a discontinuity.
 - **Identity.** The serial's SHA-256 is compared with `serialSha256`. A different
   device publishes `identity-mismatch` and disconnects. The serial is not
   published, logged or kept.
