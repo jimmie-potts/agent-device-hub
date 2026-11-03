@@ -240,7 +240,7 @@ is a bounded takeover. It changes no mode and no configuration revision:
    (`unsupported-capability`), its start window has passed (`expired`), a command or another
    moment is in hand (`capacity`), the last moment has not been released (`unavailable`), its
    moment ID was accepted before, or it is blocked (`invalid-state`).
-2. Its frame is made once. A failure ends it `failed` with nothing sent.
+2. Its frame is made once. A failure, or 30 s without one, ends it `failed` with nothing sent.
 3. At its start, one queue turn reads the server's pin, pushes the frame in the foreground to
    the installation `bunnymoment`, which no tile may take, and pins it. If a pin stands,
    nothing is written and it ends `failed` with `invalid-state`.
@@ -258,19 +258,34 @@ is a bounded takeover. It changes no mode and no configuration revision:
 | Any other accepted command | Ends it |
 
 The outcome follows the release. `succeeded` and `transmitted` mean the server took the frame
-and the pin and answered the release; a moment that ended early is `failed` with `cancelled`,
-`transmitted` if its frame went out. A push or pin with no definite answer, or a release that
+and the pin and answered the release. A moment that ended early after its frame went out is
+`failed` with `cancelled` and `transmitted`. One ended before anything went out is `failed` with
+evidence `none`: `cancelled` for a later command, `invalid-state` for what it yielded to. A push or pin with no definite answer, or a release that
 did not succeed, is `uncertain`. No write goes out twice, and nothing says what the panel showed.
 
 No frame is stored and nothing replays. A stored mark covers a takeover from before its first
 request until a release is answered. While it stands, new moments are refused and a fresh
-release goes out at a tile's next evaluation, at least 60 s after a failed one. A stop or a
-crash cannot reach the server, so **the frame stays pinned until the next start**, whose first
-evaluation releases it. That start reports the moment `uncertain`, and its ID stays spent.
+release goes out at a tile's next evaluation, at least 60 s after a failed one. The first failure
+logs `operation.failed` with `bunny.operation` `moment`, and the release that works logs
+`operation.completed`.
+
+A release waits behind the queue's holds like any write, so **the frame can outlast its time**:
+
+- A rate limit holds the release for its `Retry-After`, at most 15 minutes, even after attention.
+- A refused key holds it until the next start reads the key anew.
+- A stop or a crash cannot reach the server, so the frame stays pinned until the next start on this
+  backend, whose first evaluation releases it. That start reports the moment `uncertain`, and its
+  ID stays spent. A start on the cloud, or a rollback to code from before moments, sends no
+  release, and a handoff to another server releases nothing on the old one, so clear that pin on
+  the server's own page.
+
+The server has no conditional pin. A pin set by hand in the moment between the read and the
+moment's pin is overwritten, and the release then clears it.
 
 What a moment shows comes from `TidbytModuleOptions.momentPicture`
-(`(moment: MomentPlayRequest) => Promise<Uint8Array>`, an encoded WebP), a mood card from
-`moment-card.ts` by default. Exact art replaces that function and nothing else.
+(`(moment: MomentPlayRequest, signal: AbortSignal) => Promise<Uint8Array>`, an encoded WebP), a
+mood card from `moment-card.ts` by default. `signal` aborts once the answer can no longer be used,
+and nothing waits for it after that. Exact art replaces that function and nothing else.
 
 ### Changing backend
 
@@ -324,7 +339,7 @@ lease.
 ([#967](https://github.com/jimmie-potts/agent-device-hub/issues/967)).
 
 On the cloud, every general command (#918) on `bunny.cmd.<family>.<id>` is refused with
-`unsupported-capability`; a server takes two, as [its controls](#the-displays-controls) state. One whose subject is another device never reaches the
+`unsupported-capability`; a server takes three, as [its controls](#the-displays-controls) and [moments](#moments) state. One whose subject is another device never reaches the
 module: the SDK's bus refuses it with `invalid-message` (the profile's routing-ID
 rule, Hub #835). Nothing is accepted, so the module has no outcome to report.
 

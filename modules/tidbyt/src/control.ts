@@ -40,6 +40,8 @@ export const PIN_RETRY_MS = 60_000;
 export const MOMENT_MAX_DURATION_MS = 60_000;
 /** A shorter moment holds this long: the firmware shows a frame for its own dwell, so a moment of a few seconds is not one the display can keep. */
 export const MOMENT_MIN_HOLD_MS = 30_000;
+/** How long a moment's picture may take. Past this, the moment ends with nothing sent. */
+export const MOMENT_PICTURE_TIMEOUT_MS = 30_000;
 
 const OUTCOME_SCHEMA = `${SCHEMA_BASE}outcome/2.0`;
 const COMMANDS: Readonly<Record<ControlFamily, {dataschema: string; entity: string; operation: 'brightness' | 'mode' | 'moment'}>> = {
@@ -249,7 +251,7 @@ export type DisplayControlOptions = {
   picture: MomentPicture;
 };
 
-/** The one moment in hand, from its acceptance to its outcome. `ended` says why it stops before its time, and `taking` that its takeover began. */
+/** The one moment in hand, from its acceptance to its outcome. `ended` says why it stops before its time, and `taking` that its takeover's turn is queued. */
 type Moment = {data: MomentPlayRequest; ended: 'yielded' | 'command' | undefined; wake: (() => void) | undefined; taking: boolean};
 
 /** The display's mode, brightness and pin, and the commands that change them. */
@@ -266,6 +268,7 @@ export class DisplayControl {
   #moment: Moment | undefined;
   /** Whether a takeover may stand on the server, so a release is due. */
   #mayStand: boolean;
+  #releaseFailing = false;
 
   constructor(options: DisplayControlOptions) {
     this.#options = options;
@@ -294,7 +297,7 @@ export class DisplayControl {
     return this.#display.mode === `hide-${tile}`;
   }
 
-  /** Whether a tile's push interrupts the display. None does during a takeover, and one that ended early no longer counts. */
+  /** Whether a tile's push interrupts the display. None does from the takeover's turn on, and one that ended early no longer counts. */
   immediate(): boolean {
     const moment = this.#moment;
     return this.#display.mode === 'interrupt' && (moment === undefined || !moment.taking || moment.ended !== undefined);
@@ -550,12 +553,24 @@ export class DisplayControl {
       return clock.now() > data.startAtMs + data.toleranceMs ? outcome(Outcome.failed, Outcome.none, 'expired', 'the moment\'s start window passed') : undefined;
     };
 
-    let webp: Uint8Array;
-    try {
-      webp = await picture(data);
-    } catch (error) {
-      if (stopping()) return;
-      await end(outcome(Outcome.failed, Outcome.none, error instanceof SdkError ? error.body.error.code : 'internal', 'the moment\'s picture could not be made'));
+    // Nothing waits on the picture past its time, the moment's end or the stop, whatever it does with its signal.
+    const giveUp = new AbortController();
+    let webp: Uint8Array | undefined;
+    let pictureFailed: unknown;
+    const pictured = (async (): Promise<void> => { webp = await picture(data, giveUp.signal); })().catch((error: unknown) => { pictureFailed = error; });
+    await Promise.race([pictured, this.#wait(moment, MOMENT_PICTURE_TIMEOUT_MS)]);
+    moment.wake?.();
+    giveUp.abort();
+    if (stopping()) return;
+    const unusable = barred();
+    if (unusable !== undefined) {
+      await end(unusable);
+      return;
+    }
+    const frame: Uint8Array | undefined = webp;
+    if (frame === undefined) {
+      const code = pictureFailed === undefined ? 'unavailable' : pictureFailed instanceof SdkError ? pictureFailed.body.error.code : 'internal';
+      await end(outcome(Outcome.failed, Outcome.none, code, 'the moment\'s picture could not be made'));
       return;
     }
     await this.#wait(moment, data.startAtMs - clock.now());
@@ -571,6 +586,8 @@ export class DisplayControl {
     let wrote = false;
     let transmitted = false;
     let result: WriteResult | NotSent;
+    // From here a tile queued behind the turn must not interrupt it, so this is set before the turn is asked for.
+    moment.taking = true;
     try {
       result = await writes.queue.control(async signal => {
         const pin = await writes.connection.serverPin(signal);
@@ -579,16 +596,19 @@ export class DisplayControl {
           yielded = true;
           return {outcome: 'sent'};
         }
+        // The read was a wait: what outranks a moment may have arrived during it.
+        if (barred() !== undefined) return {outcome: 'sent'};
         wrote = true;
-        const pushed = await writes.connection.pushMoment(webp, signal);
+        const pushed = await writes.connection.pushMoment(frame, signal);
         if (pushed.outcome !== 'sent') return pushed;
         transmitted = true;
+        // Without a pin, this moment ends at the hold below, at once.
+        if (moment.ended !== undefined) return pushed;
         return await writes.connection.pinMoment(signal);
       }, () => {
         store.setState(command.source, requestId, 'started');
         store.markMomentWritten(data.momentId);
         this.#mayStand = true;
-        moment.taking = true;
         recordLog(log, 'command.executing', fields, command);
         span = trace.start('bunny.device.call', {parent: command, kind: 'client', attributes: fields});
       }, () => barred() === undefined);
@@ -606,9 +626,12 @@ export class DisplayControl {
     }
     // Nothing was written: a pin stood, or it could not be read. Nothing stands, so no release is due.
     if (!wrote) {
-      if (!yielded) this.#options.reached(result, 'moment', command, requestId);
+      const read = result.outcome === 'sent';
+      if (!read) this.#options.reached(result, 'moment', command, requestId);
       this.#standsNot();
-      await end(yielded ? outcome(Outcome.failed, Outcome.none, 'invalid-state', 'the server holds a pin') : outcome(Outcome.failed, Outcome.none, codeOf(result), 'the server\'s pin could not be read'));
+      if (yielded) await end(outcome(Outcome.failed, Outcome.none, 'invalid-state', 'the server holds a pin'));
+      else if (read) await end(barred() ?? outcome(Outcome.failed, Outcome.none, 'cancelled', 'the moment ended before it started'));
+      else await end(outcome(Outcome.failed, Outcome.none, codeOf(result), 'the server\'s pin could not be read'));
       return;
     }
     this.#options.reached(result, 'moment', command, requestId);
@@ -621,14 +644,16 @@ export class DisplayControl {
       await end(outcome(Outcome.failed, Outcome.none, codeOf(result), 'the server refused the moment'));
       return;
     }
+    // An event during the release itself does not make a moment that held its time one that ended early.
+    const endedEarly = moment.ended;
     const released = await this.#release(command);
     if (stopping()) return;
     if (released.outcome !== 'sent' || result.outcome === Outcome.uncertain) {
       await end(outcome(Outcome.uncertain, transmitted ? Outcome.transmitted : Outcome.none, 'uncertain-result', 'the server did not confirm the moment\'s writes'));
     } else if (result.outcome === Outcome.failed) {
       await end(outcome(Outcome.failed, Outcome.transmitted, codeOf(result), 'the server took the frame and refused its pin'));
-    } else if (moment.ended !== undefined) {
-      await end(outcome(Outcome.failed, Outcome.transmitted, 'cancelled', moment.ended === 'command' ? 'a later command ended the moment' : 'the moment yielded before its time'));
+    } else if (endedEarly !== undefined) {
+      await end(outcome(Outcome.failed, Outcome.transmitted, 'cancelled', endedEarly === 'command' ? 'a later command ended the moment' : 'the moment yielded before its time'));
     } else {
       await end(outcome(Outcome.succeeded, Outcome.transmitted));
     }
@@ -647,17 +672,25 @@ export class DisplayControl {
   /** One release in the queue's turn. A failed one is a fresh one later, at the next evaluation after the retry wait. */
   async #release(parent: TraceContext | undefined): Promise<WriteResult | NotSent> {
     const writes = this.#writes;
-    const {context: {trace, clock}, device} = this.#options;
+    const {context: {trace, clock, log}, device} = this.#options;
     if (writes === undefined) return {outcome: 'cancelled'};
+    const fields: LogFields = {'bunny.device.id': device, 'bunny.operation': 'moment'};
     let span: ReturnType<typeof trace.start> | undefined;
     const result = await writes.queue.control(signal => writes.connection.releaseMoment(signal), () => {
-      span = trace.start('bunny.device.call', {...(parent === undefined ? {} : {parent}), kind: 'client', attributes: {'bunny.device.id': device, 'bunny.operation': 'moment'}});
+      span = trace.start('bunny.device.call', {...(parent === undefined ? {} : {parent}), kind: 'client', attributes: fields});
     });
     span?.end(result.outcome === 'sent' ? 'unset' : 'error');
     if (result.outcome === 'cancelled' || result.outcome === 'held') return result;
     this.#options.reached(result, 'moment', parent);
-    if (result.outcome === 'sent') this.#standsNot();
-    else this.#retryPinAtMs = clock.now() + PIN_RETRY_MS;
+    if (result.outcome === 'sent') {
+      this.#standsNot();
+      if (this.#releaseFailing) recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': Outcome.succeeded});
+      this.#releaseFailing = false;
+    } else {
+      this.#retryPinAtMs = clock.now() + PIN_RETRY_MS;
+      if (!this.#releaseFailing) recordLog(log, 'operation.failed', {...fields, 'bunny.code': codeOf(result)});
+      this.#releaseFailing = true;
+    }
     return result;
   }
 
@@ -670,12 +703,14 @@ export class DisplayControl {
     const writes = this.#writes;
     const {clock, log, trace} = this.#options.context;
     this.checkMoment();
-    if (writes === undefined || this.#reconciling || this.#pending.size > 0 || this.#options.stopping() || writes.queue.held()) return;
+    if (writes === undefined || this.#reconciling || this.#options.stopping() || writes.queue.held()) return;
     const now = clock.now();
     // A time in the future, after the wall clock was set back, counts as now.
     if (this.#retryPinAtMs > now + PIN_RETRY_MS) this.#retryPinAtMs = now;
     if (now < this.#retryPinAtMs) return;
-    if (this.#mayStand) {
+    // A release clears only its own pin, so it need not wait for commands in hand: an outcome the database refused keeps its
+    // command pending until the next start, and that must not strand the frame. Only a moment still in hand owns its release.
+    if (this.#mayStand && this.#moment === undefined) {
       this.#reconciling = true;
       try {
         await this.#release(undefined);
@@ -684,6 +719,7 @@ export class DisplayControl {
       }
       if (this.#mayStand) return;
     }
+    if (this.#pending.size > 0 || this.#options.stopping()) return;
     const tile = pinnedTile(this.#display.mode);
     const presence = tile === undefined ? 'absent' : this.#options.presence(tile);
     // An installation in an unknown state may have taken a new ID, so the pin is written again once it stands.

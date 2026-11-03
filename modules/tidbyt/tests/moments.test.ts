@@ -1,11 +1,12 @@
 // Moments on a Tronbyt server (Hub #337): the bounded takeover, what it yields to, what is left after a failure or a
 // restart, and the seam that supplies its picture, on `SimulatedTronbyt`. The evidence stays a transmission throughout.
 import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
 import {SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
 import type {CloudFetch} from '../src/cloud.js';
 import {configureTidbyt} from '../src/configuration.js';
-import {MOMENT_MAX_DURATION_MS, MOMENT_MIN_HOLD_MS, PIN_RETRY_MS} from '../src/control.js';
+import {ControlStore, MOMENT_MAX_DURATION_MS, MOMENT_MIN_HOLD_MS, MOMENT_PICTURE_TIMEOUT_MS, PIN_RETRY_MS, REMEMBERED} from '../src/control.js';
 import {MOMENT_MOODS, momentFrame, momentView} from '../src/moment-card.js';
 import {picture} from '../src/picture.js';
 import {FRAME_HEIGHT, FRAME_WIDTH, renderFrame} from '../src/render.js';
@@ -13,7 +14,7 @@ import {SimulatedTronbyt, TRONBYT_ORIGIN} from '../src/simulated-tronbyt.js';
 import {SIMULATED_DEVICE} from '../src/simulated.js';
 import {renderTile} from '../src/tiles.js';
 import {MOMENT_INSTALLATION} from '../src/tronbyt.js';
-import {SECOND, asking, finished, host, playback, test, until, working, type Hosted, type HostOptions} from './support.js';
+import {SECOND, asking, finished, flush, host, playback, records, test, until, withWriteFailure, working, type Hosted, type HostOptions} from './support.js';
 
 const STATUS = 'agentdevicehub';
 const NOW_PLAYING = 'nowplaying';
@@ -302,8 +303,14 @@ test('one moment at a time, each moment once, and a repeat of a request changes 
   await h.advance(41 * SECOND, SECOND);
   await until(() => outcomes(h).length === 1 && !cardStands(server), 'its end');
   assert.deepEqual(await play(h, {momentId: 'm-1'}), {status: 'rejected', code: 'invalid-state'}, 'a moment ID plays once');
-  await h.advance(SECOND);
-  assert.equal(outcomes(h).length, 1);
+  const repeated = {requestId: 'r-2', momentId: 'm-2', startAtMs: h.wall()};
+  assert.deepEqual(await play(h, repeated), {status: 'accepted'});
+  assert.deepEqual(await play(h, repeated), {status: 'accepted'}, 'a repeat of the request is answered as before');
+  assert.deepEqual(await play(h, {...repeated, durationMs: 31 * SECOND}), {status: 'rejected', code: 'duplicate-conflict'});
+  await until(() => taken(server), 'its one takeover');
+  await h.advance(41 * SECOND, SECOND);
+  await until(() => outcomes(h).length === 2 && !cardStands(server), 'its end');
+  assert.equal(momentCalls(server).filter(call => call === 'POST push').length, 2, 'one push for each moment');
   assert.ok(!cardStands(server));
 });
 
@@ -386,8 +393,16 @@ test('a release that fails is a fresh one later, and no moment plays until it is
   assert.equal(outcomes(h)[0]?.evidence, 'transmitted');
   assert.ok(cardStands(server), 'it may still stand');
   assert.deepEqual(await play(h), {status: 'rejected', code: 'unavailable'});
+  const failed = (): string[] => records(h, 'operation.failed').filter(record => record.includes(' moment '));
+  assert.equal(failed().length, 1, 'the failure is on record');
+  server.answerNextPatch(500);
+  await h.advance(PIN_RETRY_MS + 31 * SECOND, SECOND);
+  assert.ok(cardStands(server), 'a second failure');
+  assert.equal(failed().length, 1, 'one record per run of failures');
+  assert.equal(records(h, 'operation.completed').filter(record => record.includes(' moment')).length, 0);
   await h.advance(PIN_RETRY_MS + 31 * SECOND, SECOND);
   await until(() => !cardStands(server) && server.state().pinnedApp === null, 'the release');
+  assert.equal(records(h, 'operation.completed').filter(record => record.includes(' moment')).length, 1, 'and its recovery');
   assert.deepEqual(await play(h), {status: 'accepted'}, 'the display is free again');
   assert.equal(outcomes(h).length, 1, 'the release reports no second outcome');
 });
@@ -401,6 +416,159 @@ test('a refused key ends the moment with nothing written, and holds later writes
   assert.equal(outcomes(h)[0]?.error?.code, 'unauthenticated');
   assert.equal(outcomes(h)[0]?.evidence, 'none');
   assert.ok(!cardStands(server));
+  const heard = server.state().calls.length;
+  assert.deepEqual(await play(h), {status: 'accepted'});
+  await until(() => outcomes(h).length === 2, 'the next moment\'s outcome');
+  assert.equal(outcomes(h)[1]?.error?.code, 'unauthenticated');
+  assert.equal(server.state().calls.length, heard, 'the hold keeps it from going out');
+});
+
+test('a push the server refuses leaves nothing standing, so the next moment plays', async context => {
+  const server = new SimulatedTronbyt();
+  let refuse = false;
+  const transport: CloudFetch = async (url, init) => {
+    if (refuse && init.method === 'POST') {
+      refuse = false;
+      server.answerNext(400);
+    }
+    return await server.fetch(url, init);
+  };
+  const h = await onIdle(context, server, {module: {transport}});
+  refuse = true;
+  assert.deepEqual(await play(h), {status: 'accepted'});
+  await until(() => outcomes(h).length === 1, 'the outcome');
+  assert.equal(outcomes(h)[0]?.result, 'failed');
+  assert.equal(outcomes(h)[0]?.evidence, 'none');
+  assert.equal(outcomes(h)[0]?.error?.code, 'invalid-request');
+  assert.deepEqual(momentCalls(server), ['POST push'], 'no pin and no release');
+  assert.deepEqual(await play(h), {status: 'accepted'});
+  await until(() => taken(server), 'the next moment');
+});
+
+test('a release that fails with its outcome refused by the database is still sent again', async context => {
+  const server = new SimulatedTronbyt();
+  let refusing = false;
+  const h = await onIdle(context, server, {wrapDatabase: database => withWriteFailure(database, () => refusing ? Object.assign(new Error('database or disk is full'), {code: 'ERR_SQLITE_ERROR', errcode: 13}) : undefined)});
+  assert.deepEqual(await play(h), {status: 'accepted'});
+  await until(() => taken(server), 'the takeover');
+  server.answerNextPatch(500);
+  refusing = true;
+  await h.advance(41 * SECOND, SECOND);
+  await until(() => records(h, 'operation.failed').some(record => record.includes('storage')), 'the refused outcome');
+  assert.ok(cardStands(server), 'it may still stand');
+  refusing = false;
+  await h.advance(PIN_RETRY_MS + 31 * SECOND, SECOND);
+  await until(() => !cardStands(server) && server.state().pinnedApp === null, 'the fresh release, with the command still pending');
+  assert.equal(h.device().pending, 1, 'the outcome waits for the next start');
+  await h.restart();
+  await until(() => outcomes(h).length === 1, 'the report at the next start');
+  assert.equal(outcomes(h)[0]?.result, 'uncertain');
+});
+
+test('what arrives during the pin read keeps the frame from going out', async context => {
+  const server = new SimulatedTronbyt();
+  let before: (() => Promise<void>) | undefined;
+  const transport: CloudFetch = async (url, init) => {
+    if (init.method === 'GET' && url.endsWith(`/v0/devices/${SIMULATED_DEVICE}`)) await before?.();
+    return await server.fetch(url, init);
+  };
+  const h = await onIdle(context, server, {module: {transport}});
+  before = async () => {
+    before = undefined;
+    await h.core?.set(asking());
+  };
+  assert.deepEqual(await play(h), {status: 'accepted'});
+  await until(() => outcomes(h).length === 1, 'the outcome');
+  assert.equal(outcomes(h)[0]?.result, 'failed');
+  assert.equal(outcomes(h)[0]?.evidence, 'none');
+  assert.equal(outcomes(h)[0]?.error?.code, 'invalid-state');
+  assert.deepEqual(momentCalls(server), []);
+});
+
+test('a command during the release does not make a moment that held its time one that ended early', async context => {
+  const server = new SimulatedTronbyt();
+  let during: (() => Promise<void>) | undefined;
+  const transport: CloudFetch = async (url, init) => {
+    if (init.method === 'PATCH' && init.body === '{"pinned":false}') await during?.();
+    return await server.fetch(url, init);
+  };
+  const h = await onIdle(context, server, {module: {transport}});
+  during = async () => {
+    during = undefined;
+    await request(h, 'brightness-set', 'org.bunny.brightness.set.requested', {requestId: 'dim', percent: 10});
+  };
+  assert.deepEqual(await play(h), {status: 'accepted'});
+  await until(() => taken(server), 'the takeover');
+  await h.advance(41 * SECOND, SECOND);
+  await until(() => outcomes(h).length === 1, 'the outcome');
+  assert.equal(outcomes(h)[0]?.result, 'succeeded');
+});
+
+test('a window that passes while a moment waits for its turn sends nothing', async context => {
+  const server = new SimulatedTronbyt();
+  const session = working();
+  const h = await host(context, {sessions: [session], playback: 'absent', ...onServer(server)});
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the tile');
+  await h.advance(16 * SECOND, SECOND);
+  // A tile's call that hangs holds the queue until its deadline.
+  server.offline();
+  await h.core?.set({...session, label: {value: 'moved on', origin: 'user'}});
+  await until(() => server.state().calls.at(-1)?.method === 'POST', 'the tile\'s call in flight');
+  assert.deepEqual(await play(h, {toleranceMs: 2 * SECOND}), {status: 'accepted'});
+  await flush();
+  server.online();
+  await h.advance(11 * SECOND, SECOND);
+  await until(() => outcomes(h).length === 1, 'the outcome');
+  assert.equal(outcomes(h)[0]?.error?.code, 'expired');
+  assert.equal(outcomes(h)[0]?.evidence, 'none');
+  assert.ok(!cardStands(server));
+});
+
+test('a hidden status tile does not keep a flourish off the display, and attention still does', async context => {
+  const server = new SimulatedTronbyt();
+  const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server)});
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the tile');
+  assert.deepEqual(await mode(h, 'hide', 'hide-status'), {status: 'accepted'});
+  await until(() => h.device().desired.mode.status === 'known' && h.device().pending === 0, 'the mode');
+  assert.deepEqual(await play(h, {priorityClass: 'flourish', coversStatus: false}), {status: 'accepted'});
+  await until(() => taken(server), 'the flourish');
+  await h.core?.set(asking());
+  await until(() => !cardStands(server), 'its end');
+});
+
+test('a picture that never answers cannot hold a moment or the stop', async context => {
+  const server = new SimulatedTronbyt();
+  const signals: AbortSignal[] = [];
+  const h = await onIdle(context, server, {module: {transport: server.fetch, momentPicture: (_moment, signal) => {
+    signals.push(signal);
+    return new Promise(() => {});
+  }}});
+  assert.deepEqual(await play(h), {status: 'accepted'});
+  await h.advance(MOMENT_PICTURE_TIMEOUT_MS + SECOND, SECOND);
+  await until(() => outcomes(h).length === 1, 'the outcome');
+  assert.equal(outcomes(h)[0]?.result, 'failed');
+  assert.equal(outcomes(h)[0]?.evidence, 'none');
+  assert.equal(signals[0]?.aborted, true);
+  assert.deepEqual(momentCalls(server), []);
+
+  assert.deepEqual(await play(h), {status: 'accepted'});
+  await flush();
+  await h.stop();
+  assert.equal(signals[1]?.aborted, true, 'the stop finished without it');
+});
+
+test('forgetting old moments keeps one that may still stand', () => {
+  const database = new DatabaseSync(':memory:');
+  const store = new ControlStore(database);
+  store.rememberMoment('standing');
+  store.markMomentWritten('standing');
+  for (let index = 0; index < REMEMBERED + 2; index += 1) store.rememberMoment(`moment-${String(index)}`);
+  assert.ok(store.momentMayStand());
+  assert.ok(store.momentSeen('standing'));
+  assert.ok(!store.momentSeen('moment-0'), 'the oldest of the rest are forgotten');
+  store.momentReleased();
+  assert.ok(!store.momentMayStand());
+  database.close();
 });
 
 test('the picture seam: a supplied frame is what goes out, and one that cannot be made sends nothing', async context => {

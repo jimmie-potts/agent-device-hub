@@ -10,10 +10,11 @@ import {FRAME_BYTES, FRAME_HEIGHT, FRAME_WIDTH, type Frame} from './render.js';
 export const MOMENT_MOODS = ['celebrate', 'setback', 'reminder'] as const;
 /**
  * Supplies the encoded WebP one moment shows. It runs once, after the moment was accepted and before anything goes out, so
- * a rejection ends the moment with nothing sent. It may read `moment` only as the accepted request: no message carries a
- * frame, and what it fetches or draws stays private to the module.
+ * a rejection ends the moment with nothing sent. `signal` aborts once its answer can no longer be used: the moment ended,
+ * the module stops, or `MOMENT_PICTURE_TIMEOUT_MS` passed, and nothing waits for it after that. No message carries a frame,
+ * and what it fetches or draws stays private to the module.
  */
-export type MomentPicture = (moment: MomentPlayRequest) => Promise<Uint8Array>;
+export type MomentPicture = (moment: MomentPlayRequest, signal: AbortSignal) => Promise<Uint8Array>;
 export type MomentView = {mood: string; palette: readonly string[]};
 
 const MOOD_PALETTES: Readonly<Record<string, readonly string[]>> = {

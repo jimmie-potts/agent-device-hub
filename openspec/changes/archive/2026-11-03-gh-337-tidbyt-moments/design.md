@@ -5,7 +5,7 @@ ADR 0006 puts a moment's mechanism, precedence and return to base in the device.
 ## Decisions
 
 - **Its own installation, pinned for the hold.** A push alone shows for one dwell and leaves a tile in the rotation. A pin holds the frame for the whole moment, and tiles keep writing behind it in the background, so the return shows the current rotation and nothing needs restoring. Deleting the installation at the end leaves no trace in the rotation.
-- **One queue turn for the takeover.** The read, the push and the pin share a turn, so no mode write lands between them. The release is a later turn. Its `pinned: false` makes the server do the comparison, so there is no gap between a read and a clear in which an owner's new pin could be lost.
+- **One queue turn for the takeover.** The read, the push and the pin share a turn, so no mode write lands between them. The release is a later turn. Its `pinned: false` makes the server do the comparison, so there is no gap between a read and a clear in which an owner's new pin could be lost. The pin itself has no such comparison, so a pin set by hand between the read and the moment's pin is overwritten. The API offers nothing to close that.
 - **Any pin wins.** A pin mode refuses at admission. A pin set on the server's own page is only known by reading, so the takeover reads first and writes nothing if one stands. A pin set during the hold survives the release.
 - **Missing evidence blocks.** A sessions copy that does not follow its owner counts as possible attention, as ADR 0006 says no moments play without the hub.
 - **A floor of 30 s.** The firmware decides how long a frame shows, so a request for a few seconds cannot be honored as asked. The dashboard's test button asks for 3 s. It holds 30 s, the low end of the owner's range. Above 60 s is refused by the shared admission rule.
@@ -18,4 +18,5 @@ A row marks a takeover that may stand, written before the first request and clea
 ## Risks
 
 - A long runtime outage during a hold leaves the card pinned on the server. Only a server-side expiry could bound that, and the API has none. The window is at most 60 s per moment, and the next start clears it.
+- A release waits behind the queue's holds like any write: up to 15 minutes under a rate limit and until the next start under a refused key. The server records no rate limit of its own, so a 429 would come from a proxy.
 - `pendingKinds` shows `moment-play` for the whole hold. That is true of a command whose outcome follows its release.

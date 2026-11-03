@@ -7,7 +7,7 @@ export {
   tidbytFactory, type TidbytModuleOptions, type TidbytTiming,
 } from './module.js';
 export {registration, tidbytSimulation} from './registration.js';
-export {CONTROL_FAMILIES, DEFAULT_MODE, MAX_PENDING, MOMENT_MAX_DURATION_MS, MOMENT_MIN_HOLD_MS, displayCapabilities, displayModes} from './control.js';
+export {CONTROL_FAMILIES, DEFAULT_MODE, MAX_PENDING, MOMENT_MAX_DURATION_MS, MOMENT_MIN_HOLD_MS, MOMENT_PICTURE_TIMEOUT_MS, displayCapabilities, displayModes} from './control.js';
 export {BRIGHTNESS_CEILING, MOMENT_INSTALLATION, TronbytConnection, privateServerUrl, type TronbytConfig} from './tronbyt.js';
 export {SimulatedTronbyt, TRONBYT_ORIGIN, type SimulatedTronbytOptions, type TronbytState} from './simulated-tronbyt.js';
 export {

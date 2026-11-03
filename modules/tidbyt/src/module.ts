@@ -255,7 +255,7 @@ class TidbytRun {
         track: work => { this.#track(work); },
         storageFailed: error => { this.#storageFailed(storageCode(error)); },
         presentation: () => this.#presentation(),
-        picture: this.#options.momentPicture ?? (moment => this.#momentCard(moment)),
+        picture: this.#options.momentPicture ?? ((moment, signal) => this.#momentCard(moment, signal)),
       });
     }
     // The API key is read once, at start; a key replaced on disk takes effect at the next start.
@@ -667,10 +667,10 @@ class TidbytRun {
   }
 
   /** Draws and encodes a moment's mood card in a worker thread, which the module's stop ends. */
-  async #momentCard(moment: MomentPlayRequest): Promise<Uint8Array> {
+  async #momentCard(moment: MomentPlayRequest, signal: AbortSignal): Promise<Uint8Array> {
     const request: TileRequest = {tile: 'moment', view: momentView(moment)};
     const reply = await this.#context.workers.call<TileReply>(this.#options.renderWorker ?? RENDER_WORKER, request, {
-      timeoutMs: this.#options.renderTimeoutMs ?? RENDER_TIMEOUT_MS, signal: this.#context.signal,
+      timeoutMs: this.#options.renderTimeoutMs ?? RENDER_TIMEOUT_MS, signal: AbortSignal.any([this.#context.signal, signal]),
     });
     if (typeof reply !== 'object' || reply === null || !reply.ok || !(reply.webp instanceof Uint8Array)) {
       throw new SdkError(errorBody('internal', {detail: 'the render worker answered without a frame'}));
