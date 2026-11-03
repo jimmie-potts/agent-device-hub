@@ -176,9 +176,11 @@ Checked 2026-11-03. Neither project had released since the pins below.
 | Firmware | v1.7.4, target `tidbyt-gen1` | Not exercised: #24 owns the flash. |
 | API | `/v0` | The table below, and `tests/tronbyt-server.test.ts`. |
 
-What differs from the cloud, each exercised on the v2.5.1 server. The v2.5.2 run repeats
-what the test asserts, which leaves out the `background` default, the anonymous queue,
-out-of-range brightness, a re-pushed installation's new ID and the unchecked image:
+What differs from the cloud, each exercised on the v2.5.1 server. The v2.5.2 run asserts
+only part of this: a named push replacing its own installation, server IDs that differ from
+the chosen name, presence found by name, the two 404s as outcomes, a pin outliving its
+installation, brightness at the ceiling and a 200 with no device connected. The rest of the
+table, including the rate row, rests on the v2.5.1 run and the unchanged API source:
 
 | Server behavior | What the module does |
 | --- | --- |
