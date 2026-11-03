@@ -57,7 +57,7 @@ export type Hour = {
 /** One active alert: its event from the closed list and its severity, never its area, headline, sender or description. */
 export type Alert = {event: typeof ALERT_EVENTS[number] | typeof GENERIC_ALERT; severity: Severity; endsAtMs: number | null};
 /**
- * Facts stand only in an `available` record whose `staleAtMs` has not passed; read them through `promptWords`. An
+ * Facts stand only in an `available` record whose `staleAtMs` has not passed; read them through `promptWords` and `forecastWords`. An
  * `unavailable` record carries no weather at all, only when the last observation was and its age when written.
  * `current` is the forecast for this hour, not a station measurement.
  */

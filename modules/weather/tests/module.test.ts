@@ -277,6 +277,27 @@ void test('AC4: wording outside the vocabulary is no change on its own', async t
   assert.deepEqual(world.changes.map(change => change.changes), [['condition']]);
 });
 
+void test('AC4: unknown wording in a temperature signal, or first of all, draws no later condition signal', async t => {
+  const moved = new World();
+  await hosted(t, moved);
+  await moved.step();
+  moved.hours = [{shortForecast: 'Hot', temperature: 60}];
+  await moved.step();
+  moved.hours = [{shortForecast: 'Mostly Sunny', temperature: 60}];
+  await moved.step();
+  assert.deepEqual(moved.changes.map(change => change.changes), [['temperature']]);
+  const first = new World();
+  first.hours = [{shortForecast: 'Hot'}];
+  await hosted(t, first);
+  await first.step();
+  first.hours = [{shortForecast: 'Mostly Sunny'}];
+  await first.step();
+  assert.equal(first.changes.length, 0);
+  first.hours = [{shortForecast: 'Rain'}];
+  await first.step();
+  assert.deepEqual(first.changes.map(change => change.changes), [['condition']]);
+});
+
 void test('AC4: temperature signals a large move, including a slow one, and not drift around a value', async t => {
   const world = new World();
   await hosted(t, world);

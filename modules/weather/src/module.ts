@@ -28,11 +28,17 @@ const baselineOf = ({current, alerts}: Observation): Baseline => ({condition: cu
 /** What differs enough from the baseline to deserve one signal. */
 export function changesFrom(before: Baseline, after: Baseline): Change[] {
   return [
-    // Wording outside the vocabulary says nothing about the sky, so it is no change on its own.
-    ...(after.condition !== 'other' && (before.condition !== after.condition || before.likely !== after.likely) ? ['condition' as const] : []),
+    // Wording outside the vocabulary says nothing about the sky, so a move to or from it is no change.
+    ...(before.condition !== 'other' && after.condition !== 'other' && (before.condition !== after.condition || before.likely !== after.likely) ? ['condition' as const] : []),
     ...(Math.abs(before.temperatureF - after.temperatureF) >= TEMPERATURE_CHANGE_F ? ['temperature' as const] : []),
     ...(before.alerts.join('\n') !== after.alerts.join('\n') ? ['alerts' as const] : []),
   ];
+}
+/** The next baseline: what a signal described, keeping the last sky the vocabulary could name. */
+export function nextBaseline(before: Baseline | null, after: Baseline, changes: readonly Change[]): Baseline {
+  if (before === null) return after;
+  const sky = after.condition === 'other' ? before : after;
+  return {...(changes.length > 0 ? after : before), condition: sky.condition, likely: sky.likely};
 }
 
 export function createWeatherModule(options: WeatherOptions = {}): BunnyModule<WeatherConfig> {
@@ -143,7 +149,7 @@ class Owner {
     const after = baselineOf(observation);
     // The first observation sets the baseline: nothing has changed yet. An outage in between changes nothing either.
     const changes = this.#baseline === null ? [] : changesFrom(this.#baseline, after);
-    const baseline = this.#baseline === null || changes.length > 0 ? after : this.#baseline;
+    const baseline = nextBaseline(this.#baseline, after, changes);
     const changed: WeatherChanged | undefined = changes.length === 0 ? undefined : {revision: next.revision, observedAtMs, changes, words: observation.words};
     await this.#publish(next, baseline, changed);
   }

@@ -70,8 +70,10 @@ unacknowledged outcomes must survive without another device write.
 
 Weather's `weather.sqlite` holds its revision, last observation time and change
 baseline. It is not a durable owner: losing it costs one change baseline and resets
-the revision, which a runtime restart makes harmless because in-process copies
-restart with it. No recovery depends on it.
+the revision. In-process copies restart with the runtime. A remote copy that
+outlived it would ignore new records until the revision catches up, and gets no
+prompt words once its record is stale; no remote consumer exists today. No recovery
+depends on it.
 
 Configured Wemo requires its primary store and ordinary healthy running state.
 Preserve retained inactive Wemo state without mandatory phase certificates.

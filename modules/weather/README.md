@@ -52,7 +52,8 @@ Build a prompt only from `promptWords(state, nowMs)`, which returns words such a
 `rain`, `48°F`, `evening` for this hour, and `forecastWords(state, nowMs)`, which
 returns the same words for each forecast hour. Both return nothing for an unavailable
 or stale record. No words means no factual claim: art labels what it invents as
-fiction.
+fiction. A labelled piece inspired by an alert may also use `alerts[].event`, from a
+record `promptWords` still has words for.
 
 When the conditions really change, the module also publishes one occurrence on
 `bunny.event.weather-changed.local`, schema
