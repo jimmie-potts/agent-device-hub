@@ -172,7 +172,7 @@ Checked 2026-11-03. Neither project had released since the pins below.
 
 | Item | Pinned | Evidence |
 | --- | --- | --- |
-| Server | v2.5.2 (`linux/arm64` image published) | Source read at v2.5.2. `tests/tronbyt-server.test.ts` passed on a disposable v2.5.2 server (`sha256:fb0c08e9…`) with no device connected. First exercised on a disposable v2.5.1 server (`sha256:b266da13…`), with synthetic credentials and no network; v2.5.1 to v2.5.2 changes no API handler, the auth middleware or `API.md`. |
+| Server | v2.5.2 (`linux/arm64` image published) | Source read at v2.5.2. `tests/tronbyt-server.test.ts` passed on a disposable v2.5.2 server (`sha256:fb0c08e9…`) with no device connected, then with a device key on the hosted server of [#1406](https://github.com/jimmie-potts/agent-device-hub/issues/1406), the same image, before any device had connected. First exercised on a disposable v2.5.1 server (`sha256:b266da13…`), with synthetic credentials and no network; v2.5.1 to v2.5.2 changes no API handler, the auth middleware or `API.md`. |
 | Firmware | v1.7.4, target `tidbyt-gen1` | Not exercised: #24 owns the flash. |
 | API | `/v0` | The table below, and `tests/tronbyt-server.test.ts`. |
 
@@ -194,7 +194,10 @@ table, including the rate row, rests on the v2.5.1 run and the unchanged API sou
 | No rate limit; writes 1 s apart were all answered | Takes a gate down to 1 s. This qualifies the server, not what the device renders; #24 selects the value |
 
 Run the optional check against a disposable server after a build: its device's
-installations, pin and brightness change.
+installations, pin and brightness change. It takes a user key or a device key. A device key
+is scoped to its device, so use one for the module; only the check's refusal for another
+device differs, 403 where a user key hears 404. The server's device listing returns the
+owner's devices for either key.
 
 ```bash
 TRONBYT_QUALIFY_URL=<origin> TRONBYT_QUALIFY_DEVICE=<id> TRONBYT_QUALIFY_KEY=<key> node --test modules/tidbyt/dist/tests/tronbyt-server.test.js

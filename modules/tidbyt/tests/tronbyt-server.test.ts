@@ -60,8 +60,10 @@ void nodeTest('the connection\'s every call against a real server, with what the
   const wrongKey = new TronbytConnection({url: url ?? '', deviceId: device ?? '', apiKey: 'wrong-key', installationId: STATUS, fetch: realFetch});
   assert.deepEqual(await wrongKey.push(FRAME, signal()), {outcome: 'failed', failure: 'unauthenticated'});
   const wrongDevice = new TronbytConnection({url: url ?? '', deviceId: 'nosuchdevice', apiKey: key ?? '', installationId: STATUS, fetch: realFetch});
-  assert.deepEqual(await wrongDevice.push(FRAME, signal()), {outcome: 'failed', failure: 'unknown-device'});
-  assert.deepEqual(await wrongDevice.remove(signal()), {outcome: 'failed', failure: 'unknown-device'}, 'a missing device is not a missing installation');
+  // A user key hears 404 for a device that does not exist, and a device key 403 for any device but its own.
+  const refusal = await wrongDevice.push(FRAME, signal());
+  assert.deepEqual(refusal, {outcome: 'failed', failure: refusal.outcome === 'failed' && refusal.failure === 'forbidden' ? 'forbidden' : 'unknown-device'});
+  assert.deepEqual(await wrongDevice.remove(signal()), refusal, 'a missing device is not a missing installation');
 });
 
 void nodeTest('the module draws its status tile on a real server at a shorter gate, and its pin follows the tile', {skip, timeout: 60_000}, async context => {

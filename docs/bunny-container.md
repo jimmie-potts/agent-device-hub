@@ -70,6 +70,35 @@ writer, retaining the source for explicit manual return. A local lease cannot
 exclude another computer. The [WSL upgrade procedure](../apps/runtime/UPGRADE.md)
 continues to apply only to that established installation.
 
+## Tronbyt server on the Mac
+
+[#1406](https://github.com/jimmie-potts/agent-device-hub/issues/1406) hosts the
+Tidbyt's Tronbyt server here, beside the core and separate from it. Selecting it is the
+[Tidbyt module's](../modules/tidbyt/README.md#the-tronbyt-backend) configuration and
+the device transition; hosting changes neither.
+
+| Item | Selected |
+| --- | --- |
+| Method | Its own Compose project, `bunny-tronbyt`, on the published `linux/arm64` image |
+| Version | v2.5.2, pinned by digest (`sha256:fb0c08e9…`), from the module's compatibility record |
+| Restart | `unless-stopped`, with Docker Desktop set to start at sign-in |
+| Address | One port on loopback and on the Mac's LAN address, which a DHCP reservation on the router holds. The reservation is for the Ethernet interface |
+| VPN | Reach from the LAN holds with Proton disconnected, the owner's normal state, and was not tested with it connected. Proton has made LAN devices unreachable before, so the Tidbyt may lose the server while Proton is connected |
+| Firmware updates | Automatic updates off in the server's settings, so the device transition pins firmware deliberately |
+| Device key | One device-scoped API key, in a private file outside Git |
+| Health | `/health` and `/metrics` |
+
+Keep the Compose file, data, backups, key and the device ID private. Its own `backup.sh`
+stops the server, copies the data directory and starts it again. Take a backup before
+changing the image, and keep the previous image for rollback.
+
+After a Mac restart and sign-in the server returns by itself; a reboot on 2026-11-03
+proved it, on the same address. Nothing runs before sign-in, so once the Tidbyt is moved,
+its display stops updating until someone signs in. That is accepted downtime, as for the
+core. The core, the [diagnostics stack](#diagnostics-stack) and the
+[private route](../apps/runtime/PRIVATE-ACCESS.md) stay down until started by hand, and the server does not need any of them to keep serving
+what it holds.
+
 ## Mac-local browser profile
 
 For the separately selected private HTTPS entry, use
