@@ -124,6 +124,36 @@ void test('sessions page newest first by cursor, and the last page ends', async 
   assert.equal(second.next, null);
 });
 
+void test('sessions page by position, so a stepped clock neither skips nor repeats one, and a cursor keeps its threshold', async t => {
+  const world = await rig(t);
+  const database = world.host.moduleDatabase();
+  assert.ok(database !== undefined);
+  const insert = database.prepare('INSERT INTO volcano_facts(kind, observed_at_ms, received_at_ms, data) VALUES(?, ?, ?, ?)');
+  const at = (minutes: number): number => world.clock.now() + minutes * 60_000;
+  const use = (minutes: number, edge = 'observed'): void => {
+    insert.run('heater', at(minutes), at(minutes), JSON.stringify({kind: 'heater', on: true, status1: HEATING, edge}));
+    insert.run('heater', at(minutes + 1), at(minutes + 1), JSON.stringify({kind: 'heater', on: false, status1: IDLE, edge: 'observed'}));
+  };
+  use(1000);
+  use(1100);
+  insert.run('discontinuity', at(500), at(500), JSON.stringify({kind: 'discontinuity', reason: 'clock-step', lastReadingAtMs: at(1101)}));
+  use(500, 'first-observation');
+  use(600);
+  use(700);
+  const seen: number[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 10; page += 1) {
+    const answer: {sessions: Session[]; next: string | null} = await world.read('sessions', {limit: '2', ...(cursor === undefined ? {} : {cursor})});
+    seen.push(...answer.sessions.map(session => session.startAtMs));
+    if (answer.next === null) break;
+    cursor = answer.next;
+  }
+  assert.deepEqual(seen, [at(700), at(600), at(500), at(1100), at(1000)], 'each once, in stored order, across the step');
+  const first = await world.read<{next: string}>('sessions', {limit: '2'});
+  await refused(world, 'sessions', {cursor: first.next, gapMinutes: '30'});
+  for (const cursor of ['15:0', '0:1', '15', 'x:1']) await refused(world, 'sessions', {cursor});
+});
+
 void test('a long history stays inside the page and byte caps', async t => {
   const world = await rig(t);
   await world.send({reading: reading({status1: IDLE})});

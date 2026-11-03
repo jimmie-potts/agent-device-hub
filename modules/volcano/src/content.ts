@@ -13,6 +13,7 @@ const MAX_BYTES = 256 * 1024;
 const PAGE_BYTES = 224 * 1024;
 const ZONE = /^[A-Za-z0-9_+./-]{1,64}$/;
 const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+const SESSIONS_CURSOR = /^([1-9][0-9]{0,2}):([1-9][0-9]{0,14})$/;
 const TIMELINE_CURSOR = /^(0|[1-9][0-9]{0,15})-([1-9][0-9]{0,15})$/;
 
 type Code = 'invalid-request' | 'invalid-message' | 'cancelled' | 'too-large' | 'internal' | 'capacity';
@@ -39,8 +40,13 @@ function zoneDay(zone: string | undefined): ((atMs: number) => string) | undefin
   }
 }
 
-function sessionsPage(sessions: readonly Session[], before: number | undefined, limit: number): {page: Session[]; next: string | null} {
-  const newest = [...sessions].reverse().filter(session => before === undefined || session.startAtMs < before);
+/**
+ * One page, newest stored first. A clock step can put a later session's start before an earlier one's, so the cursor counts
+ * positions in the derived order rather than comparing times. New sessions only add after that position, and a cursor names
+ * the threshold it counted under, since another threshold groups other sessions.
+ */
+function sessionsPage(sessions: readonly Session[], remaining: number | undefined, gapMinutes: number, limit: number): {page: Session[]; next: string | null} {
+  const newest = sessions.slice(0, remaining ?? sessions.length).reverse();
   const page: Session[] = [];
   let bytes = 0;
   for (const session of newest) {
@@ -49,8 +55,7 @@ function sessionsPage(sessions: readonly Session[], before: number | undefined, 
     page.push(session);
     bytes += size;
   }
-  const last = page.at(-1);
-  return {page, next: last !== undefined && newest.length > page.length ? String(last.startAtMs) : null};
+  return {page, next: newest.length > page.length ? `${String(gapMinutes)}:${String(newest.length - page.length)}` : null};
 }
 
 /** Answers one read of `ref`, or undefined for a reference the module does not serve. */
@@ -83,11 +88,12 @@ export function readContent(ref: string, request: ModuleContentRequest | undefin
       }
       case 'sessions': {
         const limit = query.limit === undefined ? MAX_SESSIONS : decimal(query.limit, 1, MAX_SESSIONS);
-        const before = query.cursor === undefined ? undefined : decimal(query.cursor, 0, Number.MAX_SAFE_INTEGER);
+        const position = query.cursor === undefined ? undefined : SESSIONS_CURSOR.exec(query.cursor);
         const preview = query.gapMinutes === undefined ? undefined : decimal(query.gapMinutes, MIN_GAP_MINUTES, MAX_GAP_MINUTES);
-        if (limit === undefined || (query.cursor !== undefined && before === undefined) || (query.gapMinutes !== undefined && preview === undefined)) return fail('invalid-request');
+        if (limit === undefined || position === null || (query.gapMinutes !== undefined && preview === undefined)) return fail('invalid-request');
         const gapMinutes = preview ?? status.gapMinutes;
-        const {page, next} = sessionsPage(groupSessions(derive(store.structural(), observedThroughMs), gapMinutes), before, limit);
+        if (position !== undefined && Number(position[1]) !== gapMinutes) return fail('invalid-request');
+        const {page, next} = sessionsPage(groupSessions(derive(store.structural(), observedThroughMs), gapMinutes), position === undefined ? undefined : Number(position[2]), gapMinutes, limit);
         value = {schema: 'volcano-sessions/2.0', ...base, gapMinutes, preview: preview !== undefined, sessions: page, next};
         valid = validateSessions;
         break;
