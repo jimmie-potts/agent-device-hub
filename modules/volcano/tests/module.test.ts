@@ -116,17 +116,21 @@ void test('history survives a restart, which adds no fact, and a restarted modul
   assert.equal((await world.read<Sessions>('sessions')).sessions[0]?.startAtMs, startedAt);
 });
 
-void test('a heater kept on across a restart remains one stretch', async t => {
+void test('a heater kept on across a restart remains one stretch, and the snapshots the restart missed are unobserved', async t => {
   const world = await rig(t);
   await world.send({reading: reading({status1: IDLE})});
   await world.after(5000, {reading: reading({status1: HEATING})});
   await world.restart();
+  // The collector kept publishing while the module was away, so the next sequence it hears is not the next one it took.
+  world.sequence += 1;
   await world.after(5000, {reading: reading({status1: HEATING})});
   await world.after(5000, {reading: reading({status1: IDLE})});
   const {sessions} = await world.read<Sessions>('sessions');
   assert.equal(sessions.length, 1);
   assert.equal(sessions[0]?.stretches.length, 1);
-  assert.equal(sessions[0]?.observedHeatingMs, 10_000);
+  assert.equal(sessions[0]?.stretches[0]?.unobserved.length, 1);
+  assert.equal(sessions[0]?.observedHeatingMs, 5000);
+  assert.equal(sessions[0]?.endAtMs, world.clock.now());
 });
 
 void test('a restart between store commit and publication sends the stored messages once more and repeats no fact', async t => {

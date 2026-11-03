@@ -39,7 +39,7 @@ indefinitely. Every fact keeps `observedAtMs`, the collector's clock, and
 | `counter` | On change. Whole minutes: `hours*60+minutes`. |
 | `link` | On change: `connected`, `disconnected`, `unavailable`, `identity-mismatch` or `stale`. |
 | `collector-restart` | When the collector's epoch changes. |
-| `gap` | An unobserved interval, with the heater on each side and the counter's gain across it. |
+| `gap` | An unobserved interval, with the heater on each side and the counter's gain across it: a broken link, a feed silent for over 15 s, a skipped `sequence` or a new collector epoch. |
 | `discontinuity` | `counter-decrease`, `counter-jump` (a gain larger than the time that passed), `identity-mismatch` or `clock-step`. No delta crosses one. |
 
 Decoding follows the live trial on [#614](https://github.com/jimmie-potts/agent-device-hub/issues/614): the heater is `status1` bit `0x0020` and the pump

@@ -19,11 +19,15 @@ The runtime SHALL ship one `modules/volcano` module for one configured feed, who
 
 ### Requirement: No fabricated continuity
 
-A snapshot repeating its `(collectorEpoch, sequence)`, or whose `observedAtMs` is not newer than the ordering baseline, SHALL add no fact and renew no freshness, and once the feed has been stale for 15 s such a snapshot SHALL move the baseline to its own stamp without giving evidence. A missing observation SHALL stay unknown: a disconnect or a stale feed SHALL never record off. When observation resumes after a broken link or more than 15 s of silence, the module SHALL record one gap with the heater on each side. Its credit SHALL be the counter's gain in whole minutes only when a baseline spans it with no discontinuity. A counter decrease, a gain larger than the elapsed minutes plus one, a changed identity or a stepped clock SHALL record a discontinuity that no delta crosses.
+A snapshot repeating its `(collectorEpoch, sequence)`, or whose `observedAtMs` is not newer than the ordering baseline, SHALL add no fact and renew no freshness, and once the feed has been stale for 15 s such a snapshot SHALL move the baseline to its own stamp without giving evidence. A missing observation SHALL stay unknown: a disconnect or a stale feed SHALL never record off. When observation resumes after a broken link, more than 15 s of silence, a skipped `sequence` within an epoch or a new collector epoch, the module SHALL record one gap with the heater on each side. Its credit SHALL be the counter's gain in whole minutes only when a baseline spans it with no discontinuity. A counter decrease, a gain larger than the elapsed minutes plus one, a changed identity or a stepped clock SHALL record a discontinuity that no delta crosses.
 
 #### Scenario: Duplicates and delayed snapshots
 - **WHEN** heartbeats repeat, the same sequence arrives again, an older stamp arrives late and `status2` bit 13 flips
 - **THEN** no fact, accumulated time or published state changes
+
+#### Scenario: A skipped sequence
+- **WHEN** a snapshot arrives within 15 s of the last, but its sequence skips one
+- **THEN** a gap is recorded, and a transition it shows has an `after-gap` edge rather than an observed one
 
 #### Scenario: Counter decrease and jump
 - **WHEN** the counter reads 120 h 05 min and then 3 h 00 min, or gains more minutes than have passed

@@ -101,6 +101,10 @@ export function reduce(state: Continuity, snapshot: VolcanoObservation, received
     forget();
   }
   if (state.epoch !== null && state.epoch !== collectorEpoch) add({kind: 'collector-restart'});
+  // The collector counts every snapshot it tries, so a skipped sequence is one that never arrived, and a new process held
+  // no link for a while: either way something went unobserved, however short the time.
+  const missed = state.epoch !== null && (state.epoch !== collectorEpoch || sequence > state.sequence + 1);
+  if (missed && next.lastReadingAtMs !== null) next.broken = true;
   if (state.link !== link) add({kind: 'link', state: link});
   if (link === 'identity-mismatch' && state.link !== 'identity-mismatch') {
     add({kind: 'discontinuity', reason: 'identity-mismatch', lastReadingAtMs: next.lastReadingAtMs});

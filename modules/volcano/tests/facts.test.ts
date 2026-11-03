@@ -178,14 +178,26 @@ void test('a changed identity starts a discontinuity, and what follows starts ov
   assert.equal(state.counter, 725 + 4);
 });
 
-void test('a new collector epoch is one marker and does not lose continuity', () => {
+void test('a new collector epoch is one marker and an unobserved interval, with no heater fact unless it changed', () => {
   const {facts} = play([
     {at: 0, epoch: 'epoch-a', reading: {status1: HEATING, heatingMinutes: 5}}, {at: 5000, epoch: 'epoch-b', reading: {status1: HEATING, heatingMinutes: 5}},
     {at: 10_000, epoch: 'epoch-b', reading: {status1: HEATING, heatingMinutes: 5}},
   ]);
   assert.equal(only(facts, 'collector-restart').length, 1);
   assert.equal(only(facts, 'heater').length, 1);
-  assert.equal(only(facts, 'gap').length, 0);
+  assert.deepEqual(only(facts, 'gap').map(({fromMs, toMs, creditedMinutes}) => [fromMs, toMs, creditedMinutes]), [[START, START + 5000, 0]]);
+});
+
+void test('a skipped sequence is a missed observation even within 15 s: what it hid has an unobserved edge', () => {
+  const taken = play([{at: 0, reading: {status1: HEATING, heatingMinutes: 5}}]).state;
+  const later = (sequence: number, status1: number): VolcanoObservation => ({feed: FEED, observedAtMs: START + 5000, collectorEpoch: 'epoch-a', sequence, link: 'connected', reading: reading({status1, heatingMinutes: 5})});
+  const next = reduce(taken, later(taken.sequence + 1, IDLE), START + 5000);
+  assert.equal(only(next.facts, 'heater')[0]?.edge, 'observed', 'the next sequence saw it as it happened');
+  assert.equal(only(next.facts, 'gap').length, 0);
+  const skipped = reduce(taken, later(taken.sequence + 2, IDLE), START + 5000);
+  assert.equal(only(skipped.facts, 'heater')[0]?.edge, 'after-gap');
+  assert.deepEqual(only(skipped.facts, 'gap').map(({fromMs, toMs, heaterBefore, heaterAfter, creditedMinutes}) => [fromMs, toMs, heaterBefore, heaterAfter, creditedMinutes]), [[START, START + 5000, 'on', 'off', 0]]);
+  assert.equal(skipped.state.broken, false, 'the reading closes the gap');
 });
 
 void test('going stale is one marker and leaves the heater as last seen for the gap, not off', () => {
