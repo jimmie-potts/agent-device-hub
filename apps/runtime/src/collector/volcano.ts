@@ -60,7 +60,7 @@ export const READ_DEADLINE_MS = 5000;
 export const PUBLISH_TIMEOUT_MS = 4000;
 export const BACKOFF_FIRST_MS = 2000;
 export const BACKOFF_MAX_MS = 60_000;
-/** How long a counter that does not move forward must hold before it is believed. One poll is enough, and one notification is not. */
+/** How long a counter that does not move forward must hold before a poll believes it: shorter than the poll, so the next poll does. */
 export const COUNTER_CONFIRM_MS = 4000;
 /** How far behind the last stamp a reading may fall and still be held just past it: a same-millisecond or slewed clock. */
 export const SAME_INSTANT_MS = 1000;
@@ -172,8 +172,8 @@ type Pair = {hours: number | null; minutes: number | null};
 /**
  * Keeps a torn counter out of what is published. The device notifies hours and minutes separately, so at an hour boundary
  * the registers can read 12:59, 13:59, 13:00 or 12:59, 12:00, 13:00. A pair is taken when it moves forward by no more than the
- * time allows. Any other pair is held back, published as unread, until a later read at least `confirmMs` on still says the
- * same: then it is a real reset, for the module to record as a discontinuity. Publishing the last good pair instead would
+ * time allows. Any other pair is held back, published as unread, until a later poll at least `confirmMs` on still says the
+ * same, since only a poll reads both registers afresh, and an unrelated notification proves nothing about them: then it is a real reset, for the module to record as a discontinuity. Publishing the last good pair instead would
  * tell the module the counter had not moved, and it would store that as a gain of zero across any gap that had just ended.
  */
 export class CounterGate {
@@ -185,7 +185,7 @@ export class CounterGate {
     this.#confirmMs = confirmMs;
   }
 
-  take({hours, minutes}: Pair, atMs: number): Pair {
+  take({hours, minutes}: Pair, atMs: number, polled = false): Pair {
     if (hours === null || minutes === null) return {hours, minutes};
     const take = (): Pair => {
       this.#taken = {hours, minutes, atMs};
@@ -197,7 +197,7 @@ export class CounterGate {
     // A wall clock that stepped back allows no time, but an unchanged pair needs none.
     if (gain >= 0 && gain <= Math.ceil(Math.max(0, atMs - this.#taken.atMs) / 60_000) + 1) return take();
     if (this.#suspect?.hours === hours && this.#suspect.minutes === minutes) {
-      if (atMs - this.#suspect.atMs >= this.#confirmMs) return take();
+      if (polled && atMs - this.#suspect.atMs >= this.#confirmMs) return take();
       if (atMs < this.#suspect.atMs) this.#suspect.atMs = atMs;
     } else {
       this.#suspect = {hours, minutes, atMs};
@@ -394,21 +394,24 @@ export async function runCollector(collector: Collector, options: RunOptions): P
       // it is not lost. A larger regression is a stepped clock, and it passes as it is: a floor would stamp real time as
       // milliseconds for as long as the clock takes to catch up, and the module would store that. Passed on, the module
       // drops the snapshots until its stale path runs and records a clock-step.
-      const evidence = (atMs: number): void => {
+      const evidence = (atMs: number, polled: boolean): void => {
         const behind = readingAtMs - atMs;
         readingAtMs = behind >= 0 && behind <= SAME_INSTANT_MS ? readingAtMs + 1 : atMs;
-        const {hours, minutes} = counter.take(registers, now());
+        const {hours, minutes} = counter.take(registers, now(), polled);
         if (open) publisher.update('connected', {status1: registers.status1, status2: registers.status2, currentDeciC: registers.current, targetDeciC: registers.target, heatingHours: hours, heatingMinutes: minutes}, readingAtMs);
       };
-      evidence(started);
+      evidence(started, true);
       availability.reached(LINK_DEVICE);
+      // Whether a binding also reports its reads here does not matter: such a call is evidence and confirms nothing.
       const listener = (name: keyof Registers) => (bytes: Uint8Array): void => {
+        // A binding may keep one characteristic across connections, and its old listener with it.
+        if (!open) return;
         const value = uint16(bytes);
         if (value === null && (name === 'status1' || name === 'status2')) return;
         (registers as Record<keyof Registers, number | null>)[name] = value;
         duringPoll?.add(name);
         heardAtMs = now();
-        evidence(heardAtMs);
+        evidence(heardAtMs, false);
       };
       for (const name of Object.keys(VOLCANO_REGISTERS) as (keyof typeof VOLCANO_REGISTERS)[]) {
         const subscribed = await bounded(deadline => transport.subscribe(VOLCANO_REGISTERS[name], listener(name), deadline), readMs, live);
@@ -430,7 +433,7 @@ export async function runCollector(collector: Collector, options: RunOptions): P
         // A notification during the poll is newer than what the poll read.
         for (const name of Object.keys(polled) as (keyof Registers)[]) if (!heard.has(name)) (registers as Record<keyof Registers, number | null>)[name] = polled[name];
         // The poll began before a notification it heard, so that notification is the newest evidence it has.
-        evidence(heard.size === 0 ? polledAt : heardAtMs);
+        evidence(heard.size === 0 ? polledAt : heardAtMs, true);
       }
       if (!signal.aborted) {
         publisher.update('disconnected', null);

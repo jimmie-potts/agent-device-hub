@@ -758,7 +758,7 @@ root lockfile and the container image. It keeps no history.
   failed read ends the connection, and a lost link ends any read under way.
 - **The counter.** The device notifies hours and minutes separately, so an hour
   boundary can read 13:59 or 12:00 for a moment. A pair that does not move forward
-  by what the time allows is held back, published as unread (null), until a read at
+  by what the time allows is held back, published as unread (null), until a poll at
   least 4 s later still says the same: then it is a real reset, which the module
   records as a discontinuity. A gap that ends while a pair is held has no credit.
 - **Identity.** The serial's SHA-256 is compared with `serialSha256`. A different

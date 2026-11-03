@@ -43,6 +43,8 @@ class FakeDevice implements VolcanoTransport {
   connectFails = false;
   lost: (() => void) | undefined;
   readFails = false;
+  /** Reports each register read as a notification too, as a binding may. */
+  dataOnRead = false;
   /** While set, register reads wait for it. */
   readsHeld: Promise<void> | undefined;
 
@@ -62,6 +64,7 @@ class FakeDevice implements VolcanoTransport {
     if (uuid === VOLCANO_SERIAL) return Promise.resolve(Buffer.from(`${this.serial}\0\0`));
     const name = Object.entries(VOLCANO_REGISTERS).find(([, value]) => value === uuid)?.[0] ?? '';
     const value = this.registers[name] ?? 0;
+    if (this.dataOnRead) this.notifications.get(uuid)?.(le(value));
     return (this.readsHeld ?? Promise.resolve()).then(() => le(value));
   }
   subscribe(uuid: SubscribeUuid, listener: (bytes: Uint8Array) => void): Promise<void> {
@@ -436,6 +439,40 @@ void test('a small clock regression keeps stamps moving, and the same pair stays
   assert.deepEqual(gate.take({hours: 1, minutes: 5}, 0), {hours: 1, minutes: 5}, 'an unchanged pair is never suspect');
 });
 
+void test('only a poll confirms a suspect counter: an unrelated notification in the window does not', async t => {
+  const device = new FakeDevice();
+  device.registers.hours = 120;
+  device.registers.minutes = 5;
+  const run = start(t, device, {timing: {minPublishMs: 1, heartbeatMs: 5, pollMs: 60_000, counterConfirmMs: 10}});
+  await until(() => connected(run).length > 0, 'the first snapshot');
+  device.notify('hours', 3);
+  await sleepFor(40);
+  device.notify('current', 500);
+  device.notify('status2', 0x2200);
+  await until(() => connected(run).at(-1)?.reading?.currentDeciC === 500, 'the unrelated notification');
+  await sleepFor(20);
+  assert.equal(totals(run).at(-1), null, 'still held');
+  assert.deepEqual(discontinuities(run), []);
+});
+
+void test('a binding that reports reads as notifications changes nothing: a torn pair stays out, and a poll still confirms a reset', async t => {
+  const device = new FakeDevice();
+  device.dataOnRead = true;
+  device.registers.hours = 12;
+  device.registers.minutes = 59;
+  const run = start(t, device, {timing: {minPublishMs: 1, heartbeatMs: 5, pollMs: 25, counterConfirmMs: 20}});
+  await until(() => connected(run).length > 0, 'the first snapshot');
+  device.registers.hours = 13;
+  await sleepFor(10);
+  device.registers.minutes = 0;
+  await until(() => totals(run).at(-1) === 780, 'the rollover');
+  assert.ok(totals(run).every(total => total === 779 || total === 780 || total === null), String(totals(run)));
+  assert.deepEqual(discontinuities(run), []);
+  device.registers.hours = 1;
+  await until(() => totals(run).at(-1) === 60, 'the reset');
+  assert.deepEqual(discontinuities(run), ['counter-decrease']);
+});
+
 void test('the gate takes a normal tick and passes unread registers through', () => {
   const gate = new CounterGate(1000);
   assert.deepEqual(gate.take({hours: 1, minutes: 5}, 0), {hours: 1, minutes: 5});
@@ -443,7 +480,8 @@ void test('the gate takes a normal tick and passes unread registers through', ()
   assert.deepEqual(gate.take({hours: null, minutes: 6}, 60_001), {hours: null, minutes: 6});
   assert.deepEqual(gate.take({hours: 5, minutes: 0}, 60_002), {hours: null, minutes: null}, 'held');
   assert.deepEqual(gate.take({hours: 5, minutes: 0}, 60_500), {hours: null, minutes: null}, 'not yet confirmed');
-  assert.deepEqual(gate.take({hours: 5, minutes: 0}, 61_002), {hours: 5, minutes: 0}, 'confirmed');
+  assert.deepEqual(gate.take({hours: 5, minutes: 0}, 61_002), {hours: null, minutes: null}, 'old enough, but not a poll');
+  assert.deepEqual(gate.take({hours: 5, minutes: 0}, 61_003, true), {hours: 5, minutes: 0}, 'confirmed by a poll');
   assert.deepEqual(gate.take({hours: 6, minutes: 0}, 8 * 60 * 60_000), {hours: 6, minutes: 0}, 'time allows it after a long gap');
 });
 
