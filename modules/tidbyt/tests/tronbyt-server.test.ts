@@ -47,6 +47,9 @@ void nodeTest('the connection\'s every call against a real server, with what the
   assert.deepEqual(await connection.push(FRAME, signal()), {outcome: 'sent'});
   assert.deepEqual(answers.slice(-2), ['POST 200', 'PATCH 200'], 'a background push reloads the list');
   assert.deepEqual(await server<Device>(), untouched, 'the reload changes nothing on the device');
+  const installed = await server<Installation>(`/installations/${STATUS}`);
+  assert.deepEqual(await connection.push(FRAME, signal()), {outcome: 'sent'});
+  assert.deepEqual(await server<Installation>(`/installations/${STATUS}`), installed, 'or on the installation');
   assert.deepEqual(await connection.list(signal()), {ok: true, present: true}, 'found by the name a push chose');
   const first = await server<Installation>(`/installations/${STATUS}`);
   assert.ok(first.pushed && first.id !== STATUS, 'the server gives it its own ID');

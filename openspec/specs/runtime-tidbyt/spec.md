@@ -232,7 +232,7 @@ A section with `backend: "tronbyt"` SHALL name `tronbyt: {url, deviceId, minInte
 
 #### Scenario: A reload that fails
 - **WHEN** that `PATCH` fails or goes unanswered
-- **THEN** the write takes that outcome, though the frame reached the server, and the writer's holds and retry apply
+- **THEN** the write is `uncertain` however the `PATCH` ended, since the frame reached the server, so the tile's stored presence becomes unknown and the writer retries at its backoff
 
 ### Requirement: Tronbyt display controls
 

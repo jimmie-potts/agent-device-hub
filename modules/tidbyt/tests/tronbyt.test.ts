@@ -89,28 +89,38 @@ test('an interrupting push needs no reload, because it reloads the list itself',
   assert.deepEqual(reloads(server), []);
 });
 
-test('a reload that fails is the write\'s outcome, so the writer\'s holds and its retry apply', async () => {
+test('a reload that fails after the frame was taken is uncertain, never no effect', async () => {
   const server = new SimulatedTronbyt();
   const connection = onSimulated(server);
-  server.answerNextPatch(500);
-  assert.deepEqual(await connection.push(realFrame(), signal()), {outcome: 'uncertain', answered: true});
-  assert.deepEqual(server.state().served, []);
-  server.answerNextPatch(401);
-  assert.deepEqual(await connection.push(realFrame(), signal()), {outcome: 'failed', failure: 'unauthenticated'});
-  assert.deepEqual(server.state().served, []);
+  for (const status of [500, 401, 403, 429, 404]) {
+    server.answerNextReload(status);
+    assert.deepEqual(await connection.push(realFrame(), signal()), {outcome: 'uncertain', answered: true}, String(status));
+    assert.deepEqual(server.state().served, []);
+  }
   assert.deepEqual(await connection.push(realFrame(), signal()), {outcome: 'sent'});
   assert.deepEqual(server.state().served, [STATUS]);
 });
 
-test('a reload that goes unanswered or is ended by a stop leaves the write uncertain', async () => {
-  const connection = onSimulated(new SimulatedTronbyt());
-  const hanging = new TronbytConnection({url: TRONBYT_ORIGIN, deviceId: SIMULATED_DEVICE, apiKey: SERVER_KEY, installationId: STATUS, fetch: async (url, init) => {
-    if (init.method !== 'PATCH') return await connection.push(realFrame(), init.signal).then(() => plain(200, 'WebP received.'));
+test('a connection refused on the reload, after the frame was taken, is uncertain and unanswered', async () => {
+  const server = new SimulatedTronbyt();
+  const refusing = new TronbytConnection({url: TRONBYT_ORIGIN, deviceId: SIMULATED_DEVICE, apiKey: SERVER_KEY, installationId: STATUS, fetch: async (url, init) => {
+    if (init.method === 'PATCH') throw new TypeError('fetch failed', {cause: Object.assign(new Error('connect ECONNREFUSED'), {code: 'ECONNREFUSED'})});
+    return await server.fetch(url, init);
+  }});
+  assert.deepEqual(await refusing.push(realFrame(), signal()), {outcome: 'uncertain', answered: false});
+});
+
+test('a reload ended by a stop leaves the write uncertain', async () => {
+  let reloading: () => void = () => undefined;
+  const reached = new Promise<void>(resolve => { reloading = resolve; });
+  const hanging = new TronbytConnection({url: TRONBYT_ORIGIN, deviceId: SIMULATED_DEVICE, apiKey: SERVER_KEY, installationId: STATUS, fetch: async (_url, init) => {
+    if (init.method !== 'PATCH') return plain(200, 'WebP received.');
+    reloading();
     return await new Promise<Response>((_, reject) => { init.signal.addEventListener('abort', () => { reject(new DOMException('stopped', 'AbortError')); }, {once: true}); });
   }});
   const controller = new AbortController();
   const pushing = hanging.push(realFrame(), controller.signal);
-  await new Promise(resolve => { setImmediate(resolve); });
+  await reached;
   controller.abort();
   assert.deepEqual(await pushing, {outcome: 'uncertain', answered: false});
 });
@@ -272,7 +282,7 @@ test('a backend\'s own gate and refresh apply on a server, and the cloud\'s are 
   const options = onServer(server, {minIntervalMs: 2000, refreshMs: 5 * MINUTE});
   const session = working();
   const h = await host(context, {sessions: [session], playback: 'absent', ...options, section: {...options.section, nowPlaying: undefined}});
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the first push and the first selection\'s pin');
   await h.core?.set(relabel(session, 'changed'));
   await until(() => h.harness.runningWorkers() === 0, 'its render');
   await h.advance(1999);
@@ -318,7 +328,7 @@ const outcomes = (h: Hosted): {result: string; evidence: string; requestId: stri
 test('brightness goes out once, in percent of the ceiling, and its outcome says it was transmitted, never observed', async context => {
   const server = new SimulatedTronbyt();
   const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the first push and the first selection\'s pin');
   const before = h.device().configurationRevision;
   assert.deepEqual(await send(h, 'brightness-set', {requestId: 'b1', percent: 100}), {status: 'accepted'});
   await until(() => outcomes(h).length === 1, 'the outcome');
@@ -347,7 +357,7 @@ test('brightness goes out once, in percent of the ceiling, and its outcome says 
 test('an unanswered command is uncertain and never sent again, and a refused key holds every later write', async context => {
   const server = new SimulatedTronbyt();
   const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the first push and the first selection\'s pin');
   const patched = server.state().calls.filter(call => call.method === 'PATCH' && !call.path.includes('/installations')).length;
   server.loseNextAnswer();
   assert.deepEqual(await send(h, 'brightness-set', {requestId: 'lost', percent: 50}), {status: 'accepted'});
@@ -374,7 +384,7 @@ test('a command the database cannot store is refused before anything goes out', 
   const server = new SimulatedTronbyt();
   let failing = false;
   const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server), wrapDatabase: database => withWriteFailure(database, () => failing ? new Error('disk I/O error') : undefined)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the first push and the first selection\'s pin');
   await until(() => h.device().availability === 'available', 'the record');
   const revision = h.device().configurationRevision;
   failing = true;
@@ -391,7 +401,7 @@ test('a command the database cannot store is refused before anything goes out', 
 test('a command that waited past its deadline never goes out', async context => {
   const server = new SimulatedTronbyt();
   const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the first push and the first selection\'s pin');
   server.answerNext(429);
   await send(h, 'brightness-set', {requestId: 'limited', percent: 10});
   await until(() => outcomes(h).length === 1, 'the rate limit');
@@ -406,7 +416,7 @@ test('the modes: interrupt sets a tile\'s pushes to interrupt, and a hidden tile
   const server = new SimulatedTronbyt();
   const session = working();
   const h = await host(context, {sessions: [session], playback: playback('playing'), ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the first push and the first selection\'s pin');
   assert.deepEqual(await send(h, 'device-mode-set', {requestId: 'm1', mode: 'interrupt'}), {status: 'accepted'});
   await until(() => outcomes(h).length === 1, 'the mode');
   assert.deepEqual(outcomes(h)[0], {requestId: 'm1', result: 'succeeded', evidence: 'transmitted'});
@@ -436,7 +446,7 @@ test('a pin follows its tile: it is set while the tile stands, cleared when the 
   const server = new SimulatedTronbyt();
   const done = finished();
   const h = await host(context, {sessions: [done], playback: 'absent', ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the first push and the first selection\'s pin');
   const first = server.state().installations[STATUS]?.serverId;
   assert.deepEqual(await send(h, 'device-mode-set', {requestId: 'pin', mode: 'pin-status'}), {status: 'accepted'});
   await until(() => outcomes(h).length === 1, 'the mode');
@@ -463,7 +473,7 @@ test('a pin write that fails is a fresh one later, and it is reported once', asy
   const server = new SimulatedTronbyt();
   const done = finished();
   const h = await host(context, {sessions: [done], playback: 'absent', ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the first push and the first selection\'s pin');
   await send(h, 'device-mode-set', {requestId: 'pin', mode: 'pin-status'});
   await until(() => outcomes(h).length === 1, 'the mode');
   server.answerNextPatch(500);
@@ -479,7 +489,7 @@ test('a pin write that fails is a fresh one later, and it is reported once', asy
 test('a restart keeps the mode and brightness, and a command the runtime stopped during is reported, never run again', async context => {
   const server = new SimulatedTronbyt();
   const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the first push and the first selection\'s pin');
   await send(h, 'device-mode-set', {requestId: 'mode', mode: 'pin-status'});
   await send(h, 'brightness-set', {requestId: 'dim', percent: 30});
   await until(() => outcomes(h).length === 2, 'both');
@@ -504,7 +514,7 @@ test('a restart keeps the mode and brightness, and a command the runtime stopped
 test('a pin write a stop left unanswered is written again for the current mode at the next start, and the command is not', async context => {
   const server = new SimulatedTronbyt();
   const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server)});
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the first push and the first selection\'s pin');
   server.loseNextAnswer();
   await send(h, 'device-mode-set', {requestId: 'caught', mode: 'pin-status'});
   await until(() => server.state().pinnedApp !== null, 'the pin taking effect, its answer lost');
@@ -531,6 +541,27 @@ test('a hidden tile returned to the rotation reaches a connected device with not
   await until(() => server.state().served.includes(STATUS), 'the reload', 5 * SECOND);
 });
 
+test('a refused reload is retried at the writer\'s pace, and the tile it left on the server can still be removed', async context => {
+  const server = new SimulatedTronbyt();
+  server.answerNextReload(401);
+  const h = await host(context, {sessions: [working()], playback: 'absent', ...onServer(server)});
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && call.path.endsWith(`/installations/${STATUS}`)), 'the frame and its refused reload');
+  await until(() => h.device().availability === 'degraded', 'the write\'s uncertain outcome on the record');
+  assert.deepEqual(server.state().served, []);
+  await h.advance(16 * SECOND);
+  await until(() => server.state().served.includes(STATUS), 'the retry');
+  await until(() => h.device().availability === 'available', 'the record recovering');
+
+  server.answerNextReload(500);
+  await h.core?.set(relabel(working(), 'changed'));
+  const pushes = server.state().installations[STATUS]?.pushes ?? 0;
+  await h.advance(16 * SECOND);
+  await until(() => (server.state().installations[STATUS]?.pushes ?? 0) > pushes, 'the next frame');
+  await send(h, 'device-mode-set', {requestId: 'hide', mode: 'hide-status'});
+  await h.advance(32 * SECOND);
+  await until(() => server.state().installations[STATUS] === undefined, 'the removal the writer must not skip');
+});
+
 test('a command whose start cannot be stored ends with no effect, and later work goes on', async context => {
   const server = new SimulatedTronbyt();
   let armed = false;
@@ -554,7 +585,7 @@ test('a command whose start cannot be stored ends with no effect, and later work
       };
     },
   })});
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the first push and the first selection\'s pin');
   armed = true;
   assert.deepEqual(await send(h, 'brightness-set', {requestId: 'unmarked', percent: 10}), {status: 'accepted'});
   await until(() => outcomes(h).length === 1, 'its outcome');
@@ -576,7 +607,7 @@ test('a return to a server clears the pin it left, since the record starts at th
   const server = new SimulatedTronbyt();
   const options: HostOptions = {sessions: [working()], playback: 'absent', ...onServer(server)};
   const h = await host(context, options);
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the first push and the first selection\'s pin');
   await send(h, 'device-mode-set', {requestId: 'pin', mode: 'pin-status'});
   await until(() => outcomes(h).length === 1, 'the pin');
   assert.notEqual(server.state().pinnedApp, null);
@@ -649,7 +680,7 @@ test('every record of a handoff and a command takes values the diagnostic contra
   await h.stop();
   Object.assign(options, onServer(server));
   await h.start();
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the fresh write');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the fresh write');
   await send(h, 'brightness-set', {requestId: 'b', percent: 10});
   await until(() => outcomes(h).length === 1, 'the outcome');
   for (const key of ['bunny.operation', 'bunny.reason']) {
@@ -681,7 +712,7 @@ test('renaming the device hands nothing off', async context => {
   const server = new SimulatedTronbyt();
   const options: HostOptions = {sessions: [working()], playback: 'absent', ...onServer(server)};
   const h = await host(context, options);
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the tile');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the tile');
   await send(h, 'device-mode-set', {requestId: 'pin', mode: 'pin-status'});
   await until(() => outcomes(h).length === 1, 'the pin');
   await h.stop();
@@ -759,7 +790,7 @@ test('no message, record or log carries the server, its device or its key', asyn
   const server = new SimulatedTronbyt({origin: url, device: 'private-device-id'});
   const options = onServer(server);
   const h = await host(context, {sessions: [working()], playback: 'absent', ...options, section: {...options.section, tronbyt: {url, deviceId: 'private-device-id'}}});
-  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH'), 'the first push and the first selection\'s pin');
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().calls.some(call => call.method === 'PATCH' && !call.path.includes('/installations')), 'the first push and the first selection\'s pin');
   server.answerNext(500);
   await send(h, 'brightness-set', {requestId: 'b', percent: 10});
   await until(() => outcomes(h).length === 1, 'the outcome');

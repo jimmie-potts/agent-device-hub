@@ -67,6 +67,7 @@ export class SimulatedTronbyt {
   #loseAnswers = 0;
   readonly #answers: number[] = [];
   readonly #patchAnswers: number[] = [];
+  readonly #reloadAnswers: number[] = [];
 
   constructor({key = SIMULATED_API_KEY, device = SIMULATED_DEVICE, origin = TRONBYT_ORIGIN, installations = [], now = Date.now}: SimulatedTronbytOptions = {}) {
     this.#key = key;
@@ -102,6 +103,8 @@ export class SimulatedTronbyt {
   answerNext(status: number): void { this.#answers.push(status); }
   /** The next PATCH is answered with this status, whatever calls come before it. */
   answerNextPatch(status: number): void { this.#patchAnswers.push(status); }
+  /** The next empty PATCH of an installation, which only reloads the list, is answered with this status. */
+  answerNextReload(status: number): void { this.#reloadAnswers.push(status); }
   loseNextAnswer(): void { this.#loseAnswers += 1; }
 
   state(): TronbytState {
@@ -127,7 +130,8 @@ export class SimulatedTronbyt {
 
   #reply(path: string, init: Parameters<CloudFetch>[1]): Response {
     if (init.headers.authorization !== `Bearer ${this.#key}`) return text(401, 'Unauthorized');
-    const status = (init.method === 'PATCH' ? this.#patchAnswers.shift() : undefined) ?? this.#answers.shift();
+    const reloading = init.method === 'PATCH' && path.includes('/installations/') && init.body === '{}';
+    const status = (reloading ? this.#reloadAnswers.shift() : undefined) ?? (init.method === 'PATCH' ? this.#patchAnswers.shift() : undefined) ?? this.#answers.shift();
     if (status !== undefined) return text(status, 'Simulated');
     const match = /^\/v0\/devices\/([^/]+)(?:\/(push|installations)(?:\/([^/]+))?)?$/.exec(path);
     if (match === null) return text(404, 'Not Found');
