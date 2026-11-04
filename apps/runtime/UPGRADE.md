@@ -68,6 +68,13 @@ through its transaction/outbox. Wemo adds private `wemo.sqlite` request/device
 fences and its module folder's writer leases. A retained uncertain hold and
 unacknowledged outcomes must survive without another device write.
 
+Weather's `weather.sqlite` holds its revision, last observation time and change
+baseline. It is not a durable owner: losing it costs one change baseline and resets
+the revision. In-process copies restart with the runtime. A remote copy that
+outlived it would ignore new records until the revision catches up, and gets no
+prompt words once its record is stale; no remote consumer exists today. No recovery
+depends on it.
+
 Configured Wemo requires its primary store and ordinary healthy running state.
 Preserve retained inactive Wemo state without mandatory phase certificates.
 Assess changes to limit/Wemo formats using focused production-store evidence;
@@ -374,7 +381,7 @@ configuration or silent hook retargeting. The existing readers verify exact
 bytes and resolutions. An empty list still needs accepted completeness evidence.
 
 Configured modules require running, healthy, null-reason health. Unconfigured
-Wispr, BB-8, ONN, Roborock and Wemo may report only the exact absent-module
+Wispr, BB-8, ONN, Roborock, Wemo and Weather may report only the exact absent-module
 `refused`/`not-found`/`healthy: false` row and corresponding degraded aggregate.
 Retained inactive files do not convert absence into healthy active ownership.
 Unknown owners and unsafe files still refuse. The always-started companions

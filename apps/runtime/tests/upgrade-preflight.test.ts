@@ -110,7 +110,7 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
   const health = {schema: 'runtime-health/1.0', status: 'degraded', moduleApiVersion: MODULE_API_VERSION, startedAtMs: 1000, lagCheck: {status: 'active', limitMs: 10000},
     modules: [...['core', ...configured].map((name): Row => ({name, apiVersion: MODULE_API_VERSION, state: 'running', healthy: true, reasonCode: null})),
       {name: 'wispr', apiVersion: MODULE_API_VERSION, state: 'refused', healthy: false, reasonCode: 'not-found'} as Row].sort((a, b) => a.name.localeCompare(b.name))};
-  for (const name of ['roborock', 'onn']) {
+  for (const name of ['roborock', 'onn', 'weather']) {
     if (!scenario.startsWith(`${name}-`) && scenario !== `configured-${name}`) continue;
     health.modules.push({name, apiVersion: MODULE_API_VERSION, state: scenario === `${name}-running` ? 'running' : 'refused', healthy: scenario === `${name}-healthy`,
       reasonCode: scenario === `${name}-wrong-reason` ? 'unavailable' : 'not-found'});
@@ -289,6 +289,7 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.ok(!JSON.stringify(shown.value).includes('synthetic-secret-never-public'));
   assert.ok(!shown.text.includes('synthetic-secret-never-public'));
   assert.equal((await inspect('roborock-absent') as Planned).plan.operation, 'adoption');
+  assert.equal((await inspect('weather-absent') as Planned).plan.operation, 'adoption');
   const absentOnn = await inspect('onn-absent') as Planned & {code?: string};
   assert.equal(absentOnn.code, undefined, 'exact absent ONN health remains eligible');
   assert.equal(absentOnn.plan.operation, 'adoption');
@@ -349,7 +350,7 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.match(locked.plan.planSha256, /^[0-9a-f]{64}$/);
   assert.equal(locked.counters.lock, 2);
   for (const scenario of ['unknown-field','execution-drift','late-execution-drift','owner-drift','listener-drift','source-drift','baseline-drift','paths-drift','hook-drift','state-drift','receipt-drift','request-drift',
-    'late-source-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-roborock','roborock-running','roborock-healthy','roborock-wrong-reason','roborock-wrong-status','configured-onn','onn-running','onn-healthy','onn-wrong-reason','onn-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
+    'late-source-drift','late-baseline-drift','late-paths-drift','late-hook-drift','late-state-drift','late-receipt-drift','token-drift','credentials-drift','config-drift','configured-refusal','unknown-module','configured-wispr','configured-roborock','roborock-running','roborock-healthy','roborock-wrong-reason','roborock-wrong-status','configured-onn','onn-running','onn-healthy','onn-wrong-reason','onn-wrong-status','configured-weather','weather-running','weather-healthy','weather-wrong-reason','weather-wrong-status','stopped-watchdog','health-drift','wrong-plan','missing-lock']) {
     await t.test(scenario + ' refuses', async () => {
       const result = await inspect(scenario);
       assert.equal(result.plan, undefined, `${scenario} returned a plan`);

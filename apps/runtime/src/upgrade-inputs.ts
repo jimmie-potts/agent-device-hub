@@ -7,7 +7,7 @@ import {isDeepStrictEqual} from 'node:util';
 import {checkStateDirectory, readPrivateFile, readRuntimeConfig} from './state.js';
 
 const durable = ['core', 'playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'bb8', 'onn', 'companions', 'roborock', 'wemo'];
-const configuredNames = [...durable, 'codex-desktop', 'wispr'];
+const configuredNames = [...durable, 'codex-desktop', 'wispr', 'weather'];
 const rootNames = ['modules', 'bunny-launch.sock', 'spans.ndjson', 'spans.previous.ndjson'];
 const refused = (): never => { throw new Error('runtime-upgrade-inputs-refused'); };
 const hash = (bytes: Buffer): string => createHash('sha256').update(bytes).digest('hex');
@@ -47,14 +47,15 @@ export async function inspectUpgradeState(state: string, configFile: string): Pr
     if (entries.length > 128 || !entries.includes('core.sqlite')) return refused();
     const retained = new Set<string>();
     for (const name of entries) {
-      const match = /^(core|playback|nanoleaf|pixoo|tidbyt|lifx|bb8|onn|companions|roborock|wemo)(?:\.sqlite(?:-wal|-shm|-journal)?|\.sqlite-owner)?$/.exec(name);
+      const match = /^(core|playback|nanoleaf|pixoo|tidbyt|lifx|bb8|onn|companions|roborock|wemo|weather)(?:\.sqlite(?:-wal|-shm|-journal)?|\.sqlite-owner)?$/.exec(name);
       if (match === null || match[1] === undefined) return refused();
       const owner = match[1];
       // Only the core uses the separate lease database in the current runtime.
       if (name.endsWith('-owner') && owner !== 'core') return refused();
       const info = await lstat(join(modules, name));
       if (!privateEntry(info) || (name === owner ? !info.isDirectory() : !info.isFile())) return refused();
-      retained.add(owner);
+      // Weather's store only saves a change baseline: losing it costs one signal, so it is no durable owner.
+      if (owner !== 'weather') retained.add(owner);
     }
     for (const owner of ['companions', 'roborock', 'wemo']) {
       if ((configured.includes(owner) || retained.has(owner))
