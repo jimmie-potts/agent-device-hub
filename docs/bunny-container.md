@@ -81,7 +81,7 @@ the device transition; hosting changes neither.
 | Item | Selected |
 | --- | --- |
 | Method | Its own Compose project, `bunny-tronbyt`, on a `linux/arm64` image built from a local clone of the upstream source beside the Compose file |
-| Version | Upstream tag v2.5.2 plus one local commit, tagged `2.5.2-bunny.1`. The published v2.5.2 image (`sha256:fb0c08e9…`) stays on the Mac for rollback |
+| Version | Upstream tag v2.5.2 plus one local commit, tagged `2.5.2-bunny.2`. The published v2.5.2 image (`sha256:fb0c08e9…`) stays on the Mac for rollback |
 | Restart | `unless-stopped`, with Docker Desktop set to start at sign-in |
 | Address | One port on loopback and on the Mac's LAN address, which a DHCP reservation on the router holds. The reservation is for the Ethernet interface |
 | VPN | Reach from the LAN holds with Proton disconnected, the owner's normal state, and was not tested with it connected. Proton has made LAN devices unreachable before, so the Tidbyt may lose the server while Proton is connected |
@@ -94,11 +94,12 @@ Keep the Compose file, data, backups, key and the device ID private. The private
 changing the image, and keep the previous image for rollback.
 
 The local commit fixes [#1411](https://github.com/jimmie-potts/agent-device-hub/issues/1411):
-when `ensurePushedApp` creates an installation, it sends the device's loop an empty
-broadcast, so a tile pushed in the background reaches a device with nothing else to show.
+after a background push saves its image, the server sends the device's loop an empty
+broadcast, so the tile reaches a device with nothing else to show. Interrupting pushes are
+unchanged, because a broadcast ahead of one could take the channel's single slot and drop its image.
 The clone exists only on the Mac, its push URL is disabled, and nothing is published
-upstream. To rebuild after changing the source, take a backup, update the image tag and
-`COMMIT` in the Compose file, and run `docker compose up -d --build`. A restart reuses the
+upstream. To rebuild after changing the source, take a backup, update the image tag, `VERSION`,
+`COMMIT` and `BUILD_DATE` in the Compose file, and run `docker compose up -d --build`. A restart reuses the
 built image and needs no network. Reaching a later upstream version means rebasing the
 commit and checking it against the
 [compatibility record](../modules/tidbyt/README.md#compatibility-record) first.
