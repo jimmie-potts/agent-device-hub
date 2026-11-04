@@ -139,6 +139,10 @@ Do not publish personal state, tokens or raw installation receipts.
 
 ## Return to the old installation
 
+If the Mac core is the current writer, first stop it and set its
+[start hold](../../docs/bunny-container.md#hold-the-core-stopped), so that sign-in
+cannot start a second device writer.
+
 Stop and disable `bunny-runtime.service`. Confirm its process and listener are
 gone before restarting an old writer. Restore the exact previous hook-link
 target, then restore the old units' recorded enablement/active states and any

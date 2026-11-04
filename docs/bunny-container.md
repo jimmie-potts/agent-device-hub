@@ -179,7 +179,8 @@ for agent in runtime-signin private-forwarder private-serve; do launchctl bootst
 The agents use the Node that ran the install, by its version's own path. If that
 version is removed, launchd cannot run the starter, so no log line or notification
 appears and the core stays stopped; run the install again to fix that or to update
-the starter. Pass a project to select another one: `signin PROJECT`.
+the starter. Pass a project to select another one with `signin PROJECT`, and pass it
+on every later install too, because an install without it selects `bunny-mac-personal`.
 
 ### Hold the core stopped
 
@@ -195,7 +196,8 @@ these, set the start hold, which survives reboots; a batch deployment needs none
 touch ~/.local/state/bunny-operations/bunny-mac-personal.start-hold
 ```
 
-Remove it when the window ends. The next sign-in then starts the core:
+Remove it when the window ends. The next sign-in then starts the core. The file is
+per project, so use the selected project's name in both commands:
 
 ```bash
 rm ~/.local/state/bunny-operations/bunny-mac-personal.start-hold
@@ -371,6 +373,9 @@ before this rule refuses any section, so remove every section before returning
 to such an image.
 
 ### Replace the initial stopped profile without replacing its data
+
+Set the [start hold](#hold-the-core-stopped) first, and remove it once the new
+container is verified.
 
 If the initial internal-network attempt was already created, its network cannot
 be changed in place. Replace only that new profile's stopped container and
@@ -885,6 +890,10 @@ Preserve partial output and inspect it before an explicitly selected next step.
 
 ## Restore into a separate empty instance
 
+Set the [start hold](#hold-the-core-stopped) on the failed instance first. After a
+handoff, keep that hold and install with `signin PROJECT` for the restored project,
+or the next sign-in starts the old instance beside it.
+
 Preserve the failed/latest instance and its state. Create a separate stopped
 Compose instance with an empty state volume, the same reviewed source revision,
 and the exact archived configuration and external credentials. Do not run the
@@ -1111,7 +1120,9 @@ that checkout as an installed dependency and keep it.
 A failed start or check stops only the owned failed replacement where possible,
 preserves latest data and leaves the last intended phase pending. A stop that
 cannot be verified is uncertain. There is no retry, oscillation or automatic
-rollback. Inspect the record, Docker identity/state and private latest stores
+rollback. Sign-in leaves a failed replacement stopped until a later deployment
+replaces it, even after a reconcile. If you remove or recreate a container by hand,
+[set the start hold](#hold-the-core-stopped) first. Inspect the record, Docker identity/state and private latest stores
 before explicitly running:
 
 ```text

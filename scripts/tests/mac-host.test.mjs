@@ -6,6 +6,8 @@ import {join} from 'node:path';
 import {test} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
+import {Outcome} from '../../packages/sdk/dist/src/index.js';
+import {reconcileOperation, withOperation} from '../bunny-operations.mjs';
 import * as realOperator from '../bunny.mjs';
 import {agents, installDiagnostics, installSignin, plist} from '../mac-host-install.mjs';
 import {engineWait, healthWait, operatorFor, startAtSignIn, startGate} from '../mac-signin.mjs';
@@ -233,7 +235,7 @@ test('the start gate refuses a hold and only a failed deployment\'s own replacem
   const info = {Id: 'c'.repeat(64)};
   await startGate(gate, info);
   await mkdir(join(operations, 'synthetic.records'));
-  const record = (name, value) => writeFile(join(operations, 'synthetic.records', `${name}.json`), JSON.stringify(value));
+  const record = (name, value) => writeFile(join(operations, 'synthetic.records', `${name}.json`), JSON.stringify({schema: 'bunny-batch-record/1.0', ...value}));
   await record('completed', {id: 'a', replacementContainer: info.Id, completedAt: 'then'});
   await record('reconciled-success', {id: 'b', replacementContainer: info.Id, reconciledFrom: {}, completedAt: 'then'});
   await record('reconciled-other', {id: 'c', replacementContainer: 'd'.repeat(64), reconciledFrom: {}});
@@ -250,9 +252,38 @@ test('the start gate refuses a hold and only a failed deployment\'s own replacem
   await rm(join(operations, 'synthetic.records', 'unnamed.json'));
   await writeFile(join(operations, 'synthetic.records', 'broken.json'), '{');
   await assert.rejects(startGate(gate, info), refusedWith('records-unreadable'));
+  await writeFile(join(operations, 'synthetic.records', 'broken.json'), JSON.stringify({schema: 'bunny-batch-record/2.0'}));
+  await assert.rejects(startGate(gate, info), refusedWith('records-unreadable'));
   await rm(join(operations, 'synthetic.records', 'broken.json'));
   await writeFile(join(operations, 'synthetic.start-hold'), '');
   await assert.rejects(startGate(gate, info), refusedWith('held'));
+});
+
+// Hand-written records cannot notice a format change, so these come from the real writers and pin the deployment's fields.
+test('the start gate reads what a failed deployment and its reconcile really write', async t => {
+  const operations = await fixture(t);
+  const gate = {project: 'synthetic', operations};
+  const failed = {id: 'deployment', schema: 'bunny-batch-record/1.0', phase: 'checking-health', outcome: Outcome.failed, targetImage: 'sha256:target'};
+  const fail = (record, root = operations) => withOperation({root, project: 'synthetic'}, async lease => {
+    await lease.record(record);
+    throw new Error('stop here, as a failed deployment does');
+  });
+  const reconcile = () => reconcileOperation({root: operations, project: 'synthetic'}, async () => ({status: 'exited'}));
+  const replacement = {Id: 'c'.repeat(64), Image: 'sha256:target', Created: '2026-01-01T00:00:00.000000000Z'};
+
+  await assert.rejects(fail({...failed, replacementContainer: replacement.Id}), /stop here/);
+  await reconcile();
+  await assert.rejects(startGate(gate, replacement), refusedWith('failed-deployment'));
+  await startGate(gate, {...replacement, Id: 'd'.repeat(64), Image: 'sha256:other'});
+
+  // Also the case with no recorded ID: nanoseconds as Docker writes them, older than the reconcile.
+  await rm(join(operations, 'synthetic.records'), {recursive: true});
+  await assert.rejects(fail(failed), /stop here/);
+  await reconcile();
+  await assert.rejects(startGate(gate, {...replacement, Id: 'e'.repeat(64)}), refusedWith('failed-deployment'));
+
+  const batch = await readFile(new URL('../deployment/batch.mjs', import.meta.url), 'utf8');
+  for (const written of ["schema:'bunny-batch-record/1.0'", 'targetImage:', 'record.replacementContainer=', 'completedAt:']) assert.ok(batch.includes(written), written);
 });
 
 // #1410's hang and a broken module graph only show with the real operator, so these run the starter as a process.

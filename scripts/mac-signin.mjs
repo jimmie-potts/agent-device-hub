@@ -65,6 +65,8 @@ export async function startGate({project, operations}, info) {
   const names = await readdir(records).catch(error => (error.code === 'ENOENT' ? [] : refuse('records-unreadable')));
   for (const name of names.filter(file => file.endsWith('.json'))) {
     const record = await readFile(join(records, name), 'utf8').then(JSON.parse).catch(() => refuse('records-unreadable'));
+    // An installed copy can lag a release: a record format it does not know must not read as "no failed deployment".
+    if (record.schema !== 'bunny-batch-record/1.0') refuse('records-unreadable');
     if (record.reconciledFrom === undefined || record.completedAt !== undefined) continue;
     // A replacement can fail before its ID is recorded; then its image and age identify it.
     const unnamed = record.replacementContainer === undefined && record.targetImage === info.Image
