@@ -62,6 +62,16 @@ binding, the macOS launch path, or the owner's firmware; that is #617.
 native dependency and the root build compiles its adapter against its own types of
 noble.
 
+## Weather checks
+
+Use Node 24. Run `npm run test:weather` for the National Weather Service client,
+the owner and SDK conformance, or build once and run `npm run test:weather:built`.
+The modules CI group runs the built suite. Tests use synthetic coordinates and
+recorded synthetic responses through a fake transport, so nothing reaches the
+service. Run the shared build/type/lint/contracts/workflow checks and
+`npm run test:runtime:built`, whose shipped-module run and upgrade preflight cover
+its registration. A real-service check belongs to installed acceptance in #687.
+
 ## Current architecture diagram
 
 The current runtime view is authored in `docs/runtime-architecture.json` and

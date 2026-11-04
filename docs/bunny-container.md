@@ -201,7 +201,7 @@ everyday activation. PC stays stopped until a separately selected manual handoff
 The profile keeps device control disabled. It accepts a section in the private
 `runtime.json` only for a shipped module that declares no device simulation, and
 it starts the core and each module that has a section, in shipped order. Today
-those modules are `companions` and `wispr`. Startup refuses with the fixed
+those modules are `companions`, `weather` and `wispr`. Startup refuses with the fixed
 refusal, before state effects, for:
 
 - a section for a shipped module that declares a device simulation, or for an
@@ -392,6 +392,7 @@ and reaching a physical device remains #568's exact-target check.
 | Wemo | Outbound HTTP (SOAP) to each configured plug at its configured port, which must be in 49151 to 49159. |
 | Roborock | Outbound TCP 58867 to the selected device address for the local protocol and MQTT over TLS (TCP 8883) to the session's broker. The regional `roborock.com` HTTPS API serves only the interactive session setup tool, not the container. Read-only, with the existing private target and session files. |
 | Companions | Outbound HTTPS to `api.anthropic.com` only when the section selects the Anthropic provider for the B.U.N.N.Y. conversation; the synthetic default makes no outbound connection. |
+| Weather | Outbound HTTPS to `api.weather.gov`. The section's coordinates go only there. |
 | Codex Desktop, companions | None. Remote Desktop evidence arrives through the private HTTPS route. |
 
 ## Diagnostics stack

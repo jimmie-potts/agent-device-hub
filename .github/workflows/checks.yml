@@ -172,6 +172,9 @@ jobs:
         run: npm run test:wemo:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:volcano:built
+      - name: Weather module
+        if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:weather:built
       - name: Reachy simulator module
         if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:reachy:built

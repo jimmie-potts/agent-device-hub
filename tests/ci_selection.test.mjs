@@ -376,7 +376,7 @@ const STEP_GROUPS = {
     'npm run test:wispr-module:built': 'modules', 'npm run test:companions:built': 'modules', 'npm run test:roborock-transport:built': 'modules',
     // The Roborock consumer tests import the built runtime registry.
     'npm run test:roborock-transport:consumer:built': 'runtime', 'npm run test:roborock:built': 'modules',
-    'npm run test:roborock:consumer:built': 'runtime', 'npm run test:volcano:consumer:built': 'runtime', 'npm run test:volcano:built': 'modules', 'npm run test:wemo:built': 'modules', 'npm run test:reachy:built': 'modules', 'npm run test:microduck:built': 'modules', 'npm run test:onn:built': 'modules', 'actions/setup-java': 'modules',
+    'npm run test:roborock:consumer:built': 'runtime', 'npm run test:volcano:consumer:built': 'runtime', 'npm run test:volcano:built': 'modules', 'npm run test:wemo:built': 'modules', 'npm run test:weather:built': 'modules', 'npm run test:reachy:built': 'modules', 'npm run test:microduck:built': 'modules', 'npm run test:onn:built': 'modules', 'actions/setup-java': 'modules',
     'npm run test:onn:native': 'modules', 'npm run test:dashboard': 'shared', 'npm run test:runtime-dashboard:built': 'runtime',
   },
   'app-verify': {

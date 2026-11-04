@@ -7,8 +7,8 @@ export {
   tidbytFactory, type TidbytModuleOptions, type TidbytTiming,
 } from './module.js';
 export {registration, tidbytSimulation} from './registration.js';
-export {CONTROL_FAMILIES, DEFAULT_MODE, MAX_PENDING, displayCapabilities, displayModes} from './control.js';
-export {BRIGHTNESS_CEILING, TronbytConnection, privateServerUrl, type TronbytConfig} from './tronbyt.js';
+export {CONTROL_FAMILIES, DEFAULT_MODE, MAX_PENDING, MOMENT_MAX_DURATION_MS, MOMENT_MIN_HOLD_MS, MOMENT_PICTURE_TIMEOUT_MS, displayCapabilities, displayModes} from './control.js';
+export {BRIGHTNESS_CEILING, MOMENT_INSTALLATION, TronbytConnection, privateServerUrl, type TronbytConfig} from './tronbyt.js';
 export {SimulatedTronbyt, TRONBYT_ORIGIN, type SimulatedTronbytOptions, type TronbytState} from './simulated-tronbyt.js';
 export {
   API_KEY_SECRET, DEFAULT_DEVICE_ID, DEFAULT_NOW_PLAYING_INSTALLATION, DEFAULT_STATUS_INSTALLATION, configureTidbyt, convertTidbytRunner,
@@ -26,6 +26,7 @@ export {
   type NowPlayingView, type PlaybackFeed,
 } from './nowplaying.js';
 export {renderTile, tileFrame, type TileReply, type TileRequest} from './tiles.js';
+export {MOMENT_MOODS, momentFrame, momentView, type MomentPicture, type MomentView} from './moment-card.js';
 export {decodeLossless, picture} from './picture.js';
 export {acquireLease, type Lease, type LeaseRefusal, type LeaseResult} from './lease.js';
 export {

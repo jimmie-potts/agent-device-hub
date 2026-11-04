@@ -65,6 +65,10 @@ The [Wemo module](../../modules/wemo/README.md) controls up to two explicitly
 qualified local F7C063 plugs. It supplies power/observations only; schedules and
 maximum-on enforcement stay in the core.
 
+The [weather module](../../modules/weather/README.md) reads one privately
+configured location from the National Weather Service and publishes synced
+`weather-state` for art. It names no place and takes no command.
+
 ## Hosting profiles
 
 The [hosting decision](../../docs/decisions/0008-runtime-hosting.md) selects the Mac
