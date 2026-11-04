@@ -14,6 +14,4 @@
 
 - [x] 3.1 Update the container guide, private access, ADR 0008, the README and the operator spec.
 
-## 4. Installed acceptance (owner-run, tracked on #1426)
-
-- [ ] 4.1 Install on the Mac, then reboot and sign in: the core is running and healthy, Grafana receives records and the private route answers.
+Installed acceptance is owner-run and tracked on #1426: install on the Mac, reboot and sign in, then confirm the core is running and healthy, Grafana receives records and the private route answers.
