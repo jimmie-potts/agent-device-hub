@@ -330,6 +330,16 @@ async function states(): Promise<void> {
   assert.deepEqual(await card.locator('li[data-kind=session] .volcano-facts > div').evaluateAll(nodes => nodes.map(node => node.textContent)), ['Observed heating25 min', 'Stretches2', 'Pump runs1', 'Unobserved intervals2', 'Counter creditUnknown']);
   await card.getByText('Incomplete evidence: the heater may have run at times not observed here.', {exact: true}).waitFor();
 
+  // The same open session: being watched it is simply running, and with the feed lost it may be running unseen.
+  const open = {...empty.sessions, sessions: [session({endAtMs: null, open: true}, [stretch({endAtMs: null, open: true})])]};
+  await mount({doc: status(), reads: {...empty, sessions: open}});
+  await tab('Sessions');
+  await card.getByText(/^No end seen yet/u).waitFor();
+  assert.equal(await card.getByText(/Incomplete evidence/u).count(), 0);
+  await mount({doc: status({availability: 'unavailable', link: 'disconnected', heater: 'unknown', pump: 'unknown', currentDeciC: null, targetDeciC: null, heatingCounterMinutes: null}), reads: {...empty, sessions: open}});
+  await tab('Sessions');
+  await card.getByText(/Incomplete evidence/u).waitFor();
+
   // A preview asks for the threshold it names, and shows that grouping beside the saved one.
   const saved = {...empty.sessions, sessions: [session(), session({startAtMs: NOW - 90 * MIN})]};
   await mount({doc: status(), reads: {...empty, sessions: saved, 'sessions?limit=25&gapMinutes=30': {...empty.sessions, gapMinutes: 30, preview: true, sessions: [session({}, [stretch(), stretch()])]}}});
@@ -361,7 +371,7 @@ async function states(): Promise<void> {
   const firstDay = (await paths(page)).find(path => path.includes('timeline?'));
   await card.getByRole('button', {name: 'Later', exact: true}).click();
   await page.waitForFunction(() => (window as unknown as {volcanoProbe: {paths(): string[]}}).volcanoProbe.paths().some(path => path.includes('timeline?') && path.includes('cursor=100-3')));
-  await card.getByText('No more facts for this day.', {exact: true}).waitFor();
+  await card.getByText('Nothing more for this day.', {exact: true}).waitFor();
   assert.equal(await card.getByText(/Nothing recorded for this day/u).count(), 0, 'a later empty page does not unsay the page before it');
   await card.getByRole('button', {name: 'Previous day', exact: true}).click();
   await frame(page);

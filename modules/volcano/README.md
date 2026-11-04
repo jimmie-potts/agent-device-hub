@@ -147,7 +147,8 @@ directory. The module declares no page. Its tabs, on one card with a fixed heigh
   never as an empty history. A duration is drawn only between two edges seen as they
   happened, with nothing unobserved between them.
 - A session with an unseen start or end or an unobserved interval says its evidence is
-  incomplete. A running session has no end yet, which is not missing evidence. A counter
+  incomplete. A session being watched has no end yet, which is not missing evidence; with
+  the feed lost, an open one counts as incomplete, since it may be running unseen. A counter
   credit with any unknown part reads as unknown or "at least", never as an exact sum. A gain
   across a gap between stretches counts on the Timeline and Totals, not on the session.
 - A preview is a read and stores nothing. The save is the card's only command. It carries

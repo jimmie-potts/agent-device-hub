@@ -85,7 +85,7 @@ void test('pump runs and temperature samples: a run is a row, a sample is not', 
 });
 
 void test('a session says what it does not know', () => {
-  assert.equal(sessionRow(session()).partial, false);
+  assert.equal(sessionRow(session(), true).partial, false);
   const first = sessionRow(session({startedBeforeObservation: true}));
   assert.equal(first.partial, true); assert.match(first.start, /^First seen on /u);
   const hidden = sessionRow(session({endAtMs: null, endedUnobservedBy: NOW + 30 * MIN, stretches: session().stretches.map(value => ({...value, endAtMs: null, endedUnobservedBy: NOW + 30 * MIN}))}));
@@ -121,12 +121,14 @@ void test('a session is incomplete when anything inside it was not seen, includi
   assert.equal(sessionRow(session({stretches: [one, {...one, startedBeforeObservation: true}]})).partial, true, 'a later stretch first seen on');
   assert.equal(sessionRow(session({stretches: [{...one, endAtMs: null, endedUnobservedBy: NOW + MIN}, one]})).partial, true, 'an earlier stretch with no seen end');
   assert.deepEqual(sessionRow({...session(), omittedStretches: 2}).facts.find(([name]) => name === 'Unobserved intervals'), ['Unobserved intervals', 'At least 0']);
-  const running = sessionRow(session({endAtMs: null, open: true, stretches: [{...one, endAtMs: null, open: true}]}));
+  const open = session({endAtMs: null, open: true, stretches: [{...one, endAtMs: null, open: true}]});
+  const running = sessionRow(open, true);
   assert.match(running.end, /^No end seen yet/u);
-  assert.equal(running.partial, false, 'a running session watched throughout has no end yet, and nothing missing');
+  assert.equal(running.partial, false, 'a session being watched has no end yet, and nothing missing');
   assert.equal(running.note, '');
+  assert.match(sessionRow(open, false).note, /Incomplete evidence/u, 'with the feed lost, it may be running unseen');
   assert.equal(sessionRow(session({discontinuities: 1})).note, '', 'a counter discontinuity has its own line, and says nothing about unobserved time');
-  assert.equal(sessionRow(session({endAtMs: null, stretches: [{...one, endAtMs: null}]})).partial, true, 'a stretch closed with no end time');
+  assert.equal(sessionRow(session({endAtMs: null, stretches: [{...one, endAtMs: null}]}), true).partial, true, 'a stretch closed with no end time');
 });
 
 void test('a span over days shows its dates, so it cannot read as minutes', () => {

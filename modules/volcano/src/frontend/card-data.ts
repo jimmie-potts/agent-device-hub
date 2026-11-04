@@ -132,7 +132,8 @@ export function timelineRows(facts: readonly TimelineFact[]): TimelineRow[] {
 
 export type SessionRow = {key: string; start: string; end: string; partial: boolean; note: string; facts: readonly (readonly [string, string])[]};
 const plural = (count: number, one: string): string => `${String(count)} ${one}${count === 1 ? '' : 's'}`;
-export function sessionRow(session: Session): SessionRow {
+/** `current` says the feed is being read now, without which an open session may be running unseen. */
+export function sessionRow(session: Session, current = false): SessionRow {
   const inside = session.stretches.reduce((sum, stretch) => sum + stretch.unobserved.length + stretch.omittedUnobserved, 0);
   const unobserved = inside + session.unobservedBetween;
   const hidden = session.omittedStretches > 0;
@@ -148,8 +149,8 @@ export function sessionRow(session: Session): SessionRow {
   }
   if (session.discontinuities > 0) facts.push(['Discontinuities', String(session.discontinuities)]);
   const firstSeen = session.startedBeforeObservation || session.stretches.some(stretch => stretch.startedBeforeObservation);
-  // A running session has no end yet, which is not missing evidence, and a counter discontinuity has its own line.
-  const endUnseen = session.stretches.some(stretch => stretch.endAtMs === null && !stretch.open);
+  // A session being watched has no end yet, which is not missing evidence, and a counter discontinuity has its own line.
+  const endUnseen = session.stretches.some(stretch => stretch.endAtMs === null && (!stretch.open || !current));
   const partial = firstSeen || endUnseen || unobserved > 0 || hidden;
   return {
     key: String(session.startAtMs), start: `${session.startedBeforeObservation ? 'First seen on ' : ''}${clock(session.startAtMs)}`, end, partial,
