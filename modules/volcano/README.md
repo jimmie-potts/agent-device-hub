@@ -48,7 +48,8 @@ Decoding follows the live trial on [#614](https://github.com/jimmie-potts/agent-
 times ten. `status2` bit 13 flips by itself and is never a change. Counter persistence
 across power-off is not verified, so any decrease is a discontinuity. The hour rollover
 is not verified either: the collector publishes a pair torn across it as unread, so
-one reaching this module is a real change. A gap that ends with no counter has no
+one reaching this module is a real change, apart from the first read described under
+[Accepted limits](#accepted-limits). A gap that ends with no counter has no
 credit, and neither does the next one if no counter has been read between them.
 
 A snapshot repeating its epoch and sequence is dropped, and so is one whose
@@ -144,9 +145,11 @@ what these cases store stays.
   `clock-step`, and no credit crosses it.
 - **A clock stepped back by just over a second.** Under busy publishing this can record
   a false `clock-step`, which closes the open stretch with no end time.
-- **A collector restarted exactly on an hour boundary.** A new process has no last good
-  counter, so a first read torn across the boundary is taken as read and can record
-  false discontinuities. It cannot create a wrong credit.
+- **A first read torn across an hour boundary.** A new process has no last good counter,
+  and a reconnect after a long absence allows a large gain, so such a read can be taken
+  as read. It can record false discontinuities. When the absence is long enough to allow
+  the false gain, it can also store a wrong credit, too high or too low, that later facts
+  do not correct.
 
 ## Simulation
 

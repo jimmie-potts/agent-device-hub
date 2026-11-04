@@ -331,7 +331,7 @@ class Publisher {
 export async function runCollector(collector: Collector, options: RunOptions): Promise<void> {
   const {log, signal, transport, now = Date.now, sleep = wait, timing = {}} = options;
   const {pollMs = POLL_MS, scanMs = SCAN_MS, connectMs = CONNECT_MS, readMs = READ_DEADLINE_MS, counterConfirmMs = COUNTER_CONFIRM_MS} = timing;
-  // It outlives a connection, because a torn pair can be the first read of the next one.
+  // It outlives a connection, because a torn pair can be the first read of the next one. After a long absence the time allowed can still admit that pair.
   const counter = new CounterGate(counterConfirmMs);
   const availability = new DeviceAvailability({log, clock: {now}});
   const publisher = new Publisher(collector, options);

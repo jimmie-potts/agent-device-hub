@@ -121,6 +121,10 @@ The runtime SHALL ship a host-local collector whose transport has only scan, con
 - **WHEN** the counter rolls from 12:59 to 13:00 and hours and minutes notify separately, in either order
 - **THEN** only 12:59 and 13:00 are published, and the module records no discontinuity
 
+#### Scenario: A torn first read is an accepted limit
+- **WHEN** the first read by a new process, or the first after an absence long enough to allow the false gain, is torn across an hour boundary
+- **THEN** it can be published as read, recording false discontinuities or a wrong credit that later facts do not correct, which the owner accepted on 2026-11-03 as a rare limit
+
 #### Scenario: A tick only the poll saw
 - **WHEN** a register changes with no notification
 - **THEN** the next poll publishes it
