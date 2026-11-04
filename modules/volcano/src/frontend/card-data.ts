@@ -33,6 +33,12 @@ function time(at: number): string {
   const date = new Date(at);
   return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(undefined, {hour: '2-digit', minute: '2-digit'}).format(date) : UNKNOWN;
 }
+/** A span in the local zone: times alone within one day, and with their dates otherwise, so two days never read as minutes. */
+function spanText(fromMs: number, toMs: number): string {
+  const sameDay = new Date(fromMs).toDateString() === new Date(toMs).toDateString();
+  return sameDay ? `${time(fromMs)} to ${time(toMs)}` : `${clock(fromMs)} to ${clock(toMs)}`;
+}
+const endOf = (startMs: number, atMs: number): string => (new Date(startMs).toDateString() === new Date(atMs).toDateString() ? time(atMs) : clock(atMs));
 export function ageText(at: number | null, now: number): string {
   if (at === null || !Number.isFinite(now) || at > now) return 'Age unknown';
   const seconds = Math.floor((now - at) / 1000);
@@ -90,8 +96,9 @@ export function timelineRows(facts: readonly TimelineFact[]): TimelineRow[] {
       if (heating === undefined) rows.push(fact.edge === 'first-observation' ? {key, kind: 'heating', title: `First seen off at ${time(fact.observedAtMs)}`, detail: ''}
         : {key, kind: 'heating', title: `Heater off at ${time(fact.observedAtMs)}`, detail: fact.edge === 'observed' ? 'It went on before this view.' : 'Seen off after an unobserved interval.'});
       else if (fact.edge === 'observed') {
-        heating.row.title = `Heating ${time(heating.atMs)} to ${time(fact.observedAtMs)}`;
-        if (heating.seen && !heating.crossed) heating.row.detail = durationText(fact.observedAtMs - heating.atMs);
+        heating.row.title = `Heating ${spanText(heating.atMs, fact.observedAtMs)}`;
+        if (heating.crossed) unfinished(heating, 'Includes unobserved time.');
+        else if (heating.seen) heating.row.detail = durationText(fact.observedAtMs - heating.atMs);
       } else unfinished(heating, `The end was not seen: off by ${time(fact.observedAtMs)}.`);
       heating = undefined;
     } else if (fact.kind === 'pump' && fact.on) {
@@ -100,16 +107,19 @@ export function timelineRows(facts: readonly TimelineFact[]): TimelineRow[] {
       pump = {row, atMs: fact.observedAtMs, seen: fact.edge === 'observed', crossed: false};
     } else if (fact.kind === 'pump') {
       if (pump === undefined) rows.push({key, kind: 'pump', title: `Pump off at ${time(fact.observedAtMs)}`, detail: 'It went on before this view.'});
-      else if (fact.edge === 'observed') pump.row.title = `Pump ${time(pump.atMs)} to ${time(fact.observedAtMs)}`;
-      else unfinished(pump, `The end was not seen: off by ${time(fact.observedAtMs)}.`);
+      else if (fact.edge === 'observed') {
+        pump.row.title = `Pump ${spanText(pump.atMs, fact.observedAtMs)}`;
+        if (pump.crossed) unfinished(pump, 'Includes unobserved time.');
+      } else unfinished(pump, `The end was not seen: off by ${time(fact.observedAtMs)}.`);
       pump = undefined;
     } else if (fact.kind === 'gap') {
-      rows.push({key, kind: 'gap', title: `Unobserved ${time(fact.fromMs)} to ${time(fact.toMs)}`, detail: `Heater ${side(fact.heaterBefore)} before, ${side(fact.heaterAfter)} after; ${credit(fact.creditedMinutes)}.`});
+      rows.push({key, kind: 'gap', title: `Unobserved ${spanText(fact.fromMs, fact.toMs)}`, detail: `Heater ${side(fact.heaterBefore)} before, ${side(fact.heaterAfter)} after; ${credit(fact.creditedMinutes)}.`});
       if (heating !== undefined) heating.crossed = true;
       if (pump !== undefined) pump.crossed = true;
     } else if (fact.kind === 'discontinuity') {
-      rows.push({key, kind: 'discontinuity', title: `${DISCONTINUITY[fact.reason]} at ${time(fact.observedAtMs)}`, detail: 'No time or credit is counted across this.'});
-      if (fact.reason === 'identity-mismatch' || fact.reason === 'clock-step') {
+      const closes = fact.reason === 'identity-mismatch' || fact.reason === 'clock-step';
+      rows.push({key, kind: 'discontinuity', title: `${DISCONTINUITY[fact.reason]} at ${time(fact.observedAtMs)}`, detail: closes ? 'No time or credit is counted across this.' : 'No counter credit is counted across this.'});
+      if (closes) {
         unfinished(heating, 'Its end is unknown.');
         heating = undefined;
       }
@@ -120,19 +130,29 @@ export function timelineRows(facts: readonly TimelineFact[]): TimelineRow[] {
   return rows;
 }
 
-export type SessionRow = {key: string; start: string; end: string; partial: boolean; facts: readonly (readonly [string, string])[]};
+export type SessionRow = {key: string; start: string; end: string; partial: boolean; note: string; facts: readonly (readonly [string, string])[]};
 const plural = (count: number, one: string): string => `${String(count)} ${one}${count === 1 ? '' : 's'}`;
 export function sessionRow(session: Session): SessionRow {
-  const unobserved = session.stretches.reduce((sum, stretch) => sum + stretch.unobserved.length + stretch.omittedUnobserved, 0);
-  const end = session.endAtMs !== null ? `to ${time(session.endAtMs)}`
-    : session.endedUnobservedBy !== null ? `End not seen: last on ${time(session.lastObservedOnAtMs)}, off by ${time(session.endedUnobservedBy)}`
-      : session.open ? `No end seen yet: last on ${time(session.lastObservedOnAtMs)}` : `End unknown: last on ${time(session.lastObservedOnAtMs)}`;
+  const inside = session.stretches.reduce((sum, stretch) => sum + stretch.unobserved.length + stretch.omittedUnobserved, 0);
+  const unobserved = inside + session.unobservedBetween;
+  const hidden = session.omittedStretches > 0;
+  const end = session.endAtMs !== null ? `to ${endOf(session.startAtMs, session.endAtMs)}`
+    : session.endedUnobservedBy !== null ? `End not seen: last on ${endOf(session.startAtMs, session.lastObservedOnAtMs)}, off by ${endOf(session.startAtMs, session.endedUnobservedBy)}`
+      : session.open ? `No end seen yet: last on ${endOf(session.startAtMs, session.lastObservedOnAtMs)}` : `End unknown: last on ${endOf(session.startAtMs, session.lastObservedOnAtMs)}`;
   const facts: (readonly [string, string])[] = [['Observed heating', durationText(session.observedHeatingMs)], ['Stretches', String(session.stretches.length + session.omittedStretches)], ['Pump runs', String(session.pumpRuns)]];
-  if (unobserved > 0) facts.push(['Unobserved intervals', String(unobserved)], ['Counter credit', minutesText(session.creditedMinutes)]);
+  if (unobserved > 0 || hidden) facts.push(['Unobserved intervals', hidden ? `At least ${String(unobserved)}` : String(unobserved)]);
+  if (inside > 0 || hidden) {
+    // A null credit is unknown, and the module's sum counts it as nothing, so that sum alone is only a lower bound.
+    const unknown = hidden || session.stretches.some(stretch => stretch.omittedUnobserved > 0 || stretch.unobserved.some(({creditedMinutes}) => creditedMinutes === null));
+    facts.push(['Counter credit', !unknown ? minutesText(session.creditedMinutes) : session.creditedMinutes > 0 ? `At least ${minutesText(session.creditedMinutes)}` : 'Unknown']);
+  }
   if (session.discontinuities > 0) facts.push(['Discontinuities', String(session.discontinuities)]);
+  const firstSeen = session.startedBeforeObservation || session.stretches.some(stretch => stretch.startedBeforeObservation);
+  const endUnseen = session.endAtMs === null || session.stretches.some(stretch => stretch.endAtMs === null);
+  const partial = firstSeen || endUnseen || unobserved > 0 || session.discontinuities > 0 || hidden;
   return {
-    key: String(session.startAtMs), start: `${session.startedBeforeObservation ? 'First seen on ' : ''}${clock(session.startAtMs)}`, end,
-    partial: session.startedBeforeObservation || session.endAtMs === null || unobserved > 0 || session.discontinuities > 0, facts,
+    key: String(session.startAtMs), start: `${session.startedBeforeObservation ? 'First seen on ' : ''}${clock(session.startAtMs)}`, end, partial,
+    note: partial ? 'Incomplete evidence: the heater may have run at times not observed here.' : '', facts,
   };
 }
 export function totalsLine(day: TotalsDay): string {

@@ -162,6 +162,20 @@ void test('a changed identity closes what was open with no end time, and the nex
   assert.equal(second?.open, true);
 });
 
+void test('a gap while the heater is off stays on the session and makes its separation uncertain', () => {
+  // On, off, the feed lost and back, on and off again, with both stretches' edges seen: the heater may have run in the gap.
+  const derived = derive(structural(play([{from: '20:00', to: '20:05', heater: true}, {from: '20:05:05', to: '20:06'}, {from: '20:06:05', to: '20:07', link: 'disconnected'}, {from: '20:07:05', to: '20:08'}, {from: '20:08:05', to: '20:10', heater: true}, {from: '20:10:05', to: '20:11'}]).facts), null);
+  const [session] = groupSessions(derived, 15);
+  assert.equal(session?.stretches.length, 2);
+  assert.equal(session?.stretches[1]?.startedBeforeObservation, false, 'the second start was seen');
+  assert.equal(session?.unobservedBetween, 1);
+  assert.deepEqual(gapDistribution(derived).filter(bucket => bucket.count > 0).map(({count, uncertain}) => [count, uncertain]), [[1, 1]]);
+  const apart = groupSessions(derived, 1);
+  assert.equal(apart.length, 2, 'at a small threshold the stretches part');
+  assert.deepEqual(apart.map(value => value.unobservedBetween), [0, 0], 'and the gap is between sessions, on neither');
+  assert.equal(groupSessions(derive(structural(play(autoOff).facts), null), 15)[0]?.unobservedBetween, 0);
+});
+
 void test('gap distribution counts each separation once and marks those with an edge not seen as it happened', () => {
   const derived = derive(structural(play(autoOff).facts), null);
   const buckets = gapDistribution(derived);

@@ -51,7 +51,7 @@ A snapshot repeating its `(collectorEpoch, sequence)`, or whose `observedAtMs` i
 
 ### Requirement: Read-time sessions
 
-Sessions SHALL be derived when read: heater-on stretches separated by less than the threshold, 15 minutes by default, SHALL form one session, and changing the threshold SHALL regroup all history without rewriting a fact. A stretch first seen on SHALL be `startedBeforeObservation` from the time first seen, with no earlier start. An unobserved interval SHALL create no boundary inside it. An end hidden in a gap SHALL have no end time, only the time last seen on and the time first seen off. A session SHALL mean heater activity, and no document SHALL have a field for consumption, dose or inhalation.
+Sessions SHALL be derived when read: heater-on stretches separated by less than the threshold, 15 minutes by default, SHALL form one session, and changing the threshold SHALL regroup all history without rewriting a fact. A stretch first seen on SHALL be `startedBeforeObservation` from the time first seen, with no earlier start. An unobserved interval SHALL create no boundary inside it. A session SHALL count the unobserved intervals between its stretches, and a separation with one SHALL be uncertain in the gap distribution, since the heater may have run in it. An end hidden in a gap SHALL have no end time, only the time last seen on and the time first seen off. A session SHALL mean heater activity, and no document SHALL have a field for consumption, dose or inhalation.
 
 #### Scenario: Manual use
 - **WHEN** HEAT goes on at 20:00 and off at 20:25
@@ -68,6 +68,10 @@ Sessions SHALL be derived when read: heater-on stretches separated by less than 
 #### Scenario: Missed interval
 - **WHEN** the link is gone from 20:10 to 20:20 with the heater on at both edges and the counter has gained minutes
 - **THEN** the interval shows unobserved inside one stretch, the gain is credited in whole minutes apart from observed time, and no threshold divides it
+
+#### Scenario: A gap between stretches
+- **WHEN** the heater goes off, the feed is lost and returns, and the heater goes on again within the threshold
+- **THEN** both stretches are one session that counts one unobserved interval between them, and that separation is uncertain
 
 #### Scenario: Regrouping
 - **WHEN** the threshold changes, or a read previews another one

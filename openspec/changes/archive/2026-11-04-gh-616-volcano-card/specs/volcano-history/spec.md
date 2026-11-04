@@ -15,3 +15,13 @@ The module SHALL ship one reusable card with tabs Now, Timeline, Sessions, Total
 #### Scenario: Incomplete evidence
 - **WHEN** the feed is stale or unavailable, a read is refused, there is no history yet, or a session has an unobserved interval, a hidden end or a discontinuity
 - **THEN** the card shows unknown or unavailable, no zero or off is implied, and no duration crosses the missing interval
+
+## MODIFIED Requirements
+
+### Requirement: Read-time sessions
+
+Sessions SHALL be derived when read. A session SHALL count the unobserved intervals between its stretches, and a separation with one SHALL be uncertain in the gap distribution, since the heater may have run in it. The rest of the requirement is unchanged and is held in the main specification.
+
+#### Scenario: A gap between stretches
+- **WHEN** the heater goes off, the feed is lost and returns, and the heater goes on again within the threshold
+- **THEN** both stretches are one session that counts one unobserved interval between them, and that separation is uncertain

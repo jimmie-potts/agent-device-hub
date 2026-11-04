@@ -52,30 +52,33 @@ function TimelinePanel({api, id, refresh, now}: Source & {now: number}): React.J
   const read = useRead(api, api === undefined ? undefined : path, refresh, decode);
   const rows = useMemo(() => timelineRows(read?.value?.facts ?? []), [read?.value]);
   return <>
-    <div className="volcano-day"><button type="button" className="secondary" onClick={() => { setDay(shiftDay(day, -1)); }}>Previous day</button><strong>{dayLabel(day)}</strong><button type="button" className="secondary" disabled={day >= today} onClick={() => { setDay(shiftDay(day, 1)); }}>Next day</button></div>
+    <div className="volcano-day"><button type="button" className="secondary" onClick={() => { setDay(shiftDay(day, -1)); }}>Previous day</button><strong>{dayLabel(day)}<span className="volcano-sr"> in this browser's time zone</span></strong><button type="button" className="secondary" disabled={day >= today} onClick={() => { setDay(shiftDay(day, 1)); }}>Next day</button></div>
     <Refusal code={read?.error} what="The timeline is"/>
     {read?.value === undefined ? read?.error === undefined && <p className="volcano-note" role="status">{api === undefined ? 'The timeline is unavailable.' : 'Loading the timeline.'}</p>
-      : rows.length === 0 ? <p className="volcano-note">Nothing recorded {pages.depth === 0 ? 'for this day' : 'on this page'}. That is not evidence of no use: the collector may not have been running.</p>
+      : read.value.facts.length > 0 && rows.length === 0 ? <p className="volcano-note">No heating, pump or gap changes on this page.</p>
+      : rows.length === 0 ? <p className="volcano-note">Nothing recorded for this day. That is not evidence of no use: the collector may not have been running.</p>
         : <ul className="volcano-rows">{rows.map(row => <li key={row.key} data-kind={row.kind}><span className="volcano-row-title">{row.title}</span>{row.detail !== '' && <span className="volcano-row-detail">{row.detail}</span>}</li>)}</ul>}
     <Pager older={typeof read?.value?.next === 'string'} newer={pages.depth > 0} olderLabel="Later" newerLabel="Earlier" onOlder={() => { const next = read?.value?.next; if (typeof next === 'string') pages.push(next); }} onNewer={pages.pop}/>
   </>;
 }
 
+const stretchCount = (count: number): string => `${String(count)} stretch${count === 1 ? '' : 'es'}`;
 function SessionList({doc}: {doc: SessionsDocument}): React.JSX.Element {
   return <ul className="volcano-rows">{doc.sessions.map(session => {
     const row = sessionRow(session);
     return <li key={row.key} data-kind="session" data-partial={row.partial}>
       <span className="volcano-row-title">{row.start}</span><span className="volcano-row-detail">{row.end}</span>
+      {row.note !== '' && <span className="volcano-row-detail volcano-partial">{row.note}</span>}
       <dl className="volcano-facts">{row.facts.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl>
     </li>;
   })}</ul>;
 }
-function SessionsPanel({api, id, refresh, gapMinutes}: Source & {gapMinutes: number}): React.JSX.Element {
+function SessionsPanel({api, id, refresh, gapMinutes}: Source & {gapMinutes: number | undefined}): React.JSX.Element {
   const pages = useCursors(`${id}:${String(gapMinutes)}`);
   const decode = useMemo(() => (value: unknown) => sessionsDocument(value, id), [id]);
   const read = useRead(api, api === undefined ? undefined : withCursor(`${CONTENT}sessions?limit=25`, pages.current), refresh, decode);
   return <>
-    <p className="volcano-note">Heater activity, grouped when less than {gapMinutes} min apart. Not consumption or dose.</p>
+    <p className="volcano-note">Heater activity{read?.value === undefined ? '' : `, grouped when less than ${String(read.value.gapMinutes)} min apart`}. Not consumption or dose. Times are local to this browser.</p>
     <Refusal code={read?.error} what="The session list is"/>
     {read?.value === undefined ? read?.error === undefined && <p className="volcano-note" role="status">{api === undefined ? 'The session list is unavailable.' : 'Loading sessions.'}</p>
       : read.value.sessions.length === 0 ? <p className="volcano-note">No sessions recorded yet.</p> : <SessionList doc={read.value}/>}
@@ -100,16 +103,17 @@ function TotalsPanel({api, id, refresh}: Source): React.JSX.Element {
 
 function GapsPanel({context, api, id, refresh, doc, live}: Source & {context: FrontendContext; doc: VolcanoStatus | undefined; live: boolean}): React.JSX.Element {
   const decode = useMemo(() => (value: unknown) => gapsDocument(value, id), [id]);
-  const decodeSessions = useMemo(() => (value: unknown) => sessionsDocument(value, id), [id]);
   const read = useRead(api, api === undefined ? undefined : `${CONTENT}gaps`, refresh, decode);
   const saved = doc?.gapMinutes;
   const [draft, setDraft] = useState<string | undefined>();
   const [asked, setAsked] = useState<number | undefined>();
   const text = draft ?? (saved === undefined ? '' : String(saved));
   const value = thresholdValue(text);
-  const preview = useRead(api, api === undefined || asked === undefined ? undefined : `${CONTENT}sessions?limit=25&gapMinutes=${String(asked)}`, refresh, decodeSessions);
-  const current = useRead(api, api === undefined || asked === undefined ? undefined : `${CONTENT}sessions?limit=25`, refresh, decodeSessions);
-  const counted = (result: SessionsDocument | undefined): string => (result === undefined ? 'unknown' : `${String(result.sessions.length)}${result.next === null ? '' : '+'}`);
+  const decodePreview = useMemo(() => (input: unknown) => sessionsDocument(input, id, asked), [id, asked]);
+  const decodeSaved = useMemo(() => (input: unknown) => sessionsDocument(input, id, saved), [id, saved]);
+  const preview = useRead(api, api === undefined || asked === undefined ? undefined : `${CONTENT}sessions?limit=25&gapMinutes=${String(asked)}`, refresh, decodePreview);
+  const current = useRead(api, api === undefined || asked === undefined ? undefined : `${CONTENT}sessions?limit=25`, refresh, decodeSaved);
+  const counted = (result: SessionsDocument | undefined): string => (result === undefined ? 'unknown' : `${String(result.sessions.length)}${result.next === null ? '' : '+'} session${result.sessions.length === 1 && result.next === null ? '' : 's'}`);
   const buckets = read?.value?.buckets ?? [];
   const largest = Math.max(1, ...buckets.map(bucket => bucket.count));
   const uid = useId();
@@ -141,8 +145,8 @@ function GapsPanel({context, api, id, refresh, doc, live}: Source & {context: Fr
     <Command context={context} target={id}>{controls}</Command>
     {asked !== undefined && <section aria-label="Regroup preview" className="volcano-preview">
       <Refusal code={preview?.error ?? current?.error} what="The preview is"/>
-      <p className="volcano-note" role="status">At {asked} min: {counted(preview?.value)} sessions. Saved threshold: {counted(current?.value)}. Nothing is stored by a preview.</p>
-      {preview?.value !== undefined && preview.value.sessions.length > 0 && <ul className="volcano-rows">{preview.value.sessions.slice(0, 5).map(session => <li key={session.startAtMs} data-kind="preview"><span className="volcano-row-title">{clock(session.startAtMs)}</span><span className="volcano-row-detail">{session.stretches.length + session.omittedStretches} stretches</span></li>)}</ul>}
+      <p className="volcano-note" role="status">At {asked} min: {counted(preview?.value)}. Saved threshold: {counted(current?.value)}. Nothing is stored by a preview.</p>
+      {preview?.value !== undefined && preview.value.sessions.length > 0 && <ul className="volcano-rows">{preview.value.sessions.slice(0, 5).map(session => <li key={session.startAtMs} data-kind="preview"><span className="volcano-row-title">{clock(session.startAtMs)}</span><span className="volcano-row-detail">{stretchCount(session.stretches.length + session.omittedStretches)}</span></li>)}</ul>}
     </section>}
   </>;
 }
@@ -186,7 +190,7 @@ export function VolcanoWidget({context, expectedTarget, label = 'Volcano'}: Volc
         </dl>
       </section>
       <section role="tabpanel" id={`${uid}-timeline-panel`} aria-labelledby={`${uid}-timeline`} hidden={tab !== 'timeline'} tabIndex={0}><TimelinePanel {...source} now={now}/></section>
-      <section role="tabpanel" id={`${uid}-sessions-panel`} aria-labelledby={`${uid}-sessions`} hidden={tab !== 'sessions'} tabIndex={0}><SessionsPanel {...source} gapMinutes={doc?.gapMinutes ?? 15}/></section>
+      <section role="tabpanel" id={`${uid}-sessions-panel`} aria-labelledby={`${uid}-sessions`} hidden={tab !== 'sessions'} tabIndex={0}><SessionsPanel {...source} gapMinutes={doc?.gapMinutes}/></section>
       <section role="tabpanel" id={`${uid}-totals-panel`} aria-labelledby={`${uid}-totals`} hidden={tab !== 'totals'} tabIndex={0}><TotalsPanel {...source}/></section>
       <section role="tabpanel" id={`${uid}-gaps-panel`} aria-labelledby={`${uid}-gaps`} hidden={tab !== 'gaps'} tabIndex={0}><GapsPanel {...source} context={context} doc={doc} live={live}/></section>
     </div>

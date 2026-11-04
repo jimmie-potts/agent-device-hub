@@ -69,7 +69,7 @@ const factChecks: readonly Check[] = [
 ];
 const span = {startAtMs: instant, startedBeforeObservation: bool, endAtMs: nullable(instant), endedUnobservedBy: nullable(instant), lastObservedOnAtMs: instant, open: bool, observedHeatingMs: count, creditedMinutes: count, pumpRuns: count};
 const stretch = closed({...span, unobserved: list(closed({fromMs: instant, toMs: instant, creditedMinutes: nullable(count)}), 8), omittedUnobserved: count});
-const session = closed({...span, discontinuities: count, stretches: list(stretch, 32), omittedStretches: count});
+const session = closed({...span, discontinuities: count, stretches: list(stretch, 32), omittedStretches: count, unobservedBetween: count});
 const timelineCheck = closed({schema: literal('volcano-timeline/2.0'), ...base, facts: list(value => factChecks.some(check => check(value)), 200), next: cursor});
 const sessionsCheck = closed({schema: literal('volcano-sessions/2.0'), ...base, gapMinutes: gap, preview: bool, sessions: list(session, 25), next: cursor});
 const totalsCheck = closed({

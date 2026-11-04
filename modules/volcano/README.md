@@ -78,6 +78,9 @@ threshold regroups all history and rewrites nothing.
   discontinuity closes it with no end time.
 - The separation from a stretch with no observed end is measured from the first time
   it was seen off, and is marked `uncertain` in the gap distribution.
+- A gap while the heater was last seen off lies outside any stretch. A session counts those
+  between its stretches as `unobservedBetween`, and the separation is marked `uncertain`,
+  since the heater may have run in it.
 
 ## State and reads
 
@@ -143,6 +146,9 @@ directory. The module declares no page. Its tabs, on one card with a fixed heigh
 - Anything not current reads as unknown, never off. A refused read reads as unavailable,
   never as an empty history. A duration is drawn only between two edges seen as they
   happened, with nothing unobserved between them.
+- A session with an unseen start or end, an unobserved interval or a discontinuity says its
+  evidence is incomplete. A counter credit with any unknown part reads as unknown or
+  "at least", never as an exact sum.
 - A preview is a read and stores nothing. The save is the card's only command. It carries
   the configuration revision it was made against, needs control access, and goes through the
   shell's tracked command attempt. Session paging restarts after a save, since a cursor

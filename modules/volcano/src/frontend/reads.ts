@@ -34,6 +34,7 @@ export function useVolcanoStatus(context: FrontendContext, attempt: number, targ
           case 'updated':
             if (change.entity.family !== FAMILY) throw new Refused('invalid-message');
             accept(messageStatus(change.message, expectedId));
+            if (!live) { live = true; publish(); }
             break;
           case 'synced': live = true; publish(); break;
           case 'failed': fail({body: change.error}); break;
@@ -79,15 +80,16 @@ export function useRead<T>(api: FrontendApi | undefined, path: string | undefine
   return view !== undefined && view.api === api && view.decode === decode && view.path === path ? view : undefined;
 }
 
-/** The key history reads follow. A threshold or a reload moves it at once, and a revision at most once per spacing. */
+/** The key history reads follow. A threshold, a reload or the first revision moves it at once, and any later revision at most once per spacing. */
 export function useReadKey(revision: number | undefined, immediate: string): string {
-  const [settled, setSettled] = useState({revision, immediate, at: Date.now()});
+  const [settled, setSettled] = useState({revision, immediate, at: 0});
+  const now = settled.immediate !== immediate || settled.revision === undefined;
+  // Adjusted during the render, so a read never goes out under the key this replaces.
+  if (now && (settled.immediate !== immediate || settled.revision !== revision)) setSettled({revision, immediate, at: Date.now()});
   useEffect(() => {
-    if (settled.immediate !== immediate) { setSettled({revision, immediate, at: Date.now()}); return; }
     if (settled.revision === revision) return;
-    const wait = settled.revision === undefined ? 0 : Math.max(0, settled.at + READ_SPACING_MS - Date.now());
-    const timer = window.setTimeout(() => { setSettled({revision, immediate, at: Date.now()}); }, wait);
+    const timer = window.setTimeout(() => { setSettled({revision, immediate, at: Date.now()}); }, Math.max(0, settled.at + READ_SPACING_MS - Date.now()));
     return () => { window.clearTimeout(timer); };
   }, [revision, immediate, settled]);
-  return `${settled.immediate}:${String(settled.revision)}`;
+  return now ? `${immediate}:${String(revision)}` : `${settled.immediate}:${String(settled.revision)}`;
 }

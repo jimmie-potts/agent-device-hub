@@ -13,7 +13,7 @@ Installation and physical acceptance stay with #617.
 
 ### Modified Capabilities
 
-- `volcano-history`: adds the card's behavior over the existing reads and command. No read, command or stored fact changes.
+- `volcano-history`: adds the card's behavior over the existing reads and command. Review of the card showed the session read hid unobserved time between stretches, so sessions gain `unobservedBetween` and such a separation becomes uncertain. No command or stored fact changes.
 
 ## Impact
 
