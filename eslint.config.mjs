@@ -15,7 +15,7 @@ const unused = {
 // New code under the strict profile (Hub #867). Staged imported code joins when its module story converts it; the
 // Pixoo snapshot joined with its module (Hub #843), so nothing is staged now.
 // tests/strict_profile.test.mjs reads both lists, so its convention guards follow any path added here.
-export const strict = ['apps/runtime/**/*.{ts,tsx}', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}', 'packages/event-contracts/src/v2/**/*.ts'];
+export const strict = ['apps/runtime/**/*.{ts,tsx}', 'apps/volcano-collector/**/*.ts', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}', 'packages/event-contracts/src/v2/**/*.ts'];
 export const staged = [];
 // Tests, their fixtures and helpers read an error to report a failure and spell out the bodies they expect, so the
 // safe-error rules (Hub #953) skip them. The strict rules still apply.

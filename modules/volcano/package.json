@@ -1,0 +1,15 @@
+{
+  "name": "@jimmie-potts/volcano",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Private VOLCANO HYBRID usage facts and read-time sessions for B.U.N.N.Y.",
+  "exports": {
+    ".": {"types": "./dist/src/index.d.ts", "import": "./dist/src/index.js"}
+  },
+  "dependencies": {
+    "@jimmie-potts/event-contracts": "1.0.0",
+    "@jimmie-potts/sdk": "0.1.0",
+    "ajv": "8.20.0"
+  }
+}

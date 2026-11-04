@@ -54,9 +54,11 @@ export const CONTROL_KEYS: readonly string[] = DIRECT_COMMANDS.map(family => `bu
 
 /**
  * The SDK edge's permissions for a caller's scopes (Hub #835): `read` subscribes to and syncs every state and event
- * key; `ingest` publishes lifecycle observations and Codex Desktop metadata snapshots only, on their own keys, so a
- * hook or a host-local collector can do nothing else (Hub #567: the gateway admits a snapshot only from the derived
- * collector credential of its feed); `control` requests the core's operator commands, and sends every other command
+ * key; `ingest` publishes lifecycle observations, Codex Desktop metadata snapshots and Volcano observations only, on
+ * their own keys, so a hook or a host-local collector can publish nothing else and read or command nothing (Hub #567, #615).
+ * The gateway admits a snapshot only from the derived collector credential of its feed. A lifecycle observation is bound
+ * to its producer's identity on the private entry only (producer-admission.ts), so on the loopback entry a collector's
+ * credential can still publish one, as a released local hook's can; `control` requests the core's operator commands, and sends every other command
  * through the dispatcher's action routes (#782); `admin` adds nothing at the edge. A dashboard browser with read and
  * control may explicitly open the connection-bound speech endpoint. Its grant adds no ordinary responder or publication
  * authority.
@@ -84,8 +86,8 @@ export function edgePermissions(principal: Principal): EdgePrincipal {
   }
   if (principal.scopes.has('ingest')) {
     calls.add('publish');
-    keys.add('bunny.event.lifecycle.*').add('bunny.event.desktop-metadata.*');
-    publishes.push('lifecycle', 'desktop-metadata');
+    keys.add('bunny.event.lifecycle.*').add('bunny.event.desktop-metadata.*').add('bunny.event.volcano-observation.*');
+    publishes.push('lifecycle', 'desktop-metadata', 'volcano-observation');
   }
   if (principal.scopes.has('control')) {
     calls.add('request');

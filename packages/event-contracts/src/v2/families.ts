@@ -193,6 +193,35 @@ export function desktopFeedId(feed: DesktopFeed): string {
   return createHash('sha256').update(JSON.stringify({client, hostId, provider, sourceId}), 'utf8').digest('hex');
 }
 
+/** One enrolled VOLCANO HYBRID's feed from its host-local collector (Hub #615). */
+export type VolcanoFeed = {provider: 'storz-bickel'; client: 'volcano'; hostId: string; sourceId: string};
+/** What the collector knows of its Bluetooth link. A link that is not connected says nothing about the heater. */
+export type VolcanoLink = 'connected' | 'disconnected' | 'unavailable' | 'identity-mismatch';
+/** The device's registers as read: raw status registers, temperatures in degrees Celsius times ten and raw counters. */
+export type VolcanoReading = {
+  status1: number; status2: number; currentDeciC: number | null; targetDeciC: number | null; heatingHours: number | null; heatingMinutes: number | null;
+};
+/**
+ * `org.bunny.volcano-observation.observed`: one bounded snapshot of one Volcano feed, as a source-bound collector publishes
+ * it on `bunny.event.volcano-observation.<feed ID>` (Hub #615). `collectorEpoch` names one collector process and `sequence`
+ * counts its snapshots; `reading` is null unless the link is connected. Only the Volcano module consumes it; the core
+ * ignores the family and history does not keep it.
+ */
+export type VolcanoObservation = {
+  feed: VolcanoFeed; observedAtMs: number; collectorEpoch: string; sequence: number; link: VolcanoLink; reading: VolcanoReading | null;
+};
+/** The `volcano-observation` family's type, schema and routing-key prefix, for its one publisher and its one consumer (Hub #615). */
+export const VOLCANO_OBSERVATION_TYPE = 'org.bunny.volcano-observation.observed';
+export const VOLCANO_OBSERVATION_SCHEMA = 'https://bunny.invalid/events/volcano-observation/2.0';
+export const VOLCANO_OBSERVATION_KEY_PREFIX = 'bunny.event.volcano-observation.';
+/** The ID of a Volcano feed's entity: the lowercase hex SHA-256 of its four identity fields, sorted, in UTF-8 JSON. */
+export function volcanoFeedId(feed: VolcanoFeed): string {
+  const {client, hostId, provider, sourceId} = feed;
+  return createHash('sha256').update(JSON.stringify({client, hostId, provider, sourceId}), 'utf8').digest('hex');
+}
+/** The routing key of one feed's snapshots. */
+export const volcanoObservationKey = (feed: VolcanoFeed): string => `${VOLCANO_OBSERVATION_KEY_PREFIX}${volcanoFeedId(feed)}`;
+
 /** The ID of an operation entity: the lowercase hex SHA-256 of its request ID in UTF-8, so one request has one entity. */
 export function operationEntityId(requestId: string): string {
   return createHash('sha256').update(requestId, 'utf8').digest('hex');
@@ -259,6 +288,12 @@ const checkDesktopMetadata: PayloadCheck = message => {
   const snapshot = message.data as DesktopMetadataSnapshot;
   if (message.subject !== desktopFeedId(snapshot.feed)) return 'envelope /subject not the feed';
   return repeated(snapshot.titles.map(title => title.id)) ? 'payload /titles duplicate id' : undefined;
+};
+// A Volcano snapshot's subject is its feed, and only a connected link has a reading.
+const checkVolcanoObservation: PayloadCheck = message => {
+  const snapshot = message.data as VolcanoObservation;
+  if (message.subject !== volcanoFeedId(snapshot.feed)) return 'envelope /subject not the feed';
+  return snapshot.link !== 'connected' && snapshot.reading !== null ? 'payload /reading on a link that is not connected' : undefined;
 };
 const checkEntity: PayloadCheck = message => entity(message, message.data.id);
 // An operation's entity is its request's, and its command is its family's.
@@ -328,6 +363,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('operation', 'state', 'org.bunny.operation.updated', checkOperation),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle),
   define('desktop-metadata', 'occurrence', 'org.bunny.desktop-metadata.observed', checkDesktopMetadata),
+  define('volcano-observation', 'occurrence', 'org.bunny.volcano-observation.observed', checkVolcanoObservation),
   define('attention-raised', 'occurrence', 'org.bunny.attention.raised', checkRaised),
   define('attention-cleared', 'occurrence', 'org.bunny.attention.cleared', checkOccurrence),
   define('turn-ended', 'occurrence', 'org.bunny.turn.ended', checkOccurrence),

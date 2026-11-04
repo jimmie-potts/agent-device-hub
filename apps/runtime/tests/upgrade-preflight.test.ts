@@ -110,7 +110,7 @@ async function composedPreflight(root: string, scenario: string): Promise<Outcom
   const health = {schema: 'runtime-health/1.0', status: 'degraded', moduleApiVersion: MODULE_API_VERSION, startedAtMs: 1000, lagCheck: {status: 'active', limitMs: 10000},
     modules: [...['core', ...configured].map((name): Row => ({name, apiVersion: MODULE_API_VERSION, state: 'running', healthy: true, reasonCode: null})),
       {name: 'wispr', apiVersion: MODULE_API_VERSION, state: 'refused', healthy: false, reasonCode: 'not-found'} as Row].sort((a, b) => a.name.localeCompare(b.name))};
-  for (const name of ['roborock', 'onn', 'weather']) {
+  for (const name of ['roborock', 'onn', 'volcano', 'weather']) {
     if (!scenario.startsWith(`${name}-`) && scenario !== `configured-${name}`) continue;
     health.modules.push({name, apiVersion: MODULE_API_VERSION, state: scenario === `${name}-running` ? 'running' : 'refused', healthy: scenario === `${name}-healthy`,
       reasonCode: scenario === `${name}-wrong-reason` ? 'unavailable' : 'not-found'});
@@ -289,6 +289,12 @@ void test('composed upgrade preflight binds original observations and the exact 
   assert.ok(!JSON.stringify(shown.value).includes('synthetic-secret-never-public'));
   assert.ok(!shown.text.includes('synthetic-secret-never-public'));
   assert.equal((await inspect('roborock-absent') as Planned).plan.operation, 'adoption');
+  const absentVolcano = await inspect('volcano-absent') as Planned & {code?: string};
+  assert.equal(absentVolcano.code, undefined, 'an unconfigured Volcano may report the exact absent-module refusal');
+  assert.equal(absentVolcano.plan.operation, 'adoption');
+  for (const scenario of ['volcano-running', 'volcano-healthy', 'volcano-wrong-reason', 'volcano-wrong-status', 'configured-volcano']) {
+    assert.equal((await inspect(scenario)).code, 'runtime-upgrade-preflight-refused', scenario);
+  }
   assert.equal((await inspect('weather-absent') as Planned).plan.operation, 'adoption');
   const absentOnn = await inspect('onn-absent') as Planned & {code?: string};
   assert.equal(absentOnn.code, undefined, 'exact absent ONN health remains eligible');

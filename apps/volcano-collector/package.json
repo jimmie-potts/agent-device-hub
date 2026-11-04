@@ -1,0 +1,13 @@
+{
+  "name": "@jimmie-potts/volcano-collector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Bluetooth binding of the host-local VOLCANO HYBRID collector, kept out of the root lockfile and the runtime's image.",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "dependencies": {
+    "@stoprocent/noble": "2.8.0"
+  }
+}

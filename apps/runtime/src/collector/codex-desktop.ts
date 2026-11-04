@@ -9,12 +9,13 @@
 import {createHash} from 'node:crypto';
 import {isAbsolute, normalize} from 'node:path';
 import {readDesktopMetadata, readMarker, type DesktopMetadata} from '@jimmie-potts/codex-desktop';
-import {errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
   DESKTOP_METADATA_SCHEMA, DESKTOP_METADATA_TYPE, desktopFeedId, desktopMetadataKey, type DesktopFeed, type DesktopMetadataSnapshot, type Title,
 } from '@jimmie-potts/event-contracts/v2/families';
-import {DeviceAvailability, Outcome, SUMMARY_MS, prepareMessage, publishOnce, recordLog, type Logger, type PublishOnceResult} from '@jimmie-potts/sdk';
+import {DeviceAvailability, Outcome, prepareMessage, publishOnce, type Logger, type PublishOnceResult} from '@jimmie-potts/sdk';
 import {canonical, readPrivateJson, readProducer, type Producer} from '../hook/producer.js';
+import {PublicationFailures} from './publication.js';
 
 /** The most distinct unread IDs a snapshot carries; more makes `unread` unavailable (null), never truncated. */
 export const MAX_UNREAD = 4096;
@@ -146,38 +147,6 @@ export const REFUSAL_TEXT: Readonly<Record<Refusal, string>> = {
   collector: 'codex-desktop-collector: the collector file is missing, not private or not the collector shape',
   producer: 'codex-desktop-collector: the producer file is missing, not private, not enabled and qualified, or not a Codex Desktop metadata producer',
 };
-
-/**
- * The publication's failures, as ADR 0012's "Repetition" asks: the first failure after successes is one
- * `operation.failed` record at its table level, later ones are summarized at DEBUG at most once a minute, and the first
- * success after them is one `operation.completed` record.
- */
-class PublicationFailures {
-  readonly #log: Logger;
-  #since: number | undefined;
-  #summarized = 0;
-  constructor(log: Logger) {
-    this.#log = log;
-  }
-  failed(at: number, result: Exclude<PublishOnceResult, {status: 'published'}> | 'late', message: Message): void {
-    const uncertain = result === 'late' || result.status === 'uncertain';
-    const code: ErrorCode = result === 'late' ? 'uncertain-result' : result.error.error.code;
-    const fields = {'bunny.operation': 'lifecycle', 'bunny.outcome': uncertain ? Outcome.uncertain : Outcome.rejected, 'bunny.code': code} as const;
-    if (this.#since === undefined) {
-      this.#since = at;
-      this.#summarized = at;
-      recordLog(this.#log, 'operation.failed', fields, message);
-    } else if (at - this.#summarized >= SUMMARY_MS) {
-      this.#summarized = at;
-      this.#log.debug('operation.failed', fields, message);
-    }
-  }
-  succeeded(): void {
-    if (this.#since === undefined) return;
-    this.#since = undefined;
-    recordLog(this.#log, 'operation.completed', {'bunny.operation': 'lifecycle', 'bunny.outcome': Outcome.succeeded});
-  }
-}
 
 export type RunOptions = {
   /** The diagnostic contract's logger: the entry point's runtime `LogWriter` over stderr. */
