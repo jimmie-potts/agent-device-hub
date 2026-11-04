@@ -36,10 +36,14 @@ Use the same explicit project and Compose selection for every operation. The
 fresh-volume examples below are setup/rehearsal examples, not a daily startup
 procedure for an existing instance.
 
-1. After a Mac restart, unlock FileVault, sign in and confirm Docker Desktop's Linux
-   engine is running; it starts at sign-in if that setting is on. Waiting for the
-   operator is accepted downtime; this procedure installs no unattended pre-login
-   startup or automatic restart of the core.
+After a Mac restart, unlock FileVault and sign in; nothing runs before that, which
+is accepted downtime. With [start at sign-in](#start-at-sign-in) installed, the core
+then starts by itself. A notification reports a refusal, and these steps are how
+you start it by hand then or at any other time. A crash or a Docker Desktop restart
+during a session leaves the core stopped until the next sign-in.
+
+1. Confirm Docker Desktop's Linux engine is running; it starts at sign-in if that
+   setting is on.
 2. Select the existing owned instance and inspect its process state with the
    operator's `status`. Confirm the selected image and mounts before `start`.
    Never rerun fresh provisioning or create replacement empty volumes as a way
@@ -111,9 +115,75 @@ same version.
 After a Mac restart and sign-in the server returns by itself; a reboot on 2026-11-03
 proved it, on the same address. Nothing runs before sign-in, so once the Tidbyt is moved,
 its display stops updating until someone signs in. That is accepted downtime, as for the
-core. The core, the [diagnostics stack](#diagnostics-stack) and the
-[private route](../apps/runtime/PRIVATE-ACCESS.md) stay down until started by hand, and the server does not need any of them to keep serving
-what it holds.
+core. The server does not need the core, the [diagnostics stack](#diagnostics-stack)
+or the [private route](../apps/runtime/PRIVATE-ACCESS.md) to keep serving what it
+holds; they return through [start at sign-in](#start-at-sign-in).
+
+## Start at sign-in
+
+The owner selected this on 2026-11-04
+([#1426](https://github.com/jimmie-potts/agent-device-hub/issues/1426)). FileVault
+and manual sign-in stay, so it adds no pre-login startup. Three launchd agents in
+`~/Library/LaunchAgents`, plus Docker Desktop's own setting, bring everything back:
+
+| Piece | How it returns | After a crash in the session |
+| --- | --- | --- |
+| Docker Desktop | **Settings → General → Start Docker Desktop when you sign in** | Not applicable |
+| Core | `org.bunny.runtime-signin` runs once per sign-in | Stays stopped until the next sign-in or a manual start |
+| [Diagnostics stack](#diagnostics-stack) | `restart: unless-stopped` | Docker restarts it |
+| [Tronbyt server](#tronbyt-server-on-the-mac) | `restart: unless-stopped` | Docker restarts it |
+| [Private route](../apps/runtime/PRIVATE-ACCESS.md#start-and-use-the-route) | `org.bunny.private-forwarder` and `org.bunny.private-serve`, with `KeepAlive` | launchd restarts it |
+| Coding worker | `org.bunny.coding-worker`, with `KeepAlive` | launchd restarts it |
+
+The core keeps `restart: "no"`, and the operator still refuses any other policy. A
+Docker restart would skip the operation lease and the hold on an unfinished
+deployment, and would restart a device writer on a fault nobody has looked at.
+
+The starter waits up to five minutes for the engine, then reads the core's image
+revision and Compose file from the container's own labels, so a deployment needs no
+change to it. It runs `start` through the operator of that revision's release, and
+reads the runtime's health for up to three minutes. It leaves a running core alone.
+Sign-in starts the core even after a deliberate stop, unless a deployment is
+unfinished or another operation holds the lease. It writes one line per step to
+`~/.local/share/bunny/signin/signin.log`. Any refusal shows a macOS notification,
+is not retried and never falls back to `docker start`. A failed health check does
+not stop the core. The starter imports the operator, so
+[#1410](https://github.com/jimmie-potts/agent-device-hub/issues/1410) does not
+affect it.
+
+Health can read `ok` while devices are unavailable. Proton VPN makes every LAN
+device unavailable whenever it is on, and a first Roborock poll that fails during
+sign-in leaves that module unavailable until a restart
+([#1331](https://github.com/jimmie-potts/agent-device-hub/issues/1331)).
+
+Install from a checkout of the selected revision with Node 24, after turning on the
+Docker Desktop setting. The route agents replace its manual sessions, so stop those
+first if they exist. launchd loads the agents by itself at the next sign-in; these
+commands load them now, and the first one starts the core if it is stopped:
+
+```bash
+node scripts/mac-host-install.mjs signin
+```
+
+```bash
+screen -S bunny-private-caddy -X quit; screen -S bunny-private-https -X quit
+```
+
+```bash
+for agent in runtime-signin private-forwarder private-serve; do launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/org.bunny.$agent.plist"; done
+```
+
+The agents use the Node that ran the install, by its version's own path. Run the
+install again after removing that version or to update the starter.
+
+For maintenance that spans a reboot, unload the runtime agent first, and load it
+again afterwards with the same `launchctl bootstrap` command:
+
+```bash
+launchctl bootout "gui/$(id -u)/org.bunny.runtime-signin"
+```
+
+To return to manual start, boot out each agent and delete its plist.
 
 ## Mac-local browser profile
 
@@ -416,9 +486,11 @@ The Mac-local log and trace viewer for the personal runtime
 ([#813](https://github.com/jimmie-potts/agent-device-hub/issues/813)) is one
 owned Compose project, `bunny-diagnostics`, defined in
 `deploy/diagnostics/compose.yaml`: an OpenTelemetry Collector, Loki, Tempo and
-Grafana, each pinned by its multi-architecture image digest. It is operated by
-hand beside the runtime, with the same accepted downtime: start it after the
-runtime after sign-in, stop it before maintenance. Only two ports exist, on the
+Grafana, each pinned by its multi-architecture image digest. It runs from its own
+fixed folder, `~/.local/share/bunny/diagnostics/current`, not from a runtime release
+or checkout, and updates separately from the runtime. With `restart: unless-stopped`
+it returns with Docker Desktop after sign-in, in any order with the runtime, and a
+deliberate `stop` holds across engine restarts. Only two ports exist, on the
 Mac's loopback: Grafana at `http://127.0.0.1:3000/` and the Collector's OTLP/HTTP
 receiver at `127.0.0.1:4318`. Nothing is published on the LAN, and the viewer is
 never reachable through the private remote entry; the dashboard's Connections
@@ -449,12 +521,18 @@ or archives.
 
 ### Set up once
 
-Pull the four pinned images, then create the project without starting it:
+From any checkout that holds the commit, install one revision. It copies
+`deploy/diagnostics` at that commit to the fixed folder, keeps the last copy as
+`previous` beside it and recreates the containers from the new copy, pulling any
+missing pinned image. The three data volumes stay. Run the same command to update
+or to move an installation off an older path:
 
-```text
-docker compose -f deploy/diagnostics/compose.yaml pull
-docker compose -f deploy/diagnostics/compose.yaml create --pull never
+```bash
+node scripts/mac-host-install.mjs diagnostics "$(git rev-parse origin/main)"
 ```
+
+`revision.txt` in the folder names what is installed. To go back, install the
+earlier revision.
 
 Point the runtime at the Collector and name the viewer for the dashboard by
 adding to the private `runtime.json`, through the one-shot replacement in
@@ -476,11 +554,20 @@ page shows **Open Grafana · Local**.
 
 ### Start, stop and inspect
 
-```text
-docker compose -f deploy/diagnostics/compose.yaml start
-docker compose -f deploy/diagnostics/compose.yaml ps
+```bash
+docker compose -f ~/.local/share/bunny/diagnostics/current/compose.yaml start
+```
+
+```bash
+docker compose -f ~/.local/share/bunny/diagnostics/current/compose.yaml ps
+```
+
+```bash
 curl -s http://127.0.0.1:3000/api/health
-docker compose -f deploy/diagnostics/compose.yaml stop
+```
+
+```bash
+docker compose -f ~/.local/share/bunny/diagnostics/current/compose.yaml stop
 ```
 
 `ps` shows the four containers `Up`; Grafana's health answers
@@ -488,8 +575,8 @@ docker compose -f deploy/diagnostics/compose.yaml stop
 `docker system df -v`, under the `bunny-diagnostics_loki-data`,
 `bunny-diagnostics_tempo-data` and `bunny-diagnostics_grafana-data` volumes;
 the figures recorded at installation are in #813. Loss shows in three places:
-the Collector's own log (`docker compose -f deploy/diagnostics/compose.yaml
-logs collector`), the runtime's `telemetry.dropped` records, and the
+the Collector's own log (`docker compose -f
+~/.local/share/bunny/diagnostics/current/compose.yaml logs collector`), the runtime's `telemetry.dropped` records, and the
 `runtime.stopped` record's counts.
 
 In Grafana, **Dashboards → B.U.N.N.Y. → B.U.N.N.Y. diagnostics** holds the
@@ -512,8 +599,8 @@ program trusted on this Mac may open Grafana, so keep the port on loopback.
 
 To discard every diagnostic record and start again, which the owner accepts:
 
-```text
-docker compose -f deploy/diagnostics/compose.yaml down -v
+```bash
+docker compose -f ~/.local/share/bunny/diagnostics/current/compose.yaml down -v
 ```
 
 That removes only this project's containers, network and the three

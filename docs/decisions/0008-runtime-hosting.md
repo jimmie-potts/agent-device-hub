@@ -1,5 +1,18 @@
 # ADR 0008: Make the Mac Mini the primary B.U.N.N.Y. host
 
+## Start at sign-in, 2026-11-04
+
+The owner selected automatic start after sign-in
+([#1426](https://github.com/jimmie-potts/agent-device-hub/issues/1426)). This
+supersedes the explicit restart under
+[Manual operation and state handoff](#manual-operation-and-state-handoff) for the
+Mac. FileVault and manual sign-in stay, so downtime until sign-in remains accepted.
+The core starts once per sign-in through its release's operator, including after a
+deliberate stop, unless a deployment is unfinished or another operation holds the
+lease. It keeps no Docker restart policy, so a crash during a session leaves it
+stopped. The diagnostics stack and the private route restart by themselves. Follow
+the [procedure](../bunny-container.md#start-at-sign-in).
+
 ## Explicit production profile, 2026-10-30
 
 [Hub #1233](https://github.com/jimmie-potts/agent-device-hub/issues/1233) adds an
