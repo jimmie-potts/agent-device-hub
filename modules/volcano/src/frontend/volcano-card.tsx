@@ -52,10 +52,11 @@ function TimelinePanel({api, id, refresh, now}: Source & {now: number}): React.J
   const read = useRead(api, api === undefined ? undefined : path, refresh, decode);
   const rows = useMemo(() => timelineRows(read?.value?.facts ?? []), [read?.value]);
   return <>
-    <div className="volcano-day"><button type="button" className="secondary" onClick={() => { setDay(shiftDay(day, -1)); }}>Previous day</button><strong>{dayLabel(day)}<span className="volcano-sr"> in this browser's time zone</span></strong><button type="button" className="secondary" disabled={day >= today} onClick={() => { setDay(shiftDay(day, 1)); }}>Next day</button></div>
+    <div className="volcano-day"><button type="button" className="secondary" onClick={() => { setDay(shiftDay(day, -1)); }}>Previous day</button><strong>{dayLabel(day)}<span className="volcano-local">Local time</span></strong><button type="button" className="secondary" disabled={day >= today} onClick={() => { setDay(shiftDay(day, 1)); }}>Next day</button></div>
     <Refusal code={read?.error} what="The timeline is"/>
     {read?.value === undefined ? read?.error === undefined && <p className="volcano-note" role="status">{api === undefined ? 'The timeline is unavailable.' : 'Loading the timeline.'}</p>
       : read.value.facts.length > 0 && rows.length === 0 ? <p className="volcano-note">No heating, pump or gap changes on this page.</p>
+      : pages.depth > 0 && rows.length === 0 ? <p className="volcano-note">No more facts for this day.</p>
       : rows.length === 0 ? <p className="volcano-note">Nothing recorded for this day. That is not evidence of no use: the collector may not have been running.</p>
         : <ul className="volcano-rows">{rows.map(row => <li key={row.key} data-kind={row.kind}><span className="volcano-row-title">{row.title}</span>{row.detail !== '' && <span className="volcano-row-detail">{row.detail}</span>}</li>)}</ul>}
     <Pager older={typeof read?.value?.next === 'string'} newer={pages.depth > 0} olderLabel="Later" newerLabel="Earlier" onOlder={() => { const next = read?.value?.next; if (typeof next === 'string') pages.push(next); }} onNewer={pages.pop}/>

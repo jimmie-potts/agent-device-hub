@@ -361,6 +361,8 @@ async function states(): Promise<void> {
   const firstDay = (await paths(page)).find(path => path.includes('timeline?'));
   await card.getByRole('button', {name: 'Later', exact: true}).click();
   await page.waitForFunction(() => (window as unknown as {volcanoProbe: {paths(): string[]}}).volcanoProbe.paths().some(path => path.includes('timeline?') && path.includes('cursor=100-3')));
+  await card.getByText('No more facts for this day.', {exact: true}).waitFor();
+  assert.equal(await card.getByText(/Nothing recorded for this day/u).count(), 0, 'a later empty page does not unsay the page before it');
   await card.getByRole('button', {name: 'Previous day', exact: true}).click();
   await frame(page);
   const previousDay = (await paths(page)).filter(path => path.includes('timeline?')).at(-1);

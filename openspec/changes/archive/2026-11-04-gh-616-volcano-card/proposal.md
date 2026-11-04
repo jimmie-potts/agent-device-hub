@@ -17,4 +17,4 @@ Installation and physical acceptance stay with #617.
 
 ## Impact
 
-`modules/volcano/src/frontend`, the runtime dashboard's device placement and Home catalog, the shared card chrome and the App verification browser suite. No new message format, no contract change and no new dependency.
+`modules/volcano/src/frontend`, the runtime dashboard's device placement and Home catalog, the shared card chrome and the App verification browser suite. No new message format or dependency. The session read gains one derived field; it is a module read, the module and card ship together, and nothing installed holds it.

@@ -148,8 +148,9 @@ export function sessionRow(session: Session): SessionRow {
   }
   if (session.discontinuities > 0) facts.push(['Discontinuities', String(session.discontinuities)]);
   const firstSeen = session.startedBeforeObservation || session.stretches.some(stretch => stretch.startedBeforeObservation);
-  const endUnseen = session.endAtMs === null || session.stretches.some(stretch => stretch.endAtMs === null);
-  const partial = firstSeen || endUnseen || unobserved > 0 || session.discontinuities > 0 || hidden;
+  // A running session has no end yet, which is not missing evidence, and a counter discontinuity has its own line.
+  const endUnseen = session.stretches.some(stretch => stretch.endAtMs === null && !stretch.open);
+  const partial = firstSeen || endUnseen || unobserved > 0 || hidden;
   return {
     key: String(session.startAtMs), start: `${session.startedBeforeObservation ? 'First seen on ' : ''}${clock(session.startAtMs)}`, end, partial,
     note: partial ? 'Incomplete evidence: the heater may have run at times not observed here.' : '', facts,
