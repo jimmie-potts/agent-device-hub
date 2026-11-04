@@ -17,7 +17,7 @@
 //   the clock was set back, counts as now, so a clock set back delays a write by at most its own wait.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {SdkError, type Cancel, type ModuleScheduler, Outcome} from '@jimmie-potts/sdk';
-import type {ListResult, TidbytConnection, WriteResult} from './cloud.js';
+import {MAX_RETRY_MS, type ListResult, type TidbytConnection, type WriteResult} from './cloud.js';
 import type {TileRequest} from './tiles.js';
 
 export type CurrentTarget = () => boolean;
@@ -57,7 +57,7 @@ export class CloudQueue {
 
   /** Whether a hold keeps calls from going out now. */
   held(): boolean {
-    return this.#authentication !== undefined || (this.#rateLimitedUntilMs !== undefined && this.#rateLimitedUntilMs > this.#now());
+    return this.#authentication !== undefined || this.#rateLimitWaitMs() > 0;
   }
 
   get closed(): boolean {
@@ -106,7 +106,7 @@ export class CloudQueue {
     for (;;) {
       if (this.closed || current?.() === false) return {outcome: 'cancelled'};
       if (this.#authentication !== undefined) return {outcome: 'held', failure: this.#authentication};
-      const wait = (this.#rateLimitedUntilMs ?? 0) - this.#now();
+      const wait = this.#rateLimitWaitMs();
       if (wait <= 0) break;
       await this.#sleep(wait);
     }
@@ -123,6 +123,13 @@ export class CloudQueue {
     } finally {
       cancel();
     }
+  }
+
+  /** What remains of a rate limit. A wall clock set back cannot stretch one past the longest hold the queue takes. */
+  #rateLimitWaitMs(): number {
+    if (this.#rateLimitedUntilMs === undefined) return 0;
+    this.#rateLimitedUntilMs = Math.min(this.#rateLimitedUntilMs, this.#now() + MAX_RETRY_MS);
+    return this.#rateLimitedUntilMs - this.#now();
   }
 
   /** Waits `ms` on the runtime's scheduler, or until the queue closes. */
