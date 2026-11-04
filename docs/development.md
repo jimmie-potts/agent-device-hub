@@ -2446,7 +2446,7 @@ The [operator guide](bunny-container.md#deploy-a-qualified-batch) owns real oper
 
 Use Node 24 and `npm ci`, then run `npm run build`, `npm run typecheck`,
 `npm run lint:js`, `node --test scripts/tests/bunny.test.mjs
-scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-deployment.test.mjs scripts/tests/mac-host.test.mjs
+scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-deployment.test.mjs
 scripts/tests/bunny-operations.test.mjs`, `npm run check:workflow` and
 `npm run test:workflow`. Existing runtime CI test discovery includes these files.
 The worker suite requires Linux private-file semantics; Mac reports those cases
