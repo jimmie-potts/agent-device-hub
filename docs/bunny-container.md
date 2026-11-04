@@ -71,7 +71,8 @@ source revision and configuration/reference pairing; same-architecture acceptanc
 does not qualify cross-architecture transfer. The owning cutover must qualify the
 actual stores, assets, native dependencies and host-specific paths. Stop and disable
 old writers and their restart actors before making the Mac the selected device
-writer, retaining the source for explicit manual return. A local lease cannot
+writer, retaining the source for explicit manual return, and set the
+[start hold](#hold-the-core-stopped) before any return to it. A local lease cannot
 exclude another computer. The [WSL upgrade procedure](../apps/runtime/UPGRADE.md)
 continues to apply only to that established installation.
 
@@ -143,11 +144,13 @@ The starter waits up to five minutes for the engine, then reads the core's image
 revision and Compose file from the container's own labels, so a deployment needs no
 change to it. It runs `start` through the operator of that revision's release, and
 reads the runtime's health for up to three minutes. It leaves a running core alone.
-Sign-in starts the core even after a deliberate stop, unless a deployment is
-unfinished or another operation holds the lease. It writes one line per step to
+Sign-in starts the core even after a deliberate stop. It leaves the core stopped if
+a deployment is unfinished, another operation holds the lease, an owner's start hold
+exists, or the core is the replacement from a failed deployment that was reconciled;
+a later deployment replaces that container and ends this last refusal. It writes one line per step to
 `~/.local/share/bunny/signin/signin.log`. Any refusal shows a macOS notification,
 is not retried and never falls back to `docker start`. A failed health check does
-not stop the core. The starter imports the operator, so
+not stop the core, because a degraded module would otherwise become a full outage. The starter imports the operator, so
 [#1410](https://github.com/jimmie-potts/agent-device-hub/issues/1410) does not
 affect it.
 
@@ -173,17 +176,34 @@ screen -S bunny-private-caddy -X quit; screen -S bunny-private-https -X quit
 for agent in runtime-signin private-forwarder private-serve; do launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/org.bunny.$agent.plist"; done
 ```
 
-The agents use the Node that ran the install, by its version's own path. Run the
-install again after removing that version or to update the starter.
+The agents use the Node that ran the install, by its version's own path. If that
+version is removed, launchd cannot run the starter, so no log line or notification
+appears and the core stays stopped; run the install again to fix that or to update
+the starter. Pass a project to select another one: `signin PROJECT`.
 
-For maintenance that spans a reboot, unload the runtime agent first, and load it
-again afterwards with the same `launchctl bootstrap` command:
+### Hold the core stopped
+
+Sign-in cannot see a window that runs outside the operation lease. Before any of
+these, set the start hold, which survives reboots; a batch deployment needs none:
+
+- image replacement by hand, or a window script
+- maintenance that may span a reboot
+- [restoring](#restore-into-a-separate-empty-instance) and handing off to another instance, which also reinstalls with `signin PROJECT`
+- returning the device writer to another computer, because no lease spans two computers
 
 ```bash
-launchctl bootout "gui/$(id -u)/org.bunny.runtime-signin"
+touch ~/.local/state/bunny-operations/bunny-mac-personal.start-hold
 ```
 
-To return to manual start, boot out each agent and delete its plist.
+Remove it when the window ends. The next sign-in then starts the core:
+
+```bash
+rm ~/.local/state/bunny-operations/bunny-mac-personal.start-hold
+```
+
+Booting out the agent lasts only until the next sign-in, when launchd loads it again
+and it starts the core at once. To return to manual start, boot out each agent and
+delete its plist.
 
 ## Mac-local browser profile
 
@@ -607,6 +627,9 @@ That removes only this project's containers, network and the three
 `bunny-diagnostics_*` volumes.
 
 ## Replace an image
+
+Set the [start hold](#hold-the-core-stopped) first, and remove it once the replacement
+is verified, so a reboot during the window cannot start a core that is mid-replacement.
 
 `start` resumes the selected existing container; it does not apply a changed
 Compose image. First stop and verify PID zero, take and verify a consistent

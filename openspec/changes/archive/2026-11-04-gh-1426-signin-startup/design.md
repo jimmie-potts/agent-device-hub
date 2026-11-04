@@ -19,5 +19,7 @@ The operator refuses a core container with any restart policy, and its `start` t
 ## Risks / Trade-offs
 
 - Health can be `ok` while LAN devices are unavailable, under Proton VPN or after a failed first Roborock poll (#1331) → documented; the operator sees it on the dashboard.
-- A maintenance window that spans a reboot would restart the core → the guide says to boot out the agent first. An unfinished deployment is already held by the operator.
+- Sign-in cannot see a window outside the lease, a return to another computer or a restore handoff → a persistent start hold the starter refuses on, set first in each of those procedures. Booting out the agent would last only until the next sign-in. An unfinished deployment is already held by the operator.
+- A failed deployment's marker ends at reconcile, before the fix forward → the starter refuses a core that is the replacement in such a record, read from the operation records so the operator needs no change, and a later deployment ends it.
+- A window outside the lease could remove the core between the starter's read and the operator's lease, and the operator's `start` would create one from the old label → accepted: the hold closes this for procedures that set it, and the race is narrow.
 - The agents use one Node version's path, as the coding worker's does → the guide says to reinstall after removing it.

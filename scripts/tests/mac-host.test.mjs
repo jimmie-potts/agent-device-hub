@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import * as realOperator from '../bunny.mjs';
 import {agents, installDiagnostics, installSignin, plist} from '../mac-host-install.mjs';
-import {engineWait, healthWait, operatorFor, startAtSignIn} from '../mac-signin.mjs';
+import {engineWait, healthWait, operatorFor, startAtSignIn, startGate} from '../mac-signin.mjs';
 
 const revision = 'a'.repeat(40);
 const compose = '/releases/old/compose.production.yaml';
@@ -31,6 +31,7 @@ function host({info = core(false), ids = ['c'], engine = () => 'ok', health = ()
       if (args[0] === 'exec') return health();
       return assert.fail(`unexpected docker ${args[0]}`);
     },
+    gate: async () => {},
     load: async path => {
       state.loaded = path;
       return {parse: argv => realOperator.parse(argv), maintain: async plan => {state.plans.push(plan); return maintain(plan);}};
@@ -134,6 +135,9 @@ test('the runtime agent runs once per sign-in and the route agents stay up', () 
   assert.equal(serve.keepAlive, true);
   assert.match(plist(runtime), /<key>KeepAlive<\/key>\n {2}<false\/>/);
   assert.match(plist(forwarder), /<key>KeepAlive<\/key>\n {2}<true\/>/);
+  assert.match(plist(runtime), /<string>Background<\/string>/);
+  assert.doesNotMatch(plist(serve), /ProcessType/);
+  assert.deepEqual(agents({home: '/h', node: '/node', project: 'other'})[0].program.slice(-2), ['--project', 'other']);
   assert.ok(runtime.path.split(':').includes('/Users/owner/.docker/bin'));
   assert.match(plist({...runtime, log: '/a&b'}), /\/a&amp;b/);
 });
@@ -147,6 +151,7 @@ async function fixture(t) {
 test('sign-in install writes the starter and three lintable agents, with no release path or credential', async t => {
   const home = await fixture(t);
   await assert.rejects(installSignin({home, node: '/node'}), /private-route-missing/);
+  await assert.rejects(installSignin({home, node: '/node', project: '../x'}), /project-invalid/);
   const route = join(home, '.config', 'bunny', 'private-access');
   await mkdir(route, {recursive: true});
   await writeFile(join(route, 'start-forwarder.sh'), '#!/bin/sh\n');
@@ -202,38 +207,140 @@ test('a copy that does not validate leaves the installed stack alone', async t =
   assert.equal(await readFile(join(root, 'current', 'revision.txt'), 'utf8'), `${revision}\n`);
 });
 
-// #1410's hang only shows with the real module graph, so this one runs the starter as a process against a fake engine.
-test('the installed starter settles through the real operator and reports its refusal', {timeout: 60_000}, async t => {
-  if (process.platform === 'win32') return t.skip('POSIX only');
+test('a failed recreate returns the folder and the stack to the previous copy', async t => {
   const home = await fixture(t);
-  const bin = join(home, 'bin'), calls = join(home, 'calls.log');
+  const root = join(home, '.local', 'share', 'bunny', 'diagnostics');
+  const ups = [];
+  let failing = false;
+  const command = async (file, args) => {
+    if (file === 'git') await writeFile(args[args.indexOf('-o') + 1], '');
+    if (args.includes('up')) {
+      ups.push(await readFile(join(root, 'current', 'revision.txt'), 'utf8'));
+      if (failing) {failing = false; throw new Error('port in use');}
+    }
+    return '';
+  };
+  await installDiagnostics(revision, {home, command});
+  failing = true;
+  await assert.rejects(installDiagnostics('b'.repeat(40), {home, command}), /port in use/);
+  assert.equal(await readFile(join(root, 'current', 'revision.txt'), 'utf8'), `${revision}\n`);
+  assert.deepEqual(ups, [`${revision}\n`, `${'b'.repeat(40)}\n`, `${revision}\n`]);
+});
+
+test('the start gate refuses a hold and only a failed deployment\'s own replacement', async t => {
+  const operations = await fixture(t);
+  const gate = {project: 'synthetic', operations};
+  const info = {Id: 'c'.repeat(64)};
+  await startGate(gate, info);
+  await mkdir(join(operations, 'synthetic.records'));
+  const record = (name, value) => writeFile(join(operations, 'synthetic.records', `${name}.json`), JSON.stringify(value));
+  await record('completed', {id: 'a', replacementContainer: info.Id, completedAt: 'then'});
+  await record('reconciled-success', {id: 'b', replacementContainer: info.Id, reconciledFrom: {}, completedAt: 'then'});
+  await record('reconciled-other', {id: 'c', replacementContainer: 'd'.repeat(64), reconciledFrom: {}});
+  await startGate(gate, info);
+  await record('reconciled-failed', {id: 'd', replacementContainer: info.Id, reconciledFrom: {}});
+  await assert.rejects(startGate(gate, info), refusedWith('failed-deployment'));
+  await rm(join(operations, 'synthetic.records', 'reconciled-failed.json'));
+  const image = `sha256:${'2'.repeat(64)}`;
+  const replacement = {Id: info.Id, Image: image, Created: '2026-11-04T10:00:00Z'};
+  await record('unnamed', {id: 'e', targetImage: image, reconciledFrom: {}, reconciledAt: '2026-11-04T11:00:00Z'});
+  await assert.rejects(startGate(gate, replacement), refusedWith('failed-deployment'));
+  await startGate(gate, {...replacement, Created: '2026-11-04T12:00:00Z'});
+  await startGate(gate, {...replacement, Image: `sha256:${'3'.repeat(64)}`});
+  await rm(join(operations, 'synthetic.records', 'unnamed.json'));
+  await writeFile(join(operations, 'synthetic.records', 'broken.json'), '{');
+  await assert.rejects(startGate(gate, info), refusedWith('records-unreadable'));
+  await rm(join(operations, 'synthetic.records', 'broken.json'));
+  await writeFile(join(operations, 'synthetic.start-hold'), '');
+  await assert.rejects(startGate(gate, info), refusedWith('held'));
+});
+
+// #1410's hang and a broken module graph only show with the real operator, so these run the starter as a process.
+const coreId = 'c'.repeat(64);
+const stoppedCore = {
+  ...core(false),
+  Id: coreId,
+  Image: `sha256:${'2'.repeat(64)}`,
+  State: {Status: 'exited', Running: false, Restarting: false, Pid: 0},
+  Config: {User: '1000:1000', Labels: {...core(false).Config.Labels, 'com.docker.compose.project': 'synthetic', 'com.docker.compose.service': 'core'}},
+  HostConfig: {RestartPolicy: {Name: 'no'}, PortBindings: {}, NetworkMode: 'none'},
+  NetworkSettings: {Networks: {}},
+  Mounts: [['state', '/var/lib/bunny', true], ['config', '/etc/bunny', false], ['secrets', '/run/secrets/bunny', false]]
+    .map(([Name, Destination, RW]) => ({Type: 'volume', Name, Destination, RW})),
+};
+async function starterHost(t) {
+  const home = await fixture(t);
+  const bin = join(home, 'bin'), calls = join(home, 'calls.log'), inspect = join(home, 'inspect.json');
   const releases = join(home, 'releases', revision);
+  const operations = join(home, '.local', 'state', 'bunny-operations');
   await mkdir(bin);
   await mkdir(releases, {recursive: true});
+  await mkdir(operations, {recursive: true, mode: 0o700});
   await symlink(fileURLToPath(new URL('../..', import.meta.url)), join(releases, 'source'));
-  // The operator refuses this container: it has none of the owned mounts, which is enough to prove the path settles.
-  await writeFile(join(home, 'inspect.json'), JSON.stringify([core(false)]));
+  await writeFile(inspect, JSON.stringify([stoppedCore]));
+  const running = JSON.stringify([{...stoppedCore, State: {Status: 'running', Running: true, Restarting: false, Pid: 42}}]);
+  await writeFile(join(home, 'running.json'), running);
   await writeFile(join(bin, 'docker'), `#!/bin/sh
 echo "$*" >> "${calls}"
 case "$1" in
   info) echo 1 ;;
-  ps) echo ${'c'.repeat(64)} ;;
-  inspect) cat "${join(home, 'inspect.json')}" ;;
-  compose) echo ${'c'.repeat(64)} ;;
+  ps) echo ${coreId} ;;
+  inspect) cat "${inspect}" ;;
+  volume) echo '[{"Name":"'"$3"'","Driver":"local","Scope":"local","Options":null}]' ;;
+  start) cp "${join(home, 'running.json')}" "${inspect}" ;;
+  exec) echo '{"status":"ok"}' ;;
 esac
 `, {mode: 0o755});
   await writeFile(join(bin, 'osascript'), `#!/bin/sh\necho "osascript $*" >> "${calls}"\n`, {mode: 0o755});
   const starter = fileURLToPath(new URL('../mac-signin.mjs', import.meta.url));
-  const child = await new Promise(done => {
+  const run = () => new Promise(done => {
     execFile(process.execPath, [starter, '--project', 'synthetic', '--releases', join(home, 'releases')], {
       env: {PATH: `${bin}:/usr/bin:/bin`, HOME: home}, timeout: 50_000,
-    }, (error, stdout) => done({code: error?.code, stdout}));
+    }, (error, stdout) => done({code: error?.code, reports: stdout.trim().split('\n').map(line => JSON.parse(line))}));
   });
-  assert.equal(child.code, 1);
-  const reports = child.stdout.trim().split('\n').map(line => JSON.parse(line));
-  assert.deepEqual(reports.at(-1).reason, 'start-refused');
-  assert.equal(reports.at(-2).outcome, 'refused');
-  const log = await readFile(calls, 'utf8');
-  assert.match(log, /osascript -e display notification .*start-refused/);
-  assert.doesNotMatch(log, /^(start|restart) /m);
+  return {run, operations, log: () => readFile(calls, 'utf8')};
+}
+const posixOnly = {timeout: 60_000, skip: process.platform === 'win32'};
+
+test('the starter starts a stopped core through the real operator, which issues the only start', posixOnly, async t => {
+  const {run, operations, log} = await starterHost(t);
+  const {code, reports} = await run();
+  assert.equal(code, undefined);
+  assert.deepEqual(reports.map(r => r.outcome), ['ready', 'started', 'ok']);
+  assert.match(await log(), new RegExp(`^start ${coreId}$`, 'm'));
+  assert.equal((await stat(join(operations, 'synthetic.operation-owner'))).mode & 0o777, 0o600);
+});
+
+test('a pending deployment record stops the real operator', posixOnly, async t => {
+  const {run, operations, log} = await starterHost(t);
+  await writeFile(join(operations, 'synthetic.pending.json'), JSON.stringify({id: 'deployment', phase: 'checking-health'}), {mode: 0o600});
+  const {code, reports} = await run();
+  assert.equal(code, 1);
+  assert.equal(reports.at(-1).reason, 'start-refused');
+  assert.equal(reports.at(-2).code, 'operation-refused');
+  const calls = await log();
+  assert.match(calls, /osascript -e display notification .*start-refused/);
+  assert.doesNotMatch(calls, /^(start|restart) /m);
+});
+
+test('a lease another operation holds stops the real operator', posixOnly, async t => {
+  const {run, operations, log} = await starterHost(t);
+  const {takeLock} = await import('../../apps/runtime/dist/src/core/lock.js');
+  const lease = await takeLock(join(operations, 'synthetic.operation'), AbortSignal.abort());
+  t.after(() => lease.release());
+  const {code, reports} = await run();
+  assert.equal(code, 1);
+  assert.equal(reports.at(-1).reason, 'start-refused');
+  assert.doesNotMatch(await log(), /^(start|restart) /m);
+});
+
+test('a start hold keeps the core stopped before the operator is reached', posixOnly, async t => {
+  const {run, operations, log} = await starterHost(t);
+  await writeFile(join(operations, 'synthetic.start-hold'), '');
+  const {code, reports} = await run();
+  assert.equal(code, 1);
+  assert.equal(reports.at(-1).reason, 'held');
+  const calls = await log();
+  assert.match(calls, /start hold/);
+  assert.doesNotMatch(calls, /^(start|restart|volume) /m);
 });

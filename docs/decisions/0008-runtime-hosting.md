@@ -9,8 +9,9 @@ supersedes the explicit restart under
 Mac. FileVault and manual sign-in stay, so downtime until sign-in remains accepted.
 The core starts once per sign-in through its release's operator, including after a
 deliberate stop, unless a deployment is unfinished or another operation holds the
-lease. It keeps no Docker restart policy, so a crash during a session leaves it
-stopped. The diagnostics stack and the private route restart by themselves. Follow
+lease. A persistent start hold keeps it stopped for manual windows and for a return
+to another computer, and a failed deployment's replacement stays stopped by itself.
+It keeps no Docker restart policy, so a crash during a session leaves it stopped. The diagnostics stack and the private route restart by themselves. Follow
 the [procedure](../bunny-container.md#start-at-sign-in).
 
 ## Explicit production profile, 2026-10-30
@@ -122,7 +123,8 @@ are not evidence of WSL-to-container or AMD64-to-ARM64 compatibility. Qualify th
 actual databases, keys, assets, native dependencies and configuration mappings.
 Keep the old instance and all restart actors stopped and disabled before the Mac
 becomes the selected device writer. A local lease cannot exclude a writer on
-another computer. Manual return must stop the Mac writer first and explicitly
+another computer. Manual return must stop the Mac writer first, set its
+[start hold](../bunny-container.md#hold-the-core-stopped) so that sign-in cannot restart it, and explicitly
 select the preserved source and data gap; never run both device writers.
 
 Current [Nanoleaf](../../modules/nanoleaf/README.md) and

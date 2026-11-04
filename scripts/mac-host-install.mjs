@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Installs the Mac host's sign-in pieces (Hub #1426) into fixed folders outside every release and checkout.
 //   diagnostics REVISION  copies deploy/diagnostics from that commit and recreates the stack from the copy
-//   signin                writes the runtime and private-route launchd agents; the owner loads them
+//   signin [PROJECT]      writes the runtime and private-route launchd agents; the owner loads them
 import {execFile} from 'node:child_process';
 import {access, chmod, copyFile, mkdir, mkdtemp, rename, rm, writeFile} from 'node:fs/promises';
 import {homedir} from 'node:os';
@@ -17,7 +17,7 @@ const run = (file, args, cwd) => new Promise((done, fail) => {
 const refuse = reason => {throw new Error(reason);};
 
 const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-export function plist({label, program, keepAlive, log, path, workingDirectory}) {
+export function plist({label, program, keepAlive, background, log, path, workingDirectory}) {
   const strings = values => values.map(value => `    <string>${xml(value)}</string>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -42,9 +42,7 @@ ${strings(program)}
   <${keepAlive}/>
   <key>ThrottleInterval</key>
   <integer>30</integer>
-  <key>ProcessType</key>
-  <string>Background</string>
-  <key>StandardOutPath</key>
+${background ? '  <key>ProcessType</key>\n  <string>Background</string>\n' : ''}  <key>StandardOutPath</key>
   <string>${xml(log)}</string>
   <key>StandardErrorPath</key>
   <string>${xml(log)}</string>
@@ -53,14 +51,14 @@ ${strings(program)}
 `;
 }
 
-export function agents({home, node}) {
+export function agents({home, node, project = 'bunny-mac-personal'}) {
   const signin = join(home, '.local', 'share', 'bunny', 'signin');
   const route = join(home, '.config', 'bunny', 'private-access');
   const path = [join(home, '.docker', 'bin'), '/opt/homebrew/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':');
   return [
     // Once per sign-in: a crash or a Docker Desktop restart in the session leaves the runtime stopped until the next one.
-    {label: 'org.bunny.runtime-signin', keepAlive: false, path, workingDirectory: signin,
-      program: [node, join(signin, 'mac-signin.mjs')], log: join(signin, 'signin.log')},
+    {label: 'org.bunny.runtime-signin', keepAlive: false, background: true, path, workingDirectory: signin,
+      program: [node, join(signin, 'mac-signin.mjs'), '--project', project], log: join(signin, 'signin.log')},
     // The route holds no state and sends no device command, so launchd keeps it up while Tailscale or the core is away.
     {label: 'org.bunny.private-forwarder', keepAlive: true, path, workingDirectory: route,
       program: ['/bin/sh', join(route, 'start-forwarder.sh')], log: join(route, 'forwarder.log')},
@@ -69,8 +67,9 @@ export function agents({home, node}) {
   ];
 }
 
-export async function installSignin({home = homedir(), node = process.execPath, source = dirname(fileURLToPath(import.meta.url))} = {}) {
-  const selected = agents({home, node});
+export async function installSignin({home = homedir(), node = process.execPath, source = dirname(fileURLToPath(import.meta.url)), project} = {}) {
+  if (project !== undefined && !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(project)) refuse('project-invalid');
+  const selected = agents({home, node, project});
   const [starter, forwarder] = selected;
   await access(forwarder.program[1]).catch(() => refuse('private-route-missing'));
   await mkdir(starter.workingDirectory, {recursive: true, mode: 0o700});
@@ -100,7 +99,15 @@ export async function installDiagnostics(revision, {home = homedir(), checkout =
     await rename(current, previous).catch(error => {if (error.code !== 'ENOENT') throw error;});
     await rename(incoming, current);
     // Recreating follows the copied files and the restart policy; the three data volumes stay.
-    await command('docker', ['compose', '-f', join(current, 'compose.yaml'), 'up', '-d', '--no-build', '--pull', 'missing', '--force-recreate']);
+    const up = () => command('docker', ['compose', '-f', join(current, 'compose.yaml'), 'up', '-d', '--no-build', '--pull', 'missing', '--force-recreate']);
+    try {await up();}
+    catch (error) {
+      // The folder keeps naming what runs. The first install has no copy to return to: its containers keep their old path.
+      await rm(current, {recursive: true, force: true});
+      const restored = await rename(previous, current).then(() => true, () => false);
+      if (restored) await up().catch(() => {});
+      throw error;
+    }
     return {compose: join(current, 'compose.yaml'), revision};
   } finally {
     await rm(incoming, {recursive: true, force: true});
@@ -118,13 +125,14 @@ async function grafanaAnswers() {
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [command, revision] = process.argv.slice(2);
+  const [command, argument] = process.argv.slice(2);
   try {
-    if (command === 'signin') process.stdout.write(`${JSON.stringify(await installSignin())}\n`);
+    if (command === 'signin') process.stdout.write(`${JSON.stringify(await installSignin({project: argument}))}\n`);
     else if (command === 'diagnostics') {
-      const result = await installDiagnostics(revision);
-      process.stdout.write(`${JSON.stringify({...result, grafana: await grafanaAnswers() ? 'ok' : 'unavailable'})}\n`);
-    } else refuse('usage: node scripts/mac-host-install.mjs <diagnostics REVISION|signin>');
+      const result = await installDiagnostics(argument);
+      if (!await grafanaAnswers()) refuse('grafana-unavailable');
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+    } else refuse('usage: node scripts/mac-host-install.mjs <diagnostics REVISION|signin [PROJECT]>');
   } catch (error) {
     process.stderr.write(`${error.message}\n`);
     process.exitCode = 1;

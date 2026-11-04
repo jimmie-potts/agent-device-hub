@@ -227,7 +227,7 @@ Backup and restore refusals SHALL report the shared canonical error body on stde
 
 ### Requirement: Mac start at sign-in
 
-The Mac host SHALL offer launchd agents, installed by one command and holding no credential or release path, that return the selected core and the private route after sign-in with no pre-login startup. The core agent SHALL run once per sign-in, wait a bounded time for the engine, select the core by its Compose labels, and take the operator from the release named by the core's image revision and the Compose file from its label. It SHALL start the core only through that operator's guarded `start`, so the operation lease, the unfinished-deployment hold and the access checks apply, and it SHALL leave a running core alone. The core SHALL keep no Docker restart policy. A refusal, a missing or ambiguous core, a missing or unusable operator or failed health SHALL be logged and shown as a notification, SHALL NOT be retried, SHALL NOT fall back to a direct container start and SHALL NOT stop the core. The private route's two agents SHALL restart their process if it exits.
+The Mac host SHALL offer launchd agents, installed by one command and holding no credential or release path, that return the selected core and the private route after sign-in with no pre-login startup. The core agent SHALL run once per sign-in, wait a bounded time for the engine, select the core by its Compose labels, and take the operator from the release named by the core's image revision and the Compose file from its label. It SHALL start the core only through that operator's guarded `start`, so the operation lease, the unfinished-deployment hold and the access checks apply, and it SHALL leave a running core alone. The core SHALL keep no Docker restart policy. It SHALL leave a stopped core stopped when an owner's persistent start hold exists for the project or when the core is the replacement from a failed deployment that was reconciled. A refusal, a missing or ambiguous core, a missing or unusable operator or failed health SHALL be logged and shown as a notification and SHALL NOT be retried or fall back to a direct container start, and the starter itself SHALL NOT stop the core. The private route's two agents SHALL restart their process if it exits.
 
 #### Scenario: Sign-in with a stopped core
 - **WHEN** the owner signs in, the engine becomes ready and the selected core is stopped with no unfinished deployment
@@ -236,6 +236,10 @@ The Mac host SHALL offer launchd agents, installed by one command and holding no
 #### Scenario: Unfinished deployment at sign-in
 - **WHEN** the operator refuses `start` because an operation is unfinished or holds the lease
 - **THEN** the core stays stopped, the refusal is logged and notified, and nothing retries it
+
+#### Scenario: A held or failed core at sign-in
+- **WHEN** the owner has set the start hold, or the stopped core is a failed deployment's reconciled replacement
+- **THEN** the starter does not call the operator, the core stays stopped and a notification says why; a later deployment that replaces the container ends the failed-deployment refusal
 
 #### Scenario: Crash during a session
 - **WHEN** the core or the engine stops after the agent has run

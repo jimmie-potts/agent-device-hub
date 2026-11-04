@@ -54,7 +54,9 @@ changes no state format.
    startup script. Caddy 2.11.7 is exercised by the proxy tests. Record the
    installed version and check the route after a deliberate package upgrade.
    Installing the package does not select a startup policy; this recipe uses
-   manual foreground operation, without `brew services start caddy`.
+   foreground operation, under launchd or by hand as
+   [Start and use the route](#start-and-use-the-route) describes, without
+   `brew services start caddy`.
 
    Keep [private.Caddyfile](private.Caddyfile), `forwarder.env` and an optional
    `start-forwarder.sh` in a stable owner-only directory such as
@@ -100,8 +102,8 @@ With [start at sign-in](../../docs/bunny-container.md#start-at-sign-in) installe
 (#1426), the `org.bunny.private-forwarder` and `org.bunny.private-serve` launchd
 agents run the forwarder's `start-forwarder.sh` and the Serve command below, and
 restart them if they exit. Their output goes to `forwarder.log` and `serve.log` in
-the private directory. To stop the route, boot out both agents; never run a manual
-copy beside them. The route holds no state and sends no device command, and its
+the private directory. To stop the route, boot out both agents; it returns at the
+next sign-in unless you also delete their plists. Never run a manual copy beside them. The route holds no state and sends no device command, and its
 authentication is unchanged.
 
 To start it by hand instead, after Mac unlock/sign-in and Docker/runtime startup,

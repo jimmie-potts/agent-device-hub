@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Starts the selected core once at Mac sign-in (Hub #1426), through the operator of the release that matches its
 // image, so the operation lease, the unfinished-deployment hold and the access checks all apply. It never runs
-// `docker start` itself and never retries a refusal. Installed alone by mac-host-install.mjs: imports only node:*.
+// `docker start` itself and never retries a refusal. A stopped core stays stopped under an owner's start hold or when
+// it is a failed deployment's replacement. Installed alone by mac-host-install.mjs: imports only node:*.
 import {execFile} from 'node:child_process';
-import {access} from 'node:fs/promises';
+import {access, readdir, readFile} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -56,14 +57,32 @@ export async function operatorFor(info, releases, exists) {
   return refuse('operator-missing');
 }
 
-export async function startAtSignIn({project, releases}, {
+// Reads no operator state beyond what its records hold: a later deployment replaces the container, which ends the refusal.
+export async function startGate({project, operations}, info) {
+  const present = await access(join(operations, `${project}.start-hold`)).then(() => true, () => false);
+  if (present) refuse('held');
+  const records = join(operations, `${project}.records`);
+  const names = await readdir(records).catch(error => (error.code === 'ENOENT' ? [] : refuse('records-unreadable')));
+  for (const name of names.filter(file => file.endsWith('.json'))) {
+    const record = await readFile(join(records, name), 'utf8').then(JSON.parse).catch(() => refuse('records-unreadable'));
+    if (record.reconciledFrom === undefined || record.completedAt !== undefined) continue;
+    // A replacement can fail before its ID is recorded; then its image and age identify it.
+    const unnamed = record.replacementContainer === undefined && record.targetImage === info.Image
+      && Date.parse(info.Created) <= Date.parse(record.reconciledAt);
+    if (record.replacementContainer === info.Id || unnamed) refuse('failed-deployment');
+  }
+}
+
+export async function startAtSignIn(selection, {
   run = docker,
+  gate = info => startGate(selection, info),
   load = path => import(pathToFileURL(path).href),
   exists = path => access(path).then(() => true, () => false),
   sleep = delay,
   now = Date.now,
   report = () => {},
 } = {}) {
+  const {project, releases} = selection;
   const clock = {sleep, now};
   if (!await until(() => run(['info', '--format', '{{.ServerVersion}}']).then(() => true), engineWait, clock)) refuse('docker-unavailable');
   report({step: 'engine', outcome: 'ready'});
@@ -71,6 +90,7 @@ export async function startAtSignIn({project, releases}, {
   if (info.State?.Running === true) {
     report({step: 'start', outcome: 'already-running'});
   } else {
+    await gate(info);
     const {path, compose} = await operatorFor(info, releases, exists);
     const operator = await load(path).catch(() => refuse('operator-unusable'));
     // Imported rather than run: the operator's entry point hangs on the Mac (#1410), and the same lease and checks apply.
@@ -90,8 +110,14 @@ export async function startAtSignIn({project, releases}, {
   return {outcome: 'running'};
 }
 
+const notices = {
+  held: 'The runtime stayed stopped at sign-in because of its start hold.',
+  'failed-deployment': 'The runtime stayed stopped at sign-in: its image failed a deployment.',
+  'health-failed': 'The runtime is running but did not report healthy after sign-in.',
+};
 const notify = reason => new Promise(done => {
-  const script = `display notification "The runtime did not start at sign-in: ${reason}. Check the sign-in log." with title "B.U.N.N.Y."`;
+  const notice = notices[reason] ?? `The runtime did not start at sign-in: ${reason}.`;
+  const script = `display notification "${notice} Check the sign-in log." with title "B.U.N.N.Y."`;
   execFile('osascript', ['-e', script], {timeout: 10 * seconds}, () => done());
 });
 
@@ -102,6 +128,7 @@ if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(
     await startAtSignIn({
       project: values.project ?? 'bunny-mac-personal',
       releases: values.releases ?? join(homedir(), '.local', 'share', 'bunny', 'releases'),
+      operations: join(homedir(), '.local', 'state', 'bunny-operations'),
     }, {report});
   } catch (error) {
     const reason = error instanceof Refused ? error.reason : 'unexpected';
