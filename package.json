@@ -168,6 +168,7 @@
     "test:volcano:built": "node --test modules/volcano/dist/tests/*.test.js modules/volcano/tests/*.test.mjs apps/volcano-collector/dist/tests/*.test.js apps/runtime/dist/tests/volcano-collector.test.js",
     "test:volcano:consumer": "npm run build && npm run test:volcano:consumer:built",
     "test:volcano:consumer:built": "node --test tests/volcano_consumer.test.mjs",
+    "test:volcano:browser": "node apps/runtime/dashboard/tests/volcano.browser.ts",
     "test:weather": "npm run build && npm run test:weather:built",
     "test:weather:built": "node --test modules/weather/dist/tests/*.test.js",
     "test:reachy": "npm run build && npm run test:reachy:built",

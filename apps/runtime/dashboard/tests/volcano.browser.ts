@@ -1,0 +1,343 @@
+// The Volcano card's browser journey (Hub #616), on synthetic data only: the real module and store over a simulated feed,
+// then the card's states over fixed documents. Nothing here reaches an installation, a radio or a device.
+import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
+import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {AxeBuilder} from '@axe-core/playwright';
+import {build} from 'esbuild';
+import {chromium, type Page} from 'playwright';
+import {changes, feed, startWorld} from './harness.ts';
+
+const TABS = ['Now', 'Timeline', 'Sessions', 'Totals', 'Gaps'];
+const browser = await chromium.launch({headless: true});
+const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
+const frame = (page: Page): Promise<void> => page.evaluate(() => new Promise<void>(resolve => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve(); }); }); }));
+
+async function journey(): Promise<void> {
+  const world = await startWorld({volcano: true});
+  try {
+    const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+    const errors: string[] = [];
+    context.on('weberror', error => { errors.push(error.error().message); });
+    const page = await context.newPage();
+    page.setDefaultTimeout(20_000);
+    const sent = changes(page);
+    world.volcanoAction('heater-on');
+    await sleep(1100);
+    world.volcanoAction('tick');
+    await sleep(1100);
+    world.volcanoAction('pump-on');
+    await sleep(1100);
+    world.volcanoAction('pump-off');
+    await sleep(1100);
+    world.volcanoAction('heater-off');
+    await sleep(1100);
+    world.volcanoAction('heater-on');
+    await sleep(1100);
+
+    await page.goto(`${world.url}/#/`); await feed(page, 'connected');
+    const card = page.locator('[data-volcano-card]');
+    await card.waitFor();
+    assert.equal(await card.count(), 1, 'Home shows one Volcano card');
+    assert.equal(await page.locator('[data-home-card="device:bunny/modules/volcano:volcano"]').count(), 1);
+    await card.getByText('Heating', {exact: true}).waitFor();
+    await card.getByRole('tab', {name: 'Sessions', exact: true}).click();
+    await card.locator('li[data-kind=session]').first().waitFor();
+    assert.deepEqual(sent, [], 'opening Home and a tab sends no command');
+
+    await page.goto(`${world.url}/#/devices`); await feed(page, 'connected');
+    await page.getByRole('button', {name: 'Other', exact: true}).click();
+    await page.getByRole('link', {name: 'Volcano', exact: true}).first().click();
+    await card.waitFor();
+    assert.equal(await card.count(), 1, 'the selected device uses the same card');
+    assert.match(new URL(page.url()).hash, /component\/volcano/u);
+
+    // The Home editor's sizes. Each is the saved placement, through the same command the editor sends.
+    await page.goto(`${world.url}/#/`); await feed(page, 'connected'); await card.waitFor();
+    const placement = page.locator('[data-home-card="device:bunny/modules/volcano:volcano"]');
+    const widths: number[] = [];
+    for (const size of ['small', 'medium', 'large'] as const) {
+      assert.equal(await page.evaluate(async size => {
+        const data = await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': {revision: number}[]}};
+        const record = data.records['home-layout'][0]; if (record === undefined) throw new Error('home-record');
+        const placed = [{widget: 'device:bunny/modules/volcano:volcano', size, hidden: false}];
+        return (await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'}, body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: record.revision, layouts: {desktop: placed, phone: placed}}})})).status;
+      }, size), 200, `saving ${size}`);
+      await sleep(500);
+      const before = await card.boundingBox(); assert.ok(before !== null);
+      widths.push(before.width);
+      for (const tab of TABS) {
+        await card.getByRole('tab', {name: tab, exact: true}).click();
+        assert.equal((await card.boundingBox())?.height, before.height, `${size} ${tab}: the card keeps its height`);
+        assert.equal(await card.getByRole('tab', {name: tab, exact: true}).evaluate(node => node.scrollWidth > node.clientWidth + 1), false, `${size} ${tab}: the label fits`);
+      }
+      assert.equal(await placement.count(), 1);
+    }
+    assert.ok((widths[0] ?? 0) <= (widths[2] ?? 0), `Home sizes: ${widths.join(', ')}`);
+    await page.goto(`${world.url}/#/component/volcano`); await feed(page, 'connected'); await card.waitFor();
+    sent.length = 0;
+
+    const shots = process.env.DASHBOARD_RECEIPTS;
+    if (shots !== undefined) await mkdir(shots, {recursive: true});
+    for (const colorScheme of ['light', 'dark'] as const) for (const width of [1440, 736, 390, 320]) {
+      await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
+      await page.setViewportSize({width, height: 1000}); await frame(page);
+      await card.locator('.volcano-art').evaluate(element => { (window as unknown as {volcanoArt: Element}).volcanoArt = element; });
+      const before = await card.boundingBox(); assert.ok(before !== null);
+      for (const tab of TABS) {
+        await card.getByRole('tab', {name: tab, exact: true}).click();
+        assert.equal((await card.boundingBox())?.height, before.height, `${width} ${tab}: the card keeps its height`);
+        assert.equal(await card.locator('.volcano-art').evaluate(element => element === (window as unknown as {volcanoArt: Element}).volcanoArt), true);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${width} ${tab}: no page scroll`);
+        const outside = await card.evaluate(element => {
+          const bounds = element.getBoundingClientRect();
+          return [...element.querySelectorAll('[role="tab"],[role="tabpanel"]')].filter(node => node.getClientRects().length > 0).some(node => {
+            const item = node.getBoundingClientRect(); return item.left < bounds.left - 1 || item.right > bounds.right + 1 || item.bottom > bounds.bottom + 1;
+          });
+        });
+        assert.equal(outside, false, `${width} ${tab}: stays inside the card`);
+        const clipped = await card.getByRole('tab', {name: tab, exact: true}).evaluate(node => node.scrollWidth > node.clientWidth + 1);
+        assert.equal(clipped, false, `${width} ${tab}: the label fits`);
+        assert.deepEqual((await new AxeBuilder({page}).include('[data-volcano-card]').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => ({id: item.id, nodes: item.nodes.map(node => node.failureSummary)})), []);
+        if (shots !== undefined && width === 390) await card.screenshot({path: join(shots, `volcano-${colorScheme}-${tab.toLowerCase()}.png`)});
+      }
+    }
+    await page.emulateMedia({colorScheme: 'light', reducedMotion: 'reduce'}); await page.setViewportSize({width: 1280, height: 1000});
+    assert.deepEqual(sent, [], 'switching tabs at every size sends no command');
+
+    const now = card.getByRole('tab', {name: 'Now', exact: true});
+    await now.click(); await now.press('ArrowRight');
+    assert.equal(await card.getByRole('tab', {name: 'Timeline', exact: true}).evaluate(element => element === document.activeElement), true, 'arrow keys move between tabs');
+    await card.getByRole('tab', {name: 'Timeline', exact: true}).press('End');
+    assert.equal(await card.getByRole('tab', {name: 'Gaps', exact: true}).getAttribute('aria-selected'), 'true');
+    await card.getByRole('tab', {name: 'Gaps', exact: true}).press('Home');
+    assert.equal(await now.getAttribute('aria-selected'), 'true');
+    assert.equal(await card.getByRole('button', {name: /heat|pump|start|stop|release|delete/iu}).count(), 0, 'no control reaches the device, and no delete');
+
+    // The threshold: a preview changes nothing, and a save is the only command. Stored facts do not move.
+    const facts = await world.volcanoRead('timeline?limit=200');
+    assert.equal(facts.status, 200);
+    await card.getByRole('tab', {name: 'Gaps', exact: true}).click();
+    const input = card.getByLabel('Session gap (1 to 240 min)');
+    assert.equal(await input.inputValue(), '15');
+    await input.fill('999');
+    await card.getByText('Enter a whole number of minutes from 1 to 240.', {exact: true}).waitFor();
+    assert.equal(await card.getByRole('button', {name: 'Save', exact: true}).isDisabled(), true);
+    assert.equal(await card.getByRole('button', {name: 'Preview', exact: true}).isDisabled(), true);
+    await input.fill('1');
+    await card.getByRole('button', {name: 'Preview', exact: true}).click();
+    await card.getByRole('region', {name: 'Regroup preview'}).getByText(/^At 1 min: 1 sessions\. Saved threshold: 1\. Nothing is stored/u).waitFor();
+    assert.deepEqual(sent, [], 'a preview sends no command');
+    assert.deepEqual((await world.volcanoRead('status')).body, await (async () => (await world.volcanoRead('status')).body)(), 'the status is steady');
+    assert.equal(((await world.volcanoRead('status')).body as {gapMinutes: number}).gapMinutes, 15, 'a preview changes no setting');
+    await input.fill('30');
+    await card.getByRole('button', {name: 'Save', exact: true}).click();
+    await page.waitForFunction(() => document.querySelector<HTMLElement>('[data-volcano-card] .volcano-note[role=status]') !== null);
+    await sleep(500);
+    assert.deepEqual(sent, ['/api/v2/commands/volcano-session-gap'], 'the save is one command on the threshold family');
+    for (let i = 0; i < 50 && ((await world.volcanoRead('status')).body as {gapMinutes: number}).gapMinutes !== 30; i++) await sleep(100);
+    assert.equal(((await world.volcanoRead('status')).body as {gapMinutes: number}).gapMinutes, 30);
+    await card.getByRole('tab', {name: 'Sessions', exact: true}).click();
+    await card.getByText('Heater activity, grouped when less than 30 min apart. Not consumption or dose.', {exact: true}).waitFor();
+    await card.locator('li[data-kind=session]').first().waitFor();
+    const after = await world.volcanoRead('timeline?limit=200');
+    assert.deepEqual((after.body as {facts: unknown[]}).facts.slice(0, (facts.body as {facts: unknown[]}).facts.length), (facts.body as {facts: unknown[]}).facts, 'the threshold rewrites no fact');
+
+    // A reload sends nothing, and an unauthenticated read gets nothing.
+    sent.length = 0;
+    await page.reload(); await feed(page, 'connected'); await card.waitFor();
+    await card.getByText('Heating', {exact: true}).waitFor();
+    assert.deepEqual(sent, [], 'a reload resends nothing');
+    assert.equal(await world.volcanoReadAnonymous('sessions'), 401);
+
+    // Losing the device reads as unknown, never off.
+    world.volcanoAction('offline');
+    await card.getByText('Unavailable', {exact: true}).waitFor();
+    await card.getByRole('tab', {name: 'Now', exact: true}).click();
+    assert.equal(await card.locator('.volcano-now').getByText('Off', {exact: true}).count(), 0);
+    await card.getByRole('button', {name: 'Volcano status', exact: true}).click();
+    await card.getByText(/The heater and pump are unknown, not off\./u).waitFor();
+    await card.getByRole('button', {name: 'Volcano status', exact: true}).press('Escape');
+    assert.equal(await card.getByRole('button', {name: 'Volcano status', exact: true}).evaluate(element => element === document.activeElement), true);
+    assert.deepEqual(sent, [], 'an unavailable device gets no command');
+    assert.deepEqual(errors, []);
+    await context.close();
+  } finally {
+    await world.close();
+  }
+}
+
+// The card's states over fixed documents, for what a short synthetic run cannot produce.
+const PROBE = `
+  import React from 'react';
+  import {createRoot} from 'react-dom/client';
+  import {flushSync} from 'react-dom';
+  import {VolcanoWidget} from '../../../../modules/volcano/src/frontend/index.tsx';
+  const root = createRoot(document.getElementById('root'));
+  const state = {reads: {}, commands: [], paths: [], changed: undefined};
+  function message(doc) {
+    return {source: 'bunny/modules/volcano', kind: 'state', type: 'org.bunny.volcano-status.updated', dataschema: 'https://bunny.invalid/events/volcano-status/2.0', subject: doc.id, data: doc};
+  }
+  window.volcanoProbe = {
+    mount({doc, reads, connected = true, control = true}) {
+      state.reads = reads; state.paths = []; state.commands = [];
+      const api = {
+        read(path) {
+          state.paths.push(path);
+          const name = path.slice('/modules/volcano/content/'.length).split('?')[0];
+          const value = reads[name];
+          if (value === undefined || value.refuse !== undefined) return Promise.reject({body: {error: {code: value === undefined ? 'unavailable' : value.refuse}}});
+          return Promise.resolve(value);
+        },
+        sync(families, changed) {
+          state.changed = changed;
+          if (doc === undefined) return Promise.resolve({status: 'rejected', error: {error: {code: 'forbidden'}}});
+          return Promise.resolve({status: 'synced', copy: {states: () => [message(doc)], close: async () => {}}});
+        },
+        command() {throw new Error('Unexpected direct command');}, upload() {throw new Error('Unexpected upload');}, image() {throw new Error('Unexpected image');},
+      };
+      const Command = ({children}) => children({text: '', locked: false, requestId: undefined, run: async action => {state.commands.push(action);}});
+      flushSync(() => root.render(null));
+      flushSync(() => root.render(React.createElement(VolcanoWidget, {key: Math.random(), expectedTarget: 'volcano', context: {module: 'volcano', api, ui: {Command}, connected, control, operations: [], operationsLive: true}})));
+    },
+    fail() {state.changed?.({type: 'failed', error: {error: {code: 'unavailable'}}});},
+    commands: () => state.commands,
+    paths: () => state.paths,
+  };
+`;
+const NOW = Date.now(), MIN = 60_000;
+const base = {id: 'volcano', revision: 3};
+const status = (over: object = {}): object => ({schema: 'volcano-status/2.0', ...base, configurationRevision: 2, availability: 'available', link: 'connected', observedAtMs: NOW - 5000, receivedAtMs: NOW - 5000, heater: 'on', pump: 'off', status1: 1571, currentDeciC: 1850, targetDeciC: 1900, heatingCounterMinutes: 725, displayFahrenheit: true, gapMinutes: 15, recording: 'ok', ...over});
+const stamp = (seq: number, at: number): object => ({seq, observedAtMs: at, receivedAtMs: at});
+const span = (over: object = {}): object => ({startAtMs: NOW - 60 * MIN, startedBeforeObservation: false, endAtMs: NOW - 35 * MIN, endedUnobservedBy: null, lastObservedOnAtMs: NOW - 35 * MIN, open: false, observedHeatingMs: 25 * MIN, creditedMinutes: 0, pumpRuns: 1, ...over});
+const stretch = (over: object = {}): object => ({...span(), unobserved: [], omittedUnobserved: 0, ...over});
+const session = (over: object = {}, stretches: object[] = [stretch()]): object => ({...span(), discontinuities: 0, stretches, omittedStretches: 0, ...over});
+const empty = {
+  timeline: {schema: 'volcano-timeline/2.0', ...base, facts: [], next: null}, sessions: {schema: 'volcano-sessions/2.0', ...base, gapMinutes: 15, preview: false, sessions: [], next: null},
+  totals: {schema: 'volcano-totals/2.0', ...base, zone: 'UTC', gapMinutes: 15, days: [], next: null}, gaps: {schema: 'volcano-gaps/2.0', ...base, gapMinutes: 15, buckets: []},
+};
+
+async function states(): Promise<void> {
+  const bundle = await build({
+    stdin: {resolveDir: fileURLToPath(new URL('.', import.meta.url)), sourcefile: 'volcano-probe.js', contents: PROBE},
+    bundle: true, write: false, format: 'iife', platform: 'browser', outdir: '/probe', jsx: 'automatic', loader: {'.tsx': 'tsx', '.ts': 'ts', '.css': 'css'}, define: {'process.env.NODE_ENV': '"development"'},
+  });
+  const code = bundle.outputFiles.find(file => file.path.endsWith('.js'))?.text, style = bundle.outputFiles.find(file => file.path.endsWith('.css'))?.text;
+  assert.ok(code !== undefined && style !== undefined);
+  const context = await browser.newContext({viewport: {width: 480, height: 900}, reducedMotion: 'reduce'});
+  const page = await context.newPage();
+  page.setDefaultTimeout(5000);
+  const failures: string[] = [];
+  page.on('pageerror', error => { failures.push(error.message); });
+  // Not a blank page: a command's request ID needs a secure context, as the dashboard has.
+  await page.route('http://localhost:9/', route => route.fulfill({contentType: 'text/html', body: '<!doctype html><title>probe</title><main id="root"></main>'}));
+  await page.goto('http://localhost:9/');
+  await page.addStyleTag({content: style}); await page.addScriptTag({content: code});
+  const mount = async (value: {doc?: object; reads?: object; connected?: boolean; control?: boolean}): Promise<void> => {
+    await page.evaluate(input => { (window as unknown as {volcanoProbe: {mount(input: unknown): void}}).volcanoProbe.mount(input); }, {reads: empty, ...value});
+    await frame(page);
+  };
+  const card = page.locator('[data-volcano-card]');
+  const tab = async (name: string): Promise<void> => { await card.getByRole('tab', {name, exact: true}).click(); };
+
+  // Fresh.
+  await mount({doc: status()});
+  await card.getByText('Heating', {exact: true}).waitFor();
+  await card.getByText('365 °F', {exact: true}).waitFor();
+  await card.getByText('374 °F', {exact: true}).waitFor();
+  await card.getByText('12 h 5 min', {exact: true}).waitFor();
+  const reads = await page.evaluate(() => (window as unknown as {volcanoProbe: {paths(): string[]}}).volcanoProbe.paths());
+  await tab('Timeline'); await tab('Sessions'); await tab('Totals'); await tab('Gaps');
+  assert.deepEqual(await page.evaluate(() => (window as unknown as {volcanoProbe: {paths(): string[]}}).volcanoProbe.paths()), reads, 'switching tabs issues no read');
+  assert.equal(reads.some(path => path.startsWith('/modules/volcano/content/totals?zone=')), true);
+
+  // No history: nothing reads as zero use.
+  await tab('Timeline'); await card.getByText(/Nothing recorded for this day\. That is not evidence of no use/u).waitFor();
+  await tab('Sessions'); await card.getByText('No sessions recorded yet.', {exact: true}).waitFor();
+  await tab('Totals'); await card.getByText('No days recorded yet.', {exact: true}).waitFor();
+  await tab('Gaps'); await card.getByText('No separations between heating stretches yet.', {exact: true}).waitFor();
+  assert.equal(await card.getByText(/\b0 min\b/u).count(), 0, 'no history is not a zero');
+
+  // Stale: the stream failed after a reading, and a value it had says nothing now.
+  await mount({doc: status({heater: 'off'})});
+  await card.getByText('Heater off', {exact: true}).waitFor();
+  await page.evaluate(() => { (window as unknown as {volcanoProbe: {fail(): void}}).volcanoProbe.fail(); });
+  await card.getByText('Stale', {exact: true}).waitFor();
+  assert.equal(await card.locator('.volcano-now dd', {hasText: /^Off$/u}).count(), 0);
+  await card.locator('.volcano-now').getByText('Unknown', {exact: true}).first().waitFor();
+
+  // Unavailable, including no state at all and a refused stream.
+  await mount({doc: status({availability: 'unavailable', link: 'stale', heater: 'unknown', pump: 'unknown', currentDeciC: null, targetDeciC: null, heatingCounterMinutes: null})});
+  await card.getByText('Unavailable', {exact: true}).waitFor();
+  await card.getByRole('button', {name: 'Volcano status', exact: true}).click();
+  await card.getByText(/The collector has stopped reporting\. The heater and pump are unknown, not off\./u).waitFor();
+  await mount({connected: true});
+  await card.getByText('Unavailable', {exact: true}).waitFor();
+  await card.getByRole('button', {name: 'Volcano status', exact: true}).click();
+  await card.getByText('Volcano read refused: forbidden.', {exact: true}).waitFor();
+  assert.deepEqual(await page.evaluate(() => (window as unknown as {volcanoProbe: {paths(): string[]}}).volcanoProbe.paths()), [], 'a refused status reads no history');
+  await mount({connected: false});
+  await card.getByText('Unavailable', {exact: true}).waitFor();
+
+  // Refused history shows as unavailable, never as an empty or zero history.
+  await mount({doc: status(), reads: {timeline: {refuse: 'forbidden'}, sessions: {refuse: 'forbidden'}, totals: {refuse: 'forbidden'}, gaps: {refuse: 'forbidden'}}});
+  await tab('Sessions'); await card.getByText('The session list is unavailable: forbidden.', {exact: true}).waitFor();
+  await tab('Totals'); await card.getByText('The daily totals are unavailable: forbidden.', {exact: true}).waitFor();
+  await tab('Gaps'); await card.getByText('The gap distribution is unavailable: forbidden.', {exact: true}).waitFor();
+  await tab('Timeline'); await card.getByText('The timeline is unavailable: forbidden.', {exact: true}).waitFor();
+  assert.equal(await card.getByText('No sessions recorded yet.').count(), 0);
+  // A document that fails its check is refused the same way.
+  await mount({doc: status(), reads: {...empty, sessions: {...empty.sessions, dose: 1}}});
+  await tab('Sessions'); await card.getByText('The session list is unavailable: invalid-message.', {exact: true}).waitFor();
+
+  // Partial session, counter discontinuity and a recovered gap.
+  const gap = {...stamp(3, NOW - 40 * MIN), kind: 'gap', fromMs: NOW - 50 * MIN, toMs: NOW - 40 * MIN, heaterBefore: 'on', heaterAfter: 'on', creditedMinutes: 7};
+  const timeline = [{...stamp(1, NOW - 60 * MIN), kind: 'heater', on: true, status1: 32, edge: 'first-observation'}, gap,
+    {...stamp(4, NOW - 39 * MIN), kind: 'discontinuity', reason: 'counter-decrease', lastReadingAtMs: NOW - 50 * MIN}, {...stamp(5, NOW - 35 * MIN), kind: 'heater', on: false, status1: 0, edge: 'observed'}];
+  const crossed = stretch({startedBeforeObservation: true, endAtMs: null, endedUnobservedBy: NOW - 35 * MIN, creditedMinutes: 7, observedHeatingMs: 15 * MIN, unobserved: [{fromMs: NOW - 50 * MIN, toMs: NOW - 40 * MIN, creditedMinutes: 7}]});
+  await mount({doc: status(), reads: {
+    ...empty, timeline: {...empty.timeline, facts: timeline},
+    sessions: {...empty.sessions, sessions: [session({startedBeforeObservation: true, endAtMs: null, endedUnobservedBy: NOW - 35 * MIN, creditedMinutes: 7, observedHeatingMs: 15 * MIN, discontinuities: 1}, [crossed])]},
+    totals: {...empty.totals, days: [{date: '2026-11-04', observedHeatingMs: 15 * MIN, creditedMinutes: 7, stretches: 1, sessions: 1, pumpRuns: 1}]},
+    gaps: {...empty.gaps, buckets: [{fromMinutes: 0, toMinutes: 5, count: 0, uncertain: 0}, {fromMinutes: 15, toMinutes: 30, count: 3, uncertain: 1}]},
+  }});
+  await tab('Timeline');
+  await card.locator('li[data-kind=gap]').getByText(/Heater on before, on after; counter gained 7 min\./u).waitFor();
+  await card.locator('li[data-kind=discontinuity]').getByText(/No time or credit is counted across this\./u).waitFor();
+  const heating = await card.locator('li[data-kind=heating]').first().innerText();
+  assert.match(heating, /may have started earlier/u); assert.doesNotMatch(heating, /\b\d+ min\b/u, 'no duration through the unobserved interval');
+  await tab('Sessions');
+  const row = card.locator('li[data-kind=session]');
+  assert.equal(await row.getAttribute('data-partial'), 'true');
+  await row.getByText(/^First seen on /u).waitFor();
+  await row.getByText(/^End not seen: last on .*, off by /u).waitFor();
+  assert.deepEqual(await row.locator('.volcano-facts > div').evaluateAll(nodes => nodes.map(node => node.textContent)), ['Observed heating15 min', 'Stretches1', 'Pump runs1', 'Unobserved intervals1', 'Counter credit7 min', 'Discontinuities1']);
+  await tab('Totals'); await card.getByText('15 min observed · 7 min credited · 1 session · 1 pump run', {exact: true}).waitFor();
+  await tab('Gaps');
+  assert.equal(await card.locator('.volcano-buckets > li').count(), 1, 'an empty bucket is not drawn');
+  await card.getByText('3 (1 uncertain)', {exact: true}).waitFor();
+  assert.equal(await card.locator('.volcano-buckets > li').getAttribute('data-threshold'), 'true');
+  assert.deepEqual((await new AxeBuilder({page}).include('[data-volcano-card]').disableRules(['color-contrast']).withTags(['wcag2a', 'wcag2aa']).analyze()).violations.map(item => item.id), []);
+
+  // The save carries the revision it was made against, once. Without control it cannot be sent.
+  await card.getByLabel('Session gap (1 to 240 min)').fill('30');
+  await card.getByRole('button', {name: 'Save', exact: true}).click();
+  const sent = await page.evaluate(() => (window as unknown as {volcanoProbe: {commands(): {family: string; target: string; data: unknown}[]}}).volcanoProbe.commands());
+  assert.equal(sent.length, 1); assert.equal(sent[0]?.family, 'volcano-session-gap'); assert.equal(sent[0]?.target, 'volcano');
+  assert.deepEqual(sent[0]?.data, {gapMinutes: 30, expectedConfigurationRevision: 2});
+  await mount({doc: status(), control: false});
+  await tab('Gaps');
+  await card.getByLabel('Session gap (1 to 240 min)').fill('30');
+  assert.equal(await card.getByRole('button', {name: 'Save', exact: true}).isDisabled(), true);
+  await card.getByText('Saving needs control access. Previews still work.', {exact: true}).waitFor();
+  assert.deepEqual(failures, []);
+  await context.close();
+}
+
+try {
+  await states();
+  await journey();
+} finally {
+  await browser.close();
+}

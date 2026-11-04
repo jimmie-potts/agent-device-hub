@@ -2,10 +2,9 @@
 
 The private history of one enrolled VOLCANO HYBRID ([#615](https://github.com/jimmie-potts/agent-device-hub/issues/615)).
 It records what a host-local collector observes when the owner uses the physical
-buttons, and serves it through authenticated reads. It reaches no device: nothing in
-it can start a heater or pump, or change a setting. The card is
-[#616](https://github.com/jimmie-potts/agent-device-hub/issues/616); installation and
-physical acceptance are [#617](https://github.com/jimmie-potts/agent-device-hub/issues/617).
+buttons, and serves it through authenticated reads and one card. It reaches no device:
+nothing in it can start a heater or pump, or change a setting. Installation and physical
+acceptance are [#617](https://github.com/jimmie-potts/agent-device-hub/issues/617).
 
 A session is heater activity. It is not consumption, dose or inhalation, and a pump
 run is not a filled balloon. Connection state says nothing about the heater: a
@@ -119,6 +118,37 @@ through the core's tracked dispatcher (`POST /api/v2/commands/volcano-session-ga
   with other content it is `duplicate-conflict`. A stale expected revision is
   `revision-conflict`, an expired command `expired`, and a full disk `capacity`, before
   anything is accepted.
+
+## The card
+
+`VolcanoWidget` is one reusable card ([#616](https://github.com/jimmie-potts/agent-device-hub/issues/616)),
+placed through the Home editor at small, standard or wide size and shown in the Devices
+directory. The module declares no page. Its tabs, on one card with a fixed height, are:
+
+| Tab | Shows |
+| --- | --- |
+| Now | Heater, pump, temperature, target, heating counter and the last change seen. |
+| Timeline | One local day of heating stretches, pump runs, unobserved gaps and discontinuities. |
+| Sessions | Newest first, with what each one does not know about its start and end. |
+| Totals | Per local day, keeping observed time and counter credit apart. |
+| Gaps | The distribution of separations, the threshold, and a regroup preview. |
+
+- It reads the `volcano-status` family over the shell's participant. All four history
+  reads happen when the card mounts, so switching tabs reads and sends nothing. They repeat
+  when the revision moves, at most every 30 s, and at once after a threshold change or a
+  reload. There is no timer read.
+- A published status repeats nothing, so the time it shows is the last change seen, not the
+  last snapshot. Whether the feed is current comes from the module's `availability`, which
+  goes unavailable at 15 s.
+- Anything not current reads as unknown, never off. A refused read reads as unavailable,
+  never as an empty history. A duration is drawn only between two edges seen as they
+  happened, with nothing unobserved between them.
+- A preview is a read and stores nothing. The save is the card's only command. It carries
+  the configuration revision it was made against, needs control access, and goes through the
+  shell's tracked command attempt. Session paging restarts after a save, since a cursor
+  names its threshold.
+- There is no heater or pump control, release control or delete control, and no field for
+  consumption, dose or inhalation.
 
 ## Diagnostics
 

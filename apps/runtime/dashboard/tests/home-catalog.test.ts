@@ -48,3 +48,13 @@ void test('adding appends to the other breakpoint without replacing its independ
   const added = next.desktop.find(entry => entry.widget === 'test-card');assert.ok(added !== undefined);added.hidden = true;
   const shown = addHomeCard(next, 'desktop', card);assert.equal(shown.desktop.at(-1)?.hidden, false);assert.equal(shown.phone.length, next.phone.length);
 });
+
+void test('a Volcano is one device placement at the card sizes, and a saved one stays its own source when it is absent', () => {
+  const record = {id: 'volcano', revision: 1, kind: 'volcano'} as unknown as Parameters<typeof homeCatalog>[0]['copies'][number]['records'][number];
+  const configured = homeCatalog({...runtime, copies: [{owner: 'bunny/modules/volcano', family: 'device', synced: true, records: [record]}]}, true);
+  const card = configured.find(value => value.id === 'device:bunny/modules/volcano:volcano');
+  assert.deepEqual(card?.sizes, ['small', 'medium', 'large']);
+  assert.equal(configured.filter(value => value.id.includes('volcano')).length, 1);
+  assert.equal(homeCatalog(runtime, true).some(value => value.id.includes('volcano')), false);
+  assert.deepEqual(savedHomeCard('device:bunny/modules/volcano:volcano', homeCatalog(runtime, true))?.source, {kind: 'device', owner: 'bunny/modules/volcano', instance: 'volcano'});
+});

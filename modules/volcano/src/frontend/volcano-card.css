@@ -1,0 +1,31 @@
+.volcano-card{position:relative;min-width:0;width:100%;padding:22px;border:1px solid var(--edge-dense);border-radius:28px;background:var(--panel);color:var(--text)}
+.volcano-card [hidden]{display:none!important}.volcano-card button{touch-action:manipulation}
+.volcano-head{display:flex;justify-content:space-between;align-items:flex-start;min-height:66px;gap:12px}.volcano-head>div{min-width:0}
+.volcano-card .volcano-head h2{font:400 .875rem/1.5 var(--font);margin:0;color:var(--muted-dense)}.volcano-card .volcano-state{font:500 1.5rem/1.5 var(--font);margin:0}
+.volcano-card .volcano-warning{width:44px;height:44px;min-width:44px;padding:0;border:0;border-radius:50%;background:var(--warning-badge-bg);color:var(--pending-text);font-size:1rem;font-weight:700}
+.volcano-card .volcano-warning:hover:not(:disabled){background:var(--warning-badge-bg);color:var(--pending-text)}
+.volcano-notice{position:absolute;z-index:3;top:80px;left:18px;right:18px;padding:14px 16px;border:1px solid var(--edge-dense);border-radius:16px;background:var(--panel);font-size:.875rem}.volcano-notice p{margin:0 0 10px}
+.volcano-art{--vc-body:light-dark(#dfe4ea,#aeb7c4);--vc-edge:light-dark(#9aa6b5,#6d7888);--vc-top:light-dark(#596b86,#46566e);--vc-panel:light-dark(#2c3645,#1d2531);--vc-screen:light-dark(#d9534f,#e0605c);--vc-key:light-dark(#c3ccd8,#94a0b0);--vc-shadow:light-dark(#1b253526,#00000059);height:124px;display:flex;justify-content:center}
+.volcano-art svg{height:100%;width:auto}.volcano-shadow{fill:var(--vc-shadow)}.volcano-body{fill:var(--vc-body);stroke:var(--vc-edge);stroke-width:1.5}.volcano-top{fill:var(--vc-top)}.volcano-panel{fill:var(--vc-panel)}.volcano-screen{fill:var(--vc-screen)}.volcano-key{fill:var(--vc-key)}
+.volcano-tabs{display:flex;gap:2px;border-radius:14px;padding:4px;background:var(--inset);margin-top:8px}
+.volcano-card .volcano-tabs button{min-width:0;min-height:40px;border:0;border-radius:11px;background:transparent;color:var(--muted-dense);overflow-wrap:normal}
+.shell .volcano-card .volcano-tabs[role=tablist]{gap:2px}
+/* Five labels at the shared control size share a narrow card: the track borrows some of the card's padding, and each label takes its own width. */
+.shell .volcano-card .volcano-tabs[role=tablist]{margin-inline:-10px}
+.shell .volcano-card .volcano-tabs[role=tablist] button,.volcano-card .volcano-tabs button{flex:1 1 auto;padding:6px 2px}
+.volcano-card .volcano-tabs button[aria-selected=true]{background:var(--panel);color:var(--text)}
+.volcano-plane{height:252px;padding-top:12px;perspective:800px}.volcano-plane>section{height:100%;overflow-y:auto;overflow-wrap:anywhere;transform-origin:50% 30%;animation:volcano-controls-flip .26s cubic-bezier(.2,.8,.2,1)}
+@keyframes volcano-controls-flip{from{transform:rotateY(-16deg) translateY(3px)}to{transform:rotateY(0) translateY(0)}}
+.volcano-note{margin:0 0 10px;color:var(--muted-dense);font-size:.8125rem}
+.volcano-facts{display:grid;gap:8px;margin:6px 0 0}.volcano-facts>div{display:flex;justify-content:space-between;gap:10px;font-size:.8125rem}.volcano-facts dt{color:var(--muted-dense)}.volcano-facts dd{margin:0;text-align:right}
+.volcano-now{gap:11px;margin:0}.volcano-now>div{font-size:.875rem}.volcano-age{color:var(--muted-dense)}
+.volcano-rows{display:grid;gap:8px;list-style:none;margin:0 0 10px;padding:0}.volcano-rows>li{display:grid;gap:2px;padding:8px 10px;border-radius:12px;background:var(--inset)}.volcano-rows>li[data-kind=gap]{border:1px dashed var(--edge-dense);background:transparent}.volcano-rows>li[data-kind=discontinuity]{border:1px solid var(--edge-dense)}
+.volcano-row-title{font-size:.875rem}.volcano-row-detail{color:var(--muted-dense);font-size:.75rem}
+.volcano-day,.volcano-pager{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:10px}.volcano-day strong{font-size:.8125rem;font-weight:500;text-align:center}.volcano-card .volcano-day button,.volcano-card .volcano-pager button{min-height:40px;padding:4px 8px;font-size:.75rem}
+.volcano-buckets{display:grid;gap:6px;list-style:none;margin:0 0 12px;padding:0}.volcano-buckets>li{display:grid;grid-template-columns:minmax(0,5.5rem) minmax(0,1fr) auto;align-items:center;gap:8px;font-size:.75rem}.volcano-buckets>li[data-threshold=true] .volcano-bucket-label{font-weight:700;color:var(--text)}.volcano-bucket-label{color:var(--muted-dense)}
+.volcano-bucket-track{display:block;height:6px;border-radius:6px;background:var(--inset);overflow:hidden}.volcano-bucket-track>span{display:block;height:100%;border-radius:6px;background:var(--link)}
+.volcano-threshold{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;align-items:center;margin-bottom:8px}.volcano-threshold label{grid-column:1/-1;font-size:.8125rem;color:var(--muted-dense)}.volcano-threshold input{min-width:0;width:100%;min-height:40px;box-sizing:border-box}.volcano-card .volcano-threshold button{min-height:40px;padding:4px 10px;font-size:.8125rem}
+.volcano-preview{margin-top:8px}
+@media(max-width:370px){.volcano-card{padding:17px}.volcano-card .volcano-state{font-size:1.25rem}}
+@media(pointer:coarse){.volcano-card .volcano-tabs button,.volcano-card .volcano-day button,.volcano-card .volcano-pager button,.volcano-card .volcano-threshold button,.volcano-threshold input{min-height:44px}}
+@media(prefers-reduced-motion:reduce){.volcano-plane>section{animation:none}}

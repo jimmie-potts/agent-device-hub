@@ -9,8 +9,8 @@ type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; ins
 export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean};
 const ordinarySizes: readonly WidgetSize[] = ['medium', 'large'];
 export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardDefinition[] {
-  // Roborock metadata describes each existing device placement, not a second default card.
-  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock').map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: !['wispr', 'duck-latest', 'reachy', 'timeline'].includes(widget.id)}));
+  // Roborock and Volcano metadata describe each existing device placement, not a second default card.
+  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock' && widget.id !== 'volcano').map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: !['wispr', 'duck-latest', 'reachy', 'timeline'].includes(widget.id)}));
   for (const id of ['duck-latest', 'reachy']) {
     const card = result.find(card => card.id === id);
     if (card === undefined) continue;
@@ -45,7 +45,7 @@ export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardD
       if (device.kind === 'lifx' || device.kind === 'nanoleaf') continue;
       result.push({id: `device:${copy.owner}:${device.id}`, name: device.label ?? device.id,
         category: device.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' ? 'Cleaning' : device.kind === 'wemo' ? 'Plugs' : device.kind === 'pixoo' || device.kind === 'tidbyt' ? 'Displays' : 'Devices',
-        sizes: device.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' ? widgetDefinition('roborock')?.sizes ?? ordinarySizes : ordinarySizes,
+        sizes: device.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' ? widgetDefinition('roborock')?.sizes ?? ordinarySizes : device.kind === 'volcano' && copy.owner === 'bunny/modules/volcano' ? widgetDefinition('volcano')?.sizes ?? ordinarySizes : ordinarySizes,
         source: {kind: 'device', owner: copy.owner, instance: device.id}, defaultSelected: true, ...(!connected || !copy.synced ? {reason: 'Device records are unavailable or stale.'} : {})});
     }
     if (copy.family === 'playback') for (const playback of copy.records as readonly PlaybackState[]) result.push({id: `music:${copy.owner}:${playback.id}`, name: `Music · ${playback.id}`, category: 'Audio', sizes: ordinarySizes,
@@ -66,6 +66,8 @@ export function savedHomeCard(id: string, catalog: readonly HomeCardDefinition[]
   if (id === 'module:roborock') return {id, name: 'Roborock', category: 'Cleaning', sizes: widgetDefinition('roborock')?.sizes ?? ordinarySizes, source: {kind: 'core'}, defaultSelected: false};
   const vacuum = /^device:bunny\/modules\/roborock:([a-z0-9-]+)$/.exec(id)?.[1];
   if (vacuum !== undefined) return {id, name: 'Roborock', category: 'Cleaning', sizes: widgetDefinition('roborock')?.sizes ?? ordinarySizes, source: {kind: 'device', owner: 'bunny/modules/roborock', instance: vacuum}, defaultSelected: false};
+  const volcano = /^device:bunny\/modules\/volcano:([a-z0-9-]+)$/.exec(id)?.[1];
+  if (volcano !== undefined) return {id, name: 'Volcano', category: 'Devices', sizes: widgetDefinition('volcano')?.sizes ?? ordinarySizes, source: {kind: 'device', owner: 'bunny/modules/volcano', instance: volcano}, defaultSelected: false};
   if (/^(device|music):bunny\/modules\/[a-z0-9-]+:[a-z0-9-]+$/.test(id) || /^light:(device|room|group):[a-z0-9-]+$/.test(id)) return {id, name: id.split(':').at(-1) ?? id, category: 'Unavailable', sizes: ordinarySizes, source: {kind: 'unavailable'}, reason: 'This saved source is unavailable.', defaultSelected: false};
   return undefined;
 }

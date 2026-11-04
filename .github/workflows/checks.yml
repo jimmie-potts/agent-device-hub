@@ -273,6 +273,8 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:roborock:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:volcano:browser
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:onn:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         # Includes #501 preferences, active-only copy, import/export and accessibility.

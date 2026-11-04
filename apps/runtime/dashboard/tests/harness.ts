@@ -4,6 +4,7 @@ import {createWemoModule,SimulatedWemo,WEMO_SIMULATED_SECTION,wemoSchemas} from 
 import {createCompanionsModule} from '@jimmie-potts/companions';
 import {createRoborockModule,SimulatedRoborock,roborockSchemas,type RoborockModule,type SimulationAction,type VacuumStatus} from '@jimmie-potts/roborock';
 import {createOnnModule, SimulatedOnn, onnSchemas, ONN_SIMULATED_SECTION} from '@jimmie-potts/onn';
+import {createVolcanoModule, SimulatedVolcano, VOLCANO_SIMULATED_SECTION, volcanoSchemas, type SimulationAction as VolcanoAction} from '@jimmie-potts/volcano';
 import {Gadget, gadgetSchemas, setGadget} from '../../dist/tests/fixtures/gadget.js';
 // The runtime dashboard's browser suites' world (Hub #922): the built runtime in this process with the core and its
 // gateway on a free loopback port, a private state directory under the system temporary directory, which lies outside
@@ -62,6 +63,8 @@ export type WorldOptions = {
   onn?: boolean;
   wemo?:boolean;
   roborock?: boolean;
+  /** The real Volcano module and its store over a synthetic feed: no radio. */
+  volcano?: boolean;
   /** The actual file reader on explicitly selected private synthetic collector files. */
   wispr?: {exposeToDashboard?: boolean; shareTextAggregates?: boolean};
   /** The real Pixoo module with a fresh library and an in-memory device. */
@@ -105,6 +108,9 @@ export type World = {
   assistantRead(): Promise<{status: number; text: string}>;
   readonlyAssistantUpload(): Promise<number>;
   roborockAction(action:SimulationAction):Promise<void>;
+  volcanoAction(action:VolcanoAction,deciC?:number):void;
+  volcanoRead(path:string):Promise<{status:number;body:unknown}>;
+  volcanoReadAnonymous(path:string):Promise<number>;
   roborockRefresh():Promise<void>;
   roborockCalls():readonly string[];
   roborockStatus():Promise<VacuumStatus>;
@@ -184,6 +190,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.coding === true ? [{id: 'coding-worker', source: 'bunny/parts/coding-worker', digest: tokenDigest(codingToken), scopes: [], role: 'coding-worker'}] : []),
   ]}));
   const roborock=new SimulatedRoborock();
+  const volcano=new SimulatedVolcano();
   let roborockModule:RoborockModule|undefined;
   const refreshRoborock=async():Promise<void>=>{assert.equal(options.roborock,true);const refresh=roborockModule?.refreshForTest;assert.ok(refresh!==undefined);await refresh();};
   const microduck=new SimulatedMicroDuck();
@@ -219,6 +226,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.reachy === true ? {'reachy-mini':REACHY_SIMULATED_SECTION} : {}),
     ...(options.onn === true ? {onn: ONN_SIMULATED_SECTION} : {}),
     ...options.roborock===true?{roborock:{id:'vacuum'}}:{},
+    ...options.volcano===true?{volcano:VOLCANO_SIMULATED_SECTION}:{},
     ...(wisprConfig === undefined ? {} : {wispr: {...wisprConfig, shareTextAggregates: options.wispr?.shareTextAggregates ?? false}}),
     ...withDevices ? {lifx: options.lighting === true ? {bulbs: [...['a', 'b', 'c'].map((suffix, index) => ({...LIFX_SIMULATED_SECTION.bulbs[0], id: `lamp-${suffix}`, address: `192.0.2.${42 + index}`})), LIFX_SIMULATED_SECTION.bulbs[1]]} : LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
     ...options.nanoleaf === true ? {nanoleaf: {...NANOLEAF_SECTION, qualifiedSources: [...NANOLEAF_SECTION.qualifiedSources,
@@ -261,12 +269,12 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   };
   const start = (port: number): Promise<Runtime> => startRuntime({
     modules: [
-      core = createCoreModule(), ...(options.microduck===true?[options.microduckVendor===true?createMicroDuckModule():createMicroDuckModule({transport:options.microduckTransport??microduck})]:[]), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.onn === true ? [createOnnModule({transport: onn})] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+      core = createCoreModule(), ...(options.microduck===true?[options.microduckVendor===true?createMicroDuckModule():createMicroDuckModule({transport:options.microduckTransport??microduck})]:[]), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.onn === true ? [createOnnModule({transport: onn})] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]),...(options.volcano===true?[createVolcanoModule({feed:volcano})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}})]
         : options.pixooPages === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
       ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request})] : [])],
-    port, stateDir, configFile: config, edge: {schemas: {...(options.microduck===true?microduckSchemas:{}),...(options.reachy===true?reachySchemas:{}),...(options.wemo===true?wemoSchemas:{}),...options.onn === true ? onnSchemas : {}, ...options.roborock===true?roborockSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
+    port, stateDir, configFile: config, edge: {schemas: {...(options.microduck===true?microduckSchemas:{}),...(options.reachy===true?reachySchemas:{}),...(options.wemo===true?wemoSchemas:{}),...options.onn === true ? onnSchemas : {}, ...options.roborock===true?roborockSchemas:{}, ...options.volcano===true?volcanoSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime: Runtime;
   try {
@@ -301,6 +309,9 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       }finally{await client.close();}
     },
     roborockRefresh:refreshRoborock,
+    volcanoAction:(action,deciC)=>{assert.equal(options.volcano,true);volcano.act(action,deciC);},
+    volcanoRead:async path=>{const response=await fetch(`${runtime.url}/modules/volcano/content/${path}`,{headers:{authorization:`Bearer ${readerToken}`}});return {status:response.status,body:await response.json()};},
+    volcanoReadAnonymous:async path=>(await fetch(`${runtime.url}/modules/volcano/content/${path}`)).status,
     roborockAction:async action=>{assert.equal(options.roborock,true);await roborock.action(action);},
     roborockCalls:()=>[...roborock.calls],
     roborockStatus:async()=>{const response=await fetch(`${runtime.url}/modules/roborock/content/status`,{headers:{authorization:`Bearer ${readerToken}`}});assert.equal(response.status,200);return await response.json()as VacuumStatus;},
