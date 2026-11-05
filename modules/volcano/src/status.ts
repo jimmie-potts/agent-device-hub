@@ -3,18 +3,13 @@
 import {SCHEMA_BASE} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {StateDraft} from '@jimmie-potts/sdk';
-import {STALE_MS, type LinkFact} from './facts.js';
+import {STALE_MS} from './facts.js';
 import {STATUS_SCHEMA, STATUS_TYPE} from './families.js';
+import type {VolcanoStatus} from './status-document.js';
 import type {Meta} from './store.js';
 import type {VolcanoConfig} from './configuration.js';
 
-export type VolcanoStatus = {
-  schema: 'volcano-status/2.0'; id: string; revision: number; configurationRevision: number;
-  availability: 'available' | 'unavailable'; link: LinkFact | 'unknown';
-  observedAtMs: number | null; receivedAtMs: number | null; heater: 'on' | 'off' | 'unknown'; pump: 'on' | 'off' | 'unknown';
-  status1: number | null; currentDeciC: number | null; targetDeciC: number | null; heatingCounterMinutes: number | null; displayFahrenheit: boolean | null;
-  gapMinutes: number; recording: 'ok' | 'refused';
-};
+export type {VolcanoStatus};
 
 /**
  * The status now. `freshSinceMs` is when this process last took a snapshot, or undefined: a store's last snapshot from an

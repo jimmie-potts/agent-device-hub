@@ -58,6 +58,15 @@ and the `volcano-physical-use` catalog scenario, under
 `npm run test:runtime:built`, which read an edge configuration file and so run in
 Linux. All of these use synthetic values and no radio. They do not qualify the
 binding, the macOS launch path, or the owner's firmware; that is #617.
+
+The card (#616) adds `modules/volcano/tests/card.test.ts` to the built suite and
+`npm run test:volcano:browser` to App verification. After the root build, the browser
+journey drives the real module and store over a synthetic feed: Home and Devices placement,
+passive tabs, fixed geometry at each Home size and at light and dark desktop and phone
+widths, accessibility, keyboard access, one tracked threshold save that rewrites no fact, and
+unknown rather than off. It then mounts the card over fixed documents for the stale,
+unavailable, refused, no-history, partial-session, discontinuity and recovered-gap states. It
+runs in Linux. `DASHBOARD_RECEIPTS` names a folder for its screenshots.
 `apps/volcano-collector` is not a workspace, so `npm ci` at the root installs no
 native dependency and the root build compiles its adapter against its own types of
 noble.

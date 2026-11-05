@@ -549,6 +549,12 @@ retain full run/sample observations. Unconfigured/refused sources stay visibly
 unavailable. State/battery and care have separate evidence ages; the display
 clock reads nothing. There are no vacuum controls or inferred replacement dates.
 
+The Volcano's Home and device placements share the module's reusable card (#616).
+Now, Timeline, Sessions, Totals and Gaps keep the illustration and dimensions stable,
+and switching them reads and sends nothing. Its only command is the session threshold,
+which never reaches the device. See the
+[module guide](../../../modules/volcano/README.md#the-card).
+
 The authenticated module catalog names every device owner. `runtime-feeds.ts`
 keeps one SDK copy per owner, alongside core operations and playback, using the
 existing participant. Desired state, device observation, queued kinds, last

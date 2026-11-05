@@ -7,7 +7,7 @@ import type {Route} from './routes.ts';
 export const DEVICE_CATEGORIES = ['Lighting', 'Displays', 'Audio', 'Other'] as const;
 export type DeviceCategory = typeof DEVICE_CATEGORIES[number];
 export type DirectoryEntry = {id: string; label: string; category: DeviceCategory; state: string; stale: boolean; links: {label: string; route: Route}[]};
-const LABELS: Readonly<Record<string, string>> = {pixoo: 'Pixoo', tidbyt: 'Tidbyt', wemo: 'Wemo', onn: 'ONN', roborock: 'Roborock', wispr: 'Wispr', companions: 'Companions'};
+const LABELS: Readonly<Record<string, string>> = {pixoo: 'Pixoo', tidbyt: 'Tidbyt', wemo: 'Wemo', onn: 'ONN', roborock: 'Roborock', volcano: 'Volcano', wispr: 'Wispr', companions: 'Companions'};
 
 /** Projects existing declarations and observations; no discovery, reads or device actions live here. */
 export function directoryEntries(runtime: RuntimeData): DirectoryEntry[] {

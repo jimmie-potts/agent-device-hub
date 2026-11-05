@@ -59,7 +59,7 @@ const stretch = closed({
 });
 const session = closed({
   startAtMs: instant, startedBeforeObservation: {type: 'boolean'}, endAtMs: nullable(instant), endedUnobservedBy: nullable(instant), lastObservedOnAtMs: instant, open: {type: 'boolean'},
-  observedHeatingMs: count, creditedMinutes: count, pumpRuns: count, discontinuities: count, stretches: {type: 'array', maxItems: 32, items: stretch}, omittedStretches: count,
+  observedHeatingMs: count, creditedMinutes: count, pumpRuns: count, discontinuities: count, stretches: {type: 'array', maxItems: 32, items: stretch}, omittedStretches: count, unobservedBetween: count,
 });
 export const MAX_SESSIONS = 25;
 export const sessionsSchema = document({

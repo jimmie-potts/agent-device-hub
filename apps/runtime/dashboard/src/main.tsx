@@ -23,6 +23,7 @@ import {WemoDeviceCard} from './wemo-device-card.tsx';
 import {OnnDeviceCard} from './onn-device-card.tsx';
 import {RoborockDeviceCard} from './roborock-device-card.tsx';
 import {RoborockWidget} from '@jimmie-potts/roborock/frontend';
+import {VolcanoDeviceCard} from './volcano-device-card.tsx';
 import {PlaybackWorkspace} from './playback-workspace.tsx';
 import {BuildIdentity} from './build-identity.tsx';
 import {FRONTENDS} from '@bunny/module-frontends';
@@ -209,6 +210,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
               control={runtime.control} operations={operations} operationsLive={operationsLive}/>
             : record.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <RoborockDeviceCard target={record.id} label={record.label} connection={connection}
               live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'roborock' && module.state === 'running' && module.serves.includes('roborock-vacuum')) === true}/>
+            : record.kind === 'volcano' && copy.owner === 'bunny/modules/volcano' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <VolcanoDeviceCard target={record.id} label={record.label} connection={connection} control={runtime.control} operations={operations} operationsLive={operationsLive}
+              live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'volcano' && module.state === 'running' && module.serves.includes('volcano-status')) === true}/>
             : record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?<WemoDeviceCard record={record} owner={copy.owner}
             live={state.feed==='connected'&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1} control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now}
             limit={{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}/>
@@ -218,6 +221,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     if (definition.source.kind === 'device') {
       const source = definition.source, device = devices.find(item => item.copy.owner === source.owner && item.record.id === source.instance);
       if (device === undefined && source.owner === 'bunny/modules/roborock') return <RoborockDeviceCard target={source.instance} connection={connection} live={false}/>;
+      if (device === undefined && source.owner === 'bunny/modules/volcano') return <VolcanoDeviceCard target={source.instance} connection={connection} live={false} control={false} operations={[]} operationsLive={false}/>;
       return device === undefined ? <article className="card"><h2>{definition.name}</h2><p>Device unavailable.</p></article> : deviceCard(device);
     }
     if (definition.source.kind === 'light') return <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={{kind: 'home'}} homeSelection={definition.source.selection} homeSelections={selections}/>;

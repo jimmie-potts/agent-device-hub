@@ -21,6 +21,8 @@ void test('every catalog widget declares its source, read surface, sizes and com
   assert.equal(widgetDefinition('wispr')?.commands, false);
   assert.deepEqual(widgetDefinition('roborock')?.source, {kind: 'module', families: ['roborock-vacuum'], content: ['roborock/status', 'roborock/latest-run']});
   assert.equal(widgetDefinition('roborock')?.commands, false);
+  assert.deepEqual(widgetDefinition('volcano')?.sizes, ['small', 'medium', 'large']);
+  assert.equal(widgetDefinition('volcano')?.commands, true);
   assert.equal(widgetDefinition('missing'), undefined);
 });
 
