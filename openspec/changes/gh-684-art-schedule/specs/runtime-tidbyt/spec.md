@@ -10,3 +10,8 @@ A Tidbyt backend SHALL declare rain-notice support only when its art moment rend
 #### Scenario: The target or evidence cannot support the notice
 - **WHEN** the backend lacks notice support, the notice is malformed/stale, or a pin/attention state blocks the moment
 - **THEN** it returns the appropriate typed refusal or failed outcome without showing an unlabelled replacement or bypassing the current writer
+
+#### Scenario: Transport consumes the forecast hold
+- **WHEN** a slow upload or push consumes the remaining notice validity after effects begin
+- **THEN** the existing owner caps its hold at source stale time or forecast end and reports an interrupted/cancelled attempt rather than completion of the full requested duration
+- **AND** current-base restoration retains its own failed or uncertain evidence without resend or a claim that physical pixels cleared
