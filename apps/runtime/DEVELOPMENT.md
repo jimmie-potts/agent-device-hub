@@ -713,6 +713,7 @@ node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed no
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
 node apps/runtime/dashboard/tests/automation.browser.ts # routine/rule tabs, drafts, lost replies and accessibility
+node apps/runtime/dashboard/tests/music-capture.browser.ts # Music-only measurement, tracked start/stop and freshness; also in hosted smoke and Music-card browser entry
 node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # shared Pixoo cards, playlist drafts and trusted editor bundle
 node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal
 node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts # create, rename, options, items, order and deletion
@@ -722,6 +723,19 @@ node apps/runtime/dashboard/tests/pixoo-monitor.browser.ts # title refresh, pass
 node apps/runtime/dashboard/tests/pixoo-settings.browser.ts # safe setup projection and explicit brightness/screen commands
 node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts # retained wall editor through authenticated tracked commands
 ```
+
+The Music input check uses a numeric-only producer fixture through the real core
+and gateway. It verifies passive load/reload/reconnect, measured silence,
+expiry, delayed clock qualification, pending and lost Start replies, independent
+Stop, read-only refusal, replacement generations and endpoint loss. Desktop and
+320/390 px light/dark checks include keyboard use, reduced motion, overflow and
+axe. It opens no native helper or media source. The dashboard unit suite covers
+clock jumps, source identity/order, exact conservative expiry and late scope
+cleanup. The browser-safe `v2/music-capture-data` export keeps existing wire
+values; the event suite verifies export parity and a browser bundle with no
+server registry dependency. Run `npm run test:events:built`,
+`npm run test:music-producer:built` and `npm run test:runtime:built` for its
+existing contract consumers after the shared build.
 
 The Nanoleaf editor check (#934) uses the actual module with a simulated Lines controller. It covers passive reads, local selection, tracked editing, read-only and Origin refusal, observed power, keyboard/accessibility, reduced motion and re-entry. The `nanoleaf-editor` catalog scenario runs through both tier-1 transports and disposable Acceptance. `test:nanoleaf:built` includes the literal-source Prism adapter test beside the compiled TypeScript tests; retained browser JavaScript does not require a second runtime build policy.
 

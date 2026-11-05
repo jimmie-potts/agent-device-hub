@@ -80,3 +80,6 @@ await import('./card-consistency.browser.ts');
 await import('./automation.browser.ts');
 
 await import('./read-receipts.browser.ts');
+
+// Explicit Music input measurements use only a numeric producer fixture.
+await import('./music-capture.browser.ts');
