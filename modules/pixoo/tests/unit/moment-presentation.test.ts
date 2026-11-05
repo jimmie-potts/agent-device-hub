@@ -17,12 +17,12 @@ const RGB=(value:number)=>new Uint8Array(12288).fill(value);
 const song:PlaybackSourceStatus={source:'current',view:{card:true,status:'playing',title:'HARVEST MOON',artist:'NEIL YOUNG',stale:false}};
 async function flush(clock:ManualClock){for(let i=0;i<100;i++){await Promise.resolve();clock.advance(0);}}
 
-async function setup(options:{media?:'off'|'popup'|'whole';overMonitor?:boolean;pauseOnUncertain?:boolean}={}){
+async function setup(options:{media?:'off'|'popup'|'whole';overMonitor?:boolean;pauseOnUncertain?:boolean;saving?:Promise<void>}={}){
  const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock}),player=await Player.open({store,device,clock,pauseOnUncertain:options.pauseOnUncertain??false});
  store.playlist.repeat=true;
  const saved:unknown[]=[];
  const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now(),nowPlaying:{version:1,media:options.media??'off'},
-  moments:{version:1,overMonitor:options.overMonitor??true},saveMoments:value=>{saved.push(value);return Promise.resolve();}});
+  moments:{version:1,overMonitor:options.overMonitor??true},saveMoments:value=>{saved.push(value);return options.saving??Promise.resolve();}});
  const frames=()=>device.effects.filter(e=>e.kind==='frame').map(e=>Array.from(e.frame.rgb));
  const dashboard=()=>present(present(monitor.rendition().rendition).frames.at(-1));
  const run=async(ms:number)=>{for(let t=0;t<ms;t+=100){clock.advance(100);monitor.tick();await flush(clock);}};
@@ -177,7 +177,60 @@ it('over Media a paused item refuses a moment, since nothing could repaint it',a
   expect(s.monitor.momentBlock(false)).toBeNull();
   await s.settle(s.player.pause());
   expect(s.player.getState().itemId).not.toBeNull();
-  expect(s.monitor.momentBlock(false)).toBe('a paused playlist could not be repainted');
+  expect(s.monitor.momentBlock(false)).toBe('a held item could not be repainted');
+ }finally{await s.close();}
+});
+it('over Media a stopped item refuses a moment too, before and after a screen cycle',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);await s.settle(s.player.stop());
+  expect(s.player.getState().intent).toBe('stopped');
+  expect(s.player.getState().itemId).not.toBeNull();
+  expect(s.monitor.momentBlock(false)).toBe('a held item could not be repainted');
+  await s.settle(s.player.setScreen(false));await s.settle(s.player.setScreen(true));
+  expect(s.monitor.momentBlock(false)).toBe('a held item could not be repainted');
+ }finally{await s.close();}
+});
+it('a moment waiting behind other work never pauses a player that has since stopped, so nothing resumes over the stop',async()=>{
+ let release=():void=>{};
+ const s=await setup({saving:new Promise<void>(resolve=>{release=resolve;})});
+ try{
+  await mediaPlaying(s);
+  const saving=s.monitor.setMoments(true);
+  const results=s.play();await s.run(200);
+  await s.settle(s.player.stop());
+  release();await s.settle(saving);await s.run(4000);
+  expect(s.player.getState().intent).toBe('stopped');
+  expect(results).toEqual([expect.objectContaining({ending:null,refused:'blocked'})]);
+  expect(s.frames()).not.toContainEqual(art);
+ }finally{await s.close();}
+});
+for(const [name,lastError] of [['an uncertain write',{code:'timeout',priorEffects:'possible'}],['external control',{code:'external-control'}]] as const){
+ it(`after ${name} an empty player refuses a moment, since what the display shows may be the owner's`,async()=>{
+  const s=await setup();
+  try{
+   const state=s.player.getState();
+   vi.spyOn(s.player,'getState').mockReturnValue({...state,lastError});
+   expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+  }finally{vi.restoreAllMocks();await s.close();}
+ });
+}
+it('a player in error is not idle, though nothing is loaded',async()=>{
+ const s=await setup();
+ try{
+  const state=s.player.getState();
+  vi.spyOn(s.player,'getState').mockReturnValue({...state,intent:'paused',state:'error',lastError:{code:'operation-failed'}});
+  expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+ }finally{vi.restoreAllMocks();await s.close();}
+});
+it('a view change during a moment over an idle player ends it',async()=>{
+ const s=await setup();
+ try{
+  s.monitor.submit(quietView);await flush(s.clock);
+  const results=s.play();await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
+  await s.settle(s.monitor.configure({operation:'view',filter:{},cadenceMs:3000}));await s.run(100);
+  ended(results,'interrupted');
+  expect(s.player.getState().intent).toBe('stopped');
  }finally{await s.close();}
 });
 const blankLast=(s:Setup)=>expect(s.frames().at(-1)).toEqual(blank);
@@ -200,15 +253,15 @@ it('over an idle player the moment shows without touching the player, and one bl
   expect(s.monitor.momentBusy()).toBe(false);
  }finally{await s.close();}
 });
-it('an empty player that Monitor left paused is idle, and so is a stopped one',async()=>{
+it('an empty player that Monitor left paused is idle, and so is one cleared after playing',async()=>{
  const s=await setup();
  try{
   s.monitor.submit(quietView);await flush(s.clock);
   await s.settle(s.monitor.configure({operation:'mode',mode:'monitor'}));await s.settle(s.monitor.configure({operation:'mode',mode:'media'}));
   expect(s.player.getState()).toMatchObject({intent:'paused',itemId:null});
   expect(s.monitor.momentBlock(false)).toBeNull();
-  await mediaPlaying(s);await s.settle(s.player.stop());
-  expect(s.player.getState().intent).toBe('stopped');
+  await mediaPlaying(s);await s.settle(s.player.clear());
+  expect(s.player.getState()).toMatchObject({intent:'stopped',itemId:null});
   expect(s.monitor.momentBlock(false)).toBeNull();
   const results=s.play();await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
   await s.run(3200);ended(results,'completed');await s.run(1100);blankLast(s);

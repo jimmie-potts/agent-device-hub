@@ -277,9 +277,12 @@ sits on the Monitor page.
 
 A moment never changes the mode. Over Media it pauses a playing playlist under the
 same guard Now Playing uses, then resumes it at the same item. A player with nothing
-playing and no paused item, including an empty one Monitor left paused, takes the
-moment without being touched, and one blank frame follows it. A paused item refuses
-it, because nothing could repaint that item. So does a Now Playing takeover. Over Monitor it plays only with `coversStatus` set, the setting
+loaded, including an empty one Monitor left paused, takes the moment without being
+touched, and one black frame follows it, because the module can't return the device
+to what it showed before. A paused or stopped item refuses it, because nothing could
+repaint that item. So does a Now Playing takeover, a player in error, and a display
+left unknown by an uncertain write or external control. That last refusal lasts until
+the next start, clear or restart. Over Monitor it plays only with `coversStatus` set, the setting
 on and a current session source that shows nothing needing attention, and the
 current dashboard follows it. A flourish cannot set `coversStatus`, so a moment
 meant to appear over Monitor must be an `event`.

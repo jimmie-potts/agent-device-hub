@@ -156,7 +156,7 @@ export class MonitorPresentation {
  /**
   * Why a moment could not play now, or null when it could. Over Monitor it needs the hub's permission to cover status,
   * the owner's setting and evidence that nothing needs attention. Over Media it needs a playlist in play or an idle player,
-  * since nothing could repaint a paused item. A takeover keeps the display, and known attention stops either one.
+  * since nothing could repaint a paused or stopped item. A takeover keeps the display, and known attention stops either one.
   */
  momentBlock(coversStatus:boolean):string|null{
   const state=this.player.getState();
@@ -176,12 +176,12 @@ export class MonitorPresentation {
   }
   if(this.takeover!==null||(this.takeoverPending&&this.moment?.phase!=='holding'))return 'Now Playing holds the display';
   if(state.intent==='active'||this.idle(state))return null;
-  return this.displayUnknown(state)?'the display may show something else':'a paused playlist could not be repainted';
+  return state.itemId===null?'the display may show something else':'a held item could not be repainted';
  }
  /** Whether what the display shows may not be ours: after an uncertain write, or under external control. */
  private displayUnknown(state:PlayerState):boolean{return state.lastError?.priorEffects==='possible'||state.lastError?.code==='external-control';}
- /** Whether nothing is playing and no paused item is waiting: stopped, or paused with nothing loaded, as Monitor leaves an empty player. */
- private idle(state:PlayerState):boolean{return (state.intent==='stopped'||(state.intent==='paused'&&state.itemId===null))&&!this.displayUnknown(state);}
+ /** Whether nothing is loaded and the player is at rest, whether stopped or paused as Monitor leaves an empty player. */
+ private idle(state:PlayerState):boolean{return state.intent!=='active'&&state.itemId===null&&state.state!=='error'&&!this.displayUnknown(state);}
  /** Whether a moment holds a playlist paused, so that a manual next or previous still means to keep playing. */
  momentHoldsMedia():boolean{return this.takeover?.kind==='moment'||this.moment?.phase==='holding';}
  /**
@@ -240,7 +240,8 @@ export class MonitorPresentation {
   const state=this.player.getState();
   if(this.idle(state)){moment.over='idle';moment.generation=state.generation;moment.phase='showing';this.momentWrite=true;this.onChange();return;}
   moment.phase='holding';
-  this.hold('moment',()=>Infinity,()=>this.moment===moment&&this.configuration.mode==='media'&&this.momentBlock(moment.coversStatus)===null,held=>{
+  // A pause on a player that has since stopped would give the moment a playlist to resume over that stop.
+  this.hold('moment',()=>Infinity,()=>this.moment===moment&&this.configuration.mode==='media'&&this.player.getState().intent==='active'&&this.momentBlock(moment.coversStatus)===null,held=>{
    if(held===null){this.refuseMoment(moment,'blocked');return;}
    moment.generation=held;moment.phase='showing';this.momentWrite=true;
   });
