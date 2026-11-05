@@ -35,6 +35,13 @@ See [the module guide](../modules/reachy-mini/README.md).
 
 ## Art checks
 
+Art-derived decoration (#683) uses `npm run test:art-theme:browser` after the
+root build, in the existing App verification runtime group and full local
+dashboard browser suite. Bounded palette and preference cases are discovered
+by `npm run test:runtime-dashboard:built`. Keep shared build/type/lint,
+contract/package and workflow checks; no new backend contract is introduced.
+See the runtime dashboard guide for synthetic theme and zero-effect evidence.
+
 The adaptive widget and Gallery checks for #682 use
 `npm run test:art:browser` after the root build. They run in the existing App
 verification runtime group and the full local runtime dashboard browser suite.
@@ -56,15 +63,19 @@ cover its registration. A contract change to the diagnostic profile also needs
 `npm run test:observability`. Real generation and the GIF rejection rate belong to
 installed acceptance in #687. See [the module guide](../modules/art/README.md).
 
-The registered `art-gallery`, `art-catalog` and `art-spending-limit` scenarios run through both
+The registered `art-theme`, `art-gallery`, `art-catalog` and `art-spending-limit` scenarios run through both
 runtime transports in `test:runtime:scenarios:built`. They use synthetic GIF/still
 providers with fixed billed usage and the real authenticated commands, catalog,
 ledger and private store. They cover favorite/reuse/variation, invalid bytes, lost
 responses, restart without replay, recent retention and the monthly ceiling.
 After building, focus them with
-`node --test --test-name-pattern='art-gallery|art-catalog|art-spending-limit' apps/runtime/dist/tests/scenarios/catalog.test.js`.
+`node --test --test-name-pattern='art-theme|art-gallery|art-catalog|art-spending-limit' apps/runtime/dist/tests/scenarios/catalog.test.js`.
 On a Mac, use `npm run test:runtime:container -- --suite scenarios`.
 
+For local theme controls, select `scenario-art-theme`; its labelled capture shows
+contrasting saved art, locking the colors, restoring defaults and following again,
+with no additional provider call or device command. The simulation's warm/cool
+fixtures pass through the real pixel palette processor.
 For the actual gallery UI, select `scenario-art-gallery`; its capture uses visible,
 labelled controls and leaves decoded synthetic art on screen. For the producer API
 exercise on a clean committed candidate, select `scenario-art-catalog` through the [portable route](../apps/runtime/verify/PORTABLE.md).
@@ -73,7 +84,7 @@ content route, using a labelled review-only link in the existing shell. It adds 
 gallery UI and exercises no real provider or device. The rendition remains visible
 in the final screenshot. The separate `scenario-art-spending-limit` capture covers
 the ceiling and restart. Existing
-`test:runtime:verify:built` discovery runs both captures; on a Mac use
+`test:runtime:verify:built` discovery runs these captures; on a Mac use
 `npm run test:runtime:container -- --suite verify`. Inspect the complete video and
 scenario-result attachment before assessing acceptance.
 

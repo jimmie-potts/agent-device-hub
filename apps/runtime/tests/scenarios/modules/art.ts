@@ -20,6 +20,22 @@ const seed: Scenario['seed'] = {modules: ['core', 'art'], sections: {art: {recen
 const initialCalls = new WeakMap<Harness, number>();
 
 export const scenarios: readonly Scenario[] = [{
+  id: 'art-theme', title: 'decoded contrasting art changes decoration while local lock and default remain under owner control',
+  seed: {...seed, sections: {art: {recentLimit: 8}}}, keepCapturePage: true,
+  capture: async (context, harness) => {const {captureArtTheme} = await import('../../../verify/art-theme.js');await captureArtTheme(context, harness);},
+  steps: [
+    expect('core and art are running', h => running(h, ['core', 'art'])),
+    ...(['warm', 'cool'] as const).flatMap(colors => [
+      act(`prepare a synthetic ${colors} browser composition`, async h => {h.simulate({device: 'art', action: `${colors}-colors`});await request(h, `art-theme-${colors}`);}),
+      ended(`art-theme-${colors}`, 'succeeded'),
+    ]),
+    expect('two decoded compositions have distinct pixel-derived palettes', h => {
+      const warm = artwork(h, 'art-theme-warm'), cool = artwork(h, 'art-theme-cool');
+      return warm?.compositions.some(value => value.target === 'ui' && value.outcome === 'succeeded') === true && cool?.compositions.some(value => value.target === 'ui' && value.outcome === 'succeeded') === true && warm.palette.length > 0 && cool.palette.length > 0 && JSON.stringify(warm.palette) !== JSON.stringify(cool.palette) || 'contrasting ready palettes missing';
+    }),
+    expect('the two explicit requests made two synthetic ideas and images', h => calls(h).imageCalls === 2 && calls(h).ideaCalls === 2 || 'unexpected generation'),
+  ],
+}, {
   id: 'art-gallery', title: 'the real Art Gallery displays a saved synthetic browser composition',
   seed: {...seed, sections: {art: {recentLimit: 8}}}, keepCapturePage: true,
   capture: async context => {const {captureArtGallery} = await import('../../../verify/art-gallery.js');await captureArtGallery(context);},

@@ -1,5 +1,6 @@
 import {HabitatPage} from './habitat.tsx';
 import {ArtPresentationProvider, ArtWidget} from '@jimmie-potts/art/frontend';
+import {ArtThemeProvider, ArtThemeSettings} from './art-theme.tsx';
 import {HomeLayout} from './home-layout.tsx';
 import type {HomeCardDefinition} from './home-catalog.ts';
 import type {HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
@@ -256,7 +257,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       synced={state.sessions.synced} live={live} control={state.runtime.control} now={now}/></Widget>;
     return null;
   };
-  return <ArtPresentationProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className="shell">
+  return <ArtPresentationProvider><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className="shell">
     <a className="skip" href="#main" onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
     <aside>
       <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
@@ -280,7 +281,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       {route.kind === 'settings' && <section aria-label="Settings"><header className="page"><h1>Settings</h1></header>
         <div className="settings-grid"><article className="card"><h2>Connections</h2><p className="hint">Connection evidence, running build and operator tools.</p><NavLink route={{kind: 'connections'}}>Connections</NavLink></article>
           <article className="card"><h2>Browser session</h2><FeedIndicator state={state} now={now}/><div className="actions"><button type="button" className="secondary" onClick={disconnect}>Disconnect</button></div></article>
-          <article className="card"><PlacesNav links={links}/></article></div>
+          <ArtThemeSettings/><article className="card"><PlacesNav links={links}/></article></div>
       </section>}
       {route.kind !== 'home' && <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
       {route.kind === 'component' && <section aria-label="Devices">
@@ -308,7 +309,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </div></section>}
       <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer>
     </main>
-  </div></DeviceModesProvider></ArtPresentationProvider>;
+  </div></DeviceModesProvider></ArtThemeProvider></ArtPresentationProvider>;
 }
 
 /** Where sign-in stands: checking, signed in with a connection, or signed out with the reason the page shows. */
