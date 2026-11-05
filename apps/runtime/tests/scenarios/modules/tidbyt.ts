@@ -131,6 +131,7 @@ const staged = (h: Harness): string | undefined => artState(h)?.candidates.find(
 const serverState = (h: Harness): TronbytState => deviceState<TronbytState>(h, 'tidbyt');
 const nativeArt = (h: Harness) => serverState(h).installations.bunnyart;
 const artCalls = (h: Harness) => deviceState<{imageCalls: number; ideaCalls: number}>(h, 'art');
+const artSyncBeforeRestart = new WeakMap<Harness, number>();
 const {nowPlaying: _card, ...ART_SECTION} = TRONBYT_SIMULATED_SECTION;
 
 /** Real producer, tracker, worker and queue, through strict simulated transports and authenticated content. */
@@ -178,7 +179,14 @@ const tidbytArt: Scenario = {
       const allowed = await h.gateway({as: 'reader', method: 'GET', path});
       return allowed.status === 200 && allowed.headers['content-type']?.startsWith('image/webp') === true || 'authenticated exact preview was unreadable';
     }),
-    act('the runtime restarts with its saved selection and private copy', h => h.restart()),
+    act('the runtime restarts with its saved selection and private copy', async h => {
+      artSyncBeforeRestart.set(h, h.reader.syncs('art', 'bunny/modules/art'));
+      await h.restart();
+    }),
+    expect('the restarted art and display owners are running', h => running(h, ['core', 'art', 'tidbyt'])),
+    expect('the reader has synchronized the restarted art owner before inspecting saved state', h =>
+      h.reader.syncs('art', 'bunny/modules/art') > (artSyncBeforeRestart.get(h) ?? Number.POSITIVE_INFINITY) && staged(h) !== undefined
+      || 'the restarted art copy has not completed its sync', 5000),
     expect('selection survives independently of server evidence', async h => {
       const response = await h.gateway({as: 'reader', method: 'GET', path: '/modules/tidbyt/content/art-status'});
       const status = bodyOf<{selected: {compositionId: string} | null; visible: string}>(response);
