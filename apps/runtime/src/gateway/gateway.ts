@@ -932,7 +932,7 @@ export class Gateway {
 
   /**
    * The command an action names: its key, and a draft whose type, `org.bunny.<entity>.<verb>.requested`, and schema,
-   * `<family>/2.0`, follow from the family (ADR 0012's command naming), checked against the family's schema. A family
+   * the registered command version, follow from the family (ADR 0012's command naming), checked against its schema. A family
    * whose schema the runtime does not know is `not-found`. A known family that no running module answers passes here: the
    * dispatcher tracks it, and the bus refuses it with `unavailable`.
    */
@@ -948,7 +948,8 @@ export class Gateway {
     if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
     if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
     const type = `org.bunny.${family.slice(0, verb)}.${family.slice(verb + 1)}.requested`;
-    const dataschema = `${SCHEMA_BASE}${family}/2.0`;
+    const version = family === 'music-capture-control' && data.action === 'start' && data.input === 'microphone' ? '2.1' : '2.0';
+    const dataschema = `${SCHEMA_BASE}${family}/${version}`;
     const now = this.#options.clock.now();
     const checked = this.#options.validator.validate({
       specversion: '1.0', bunnyprofile: '2.0', id: 'action-check', source, type, subject: target, time: new Date(now).toISOString(), kind: 'command',

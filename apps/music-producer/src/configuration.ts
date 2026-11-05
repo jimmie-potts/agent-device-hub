@@ -3,14 +3,22 @@ import {open} from 'node:fs/promises';
 import {isAbsolute} from 'node:path';
 import {Ajv2020} from 'ajv/dist/2020.js';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {CAPTURE_MICROPHONE_ID} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {SdkError} from '@jimmie-potts/sdk';
 
-type Configuration = {schema: 'music-producer/1.0'; edgeOrigin: string; tokenFile: string; helper: string};
-const validate = new Ajv2020({allErrors: false}).compile<Configuration>({
+export type ConfiguredMicrophone = {id: string; uid: string};
+type Configuration = {edgeOrigin: string; tokenFile: string; helper: string} &
+  ({schema: 'music-producer/1.0'; microphone?: never} | {schema: 'music-producer/1.1'; microphone?: ConfiguredMicrophone});
+const properties = {edgeOrigin: {type: 'string', minLength: 1, maxLength: 2048},
+  tokenFile: {type: 'string', minLength: 1, maxLength: 4096}, helper: {type: 'string', minLength: 1, maxLength: 4096}};
+const validate = new Ajv2020({allErrors: false}).compile<Configuration>({oneOf: ['1.0', '1.1'].map(version => ({
   type: 'object', additionalProperties: false, required: ['schema', 'edgeOrigin', 'tokenFile', 'helper'],
-  properties: {schema: {const: 'music-producer/1.0'}, edgeOrigin: {type: 'string', minLength: 1, maxLength: 2048},
-    tokenFile: {type: 'string', minLength: 1, maxLength: 4096}, helper: {type: 'string', minLength: 1, maxLength: 4096}},
-});
+  properties: {...properties, schema: {const: `music-producer/${version}`}, ...(version === '1.0' ? {} : {
+    microphone: {type: 'object', additionalProperties: false, required: ['id', 'uid'], properties: {
+      id: {type: 'string', pattern: CAPTURE_MICROPHONE_ID.source}, uid: {type: 'string', minLength: 1, maxLength: 1024},
+    }},
+  })},
+}))});
 const refusal = (): SdkError => new SdkError(errorBody('invalid-request', {detail: 'Music producer configuration is invalid.'}));
 
 /** Read once from an owner-only regular file; a growing file cannot expand the allocation. */
@@ -36,6 +44,7 @@ export async function loadConfiguration(file: string): Promise<Configuration & {
   try {
     const value: unknown = JSON.parse(await privateText(file, 8192));
     if (!validate(value) || !isAbsolute(value.tokenFile) || !isAbsolute(value.helper)) throw refusal();
+    if (value.microphone !== undefined && Buffer.byteLength(value.microphone.uid, 'utf8') > 1024) throw refusal();
     const origin = new URL(value.edgeOrigin);
     if (!['http:', 'https:'].includes(origin.protocol) || origin.username !== '' || origin.password !== '' ||
       origin.pathname !== '/' || origin.search !== '' || origin.hash !== '') throw refusal();

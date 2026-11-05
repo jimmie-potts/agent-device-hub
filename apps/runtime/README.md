@@ -558,12 +558,17 @@ controls the installed Music app.
 
 ## Music capture
 
-The core owns explicitly started Music.app capture sessions through
+The core owns explicitly started Music.app or configured microphone sessions through
 `music-capture-control` and serves their current `music-capture-state` record.
 Start and stop use tracked operator admission with the current revision. A
 received start report proves activation; an accepted request alone does not.
 Stop fences features immediately, and clean teardown has its own outcome.
-The separate [Mac producer](../music-producer/README.md) opens the audio tap.
+The separate [Mac producer](../music-producer/README.md) opens the selected input.
+The core emits one `music-capture-state/2.1` entity for sync and live updates.
+It accepts unchanged 2.0 Music producers and commands alongside explicit 2.1
+microphone commands. A configured alias is not evidence of device presence or
+permission. Audio selection alone starts nothing; missing permission must be
+resolved through the separate Mac setup operation.
 
 Its credential uses role `music-producer`, source
 `bunny/parts/music-producer` and an empty scopes list. The edge grants one

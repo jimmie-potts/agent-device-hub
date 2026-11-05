@@ -1,15 +1,15 @@
-# Native Music input
+# Native audio input
 
-This directory contains Music.app audio capture, a read-only state/position
-reader and a distinct playback adapter. These are source components of the
-Music producer, not installed services. For
-capture, the owning Node process admits the session, consumes its records and
-uses the authenticated SDK edge. The runtime owns the capture session and
-Nanoleaf owns rendering and device writes. The position reader has no SDK integration.
-The playback adapter observes the selected Music process and accepts only four
-explicit transport actions through its parent. None of the helpers opens a
-network connection, selects an output, captures a microphone or analyzes a
-prepared track.
+This directory contains Music.app audio capture, selected microphone capture
+and a read-only Music state/position reader, plus a distinct playback adapter.
+These are source components of the Music producer, not installed services.
+For capture, the owning Node process admits the session, consumes its records
+and uses the authenticated SDK edge. The runtime owns the capture session and
+Nanoleaf owns rendering and device writes. The position reader has no SDK
+integration. The playback adapter observes the selected Music process and
+accepts only four explicit transport actions through its parent. None of the
+helpers opens a network connection, selects an output or analyzes a prepared
+track.
 
 ## Build and source checks
 
@@ -46,11 +46,13 @@ compilation and synthetic checks do not qualify capture on every OS version,
 output route or protected music source.
 
 `adapter-test.sh` builds a different executable whose Core Audio access functions
-are all replaced with test implementations. It checks exact Music inclusion,
+and AVFoundation authorization class are all replaced with test implementations. It checks exact Music inclusion,
 unmuted private-tap configuration, no output subdevice, zero audio access from
 startup, self-test and clock modes, source/format failures, invalid buffers,
 stop, EOF, signals and every cleanup attempt after acquisition failures.
-Its explicit-capture invocations use generated samples and cannot capture audio.
+It also covers exact microphone UID selection, input-only IOProc stream usage,
+permission refusal/revocation, removal, setup discovery and permission-only
+operations. Its capture invocations use generated samples and cannot capture audio.
 It also builds a separate position executable with fake process lookup,
 permission preflight and AppleEvent sends. Its scenarios check exact getter
 descriptors and flags, process replacement, partial reads, five state enums,
@@ -220,7 +222,8 @@ accuracy, pause/seek behavior or audible timing.
 
 ## Explicit capture and lifetime
 
-Only the exact `--capture` argument enters the capture path. No argument or an
+The exact `--capture` argument enters the Music path; `--capture-microphone`
+enters the selected microphone path. No argument or an
 unknown argument emits a fixed `invalid-request` terminal record and exits 2.
 Permission grant alone never starts a session. The parent must keep stdin open
 and consume stdout through a pipe or local socket. Capture refuses stdout to a
@@ -246,6 +249,32 @@ substitutes the system default output or observes unrelated process routes.
 The helper stops on any selected-route notification because it invalidates the
 session's route qualification. A later session needs an explicit start.
 
+Microphone capture first reads a closed `music-native-input/1.0` JSON line with
+only `schema` and `uid`. It permits at most 8192 bytes and two seconds for this
+startup record; the UID is 1–1024 UTF-8 bytes. EOF, stop or signals before selection
+cause no audio access. Authorization must already be granted. The helper resolves
+that exact UID through `kAudioHardwarePropertyTranslateUIDToDevice` and verifies
+its UID and alive state. Missing or unsupported devices are refused. It never
+reads or switches to the default input.
+
+The selected device must expose exactly one input stream in the existing
+mono/stereo Float32/Float64 formats. Per-IOProc stream usage enables that input
+and disables every output stream, then reads both settings back before starting.
+The helper changes no system default, gain, sample rate or hog ownership. Device
+alive/UID, input/output stream and virtual-format listeners retire the session;
+control-thread checks also detect permission revocation or device loss. There
+is no process tap or aggregate for microphone capture. Cleanup owns only this
+helper's listeners and IOProc.
+
+`--list-microphones` is explicit setup only. It reports at most 64 devices, each
+with at most 32 input streams, a UID of at most 1024 UTF-8 bytes and a name of at
+most 256 UTF-8 bytes. The local JSON output is capped at 512 KiB. It requests no
+permission and opens no capture. Its names and UIDs are private owner setup data.
+`--authorize-microphone` separately checks AVFoundation audio authorization and
+requests it only when undetermined. It reports a fixed result and opens no audio
+IO. It ends on parent loss, a signal or its 120-second waiting bound. Starting a
+capture never invokes this permission request.
+
 The parent ends capture by writing `stop\n`, closing stdin or sending SIGTERM or
 SIGINT. Any other control bytes end it with `invalid-request`. The loop also ends
 after 24 hours. After deciding to stop, it stops and destroys the IOProc, removes
@@ -266,8 +295,9 @@ must use child exit and invalidate the session, never infer success from silence
 Stdout carries newline-delimited JSON only. These records are an internal child
 process interface, not a second runtime transport. The parent validates them,
 adds its session/source identity and generation, and wraps admitted measurements
-in the shared event contract. No raw PCM, audio file, track identifier, process
-list, route name, credential, arbitrary exception or OS error text is emitted.
+in the shared event contract. Capture emits no raw PCM, audio file, track identifier, process list, route name,
+UID, credential, arbitrary exception or OS error text. The separate explicit
+inventory command emits only the owner-local setup data described above.
 The helper creates no audio file or local diagnostic log.
 
 Every measurement uses `schema: "music-native-frame/1.0"` and these fields:
@@ -329,7 +359,8 @@ unavailable and does not reuse the last frame.
 
 ## Refusals and qualification limits
 
-Terminal failures use `schema: "music-native-terminal/1.0"` and the shared
+Music terminal failures use `schema: "music-native-terminal/1.0"`; microphone
+terminal failures use `music-native-terminal/1.1`. Both carry the shared
 `error: {code, retryable, detail}` body. `detail` comes from fixed strings in the
 helper. The existing registry supplies `invalid-request`, `invalid-message` and
 `unsupported-capability` with `retryable: false`, and `unavailable` and `capacity`
@@ -344,9 +375,10 @@ failures map to `unavailable`; they do not prove permission was denied. There is
 no automatic fallback, output-route switch or permissions reset.
 
 The embedded identity is `local.bunny.music-producer`, with
-`NSAudioCaptureUsageDescription`. This source build is unsigned. Packaging,
+`NSAudioCaptureUsageDescription` and `NSMicrophoneUsageDescription`. This source build is unsigned. Packaging,
 signing, responsible-process identity, the system audio recording permission
-flow and installed parent/child termination need qualification in the selected
+flow, microphone authorization identity and installed parent/child termination
+need qualification in the selected
 Mac installation. Do not infer a stable permission grant from compilation.
 
 Apple's [Core Audio tap example](https://developer.apple.com/documentation/coreaudio/capturing-system-audio-with-core-audio-taps)
@@ -357,3 +389,9 @@ process output-device change is not qualified by this check. There is no DRM
 bypass or blanket AirPlay support claim. Source tests establish
 numeric and lifecycle behavior with generated input; installation and physical
 timing acceptance remain separate work under the owning issue.
+
+Apple's [capture authorization guide](https://developer.apple.com/documentation/AVFoundation/requesting-authorization-to-capture-and-save-media)
+owns the microphone permission API. Compilation and substituted adapter tests do
+not prove permission behavior for a signed installed helper or a real device.
+Noise-floor calibration and tuning are not implemented; current values remain
+raw digital measurements with the same analyzer definitions for both inputs.

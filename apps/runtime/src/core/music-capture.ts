@@ -4,7 +4,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {MessageValidator, errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {CAPTURE_CLOCK_DRIFT_MS, CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_VALIDITY_MS, MUSIC_PRODUCER_SOURCE,
-  type CaptureControl, type CaptureEndpointControl, type CaptureFeatures, type CaptureLost, type CaptureProgress, type CaptureState, type CaptureWork,
+  type CaptureControl, type CaptureEndpointControl, type CaptureFeatures, type CaptureLost, type CaptureProgress, type CaptureSelection, type CaptureState, type CaptureWork,
 } from '@jimmie-potts/event-contracts/v2/music-capture';
 import {Outcome, fullDisk, recordLog, type Cancel, type Command, type ModuleScheduler, type Reply, type StateDraft} from '@jimmie-potts/sdk';
 import {Backoff} from './backoff.js';
@@ -13,9 +13,10 @@ import type {CoreTransaction} from './store.js';
 import type {CompletedOutcome, CoreResponsibility} from './tracker.js';
 
 const SCHEMA = 'https://bunny.invalid/events/';
-const stateDraft = (data: CaptureState): StateDraft<CaptureState> => ({type: 'org.bunny.music-capture.updated', subject: 'music', dataschema: `${SCHEMA}music-capture-state/2.0`, data});
+const stateDraft = (data: CaptureState): StateDraft<CaptureState> => ({type: 'org.bunny.music-capture.updated', subject: 'music', dataschema: `${SCHEMA}music-capture-state/2.1`, data});
+const selectedInput = (value: CaptureSelection): CaptureSelection => value.input === 'music' ? {input: 'music'} : {input: 'microphone', microphoneId: value.microphoneId};
 type Responsibility = {authority: CoreResponsibility; action: 'start' | 'stop'; generation: string; endpointId: string;
-  result: 'pending' | 'uncertain' | 'succeeded' | 'failed'; traceparent: string};
+  result: 'pending' | 'uncertain' | 'succeeded' | 'failed'; traceparent: string; selection?: CaptureSelection};
 type ClockAnchor = {wall: number; mono: number};
 type Live = ClockAnchor & {generation: string; sequence: number; sourceEnd: number; untilWall: number; untilMono: number};
 export type CaptureAdmission = {
@@ -88,12 +89,13 @@ export class MusicCapturePart implements CorePart {
   async #recover(): Promise<void> {
     if (this.#database === undefined) return;
     const previous = this.#state();
-    if (previous.endpointId === null && previous.session.status === 'idle' && this.#responsibilities().every(record => record.result !== 'pending')) return;
+    if (previous.endpointId === null && previous.microphone === undefined && previous.session.status === 'idle' && this.#responsibilities().every(record => record.result !== 'pending')) return;
     const core = this.#required();
     const completions: (() => void)[] = [];
     await core.transaction(tx => {
       const current = this.#state();
-      if (current.endpointId !== null || current.session.status !== 'idle') {
+      if (current.endpointId !== null || current.microphone !== undefined || current.session.status !== 'idle') {
+        delete current.microphone;
         this.#save(tx, {...current, endpointId: null, availability: 'unavailable',
           session: current.session.status === 'idle' ? current.session : {...current.session, status: 'unavailable'}});
       }
@@ -147,12 +149,15 @@ export class MusicCapturePart implements CorePart {
       this.#fence();await this.#retire('off');return {status: 'accepted'};
     }
     const anchor = {wall: core.clock.now(), mono: this.monotonic()};
+    const microphone = command.data.microphone;
     let registered = false;
     const reply = await core.transaction(tx => {
       const current = this.#state();
       if (current.endpointId !== null && current.endpointId !== command.subject) return errorBody('invalid-state');
+      if (current.endpointId === command.subject && current.microphone?.id !== microphone?.id) return errorBody('invalid-state');
       if (current.endpointId !== command.subject || current.availability !== 'available') {
-        this.#save(tx, {...current, endpointId: command.subject, availability: 'available'});registered = true;
+        this.#save(tx, {...current, endpointId: command.subject, availability: 'available',
+          ...(microphone === undefined ? {} : {microphone: {id: microphone.id}})});registered = true;
       }
       return {status: 'accepted'} as const;
     });
@@ -177,14 +182,17 @@ export class MusicCapturePart implements CorePart {
         if (data.expectedRevision !== current.revision) return errorBody('revision-conflict');
         if (current.availability !== 'available' || current.endpointId === null) return errorBody('unavailable');
         if (data.action === 'start' && (data.endpointId !== current.endpointId || ['starting', 'active', 'stale', 'stopping', 'uncertain'].includes(current.session.status))) return errorBody('invalid-state');
+        if (data.action === 'start' && data.input === 'microphone' && data.microphoneId !== current.microphone?.id) return errorBody('unsupported-capability');
         if (data.action === 'stop' && (current.session.status === 'idle' || current.session.status === 'stopping')) return errorBody('invalid-state');
         if (data.action === 'start' && (anchor === undefined || !this.#clockValid(anchor, core.clock.now(), this.monotonic()))) {
           clockInvalid = true;return errorBody('unavailable');
         }
+        const selection = data.action === 'start' ? selectedInput(data) : current.session.status === 'idle' ? undefined : selectedInput(current.session);
+        if (selection === undefined) return errorBody('invalid-state');
         const generation = data.action === 'start' ? randomUUID() : current.session.status === 'idle' ? '' : current.session.generation;
-        const record: Responsibility = {authority, action: data.action, generation, endpointId: current.endpointId, result: 'pending', traceparent: command.traceparent};
+        const record: Responsibility = {authority, action: data.action, generation, endpointId: current.endpointId, result: 'pending', traceparent: command.traceparent, selection};
         this.#write(record);
-        this.#save(tx, {...current, session: {status: data.action === 'start' ? 'starting' : 'stopping', generation, operationId: authority.requestId, input: 'music'}});
+        this.#save(tx, {...current, session: {status: data.action === 'start' ? 'starting' : 'stopping', generation, operationId: authority.requestId, ...selection}});
         tx.take(command);accepted = record;
         if (data.action === 'start' && anchor !== undefined) live = {...anchor, generation, sequence: 0, sourceEnd: -1, untilWall: 0, untilMono: 0};
         return {status: 'accepted'} as const;
@@ -203,11 +211,12 @@ export class MusicCapturePart implements CorePart {
   async #send(record: Responsibility): Promise<void> {
     const core = this.#required();
     if (this.#closed) return;
+    const selection = record.selection ?? {input: 'music'};
     const data: CaptureWork = {requestId: record.authority.requestId, operationId: record.authority.requestId, generation: record.generation,
-      ...(record.action === 'start' ? {action: 'start', input: 'music'} : {action: 'stop'})};
+      ...(record.action === 'start' ? {action: 'start', ...selection} : {action: 'stop'})};
     try {
       const reply = await core.sdk.request(`bunny.cmd.music-capture-work.${record.endpointId}`, {type: 'org.bunny.music-capture.work.requested', subject: record.endpointId,
-        dataschema: `${SCHEMA}music-capture-work/2.0`, data}, {requestId: record.authority.requestId, timeoutMs: 2000, parent: record});
+        dataschema: `${SCHEMA}music-capture-work/${record.action === 'start' && selection.input === 'microphone' ? '2.1' : '2.0'}`, data}, {requestId: record.authority.requestId, timeoutMs: 2000, parent: record});
       if (reply.status === 'accepted') return;
       await this.#serial(() => this.#settleFailure(record, reply.status === 'rejected' ? 'failed' : 'uncertain', reply.error.error.code));
     } catch {await this.#serial(() => this.#settleFailure(record, 'uncertain', 'uncertain-result'));}
@@ -262,6 +271,8 @@ export class MusicCapturePart implements CorePart {
     if (!this.#clockValid(live, wall, mono)) {await this.#retire('unavailable');return;}
     if (message.subject !== current.endpointId || frame.generation !== live.generation || current.session.status === 'idle' ||
       !['active', 'stale'].includes(current.session.status) || frame.sequence <= live.sequence || frame.endMonotonicMs <= live.sourceEnd || frame.observedAtMs > wall + CAPTURE_MAX_CLOCK_SKEW_MS || wall >= frame.validUntilMs) return;
+    if (frame.input !== current.session.input || (frame.input === 'microphone' &&
+      (current.session.input !== 'microphone' || frame.microphoneId !== current.session.microphoneId))) return;
     live.sequence = frame.sequence;live.sourceEnd = frame.endMonotonicMs;live.untilWall = frame.validUntilMs;
     live.untilMono = mono + Math.min(CAPTURE_VALIDITY_MS, frame.validUntilMs - wall);
     const session = current.session;
@@ -300,6 +311,7 @@ export class MusicCapturePart implements CorePart {
     const completions: (() => void)[] = [];
     await core.transaction(tx => {
       const current = this.#state();
+      delete current.microphone;
       this.#save(tx, {...current, endpointId: null, availability,
         session: current.session.status === 'idle' ? current.session : {...current.session, status: 'unavailable'}});
       for (const record of this.#responsibilities()) if (record.result === 'pending') completions.push(this.#finish(tx, record, 'uncertain', 'uncertain-result'));
