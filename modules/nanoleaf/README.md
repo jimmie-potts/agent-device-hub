@@ -129,6 +129,24 @@ instruction. `renderMusicCue` validates the supplied saved layout and uses the
 existing Lines/NL22 encoder with cue intensity. It renders the ordinary effect
 from its beginning, so the cursor's elapsed time is not a phase-accurate seek.
 
+`prepareMusicCueFrames(cue, layout)` provides an internal immutable copy of the
+same canonical keyframes, with each zone's actual cycle duration. It validates
+only the supplied layout values and reads no layout file. The shared internal
+frame preparation keeps ordinary animation payload bytes unchanged. The existing
+package `effects` namespace additively exposes `prepareAnimationFrames`; it
+returns frozen canonical zones and an ordinary mutable display payload, with
+existing capacity checks. Existing namespace exports retain their signatures.
+`locateMusicCuePhase(prepared, elapsedMs)` accepts cue-relative elapsed time
+and returns frozen per-zone transition descriptors: target, previous endpoint
+when known, frame index, cycle and elapsed/remaining transition milliseconds.
+The initial first transition reports an unknown origin. A later loop cycle
+uses the last endpoint as its first origin; a completed one-shot reports its
+final endpoint. At cue duration or later, `cue-ended` supplies no presentation
+instruction. Invalid positions are refused. Sampling order has no effect, so
+callers use the selector's current elapsed time after pause, resume or seek.
+These descriptors infer no interpolated RGB color or controller phase-seek
+support. They add no remote preparation contract, route or playback caller.
+
 The offline show library calls preparation; its storyboard uses only the
 browser-safe semantic selector in `music-timeline-data.ts`. The cursor and
 renderer have no production playback caller or device access. Preparation

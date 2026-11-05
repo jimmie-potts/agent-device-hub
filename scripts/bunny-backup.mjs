@@ -102,7 +102,7 @@ async function configuration(config, secrets, heldOwner, legacy=false) {
   const fields=['adbSocket','hostExecutable','hostKeyDirectory'];
   let declared=false;
   if(!legacy&&parsed.modules?.onn!==undefined) {
-    const {configureOnn}=await import('../modules/onn/dist/src/configuration.js');
+    const {configureOnn}=await import('../apps/runtime/dist/src/compatibility/onn-configuration.js');
     declared='config' in configureOnn(parsed.modules.onn);
   }
   function walk(value,location=[]) {

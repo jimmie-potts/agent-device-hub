@@ -154,6 +154,16 @@ try {
   assert.equal(tv.sent.length, 0, 'signing in again sends no command');
   checks.push('after a restart, Sign in again works from the keyboard');
 
+  // Retired module bookmarks use the ordinary missing-route state without controls or effects (#1464).
+  for (const route of ['controls', 'history']) {
+    await page.goto(`${world.url}/#/module/onn/${route}`);
+    await feed(page, 'connected');
+    await page.getByRole('region', {name: 'Not found'}).waitFor();
+    assert.equal(await page.locator('.onn-card').count(), 0);
+    assert.equal(tv.sent.length, 0, 'a retired ONN bookmark sends no command');
+  }
+  checks.push('retired ONN controls and history bookmarks show the missing-route state without commands');
+
   assert.deepEqual(errors, []);
   await tv.context.close();
   process.stdout.write(`${JSON.stringify({passed: true, viewport: '1920x1080', checks, actualOnn: false, tvBrowser: false})}\n`);

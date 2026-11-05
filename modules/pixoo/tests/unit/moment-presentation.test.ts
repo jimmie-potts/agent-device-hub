@@ -180,15 +180,125 @@ it('over Media a paused item refuses a moment, since nothing could repaint it',a
   expect(s.monitor.momentBlock(false)).toBe('a held item could not be repainted');
  }finally{await s.close();}
 });
-it('over Media a stopped item refuses a moment too, before and after a screen cycle',async()=>{
+it('over a stopped item the moment plays without touching the player, one blank follows, and the item can still resume',async()=>{
  const s=await setup();
  try{
   await mediaPlaying(s);await s.settle(s.player.stop());
-  expect(s.player.getState().intent).toBe('stopped');
-  expect(s.player.getState().itemId).not.toBeNull();
+  const before=s.player.getState();
+  expect(before.intent).toBe('stopped');
+  expect(before.itemId).not.toBeNull();
+  expect(s.monitor.momentBlock(false)).toBeNull();
+  const results=s.play({coversStatus:false});await s.run(1300);
+  expect(s.frames().at(-1)).toEqual(art);
+  await s.run(3200);ended(results,'completed');await s.run(1100);
+  expect(s.frames().at(-1)).toEqual(blank);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before.generation,itemId:before.itemId});
+  await s.settle(s.player.resume());await s.run(200);
+  expect(s.player.getState()).toMatchObject({intent:'active',state:'playing',itemId:before.itemId});
+ }finally{await s.close();}
+});
+it('over a finished playlist the moment plays and the playlist stays finished',async()=>{
+ const s=await setup();
+ try{
+  s.store.playlist.repeat=false;
+  await mediaPlaying(s);
+  for(let i=0;i<s.store.playlist.items.length+1&&s.player.getState().intent==='active';i++){await s.settle(s.player.next());await s.run(200);}
+  const before=s.player.getState();
+  expect(before.intent).toBe('stopped');
+  expect(before.itemId).not.toBeNull();
+  const results=s.play();await s.run(1300);
+  expect(s.frames().at(-1)).toEqual(art);
+  await s.run(3200);ended(results,'completed');await s.run(1100);
+  expect(s.frames().at(-1)).toEqual(blank);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before.generation,itemId:before.itemId});
+ }finally{await s.close();}
+});
+it('turning the screen off pauses a stopped item, which then refuses like any paused item',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);await s.settle(s.player.stop());
+  await s.settle(s.player.setScreen(false));
+  expect(s.monitor.momentBlock(false)).toBe('the screen is off');
+  await s.settle(s.player.setScreen(true));
+  expect(s.player.getState().intent).toBe('paused');
   expect(s.monitor.momentBlock(false)).toBe('a held item could not be repainted');
-  await s.settle(s.player.setScreen(false));await s.settle(s.player.setScreen(true));
-  expect(s.monitor.momentBlock(false)).toBe('a held item could not be repainted');
+ }finally{await s.close();}
+});
+it('resuming during a moment over a stopped item ends it, and no blank lands on the resumed item',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);await s.settle(s.player.stop());
+  const results=s.play();await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
+  await s.settle(s.player.resume());await s.run(1500);
+  ended(results,'interrupted');
+  expect(s.player.getState()).toMatchObject({intent:'active',state:'playing'});
+  // The art, then the fake playlist's items, the first of them all zeros: a blank would repeat that zero.
+  const firsts=s.frames().map(frame=>frame[0]);
+  expect(firsts.slice(firsts.indexOf(7))).toEqual([7,0,1]);
+ }finally{await s.close();}
+});
+it('a stopped item whose display is unknown still refuses a moment',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);await s.settle(s.player.takeover());await s.settle(s.player.stop());
+  expect(s.player.getState()).toMatchObject({intent:'stopped',lastError:{code:'external-control'}});
+  expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+ }finally{await s.close();}
+});
+it('a failed background check does not erase external control on a stopped item',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);await s.settle(s.player.takeover());await s.settle(s.player.stop());
+  s.device.setOnline(false);await s.settle(s.player.probe());
+  s.device.setOnline(true);await s.settle(s.player.probe());
+  expect(s.player.getState()).toMatchObject({intent:'stopped',availability:'available',lastError:{code:'external-control'}});
+  expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+ }finally{await s.close();}
+});
+it('a failed background check does not erase an uncertain write on a stopped item, and resume clears it',async()=>{
+ const s=await setup({pauseOnUncertain:true});
+ try{
+  await mediaPlaying(s);
+  s.device.failNextUpload(1);await s.settle(s.player.next());await s.run(200);
+  expect(s.player.getState().lastError?.priorEffects).toBe('possible');
+  await s.settle(s.player.stop());
+  s.device.setOnline(false);await s.settle(s.player.probe());
+  s.device.setOnline(true);await s.settle(s.player.probe());
+  expect(s.player.getState()).toMatchObject({intent:'stopped',lastError:{priorEffects:'possible'}});
+  expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+  await s.settle(s.player.resume());await s.run(200);
+  expect(s.player.getState().lastError).toBeNull();
+ }finally{await s.close();}
+});
+it('a failed background check on an ordinary stopped item is still recorded',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);await s.settle(s.player.stop());
+  s.device.setOnline(false);await s.settle(s.player.probe());
+  expect(s.player.getState().lastError).toMatchObject({code:'offline'});
+ }finally{await s.close();}
+});
+it('a moment still waiting for its start plays over a stop that came first, and nothing resumes',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);
+  const results=s.play({startAtMs:s.clock.now()+1000});await s.run(200);
+  await s.settle(s.player.stop());
+  const generation=s.player.getState().generation;
+  await s.run(2100);expect(s.frames().at(-1)).toEqual(art);
+  await s.run(3200);ended(results,'completed');await s.run(1100);
+  expect(s.frames().at(-1)).toEqual(blank);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',generation});
+ }finally{await s.close();}
+});
+it('external control during a moment over a stopped item ends it with no blank over what may be the owner\'s',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);await s.settle(s.player.stop());
+  const results=s.play();await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
+  await s.settle(s.player.takeover());await s.run(2000);
+  ended(results,'interrupted');
+  expect(s.frames().at(-1)).toEqual(art);
  }finally{await s.close();}
 });
 it('a moment waiting behind other work never pauses a player that has since stopped, so nothing resumes over the stop',async()=>{
@@ -226,6 +336,7 @@ for(const [name,lastError] of [['an uncertain write',{code:'timeout',priorEffect
    const state=s.player.getState();
    vi.spyOn(s.player,'getState').mockReturnValue({...state,lastError});
    expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+   expect(s.monitor.momentBlock(false,true)).toBe('the display may show something else');
   }finally{vi.restoreAllMocks();await s.close();}
  });
 }
@@ -235,6 +346,7 @@ it('a player in error is not idle, though nothing is loaded',async()=>{
   const state=s.player.getState();
   vi.spyOn(s.player,'getState').mockReturnValue({...state,intent:'paused',state:'error',lastError:{code:'operation-failed'}});
   expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+   expect(s.monitor.momentBlock(false,true)).toBe('the display may show something else');
  }finally{vi.restoreAllMocks();await s.close();}
 });
 it('a view change during a moment over an idle player ends it',async()=>{
@@ -695,4 +807,37 @@ it('chooses mood content through one seam and draws two complete, distinct frame
  }
  const tinted=renderMomentContent({kind:'mood',mood:'reminder',palette:['#102030']})[0];
  expect(Array.from(tinted??[]).filter(value=>![0,0x10,0x20,0x30].includes(value))).toEqual([]);
+});
+
+it('queued exact art never adopts an idle display after the owner clears playing Media',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);
+  const results=s.play({exactArt:true,startAtMs:s.clock.now()+2000});
+  await s.run(200);
+  await s.settle(s.player.clear());
+  await s.run(5000);
+  expect(results).toEqual([expect.objectContaining({ending:null,refused:'blocked'})]);
+  expect(s.frames()).not.toContainEqual(art);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',itemId:null});
+ }finally{await s.close();}
+});
+
+for(const completed of [false,true])it(`exact art preserves a ${completed?'finished':'stopped'} saved item and respects a later resume`,async()=>{
+ const s=await setup();
+ try{
+  s.store.playlist.repeat=!completed;await mediaPlaying(s);
+  if(completed){for(let i=0;i<s.store.playlist.items.length+1&&s.player.getState().intent==='active';i++){await s.settle(s.player.next());await s.run(200);}}
+  else await s.settle(s.player.stop());
+  const before=s.player.getState();expect(before.intent).toBe('stopped');expect(before.itemId).not.toBeNull();
+  expect(s.monitor.momentBlock(false,true)).toBeNull();
+  const results=s.play({exactArt:true,coversStatus:false});await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
+  await s.run(3200);ended(results,'completed');await s.run(1100);expect(s.frames().at(-1)).toEqual(blank);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before.generation,itemId:before.itemId});
+  const again=s.play({exactArt:true,coversStatus:false});await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
+  await s.settle(s.player.resume());await s.run(completed?200:1500);ended(again,'interrupted');
+  expect(s.player.getState()).toMatchObject({intent:'active',state:'playing'});
+  const firsts=s.frames().map(frame=>frame[0]);
+  expect(firsts.slice(firsts.lastIndexOf(7))).toEqual([7,0,1]);
+ }finally{await s.close();}
 });

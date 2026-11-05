@@ -95,18 +95,7 @@ browser journey establish forwarding and UI behavior separately from actual
 installed iPhone acceptance; no physical device command is required by these tests.
 
 
-After the root build, run
-`node --test apps/runtime/dist/tests/onn-upgrade-profile.test.js apps/runtime/dist/tests/onn-upgrade-qualification.test.js apps/runtime/dist/tests/upgrade-inputs.test.js apps/runtime/dist/tests/upgrade-admission.test.js apps/runtime/dist/tests/upgrade-preflight.test.js apps/runtime/dist/tests/upgrade-source.test.js`.
-Existing `test:runtime:built` discovery runs these checks in active core CI; no
-additional workflow is needed. They cover private inventory, exact qualification
-coverage, configured health and preserved absent-ONN refusals. Four separate
-synthetic processes use the production ONN module, its history/command stores and
-SDK outbox to retain original observations, reported progress, gaps, private
-identities and truthful interrupted outcomes without replay. All four processes
-use the same built implementation: this checks restart semantics, not compatibility
-between historical release artifacts. Actual previous/target/recovery artifacts,
-coordinator admission, installed readers/clients and physical acceptance require
-their own evidence under [UPGRADE.md](UPGRADE.md).
+ONN dedicated qualification is dormant under #1464. Shared upgrade inventory/admission/preflight/source checks remain active to preserve retained state. Run `node --test tests/onn_hibernation.test.mjs` for runtime/frontend registration absence and the ordinary runtime upgrade and core privacy tests for retained compatibility. The ONN module guide retains historical qualification instructions.
 
 Roborock configured-owner qualification also runs
 `node --test apps/runtime/dist/tests/roborock-upgrade-profile.test.js apps/runtime/dist/tests/roborock-upgrade-qualification.test.js apps/runtime/dist/tests/upgrade-inputs.test.js apps/runtime/dist/tests/upgrade-admission.test.js apps/runtime/dist/tests/upgrade-preflight.test.js`

@@ -1,5 +1,7 @@
 # Upgrade and recover the installed runtime
 
+ONN is hibernated after device retirement. Preserve retained ONN state and compatibility readers without activating its writer or requiring dormant-device qualification. Its historical setup references do not select active ONN use.
+
 This procedure belongs to `bunny-runtime.service`, the current TypeScript runtime
 on the established WSL installation. It preserves that installation's state,
 configuration, credentials, Node executable and hooks. It does not operate the
@@ -86,6 +88,12 @@ a recovery appear eligible.
 Volcano adds private `volcano.sqlite`, which holds usage facts that nothing deletes,
 the gap threshold and threshold request fences. Configured Volcano requires its
 primary store. Preserve a retained store when its section goes.
+
+Art adds private `art.sqlite`, which holds its job rows, the spending ledger, the
+catalog and its bytes. It is a durable owner: favorites and spend cannot be rebuilt, so
+configured Art requires its primary store and ordinary healthy running state, and a
+retained store stays when its section is gone. A restart leaves every in-flight call
+uncertain with its reservation kept, and resends nothing.
 
 ## Routine operation checklist
 
@@ -385,7 +393,7 @@ configuration or silent hook retargeting. The existing readers verify exact
 bytes and resolutions. An empty list still needs accepted completeness evidence.
 
 Configured modules require running, healthy, null-reason health. Unconfigured
-Wispr, BB-8, ONN, Roborock, Wemo, Weather and Volcano may report only the exact absent-module
+Art, Wispr, BB-8, ONN, Roborock, Wemo, Weather and Volcano may report only the exact absent-module
 `refused`/`not-found`/`healthy: false` row and corresponding degraded aggregate.
 Retained inactive files do not convert absence into healthy active ownership.
 Unknown owners and unsafe files still refuse. The always-started companions
