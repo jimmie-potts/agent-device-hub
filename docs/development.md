@@ -1892,6 +1892,13 @@ The internal prepared-music timeline helper (#1273) is covered by
 `node --test modules/nanoleaf/dist/tests/music-timeline.test.js`; run the full
 Nanoleaf, typecheck, lint and workflow checks before delivery. Its explicit-clock
 and synthetic Lines/NL22 results establish no worker admission or physical timing.
+Internal cue phase preparation and location use that same timeline suite. Run
+`node --test modules/nanoleaf/dist/tests/music-timeline.test.js modules/nanoleaf/dist/tests/effects.test.js`
+after the root build for exact transition boundaries, unequal durations,
+initial-origin uncertainty, one-shot/loop behavior and unchanged animation bytes.
+The existing Core modules CI discovery includes both files. Keep the full
+Nanoleaf, typecheck, lint, contract and workflow checks. Phase descriptors are
+canonical endpoints and timing, not interpolated colors or physical seek proof.
 
 Hub #26 ports the Nanoleaf domain logic to TypeScript in `modules/nanoleaf`, under
 the strict profile, and Hub #844 runs it as the runtime's shipped module
