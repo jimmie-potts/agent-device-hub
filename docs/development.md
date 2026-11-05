@@ -777,7 +777,7 @@ Do not fabricate extra reviews merely to satisfy this optional parser.
 The preflight enumerates both CodeQL analysis jobs from their workflow. It does
 not interpret native Code scanning results from another GitHub app. Before merge,
 verify that result separately for the actual PR analysis, including both languages
-and the repository's finding threshold, as described in
+and every new `error`, `high` or `critical` finding, as described in
 [CodeQL security analysis](static-analysis.md#codeql-security-analysis). Missing,
 failed or inaccessible findings evidence remains unresolved even when the analysis
 jobs and this optional preflight succeed.
