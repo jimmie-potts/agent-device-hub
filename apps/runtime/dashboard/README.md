@@ -229,11 +229,12 @@ layout editing and audio routing remain separate work.
 ## Music input measurement
 
 Audio also has a separate **Music input measurement** card. It shows the core's
-capture status and explicit **Start measuring Music** and **Stop measuring**
-controls. Opening Audio, another tab, reload and reconnect only read state.
+capture status, an input selector and explicit Start and Stop measuring controls.
+Choose Music.app or the producer's configured microphone alias. Selecting an
+input starts nothing. Opening Audio, another tab, reload and reconnect only read state.
 The existing playback card and its transport controls are unchanged.
 
-The meter uses current Music.app measurements from the selected producer
+The meter uses current measurements for the selected input from the producer
 endpoint and generation. Zero means measured silence; missing or expired data
 shows **Input level unavailable**. Its visual scale ends at digital full scale,
 while the RMS and peak numbers retain measured values above that scale.
@@ -249,8 +250,8 @@ Start. Read-only access, stale command records and unavailable producer state
 disable actions. A stopped session does not invent a result for an older
 uncertain Start; that Start remains locked until its tracked outcome resolves.
 
-This card measures input only. Microphone input and light effects are not
-available here. It cannot enable a missing Mac producer or grant macOS
+This card measures input only and does not drive light effects. It cannot
+enable a missing Mac producer or grant macOS
 permission. `MusicCaptureFeed` owns one state copy and one feature subscription
 on the existing dashboard participant and closes them when Audio unmounts or
 its connection ends. It retains no measurement history.
@@ -747,3 +748,10 @@ Select a bunny once to inspect it and again to open a qualified Codex Desktop co
 Settings are local to the browser origin. Use **Export habitat settings** in the private preview, then **Move your habitat settings → Import habitat settings** here. The bounded JSON transfer includes only room positions, apron colors, recovery preference and assignments; it never uploads a file. Import validates before writing and retains a browser-local backup. Storage failure keeps the current visit usable; assignments cannot be promised across reload without storage.
 
 The focused `tests/habitat.browser.ts` journey runs through the real disposable runtime with synthetic sessions. It covers ten residents plus overflow, shared connection, lifecycle updates, reconnect, demo isolation, preference import, unmount cleanup, fallback, keyboard and axe in dark/light desktop/phone views. It is included in both the local browser suite and hosted dashboard smoke entry. Unit policy and preference tests run in `test:runtime-dashboard:built`. These checks do not establish mobile app deep links or physical device behavior.
+
+The Wall Music effect preview also lists private saved reactive presets. Saving
+is explicit and requires control access and a current library; read-only users
+can load a saved recipe into the local draft. Frozen effect-local parameters
+remain visible and intact. Save/load changes no device and starts no capture.
+The existing Nanoleaf page browser entry checks persistence, full-recipe preview,
+stale/read-only refusals and no resend through reconnect or uncertain reload.

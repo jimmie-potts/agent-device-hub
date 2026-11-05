@@ -717,7 +717,7 @@ node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed no
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
 node apps/runtime/dashboard/tests/automation.browser.ts # routine/rule tabs, drafts, lost replies and accessibility
-node apps/runtime/dashboard/tests/music-capture.browser.ts # Music-only measurement, tracked start/stop and freshness; also in hosted smoke and Music-card browser entry
+node apps/runtime/dashboard/tests/music-capture.browser.ts # Music/microphone measurement, tracked start/stop and freshness; also in hosted smoke and Music-card browser entry
 node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # shared Pixoo cards, playlist drafts and trusted editor bundle
 node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal
 node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts # create, rename, options, items, order and deletion
@@ -731,7 +731,9 @@ node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts # retained wall edit
 The Music input check uses a numeric-only producer fixture through the real core
 and gateway. It verifies passive load/reload/reconnect, measured silence,
 expiry, delayed clock qualification, pending and lost Start replies, independent
-Stop, read-only refusal, replacement generations and endpoint loss. Desktop and
+Stop, read-only refusal, replacement generations and endpoint loss. The configured
+microphone journey checks selection without capture, 2.1 starts, fixed refusal,
+retry, reload and a return to unchanged 2.0 Music work. Desktop and
 320/390 px light/dark checks include keyboard use, reduced motion, overflow and
 axe. It opens no native helper or media source. The dashboard unit suite covers
 clock jumps, source identity/order, exact conservative expiry and late scope
@@ -753,6 +755,18 @@ outside the checkout. The Nanoleaf built suite covers atomic save/outcome
 rollback, full storage, deferred publication, core acknowledgment, restart,
 bounded content and delayed-sync freshness. No test uses an installed source,
 personal media or physical controller.
+
+The same Nanoleaf browser entry covers reactive presets (#722): explicit named
+saves, exact reload and restart, full frozen V1 recipes in synthetic preview,
+read-only/Origin/stale/invalid refusals, local drafts through refresh and
+reconnect, uncertainty locks through reload, and light/dark 1440/390/320 px axe.
+The Nanoleaf built suite includes a frozen previous-source SQLite schema,
+full-disk and transaction rollback, deferred outcome publication/core-only
+acknowledgment, mixed-family high water and maximal document/query bounds.
+Run `node --test modules/nanoleaf/dist/tests/music-presets.test.js modules/nanoleaf/dist/tests/module-presets.test.js modules/nanoleaf/dist/tests/reactive-preset-model.test.js`
+after the shared build, then the existing owning suites. These checks use no
+audio, installed state or household devices. A browser journey that cannot
+start its disposable listener has not satisfied acceptance.
 
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use
 Playwright Chromium against the built runtime in the test's own process, with

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/music-capture-control/2.1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "action",
+        "endpointId",
+        "input"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "action": {
+          "const": "start"
+        },
+        "endpointId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        "input": {
+          "const": "music"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "action"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "action": {
+          "const": "stop"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "action",
+        "endpointId",
+        "input",
+        "microphoneId"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "action": {
+          "const": "start"
+        },
+        "endpointId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        "input": {
+          "const": "microphone"
+        },
+        "microphoneId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+        }
+      }
+    }
+  ]
+}
