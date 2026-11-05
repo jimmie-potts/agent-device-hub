@@ -2,12 +2,12 @@
 
 - [ ] 1.1 Add owning build/type/test commands and Linux portable plus macOS compile CI before integrating product code; validate workflow routing and read back the owning documentation.
 - [ ] 1.2 Add closed capture payload families with behavioral failing-before schema fixtures; pass finite/range/timing/content-refusal and shared contract consumers.
-- [ ] 1.3 Add the fixed-source music-producer credential role and endpoint grants; prove unrelated reads, commands, publications and widened roles are refused in real gateway tests.
+- [x] 1.3 Add the fixed-source music-producer credential role and endpoint grants; prove unrelated reads, commands, publications and widened roles are refused in real gateway tests.
 
 ## 2. Native source and wrapper
 
-- [ ] 2.1 Implement portable window analysis with deterministic silence, band-tone, amplitude-step, clipping, invalid-input and discontinuity checks; record failing-before and passing-after results.
-- [ ] 2.2 Add the explicitly invoked Music-only Core Audio adapter with stable source identity and bounded callback transfer; compile on macOS and exercise only synthetic/CLI paths before physical qualification.
+- [x] 2.1 Implement portable window analysis with deterministic silence, band-tone, amplitude-step, clipping, invalid-input and discontinuity checks; record failing-before and passing-after results.
+- [x] 2.2 Add the explicitly invoked Music-only Core Audio adapter with stable source identity and bounded callback transfer; compile on macOS and exercise only synthetic/CLI paths before physical qualification.
 - [ ] 2.3 Implement the SDK producer lifecycle and parsed native process boundary; test no capture at connection, explicit start/stop, source failure, bounded startup/stop, old-generation fencing and endpoint loss.
 - [ ] 2.4 Implement one in-flight plus one pending feature delivery and independent lifecycle reports; use a slow fake transport to prove bounds, source age checks and visible sequence gaps.
 

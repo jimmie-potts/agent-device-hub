@@ -1881,7 +1881,8 @@ checks on Linux or macOS. The shared Checks job runs both producer suites.
 
 On macOS, also run `npm run build:music-producer:native` to compile the Core Audio
 adapter. The Music native source workflow runs portable tests and compilation on
-macOS 15 with explicitly selected Xcode 26.3, including `npm run test:music-producer:adapter` with fake Core Audio
+macOS 15 with explicitly selected Xcode 26.3 from the
+[hosted runner image](https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md), including `npm run test:music-producer:adapter` with fake Core Audio
 access. These commands never start real capture or change audio permissions.
 The owning [producer guide](../apps/music-producer/README.md) records packaging,
 permissions and supported input limits. A successful compile is not evidence of
