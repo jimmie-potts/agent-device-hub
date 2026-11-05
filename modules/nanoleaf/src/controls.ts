@@ -7,7 +7,7 @@ import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {isObject, parseJson} from './compat.js';
 import {registeredDevices} from './configuration.js';
-import {DEFAULT, ID, layoutDevices, metaKey} from './devices.js';
+import {DEFAULT, ID, layoutDevices, metaKey, type Kind} from './devices.js';
 import {Rejected, render, valid, type AnimationCommand, type Display} from './effects.js';
 import {ValueError} from './errors.js';
 import {resolveAnimation} from './favorites.js';
@@ -77,33 +77,35 @@ export function parseCommand(value: unknown): ControlCommand {
   throw new Refused('invalid-request', 'The command is not one the device takes.');
 }
 
-/** The saved Lines zone pairs and positions; positions are null until every Line has one (integration_api.geometry). */
-export function savedGeometry(directory: string): {groups: number[][]; positions: number[][] | null} {
+/** The selected device's saved zones and positions; positions are null until every element has one. */
+export function savedGeometry(directory: string, device: string = DEFAULT): {kind: Kind; groups: number[][]; positions: number[][] | null} {
   // Only the saved physical mapping, never load_config's geometry discovery.
   const raw = readFileSync(join(directory, 'layout.json'));
   if (raw.length > MAX_LAYOUT_BYTES) throw new Refused('capacity', 'The saved layout is too large.');
   let entry;
   try {
-    entry = layoutDevices(parseJson(raw.toString('utf8'))).get(DEFAULT);
+    entry = layoutDevices(parseJson(raw.toString('utf8'))).get(device);
   } catch (error) {
     if (error instanceof ValueError || error instanceof TypeError || error instanceof SyntaxError) {
       throw new Refused('unsupported-capability', 'The saved layout cannot place an animation.');
     }
     throw error;
   }
-  if (entry?.kind !== 'lines') throw new Refused('unsupported-capability', 'The saved layout has no Lines.');
+  if (entry === undefined || (device === DEFAULT && entry.kind !== 'lines')) {
+    throw new Refused('unsupported-capability', 'The device has no compatible saved layout.');
+  }
   const positions = entry.elements.map(element => element.position);
-  return {groups: entry.elements.map(element => [...element.zones]),
+  return {kind: entry.kind, groups: entry.elements.map(element => [...element.zones]),
     positions: positions.every(position => position !== null) ? positions : null};
 }
 
-/** The rendered write for an animation; a command these Lines cannot play is refused with Rejected's code. */
+/** The rendered write for an animation; a command this device cannot play is refused with Rejected's code. */
 export function animationPayload(db: Db, command: AnimationCommand, groups: readonly (readonly number[])[],
-  positions: readonly (readonly number[] | null)[] | null): Display {
+  positions: readonly (readonly number[] | null)[] | null, kind: Kind = 'lines'): Display {
   try {
-    return render(resolveAnimation(db, command), groups, positions);
+    return render(resolveAnimation(db, command), groups, positions, kind);
   } catch (error) {
-    if (error instanceof Rejected) throw new Refused(error.code, 'The Lines cannot play this animation.');
+    if (error instanceof Rejected) throw new Refused(error.code, 'The device cannot play this animation.');
     throw error;
   }
 }
@@ -121,13 +123,12 @@ export function admitCommand(db: Db, directory: string, admission: Admission, re
   const command = parseCommand(admission.command);
   const control = controlState(db, device);
   if (command.kind === ANIMATION) {
-    // In integration_api.admit's order: the Lines alone play requested animations, one waits at a time, the saved
-    // layout must place it, and only in Free, since Work and Quiet present agent status (hub ADR 0005).
-    if (device !== DEFAULT) throw new Refused('unsupported-capability', 'Animations play only on the Lines.');
+    // One animation waits per device. Its saved layout must place it, and it plays only in Free,
+    // since Work and Quiet present agent status (hub ADR 0005).
     if (journal(db, device, 'AND kind=?', ANIMATION).length > 0) throw new Refused('capacity', 'Another animation is waiting.');
-    const {groups, positions} = savedGeometry(directory);
+    const {kind, groups, positions} = savedGeometry(directory, device);
     if (control.mode !== 'free') throw new Refused('unsupported-capability', 'Animations play only in Free.');
-    animationPayload(db, command, groups, positions);
+    animationPayload(db, command, groups, positions, kind);
     // Like a fresh native control, a requested animation authorizes another attempt.
     release(db, device);
     insert(db, admission, device, command, control.revision);
@@ -171,7 +172,7 @@ function insert(db: Db, admission: Admission, device: string, command: ControlCo
 
 /**
  * The device's queued native controls at this revision and its queued animations, in admission order. An animation is
- * only ever queued on the Lines in Free, where Python's worker looked for one, since any mode command retires it.
+ * only ever queued in Free, since any mode command retires it.
  */
 export function queuedContent(db: Db, device: string, revision: number): JournalRow[] {
   return journal(db, device, "AND phase='queued' AND ((kind IN (?, ?, ?, ?) AND mode_revision=?) OR kind=?)", ...CONTROLS, 'moment.play', revision, ANIMATION);

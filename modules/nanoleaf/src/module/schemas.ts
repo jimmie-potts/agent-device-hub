@@ -84,7 +84,7 @@ export const nanoleafSchemas: Readonly<Record<string, object>> = {
     }),
   },
   [schemaOf('nanoleaf-animations')]: {
-    description: 'State: the Lines\' animation options (Hub #844): the presets, the saved favorites, the patterns, speeds, directions, defaults and bounds a play request uses, the queued animation, whether the saved layout places spatial patterns, and the remembered scene\'s ID.',
+    description: 'State: the device\'s animation options (Hub #844): the presets, the saved favorites, the patterns, speeds, directions, defaults and bounds a play request uses, the queued animation, whether the saved layout places spatial patterns, and the remembered scene\'s ID.',
     ...closed({
       id: block('routingId'), revision: block('revision'), mode: {enum: ['work', 'quiet', 'free']},
       presets: list(closed({id: {enum: Object.keys(PRESETS)}, pattern: {enum: Object.keys(PATTERNS)}, colors: list(COLOR, 1, 8),
@@ -112,7 +112,7 @@ export const nanoleafSchemas: Readonly<Record<string, object>> = {
     ...closed({requestId: block('requestId'), expectedConfigurationRevision: block('revision'), edit: {oneOf: machineEdits(MACHINE_SETTINGS)}}),
   },
   [schemaOf('nanoleaf-animation-play')]: {
-    description: 'Command: play one animation on the Lines in Free: a preset, a saved favorite or an explicit recipe.',
+    description: 'Command: play one animation on Lines or NL22 Light Panels in Free: a preset, a saved favorite or an explicit recipe.',
     ...closed({requestId: block('requestId'), animation: ANIMATION}),
   },
   [schemaOf('nanoleaf-favorite-edit')]: {

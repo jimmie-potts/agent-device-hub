@@ -315,7 +315,7 @@ suite('ProtectedApiTest', () => {
     assert.ok(levels(replay.run.lines.calls).includes(55));
   });
 
-  test('test_extension_animations_play_only_on_lines', async context => {
+  test('a Lines animation uses only the Lines worker', async context => {
     const replay = await replayDevices(context, 'requested animations play only on the Lines');
     assert.deepEqual(results(replay, 'play'), ['accepted']);
     assert.equal(effectWrites(replay.run.panels.calls), 0);
