@@ -1,0 +1,23 @@
+.nanoleaf-shows { max-width: 1100px; margin: 0 auto; color: var(--text); }
+.nanoleaf-shows section { margin: 1.2rem 0; padding: 1rem; border: 1px solid var(--edge-dense); border-radius: 16px; background: var(--panel); }
+.nanoleaf-shows h1, .nanoleaf-shows h2, .nanoleaf-shows h3 { margin-top: 0; }
+.nanoleaf-shows p { line-height: 1.5; overflow-wrap: anywhere; }
+.nanoleaf-shows .show-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: .85rem; align-items: end; margin-bottom: 1rem; }
+.nanoleaf-shows label { display: grid; gap: .4rem; min-width: 0; }
+.nanoleaf-shows input:not([type=checkbox]), .nanoleaf-shows select { width: 100%; min-width: 0; box-sizing: border-box; }
+.nanoleaf-shows .show-check { display: flex; align-items: center; gap: .5rem; min-height: 44px; grid-column: 1 / -1; }
+.nanoleaf-shows .show-check input { width: 1.1rem; height: 1.1rem; min-height: 0; flex: 0 0 auto; }
+.nanoleaf-shows .show-cue-edit { border: 1px solid var(--edge-dense); border-radius: 12px; padding: .9rem; margin: 1rem 0; min-width: 0; }
+.nanoleaf-shows .show-cue-edit legend { padding: 0 .4rem; font-weight: 650; }
+.nanoleaf-shows .show-colors, .nanoleaf-shows .show-actions { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; margin: .8rem 0; }
+.nanoleaf-shows .show-colors label { width: 72px; }
+.nanoleaf-shows input[type=color] { height: 44px; padding: 3px; }
+.nanoleaf-shows .show-storyboard { background: transparent; }
+.nanoleaf-shows .show-storyboard ol { display: grid; gap: .5rem; margin: 1rem 0; padding: 0; list-style: none; }
+.nanoleaf-shows .show-cue { display: grid; text-align: left; gap: .5rem; width: 100%; padding: .75rem; white-space: normal; }
+.nanoleaf-shows .show-cue[aria-pressed=true] { outline: 2px solid var(--edge-strong); outline-offset: 1px; }
+.nanoleaf-shows .show-gap { padding: .65rem; border-left: 2px dashed var(--edge-strong); color: var(--muted-dense); }
+.nanoleaf-shows .show-palette { display: flex; flex-wrap: wrap; gap: .6rem; }
+.nanoleaf-shows .show-color { display: inline-flex; align-items: center; gap: .3rem; font-size: .85rem; }
+.nanoleaf-shows .show-color i { display: inline-block; width: 18px; height: 18px; border: 1px solid var(--edge-strong); border-radius: 4px; }
+@media (max-width: 420px) { .nanoleaf-shows section { padding: .7rem; } .nanoleaf-shows .show-cue-edit { padding: .6rem; } }
