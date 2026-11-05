@@ -13,12 +13,12 @@
 ## 3. Integrated evidence
 
 - [x] 3.1 Add contrasting synthetic artwork fixtures and an actual browser journey; verify dark/light and 1440/390/320px accessibility, semantic states, focus/geometry, palette/asset failures and zero theme-caused provider/device commands.
-- [ ] 3.2 Add a disposable theme scenario with visible labelled controls; run both transports and the actual capture, then obtain independent acceptance on a frozen committed candidate.
+- [x] 3.2 Add a disposable theme scenario with visible labelled controls; run both transports and the actual capture, then obtain independent acceptance on a frozen committed candidate.
 - [x] 3.3 Update the style guide's authorized runtime-theme decision and owning guides; verify instruction/readback and source-policy checks.
-- [ ] 3.4 Run build then lint, type, affected unit/browser/scenario, shared contract/package and workflow checks; record complete results and any unrelated failures.
+- [x] 3.4 Run build then lint, type, affected unit/browser/scenario, shared contract/package and workflow checks; record complete results and any unrelated failures.
 
 ## 4. Review handoff
 
-- [ ] 4.1 Complete independent Standards/Specification and focused preference safety review on one committed comparison; fix blocking findings with regression evidence.
-- [ ] 4.2 Refresh successful OpenSpec lookups after acceptance, synchronize both affected specs and archive the change; run strict/workflow checks and report the specification inventory.
-- [ ] 4.3 Return a clean tested committed candidate and remaining hosted/installation gates to the coordinator without changing installed services or devices.
+- [x] 4.1 Complete independent Standards/Specification and focused preference safety review on one committed comparison; fix blocking findings with regression evidence.
+- [x] 4.2 Refresh successful OpenSpec lookups after acceptance, synchronize both affected specs and archive the change; run strict/workflow checks and report the specification inventory.
+- [x] 4.3 Return a clean tested committed candidate and remaining hosted/installation gates to the coordinator without changing installed services or devices.
