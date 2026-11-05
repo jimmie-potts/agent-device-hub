@@ -286,8 +286,10 @@ meant to appear over Monitor must be an `event`.
 Attention ends a moment at once, with the ending `preempted` and no replay. An
 explicit command that changes what plays ends it as `interrupted`. A manual pause,
 stop or start is never resumed over, and a next or previous keeps playing. When
-nothing follows a moment that showed, one blank frame replaces its picture; an
-uncertain write is not rolled back. A moment that never reached the device has no
+nothing follows a moment that showed, one blank frame replaces its picture. The
+picture stays after an uncertain write, which is not rolled back, and once the
+device was offline or under external control, since what it shows by then may be
+the owner's. A moment that never reached the device has no
 `moment-ended`; its outcome says why. After a restart its command reports
 `uncertain`, it does not play, and its ID stays refused for 24 hours. A restart
 during a moment over Media leaves its picture on until someone resumes.

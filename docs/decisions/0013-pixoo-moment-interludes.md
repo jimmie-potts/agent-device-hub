@@ -53,8 +53,10 @@ A moment is a different thing, and may cover the current base for a short time.
   playback alone, so the moment ends and the playlist resumes.
 - **Time box.** A moment's picture does not outlast it. When nothing follows it,
   such as after a manual pause, stop or change to Media, one blank frame replaces
-  it. There is no call that repaints a paused item. An uncertain write is the
-  exception: as in ADR 0018, unknown artwork is not rolled back.
+  it. There is no call that repaints a paused item. An uncertain write is one
+  exception: as in ADR 0018, unknown artwork is not rolled back. The blank is also
+  dropped once the device was offline or under external control, because what it
+  shows by then may be the owner's. The picture stays in those cases.
 - **Mode.** A moment never changes the device mode.
 - **Restart.** A moment is never replayed. Its command reports `uncertain` at the
   next start, and its ID stays refused for 24 hours. The player's own rule still
