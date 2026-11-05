@@ -8,13 +8,15 @@
 // while it has none to show does not (Hub #1411). Like the simulated cloud, it can stop answering, refuse connections,
 // answer the next call with a status of its choice, or lose the next answer.
 import type {CloudFetch} from './cloud.js';
+import {createHash} from 'node:crypto';
 import {decodeLossless, picture} from './picture.js';
 import {SIMULATED_API_KEY, SIMULATED_DEVICE} from './simulated.js';
 
 /** The origin of the simulated server, which a simulated section names. */
 export const TRONBYT_ORIGIN = 'http://tronbyt.local:8000';
 
-type Installation = {serverId: string; picture: string[]; pushes: number; immediate: number; pushedAtMs: number[]};
+type Animation = {frames: string[][]; delaysMs: number[]; byteLength: number; sha256: string};
+type Installation = {serverId: string; picture: string[]; animation?: Animation; pushes: number; immediate: number; pushedAtMs: number[]};
 export type TronbytState = {
   installations: Record<string, Installation>;
   /** Pushes that named no installation, which the server queues for the device. The module must never make one. */
@@ -87,7 +89,7 @@ export class SimulatedTronbyt {
       throw refusedConnection();
     }
     if (!this.#online) return await silence(init.signal);
-    const response = this.#reply(path, init);
+    const response = await this.#reply(path, init);
     call.answer = response.status;
     if (this.#loseAnswers > 0) {
       this.#loseAnswers -= 1;
@@ -111,7 +113,8 @@ export class SimulatedTronbyt {
 
   state(): TronbytState {
     const installations: TronbytState['installations'] = {};
-    for (const [name, entry] of this.#installations) installations[name] = {...entry, picture: [...entry.picture], pushedAtMs: [...entry.pushedAtMs]};
+    for (const [name, entry] of this.#installations) installations[name] = {...entry, picture: [...entry.picture], pushedAtMs: [...entry.pushedAtMs],
+      ...(entry.animation === undefined ? {} : {animation: {...entry.animation, frames: entry.animation.frames.map(frame => [...frame]), delaysMs: [...entry.animation.delaysMs]}})};
     return {installations, anonymous: this.#anonymous, brightness: this.#brightness, brightnessWrites: this.#brightnessWrites, pinWrites: this.#pinWrites, pinnedApp: this.#pinned, served: [...this.#served], calls: this.#calls.map(call => ({...call}))};
   }
 
@@ -130,7 +133,7 @@ export class SimulatedTronbyt {
     return {id: entry.serverId, appID: 'pushed', enabled: true, pinned: this.#pinned === entry.serverId, pushed: true};
   }
 
-  #reply(path: string, init: Parameters<CloudFetch>[1]): Response {
+  async #reply(path: string, init: Parameters<CloudFetch>[1]): Promise<Response> {
     if (init.headers.authorization !== `Bearer ${this.#key}`) return text(401, 'Unauthorized');
     const reloading = init.method === 'PATCH' && path.includes('/installations/') && init.body === '{}';
     const status = (reloading ? this.#reloadAnswers.shift() : undefined) ?? (init.method === 'PATCH' ? this.#patchAnswers.shift() : undefined) ?? this.#answers.shift();
@@ -178,19 +181,23 @@ export class SimulatedTronbyt {
     return json({id: this.#device, brightness: this.#brightness, pinnedApp: this.#pinned});
   }
 
-  #push(body: string | undefined): Response {
+  async #push(body: string | undefined): Promise<Response> {
     const request = JSON.parse(body ?? '{}') as {image?: string; installationID?: string; background?: boolean};
     if (typeof request.image !== 'string') return text(400, 'Invalid Base64 Image');
     if (request.installationID === undefined || request.installationID === '') {
       this.#anonymous += 1;
       return text(200, 'WebP received.');
     }
-    const decoded = decodeLossless(new Uint8Array(Buffer.from(request.image, 'base64')));
-    if (decoded === undefined) return text(400, 'Invalid image');
+    const bytes = Buffer.from(request.image, 'base64');
+    const decoded = decodeLossless(bytes);
+    const animation = decoded === undefined ? await animatedPicture(bytes) : undefined;
+    if (decoded === undefined && animation === undefined) return text(400, 'Invalid image');
     const entry = this.#installations.get(request.installationID) ?? this.#add(request.installationID);
     // A loop showing an installation reloads its copy at the device's next acknowledgment.
     if (this.#served.length > 0) this.#reload();
-    entry.picture = picture(decoded.rgb, decoded.width, decoded.height);
+    entry.picture = decoded === undefined ? animation?.frames[0] ?? [] : picture(decoded.rgb, decoded.width, decoded.height);
+    if (animation === undefined) delete entry.animation;
+    else entry.animation = animation;
     entry.pushes += 1;
     if (request.background !== true) {
       entry.immediate += 1;
@@ -199,4 +206,58 @@ export class SimulatedTronbyt {
     entry.pushedAtMs.push(this.#now());
     return text(200, 'WebP received.');
   }
+}
+
+/**
+ * The #681 native art envelope: at most 160 KiB, 20 full 64×32 frames and 16 seconds, with 100–800 ms delays.
+ * Framing is checked before native decoding; these are synthetic readback bounds, not a physical playback claim.
+ */
+function animationDelays(bytes: Buffer): number[] | undefined {
+  if (bytes.length < 44 || bytes.length > 163_840 || bytes.toString('ascii', 0, 4) !== 'RIFF' || bytes.readUInt32LE(4) !== bytes.length - 8 || bytes.toString('ascii', 8, 12) !== 'WEBP') return;
+  let at = 12, extended = false, animation = false;
+  const delays: number[] = [];
+  while (at + 8 <= bytes.length) {
+    const kind = bytes.toString('ascii', at, at + 4), size = bytes.readUInt32LE(at + 4), start = at + 8;
+    if (size > bytes.length - start || ((size & 1) !== 0 && bytes[start + size] !== 0)) return;
+    if (kind === 'VP8X') {
+      if (at !== 12 || size !== 10 || bytes[start] !== 2 || bytes.readUIntLE(start + 4, 3) !== 63 || bytes.readUIntLE(start + 7, 3) !== 31) return;
+      if (bytes.subarray(start + 1, start + 4).some(value => value !== 0)) return;
+      extended = true;
+    } else if (kind === 'ANIM') {
+      if (!extended || animation || delays.length !== 0 || size !== 6) return;
+      animation = true;
+    } else if (kind === 'ANMF') {
+      if (!animation || delays.length === 20 || size < 24) return;
+      const width = bytes.readUIntLE(start + 6, 3) + 1, height = bytes.readUIntLE(start + 9, 3) + 1;
+      const delay = bytes.readUIntLE(start + 12, 3);
+      if (bytes.readUIntLE(start, 3) !== 0 || bytes.readUIntLE(start + 3, 3) !== 0 || width !== 64 || height !== 32 || (bytes[start + 15] ?? 255) > 3 || delay < 100 || delay > 800) return;
+      let frameAt = start + 16, image = false;
+      while (frameAt + 8 <= start + size) {
+        const frameKind = bytes.toString('ascii', frameAt, frameAt + 4), frameSize = bytes.readUInt32LE(frameAt + 4);
+        if (image || (frameKind !== 'VP8L' && frameKind !== 'VP8 ') || frameSize > start + size - frameAt - 8) return;
+        if ((frameSize & 1) !== 0 && bytes[frameAt + 8 + frameSize] !== 0) return;
+        image = true;
+        frameAt += 8 + frameSize + (frameSize & 1);
+      }
+      if (!image || frameAt !== start + size) return;
+      delays.push(delay);
+    } else return;
+    at = start + size + (size & 1);
+  }
+  return at === bytes.length && delays.length > 0 && delays.reduce((sum, delay) => sum + delay, 0) <= 16_000 ? delays : undefined;
+}
+
+/** Independent libwebp decoding makes the simulated display's readback inspectable beyond the encoder's own parser. */
+async function animatedPicture(bytes: Buffer): Promise<Animation | undefined> {
+  const delaysMs = animationDelays(bytes);
+  if (delaysMs === undefined) return;
+  try {
+    const {default: sharp} = await import('sharp');
+    const decoded = sharp(bytes, {animated: true, limitInputPixels: 64 * 32 * 20, failOn: 'warning'});
+    const metadata = await decoded.metadata();
+    if (metadata.format !== 'webp' || metadata.width !== 64 || (metadata.pageHeight ?? metadata.height) !== 32 || metadata.pages !== delaysMs.length || JSON.stringify(metadata.delay) !== JSON.stringify(delaysMs)) return;
+    const {data, info} = await decoded.flatten({background: '#000000'}).removeAlpha().raw().toBuffer({resolveWithObject: true});
+    if (info.width !== 64 || info.height !== 32 * delaysMs.length || info.channels !== 3 || data.length !== 6144 * delaysMs.length) return;
+    return {frames: delaysMs.map((_, frame) => picture(data.subarray(frame * 6144, (frame + 1) * 6144))), delaysMs, byteLength: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex')};
+  } catch {return;}
 }
