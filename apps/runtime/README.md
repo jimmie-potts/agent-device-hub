@@ -534,6 +534,27 @@ rechecks the original request's authority immediately before changing state;
 expected refusal codes leave the core running. A lost reply is never retried
 automatically. Inspect the current rules/settings before another edit.
 
+## Mac Music playback
+
+The [playback owner](../../modules/playback/README.md#optional-mac-music-source)
+can include one explicitly configured `{"kind":"music"}` source alongside Sony
+and Sonos. The [Mac playback producer](../music-producer/README.md) requires its
+own role `music-playback-producer`, fixed source `bunny/parts/music-playback` and
+empty scopes. Its connection-bound endpoint can register, publish observations
+and results, and answer the owner's four playback actions. It cannot read general
+state, issue operator/device commands or start audio capture. Operator requests
+still use tracked `playback-control`; internal producer families are refused on
+the action route.
+
+The ordinary `playback/2.1` record and receiver selection rule stay compatible.
+Music-configured owners also publish `playback-position/2.0`, with bounded read
+intervals, local item identity and Music-declared selected outputs. This evidence
+does not qualify recording identity, actual speaker routing or synchronized show
+replay. Connection/process/clock changes retire authority; uncertain controls are
+never resent. Startup, private source order and permission packaging need their
+separate installed qualification. No source test provisions a credential or
+controls the installed Music app.
+
 ## Music capture
 
 The core owns explicitly started Music.app capture sessions through

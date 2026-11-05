@@ -125,13 +125,14 @@ fixed authenticated producer registers its declared library scope. It SHALL
 preserve source-derived observation times, refuse reordered or clock-invalid
 samples, and immediately disable Music controls on explicit process/permission
 loss. The original source ranking and receiver polling SHALL remain unchanged.
-It SHALL serve `playback-position/2.0` under the same stable playback ID, carrying
+When Music is configured it SHALL serve `playback-position/2.0` under the same stable playback ID, carrying
 source/process/item/position/declared-output evidence with explicit unavailability
 and no recording or speaker-time qualification. A receiver presentation SHALL
 never reuse the last Music evidence. The owner SHALL maintain one sync high-water
 revision, commit related records/outbox entries atomically, preserve ordinary
 playback revisions across position-only updates and publish unavailable evidence
 above the stored high-water mark after restart.
+Receiver-only configurations SHALL continue to serve only `playback`.
 
 #### Scenario: Paused Music and a playing receiver
 - **WHEN** fresh paused Music is configured before a fresh playing receiver
@@ -148,6 +149,22 @@ above the stored high-water mark after restart.
 #### Scenario: Storage refuses source state or intent
 - **WHEN** a transaction cannot persist its revision/outbox entries or a command intent
 - **THEN** no partial state commit occurs and a refused command intent sends no native work; retrying an outcome commit never resends an event
+
+#### Scenario: Repeated failed source commits
+- **WHEN** a source handoff or successive companion updates fail to commit
+- **THEN** sync returns only the last durable snapshot and an earlier displayed revision cannot authorize a command to the uncommitted replacement source
+
+#### Scenario: Committed publication is refused
+- **WHEN** state or outcome publication fails after its transaction committed
+- **THEN** the committed snapshot remains authoritative, its original outbox messages remain pending and later publication never repeats the native action
+
+#### Scenario: Missing reads retain original late evidence
+- **WHEN** a transient read is unavailable after a command initially became uncertain
+- **THEN** current Music controls are unavailable but definitive evidence from the same live endpoint/process/operation can still reconcile that command
+
+#### Scenario: Bounded retired endpoints
+- **WHEN** a retired endpoint registers again or 64 endpoint IDs have already retired in the current module run
+- **THEN** registration refuses without new source authority, with an explicit new connection required in the first case and owner restart required when retirement capacity is exhausted
 
 #### Scenario: Existing configuration and restart
 - **WHEN** the runtime uses its unchanged Sony/Sonos section or restarts with an unfinished Music command

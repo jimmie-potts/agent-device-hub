@@ -28,6 +28,9 @@ qualify recording association or speaker timing.
   A shared owner high-water revision supports mixed sync, while position ticks
   do not invalidate the ordinary playback revision. Update the existing revision
   row and outbox atomically; restart publishes unavailable above the saved mark.
+  Receiver-only configurations still serve only playback. Mixed sync reads the
+  last durable snapshot; failed commits never expose optimistic replacements.
+  Receiver artwork retains its existing publication-attempt gate separately.
 - Keep one native child and use a distinct helper with typed read/control modes.
   Read budgets are five seconds, with the final second reserved for output.
   Control budgets are three seconds including prior-read cancellation. The
@@ -36,6 +39,9 @@ qualify recording association or speaker timing.
   original live endpoint/process/operation so late definitive evidence can pass
   through the same outbox, preserving ADR0012 reconciliation and conflicts.
   Restart retires that endpoint and leaves unfinished intent uncertain.
+  Transient missing reads disable controls but retain the original live process
+  correlation. The owner bounds command correlations and retired endpoint IDs
+  at 64 each; exhausting endpoint retirement capacity requires an owner restart.
 - The native digest identifies a process; persistent item IDs identify local
   library items. A neutral operator-selected library scope is declared, not an
   observed library fingerprint. Matching before/after item checks bound an
@@ -61,7 +67,7 @@ qualify recording association or speaker timing.
 | Owner to producer | Exact endpoint/process, single operation, original expiry | Known unsent fails with none; Music acceptance succeeds transmitted; timeout is uncertain |
 | Late result to owner | Same still-live endpoint/process/operation and retained journal entry | Definitive evidence reconciles uncertainty; no retry, redirect or newer-generation completion |
 
-The command trace remains the parent of endpoint work and native-call spans.
+The command trace remains the parent of endpoint work and the owner's device-call span.
 Diagnostics use registered events and fixed codes only, never listening metadata,
 native strings, token values or device names. Selected personal data stays in
 private declared observations/history under ADR0011 and current capacity limits.
