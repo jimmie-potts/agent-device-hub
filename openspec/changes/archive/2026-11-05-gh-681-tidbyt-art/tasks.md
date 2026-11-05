@@ -12,5 +12,5 @@
 ## 3. Integrated evidence
 
 - [x] 3.1 Register strict synthetic cloud/Tronbyt routing and animated simulator readback; verify previous cloud scenarios and gateway-driven art staging and ambient selection, plus the exact moment handler on the registered Tronbyt route.
-- [ ] 3.2 Run the applicable build, types, lint, module, contract, workflow, scenario and authenticated-preview checks; retain disposable acceptance evidence and document installed checks for #687.
-- [ ] 3.3 Synchronize every affected capability and archive this completed change before the final independent review; verify current OpenSpec status, lookups and inventory.
+- [x] 3.2 Run the applicable build, types, lint, module, contract, workflow, scenario and authenticated-preview checks; retain disposable acceptance evidence and document installed checks for #687.
+- [x] 3.3 Synchronize every affected capability and archive this completed change before the final independent review; verify current OpenSpec status, lookups and inventory.
