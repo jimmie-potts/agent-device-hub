@@ -237,6 +237,8 @@ export type ModuleRun = {
 };
 export type Scenario = {
   readonly id: string; readonly title: string; readonly seed: Seed; readonly steps: readonly Step[];
+  /** A bounded tier-1 case budget when a qualified device hold exceeds the usual short test. */
+  readonly memoryTimeoutMs?: number;
   /** Optional browser observations after the same scenario passes in a disposable run. */
   readonly capture?: (context: CaptureContext, harness: Harness) => Promise<void>;
   /** Keep a browser journey's final view instead of returning to health for its screenshot. */

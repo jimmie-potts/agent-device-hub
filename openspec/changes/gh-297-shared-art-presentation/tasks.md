@@ -15,6 +15,7 @@
 - [ ] 3.1 Extend the existing automation owner with current configured art targets and per-device plans; prove noncanonical identities, stale/absent/held capability refusal, distinct durations and independent common-start hand-offs.
 - [ ] 3.2 Refuse art-bearing moment requests from any non-core requester at the tracker; observe the regression fail before the guard and pass afterwards without changing ordinary moments.
 - [ ] 3.3 Follow authoritative browser selection through existing authenticated content and decoded presentation; verify older-page selection, slow/obsolete/failed decoding and zero provider or device calls from browsing.
+- [ ] 3.4 Bind the complete plan identity before dispatch; prove late preparation cannot revive changed timing before or after reopening the store, failed storage sends nothing, and post-policy deadlines still refuse.
 
 ## 4. Assembled evidence and delivery
 

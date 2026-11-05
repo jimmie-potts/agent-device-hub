@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import type {TestContext} from 'node:test';
+import type {DatabaseSync} from 'node:sqlite';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {ArtAuto21} from '@jimmie-potts/event-contracts/v2/art';
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
@@ -7,14 +8,15 @@ import type {BunnyModule, Command, ModuleContext} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import type {ArtPlan} from '../src/core/art-plans.js';
 import {deviceRecord, deviceState} from './fixtures/device.js';
-import {edgeConfig, flush, it, manualClock, run, waitFor} from './support.js';
+import {edgeConfig, flush, it, manualClock, run, stateDir, waitFor} from './support.js';
 
 const PIXOO = 'a'.repeat(64), TIDBYT = 'b'.repeat(64), BROWSER = 'c'.repeat(64);
 
 async function world(t: TestContext) {
   const clock = manualClock(1_700_000_000_000), preparations: Command<ArtAuto21>[] = [], moments: Command<MomentPlayRequest>[] = [];
-  let artContext: ModuleContext | undefined, handle: CoreHandle | undefined;
-  const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}]});
+  let artContext: ModuleContext | undefined, handle: CoreHandle | undefined, database: DatabaseSync | undefined;
+  const makeCore = () => createCoreModule({parts: [{open: db => {database = db;}, start: given => {handle = given; return Promise.resolve();}}]});
+  let core = makeCore();
   const art: BunnyModule = {manifest: {name: 'art', apiVersion: '1.3'}, start: async context => {
     artContext = context;
     await context.sdk.respond<ArtAuto21>('bunny.cmd.art-auto.art', command => {preparations.push(command); return {status: 'accepted'};});
@@ -36,11 +38,15 @@ async function world(t: TestContext) {
     }};
   });
   const files = await edgeConfig(t, [], {modules: {pixoo: {}, tidbyt: {}}});
-  const {runtime} = await run(t, {modules: [core, art, ...displays.map(display => display.module)], configFile: files.config,
+  const directory = await stateDir(t);
+  const launch = () => run(t, {modules: [core, art, ...displays.map(display => display.module)], configFile: files.config, stateDir: directory,
     clock: {now: clock.now}, scheduler: clock.scheduler});
+  let {runtime} = await launch();
   await waitFor(() => displays.every(display => display.syncs() > 0)); await flush();
   assert.ok(handle); assert.ok(artContext);
-  return {core, runtime, handle, clock, preparations, moments, displays,
+  return {get core() {return core;}, get runtime() {return runtime;}, get handle() {assert.ok(handle);return handle;}, clock, preparations, moments, displays,
+    get database() {assert.ok(database);return database;},
+    restart: async () => {await runtime.stop();core = makeCore();({runtime} = await launch());await flush();},
     complete: async (requestId: string, result: 'succeeded' | 'failed' = 'succeeded') => {
       assert.ok(artContext);
       await artContext.sdk.publish('bunny.event.art-auto.art', {kind: 'outcome', type: 'org.bunny.art.auto.completed', subject: 'art',
@@ -57,6 +63,35 @@ function oneDisplay(now: number, id = 'single-plan'): ArtPlan {
     displays: [{target: 'desk-display', compositionId: PIXOO, durationMs: 8000}]};
 }
 
+for (const restarted of [false, true]) it(`an expired art plan cannot borrow late preparation with changed timing${restarted ? ' after restart' : ''}`, async t => {
+  const w = await world(t), plan = oneDisplay(w.clock.now());assert.ok(w.core.automation.art);
+  const completion = w.core.automation.art.present(plan, () => undefined);
+  await waitFor(() => w.preparations.length === 1);const prepare = w.preparations[0];assert.ok(prepare);
+  w.clock.advance(4001);await flush();const expired = await completion;
+  assert.ok(!('error' in expired));assert.equal(expired.displays[0]?.moment.status, 'not-requested');
+  await w.complete(prepare.data.requestId);
+  if (restarted) await w.restart();
+  const changed = await w.core.automation.art.present({...plan, startAtMs: w.clock.now() + 5000, prepareUntilMs: w.clock.now() + 4000}, () => undefined);
+  assert.ok('error' in changed, 'the plan ID retains its original complete intent');assert.equal(changed.error.code, 'duplicate-conflict');
+  assert.equal(w.preparations.length, 1);assert.equal(w.moments.length, 0);
+});
+
+it('a policy callback cannot make a display handoff late', async t => {
+  const w = await world(t);assert.ok(w.core.automation.art);
+  const display = w.core.automation.art.present(oneDisplay(w.clock.now()), () => {w.clock.advance(6001);return undefined;});
+  await waitFor(() => w.preparations.length === 1);const prepare = w.preparations[0];assert.ok(prepare);await w.complete(prepare.data.requestId);
+  const result = await display;assert.ok(!('error' in result));assert.equal(result.displays[0]?.moment.status, 'not-requested');
+  assert.equal(w.moments.length, 0);
+});
+
+it('a policy callback cannot make browser selection late', async t => {
+  const w = await world(t);assert.ok(w.core.automation.art);
+  const browser = await w.core.automation.art.present({...oneDisplay(w.clock.now(), 'late-browser'), displays: [], startAtMs: w.clock.now(), prepareUntilMs: w.clock.now(), browser: {compositionId: BROWSER}},
+    () => {w.clock.advance(1001);return undefined;});
+  assert.ok(!('error' in browser));assert.equal(browser.browser?.status, 'not-requested');
+  assert.equal(w.preparations.length, 0, 'late browser choice sends no present command');
+});
+
 it('duplicate art plans never replay effects and conflicting content cannot borrow an earlier preparation', async t => {
   const w = await world(t), plan = oneDisplay(w.clock.now());assert.ok(w.core.automation.art);
   const first = w.core.automation.art.present(plan, () => undefined);
@@ -66,11 +101,22 @@ it('duplicate art plans never replay effects and conflicting content cannot borr
   assert.deepEqual(await w.core.automation.art.present(plan, () => undefined), result);
   assert.equal(w.preparations.length, 1);assert.equal(w.moments.length, 1);
   const conflict = await w.core.automation.art.present({...plan, displays: [{...plan.displays[0], target: 'desk-display', compositionId: TIDBYT, durationMs: 8000}]}, () => undefined);
-  assert.ok(!('error' in conflict));
-  assert.deepEqual(conflict.displays[0]?.prepare.status, 'not-requested', 'a prior operation belongs only to the same immutable action');
-  assert.ok(conflict.displays[0]?.prepare.status === 'not-requested');
-  assert.equal(conflict.displays[0].prepare.error.error.code, 'duplicate-conflict');
+  assert.ok('error' in conflict, 'a prior plan belongs only to the same complete immutable intent');
+  assert.equal(conflict.error.code, 'duplicate-conflict');
   assert.equal(w.preparations.length, 1);assert.equal(w.moments.length, 1);
+});
+
+it('a failed plan identity commit sends nothing and leaves no claimed identity', async t => {
+  const w = await world(t);assert.ok(w.core.automation.art);
+  w.database.exec("CREATE TRIGGER synthetic_plan_failure BEFORE INSERT ON automation_art_plans BEGIN SELECT RAISE(FAIL,'synthetic plan storage failure'); END");
+  const plan = oneDisplay(w.clock.now()), refused = await w.core.automation.art.present(plan, () => undefined);
+  assert.ok('error' in refused);assert.equal(refused.error.code, 'unavailable');
+  assert.equal(w.database.prepare('SELECT COUNT(*) AS n FROM automation_art_plans').get()?.n, 0);
+  assert.equal(w.preparations.length, 0);assert.equal(w.moments.length, 0);
+  w.database.exec('DROP TRIGGER synthetic_plan_failure');
+  const completion = w.core.automation.art.present(plan, () => undefined);
+  await waitFor(() => w.preparations.length === 1);const prepare = w.preparations[0];assert.ok(prepare);await w.complete(prepare.data.requestId);
+  const result = await completion;assert.ok(!('error' in result));assert.equal(w.moments.length, 1);
 });
 
 it('art rechecks the configured generation and policy immediately before a display handoff', async t => {

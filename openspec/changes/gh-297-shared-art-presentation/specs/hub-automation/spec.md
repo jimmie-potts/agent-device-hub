@@ -11,6 +11,18 @@ The current runtime's automation owner SHALL support one saved artwork with a se
 - **WHEN** one target refuses, is absent or remains pending past the selected deadline
 - **THEN** other ready targets can still proceed and the failed target is not retried or allowed to change their start time
 
+#### Scenario: Changed timing cannot revive an expired intent
+- **WHEN** preparation succeeds after its cutoff and the same plan ID is submitted with changed timing, including after restart
+- **THEN** the core refuses the conflicting complete plan before any preparation or presentation command, and retains that identity without eviction
+
+#### Scenario: Identity storage fails before dispatch
+- **WHEN** the core cannot commit the complete plan's identity receipt
+- **THEN** no preparation, display moment or browser selection is sent and no executable plan is recovered later
+
+#### Scenario: Policy evaluation crosses a deadline
+- **WHEN** the final synchronous policy check finishes after the target's dispatch deadline
+- **THEN** the core refuses that handoff without moving its original start or sending a late browser selection
+
 ### Requirement: Runtime art dispatch requires current owner capability
 Runtime art dispatch SHALL resolve actual configured identities from current owner state and require affirmative current `moments.art` support. It SHALL send art-bearing 2.1 moments only through the core's tracked dispatcher and each display's existing writer. Stale, missing, held or unsupported evidence SHALL prevent that target's dispatch. Ordinary moments SHALL retain their existing behavior. Art dispatch SHALL preserve explicit pauses, attention, pins, mode selection and each device's own precedence.
 

@@ -1,7 +1,7 @@
 // Hub #925: live core occurrences -> the reused arbitration -> tracked runtime dispatch.
 import {createHash} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
-import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {AgentOccurrence, OperationRecord, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog,type Cancel,type ModuleScheduler,type SyncedCopy, Outcome} from '@jimmie-potts/sdk';
@@ -111,7 +111,14 @@ export class AutomationPart implements CorePart {
         const target=this.#configured.find(device=>device.id===id);
         return target!==undefined && this.#devices.get(target.owner)?.fresh===true?this.#device(id):undefined;
       },
-      dispatch:action=>handle.dispatch(action),operation:requestId=>handle.operation(requestId)});
+      dispatch:action=>handle.dispatch(action),operation:requestId=>handle.operation(requestId),
+      claim:(id,digest)=>{
+        try{return store.claimArtPlan(id,digest)?undefined:errorBody('duplicate-conflict',{detail:'another art presentation already used this plan ID'});}
+        catch{
+          recordLog(handle.log,'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal'});
+          return errorBody('unavailable',{detail:'the art plan identity could not be saved'});
+        }
+      }});
     const powerOptions={clock:()=>handle.clock.now(),scheduler:this.#scheduler,active:()=>!this.#closed && !this.#signal.aborted,
       targets:()=>this.#configured.filter(device=>this.#device(device.id)?.capabilities.power.supported===true).map(device=>device.id),
       owner:id=>this.#configured.find(device=>device.id===id)?.owner,

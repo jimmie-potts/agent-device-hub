@@ -22,6 +22,7 @@ type Options = {
   clock: () => number; scheduler: ModuleScheduler; active: () => boolean;
   targets: () => readonly ArtPlanTarget[]; current: (target: string) => DeviceRecord | undefined;
   dispatch: (action: Action) => Promise<ActionAnswer>; operation: (requestId: string) => Operation | undefined;
+  claim: (id: string, digest: string) => ErrorBody | undefined;
 };
 const id = (value: string): boolean => /^[A-Za-z0-9_.-]{1,128}$/.test(value);
 const composition = (value: string): boolean => /^[a-f0-9]{64}$/.test(value);
@@ -31,6 +32,11 @@ const cutoff = (): ErrorBody => errorBody('invalid-state', {detail: 'art present
 const stopped = (): ErrorBody => errorBody('cancelled', {detail: 'art presentation stopped before handoff'});
 const requestId = (plan: ArtPlan, phase: string, target: string): string =>
   `art-plan-${createHash('sha256').update(`${plan.id}\0${phase}\0${target}`).digest('hex')}`;
+const planDigest = (plan: ArtPlan): string => createHash('sha256').update(JSON.stringify([
+  plan.artworkId, plan.startAtMs, plan.prepareUntilMs, plan.toleranceMs, plan.mood, plan.priorityClass, plan.coversStatus,
+  [...plan.displays].sort((a, b) => a.target < b.target ? -1 : a.target > b.target ? 1 : 0).map(value => [value.target, value.compositionId, value.durationMs]),
+  plan.browser?.compositionId ?? null,
+])).digest('hex');
 
 export function createArtPlans(options: Options) {
   let closed = false;
@@ -76,6 +82,8 @@ export function createArtPlans(options: Options) {
       if (options.clock() > plan.startAtMs + plan.toleranceMs) return notRequested(errorBody('invalid-state', {detail: 'browser art missed its start window'}));
       const refusal = permit({kind: 'browser'});
       if (refusal !== undefined) return notRequested(refusal);
+      if (!active()) return notRequested(stopped());
+      if (options.clock() > plan.startAtMs + plan.toleranceMs) return notRequested(errorBody('invalid-state', {detail: 'browser art missed its start window'}));
       if (plan.browser === undefined) return notRequested(errorBody('invalid-request'));
       return attempt({requestId: requestId(plan, 'browser', 'art'), key: 'bunny.cmd.art-auto.art', requestedBy: 'bunny/core',
         draft: {type: 'org.bunny.art.auto.requested', subject: 'art', dataschema: 'https://bunny.invalid/events/art-auto/2.1',
@@ -114,6 +122,8 @@ export function createArtPlans(options: Options) {
     if (!commandSupported(current.record.capabilities, {family: 'moment-play', data: moment})) return result(notRequested(errorBody('unsupported-capability')));
     const policy = permit({kind: 'display', target: selected.target});
     if (policy !== undefined) return result(notRequested(policy));
+    if (!active()) return result(notRequested(stopped()));
+    if (options.clock() >= plan.prepareUntilMs) return result(notRequested(cutoff()));
     return result(await attempt({requestId: moment.requestId, key: `bunny.cmd.moment-play.${selected.target}`, requestedBy: 'bunny/core',
       draft: {type: 'org.bunny.moment.play.requested', subject: selected.target, dataschema: 'https://bunny.invalid/events/moment-play/2.1', data: moment}}));
   };
@@ -131,6 +141,8 @@ export function createArtPlans(options: Options) {
         || plan.displays.some(item => !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.target) || item.target.length > 128 || !composition(item.compositionId)
           || !Number.isInteger(item.durationMs) || item.durationMs < 1000 || item.durationMs > 300_000)
         || plan.browser !== undefined && !composition(plan.browser.compositionId)) return errorBody('invalid-request');
+      const refused = options.claim(plan.id, planDigest(plan));
+      if (refused !== undefined) return refused;
       const [displays, browserResult] = await Promise.all([
         Promise.all(plan.displays.map(selected => display(plan, selected, permit))),
         plan.browser === undefined ? undefined : browser(plan, permit),

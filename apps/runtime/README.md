@@ -454,6 +454,30 @@ Triggers use source `core` and kind `attention-raised`, `attention-cleared`, `tu
 
 Arbitration retains no-flourishes, quiet hours, task and hourly budgets, device spacing, Quiet mode, the Work interrupt set and alert precedence. Each permitted target goes through the tracked dispatcher once, with a shared runtime-clock `startAtMs`. The private log's `receipt` means accepted, and `requestId` links to the current `operation`; an absent outcome is never completion or physical proof. Target IDs come from the host's admitted Nanoleaf/Pixoo participants, and current device records select their capabilities and mode. Unavailable or held devices are blocked.
 
+Saved-art callers use the internal `CoreModule.automation.art` control.
+`targets()` lists the configured Pixoo and Tidbyt IDs and kinds. `present(plan,
+permit)` takes one artwork, exact compositions, a common start and preparation
+cutoff, each display's duration, and an optional browser composition. Each
+display independently waits for its tracked preparation to succeed, then rechecks
+the fresh owner record, generation, configuration and `moments.art` capability.
+A late or failed preparation cannot move the start or produce a mood fallback.
+The browser's tracked selection commits at the common start; decoded visible
+pixels remain separate frontend evidence.
+
+The required synchronous `permit` callback runs immediately before each display
+or browser handoff. The calling automation policy owns opportunity selection,
+quiet hours, budgets, attention and durable occurrence claims. Device modules
+retain final pause, pin and writer precedence. The control returns separate
+preparation, moment and browser attempts; `tracked` supplies an operation ID,
+while `not-requested` carries the refusal. It makes no aggregate success claim.
+Stable plan IDs deduplicate unchanged commands, changed content is refused, and
+restart recovers no plan timers. Art-bearing moments are dispatched only by the
+core and cannot be resent from the inbox.
+The additive private `automation_art_plans` table binds each ID to a digest of
+the complete stable plan before any phase. It retains these non-executable
+receipts without eviction, like `core_operations`, so changing old timing cannot
+reuse a late successful preparation. A failed identity commit sends nothing.
+
 The core also owns weekly routines for configured devices
 ([#1297](https://github.com/jimmie-potts/agent-device-hub/issues/1297), which
 generalizes the one on/off power window of #483). A routine selects weekdays

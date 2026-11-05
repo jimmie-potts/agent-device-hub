@@ -14,6 +14,7 @@ import {createWisprModule} from '@jimmie-potts/wispr';
 import {registrations, runMain, type ModuleFactory} from '../src/index.js';
 import {createChimeModule, type ChimeRing, type ChimeTransport} from '../tests/fixtures/chime.js';
 import {createCoreModule} from '../tests/fixtures/core.js';
+import {createPresentationFixture} from '../tests/fixtures/presentation.js';
 import {createLampModule, lampSchemas, type Indicator, type LampTransport, type Power} from '../tests/fixtures/lamp.js';
 import {createSignModule, signSchemas, type SignTransport} from '../tests/fixtures/sign.js';
 import {SCENARIO_SCHEMAS} from '../tests/scenarios/parts.js';
@@ -143,9 +144,11 @@ const harness = fixture('harness', () => ({
   stop: () => {},
 }));
 
+let fixtureCore: ReturnType<typeof createCoreModule> | undefined;
 const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
   wispr: {name: 'wispr', create: () => createWisprModule(), simulate: () => createWisprModule()},
-  core: fixture('core', () => createCoreModule()),
+  core: fixture('core', () => fixtureCore = createCoreModule()),
+  'presentation-fixture': fixture('presentation-fixture', () => createPresentationFixture(() => fixtureCore)),
   lamp: fixture('lamp', () => createLampModule({
     transport: lamps,
     // A real crash: the process dies between the lamp's commit and its first publish, as #882's kill test does.

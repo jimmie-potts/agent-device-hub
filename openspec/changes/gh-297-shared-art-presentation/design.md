@@ -32,6 +32,15 @@ Do not add Tidbyt to generic mode commands merely to discover it. Use the config
 
 The Art owner deduplicates prepare and present requests with its existing receipt pattern. The core tracker retains each target's operation independently. Requests and target IDs are stable within a plan; neither a lost reply nor a restarted owner creates another send. Preparation does not require provider credentials or modify spending. Selection success records a committed choice, not rendered pixels or device proof.
 
+Before dispatch, the existing core automation store binds a plan ID to the digest
+of its complete stable fields, including timing and every selected composition.
+The additive `automation_art_plans` table retains only this identity receipt,
+never executable plans. Like `core_operations`, these receipts have no eviction:
+forgetting an ID would let changed timing borrow old preparation and revive a
+missed opportunity. A conflicting ID or failed receipt commit sends nothing.
+This is command identity, separate from #684's occurrence claims and arbitration.
+Activity and deadlines are checked again after the synchronous permit callback.
+
 ## Risks / Trade-offs
 
 - An admitted preparation can outlive its caller. Its tracked deadline and terminal evidence remain separate from the caller's cutoff; late success cannot revive an expired opportunity.

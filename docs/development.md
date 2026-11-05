@@ -56,6 +56,12 @@ The existing runtime scenario and verification CI globs discover this path;
 `scenario-shared-art` is the disposable capture. It verifies zero provider calls
 during reuse, independent target results and no replay, without a device or
 installed-runtime claim.
+Its named `presentation-fixture` module calls the real core's internal presentation
+control only after a new synthetic request completes. It adds no production
+command route. Initial sync after restart seeds its seen IDs without dispatching.
+Its tier-1 case allows 60 seconds because it observes the Tidbyt's complete
+qualified 30-second hold as well as generation, preparation and restart. Other
+catalog cases keep their existing 20-second default.
 
 The adaptive widget and Gallery checks for #682 use
 `npm run test:art:browser` after the root build. They run in the existing App
