@@ -434,7 +434,8 @@ still uses the resource. This applies to ordinary delivery and to explicit
 deliver-work alike. While working, note each worktree, branch, scratch folder, clone,
 review copy and staging directory when you create it, and each consumer when one
 arises, because cleanup depends on that record. Keep it in the task's own notes, or
-under `.local/evidence/` for anything private.
+in the canonical local checkout's `.local/evidence/` for anything private, because
+removing a worktree deletes the worktree's own `.local/`.
 
 Clean up only what this delivery created and still exclusively owns. The positive
 evidence is the task's own record that it created the resource and handed it to
@@ -505,7 +506,7 @@ the resource.
    Read back with `git show-ref --verify --quiet refs/heads/<branch>`. Exit 1 means
    the ref is gone; any other exit code, such as 128 outside the repository, leaves
    the result unknown. If `git config --get-regexp '^branch\.<branch>\.[^.]*$'` lists
-   anything (escape any dots in the branch name), run
+   anything (escape regex metacharacters in the branch name), run
    `git config --remove-section branch.<branch>` and repeat the query, which must then
    exit 1.
    Judge delivery from the merged PR as in step 1, never `git branch --merged`.
