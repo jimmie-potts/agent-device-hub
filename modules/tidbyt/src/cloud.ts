@@ -57,7 +57,8 @@ const API_KEY = /^[\x21-\x7e]{1,4096}$/;
 const MAX_BODY = 64 * 1024;
 export const MAX_ADDITIONAL_INSTALLATIONS = 4;
 const DEFAULT_RETRY_MS = 60_000;
-const MAX_RETRY_MS = 15 * 60_000;
+/** The longest a rate limit holds the queue. */
+export const MAX_RETRY_MS = 15 * 60_000;
 /** A write for an installation this connection does not list; nothing is sent. */
 const REFUSED: WriteResult = Object.freeze({outcome: Outcome.failed, failure: 'invalid-request'});
 // Failures raised before any request bytes can have left this host.

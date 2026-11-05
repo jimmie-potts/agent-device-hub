@@ -36,6 +36,23 @@ void test('inventories configured and retained Wemo without reading or modifying
   await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
 });
 
+void test('admits the weather section and its files without making them a durable owner', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'weather-upgrade-profile-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const state = join(root, 'state'), modules = join(state, 'modules');
+  await mkdir(modules, {recursive: true, mode: 0o700});
+  for (const name of ['core.sqlite', 'weather.sqlite', 'weather.sqlite-wal', 'weather.sqlite-shm']) await writeFile(join(modules, name), 'opaque synthetic database', {mode: 0o600});
+  const configFile = join(root, 'runtime.json');
+  for (const [section, configured] of [[{weather: {latitude: 12.3456, longitude: -65.4321, contact: 'operator@example.invalid'}}, ['weather']], [{}, []]] as const) {
+    await writeFile(configFile, JSON.stringify({schema: 'runtime-config/1.0', modules: section}), {mode: 0o600});
+    const inspected = await inspectUpgradeState(state, configFile);
+    assert.deepEqual(inspected.configured, configured);
+    assert.deepEqual(inspected.durableOwners, ['core']);
+  }
+  await writeFile(join(modules, 'weather.sqlite-owner'), 'unsupported owner lease', {mode: 0o600});
+  await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/);
+});
+
 void test('binds the fixed Wemo coverage set and rejects incomplete or unknown owner coverage', async t => {
   const root = await mkdtemp(join(tmpdir(), 'wemo-upgrade-admission-'));
   t.after(() => rm(root, {recursive: true, force: true}));
@@ -59,6 +76,12 @@ void test('binds the fixed Wemo coverage set and rejects incomplete or unknown o
   const bound = await bindUpgradeAdmission(file, expected);
   assert.ok('coveredOwners' in bound);
   assert.deepEqual(bound.coveredOwners, [...owners].sort());
+  // Volcano's store joins the fixed sets as Wemo's does, alone or beside it.
+  for (const added of [[...owners, 'volcano'], [...owners.filter(owner => owner !== 'wemo'), 'volcano']]) {
+    await writeFile(file, JSON.stringify({...value, coverage: added.map(owner => ({owner, phases: phases.map(phase => ({phase, receipt: pin}))}))}), {mode: 0o600});
+    assert.deepEqual((await bindUpgradeAdmission(file, expected)).coveredOwners, [...added].sort());
+  }
+  await writeFile(file, JSON.stringify(value), {mode: 0o600});
   for (const row of [
     {...value, coverage: value.coverage.filter(owner => owner.owner !== 'core')},
     {...value, coverage: [...value.coverage, {owner: 'unknown', phases: value.coverage[0]?.phases}]},

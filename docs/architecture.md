@@ -436,6 +436,10 @@ sessions. The runtime's Codex Desktop module reads that home locally or takes a
 host-local collector's bounded `desktop-metadata` snapshots for a source on
 another computer, under the same rules, and remains the only publisher of that
 evidence ([#567](https://github.com/jimmie-potts/agent-device-hub/issues/567)).
+A VOLCANO HYBRID is observed the same way: a host-local collector with a read and
+notify allowlist publishes `volcano-observation` snapshots under a source-bound
+credential, and the Volcano module alone stores the facts and derives sessions when
+they are read ([#615](https://github.com/jimmie-potts/agent-device-hub/issues/615)).
 Pixoo dismissal changes monitor state only. New generic consumers
 must not assume every provider supplies read receipts.
 

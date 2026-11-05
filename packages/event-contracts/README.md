@@ -158,6 +158,7 @@ carries a device-specific payload: modules define those.
 | state | `session`, `mode`, `inbox-item`, `playback`, `operation`, `power-limit` | `org.bunny.<family>.updated` |
 | occurrence | `lifecycle` (hook or Desktop metadata evidence for the core) | `org.bunny.lifecycle.observed` |
 | occurrence | `desktop-metadata` (a collector's Codex Desktop metadata snapshot for the Desktop module) | `org.bunny.desktop-metadata.observed` |
+| occurrence | `volcano-observation` (a collector's VOLCANO HYBRID snapshot for the Volcano module) | `org.bunny.volcano-observation.observed` |
 | occurrence | `attention-raised`, `attention-cleared`, `turn-ended`, `session-ended` | `org.bunny.attention.raised`, `.attention.cleared`, `.turn.ended`, `.session.ended` |
 | occurrence | `moment-ended` | `org.bunny.moment.ended` |
 | occurrence | `outcome-recorded` (the core's outcome acknowledgment) | `org.bunny.outcome.recorded` |
@@ -215,6 +216,22 @@ The rules:
   credential derived from the feed and `feed: 'desktop-metadata'`, which the
   runtime's edge requires on every entry. The Codex Desktop module consumes it
   and alone turns a snapshot into lifecycle evidence; the core ignores it.
+- `volcano-observation` ([Hub #615](https://github.com/jimmie-potts/agent-device-hub/issues/615))
+  carries one bounded snapshot of one enrolled VOLCANO HYBRID:
+  `{feed, observedAtMs, collectorEpoch, sequence, link, reading}`. `feed` is
+  `{provider: 'storz-bickel', client: 'volcano', hostId, sourceId}`, and the
+  envelope `subject` and the key's last token are `volcanoFeedId(feed)`.
+  `collectorEpoch` names one collector process and `sequence` counts its
+  snapshots. `link` is `connected`, `disconnected`, `unavailable` or
+  `identity-mismatch`; `reading` is null unless the link is connected, and
+  otherwise holds the raw `status1` and `status2` registers, `currentDeciC` and
+  `targetDeciC` (degrees Celsius times ten whatever the device displays) and the
+  raw `heatingHours` and `heatingMinutes` counters, each null when unread. No
+  serial, Bluetooth address or firmware travels here. A host-local collector
+  publishes it with a source-bound `ingest` credential derived from the feed and
+  `feed: 'volcano-observation'`, which the runtime's edge requires on every
+  entry. Only the Volcano module consumes it; the core ignores it and history
+  does not keep it.
 - `notice-acknowledge` is how a consumer, such as the Pixoo module after a
   dismissal, acknowledges one turn-ended notice for its own consumer ID. Its
   `subject` is the session's `id`, and the core (#831) adds the consumer to the
