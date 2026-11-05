@@ -2,8 +2,8 @@ import check from './validator.js';
 import catalogData from './catalog.json' with {type:'json'};
 import schema from './record.schema.json' with {type:'json'};
 
-export const ARTIFACT_VERSION = '1.7.0';
-/** The default producer profile. Profiles 1.2 to 1.7 add the runtime's vocabulary; its producers select them explicitly. */
+export const ARTIFACT_VERSION = '1.8.0';
+/** The default producer profile. Profiles 1.2 to 1.8 add the runtime's vocabulary; its producers select them explicitly. */
 export const SCHEMA_VERSION = '1.1';
 export const SEMANTIC_CONVENTIONS_VERSION = '1.44.0';
 export const MAX_RECORD_BYTES = 8192;
@@ -11,7 +11,7 @@ export const MAX_QUEUE_RECORDS = 1024;
 export const MAX_QUEUE_BYTES = 4 * 1024 * 1024;
 export const MAX_FLUSH_MS = 1000;
 export type Primitive = string | number | boolean;
-export type SchemaVersion = '1.0'|'1.1'|'1.2'|'1.3'|'1.4'|'1.5'|'1.6'|'1.7';
+export type SchemaVersion = '1.0'|'1.1'|'1.2'|'1.3'|'1.4'|'1.5'|'1.6'|'1.7'|'1.8';
 export type TraceContext = Readonly<{trace_id:string; span_id:string; trace_flags:string}>;
 export type DiagnosticRecord = {
   schema_version:SchemaVersion; timestamp?:string; observed_timestamp?:string;
@@ -25,7 +25,7 @@ const failure = ():Result<never> => ({ok:false,code:'invalid-record'});
 const events:Record<string,string> = catalogData.events;
 const severities:Record<string,number> = catalogData.severities;
 export const catalog = Object.freeze(structuredClone(catalogData));
-const additions:Record<string,{attributes?:string[]}> = catalogData.additions;
+const additions:Record<string,{attributes?:string[];span_names?:string[]}> = catalogData.additions;
 /** The attributes a profile registers: every attribute but those a later profile adds. An unknown profile keeps all. */
 function profileAttributes(version:unknown):string[] {
   const index=typeof version==='string'?catalogData.schema_versions.indexOf(version):-1;

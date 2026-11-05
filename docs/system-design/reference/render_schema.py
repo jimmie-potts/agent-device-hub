@@ -35,7 +35,7 @@ def normalize(source, destination, database, name):
             value = value.replace('http://schemaspy.org/', 'https://schemaspy.org/').replace('http://stackoverflow.com/', 'https://stackoverflow.com/')
             if path.suffix == '.html':
                 prefix = '../' * len(relative.parts)
-                value = re.sub(r'((?:href|src)=[\"\'])(?:\.\./)*(bower|fonts)/', lambda m:m[1]+prefix+'shared/'+m[2]+'/', value)
+                value = re.sub(r'((?:href|src)=[\"\'])(?:\.\./)*(bower|fonts)/', lambda m:m[1]+prefix+'shared/'+m[2]+'/', value)  # noqa: B023 -- re.sub consumes the callback before this loop advances.
                 value = value.replace('width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no', 'width=device-width, initial-scale=1')
                 value = value.replace('<html>', '<html lang="en">')
                 banner = f'<div style="padding:14px 20px;background:#102a2b;color:#e8f6f1;font:16px/1.5 system-ui"><a style="color:#9cf1d5" href="{prefix}../index.html">B.U.N.N.Y. reference</a> · {html.escape(name)} · source schema only; no live data. Relationships show declared foreign keys only.</div>'

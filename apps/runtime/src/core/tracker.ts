@@ -21,7 +21,7 @@
 //   which settles the dispatcher's own requests: one the owner's handler has with no reply ends uncertain at once
 //   ("the requester closed before the reply"), and one still queued is cancelled, failed.
 // - Every step is logged once, in the action's trace, and `message.received` carries the incoming message's trace.
-import {randomUUID} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MessageValidator, compareDelivery, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {ART_MODULE_SOURCE} from '@jimmie-potts/event-contracts/v2/art';
@@ -43,12 +43,12 @@ import type {CoreStore, CoreTransaction} from './store.js';
  */
 export const DIRECT_COMMANDS: readonly string[] = Object.freeze(['approval-recover', 'notice-acknowledge', 'inbox-handle']);
 /** Tracked actions admitted only by the authenticated gateway's dedicated capability. */
-export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['session-label-set', 'notice-clear', 'lighting-layout-set', 'playback-layout-set', 'home-layout-set']);
+export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['session-label-set', 'notice-clear', 'lighting-layout-set', 'playback-layout-set', 'home-layout-set', 'music-capture-control']);
 /** Routine background art (ADR 0012's 2026-11-03 amendment): a failure raises no inbox item, and the art state reports it. */
 export const BACKGROUND_ACTIONS: readonly string[] = Object.freeze(['art-auto', 'art-stage', 'art-ambient-set']);
 /** Each art family's only requester. The dashboard's source is a browser session's, which no client credential can take. */
 const ART_REQUESTERS: Readonly<Record<string, string>> = Object.freeze({
-  'art-request': DASHBOARD_SOURCE, 'art-auto': CORE_SOURCE, 'art-stage': ART_MODULE_SOURCE, 'art-ambient-set': ART_MODULE_SOURCE,
+  'art-request': DASHBOARD_SOURCE, 'art-catalog-edit': DASHBOARD_SOURCE, 'art-auto': CORE_SOURCE, 'art-stage': ART_MODULE_SOURCE, 'art-ambient-set': ART_MODULE_SOURCE,
 });
 /**
  * The commands whose payload stays in memory: the operation keeps a private digest for duplicate detection and no
@@ -103,6 +103,8 @@ export type OperationChange = {
 /** A part's rows for one tracked action's change, written in the change's own transaction. */
 export type Tracked = (change: OperationChange, tx: CoreTransaction) => void;
 
+/** A private core owner's admitted responsibility. It contains no command envelope and is never replayed. */
+export type CoreResponsibility = {requestId: string; admittedCommandId: string; factsDigest: string};
 /** The profile's completed outcome payload. */
 export type CompletedOutcome = {requestId: string; result: 'succeeded' | 'failed' | 'uncertain'; evidence: 'transmitted' | 'observed' | 'none'; error?: ErrorDetail};
 
@@ -302,10 +304,35 @@ export class Tracker {
     const {requestId} = command.data;
     const admission = this.#admitted.get(requestId), operation = this.#read(requestId);
     if (admission?.commandId !== command.id || operation === undefined || factsOf(operation) !== admission.facts) throw new Error('operator-admission');
+    return this.#completeCoreOperation(tx, operation, result, command);
+  }
+
+  /** Only the asynchronous Music capture owner receives these two methods through private constructor callbacks. */
+  retainCore(command: Command<{requestId: string}>): CoreResponsibility {
+    const {requestId} = command.data, operation = this.#read(requestId), admission = this.#admitted.get(requestId);
+    if (operation?.family !== 'music-capture-control' || operation.target !== 'music' || command.source !== this.#options.sdk.source ||
+      admission?.commandId !== command.id || factsOf(operation) !== admission.facts) throw new Error('operator-responsibility');
+    return {requestId, admittedCommandId: command.id, factsDigest: createHash('sha256').update(admission.facts).digest('hex')};
+  }
+
+  /** Settles retained responsibility after restart or a late report, through the same tracker and outcome rules. */
+  completeOwnedCore(tx: CoreTransaction, responsibility: CoreResponsibility, result: Omit<CompletedOutcome, 'requestId'>): () => void {
+    const operation = this.#read(responsibility.requestId);
+    if (operation?.family !== 'music-capture-control' || operation.target !== 'music' ||
+      operation.command !== 'org.bunny.music-capture.control.requested' || operation.dataschema !== 'https://bunny.invalid/events/music-capture-control/2.0' ||
+      (operation.responder !== undefined && operation.responder !== this.#options.sdk.source) ||
+      !ID.test(responsibility.admittedCommandId) || createHash('sha256').update(factsOf(operation)).digest('hex') !== responsibility.factsDigest) {
+      throw new Error('operator-responsibility');
+    }
+    return this.#completeCoreOperation(tx, operation, result);
+  }
+
+  #completeCoreOperation(tx: CoreTransaction, operation: Operation, result: Omit<CompletedOutcome, 'requestId'>, parent: TraceContext = operation): () => void {
+    const {requestId} = operation;
     const outcome = tx.add(`bunny.event.${operation.family}.${operation.target}`, {
       kind: 'outcome', type: operation.command.replace(/\.requested$/, '.completed'), subject: operation.target,
       dataschema: 'https://bunny.invalid/events/outcome/2.0', data: {...result, requestId},
-    }, {parent: command}) as Message<CompletedOutcome>;
+    }, {parent}) as Message<CompletedOutcome>;
     const checked = this.#validator.validate(outcome);
     if (!checked.ok) throw new Error('invalid-core-outcome');
     const next = advance({...operation, responder: this.#options.sdk.source}, {type: 'outcome', outcome: {
@@ -341,6 +368,7 @@ export class Tracker {
     if (family === undefined || target === undefined) return refuse('invalid-request', 'an action is a command on a key bunny.cmd.<family>.<target>');
     if (DIRECT_COMMANDS.includes(family)) return refuse('invalid-request', 'the core\'s operator commands are not tracked actions; send them as they are');
     if (OPERATOR_ACTIONS.includes(family) !== operator) return refuse('forbidden', 'this action requires its dedicated operator admission');
+    if (family.startsWith('music-capture-') && family !== 'music-capture-control') return refuse('forbidden', 'capture endpoint work belongs to the capture owner');
     if (family.startsWith('companion-speech-') && (family !== 'companion-speech-play' || action.requestedBy !== 'bunny/modules/companions')) {
       return refuse('forbidden', 'speech is dispatched only by its companions owner');
     }

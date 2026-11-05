@@ -232,6 +232,36 @@ const expectedTriggers = {
   workflow_dispatch: {},
 };
 
+test('CodeQL scans ready PRs, main and a weekly event without executing application code', () => {
+  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/codeql.yml'), 'utf8'));
+  assert.deepEqual(workflow.on.pull_request, {...readyTrigger, branches: ['main']});
+  assert.deepEqual(workflow.on.push, {branches: ['main']});
+  assert.deepEqual(workflow.on.schedule, [{cron: '23 7 * * 4'}]);
+  assert.deepEqual(workflow.on.workflow_dispatch, {});
+  assert.equal(workflow.on.pull_request_target, undefined);
+  assert.deepEqual(workflow.permissions, {contents: 'read'});
+  const job = workflow.jobs.analyze;
+  assert.deepEqual(job.strategy.matrix, {language: ['javascript-typescript', 'python']});
+  assert.equal(job.strategy['fail-fast'], false);
+  assert.equal(job.if, "github.event_name != 'pull_request' || !github.event.pull_request.draft");
+  assert.equal(job['timeout-minutes'], 30);
+  assert.deepEqual(job.permissions, {contents: 'read', 'security-events': 'write'});
+  assert.equal(job.steps.some(step => step.run || step['continue-on-error']), false, 'scan jobs never execute repository scripts or hide failure');
+  assert.equal(job['continue-on-error'], undefined);
+  const checkout = job.steps.find(step => step.uses.startsWith('actions/checkout@'));
+  assert.equal(checkout.with['persist-credentials'], false);
+  const init = job.steps.find(step => step.uses.startsWith('github/codeql-action/init@'));
+  const analyze = job.steps.find(step => step.uses.startsWith('github/codeql-action/analyze@'));
+  assert.match(init.uses, /@[a-f0-9]{40}$/);
+  assert.equal(init.uses.split('@')[1], analyze.uses.split('@')[1]);
+  assert.equal(init.with['build-mode'], 'none');
+  assert.equal(init.with.tools, 'linked');
+  assert.equal(init.with.languages, '${{ matrix.language }}');
+  assert.equal(analyze.with.category, '/language:${{ matrix.language }}');
+  assert.equal(analyze.with['upload-database'], false);
+  assert.equal(analyze.with['wait-for-processing'], true);
+});
+
 test('ready PRs run admission while main uses separate integration and qualification', () => {
   for (const [file, triggers, checks] of [['checks.yml', expectedTriggers, true], ['workflow.yml', allTriggers, false]]) {
     const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
@@ -259,7 +289,7 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
   const checks = read('checks.yml'), workflowChecks = read('workflow.yml');
   // Hub #870: GitHub-hosted runners replaced Depot. The workflows use new paths, because GitHub keeps the
   // manually disabled state of the retired ci.yml and work-guide.yml copies.
-  assert.deepEqual(fs.readdirSync(path.join(root, '.github/workflows')).sort(), ['checks.yml', 'integration.yml', 'release-qualification.yml', 'workflow.yml']);
+  assert.deepEqual(fs.readdirSync(path.join(root, '.github/workflows')).sort(), ['checks.yml', 'codeql.yml', 'integration.yml', 'music-native.yml', 'release-qualification.yml', 'workflow.yml']);
   assert.equal(fs.existsSync(path.join(root, '.depot')), false, 'Depot workflows would run twice');
   // Workflow checks run in their own workflow so Markdown-only changes still run them (Hub #861).
   assert.equal(workflowChecks.name, 'Workflow');
@@ -279,13 +309,13 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
   const suites = {
     select: ['node scripts/ci-selection/cli.mjs select'],
     gate: ['node scripts/ci-selection/cli.mjs gate'],
-    workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow',
+    workflow: ['npm ci', 'npm run typecheck:python', 'npm run test:python-types', 'npm run check:workflow', 'npm run test:workflow',
       'npm run build', 'node --test apps/runtime/dist/tests/upgrade-procedure.workflow.js',
       'npm run test:preflight'],
-    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'node --test scripts/release/tests/*.test.mjs', 'npm run lint:js', 'npm run test:workspace-audit', playwrightInstall, 'node scripts/ci-selection/run-standalone.mjs', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs scripts/tests/mac-host.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
+    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'node --test scripts/release/tests/*.test.mjs', 'npm run lint:js', 'npm run test:workspace-audit', playwrightInstall, 'node scripts/ci-selection/run-standalone.mjs', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:music-producer:built', 'npm run test:music-producer:native', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs scripts/tests/mac-host.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built',
-      'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:companions:built', 'npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:roborock:built', 'npm run test:onn:built', 'npm run test:wemo:built', 'npm run test:volcano:built', 'npm run test:weather:built', 'npm run test:reachy:built', 'npm run test:microduck:built', 'npm run test:onn:native', 'npm run test:roborock:consumer:built', 'npm run test:volcano:consumer:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
+      'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:companions:built', 'npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:roborock:built', 'npm run test:onn:built', 'npm run test:wemo:built', 'npm run test:art:built', 'npm run test:volcano:built', 'npm run test:weather:built', 'npm run test:reachy:built', 'npm run test:microduck:built', 'npm run test:onn:native', 'npm run test:roborock:consumer:built', 'npm run test:volcano:consumer:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
     'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser',
       'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'node apps/runtime/dashboard/tests/timeline-card.browser.ts', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts',
@@ -516,6 +546,29 @@ test('retained documents keep static checks, browser checks and review artifacts
   for (const folder of ['bunny-places-review', 'bunny-design-review']) assert.ok(upload.with.path.includes(folder));
 });
 
+test('Python lint runs once for ready PRs and full qualification, with failures retained', () => {
+  const workflows = ['checks.yml', 'workflow.yml', 'integration.yml', 'release-qualification.yml']
+    .map(file => YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8')));
+  const allSteps = workflows.flatMap(workflow => Object.values(workflow.jobs).flatMap(job => job.steps ?? []));
+  for (const command of ['npm run lint:python', 'npm run test:lint:python']) {
+    const steps = allSteps.filter(step => step.run === command);
+    assert.equal(steps.length, 1, command);
+    assert.equal(steps[0].if, undefined, command);
+    assert.equal(steps[0]['continue-on-error'], undefined, command);
+  }
+  const documents = workflows[1].jobs.documents;
+  assert.equal(documents.strategy, undefined, 'Python tooling has no runtime matrix');
+  assert.equal(documents['continue-on-error'], undefined);
+  const setup = documents.steps.find(step => step.uses?.startsWith('actions/setup-python@'));
+  assert.equal(setup.with['python-version'], '3.12');
+  assert.equal(setup.with['cache-dependency-path'], 'requirements-tooling.txt');
+  const install = documents.steps.findIndex(step => step.run === 'python3 -m pip install -r requirements-tooling.txt');
+  const lint = documents.steps.findIndex(step => step.run === 'npm run lint:python');
+  assert.ok(install >= 0 && install < lint);
+  assert.equal(workflows[3].jobs.workflow.uses, './.github/workflows/workflow.yml');
+  assert.equal(workflows[3].jobs.workflow.with.qualification, true);
+});
+
 test('documentation drift has full local history and read-only summary reporting', () => {
   const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/workflow.yml'), 'utf8'));
   assert.deepEqual(workflow.permissions, { contents: 'read' });
@@ -632,4 +685,20 @@ test('a stale suppression check stopped by a signal fails and says so', (t) => {
   const result = run(path.join(scripts, 'check-workflow.cjs'), directory);
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /Stale suppression check stopped by SIGKILL/);
+});
+
+
+test('Music native CI compiles with SDK26 and exercises only synthetic capture', () => {
+  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/music-native.yml'), 'utf8'));
+  assert.equal(workflow.permissions.contents, 'read');
+  assert.deepEqual(workflow.on.pull_request.paths, ['apps/music-producer/**', '.github/workflows/music-native.yml']);
+  assert.deepEqual(workflow.on.push.branches, ['main']);
+  const job = workflow.jobs.macos;
+  assert.equal(job['runs-on'], 'macos-15');
+  assert.equal(job.if, "github.event_name != 'pull_request' || !github.event.pull_request.draft");
+  assert.equal(job.env.DEVELOPER_DIR, '/Applications/Xcode_26.3.app/Contents/Developer');
+  assert.equal(job['timeout-minutes'], 10);
+  assert.deepEqual(job.steps.filter(step => step.run).map(step => step.run), [
+    'sh apps/music-producer/native/test.sh', 'sh apps/music-producer/native/build.sh', 'sh apps/music-producer/native/adapter-test.sh',
+  ]);
 });

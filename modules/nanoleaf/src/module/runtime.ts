@@ -377,7 +377,7 @@ export class NanoleafRuntime {
       const presence = this.#presence(id);
       this.#publish('device', id, deviceRecord(db, link, epoch, presence, this.#transmission(id)));
       this.#publish(NANOLEAF_FAMILIES.wall.family, id, wallView(db, this.#feed.copy, this.#directory, id, section.kind, presence));
-      if (id === LINES) this.#publish(NANOLEAF_FAMILIES.animations.family, id, animationsView(db, this.#directory));
+      this.#publish(NANOLEAF_FAMILIES.animations.family, id, animationsView(db, this.#directory, id));
       this.#noteHold(id, presence.hold !== undefined);
     }
   }
@@ -815,10 +815,10 @@ export class NanoleafRuntime {
   #animation(device: string, command: Command<{requestId: string; animation: Record<string, unknown>}>): Promise<Reply> {
     const {requestId, animation} = command.data;
     return this.#admit(command, report => {
-      // The port reads the saved Lines layout for the animation's placement; until the device answered once there is none.
+      // The saved device layout places the animation; until the device answered once there is none.
       // The condition clears by itself, so it is the device's state, as for a wall edit then.
-      if (device === LINES && savedLayout(this.#directory, LINES) === undefined) {
-        throw new CommandRefused('invalid-state', 'the Lines\' layout is not saved yet; it is read once the device answers');
+      if (savedLayout(this.#directory, device) === undefined) {
+        throw new CommandRefused('invalid-state', 'the device layout is not saved yet; it is read once the device answers');
       }
       this.#record(command, device, NANOLEAF_FAMILIES.animationPlay.family);
       admitCommand(this.#db, this.#directory, {id: requestId, device, command: {kind: 'animation.play', ...animation}, instant: this.#seconds(),
@@ -912,7 +912,7 @@ export class NanoleafRuntime {
       bumpRevision(this.#db, [device]);
       this.#record(command, device, family);
       report({type: 'outcome', device, requestId: command.data.requestId, result: OutcomeWord.succeeded, evidence: OutcomeWord.observed});
-    }, () => { this.#changed(device); });
+    }, () => { this.#changed(); });
   }
 
   /**
@@ -976,7 +976,7 @@ const ended = (signal: AbortSignal): boolean => signal.aborted;
 
 /** Fixed text for each refusal of a control or an animation the port decides; the port's own messages are not repeated. */
 const PORT_REFUSALS: Partial<Readonly<Record<ErrorCode, string>>> = {
-  'unsupported-capability': 'the device does not take this now: scenes and animations play in Free only, and animations on the Lines only',
+  'unsupported-capability': 'the device does not take this now: scenes and animations play in Free only',
   capacity: 'the device has too many waiting commands, or another animation is waiting',
   'not-found': 'no such device',
 };

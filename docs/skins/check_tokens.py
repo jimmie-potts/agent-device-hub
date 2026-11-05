@@ -8,6 +8,7 @@ fallback that differs from the light block, or decoration outside its skin scope
 
     python3 docs/skins/check_tokens.py
 """
+from collections.abc import Iterator, Mapping, Sequence
 import io
 import re
 import sys
@@ -64,7 +65,7 @@ ATTRIBUTE = re.compile(r'\b(?:fill|stroke|stop-color|flood-color|lighting-color|
 WORD = re.compile(r'(?<![\w-])[A-Za-z]+(?![\w-])')
 
 
-def sources():
+def sources() -> list[Path]:
     """Authored style sources of the diagram and atlas generators (token CSS files excluded)."""
     atlas = DOCS / 'system-design'
     return [
@@ -72,15 +73,15 @@ def sources():
             SKINS / 'skin.py']
 
 
-def shown(path):
+def shown(path: Path) -> Path:
     return path.relative_to(DOCS.parent) if path.is_relative_to(DOCS.parent) else path
 
 
-def blank(match):
+def blank(match: re.Match[str]) -> str:
     return re.sub(r'[^\n]', ' ', match.group())
 
 
-def chunks(text, suffix):
+def chunks(text: str, suffix: str) -> Iterator[tuple[int, str]]:
     """(first line, text) pieces that can carry styles: Python string literals, or code without comments."""
     if suffix == '.py':
         kinds = {tokenize.STRING, getattr(tokenize, 'FSTRING_MIDDLE', None), getattr(tokenize, 'TSTRING_MIDDLE', None)} - {None}
@@ -94,7 +95,7 @@ def chunks(text, suffix):
     yield 1, text
 
 
-def color_literals(text, suffix):
+def color_literals(text: str, suffix: str) -> list[tuple[int, str]]:
     """Sorted (line, literal) pairs for every color literal in the given source text."""
     found = []
     for first, chunk in chunks(text, suffix):
@@ -109,7 +110,7 @@ def color_literals(text, suffix):
     return sorted(found)
 
 
-def rules(css, media=''):
+def rules(css: str, media: str = '') -> Iterator[tuple[str, str, str]]:
     """(media, selector, body) for each rule; nested @media flattens, other at-rules keep their prelude."""
     index = 0
     while (start := css.find('{', index)) >= 0:
@@ -125,7 +126,7 @@ def rules(css, media=''):
         index = end
 
 
-def selectors(prelude):
+def selectors(prelude: str) -> list[str]:
     parts, depth, current = [], 0, ''
     for character in prelude:
         depth += {'(': 1, ')': -1}.get(character, 0)
@@ -137,7 +138,7 @@ def selectors(prelude):
     return parts + [current.strip()]
 
 
-def token_file_problems(path, expected):
+def token_file_problems(path: Path, expected: Mapping[str, Sequence[str]]) -> list[str]:
     """Contract problems for a token file; `expected` maps block names to required names."""
     name, problems, found, path = path.stem, [], {}, shown(path)
     css = re.sub(r'/\*.*?\*/', '', (DOCS.parent / path).read_text(encoding='utf-8'), flags=re.S)
@@ -165,7 +166,7 @@ def token_file_problems(path, expected):
     return problems
 
 
-def main():
+def main() -> int:
     problems = []
     scanned = sources()
     for path in scanned:

@@ -1,0 +1,2 @@
+# Development checks only; never installed with the runtime or consumer packages.
+ruff==0.17.3

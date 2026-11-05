@@ -454,14 +454,6 @@ suite('control checks the port adds', () => {
     assert.deepEqual(results(replay, 'play'), ['accepted', {refused: 'capacity'}]);
   });
 
-  test('a requested animation plays only on the Lines', async context => {
-    // Recorded from Python with a Panels device registered and in Free, as
-    // test_panels_controller.IntegrationTest.test_panels_extension_commands_fail_before_reservation refused it.
-    const replay = await replayControls(context, 'animations play only on the Lines');
-    assert.deepEqual(results(replay, 'play'), [{refused: 'unsupported-capability'}, 'accepted']);
-    assert.deepEqual(replay.run.query('SELECT id, device FROM control_journal'), [['w', 'wall']]);
-  });
-
   test('a mode command that needs no device write succeeds with observed evidence', async context => {
     // From Work with nothing shown, the Free handoff has nothing to restore: the pass observes the device and writes
     // nothing, where Python cancelled the command.

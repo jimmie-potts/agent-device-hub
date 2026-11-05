@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {LINES_ADDRESS, NANOLEAF_FAMILIES, OBSERVE_MS, REQUEST_MS, SimulatedNanoleaf, createNanoleafModule} from '@jimmie-potts/nanoleaf';
+import {LINES_ADDRESS, NANOLEAF_FAMILIES, PANELS_ADDRESS, OBSERVE_MS, REQUEST_MS, SimulatedNanoleaf, createNanoleafModule} from '@jimmie-potts/nanoleaf';
 import type {RequestResult, Sdk} from '@jimmie-potts/sdk';
 import {createCoreModule} from '../src/index.js';
 import {NANOLEAF_SECTION} from './scenarios/modules/nanoleaf.js';
@@ -107,4 +107,44 @@ it('a mode command and an edit are answered while the worker waits on the wall, 
   await waitFor(() => wall.state().devices[LINES_ADDRESS]?.brightness === 10, 10_000, 'the wall at the Quiet level once it answers');
   assert.deepEqual(runtime.health().lagCheck, {status: 'active', limitMs: LAG_LIMIT_MS});
   assert.equal(logs.some(record => record.event_name === 'runtime.stuck' || record.event_name === 'runtime.module.failed'), false);
+});
+
+it('the runtime routes a requested NL22 animation to Panels and preserves Lines playback', async context => {
+  const devices = new SimulatedNanoleaf({devices: {[LINES_ADDRESS]: 'lines', [PANELS_ADDRESS]: 'panels'}});
+  const outcomes: Message<{requestId: string; result: string; evidence: string}>[] = [];
+  let operator: Sdk | undefined;
+  const probe = fixture('operator', async ({sdk}) => {
+    operator = sdk;
+    await sdk.subscribe('bunny.event.*.*', message => {
+      if (message.kind === 'outcome') outcomes.push(message as Message<{requestId: string; result: string; evidence: string}>);
+    });
+  });
+  const section = {...NANOLEAF_SECTION, devices: [...NANOLEAF_SECTION.devices,
+    {id: 'nl22', kind: 'panels', address: PANELS_ADDRESS, secret: 'token'}]};
+  const configFile = await writeConfiguration(join(await stateDir(context), 'config'), {modules: {nanoleaf: section}, tokens: partTokens()});
+  const {runtime} = await run(context, {modules: [createCoreModule(), createNanoleafModule({transport: devices.request}), probe], configFile,
+    lagCheck: {limitMs: LAG_LIMIT_MS}});
+  assert.equal(runtime.health().status, 'ok');
+  const sdk = operator;
+  assert.ok(sdk !== undefined);
+  await waitFor(() => Object.values(devices.state().devices).every(device => device.reads > 2), 5000, 'both saved layouts');
+  for (const device of ['wall', 'nl22']) {
+    assert.equal((await sdk.request(`bunny.cmd.device-mode-set.${device}`, {type: 'org.bunny.device-mode.set.requested', subject: device,
+      dataschema: 'https://bunny.invalid/events/device-mode-set/2.0', data: {mode: 'free'}}, {timeoutMs: 5000, requestId: `${device}-free`})).status, 'accepted');
+  }
+  await waitFor(() => ['wall-free', 'nl22-free'].every(id => outcomes.some(message => message.data.requestId === id)), 5000, 'Free mode outcomes');
+  const linesBefore = devices.state().devices[LINES_ADDRESS]?.writes;
+  for (const device of ['nl22', 'wall']) {
+    const requestId = `${device}-animation`;
+    assert.equal((await sdk.request(`bunny.cmd.${NANOLEAF_FAMILIES.animationPlay.family}.${device}`, {
+      type: NANOLEAF_FAMILIES.animationPlay.type, subject: device,
+      dataschema: `https://bunny.invalid/events/${NANOLEAF_FAMILIES.animationPlay.family}/2.0`, data: {animation: {preset: 'ocean'}},
+    }, {timeoutMs: 5000, requestId})).status, 'accepted');
+    await waitFor(() => outcomes.some(message => message.data.requestId === requestId), 5000, `${device} animation outcome`);
+    assert.deepEqual(outcomes.find(message => message.data.requestId === requestId)?.data,
+      {requestId, result: 'succeeded', evidence: 'transmitted'});
+    if (device === 'nl22') assert.equal(devices.state().devices[LINES_ADDRESS]?.writes, linesBefore);
+  }
+  assert.equal(devices.state().devices[PANELS_ADDRESS]?.effect, 'custom');
+  assert.equal(devices.state().devices[LINES_ADDRESS]?.effect, 'custom');
 });

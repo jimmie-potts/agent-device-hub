@@ -84,7 +84,10 @@ test('shared, toolchain, CI, selector and unknown paths select full coverage wit
     ['packages/event-contracts/src/v2/index.ts', /shared package/],
     ['package-lock.json', /not mapped/],
     ['tsconfig.json', /not mapped/],
+    ['pyrightconfig.json', /not mapped/],
     ['eslint.config.mjs', /not mapped/],
+    ['ruff.toml', /not mapped/],
+    ['requirements-tooling.txt', /not mapped/],
     ['.github/workflows/checks.yml', /CI configuration/],
     ['scripts/ci-selection/selection.mjs', /repository script/],
     ['scripts/delivery-preflight/ci.mjs', /repository script/],
@@ -364,7 +367,7 @@ const STEP_GROUPS = {
     'npm run test:maintenance:built': 'maintenance', 'npm run test:maintenance:package:built': 'maintenance',
     'npm run test:observability:built': 'shared', 'npm run test:observability:pilot': 'shared', 'npm run test:observability:python': 'shared',
     'npm run test:observability:query': 'shared', 'npm run test:observability:package:built': 'shared', 'npm run test:contracts:built': 'shared',
-    'npm run test:events:built': 'shared', 'npm run test:events:python': 'shared', 'npm run test:sdk:built': 'shared',
+    'npm run test:events:built': 'shared', 'npm run test:music-producer:built': 'shared', 'npm run test:music-producer:native': 'shared', 'npm run test:events:python': 'shared', 'npm run test:sdk:built': 'shared',
     'npm run test:runtime:built': 'runtime', 'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs scripts/tests/mac-host.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs': 'runtime', 'npm run test:runtime:scenarios:built': 'runtime',
     'npm run test:lifecycle:built': 'shared', 'npm run test:lifecycle:python': 'shared', 'npm run test:lifecycle:package:built': 'shared',
     'npm run test:agent-state:built': 'shared', 'npm run test:agent-state:python': 'shared', 'npm run test:agent-state:package:built': 'shared',
@@ -376,7 +379,7 @@ const STEP_GROUPS = {
     'npm run test:wispr-module:built': 'modules', 'npm run test:companions:built': 'modules', 'npm run test:roborock-transport:built': 'modules',
     // The Roborock consumer tests import the built runtime registry.
     'npm run test:roborock-transport:consumer:built': 'runtime', 'npm run test:roborock:built': 'modules',
-    'npm run test:roborock:consumer:built': 'runtime', 'npm run test:volcano:consumer:built': 'runtime', 'npm run test:volcano:built': 'modules', 'npm run test:wemo:built': 'modules', 'npm run test:weather:built': 'modules', 'npm run test:reachy:built': 'modules', 'npm run test:microduck:built': 'modules', 'npm run test:onn:built': 'modules', 'actions/setup-java': 'modules',
+    'npm run test:roborock:consumer:built': 'runtime', 'npm run test:volcano:consumer:built': 'runtime', 'npm run test:volcano:built': 'modules', 'npm run test:wemo:built': 'modules', 'npm run test:art:built': 'modules', 'npm run test:weather:built': 'modules', 'npm run test:reachy:built': 'modules', 'npm run test:microduck:built': 'modules', 'npm run test:onn:built': 'modules', 'actions/setup-java': 'modules',
     'npm run test:onn:native': 'modules', 'npm run test:dashboard': 'shared', 'npm run test:runtime-dashboard:built': 'runtime',
   },
   'app-verify': {

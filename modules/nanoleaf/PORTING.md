@@ -178,8 +178,7 @@ The port adds tests of its own:
   `a Quiet level with no remembered scene sends nothing`, in `scenes.test.ts`;
 - `control checks the port adds`, in `controls.test.ts`. Every control replay also checks each
   outcome against the profile's outcome rules. The checks:
-  - recorded from Python: a requested animation plays only on the Lines, with a Panels device in
-    Free; a saved layout too large refuses an animation before the Free gate; an animation in flight
+  - recorded from Python: a saved layout too large refuses an animation before the Free gate; an animation in flight
     refuses another in any mode; the worker command runs a worker that ended at a hold again;
   - a mode command that needs no device write succeeds with observed evidence;
   - commands that commit while a write is out: a command retired during its write ends uncertain and
@@ -944,3 +943,10 @@ The module's own differences from Python:
   worker read `/state` only while a saved scene played, and its ledger had no observation. A poll
   that reads the same power and brightness publishes nothing.
 - The port's lock files are created with mode 600 (`privateDatabase`); Python's took the umask.
+
+Hub #1258 extends requested animations to NL22 Light Panels through the same per-device
+worker and journal. The former Lines-only admission replay remains a historical fixture;
+`panels-animations.test.ts` covers current admission, playback and isolation, while
+`effects.test.ts` checks all presets on the synthetic NL22 fixture. Lines encodings keep
+their Python byte comparisons. Requested-animation uncertainty keeps the existing
+no-retry, no-hold behavior; native-control holds remain unchanged.

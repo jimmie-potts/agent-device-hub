@@ -27,6 +27,7 @@ import {LightingLayoutPart} from './lighting-layout.js';
 import {PlaybackLayoutPart} from './playback-layout.js';
 import {HomeLayoutPart} from './home-layout.js';
 import {AutomationError} from './automation.js';
+import {MusicCapturePart} from './music-capture.js';
 import {ArtPart} from './art-part.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
@@ -174,6 +175,8 @@ export interface CoreModule extends BunnyModule {
   /** Internal qualified host admission bridge; assignment sends nothing. */
   setModeParticipants(participants: readonly ModeParticipant[]): void;
   setAutomationDevices(devices:readonly AutomationDevice[]):void;
+  /** The host binds only the fixed Music producer connection lifetime. */
+  setMusicCaptureRetirement(retire: () => void): void;
   readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody};
 }
 
@@ -258,6 +261,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
       if(core===undefined) throw new Error('core-not-started');
       core.setAutomationDevices(devices);
     },
+    setMusicCaptureRetirement: retire => {core?.setMusicCaptureRetirement(retire);},
     setModeParticipants: participants => {
       if (core === undefined) throw new Error('core-not-started');
       core.setModeParticipants(participants);
@@ -279,9 +283,11 @@ class Core {
   readonly #automation: AutomationPart;
   readonly #companions = new CompanionPart();
   readonly #art = new ArtPart();
+  setMusicCaptureRetirement(retire: () => void): void {this.#music.setRetirement(retire);}
   get automation(): AutomationControls {return this.#automation.controls;}
   setAutomationDevices(devices:readonly AutomationDevice[]):void {this.#automation.setDevices(devices);}
   readonly #mode: ModePart;
+  readonly #music: MusicCapturePart;
   readonly #sdk: Sdk;
   readonly #log: Logger;
   readonly #clock: Clock;
@@ -327,6 +333,12 @@ class Core {
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
     });
+    this.#music = new MusicCapturePart({
+      admit: command => this.#tracker.admitOperator(command),
+      retain: command => this.#tracker.retainCore(command),
+      complete: (tx, authority, result) => this.#tracker.completeOwnedCore(tx, authority, result),
+      end: command => this.#tracker.endOperator(command),
+    }, context.scheduler);
     const lightingLayout = new LightingLayoutPart({
       admit: command => this.#tracker.admitOperator(command),
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
@@ -343,7 +355,7 @@ class Core {
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
     });
-    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, this.#art, ...added];
+    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, this.#art, this.#music, ...added];
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);
@@ -432,6 +444,7 @@ class Core {
           // Whatever was not sent stays stored, and goes out with the next commit.
         });
         this.#opened();
+        await this.#music.recover();
         this.#schedule();
         // Every action still pending after a restart waits for its deadline, never to be sent again.
         this.#tracker.resume();
@@ -452,6 +465,7 @@ class Core {
     await this.#automation.close();
     this.#companions.close();
     this.#art.close();
+    await this.#music.close();
     await this.#tracker.stop();
     const owner = this.#owner;
     this.#owner = undefined;
@@ -554,6 +568,7 @@ class Core {
    * (ADR 0012, "Repetition"), never a record per attempt above DEBUG.
    */
   #degraded(code: ErrorCode): void {
+    this.#music.storageFailed();
     const now = this.#clock.now();
     const fields = {'bunny.operation': 'storage', 'bunny.outcome': 'unavailable', 'bunny.code': code};
     const record = (extra: LogFields = {}): void => {
@@ -905,6 +920,7 @@ class Core {
       }
       this.#schedule();
       const {families} = request.data;
+      if (families.includes('music-capture-state') && !this.#music.available()) return errorBody('unavailable', {detail: 'the capture owner cannot serve current state'});
       const states: StateDraft[] = families.includes('session') ? this.#store.records().map(record => ({
         type: 'org.bunny.session.updated', subject: record.id, dataschema: sessionSchema(record), data: record,
       })) : [];

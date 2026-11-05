@@ -108,6 +108,10 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:events:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:music-producer:built
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
+        run: npm run test:music-producer:native
+      - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:events:python
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:sdk:built
@@ -170,6 +174,9 @@ jobs:
         run: npm run test:onn:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:wemo:built
+      - name: Art module
+        if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:art:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:volcano:built
       - name: Weather module

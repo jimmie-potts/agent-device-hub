@@ -18,7 +18,7 @@ async function moduleConnection(context: TestContext, control = true, moduleName
   context.mock.method(globalThis, 'fetch', (path: string, init: RequestInit = {}) => {
     requests.push({path, init});
     if (path === '/api/v2/modules') return Promise.resolve(Response.json({schema: 'module-list/2.0', modules: [
-      {name: moduleName, state: 'running', serves: ['pixoo-library'], pages: []},
+      {name: moduleName, state: 'running', serves: moduleName === 'core' ? ['music-capture-state'] : ['pixoo-library'], pages: []},
     ]}));
     if (path.includes('/authority')) return Promise.resolve(Response.json({}, {status: control ? 200 : 403}));
     return Promise.resolve(Response.json({schema: 'module-settings/2.0', settings: {}}));
@@ -263,6 +263,7 @@ function scripted(answers: readonly ('synced' | ErrorCode)[], at: () => number):
   let closed = false;
   const participant = {
     openEndpoint: () => Promise.reject(new Error('no endpoint was expected')),
+    subscribe: () => Promise.resolve({close: () => Promise.resolve()}),
     sync: (_families: readonly string[], handle: (change: SyncChange<SessionRecord>) => void): Promise<SyncResult<SessionRecord>> => {
       syncs.push(at());
       handler = handle;
@@ -485,4 +486,19 @@ void test('a late initial session-sync promise cannot restore freshness after it
   finish();
   await new Promise(resolve => {setImmediate(resolve);});
   assert.equal(connection.getState().sessions.synced, true);
+});
+
+for (const event of ['remote.disconnected', 'remote.refused'] as const) void test(`Audio reads share the shell participant and close on ${event}`, async context => {
+  const {connection, script, connects, diagnose} = await moduleConnection(context, false, 'core');
+  let opened = 0, subscriptions = 0, closed = 0;
+  context.mock.method(script.participant, 'openEndpoint', () => {opened += 1; throw new Error('Audio must not open an endpoint');});
+  context.mock.method(script.participant, 'subscribe', () => {
+    subscriptions += 1; return Promise.resolve({close: () => {closed += 1; return Promise.resolve();}});
+  });
+  const scope = connection.openMusicCapture(); assert.equal(subscriptions, 0, 'scope creation is inert');
+  await scope.refresh(); assert.equal(subscriptions, 1); assert.equal(opened, 0); assert.equal(connects(), 1);
+  diagnose({event, level: 'warn', source: 'bunny/parts/dashboard', ...(event === 'remote.refused' ? {code: 'forbidden'} : {})});
+  assert.equal(scope.getSnapshot().synced, false); assert.equal(closed, 1);
+  assert.equal(await scope.refresh(), false); assert.throws(() => connection.openMusicCapture());
+  assert.equal(subscriptions, 1); assert.equal(opened, 0); assert.equal(connects(), 1);
 });
