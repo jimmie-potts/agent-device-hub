@@ -698,3 +698,17 @@ it('chooses mood content through one seam and draws two complete, distinct frame
  const tinted=renderMomentContent({kind:'mood',mood:'reminder',palette:['#102030']})[0];
  expect(Array.from(tinted??[]).filter(value=>![0,0x10,0x20,0x30].includes(value))).toEqual([]);
 });
+
+it('queued exact art never adopts an idle display after the owner clears playing Media',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);
+  const results=s.play({exactArt:true,startAtMs:s.clock.now()+2000});
+  await s.run(200);
+  await s.settle(s.player.clear());
+  await s.run(5000);
+  expect(results).toEqual([expect.objectContaining({ending:null,refused:'blocked'})]);
+  expect(s.frames()).not.toContainEqual(art);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',itemId:null});
+ }finally{await s.close();}
+});

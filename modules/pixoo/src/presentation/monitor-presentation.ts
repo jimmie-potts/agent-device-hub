@@ -254,7 +254,7 @@ export class MonitorPresentation {
   }
   if(this.configuration.mode==='monitor'){moment.over='monitor';moment.generation=this.playerGeneration;moment.phase='showing';this.momentWrite=true;this.onChange();return;}
   const state=this.player.getState();
-  if(this.idle(state)){moment.over='idle';moment.generation=state.generation;moment.phase='showing';this.momentWrite=true;this.onChange();return;}
+  if(moment.exactArt!==true&&this.idle(state)){moment.over='idle';moment.generation=state.generation;moment.phase='showing';this.momentWrite=true;this.onChange();return;}
   moment.phase='holding';
   // A pause on a player that has since stopped would give the moment a playlist to resume over that stop.
   this.hold('moment',()=>Infinity,()=>this.moment===moment&&this.configuration.mode==='media'&&this.player.getState().intent==='active'&&this.momentBlock(moment.coversStatus,moment.exactArt)===null,held=>{
