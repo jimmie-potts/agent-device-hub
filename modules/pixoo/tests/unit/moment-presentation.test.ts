@@ -205,6 +205,20 @@ it('a moment waiting behind other work never pauses a player that has since stop
   expect(s.frames()).not.toContainEqual(art);
  }finally{await s.close();}
 });
+it('a moment waiting behind other work never pauses a player that has since been cleared',async()=>{
+ let release=():void=>{};
+ const s=await setup({saving:new Promise<void>(resolve=>{release=resolve;})});
+ try{
+  await mediaPlaying(s);
+  const saving=s.monitor.setMoments(true);
+  const results=s.play();await s.run(200);
+  await s.settle(s.player.clear());
+  release();await s.settle(saving);await s.run(4000);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',itemId:null});
+  expect(results).toEqual([expect.objectContaining({ending:null,refused:'blocked'})]);
+  expect(s.frames()).not.toContainEqual(art);
+ }finally{await s.close();}
+});
 for(const [name,lastError] of [['an uncertain write',{code:'timeout',priorEffects:'possible'}],['external control',{code:'external-control'}]] as const){
  it(`after ${name} an empty player refuses a moment, since what the display shows may be the owner's`,async()=>{
   const s=await setup();
