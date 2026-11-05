@@ -91,10 +91,7 @@ they do not install the Mac container or qualify cross-host state transfer.
 
 ## Adding a module
 
-The [ONN module](../../modules/onn/README.md) owns one configured streaming
-device, its fixed controls and its shared-dashboard React remote. Its
-`onn_status` tool reads cached neutral app/connection evidence; commands use
-the core dispatcher. Pairing and device addresses remain private manual setup.
+The [ONN module](../../modules/onn/README.md) is hibernated after device retirement. Its source and private historical state remain retained; the shipped runtime and dashboard do not register it.
 
 A module registers itself from its own folder (#999), so adding runtime and
 harness registration needs no shared module list:

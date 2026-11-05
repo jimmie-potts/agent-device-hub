@@ -19,5 +19,8 @@
     "@jimmie-potts/sdk": "0.1.0",
     "@yume-chan/adb": "2.6.4",
     "@yume-chan/stream-extra": "2.6.1"
+  },
+  "bunny": {
+    "hibernated": true
   }
 }

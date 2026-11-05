@@ -192,6 +192,8 @@ and physical briefs. Resumption requires a new owner decision.
 
 ## ONN qualification
 
+The owner retired the ONN device on 2026-11-05. ONN is hibernated indefinitely under [#1464](https://github.com/jimmie-potts/agent-device-hub/issues/1464). Its source, private stores, schemas and compatibility readers are retained. Runtime/frontend registration, controls, observations, history pages and dedicated default checks are inactive. Resumption requires a new owner decision and restored verification. [#1465](https://github.com/jimmie-potts/agent-device-hub/issues/1465) owns installed deactivation; source changes alone do not establish it. Earlier qualification descriptions below are historical.
+
 [ONN controls qualification](onn-controls-qualification.md) records the selected
 host ADB route, owner-approved native dependency, physical evidence and minimum
 controls contract. The [ONN module](../modules/onn/README.md) implements those
@@ -213,7 +215,7 @@ it qualifies no TV browser or device.
 
 ### ONN focused-text admission checks
 
-The issue-linked `gh-1039-onn-controls` change adds a narrow privacy exception to the existing core dispatcher. After the root build, run `npm run test:runtime:onn-admission:built` for the actual dispatcher/store regression. The runtime unit suite discovers this test, and CI's existing `test:runtime:built` step runs it; shared SDK checks cover the private digest primitive. Retain the failing-before result and verify semantic duplicates, missing/replaced keys, durable plaintext exclusion, no replay and inbox refusal. This is source evidence; installed ONN acceptance remains separate.
+The dedicated ONN admission suite is dormant. Keep core historical omitted-text identities and private digest behavior covered by the active `apps/runtime/tests/art-handoff.test.ts` regression. Run it after build using the owning runtime test environment.
 
 ## Roborock transport checks
 
@@ -2210,62 +2212,7 @@ for resumption. The owning [module](../modules/bb8/README.md) and
 
 ## ONN module checks
 
-The reusable Soft keys card (#1210) extends existing module-test discovery with
-frontend guard, freshness, evidence and browser-bundle checks. Its existing ONN
-browser journey covers shared Home/component/controls placement, Remote/Apps
-geometry and keyboard focus, persistent illustration, memory-only drafts,
-History navigation, light/dark 1440/736/390/320 layouts and uncertain-attempt locks
-across routes and reload. These tests use the existing modules and App verification
-CI entries. Retain the separate history capture below for filters and continuation.
-
-Use Node 24 and `npm ci`, then run `npm run build`, `npm run typecheck`,
-`npm run lint:js` and `npm run test:onn:built`. The module suite covers the
-fixed action mappings, private ADB protocol, bounded queue, persistent fences,
-outcome outbox, key changes before effects, truthful connection transitions,
-unchanged polling, actual module-store exhaustion and module conformance.
-`npm run test:runtime:onn-admission:built`
-checks text omission and duplicate identity in the actual core store and inbox.
-The runtime unit suite also runs `onn-gateway.test.ts` through a real MCP SDK
-client. Run `npm run test:runtime:scenarios:built` for the shared catalog's
-`onn-controls` scenario on both in-process and remote transports. Run
-`npm run test:onn:browser` for the authenticated simulated remote's keyboard,
-text, read-only refusal, reload, unavailable/unknown states, phone/desktop and
-WCAG checks. Set `BUNNY_ONN_SCREENSHOTS` to an existing private evidence folder
-to retain desktop/phone images for visual inspection. Also run the full
-runtime dashboard browser suite locally as its owning guide requires.
-The active Checks workflow includes ONN under its existing modules group;
-App verification runs the focused ONN browser journey, and runtime/SDK suites
-cover shared consumers. Run the shared contract and workflow checks too.
-These are source and
-simulator checks. Installed-client and physical acceptance require their own
-evidence.
-
-For ONN title-history source changes, also run `npm run test:onn:native` with
-JDK 21 and Python 3.12 or later. This compiles the fixed reader against synthetic
-Android surfaces, exercises privacy/bounds/deadlines and fixed invocation over
-socket-backed raw ADB output, checks missing/existing process-local media
-initialization and private refusal, and verifies the packaged
-source/Dex pins. It does not run Android or reproduce Dex unless the qualified
-R8 tool is explicitly supplied through the owning native build procedure.
-The modules CI group provisions JDK 21 and runs this check. Module tests cover
-closed metadata intake, immutable private originals, gaps, clock/restart faults,
-storage loss and bounded cutoff history/detail queries. Runtime gateway tests
-use a real loopback MCP SDK client; both transport scenario runs verify stored
-reads without device commands. Source delivery leaves installed acceptance in
-#1044 and history React/browser work in #1041.
-
-For ONN history visuals, run `npm run test:onn:built` for local calendar/DST,
-closed browser documents and source-value checks, then
-`npm run test:onn:history:browser` after the root build. That focused command
-selects the existing `scenario-onn-title-history` capture, which exercises
-the module page in the same fresh simulated runtime as the catalog. CI's
-`test:runtime:verify:built` and independent disposable Acceptance use that exact
-path. It checks real owner reads, synthetic prior-day owner fixtures, filters,
-history/detail continuation, keyboard focus, unsupported/failed/superseded
-reads, reconnect, phone/desktop accessibility and zero device commands/effects.
-Capture attachments retain synthetic screenshots and a labelled interaction
-video for inspection. Run the full runtime dashboard browser checks as well.
-These checks do not establish installed or physical behavior.
+ONN is hibernated. Dedicated module, native-reader, browser, scenario and qualification checks are retained as dormant sources and are excluded from default build and CI. Run `node --test tests/onn_hibernation.test.mjs` for active registry absence. Build/typecheck/lint, workflow/CI-selection checks and shared runtime/dashboard checks remain required for hibernation changes. The shared television-viewport keyboard journey remains active. Historical instructions remain in the [module guide](../modules/onn/README.md).
 
 ## Roborock module checks
 

@@ -1,5 +1,7 @@
 # Upgrade and recover the installed runtime
 
+ONN is hibernated after device retirement. Preserve retained ONN state and compatibility readers without activating its writer or requiring dormant-device qualification. Its historical setup references do not select active ONN use.
+
 This procedure belongs to `bunny-runtime.service`, the current TypeScript runtime
 on the established WSL installation. It preserves that installation's state,
 configuration, credentials, Node executable and hooks. It does not operate the
