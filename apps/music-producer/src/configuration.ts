@@ -14,7 +14,7 @@ const validate = new Ajv2020({allErrors: false}).compile<Configuration>({
 const refusal = (): SdkError => new SdkError(errorBody('invalid-request', {detail: 'Music producer configuration is invalid.'}));
 
 /** Read once from an owner-only regular file; a growing file cannot expand the allocation. */
-async function privateText(file: string, maximum: number): Promise<string> {
+export async function privateText(file: string, maximum: number): Promise<string> {
   if (!isAbsolute(file)) throw refusal();
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
