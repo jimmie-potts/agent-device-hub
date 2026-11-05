@@ -1,5 +1,5 @@
 // Semantic timing only; no renderer, clock, persistence or device dependency.
-import type {Recipe} from './effects.js';
+import type {Recipe} from './effect-data.js';
 
 export const MAX_MUSIC_CUES = 256;
 export const MAX_MUSIC_DURATION_MS = 30 * 60 * 1000;

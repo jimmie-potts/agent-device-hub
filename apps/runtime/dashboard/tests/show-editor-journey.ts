@@ -38,7 +38,12 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     const editor = page.locator('.nanoleaf-shows'); await editor.waitFor();
     await editor.getByText('Your private library is empty. Choose a starter to prepare a draft.', {exact: true}).waitFor();
     await delay(300);
-    const deviceBefore = structuredClone(world.nanoleafState());
+    // Ordinary controller polling may continue while the offline editor is open.
+    const outputState = (): object => {
+      const state = world.nanoleafState();
+      return {...state, devices: Object.fromEntries(Object.entries(state.devices).map(([id, {reads: _reads, ...device}]) => [id, device]))};
+    };
+    const deviceBefore = structuredClone(outputState());
     const wallBefore = await world.nanoleafWall();
     assert.equal(sent.length, 0, 'opening the authoring page sends no command');
     const starter = editor.getByRole('button', {name: 'Use Ocean drift', exact: true});
@@ -74,6 +79,29 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.equal(await editor.getByLabel('Version name', {exact: true}).inputValue(), 'Unsubmitted local change');
     assert.equal(saves.length, 2, 'refresh does not save the draft');
 
+    let releaseRead: (() => void) | undefined;
+    const heldRead = new Promise<void>(resolve => {releaseRead = resolve;});
+    let readStarted: (() => void) | undefined;
+    const startedRead = new Promise<void>(resolve => {readStarted = resolve;});
+    await page.route('**/modules/nanoleaf/content/show-version?**', async route => {
+      const response = await route.fetch(); readStarted?.(); await heldRead; await route.fulfill({response});
+    }, {times: 1});
+    try {
+      await editor.getByLabel('Saved version', {exact: true}).selectOption('1');
+      await editor.getByRole('button', {name: 'Open saved version', exact: true}).click(); await startedRead;
+      await editor.getByRole('button', {name: 'Cancel version read', exact: true}).click();
+      assert.equal(await editor.getByLabel('Version name', {exact: true}).isDisabled(), false);
+      assert.equal(await editor.getByLabel('Version name', {exact: true}).inputValue(), 'Unsubmitted local change');
+    } finally {releaseRead?.();}
+    await editor.getByRole('button', {name: 'Open saved version', exact: true}).waitFor();
+    await delay(100);
+    assert.equal(await editor.getByLabel('Version name', {exact: true}).inputValue(), 'Unsubmitted local change', 'late cancelled read cannot replace the draft');
+    await page.route('**/modules/nanoleaf/content/show-version?**', route => route.fulfill({status: 503, contentType: 'application/json',
+      body: '{"error":{"code":"unavailable","retryable":true}}'}), {times: 1});
+    await editor.getByRole('button', {name: 'Open saved version', exact: true}).click();
+    await editor.getByRole('alert').filter({hasText: 'That saved version is unavailable.'}).waitFor();
+    assert.equal(await editor.getByLabel('Version name', {exact: true}).inputValue(), 'Unsubmitted local change', 'failed read retains the draft');
+
     // A different authenticated client wins the same head. The browser retains its local draft.
     const other = await world.credentialAction('nanoleaf-show-save', 'shows', {...first.data, expectedVersion: 2, versionName: 'Other client'});
     assert.equal(other.status, 200);
@@ -89,7 +117,7 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.equal(cross.status(), 403); await cross.dispose();
     const malformed = await world.credentialAction('nanoleaf-show-save', 'shows', {...first.data, expectedVersion: 3, audio: 'not-allowed'});
     assert.equal(malformed.status, 400);
-    assert.deepEqual(world.nanoleafState(), deviceBefore, 'authoring, saves and preview leave the simulated device unchanged');
+    assert.deepEqual(outputState(), deviceBefore, 'authoring, saves and preview leave output, writes and controller command history unchanged');
     assert.deepEqual(await world.nanoleafWall(), wallBefore, 'no device configuration or displayed task mutation');
     const receipts = process.env.DASHBOARD_RECEIPTS;
     for (const colorScheme of ['light', 'dark'] as const) for (const width of [1440, 390, 320]) {

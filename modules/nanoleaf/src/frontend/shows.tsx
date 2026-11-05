@@ -1,36 +1,18 @@
 import React, {useEffect, useRef, useState} from 'react';
 import type {FrontendApi, FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
-import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
 import {SHOW_LIMITS, SHOW_TARGET, type ShowCatalog, type ShowSave} from '../music-show-data.js';
 import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS, selectMusicCue, type MusicCue, type MusicTimeline} from '../music-timeline-data.js';
 import {DIRECTION_CHOICES, draftProblem, PATTERN_CHOICES, showVersion, spatial, SPEED_CHOICES, starter, STARTERS} from './show-model.js';
+import {followShows, type CatalogView} from './show-feed.js';
 import './shows.css';
 
-type Catalog = {value: ShowCatalog | undefined; live: boolean; pending: boolean; failed: boolean};
-function useShows(api: FrontendApi): Catalog & {refresh: () => void} {
-  const [state, setState] = useState<Catalog>({value: undefined, live: false, pending: true, failed: false});
+function useShows(api: FrontendApi): CatalogView & {refresh: () => void} {
+  const [state, setState] = useState<CatalogView>({value: undefined, live: false, pending: true, failed: false});
   const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    let disposed = false;
-    let copy: SyncedCopy<ShowCatalog> | undefined;
-    const stale = (): void => {if (!disposed) setState(previous => ({...previous, live: false, pending: true}));};
-    const failed = (): void => {if (!disposed) setState(previous => ({...previous, live: false, pending: false, failed: true}));};
-    stale();
-    void api.sync<ShowCatalog>(['nanoleaf-shows'], change => {
-      if (disposed) return;
-      if (change.type === 'failed') {failed(); return;}
-      if (change.type === 'updated' && change.message.data.id === SHOW_TARGET) setState(previous => ({...previous, value: change.message.data}));
-      if (change.type === 'removed') setState({value: undefined, live: false, pending: false, failed: true});
-      if (change.type === 'synced') setState(previous => ({...previous, live: true, pending: false, failed: false}));
-    }, {onRestarted: stale}).then(result => {
-      if (result.status === 'rejected') {failed(); return;}
-      if (disposed) {void result.copy.close(); return;}
-      copy = result.copy;
-      const value = [...copy.states()].find(message => message.data.id === SHOW_TARGET)?.data;
-      setState({value, live: value !== undefined, pending: false, failed: value === undefined});
-    }).catch(failed);
-    return () => {disposed = true; void copy?.close();};
-  }, [api, attempt]);
+  const retained = useRef<ShowCatalog | undefined>(undefined);
+  useEffect(() => followShows((changed, options) => api.sync<ShowCatalog>(['nanoleaf-shows'], changed, options), view => {
+    retained.current = view.value; setState(view);
+  }, retained.current), [api, attempt]);
   return {...state, refresh: () => {setAttempt(value => value + 1);}};
 }
 
@@ -97,11 +79,12 @@ function ShowEditor({context, catalog, command}: {context: FrontendContext; cata
   const [selectedShow, setSelectedShow] = useState('');
   const [selectedVersion, setSelectedVersion] = useState('');
   const [reading, setReading] = useState(false), [readFailed, setReadFailed] = useState(false);
+  const [pendingRead, setPendingRead] = useState(false), [readCancelled, setReadCancelled] = useState(false);
   const [sending, setSending] = useState(false);
   const [submitted, setSubmitted] = useState<{requestId: string; draft: ShowSave}>();
-  const readSequence = useRef(0), sendingRef = useRef(false);
-  useEffect(() => () => {readSequence.current++;}, []);
-  const operation = context.operations.find(value => value.requestId === submitted?.requestId && value.family === 'nanoleaf-show-save');
+  const readSequence = useRef(0), readActive = useRef(false), sendingRef = useRef(false), mounted = useRef(true);
+  useEffect(() => {mounted.current = true; readSequence.current++; return () => {mounted.current = false;};}, []);
+  const operation = context.operations.find(value => value.requestId === submitted?.requestId && value.family === 'nanoleaf-show-save' && value.target === SHOW_TARGET);
   useEffect(() => {
     if (submitted === undefined || operation?.status !== 'completed' || operation.result !== 'succeeded' || operation.evidence !== 'observed') return;
     if (draft !== submitted.draft) {setSubmitted(undefined); return;}
@@ -118,21 +101,22 @@ function ShowEditor({context, catalog, command}: {context: FrontendContext; cata
   const problem = draft === undefined ? undefined : draftProblem(draft);
   const change = (next: ShowSave): void => {setDraft(next); setDirty(true);};
   const load = (): void => {
-    if (currentShow === undefined || version === undefined || locked) return;
+    if (currentShow === undefined || version === undefined || locked || readActive.current) return;
     const sequence = ++readSequence.current, id = currentShow.id;
-    setReading(true); setReadFailed(false);
+    readActive.current = true; setPendingRead(true); setReading(true); setReadFailed(false); setReadCancelled(false);
     void context.api.read(`/modules/nanoleaf/content/show-version?showId=${encodeURIComponent(id)}&version=${String(version)}`).then(value => {
-      if (sequence !== readSequence.current) return;
+      if (!mounted.current || sequence !== readSequence.current) return;
       const saved = showVersion(value, id, version);
       setDraft({showId: saved.showId, expectedVersion: saved.version, name: saved.name, versionName: saved.versionName, timeline: saved.timeline});
-      setDirty(false); setReading(false);
-    }).catch(() => {if (sequence === readSequence.current) {setReadFailed(true); setReading(false);}});
+      setSelectedShow(id); setSelectedVersion(String(version)); setDirty(false); setReading(false);
+    }).catch(() => {if (mounted.current && sequence === readSequence.current) {setReadFailed(true); setReading(false);}})
+      .finally(() => {readActive.current = false; if (mounted.current) setPendingRead(false);});
   };
   const save = (): void => {
     if (draft === undefined || !editable || !live || !context.operationsLive || problem !== undefined || conflict || !dirty || sendingRef.current) return;
     sendingRef.current = true; setSending(true);
     const requestId = crypto.randomUUID(); setSubmitted({requestId, draft});
-    void command.run({family: 'nanoleaf-show-save', target: SHOW_TARGET, requestId, data: draft}).finally(() => {sendingRef.current = false; setSending(false);});
+    void command.run({family: 'nanoleaf-show-save', target: SHOW_TARGET, requestId, data: draft}).finally(() => {sendingRef.current = false; if (mounted.current) setSending(false);});
   };
   return <>
     <section className="show-library" aria-label="Saved decorative shows"><h2>Saved shows</h2>
@@ -142,14 +126,16 @@ function ShowEditor({context, catalog, command}: {context: FrontendContext; cata
         {catalog.value?.shows.map(show => <option key={show.id} value={show.id}>{show.name}</option>)}</select></label>
         <label>Saved version<select aria-label="Saved version" value={String(version)} disabled={locked || reading} onChange={event => {setSelectedVersion(event.target.value);}}>
           {currentShow.versions.map(item => <option key={item.version} value={item.version}>v{item.version} · {item.versionName}</option>)}</select></label>
-        <button type="button" className="secondary" disabled={!context.connected || locked || reading} onClick={load}>{reading ? 'Reading version…' : 'Open saved version'}</button></div>}
+        <button type="button" className="secondary" disabled={!context.connected || locked || pendingRead} onClick={load}>{reading ? 'Reading version…' : pendingRead ? 'Read still pending' : 'Open saved version'}</button></div>}
+      {reading && <button type="button" className="secondary" onClick={() => {readSequence.current++; setReading(false); setReadCancelled(true);}}>Cancel version read</button>}
+      {readCancelled && <p role="status">Version read cancelled. Your draft is retained.</p>}
       {dirty && <p className="hint">Opening a saved version or a starter replaces this unsaved draft.</p>}
       {readFailed && <p role="alert">That saved version is unavailable. Any earlier draft below is retained; it is not the requested version.</p>}
       <button type="button" className="secondary" disabled={catalog.pending} onClick={catalog.refresh}>Refresh show library</button>
     </section>
     <section className="show-starters" aria-label="Starter shows"><h2>Start a decorative show</h2><p>These starters need no song or audio analysis. Nothing is saved or played when you open one.</p>
       <div className="show-actions">{STARTERS.map(item => <button type="button" className="secondary" key={item.id} disabled={!editable}
-        onClick={() => {readSequence.current++; setReadFailed(false); change(starter(item.id, `show-${crypto.randomUUID()}`));}}>Use {item.name}</button>)}</div>
+        onClick={() => {readSequence.current++; setReadFailed(false); setReadCancelled(false); change(starter(item.id, `show-${crypto.randomUUID()}`));}}>Use {item.name}</button>)}</div>
     </section>
     {!context.control && <p>Read-only access. You can inspect saved versions; editing requires control access.</p>}
     {!live && <p role="status">{catalog.failed ? 'The show library is unavailable.' : 'The show library is stale or still loading.'} Saving is disabled.</p>}

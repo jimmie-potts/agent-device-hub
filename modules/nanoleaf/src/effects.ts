@@ -4,24 +4,15 @@
 import {isObject, own, pyHypot, pyJson, pyMod, pyRound, pySum} from './compat.js';
 import type {Kind} from './devices.js';
 import {ValueError} from './errors.js';
+import type {Pattern, Speed, Direction, Recipe} from './effect-data.js';
+export type {Pattern, Speed, Direction, Recipe} from './effect-data.js';
 
-export type Pattern = 'wave' | 'gradient' | 'pulse' | 'breathe' | 'sparkle';
-export type Speed = 'slow' | 'medium' | 'fast' | 'faster';
-export type Direction = 'left' | 'right' | 'up' | 'down' | 'outward' | 'inward' | 'clockwise' | 'counterclockwise';
 export type PresetName = 'cozy' | 'ocean' | 'sunset' | 'aurora' | 'campfire' | 'forest' | 'rain' | 'focus' | 'party' | 'celebration';
 export type Rgb = readonly [number, number, number];
 /** One keyframe: red, green, blue and the transition into it in deciseconds. */
 export type Frame = readonly [number, number, number, number];
 export type Zone = readonly [number, readonly Frame[]];
 
-/** An explicit animation; a frozen recipe has every optional field its pattern takes. */
-export interface Recipe {
-  pattern: Pattern;
-  colors: string[];
-  speed?: Speed;
-  direction?: Direction;
-  loop?: boolean;
-}
 export type RecipeInput = Recipe | {preset: PresetName};
 export type ExplicitAnimation = {kind: 'animation.play'} & Recipe;
 export type AnimationCommand = ExplicitAnimation | {kind: 'animation.play'; preset: PresetName} | {kind: 'animation.play'; favorite: string};

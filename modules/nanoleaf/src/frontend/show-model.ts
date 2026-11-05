@@ -1,6 +1,6 @@
 import {SHOW_LIMITS, SHOW_VERSION_SCHEMA, validShowId, type ShowSave, type ShowVersion} from '../music-show-data.js';
 import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS, type MusicCue, type MusicTimeline} from '../music-timeline-data.js';
-import type {Direction, Pattern, Speed} from '../effects.js';
+import type {Direction, Pattern, Speed} from '../effect-data.js';
 
 export const PATTERN_CHOICES = ['wave', 'gradient', 'pulse', 'breathe', 'sparkle'] as const satisfies readonly Pattern[];
 export const SPEED_CHOICES = ['slow', 'medium', 'fast', 'faster'] as const satisfies readonly Speed[];

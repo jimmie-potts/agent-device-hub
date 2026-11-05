@@ -1830,7 +1830,8 @@ restart/rollback checks. After the root build, run
 then `npm run test:nanoleaf:built`. The existing
 `node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts` journey covers the
 editor through the authenticated disposable runtime and remains in the full
-runtime dashboard browser and smoke checks. Keep shared build, typecheck, lint,
+local runtime dashboard browser check. Run the existing smoke check as well.
+Keep shared build, typecheck, lint,
 contract and workflow checks. These checks use synthetic plans and establish
 no installation, playback, physical timing or light output.
 
