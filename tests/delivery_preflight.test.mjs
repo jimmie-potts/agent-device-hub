@@ -129,7 +129,7 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
   assert.equal(mixed.jobs.length, 8, 'one non-Markdown path keeps every job expected');
   assert.ok(mixed.jobs.every(item => item.selected), 'an old-system path selects every job');
   const incomplete = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/a.md'], filesComplete: false }, ACTIONS);
-  assert.equal(incomplete.jobs.length, 8, 'an incomplete file list keeps every job expected');
+  assert.equal(incomplete.jobs.length, 9, 'an incomplete file list keeps every job expected');
   assert.ok(incomplete.jobs.every(item => item.selected), 'an incomplete file list selects every job');
   // Hub #1080: a narrow change still expects every job, but the jobs it leaves out are expected to be skipped.
   const narrow = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['apps/maintenance/src/planner.ts'], filesComplete: true }, ACTIONS);
@@ -251,6 +251,7 @@ test('CI: a candidate that edits its workflows cannot drop an expected job unnot
 const depotEra = { 'ci.yml': WORKFLOW_FILES['checks.yml'], 'workflow.yml': WORKFLOW_FILES['workflow.yml'] };
 const moveWorld = () => {
   const world = cleanWorld();
+  world.checkRuns[HEAD].push(checkRun('Music native compile and synthetic tests', HEAD, world.checkRuns[HEAD][0].check_suite.id));
   // A Depot-era base also holds disabled copies under .github/workflows; Depot's directory decides.
   world.workflows[BASE] = { [DEPOT.directory]: { ...depotEra }, [ACTIONS.directory]: { 'ci.yml': 'name: Stale\non: pull_request\njobs: {}\n' } };
   world.files.push(

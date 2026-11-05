@@ -16,7 +16,8 @@ const SCHEMA = 'https://bunny.invalid/events/';
 const stateDraft = (data: CaptureState): StateDraft<CaptureState> => ({type: 'org.bunny.music-capture.updated', subject: 'music', dataschema: `${SCHEMA}music-capture-state/2.0`, data});
 type Responsibility = {authority: CoreResponsibility; action: 'start' | 'stop'; generation: string; endpointId: string;
   result: 'pending' | 'uncertain' | 'succeeded' | 'failed'; traceparent: string};
-type Live = {generation: string; wall: number; mono: number; sequence: number; sourceEnd: number; untilWall: number; untilMono: number};
+type ClockAnchor = {wall: number; mono: number};
+type Live = ClockAnchor & {generation: string; sequence: number; sourceEnd: number; untilWall: number; untilMono: number};
 export type CaptureAdmission = {
   admit(command: Command<CaptureControl>): boolean;
   retain(command: Command<CaptureControl>): CoreResponsibility;
@@ -37,6 +38,7 @@ export class MusicCapturePart implements CorePart {
   readonly #backoff = new Backoff(1000, 60_000);
   #queue: Promise<unknown> = Promise.resolve();
   #live: Live | undefined;
+  #endpointClock: ClockAnchor | undefined;
   #timer: Cancel | undefined;
   readonly #deadlines = new Map<string, Cancel>();
   constructor(readonly admission: CaptureAdmission, readonly scheduler: ModuleScheduler, readonly monotonic: () => number = () => performance.now()) {
@@ -54,7 +56,9 @@ export class MusicCapturePart implements CorePart {
     if (!this.available()) return [];
     return [stateDraft(this.#state())];
   }
-  storageFailed(): void {this.#failure();}
+  storageFailed(): void {
+    if (this.#faulted || this.#live !== undefined || (this.#database?.isOpen === true && this.#state().endpointId !== null)) this.#failure();
+  }
   available(): boolean {return !this.#faulted && this.#database !== undefined;}
   setRetirement(retire: () => void): void {
     if (this.#retireEndpoint !== undefined) throw new Error('capture-retirement-already-bound');
@@ -81,6 +85,9 @@ export class MusicCapturePart implements CorePart {
     try {await this.#recover();} catch {this.#failure();}
   }
   async #recover(): Promise<void> {
+    if (this.#database === undefined) return;
+    const previous = this.#state();
+    if (previous.endpointId === null && previous.session.status === 'idle' && this.#responsibilities().every(record => record.result !== 'pending')) return;
     const core = this.#required();
     const completions: (() => void)[] = [];
     await core.transaction(tx => {
@@ -138,13 +145,19 @@ export class MusicCapturePart implements CorePart {
       if (this.#state().endpointId !== command.subject) return errorBody('forbidden');
       this.#fence();await this.#retire('off');return {status: 'accepted'};
     }
+    const anchor = {wall: core.clock.now(), mono: this.monotonic()};
+    let registered = false;
     const reply = await core.transaction(tx => {
       const current = this.#state();
       if (current.endpointId !== null && current.endpointId !== command.subject) return errorBody('invalid-state');
-      if (current.endpointId !== command.subject || current.availability !== 'available') this.#save(tx, {...current, endpointId: command.subject, availability: 'available'});
+      if (current.endpointId !== command.subject || current.availability !== 'available') {
+        this.#save(tx, {...current, endpointId: command.subject, availability: 'available'});registered = true;
+      }
       return {status: 'accepted'} as const;
     });
-    if (!('error' in reply)) this.#disconnected = false;
+    if (!('error' in reply)) {
+      this.#disconnected = false;if (registered) this.#endpointClock = anchor;
+    }
     return reply;
   }
   async #control(command: Command<CaptureControl>): Promise<Reply> {
@@ -154,7 +167,9 @@ export class MusicCapturePart implements CorePart {
     try {return await this.#serial(async () => {
       const core = this.#required();await core.ready;
       if (this.#closed || this.#faulted) return errorBody('unavailable');
-      let accepted: Responsibility | undefined;
+      let accepted: Responsibility | undefined, live: Live | undefined;
+      let clockInvalid = false;
+      const anchor = this.#endpointClock;
       const answer = await core.transaction(tx => {
         const current = this.#state(), data = command.data;
         if (Date.parse(command.expiresat ?? '') <= tx.atMs) return errorBody('expired');
@@ -162,15 +177,20 @@ export class MusicCapturePart implements CorePart {
         if (current.availability !== 'available' || current.endpointId === null) return errorBody('unavailable');
         if (data.action === 'start' && (data.endpointId !== current.endpointId || ['starting', 'active', 'stale', 'stopping', 'uncertain'].includes(current.session.status))) return errorBody('invalid-state');
         if (data.action === 'stop' && (current.session.status === 'idle' || current.session.status === 'stopping')) return errorBody('invalid-state');
+        if (data.action === 'start' && (anchor === undefined || !this.#clockValid(anchor, core.clock.now(), this.monotonic()))) {
+          clockInvalid = true;return errorBody('unavailable');
+        }
         const generation = data.action === 'start' ? randomUUID() : current.session.status === 'idle' ? '' : current.session.generation;
         const record: Responsibility = {authority, action: data.action, generation, endpointId: current.endpointId, result: 'pending', traceparent: command.traceparent};
         this.#write(record);
         this.#save(tx, {...current, session: {status: data.action === 'start' ? 'starting' : 'stopping', generation, operationId: authority.requestId, input: 'music'}});
-        tx.take(command);accepted = record;return {status: 'accepted'} as const;
+        tx.take(command);accepted = record;
+        if (data.action === 'start' && anchor !== undefined) live = {...anchor, generation, sequence: 0, sourceEnd: -1, untilWall: 0, untilMono: 0};
+        return {status: 'accepted'} as const;
       });
+      if (clockInvalid) await this.#retire('unavailable');
       if (accepted !== undefined) {
-        this.#fence();
-        if (accepted.action === 'start') this.#live = {generation: accepted.generation, wall: core.clock.now(), mono: this.monotonic(), sequence: 0, sourceEnd: -1, untilWall: 0, untilMono: 0};
+        this.#fence();this.#live = live;
         const record = accepted;
         this.#deadlines.set(authority.requestId, this.scheduler.after(record.action === 'start' ? 10_000 : 6000, () => this.#serial(() => this.#uncertain(record)).catch(() => {})));
         void this.#send(record);this.#schedule();
@@ -247,7 +267,7 @@ export class MusicCapturePart implements CorePart {
     if (session.status !== 'active') await core.transaction(tx => this.#save(tx, {...current, session: {...session, status: 'active'}}));
     this.#schedule();
   }
-  #clockValid(live: Live, wall: number, mono: number): boolean {
+  #clockValid(live: ClockAnchor, wall: number, mono: number): boolean {
     return Number.isFinite(wall) && Number.isFinite(mono) && mono >= live.mono && Math.abs(wall - live.wall - (mono - live.mono)) <= CAPTURE_CLOCK_DRIFT_MS;
   }
   #schedule(): void {
@@ -272,6 +292,7 @@ export class MusicCapturePart implements CorePart {
   #cancelDeadline(id: string): void {this.#deadlines.get(id)?.();this.#deadlines.delete(id);}
   #lose(): void {this.#fence();if (!this.#closed) void this.#serial(() => this.#retire('unavailable')).catch(() => {});}
   async #retire(availability: 'off' | 'unavailable'): Promise<void> {
+    this.#endpointClock = undefined;
     if (availability === 'unavailable') this.#disconnect();
     this.#fence();if (this.#closed) return;
     const core = this.#required();await core.ready;
@@ -285,12 +306,13 @@ export class MusicCapturePart implements CorePart {
     for (const cancel of this.#deadlines.values()) cancel();this.#deadlines.clear();
   }
   #disconnect(): void {
+    this.#endpointClock = undefined;
     if (this.#disconnected) return;
     this.#disconnected = true;this.#retireEndpoint?.();
   }
   #failure(): void {
     if (this.#closed || this.#core === undefined) return;
-    if (!this.#faulted) recordLog(this.#core.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': Outcome.rejected, 'bunny.code': 'internal'});
+    if (!this.#faulted) recordLog(this.#core.log, 'operation.failed', {'bunny.operation': 'status', 'bunny.outcome': Outcome.rejected, 'bunny.code': 'internal'});
     this.#faulted = true;this.#disconnect();this.#fence();
     if (this.#recovering !== undefined) return;
     this.#backoff.failed(this.#core.clock.now());

@@ -225,3 +225,14 @@ for (const status of ['failed', 'uncertain'] as const) it(`a ${status} stop repo
   await waitFor(() => h.closed() === 1 && h.operation('reported-stop')?.result === status);
   assert.equal(h.operation('reported-stop-start')?.result, 'succeeded');
 });
+
+it('a core clock jump after registration refuses start before any capture work', async t => {
+  const h = await setup(t);await h.enable();const initial = await h.read();
+  h.wallOffset(-250);
+  const answer = await h.control('idle-clock-start', initial.revision, 'start');
+  assert.ok('error' in answer, 'registration clock qualification must survive the idle interval');
+  assert.equal(answer.error.code, 'unavailable');
+  assert.equal(h.work.length, 0);
+  await waitFor(() => h.closed() === 1);
+  h.wallOffset(0);
+});
