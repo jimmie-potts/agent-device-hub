@@ -15,7 +15,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {createWisprModule, isWisprModule} from '@jimmie-potts/wispr';
 import {
-  connectRemote, type BunnyModule, type CommandDraft, type DeviceSimulation, type Diagnostic, type ModuleRegistration, type Participant,
+  connectRemote, type BunnyModule, type CommandDraft, type DeviceSimulation, type Diagnostic, type ModuleRegistration, type Participant, type WorkerCallOptions,
 } from '@jimmie-potts/sdk';
 import {readEdgeCredentials, type EdgeCredential} from '../../src/credentials.js';
 import {Gateway, readableFamilies} from '../../src/gateway/gateway.js';
@@ -48,6 +48,12 @@ export const INSTALLED_PORTS: readonly number[] = [8765, 8787, 8788, 8791, 41231
 const RECONNECT_MS = 20;
 /** How far virtual time moves before real I/O, such as the edge's HTTP, gets to run. */
 const STEP_MS = 10;
+/**
+ * How long, in real time, virtual time waits for one module's worker call. A worker runs in real time but its deadline
+ * is on virtual time, which runs several times faster, so a stalled runner could time out a worker that had done nothing
+ * wrong (Hub #1442). A call still running after this long takes its chances: a worker that never answers reaches its deadline.
+ */
+const WORKER_WAIT_MS = 10_000;
 
 export interface MemoryHarness extends Harness {
   /** The private state directory the runtime uses across restarts. */
@@ -97,13 +103,20 @@ type Part = {role: Role; source: string; token: string; participant: Participant
 /** A registered module's simulation and its simulated device, which outlives the runtime's restarts and crashes. */
 type Simulated = {simulation: DeviceSimulation; device: unknown};
 
-/** The module, keeping each database it opens in `databases`, so a crash can close them as a process's end would. */
-function holding(module: BunnyModule, databases: Set<DatabaseSync>): BunnyModule {
+/**
+ * The module, keeping each database it opens in `databases`, so a crash can close them as a process's end would, and
+ * handing each worker call it makes to `working`, so virtual time can wait for the worker.
+ */
+function holding(module: BunnyModule, databases: Set<DatabaseSync>, working: (call: Promise<unknown>) => void): BunnyModule {
   return {...module, start: context => module.start({...context, database: () => {
     const database = context.database();
     databases.add(database);
     return database;
-  }})};
+  }, workers: {...context.workers, call: <Reply>(file: URL, request: unknown, options: WorkerCallOptions): Promise<Reply> => {
+    const call = context.workers.call<Reply>(file, request, options);
+    working(call);
+    return call;
+  }}})};
 }
 
 class Memory implements MemoryHarness {
@@ -144,6 +157,9 @@ class Memory implements MemoryHarness {
   readonly #crashed = new WeakSet<Participant>();
   /** A restart or reconnect under way. Every call waits for them, and virtual time stands still meanwhile. */
   readonly #pending = new Set<Promise<void>>();
+  /** Module worker calls under way, each until it ends or `#workerWaitMs` passes. Virtual time stands still meanwhile. */
+  readonly #working = new Set<Promise<void>>();
+  readonly #workerWaitMs: number;
   /** What the retired runtimes and parts still release. */
   readonly #retiring: Promise<unknown>[] = [];
   #server: Server | undefined;
@@ -153,8 +169,9 @@ class Memory implements MemoryHarness {
   #loseAcknowledgment = false;
   #closing: Promise<void> | undefined;
 
-  constructor(seed: Seed, transport: TransportName, stateDir: string, registrations: readonly ModuleRegistration[]) {
+  constructor(seed: Seed, transport: TransportName, stateDir: string, registrations: readonly ModuleRegistration[], workerWaitMs: number) {
     this.#seed = seed;
+    this.#workerWaitMs = workerWaitMs;
     this.#registrations = new Map(registrations.map(registration => [registration.name, registration]));
     this.#validator = scenarioValidator(registrations);
     this.#schemas = scenarioSchemas(registrations);
@@ -363,6 +380,7 @@ class Memory implements MemoryHarness {
   async wait(ms: number): Promise<void> {
     await this.#settled();
     for (let elapsed = 0; elapsed < ms; elapsed += STEP_MS) {
+      while (this.#working.size > 0) await Promise.race([...this.#working]);
       this.#clock.advance(Math.min(STEP_MS, ms - elapsed));
       await settle();
       await this.#settled();
@@ -441,7 +459,7 @@ class Memory implements MemoryHarness {
     const clock = {now: this.#clock.now};
     const logs = new LogWriter(record => { this.#logs.push({generation: number, record}); }, 'info', clock);
     const databases = new Set<DatabaseSync>();
-    const modules = this.#seed.modules.map(name => holding(this.#build(name), databases));
+    const modules = this.#seed.modules.map(name => holding(this.#build(name), databases, call => { this.#waitFor(call); }));
     const host = new ModuleHost(modules, {
       clock, scheduler: this.#clock.scheduler, stateDir: this.stateDir, logs, startTimeoutMs: 10_000, stopTimeoutMs: 5000,
       ...(this.#tracing === undefined ? {} : {tracing: this.#tracing}),
@@ -594,6 +612,16 @@ class Memory implements MemoryHarness {
     for (const promise of work) if (promise !== undefined) this.#retiring.push(promise);
   }
 
+  /** Holds virtual time while a module's worker call runs, for at most `#workerWaitMs` of real time. */
+  #waitFor(call: Promise<unknown>): void {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ended = Promise.race([call.then(() => {}, () => {}), new Promise<void>(resolve => { timer = setTimeout(resolve, this.#workerWaitMs); })]).then(() => {
+      clearTimeout(timer);
+      this.#working.delete(ended);
+    });
+    this.#working.add(ended);
+  }
+
   #track(work: Promise<void>): void {
     const tracked = work.catch((error: unknown) => { this.#problem(`the harness failed: ${failureOf(error)}`); });
     this.#pending.add(tracked);
@@ -609,12 +637,13 @@ class Memory implements MemoryHarness {
  * Starts the runtime with the seed's modules, connects the scenario's parts over `transport` and syncs the reader's
  * copies. `root` holds the state directory; it defaults to the system temporary directory, which must lie outside every
  * Git checkout, as the runtime requires. `registrations` are the modules a seed may name beside the core and the
- * fixture modules: by default every module the runtime's build collected.
+ * fixture modules: by default every module the runtime's build collected. `workerWaitMs` shortens how long virtual time
+ * waits for a worker call, for a test of a worker that never answers.
  */
-export async function startMemoryHarness(seed: Seed, transport: TransportName, {root = tmpdir(), registrations = REGISTERED}: {
-  root?: string; registrations?: readonly ModuleRegistration[];
+export async function startMemoryHarness(seed: Seed, transport: TransportName, {root = tmpdir(), registrations = REGISTERED, workerWaitMs = WORKER_WAIT_MS}: {
+  root?: string; registrations?: readonly ModuleRegistration[]; workerWaitMs?: number;
 } = {}): Promise<MemoryHarness> {
-  const harness = new Memory(seed, transport, await realpath(await mkdtemp(join(root, 'bunny-scenario-'))), registrations);
+  const harness = new Memory(seed, transport, await realpath(await mkdtemp(join(root, 'bunny-scenario-'))), registrations, workerWaitMs);
   try {
     await harness.open();
   } catch (error) {
