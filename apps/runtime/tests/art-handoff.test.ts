@@ -124,6 +124,10 @@ it('each art family admits only its one requester, beside the speech check', asy
     assert.deepEqual(await w.core.actions.dispatch(artAction(family, allowed, `${family}-ok`)), accepted(`${family}-ok`));
     assert.equal(w.handle.operation(`${family}-ok`)?.requestedBy, allowed);
   }
+  // The art module's own catalog command has the owner's one requester too.
+  for (const by of others.filter(source => source !== DASHBOARD)) {
+    refused.push([{key: 'bunny.cmd.art-catalog-edit.art', requestedBy: by, requestId: `no-${++id}`, draft: {type: 'org.bunny.art-catalog.edit.requested', subject: 'art', dataschema: 'https://bunny.invalid/events/art-catalog-edit/2.0', data: {action: 'delete', artworkId: 'art-1'}}} as unknown as ReturnType<typeof artAction>, by]);
+  }
   for (const family of ['art-stage', 'art-ambient-set'] as const) {
     for (const by of others.filter(source => source !== ART_MODULE_SOURCE)) refused.push([forwarded(family, by, `no-${++id}`), by]);
     assert.deepEqual(await w.core.actions.dispatch(forwarded(family, ART_MODULE_SOURCE, `${family}-ok`)), accepted(`${family}-ok`));

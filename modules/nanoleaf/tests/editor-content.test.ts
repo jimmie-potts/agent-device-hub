@@ -18,7 +18,7 @@ test('the wall contribution serves cached geometry without touching its scene or
   await core.serveSync(['session'], () => ({revision: 1, states: []}));
   let calls = 0;
   const module = createNanoleafModule({transport: () => { calls += 1; return Promise.reject(new Error('synthetic offline controller')); }});
-  assert.deepEqual(module.manifest.pages, [{id: 'wall', title: 'Wall', presentation: 'react'}]);
+  assert.deepEqual(module.manifest.pages, [{id: 'wall', title: 'Wall', presentation: 'react'}, {id: 'shows', title: 'Decorative shows', presentation: 'react'}]);
   assert.equal(module.manifest.apiVersion, '1.3');
   const content = module.manifest.content;
   assert.ok(content !== undefined);

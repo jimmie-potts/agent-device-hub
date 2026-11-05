@@ -84,6 +84,18 @@ export class PixooStore {
     return Number.isSafeInteger(value) && value >= 0 ? value : 0;
   }
 
+  /** A pause without a selected checkpoint must still survive a restart. Missing means fresh empty Media. */
+  emptyIntent(): 'paused' | 'stopped' {
+    const value = this.#get('emptyIntent');
+    if (value === undefined || value === 'stopped') return 'stopped';
+    if (value === 'paused') return 'paused';
+    throw new Error('invalid empty-player intent');
+  }
+
+  saveEmptyIntent(intent: 'paused' | 'stopped'): void {
+    this.#set('emptyIntent', intent);
+  }
+
   /** The module's revision: every record it serves carries the revision of its last change, and only this raises it. */
   get revision(): number {
     return this.#number('revision');

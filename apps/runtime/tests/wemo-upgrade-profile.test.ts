@@ -92,3 +92,21 @@ void test('binds the fixed Wemo coverage set and rejects incomplete or unknown o
     await assert.rejects(bindUpgradeAdmission(file, expected), /^Error: runtime-proof-admission-refused$/);
   }
 });
+
+void test('admits the art section and its files as a durable owner', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'art-upgrade-profile-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const state = join(root, 'state'), modules = join(state, 'modules');
+  await mkdir(modules, {recursive: true, mode: 0o700});
+  const configFile = join(root, 'runtime.json');
+  await writeFile(join(modules, 'core.sqlite'), 'opaque synthetic database', {mode: 0o600});
+  await writeFile(configFile, JSON.stringify({schema: 'runtime-config/1.0', modules: {art: {}}}), {mode: 0o600});
+  await assert.rejects(inspectUpgradeState(state, configFile), /^Error: runtime-upgrade-inputs-refused$/, 'a configured owner needs its store');
+  for (const name of ['art.sqlite', 'art.sqlite-wal', 'art.sqlite-shm']) await writeFile(join(modules, name), 'opaque synthetic database', {mode: 0o600});
+  for (const [section, configured] of [[{art: {}}, ['art']], [{}, []]] as const) {
+    await writeFile(configFile, JSON.stringify({schema: 'runtime-config/1.0', modules: section}), {mode: 0o600});
+    const inspected = await inspectUpgradeState(state, configFile);
+    assert.deepEqual(inspected.configured, configured);
+    assert.deepEqual(inspected.durableOwners, ['art', 'core'], 'a retained store stays an owner without its section');
+  }
+});

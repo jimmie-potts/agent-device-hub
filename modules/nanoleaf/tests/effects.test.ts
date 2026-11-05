@@ -406,3 +406,19 @@ suite('requested NL22 animations', () => {
     assert.throws(() => effects.render({kind: 'animation.play', preset: 'party'}, Array.from({length: 300}, (_, i) => [i]), null, 'panels'), rejected('capacity'));
   });
 });
+
+
+test('the package effects namespace additively exposes canonical frame preparation', async () => {
+  const {effects: publicEffects} = await import('../src/index.js');
+  assert.equal(publicEffects.render, effects.render);
+  assert.equal(publicEffects.prepareAnimationFrames, effects.prepareAnimationFrames);
+  const command: effects.ExplicitAnimation = {kind: 'animation.play', pattern: 'pulse', colors: ['#804020']};
+  const prepared = publicEffects.prepareAnimationFrames(command, [[101, 102]], [[0, 0]]);
+  assert.deepEqual(prepared.payload, publicEffects.render(command, [[101, 102]], [[0, 0]]));
+  assert.deepEqual([...decode(prepared.payload).keys()], [101, 102]);
+  assert.ok(Object.isFrozen(prepared.zones));
+  assert.ok(prepared.zones.every(([_, frames]) => Object.isFrozen(frames) && frames.every(Object.isFrozen)));
+  assert.ok(!Object.isFrozen(prepared.payload));
+  assert.ok(!Object.isFrozen(prepared.payload.write));
+  assert.ok(!Object.isFrozen(prepared.payload.write.palette));
+});

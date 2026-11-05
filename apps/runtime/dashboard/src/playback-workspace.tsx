@@ -66,6 +66,10 @@ export function PlaybackWorkspace({runtime, connected, operations, operationsLiv
   const selected = homeSource !== undefined ? players.filter(player => player.copy.owner === homeSource.owner && player.record.id === homeSource.instance) : route.kind === 'playback' ? players.filter(player => player.record.id === route.sourceId) : players;
   return <section className="music-workspace" aria-label="Music">
     {route.kind === 'audio' ? <header className="page"><h1>Audio</h1></header> : route.kind === 'home' && homeSource === undefined ? <h2>Music</h2> : null}
+    {route.kind === 'audio' && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'nanoleaf' && module.state === 'running'
+      && module.pages.some(page => page.id === 'shows')) === true && <p><a href="#/module/nanoleaf/shows">Decorative shows</a> · Prepare private cue plans. Replay is unavailable.</p>}
+    {route.kind === 'audio' && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'nanoleaf' && module.state === 'running'
+      && module.pages.some(page => page.id === 'wall')) === true && <p><a href="#/module/nanoleaf/wall">Music effect preview</a> · Compare generated examples in the Wall page.</p>}
     {selected.length === 0 && <p className="hint">No playback records are available.</p>}
     <div className="music-grid">{selected.map(card)}</div>
     {route.kind === 'audio' && <MusicCaptureCard connection={connection} connected={connected} coreLive={coreLive && !runtime.catalogFailed}

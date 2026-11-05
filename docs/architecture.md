@@ -1,5 +1,7 @@
 # Shared architecture
 
+ONN is hibernated after device retirement. Preserve retained ONN state and compatibility readers without activating its writer or requiring dormant-device qualification. Its historical setup references do not select active ONN use.
+
 ## Current runtime and evidence
 
 B.U.N.N.Y. uses one TypeScript process under `apps/runtime`, with a fixed shipped
@@ -84,7 +86,7 @@ explicit control enablement. Its optional Pixoo hosted-GIF binding is separate
 from the loopback gateway. #568 owns the fresh-state handoff after the PC device
 runtime stops, retaining the existing Mac core. This changes profile admission,
 not the core/module/SDK topology in the current diagram. No PC relay,
-public ingress, additional core or automatic startup is introduced.
+public ingress or additional core is introduced.
 
 **Connect/reconnect:** a remote client authenticates, syncs current membership
 from its owner, then follows live events. A sync replaces membership, so removed
@@ -155,10 +157,15 @@ device targets. A production client route terminates on the Mac; it cannot depen
 on the WSL profile's Windows forwarder. Windows Docker Desktop remains an alternate
 host for the portable core, not a required intermediate production deployment.
 
-The [manual operating procedure](bunny-container.md#manual-operation-after-mac-sign-in)
-accepts downtime until FileVault unlock, Mac sign-in, Docker startup and explicit
-runtime start. It uses the existing stop, backup, image replacement and separate
-restore operations. Cross-host cutover separately qualifies actual state/assets
+The [operating procedure](bunny-container.md#manual-operation-after-mac-sign-in)
+accepts downtime until FileVault unlock and manual Mac sign-in; nothing runs before
+sign-in. The [sign-in starter](bunny-container.md#start-at-sign-in) then starts the
+core once through its release's guarded operator. It leaves the core stopped during
+an unfinished deployment, a held lease, an owner's start hold or a failed deployment's
+reconciled replacement. The core keeps `restart: "no"`, so a crash or Docker restart during a
+session leaves it stopped until the next sign-in or a manual start. Maintenance uses
+the existing stop, backup, image replacement and separate restore operations.
+Cross-host cutover separately qualifies actual state/assets
 and native dependencies, retains the source, and stops/disables old writers and
 restart actors before transferring device ownership. Local leases do not fence
 other computers. There is no automatic failover or snapshot rollback.

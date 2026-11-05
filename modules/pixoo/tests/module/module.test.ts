@@ -443,7 +443,7 @@ void describe('moments', () => {
     await within(world, async () => {
       await world.start();
       const capabilities = await waitFor(() => world.deviceRecord()?.capabilities.moments, 'the capability');
-      assert.deepEqual(capabilities, {supported: true, moods: ['celebrate', 'setback', 'reminder'], maxDurationMs: 10_000, coversStatus: true});
+      assert.deepEqual(capabilities, {supported: true, moods: ['celebrate', 'setback', 'reminder'], maxDurationMs: 10_000, coversStatus: true, art: {formats: ['png', 'gif'], maxBytes: 163_840}});
       await world.outcome(await mode(world, 'monitor'));
       await world.publishSession();
       const dashboard = await waitFor(() => world.device.state().shown?.digests[0], 'the dashboard on the device');
@@ -567,12 +567,31 @@ void describe('moments', () => {
     });
   });
 
-  void it('refuses over Media with nothing playing to return to', async () => {
+  void it('plays over Media with nothing playing, leaves the player alone and blanks the art afterwards', async () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
-      assert.equal(await refusal(world.request('moment-play', MOMENT, moment('m-idle'))), 'invalid-state');
-      assert.equal(world.device.state().uploads, 0);
+      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-idle', {durationMs: 1000})));
+      await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device');
+      assert.equal((await world.outcome(requestId)).data.result, 'succeeded');
+      assert.equal(ended(world, requestId)?.ending, 'completed');
+      await waitFor(() => world.device.state().shown?.digests[0] === frameDigest(new Uint8Array(12288)) ? true : undefined, 'the blank frame');
+      assert.equal(world.display()?.mode, 'media');
+      assert.equal(world.display()?.player.intent, 'stopped');
+    });
+  });
+
+  void it('refuses over Media while an item is paused, since nothing could repaint it', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      const {list} = await readyPlaylist(world);
+      await world.outcome(await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id})));
+      await waitFor(() => world.display()?.player.state === 'playing' ? true : undefined, 'the playing playlist');
+      await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause'})));
+      const uploads = world.device.state().uploads;
+      assert.equal(await refusal(world.request('moment-play', MOMENT, moment('m-paused'))), 'invalid-state');
+      assert.equal(world.device.state().uploads, uploads);
     });
   });
 
@@ -610,7 +629,7 @@ void describe('the device', () => {
       assert.equal(recoveries.length, 1);
       assert.ok(Number(recoveries[0]?.fields['bunny.attempt_count']) > 1, 'the recovery counts the failed probes');
       // Nothing published a device record that changed nothing.
-      const records = world.seen.filter(message => message.subject === DEVICE && message.dataschema.endsWith('/device/2.0')).map(message => JSON.stringify({...message.data, revision: 0}));
+      const records = world.seen.filter(message => message.subject === DEVICE && message.dataschema.endsWith('/device/2.2')).map(message => JSON.stringify({...message.data, revision: 0}));
       assert.equal(new Set(records).size, records.length, 'each device record differs from the one before');
     });
   });
@@ -630,7 +649,7 @@ void describe('another module\'s devices', () => {
       const synced = await world.probe.sync<{id: string}>(['device', FAMILIES.display], () => {}, {timeoutMs: 2000, owner: 'bunny/modules/pixoo'});
       assert.equal(synced.status, 'synced');
       if (synced.status === 'synced') {
-        assert.deepEqual(synced.copy.states().filter(state => state.dataschema.endsWith('/device/2.0')).map(state => state.data.id), [DEVICE]);
+        assert.deepEqual(synced.copy.states().filter(state => state.dataschema.endsWith('/device/2.2')).map(state => state.data.id), [DEVICE]);
         await synced.copy.close();
       }
       // Without an owner, a sync of device is refused, since two modules serve it.

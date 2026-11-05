@@ -679,6 +679,16 @@ owns the handoff and its policy.
   a fresh one must pass arbitration under #684, and refuses a stage because its payload
   was not kept.
 
+## Art state
+
+`art/2.0` (`v2/art-state`) is the art module's complete record, on
+`bunny.state.art.art`: spent, reserved, uncertain and remaining micro-dollars per
+provider, the loop guard, recent jobs and artworks by reference, staged candidates and
+what retention holds. It carries no prompt, key, location or image bytes. Read bytes
+through the module's content references, `artContentRef`. `art-catalog-edit/2.0` is the
+owner's favorite, feedback, delete and reuse command. The module registers both, so
+they are not core families. `v2/art` owns the job and handoff families.
+
 ## Companion payloads
 
 The additive `./v2/companions` entry supplies the `companion-opportunity`,

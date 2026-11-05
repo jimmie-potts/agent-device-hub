@@ -212,12 +212,14 @@ layout editing and audio routing remain separate work.
 ## Music input measurement
 
 Audio also has a separate **Music input measurement** card. It shows the core's
-capture status, an explicit source selector and **Start measuring** and **Stop
-measuring** controls. A configured microphone alias is not evidence of device
-presence or permission. Opening Audio, another tab, reload and reconnect only read state.
+capture status, an input selector and explicit Start and Stop measuring controls.
+Choose Music.app or the producer's configured microphone alias. Selecting an
+input starts nothing. Opening Audio, another tab, reload and reconnect only read state.
 The existing playback card and its transport controls are unchanged.
 
-The raw meter uses current Music.app or microphone measurements from the selected producer
+A configured microphone alias is not evidence of device presence or permission.
+
+The raw meter uses current measurements for the selected input from the producer
 endpoint and generation. Zero means measured silence; missing or expired data
 shows **Input level unavailable**. Its visual scale ends at digital full scale,
 while the RMS and peak numbers retain measured values above that scale.
@@ -358,6 +360,25 @@ exports its read-only artwork component through the public frontend entry and
 uses saved geometry. Other artwork and missing geometry use labelled placeholders.
 
 ## Module interfaces
+
+The existing Nanoleaf Wall page embeds **Music effect preview**, with an Audio
+link when that running module declares its Wall page. It offers five built-in
+effects, an unsaved palette/intensity draft and fixed example Lines/NL22
+arrangements. Only **Preview** reads the owning module's bounded synthetic
+content. Scrubbing stays local; edits, disconnect and unmount invalidate results.
+Read-only users can inspect examples. Generated-input labels distinguish this
+from live measurements and configured geometry. Reactive preset persistence,
+live execution and physical timing remain separate work.
+
+Nanoleaf's **Decorative shows** page prepares private cue plans from deterministic
+starters. Audio links to it when the running module declares the page. Edits
+remain in memory until **Save new version**, which uses the shared tracked
+command attempt and an expected-version guard. Saved versions remain immutable.
+The cue storyboard shows timing, palettes and effect names; it plays no music
+and sends no light command. Replay and synchronization are unavailable. The
+existing Nanoleaf browser journey covers the authoring flow, conflict and
+authority refusals, reload without resend, unchanged simulated device state
+and light/dark desktop/phone accessibility.
 
 The authenticated module catalog and static browser build jointly select each
 React page. A missing component, unavailable module or undeclared route opens
