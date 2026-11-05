@@ -393,10 +393,19 @@ Java or Actions-language scan is selected.
 Require both language analysis jobs to succeed, including upload and processing.
 Then inspect the native Code scanning results check and its findings for the same
 PR. Its default failure levels are new `error`, `high` and `critical` findings.
-Verify the actual threshold during adoption; do not change repository settings or
-branch protection as an incidental fix. Record pre-existing findings and reasoned
-dispositions in the delivery evidence. New blocking findings need a fix or an
-explicit reviewed disposition. Do not broadly ignore or automatically dismiss them.
+Treat every new `error`, `high` or `critical` finding as blocking until fixed or
+explicitly dispositioned through review, independently of the native result's
+configured threshold. Record pre-existing findings and reasoned
+dispositions in the delivery evidence. Do not broadly ignore or automatically
+dismiss them.
+
+During adoption, record the native check identity and the severity behavior
+observed with disposable controls. If the exact repository setting cannot be
+read, record that limit and retain the complete findings review above. A blocked
+critical example does not establish the treatment of lower severities. Unavailable
+analysis or findings still prevents acceptance; unavailable threshold settings do
+not turn findings into clean results. Do not change credentials, repository
+settings or branch protection as an incidental fix.
 
 The [delivery preflight](development.md#delivery-preflight) enumerates the two
 analysis jobs, but does not interpret result checks from another GitHub app.
