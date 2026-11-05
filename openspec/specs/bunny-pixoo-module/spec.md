@@ -266,7 +266,7 @@ The module SHALL declare `capabilities.moments` with the moods `celebrate`, `set
 
 Before accepting, the module SHALL refuse with `unsupported-capability` a mood or duration the capability does not offer; with `invalid-state` a moment ID it accepted in the last 24 hours, across restarts, or a moment the current presentation does not admit; with `expired` a moment past its start window; and with `capacity` a moment while another waits or plays. The presentation SHALL check admission again at the start, and a moment no longer admitted SHALL complete `failed` with no device write.
 
-Over Monitor a moment SHALL be admitted only while Monitor participates, the request's `coversStatus` is true, the setting is on, the session source is current and no session needs attention. Over Media a moment SHALL be admitted only while a playlist is in play or the player is idle, no Now Playing takeover holds the display and no session needs attention. A player is idle when nothing is loaded, it is not playing or in error, and no uncertain write or external control has left the display unknown. A paused or stopped item SHALL refuse it. A moment over an idle player SHALL NOT change the player, SHALL end when the player changes or the screen turns off, and SHALL be followed by one blank frame unless something else takes the display.
+Over Monitor a moment SHALL be admitted only while Monitor participates, the request's `coversStatus` is true, the setting is on, the session source is current and no session needs attention. Over Media a moment SHALL be admitted only while a playlist is in play or the player is idle, no Now Playing takeover holds the display and no session needs attention. A player is idle when it is stopped or finished, or paused with nothing loaded, and it is not in error, and no uncertain write or external control has left the display unknown. A paused item SHALL refuse it. A moment over an idle player SHALL NOT change the player, SHALL end when the player changes or the screen turns off, and SHALL be followed by one blank frame unless something else takes the display.
 
 Over Media the moment SHALL pause the player through the Now Playing takeover and SHALL resume it only while the generation its own pause produced, the paused intent and the screen request are unchanged. No other restore path SHALL exist. Over Monitor the moment SHALL write under Monitor's generation and the next picture SHALL be the current dashboard.
 
@@ -296,8 +296,12 @@ A moment that reached the device SHALL complete `succeeded` with `transmitted` a
 - **WHEN** Media has nothing loaded, and a moment arrives
 - **THEN** the moment shows for its duration, the player and the mode do not change, it completes with a `completed` ending, and one blank frame replaces its picture
 
+#### Scenario: A moment over a stopped or finished item
+- **WHEN** a playlist item is stopped or its playlist has finished in Media, and a moment arrives
+- **THEN** the moment shows for its duration, the player keeps its stopped item and generation, one blank frame replaces the moment's picture, and the item can still resume
+
 #### Scenario: A moment over a held item
-- **WHEN** a playlist item is paused or stopped in Media and a moment arrives
+- **WHEN** a playlist item is paused in Media and a moment arrives
 - **THEN** it is refused with `invalid-state` and nothing is written
 
 #### Scenario: A manual command during a moment over Media

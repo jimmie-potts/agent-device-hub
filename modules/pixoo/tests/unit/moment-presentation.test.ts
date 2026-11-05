@@ -180,15 +180,78 @@ it('over Media a paused item refuses a moment, since nothing could repaint it',a
   expect(s.monitor.momentBlock(false)).toBe('a held item could not be repainted');
  }finally{await s.close();}
 });
-it('over Media a stopped item refuses a moment too, before and after a screen cycle',async()=>{
+it('over a stopped item the moment plays without touching the player, one blank follows, and the item can still resume',async()=>{
  const s=await setup();
  try{
   await mediaPlaying(s);await s.settle(s.player.stop());
-  expect(s.player.getState().intent).toBe('stopped');
-  expect(s.player.getState().itemId).not.toBeNull();
+  const before=s.player.getState();
+  expect(before.intent).toBe('stopped');
+  expect(before.itemId).not.toBeNull();
+  expect(s.monitor.momentBlock(false)).toBeNull();
+  const results=s.play({coversStatus:false});await s.run(1300);
+  expect(s.frames().at(-1)).toEqual(art);
+  await s.run(3200);ended(results,'completed');await s.run(1100);
+  expect(s.frames().at(-1)).toEqual(blank);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before.generation,itemId:before.itemId});
+  await s.settle(s.player.resume());await s.run(200);
+  expect(s.player.getState()).toMatchObject({intent:'active',state:'playing',itemId:before.itemId});
+ }finally{await s.close();}
+});
+it('over a finished playlist the moment plays and the playlist stays finished',async()=>{
+ const s=await setup();
+ try{
+  s.store.playlist.repeat=false;
+  await mediaPlaying(s);
+  for(let i=0;i<s.store.playlist.items.length+1&&s.player.getState().intent==='active';i++){await s.settle(s.player.next());await s.run(200);}
+  const before=s.player.getState();
+  expect(before.intent).toBe('stopped');
+  expect(before.itemId).not.toBeNull();
+  const results=s.play();await s.run(1300);
+  expect(s.frames().at(-1)).toEqual(art);
+  await s.run(3200);ended(results,'completed');await s.run(1100);
+  expect(s.frames().at(-1)).toEqual(blank);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before.generation,itemId:before.itemId});
+ }finally{await s.close();}
+});
+it('turning the screen off pauses a stopped item, which then refuses like any paused item',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);await s.settle(s.player.stop());
+  await s.settle(s.player.setScreen(false));
+  expect(s.monitor.momentBlock(false)).toBe('the screen is off');
+  await s.settle(s.player.setScreen(true));
+  expect(s.player.getState().intent).toBe('paused');
   expect(s.monitor.momentBlock(false)).toBe('a held item could not be repainted');
-  await s.settle(s.player.setScreen(false));await s.settle(s.player.setScreen(true));
-  expect(s.monitor.momentBlock(false)).toBe('a held item could not be repainted');
+ }finally{await s.close();}
+});
+it('resuming during a moment over a stopped item ends it, and no blank lands on the resumed item',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);await s.settle(s.player.stop());
+  const results=s.play();await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
+  await s.settle(s.player.resume());await s.run(1500);
+  ended(results,'interrupted');
+  expect(s.player.getState()).toMatchObject({intent:'active',state:'playing'});
+  // The art, then the fake playlist's items, the first of them all zeros: a blank would repeat that zero.
+  const firsts=s.frames().map(frame=>frame[0]);
+  expect(firsts.slice(firsts.indexOf(7))).toEqual([7,0,1]);
+ }finally{await s.close();}
+});
+it('a stopped item whose display is unknown still refuses a moment',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);await s.settle(s.player.takeover());await s.settle(s.player.stop());
+  expect(s.player.getState()).toMatchObject({intent:'stopped',lastError:{code:'external-control'}});
+  expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+ }finally{await s.close();}
+});
+it('a moment over a stopped item is not given a resume by its own end',async()=>{
+ const s=await setup({media:'whole'});
+ try{
+  await mediaPlaying(s);await s.settle(s.player.stop());
+  const before=s.player.getState().generation;
+  const results=s.play();await s.run(1300);await s.run(3200);ended(results,'completed');await s.run(1100);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before});
  }finally{await s.close();}
 });
 it('a moment waiting behind other work never pauses a player that has since stopped, so nothing resumes over the stop',async()=>{
