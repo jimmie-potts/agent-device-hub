@@ -418,7 +418,10 @@ export class MonitorPresentation {
    if(interrupts!==this.interrupts)throw new ApiError('cancelled',409);
    admit();const wasActive=this.active;
    // A view change leaves Media as it is, so a moment over Media gives the playlist back rather than leaving it paused.
-   if(action.operation==='view'&&this.takeover?.kind==='moment')this.endMoment('interrupted');
+   if(action.operation==='view'&&this.moment!==null){
+    if(this.moment.phase==='showing')this.endMoment('interrupted');
+    else this.refuseMoment(this.moment,'cancelled');
+   }
    this.dropTakeover();
    const next=presentationConfiguration.parse(action.operation==='mode'?{...this.configuration,mode:action.mode}:{...this.configuration,filter:action.filter,cadenceMs:action.cadenceMs});
    this.suspend();this.pendingMode=next.mode;this.onChange();

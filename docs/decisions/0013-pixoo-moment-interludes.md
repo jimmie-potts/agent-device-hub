@@ -101,3 +101,12 @@ display therefore goes black after its first moment. A restart during such a mom
 leaves the art on with nothing to blank it, until something else writes, and it also
 forgets an unknown display on an empty player. How this looks on a real Pixoo belongs
 to [#687](https://github.com/jimmie-potts/agent-device-hub/issues/687).
+
+Scheduled-art pins are enforced by the core's arbitration; no Pixoo pin field is
+introduced here. A retained selected item is not empty. A pause without a selected
+checkpoint is saved in the module's existing private state store and remains
+paused after restart. Stop or Clear releases that pause; Resume still needs a
+selection. Closing an already stopped empty player does not introduce a pause.
+
+Exact art also requires a stopped empty player. An explicit empty pause therefore
+refuses scheduled art even though ordinary moments retain their idle-player rule.

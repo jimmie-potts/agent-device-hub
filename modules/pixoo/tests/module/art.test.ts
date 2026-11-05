@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import {it} from 'node:test';
 import sharp from 'sharp';
 import {z} from 'zod';
+import type {MomentEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {ArtStageContent} from '@jimmie-potts/event-contracts/v2/art';
 import type {RequestResult} from '@jimmie-potts/sdk';
 import {DEVICE, SECTION, World, bytesOf, hostedGif, manyColorGif, sleep, waitFor} from './support.js';
@@ -251,6 +252,113 @@ void it('a manual pause during empty-Media art ends it and prevents another art 
     const refused = await artMoment(world, data.compositionId, {momentId: 'after-empty-pause'});
     assert.ok(refused.status === 'rejected'); assert.equal(refused.error.error.code, 'invalid-state');
     assert.equal(world.device.state().uploads, writes); assert.equal(world.display()?.player.intent, 'paused');
+  } finally { await world.close(); }
+});
+
+void it('an explicit empty-player pause survives restart until the owner deliberately releases it', async () => {
+  const world = await World.open();
+  try {
+    await world.start();
+    const data = content('durable-empty-pause', hostedGif(47, 8), 8);
+    await world.outcome(await accepted(stage(world, data)));
+    await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause'})));
+    const writes = world.device.state().uploads;
+    await world.restart();
+    const refused = await artMoment(world, data.compositionId, {momentId: 'after-paused-restart', coversStatus: false});
+    assert.ok(refused.status === 'rejected', JSON.stringify(refused));
+    assert.equal(refused.error.error.code, 'invalid-state');
+    assert.equal(world.display()?.player.intent, 'paused');
+    assert.equal(world.device.state().uploads, writes);
+    const resume = await world.request('media-control', 'org.bunny.media.control.requested', {action: 'resume'});
+    assert.ok(resume.status === 'rejected', 'a missing selection cannot be resumed to release the pause');
+    assert.equal(resume.error.error.code, 'invalid-state');
+    await world.restart();
+    assert.equal(world.display()?.player.intent, 'paused');
+    await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'stop'})));
+    await world.restart();
+    assert.equal(world.display()?.player.intent, 'stopped');
+    const request = await accepted(artMoment(world, data.compositionId, {momentId: 'after-owner-release', coversStatus: false}));
+    await waitFor(() => world.device.state().shown?.frames === 8 ? true : undefined, 'art after explicit pause release');
+    assert.equal((await world.outcome(request)).data.result, 'succeeded');
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
+
+void it('selected checkpoints take precedence over an old empty pause and explicit clear releases both', async () => {
+  const world = await World.open();
+  try {
+    let renditionId = '';
+    await world.populate(async library => {
+      const png = await sharp({create: {width: 64, height: 64, channels: 3, background: '#517aaf'}}).png().toBuffer();
+      renditionId = (await library.importMedia(bytesOf(png), 'Selection after pause')).rendition.id;
+    });
+    await world.start();
+    const data = content('clear-empty-pause', hostedGif(48, 8), 8);
+    await world.outcome(await accepted(stage(world, data)));
+    await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause'})));
+    await world.outcome(await accepted(world.request(FAMILIES.show, 'org.bunny.pixoo-media.show.requested', {renditionId, playback: {mode: 'duration', durationMs: 60_000}})));
+    const itemId = world.display()?.player.itemId;
+    assert.notEqual(itemId, null);
+    const writes = world.device.state().uploads;
+    await world.restart();
+    assert.equal(world.device.state().uploads, writes);
+    assert.equal(world.display()?.player.itemId, itemId);
+    assert.equal(world.display()?.player.intent, 'paused');
+    await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'clear'})));
+    await world.restart();
+    assert.equal(world.display()?.player.itemId, null);
+    assert.equal(world.display()?.player.intent, 'stopped');
+    const request = await accepted(artMoment(world, data.compositionId, {momentId: 'after-owner-clear', coversStatus: false}));
+    await waitFor(() => world.device.state().shown?.frames === 8 ? true : undefined, 'art after explicit clear');
+    assert.equal((await world.outcome(request)).data.result, 'succeeded');
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
+
+void it('an empty-pause persistence failure never reports durable success or admits art', async () => {
+  const world = await World.open();
+  try {
+    await world.start();
+    const data = content('failed-empty-pause', hostedGif(48, 8), 8);
+    await world.outcome(await accepted(stage(world, data)));
+    world.withDatabase(db => db.exec(`CREATE TRIGGER fail_empty_intent BEFORE INSERT ON pixoo_state
+      WHEN NEW.key = 'emptyIntent' BEGIN SELECT RAISE(FAIL, 'synthetic storage failure'); END`));
+    const result = await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause'})));
+    assert.equal(result.data.result, 'uncertain'); assert.equal(result.data.evidence, 'none');
+    assert.equal(result.data.error?.code, 'uncertain-result');
+    const refused = await artMoment(world, data.compositionId, {coversStatus: false});
+    assert.ok(refused.status === 'rejected'); assert.equal(refused.error.error.code, 'invalid-state');
+    assert.equal(world.device.state().uploads, 0);
+  } finally {
+    world.withDatabase(db => db.exec('DROP TRIGGER IF EXISTS fail_empty_intent'));
+    await world.close();
+  }
+});
+
+for (const waiting of [false, true]) void it(`a Monitor view change interrupts ${waiting ? 'waiting' : 'playing'} exact art over empty Media`, async () => {
+  const world = await World.open();
+  try {
+    await world.start();
+    const data = content(`empty-view-${String(waiting)}`, hostedGif(49, 8), 8);
+    await world.outcome(await accepted(stage(world, data)));
+    const request = await accepted(artMoment(world, data.compositionId, {durationMs: 10_000, coversStatus: false, startAtMs: Date.now() + (waiting ? 800 : 0)}));
+    if (!waiting) await waitFor(() => world.device.state().shown?.frames === 8 ? true : undefined, 'art before view change');
+    await world.outcome(await accepted(world.request(FAMILIES.monitor, 'org.bunny.pixoo-monitor.set.requested', {filter: {}, cadenceMs: 2000})));
+    const result = await world.outcome(request);
+    assert.equal(result.data.result, waiting ? 'failed' : 'succeeded');
+    assert.equal(result.data.evidence, waiting ? 'none' : 'transmitted');
+    if (!waiting) {
+      const ended = world.seen.find(message => message.type === 'org.bunny.moment.ended' && (message.data as MomentEnded).requestId === request)?.data as MomentEnded | undefined;
+      assert.equal(ended?.ending, 'interrupted');
+      await waitFor(() => world.device.state().shown?.digests[0] === frameDigest(new Uint8Array(12288)) ? true : undefined, 'blank after view change');
+    }
+    const writes = world.device.state().uploads;
+    await sleep(1000);
+    assert.equal(world.device.state().uploads, writes, 'the interrupted moment never replays');
+    assert.equal(world.display()?.moments?.playing, null);
+    assert.equal(world.display()?.player.intent, 'stopped');
+    if (waiting) assert.equal(writes, 0);
+    assert.deepEqual(world.invalid, []);
   } finally { await world.close(); }
 });
 

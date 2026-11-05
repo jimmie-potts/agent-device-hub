@@ -309,8 +309,9 @@ plays its exact frames and timing through that same presentation and writer.
 An unknown, expired or incompatible reference is refused before any effect;
 it never plays a mood in its place. A moment without art keeps its behavior.
 The core owns scheduled-art pin arbitration; the module does not invent pin state.
-The player's existing persistence records a pause only with a selected checkpoint;
-a pause with no selection does not survive restart.
+An explicit pause survives restart even without a selected checkpoint. Stop or
+Clear deliberately releases that empty-player pause; Resume still requires a
+selection. A Monitor view change cancels waiting art or interrupts playing art.
 
 ### Private generated art
 

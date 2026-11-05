@@ -259,6 +259,7 @@ class PixooRuntime {
       address: device.address, profile: device.profile, clock: this.#deviceClock, ...(hostedGif === undefined ? {} : {hostedGif}),
     });
     const player = this.#player = await Player.open({
+      emptyIntent: {read: () => store.emptyIntent(), save: intent => { store.saveEmptyIntent(intent); }},
       store: new LibraryPlaybackStore(library, {profile: device.profile, stillDelayMs}), device: this.#opened.adapter, clock: this.#deviceClock,
       pauseOnUncertain: !simulated, operationTimeoutMs: device.profile.name === HOSTED_PROFILE ? 15_000 : 5000,
     });

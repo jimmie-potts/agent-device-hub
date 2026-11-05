@@ -8,7 +8,7 @@ Pixoo currently refuses exact artwork in a moment. [#1288](https://github.com/ji
 - Keep composition references private, reuse identical stages, reject conflicting or invalid stages and expire unused copies safely.
 - Serve authenticated previews and play exact artwork through `moment-play/2.1`, including admitted GIF frame timing.
 - Preserve current moment admission, attention, manual control, uncertainty and restoration rules.
-- Permit exact art over idle, stopped Media with no selection, preserving paused/selected content and core pin arbitration.
+- Permit exact art over idle, stopped Media with no selection, preserving pauses across restart, selected content and core pin arbitration; view changes cancel waiting art or interrupt playing art.
 
 ## Capabilities
 
