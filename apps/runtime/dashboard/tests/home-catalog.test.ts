@@ -5,6 +5,19 @@ import type {RuntimeData} from '../src/runtime-feeds.ts';
 import {emptyStatus} from '../../../../modules/roborock/src/contracts.ts';
 import {deviceRecord} from '../../../../modules/roborock/dist/src/state.js';
 const runtime: RuntimeData = {modules: [], copies: [], control: true, catalogFailed: false};
+void test('art is offered by its running Gallery and never silently added to saved defaults', () => {
+  const ready: RuntimeData = {...runtime, modules: [{name: 'art', state: 'running', serves: ['art'], pages: [{id: 'gallery', title: 'Art Gallery', path: '/modules/art/gallery', presentation: 'react'}]}]};
+  const catalog = homeCatalog(ready, true), card = catalog.find(value => value.id === 'art');
+  assert.ok(card !== undefined, 'the exposed art module has one reusable card');
+  assert.equal(card.defaultSelected, false);
+  assert.equal(card.reason, undefined);
+  assert(!defaultHomeArrangements(catalog).desktop.some(value => value.widget === 'art'));
+  assert.equal(homeCatalog(runtime, true).find(value => value.id === 'art')?.source.kind, 'unavailable');
+  assert.equal(homeCatalog(ready, false).find(value => value.id === 'art')?.source.kind, 'unavailable');
+  const layouts = addHomeCard(defaultHomeArrangements(catalog), 'desktop', card);
+  assert.deepEqual(layouts.desktop.at(-1)?.art, {format: 'auto', pinned: true});
+  assert.deepEqual(layouts.phone.at(-1)?.art, {format: 'auto', pinned: true});
+});
 void test('Roborock keeps existing device placements and offers an unavailable source without a duplicate', () => {
   const catalog = homeCatalog(runtime, true), missing = catalog.find(value => value.id === 'module:roborock');
   assert.ok(missing !== undefined); assert.equal(missing.source.kind, 'core'); assert.equal(missing.defaultSelected, false);

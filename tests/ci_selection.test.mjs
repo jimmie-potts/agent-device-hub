@@ -385,7 +385,7 @@ const STEP_GROUPS = {
     'npm run test:dashboard:smoke': 'shared',
     // The runtime dashboard's browser checks, including its module pages, live under apps/runtime.
     'npm run test:runtime-dashboard:smoke': 'runtime', 'node apps/runtime/dashboard/tests/timeline-card.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/room-models.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/music-card.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/tv.browser.ts': 'runtime',
-    'npm run test:roborock:browser': 'runtime', 'npm run test:volcano:browser': 'runtime', 'npm run test:onn:browser': 'runtime', 'npm run test:companions:browser': 'runtime', 'npm run test:wemo:browser': 'runtime', 'npm run test:reachy:browser': 'runtime', 'npm run test:microduck:browser': 'runtime', 'npm run test:observability:browser': 'shared',
+    'npm run test:roborock:browser': 'runtime', 'npm run test:volcano:browser': 'runtime', 'npm run test:onn:browser': 'runtime', 'npm run test:companions:browser': 'runtime', 'npm run test:wemo:browser': 'runtime', 'npm run test:reachy:browser': 'runtime', 'npm run test:microduck:browser': 'runtime', 'npm run test:art:browser': 'runtime', 'npm run test:observability:browser': 'shared',
   },
 };
 

@@ -571,6 +571,21 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Adaptive art and Gallery (#682) use `npm run test:art:browser` after
+`npm run build`. App verification runs this focused journey in its runtime group;
+the full local browser suite includes it. It uses the real authenticated core/art
+owners with synthetic providers and an outside-checkout private `TMPDIR`.
+The journey checks saved pin/dismiss/restore, independent desktop/phone layout,
+revision conflicts and restart; banner/square/tall fit and full-screen omission;
+pointer/focus/attention preservation; rich rendition decode, stale/unavailable
+content and late-load cancellation; and request/favorite/feedback/variation with
+truthful allowance and job outcomes. Layout-only operations and gallery reads
+must send no device command or provider request. Check 1440, 390 and 320px in
+light/dark appearance and reduced motion with axe. `DASHBOARD_RECEIPTS` keeps
+synthetic screenshots private. Run the full browser suite below for dashboard
+changes. Disposable acceptance uses the same synthetic art owner with the actual
+Gallery controls; this establishes no installed or physical result.
+
 Qualified read receipts (#1354) use
 `node apps/runtime/dashboard/tests/read-receipts.browser.ts` after the root
 build. The real helper and authenticated owner publish session/2.1 to the

@@ -63,7 +63,8 @@ export type ArtModuleOptions = {
 export function createArtModule(options: ArtModuleOptions = {}): BunnyModule<ArtConfig> {
   let owner: ArtOwner | undefined;
   return {
-    manifest: {name: 'art', apiVersion: '1.3', configure: configureArt, content: (ref, request) => owner?.content(ref, request)},
+    manifest: {name: 'art', apiVersion: '1.3', configure: configureArt, content: (ref, request) => owner?.content(ref, request),
+      pages: [{id: 'gallery', title: 'Art Gallery', presentation: 'react'}]},
     start: async context => {owner = new ArtOwner(context, options); await owner.start();},
     stop: async () => {await owner?.stop();},
   };

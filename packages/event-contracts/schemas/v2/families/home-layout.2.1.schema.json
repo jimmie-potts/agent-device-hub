@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/home-layout/2.1",
+  "description": "Private Home arrangements with bounded art-only presentation options (Hub #682).",
+  "type": "object", "additionalProperties": false,
+  "required": ["id", "revision", "version", "layouts"],
+  "properties": {
+    "id": {"const": "home"}, "version": {"const": 1},
+    "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "layouts": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/layouts"}]}
+  },
+  "$defs": {
+    "art": {"type": "object", "additionalProperties": false, "required": ["format", "pinned"], "properties": {
+      "format": {"enum": ["auto", "banner", "square", "tall"]}, "pinned": {"type": "boolean"}
+    }},
+    "entry": {"type": "object", "additionalProperties": false, "required": ["widget", "size", "hidden"], "properties": {
+      "widget": {"type": "string", "minLength": 1, "maxLength": 384, "pattern": "^[a-z0-9][a-z0-9:/.-]*$"},
+      "size": {"enum": ["small", "medium", "large"]}, "hidden": {"type": "boolean"}, "art": {"$ref": "#/$defs/art"}
+    }, "if": {"properties": {"art": {}}, "required": ["art"]}, "then": {"properties": {"widget": {"const": "art"}}}},
+    "entries": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/entry"}},
+    "layouts": {"type": "object", "additionalProperties": false, "required": ["desktop", "phone"], "properties": {
+      "desktop": {"$ref": "#/$defs/entries"}, "phone": {"$ref": "#/$defs/entries"}
+    }}
+  }
+}
