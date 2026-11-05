@@ -69,7 +69,22 @@ export async function reactivePresetJourney(browser: Browser): Promise<void> {
     await preview.getByText('Example colors are ready for this draft.', {exact: true}).waitFor();
     assert.deepEqual(previews.at(-1), {version: 1, recipe: external.recipe, model: 'lines-demo-v1'});
     await library.getByLabel('New preset name', {exact: true}).fill('Retained local draft');
-    await library.getByRole('button', {name: 'Refresh preset library', exact: true}).click();
+    let reactiveSyncs = 0, refreshed: (() => void) | undefined, releaseRefresh: (() => void) | undefined, releaseReconnect: (() => void) | undefined;
+    const refreshStarted = new Promise<void>(resolve => {refreshed = resolve;});
+    const refreshHeld = new Promise<void>(resolve => {releaseRefresh = resolve;});
+    const reconnectHeld = new Promise<void>(resolve => {releaseReconnect = resolve;});
+    // Hold the real Refresh response across the gap, then hold the new owner snapshot after reconnect.
+    await page.route('**/api/sdk/v1/sync', async route => {
+      const body: unknown = route.request().postDataJSON();
+      if (typeof body !== 'object' || body === null || !('request' in body) || typeof body.request !== 'object' || body.request === null
+          || !('subject' in body.request) || body.request.subject !== 'nanoleaf-reactive-presets') {await route.continue(); return;}
+      const attempt = ++reactiveSyncs;
+      const response = await route.fetch();
+      if (attempt === 1) {refreshed?.(); await refreshHeld;} else if (attempt === 2) await reconnectHeld;
+      // Closing a copy withdraws its pending read; that cancellation must not preserve its authority.
+      await route.fulfill({response}).catch(() => {});
+    });
+    await library.getByRole('button', {name: 'Refresh preset library', exact: true}).click(); await refreshStarted;
     await expect(library.getByLabel('New preset name', {exact: true})).toHaveValue('Retained local draft'); assert.equal(saves.length, 1);
     const stale = await world.credentialAction('nanoleaf-reactive-preset-save', 'reactive-presets', {...external, presetId: 'preset-stale'});
     assert.equal(stale.status, 409);
@@ -84,10 +99,16 @@ export async function reactivePresetJourney(browser: Browser): Promise<void> {
       headers: {origin: 'https://unrelated.invalid', [REQUEST_HEADER]: '1'},
       data: {target: 'reactive-presets', requestId: 'preset-origin', data: {...external, expectedRevision: second.revision}},
     }); assert.equal(cross.status(), 403); await cross.dispose();
-    await page.route('**/api/sdk/v1/stream', route => route.abort()); world.dropDashboardStreams();
-    await library.getByText(/Saving is disabled/).waitFor(); await expect(save).toBeDisabled();
-    await page.unroute('**/api/sdk/v1/stream'); await feed(page, 'connected');
-    await expect(save).toBeEnabled(); assert.equal(saves.length, 1);
+    try {
+      await page.route('**/api/sdk/v1/stream', route => route.abort()); world.dropDashboardStreams();
+      await feed(page, 'reconnecting'); await library.getByText(/Saving is disabled/).waitFor(); await expect(save).toBeDisabled();
+      releaseRefresh?.();
+      await page.unroute('**/api/sdk/v1/stream'); await feed(page, 'connected');
+      await expect.poll(() => reactiveSyncs).toBe(2);
+      await expect(save).toBeDisabled();
+      await expect(library.getByLabel('New preset name', {exact: true})).toHaveValue('Retained local draft');
+      releaseReconnect?.(); await expect(save).toBeEnabled(); assert.equal(saves.length, 1);
+    } finally {releaseRefresh?.(); releaseReconnect?.(); await page.unroute('**/api/sdk/v1/sync');}
     await expect(library.getByLabel('New preset name', {exact: true})).toHaveValue('Retained local draft');
     assert.deepEqual(output(), before); assert.deepEqual(await world.nanoleafWall(), wallBefore);
     await world.restart(); await page.reload(); await feed(page, 'connected'); await preview.locator('summary').click();

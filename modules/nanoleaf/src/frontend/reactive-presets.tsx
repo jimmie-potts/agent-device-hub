@@ -12,9 +12,15 @@ function PresetLibrary({context, recipe, load, command}: {context: FrontendConte
   const [submitted, setSubmitted] = useState<{requestId: string; fingerprint: string}>(), [saved, setSaved] = useState<string>();
   const busy = useRef(false), mounted = useRef(true);
   useEffect(() => {mounted.current = true; return () => {mounted.current = false;};}, []);
-  useEffect(() => followReactivePresets((changed, options) => context.api.sync<ReactiveCatalog>(['nanoleaf-reactive-presets'], changed, options), view => {
-    retained.current = view.value; setCatalog(view);
-  }, retained.current), [context.api, refresh]);
+  useEffect(() => {
+    if (!context.connected) {
+      setCatalog({value: retained.current, live: false, pending: false, failed: false});
+      return;
+    }
+    return followReactivePresets((changed, options) => context.api.sync<ReactiveCatalog>(['nanoleaf-reactive-presets'], changed, options), view => {
+      retained.current = view.value; setCatalog(view);
+    }, retained.current);
+  }, [context.api, context.connected, refresh]);
   const fingerprint = JSON.stringify({name, recipe});
   const operation = context.operations.find(value => value.requestId === submitted?.requestId
     && value.family === 'nanoleaf-reactive-preset-save' && value.target === REACTIVE_TARGET);
