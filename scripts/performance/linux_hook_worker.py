@@ -240,4 +240,4 @@ if __name__=='__main__':
         raise SystemExit(main())
     except Exception:
         checkpoint({'failure':'isolated-profile-failed'})
-        raise SystemExit(1)
+        raise SystemExit(1)  # noqa: B904 -- Preserve the CLI's existing implicit exception context.

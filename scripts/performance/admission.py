@@ -1,19 +1,4 @@
 """Pinned legacy admission measurements, without hooks or device workers."""
-import math
-import statistics
-
-
-def summary_ns(values):
-    if not values or any(type(value) is not int or value < 0 for value in values):
-        raise ValueError('invalid-samples')
-    ordered = sorted(values)
-    return {
-        'n': len(ordered), 'minNs': ordered[0], 'medianNs': statistics.median(ordered),
-        'p95Ns': ordered[math.ceil(.95 * len(ordered)) - 1],
-        'p99Ns': ordered[math.ceil(.99 * len(ordered)) - 1], 'maxNs': ordered[-1],
-        'p99SampleSupport': 'provisional' if len(ordered) < 1000 else 'recorded',
-    }
-
 import argparse
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
@@ -30,6 +15,21 @@ import sys
 import tempfile
 import threading
 import time
+import math
+import statistics
+
+
+def summary_ns(values):
+    if not values or any(type(value) is not int or value < 0 for value in values):
+        raise ValueError('invalid-samples')
+    ordered = sorted(values)
+    return {
+        'n': len(ordered), 'minNs': ordered[0], 'medianNs': statistics.median(ordered),
+        'p95Ns': ordered[math.ceil(.95 * len(ordered)) - 1],
+        'p99Ns': ordered[math.ceil(.99 * len(ordered)) - 1], 'maxNs': ordered[-1],
+        'p99SampleSupport': 'provisional' if len(ordered) < 1000 else 'recorded',
+    }
+
 
 TASKS = (1, 10, 50)
 MAX_SAMPLES = 50_000

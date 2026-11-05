@@ -1,0 +1,31 @@
+name: Music native source
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'apps/music-producer/**'
+      - '.github/workflows/music-native.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/music-producer/**'
+      - '.github/workflows/music-native.yml'
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: music-native-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+jobs:
+  macos:
+    name: Music native compile and synthetic tests
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: macos-15
+    timeout-minutes: 10
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: sh apps/music-producer/native/test.sh
+      - run: sh apps/music-producer/native/build.sh
+      - run: sh apps/music-producer/native/adapter-test.sh

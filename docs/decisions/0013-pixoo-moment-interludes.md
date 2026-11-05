@@ -31,8 +31,9 @@ ADR 0018's rejection stands for raw agent events: they still never select a mode
 A moment is a different thing, and may cover the current base for a short time.
 
 - **Over Media**, a moment pauses a playing playlist and resumes it at the same
-  item when it ends. A paused or stopped player has nothing to give back, so the
-  moment is refused.
+  item when it ends. A paused or stopped item refuses the moment, because no call
+  can repaint it. A player with nothing loaded takes the moment without being
+  touched, and one blank frame follows it (see the amendment below).
 - **Over Monitor**, a moment plays only when all of these hold: the hub marks it
   as allowed to cover status (ADR 0006's interrupt set), the owner's setting is on,
   and the session source is current and shows nothing needing attention. The
@@ -80,3 +81,19 @@ The Pixoo declares `capabilities.moments` with its moods and duration bound, and
 
 Source and simulator tests prove the source behavior only. They do not show what a
 physical Pixoo displays.
+
+## Amendment, 2026-11-05
+
+The owner chose to let a Pixoo with nothing loaded show art, and return to its idle
+screen afterwards. This replaces the first decision's refusal of every player that
+is not playing: Media is the default mode, so that refusal would have hidden most
+scheduled art. A paused or stopped item still refuses, because nothing could repaint
+it. So does a player in error, and a display left unknown by an uncertain write or
+external control, until the next start, clear or restart.
+
+The module can't read back what the device showed or return it to a built-in channel,
+so the "idle screen" is one black frame. On a fresh installation the device's own
+display therefore goes black after its first moment. A restart during such a moment
+leaves the art on with nothing to blank it, until something else writes, and it also
+forgets an unknown display on an empty player. How this looks on a real Pixoo belongs
+to [#687](https://github.com/jimmie-potts/agent-device-hub/issues/687).

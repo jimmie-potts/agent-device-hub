@@ -1,6 +1,162 @@
 {
  "description": "Core payload families of profile 2.0 (Hub #842 and #918). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy in tests/consumer.mjs and names the messages whose payloads remain. The root session's state, occurrence and removal messages are what the real owner published in one reference history, which apps/runtime/tests/reference-history.test.ts replays (Hub #831). Only those messages come from it: the Claude session, inbox item and sync fixtures keep revisions of their own, chosen for the consumer rules they show, so `sync-completed` at revisions 14 and 15 still lists the root session that the reference history retires at 12. A finished turn is never an inbox item (Hub #782 removed the turn-ended item), so the inbox items are operations only.",
  "valid": {
+ "music-capture-features": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "test-music-capture-features",
+  "source": "bunny/parts/music-producer",
+  "type": "org.bunny.music-capture.features.observed",
+  "subject": "endpoint-1",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "occurrence",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-capture-features/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "generation": "9df02246-518e-44f2-9412-a942735e63cd",
+   "input": "music",
+   "sequence": 1,
+   "sampleRateHz": 48000,
+   "channels": 2,
+   "frameCount": 4800,
+   "startMonotonicMs": 1000,
+   "endMonotonicMs": 1100,
+   "emittedMonotonicMs": 1102,
+   "observedAtMs": 1793836800000,
+   "validUntilMs": 1793836800400,
+   "rms": 0.25,
+   "peak": 0.5,
+   "clippedFraction": 0,
+   "bands": {
+    "bass": 0.2,
+    "mid": 0.1,
+    "treble": 0.05
+   },
+   "onset": {
+    "strength": 0.1,
+    "confidence": 0.5
+   },
+   "discontinuity": true
+  }
+ },
+ "music-capture-work": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "test-music-capture-work",
+  "source": "bunny/core",
+  "type": "org.bunny.music-capture.work.requested",
+  "subject": "endpoint-1",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-capture-work/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "req-1",
+   "operationId": "op-1",
+   "generation": "9df02246-518e-44f2-9412-a942735e63cd",
+   "action": "start",
+   "input": "music"
+  },
+  "expiresat": "2026-11-05T00:00:05.000Z"
+ },
+ "music-capture-progress": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "test-music-capture-progress",
+  "source": "bunny/parts/music-producer",
+  "type": "org.bunny.music-capture.progress.observed",
+  "subject": "endpoint-1",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "occurrence",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-capture-progress/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "operationId": "op-1",
+   "generation": "9df02246-518e-44f2-9412-a942735e63cd",
+   "status": "started"
+  }
+ },
+ "music-capture-endpoint": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "test-music-capture-endpoint",
+  "source": "bunny/parts/music-producer",
+  "type": "org.bunny.music-capture.endpoint.requested",
+  "subject": "endpoint-1",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-capture-endpoint/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "req-1",
+   "action": "enable",
+   "input": "music"
+  },
+  "expiresat": "2026-11-05T00:00:05.000Z"
+ },
+ "music-capture-lost": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "test-music-capture-lost",
+  "source": "bunny/runtime/gateway",
+  "type": "org.bunny.music-capture.endpoint-lost",
+  "subject": "endpoint-1",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "occurrence",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-capture-lost/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "endpoint-1"
+  }
+ },
+ "music-capture-control": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "test-music-capture-control",
+  "source": "bunny/core",
+  "type": "org.bunny.music-capture.control.requested",
+  "subject": "music",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-capture-control/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "req-1",
+   "expectedRevision": 1,
+   "action": "start",
+   "endpointId": "endpoint-1",
+   "input": "music"
+  },
+  "expiresat": "2026-11-05T00:00:05.000Z"
+ },
+ "music-capture-state": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "test-music-capture-state",
+  "source": "bunny/core",
+  "type": "org.bunny.music-capture.updated",
+  "subject": "music",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-capture-state/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "music",
+   "revision": 1,
+   "endpointId": null,
+   "availability": "off",
+   "session": {
+    "status": "idle"
+   }
+  }
+ },
  "microduck-dispatch": {
   "specversion": "1.0",
   "bunnyprofile": "2.0",
