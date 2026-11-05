@@ -21,10 +21,11 @@ const lastChecks = new WeakMap<TestContext, (() => void)[]>();
 
 /**
  * node:test's test() with a timeout, so a wait that never ends fails the test instead of hanging the run. Checks added
- * with `checkLast` run in the test's last after hook, once the body's own hooks have run.
+ * with `checkLast` run in the test's last after hook, once the body's own hooks have run. A test whose own bounded waits
+ * add up to more than the default passes a `timeoutMs` above their sum, so that those waits report first.
  */
-export function it(name: string, body: (context: TestContext) => void | Promise<void>): void {
-  void test(name, {timeout: 20_000}, async context => {
+export function it(name: string, body: (context: TestContext) => void | Promise<void>, timeoutMs = 20_000): void {
+  void test(name, {timeout: timeoutMs}, async context => {
     const checks: (() => void)[] = [];
     lastChecks.set(context, checks);
     await body(context);

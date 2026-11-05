@@ -63,14 +63,42 @@ it('process log polling waits for a complete line and retains every completed re
   ]);
 });
 
+/** The longest a runtime gets to come up, or to reach its fixture's kill. */
+const START_BOUND_MS = 15_000;
+/** The longest a running runtime gets to act on something it already holds, and to stop on SIGTERM. */
+const STORED_BOUND_MS = 10_000;
+const STOP_BOUND_MS = 5000;
+/**
+ * The budget of a test that kills a runtime and starts it twice more, above the sum of its phases' bounds: three starts,
+ * the wait for the stored messages and two stops. On the slower hosted Linux runners these tests took up to 19.8 s
+ * against the old 20 s budget, or ran out of it, while a test with one start and stop took up to 7.9 s (Hub #1455). A
+ * phase that hangs still fails at its own bound, by name.
+ */
+const KILL_AND_RESTART_BUDGET_MS = 70_000;
+
+/** Waits for `condition`, failing with the phase's name and the process's last records when it does not hold in time. */
+async function phase(runtime: Spawned, condition: () => boolean, timeoutMs: number, name: string): Promise<void> {
+  try {
+    await waitFor(condition, timeoutMs, name);
+  } catch {
+    assert.fail(`timed out after ${timeoutMs} ms waiting for ${name}; the last records: ${runtime.records().slice(-8).map(record => record.event_name).join(', ')}`);
+  }
+}
+
 /** Starts a runtime process and waits for its ready line. */
-async function launch(context: TestContext, script: string, args: readonly string[]): Promise<Launched> {
+async function launch(context: TestContext, script: string, args: readonly string[], name = 'the ready line'): Promise<Launched> {
   const spawned = spawnRuntime(context, script, args);
   const exitedEarly = spawned.exited.then(exit => assert.fail(`exited before ready: ${JSON.stringify(exit)} ${JSON.stringify(spawned.records())}`));
-  await Promise.race([waitFor(() => spawned.stdout().includes('\n'), 15_000, 'the ready line'), exitedEarly]);
+  await Promise.race([phase(spawned, () => spawned.stdout().includes('\n'), START_BOUND_MS, name), exitedEarly]);
   const ready = JSON.parse(spawned.stdout().split('\n')[0] ?? '') as {event: string; url: string};
   assert.equal(ready.event, 'runtime.ready');
   return {...spawned, url: ready.url};
+}
+
+/** How the process ended, once it has, within `timeoutMs`. */
+async function exitOf(runtime: Spawned, timeoutMs: number, name: string): Promise<Exit> {
+  await phase(runtime, () => runtime.child.exitCode !== null || runtime.child.signalCode !== null, timeoutMs, name);
+  return runtime.exited;
 }
 
 const recorded = (runtime: Spawned, event: string): boolean => runtime.records().some(record => record.event_name === event);
@@ -293,15 +321,15 @@ for (const scenario of ['lamp-crash', 'lamp-crash-delayed']) it(`an outcome comm
     .filter(record => record.attributes['bunny.message.kind'] === 'outcome' && record.attributes['bunny.outcome'] === 'accepted');
 
   const crashed = spawnRuntime(context, FIXTURE, [scenario, ...args]);
-  assert.deepEqual(await crashed.exited, {code: null, signal: 'SIGKILL'});
+  assert.deepEqual(await exitOf(crashed, START_BOUND_MS, 'the kill after the lamp\'s commit'), {code: null, signal: 'SIGKILL'});
   assert.equal(of(crashed, 'lamp', 'command.executing').length, 1, 'the lamp had the command once');
   assert.equal(of(crashed, 'core', 'message.received').length, 0, 'nothing was published before the kill');
 
-  const restarted = await launch(context, FIXTURE, ['lamp-restart', ...args]);
+  const restarted = await launch(context, FIXTURE, ['lamp-restart', ...args], 'the ready line after the kill');
   assert.equal(of(restarted, 'lamp', 'outbox.republished')[0]?.attributes['bunny.outbox.republished_count'], 3, 'the state, the occurrence and the outcome');
-  await waitFor(() => of(restarted, 'lamp', 'outbox.acknowledged').length > 0, 10_000, 'the core\'s acknowledgment');
+  await phase(restarted, () => of(restarted, 'lamp', 'outbox.acknowledged').length > 0, STORED_BOUND_MS, 'the core\'s acknowledgment');
   restarted.child.kill('SIGTERM');
-  assert.deepEqual(await restarted.exited, {code: 0, signal: null});
+  assert.deepEqual(await exitOf(restarted, STOP_BOUND_MS, 'the restarted runtime to stop'), {code: 0, signal: null});
   const [outcome] = taken(restarted);
   assert.equal(taken(restarted).length, 1);
   assert.equal(outcome?.attributes['bunny.request.id'], 'req-crash');
@@ -309,12 +337,26 @@ for (const scenario of ['lamp-crash', 'lamp-crash-delayed']) it(`an outcome comm
   assert.equal(of(restarted, 'lamp', 'command.executing').length, 0, 'no command was sent again');
 
   // Acknowledged, the outcome is forgotten: the next start sends nothing again, and the core takes nothing more.
-  const again = await launch(context, FIXTURE, ['lamp-restart', ...args]);
+  const again = await launch(context, FIXTURE, ['lamp-restart', ...args], 'the ready line of the last start');
   again.child.kill('SIGTERM');
-  assert.deepEqual(await again.exited, {code: 0, signal: null});
+  assert.deepEqual(await exitOf(again, STOP_BOUND_MS, 'the last start to stop'), {code: 0, signal: null});
   assert.equal(of(again, 'lamp', 'outbox.republished')[0]?.attributes['bunny.outbox.republished_count'], 0);
   assert.equal(of(again, 'core', 'message.received').length, 0, 'exactly once across all three runs');
   assert.equal(of(again, 'lamp', 'command.executing').length, 0);
+}, KILL_AND_RESTART_BUDGET_MS);
+
+for (const signal of ['SIGTERM', 'SIGINT']) it(`the lamp driver stays silent after startup cancellation ${signal}`, async context => {
+  const runtime = spawnRuntime(context, FIXTURE, [`lamp-cancel-${signal}`, '--port', '0', '--state-dir', await stateDir(context)]);
+  const closed = once(runtime.child, 'close');
+  assert.deepEqual(await exitOf(runtime, START_BOUND_MS, `startup cancellation ${signal}`), {code: 0, signal: null});
+  await closed;
+  assert.equal(runtime.stdout(), '', 'cancellation during startup emits no ready line');
+  assert.ok(recorded(runtime, 'runtime.started'));
+  assert.ok(recorded(runtime, 'runtime.stopped'));
+  for (const name of ['runtime.command.admitted', 'command.executing', 'command.completed']) {
+    assert.equal(recorded(runtime, name), false, `startup cancellation causes no ${name}`);
+  }
+  assert.equal(runtime.records().some(record => record.event_name.endsWith('.failed')), false, 'the waiting callback causes no post-stop failure');
 });
 
 it('a kill between the core\'s commit and its publish loses and duplicates nothing: the restart sends each stored message once', async context => {
@@ -327,7 +369,7 @@ it('a kill between the core\'s commit and its publish loses and duplicates nothi
     .filter(record => record.attributes['bunny.outcome'] === outcome).map(record => String(record.attributes['bunny.message.id']));
 
   const crashed = spawnRuntime(context, FIXTURE, ['core-crash', ...args]);
-  assert.deepEqual(await crashed.exited, {code: null, signal: 'SIGKILL'});
+  assert.deepEqual(await exitOf(crashed, START_BOUND_MS, 'the kill after the core\'s commit'), {code: null, signal: 'SIGKILL'});
   assert.deepEqual(heard(crashed, 'accepted'), [], 'nothing was published before the kill');
   const database = new DatabaseSync(join(dir, 'modules', 'core.sqlite'), {readOnly: true});
   const stored = database.prepare('SELECT id, kind FROM bunny_outbox ORDER BY seq').all().map(row => ({...row}) as {id: string; kind: string});
@@ -336,20 +378,20 @@ it('a kill between the core\'s commit and its publish loses and duplicates nothi
   assert.deepEqual(stored.map(row => row.kind), ['state', 'occurrence'], 'the session and its attention-raised, committed and unpublished');
   assert.ok((committed ?? 0) > 0);
 
-  const restarted = await launch(context, FIXTURE, ['core-restart', ...args]);
-  await waitFor(() => heard(restarted, 'accepted').length >= 2, 10_000, 'the stored messages');
+  const restarted = await launch(context, FIXTURE, ['core-restart', ...args], 'the ready line after the kill');
+  await phase(restarted, () => heard(restarted, 'accepted').length >= 2, STORED_BOUND_MS, 'the stored messages');
   restarted.child.kill('SIGTERM');
-  assert.deepEqual(await restarted.exited, {code: 0, signal: null});
+  assert.deepEqual(await exitOf(restarted, STOP_BOUND_MS, 'the restarted runtime to stop'), {code: 0, signal: null});
   const ids = heard(restarted, 'accepted');
   for (const {id} of stored) assert.equal(ids.filter(heardId => heardId === id).length, 1, `${id} went out once, with its stored id`);
   assert.deepEqual(heard(restarted, 'duplicate'), [], 'nothing twice');
 
   // Published, they are gone from the outbox: the next start sends none of them again.
-  const again = await launch(context, FIXTURE, ['core-restart', ...args]);
+  const again = await launch(context, FIXTURE, ['core-restart', ...args], 'the ready line of the last start');
   again.child.kill('SIGTERM');
-  assert.deepEqual(await again.exited, {code: 0, signal: null});
+  assert.deepEqual(await exitOf(again, STOP_BOUND_MS, 'the last start to stop'), {code: 0, signal: null});
   assert.equal(heard(again, 'accepted').filter(id => stored.some(row => row.id === id)).length, 0);
-});
+}, KILL_AND_RESTART_BUDGET_MS);
 
 it('a core that fails ends the runtime with a failure exit, so the service manager restarts it whole', async context => {
   // A store the core cannot read: the core's start fails, and with it the runtime.
