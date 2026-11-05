@@ -1,0 +1,99 @@
+// Real disposable core/gateway with numeric-only source data. No native helper or physical device.
+import assert from 'node:assert/strict';
+import {join} from 'node:path';
+import {chromium} from 'playwright';
+import {expect} from 'playwright/test';
+import {AxeBuilder} from '@axe-core/playwright';
+import {startWorld, changes, feed} from './harness.ts';
+import {musicCaptureProducer} from './music-capture-producer.ts';
+import {browserArtifactDirectory} from './browser-artifacts.ts';
+
+const world = await startWorld({musicCapture: true});
+let producer: Awaited<ReturnType<typeof musicCaptureProducer>> | undefined;
+const browser = await chromium.launch({headless: true});
+const artifacts = await browserArtifactDirectory();
+try {
+  const context = await browser.newContext({viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
+  const page = await context.newPage(); page.setDefaultTimeout(10_000);
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message)); const sent = changes(page);
+  await page.goto(world.url + '/#/audio'); await feed(page, 'connected');
+  const card = page.getByRole('article', {name: 'Music input measurement', exact: true});
+  const start = card.getByRole('button', {name: 'Start measuring Music', exact: true});
+  const stop = card.getByRole('button', {name: 'Stop measuring', exact: true});
+  await card.getByText('Music producer is off.', {exact: true}).waitFor(); await expect(start).toBeDisabled();
+  producer = await musicCaptureProducer(world.url, world.musicCaptureToken);
+  await expect(start).toBeEnabled(); assert.equal(producer.commands.length, 0); assert.equal(sent.length, 0);
+  await expect(card.getByRole('meter')).toHaveCount(0); await start.focus(); await page.keyboard.press('Enter');
+  await expect(card.getByRole('meter')).toHaveAttribute('value', '0.25');
+  await card.getByText(/Start: Completed: succeeded/).waitFor(); assert.equal(producer.commands.length, 1);
+  await page.screenshot({path: join(artifacts, 'music-capture-active-desktop.png'), fullPage: true});
+  await page.route('**/api/sdk/v1/sync', async route => {
+    const request = route.request().postDataJSON() as {request?: {data?: {families?: string[]}}};
+    if (request.request?.data?.families?.includes('music-capture-state') !== true) {await route.continue(); return;}
+    const reply = await route.fetch(); await new Promise(resolve => {setTimeout(resolve, 150);}); await route.fulfill({response: reply});
+  });
+  await card.getByRole('button', {name: 'Refresh capture status'}).click();
+  await card.getByText('Measurement timing is unavailable. Refresh status to check again.', {exact: true}).waitFor();
+  await expect(card.getByRole('meter')).toHaveCount(0); await expect(stop).toBeEnabled();
+  await page.unroute('**/api/sdk/v1/sync'); await card.getByRole('button', {name: 'Refresh capture status'}).click();
+  await expect(card.getByRole('meter')).toHaveCount(1);
+  producer.level(0); await expect(card.getByRole('meter')).toHaveAttribute('value', '0');
+  producer.pause(); await expect(card.getByRole('meter')).toHaveCount(0); await card.getByText('Measurements are stale.', {exact: true}).waitFor();
+  await producer.emit({generation: '22222222-2222-4222-8222-222222222222'}); await expect(card.getByRole('meter')).toHaveCount(0);
+  await producer.start(); await expect(card.getByRole('meter')).toHaveCount(1);
+  const second = await context.newPage(); await second.goto(world.url + '/#/audio'); await feed(second, 'connected');
+  await second.getByRole('meter').waitFor(); assert.equal(producer.commands.length, 1); await second.close();
+  await page.reload(); await feed(page, 'connected'); await expect(card.getByRole('meter')).toHaveCount(1); assert.equal(producer.commands.length, 1);
+  await page.route('**/api/sdk/v1/stream', route => route.abort()); world.dropDashboardStreams();
+  await expect(card.getByRole('meter')).toHaveCount(0); await expect(stop).toBeDisabled();
+  await page.unroute('**/api/sdk/v1/stream'); await feed(page, 'connected'); await expect(stop).toBeEnabled();
+  assert.equal(producer.commands.length, 1);
+  await stop.click(); await card.getByText(/Stop: Completed: succeeded/).waitFor(); await expect(start).toBeEnabled();
+  assert.equal(producer.commands.length, 2); await expect(card.getByRole('meter')).toHaveCount(0);
+  producer.automatic(false);
+  await page.route('**/api/sdk/v1/stream', route => route.abort());
+  await page.route('**/api/sdk/v1/sync', route => route.abort());
+  let lostReplies = 0;
+  await page.route('**/api/v2/commands/music-capture-control', async route => {
+    world.dropDashboardStreams(); const reply = await route.fetch(); assert.equal(reply.status(), 200);
+    lostReplies += 1; await reply.dispose(); await route.abort();
+  }, {times: 1});
+  await start.click(); await card.getByText(/Start: Uncertain result/).waitFor();
+  await expect(start).toBeDisabled(); assert.equal(producer.commands.length, 3);
+  await page.unroute('**/api/sdk/v1/sync'); await page.unroute('**/api/sdk/v1/stream'); await feed(page, 'connected');
+  await expect(stop).toBeEnabled(); await page.reload(); await feed(page, 'connected');
+  await expect(stop).toBeEnabled(); assert.equal(producer.commands.length, 3); assert.equal(lostReplies, 1);
+  await card.getByText('Starting measurement. Waiting for source evidence.', {exact: true}).waitFor(); await expect(card.getByRole('meter')).toHaveCount(0);
+  await stop.click(); await card.getByText(/Stop: Completed: succeeded/).waitFor();
+  assert.deepEqual(producer.commands.map(command => command.data.action), ['start', 'stop', 'start', 'stop']);
+  const readsOnly = await page.request.post(world.url + '/api/v2/commands/music-capture-control', {
+    headers: {authorization: `Bearer ${world.readerToken}`, 'content-type': 'application/json'},
+    data: {target: 'music', requestId: 'reader-start', data: {action: 'start', input: 'music', endpointId: producer.endpointId, expectedRevision: 0}},
+  });
+  assert.equal(readsOnly.status(), 403); assert.equal(producer.commands.length, 4);
+  await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
+  await page.reload(); await feed(page, 'connected'); await card.getByText('Read-only access. Capture controls are disabled.', {exact: true}).waitFor();
+  await expect(start).toBeDisabled(); await expect(stop).toBeDisabled(); assert.equal(producer.commands.length, 4);
+
+  for (const colorScheme of ['light', 'dark'] as const) for (const width of [1280, 390, 320]) {
+    await page.emulateMedia({colorScheme}); await page.setViewportSize({width, height: 900});
+    await card.getByRole('button', {name: 'Refresh capture status'}).focus();
+    const a11y = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
+    assert.deepEqual(a11y.violations.map(value => value.id), [], `${colorScheme}/${width}`);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({path: join(artifacts, `music-capture-${colorScheme}-${width}.png`), fullPage: true});
+  }
+  const replacement = await browser.newContext(); const replacementPage = await replacement.newPage(); replacementPage.setDefaultTimeout(10_000);
+  await replacementPage.goto(world.url + '/#/audio'); await feed(replacementPage, 'connected');
+  const replacementCard = replacementPage.getByRole('article', {name: 'Music input measurement', exact: true});
+  producer.automatic(true); producer.level(0.5);
+  await replacementCard.getByRole('button', {name: 'Start measuring Music', exact: true}).click();
+  await expect(replacementCard.getByRole('meter')).toHaveAttribute('value', '0.5');
+  const generations = producer.commands.filter(command => command.data.action === 'start').map(command => command.data.generation);
+  assert.equal(new Set(generations).size, 3, 'each explicit start gets a new authoritative generation');
+  await producer.close(); await expect(replacementCard.getByRole('meter')).toHaveCount(0);
+  await expect(replacementCard.getByRole('button', {name: 'Stop measuring', exact: true})).toBeDisabled();
+  await replacementCard.getByText('Music input is unavailable.', {exact: true}).waitFor();
+  await replacement.close(); assert.deepEqual(errors, []);
+  await context.close();
+} finally {await browser.close(); await producer?.close(); await world.close();}
