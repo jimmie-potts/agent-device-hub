@@ -124,9 +124,11 @@ function cli(machine,...args) {
   });
 }
 function settled(result) {
-  // Exit 13 and this warning are how Node reports the top-level await that never settled.
+  // A top-level await that never settles exits 13 with Node's warning, or, once the entry path has
+  // set its failing default, exit 1 with nothing printed. Every real outcome prints a result or a refusal.
   assert.notEqual(result.code,13,result.stderr);
   assert.doesNotMatch(result.stderr,/unsettled top-level await/i);
+  assert.ok(result.stdout!==''||result.stderr!=='',`exit ${result.code} with no result or refusal`);
 }
 const engineCalls=async machine=>(await machine.calls()).map(args=>args[0]);
 
