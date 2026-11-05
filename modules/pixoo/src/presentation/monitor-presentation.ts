@@ -28,7 +28,7 @@ export interface MomentPlay {
  frames:()=>Promise<readonly Uint8Array[]>;
  /** Staged exact art has uniform timing checked against the selected device profile. Mood frames use 500 ms. */
  delayMs?:number;
- /** The core-approved exact composition may use Media only when it has no selected playback context. */
+ /** Exact art also uses stopped Media, while explicit pauses and later player changes retain precedence. */
  exactArt?:true;
 }
 /**
@@ -512,7 +512,7 @@ export class MonitorPresentation {
   // being sent. Keep that upload valid; the changed render key schedules the
   // latest card afterward without cancelling a native write with possible effects.
   const observation=this.observation(),playback=JSON.stringify(this.playback),abort=new AbortController();
-  // Empty Media has no held base: recheck its permission before each effect. Other moments retain their existing generation guard.
+  // Stopped Media has no active base to resume: recheck its permission before each effect. Other moments retain their existing generation guard.
   const current=moment!==undefined?()=>!this.closed&&playerGeneration===this.player.getState().generation
     &&(moment.over!=='stopped-media'||this.moment===moment&&this.configuration.mode==='media'&&this.stoppedMedia()&&this.momentBlock(moment.coversStatus,true)===null)
    :()=>!this.closed&&generation===this.generation&&playerGeneration===this.player.getState().generation
