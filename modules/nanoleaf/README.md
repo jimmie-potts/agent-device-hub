@@ -185,6 +185,31 @@ Existing workers retain sole device-write ownership; #725 owns physical timing.
 `music-effects.test.ts` and `music-input.test.ts` use synthetic inputs and explicit
 times to check these source contracts.
 
+## Synthetic Music effect preview
+
+The existing Wall page includes an expandable **Music effect preview**, linked
+from Audio. Choose one of the five built-in effects, edit its palette and
+intensity, select an example Lines or NL22 arrangement, then choose **Preview**.
+The sample slider inspects generated RGB colors locally. Drafts last for the
+page lifetime, and reconnect or changed settings require another explicit read.
+Read-only users can inspect these examples.
+
+The owner uses the unchanged Music renderer with fixed generated input and six
+example elements in a 3 × 2 arrangement. The authenticated module-content ref
+`music-preview` accepts one `request` query containing JSON fields `version: 1`,
+`preset`, `palette`, `intensity` and `model`. Supported models are
+`lines-demo-v1` and `nl22-demo-v1`. The decoded request is at most 2 KiB; the
+`nanoleaf-music-preview/2.0` response is at most 16 KiB with twenty samples and
+at most twelve RGB zones. Invalid, cancelled and unavailable reads use the
+registered error bodies. The preview reads no configured layout, capture or
+stored state and sends no device work. Existing Wall-editor state reads retain
+their behavior independently.
+
+Example offsets are virtual time. The result establishes no live input,
+calibration, physical geometry or speaker timing. Custom reactive-preset
+save/reload remains part of #722. Static favorites and decorative show versions
+retain their existing recipe contracts.
+
 ## Offline decorative shows
 
 The declared **Decorative shows** page at `#/module/nanoleaf/shows`, also linked
