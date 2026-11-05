@@ -2,7 +2,7 @@ import React, {useEffect, useId, useRef, useState} from 'react';
 import type {ArtState, ArtTarget, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {FrontendCommand, FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
 import {ArtImage} from './image.js';
-import {useArt, useGalleryPage} from './hooks.js';
+import {useArt, useGalleryPage, useWidgetArtwork} from './hooks.js';
 import {ART_TARGETS, TARGET_LABELS, browserArt, latestBrowserArt, money, reasonText} from './model.js';
 export {ArtPresentationProvider, useArtPresentation} from './presentation.js';
 export type {ArtPresentation, PresentedArt} from './presentation.js';
@@ -105,9 +105,10 @@ export function ArtGallery({context}: {context: FrontendContext}): React.JSX.Ele
   </div>;
 }
 export function ArtWidget({context}: {context: FrontendContext}): React.JSX.Element {
-  const catalog = useArt(context.api, context.connected), artwork = latestBrowserArt(catalog.state?.artworks ?? []);
+  const catalog = useArt(context.api, context.connected), selected = useWidgetArtwork(context.api, catalog.state, catalog.live);
   return <article className="card art-widget" aria-label="Art"><header><h2>Art</h2><a href="#/module/art/gallery">Open Gallery</a></header>
-    <ArtImage api={context.api} artwork={artwork} live={catalog.live} compact presented/>
+    <ArtImage api={context.api} artwork={selected.status === 'ready' ? selected.artwork : undefined} live={catalog.live}
+      metadataStatus={selected.status === 'ready' ? undefined : selected.status} compact presented/>
     {catalog.error !== undefined && <p className="hint">{catalog.error}</p>}
   </article>;
 }
