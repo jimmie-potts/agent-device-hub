@@ -1,5 +1,47 @@
 # Static analysis
 
+## Staged Python type checking
+
+`npm run typecheck:python` runs the exact Pyright version in the root development
+dependencies and lockfile. `npm ci` installs it; no global Pyright or Python
+package installation is needed. [`pyrightconfig.json`](../pyrightconfig.json)
+uses standard checking, Python 3.12 and Linux, matching the retained documentation
+job. Its bundled standard-library stubs cover the first slice, with an explicit
+`docs/skins` import root and no ignored imports or diagnostic suppressions.
+
+The first slice is `docs/skins/*.py`: `skin.py`, `check_tokens.py` and
+`test_places.py`. It checks the shared Places/skin generator, the color-token
+checker and the generator's direct Python tests. Function annotations protect
+arguments and return values; they do not replace the existing manifest checks
+or prove that an arbitrary JSON file is valid. The rest of the surviving Python
+tooling keeps its existing tests and lint coverage. Broader documentation,
+performance and maintenance typing stays deferred until a concrete change or
+type-related defect justifies the next useful slice. Retained consumer packages,
+historical copies and hibernated work are outside this adoption.
+
+The existing Workflow checks job runs the same command for every ready PR and
+when reused by full release qualification. Main Integration does not run Pyright.
+`npm run test:python-types` copies the selected tooling into a temporary directory
+and proves that a wrong argument and wrong return each produce the intended
+diagnostic and nonzero exit, then restores a clean result. These expected-failure
+checks run in that same job; they do not themselves claim a failed Actions job.
+Neither command edits source or starts an application.
+
+For changes in this slice, run both commands and its existing consumer checks:
+
+```bash
+npm run typecheck:python
+npm run test:python-types
+python3 docs/skins/test_places.py
+python3 docs/skins/check_tokens.py
+python3 docs/system-design/build.py --check
+python3 docs/system-design/check.py
+```
+
+Use Python 3.12 or 3.14 for the executable checks. Add another slice only with its
+import/dependency inventory, supported target and direct tests. Keep the same
+declared source coverage locally and in CI.
+
 ## Static analysis
 
 `npm run lint:js` runs ESLint with [`eslint.config.mjs`](../eslint.config.mjs).
@@ -76,7 +118,7 @@ code written for the move.
 
 New code for the runtime follows a stricter profile from its first commit
 ([#867](https://github.com/jimmie-potts/agent-device-hub/issues/867)). It covers
-`apps/runtime/`, `packages/sdk/`, `modules/` and the 2.0 contract sources in
+`apps/runtime/`, `apps/music-producer/`, `packages/sdk/`, `modules/` and the 2.0 contract sources in
 `packages/event-contracts/src/v2/`, and starts with no baseline entries. Staged
 imported code keeps the shared rules until its module story converts it; none
 is staged now, since the Pixoo module joined the profile
@@ -247,7 +289,7 @@ name or this listing, and on a file exception that no longer hides a finding.
 | --- | --- | --- | --- | --- |
 | `ignores` in `bunny/safe-errors` | Tests: `**/tests/**` and `*.test.*` | All three | Tests read errors to report failures and spell out the bodies they expect. | Permanent |
 | `bunny/safe-errors/scripts` | `apps/runtime/scripts/` | `no-console` | Scripts write their results to the terminal. | Permanent |
-| `bunny/safe-errors/stream-owners` | `streamOwners` in `eslint.config.mjs` | `no-console` | The Windows BB-8 helper's process entry (`apps/bb8-windows/src/process.ts`, #604), the runtime's journal sink (`log.ts`) and process entry (`process.ts`), the Pixoo library migration's entry point (`migrate-pixoo.ts`, #931), the Nanoleaf migration's entry point (`migrate-nanoleaf.ts`, #933), the verification run's supervisor and network guard, the explicit Roborock account-setup CLI (`modules/roborock/bin/setup.mjs`, #1070), and the disposable MicroDuck fixture ready-line entry (`modules/microduck/src/fixture.ts`, #623) own the process's standard streams. | Permanent. A new entry point is added by name. |
+| `bunny/safe-errors/stream-owners` | `streamOwners` in `eslint.config.mjs` | `no-console` | The Windows BB-8 helper's process entry (`apps/bb8-windows/src/process.ts`, #604), the runtime's journal sink (`log.ts`) and process entry (`process.ts`), the Pixoo library migration's entry point (`migrate-pixoo.ts`, #931), the Nanoleaf migration's entry point (`migrate-nanoleaf.ts`, #933), the verification run's supervisor and network guard, the explicit Roborock account-setup CLI (`modules/roborock/bin/setup.mjs`, #1070), the explicit Music producer CLI (`apps/music-producer/src/cli.ts`), and the disposable MicroDuck fixture ready-line entry (`modules/microduck/src/fixture.ts`, #623) own the process's standard streams. | Permanent. A new entry point is added by name. |
 | `bunny/safe-errors/contracts` | `packages/event-contracts/` | `error-body-from-registry` | It defines `errorBody`. | Permanent |
 | `bunny/safe-errors/runtime-usage` | `apps/runtime/src/process.ts` | `no-raw-error-text` | A malformed command line's usage error quotes `parseArgs`'s message, which repeats only the operator's own argument, in the usage output before the runtime starts. ADR 0012's surfaces do not include usage output. | Permanent ([#954](https://github.com/jimmie-potts/agent-device-hub/issues/954)) |
 
@@ -314,4 +356,186 @@ for these reasons:
 | Writes to file descriptors 1 and 2, an alias of `process`, `await import('node:console')` | Not checked | No covered code does this, and a syntax rule cannot follow an alias or a computed descriptor |
 | An alias, a helper, a custom type guard, an untyped callback parameter, `any`, a computed member in an `instanceof` test, a reassigned narrowed binding | Not checked | Each needs data flow or type information that a syntax rule does not have |
 
+## CodeQL security analysis
+
+[The CodeQL workflow](../.github/workflows/codeql.yml) analyzes JavaScript,
+TypeScript and Python on ready PRs to main, main pushes, Thursdays at 07:23 UTC,
+and explicit diagnostic dispatches. Draft PRs skip analysis. A late or missing
+scheduled run is pending evidence; a manual run does not replace it. Keep this
+weekly schedule after the initial acceptance observation.
+
+The workflow implements [the qualified setup decision](https://github.com/jimmie-potts/agent-device-hub/issues/768#issuecomment-6649674345).
+CodeQL action v4.39.3 is pinned to
+`33d7b85da1a04171e211befe2c739303b9a4c066`. Its `tools: linked` bundle is CLI
+2.27.4, with default JavaScript queries 2.5.0 and Python queries 1.9.0. Update the
+action and linked bundle through review. The default security suite is used;
+there are no custom packs or additional quality queries.
+
+Each language has a separate Ubuntu 24.04 job with a 30-minute limit and the
+runner's default memory/thread selection. `build-mode: none` avoids application
+builds, dependency installs and repository-script execution. The job uses only
+the built-in token, with `contents: read` and `security-events: write`. Checkout
+does not persist credentials. Ordinary `pull_request` events preserve GitHub's
+fork-token and contributor-approval controls; `pull_request_target` is not used.
+Do not add a PAT or broaden permissions to repair an unavailable fork result.
+
+[The source config](../.github/codeql/codeql-config.yml) owns exclusions for
+generated/dependency trees, private/local data, vendored reference assets and
+databases, saved source copies and hibernated BB-8. Maintained tests and tooling
+remain included. Python security analysis also includes retained consumer packages
+because they are still distributed for compatibility/manual return. This does
+not run those packages or expand the bounded Ruff/Pyright adoption. CodeQL's
+supported JS/TS and Python extractors define its language coverage; no C/C++,
+Java or Actions-language scan is selected.
+
+### Read execution and finding results separately
+
+Require both language analysis jobs to succeed, including upload and processing.
+Then inspect the native Code scanning results check and its findings for the same
+PR. Its default failure levels are new `error`, `high` and `critical` findings.
+Treat every new `error`, `high` or `critical` finding as blocking until fixed or
+explicitly dispositioned through review, independently of the native result's
+configured threshold. Record pre-existing findings and reasoned
+dispositions in the delivery evidence. Do not broadly ignore or automatically
+dismiss them.
+
+During adoption, record the native check identity and the severity behavior
+observed with disposable controls. If the exact repository setting cannot be
+read, record that limit and retain the complete findings review above. A blocked
+critical example does not establish the treatment of lower severities. Unavailable
+analysis or findings still prevents acceptance; unavailable threshold settings do
+not turn findings into clean results. Do not change credentials, repository
+settings or branch protection as an incidental fix.
+
+The [delivery preflight](development.md#delivery-preflight) enumerates the two
+analysis jobs, but does not interpret result checks from another GitHub app.
+Read that native result separately before merge. Missing language results,
+extraction/upload/processing errors, cancellation, timeout and inaccessible
+findings remain failed or unavailable, even if other checks are green.
+
+For a PR, retain its head and the actual analyzed merge revision, plus run/check
+links. Normal checkout/ref inference keeps the merge bytes associated with their
+merge SHA. Main, scheduled and manual runs bind their exact event revision.
+Main scanning remains separate from cheap Integration and full Release
+qualification. Reuse the successful main scan for the exact qualified release;
+do not infer a scan from either other workflow or another revision.
+
+Use existing GitHub check records and the native security view. For diagnostics:
+
+```bash
+gh run list --repo jimmie-potts/agent-device-hub --workflow codeql.yml --commit <full-sha> --json databaseId,event,status,conclusion
+gh run view <run-id> --repo jimmie-potts/agent-device-hub --json jobs
+```
+
+Only an authorized diagnostic run uses `gh workflow run codeql.yml --ref
+<selected-ref>`. Keep default setup off while this advanced workflow owns scans.
+To stop future execution during an authorized repair, disable this workflow and
+record the coverage gap; restore it after the corrected candidate passes. A
+reviewed revert can restore its last qualified configuration. Neither action
+turns absent analysis into a clean result or waives the delivery gate.
+
+Database uploads are disabled. SARIF and source-derived diagnostics use native
+code scanning and existing Actions retention. A disposable-control artifact, if
+needed, has 14-day retention and contains only source-derived results and tool/
+revision metadata. Never scan installed stores or publish runtime data, secrets
+or debug bundles. Existing privacy rules apply to source-security evidence too.
+
+Validate workflow/configuration changes with `npm run check:workflow`,
+`npm run test:workflow` and `npm run test:preflight`, after the documented setup
+and build. These local fixtures check routing and permissions; actual hosted
+analysis, finding controls and failed execution require separate evidence.
+
 <a id="depot-diagnostic-access"></a>
+
+## Python tooling
+
+`npm run lint:python` runs Ruff 0.17.3 over the surviving Python tooling listed
+in [`ruff.toml`](../ruff.toml). It does not format or fix files. The tool pin is in
+[`requirements-tooling.txt`](../requirements-tooling.txt), separate from product
+and consumer dependencies. Ruff refuses a different version.
+
+Use Python 3.12 or later in a development environment. For example, with the
+repository's Python 3.14 toolchain:
+
+```bash
+python3.14 -m venv .local/python-tooling
+source .local/python-tooling/bin/activate
+python3 -m pip install -r requirements-tooling.txt
+npm run lint:python
+npm run test:lint:python
+```
+
+The syntax target is Python 3.12 for every included group. This keeps the
+system-Python documentation and performance tooling compatible with its current
+Ubuntu runner. It does not change the Python versions used by consumer tests.
+
+### Included tooling
+
+The configuration is the authoritative include list. These groups contained 38
+Python files at adoption; matching new files join the check automatically.
+Use `npm run lint:python -- --show-files` to inspect the actual inventory.
+Python typing slices use this same surviving-tooling inventory and declare their
+smaller coverage separately.
+
+| Included group | Purpose |
+| --- | --- |
+| `apps/maintenance/**/*.py` | Recommendation parsing, closeout helpers and their fixtures |
+| `docs/*.py`, `docs/diagrams/*.py`, `docs/skins/*.py`, `docs/system-design/**/*.py` | Drift checks and maintained generators/checks for retained documentation |
+| `scripts/performance/*.py`, `scripts/check-performance.py` | Measurement and isolated-supervision tooling |
+| `tests/performance/**/*.py`, `tests/performance_linux/**/*.py`, `tests/performance_standalone/**/*.py` | The measurement and supervision tests |
+| `modules/nanoleaf/tests/fixtures/*.py` | Synthetic reference-fixture generation for the maintained port |
+| `modules/onn/native/**/*.py` | Offline native-reader checks, reproduction and tests |
+
+Retained Python consumer packages and their controller tests are outside this
+adoption under the [October 6 scope decision](https://github.com/jimmie-potts/agent-device-hub/issues/766#issuecomment-6009423886).
+Their existing checks continue until separately authorized retirement. The
+removed Work Guide adds no files. Saved source snapshots under
+`docs/diagrams/legacy/`, third-party reference assets and generated reference
+pages, `scripts/performance/vendor/`, private `.local/` data and Git-ignored
+outputs are excluded. BB-8 remains hibernated. Adding a maintained tooling group
+requires an explicit include entry and its Python target and purpose here.
+
+### Rules and exceptions
+
+The selected base is `E4`, `E7`, `E9` and `F`, Ruff's original defect-focused
+default set. It is explicit because newer Ruff defaults include more rules.
+The selected bugbear rules reject mutable defaults, calls in defaults,
+control flow that swallows exceptions in `finally`, unbound loop closures and
+implicit exception chaining: `B006`, `B008`, `B012`, `B023` and `B904`.
+
+The exact-file exceptions in `ruff.toml` keep existing compact statements and
+assigned lambdas in fixtures and documentation/performance generators.
+They suppress only `E701`, `E702` and `E731`; every selected correctness rule
+still runs in those files. This avoids a formatting migration during adoption.
+Remove an exception when its file no longer needs that notation.
+
+Inline exceptions name one rule and its reason. Existing source-path setup
+requires `E402` exceptions before importing a selected reference checkout.
+`B023` exceptions identify callbacks consumed synchronously before their loop
+advances. Two CLI exits retain their existing implicit exception context with
+`B904` exceptions. The Nanoleaf recorder retains one upstream initialization
+import with `F401`. Do not suppress a file or rule group to conceal a new defect.
+
+### Validation and hosted evidence
+
+`npm run test:lint:python` invokes the configured lint command with synthetic
+source on stdin. An undefined name and a mutable default each exit with status 1;
+a clean replacement exits with status 0. It also checks that file discovery
+includes the maintained tooling and omits retained consumers and source copies.
+No probe writes into a production source file or reads installed data.
+
+The existing Retained documentation checks job installs the pinned tool and runs
+lint plus these controls once on each ready PR and full Release qualification.
+A lint failure stops that job. The job is outside product test matrices and keeps
+its existing name, so the delivery preflight already requires its success.
+Workflow and selector fixtures preserve this routing and conservative admission
+for toolchain changes. A green main Integration job does not prove Ruff ran.
+
+The expected-failure controls prove the checker rejects bad input when the test
+runs. They do not prove that a native Actions job failed. For initial hosted gate
+acceptance, use an isolated disposable candidate containing an undefined name
+and mutable default in a temporary file under `tests/performance/`. Read the
+failed lint step and job, remove the probe, then verify the clean exact PR head
+and a pinned integrated qualification revision. Keep the source, run links and
+results in the delivery issue/PR; no permanent bad example belongs in the linted
+inventory.

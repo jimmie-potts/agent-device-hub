@@ -15,6 +15,7 @@ import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {RuntimeFeeds, type RuntimeData} from './runtime-feeds.ts';
 import {moduleOwner} from './modules.ts';
 import {sendAction, sendUpload} from './actions.ts';
+import {MusicCaptureFeed} from './music-capture-feed.ts';
 
 /** The source every browser session acts as, which the runtime's gateway gives the dashboard (Hub #835). */
 export const DASHBOARD_SOURCE = 'bunny/parts/dashboard';
@@ -75,6 +76,7 @@ export class DashboardConnection {
   #participant: RemoteParticipant | undefined;
   readonly #runtime: RuntimeFeeds;
   readonly #moduleScopes = new Set<ModuleScope>();
+  readonly #musicScopes = new Set<MusicCaptureFeed>();
   readonly #speechChecks = new Set<() => void>();
   #copy: SyncedCopy<SessionRecord> | undefined;
   #closed = false;
@@ -132,7 +134,7 @@ export class DashboardConnection {
     this.#closed = true;
     this.#cancelRetry();
     this.#runtime.close();
-    const scopes = [...this.#moduleScopes].map(scope => scope.close());
+    const scopes = [...this.#moduleScopes, ...this.#musicScopes].map(scope => scope.close());
     const participant = this.#participant;
     this.#participant = undefined;
     this.#copy = undefined;
@@ -144,6 +146,17 @@ export class DashboardConnection {
   readonly refreshPlaybackPlacement = async (): Promise<boolean> => this.#runtime.refresh([
     {owner: 'bunny/core', family: 'lighting-layout'}, {owner: 'bunny/core', family: 'playback-layout'},
   ]);
+
+  /** Audio reads use the shell participant; creating this scope neither starts capture nor opens an endpoint. */
+  openMusicCapture(): MusicCaptureFeed {
+    const participant = this.#participant;
+    if (participant === undefined || this.#closed || this.#state.feed !== 'connected' || this.#state.runtime.catalogFailed ||
+      this.#state.runtime.modules?.some(module => module.name === 'core' && module.state === 'running' && module.serves.includes('music-capture-state')) !== true) {
+      throw new SdkError(errorBody('unavailable', {detail: 'Music capture status is unavailable.'}));
+    }
+    const scope = new MusicCaptureFeed({participant, onClosed: () => {this.#musicScopes.delete(scope);}});
+    this.#musicScopes.add(scope); return scope;
+  }
 
   /** One mounted page owns its reads/copies; all pages use this connection's authenticated participant. */
   openModule(name: string): ModuleScope {
@@ -394,6 +407,10 @@ export class DashboardConnection {
 
   #update(change: Partial<DashboardState>): void {
     this.#state = {...this.#state, ...change};
+    if (this.#state.feed !== 'connected' || this.#state.runtime.catalogFailed ||
+      this.#state.runtime.modules?.some(module => module.name === 'core' && module.state === 'running') !== true) {
+      for (const scope of [...this.#musicScopes]) void scope.close();
+    }
     for (const check of [...this.#speechChecks]) check();
     for (const listener of this.#listeners) listener();
   }

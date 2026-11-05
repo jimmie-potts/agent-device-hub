@@ -567,12 +567,31 @@ void describe('moments', () => {
     });
   });
 
-  void it('refuses over Media with nothing playing to return to', async () => {
+  void it('plays over Media with nothing playing, leaves the player alone and blanks the art afterwards', async () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
-      assert.equal(await refusal(world.request('moment-play', MOMENT, moment('m-idle'))), 'invalid-state');
-      assert.equal(world.device.state().uploads, 0);
+      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-idle', {durationMs: 1000})));
+      await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device');
+      assert.equal((await world.outcome(requestId)).data.result, 'succeeded');
+      assert.equal(ended(world, requestId)?.ending, 'completed');
+      await waitFor(() => world.device.state().shown?.digests[0] === frameDigest(new Uint8Array(12288)) ? true : undefined, 'the blank frame');
+      assert.equal(world.display()?.mode, 'media');
+      assert.equal(world.display()?.player.intent, 'stopped');
+    });
+  });
+
+  void it('refuses over Media while an item is paused, since nothing could repaint it', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      const {list} = await readyPlaylist(world);
+      await world.outcome(await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id})));
+      await waitFor(() => world.display()?.player.state === 'playing' ? true : undefined, 'the playing playlist');
+      await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause'})));
+      const uploads = world.device.state().uploads;
+      assert.equal(await refusal(world.request('moment-play', MOMENT, moment('m-paused'))), 'invalid-state');
+      assert.equal(world.device.state().uploads, uploads);
     });
   });
 

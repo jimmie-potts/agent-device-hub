@@ -169,3 +169,6 @@ try {
     failedRefreshAborts: [...failedRefreshFamilies].sort(), physical: false}));
   await context.close();
 } finally {await browser.close(); await world.close();}
+
+// Explicit Music input measurements use only a numeric producer fixture.
+await import('./music-capture.browser.ts');

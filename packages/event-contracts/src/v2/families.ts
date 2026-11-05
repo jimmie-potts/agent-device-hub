@@ -12,6 +12,7 @@ export type {LightingLayout, LightingLayoutRecord, LightingLayoutSetRequest, Lig
 // shared blocks. `MAPPING.md` shows where each 1.x field lands. The device families are in `devices.ts`.
 import {companionFamilies} from './companions.js';
 import {codingFamilies} from './coding.js';
+import {musicCaptureFamilies} from './music-capture.js';
 import {artFamilies} from './art.js';
 import {createHash} from 'node:crypto';
 import type {ErrorDetail, Message, MessageValidator, PayloadCheck} from './index.js';
@@ -386,6 +387,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('microduck-dispatch', 'command', 'org.bunny.microduck.dispatch.requested', message => message.subject === 'microduck' ? undefined : 'MicroDuck dispatch subject mismatch'),
   ...companionFamilies,
   ...codingFamilies,
+  ...musicCaptureFamilies,
   ...artFamilies,
   ...assistantFamilies,
   ...lightingLayoutFamilies,

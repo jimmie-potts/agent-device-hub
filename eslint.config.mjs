@@ -15,7 +15,7 @@ const unused = {
 // New code under the strict profile (Hub #867). Staged imported code joins when its module story converts it; the
 // Pixoo snapshot joined with its module (Hub #843), so nothing is staged now.
 // tests/strict_profile.test.mjs reads both lists, so its convention guards follow any path added here.
-export const strict = ['apps/runtime/**/*.{ts,tsx}', 'apps/volcano-collector/**/*.ts', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}', 'packages/event-contracts/src/v2/**/*.ts'];
+export const strict = ['apps/runtime/**/*.{ts,tsx}', 'apps/volcano-collector/**/*.ts', 'apps/music-producer/**/*.ts', 'packages/sdk/**/*.{ts,tsx}', 'modules/**/*.{ts,tsx}', 'packages/event-contracts/src/v2/**/*.ts'];
 export const staged = [];
 // Tests, their fixtures and helpers read an error to report a failure and spell out the bodies they expect, so the
 // safe-error rules (Hub #953) skip them. The strict rules still apply.
@@ -29,6 +29,8 @@ export const streamOwners = [
   'modules/roborock/bin/setup.mjs',
   // The explicit disposable MicroDuck fixture CLI owns its one ready line.
   'modules/microduck/src/fixture.ts',
+  // The explicit Music producer CLI owns fixed startup and stop notices.
+  'apps/music-producer/src/cli.ts',
 ];
 // Code under the profile has no inline ESLint comments: each one is ignored and reported, and lint allows no
 // warnings. An exception is a config entry after the profile blocks, scoped to its files, with a comment saying why.

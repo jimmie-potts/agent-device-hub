@@ -209,6 +209,40 @@ or uncertain save, refresh before editing again. Refresh reads
 current records without replaying any save or playback command. General Home
 layout editing and audio routing remain separate work.
 
+## Music input measurement
+
+Audio also has a separate **Music input measurement** card. It shows the core's
+capture status and explicit **Start measuring Music** and **Stop measuring**
+controls. Opening Audio, another tab, reload and reconnect only read state.
+The existing playback card and its transport controls are unchanged.
+
+The meter uses current Music.app measurements from the selected producer
+endpoint and generation. Zero means measured silence; missing or expired data
+shows **Input level unavailable**. Its visual scale ends at digital full scale,
+while the RMS and peak numbers retain measured values above that scale.
+Full-scale crossings report the fraction of samples at or above full scale.
+These values do not establish speaker volume or physical timing.
+
+A core sync request and its receipt bound the meter's clock estimate. Excessive
+latency, a local clock jump or lost state freshness hides the measurement.
+**Refresh capture status** performs one read to qualify it again. It never
+restarts capture or clears an uncertain command. Start and Stop retain separate
+tracked attempts, so a permitted Stop remains available during an unresolved
+Start. Read-only access, stale command records and unavailable producer state
+disable actions. A stopped session does not invent a result for an older
+uncertain Start; that Start remains locked until its tracked outcome resolves.
+
+This card measures input only. Microphone input and light effects are not
+available here. It cannot enable a missing Mac producer or grant macOS
+permission. `MusicCaptureFeed` owns one state copy and one feature subscription
+on the existing dashboard participant and closes them when Audio unmounts or
+its connection ends. It retains no measurement history.
+
+The numeric-only source fixture in `tests/music-capture.browser.ts` exercises
+the real disposable core and gateway. It runs through both the Music-card
+browser entry and hosted smoke. Its screenshots and accessibility checks are
+source evidence; installation and physical acceptance remain separate.
+
 ## Reusable Pixoo controls
 
 Home, the Pixoo device page and Player mount the module's `PixooDisplay` through

@@ -93,7 +93,7 @@ test('a fully evidenced source candidate reports every applicable gate satisfied
 });
 
 test('the real GitHub Actions configuration enumerates the expected jobs and routes Markdown-only changes', () => {
-  assert.deepEqual(Object.keys(WORKFLOW_FILES).sort(), ['checks.yml', 'integration.yml', 'release-qualification.yml', 'workflow.yml']);
+  assert.deepEqual(Object.keys(WORKFLOW_FILES).sort(), ['checks.yml', 'codeql.yml', 'integration.yml', 'music-native.yml', 'release-qualification.yml', 'workflow.yml']);
   assert.equal(fs.existsSync(path.join(root, DEPOT.directory)), false, 'Depot workflows are retired (#870)');
   const workflows = Object.entries(WORKFLOW_FILES).map(([file, text]) => parseWorkflow(file, text));
   const source = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['scripts/a.mjs'], filesComplete: true }, ACTIONS);
@@ -101,6 +101,8 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
   assert.deepEqual(source.jobs.map(item => item.name).sort(), [
     'App verification on ubuntu-latest',
     'Build, lint and core tests on ubuntu-latest',
+    'CodeQL analysis (javascript-typescript)',
+    'CodeQL analysis (python)',
     'Firmware host tests and ARM build on ubuntu-latest',
     'Retained documentation checks',
     'Runtime verification on ubuntu-latest',
@@ -116,6 +118,8 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
     'Checks / Runtime verification on ubuntu-latest',
     'Checks / Select affected checks',
     'Checks / Selected checks gate',
+    'CodeQL / CodeQL analysis (javascript-typescript)',
+    'CodeQL / CodeQL analysis (python)',
     'Workflow / Retained documentation checks',
     'Workflow / Workflow checks on ubuntu-latest',
   ]);
@@ -123,17 +127,17 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
   assert.equal(source.selection.mode, 'full');
   assert.deepEqual(source.uncertain, []);
   const push = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['docs/work-guide/a.md', 'README.md'], filesComplete: true }, ACTIONS);
-  // Hub #861's main-push filter remains; a PR must still emit its required core check.
-  assert.deepEqual(push.jobs.map(item => item.name).sort(), ['Integrated source checks']);
+  // Main security analysis is separate from cheap Integration and full qualification.
+  assert.deepEqual(push.jobs.map(item => item.name).sort(), ['CodeQL analysis (javascript-typescript)', 'CodeQL analysis (python)', 'Integrated source checks']);
   const mixed = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/sdlc.md', 'apps/hub/src/server.ts'], filesComplete: true }, ACTIONS);
-  assert.equal(mixed.jobs.length, 8, 'one non-Markdown path keeps every job expected');
+  assert.equal(mixed.jobs.length, 10, 'one non-Markdown path keeps every job expected');
   assert.ok(mixed.jobs.every(item => item.selected), 'an old-system path selects every job');
   const incomplete = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/a.md'], filesComplete: false }, ACTIONS);
-  assert.equal(incomplete.jobs.length, 8, 'an incomplete file list keeps every job expected');
+  assert.equal(incomplete.jobs.length, 11, 'an incomplete file list keeps every job expected');
   assert.ok(incomplete.jobs.every(item => item.selected), 'an incomplete file list selects every job');
   // Hub #1080: a narrow change still expects every job, but the jobs it leaves out are expected to be skipped.
   const narrow = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['apps/maintenance/src/planner.ts'], filesComplete: true }, ACTIONS);
-  assert.equal(narrow.jobs.length, 8);
+  assert.equal(narrow.jobs.length, 10);
   assert.deepEqual(narrow.jobs.filter(item => !item.selected).map(item => item.name).sort(), [
     'App verification on ubuntu-latest', 'Firmware host tests and ARM build on ubuntu-latest', 'Runtime verification on ubuntu-latest',
   ]);
@@ -251,6 +255,7 @@ test('CI: a candidate that edits its workflows cannot drop an expected job unnot
 const depotEra = { 'ci.yml': WORKFLOW_FILES['checks.yml'], 'workflow.yml': WORKFLOW_FILES['workflow.yml'] };
 const moveWorld = () => {
   const world = cleanWorld();
+  world.checkRuns[HEAD].push(checkRun('Music native compile and synthetic tests', HEAD, world.checkRuns[HEAD][0].check_suite.id));
   // A Depot-era base also holds disabled copies under .github/workflows; Depot's directory decides.
   world.workflows[BASE] = { [DEPOT.directory]: { ...depotEra }, [ACTIONS.directory]: { 'ci.yml': 'name: Stale\non: pull_request\njobs: {}\n' } };
   world.files.push(
@@ -284,7 +289,11 @@ test('CI: a Depot-era revision expects Depot check runs under "<workflow> / <job
   const world = cleanWorld();
   world.workflows[HEAD] = { [DEPOT.directory]: { ...depotEra }, [ACTIONS.directory]: { 'ci.yml': 'name: Stale\non: pull_request\njobs: {}\n' } };
   world.checkSuites[HEAD] = [suite(9400, HEAD, 'claude/gh-700-example', { app: { slug: DEPOT.app } })];
-  const depotNames = EXPECTED_JOBS.map(name => ((name.startsWith('Workflow checks') || name.startsWith('Retained documentation')) ? `Workflow / ${name}` : `Checks / ${name}`));
+  const depotNames = expectedJobs(
+    Object.entries(depotEra).map(([file, text]) => parseWorkflow(file, text)),
+    { event: 'pull_request', branch: 'main', files: ['scripts/a.mjs'], filesComplete: true },
+    DEPOT,
+  ).jobs.map(item => item.name);
   world.checkRuns[HEAD] = depotNames.map(name => checkRun(name, HEAD, 9400, { app: { slug: DEPOT.app } }));
   publishSelection(world, HEAD);
   const ci = gate(await preflight(world), 'ci-pr');
@@ -325,7 +334,8 @@ test('CI: a Markdown-only PR requires the core and gate while product jobs remai
   assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
   assert.deepEqual(ci.evidence.selection.groups, []);
   assert.deepEqual(ci.evidence.jobs.filter(item => item.selected !== false).map(item => item.name).sort(), [
-    'Build, lint and core tests on ubuntu-latest', 'Retained documentation checks',
+    'Build, lint and core tests on ubuntu-latest',
+    'CodeQL analysis (javascript-typescript)', 'CodeQL analysis (python)', 'Retained documentation checks',
     'Select affected checks', 'Selected checks gate', 'Workflow checks on ubuntu-latest',
   ]);
   assert.deepEqual(ci.evidence.jobs.filter(item => item.selected === false).map(item => [item.name, item.result]).sort(), [
@@ -1234,9 +1244,9 @@ test('a live finish line cannot be satisfied by source, CI or simulator evidence
 });
 
 test('workflow filters treat ** as GitHub does, including dot-files', () => {
-  const workflows = ['checks.yml', 'integration.yml', 'release-qualification.yml', 'workflow.yml'].map(file => parseWorkflow(file, WORKFLOW_FILES[file]));
+  const workflows = Object.entries(WORKFLOW_FILES).map(([file, text]) => parseWorkflow(file, text));
   const dotfile = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/.gitignore'], filesComplete: true }, ACTIONS);
-  assert.equal(dotfile.jobs.length, 8, 'a dot-file is not Markdown, so both workflows apply');
+  assert.equal(dotfile.jobs.length, 10, 'a dot-file is not Markdown, so admission and security workflows apply');
   for (const [pattern, file, expected] of [
     ['docs/work-guide/**', 'docs/work-guide/.gitignore', true], ['docs/work-guide/**', 'docs/work-guides/a.md', false],
     ['**/README.md', 'README.md', true], ['**/README.md', 'a/.b/README.md', true], ['docs/*.md', 'docs/a/b.md', false], ['a.b', 'axb', false],
@@ -1639,4 +1649,11 @@ test('main source evidence distinguishes independent release qualification from 
   assert.match(result.filtered[0].reason, /source integration is not release eligibility/);
   const unknown = { ...release, file: 'unknown.yml' };
   assert.match(expectedJobs([unknown], { event: 'push', branch: 'main', files: [], filesComplete: true }, ACTIONS).uncertain.join(), /reusable workflow jobs are not enumerated/);
+});
+
+
+test('music native source checks are required when the selected PR changes its producer', () => {
+  const workflows = Object.entries(WORKFLOW_FILES).map(([file, text]) => parseWorkflow(file, text));
+  const expected = expectedJobs(workflows, {event: 'pull_request', branch: 'main', files: ['apps/music-producer/native/main.m'], filesComplete: true}, ACTIONS);
+  assert.ok(expected.jobs.some(item => item.name === 'Music native compile and synthetic tests'));
 });

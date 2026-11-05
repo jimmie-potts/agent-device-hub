@@ -414,8 +414,8 @@ attempts in all. The step limits (20 minutes for the browser installs, 14 for th
 hook step) and the job limits leave room for two stalled attempts. Because it
 changes apt's configuration and stops every `apt-get`, the script refuses to run
 unless `GITHUB_ACTIONS` is `true`.
-Active workflow files are `checks.yml`, `workflow.yml`, `integration.yml` and
-`release-qualification.yml`. The Work Guide
+Active workflow files are `checks.yml`, `workflow.yml`, `integration.yml`,
+`release-qualification.yml` and `codeql.yml`. The Work Guide
 workflow and its path exceptions are removed. The existing Workflow workflow
 owns both Workflow checks and Retained documentation checks.
 
@@ -702,6 +702,24 @@ and keep the waits that test safety behavior.
 ## Static analysis
 
 See [Static analysis](static-analysis.md#static-analysis) for the authoritative procedure.
+The separate [CodeQL procedure](static-analysis.md#codeql-security-analysis) covers
+source-security results, permissions and the weekly scan. Its two analysis jobs
+run on ready PRs and main independently of the eight existing admission jobs.
+The native findings result is a separate merge check; scanner success alone does
+not establish that findings passed.
+
+For Python development tooling, install the separate pinned requirements and run
+`npm run lint:python` and `npm run test:lint:python` as described in
+[Python tooling](static-analysis.md#python-tooling). The existing Retained
+documentation checks job runs both commands once on ready PRs and full release
+qualification. Main Integration does not run them. Changes to the tool pin,
+configuration or workflow retain conservative admission.
+
+For the selected surviving Python tooling, run `npm run typecheck:python` and
+`npm run test:python-types` after `npm ci`. The [staged typing procedure](static-analysis.md#staged-python-type-checking)
+owns coverage, Python targets and direct consumer checks. The Workflow checks job
+runs both commands on ready PRs and full release qualification; ordinary main
+Integration is separate.
 
 ### Adoption baseline
 
@@ -787,6 +805,14 @@ it supports the lightweight review policy, a missing legacy report is advisory;
 verify the actual independent review directly in the PR. This exception does not
 waive CI, lint, safety findings, source identity or live-acceptance requirements.
 Do not fabricate extra reviews merely to satisfy this optional parser.
+
+The preflight enumerates both CodeQL analysis jobs from their workflow. It does
+not interpret native Code scanning results from another GitHub app. Before merge,
+verify that result separately for the actual PR analysis, including both languages
+and every new `error`, `high` or `critical` finding, as described in
+[CodeQL security analysis](static-analysis.md#codeql-security-analysis). Missing,
+failed or inaccessible findings evidence remains unresolved even when the analysis
+jobs and this optional preflight succeed.
 
 The tool only reads. Before any network use, its GitHub client refuses every
 request except `GET` and the tool's own two GraphQL query documents, matched by
@@ -1842,6 +1868,13 @@ for the acceptance exercise.
 
 ## Nanoleaf port
 
+The internal prepared-music timeline helper (#1273) is covered by
+`modules/nanoleaf/tests/music-timeline.test.ts`, discovered by the existing
+`test:nanoleaf:built` CI suite. After the root build, its focused check is
+`node --test modules/nanoleaf/dist/tests/music-timeline.test.js`; run the full
+Nanoleaf, typecheck, lint and workflow checks before delivery. Its explicit-clock
+and synthetic Lines/NL22 results establish no worker admission or physical timing.
+
 Hub #26 ports the Nanoleaf domain logic to TypeScript in `modules/nanoleaf`, under
 the strict profile, and Hub #844 runs it as the runtime's shipped module
 `nanoleaf` ([README](../modules/nanoleaf/README.md)).
@@ -1915,6 +1948,29 @@ last bit.
 checkout, as PORTING.md describes; CI does not run it.
 
 Sonos artwork (#1162) uses the existing playback, runtime and scenario test discovery in core CI. After the root build, run `npm run test:playback:built`, `npm run test:tidbyt-module:built`, `npm run test:pixoo:built`, `npm run test:runtime:built`, `npm run test:runtime:scenarios:built` and `node apps/runtime/dashboard/tests/playback-artwork.browser.ts`. The `speaker-artwork` disposable scenario covers both source acquisitions, the no-art handoff and both real display renderers. Unit tests cover Sonos XML extraction, source-specific URL admission, late results and passive content; synthetic evidence does not establish installed or physical acceptance. No workflow change is needed: all of these existing suites are already selected for playback/runtime changes.
+
+## Music producer checks
+
+Use Node 24 and `npm ci`. Run `npm run build`, `npm run typecheck`,
+`npm run lint:js` and `npm run test:music-producer:built`, plus event, SDK,
+runtime and workflow checks for the authenticated capture integration.
+`npm run test:music-producer:native` compiles and runs portable synthetic signal
+checks on Linux or macOS. The shared Checks job runs both producer suites.
+
+On macOS, also run `npm run build:music-producer:native` to compile the Core Audio
+capture adapter and the separate read-only Music state/position helper. The Music native source workflow runs portable tests and compilation on
+macOS 15 with explicitly selected Xcode 26.3 from the
+[hosted runner image](https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md), including `npm run test:music-producer:adapter` with fake Core Audio
+and AppleEvent access. The position cases cover pinned process identity, partial
+results, descriptor validation and bounded read cancellation. These commands
+never start real capture, send application AppleEvents or change permissions.
+The owning [producer guide](../apps/music-producer/README.md) records packaging,
+permissions and supported input limits. A successful compile is not evidence of
+permission behavior, protected-content access, speaker routing or physical sync.
+
+Tests use synthetic PCM, fake sources/clocks and disposable loopback SDK peers.
+Keep real audio-derived observations and camera recordings private. Installed
+capture, microphone and light trials belong to the selected music pilot.
 
 ## Playback module checks
 

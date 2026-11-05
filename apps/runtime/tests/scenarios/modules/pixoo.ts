@@ -310,6 +310,15 @@ const pixooMoment: Scenario = {
     expect('Monitor shows the session that needs attention', h => (pixooDisplay(h)?.showing === 'dashboard' && pixooDisplay(h)?.monitor.attention === 1) || `display ${show(pixooDisplay(h))}`, 5000),
     act('the approval resolves', h => publish(h, approvalResolved('approve-moment'))),
     act('the operator selects Media', h => dispatchOnce(h, 'operator', 'pixoo-media', pixooMode('media'), 'pixoo-moment-media')),
+    act('a flourish arrives with nothing playing', h => dispatchOnce(h, 'operator', 'moment-idle', momentOf(h, 'moment-idle', {priorityClass: 'flourish', coversStatus: false}), 'moment-idle-1')),
+    expect('the moment shows without changing the mode or the player', h => {
+      const display = pixooDisplay(h);
+      return (display?.showing === 'moment' && display.mode === 'media' && display.player.state !== 'playing') || `display ${show(display)}`;
+    }, 5000),
+    expect('it completes and nothing starts playing', h => {
+      const display = pixooDisplay(h), done = momentEnding(h, 'moment-idle-1', 'completed');
+      return done === true ? (display?.showing === 'none' && display.player.state !== 'playing') || `display ${show(display)}` : done;
+    }, 8000),
     ...pixooPlaylist(),
     act('the operator starts the playlist', h => startPlaylist(h, 'pixoo-start', 'pixoo-moment-start')),
     expect('the start completes', h => completedAs(h, 'pixoo-moment-start', 'succeeded', 'transmitted'), 8000),

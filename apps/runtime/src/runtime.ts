@@ -5,6 +5,7 @@ import {registerReadReceiptFamily} from '@jimmie-potts/event-contracts/v2/read-r
 // browser sessions its configuration file's `edge` section grants.
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
+import {MUSIC_PRODUCER_SOURCE} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {recordLog, MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler, Outcome} from '@jimmie-potts/sdk';
 import {isWisprModule} from '@jimmie-potts/wispr';
@@ -371,6 +372,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       await endTracing();
       throw error;
     }
+    core?.setMusicCaptureRetirement(() => gateway.edge.disconnect(MUSIC_PRODUCER_SOURCE));
     edge = {state: 'serving', gateway};
     recordLog(log, 'runtime.edge.serving', {'server.port': bound, 'bunny.grant_count': credentials.length});
     options.edge.onServing?.(gateway.edge);
