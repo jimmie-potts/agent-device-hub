@@ -1,6 +1,6 @@
 # Selected microphone source evidence
 
-This is the bounded source increment for [#721](https://github.com/jimmie-potts/agent-device-hub/issues/721), based on the reviewed controls revision `34d638a0df86a7e478a59540dc8915b2bc529388`. It preserves the full issue's remaining calibration, tuning, richer analysis and installed/physical qualification. No real audio source, microphone enumeration, permission prompt, installed process or physical device was used.
+This is the bounded source increment for [#721](https://github.com/jimmie-potts/agent-device-hub/issues/721), initially reviewed against controls revision `34d638a0df86a7e478a59540dc8915b2bc529388`. It preserves the full issue's remaining calibration, tuning, richer analysis and installed/physical qualification. No real audio source, microphone enumeration, permission prompt, installed process or physical device was used.
 
 ## Behavioral evidence
 
@@ -31,7 +31,7 @@ Node 24.22.0 and the existing Python 3.14.8 environment were used. `npm ci` comp
 | `npm run test:music-producer:native` | Portable synthetic analysis/concurrent transfer passed. |
 | `npm run build:music-producer:native` | macOS source compilation passed; no capture executed. |
 | `npm run test:music-producer:adapter` | All substituted Music/microphone/setup cases passed. |
-| `npm run check:workflow`, `npm run test:workflow` | Passed after archive; 280 workflow tests. After synchronization/archive: 91 specs, zero active changes and 262 archives; strict spec validation passed. |
+| `npm run check:workflow`, `npm run test:workflow` | Passed after archive; 280 workflow tests. Initial archive inventory: 91 specs, zero active changes and 262 archives; strict spec validation passed. |
 
 The default shell Python lacked `jsonschema`; the supported Python 3.14 environment passed. A sandboxed package attempt could not write npm cache logs; the disposable package check passed with scoped cache access. These setup failures caused no product changes.
 
@@ -44,3 +44,45 @@ The full macOS SDK suite twice passed 397 of 398 tests; the unchanged oversized-
 The coordinator performed an independent focused native permission/input safety review of `34d638a0...f41b2c41`, read the UID/permission/output-stream/teardown paths against Apple's installed SDK declarations and ran the substituted adapter suite in a separate frozen copy. It found no blockers. Those reviewed production paths remain unchanged. Full independent Standards/Specification review is still required on the final committed comparison, followed by applicable hosted CI.
 
 These checks do not qualify actual microphone formats or acoustic quality, system permission behavior, signed-helper identity, Bluetooth route effects, protected Music access, installed recovery or physical light timing. Calibration and response tuning are not implemented. The capture path changes no light policy, renderer intake, worker admission or device writer.
+
+
+## Integration onto merged prerequisites
+
+The reviewed `23cab8ac79ee123a7a152cdf49f61033645f340d` is retained locally as
+`codex/gh-721-selected-microphone-reviewed`. Its three microphone commits were
+rebased from `34d638a0df86a7e478a59540dc8915b2bc529388` onto merged main
+`f2514917bb2614de881565e583b70c29e3bb4f64`. The new base includes the separately
+reviewed position helper and prepared timeline, and the merged controls.
+
+The only manual conflicts were in the producer README, native README and
+`docs/development.md`. Their resolutions preserve both capture and position-reader
+behavior and checks. The two native scripts combined automatically: capture
+retains AVFoundation, and the separate position helper retains AppKit and
+CoreServices. Range comparison shows only those script contexts and combined
+prose; the final microphone specification/layout commit is unchanged.
+
+Direct comparison with the reviewed head confirms that the capture native code,
+configuration, supervisor, producer, contracts, runtime server and dashboard
+source are unchanged. Direct comparison with the new base confirms that the
+position implementation/tests and timeline implementation/tests/specifications
+are preserved unchanged. Root manifests and the lockfile are unchanged. No new
+calibration behavior was implemented.
+
+Renewed checks all passed on the integrated source:
+
+- Root build, typecheck and JavaScript lint.
+- Native build for both helpers; substituted capture, microphone/permission and
+  position adapters, including 40 position scenarios; portable signal tests.
+- All 43 producer tests, including the selected microphone and position reader.
+- All 13 prepared-timeline tests.
+- Workflow validation and all 280 workflow tests; strict validation of all 93
+  capability specs. Final inventory is 93 specs, zero active changes and 264
+  archives.
+
+The incoming controls files and the final microphone UI source are identical to
+the reviewed versions. No UI integration change invalidates the preceding full
+browser and focused maximum-alias acceptance. The preceding Linux core/SDK and
+native-safety evidence covers unchanged microphone behavior. Independent delta
+confirmation and applicable hosted CI remain the publication gates. Every renewed
+native test uses substituted APIs; no actual audio, permissions, AppleEvents,
+installed process or device was exercised.
