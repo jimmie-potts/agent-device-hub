@@ -3,6 +3,7 @@ import type {HomeArrangements, HomeLayoutRecord} from '@jimmie-potts/event-contr
 import {createCoreModule} from '../src/core/core.js';
 import type {Action} from '../src/core/tracker.js';
 import {contextOf, edgeConfig, fixture, it, run, stateDir, waitFor} from './support.js';
+import {World} from './fixtures/store-world.js';
 
 type Saved = {id: string; revision: number; version: number; layouts: object | null};
 const arrangements = (): HomeArrangements => ({desktop: [{widget: 'hub-mode', size: 'medium', hidden: false}, {widget: 'art', size: 'medium', hidden: false, art: {format: 'banner', pinned: true}}],
@@ -136,24 +137,28 @@ it('Home expiry is checked at the transaction boundary without a saved metadata 
   } finally {db.close();}
 });
 
-it('older Home saves retain explicit art options while replacement, removal and reset remain deliberate', async () => {
-  const db = new DatabaseSync(':memory:');let responder: Responder<HomeLayoutSetRequest> | undefined, revision = 0;
+it('older Home saves preserve art options and original command identity while explicit changes remain deliberate', async context => {
+  const world = await World.open(context);let responder: Responder<HomeLayoutSetRequest> | undefined, sequence = 0;
   const part = new HomeLayoutPart({admit: () => true, complete: () => () => {}, end: () => {}});
-  const now = Date.now();
+  const now = world.clock.now();
   const sdk = {respond: (_pattern: string, receive: Responder<HomeLayoutSetRequest>) => {responder = receive;return Promise.resolve();}} as unknown as Sdk;
-  const core = {sdk, ready: Promise.resolve(), transaction: (work: (tx: CoreTransaction) => unknown) => Promise.resolve(work({atMs: now, revision: () => ++revision, add: () => {}, take: () => {}} as unknown as CoreTransaction))} as CoreHandle;
+  const core = {sdk, ready: Promise.resolve(), transaction: world.store.transaction.bind(world.store)} as CoreHandle;
   const saved = (): HomeLayoutRecord => part.states(['home-layout'])[0]?.data as HomeLayoutRecord;
   const save = async (layouts: HomeArrangements): Promise<void> => {
     assert.ok(responder !== undefined);
-    const requestId = `art-options-${revision}`;
+    const requestId = `art-options-${sequence++}`;
     const command: Command<HomeLayoutSetRequest> = {specversion: '1.0', bunnyprofile: '2.0', id: requestId, source: 'bunny/core',
       type: 'org.bunny.home-layout.set.requested', subject: 'home', time: new Date(now).toISOString(), expiresat: new Date(now + 1000).toISOString(),
       kind: 'command', datacontenttype: 'application/json', dataschema: 'https://bunny.invalid/events/home-layout-set/2.0',
       traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01', data: {requestId, expectedRevision: saved().revision, layouts}};
+    const original = JSON.stringify(command);
     assert.deepEqual(await responder(command), {status: 'accepted'});
+    const intake = world.db.prepare('SELECT message FROM core_taken WHERE source = ? AND id = ?').get(command.source, command.id) as {message: string};
+    assert.equal(intake.message, original, 'the durable intake keeps the exact command, independently of normalized layout metadata');
+    assert.equal(world.store.received(command), 'duplicate', 'redelivery of the original envelope remains a duplicate');
   };
   try {
-    part.open(db);await part.start(core);await save(arrangements());
+    part.open(world.db);await part.start(core);await save(arrangements());
     const legacy = arrangements();
     for (const breakpoint of ['desktop', 'phone'] as const) for (const entry of legacy[breakpoint]) {delete entry.art;if (entry.widget !== 'art') entry.size = 'large';}
     await save(legacy);
@@ -165,5 +170,5 @@ it('older Home saves retain explicit art options while replacement, removal and 
     await save(explicit);assert.deepEqual(saved().layouts?.desktop.find(entry => entry.widget === 'art')?.art, art.art);
     await save({desktop: [], phone: explicit.phone});assert.deepEqual(saved().layouts?.desktop, []);
     await save({desktop: [], phone: []});assert.deepEqual(saved().layouts, {desktop: [], phone: []});
-  } finally {db.close();}
+  } finally {await world.store.drain();}
 });

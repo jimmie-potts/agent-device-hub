@@ -89,7 +89,7 @@ export class HomeLayoutPart implements CorePart {
         if (current === undefined || this.#save === undefined) return errorBody('unavailable', {detail: 'the Home layout store is not open'});
         if (Date.parse(command.expiresat ?? '') <= tx.atMs) return errorBody('expired', {detail: 'the Home layout command expired before saving'});
         if (current.revision !== command.data.expectedRevision) return errorBody('revision-conflict', {detail: 'the Home layout changed; refresh before saving'});
-        const layouts = command.data.layouts;
+        const layouts = structuredClone(command.data.layouts);
         // An older client can retain the art card without knowing its optional metadata.
         // Explicit options replace it; removing the placement (including reset) still removes it.
         for (const breakpoint of ['desktop', 'phone'] as const) {

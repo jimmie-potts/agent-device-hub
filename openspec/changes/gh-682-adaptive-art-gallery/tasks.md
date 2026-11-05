@@ -23,7 +23,7 @@
 - [x] 4.1 Add the actual browser journey through the real art owner and synthetic provider; verify request, favorite, feedback, revisit, read-only authority and no command replay after reload/restart.
 - [x] 4.2 Exercise banner/square/tall, full-screen omission, focus/pointer preservation and attention at 1440/390/320px; verify no overlap/overflow, zero layout-only device effects, light/dark axe and reduced motion.
 - [ ] 4.3 Add a disposable Gallery capture using the existing scenario adapter; verify visible interactions, private synthetic evidence and a final rendered art view, then obtain independent acceptance on the committed candidate.
-- [ ] 4.4 Run build then lint, type, event/contract/package, affected runtime/art/dashboard and workflow checks; run the full dashboard browser suite required by its guide and record any unrelated failures without widening scope.
+- [x] 4.4 Run build then lint, type, event/contract/package, affected runtime/art/dashboard and workflow checks; run the full dashboard browser suite required by its guide and record any unrelated failures without widening scope.
 
 ## 5. Review handoff
 
