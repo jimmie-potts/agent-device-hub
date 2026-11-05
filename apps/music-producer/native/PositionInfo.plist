@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>local.bunny.music-position</string>
+<key>CFBundleName</key><string>Bunny Music Position Reader</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>NSAppleEventsUsageDescription</key>
+<string>Read the already-running Music application's player state and position when explicitly requested. Playback and outputs are not changed.</string>
+</dict></plist>

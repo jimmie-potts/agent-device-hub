@@ -1,5 +1,5 @@
 import {artworkKey, type CardContext} from './card-context.js';
-import type {Player} from '../playback/index.js';
+import type {Player,PlayerState} from '../playback/index.js';
 import {presentationConfiguration,type MomentSetting,type PresentationConfiguration,type PresentationStatus,type IntegrationAction,type NowPlayingMedia,type NowPlayingSetting,type NowPlayingState} from '../core/index.js';
 import type {OperationResult,UploadResult} from '../device/index.js';
 import {DashboardService} from './dashboard-service.js';
@@ -39,7 +39,7 @@ type Moment=MomentPlay&{
  /** `preparing` gets its frames, `waiting` waits for its start, `holding` waits for the player's pause, and `showing` owns the display. */
  phase:'preparing'|'waiting'|'holding'|'showing';
  /** The base it covers, chosen at its start. */
- over:'monitor'|'media';
+ over:'monitor'|'media'|'idle';
  rgb:readonly Uint8Array[];generation:number;until:number;resolve:(result:MomentResult)=>void;
  upload?:OperationResult<UploadResult>|undefined;writing?:Promise<void>|undefined;writtenAt?:number;missed?:boolean;rejected?:boolean;
 };
@@ -108,6 +108,8 @@ export class MonitorPresentation {
    if(this.active&&(state.generation!==this.playerGeneration||!state.requestedScreenOn)){this.suspend();}
    // Any player change the takeover did not make, or screen-off, is the user's: never resume over it.
    if(this.takeover&&(state.generation!==this.takeover.generation||!state.requestedScreenOn))this.dropTakeover();
+   // Nothing held for a moment over an idle player, so any player change or screen-off is what ends it.
+   if(this.moment?.phase==='showing'&&this.moment.over==='idle'&&(state.generation!==this.moment.generation||!state.requestedScreenOn))this.endMoment('interrupted');
   });
  }
  status():PresentationStatus{return {configuration:structuredClone(this.configuration),sourceRevision:this.view?.snapshot?.revision??null,sourceConnection:this.view?.connection??'unavailable',renditionGeneration:this.dashboard.current()?.generation??null,generation:this.generation,pendingMode:this.pendingMode,participating:this.active,inFlight:this.inFlight?1:0,lastOutcome:structuredClone(this.lastOutcome)};}
@@ -122,7 +124,7 @@ export class MonitorPresentation {
  /** The dashboard renders only while Monitor participates; its layout follows every input. */
  submit(view:MonitorView){if(this.closed)return;this.view=structuredClone(view);this.dashboard.submit(view,this.configuration.filter,this.active);if(this.attention())this.popupUntil=0;if(this.attentionEnds())this.endMoment('preempted');this.invalidateCardWrite();this.onChange();}
  interrupt(){this.interrupts++;this.dropTakeover();this.suspend();}
- suspend(){this.cancelCardWrite();this.active=false;this.generation++;this.lastFrame='';this.popupUntil=0;if(this.moment?.phase==='showing'&&this.moment.over==='monitor')this.endMoment('interrupted');this.onChange();}
+ suspend(){this.cancelCardWrite();this.active=false;this.generation++;this.lastFrame='';this.popupUntil=0;if(this.moment?.phase==='showing'&&this.moment.over!=='media')this.endMoment('interrupted');this.onChange();}
  private attention():boolean{return this.view?.snapshot?.sessions.some(session=>session.attention.some(item=>blocking.has(item.kind)))??false;}
  /** Latest playback evidence. A new fresh track, or playback starting, is a start; stale reads are never one. */
  submitPlayback(status:PlaybackSourceStatus,context?:CardContext){
@@ -153,8 +155,8 @@ export class MonitorPresentation {
  momentSummary():{overMonitor:boolean;playing:string|null}{return {overMonitor:this.moments.overMonitor,playing:this.moment?.phase==='showing'?this.moment.momentId:null};}
  /**
   * Why a moment could not play now, or null when it could. Over Monitor it needs the hub's permission to cover status,
-  * the owner's setting and evidence that nothing needs attention. Over Media it needs a playlist in play, since a paused
-  * or stopped player has nothing to give back. A takeover keeps the display, and known attention stops either one.
+  * the owner's setting and evidence that nothing needs attention. Over Media it needs a playlist in play or an idle player,
+  * since nothing could repaint a paused or stopped item. A takeover keeps the display, and known attention stops either one.
   */
  momentBlock(coversStatus:boolean):string|null{
   const state=this.player.getState();
@@ -173,9 +175,13 @@ export class MonitorPresentation {
    return null;
   }
   if(this.takeover!==null||(this.takeoverPending&&this.moment?.phase!=='holding'))return 'Now Playing holds the display';
-  if(state.intent!=='active')return 'no playlist is playing to return to';
-  return null;
+  if(state.intent==='active'||this.idle(state))return null;
+  return state.itemId===null?'the display may show something else':'a held item could not be repainted';
  }
+ /** Whether what the display shows may not be ours: after an uncertain write, or under external control. */
+ private displayUnknown(state:PlayerState):boolean{return state.lastError?.priorEffects==='possible'||state.lastError?.code==='external-control';}
+ /** Whether nothing is loaded and the player is at rest, whether stopped or paused as Monitor leaves an empty player. */
+ private idle(state:PlayerState):boolean{return state.intent!=='active'&&state.itemId===null&&state.state!=='error'&&!this.displayUnknown(state);}
  /** Whether a moment holds a playlist paused, so that a manual next or previous still means to keep playing. */
  momentHoldsMedia():boolean{return this.takeover?.kind==='moment'||this.moment?.phase==='holding';}
  /**
@@ -231,8 +237,11 @@ export class MonitorPresentation {
   if(now>moment.startAtMs+moment.toleranceMs){this.refuseMoment(moment,'expired');return;}
   if(this.momentBlock(moment.coversStatus)!==null){this.refuseMoment(moment,'blocked');return;}
   if(this.configuration.mode==='monitor'){moment.over='monitor';moment.generation=this.playerGeneration;moment.phase='showing';this.momentWrite=true;this.onChange();return;}
+  const state=this.player.getState();
+  if(this.idle(state)){moment.over='idle';moment.generation=state.generation;moment.phase='showing';this.momentWrite=true;this.onChange();return;}
   moment.phase='holding';
-  this.hold('moment',()=>Infinity,()=>this.moment===moment&&this.configuration.mode==='media'&&this.momentBlock(moment.coversStatus)===null,held=>{
+  // A pause on a player that has since stopped would give the moment a playlist to resume over that stop.
+  this.hold('moment',()=>Infinity,()=>this.moment===moment&&this.configuration.mode==='media'&&this.player.getState().intent==='active'&&this.momentBlock(moment.coversStatus)===null,held=>{
    if(held===null){this.refuseMoment(moment,'blocked');return;}
    moment.generation=held;moment.phase='showing';this.momentWrite=true;
   });
@@ -418,7 +427,7 @@ export class MonitorPresentation {
  private clearArt(frame:Frame|null,gap:number):boolean{
   if(!this.artShown)return false;
   const state=this.player.getState();
-  if(frame!==null||state.intent==='active'||state.availability==='offline'||state.lastError?.priorEffects==='possible'||state.lastError?.code==='external-control'){this.artShown=false;return false;}
+  if(frame!==null||state.intent==='active'||state.availability==='offline'||this.displayUnknown(state)){this.artShown=false;return false;}
   if(this.active||this.takeover!==null||this.takeoverPending||this.pendingMode!==null||this.player.startPending()||!state.requestedScreenOn||this.inFlight||this.clock()-this.lastStart<gap)return false;
   this.artShown=false;this.inFlight=true;this.lastStart=this.clock();this.lastFrame='';
   void this.player.uploadDashboard([BLANK],state.generation,{whileStopped:true}).catch(()=>{}).finally(()=>{this.inFlight=false;this.onChange();});
@@ -491,7 +500,7 @@ export class MonitorPresentation {
    &&(this.active?this.popupUntil>this.clock()&&!this.attention():this.takeover===takeover&&takeover!==null&&this.clock()<takeover.until);
   const write=frame.card?{abort,current,key:frame.key}:null;this.cardWrite=write;
   this.inFlight=true;this.lastStart=this.clock();this.lastFrame=frame.key;this.onChange();
-  const upload=this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration,moment!==undefined?{current}:write===null?{}:{signal:abort.signal,current});
+  const upload=this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration,moment!==undefined?{current,whileStopped:moment.over==='idle'}:write===null?{}:{signal:abort.signal,current});
   if(moment!==undefined){
    moment.writtenAt=this.lastStart;
    moment.writing=upload.then(result=>{this.momentUploaded(moment,result);},()=>{moment.rejected=true;this.momentUploaded(moment,undefined);}).finally(()=>{this.inFlight=false;this.onChange();});

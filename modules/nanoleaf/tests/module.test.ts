@@ -578,7 +578,7 @@ suite('the session feed\'s generation guard', () => {
 });
 
 suite('a Lines and an NL22 Light Panels controller', () => {
-  test('each device has its own worker, record and map, and only the Lines take animations and machine edits', async context => {
+  test('each device has its own worker, record and map; Quiet refuses animations and Panels refuse machine edits', async context => {
     const world = await ModuleWorld.open(context, {
       section: {...SECTION, devices: [...SECTION.devices, {id: 'nl22', kind: 'panels', address: PANELS_ADDRESS, secret: 'token'}]},
       devices: {[LINES_ADDRESS]: 'lines', [PANELS_ADDRESS]: 'panels'},

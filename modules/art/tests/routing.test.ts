@@ -4,8 +4,8 @@ import {test, type TestContext} from 'node:test';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import type {ArtDispatch} from '@jimmie-potts/event-contracts/v2/art';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {InProcessBus, SdkError, type ModuleScheduler, type Snapshot, type TraceContext} from '@jimmie-potts/sdk';
-import {realDispatch, type ArtStageRequest} from '../src/seams.js';
+import {InProcessBus, SdkError, type ModuleScheduler, type Participant, type Snapshot, type TraceContext} from '@jimmie-potts/sdk';
+import {realDispatch, realWeather, type ArtStageRequest} from '../src/seams.js';
 import {artDevice, deviceDraft} from './device-fixtures.js';
 import {gradientPng} from './fixtures.js';
 import {gate, until} from './support.js';
@@ -19,7 +19,7 @@ async function world(t: TestContext) {
   const scheduler: ModuleScheduler = {after: (_delay, callback) => {scheduled.add(callback); return () => {scheduled.delete(callback);};}};
   await core.serveSync(['operation'], () => ({revision: 0, states: []}));
   await core.respond<ArtDispatch>('bunny.cmd.art-dispatch.art', command => {forwarded.push(command.data); return {status: 'accepted'};});
-  const dispatch = realDispatch({sdk, scheduler});
+  const dispatch = realDispatch({sdk, scheduler, signal: new AbortController().signal});
   let watches: Awaited<ReturnType<typeof dispatch.watch>> = [];
   const start = async () => {watches = await dispatch.watch(() => {}); await flush();};
   const stop = async () => {for (const subscription of watches) await subscription.close(); watches = [];};
@@ -148,4 +148,28 @@ void test('a held initial sync cannot route and closing it cannot revive a route
   assert.equal(w.scheduled.size, 0);
   await Promise.all([owner.update(artDevice('tidbyt', 'late', 2)), owner.update(artDevice('tidbyt', 'late', 3))]); await flush();
   assert.equal(owner.reads, 1, 'the late completed copy was closed and cannot resync');
+});
+
+void test('runtime abort prevents late device, operation and weather sync failures from scheduling retries', async t => {
+  const bus = new InProcessBus(), sdk = bus.connect('bunny/modules/art'), controller = new AbortController();
+  const held = gate<Snapshot | ErrorBody>(), owners: Participant[] = [], scheduled: (() => void | Promise<void>)[] = [];
+  let reads = 0;
+  for (const [source, family] of [['bunny/core', 'operation'], ['bunny/modules/weather', 'weather-state'],
+    ['bunny/modules/pixoo', 'device'], ['bunny/modules/tidbyt', 'device']] as const) {
+    const owner = bus.connect(source);
+    await owner.serveSync([family], () => {reads += 1; return held.promise;});
+    owners.push(owner);
+  }
+  const scheduler: ModuleScheduler = {after: (_delay, callback) => {scheduled.push(callback); return () => {};}};
+  const context = {sdk, scheduler, signal: controller.signal};
+  const weather = realWeather(context), dispatch = realDispatch(context);
+  const subscriptions = [...await weather.start(), ...await dispatch.watch(() => {})];
+  t.after(async () => {for (const subscription of subscriptions) await subscription.close();
+    await sdk.close(); for (const owner of owners) await owner.close();});
+  await until(() => reads === 4, 'all owner snapshots are pending');
+  controller.abort();
+  held.open(errorBody('unavailable'));
+  await flush();
+  assert.equal(scheduled.length, 0, 'the runtime abort precedes module.stop and forbids new timers');
+  assert.equal(weather.read(), null);
 });

@@ -6,6 +6,7 @@ import {useAttempt} from './command-control.tsx';
 import type {DashboardConnection} from './connection.ts';
 import type {RuntimeData} from './runtime-feeds.ts';
 import type {Route} from './routes.ts';
+import {MusicCaptureCard} from './music-capture-card.tsx';
 
 /** Composition and saved placement share the shell participant; no playback owner or room routing is added. */
 export function PlaybackWorkspace({runtime, connected, operations, operationsLive, connection, route, homeSource}: {
@@ -67,6 +68,8 @@ export function PlaybackWorkspace({runtime, connected, operations, operationsLiv
     {route.kind === 'audio' ? <header className="page"><h1>Audio</h1></header> : route.kind === 'home' && homeSource === undefined ? <h2>Music</h2> : null}
     {selected.length === 0 && <p className="hint">No playback records are available.</p>}
     <div className="music-grid">{selected.map(card)}</div>
+    {route.kind === 'audio' && <MusicCaptureCard connection={connection} connected={connected} coreLive={coreLive && !runtime.catalogFailed}
+      control={runtime.control} operations={operations} operationsLive={operationsLive}/>}
     {route.kind === 'audio' && <details className="music-placement"><summary>Show in rooms</summary>
       <p className="hint">Place the shared Music card in any room. This does not select a speaker or change AirPlay output.</p>
       {rooms.length === 0 && <p>Create rooms on the Rooms page first.</p>}

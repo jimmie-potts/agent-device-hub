@@ -169,15 +169,16 @@ test('the host-local profile over the real shipped list starts admitted modules 
   const edge = {credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback', launcher: false, mcp: false};
   const listed = runtimeModules.shippedModules.slice(1);
   // The container guide names this admissible set; a new module that declares no simulation must update it.
-  assert.deepEqual(listed.filter(registration => registration.simulation === undefined).map(({name}) => name).sort(), ['art', 'companions', 'weather', 'wispr']);
+  assert.deepEqual(listed.filter(registration => registration.simulation === undefined).map(({name}) => name).sort(), ['companions', 'weather', 'wispr']);
   const devices = listed.filter(registration => registration.simulation !== undefined);
   assert.ok(devices.some(({name}) => name === 'playback'));
   for (const {name} of devices) {
-    assert.throws(() => hostLocalModules({modules: {[name]: {}}, edge}, runtimeModules, checkConfiguration), {message: 'container-browser-config-refused'});
+    if (name !== 'art') assert.throws(() => hostLocalModules({modules: {[name]: {}}, edge}, runtimeModules, checkConfiguration), {message: 'container-browser-config-refused'});
   }
-  // Two device modules have a host-local section: Codex Desktop with remote sources only and no local home (Hub #567), and
-  // Volcano, whose collector runs beside the runtime (Hub #615).
-  assert.deepEqual(listed.filter(registration => registration.hostLocal !== undefined).map(({name}) => name), ['codex-desktop', 'volcano']);
+  // These simulated modules also have host-local sections: remote Codex Desktop, Volcano's collector, and Art without keys.
+  assert.deepEqual(listed.filter(registration => registration.hostLocal !== undefined).map(({name}) => name), ['codex-desktop', 'art', 'volcano']);
+  assert.deepEqual(hostLocalModules({modules: {art: {}}, edge}, runtimeModules, checkConfiguration).factories.map(({name}) => name), ['core', 'art']);
+  assert.throws(() => hostLocalModules({modules: {art: {secrets: {}}}, edge}, runtimeModules, checkConfiguration), {message: 'container-browser-config-refused'});
   assert.deepEqual(hostLocalModules({modules: {volcano: {id: 'volcano', hostId: 'mac-sim', sourceId: 'volcano-sim'}}, edge}, runtimeModules, checkConfiguration).factories.map(({name}) => name), ['core', 'volcano']);
   const remote = {sources: [{hostId: 'pc-sim', sourceId: 'codex-desktop'}]};
   assert.deepEqual(hostLocalModules({modules: {'codex-desktop': remote}, edge}, runtimeModules, checkConfiguration).factories.map(({name}) => name), ['core', 'codex-desktop']);
@@ -194,6 +195,9 @@ test('the host-local profile over the real shipped list starts admitted modules 
   const coreOnly = await run({});
   assert.equal(coreOnly.status, 'ok');
   assert.deepEqual(coreOnly.modules.map(({name, state}) => [name, state]), [['core', 'running']]);
+  const art = await run({art: {}});
+  assert.equal(art.status, 'ok');
+  assert.deepEqual(art.modules.map(({name, state}) => [name, state]), [['core', 'running'], ['art', 'running']]);
   // wispr refuses an empty section; the core and companions keep running.
   const admitted = await run({wispr: {}, companions: {}});
   assert.equal(admitted.status, 'degraded');

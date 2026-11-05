@@ -9,6 +9,7 @@ import type {IncomingMessage} from 'node:http';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {Call, Cancel, Clock, EdgePrincipal, Scheduler} from '@jimmie-potts/sdk';
 import {DIRECT_COMMANDS} from '../core/tracker.js';
+import {MUSIC_PRODUCER_SOURCE} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {CODING_WORKER_SOURCE} from '@jimmie-potts/event-contracts/v2/coding';
 import {DASHBOARD_SOURCE, tokenMatches, type EdgeCredential, type Scope} from '../credentials.js';
 
@@ -35,7 +36,7 @@ export type Principal = {
   readonly kind: 'credential' | 'browser';
   readonly source: string;
   readonly scopes: ReadonlySet<Scope>;
-  readonly role?: 'bb8-link' | 'coding-worker';
+  readonly role?: EdgeCredential['role'];
   readonly robotId?: string;
 };
 
@@ -64,6 +65,10 @@ export const CONTROL_KEYS: readonly string[] = DIRECT_COMMANDS.map(family => `bu
  * authority.
  */
 export function edgePermissions(principal: Principal): EdgePrincipal {
+  if (principal.kind === 'credential' && principal.role === 'music-producer' && principal.source === MUSIC_PRODUCER_SOURCE && principal.scopes.size === 0) {
+    return {id: principal.id, source: principal.source, calls: [], keys: [], publishes: [],
+      endpoint: {respond: ['music-capture-work'], publish: ['music-capture-progress', 'music-capture-features'], request: ['music-capture-endpoint']}};
+  }
   // The coding worker (Hub #502) gets one connection-bound endpoint and nothing else: it answers the module's work
   // commands, reports progress and declares its availability; it reads no state and requests no operator command.
   if (principal.kind === 'credential' && principal.role === 'coding-worker' && principal.source === CODING_WORKER_SOURCE && principal.scopes.size === 0) {

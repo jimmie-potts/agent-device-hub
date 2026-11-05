@@ -14,7 +14,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skins'))

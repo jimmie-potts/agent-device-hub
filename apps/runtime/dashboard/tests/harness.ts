@@ -46,6 +46,8 @@ const HOOK_SOURCE = 'bunny/parts/hook';
 export type WorldOptions = {
   /** Synthetic art provider through the real catalog and ledger; no credentials or device routes. */
   art?: boolean;
+  /** A numeric-only fake Music producer may use the existing endpoint role; no native helper. */
+  musicCapture?: boolean;
   /** A dedicated synthetic Claude terminal receipt producer for the real helper. */
   readReceipts?: boolean;
   /** The real read-only Tidbyt module over its synthetic cloud. */
@@ -124,6 +126,7 @@ export type World = {
   readonly readerToken: string;
   /** The coding-worker credential's token when the world was started with `coding`; never written anywhere else. */
   readonly codingToken: string;
+  readonly musicCaptureToken: string;
   readonly stateDir: string;
   /** Every record the runtime wrote, across restarts. */
   readonly logs: LogRecord[];
@@ -185,6 +188,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const consumerToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const readerToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const codingToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
+  const musicCaptureToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const receiptToken = randomBytes(32).toString('base64url');
   const receipt = receiptSource(IDENTITY);
   const credentials = join(configDir, 'edge-credentials.json');
@@ -193,6 +197,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     {id: 'reader', source: 'bunny/parts/reader', digest: tokenDigest(readerToken), scopes: ['read']},
     ...(options.readReceipts === true ? [{id: receipt.slice('bunny/parts/'.length), source: receipt, digest: tokenDigest(receiptToken), scopes: ['read', 'ingest']}] : []),
     ...(options.coding === true ? [{id: 'coding-worker', source: 'bunny/parts/coding-worker', digest: tokenDigest(codingToken), scopes: [], role: 'coding-worker'}] : []),
+    ...(options.musicCapture === true ? [{id: 'music-producer', source: 'bunny/parts/music-producer', digest: tokenDigest(musicCaptureToken), scopes: [], role: 'music-producer'}] : []),
   ]}));
   const art = new SimulatedArt();
   const roborock=new SimulatedRoborock();
@@ -304,7 +309,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   return {
     art,
     ...(options.readReceipts === true ? {readProducer} : {}),
-    readerToken, codingToken,
+    readerToken, codingToken, musicCaptureToken,
     credentialAction:async(family,target,data)=>{
       const response=await fetch(`${runtime.url}/api/v2/commands/${family}`,{method:'POST',headers:{authorization:`Bearer ${consumerToken}`,'content-type':'application/json'},body:JSON.stringify({target,data,requestId:randomUUID()})});
       return {status:response.status,body:await response.json()};

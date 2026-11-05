@@ -55,6 +55,14 @@
     "./v2/art": {
       "types": "./dist/v2/art.d.ts",
       "import": "./dist/v2/art.js"
+    },
+    "./v2/music-capture-data": {
+      "types": "./dist/v2/music-capture-data.d.ts",
+      "import": "./dist/v2/music-capture-data.js"
+    },
+    "./v2/music-capture": {
+      "types": "./dist/v2/music-capture.d.ts",
+      "import": "./dist/v2/music-capture.js"
     }
   },
   "dependencies": {
