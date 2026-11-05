@@ -13,7 +13,7 @@ The Art owner SHALL use its existing automatic start with appearance purpose for
 - **THEN** accounting remains authoritative, no request is retried, and saved compositions remain available to free preparation and selection
 
 ### Requirement: Free saved ambient selection preserves current authority
-The Art owner SHALL accept a core-only, closed command for one exact saved Tidbyt composition and configured target. It SHALL prepare the saved bytes without a provider call, then request a final core policy check immediately before the ambient handoff. A revoked, expired, mismatched, consumed or restart-lost authorization SHALL cause no new tile selection. Successful admission SHALL use the existing serialized ambient intent, renewal and deletion behavior, without taking over a display or changing its mode. Completion evidence SHALL distinguish staging, issued selection and physical visibility.
+The Art owner SHALL accept a core-only, closed command for one exact saved Tidbyt composition and configured target. It SHALL prepare the saved bytes without a provider call, then request a final core policy check immediately before the ambient handoff. A revoked, expired, mismatched, consumed or restart-lost authorization SHALL cause no new tile selection. Pending, revoked or definitely refused selections SHALL NOT replace the preceding durable renewable intent. Accepted or uncertain issued intent SHALL retain the existing local renewal lifecycle for its exact composition and configured target across schedule disable and restart, without reusing the initial grant, retrying its selection attempt, taking over a display or changing its mode. Explicit deletion and later admitted replacement SHALL retain their existing behavior; schedule disable SHALL NOT automatically clear an issued tile. Completion evidence SHALL distinguish staging, issued selection, uncertainty and physical visibility.
 
 #### Scenario: Reuse while generation is unavailable
 - **WHEN** an eligible authorized ambient update selects saved art while paid generation is unavailable
@@ -22,6 +22,16 @@ The Art owner SHALL accept a core-only, closed command for one exact saved Tidby
 #### Scenario: Permission is revoked while staging waits
 - **WHEN** the ambient composition stages successfully after its opportunity is revoked or expires
 - **THEN** the final handoff is refused, the preceding issued tile intent remains intact and no later callback or restart replays the rejected selection
+
+#### Scenario: Disable and restart preserve an issued ambient tile
+- **WHEN** A is issued for one exact composition and configured target, the schedule is disabled, and its renewal time passes before and after restart
+- **THEN** A retains its existing local renewal lifecycle for that same composition and target without consuming a new opportunity or reusing its initial grant
+- **AND** no automatic clear, provider call or retry of the selection attempt occurs, and an uncertain issued result remains uncertain
+
+#### Scenario: A refused replacement never becomes renewable
+- **WHEN** A is the renewable issued intent, replacement B stages but its opportunity is revoked or its final handoff is definitely refused, and renewal time or restart follows
+- **THEN** A remains the renewable intent and no renewal, late callback or restart selects B
+- **AND** B's unused or consumed grant cannot authorize another attempt or target
 
 ### Requirement: Factual treatment never changes saved art identity
 A factual notice SHALL be a separate deterministic presentation annotation and SHALL NOT modify original or staged image bytes under their existing composition identity, change generated provenance to factual, or enter provider prompts. Catalog and selection semantics SHALL remain owned by Art; a schedule's current notice SHALL NOT create a second authoritative catalog.
