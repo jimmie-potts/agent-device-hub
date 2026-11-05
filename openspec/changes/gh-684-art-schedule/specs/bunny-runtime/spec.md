@@ -24,7 +24,7 @@ The runtime SHALL plan bounded morning, daytime and evening appearance opportuni
 - **THEN** the runtime explains skipped opportunities and plans only eligible future ones, with no repeated slot or compressed spacing
 
 ### Requirement: Durable claims precede art effects
-The runtime SHALL durably identify each art opportunity, generation request and per-target attempt before sending it. One appearance SHALL count once across its surfaces, and uncertain or lost answers SHALL remain counted. The daily count, 45-minute spacing, existing moment budgets and provider dollar limits SHALL be independent protections. Concurrent triggers, duplicate occurrences, crashes and late outcomes SHALL NOT resend an automatic generation request or a presentation attempt. Storage failure before a claim SHALL cause no effect.
+The runtime SHALL durably identify each art opportunity, generation request and per-target attempt before sending it. One appearance SHALL count once across its surfaces, and uncertain or lost answers SHALL remain counted. A committed budget reservation SHALL bind its opportunity, immutable plan, policy revision, budget window and selected target attempts. Shared admission SHALL include pending reservations, and only the matching reserved attempt may use one. Final checks SHALL NOT charge the same appearance again or reject it solely because its own reservation filled the count or spacing allowance. Other claims and current restrictions SHALL still apply. The daily count, 45-minute spacing, existing moment budgets and provider dollar limits SHALL be independent protections. Concurrent triggers, duplicate occurrences, crashes and late outcomes SHALL NOT resend an automatic generation request or a presentation attempt. Storage failure before a claim SHALL cause no effect.
 
 #### Scenario: A crash follows a durable claim
 - **WHEN** the runtime claims an appearance and crashes before learning whether its first target accepted it
@@ -34,8 +34,21 @@ The runtime SHALL durably identify each art opportunity, generation request and 
 - **WHEN** an hourly tick, a new weather observation and a scheduled appearance arrive together
 - **THEN** bounded arbitration coalesces related work, reserves at most the allowed appearance and does not multiply the paid request or target attempt
 
+#### Scenario: A reserved appearance uses the last budget unit
+- **WHEN** an appearance reserves the last allowed unit and its preparations finish while other policy conditions remain valid
+- **THEN** its matching per-target attempts pass the final budget check once without a second charge or rejection caused by their own count or spacing markers
+- **AND** concurrent unrelated automation or art cannot use that reservation, exceed the shared limit or resend an already handed attempt
+
+#### Scenario: Current restrictions revoke a reserved attempt
+- **WHEN** the policy is disabled or its revision changes while a reserved target is preparing, even though its budget unit remains counted
+- **THEN** that target's final permit refuses the unsent handoff, the reservation remains counted, and no replacement attempt borrows it
+
+#### Scenario: Changed timing cannot reuse a plan identity
+- **WHEN** late preparation completes and a caller tries to move the start or cutoff under the same admitted plan ID, including after restart
+- **THEN** the shared presentation path reports duplicate-conflict before any new phase, and the scheduler neither resends that opportunity nor treats its receipt as permission for another one
+
 ### Requirement: Current art policy gates each surface independently
-Before each browser, moment or ambient presentation dispatch, the runtime SHALL recheck the current enabled policy, opportunity validity, quiet hours, budgets and attention/owner protections. Configured target identity, current owner membership, availability, holds, capability, generation and successful preparation SHALL be checked through the existing presentation path. Each target SHALL have its own duration and result under a fixed common start and cutoff. A slow, missing or unsupported target SHALL NOT delay another or move the start. No schedule SHALL change a device mode or restore an old base snapshot.
+Before each browser, moment or ambient presentation dispatch, the runtime SHALL recheck the current enabled policy, opportunity validity, quiet hours, its exact reservation under current budgets and spacing, and attention/owner protections. Configured target identity, current owner membership, availability, holds, capability, generation and successful preparation SHALL be checked through the existing presentation path. Each target SHALL have its own duration and result under a fixed common start and cutoff. Default appearances SHALL request 30 seconds on Tidbyt and 10 seconds on Pixoo, within current declared capabilities. Tidbyt appearances SHALL stay within the owner's 30-to-60-second range; a target unable to accept its selected duration SHALL be skipped rather than sent an unsupported request. A slow, missing or unsupported target SHALL NOT delay another or move the start. No schedule SHALL change a device mode or restore an old base snapshot.
 
 #### Scenario: Policy changes during preparation
 - **WHEN** quiet hours start, attention arrives, the owner disables the policy or the opportunity expires while preparation waits
@@ -45,6 +58,11 @@ Before each browser, moment or ambient presentation dispatch, the runtime SHALL 
 #### Scenario: Mixed display capabilities
 - **WHEN** one configured display can play exact art, another lacks art or required notice support, and the browser is enabled
 - **THEN** only supported permitted dispatches occur, each uses its configured ID and allowed duration, and the unsupported target is explicitly skipped
+
+#### Scenario: Each display receives its supported default duration
+- **WHEN** both configured displays declare support for their default appearance and the opportunity is permitted
+- **THEN** the Tidbyt request has durationMs 30000, the Pixoo request has durationMs 10000, and both retain the fixed common start with independent outcomes
+- **AND** if either target cannot accept its selected duration, it is skipped without shortening Tidbyt below 30 seconds or delaying the other target
 
 #### Scenario: Owner presentation takes precedence
 - **WHEN** a device has attention, an owner pin, an explicit pause or a Now Playing takeover, or the owner is browsing a saved Gallery choice
