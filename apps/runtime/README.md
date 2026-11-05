@@ -95,10 +95,7 @@ they do not install the Mac container or qualify cross-host state transfer.
 
 ## Adding a module
 
-The [ONN module](../../modules/onn/README.md) owns one configured streaming
-device, its fixed controls and its shared-dashboard React remote. Its
-`onn_status` tool reads cached neutral app/connection evidence; commands use
-the core dispatcher. Pairing and device addresses remain private manual setup.
+The [ONN module](../../modules/onn/README.md) is hibernated after device retirement. Its source and private historical state remain retained; the shipped runtime and dashboard do not register it.
 
 A module registers itself from its own folder (#999), so adding runtime and
 harness registration needs no shared module list:
@@ -453,6 +450,30 @@ The core owns event automation ([#925](https://github.com/jimmie-potts/agent-dev
 Triggers use source `core` and kind `attention-raised`, `attention-cleared`, `turn-ended` or `session-ended`. Intake accepts only an occurrence marked by its new committed reduction in this run. Sync, outbox republication, a duplicate and a restart acquire no such mark and start no moment. Deduplication is stored before evaluation; queued evaluations are not recovered or retried.
 
 Arbitration retains no-flourishes, quiet hours, task and hourly budgets, device spacing, Quiet mode, the Work interrupt set and alert precedence. Each permitted target goes through the tracked dispatcher once, with a shared runtime-clock `startAtMs`. The private log's `receipt` means accepted, and `requestId` links to the current `operation`; an absent outcome is never completion or physical proof. Target IDs come from the host's admitted Nanoleaf/Pixoo participants, and current device records select their capabilities and mode. Unavailable or held devices are blocked.
+
+Saved-art callers use the internal `CoreModule.automation.art` control.
+`targets()` lists the configured Pixoo and Tidbyt IDs and kinds. `present(plan,
+permit)` takes one artwork, exact compositions, a common start and preparation
+cutoff, each display's duration, and an optional browser composition. Each
+display independently waits for its tracked preparation to succeed, then rechecks
+the fresh owner record, generation, configuration and `moments.art` capability.
+A late or failed preparation cannot move the start or produce a mood fallback.
+The browser's tracked selection commits at the common start; decoded visible
+pixels remain separate frontend evidence.
+
+The required synchronous `permit` callback runs immediately before each display
+or browser handoff. The calling automation policy owns opportunity selection,
+quiet hours, budgets, attention and durable occurrence claims. Device modules
+retain final pause, pin and writer precedence. The control returns separate
+preparation, moment and browser attempts; `tracked` supplies an operation ID,
+while `not-requested` carries the refusal. It makes no aggregate success claim.
+Stable plan IDs deduplicate unchanged commands, changed content is refused, and
+restart recovers no plan timers. Art-bearing moments are dispatched only by the
+core and cannot be resent from the inbox.
+The additive private `automation_art_plans` table binds each ID to a digest of
+the complete stable plan before any phase. It retains these non-executable
+receipts without eviction, like `core_operations`, so changing old timing cannot
+reuse a late successful preparation. A failed identity commit sends nothing.
 
 The core also owns weekly routines for configured devices
 ([#1297](https://github.com/jimmie-potts/agent-device-hub/issues/1297), which

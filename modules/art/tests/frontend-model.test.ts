@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
-import {artworkOf, browserArt, catalogOf, latestBrowserArt, money} from '../src/frontend/model.js';
+import {artworkOf, browserArt, catalogOf, latestBrowserArt, money, selectedBrowserArtwork} from '../src/frontend/model.js';
 
 const hash = 'a'.repeat(64);
 const artwork = (): ArtworkSummary => ({artworkId: 'synthetic-one', createdAtMs: 1, favorite: false, feedback: null, variationOf: null,
@@ -31,4 +31,13 @@ void test('browser presentation selects rich stills and never promotes a display
   composition.target = 'pixoo'; composition.motion = 'gif';
   assert.equal(browserArt(row), undefined);
   assert.equal(money(3500), '$0.0035');
+});
+
+void test('authoritative selection admits only the exact validated usable browser composition', () => {
+  const row = artwork(), selection = {artworkId: row.artworkId, compositionId: hash};
+  assert.deepEqual(selectedBrowserArtwork({...row, calls: []}, selection), row, 'private result metadata may include unused fields');
+  for (const value of [{...row, createdAtMs: undefined}, {...row, artworkId: 'other-art'}, {...row, palette: ['invalid']},
+    {...row, compositions: row.compositions.map(item => ({...item, compositionId: 'b'.repeat(64)}))},
+    {...row, compositions: row.compositions.map(item => ({...item, target: 'pixoo'}))},
+    {...row, compositions: row.compositions.map(item => ({...item, renditions: []}))}]) assert.equal(selectedBrowserArtwork(value, selection), undefined);
 });

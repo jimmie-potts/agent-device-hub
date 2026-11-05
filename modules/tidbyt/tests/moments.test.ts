@@ -65,7 +65,7 @@ async function onIdle(context: Parameters<typeof host>[0], server: SimulatedTron
 test('the Tronbyt backend declares moments, and the cloud refuses them and declares none', async context => {
   const server = new SimulatedTronbyt();
   const h = await onIdle(context, server);
-  assert.deepEqual(h.device().capabilities.moments, {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_DURATION_MS, coversStatus: true});
+  assert.deepEqual(h.device().capabilities.moments, {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_DURATION_MS, coversStatus: true, art: {formats: ['png', 'gif'], maxBytes: 163_840}});
   const onCloud = await host(context, {sessions: [], playback: 'absent'});
   assert.deepEqual(onCloud.device().capabilities.moments, {supported: false});
   assert.deepEqual(await play(onCloud), {status: 'rejected', code: 'unsupported-capability'});
@@ -116,7 +116,7 @@ test('the bounds: a short moment holds the floor, a long one is refused, and a w
   const h = await onIdle(context, server);
   assert.deepEqual(await play(h, {durationMs: MOMENT_MAX_DURATION_MS + 1}), {status: 'rejected', code: 'unsupported-capability'});
   assert.deepEqual(await play(h, {mood: 'unknown-mood'}), {status: 'rejected', code: 'unsupported-capability'});
-  assert.deepEqual(await play(h, {startAtMs: h.wall() - 11 * SECOND}), {status: 'rejected', code: 'expired'});
+  assert.deepEqual(await play(h, {startAtMs: h.wall() - 11 * SECOND}), {status: 'rejected', code: 'invalid-state'});
   assert.deepEqual(momentCalls(server), [], 'a refusal sends nothing');
 
   assert.deepEqual(await play(h, {durationMs: 3 * SECOND}), {status: 'accepted'});

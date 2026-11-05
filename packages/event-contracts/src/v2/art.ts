@@ -3,7 +3,7 @@
 // the owner, or `art-auto`, which the core's automation sends; the family decides, never `origin` or `purpose`. A display
 // keeps its own private copy of a staged composition and later plays it by `compositionId` under `moment-play/2.1`. The
 // in-process bus checks no sender. Art families bind requesters at the gateway and tracker; every responder must check
-// its sender. The tracker does not gate moment-play's requester, so automation owns art-moment arbitration.
+// its sender. The tracker admits art-bearing moments only from the core; automation owns their arbitration.
 import {createHash} from 'node:crypto';
 import {errorBody, type ErrorBody} from './errors.js';
 import type {Message, MessageValidator, PayloadCheck} from './index.js';

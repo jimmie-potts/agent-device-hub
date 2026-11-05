@@ -38,7 +38,7 @@
   --empty-edge:var(--edge-dense);
   --disabled-bg:light-dark(#e6ebf3,#202a3e);
   --disabled-text:light-dark(#647187,#a2afc5);
-  --disabled-edge:var(--edge-dense);
+  --disabled-edge:light-dark(#cbd5e6,#4d5b75);
   --radius:14px;
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
   --type-body:.9375rem;

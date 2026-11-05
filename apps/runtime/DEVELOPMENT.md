@@ -95,18 +95,7 @@ browser journey establish forwarding and UI behavior separately from actual
 installed iPhone acceptance; no physical device command is required by these tests.
 
 
-After the root build, run
-`node --test apps/runtime/dist/tests/onn-upgrade-profile.test.js apps/runtime/dist/tests/onn-upgrade-qualification.test.js apps/runtime/dist/tests/upgrade-inputs.test.js apps/runtime/dist/tests/upgrade-admission.test.js apps/runtime/dist/tests/upgrade-preflight.test.js apps/runtime/dist/tests/upgrade-source.test.js`.
-Existing `test:runtime:built` discovery runs these checks in active core CI; no
-additional workflow is needed. They cover private inventory, exact qualification
-coverage, configured health and preserved absent-ONN refusals. Four separate
-synthetic processes use the production ONN module, its history/command stores and
-SDK outbox to retain original observations, reported progress, gaps, private
-identities and truthful interrupted outcomes without replay. All four processes
-use the same built implementation: this checks restart semantics, not compatibility
-between historical release artifacts. Actual previous/target/recovery artifacts,
-coordinator admission, installed readers/clients and physical acceptance require
-their own evidence under [UPGRADE.md](UPGRADE.md).
+ONN dedicated qualification is dormant under #1464. Shared upgrade inventory/admission/preflight/source checks remain active to preserve retained state. Run `node --test tests/onn_hibernation.test.mjs` for runtime/frontend registration absence and the ordinary runtime upgrade and core privacy tests for retained compatibility. The ONN module guide retains historical qualification instructions.
 
 Roborock configured-owner qualification also runs
 `node --test apps/runtime/dist/tests/roborock-upgrade-profile.test.js apps/runtime/dist/tests/roborock-upgrade-qualification.test.js apps/runtime/dist/tests/upgrade-inputs.test.js apps/runtime/dist/tests/upgrade-admission.test.js apps/runtime/dist/tests/upgrade-preflight.test.js`
@@ -571,6 +560,19 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Art-derived decoration (#683) uses `npm run test:art-theme:browser` after
+`npm run build`. App verification runs it in the runtime group, and the full
+local browser suite includes it. Synthetic contrasting artworks drive the
+real presentation context. Check light/dark at 1440, 390 and 320px, fixed
+semantic colors, readable text/focus, unchanged control bounds, explicit
+follow/lock/default persistence and storage failures. Delayed or invalid
+artwork and malformed saved palette/texture data must keep a valid theme.
+Theme application and controls must produce zero provider calls, device
+commands and layout saves. Keep screenshots and recordings private.
+The registered `art-theme` scenario runs through both runtime transports. Its
+`scenario-art-theme` disposable capture demonstrates contrasting saved art and
+the real lock/default/follow controls with labelled pointer actions.
+
 Adaptive art and Gallery (#682) use `npm run test:art:browser` after
 `npm run build`. App verification runs this focused journey in its runtime group;
 the full local browser suite includes it. It uses the real authenticated core/art
@@ -753,6 +755,17 @@ server registry dependency. Run `npm run test:events:built`,
 existing contract consumers after the shared build.
 
 The Nanoleaf editor check (#934) uses the actual module with a simulated Lines controller. It covers passive reads, local selection, tracked editing, read-only and Origin refusal, observed power, keyboard/accessibility, reduced motion and re-entry. The `nanoleaf-editor` catalog scenario runs through both tier-1 transports and disposable Acceptance. `test:nanoleaf:built` includes the literal-source Prism adapter test beside the compiled TypeScript tests; retained browser JavaScript does not require a second runtime build policy.
+
+The same `nanoleaf-pages.browser.ts` entry includes offline decorative show
+authoring (#723): starter drafts, immutable named saves, version reads and cue
+storyboards through the real gateway/core/module. It checks stale-save,
+read-only and Origin refusals, cancelled/failed reads retaining drafts, uncertain
+attempts without resend, unchanged simulated device state and light/dark
+desktop/390/320px accessibility. `DASHBOARD_RECEIPTS` keeps synthetic screenshots
+outside the checkout. The Nanoleaf built suite covers atomic save/outcome
+rollback, full storage, deferred publication, core acknowledgment, restart,
+bounded content and delayed-sync freshness. No test uses an installed source,
+personal media or physical controller.
 
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use
 Playwright Chromium against the built runtime in the test's own process, with

@@ -171,8 +171,6 @@ jobs:
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:roborock:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
-        run: npm run test:onn:built
-      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:wemo:built
       - name: Art module
         if: contains(fromJSON(needs.select.outputs.groups), 'modules')
@@ -188,13 +186,6 @@ jobs:
       - name: MicroDuck simulator module
         if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:microduck:built
-      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: '21'
-      - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
-        run: npm run test:onn:native
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:roborock:consumer:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
@@ -274,6 +265,8 @@ jobs:
         run: node apps/runtime/dashboard/tests/room-models.browser.ts
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: node apps/runtime/dashboard/tests/music-card.browser.ts
+      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts
       # #1112: the shell at a television viewport, driven from the keyboard only; synthetic, qualifies no TV browser.
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: node apps/runtime/dashboard/tests/tv.browser.ts
@@ -281,8 +274,6 @@ jobs:
         run: npm run test:roborock:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:volcano:browser
-      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
-        run: npm run test:onn:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         # Includes #501 preferences, active-only copy, import/export and accessibility.
         run: npm run test:companions:browser
@@ -297,6 +288,9 @@ jobs:
       - name: Art gallery and safe Home placement
         if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:art:browser
+      - name: Art theme and browser preferences
+        if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:art-theme:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:browser
   runtime-verify:
@@ -321,7 +315,7 @@ jobs:
         timeout-minutes: 20
         run: bash scripts/apt-retry.sh 300 npx playwright install --with-deps chromium
       - run: npm run build
-      # Full catalog, including ONN title-history browser, keyboard, phone and accessibility (#1041).
+      # Active catalog, including shared keyboard, phone and accessibility checks.
       - run: npm run test:runtime:verify:built
   gate:
     name: Selected checks gate

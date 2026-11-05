@@ -29,6 +29,7 @@ import {prepareStateDirectory, readRuntimeConfig, type EdgeConfig, type RuntimeC
 import {startTracing, type RuntimeTracing} from '../../src/tracing.js';
 import {SimulatedChime, createChimeModule} from '../fixtures/chime.js';
 import {createCoreModule} from '../fixtures/core.js';
+import {createPresentationFixture} from '../fixtures/presentation.js';
 import {SimulatedLamps, createLampModule} from '../fixtures/lamp.js';
 import {SimulatedSigns, createSignModule} from '../fixtures/sign.js';
 import {manualClock} from '../support.js';
@@ -107,6 +108,7 @@ function holding(module: BunnyModule, databases: Set<DatabaseSync>): BunnyModule
 }
 
 class Memory implements MemoryHarness {
+  #fixtureCore: ReturnType<typeof createCoreModule> | undefined;
   readonly tier = 'memory';
   readonly transport: TransportName;
   readonly stateDir: string;
@@ -482,7 +484,9 @@ class Memory implements MemoryHarness {
       case 'wispr':
         return createWisprModule();
       case 'core':
-        return createCoreModule();
+        return this.#fixtureCore = createCoreModule();
+      case 'presentation-fixture':
+        return createPresentationFixture(() => this.#fixtureCore);
       case 'lamp':
         return createLampModule({transport: this.#lamps, beforePublish: () => { this.#crashPoint(); }, onAcknowledgment: () => {
           if (!this.#loseAcknowledgment) return 'apply';

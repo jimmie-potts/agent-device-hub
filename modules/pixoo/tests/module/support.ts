@@ -10,7 +10,7 @@ import {deflateSync, crc32} from 'node:zlib';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, sessionEntityId, type Identity, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {InProcessBus, type CommandDraft, type Participant, type RequestResult, type StateDraft, type Subscription} from '@jimmie-potts/sdk';
+import {InProcessBus, type BunnyModule, type CommandDraft, type Participant, type RequestResult, type StateDraft, type Subscription} from '@jimmie-potts/sdk';
 import {ModuleHarness, RecordedSpans} from '@jimmie-potts/sdk/testing';
 import {Library} from '../../src/library/index.js';
 import {encodeHostedGif} from '../../src/media/index.js';
@@ -103,6 +103,7 @@ export class World {
   readonly core: Participant;
   readonly player: Participant;
   harness: ModuleHarness;
+  module: BunnyModule;
   sessions: SessionRecord[] = [];
   playback: PlaybackState[] = [];
   revision = 1;
@@ -118,6 +119,7 @@ export class World {
     this.#options = options;
     this.#section = section;
     this.device = new SimulatedPixoo({mode});
+    this.module = createPixooModule({...this.#options, transport: this.device});
     this.bus = new InProcessBus({spans: this.spans, onError: error => { this.errors.push(error); }});
     this.probe = this.bus.connect('bunny/test');
     this.core = this.bus.connect('bunny/core');
@@ -191,7 +193,8 @@ export class World {
   }
 
   #fresh(): ModuleHarness {
-    const harness = new ModuleHarness(createPixooModule({...this.#options, transport: this.device}), {
+    this.module = createPixooModule({...this.#options, transport: this.device});
+    const harness = new ModuleHarness(this.module, {
       bus: this.bus, stateDir: this.#dir, spans: this.spans, ...(this.#section === undefined ? {} : {section: this.#section}),
     });
     this.#hosted.push(harness);

@@ -1,5 +1,6 @@
 @import "./habitat.css";
 @import "./skins/quiet-glass.css";
+@import "./skins/art-theme.css";
 /* Layout reads its colors, spacing steps and type sizes only through the skin's tokens (style guide section 4). Structural sizes such as column tracks and control heights are layout, not skin. */
 :root{font-family:var(--font);font-size:var(--type-body);color:var(--text);background:var(--bg);font-synthesis:none}
 *{box-sizing:border-box}
@@ -257,3 +258,4 @@ label.check input{width:18px;height:18px;padding:0;flex:none;accent-color:var(--
 .timeline .session { min-width: 0; overflow-wrap: anywhere; }
 .timeline pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
 [data-inbox-panel] .session { overflow-wrap: anywhere; }
+.art-theme-status { min-block-size: 4.5em; }

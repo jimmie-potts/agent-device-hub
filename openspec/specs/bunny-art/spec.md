@@ -170,7 +170,7 @@ The module SHALL send staged compositions through `art-dispatch` and SHALL offer
 - **THEN** its saved bytes are staged again and no provider is called
 
 ### Requirement: The module publishes authenticated reads
-The module SHALL serve one `art/2.0` state record with spent, reserved, uncertain and remaining amounts per provider, and SHALL offer `catalog`, `ledger`, `artwork.<id>` and `rendition.<id>` content references. The record SHALL carry no prompt, key, location or image bytes.
+The module SHALL serve one `art/2.1` state record with spent, reserved, uncertain and remaining amounts per provider and the selected browser composition reference, and SHALL offer `catalog`, `ledger`, `artwork.<id>` and `rendition.<id>` content references. Consumers SHALL retain support for `art/2.0` records. The record SHALL carry no prompt, key, location or image bytes.
 
 #### Scenario: A dashboard syncs
 - **WHEN** a reader syncs `art`
@@ -215,3 +215,41 @@ The browser SHALL use the artwork's rich UI rendition, preserve its proportions 
 #### Scenario: New content cannot load
 - **WHEN** required image data is incomplete, malformed, unavailable or undecodable
 - **THEN** the browser does not report it complete or update its presented palette, and shows the failure while preserving any previous readable presentation
+
+### Requirement: Local art decoration follows actual presentation
+Local dashboard decoration SHALL use only a validated bounded palette from fresh decoded visibly presented artwork. Applying, locking or restoring decoration SHALL perform no generation call, device command, catalog edit or layout save. Invalid palette or styling input, missing assets, stale observations and unfinished or obsolete image loads SHALL keep the valid prior or default decoration.
+
+#### Scenario: A new image is not ready
+- **WHEN** selected artwork is loading, fails decoding, becomes stale or is replaced by a newer selection
+- **THEN** its unpresented palette does not change decoration and the prior valid or default theme remains usable
+
+#### Scenario: Styling input is malformed
+- **WHEN** a palette or stored styling preference contains invalid colors, unknown fields, a texture URL, a private path or executable content
+- **THEN** no supplied code or asset is used and the valid prior or default theme is retained
+
+#### Scenario: Local application is free
+- **WHEN** valid displayed art changes decoration or the owner locks or restores colors
+- **THEN** provider-call and device-command counts do not increase and Home layout remains unchanged
+
+### Requirement: Saved composition preparation has a completed staging outcome
+The Art owner SHALL accept a core-only request to prepare one existing display composition without a provider call or display effect. Admission SHALL remain distinct from its final tracked outcome. Success SHALL mean the target owner confirmed staging that exact composition. Missing or deleted art, a missing rendition, absent current capability, refusal and uncertainty SHALL remain distinguishable. A duplicate request SHALL NOT stage again, and restart SHALL NOT resend pending preparation.
+
+#### Scenario: A target admits staging but has not completed it
+- **WHEN** the display admits the stage command and has not yet reported its outcome
+- **THEN** the preparation remains pending rather than claiming success
+- **AND** other targets can prepare and complete independently
+
+#### Scenario: Preparation loses its response or restarts
+- **WHEN** a preparation loses its final evidence or the Art owner restarts with it pending
+- **THEN** the retained operation records uncertainty without a provider call, automatic resend or display effect
+
+### Requirement: Browser selection belongs to the private Art catalog
+The core SHALL select an existing successful browser composition through the Art owner. The selection SHALL be committed with its tracked outcome and published as versioned Art state. Success SHALL mean selection committed, never browser pixels displayed. The selected reference SHALL survive restart and catalog pruning. Explicit deletion SHALL clear that reference in the same transaction. A refused selection SHALL preserve the previous choice. Existing 2.0 commands and schema definitions SHALL retain their behavior.
+
+#### Scenario: An older selected artwork leaves the recent page
+- **WHEN** the selected artwork is older than the recent catalog limit and newer artworks arrive
+- **THEN** its browser composition remains readable and selected without another provider call
+
+#### Scenario: The selected artwork is deleted
+- **WHEN** an explicit owner deletion succeeds for the selected artwork
+- **THEN** the selection is cleared atomically and consumers receive the updated state

@@ -56,6 +56,19 @@ The existing runtime scenario and verification CI globs discover this path;
 `scenario-shared-art` is the disposable capture. It verifies zero provider calls
 during reuse, independent target results and no replay, without a device or
 installed-runtime claim.
+Its named `presentation-fixture` module calls the real core's internal presentation
+control only after a new synthetic request completes. It adds no production
+command route. Initial sync after restart seeds its seen IDs without dispatching.
+Its tier-1 case allows 60 seconds because it observes the Tidbyt's complete
+qualified 30-second hold as well as generation, preparation and restart. Other
+catalog cases keep their existing 20-second default.
+
+Art-derived decoration (#683) uses `npm run test:art-theme:browser` after the
+root build, in the existing App verification runtime group and full local
+dashboard browser suite. Bounded palette and preference cases are discovered
+by `npm run test:runtime-dashboard:built`. Keep shared build/type/lint,
+contract/package and workflow checks; no new backend contract is introduced.
+See the runtime dashboard guide for synthetic theme and zero-effect evidence.
 
 The adaptive widget and Gallery checks for #682 use
 `npm run test:art:browser` after the root build. They run in the existing App
@@ -78,15 +91,19 @@ cover its registration. A contract change to the diagnostic profile also needs
 `npm run test:observability`. Real generation and the GIF rejection rate belong to
 installed acceptance in #687. See [the module guide](../modules/art/README.md).
 
-The registered `art-gallery`, `art-catalog` and `art-spending-limit` scenarios run through both
+The registered `art-theme`, `art-gallery`, `art-catalog` and `art-spending-limit` scenarios run through both
 runtime transports in `test:runtime:scenarios:built`. They use synthetic GIF/still
 providers with fixed billed usage and the real authenticated commands, catalog,
 ledger and private store. They cover favorite/reuse/variation, invalid bytes, lost
 responses, restart without replay, recent retention and the monthly ceiling.
 After building, focus them with
-`node --test --test-name-pattern='art-gallery|art-catalog|art-spending-limit' apps/runtime/dist/tests/scenarios/catalog.test.js`.
+`node --test --test-name-pattern='art-theme|art-gallery|art-catalog|art-spending-limit' apps/runtime/dist/tests/scenarios/catalog.test.js`.
 On a Mac, use `npm run test:runtime:container -- --suite scenarios`.
 
+For local theme controls, select `scenario-art-theme`; its labelled capture shows
+contrasting saved art, locking the colors, restoring defaults and following again,
+with no additional provider call or device command. The simulation's warm/cool
+fixtures pass through the real pixel palette processor.
 For the actual gallery UI, select `scenario-art-gallery`; its capture uses visible,
 labelled controls and leaves decoded synthetic art on screen. For the producer API
 exercise on a clean committed candidate, select `scenario-art-catalog` through the [portable route](../apps/runtime/verify/PORTABLE.md).
@@ -95,7 +112,7 @@ content route, using a labelled review-only link in the existing shell. It adds 
 gallery UI and exercises no real provider or device. The rendition remains visible
 in the final screenshot. The separate `scenario-art-spending-limit` capture covers
 the ceiling and restart. Existing
-`test:runtime:verify:built` discovery runs both captures; on a Mac use
+`test:runtime:verify:built` discovery runs these captures; on a Mac use
 `npm run test:runtime:container -- --suite verify`. Inspect the complete video and
 scenario-result attachment before assessing acceptance.
 
@@ -258,6 +275,8 @@ and physical briefs. Resumption requires a new owner decision.
 
 ## ONN qualification
 
+The owner retired the ONN device on 2026-11-05. ONN is hibernated indefinitely under [#1464](https://github.com/jimmie-potts/agent-device-hub/issues/1464). Its source, private stores, schemas and compatibility readers are retained. Runtime/frontend registration, controls, observations, history pages and dedicated default checks are inactive. Resumption requires a new owner decision and restored verification. [#1465](https://github.com/jimmie-potts/agent-device-hub/issues/1465) owns installed deactivation; source changes alone do not establish it. Earlier qualification descriptions below are historical.
+
 [ONN controls qualification](onn-controls-qualification.md) records the selected
 host ADB route, owner-approved native dependency, physical evidence and minimum
 controls contract. The [ONN module](../modules/onn/README.md) implements those
@@ -279,7 +298,7 @@ it qualifies no TV browser or device.
 
 ### ONN focused-text admission checks
 
-The issue-linked `gh-1039-onn-controls` change adds a narrow privacy exception to the existing core dispatcher. After the root build, run `npm run test:runtime:onn-admission:built` for the actual dispatcher/store regression. The runtime unit suite discovers this test, and CI's existing `test:runtime:built` step runs it; shared SDK checks cover the private digest primitive. Retain the failing-before result and verify semantic duplicates, missing/replaced keys, durable plaintext exclusion, no replay and inbox refusal. This is source evidence; installed ONN acceptance remains separate.
+The dedicated ONN admission suite is dormant. Keep core historical omitted-text identities and private digest behavior covered by the active `apps/runtime/tests/art-handoff.test.ts` regression. Run it after build using the owning runtime test environment.
 
 ## Roborock transport checks
 
@@ -1781,7 +1800,24 @@ Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:tidbyt-module` from the worktree root. `test:tidbyt-module`
 builds, then runs `test:tidbyt-module:built`: the compiled tests in
 `modules/tidbyt/dist/tests/`. The core CI job runs
-`npm run test:tidbyt-module:built` after its fresh build. The suite covers the
+`npm run test:tidbyt-module:built` after its fresh build.
+
+Exact staged art (#681) adds `art-render.test.ts` and `art.test.ts` to that
+existing module suite. After the root build, run
+`node --test modules/tidbyt/dist/tests/art-render.test.js modules/tidbyt/dist/tests/art.test.js`
+for independent animated-WebP decoding, media bounds, private staging/reopen,
+exact moments, and ambient queue/attention/pin interleavings. The runtime
+scenario catalog exercises the same module through the registered synthetic
+Tronbyt transport; `test:runtime:scenarios:built` and disposable scenario runs
+cover that gateway path. These files are discovered by the existing core CI
+module and scenario commands. The playback thumbnail limit and its current
+tests remain separate from the art profile.
+The `scenario-tidbyt-art` capture follows a labelled synthetic link to the
+authenticated exact preview and retains that animation in the recording. After
+the build, run `node --test --test-name-pattern='^scenario-tidbyt-art passes in a fresh run$' apps/runtime/dist/verify/tests/steps.test.js`
+for its image-load and final-page checks in the existing verification suite.
+
+The suite also covers the
 copied renderer, status, now-playing, cloud and cadence cases; the golden frames
 decoded by an independent libwebp build through `sharp`, pixel by pixel, with a
 corrupted golden as its negative control, in place of the controller's Pillow
@@ -1889,12 +1925,43 @@ for the acceptance exercise.
 
 ## Nanoleaf port
 
+Synthetic Music-effect preview (#722) uses the existing Nanoleaf built-test
+discovery. After the root build, run
+`node --test modules/nanoleaf/dist/tests/music-preview.test.js modules/nanoleaf/dist/tests/music-preview-model.test.js`,
+then `npm run test:nanoleaf:built`. The existing Wall browser journey at
+`node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts` covers explicit
+preview reads, local drafts and scrubbing, result fencing, read-only access and
+phone/keyboard/accessibility behavior. CI runs that journey in App verification
+for the runtime group and discovers the focused tests through the core
+Nanoleaf suite. Keep build/type/lint, runtime/dashboard, shared contract and
+workflow checks. Generated input and example geometry establish no live capture,
+device output, configured-layout fidelity or physical timing.
+
+Offline decorative show authoring (#723) uses the existing Nanoleaf built-test
+discovery for immutable versions, metadata-only commands, content reads and
+restart/rollback checks. After the root build, run
+`node --test modules/nanoleaf/dist/tests/music-shows.test.js modules/nanoleaf/dist/tests/module-shows.test.js`,
+then `npm run test:nanoleaf:built`. The existing
+`node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts` journey covers the
+editor through the authenticated disposable runtime and remains in the full
+local runtime dashboard browser check. Run the existing smoke check as well.
+Keep shared build, typecheck, lint,
+contract and workflow checks. These checks use synthetic plans and establish
+no installation, playback, physical timing or light output.
+
 The internal prepared-music timeline helper (#1273) is covered by
 `modules/nanoleaf/tests/music-timeline.test.ts`, discovered by the existing
 `test:nanoleaf:built` CI suite. After the root build, its focused check is
 `node --test modules/nanoleaf/dist/tests/music-timeline.test.js`; run the full
 Nanoleaf, typecheck, lint and workflow checks before delivery. Its explicit-clock
 and synthetic Lines/NL22 results establish no worker admission or physical timing.
+Internal cue phase preparation and location use that same timeline suite. Run
+`node --test modules/nanoleaf/dist/tests/music-timeline.test.js modules/nanoleaf/dist/tests/effects.test.js`
+after the root build for exact transition boundaries, unequal durations,
+initial-origin uncertainty, one-shot/loop behavior and unchanged animation bytes.
+The existing Core modules CI discovery includes both files. Keep the full
+Nanoleaf, typecheck, lint, contract and workflow checks. Phase descriptors are
+canonical endpoints and timing, not interpolated colors or physical seek proof.
 
 Hub #26 ports the Nanoleaf domain logic to TypeScript in `modules/nanoleaf`, under
 the strict profile, and Hub #844 runs it as the runtime's shipped module
@@ -2104,6 +2171,19 @@ The build compiles the module and its tests
 (`tsc -p modules/pixoo/tsconfig.json`) before the runtime, which ships it. The
 core CI job runs `test:pixoo:built` after its fresh build.
 
+`apps/runtime/tests/moment-refusal.test.ts` runs the actual Pixoo and Tidbyt
+modules with simulated transports through the core tracker. It checks that a
+missed moment start is recorded as an owner refusal with no effect, retains the
+window explanation, and is not replayed. After the build, run
+`node --test apps/runtime/dist/tests/moment-refusal.test.js`; the existing
+`test:runtime:built` CI suite includes it. The registered `missed-moment-start`
+scenario adds the authenticated HTTP gateway and both real handlers, with
+Pixoo and Tronbyt simulations. It checks the reply, owner, operation record,
+zero moment writes and duplicate refusal. Run it after the build with
+`node --test --test-name-pattern='missed-moment-start' apps/runtime/dist/tests/scenarios/catalog.test.js`;
+the existing `test:runtime:scenarios:built` CI suite discovers it, and
+`scenario-missed-moment-start` is its disposable acceptance capture.
+
 The reusable Pixoo controls (#1154) add atomic populated creation coverage to
 `modules/pixoo/tests/integration/library.test.ts` and browser journeys to
 `apps/runtime/dashboard/tests/pixoo-pages.browser.ts`. Run that browser file
@@ -2143,6 +2223,14 @@ process uses `modules/pixoo/tests/helpers/launch.ts`. Both retry instead of
 keeping an installed service's port, such as 41230 or 41231. On 2026-10-07 the
 Vitest suite took about 8 s locally for 31 files and 310 tests, and the module's
 node:test suites about 35 s for 37 tests.
+
+Generated-art admission uses `modules/pixoo/tests/module/art.test.ts` and the
+existing `test:pixoo:built` CI suite. It exercises synthetic PNG/GIF staging,
+original preservation, decoded previews and timing, sender/profile refusals,
+duplicate renewal, reference-safe cleanup, restart and exact-art moments through
+the simulated writer. The `pixoo-art` runtime scenario covers the core handoff.
+Run these alongside the module and affected runtime checks above; no real art,
+provider key or device is needed.
 
 After the import, divoom-app-upgrade takes only bug fixes. Mirror each one here.
 
@@ -2264,62 +2352,7 @@ for resumption. The owning [module](../modules/bb8/README.md) and
 
 ## ONN module checks
 
-The reusable Soft keys card (#1210) extends existing module-test discovery with
-frontend guard, freshness, evidence and browser-bundle checks. Its existing ONN
-browser journey covers shared Home/component/controls placement, Remote/Apps
-geometry and keyboard focus, persistent illustration, memory-only drafts,
-History navigation, light/dark 1440/736/390/320 layouts and uncertain-attempt locks
-across routes and reload. These tests use the existing modules and App verification
-CI entries. Retain the separate history capture below for filters and continuation.
-
-Use Node 24 and `npm ci`, then run `npm run build`, `npm run typecheck`,
-`npm run lint:js` and `npm run test:onn:built`. The module suite covers the
-fixed action mappings, private ADB protocol, bounded queue, persistent fences,
-outcome outbox, key changes before effects, truthful connection transitions,
-unchanged polling, actual module-store exhaustion and module conformance.
-`npm run test:runtime:onn-admission:built`
-checks text omission and duplicate identity in the actual core store and inbox.
-The runtime unit suite also runs `onn-gateway.test.ts` through a real MCP SDK
-client. Run `npm run test:runtime:scenarios:built` for the shared catalog's
-`onn-controls` scenario on both in-process and remote transports. Run
-`npm run test:onn:browser` for the authenticated simulated remote's keyboard,
-text, read-only refusal, reload, unavailable/unknown states, phone/desktop and
-WCAG checks. Set `BUNNY_ONN_SCREENSHOTS` to an existing private evidence folder
-to retain desktop/phone images for visual inspection. Also run the full
-runtime dashboard browser suite locally as its owning guide requires.
-The active Checks workflow includes ONN under its existing modules group;
-App verification runs the focused ONN browser journey, and runtime/SDK suites
-cover shared consumers. Run the shared contract and workflow checks too.
-These are source and
-simulator checks. Installed-client and physical acceptance require their own
-evidence.
-
-For ONN title-history source changes, also run `npm run test:onn:native` with
-JDK 21 and Python 3.12 or later. This compiles the fixed reader against synthetic
-Android surfaces, exercises privacy/bounds/deadlines and fixed invocation over
-socket-backed raw ADB output, checks missing/existing process-local media
-initialization and private refusal, and verifies the packaged
-source/Dex pins. It does not run Android or reproduce Dex unless the qualified
-R8 tool is explicitly supplied through the owning native build procedure.
-The modules CI group provisions JDK 21 and runs this check. Module tests cover
-closed metadata intake, immutable private originals, gaps, clock/restart faults,
-storage loss and bounded cutoff history/detail queries. Runtime gateway tests
-use a real loopback MCP SDK client; both transport scenario runs verify stored
-reads without device commands. Source delivery leaves installed acceptance in
-#1044 and history React/browser work in #1041.
-
-For ONN history visuals, run `npm run test:onn:built` for local calendar/DST,
-closed browser documents and source-value checks, then
-`npm run test:onn:history:browser` after the root build. That focused command
-selects the existing `scenario-onn-title-history` capture, which exercises
-the module page in the same fresh simulated runtime as the catalog. CI's
-`test:runtime:verify:built` and independent disposable Acceptance use that exact
-path. It checks real owner reads, synthetic prior-day owner fixtures, filters,
-history/detail continuation, keyboard focus, unsupported/failed/superseded
-reads, reconnect, phone/desktop accessibility and zero device commands/effects.
-Capture attachments retain synthetic screenshots and a labelled interaction
-video for inspection. Run the full runtime dashboard browser checks as well.
-These checks do not establish installed or physical behavior.
+ONN is hibernated. Dedicated module, native-reader, browser, scenario and qualification checks are retained as dormant sources and are excluded from default build and CI. Run `node --test tests/onn_hibernation.test.mjs` for active registry absence. Build/typecheck/lint, workflow/CI-selection checks and shared runtime/dashboard checks remain required for hibernation changes. The shared television-viewport keyboard journey remains active. Historical instructions remain in the [module guide](../modules/onn/README.md).
 
 ## Roborock module checks
 
