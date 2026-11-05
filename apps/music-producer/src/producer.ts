@@ -1,21 +1,22 @@
 import {randomUUID} from 'node:crypto';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {CAPTURE_WINDOW_MS, type CaptureFeatures, type CaptureProgress, type CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
+import {CAPTURE_WINDOW_MS, type CaptureFeatures, type CaptureProgress, type CaptureSelection, type CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {Outcome, SdkError, type Command, type RemoteEndpoint, type RemoteParticipant, type Reply, type Scheduler} from '@jimmie-potts/sdk';
 import {systemClock, systemScheduler, type NativeRun, type NativeSource, type NativeTermination} from './native.js';
 import {nativeFailure, type NativeFailure, type NativeFrame} from './protocol.js';
 import {CaptureClock, coreClockQualified, type ClockReading} from './timing.js';
+import type {ConfiguredMicrophone} from './configuration.js';
 
 type Operation = {operationId: string; traceparent: string};
 type Session = {
-  generation: string; start: Operation; stop: Operation | null;
+  generation: string; selection: CaptureSelection; start: Operation; stop: Operation | null;
   phase: 'qualifying' | 'starting' | 'reporting-start' | 'active' | 'stopping';
   run: NativeRun | null; clock: CaptureClock; pending: NativeFrame | null;
   failure: NativeFailure | null; ending: boolean; cancelStartup: () => void;
 };
 export type ProducerOptions = {participant: Pick<RemoteParticipant, 'openEndpoint' | 'close'>; native: NativeSource;
-  clock?: () => ClockReading; scheduler?: Scheduler};
-const schema = (family: string): string => `https://bunny.invalid/events/${family}/2.0`;
+  clock?: () => ClockReading; scheduler?: Scheduler; microphone?: ConfiguredMicrophone};
+const schema = (family: string, version = '2.0'): string => `https://bunny.invalid/events/${family}/${version}`;
 
 /** One connection-bound endpoint and one explicitly issued capture generation. */
 export class MusicProducer {
@@ -25,6 +26,7 @@ export class MusicProducer {
   readonly #native: NativeSource;
   readonly #clock: () => ClockReading;
   readonly #scheduler: Scheduler;
+  readonly #microphone: ConfiguredMicrophone | undefined;
   #endpoint: RemoteEndpoint | undefined;
   #session: Session | undefined;
   #opened = false;
@@ -40,8 +42,9 @@ export class MusicProducer {
   #reportingCleanup = false;
   #cancelPublication: (() => void) | undefined;
   #progressTail = Promise.resolve();
-  constructor({participant, native, clock = systemClock, scheduler = systemScheduler}: ProducerOptions) {
+  constructor({participant, native, clock = systemClock, scheduler = systemScheduler, microphone}: ProducerOptions) {
     this.#participant = participant; this.#native = native; this.#clock = clock; this.#scheduler = scheduler;
+    this.#microphone = microphone === undefined ? undefined : {...microphone};
     this.closed = new Promise(resolve => {this.#resolveClosed = resolve;});
   }
   async start(): Promise<void> {
@@ -54,7 +57,9 @@ export class MusicProducer {
       this.#endpoint = endpoint;
       const sent = this.#clock();
       const answer = await endpoint.request('music-capture-endpoint', {type: 'org.bunny.music-capture.endpoint.requested',
-        dataschema: schema('music-capture-endpoint'), data: {requestId: randomUUID(), action: 'enable', input: 'music'}}, {timeoutMs: 2000});
+        dataschema: schema('music-capture-endpoint', this.#microphone === undefined ? '2.0' : '2.1'),
+        data: {requestId: randomUUID(), action: 'enable', input: 'music',
+          ...(this.#microphone === undefined ? {} : {microphone: {id: this.#microphone.id}})}}, {timeoutMs: 2000});
       const received = this.#clock();
       if (this.#closed || this.#closing || answer.status !== 'accepted' || answer.reply.source !== 'bunny/core' ||
         !coreClockQualified({sent, received, replyAtMs: Date.parse(answer.reply.time)})) throw new SdkError(errorBody('unavailable'));
@@ -98,10 +103,11 @@ export class MusicProducer {
     if (!Number.isFinite(deadline) || deadline <= this.#clock().wallMs) return errorBody('expired');
     const work = command.data;
     if (work.action === 'start') {
-      if (work.input !== 'music') return errorBody('unsupported-capability');
+      if (work.input === 'microphone' && work.microphoneId !== this.#microphone?.id) return errorBody('unsupported-capability');
       if (this.#blocked || this.#terminated?.generation === work.generation) return errorBody('invalid-state');
       if (this.#session !== undefined) return errorBody('capacity');
-      const session: Session = {generation: work.generation, start: {operationId: work.operationId, traceparent: command.traceparent},
+      const selection: CaptureSelection = work.input === 'music' ? {input: 'music'} : {input: 'microphone', microphoneId: work.microphoneId};
+      const session: Session = {generation: work.generation, selection, start: {operationId: work.operationId, traceparent: command.traceparent},
         stop: null, phase: 'qualifying', run: null, clock: new CaptureClock(this.#registrationClock ?? this.#clock()), pending: null, failure: null,
         ending: false, cancelStartup: () => {}};
       this.#session = session; this.#lastSequence = 0;
@@ -135,7 +141,9 @@ export class MusicProducer {
       if (!this.#current(session) || session.phase !== 'qualifying') return;
       if (!qualified || !session.clock.valid) {this.#fail(session, nativeFailure('unavailable')); return;}
       session.phase = 'starting';
-      session.run = this.#native.start(frame => this.#frame(session, frame));
+      if (session.selection.input === 'microphone' && this.#microphone === undefined) {this.#fail(session, nativeFailure('unsupported-capability')); return;}
+      session.run = this.#native.start(frame => this.#frame(session, frame), session.selection.input === 'music'
+        ? {input: 'music'} : {input: 'microphone', uid: this.#microphone?.uid ?? ''});
       void session.run.ended.then(result => this.#ended(session, result), () => this.#ended(session, {status: Outcome.uncertain, error: nativeFailure('uncertain-result')}));
     } catch {this.#fail(session, nativeFailure('unavailable'));}
   }
@@ -207,11 +215,11 @@ export class MusicProducer {
     if (times === undefined) {if (!session.clock.valid) this.#fail(session, nativeFailure('unavailable')); return;}
     const endpoint = this.#endpoint;
     if (endpoint === undefined) return;
-    const data: CaptureFeatures = {...frame, ...times, generation: session.generation, input: 'music',
+    const data: CaptureFeatures = {...frame, ...times, generation: session.generation, ...session.selection,
       discontinuity: frame.discontinuity || frame.sequence !== this.#lastSequence + 1};
     this.#lastSequence = frame.sequence; this.#lastPublishedMs = now.monotonicMs; this.#publishing = true;
     void endpoint.publish('music-capture-features', {kind: 'occurrence', type: 'org.bunny.music-capture.features.observed',
-      dataschema: schema('music-capture-features'), data}, {parent: {traceparent: session.start.traceparent}}).then(() => {
+      dataschema: schema('music-capture-features', session.selection.input === 'music' ? '2.0' : '2.1'), data}, {parent: {traceparent: session.start.traceparent}}).then(() => {
       this.#publishing = false;
       if (this.#session !== undefined) this.#pump(this.#session);
     }, () => {this.#publishing = false; this.#lost();});

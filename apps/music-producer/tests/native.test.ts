@@ -78,3 +78,31 @@ void test('stderr is discarded and its byte bound terminates the helper with a s
   child.spawn(); child.port.stderr.push(Buffer.alloc(8193, 120)); child.exit(0);
   assert.deepEqual(await run.ended, {status: 'failed', error: {code: 'invalid-message', retryable: false}});
 });
+
+void test('microphone selection enters only the private startup pipe and a pre-spawn stop sends no UID', async () => {
+  for (const stopEarly of [false, true]) {
+    const child = fakeChild(), world = timerWorld(), launches: string[] = [], input: string[] = [];
+    child.port.stdin.on('data', (bytes: Buffer) => {input.push(bytes.toString('utf8'));});
+    const native = new NativeCapture({helper: '/synthetic', ...world, launch: mode => {launches.push(mode);return child.port;}});
+    const run = native.start(() => {}, {input: 'microphone', uid: 'synthetic-private-uid'});
+    assert.deepEqual(input, []);
+    if (stopEarly) void run.stop();
+    child.spawn();
+    if (!stopEarly) {
+      assert.deepEqual(JSON.parse(input.join('')), {schema: 'music-native-input/1.0', uid: 'synthetic-private-uid'});
+      void run.stop();
+    } else assert.equal(input.join(''), 'stop\n');
+    child.exit(0);assert.equal((await run.ended).status, 'stopped');
+    assert.deepEqual(launches, ['--capture-microphone']);
+  }
+});
+
+void test('microphone terminal errors stay fixed and uncertain cleanup prevents a success claim', async () => {
+  for (const [detail, expected] of [['Microphone permission is not granted.', 'failed'], ['Microphone capture cleanup did not complete.', 'uncertain']] as const) {
+    const child = fakeChild(), world = timerWorld();
+    const run = new NativeCapture({helper: '/synthetic', ...world, launch: () => child.port}).start(() => assert.fail('unexpected frame'),
+      {input: 'microphone', uid: 'synthetic-private-uid'});
+    child.spawn();child.output({schema: 'music-native-terminal/1.1', error: {code: 'unavailable', retryable: true, detail}});child.exit(1);
+    assert.equal((await run.ended).status, expected);
+  }
+});

@@ -3,13 +3,13 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {TestContext} from 'node:test';
 import type {DatabaseSync} from 'node:sqlite';
 import {observation, sessionStarted} from './fixtures/agents.js';
-import {MUSIC_PRODUCER_SOURCE, type CaptureFeatures, type CaptureProgress, type CaptureState, type CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
+import {MUSIC_PRODUCER_SOURCE, type CaptureFeatures, type CaptureProgress, type CaptureSelection, type CaptureState, type CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {connectRemote, type Command} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import {tokenDigest} from '../src/credentials.js';
 import {contextOf, edgeConfig, fixture, it, run, stateDir, waitFor} from './support.js';
 
-const schema = (family: string) => `https://bunny.invalid/events/${family}/2.0`;
+const schema = (family: string, version = '2.0') => `https://bunny.invalid/events/${family}/${version}`;
 async function setup(t: TestContext, directory?: string) {
   let handle: CoreHandle | undefined, wallOffset = 0;
   const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}]});
@@ -22,26 +22,29 @@ async function setup(t: TestContext, directory?: string) {
   t.after(() => producer.close());
   const work: Command<CaptureWork>[] = [];let closed = 0, refuseStop = false;
   const endpoint = await producer.openEndpoint<CaptureWork>({family: 'music-capture-work', onClosed: () => {closed += 1;}, respond: command => {work.push(command);return refuseStop && command.data.action === 'stop' ? errorBody('unavailable') : {status: 'accepted'};}});
+  let stateSchema: string | undefined;
   const read = async (): Promise<CaptureState> => {
     const result = await contextOf(observer).sdk.sync<CaptureState>(['music-capture-state'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
     assert.equal(result.status, 'synced', result.status === 'synced' ? '' : JSON.stringify({result, health: runtime.health()}));if (result.status !== 'synced') throw new Error('capture-sync');
+    assert.equal(result.copy.states().length, 1);
+    stateSchema = result.copy.states()[0]?.dataschema;
     const current = result.copy.states()[0]?.data;await result.copy.close();assert.ok(current);return current;
   };
   let registrations = 0;
-  const enable = () => endpoint.request('music-capture-endpoint', {type: 'org.bunny.music-capture.endpoint.requested', dataschema: schema('music-capture-endpoint'),
-    data: {action: 'enable', input: 'music'}}, {requestId: `enable-music-${++registrations}`, timeoutMs: 2000});
-  const control = (requestId: string, expectedRevision: number, action: 'start' | 'stop') => core.operatorActions.dispatch({key: 'bunny.cmd.music-capture-control.music', requestedBy: 'bunny/parts/operator', requestId,
-    draft: {type: 'org.bunny.music-capture.control.requested', subject: 'music', dataschema: schema('music-capture-control'), data: {action, expectedRevision, ...(action === 'start' ? {endpointId: endpoint.id, input: 'music'} : {})}}});
+  const enable = (microphoneId?: string) => endpoint.request('music-capture-endpoint', {type: 'org.bunny.music-capture.endpoint.requested', dataschema: schema('music-capture-endpoint', microphoneId === undefined ? '2.0' : '2.1'),
+    data: {action: 'enable', input: 'music', ...(microphoneId === undefined ? {} : {microphone: {id: microphoneId}})}}, {requestId: `enable-music-${++registrations}`, timeoutMs: 2000});
+  const control = (requestId: string, expectedRevision: number, action: 'start' | 'stop', selection: CaptureSelection = {input: 'music'}) => core.operatorActions.dispatch({key: 'bunny.cmd.music-capture-control.music', requestedBy: 'bunny/parts/operator', requestId,
+    draft: {type: 'org.bunny.music-capture.control.requested', subject: 'music', dataschema: schema('music-capture-control', selection.input === 'music' ? '2.0' : '2.1'), data: {action, expectedRevision, ...(action === 'start' ? {endpointId: endpoint.id, ...selection} : {})}}});
   const progress = (data: CaptureProgress) => endpoint.publish('music-capture-progress', {kind: 'occurrence', type: 'org.bunny.music-capture.progress.observed', dataschema: schema('music-capture-progress'), data});
   const frame = (generation: string, sequence: number, patch: Partial<CaptureFeatures> = {}) => {
     const at = Date.now();
-    return endpoint.publish('music-capture-features', {kind: 'occurrence', type: 'org.bunny.music-capture.features.observed', dataschema: schema('music-capture-features'), data: {
+    return endpoint.publish('music-capture-features', {kind: 'occurrence', type: 'org.bunny.music-capture.features.observed', dataschema: schema('music-capture-features', patch.input === 'microphone' ? '2.1' : '2.0'), data: {
       generation, input: 'music', sequence, sampleRateHz: 48000, channels: 2, frameCount: 4800,
       startMonotonicMs: (sequence - 1) * 100, endMonotonicMs: sequence * 100, emittedMonotonicMs: sequence * 100 + 1, observedAtMs: at, validUntilMs: at + 400,
       rms: 0, peak: 0, clippedFraction: 0, bands: {bass: 0, mid: 0, treble: 0}, onset: {strength: 0, confidence: 0}, discontinuity: false, ...patch,
     }});
   };
-  return {core, runtime, producer, observer, endpoint, work, closed: () => closed, refuseStop: () => {refuseStop = true;}, read, enable, control, progress, frame, operation: (id: string) => handle?.operation(id), failWrites: async (value: boolean) => {
+  return {core, runtime, producer, observer, endpoint, work, stateSchema: () => stateSchema, closed: () => closed, refuseStop: () => {refuseStop = true;}, read, enable, control, progress, frame, operation: (id: string) => handle?.operation(id), failWrites: async (value: boolean) => {
     assert.ok(handle);await handle.transaction(tx => {tx.database.exec(value
       ? "CREATE TEMP TRIGGER refuse_capture BEFORE UPDATE ON music_capture BEGIN SELECT RAISE(ABORT, 'synthetic-capture-store-refusal'); END"
       : 'DROP TRIGGER refuse_capture');});
@@ -51,6 +54,47 @@ async function setup(t: TestContext, directory?: string) {
       : 'DROP TRIGGER refuse_capture_history');});
   }, wallOffset: (value: number) => {wallOffset = value;}};
 }
+
+it('a configured microphone is selected explicitly and only its current frames can activate capture', async t => {
+  const h = await setup(t);
+  assert.equal((await h.enable('studio-mic')).status, 'accepted');
+  const initial = await h.read();
+  assert.deepEqual(initial.microphone, {id: 'studio-mic'});
+  assert.equal(initial.session.status, 'idle');
+  assert.equal(h.stateSchema(), schema('music-capture-state', '2.1'));
+  assert.equal(h.work.length, 0);
+  const changed = await h.enable('another-mic');
+  assert.equal(changed.status, 'rejected');
+  const absent = await h.control('wrong-mic', initial.revision, 'start', {input: 'microphone', microphoneId: 'another-mic'});
+  assert.ok('error' in absent);assert.equal(absent.error.code, 'unsupported-capability');
+  assert.equal(h.work.length, 0);
+  const selection = {input: 'microphone', microphoneId: 'studio-mic'} as const;
+  assert.deepEqual(await h.control('start-mic', (await h.read()).revision, 'start', selection), {status: 'accepted', requestId: 'start-mic'});
+  await waitFor(() => h.work.length === 1);
+  const start = h.work[0];assert.ok(start?.data.action === 'start');
+  assert.equal(start.dataschema, schema('music-capture-work', '2.1'));
+  assert.ok(start.data.input === 'microphone');assert.equal(start.data.microphoneId, 'studio-mic');
+  await h.progress({operationId: start.data.operationId, generation: start.data.generation, status: 'started'});
+  await waitFor(() => h.operation('start-mic')?.result === 'succeeded');
+  await h.frame(start.data.generation, 1);
+  await h.frame(start.data.generation, 2, {...selection, microphoneId: 'another-mic'});
+  assert.equal((await h.read()).session.status, 'stale');
+  await h.frame(start.data.generation, 3, selection);
+  await waitFor(async () => (await h.read()).session.status === 'active');
+  await h.control('stop-mic', (await h.read()).revision, 'stop');
+  await waitFor(() => h.work.length === 2);
+  const stop = h.work[1];assert.ok(stop?.data.action === 'stop');
+  assert.equal(stop.dataschema, schema('music-capture-work'));
+  const stopping = (await h.read()).session;assert.ok(stopping.status === 'stopping' && stopping.input === 'microphone');
+  assert.equal(stopping.microphoneId, 'studio-mic');
+  await h.progress({operationId: stop.data.operationId, generation: stop.data.generation, status: 'stopped'});
+  await waitFor(async () => (await h.read()).session.status === 'idle');
+  await h.frame(start.data.generation, 4, selection);
+  assert.equal((await h.read()).session.status, 'idle');
+  await h.endpoint.close();
+  await waitFor(async () => (await h.read()).availability === 'unavailable');
+  assert.equal((await h.read()).microphone, undefined);
+});
 
 it('registration never captures; explicit start and stop have observed outcomes and fence delayed frames', async t => {
   const h = await setup(t);
