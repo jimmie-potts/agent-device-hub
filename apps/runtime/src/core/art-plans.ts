@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {commandSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
+import {rainNoticeIssue, rainNoticeRefusal, type RainNotice} from '@jimmie-potts/event-contracts/v2/art-notice';
 import {Outcome, type Cancel, type ModuleScheduler} from '@jimmie-potts/sdk';
 import type {Operation} from './operations.js';
 import type {Action, ActionAnswer} from './tracker.js';
@@ -11,6 +12,7 @@ export type ArtPlan = Pick<MomentPlayRequest, 'mood' | 'priorityClass' | 'covers
   id: string; artworkId: string; prepareUntilMs: number;
   displays: readonly {target: string; compositionId: string; durationMs: number}[];
   browser?: {compositionId: string};
+  notice?: RainNotice;
 };
 export type ArtSurface = {kind: 'display'; target: string} | {kind: 'browser'};
 /** Opportunity selection, quiet hours and budgets belong to the caller under the automation owner. */
@@ -36,6 +38,7 @@ const planDigest = (plan: ArtPlan): string => createHash('sha256').update(JSON.s
   plan.artworkId, plan.startAtMs, plan.prepareUntilMs, plan.toleranceMs, plan.mood, plan.priorityClass, plan.coversStatus,
   [...plan.displays].sort((a, b) => a.target < b.target ? -1 : a.target > b.target ? 1 : 0).map(value => [value.target, value.compositionId, value.durationMs]),
   plan.browser?.compositionId ?? null,
+  plan.notice===undefined?null:[plan.notice.kind,plan.notice.likelihood,plan.notice.forecastStartAtMs,plan.notice.forecastEndAtMs,plan.notice.forecastUpdatedAtMs,plan.notice.observedAtMs,plan.notice.staleAtMs,plan.notice.weatherRevision],
 ])).digest('hex');
 
 export function createArtPlans(options: Options) {
@@ -102,7 +105,7 @@ export function createArtPlans(options: Options) {
     if ('error' in original) return blocked(original);
     const moment: MomentPlayRequest = {requestId: requestId(plan, 'moment', selected.target), momentId: requestId(plan, 'intent', 'art'),
       mood: plan.mood, durationMs: selected.durationMs, priorityClass: plan.priorityClass, coversStatus: plan.coversStatus,
-      startAtMs: plan.startAtMs, toleranceMs: plan.toleranceMs, art: {compositionId: selected.compositionId}};
+      startAtMs: plan.startAtMs, toleranceMs: plan.toleranceMs, art: {compositionId: selected.compositionId},...(plan.notice===undefined?{}:{notice:plan.notice})};
     if (!commandSupported(original.record.capabilities, {family: 'moment-play', data: moment}) || original.kind === 'tidbyt' && selected.durationMs < 30_000)
       return blocked(errorBody('unsupported-capability'));
     const prepare = await attempt({requestId: requestId(plan, 'prepare', selected.target), key: 'bunny.cmd.art-auto.art', requestedBy: 'bunny/core',
@@ -120,12 +123,12 @@ export function createArtPlans(options: Options) {
       || current.record.generation.epoch !== original.record.generation.epoch || current.record.generation.sequence !== original.record.generation.sequence)
       return result(notRequested(errorBody('invalid-state', {detail: 'the art target changed while preparing'})));
     if (!commandSupported(current.record.capabilities, {family: 'moment-play', data: moment})) return result(notRequested(errorBody('unsupported-capability')));
-    const policy = permit({kind: 'display', target: selected.target});
+    const policy = rainNoticeRefusal(plan.notice,moment,options.clock()) ?? permit({kind: 'display', target: selected.target});
     if (policy !== undefined) return result(notRequested(policy));
     if (!active()) return result(notRequested(stopped()));
     if (options.clock() >= plan.prepareUntilMs) return result(notRequested(cutoff()));
     return result(await attempt({requestId: moment.requestId, key: `bunny.cmd.moment-play.${selected.target}`, requestedBy: 'bunny/core',
-      draft: {type: 'org.bunny.moment.play.requested', subject: selected.target, dataschema: 'https://bunny.invalid/events/moment-play/2.1', data: moment}}));
+      draft: {type: 'org.bunny.moment.play.requested', subject: selected.target, dataschema: `https://bunny.invalid/events/moment-play/${plan.notice===undefined?'2.1':'2.2'}`, data: moment}}));
   };
   return {
     targets: (): readonly ArtPlanTarget[] => options.targets().map(target => ({...target})),
@@ -141,6 +144,7 @@ export function createArtPlans(options: Options) {
         || plan.displays.some(item => !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.target) || item.target.length > 128 || !composition(item.compositionId)
           || !Number.isInteger(item.durationMs) || item.durationMs < 1000 || item.durationMs > 300_000)
         || plan.browser !== undefined && !composition(plan.browser.compositionId)) return errorBody('invalid-request');
+      if(plan.notice!==undefined && (rainNoticeIssue(plan.notice,now)!==undefined || rainNoticeRefusal(plan.notice,{startAtMs:plan.startAtMs,toleranceMs:plan.toleranceMs,durationMs:Math.max(30_000,...plan.displays.map(item=>item.durationMs))},now)!==undefined))return errorBody('invalid-request');
       const refused = options.claim(plan.id, planDigest(plan));
       if (refused !== undefined) return refused;
       const [displays, browserResult] = await Promise.all([

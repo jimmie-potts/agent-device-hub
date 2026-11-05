@@ -16,6 +16,12 @@ import type {Operation} from './operations.js';
 import {MODE_FAMILIES, createRoutines, routineCommand, type Routines, type PowerDispatchOptions} from './power-schedules.js';
 import {createPowerLimits,PowerLimitStore,type PowerLimits} from './power-limits.js';
 import {checkAutomationDevices, type AutomationDevice} from './automation-devices.js';
+import {createArtSchedule,type ArtSchedule} from './art-schedule.js';
+import {ArtScheduleStore} from './art-schedule-store.js';
+import {ArtScheduleInputs} from './art-schedule-inputs.js';
+import type {ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import type {ArtScheduleRecord} from '@jimmie-potts/event-contracts/v2/art-schedule';
+import type {TraceContext} from '@jimmie-potts/sdk';
 import {createArtPlans, type ArtPlans, type ArtPlanTarget} from './art-plans.js';
 
 const KINDS = new Map([
@@ -23,17 +29,20 @@ const KINDS = new Map([
   ['org.bunny.turn.ended','turn-ended'], ['org.bunny.session.ended','session-ended'],
 ]);
 const opaque = (value: string): string => createHash('sha256').update(value).digest('hex');
-export type AutomationControls = Omit<Automation,'submit'|'close'|'log'> & {art?:Pick<ArtPlans,'targets'|'present'>;routines?:Omit<Routines,'close'>;limits?:Omit<PowerLimits,'close'|'tick'|'records'>;log(limit:number,before?:number):(LogEntry & {operation?:Operation})[]};
+export type AutomationControls = Omit<Automation,'submit'|'close'|'log'> & {artSchedule?:{get():ArtScheduleRecord;save(input:unknown,parent?:TraceContext):Promise<ArtScheduleRecord>};art?:Pick<ArtPlans,'targets'|'present'>;routines?:Omit<Routines,'close'>;limits?:Omit<PowerLimits,'close'|'tick'|'records'>;log(limit:number,before?:number):(LogEntry & {operation?:Operation})[]};
 
 type DeviceFollower = {copy?: SyncedCopy<DeviceRecord>; fresh:boolean; pending: Promise<void>; retry: Backoff; cancel?: Cancel};
 
 export class AutomationPart implements CorePart {
-  readonly families=['power-limit'];
-  readonly states=(families:readonly string[])=>families.includes('power-limit')?(this.#limits?.records()??[]).map(record=>({type:'org.bunny.power-limit.updated',subject:record.id,dataschema:'https://bunny.invalid/events/power-limit/2.0',data:record})):[];
+  readonly families=['power-limit','art-schedule'];
+  readonly states=(families:readonly string[])=>[...(families.includes('power-limit')?(this.#limits?.records()??[]).map(record=>({type:'org.bunny.power-limit.updated',subject:record.id,dataschema:'https://bunny.invalid/events/power-limit/2.0',data:record})):[]),
+    ...(families.includes('art-schedule')&&this.#schedule!==undefined?[{type:'org.bunny.art-schedule.updated',subject:'art',dataschema:'https://bunny.invalid/events/art-schedule/2.0',data:this.#schedule.get()}]:[])];
+  #schedule:ArtSchedule|undefined;
+  #inputs:ArtScheduleInputs|undefined;
   #limits:PowerLimits|undefined;
   readonly #scheduler: ModuleScheduler;
   readonly #signal: AbortSignal;
-  constructor(scheduler: ModuleScheduler, signal: AbortSignal) {this.#scheduler=scheduler;this.#signal=signal;}
+  constructor(scheduler: ModuleScheduler, signal: AbortSignal, readonly choice:()=>number=Math.random) {this.#scheduler=scheduler;this.#signal=signal;}
   #handle: CoreHandle | undefined;
   #automation: Automation | undefined;
   #routines:Routines|undefined;
@@ -169,6 +178,16 @@ export class AutomationPart implements CorePart {
         return 'error' in answer ? (answer.error.code==='uncertain-result' || answer.error.code==='internal') ? {kind:'uncertain',momentId:moment.momentId,requestId} : {kind:'not-sent',momentId:moment.momentId,reason:answer.error.code,requestId}
           : {kind:'receipt',momentId:moment.momentId,requestId:answer.requestId,status:'accepted'};
       }});
+    this.#inputs=new ArtScheduleInputs(handle,this.#scheduler,()=>!this.#closed&&!this.#signal.aborted,
+      ()=>this.#schedule?.changed(),revision=>this.#schedule?.weatherChanged(revision));
+    this.#schedule=createArtSchedule({store:new ArtScheduleStore(database,work=>handle.transaction(work)),shared:store,core:handle,
+      scheduler:this.#scheduler,active:()=>!this.#closed&&!this.#signal.aborted,plans:this.#art,
+      current:id=>this.#device(id),settings:()=>this.#automation?.settings()??structuredClone(DEFAULT_SETTINGS),
+      attention:()=>[...this.#sessions.values()].some(session=>session.attention.length>0),inputs:this.#inputs,choice:this.choice,
+      failed:()=>recordLog(handle.log,'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal'})});
+  }
+  authorizeAmbient(authorization:string,target:string,compositionId:string):ErrorBody|undefined {
+    return this.#schedule?.authorizeAmbient(authorization,target,compositionId)??(this.#schedule===undefined?errorBody('unavailable'):undefined);
   }
   /** Only the first attempt of the original batch can deliver an eligible live occurrence. */
   publishing(message: Message<unknown>): () => void {return this.#eligibility.publishing(message);}
@@ -185,8 +204,8 @@ export class AutomationPart implements CorePart {
     this.#followDevices();
     await Promise.all([
       handle.sdk.subscribe<OperationRecord>('bunny.state.operation.*',message=>{
-        if(message.kind==='state' && message.source===handle.sdk.source) this.#art?.changed(message.data.requestId);
-      },{onOverflow:()=>{this.#art?.changed();}}),
+        if(message.kind==='state' && message.source===handle.sdk.source) {this.#art?.changed(message.data.requestId);this.#schedule?.changed();}
+      },{onOverflow:()=>{this.#art?.changed();this.#schedule?.changed();}}),
       ...[...KINDS.values()].map(kind=>handle.sdk.subscribe<AgentOccurrence>(`bunny.event.${kind}.*`,message=>{
         if(this.#closed || message.source!==handle.sdk.source || !this.#eligibility.take(message.id)) return;
         const data=message.data;
@@ -199,6 +218,7 @@ export class AutomationPart implements CorePart {
     const engine=this.#automation;
     if(engine===undefined || this.#closed) throw new AutomationError('unavailable',503);
     return {
+      ...(this.#schedule===undefined?{}:{artSchedule:this.#schedule}),
       ...(this.#art===undefined?{}:{art:{targets:this.#art.targets,present:this.#art.present}}),
       ...(this.#routines===undefined?{}:{routines:this.#routines}),
       ...(this.#limits===undefined?{}:{limits:this.#limits}),
@@ -207,7 +227,7 @@ export class AutomationPart implements CorePart {
       update:(id,value,authorize)=>engine.update(id,value,authorize),
       setEnabled:(id,enabled)=>engine.setEnabled(id,enabled),remove:id=>engine.remove(id),
       interruptSet:()=>engine.interruptSet(),replaceInterruptSet:value=>engine.replaceInterruptSet(value),
-      settings:()=>engine.settings(),replaceSettings:value=>engine.replaceSettings(value),settled:async()=>{await Promise.all([engine.settled(),this.#routines?.settled(),this.#limits?.settled()]);},
+      settings:()=>engine.settings(),replaceSettings:value=>{const result=engine.replaceSettings(value);this.#schedule?.changed();return result;},settled:async()=>{await Promise.all([engine.settled(),this.#routines?.settled(),this.#limits?.settled(),this.#schedule?.settled()]);},
       log:(limit,before)=>engine.log(limit,before).map(entry=>{
       const operation=entry.requestId===undefined?undefined:this.#handle?.operation(entry.requestId);
       return {...entry,...(operation===undefined?{}:{operation})};
@@ -216,7 +236,7 @@ export class AutomationPart implements CorePart {
   async close(): Promise<void> {
     this.#closed=true;this.#eligibility.clear();
     this.#art?.close();
-    await Promise.all([this.#routines?.close(),this.#limits?.close()]);
+    await Promise.all([this.#routines?.close(),this.#limits?.close(),this.#schedule?.close(),this.#inputs?.close()]);
     await Promise.all([...this.#devices.values()].map(async follow=>{follow.cancel?.();await follow.pending;await follow.copy?.close();}));
     this.#devices.clear();
     await this.#automation?.close();

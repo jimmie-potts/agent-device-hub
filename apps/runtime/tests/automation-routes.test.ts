@@ -4,9 +4,26 @@ import {DatabaseSync} from 'node:sqlite';
 import {AutomationError, createAutomation, DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS, type Rule} from '../src/core/automation.js';
 import {AutomationStore} from '../src/core/automation-store.js';
 import {automationRoute, type AutomationAnswer} from '../src/gateway/automation-routes.js';
+import type {ArtScheduleRecord} from '@jimmie-potts/event-contracts/v2/art-schedule';
 
 const rule = {name: 'Turn complete', kind: 'event', trigger: {source: 'core', kind: 'turn-ended'},
   action: {mood: 'celebrate', priorityClass: 'event', durationMs: 1000, targets: ['lines']}};
+
+void test('art policy reads use their own version and writes re-authorize after the bounded body', async context => {
+  const w = world(); context.after(() => w.close());
+  const record: ArtScheduleRecord = {id: 'art', revision: 1, settingsRevision: 0,
+    policy: {enabled: false, wakingStartMinute: 480, wakingEndMinute: 1320, appearances: 7, targets: [], browser: true, ambient: true, generation: false, weather: false, coversStatus: false},
+    timeZone: 'UTC', status: 'disabled', weather: 'disabled', nextOpportunity: null, lastOpportunity: null, notice: null};
+  const steps: string[] = [];
+  const controls = {...w.controls, artSchedule: {get: () => record, save: () => {steps.push('save');return Promise.resolve({...record, settingsRevision: 1});}}};
+  const call = (method: string, authorized = true) => automationRoute(controls, {method,
+    url: new URL('http://runtime.invalid/api/v2/automation/art'),
+    body: bound => {assert.equal(bound, 4096);steps.push('body');return Promise.resolve({expectedSettingsRevision: 0, policy: record.policy});},
+    authorize: () => {steps.push('authorize');if (!authorized) throw new AutomationError('forbidden', 403);}});
+  assert.deepEqual(await call('GET'), {status: 200, body: {schema: 'art-schedule/2.0', ...record}});
+  assert.equal((await call('PUT'))?.status, 200);assert.deepEqual(steps, ['body', 'authorize', 'save']);
+  steps.length = 0;assert.equal((await call('PUT', false))?.status, 403);assert.deepEqual(steps, ['body', 'authorize']);
+});
 function world() {
   const database = new DatabaseSync(':memory:');
   const store = new AutomationStore(database, () => {}, {settings: DEFAULT_SETTINGS, interruptSet: [...DEFAULT_INTERRUPT_SET]});

@@ -1,6 +1,8 @@
 import type {ErrorCode} from './errors.js';
 import type {RainNotice} from './art-notice.js';
 
+export const ART_SCHEDULE_SCHEMA = 'https://bunny.invalid/events/art-schedule/2.0';
+
 /** One core-owned policy; all times use the runtime's existing host-local zone. */
 export type ArtSchedulePolicy = {
   enabled: boolean; wakingStartMinute: number; wakingEndMinute: number; appearances: 6 | 7 | 8;
