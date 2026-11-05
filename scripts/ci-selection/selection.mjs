@@ -26,6 +26,7 @@ const RULES = Object.freeze([
   ['**/*.md', [], 'Markdown: no Checks test may depend on its content (docs/sdlc.md, Markdown-only CI routing)'],
   // Dormant source selects no product checks; root build/type/lint still protect active composition.
   ['modules/bb8/**', [], 'hibernated BB-8 source'],
+  ['modules/onn/**', [], 'hibernated ONN source'],
   ['apps/bb8-windows/**', [], 'hibernated BB-8 helper source'],
   ['scripts/package-bb8.mjs.hibernated', [], 'hibernated BB-8 packaging source'],
   // The runtime composes active modules, and maintenance imports the runtime.
@@ -98,8 +99,6 @@ const PRESENTATION_PATHS = new Set([
   'apps/runtime/dashboard/src/skins/neon-geometry-wars.css',
   'modules/companions/src/frontend/card.css',
   'modules/reachy-mini/src/frontend/reachy.css',
-  'modules/onn/src/frontend/history.css',
-  'modules/onn/src/frontend/onn-card.css',
   'modules/nanoleaf/src/frontend/wall.css',
   'modules/wispr/src/frontend/wispr.css',
   'modules/wispr/src/frontend/wispr-card.css',

@@ -1,5 +1,11 @@
 # ONN title-history qualification
 
+## Hibernation
+
+The owner retired the ONN device on 2026-11-05. ONN is hibernated indefinitely under [#1464](https://github.com/jimmie-potts/agent-device-hub/issues/1464). Its source, private stores, schemas and compatibility readers are retained. Runtime/frontend registration, controls, observations, history pages and dedicated default checks are inactive. Resumption requires a new owner decision and restored verification. [#1465](https://github.com/jimmie-potts/agent-device-hub/issues/1465) owns installed deactivation; source changes alone do not establish it.
+
+Earlier setup, commands and qualification records below are historical.
+
 This record selects the observation contract for one configured ONN. It does
 not install a collector or claim installed acceptance. GitHub
 [#1038](https://github.com/jimmie-potts/agent-device-hub/issues/1038) owns the

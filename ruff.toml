@@ -13,9 +13,9 @@ include = [
   "tests/performance_linux/**/*.py",
   "tests/performance_standalone/**/*.py",
   "modules/nanoleaf/tests/fixtures/*.py",
-  "modules/onn/native/**/*.py",
 ]
 extend-exclude = [
+  "modules/onn",
   ".local",
   "docs/diagrams/legacy",
   "docs/system-design/reference/assets",
@@ -35,7 +35,6 @@ select = ["E4", "E7", "E9", "F", "B006", "B008", "B012", "B023", "B904"]
 "docs/system-design/reference/build_api.py" = ["E701"]
 "docs/system-design/reference/check_reference.py" = ["E701"]
 "modules/nanoleaf/tests/fixtures/record.py" = ["E701", "E702", "E731"]
-"modules/onn/native/tests/test_reader.py" = ["E701", "E702"]
 "scripts/performance/linux_hook.py" = ["E701", "E702"]
 "scripts/performance/linux_hook_worker.py" = ["E702", "E731"]
 "scripts/performance/standalone-nanoleaf.py" = ["E701", "E702"]

@@ -7,6 +7,9 @@ owner's decision of 2026-11-03 is recorded in that epic: art shows over Media an
 resumes in place, shows over Monitor briefly only when nothing needs attention,
 with a setting to turn that off, and attention ends it at once with no replay. The
 other rules below follow from it, from ADR 0006 and from the issue's discussion.
+The [owner's 2026-11-05 amendment](https://github.com/jimmie-potts/agent-device-hub/issues/1288#issuecomment-6650127516)
+allows brief scheduled exact art over empty Media while retaining explicit pauses,
+attention, pins and Now Playing takeovers. Ordinary mood moments keep their policy.
 Physical acceptance belongs to
 [#687](https://github.com/jimmie-potts/agent-device-hub/issues/687).
 
@@ -69,7 +72,8 @@ Return uses the existing path. Over Media, the moment holds the player through t
 Now Playing takeover and resumes only if the generation its own pause produced,
 the paused intent and the screen request are all unchanged. There is no second
 restore path. Over Monitor, the next picture is the current dashboard, not a saved
-one. The Pixoo adds no policy of its own about event kinds or cooldowns; those stay
+one. Empty Media has nothing to restore and uses the existing one-shot blank path.
+The Pixoo adds no policy of its own about event kinds or cooldowns; those stay
 in the hub.
 
 ## Consequences
@@ -99,6 +103,15 @@ leaves the art on with nothing to blank it, until something else writes, and it 
 forgets an unknown display on an empty player. How this looks on a real Pixoo belongs
 to [#687](https://github.com/jimmie-potts/agent-device-hub/issues/687).
 
+Scheduled-art pins are enforced by the core's arbitration; no Pixoo pin field is
+introduced here. A pause without a selected
+checkpoint is saved in the module's existing private state store and remains
+paused after restart. Stop or Clear releases that pause; Resume still needs a
+selection. Closing an already stopped empty player does not introduce a pause.
+
+Exact art requires a stopped player when Media is not playing. An explicit empty
+pause therefore refuses scheduled art even though ordinary moments retain their
+idle-player rule. Amendment 2 below permits a stopped player to retain its item.
 ## Amendment 2, 2026-11-05
 
 The owner chose to let a stopped or finished item show art too. The saved item would
