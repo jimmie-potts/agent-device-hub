@@ -18,3 +18,7 @@ xcrun clang -std=c11 -fobjc-arc -O2 -Wall -Wextra -Werror \
   -mmacosx-version-min=14.2 -framework Foundation -framework CoreAudio \
   -Wl,-sectcreate,__TEXT,__info_plist,"$native_dir/Info.plist" \
   "$native_dir/music_signal.c" "$native_dir/main.m" -o "$build_dir/music-capture"
+xcrun clang -std=c11 -fobjc-arc -O2 -Wall -Wextra -Werror \
+  -mmacosx-version-min=14.2 -framework AppKit -framework CoreServices \
+  -Wl,-sectcreate,__TEXT,__info_plist,"$native_dir/PositionInfo.plist" \
+  "$native_dir/position.m" -o "$build_dir/music-position"
