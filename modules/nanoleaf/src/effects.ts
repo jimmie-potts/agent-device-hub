@@ -2,6 +2,7 @@
 // Frames are keyframes: the device fades into each frame's color over its transition time, in deciseconds, and loops the
 // whole list when asked.
 import {isObject, own, pyHypot, pyJson, pyMod, pyRound, pySum} from './compat.js';
+import type {Kind} from './devices.js';
 import {ValueError} from './errors.js';
 
 export type Pattern = 'wave' | 'gradient' | 'pulse' | 'breathe' | 'sparkle';
@@ -233,9 +234,9 @@ export const sparkle: Renderer = (index, colors, step) => {
 
 export const RENDERERS: Readonly<Record<Pattern, Renderer>> = Object.freeze({wave, gradient, pulse, breathe, sparkle});
 
-/** The looped or one-shot display payload for a valid command on these Lines. */
+/** The looped or one-shot display payload for a valid command on this device's elements. */
 export function render(command: ExplicitAnimation | {kind: 'animation.play'; preset: PresetName}, groups: readonly (readonly number[])[],
-  positions: readonly (readonly number[] | null)[] | null): Display {
+  positions: readonly (readonly number[] | null)[] | null, kind: Kind = 'lines'): Display {
   const explicit: Readonly<Recipe> = 'preset' in command ? PRESETS[command.preset] : command;
   const speed = explicit.speed ?? DEFAULTS.speed;
   const direction = explicit.direction ?? DEFAULTS.direction;
@@ -254,10 +255,10 @@ export function render(command: ExplicitAnimation | {kind: 'animation.play'; pre
   groups.forEach((zoneIds, index) => {
     const frames = RENDERERS[explicit.pattern](index, colors, SPEEDS[speed], phase, circular);
     if (frames.length > MAX_FRAMES) throw new Rejected('capacity');
-    // Both zones of a Line share its frames.
+    // Both zones of a Line share its frames; a Panel has one zone.
     for (const zone of zoneIds) zones.push([zone, frames]);
   });
-  const payload = {write: display(zones, true, loop, true)};
+  const payload = {write: display(zones, true, loop, kind === 'lines')};
   if (size(payload) > MAX_BYTES) throw new Rejected('capacity');
   return payload;
 }

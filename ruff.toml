@@ -1,0 +1,44 @@
+# Surviving Python tooling, shared inventory for #766 and the typing slices in #767.
+required-version = "==0.17.3"
+target-version = "py312"
+include = [
+  "apps/maintenance/**/*.py",
+  "docs/*.py",
+  "docs/diagrams/*.py",
+  "docs/skins/*.py",
+  "docs/system-design/**/*.py",
+  "scripts/check-performance.py",
+  "scripts/performance/*.py",
+  "tests/performance/**/*.py",
+  "tests/performance_linux/**/*.py",
+  "tests/performance_standalone/**/*.py",
+  "modules/nanoleaf/tests/fixtures/*.py",
+  "modules/onn/native/**/*.py",
+]
+extend-exclude = [
+  ".local",
+  "docs/diagrams/legacy",
+  "docs/system-design/reference/assets",
+  "docs/system-design/reference/database",
+  "scripts/performance/vendor",
+]
+force-exclude = true
+
+[lint]
+# Pin the original defect-focused defaults instead of expanding when defaults change.
+select = ["E4", "E7", "E9", "F", "B006", "B008", "B012", "B023", "B904"]
+
+[lint.per-file-ignores]
+# Keep existing compact fixture/generator notation; correctness checks still run.
+"apps/maintenance/tests/test_recommendations.py" = ["E731"]
+"docs/system-design/build.py" = ["E731"]
+"docs/system-design/reference/build_api.py" = ["E701"]
+"docs/system-design/reference/check_reference.py" = ["E701"]
+"modules/nanoleaf/tests/fixtures/record.py" = ["E701", "E702", "E731"]
+"modules/onn/native/tests/test_reader.py" = ["E701", "E702"]
+"scripts/performance/linux_hook.py" = ["E701", "E702"]
+"scripts/performance/linux_hook_worker.py" = ["E702", "E731"]
+"scripts/performance/standalone-nanoleaf.py" = ["E701", "E702"]
+"scripts/performance/standalone.py" = ["E701", "E702"]
+"tests/performance_linux/test_hook.py" = ["E702"]
+"tests/performance_standalone/test_supervisor.py" = ["E701", "E702"]

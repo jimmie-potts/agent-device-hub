@@ -7,9 +7,9 @@ import time
 
 source=Path('/runtime/nanoleaf/bridge')
 sys.path.insert(0,str(source))
-import database
-import shared_input
-import shared_source as shared
+import database  # noqa: E402 -- Load the selected source after setting its import path.
+import shared_input  # noqa: E402 -- Load the selected source after setting its import path.
+import shared_source as shared  # noqa: E402 -- Load the selected source after setting its import path.
 directory=Path('/state/nanoleaf');directory.mkdir(mode=0o700)
 poller=None
 print(json.dumps({'ready':True}),flush=True)
@@ -33,4 +33,4 @@ for line in sys.stdin:
                           'activity':rows,'comets':comets}),flush=True)
     except Exception as error:
         print(json.dumps({'error':type(error).__name__,'code':str(error)}),flush=True)
-        raise SystemExit(1)
+        raise SystemExit(1)  # noqa: B904 -- Preserve the CLI's existing implicit exception context.

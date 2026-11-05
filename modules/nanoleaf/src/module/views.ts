@@ -1,5 +1,5 @@
 // What the Nanoleaf module publishes, built from saved state and what its links observed, never from a device read
-// (Hub #844): each controller's `device/2.1` record (Hub #975), its wall map view and the Lines' animation options. Building them
+// (Hub #844): each controller's `device/2.1` record (Hub #975), its wall map view and each device's animation options. Building them
 // only reads: no row is written, so serving a sync never changes the store. No view holds an address or a credential;
 // the device record and the wall view hold no favorite or preset name, which only the animation options list. The saved
 // layout, its geometry and the remembered scene are read again only when their file changed, since the views are built
@@ -286,28 +286,28 @@ function drawn(layout: DeviceProjection): (Point[] | null)[] {
 }
 
 /** The remembered scene's opaque ID, or null when the scene file is missing or invalid, or names no listed scene. */
-function rememberedSceneId(db: Db, directory: string): string | null {
+function rememberedSceneId(db: Db, directory: string, device: string): string | null {
   let saved: unknown;
   try {
-    saved = cachedFile<unknown>(join(directory, sceneFile(DEFAULT)), null, raw => parseJson(raw.toString('utf8').replace(/^\uFEFF/u, '')));
+    saved = cachedFile<unknown>(join(directory, sceneFile(device)), null, raw => parseJson(raw.toString('utf8').replace(/^\uFEFF/u, '')));
   } catch {
     return null;
   }
   const scene = isObject(saved) ? saved.scene : undefined;
   if (!isObject(scene) || typeof scene.name !== 'string') return null;
-  const names = first(db, 'SELECT names FROM control_scenes WHERE device=?', DEFAULT)?.[0];
+  const names = first(db, 'SELECT names FROM control_scenes WHERE device=?', device)?.[0];
   if (typeof names !== 'string' || !(parseJson(names) as unknown[]).includes(scene.name)) return null;
-  return sceneList(db, DEFAULT).find(entry => entry.name === scene.name)?.id ?? null;
+  return sceneList(db, device).find(entry => entry.name === scene.name)?.id ?? null;
 }
 
 /**
- * The Lines' animation options (integration_api.animations): the presets the module advertises, the saved favorites, the
+ * The device's animation options (integration_api.animations): the presets the module advertises, the saved favorites, the
  * patterns, speeds, directions, defaults and bounds, the queued animation, whether the saved layout places spatial
  * patterns, and the remembered scene's ID, read-only and null when unavailable.
  */
-export function animationsView(db: Db, directory: string): Record<string, unknown> {
-  const layout = savedLayout(directory, DEFAULT);
-  const queued = journal(db, DEFAULT, 'AND kind=?', ANIMATION).at(0);
+export function animationsView(db: Db, directory: string, device: string = DEFAULT): Record<string, unknown> {
+  const layout = savedLayout(directory, device);
+  const queued = journal(db, device, 'AND kind=?', ANIMATION).at(0);
   let saved: {name: string; animation: object}[];
   try {
     saved = favorites(db);
@@ -316,15 +316,15 @@ export function animationsView(db: Db, directory: string): Record<string, unknow
     saved = [];
   }
   return {
-    id: DEFAULT, mode: controlState(db, DEFAULT).mode,
+    id: device, mode: controlState(db, device).mode,
     presets: Object.entries(PRESETS).map(([id, recipe]) => ({id, ...recipe, colors: [...recipe.colors]})),
     favorites: saved, patterns: Object.entries(PATTERNS).map(([id, spatial]) => ({id, spatial})), speeds: Object.keys(SPEEDS),
     directions: [...DIRECTIONS], defaults: {...DEFAULTS},
     limits: {minColors: MIN_COLORS, maxColors: MAX_COLORS, maxFramesPerZone: MAX_FRAMES, maxEffectBytes: MAX_BYTES, maxFavorites: MAX_FAVORITES,
       maxFavoriteName: MAX_NAME},
     queuedAnimation: queued === undefined ? null : {requestId: queued.id},
-    positionsSaved: layout !== undefined && layout.kind === 'lines' && layout.elements.every(element => element.position !== null),
-    rememberedSceneId: rememberedSceneId(db, directory),
+    positionsSaved: layout !== undefined && layout.elements.every(element => element.position !== null),
+    rememberedSceneId: rememberedSceneId(db, directory, device),
   };
 }
 

@@ -1,0 +1,10 @@
+{
+  "include": ["docs/skins/*.py"],
+  "exclude": ["**/__pycache__"],
+  "typeCheckingMode": "standard",
+  "pythonVersion": "3.12",
+  "pythonPlatform": "Linux",
+  "executionEnvironments": [
+    {"root": "docs/skins", "extraPaths": ["docs/skins"]}
+  ]
+}
