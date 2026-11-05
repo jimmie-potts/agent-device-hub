@@ -54,7 +54,9 @@ changes no state format.
    startup script. Caddy 2.11.7 is exercised by the proxy tests. Record the
    installed version and check the route after a deliberate package upgrade.
    Installing the package does not select a startup policy; this recipe uses
-   manual foreground operation, without `brew services start caddy`.
+   foreground operation, under launchd or by hand as
+   [Start and use the route](#start-and-use-the-route) describes, without
+   `brew services start caddy`.
 
    Keep [private.Caddyfile](private.Caddyfile), `forwarder.env` and an optional
    `start-forwarder.sh` in a stable owner-only directory such as
@@ -96,8 +98,16 @@ changes no state format.
 
 ## Start and use the route
 
-After Mac unlock/sign-in and Docker/runtime startup, load the selected private
-environment in an owner terminal and run:
+With [start at sign-in](../../docs/bunny-container.md#start-at-sign-in) installed
+(#1426), the `org.bunny.private-forwarder` and `org.bunny.private-serve` launchd
+agents run the forwarder's `start-forwarder.sh` and the Serve command below, and
+restart them if they exit. Their output goes to `forwarder.log` and `serve.log` in
+the private directory. To stop the route, boot out both agents; it returns at the
+next sign-in unless you also delete their plists. Never run a manual copy beside them. The route holds no state and sends no device command, and its
+authentication is unchanged.
+
+To start it by hand instead, after Mac unlock/sign-in and Docker/runtime startup,
+load the selected private environment in an owner terminal and run:
 
 ```sh
 BUNNY_PRIVATE_DIR="$HOME/.config/bunny/private-access"
@@ -125,9 +135,7 @@ tailscale serve --https=443 http://127.0.0.1:18789
 ```
 
 Verify the selected Serve configuration and use the exact URL for this Mac.
-Do not replace another Serve listener. These foreground processes keep startup
-and shutdown manual; this recipe adds no service, login item or background route.
-Keep operational output private. Access logging is off, but dependency errors
+Do not replace another Serve listener. Keep operational output private. Access logging is off, but dependency errors
 and startup diagnostics can still contain local addresses or request details.
 
 Open the bookmark on an enrolled browser and authenticate with the configured

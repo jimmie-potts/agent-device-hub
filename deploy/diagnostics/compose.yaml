@@ -1,9 +1,9 @@
 # The Mac-local diagnostics backend for B.U.N.N.Y. (Hub #813): one OpenTelemetry Collector, Loki, Tempo and Grafana,
-# started and stopped by hand beside the runtime (docs/bunny-container.md "Diagnostics stack"). Only Grafana and the
+# run from a fixed installed copy beside the runtime (docs/bunny-container.md "Diagnostics stack"). Only Grafana and the
 # Collector's OTLP/HTTP receiver are published, on the Mac's loopback; the runtime reaches the Collector through Docker
 # Desktop's host alias. Images are pinned by their multi-architecture index digests (linux/arm64 and linux/amd64).
 # Diagnostic data lives in the three named volumes and is deletable: seven-day retention, ingestion limits and loss are
-# accepted (epic #810). No restart policy: collection resumes when the operator starts the project after sign-in.
+# accepted (epic #810). `unless-stopped`: collection returns with Docker Desktop after sign-in (#1426), and a stop holds.
 name: bunny-diagnostics
 services:
   collector:
@@ -16,7 +16,7 @@ services:
     pids_limit: 128
     mem_limit: 256m
     cpus: 1
-    restart: "no"
+    restart: unless-stopped
     stop_grace_period: 10s
     ports:
       - "127.0.0.1:4318:4318/tcp"
@@ -34,7 +34,7 @@ services:
     pids_limit: 256
     mem_limit: 768m
     cpus: 1
-    restart: "no"
+    restart: unless-stopped
     stop_grace_period: 20s
     networks: [diagnostics]
     tmpfs:
@@ -53,7 +53,7 @@ services:
     pids_limit: 256
     mem_limit: 768m
     cpus: 1
-    restart: "no"
+    restart: unless-stopped
     stop_grace_period: 20s
     networks: [diagnostics]
     tmpfs:
@@ -70,7 +70,7 @@ services:
     pids_limit: 256
     mem_limit: 768m
     cpus: 1
-    restart: "no"
+    restart: unless-stopped
     stop_grace_period: 10s
     ports:
       - "127.0.0.1:3000:3000/tcp"

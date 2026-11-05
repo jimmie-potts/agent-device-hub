@@ -153,7 +153,7 @@ The Nanoleaf port is [#26](https://github.com/jimmie-potts/agent-device-hub/issu
 Their old services are stopped and disabled after the accepted cutover; code and
 private stores remain for manual return until separately authorized retirement.
 [ADR 0008](docs/decisions/0008-runtime-hosting.md) selects the Mac Mini as the
-primary host, with manual startup after sign-in and no PC dependency for normal
+primary host, with [automatic startup after manual sign-in](docs/bunny-container.md#start-at-sign-in) and no PC dependency for normal
 hub operation. Its historical WSL decision and the old
 [boot setup](apps/hub/SETUP.md#start-the-runtime-at-boot) remain scoped records,
 not prerequisites for Mac adoption.
