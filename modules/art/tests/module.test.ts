@@ -108,6 +108,46 @@ void test('late staging evidence never extends the admitted copy lifetime', asyn
   assert.equal(art.state.candidates.length, 0);
 });
 
+void test('an old stage conflict cannot clear a newer successful renewal of the same art', async t => {
+  const timers: {delay: number; callback: () => void}[] = [];
+  const scheduler = {after: (delay: number, callback: () => void) => {timers.push({delay, callback}); return () => {};}};
+  const dispatch = fakeDispatch(), art = await hosted(t, {providers: {openai: fakeImages(drawing())}, dispatch: dispatch.seam, scheduler});
+  await art.automatic({action: 'start', purpose: 'ambient', origin: {kind: 'schedule'}, targets: ['tidbyt']}, 'ambient');
+  await art.finished('ambient'); await until(() => dispatch.ambients.length === 1);
+  art.clock.value += STAGE_LIFETIME_MS / 2;
+  (timers.find(timer => timer.delay === STAGE_LIFETIME_MS / 2) ?? assert.fail('no renewal')).callback();
+  await until(() => dispatch.ambients.length === 2);
+  dispatch.report(dispatch.stages[0]?.requestId ?? '', 'uncertain');
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(dispatch.ambients.length, 2);
+});
+
+for (const delayed of [false, true]) void test(`a refused ambient replacement preserves the preceding selection without overwriting a newer one (delayed=${String(delayed)})`, async t => {
+  const dispatch = fakeDispatch(), hold = gate();
+  const seam: ArtDispatchSeam = {...dispatch.seam, ambient: async (request, parent) => {
+    const reply = dispatch.seam.ambient(request, parent);
+    if (dispatch.ambients.length !== 2) return reply;
+    if (delayed) await hold.promise;
+    return {error: {code: 'unavailable', retryable: true}};
+  }};
+  const art = await hosted(t, {providers: {openai: fakeImages(distinctDrawing())}, dispatch: seam});
+  const request = {action: 'start', purpose: 'ambient', origin: {kind: 'schedule'}, targets: ['tidbyt']};
+  await art.automatic(request, 'first'); const first = await art.finished('first');
+  await until(() => dispatch.ambients.length === 1);
+  await art.automatic(request, 'refused'); await art.finished('refused');
+  await until(() => dispatch.ambients.length === 2);
+  let artworkId = first.artworkId;
+  if (delayed) {
+    await art.automatic(request, 'newest'); artworkId = (await art.finished('newest')).artworkId;
+    await until(() => dispatch.ambients.length === 3);
+    hold.open();
+  }
+  await new Promise(resolve => setTimeout(resolve, 20));
+  await art.restart();
+  await art.catalog({action: 'delete', artworkId}, 'delete');
+  await until(() => dispatch.ambients.at(-1)?.compositionId === null);
+});
+
 void test('weather is rechecked when a queued job reaches its provider', async t => {
   const hold = gate(), now = Date.UTC(2026, 10, 5, 12);
   let calls = 0;

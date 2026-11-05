@@ -58,8 +58,9 @@ For disposable acceptance on a clean committed candidate, select
 `scenario-art-catalog` through the [portable route](../apps/runtime/verify/PORTABLE.md).
 Its recording opens the saved synthetic rendition through the real authenticated
 content route, using a labelled review-only link in the existing shell. It adds no
-gallery UI and exercises no real provider or device. The separate
-`scenario-art-spending-limit` capture covers the ceiling and restart. Existing
+gallery UI and exercises no real provider or device. The rendition remains visible
+in the final screenshot. The separate `scenario-art-spending-limit` capture covers
+the ceiling and restart. Existing
 `test:runtime:verify:built` discovery runs both captures; on a Mac use
 `npm run test:runtime:container -- --suite verify`. Inspect the complete video and
 scenario-result attachment before assessing acceptance.

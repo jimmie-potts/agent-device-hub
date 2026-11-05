@@ -112,6 +112,9 @@ restore deleted or superseded art, and a receipt never extends the staged copy's
 The last issued tile selection is stored separately, so deletion can clear it while
 a renewal or replacement is pending, including after restart. Issuing a tile command
 does not prove that a physical display showed it.
+Stage conflicts identify that exact issued stage, so old evidence cannot clear a
+newer renewal. A definite dispatch refusal preserves the preceding selection;
+an unknown dispatch remains unknown and is not retried.
 Conflicting stage evidence withdraws its candidate.
 
 ## Commands and boundaries

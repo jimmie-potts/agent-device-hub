@@ -237,7 +237,8 @@ const scenarioSteps: Record<string, CaptureStep> = Object.fromEntries(SCENARIOS.
   scenario: scenario.id,
   fresh: true,
   timeoutMs: scenario.captureTimeoutMs ?? 120_000,
-  run: onHealth(t => judge(t, scenario)),
+  // The art capture supplies its own visible navigation and leaves the rendition as its final observation.
+  run: scenario.id === 'art-catalog' ? t => judge(t, scenario) : onHealth(t => judge(t, scenario)),
 } satisfies CaptureStep]));
 
 export default definePlugin({

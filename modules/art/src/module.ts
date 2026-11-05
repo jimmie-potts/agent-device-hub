@@ -510,7 +510,7 @@ class ArtOwner {
       });
     } catch {return;}
     if (row?.ambient === true && row.status === Outcome.succeeded && result !== Outcome.succeeded) {
-      await this.#sendAmbient({clearArtworkId: row.artworkId}, childOf(undefined));
+      await this.#sendAmbient({clearStageId: row.requestId}, childOf(undefined));
     }
     if (row?.ambient === true && this.#store.ambient()?.requestId === requestId) {
       const artwork = this.#store.artwork(row.artworkId);
@@ -520,21 +520,27 @@ class ArtOwner {
       this.#renewAmbient();
     }
   }
-  async #sendAmbient(change: {stage: StageRow} | {clearArtworkId: string}, parent: TraceContext): Promise<void> {
+  async #sendAmbient(change: {stage: StageRow} | {clearArtworkId: string} | {clearStageId: string}, parent: TraceContext): Promise<void> {
     try {
-      const compositionId = await this.#outbox.transaction(() => {
+      const requestId = `ambient-${randomUUID()}`;
+      const intent = await this.#outbox.transaction(() => {
         if (this.#closed) return undefined;
+        const previous = this.#store.issuedAmbient();
         if ('stage' in change) {
           const {stage} = change, selected = this.#store.ambient();
-          if (selected?.requestId !== stage.requestId || selected.status !== Outcome.succeeded || this.#store.artwork(stage.artworkId)?.deletedAtMs !== null) return undefined;
-          this.#store.issueAmbient(stage.artworkId);
-          return stage.compositionId;
+          if (selected?.requestId !== stage.requestId || selected.status !== Outcome.succeeded || (selected.expiresAtMs ?? 0) <= this.#context.clock.now() || this.#store.artwork(stage.artworkId)?.deletedAtMs !== null) return undefined;
+          this.#store.issueAmbient({requestId, stageRequestId: stage.requestId, artworkId: stage.artworkId});
+          return {compositionId: stage.compositionId, previous};
         }
-        if (this.#store.issuedAmbient() !== change.clearArtworkId) return undefined;
-        this.#store.issueAmbient(null);
-        return null;
+        if ('clearArtworkId' in change ? previous?.artworkId !== change.clearArtworkId : previous?.stageRequestId !== change.clearStageId) return undefined;
+        this.#store.issueAmbient({requestId, stageRequestId: null, artworkId: null});
+        return {compositionId: null, previous};
       });
-      if (compositionId !== undefined) await this.#dispatch.ambient({requestId: `ambient-${randomUUID()}`, target: 'tidbyt', compositionId}, parent);
+      if (intent === undefined) return;
+      const reply = await this.#dispatch.ambient({requestId, target: 'tidbyt', compositionId: intent.compositionId}, parent);
+      if ('error' in reply && reply.error.code !== 'uncertain-result') await this.#outbox.transaction(() => {
+        if (this.#store.issuedAmbient()?.requestId === requestId) this.#store.issueAmbient(intent.previous);
+      });
     } catch {/* The tile keeps what it holds. Nothing resends. */}
   }
   /** Keeps the ambient tile's copy alive while generation is paused. Staging is local and free. */

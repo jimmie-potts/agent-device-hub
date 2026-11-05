@@ -23,6 +23,7 @@ export type StoredComposition = ArtComposition & {compositionId: string; promptH
 export type Artwork = {artworkId: string; requestId: string; createdAtMs: number; favorite: boolean; feedback: ArtFeedback | null; variationOf: string | null; palette: string[]; generatedBy: 'openai' | 'local'; deletedAtMs: number | null};
 export type StageStatus = 'pending' | 'succeeded' | 'failed' | 'uncertain';
 export type StageRow = {requestId: string; artworkId: string; compositionId: string; target: ArtDisplayTarget; status: StageStatus; expiresAtMs: number | null; ambient: boolean};
+export type IssuedAmbient = {requestId: string} & ({stageRequestId: string; artworkId: string} | {stageRequestId: null; artworkId: null});
 
 const json = <T>(row: unknown): T => JSON.parse((row as {record: string}).record) as T;
 export class ArtStore {
@@ -41,7 +42,7 @@ export class ArtStore {
       CREATE TABLE IF NOT EXISTS art_blobs(id TEXT PRIMARY KEY,type TEXT NOT NULL,bytes BLOB NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS art_stages(request_id TEXT PRIMARY KEY,artwork_id TEXT NOT NULL,composition_id TEXT NOT NULL,target TEXT NOT NULL,status TEXT NOT NULL,expires_at_ms INTEGER,ambient INTEGER NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS art_ambient(id INTEGER PRIMARY KEY CHECK(id=1),request_id TEXT NOT NULL) STRICT;
-      CREATE TABLE IF NOT EXISTS art_ambient_issued(id INTEGER PRIMARY KEY CHECK(id=1),artwork_id TEXT NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS art_ambient_issued(id INTEGER PRIMARY KEY CHECK(id=1),record TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS art_feedback(id INTEGER PRIMARY KEY AUTOINCREMENT,artwork_id TEXT NOT NULL,signal TEXT NOT NULL,at_ms INTEGER NOT NULL) STRICT;`);
   }
   revision(): number {return (this.db.prepare('SELECT revision FROM art_meta').get() as {revision: number}).revision;}
@@ -135,10 +136,13 @@ export class ArtStore {
     else this.db.prepare('INSERT INTO art_ambient VALUES(1,?) ON CONFLICT(id) DO UPDATE SET request_id=excluded.request_id').run(requestId);
   }
   /** Last issued tile selection, not evidence that a device displayed it. Renewal does not replace this record. */
-  issuedAmbient(): string | undefined {return (this.db.prepare('SELECT artwork_id FROM art_ambient_issued').get() as {artwork_id: string} | undefined)?.artwork_id;}
-  issueAmbient(artworkId: string | null): void {
-    if (artworkId === null) this.db.prepare('DELETE FROM art_ambient_issued').run();
-    else this.db.prepare('INSERT INTO art_ambient_issued VALUES(1,?) ON CONFLICT(id) DO UPDATE SET artwork_id=excluded.artwork_id').run(artworkId);
+  issuedAmbient(): IssuedAmbient | undefined {
+    const row = this.db.prepare('SELECT record FROM art_ambient_issued').get();
+    return row === undefined ? undefined : json<IssuedAmbient>(row);
+  }
+  issueAmbient(issued: IssuedAmbient | undefined): void {
+    if (issued === undefined) this.db.prepare('DELETE FROM art_ambient_issued').run();
+    else this.db.prepare('INSERT INTO art_ambient_issued VALUES(1,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record').run(JSON.stringify(issued));
   }
   /** The selected stage is durable, independent of receipt order or deletion of older rows. */
   ambient(): StageRow | undefined {
