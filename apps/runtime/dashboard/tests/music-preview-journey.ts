@@ -34,9 +34,9 @@ export async function musicPreviewJourney(browser: Browser): Promise<void> {
       await button.focus(); await button.press('Enter'); await ready();
     };
     for (const effect of ['level-glow', 'bass-pulse', 'spectrum', 'traveling-wave', 'ambient']) {
-      await preview.getByLabel('Built-in effect', {exact: true}).selectOption(effect);
+      await preview.getByRole('combobox', {name: 'Built-in effect', exact: true}).selectOption(effect);
       for (const model of ['lines-demo-v1', 'nl22-demo-v1']) {
-        await preview.getByLabel('Example layout', {exact: true}).selectOption(model);
+        await preview.getByRole('combobox', {name: 'Example layout', exact: true}).selectOption(model);
         await expect(preview.locator('figure')).toHaveCount(0);
         const count: number = reads.length; await prepare(); assert.equal(reads.length, count + 1);
         await expect(preview.getByRole('img')).toHaveCount(model === 'lines-demo-v1' ? 12 : 6);
