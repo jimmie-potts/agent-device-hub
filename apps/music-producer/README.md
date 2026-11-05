@@ -7,9 +7,12 @@ and analysis; the Node wrapper uses the existing authenticated SDK edge.
 
 Connection advertises endpoint availability and any configured microphone alias. Only an explicit capture command starts the
 helper. Stop, disconnect or shutdown retires its generation and pending frames.
-Microphone calibration, noise gating, sensitivity, smoothing and band emphasis
-remain subsequent work. Prepared analysis and physical synchronization retain
-their own acceptance in the issue.
+The producer keeps sending raw digital measurements. The core owns microphone
+calibration evidence and response settings, including noise gating, sensitivity,
+smoothing and band emphasis. Audio previews their response through the shared
+calculation. See the [runtime capture guide](../runtime/README.md#music-capture).
+Prepared analysis and physical synchronization retain their own acceptance in
+the issue.
 
 The separate [local position reader](#local-state-and-position-reader) is a source
 increment for [#571](https://github.com/jimmie-potts/agent-device-hub/issues/571).

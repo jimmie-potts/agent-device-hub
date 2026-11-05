@@ -289,5 +289,7 @@ timing acceptance remain separate work under the owning issue.
 Apple's [capture authorization guide](https://developer.apple.com/documentation/AVFoundation/requesting-authorization-to-capture-and-save-media)
 owns the microphone permission API. Compilation and substituted adapter tests do
 not prove permission behavior for a signed installed helper or a real device.
-Noise-floor calibration and tuning are not implemented; current values remain
-raw digital measurements with the same analyzer definitions for both inputs.
+This native helper emits raw digital measurements with the same analyzer
+definitions for both inputs. The [runtime core](../../runtime/README.md#music-capture)
+owns calibration evidence and tuning settings; Audio shows a separate response
+preview. Those settings do not change this helper's analyzer or microphone gain.
