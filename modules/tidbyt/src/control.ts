@@ -502,7 +502,7 @@ export class DisplayControl {
     if (!commandSupported(displayCapabilities(this.#options.nowPlaying, this.#options.art !== undefined), {family: 'moment-play', data: moment})) {
       return errorBody('unsupported-capability', {detail: 'the Tidbyt does not offer this moment'});
     }
-    if (clock.now() > moment.startAtMs + moment.toleranceMs) return errorBody('expired', {detail: 'the moment\'s start window has passed'});
+    if (clock.now() > moment.startAtMs + moment.toleranceMs) return errorBody('invalid-state', {detail: 'the moment\'s start window has passed'});
     if (this.#pending.size > 0) return errorBody('capacity', {detail: 'a command or a moment is in hand on the Tidbyt'});
     if (this.#mayStand) return errorBody('unavailable', {detail: 'the last moment has not been released yet'});
     let seen: boolean;
