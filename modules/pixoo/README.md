@@ -312,7 +312,11 @@ it never plays a mood in its place. A moment without art keeps its behavior.
 ### Private generated art
 
 `art-stage/2.0` accepts the core's forwarded PNG or GIF, with its composition ID,
-hash and declared metadata. The shared validator checks bytes, signature and hash;
+hash and declared metadata. It is addressed to this module's configured device ID.
+The art producer currently addresses its Pixoo target as `pixoo`; installation
+must check that identity explicitly before enabling delivery. The disposable art
+scenario selects that ID rather than the usual simulator's `pixoo-1`.
+The shared validator checks bytes, signature and hash;
 the existing isolated media decoder checks actual 64×64 dimensions, frame count
 and timing. Art is limited to 160 KiB and 20 frames at uniform 100–800 ms delays.
 The selected device profile can narrow those limits: smoke still permits only
