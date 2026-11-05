@@ -142,6 +142,7 @@ export class DashboardConnection {
   }
 
   readonly refreshDevices = async (): Promise<void> => { await this.#runtime.refresh(); };
+  readonly refreshArtSchedule = async (): Promise<boolean> => this.#runtime.refresh([{owner: 'bunny/core', family: 'art-schedule'}]);
   /** Placement recovery requires successful copies from this explicit attempt, not a later automatic retry. */
   readonly refreshPlaybackPlacement = async (): Promise<boolean> => this.#runtime.refresh([
     {owner: 'bunny/core', family: 'lighting-layout'}, {owner: 'bunny/core', family: 'playback-layout'},

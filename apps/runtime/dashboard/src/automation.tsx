@@ -1,3 +1,4 @@
+import {ArtSchedulePanel} from './art-schedule.tsx';
 import React, {useCallback, useEffect, useRef, useState, useSyncExternalStore} from 'react';
 import {isErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
@@ -180,11 +181,11 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
     {!live && <p role="status">The connection is unavailable. Saved evidence may be stale.</p>}
     {uncertain && <p role="alert">The last change has no reliable reply. Refresh current rules before another attempt.</p>}
     <p role="status" className="automation-feedback">{status}</p>
-    <div className="automation-tabs" role="tablist" aria-label="Automation views">{['Routines', 'Rules', 'Settings'].map((name, index) =>
+    <div className="automation-tabs" role="tablist" aria-label="Automation views">{['Routines', 'Rules', 'Settings', 'Art'].map((name, index) =>
       <button type="button" role="tab" key={name} id={`automation-tab-${String(index)}`} aria-controls={`automation-panel-${String(index)}`}
         aria-selected={tab === index} tabIndex={tab === index ? 0 : -1} ref={node => {tabs.current[index] = node;}}
         onClick={() => {setTab(index);}} onKeyDown={event => {
-          const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : event.key === 'ArrowRight' ? (index + 1) % 3 : event.key === 'ArrowLeft' ? (index + 2) % 3 : undefined;
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? 3 : event.key === 'ArrowRight' ? (index + 1) % 4 : event.key === 'ArrowLeft' ? (index + 3) % 4 : undefined;
           if (next === undefined) return;event.preventDefault();setTab(next);tabs.current[next]?.focus();
         }}>{name}</button>)}</div>
     <div role="tabpanel" id="automation-panel-0" aria-labelledby="automation-tab-0" hidden={tab !== 0}>
@@ -263,6 +264,7 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
         </fieldset></form>
     </article></div>
     </div>
+    <div role="tabpanel" id="automation-panel-3" aria-labelledby="automation-tab-3" hidden={tab !== 3}><ArtSchedulePanel connection={connection} live={live} control={control}/></div>
     <article className="card automation-history" aria-label="Recent automation attempts"><details><summary>Recent attempts</summary><p>The latest 100 entries. Admission and completion are separate; transmitted effects are not physical observation.</p>
       {snapshot?.entries.length === 0 && <p>No automation evaluations yet.</p>}
       <ol>{snapshot?.entries.map(entry => <li key={entry.seq}><Facts items={[

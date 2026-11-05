@@ -42,7 +42,7 @@ try {
     await expect(automation().getByRole('textbox', {name: 'Rule name', exact: true})).toBeHidden();
     const tab = (name: string) => automation().getByRole('tab', {name, exact: true});
     await tab('Routines').focus();
-    for (const [key, name] of [['End', 'Settings'], ['ArrowRight', 'Routines'], ['ArrowLeft', 'Settings'], ['Home', 'Routines']] as const) {
+    for (const [key, name] of [['End', 'Art'], ['ArrowRight', 'Routines'], ['ArrowLeft', 'Art'], ['Home', 'Routines']] as const) {
       await page.keyboard.press(key); await expect(tab(name)).toBeFocused();
       await expect(tab(name)).toHaveAttribute('aria-selected', 'true');
       await expect(automation().getByRole('tabpanel')).toHaveCount(1);
