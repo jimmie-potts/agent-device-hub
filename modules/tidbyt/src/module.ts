@@ -23,7 +23,8 @@ import {artCommandRefusal} from '@jimmie-potts/event-contracts/v2/art';
 import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, errorType, type AddMessage, type BunnyModule, type Cancel, type LogFields, type ModuleContext,
   type ModuleContent, type StateDraft, type SyncChange, type SyncedCopy, type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import type {ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {TidbytArt} from './art.js';
+import {TidbytArt, type HeldArt} from './art.js';
+import type {RainNotice} from '@jimmie-potts/event-contracts/v2/art-notice';
 import {ART_INSTALLATION} from './art-profile.js';
 import {TidbytCloudConnection, type CloudFetch, type ListResult, type TidbytConnection, type WriteResult} from './cloud.js';
 import {API_KEY_SECRET, configureTidbyt, type TidbytConfig} from './configuration.js';
@@ -276,6 +277,7 @@ class TidbytRun {
         storageFailed: error => { this.#storageFailed(storageCode(error)); },
         presentation: () => this.#presentation(),
         picture: this.#options.momentPicture ?? ((moment, signal) => this.#momentCard(moment, signal)),
+        noticePicture: (art, notice, signal) => this.#noticeCard(art, notice, signal),
         art: compositionId => this.#art?.reference(compositionId) ?? errorBody('unavailable'),
       });
     }
@@ -753,6 +755,14 @@ class TidbytRun {
     return reply.webp;
   }
 
+  async #noticeCard(art: HeldArt, notice: RainNotice, signal: AbortSignal): Promise<Uint8Array> {
+    const reply = await this.#context.workers.call<TileReply>(this.#options.renderWorker ?? RENDER_WORKER,
+      {tile: 'art-notice', webp: art.webp, delays: art.delays, notice} satisfies TileRequest,
+      {timeoutMs: this.#options.renderTimeoutMs ?? RENDER_TIMEOUT_MS, signal: AbortSignal.any([this.#context.signal, signal])});
+    if (!reply.ok || !(reply.webp instanceof Uint8Array)) throw new SdkError(errorBody(reply.ok ? 'internal' : reply.code ?? 'internal'));
+    return reply.webp;
+  }
+
   /** Starts a cloud call's span, the trigger's child, and answers its end. The cloud never gets the trace context. */
   #begin(tile: Tile, call: 'push' | 'remove' | 'list'): (succeeded: boolean) => void {
     const span = this.#context.trace.start('bunny.device.call', {
@@ -896,11 +906,11 @@ function availabilityAfter(result: WriteResult | ListResult, answered: boolean):
 
 /** The state message that carries the Tidbyt's device record. */
 export const deviceState = (record: DeviceRecord): StateDraft<DeviceRecord> =>
-  ({type: 'org.bunny.device.updated', subject: record.id, dataschema: record.capabilities.moments.supported && record.capabilities.moments.art !== undefined ? `${SCHEMA_BASE}device/2.2` : DEVICE_SCHEMA, data: structuredClone(record)});
+  ({type: 'org.bunny.device.updated', subject: record.id, dataschema: record.capabilities.moments.supported && record.capabilities.moments.art !== undefined ? `${SCHEMA_BASE}device/2.3` : DEVICE_SCHEMA, data: structuredClone(record)});
 
 /** Whether a message is a Tidbyt device record that reports it unavailable, for the module test kit's policy A check. */
 export const reportsUnavailable = (message: Message): boolean =>
-  (message.dataschema === DEVICE_SCHEMA || message.dataschema === `${SCHEMA_BASE}device/2.2`) && message.source === `bunny/modules/${TIDBYT_MODULE}` &&
+  (message.dataschema === DEVICE_SCHEMA || message.dataschema === `${SCHEMA_BASE}device/2.2` || message.dataschema === `${SCHEMA_BASE}device/2.3`) && message.source === `bunny/modules/${TIDBYT_MODULE}` &&
   (message.data as Partial<DeviceRecord>).availability === 'unavailable';
 
 /**

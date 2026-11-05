@@ -79,3 +79,14 @@ test('only initial ambient dispatch can carry an opportunity authorization', () 
   const old = structuredClone(fixtures.valid['art-dispatch']); valid(old);
   invalid({...old, dataschema: dispatch.dataschema, data: {...old.data, authorization: 'opportunity-1'}});
 });
+
+test('art schedule is closed core-owned evidence and cannot extend a browser factual hold',()=>{
+  const record=structuredClone(fixtures.valid['art-schedule']);
+  assert.ok(record);valid(record);
+  invalid({...record,source:'bunny/modules/art'});
+  invalid({...record,data:{...record.data,policy:{...record.data.policy,calendar:true}}});
+  invalid({...record,data:{...record.data,policy:{...record.data.policy,wakingEndMinute:record.data.policy.wakingStartMinute}}});
+  const at=Date.parse(record.time),notice={opportunityId:'synthetic-opportunity',artworkId:'saved-art',compositionId:'a'.repeat(64),browserRequestId:'synthetic-browser',startAtMs:at,
+    expiresAtMs:at+30_001,forecast:{kind:'rain-forecast',likelihood:'chance',forecastStartAtMs:at+3_600_000,forecastEndAtMs:at+7_200_000,forecastUpdatedAtMs:at,observedAtMs:at,staleAtMs:at+2_700_000,weatherRevision:1}};
+  invalid({...record,data:{...record.data,notice}});
+});

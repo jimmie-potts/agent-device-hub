@@ -159,12 +159,12 @@ export class Player {
   restartWithChanges():Promise<void> {if(this.record?.source?.kind==='media')return Promise.reject(new PlaybackError('unsupported-operation'));return this.record?this.start(this.record.snapshot.id):Promise.reject(new PlaybackError('no-context'));}
   pause():Promise<void> {return this.dispatch(async()=>{},'paused');}
   /** Upload a monitor picture at 500 ms, or bounded exact art with timing validated by its staging owner. */
-  async uploadDashboard(frames:readonly Uint8Array[],expectedGeneration:number,options:{signal?:AbortSignal;current?:()=>boolean;whileStopped?:boolean;artDelayMs?:number}={}):Promise<OperationResult<UploadResult>|undefined> {
+  async uploadDashboard(frames:readonly Uint8Array[],expectedGeneration:number,options:{signal?:AbortSignal;current?:(priorEffects:'none'|'possible')=>boolean;whileStopped?:boolean;artDelayMs?:number}={}):Promise<OperationResult<UploadResult>|undefined> {
     const delayMs=options.artDelayMs??500,maxFrames=options.artDelayMs===undefined?2:20;
     if(!Array.isArray(frames)||frames.length<1||frames.length>maxFrames||frames.some(rgb=>!(rgb instanceof Uint8Array)||rgb.length!==12288)
       ||!Number.isSafeInteger(delayMs)||delayMs<100||delayMs>800)throw new PlaybackError('invalid-input');
-    const cancelled=()=>options.signal?.aborted===true||options.current?.()===false;
-    if(this.closing||expectedGeneration!==this.epoch||(this.intent!=='paused'&&!(options.whileStopped===true&&this.intent==='stopped'))||!this.requestedScreenOn||cancelled()||options.current?.()===false)return undefined;
+    const cancelled=()=>options.signal?.aborted===true||options.current?.('none')===false;
+    if(this.closing||expectedGeneration!==this.epoch||(this.intent!=='paused'&&!(options.whileStopped===true&&this.intent==='stopped'))||!this.requestedScreenOn||cancelled())return undefined;
     // Card admission is read again inside the device turn: a write queued ahead (such as brightness) can outlast
     // eligibility (#1074 285-F1). A card no longer admitted ends as a cancellation with no effect, as the adapter reports it.
     const generation=this.adapterGeneration,submittedAtMs=this.clock.now();
@@ -180,7 +180,7 @@ export class Player {
       end=()=>{if(waiting)resolve(notAdmitted());};if(signal.aborted)end();else signal.addEventListener('abort',end,{once:true});})])
       .finally(()=>{if(end!==undefined)signal.removeEventListener('abort',end);});
     // Superseded private card work with no effects is no evidence about the device or user intent.
-    if(cancelled()&&!result.ok&&result.code==='cancelled'&&result.priorEffects===Outcome.none)return result;
+    if(!result.ok&&result.code==='cancelled'&&result.priorEffects===Outcome.none&&cancelled())return result;
     // Evidence from a retired write cannot alter the current player or revive it.
     if(expectedGeneration===this.epoch&&!this.closing){
       this.observeResult(result,generation,'dashboard');await this.observedControl(result,generation);

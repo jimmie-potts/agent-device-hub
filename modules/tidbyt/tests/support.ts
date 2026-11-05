@@ -199,7 +199,7 @@ export class StandIn<T extends {id: string; revision: number}> {
 }
 
 /** Whether a message is a Tidbyt device record. */
-export const isDevice = (message: Message): boolean => message.dataschema === DEVICE_SCHEMA || message.dataschema === 'https://bunny.invalid/events/device/2.2';
+export const isDevice = (message: Message): boolean => message.dataschema === DEVICE_SCHEMA || message.dataschema === 'https://bunny.invalid/events/device/2.2' || message.dataschema === 'https://bunny.invalid/events/device/2.3';
 
 export type HostOptions = {
   /** The core's sessions at start. `absent` hosts no core, so the first sync of the sessions is refused. */

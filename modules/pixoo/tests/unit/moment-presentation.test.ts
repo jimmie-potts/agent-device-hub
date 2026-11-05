@@ -17,8 +17,8 @@ const RGB=(value:number)=>new Uint8Array(12288).fill(value);
 const song:PlaybackSourceStatus={source:'current',view:{card:true,status:'playing',title:'HARVEST MOON',artist:'NEIL YOUNG',stale:false}};
 async function flush(clock:ManualClock){for(let i=0;i<100;i++){await Promise.resolve();clock.advance(0);}}
 
-async function setup(options:{media?:'off'|'popup'|'whole';overMonitor?:boolean;pauseOnUncertain?:boolean;saving?:Promise<void>}={}){
- const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock}),player=await Player.open({store,device,clock,pauseOnUncertain:options.pauseOnUncertain??false});
+async function setup(options:{media?:'off'|'popup'|'whole';overMonitor?:boolean;pauseOnUncertain?:boolean;saving?:Promise<void>;latencyMs?:number}={}){
+ const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock,...(options.latencyMs===undefined?{}:{latencyMs:options.latencyMs})}),player=await Player.open({store,device,clock,pauseOnUncertain:options.pauseOnUncertain??false});
  store.playlist.repeat=true;
  const saved:unknown[]=[];
  const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now(),nowPlaying:{version:1,media:options.media??'off'},
@@ -47,6 +47,58 @@ async function mediaPlaying(s:Setup){
  expect(s.player.getState()).toMatchObject({intent:'active',state:'playing'});
 }
 const ended=(results:MomentResult[],ending:string)=>expect(results).toEqual([expect.objectContaining({ending})]);
+
+it('refuses a rain notice that loses its full hold while waiting for the native writer, without any notice frame',async()=>{
+ const s=await setup({latencyMs:500});
+ try{
+  await monitorMode(s);
+  const now=s.clock.now();
+  const notice={kind:'rain-forecast',likelihood:'chance',forecastStartAtMs:now+60000,forecastEndAtMs:now+120000,
+   forecastUpdatedAtMs:now,observedAtMs:now,staleAtMs:now+1400,weatherRevision:1} as const;
+  const blocking=s.device.setBrightness(35,{generation:s.device.generation});
+  const results=s.play({exactArt:true,notice,durationMs:1000,toleranceMs:300});
+  await s.run(2500);await blocking;
+  expect(s.frames().filter(frame=>frame[0]===7&&frame[1]===7)).toEqual([]);
+  expect(results).toHaveLength(1);expect(results[0]).toMatchObject({ending:null,refused:'notice',upload:{ok:false,priorEffects:'none'}});
+  expect(s.frames().at(-1)).toEqual(s.dashboard());
+ }finally{await s.close();}
+});
+
+it('retains valid later rain frames, then interrupts the hold at evidence expiry and returns to the current base',async()=>{
+ const s=await setup({latencyMs:200});
+ try{
+  await monitorMode(s);
+  const now=s.clock.now();
+  const notice={kind:'rain-forecast',likelihood:'likely',forecastStartAtMs:now+60000,forecastEndAtMs:now+120000,
+   forecastUpdatedAtMs:now,observedAtMs:now,staleAtMs:now+1500,weatherRevision:1} as const;
+  const results=s.play({exactArt:true,notice,durationMs:1000,toleranceMs:300,delayMs:200,frames:()=>Promise.resolve([RGB(7),RGB(8),RGB(9),RGB(10)])});
+  await s.run(1000);
+  expect(s.frames().filter(frame=>{const first=frame[0];return first!==undefined&&first>=7&&first<=10&&frame.every(value=>value===first);}).map(frame=>frame[0])).toEqual([7,8,9,10]);
+  expect(results).toEqual([]);
+  s.monitor.submit(quietView);
+  await s.run(1300);
+  ended(results,'interrupted');
+  expect(results[0]).toMatchObject({upload:{ok:true}});
+  expect(s.frames().at(-1)).toEqual(s.dashboard());
+ }finally{await s.close();}
+});
+
+it('keeps partial rain upload evidence when native writes cross the hard expiry and never retries that moment',async()=>{
+ const s=await setup({latencyMs:200});
+ try{
+  await monitorMode(s);
+  const now=s.clock.now();
+  const notice={kind:'rain-forecast',likelihood:'chance',forecastStartAtMs:now+60000,forecastEndAtMs:now+120000,
+   forecastUpdatedAtMs:now,observedAtMs:now,staleAtMs:now+500,weatherRevision:1} as const;
+  const results=s.play({exactArt:true,notice,durationMs:100,toleranceMs:300,delayMs:200,frames:()=>Promise.resolve([RGB(7),RGB(8),RGB(9),RGB(10)])});
+  await s.run(1500);
+  expect(results).toHaveLength(1);expect(results[0]).toMatchObject({ending:null,refused:'upload',upload:{ok:false,code:'cancelled',priorEffects:'possible'}});
+  const artFrames=()=>s.frames().filter(frame=>{const first=frame[0];return first!==undefined&&first>=7&&first<=10&&frame.every(value=>value===first);});
+  const writes=artFrames().length;
+  expect(writes).toBeGreaterThan(0);expect(writes).toBeLessThan(4);
+  await s.run(5000);expect(artFrames()).toHaveLength(writes);
+ }finally{await s.close();}
+});
 
 it('plays over Monitor for its duration, keeps the mode, and returns to the current dashboard',async()=>{
  const s=await setup();
