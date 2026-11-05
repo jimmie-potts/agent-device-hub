@@ -22,3 +22,7 @@ xcrun clang -std=c11 -fobjc-arc -O2 -Wall -Wextra -Werror \
   -mmacosx-version-min=14.2 -framework AppKit -framework CoreServices \
   -Wl,-sectcreate,__TEXT,__info_plist,"$native_dir/PositionInfo.plist" \
   "$native_dir/position.m" -o "$build_dir/music-position"
+xcrun clang -std=c11 -fobjc-arc -O2 -Wall -Wextra -Werror \
+  -mmacosx-version-min=14.2 -framework AppKit -framework CoreServices \
+  -Wl,-sectcreate,__TEXT,__info_plist,"$native_dir/PlaybackInfo.plist" \
+  "$native_dir/music_playback.c" "$native_dir/playback.m" -o "$build_dir/music-playback"

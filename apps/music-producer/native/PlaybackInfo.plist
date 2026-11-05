@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>local.bunny.music-playback</string>
+<key>CFBundleName</key><string>Bunny Music Playback Adapter</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>NSAppleEventsUsageDescription</key>
+<string>Observe the already-running Music application's playback and declared selected outputs, and send only explicitly requested play, pause, next or previous controls.</string>
+</dict></plist>
