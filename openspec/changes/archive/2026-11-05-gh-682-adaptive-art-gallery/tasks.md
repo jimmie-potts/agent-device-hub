@@ -22,10 +22,10 @@
 
 - [x] 4.1 Add the actual browser journey through the real art owner and synthetic provider; verify request, favorite, feedback, revisit, read-only authority and no command replay after reload/restart.
 - [x] 4.2 Exercise banner/square/tall, full-screen omission, focus/pointer preservation and attention at 1440/390/320px; verify no overlap/overflow, zero layout-only device effects, light/dark axe and reduced motion.
-- [ ] 4.3 Add a disposable Gallery capture using the existing scenario adapter; verify visible interactions, private synthetic evidence and a final rendered art view, then obtain independent acceptance on the committed candidate.
+- [x] 4.3 Add a disposable Gallery capture using the existing scenario adapter; verify visible interactions, private synthetic evidence and a final rendered art view, then obtain independent acceptance on the committed candidate.
 - [x] 4.4 Run build then lint, type, event/contract/package, affected runtime/art/dashboard and workflow checks; run the full dashboard browser suite required by its guide and record any unrelated failures without widening scope.
 
 ## 5. Review handoff
 
-- [ ] 5.1 Refresh successful OpenSpec lookups, complete acceptance evidence, synchronize all three affected specs and archive the change; verify strict validation and the actual inventory.
-- [ ] 5.2 Commit a clean tested candidate and return its head, evidence and remaining independent/hosted gates to the coordinating writer without pushing or changing GitHub.
+- [x] 5.1 Refresh successful OpenSpec lookups, complete acceptance evidence, synchronize all three affected specs and archive the change; verify strict validation and the actual inventory.
+- [x] 5.2 Commit a clean tested candidate and return its head, evidence and remaining independent/hosted gates to the coordinating writer without pushing or changing GitHub.
