@@ -279,6 +279,9 @@ decision ([#1287](https://github.com/jimmie-potts/agent-device-hub/issues/1287))
 limit. Its `coversStatus` follows the owner's setting, which is on by default and
 sits on the Monitor page.
 
+Exact art over empty Media additionally requires a stopped player with no session
+or item checkpoint. An explicit empty pause refuses art and survives restart.
+
 A moment never changes the mode. Over Media it pauses a playing playlist under the
 same guard Now Playing uses, then resumes it at the same item. A player with nothing
 loaded, including an empty one Monitor left paused, takes the moment without being

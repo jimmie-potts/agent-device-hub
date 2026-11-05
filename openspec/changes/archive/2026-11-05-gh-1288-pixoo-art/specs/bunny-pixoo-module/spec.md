@@ -51,7 +51,9 @@ The module SHALL declare `capabilities.moments` with the moods `celebrate`, `set
 
 Before accepting, the module SHALL refuse with `unsupported-capability` a mood or duration the capability does not offer; with `invalid-state` a moment ID it accepted in the last 24 hours, across restarts, or a moment the current presentation does not admit; with `expired` a moment past its start window; and with `capacity` a moment while another waits or plays. The presentation SHALL check admission again at the start, and a moment no longer admitted SHALL complete `failed` with no device write.
 
-Over Monitor a moment SHALL be admitted only while Monitor participates, the request's `coversStatus` is true, the setting is on, the session source is current and no session needs attention. Over Media a moment SHALL be admitted while a playlist is in play, no Now Playing takeover holds the display and no session needs attention. Exact art MAY additionally play when the player is idle and stopped with no session or item checkpoint, under the same gates and generation checks. A paused player or stopped selected content SHALL refuse it; plain mood moments SHALL refuse empty Media. An explicit no-selection pause SHALL survive restart until a deliberate Stop or Clear releases it; failed or rejected commands SHALL NOT imply release. Shutdown alone SHALL NOT pause fresh stopped Media. Core arbitration SHALL retain ownership of scheduled-art pins.
+Over Monitor a moment SHALL be admitted only while Monitor participates, the request's `coversStatus` is true, the setting is on, the session source is current and no session needs attention. Over Media a moment SHALL be admitted only while a playlist is in play or the player is idle, no Now Playing takeover holds the display and no session needs attention. A player is idle when nothing is loaded, it is not playing or in error, and no uncertain write or external control has left the display unknown. A paused or stopped item SHALL refuse it. A moment over an idle player SHALL NOT change the player, SHALL end when the player changes or the screen turns off, and SHALL be followed by one blank frame unless something else takes the display.
+
+Exact art over empty Media additionally SHALL require an idle, stopped player with no session or item checkpoint. An explicit no-selection pause SHALL survive restart until a deliberate Stop or Clear releases it; failed or rejected commands SHALL NOT imply release. Shutdown alone SHALL NOT pause fresh stopped Media. Core arbitration SHALL retain ownership of scheduled-art pins.
 
 Over playing Media the moment SHALL pause the player through the Now Playing takeover and SHALL resume it only while the generation its own pause produced, the paused intent and the screen request are unchanged. Empty-Media art SHALL leave player intent and selection unchanged and use the existing blank path when it ends. No additional restore path SHALL exist. Over Monitor the moment SHALL write under Monitor's generation and the next picture SHALL be the current dashboard.
 
@@ -97,7 +99,7 @@ A moment that reached the device SHALL complete `succeeded` with `transmitted` a
 - **WHEN** the core sends exact art while Media is idle and stopped without a selected session or item
 - **THEN** the bounded art plays through the existing writer without pausing or starting playback and clears to blank when complete
 - **AND** a manual change cancels it without replay, while explicit pauses, selected content, attention and Now Playing remain protected
-- **AND** ordinary mood moments remain refused in empty Media
+- **AND** ordinary mood moments retain their accepted idle-player behavior
 
 #### Scenario: Empty pause survives restart
 - **WHEN** the owner pauses without a selected playback checkpoint and the module restarts

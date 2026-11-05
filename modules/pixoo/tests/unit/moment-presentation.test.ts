@@ -226,6 +226,7 @@ for(const [name,lastError] of [['an uncertain write',{code:'timeout',priorEffect
    const state=s.player.getState();
    vi.spyOn(s.player,'getState').mockReturnValue({...state,lastError});
    expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+   expect(s.monitor.momentBlock(false,true)).toBe('the display may show something else');
   }finally{vi.restoreAllMocks();await s.close();}
  });
 }
@@ -235,6 +236,7 @@ it('a player in error is not idle, though nothing is loaded',async()=>{
   const state=s.player.getState();
   vi.spyOn(s.player,'getState').mockReturnValue({...state,intent:'paused',state:'error',lastError:{code:'operation-failed'}});
   expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+   expect(s.monitor.momentBlock(false,true)).toBe('the display may show something else');
  }finally{vi.restoreAllMocks();await s.close();}
 });
 it('a view change during a moment over an idle player ends it',async()=>{

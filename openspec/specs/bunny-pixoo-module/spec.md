@@ -322,7 +322,7 @@ A moment that reached the device SHALL complete `succeeded` with `transmitted` a
 - **WHEN** the core sends exact art while Media is idle and stopped without a selected session or item
 - **THEN** the bounded art plays through the existing writer without pausing or starting playback and clears to blank when complete
 - **AND** a manual change cancels it without replay, while explicit pauses, selected content, attention and Now Playing remain protected
-- **AND** ordinary mood moments remain refused in empty Media
+- **AND** ordinary mood moments retain their accepted idle-player behavior
 
 #### Scenario: Empty pause survives restart
 - **WHEN** the owner pauses without a selected playback checkpoint and the module restarts

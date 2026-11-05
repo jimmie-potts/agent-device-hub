@@ -232,7 +232,10 @@ void it('brief exact art can use empty Media and clears itself without creating 
     assert.deepEqual(world.display()?.player, before);
     const plain = await world.request('moment-play', 'org.bunny.moment.play.requested', {momentId: 'plain-empty', mood: 'celebrate', durationMs: 1000,
       priorityClass: 'flourish', coversStatus: false, startAtMs: Date.now(), toleranceMs: 5000});
-    assert.ok(plain.status === 'rejected'); assert.equal(plain.error.error.code, 'invalid-state');
+    const plainRequest = await accepted(Promise.resolve(plain));
+    const plainOutcome = await world.outcome(plainRequest);
+    assert.equal(plainOutcome.data.result, 'succeeded');
+    assert.equal(plainOutcome.data.evidence, 'transmitted');
     assert.deepEqual(world.invalid, []);
   } finally { await world.close(); }
 });
