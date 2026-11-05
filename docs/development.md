@@ -382,8 +382,8 @@ attempts in all. The step limits (20 minutes for the browser installs, 14 for th
 hook step) and the job limits leave room for two stalled attempts. Because it
 changes apt's configuration and stops every `apt-get`, the script refuses to run
 unless `GITHUB_ACTIONS` is `true`.
-Active workflow files are `checks.yml`, `workflow.yml`, `integration.yml` and
-`release-qualification.yml`. The Work Guide
+Active workflow files are `checks.yml`, `workflow.yml`, `integration.yml`,
+`release-qualification.yml` and `codeql.yml`. The Work Guide
 workflow and its path exceptions are removed. The existing Workflow workflow
 owns both Workflow checks and Retained documentation checks.
 
@@ -670,6 +670,11 @@ and keep the waits that test safety behavior.
 ## Static analysis
 
 See [Static analysis](static-analysis.md#static-analysis) for the authoritative procedure.
+The separate [CodeQL procedure](static-analysis.md#codeql-security-analysis) covers
+source-security results, permissions and the weekly scan. Its two analysis jobs
+run on ready PRs and main independently of the eight existing admission jobs.
+The native findings result is a separate merge check; scanner success alone does
+not establish that findings passed.
 
 For Python development tooling, install the separate pinned requirements and run
 `npm run lint:python` and `npm run test:lint:python` as described in
@@ -768,6 +773,14 @@ it supports the lightweight review policy, a missing legacy report is advisory;
 verify the actual independent review directly in the PR. This exception does not
 waive CI, lint, safety findings, source identity or live-acceptance requirements.
 Do not fabricate extra reviews merely to satisfy this optional parser.
+
+The preflight enumerates both CodeQL analysis jobs from their workflow. It does
+not interpret native Code scanning results from another GitHub app. Before merge,
+verify that result separately for the actual PR analysis, including both languages
+and the repository's finding threshold, as described in
+[CodeQL security analysis](static-analysis.md#codeql-security-analysis). Missing,
+failed or inaccessible findings evidence remains unresolved even when the analysis
+jobs and this optional preflight succeed.
 
 The tool only reads. Before any network use, its GitHub client refuses every
 request except `GET` and the tool's own two GraphQL query documents, matched by

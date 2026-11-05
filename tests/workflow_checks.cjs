@@ -232,6 +232,36 @@ const expectedTriggers = {
   workflow_dispatch: {},
 };
 
+test('CodeQL scans ready PRs, main and a weekly event without executing application code', () => {
+  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/codeql.yml'), 'utf8'));
+  assert.deepEqual(workflow.on.pull_request, {...readyTrigger, branches: ['main']});
+  assert.deepEqual(workflow.on.push, {branches: ['main']});
+  assert.deepEqual(workflow.on.schedule, [{cron: '23 7 * * 4'}]);
+  assert.deepEqual(workflow.on.workflow_dispatch, {});
+  assert.equal(workflow.on.pull_request_target, undefined);
+  assert.deepEqual(workflow.permissions, {contents: 'read'});
+  const job = workflow.jobs.analyze;
+  assert.deepEqual(job.strategy.matrix, {language: ['javascript-typescript', 'python']});
+  assert.equal(job.strategy['fail-fast'], false);
+  assert.equal(job.if, "github.event_name != 'pull_request' || !github.event.pull_request.draft");
+  assert.equal(job['timeout-minutes'], 30);
+  assert.deepEqual(job.permissions, {contents: 'read', 'security-events': 'write'});
+  assert.equal(job.steps.some(step => step.run || step['continue-on-error']), false, 'scan jobs never execute repository scripts or hide failure');
+  assert.equal(job['continue-on-error'], undefined);
+  const checkout = job.steps.find(step => step.uses.startsWith('actions/checkout@'));
+  assert.equal(checkout.with['persist-credentials'], false);
+  const init = job.steps.find(step => step.uses.startsWith('github/codeql-action/init@'));
+  const analyze = job.steps.find(step => step.uses.startsWith('github/codeql-action/analyze@'));
+  assert.match(init.uses, /@[a-f0-9]{40}$/);
+  assert.equal(init.uses.split('@')[1], analyze.uses.split('@')[1]);
+  assert.equal(init.with['build-mode'], 'none');
+  assert.equal(init.with.tools, 'linked');
+  assert.equal(init.with.languages, '${{ matrix.language }}');
+  assert.equal(analyze.with.category, '/language:${{ matrix.language }}');
+  assert.equal(analyze.with['upload-database'], false);
+  assert.equal(analyze.with['wait-for-processing'], true);
+});
+
 test('ready PRs run admission while main uses separate integration and qualification', () => {
   for (const [file, triggers, checks] of [['checks.yml', expectedTriggers, true], ['workflow.yml', allTriggers, false]]) {
     const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
@@ -259,7 +289,7 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
   const checks = read('checks.yml'), workflowChecks = read('workflow.yml');
   // Hub #870: GitHub-hosted runners replaced Depot. The workflows use new paths, because GitHub keeps the
   // manually disabled state of the retired ci.yml and work-guide.yml copies.
-  assert.deepEqual(fs.readdirSync(path.join(root, '.github/workflows')).sort(), ['checks.yml', 'integration.yml', 'release-qualification.yml', 'workflow.yml']);
+  assert.deepEqual(fs.readdirSync(path.join(root, '.github/workflows')).sort(), ['checks.yml', 'codeql.yml', 'integration.yml', 'release-qualification.yml', 'workflow.yml']);
   assert.equal(fs.existsSync(path.join(root, '.depot')), false, 'Depot workflows would run twice');
   // Workflow checks run in their own workflow so Markdown-only changes still run them (Hub #861).
   assert.equal(workflowChecks.name, 'Workflow');

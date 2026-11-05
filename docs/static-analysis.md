@@ -356,6 +356,86 @@ for these reasons:
 | Writes to file descriptors 1 and 2, an alias of `process`, `await import('node:console')` | Not checked | No covered code does this, and a syntax rule cannot follow an alias or a computed descriptor |
 | An alias, a helper, a custom type guard, an untyped callback parameter, `any`, a computed member in an `instanceof` test, a reassigned narrowed binding | Not checked | Each needs data flow or type information that a syntax rule does not have |
 
+## CodeQL security analysis
+
+[The CodeQL workflow](../.github/workflows/codeql.yml) analyzes JavaScript,
+TypeScript and Python on ready PRs to main, main pushes, Thursdays at 07:23 UTC,
+and explicit diagnostic dispatches. Draft PRs skip analysis. A late or missing
+scheduled run is pending evidence; a manual run does not replace it. Keep this
+weekly schedule after the initial acceptance observation.
+
+The workflow implements [the qualified setup decision](https://github.com/jimmie-potts/agent-device-hub/issues/768#issuecomment-6649674345).
+CodeQL action v4.39.3 is pinned to
+`33d7b85da1a04171e211befe2c739303b9a4c066`. Its `tools: linked` bundle is CLI
+2.27.4, with default JavaScript queries 2.5.0 and Python queries 1.9.0. Update the
+action and linked bundle through review. The default security suite is used;
+there are no custom packs or additional quality queries.
+
+Each language has a separate Ubuntu 24.04 job with a 30-minute limit and the
+runner's default memory/thread selection. `build-mode: none` avoids application
+builds, dependency installs and repository-script execution. The job uses only
+the built-in token, with `contents: read` and `security-events: write`. Checkout
+does not persist credentials. Ordinary `pull_request` events preserve GitHub's
+fork-token and contributor-approval controls; `pull_request_target` is not used.
+Do not add a PAT or broaden permissions to repair an unavailable fork result.
+
+[The source config](../.github/codeql/codeql-config.yml) owns exclusions for
+generated/dependency trees, private/local data, vendored reference assets and
+databases, saved source copies and hibernated BB-8. Maintained tests and tooling
+remain included. Python security analysis also includes retained consumer packages
+because they are still distributed for compatibility/manual return. This does
+not run those packages or expand the bounded Ruff/Pyright adoption. CodeQL's
+supported JS/TS and Python extractors define its language coverage; no C/C++,
+Java or Actions-language scan is selected.
+
+### Read execution and finding results separately
+
+Require both language analysis jobs to succeed, including upload and processing.
+Then inspect the native Code scanning results check and its findings for the same
+PR. Its default failure levels are new `error`, `high` and `critical` findings.
+Verify the actual threshold during adoption; do not change repository settings or
+branch protection as an incidental fix. Record pre-existing findings and reasoned
+dispositions in the delivery evidence. New blocking findings need a fix or an
+explicit reviewed disposition. Do not broadly ignore or automatically dismiss them.
+
+The [delivery preflight](development.md#delivery-preflight) enumerates the two
+analysis jobs, but does not interpret result checks from another GitHub app.
+Read that native result separately before merge. Missing language results,
+extraction/upload/processing errors, cancellation, timeout and inaccessible
+findings remain failed or unavailable, even if other checks are green.
+
+For a PR, retain its head and the actual analyzed merge revision, plus run/check
+links. Normal checkout/ref inference keeps the merge bytes associated with their
+merge SHA. Main, scheduled and manual runs bind their exact event revision.
+Main scanning remains separate from cheap Integration and full Release
+qualification. Reuse the successful main scan for the exact qualified release;
+do not infer a scan from either other workflow or another revision.
+
+Use existing GitHub check records and the native security view. For diagnostics:
+
+```bash
+gh run list --repo jimmie-potts/agent-device-hub --workflow codeql.yml --commit <full-sha> --json databaseId,event,status,conclusion
+gh run view <run-id> --repo jimmie-potts/agent-device-hub --json jobs
+```
+
+Only an authorized diagnostic run uses `gh workflow run codeql.yml --ref
+<selected-ref>`. Keep default setup off while this advanced workflow owns scans.
+To stop future execution during an authorized repair, disable this workflow and
+record the coverage gap; restore it after the corrected candidate passes. A
+reviewed revert can restore its last qualified configuration. Neither action
+turns absent analysis into a clean result or waives the delivery gate.
+
+Database uploads are disabled. SARIF and source-derived diagnostics use native
+code scanning and existing Actions retention. A disposable-control artifact, if
+needed, has 14-day retention and contains only source-derived results and tool/
+revision metadata. Never scan installed stores or publish runtime data, secrets
+or debug bundles. Existing privacy rules apply to source-security evidence too.
+
+Validate workflow/configuration changes with `npm run check:workflow`,
+`npm run test:workflow` and `npm run test:preflight`, after the documented setup
+and build. These local fixtures check routing and permissions; actual hosted
+analysis, finding controls and failed execution require separate evidence.
+
 <a id="depot-diagnostic-access"></a>
 
 ## Python tooling
