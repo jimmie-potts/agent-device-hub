@@ -624,7 +624,7 @@ owns the handoff and its policy.
 | Family | Type | Sender and purpose |
 | --- | --- | --- |
 | `art-request` | `org.bunny.art.request.requested` | The dashboard, for the owner. Starts a job, or cancels any job, automatic or not, by its `jobRequestId`. Subject `art`. |
-| `art-auto` | `org.bunny.art.auto.requested` | `bunny/core`. Starts an automatic job, with no typed text and no cancel. Subject `art`. |
+| `art-auto` | `org.bunny.art.auto.requested` | `bunny/core`. Version 2.0 starts an automatic job; 2.1 also prepares saved display art or selects saved browser art. No typed text or cancel. Subject `art`. |
 | `art-dispatch` | `org.bunny.art.dispatch.requested` | `bunny/modules/art`, to the core: forward one `art-stage` or `art-ambient-set` to `target`. Never a moment. Subject `art`. |
 | `art-stage` | `org.bunny.art.stage.requested` | The core, for the art module. The device keeps a private copy, with no display effect. Subject: the device. |
 | `art-ambient-set` | `org.bunny.art-ambient.set.requested` | The core, for the art module. The device's ambient tile shows `compositionId`, or none when it is null. Subject: the device. |
@@ -632,6 +632,12 @@ owns the handoff and its policy.
 - **Who decides ownership.** The command family decides whether a job is the
   owner's. `origin` and `purpose` are descriptive, so `art-auto` with an owner label
   validates and stays automatic.
+- **Saved art.** `art-auto/2.1` retains the 2.0 start and adds closed `prepare`
+  and `present` actions. Both name `artworkId` and `compositionId`; preparation
+  also names the exact configured device `target`. Neither generates art.
+  Preparation success means the target finished staging that composition.
+  Presentation success means the browser selection was committed, never that a
+  browser displayed it. Admission alone proves neither result.
 - **Bounds.** `text` is at most 2,000 characters, and weather is at most 64
   characters of lowercase condition words. Payloads are closed: none has a member for
   a location, path or credential.
@@ -688,6 +694,12 @@ what retention holds. It carries no prompt, key, location or image bytes. Read b
 through the module's content references, `artContentRef`. `art-catalog-edit/2.0` is the
 owner's favorite, feedback, delete and reuse command. The module registers both, so
 they are not core families. `v2/art` owns the job and handoff families.
+
+`art/2.1` adds required `selection`, either null or `{artworkId, compositionId}`.
+It names the authoritative saved browser composition, including one outside the
+recent page. It carries no pixels or palette evidence. The 2.0 schema and its
+`ArtState` type remain unchanged; `ArtState21` names the extended record and
+`ArtRecord` accepts either version. Both minor versions remain registered.
 
 ## Companion payloads
 

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-auto/2.1",
+  "description": "Core-only automatic art commands (Hub #297). Start retains the 2.0 behavior. Prepare names one saved composition and exact configured device ID; success means the device completed staging, not merely admitted it. Present commits an existing browser composition without generating art or claiming visible pixels. The gateway grants no client access to this family.",
+  "oneOf": [
+    {"$ref": "https://bunny.invalid/events/art-auto/2.0"},
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["requestId", "action", "artworkId", "compositionId", "target"],
+      "properties": {
+        "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+        "action": {"const": "prepare"},
+        "artworkId": {"$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/artworkId"},
+        "compositionId": {"$ref": "https://bunny.invalid/events/art-stage/2.0#/$defs/compositionId"},
+        "target": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"}
+      }
+    },
+    {
+      "type": "object", "additionalProperties": false,
+      "required": ["requestId", "action", "artworkId", "compositionId"],
+      "properties": {
+        "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+        "action": {"const": "present"},
+        "artworkId": {"$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/artworkId"},
+        "compositionId": {"$ref": "https://bunny.invalid/events/art-stage/2.0#/$defs/compositionId"}
+      }
+    }
+  ]
+}

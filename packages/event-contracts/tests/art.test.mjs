@@ -54,6 +54,7 @@ test('each art family keeps one kind and the type the gateway derives from its n
     ['art-stage', 'command', 'org.bunny.art.stage.requested', 'art-stage/2.0'],
     ['art-ambient-set', 'command', 'org.bunny.art-ambient.set.requested', 'art-ambient-set/2.0'],
     ['art-dispatch', 'command', 'org.bunny.art.dispatch.requested', 'art-dispatch/2.0'],
+    ['art-auto', 'command', 'org.bunny.art.auto.requested', 'art-auto/2.1'],
   ]);
   for (const {family: name, type} of artFamilies) {
     const verb = name.lastIndexOf('-');

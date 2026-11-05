@@ -1,7 +1,7 @@
 ## 1. Contracts and coverage
 
-- [ ] 1.1 Refresh the exact prerequisite interfaces, ADR 0012 and affected guides; record any design changes and verify all three deltas with strict OpenSpec validation.
-- [ ] 1.2 Add the new build/type/contract/browser/runtime checks to development guidance and CI before product implementation; verify workflow checks and current inventory.
+- [x] 1.1 Refresh the exact prerequisite interfaces, ADR 0012 and affected guides; record any design changes and verify all three deltas with strict OpenSpec validation.
+- [x] 1.2 Add the new build/type/contract/browser/runtime checks to development guidance and CI before product implementation; verify workflow checks and current inventory.
 - [ ] 1.3 Add closed art-auto/2.1 and art/2.1 schemas and shared types while retaining 2.0 definitions; observe focused contract refusals before implementation and pass TypeScript/Python contract consumers afterwards.
 
 ## 2. Art owner

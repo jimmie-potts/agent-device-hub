@@ -29,6 +29,11 @@ export type ArtCancel = {requestId: string; action: 'cancel'; jobRequestId: stri
 export type ArtRequest = (ArtAutoStart & {text?: string}) | ArtCancel;
 /** `org.bunny.art.auto.requested`: the core starts an automatic job. The automatic limits always apply. The owner cancels with `art-request`. */
 export type ArtAuto = ArtAutoStart;
+/** A free saved composition handoff to one exact configured device. Completion means staging succeeded. */
+export type ArtPrepare = {requestId: string; action: 'prepare'; artworkId: string; compositionId: string; target: string};
+/** A durable browser choice. Its completion is no evidence that a browser rendered it. */
+export type ArtPresent = {requestId: string; action: 'present'; artworkId: string; compositionId: string};
+export type ArtAuto21 = ArtAuto | ArtPrepare | ArtPresent;
 /** What a stage says about the one rendition it carries. */
 export type ArtStageContent = {
   compositionId: string; format: ArtFormat; width: number; height: number; frames: number; durationMs: number;
@@ -128,6 +133,7 @@ export const artFamilies = [
   defineFamily('art-stage', 'command', 'org.bunny.art.stage.requested', checkStage),
   defineFamily('art-ambient-set', 'command', 'org.bunny.art-ambient.set.requested', routedSubject('device')),
   defineFamily('art-dispatch', 'command', 'org.bunny.art.dispatch.requested', checkDispatch),
+  defineFamily('art-auto', 'command', 'org.bunny.art.auto.requested', checkJob, '2.1'),
 ] as const;
 export const artSchemas: Readonly<Record<string, object>> = Object.fromEntries(artFamilies.map(family => [family.dataschema, family.schema]));
 export function registerArtFamilies(validator: MessageValidator): void { registerFamilies(validator, artFamilies); }
