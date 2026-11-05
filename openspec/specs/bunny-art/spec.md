@@ -133,6 +133,15 @@ The module SHALL prune only unsaved, unreferenced art past a configured recent l
 ### Requirement: Saved art is offered only after a device confirms it
 The module SHALL send staged compositions through `art-dispatch` and SHALL offer a candidate only after the core reports that staging succeeded. It SHALL NOT start a takeover. Reusing saved art SHALL spend nothing.
 
+#### Scenario: A display uses its configured device identity
+- **WHEN** a display kind has exactly one matching device in its designated owner's current SDK copy and declares the required art capability
+- **THEN** staging and ambient commands address that device's ID, while art state retains the display kind
+- **AND** physical connectivity remains the device owner's admission decision; local staging does not require the panel to be online
+
+#### Scenario: Device identity is not established
+- **WHEN** the owner's device copy is absent, replacing, failed or removed, matching identities are ambiguous, or the required art capability is missing
+- **THEN** no command is forwarded to a guessed device ID
+
 #### Scenario: Staging has not finished
 - **WHEN** a composition is staged and no result has arrived
 - **THEN** it is not a candidate
