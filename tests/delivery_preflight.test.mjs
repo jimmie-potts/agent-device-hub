@@ -93,7 +93,7 @@ test('a fully evidenced source candidate reports every applicable gate satisfied
 });
 
 test('the real GitHub Actions configuration enumerates the expected jobs and routes Markdown-only changes', () => {
-  assert.deepEqual(Object.keys(WORKFLOW_FILES).sort(), ['checks.yml', 'codeql.yml', 'integration.yml', 'release-qualification.yml', 'workflow.yml']);
+  assert.deepEqual(Object.keys(WORKFLOW_FILES).sort(), ['checks.yml', 'codeql.yml', 'integration.yml', 'music-native.yml', 'release-qualification.yml', 'workflow.yml']);
   assert.equal(fs.existsSync(path.join(root, DEPOT.directory)), false, 'Depot workflows are retired (#870)');
   const workflows = Object.entries(WORKFLOW_FILES).map(([file, text]) => parseWorkflow(file, text));
   const source = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['scripts/a.mjs'], filesComplete: true }, ACTIONS);
@@ -133,7 +133,7 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
   assert.equal(mixed.jobs.length, 10, 'one non-Markdown path keeps every job expected');
   assert.ok(mixed.jobs.every(item => item.selected), 'an old-system path selects every job');
   const incomplete = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/a.md'], filesComplete: false }, ACTIONS);
-  assert.equal(incomplete.jobs.length, 10, 'an incomplete file list keeps every job expected');
+  assert.equal(incomplete.jobs.length, 11, 'an incomplete file list keeps every job expected');
   assert.ok(incomplete.jobs.every(item => item.selected), 'an incomplete file list selects every job');
   // Hub #1080: a narrow change still expects every job, but the jobs it leaves out are expected to be skipped.
   const narrow = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['apps/maintenance/src/planner.ts'], filesComplete: true }, ACTIONS);
@@ -255,6 +255,7 @@ test('CI: a candidate that edits its workflows cannot drop an expected job unnot
 const depotEra = { 'ci.yml': WORKFLOW_FILES['checks.yml'], 'workflow.yml': WORKFLOW_FILES['workflow.yml'] };
 const moveWorld = () => {
   const world = cleanWorld();
+  world.checkRuns[HEAD].push(checkRun('Music native compile and synthetic tests', HEAD, world.checkRuns[HEAD][0].check_suite.id));
   // A Depot-era base also holds disabled copies under .github/workflows; Depot's directory decides.
   world.workflows[BASE] = { [DEPOT.directory]: { ...depotEra }, [ACTIONS.directory]: { 'ci.yml': 'name: Stale\non: pull_request\njobs: {}\n' } };
   world.files.push(
@@ -1648,4 +1649,11 @@ test('main source evidence distinguishes independent release qualification from 
   assert.match(result.filtered[0].reason, /source integration is not release eligibility/);
   const unknown = { ...release, file: 'unknown.yml' };
   assert.match(expectedJobs([unknown], { event: 'push', branch: 'main', files: [], filesComplete: true }, ACTIONS).uncertain.join(), /reusable workflow jobs are not enumerated/);
+});
+
+
+test('music native source checks are required when the selected PR changes its producer', () => {
+  const workflows = Object.entries(WORKFLOW_FILES).map(([file, text]) => parseWorkflow(file, text));
+  const expected = expectedJobs(workflows, {event: 'pull_request', branch: 'main', files: ['apps/music-producer/native/main.m'], filesComplete: true}, ACTIONS);
+  assert.ok(expected.jobs.some(item => item.name === 'Music native compile and synthetic tests'));
 });

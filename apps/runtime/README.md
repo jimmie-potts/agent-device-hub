@@ -534,6 +534,32 @@ rechecks the original request's authority immediately before changing state;
 expected refusal codes leave the core running. A lost reply is never retried
 automatically. Inspect the current rules/settings before another edit.
 
+## Music capture
+
+The core owns explicitly started Music.app capture sessions through
+`music-capture-control` and serves their current `music-capture-state` record.
+Start and stop use tracked operator admission with the current revision. A
+received start report proves activation; an accepted request alone does not.
+Stop fences features immediately, and clean teardown has its own outcome.
+The separate [Mac producer](../music-producer/README.md) opens the audio tap.
+
+Its credential uses role `music-producer`, source
+`bunny/parts/music-producer` and an empty scopes list. The edge grants one
+connection-bound work endpoint, capture progress/features and availability
+registration. It grants no general state reads or device commands. A connection
+or permission grant never starts capture.
+
+Derived windows expire, and source/generation/sequence checks prevent delayed
+frames from restoring a stopped session. Clock invalidation or a core storage
+failure closes the Music connection before durable recovery. The producer then
+attempts native teardown locally; connection closure alone does not prove a
+clean stop. Restart retires pending responsibility and never sends the old start
+again. Private history retains published derived measurements, so its storage
+continues growing during capture. No PCM enters that history.
+
+This source path supports Music.app only and controls no lights. The installed
+pilot separately qualifies helper identity, permissions, real routes and timing.
+
 ## Agent hooks
 
 Qualified explicit read actions use the separate
