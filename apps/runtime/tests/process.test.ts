@@ -311,7 +311,7 @@ it('a health port already in use names its reason in the runtime.failed record',
   assert.equal(runtime.records().find(record => record.event_name === 'runtime.failed')?.attributes['error.code'], 'EADDRINUSE');
 });
 
-it('an outcome committed before a kill between commit and publish is taken exactly once after the restart, then forgotten once acknowledged, and the command is never sent again', async context => {
+for (const scenario of ['lamp-crash', 'lamp-crash-delayed']) it(`an outcome committed before a kill between commit and publish is taken exactly once after the restart, then forgotten once acknowledged, and the command is never sent again (${scenario})`, async context => {
   // Hub #882: the lamp's outbox holds the outcome across the kill; the core keeps the outcome in its own history.
   const dir = await stateDir(context);
   const args = ['--port', '0', '--state-dir', dir];
@@ -320,7 +320,7 @@ it('an outcome committed before a kill between commit and publish is taken exact
   const taken = (runtime: Spawned): LogRecord[] => of(runtime, 'core', 'message.received')
     .filter(record => record.attributes['bunny.message.kind'] === 'outcome' && record.attributes['bunny.outcome'] === 'accepted');
 
-  const crashed = spawnRuntime(context, FIXTURE, ['lamp-crash', ...args]);
+  const crashed = spawnRuntime(context, FIXTURE, [scenario, ...args]);
   assert.deepEqual(await exitOf(crashed, START_BOUND_MS, 'the kill after the lamp\'s commit'), {code: null, signal: 'SIGKILL'});
   assert.equal(of(crashed, 'lamp', 'command.executing').length, 1, 'the lamp had the command once');
   assert.equal(of(crashed, 'core', 'message.received').length, 0, 'nothing was published before the kill');
@@ -344,6 +344,20 @@ it('an outcome committed before a kill between commit and publish is taken exact
   assert.equal(of(again, 'core', 'message.received').length, 0, 'exactly once across all three runs');
   assert.equal(of(again, 'lamp', 'command.executing').length, 0);
 }, KILL_AND_RESTART_BUDGET_MS);
+
+for (const signal of ['SIGTERM', 'SIGINT']) it(`the lamp driver stays silent after startup cancellation ${signal}`, async context => {
+  const runtime = spawnRuntime(context, FIXTURE, [`lamp-cancel-${signal}`, '--port', '0', '--state-dir', await stateDir(context)]);
+  const closed = once(runtime.child, 'close');
+  assert.deepEqual(await exitOf(runtime, START_BOUND_MS, `startup cancellation ${signal}`), {code: 0, signal: null});
+  await closed;
+  assert.equal(runtime.stdout(), '', 'cancellation during startup emits no ready line');
+  assert.ok(recorded(runtime, 'runtime.started'));
+  assert.ok(recorded(runtime, 'runtime.stopped'));
+  for (const name of ['runtime.command.admitted', 'command.executing', 'command.completed']) {
+    assert.equal(recorded(runtime, name), false, `startup cancellation causes no ${name}`);
+  }
+  assert.equal(runtime.records().some(record => record.event_name.endsWith('.failed')), false, 'the waiting callback causes no post-stop failure');
+});
 
 it('a kill between the core\'s commit and its publish loses and duplicates nothing: the restart sends each stored message once', async context => {
   // Hub #831: the core's outbox holds the session's state and occurrence across the kill.
