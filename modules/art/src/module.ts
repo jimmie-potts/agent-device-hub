@@ -555,10 +555,10 @@ class ArtOwner {
     this.#ambientTimer = undefined;
     const generation = ++this.#ambientGeneration;
     if (this.#closed) return;
-    const row = this.#store.ambient();
-    if (row === undefined || row.status !== Outcome.succeeded || row.expiresAtMs === null || row.expiresAtMs <= this.#context.clock.now()) return;
+    const row = this.#store.ambient(), now = this.#context.clock.now();
+    if (row === undefined || row.status !== Outcome.succeeded || row.expiresAtMs === null || row.expiresAtMs <= now) return;
     if (this.#store.artwork(row.artworkId)?.deletedAtMs !== null) return;
-    this.#ambientTimer = this.#context.scheduler.after((row.expiresAtMs - this.#context.clock.now()) / 2, () => {
+    this.#ambientTimer = this.#context.scheduler.after(Math.floor((row.expiresAtMs - now) / 2), () => {
       if (generation !== this.#ambientGeneration) return;
       this.#ambientTimer = undefined;
       if (this.#closed || this.#store.ambient()?.requestId !== row.requestId || this.#store.artwork(row.artworkId)?.deletedAtMs !== null) return;
