@@ -34,6 +34,22 @@ The module SHALL initially poll every 60 seconds while docked and every 15 secon
 - **WHEN** a read times out or the device disappears
 - **THEN** status reports unavailable input with its original observation time, preserves supported history and infers no run completion
 
+#### Scenario: Failed first poll followed by a reachable target
+- **WHEN** the first polls fail while the target is unreachable and the target later answers
+- **THEN** the same observation loop reaches available status at a capped retry without a restart, and closes its unavailable gap at that observation
+
+#### Scenario: Repeated unavailable polls
+- **WHEN** polls keep failing for the same reason
+- **THEN** each attempt stays in the private archive, no further state is published until something changes, and diagnostics record the degradation, bounded summaries and recovery with trace context rather than a warning per poll
+
+#### Scenario: Shutdown during a failed observation
+- **WHEN** the module stops while a failed read is retrying
+- **THEN** no further read, commit, timer or failure record follows
+
+#### Scenario: Steady polling with ordinary timing
+- **WHEN** a poll is admitted within 500 ms of its policy deadline and its reply takes ordinary bounded time
+- **THEN** no missed-poll gap is recorded and its observed samples stay eligible
+
 ### Requirement: Durable private history
 
 One module SHALL own the private store outside Git and Windows mounts. It SHALL retain original readings, records, observed samples, room mappings and capture provenance without automatic expiry. Runs SHALL be idempotent by robot identity and requested record identifier, with a returned identifier checked before association. Every available summary identifier SHALL be reconciled at startup and observed run end through bounded work. A subset, missing summary or failed record read SHALL neither erase retained history nor manufacture completeness.
