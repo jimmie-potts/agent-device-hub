@@ -41,7 +41,7 @@ export async function reactivePresetJourney(browser: Browser): Promise<void> {
       return {...state, devices: Object.fromEntries(Object.entries(state.devices).map(([id, {reads: _reads, ...device}]) => [id, device]))};
     };
     const before = structuredClone(output()), wallBefore = await world.nanoleafWall();
-    await preview.getByLabel('Built-in effect', {exact: true}).selectOption('traveling-wave');
+    await preview.getByRole('combobox', {name: 'Built-in effect', exact: true}).selectOption('traveling-wave');
     await preview.getByLabel('Color 1', {exact: true}).fill('#12ab34');
     await preview.getByRole('slider', {name: 'Intensity', exact: true}).fill('35');
     await library.getByLabel('New preset name', {exact: true}).fill('Synthetic wave');
@@ -61,7 +61,7 @@ export async function reactivePresetJourney(browser: Browser): Promise<void> {
         sensitivity: 3, smoothingMs: 900, direction: 'inward', periodMs: 9000}};
     assert.equal((await world.credentialAction('nanoleaf-reactive-preset-save', 'reactive-presets', external)).status, 200);
     const second = await catalog(); assert.equal(second.presets.length, 2); assert.deepEqual(second.presets.find(preset => preset.presetId === first.presets[0]?.presetId), first.presets[0]);
-    await library.getByLabel('Saved preset', {exact: true}).selectOption('preset-external');
+    await library.getByRole('combobox', {name: 'Saved preset', exact: true}).selectOption('preset-external');
     await library.getByRole('button', {name: 'Load into draft', exact: true}).click();
     await preview.getByText(/Sensitivity 3 · Renderer smoothing 900 ms/).waitFor();
     await preview.getByText(/Direction inward/).waitFor(); await preview.getByText(/Wave period 9000 ms/).waitFor();
@@ -92,7 +92,7 @@ export async function reactivePresetJourney(browser: Browser): Promise<void> {
     assert.deepEqual(output(), before); assert.deepEqual(await world.nanoleafWall(), wallBefore);
     await world.restart(); await page.reload(); await feed(page, 'connected'); await preview.locator('summary').click();
     assert.deepEqual((await catalog()).presets, second.presets); assert.equal(saves.length, 1);
-    await library.getByLabel('Saved preset', {exact: true}).selectOption('preset-external');
+    await library.getByRole('combobox', {name: 'Saved preset', exact: true}).selectOption('preset-external');
     await library.getByRole('button', {name: 'Load into draft', exact: true}).click();
     const receipts = process.env.DASHBOARD_RECEIPTS;
     for (const colorScheme of ['light', 'dark'] as const) for (const width of [1440, 390, 320]) {
