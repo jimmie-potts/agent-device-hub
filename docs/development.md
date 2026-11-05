@@ -2095,7 +2095,7 @@ window explanation, and is not replayed. After the build, run
 `test:runtime:built` CI suite includes it. The registered `missed-moment-start`
 scenario adds the authenticated HTTP gateway and both real handlers, with
 Pixoo and Tronbyt simulations. It checks the reply, owner, operation record,
-zero device writes and duplicate refusal. Run it after the build with
+zero moment writes and duplicate refusal. Run it after the build with
 `node --test --test-name-pattern='missed-moment-start' apps/runtime/dist/tests/scenarios/catalog.test.js`;
 the existing `test:runtime:scenarios:built` CI suite discovers it, and
 `scenario-missed-moment-start` is its disposable acceptance capture.
