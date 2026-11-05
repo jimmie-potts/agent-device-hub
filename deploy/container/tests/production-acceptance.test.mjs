@@ -24,7 +24,7 @@ test('production profile starts configured household modules on fresh state with
     await rm(root, {recursive: true, force: true});
     await rm(secretsRoot, {recursive: true, force: true});
   });
-  const names = ['playback', 'lifx', 'tidbyt', 'pixoo', 'nanoleaf', 'onn', 'roborock', 'wemo', 'companions', 'codex-desktop'];
+  const names = ['playback', 'lifx', 'tidbyt', 'pixoo', 'nanoleaf', 'roborock', 'wemo', 'companions', 'codex-desktop'];
   const selected = runtimeModules.shippedModules.filter(({name}) => name === 'core' || names.includes(name));
   assert.equal(selected.length, names.length + 1, 'every selected module ships');
   const modules = await simulatedSections(secretsRoot, selected);
@@ -48,19 +48,19 @@ test('production profile starts configured household modules on fresh state with
   } finally {await runtime.stop();}
 
   // Shipped real modules with no configured dependency retain their ordinary refusal instead of being labelled healthy.
-  const unavailable = productionModules({modules: {onn: {}, roborock: {}}, edge: config.edge},
+  const unavailable = productionModules({modules: {roborock: {}}, edge: config.edge},
     runtimeModules, checkConfiguration, containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled'}));
   const refused = await startRuntime({modules: unavailable.modules, stateDir: join(root, 'unavailable'), port: 0,
-    config: {modules: {onn: {}, roborock: {}}, edge: config.edge}, log: () => {}});
+    config: {modules: {roborock: {}}, edge: config.edge}, log: () => {}});
   try {
     assert.equal(refused.health().status, 'degraded');
     assert.deepEqual(refused.health().modules.map(({name, state}) => [name, state]),
-      [['core', 'running'], ['onn', 'refused'], ['roborock', 'refused']]);
+      [['core', 'running'], ['roborock', 'refused']]);
   } finally {await refused.stop();}
 });
 
 // The household device modules the fresh-state cutover selects (#568). The record below covers each, in shipped order.
-const DEVICE_MODULES = ['playback', 'lifx', 'tidbyt', 'pixoo', 'nanoleaf', 'onn', 'roborock', 'wemo'];
+const DEVICE_MODULES = ['playback', 'lifx', 'tidbyt', 'pixoo', 'nanoleaf', 'roborock', 'wemo'];
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 const octal = info => (info.mode & 0o777).toString(8);
