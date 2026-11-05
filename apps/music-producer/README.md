@@ -10,6 +10,10 @@ helper. Stop, disconnect or shutdown retires its generation and pending frames.
 The first source slice supports Music.app only. Microphone support, prepared
 analysis and physical synchronization retain their own acceptance in the issue.
 
+The separate [local position reader](#local-state-and-position-reader) is a source
+increment for [#571](https://github.com/jimmie-potts/agent-device-hub/issues/571).
+The capture CLI does not invoke it or publish its observations.
+
 ## Foreground producer
 
 After building, the entry point is:
@@ -100,8 +104,9 @@ npm run test:music-producer:built
 npm run test:music-producer:native
 ```
 
-On macOS also run `npm run build:music-producer:native`. The native tests generate
-synthetic PCM in memory and the build only compiles. Neither command opens Music,
+On macOS also run `npm run build:music-producer:native` and
+`sh apps/music-producer/native/adapter-test.sh`. The native tests generate
+synthetic PCM and AppleEvent descriptors in memory; the build only compiles. These checks do not open Music,
 captures audio, changes a speaker route or requests permission. The portable
 analyzer and Mac adapter have separate checks. See the [native guide](native/README.md)
 for formats and numeric limits.
@@ -114,6 +119,48 @@ The producer suite includes a disposable loopback SDK edge and a real child
 process that generates numeric frames. That fixture imports no audio API and
 opens no media. It exercises start, confirmed stop, stream loss and bounded pipe
 parsing without starting the production native capture helper.
+
+## Local state and position reader
+
+`src/position.ts` exports `MusicPositionReader`. Construct it with an absolute
+`helper` path to `native/build/music-position`, then call `read({signal})` for one
+observation. Construction and import perform no work. Each explicit call starts
+one child; the component has no polling schedule, SDK grant or playback controls.
+`modules/playback` retains source selection and presentation ownership. This
+partial increment does not add Music to that owner's source configuration.
+
+A successful result has `status: "sample"`, a per-reader `sequence`, a
+`sourceEpoch` and the native `sample`. A Music process restart produces a new
+epoch on the next successful read. An epoch identifies a process lifetime, not
+a recording. Cancelled reads and late replies cannot change it. Unavailability
+returns `status: "unavailable"` with the sequence and a fixed registered error.
+No prior observation is returned as a substitute. The reader retains only its
+current process identity, epoch and sequence, with no logs or observation history.
+
+State and position have separate monotonic request/reply intervals. Position may
+be unavailable while the earlier state remains valid. Zero seconds is a real
+position, never an unavailable sentinel. The supervisor checks every native
+interval against its local request and receive times, without wall-clock
+conversion. These intervals do not establish an atomic snapshot, track identity,
+seek detection, speaker latency or beat timing. A consumer must use the original
+intervals when deciding whether an observation remains fresh.
+
+The reader accepts one closed NDJSON record within 4 KiB total stdout, discards
+at most 4 KiB stderr and requires a confirmed child exit. The five-second
+whole-read deadline includes startup and permission preflight.
+Elapsed monotonic time is checked at receipt and exit even if timer dispatch is delayed.
+Cancellation, invalid output or that deadline fences the result and sends SIGTERM immediately,
+then SIGKILL after 500 ms if needed. After 1.5 seconds without observed exit it
+reports `uncertain-result` and continues to own the child. Another read is refused
+until that exit arrives. No path retries automatically. A caller that aborts
+must still await the read result to observe teardown.
+
+The portable suite includes real synthetic children for complete and partial
+reads, fragmented output, cancellation and deadline teardown. These fixtures
+send no AppleEvents. The [native guide](native/README.md#explicit-state-and-position-reads)
+describes permission identity and descriptor checks. Continuous polling, track
+metadata, output observations, SDK integration, controls, packaged permission
+access and physical timing remain within the full #571 work.
 
 ## Data and qualification
 

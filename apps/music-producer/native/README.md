@@ -1,9 +1,10 @@
 # Native Music input
 
-This helper measures Music.app output for an explicitly selected lighting session.
-It is the native part of the Music producer, not an installed service. The owning
-Node process admits the session, consumes these records and uses the authenticated
-SDK edge. The runtime owns the session and Nanoleaf owns rendering and device writes.
+This directory contains Music.app audio capture and a separate state/position reader.
+Both are source components of the Music producer, not installed services. For
+capture, the owning Node process admits the session, consumes its records and
+uses the authenticated SDK edge. The runtime owns the capture session and
+Nanoleaf owns rendering and device writes. The position reader has no SDK integration.
 This directory adds no network connection, device command, microphone input,
 playback control, Music metadata or prepared track analysis.
 
@@ -17,6 +18,8 @@ sh apps/music-producer/native/build.sh
 sh apps/music-producer/native/adapter-test.sh
 apps/music-producer/native/build/music-capture --self-test
 apps/music-producer/native/build/music-capture --clock
+apps/music-producer/native/build/music-position --self-test
+apps/music-producer/native/build/music-position --clock
 ```
 
 `test.sh` builds portable C11 signal and concurrent transfer tests with `cc`, `libm`
@@ -29,7 +32,8 @@ newest-value transfer under a concurrent writer. Temporary binaries are removed.
 Tools. The source references `processRestoreEnabled`, introduced in that SDK,
 and guards its runtime use with `@available(macOS 26.0, *)`. CI selects Xcode 26.3
 on its macOS 15 runner; the build SDK and runner OS are separate requirements.
-The script only compiles `build/music-capture`. Its deployment target is macOS
+The script compiles `build/music-capture` and the separate `build/music-position`.
+Their deployment target is macOS
 14.2, Apple's minimum for process taps; this is not tested-OS evidence. Source
 compilation and synthetic checks do not qualify capture on every OS version,
 output route or protected music source.
@@ -40,6 +44,10 @@ unmuted private-tap configuration, no output subdevice, zero audio access from
 startup, self-test and clock modes, source/format failures, invalid buffers,
 stop, EOF, signals and every cleanup attempt after acquisition failures.
 Its explicit-capture invocations use generated samples and cannot capture audio.
+It also builds a separate position executable with fake process lookup,
+permission preflight and AppleEvent sends. Its scenarios check exact getter
+descriptors and flags, process replacement, partial reads, five state enums,
+numeric descriptor validation and harmless modes. No event reaches an application.
 The script needs macOS SDK 26 or later and Python 3.
 
 `--self-test` passes generated PCM through the production callback and emits one
@@ -47,6 +55,63 @@ synthetic frame. It calls no Core Audio API. `--clock` emits only
 `{"schema":"music-native-clock/1.0","monotonicMs":...}` and calls no audio API.
 The parent uses the latter to qualify the native clock against its own local
 monotonic clock before accepting source age calculations.
+
+## Explicit state and position reads
+
+The separate `music-position` helper links AppKit and CoreServices, without the
+capture implementation. Only `--read-existing-music` enters its read path.
+Unknown arguments, including `--capture`, return a fixed `invalid-request` and
+exit 1. Its `--clock` returns `music-position-clock/1.0` with continuous monotonic
+milliseconds. Its `--self-test` checks synthetic descriptors and emits a boolean
+`passed` in `music-position-self-test/1.0`. Neither harmless mode selects Music
+or sends AppleEvents.
+
+The TypeScript `MusicPositionReader` supervises the explicit read. The helper
+requires exactly one already-running `com.apple.Music` process with a launch
+date. It pins PID, bundle and launch date, rechecks them before and after each
+reply, and discards the entire cycle if identity changes. Only a SHA-256 process
+instance digest crosses the pipe; the PID and launch date do not. This digest
+identifies a process lifetime and contains no track identifier.
+
+Permission preflight calls `AEDeterminePermissionToAutomateTarget` with
+`askUserIfNeeded: false`. Each `core/getd` event targets the pinned PID and reads
+only `pPlS` or `pPos`. Sends use `kAEWaitReply`, `kAENeverInteract`,
+`kAEDoNotPromptForUserConsent`, `kAEDontRecord` and `kAEDontReconnect`, with a
+120-tick deadline of two seconds. The helper never opens or activates Music.
+Permission refusal ends the cycle. State failure prevents the position request;
+position failure preserves the separately observed state. OS error text is
+replaced by fixed registry errors. There is no implicit retry.
+
+One `music-position-read/1.0` NDJSON record reports either a `sample` or
+`unavailable`. A sample contains `sourceInstance`, a whole-cycle `interval`,
+`state: {value, interval}`, and `position`. Every interval contains
+`startedMonotonicMs` and `endedMonotonicMs` in the continuous clock domain.
+Observed position is `{status: "observed", seconds, interval}`; a failed position
+is `{status: "unavailable", error, interval}`. Complete failure contains only
+the schema, status, cycle interval and registered error. Samples exit 0,
+including partial position samples; complete failures exit 1.
+
+State permits only `stopped`, `playing`, `paused`, `fast-forwarding` and
+`rewinding`. Position permits signed 16/32/64-bit integers, unsigned 32-bit
+integers and IEEE 32/64-bit floating-point descriptors. Values must be finite,
+nonnegative seconds, at most `Number.MAX_SAFE_INTEGER / 1000`. Strings and
+booleans are refused before coercion. The bounds preserve safe millisecond
+conversion and distinguish zero from missing evidence.
+
+The helper writes no file or diagnostic log and collects no title, artist,
+recording identifier, output route or audio. It requires the supervising
+five-second deadline because synchronous OS calls and a blocked stdout cannot
+be bounded by the event timeout alone. Do not use an unbounded standalone read
+as an installed polling service.
+
+The distinct embedded identity is `local.bunny.music-position`, with
+`NSAppleEventsUsageDescription`. This source build is unsigned. A packaged
+hardened-runtime build needs its selected signing and automation entitlement
+reviewed separately. Apple's [automation permission API](https://developer.apple.com/documentation/coreservices/3025784-aedeterminepermissiontoautomatet)
+and [usage-description documentation](https://developer.apple.com/documentation/bundleresources/information-property-list/nsappleeventsusagedescription)
+describe those boundaries. Compilation and descriptor fakes do not establish
+permission for the installed parent/helper identity, continuous position
+accuracy, pause/seek behavior or audible timing.
 
 ## Explicit capture and lifetime
 
