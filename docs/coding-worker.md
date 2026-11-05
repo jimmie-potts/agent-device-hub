@@ -87,6 +87,39 @@ part of this slice.
    task that was running is ended uncertain and the task says so, and the
    worker never resends.
 
+## One credential, one endpoint
+
+Run one worker at a time. The core selects one worker endpoint and refuses
+another while that endpoint is selected, so stop the old worker before you
+start a new one. That includes handing over to launchd: stop a worker you
+started by hand before loading the agent.
+
+A second worker started while the first is still declared connects, opens its
+own endpoint and has its `enable` refused with `invalid-state`. It closes that
+endpoint and its connection, writes the line below to standard error and exits
+with status 1, at once when refused and within about eleven seconds if the core
+stops answering. The worker that holds the endpoint keeps it and keeps running
+its task. The refused process does not ask again; only a fresh process declares.
+Under launchd, `KeepAlive` starts that fresh process at launchd's own restart
+interval, so until the old owner has released the endpoint each new process is
+refused and exits the same way. The first start after the release declares.
+Without a supervisor, start it again by hand.
+
+The old owner releases the endpoint when it stops on SIGTERM, which declares it
+off, or when it dies and the gateway reports its connection lost.
+
+| First start ends with | What it means | Effect at the core |
+| --- | --- | --- |
+| `coding-worker-enable-refused: <code> trace <id> request <id>` | The core refused the declaration; `invalid-state` means another endpoint is selected | None |
+| `coding-worker-enable-uncertain: uncertain-result trace <id> request <id>` | No answer arrived: the core went silent or the stream was lost | The core may have selected this endpoint; the worker's closed connection releases it |
+| `coding-worker-endpoint-refused: <code>` | The endpoint could not be registered, as when the connection has no endpoint grant | None; no declaration was sent |
+| `coding-worker failed: SdkError` | The worker never connected: the core could not be reached or refused the token | None |
+
+Each of these exits with status 1. The trace and request IDs name the
+declaration's command, so you can find it in the runtime's diagnostic records.
+Losing the stream after the first declaration is different: the running worker
+keeps its process, reconnects and declares again with backoff, as above.
+
 ## Use it
 
 On the Conversation page, ask B.U.N.N.Y. to delegate a task, naming the
@@ -99,6 +132,9 @@ model reads it as text naming the call) and the next reply reports it. Only
 one task runs at a time; a second proposal is refused
 until the first ends.
 
-Source tests cover the worker over a fake harness and a fake edge; running it
+Source tests cover the worker over a fake harness and a fake edge, and its real
+entry point as a child process over the SDK's edge with a fake core. Running it
 against the installed core with a real `claude` is the installed check the
-owner records under the running checklist.
+owner records under the running checklist. The handoff between two supervised
+workers, and the interval launchd actually takes, is an installed check on
+[#508](https://github.com/jimmie-potts/agent-device-hub/issues/508).

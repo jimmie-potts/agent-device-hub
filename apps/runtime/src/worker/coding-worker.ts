@@ -9,7 +9,7 @@ import {execFile} from 'node:child_process';
 import {mkdir, stat} from 'node:fs/promises';
 import {isAbsolute, join, resolve} from 'node:path';
 import {promisify} from 'node:util';
-import {connectRemote, type RemoteEndpoint, type RemoteParticipant} from '@jimmie-potts/sdk/remote';
+import {SdkError, connectRemote, type RemoteEndpoint, type RemoteParticipant, type RequestResult} from '@jimmie-potts/sdk/remote';
 import {Outcome, type Command, type Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingProgress, type CodingProgressReason, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
@@ -149,6 +149,11 @@ export class CodingWorker {
   }
   #stopping = false;
   #redeclaring = false;
+  /**
+   * Connects and declares the one endpoint. A first declaration that fails closes the connection and throws the original
+   * failure, so the process ends and its supervisor owns any later fresh start; nothing here sends the declaration again.
+   * A worker that could not connect has nothing to close and throws the same way.
+   */
   async start(): Promise<void> {
     this.#participant = await this.#connect({url: this.configuration.edge, token: this.token, source: CODING_WORKER_SOURCE,
       onDiagnostic: diagnostic => {
@@ -156,7 +161,12 @@ export class CodingWorker {
         // A lost stream closed the connection-bound endpoint; the new stream needs a fresh declaration, which the core hears as a new endpoint.
         if (diagnostic.event === 'remote.reconnected' && !this.#stopping) void this.#redeclare();
       }});
-    await this.#declare();
+    try {await this.#declare();} catch (error) {
+      this.#stopping = true;
+      this.#stopChild();
+      await this.#participant.close().catch(() => {});
+      throw error;
+    }
   }
   /**
    * Declares again after a reconnect, with backoff: the core may still name the old endpoint until the gateway has
@@ -173,23 +183,35 @@ export class CodingWorker {
       this.log('coding-worker could not declare its endpoint again; the core keeps reporting it lost');
     } finally {this.#redeclaring = false;}
   }
-  /** Opens the one endpoint on the current stream and declares it available; a refused declaration closes the endpoint again and throws. */
+  /**
+   * Opens the one endpoint on the current stream and declares it available. A declaration that was not accepted closes
+   * the endpoint again and throws its code and its command's trace and request IDs, never the refusal's text: `refused`
+   * when the core had no effect, `uncertain` when it may have selected this endpoint, which the close then releases.
+   */
   async #declare(): Promise<void> {
     const participant = this.#participant;
     if (participant === undefined) throw new Error('coding-worker: not connected');
     if (this.#endpoint !== undefined) return;
+    // A registration that fails runs the closed handler before there is an endpoint to compare.
+    let opened: RemoteEndpoint | undefined;
     const endpoint = await participant.openEndpoint<CodingWork>({family: 'coding-work', respond: command => this.#work(command), onClosed: () => {
-      if (this.#endpoint === endpoint) this.#endpoint = undefined;
+      if (this.#endpoint === opened) this.#endpoint = undefined;
       this.log('coding-worker endpoint closed; the running task, if any, is lost to the core and will be stopped');
       this.#stopChild();
-    }});
+    }}).catch((error: unknown) => {throw error instanceof SdkError ? new Error(`coding-worker-endpoint-refused: ${error.body.error.code}`) : error;});
+    opened = endpoint;
     this.#endpoint = endpoint;
-    const answer = await endpoint.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0',
-      data: {requestId: randomUUID(), action: 'enable'}}, {timeoutMs: 5000}).catch(() => ({status: 'uncertain' as const}));
+    const requestId = randomUUID();
+    let answer: RequestResult;
+    try {
+      answer = await endpoint.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0',
+        data: {requestId, action: 'enable'}}, {timeoutMs: 5000, requestId});
+    } catch {answer = {status: 'uncertain', requestId, error: errorBody('uncertain-result')};}
     if (answer.status !== 'accepted') {
       if (this.#endpoint === endpoint) this.#endpoint = undefined;
       await endpoint.close().catch(() => {});
-      throw new Error(`coding-worker-enable-refused: ${answer.status === 'rejected' ? answer.error.error.code : 'uncertain'}`);
+      const {code, traceId} = answer.error.error;
+      throw new Error(`coding-worker-enable-${answer.status === 'rejected' ? 'refused' : 'uncertain'}: ${code}${traceId === undefined ? '' : ` trace ${traceId}`} request ${answer.requestId}`);
     }
     this.log(`coding-worker available as endpoint ${endpoint.id}`);
   }
