@@ -48,4 +48,6 @@ export async function captureSharedArt(t: CaptureContext, artworkId: string): Pr
   });
   await page.locator('#shared-art-label').evaluate(node => {node.textContent = 'One retained idea is shown in the real Home widget. Device results are independent; physical visibility is unverified.';});
   await page.waitForTimeout(1500);
+  await page.locator('#shared-art-label').evaluate(node => {node.textContent = 'Synthetic review complete. Capturing a full-page still. Physical visibility remains unverified.';});
+  await page.waitForTimeout(1000);
 }
