@@ -333,6 +333,17 @@ const pixooMoment: Scenario = {
       const display = pixooDisplay(h), done = momentEnding(h, 'moment-media-1', 'completed');
       return done === true ? display?.player.intent === 'active' || `display ${show(display)}` : done;
     }, 8000),
+    act('the operator stops the playlist', h => h.dispatch('operator', 'pixoo-stop', pixooCommand('media-control', 'media.control', {action: 'stop'}), 'pixoo-moment-stop')),
+    expect('the stop completes', h => completedAs(h, 'pixoo-moment-stop', 'succeeded', 'observed'), 8000),
+    act('a flourish arrives over the stopped item', h => dispatchOnce(h, 'operator', 'moment-stopped', momentOf(h, 'moment-stopped', {priorityClass: 'flourish', coversStatus: false}), 'moment-stopped-1')),
+    expect('the moment shows and the item stays stopped', h => {
+      const display = pixooDisplay(h);
+      return (display?.showing === 'moment' && display.player.intent === 'stopped') || `display ${show(display)}`;
+    }, 5000),
+    expect('it completes and the player stays stopped', h => {
+      const display = pixooDisplay(h), done = momentEnding(h, 'moment-stopped-1', 'completed');
+      return done === true ? display?.player.intent === 'stopped' || `display ${show(display)}` : done;
+    }, 8000),
     followsItsOwners(),
   ],
 };

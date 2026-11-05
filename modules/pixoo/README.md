@@ -279,17 +279,21 @@ decision ([#1287](https://github.com/jimmie-potts/agent-device-hub/issues/1287))
 limit. Its `coversStatus` follows the owner's setting, which is on by default and
 sits on the Monitor page.
 
-Exact art over empty Media additionally requires a stopped player with no session
-or item checkpoint. An explicit empty pause refuses art and survives restart.
+Exact art over resting Media requires a stopped player, with or without a saved
+item, as accepted in #1450. An explicit pause, including an empty pause, refuses
+art; an empty pause survives restart.
 
 A moment never changes the mode. Over Media it pauses a playing playlist under the
 same guard Now Playing uses, then resumes it at the same item. A player with nothing
 loaded, including an empty one Monitor left paused, takes the moment without being
-touched, and one black frame follows it, because the module can't return the device
-to what it showed before. A paused or stopped item refuses it, because nothing could
-repaint that item. So does a Now Playing takeover, a player in error, and a display
-left unknown by an uncertain write or external control. That last refusal lasts until
-the next start, clear or restart. Over Monitor it plays only with `coversStatus` set, the setting
+touched, and so does a stopped or finished playlist. One black frame follows it,
+because the module can't return the device to what it showed before, so a stopped
+item's frozen picture is lost, though the item can still resume. A paused item refuses
+it, because nothing could repaint that item, and a restart, a Monitor visit or
+turning the screen off leaves a saved item paused. A Now Playing takeover, a player
+in error and a display left unknown by an uncertain write or external control refuse
+it too. That last refusal lasts until the next start, resume or clear; a restart
+forgets it only on an empty player. Over Monitor it plays only with `coversStatus` set, the setting
 on and a current session source that shows nothing needing attention, and the
 current dashboard follows it. A flourish cannot set `coversStatus`, so a moment
 meant to appear over Monitor must be an `event`.

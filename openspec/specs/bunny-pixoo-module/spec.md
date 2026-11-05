@@ -266,11 +266,11 @@ The module SHALL declare `capabilities.moments` with the moods `celebrate`, `set
 
 Before accepting, the module SHALL refuse with `unsupported-capability` a mood or duration the capability does not offer; with `invalid-state` a moment ID it accepted in the last 24 hours, across restarts, or a moment the current presentation does not admit; with `expired` a moment past its start window; and with `capacity` a moment while another waits or plays. The presentation SHALL check admission again at the start, and a moment no longer admitted SHALL complete `failed` with no device write.
 
-Over Monitor a moment SHALL be admitted only while Monitor participates, the request's `coversStatus` is true, the setting is on, the session source is current and no session needs attention. Over Media a moment SHALL be admitted only while a playlist is in play or the player is idle, no Now Playing takeover holds the display and no session needs attention. A player is idle when nothing is loaded, it is not playing or in error, and no uncertain write or external control has left the display unknown. A paused or stopped item SHALL refuse it. A moment over an idle player SHALL NOT change the player, SHALL end when the player changes or the screen turns off, and SHALL be followed by one blank frame unless something else takes the display.
+Over Monitor a moment SHALL be admitted only while Monitor participates, the request's `coversStatus` is true, the setting is on, the session source is current and no session needs attention. Over Media a moment SHALL be admitted only while a playlist is in play or the player is idle, no Now Playing takeover holds the display and no session needs attention. A player is idle when it is stopped or finished, or paused with nothing loaded, and it is not in error, and no uncertain write or external control has left the display unknown. A paused item SHALL refuse it. A moment over an idle player SHALL NOT change the player, SHALL end when the player changes or the screen turns off, and SHALL be followed by one blank frame unless something else takes the display.
 
-Exact art over empty Media additionally SHALL require an idle, stopped player with no session or item checkpoint. An explicit no-selection pause SHALL survive restart until a deliberate Stop or Clear releases it; failed or rejected commands SHALL NOT imply release. Shutdown alone SHALL NOT pause fresh stopped Media. Core arbitration SHALL retain ownership of scheduled-art pins.
+Exact art over resting Media additionally SHALL require a stopped player, with or without a retained item. An explicit no-selection pause SHALL survive restart until a deliberate Stop or Clear releases it; failed or rejected commands SHALL NOT imply release. Shutdown alone SHALL NOT pause fresh stopped Media. Core arbitration SHALL retain ownership of scheduled-art pins.
 
-Over playing Media the moment SHALL pause the player through the Now Playing takeover and SHALL resume it only while the generation its own pause produced, the paused intent and the screen request are unchanged. Empty-Media art SHALL leave player intent and selection unchanged and use the existing blank path when it ends. No additional restore path SHALL exist. Over Monitor the moment SHALL write under Monitor's generation and the next picture SHALL be the current dashboard.
+Over playing Media the moment SHALL pause the player through the Now Playing takeover and SHALL resume it only while the generation its own pause produced, the paused intent and the screen request are unchanged. Art over stopped Media SHALL leave player intent and selection unchanged and use the existing blank path when it ends. No additional restore path SHALL exist. Over Monitor the moment SHALL write under Monitor's generation and the next picture SHALL be the current dashboard.
 
 A moment SHALL end when its duration has passed since its first acknowledged write. Attention SHALL end it at once on either base, and a session source that stops being current SHALL end it over Monitor; either ending is `preempted`. An explicit command that changes what plays, turning the setting off over Monitor, or a Monitor view change SHALL end it as `interrupted`. A pause, stop or new start, including a start still capturing its selection, SHALL never be resumed over; a next or previous SHALL keep the playlist playing; a view change in Media SHALL resume the playlist. A moment SHALL NOT pause over a start still capturing. When a moment's picture was confirmed on the device and no dashboard, card or playlist follows, one blank frame SHALL replace it, never retried, and it SHALL be dropped after an uncertain write, or once the device was offline or under external control. A song that wants a whole takeover when the moment ends SHALL take the display with the player still paused.
 
@@ -298,8 +298,12 @@ A moment that reached the device SHALL complete `succeeded` with `transmitted` a
 - **WHEN** Media has nothing loaded, and a moment arrives
 - **THEN** the moment shows for its duration, the player and the mode do not change, it completes with a `completed` ending, and one blank frame replaces its picture
 
+#### Scenario: A moment over a stopped or finished item
+- **WHEN** a playlist item is stopped or its playlist has finished in Media, and a moment arrives
+- **THEN** the moment shows for its duration, the player keeps its stopped item and generation, one blank frame replaces the moment's picture, and the item can still resume
+
 #### Scenario: A moment over a held item
-- **WHEN** a playlist item is paused or stopped in Media and a moment arrives
+- **WHEN** a playlist item is paused in Media and a moment arrives
 - **THEN** it is refused with `invalid-state` and nothing is written
 
 #### Scenario: A manual command during a moment over Media
@@ -333,6 +337,11 @@ A moment that reached the device SHALL complete `succeeded` with `transmitted` a
 - **WHEN** the owner changes the Monitor view while exact art waits or plays over empty Media
 - **THEN** waiting art is cancelled without a write, or playing art ends as interrupted and clears through the existing blank path
 - **AND** neither moment replays
+
+#### Scenario: Exact art over a stopped or finished item
+- **WHEN** the core sends exact art while Media holds a stopped or finished item and the display is known
+- **THEN** the moment preserves the saved item, intent and generation, and one blank follows its completion
+- **AND** a manual resume interrupts the moment without a blank over resumed playback; a paused item or unknown display still refuses
 
 ### Requirement: Private art staging
 

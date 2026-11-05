@@ -43,7 +43,7 @@ type Moment=MomentPlay&{
  /** `preparing` gets its frames, `waiting` waits for its start, `holding` waits for the player's pause, and `showing` owns the display. */
  phase:'preparing'|'waiting'|'holding'|'showing';
  /** The base it covers, chosen at its start. */
- over:'monitor'|'media'|'idle'|'empty-media';
+ over:'monitor'|'media'|'idle'|'stopped-media';
  rgb:readonly Uint8Array[];generation:number;until:number;resolve:(result:MomentResult)=>void;
  upload?:OperationResult<UploadResult>|undefined;writing?:Promise<void>|undefined;writtenAt?:number;missed?:boolean;rejected?:boolean;
 };
@@ -114,8 +114,8 @@ export class MonitorPresentation {
    if(this.takeover&&(state.generation!==this.takeover.generation||!state.requestedScreenOn))this.dropTakeover();
    // Nothing held for a moment over an idle player, so any player change or screen-off is what ends it.
    if(this.moment?.phase==='showing'&&this.moment.over==='idle'&&(state.generation!==this.moment.generation||!state.requestedScreenOn))this.endMoment('interrupted');
-   if(this.moment?.phase==='showing'&&this.moment.over==='empty-media'
-    &&(state.generation!==this.moment.generation||!this.emptyMedia()||!state.requestedScreenOn))this.endMoment('interrupted',false);
+   if(this.moment?.phase==='showing'&&this.moment.over==='stopped-media'
+    &&(state.generation!==this.moment.generation||!this.stoppedMedia()||!state.requestedScreenOn))this.endMoment('interrupted',false);
   });
  }
  status():PresentationStatus{return {configuration:structuredClone(this.configuration),sourceRevision:this.view?.snapshot?.revision??null,sourceConnection:this.view?.connection??'unavailable',renditionGeneration:this.dashboard.current()?.generation??null,generation:this.generation,pendingMode:this.pendingMode,participating:this.active,inFlight:this.inFlight?1:0,lastOutcome:structuredClone(this.lastOutcome)};}
@@ -162,7 +162,7 @@ export class MonitorPresentation {
  /**
   * Why a moment could not play now, or null when it could. Over Monitor it needs the hub's permission to cover status,
   * the owner's setting and evidence that nothing needs attention. Over Media it needs a playlist in play or an idle player,
-  * since nothing could repaint a paused or stopped item. A takeover keeps the display, and known attention stops either one.
+  * since nothing could repaint a paused item. A takeover keeps the display, and known attention stops either one.
   */
  momentBlock(coversStatus:boolean,exactArt=false):string|null{
   const state=this.player.getState();
@@ -181,17 +181,17 @@ export class MonitorPresentation {
    return null;
   }
   if(this.takeover!==null||(this.takeoverPending&&this.moment?.phase!=='holding'))return 'Now Playing holds the display';
-  if(state.intent==='active'||(exactArt?this.emptyMedia():this.idle(state)))return null;
-  return state.itemId===null?'the display may show something else':'a held item could not be repainted';
+  if(state.intent==='active'||(exactArt?this.stoppedMedia():this.idle(state)))return null;
+  return state.itemId===null||state.intent==='stopped'?'the display may show something else':'a held item could not be repainted';
  }
  /** Whether what the display shows may not be ours: after an uncertain write, or under external control. */
  private displayUnknown(state:PlayerState):boolean{return state.lastError?.priorEffects==='possible'||state.lastError?.code==='external-control';}
- /** Whether nothing is loaded and the player is at rest, whether stopped or paused as Monitor leaves an empty player. */
- private idle(state:PlayerState):boolean{return state.intent!=='active'&&state.itemId===null&&state.state!=='error'&&!this.displayUnknown(state);}
- /** Empty means no selection, not a paused/stopped item or a completed playlist retained by the player. */
- private emptyMedia():boolean{
+ /** Ordinary moments also allow the empty pause left by Monitor. */
+ private idle(state:PlayerState):boolean{return (state.intent==='stopped'||state.intent==='paused'&&state.itemId===null)&&state.state!=='error'&&!this.displayUnknown(state);}
+ /** Stopped Media may retain an item, but an explicit pause or unknown display still refuses exact art. */
+ private stoppedMedia():boolean{
   const state=this.player.getState();
-  return state.state==='idle'&&state.intent==='stopped'&&state.sessionId===null&&state.itemId===null&&!this.displayUnknown(state);
+  return state.intent==='stopped'&&state.state!=='error'&&!this.displayUnknown(state);
  }
  /** Whether a moment holds a playlist paused, so that a manual next or previous still means to keep playing. */
  momentHoldsMedia():boolean{return this.takeover?.kind==='moment'||this.moment?.phase==='holding';}
@@ -211,8 +211,8 @@ export class MonitorPresentation {
   */
  playMoment(play:MomentPlay):Promise<MomentResult>{
   return new Promise<MomentResult>(resolve=>{
-   const empty=play.exactArt===true&&this.configuration.mode==='media'&&this.emptyMedia();
-   const moment:Moment={...play,phase:'preparing',over:empty?'empty-media':'media',rgb:[],generation:empty?this.player.getState().generation:0,until:Infinity,resolve};
+   const empty=play.exactArt===true&&this.configuration.mode==='media'&&this.stoppedMedia();
+   const moment:Moment={...play,phase:'preparing',over:empty?'stopped-media':'media',rgb:[],generation:empty?this.player.getState().generation:0,until:Infinity,resolve};
    this.moment=moment;
    // A failed render reaches neither the player nor the device.
    void Promise.resolve().then(play.frames).then(rgb=>{if(this.moment===moment){moment.rgb=rgb;moment.phase='waiting';}},()=>{this.refuseMoment(moment,'content');});
@@ -248,8 +248,8 @@ export class MonitorPresentation {
   if(moment.phase!=='waiting'||now<moment.startAtMs)return;
   if(now>moment.startAtMs+moment.toleranceMs){this.refuseMoment(moment,'expired');return;}
   if(this.momentBlock(moment.coversStatus,moment.exactArt)!==null){this.refuseMoment(moment,'blocked');return;}
-  if(moment.over==='empty-media'){
-   if(this.configuration.mode!=='media'||!this.emptyMedia()||this.player.getState().generation!==moment.generation){this.refuseMoment(moment,'cancelled');return;}
+  if(moment.over==='stopped-media'){
+   if(this.configuration.mode!=='media'||!this.stoppedMedia()||this.player.getState().generation!==moment.generation){this.refuseMoment(moment,'cancelled');return;}
    moment.phase='showing';this.momentWrite=true;this.onChange();return;
   }
   if(this.configuration.mode==='monitor'){moment.over='monitor';moment.generation=this.playerGeneration;moment.phase='showing';this.momentWrite=true;this.onChange();return;}
@@ -514,14 +514,14 @@ export class MonitorPresentation {
   const observation=this.observation(),playback=JSON.stringify(this.playback),abort=new AbortController();
   // Empty Media has no held base: recheck its permission before each effect. Other moments retain their existing generation guard.
   const current=moment!==undefined?()=>!this.closed&&playerGeneration===this.player.getState().generation
-    &&(moment.over!=='empty-media'||this.moment===moment&&this.configuration.mode==='media'&&this.emptyMedia()&&this.momentBlock(moment.coversStatus,true)===null)
+    &&(moment.over!=='stopped-media'||this.moment===moment&&this.configuration.mode==='media'&&this.stoppedMedia()&&this.momentBlock(moment.coversStatus,true)===null)
    :()=>!this.closed&&generation===this.generation&&playerGeneration===this.player.getState().generation
    &&observation===this.observation()&&playback===JSON.stringify(this.playback)
    &&(this.active?this.popupUntil>this.clock()&&!this.attention():this.takeover===takeover&&takeover!==null&&this.clock()<takeover.until);
   const write=frame.card?{abort,current,key:frame.key}:null;this.cardWrite=write;
   this.inFlight=true;this.lastStart=this.clock();this.lastFrame=frame.key;this.onChange();
   const upload=this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration,
-   moment!==undefined?{current,whileStopped:moment.over==='idle'||moment.over==='empty-media',...(moment.delayMs===undefined?{}:{artDelayMs:moment.delayMs})}:write===null?{}:{signal:abort.signal,current});
+   moment!==undefined?{current,whileStopped:moment.over==='idle'||moment.over==='stopped-media',...(moment.delayMs===undefined?{}:{artDelayMs:moment.delayMs})}:write===null?{}:{signal:abort.signal,current});
   if(moment!==undefined){
    moment.writtenAt=this.lastStart;
    moment.writing=upload.then(result=>{this.momentUploaded(moment,result);},()=>{moment.rejected=true;this.momentUploaded(moment,undefined);}).finally(()=>{this.inFlight=false;this.onChange();});

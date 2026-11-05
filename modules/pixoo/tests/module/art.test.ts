@@ -365,7 +365,7 @@ for (const waiting of [false, true]) void it(`a Monitor view change interrupts $
   } finally { await world.close(); }
 });
 
-void it('selected Media, attention and Now Playing remain closed to the empty-Media exception', async () => {
+void it('paused Media, attention and Now Playing refuse exact art; a stopped saved item admits it', async () => {
   const world = await World.open();
   try {
     let renditionId = '';
@@ -390,11 +390,21 @@ void it('selected Media, attention and Now Playing remain closed to the empty-Me
     const cancelled = await world.outcome(waiting);
     assert.equal(cancelled.data.result, 'failed'); assert.equal(cancelled.data.evidence, 'none');
     assert.equal(world.device.state().uploads, 1, 'only the newly selected picture was uploaded');
-    for (const action of ['pause', 'stop']) {
-      await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action})));
-      assert.notEqual(world.display()?.player.itemId, null);
-      await refusedWithoutWrite(`selected-${action}`);
-    }
+    await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause'})));
+    assert.notEqual(world.display()?.player.itemId, null);
+    await refusedWithoutWrite('selected-pause');
+    await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'stop'})));
+    const stopped = world.display()?.player;
+    assert.ok(stopped !== undefined && stopped.itemId !== null);
+    const stoppedMoment = await accepted(artMoment(world, data.compositionId, {momentId: 'selected-stop', coversStatus: false, durationMs: 1000}));
+    await waitFor(() => world.device.state().shown?.frames === 8 ? true : undefined, 'exact animation over stopped item');
+    const completed = await world.outcome(stoppedMoment);
+    assert.equal(completed.data.result, 'succeeded'); assert.equal(completed.data.evidence, 'transmitted');
+    await waitFor(() => world.device.state().shown?.digests[0] === frameDigest(new Uint8Array(12288)) ? true : undefined, 'blank after stopped-item art');
+    assert.equal(world.display()?.player.itemId, stopped.itemId);
+    assert.equal(world.display()?.player.intent, 'stopped');
+    assert.equal(world.display()?.player.playlistId, stopped.playlistId);
+    assert.equal(world.display()?.player.renditionId, stopped.renditionId);
     await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'resume'})));
     await world.outcome(await accepted(world.request(FAMILIES.nowPlaying, 'org.bunny.pixoo-now-playing.set.requested', {media: 'whole'})));
     const beforeCard = world.device.state().uploads;
