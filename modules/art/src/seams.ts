@@ -49,23 +49,24 @@ const FOLLOW_MAX_MS = 30_000;
  * Follows one owner's family from the module's start, without waiting on it: an absent or late owner only delays the copy,
  * so a start never depends on another module. Syncing current state is not replay, and nothing here sends a command.
  */
-function follow<T extends object>(context: Pick<ModuleContext, 'sdk' | 'scheduler'>, family: string, owner: string, seen: (message: {subject: string; data: T}) => void): Subscription {
+function follow<T extends object>(context: Pick<ModuleContext, 'sdk' | 'scheduler' | 'signal'>, family: string, owner: string, seen: (message: {subject: string; data: T}) => void): Subscription {
   let closed = false, retryMs = 1000, retry: Cancel | undefined, copy: Subscription | undefined;
   const again = (): void => {
-    if (closed || retry !== undefined) return;
+    if (closed || context.signal.aborted || retry !== undefined) return;
     const delay = retryMs;
     retryMs = Math.min(FOLLOW_MAX_MS, retryMs * 2);
     retry = context.scheduler.after(delay, () => {retry = undefined; void attempt();});
   };
   const attempt = async (): Promise<void> => {
-    if (closed) return;
+    if (closed || context.signal.aborted) return;
     try {
       const result = await context.sdk.sync<T>([family], change => {
+        if (closed || context.signal.aborted) return;
         if (change.type === 'updated') seen(change.message);
         else if (change.type === 'failed') {copy = undefined; again();}
       }, {owner, timeoutMs: 5000});
       if (result.status !== 'synced') {again(); return;}
-      if (closed) {await result.copy.close(); return;}
+      if (closed || context.signal.aborted) {await result.copy.close(); return;}
       copy = result.copy; retryMs = 1000;
       for (const message of result.copy.states()) seen(message);
     } catch {again();}
@@ -81,35 +82,36 @@ const stageResultOf = (record: OperationRecord): StageResult | undefined => {
   return undefined;
 };
 /** Identity is usable only while this exact owner's SDK copy is current. Connectivity remains the device owner's decision. */
-function followDevices(context: Pick<ModuleContext, 'sdk' | 'scheduler'>, kind: ArtDisplayTarget) {
+function followDevices(context: Pick<ModuleContext, 'sdk' | 'scheduler' | 'signal'>, kind: ArtDisplayTarget) {
   let closed = false, fresh = false, retryMs = 1000, retry: Cancel | undefined, copy: SyncedCopy<DeviceRecord> | undefined;
   const again = (): void => {
-    if (closed || retry !== undefined) return;
+    if (closed || context.signal.aborted || retry !== undefined) return;
     const delay = retryMs;
     retryMs = Math.min(FOLLOW_MAX_MS, retryMs * 2);
     retry = context.scheduler.after(delay, () => {retry = undefined; void attempt();});
   };
   const attempt = async (): Promise<void> => {
-    if (closed) return;
+    if (closed || context.signal.aborted) return;
     fresh = false;
     try {
       const result = await context.sdk.sync<DeviceRecord>(['device'], change => {
+        if (closed || context.signal.aborted) return;
         if (change.type === 'synced') fresh = true;
         else if (change.type === 'failed') {fresh = false; copy = undefined; again();}
       }, {owner: `bunny/modules/${kind}`, timeoutMs: 5000, onRestarted: () => {fresh = false;}});
       if (result.status !== 'synced') {again(); return;}
-      if (closed) {await result.copy.close(); return;}
+      if (closed || context.signal.aborted) {await result.copy.close(); return;}
       copy = result.copy; retryMs = 1000;
     } catch {fresh = false; again();}
   };
   void attempt();
   return {
-    read: (): DeviceRecord[] | undefined => closed || !fresh || copy === undefined ? undefined : copy.states().map(message => message.data),
+    read: (): DeviceRecord[] | undefined => closed || context.signal.aborted || !fresh || copy === undefined ? undefined : copy.states().map(message => message.data),
     close: async () => {closed = true; fresh = false; retry?.(); await copy?.close(); copy = undefined;},
   };
 }
 
-export function realDispatch(context: Pick<ModuleContext, 'sdk' | 'scheduler'>): ArtDispatchSeam {
+export function realDispatch(context: Pick<ModuleContext, 'sdk' | 'scheduler' | 'signal'>): ArtDispatchSeam {
   const devices: Partial<Record<ArtDisplayTarget, ReturnType<typeof followDevices>>> = {};
   const resolve = (kind: ArtDisplayTarget): DeviceRecord | ErrorBody => {
     const records = devices[kind]?.read();
@@ -150,13 +152,13 @@ export function realDispatch(context: Pick<ModuleContext, 'sdk' | 'scheduler'>):
 
 /** The fields of `weather-state` this module reads. An unavailable record has no words, so it says nothing. */
 type WeatherRecord = {status: string; staleAtMs?: unknown; words?: unknown};
-export function realWeather(context: Pick<ModuleContext, 'sdk' | 'scheduler'>): WeatherSeam {
+export function realWeather(context: Pick<ModuleContext, 'sdk' | 'scheduler' | 'signal'>): WeatherSeam {
   let latest: WeatherWords | null = null;
   return {
     start: () => Promise.resolve([follow<WeatherRecord>(context, 'weather-state', 'bunny/modules/weather', ({data}) => {
       latest = data.status === 'available' && typeof data.staleAtMs === 'number' && Array.isArray(data.words) && data.words.every(word => typeof word === 'string')
         ? {staleAtMs: data.staleAtMs, words: data.words} : null;
     })]),
-    read: () => latest,
+    read: () => context.signal.aborted ? null : latest,
   };
 }

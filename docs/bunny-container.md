@@ -308,7 +308,7 @@ everyday activation. PC stays stopped until a separately selected manual handoff
 The profile keeps device control disabled. It accepts a section in the private
 `runtime.json` only for a shipped module that declares no device simulation, and
 it starts the core and each module that has a section, in shipped order. Today
-those modules are `art`, `companions`, `weather` and `wispr`. Startup refuses with the fixed
+those modules are `companions`, `weather` and `wispr`. Startup refuses with the fixed
 refusal, before state effects, for:
 
 - a section for a shipped module that declares a device simulation, or for an
@@ -328,6 +328,12 @@ hook's, and no remote entry, so a collector on another computer cannot reach it
 and a second ingest grant is refused there. The Volcano module's section is admitted
 the same way (Hub #615), because the module reaches no device, and its collector's
 credential has the same limit.
+
+Art also declares a simulation for disposable provider tests. Its `hostLocal`
+predicate admits a valid section without secrets. An empty section starts the
+private catalog with no provider keys; paid generation needs the production
+profile and its explicitly configured secrets. This admission adds no device
+module or physical writer.
 
 A future module that sends device commands without declaring a simulation needs
 review against this rule before it ships. Device modules on the Mac wait for the
