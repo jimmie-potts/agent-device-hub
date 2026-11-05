@@ -63,22 +63,24 @@ export async function captureArtSchedule(t: CaptureContext, proof: ScheduleProof
       const pixoo = make('Pixoo: exact submitted RGB; all frame hashes match the simulator.', 64, 64);
       const tidbyt = make('Tidbyt: independently decoded frames in the simulator’s color palette.', 64, 32);
       const palette: Record<string, string> = {'.': '#000000', A: '#eab308', a: '#755a04', R: '#ef4444', r: '#772222', G: '#22c55e', g: '#11622f', B: '#3b82f6', b: '#1d417b', W: '#ffffff', w: '#777777'};
-      const images = proof.pixoo.frames.map(frame => {const image = new Image();image.src = `data:image/png;base64,${frame.png}`;return image;});
-      const draw = (index: number): void => {
-        const left = pixoo.getContext('2d'), right = tidbyt.getContext('2d'), image = images[index];
-        if (left === null || right === null || image === undefined || !image.complete || image.naturalWidth !== 64) return;
-        left.drawImage(image, 0, 0);proof.tidbyt[index]?.forEach((row, y) => {Array.from(row).forEach((color, x) => {right.fillStyle = palette[color] ?? '#ff00ff';right.fillRect(x, y, 1, 1);});});
-        overlay.dataset.frame = String(index);overlay.dataset.ready = 'true';
-      };
+      const decoded = proof.pixoo.frames.map(frame => createImageBitmap(new Blob([
+        Uint8Array.from(atob(frame.png), byte => byte.charCodeAt(0)),
+      ], {type: 'image/png'})));
       document.body.append(overlay);
       // Opening the labelled review replaces the long settings view, so the final still keeps this viewport.
       for (const child of Array.from(document.body.children)) {
         if (child instanceof HTMLElement && !['schedule-proof-frames', 'schedule-proof-label', 'schedule-proof-cursor'].includes(child.id)) child.hidden = true;
       }
-      void Promise.all(images.map(image => image.decode())).then(() => {
+      void Promise.all(decoded).then(images => {
+        const draw = (index: number): void => {
+          const left = pixoo.getContext('2d'), right = tidbyt.getContext('2d'), image = images[index];
+          if (left === null || right === null || image === undefined || image.width !== 64 || image.height !== 64) return;
+          left.drawImage(image, 0, 0);proof.tidbyt[index]?.forEach((row, y) => {Array.from(row).forEach((color, x) => {right.fillStyle = palette[color] ?? '#ff00ff';right.fillRect(x, y, 1, 1);});});
+          overlay.dataset.frame = String(index);overlay.dataset.ready = 'true';
+        };
         let frame = 0;draw(frame);
         if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          const timer = setInterval(() => {if (!overlay.isConnected) {clearInterval(timer);return;}frame = (frame + 1) % images.length;draw(frame);}, 200);
+          const timer = setInterval(() => {if (!overlay.isConnected) {clearInterval(timer);for (const image of images) image.close();return;}frame = (frame + 1) % images.length;draw(frame);}, 200);
         }
       });
     }, {once: true});
