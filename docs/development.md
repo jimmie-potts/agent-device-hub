@@ -2088,7 +2088,13 @@ modules with simulated transports through the core tracker. It checks that a
 missed moment start is recorded as an owner refusal with no effect, retains the
 window explanation, and is not replayed. After the build, run
 `node --test apps/runtime/dist/tests/moment-refusal.test.js`; the existing
-`test:runtime:built` CI suite includes it.
+`test:runtime:built` CI suite includes it. The registered `missed-moment-start`
+scenario adds the authenticated HTTP gateway and both real handlers, with
+Pixoo and Tronbyt simulations. It checks the reply, owner, operation record,
+zero device writes and duplicate refusal. Run it after the build with
+`node --test --test-name-pattern='missed-moment-start' apps/runtime/dist/tests/scenarios/catalog.test.js`;
+the existing `test:runtime:scenarios:built` CI suite discovers it, and
+`scenario-missed-moment-start` is its disposable acceptance capture.
 
 The reusable Pixoo controls (#1154) add atomic populated creation coverage to
 `modules/pixoo/tests/integration/library.test.ts` and browser journeys to
