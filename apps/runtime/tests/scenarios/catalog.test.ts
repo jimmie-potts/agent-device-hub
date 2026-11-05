@@ -37,6 +37,10 @@ it('the catalog names each scenario once, the core\'s first, and each one observ
   }
 });
 
+it('the catalog includes the real scheduled rain journey', () => {
+  assert.ok(SCENARIOS.some(scenario => scenario.id === 'art-schedule'), 'the scheduled rain scenario is registered');
+});
+
 // Each module's scenarios live in its own file, which the catalog collects without naming it (Hub #999).
 it('the catalog collects every module\'s scenario file, in name order, each named after a module folder with a scenario of its own', () => {
   assert.deepEqual(Object.keys(MODULE_FILES), SOURCES, 'every source file was built and collected');
