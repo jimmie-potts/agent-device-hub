@@ -170,14 +170,98 @@ it('over Media pauses the playlist, shows the moment and resumes the same item',
   expect(s.monitor.nowPlayingStatus().lastTakeover).toBeNull();
  }finally{await s.close();}
 });
-it('over Media needs a playlist in play: a paused or stopped player has nothing to give back',async()=>{
+it('over Media a paused item refuses a moment, since nothing could repaint it',async()=>{
  const s=await setup();
  try{
-  expect(s.monitor.momentBlock(false)).toBe('no playlist is playing to return to');
   await mediaPlaying(s);
   expect(s.monitor.momentBlock(false)).toBeNull();
   await s.settle(s.player.pause());
-  expect(s.monitor.momentBlock(false)).toBe('no playlist is playing to return to');
+  expect(s.player.getState().itemId).not.toBeNull();
+  expect(s.monitor.momentBlock(false)).toBe('a paused playlist could not be repainted');
+ }finally{await s.close();}
+});
+const blankLast=(s:Setup)=>expect(s.frames().at(-1)).toEqual(blank);
+it('over an idle player the moment shows without touching the player, and one blank frame follows it',async()=>{
+ const s=await setup();
+ try{
+  const before=s.player.getState();
+  expect(before).toMatchObject({intent:'stopped',itemId:null});
+  expect(s.monitor.momentBlock(false)).toBeNull();
+  const results=s.play({coversStatus:false});await s.run(1300);
+  expect(s.frames().at(-1)).toEqual(art);
+  expect(s.monitor.nowPlayingSummary().showing).toBe('moment');
+  await s.run(3200);
+  ended(results,'completed');
+  await s.run(1100);
+  blankLast(s);
+  expect(s.frames().filter(frame=>frame.every(value=>value===0))).toHaveLength(1);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before.generation,itemId:null});
+  expect(s.monitor.status().configuration.mode).toBe('media');
+  expect(s.monitor.momentBusy()).toBe(false);
+ }finally{await s.close();}
+});
+it('an empty player that Monitor left paused is idle, and so is a stopped one',async()=>{
+ const s=await setup();
+ try{
+  s.monitor.submit(quietView);await flush(s.clock);
+  await s.settle(s.monitor.configure({operation:'mode',mode:'monitor'}));await s.settle(s.monitor.configure({operation:'mode',mode:'media'}));
+  expect(s.player.getState()).toMatchObject({intent:'paused',itemId:null});
+  expect(s.monitor.momentBlock(false)).toBeNull();
+  await mediaPlaying(s);await s.settle(s.player.stop());
+  expect(s.player.getState().intent).toBe('stopped');
+  expect(s.monitor.momentBlock(false)).toBeNull();
+  const results=s.play();await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
+  await s.run(3200);ended(results,'completed');await s.run(1100);blankLast(s);
+ }finally{await s.close();}
+});
+it('attention ends a moment over an idle player at once, and refuses the next',async()=>{
+ const s=await setup();
+ try{
+  const results=s.play();await s.run(1300);
+  s.monitor.submit(attentionView);await flush(s.clock);await s.run(100);
+  ended(results,'preempted');
+  await s.run(1100);blankLast(s);
+  expect(s.monitor.momentBlock(false)).toBe('a session needs attention');
+ }finally{await s.close();}
+});
+it('a start during a moment over an idle player ends it, and no blank lands on the playlist',async()=>{
+ const s=await setup();
+ try{
+  const results=s.play();await s.run(1300);
+  await s.settle(s.monitor.media(()=>s.player.start(s.store.playlist.id),true));await s.run(1300);
+  ended(results,'interrupted');
+  expect(s.player.getState()).toMatchObject({intent:'active',state:'playing'});
+  // The art, then the fake playlist's two items, the first of them all zeros: nothing is written between them.
+  expect(s.frames().map(frame=>frame[0])).toEqual([7,0,1]);
+ }finally{await s.close();}
+});
+it('a start that reaches the player directly still ends a moment over an idle player',async()=>{
+ const s=await setup();
+ try{
+  const results=s.play();await s.run(1300);
+  await s.settle(s.player.start(s.store.playlist.id));await s.run(200);
+  ended(results,'interrupted');
+  expect(s.monitor.momentBusy()).toBe(false);
+ }finally{await s.close();}
+});
+it('turning the screen off ends a moment over an idle player, with nothing written after it',async()=>{
+ const s=await setup();
+ try{
+  const results=s.play();await s.run(1300);
+  await s.settle(s.player.setScreen(false));await s.run(200);
+  ended(results,'interrupted');
+  const count=s.frames().length;
+  await s.run(2000);expect(s.frames()).toHaveLength(count);
+ }finally{await s.close();}
+});
+it('choosing Monitor during a moment over an idle player ends it, and Monitor takes the display',async()=>{
+ const s=await setup();
+ try{
+  s.monitor.submit(quietView);await flush(s.clock);
+  const results=s.play();await s.run(1300);
+  await s.settle(s.monitor.configure({operation:'mode',mode:'monitor'}));await s.run(1200);
+  ended(results,'interrupted');
+  expect(s.frames().at(-1)).toEqual(s.dashboard());
  }finally{await s.close();}
 });
 it('attention over Media ends the moment at once and gives the playlist back',async()=>{
