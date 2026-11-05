@@ -6,6 +6,8 @@ import type {SyncChange, SyncedCopy} from '@jimmie-potts/sdk/remote';
 import {editorGeometry, legacyWall, wallAction, type ConnectorGraph, type LegacyWall, type WallDevice, type WallRecord} from './model.js';
 import {mountWall, type MountedWall} from './wall.js';
 import './wall.css';
+import {Shows} from './shows.js';
+import {MusicPreview} from './music-preview.js';
 
 type Record = DeviceRecord | WallRecord;
 type Catalog = {live: boolean; pending: boolean; error: boolean; walls: WallRecord[]; devices: DeviceRecord[]};
@@ -127,6 +129,7 @@ function Wall({context}: {context: FrontendContext}): React.JSX.Element {
   const wall = configured.find(value => value.id === target);
   const devices = configured.map(value => ({id: value.id, name: catalog.devices.find(device => device.id === value.id)?.label ?? value.id, default: value.id === first?.id}));
   return <>
+    <MusicPreview context={context}/>
     {catalog.error && <div><p role="alert">Nanoleaf records are unavailable. Saved records remain stale until sync succeeds.</p>
       <button type="button" disabled={catalog.pending} onClick={catalog.retry}>Retry Nanoleaf records</button></div>}
     {wall === undefined ? <p role="status">{catalog.pending ? 'Reading Nanoleaf records…' : 'The selected Nanoleaf wall is unavailable.'}</p>
@@ -134,7 +137,7 @@ function Wall({context}: {context: FrontendContext}): React.JSX.Element {
   </>;
 }
 
-export const frontend: FrontendContribution = {module: 'nanoleaf', pages: [{id: 'wall', Component: Wall}]};
+export const frontend: FrontendContribution = {module: 'nanoleaf', pages: [{id: 'wall', Component: Wall}, {id: 'shows', Component: Shows}]};
 
 export type {WallRecord} from './model.js';
 export {NanoleafLightVisual} from './light-visual.js';

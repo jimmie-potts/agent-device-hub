@@ -343,6 +343,25 @@ uses saved geometry. Other artwork and missing geometry use labelled placeholder
 
 ## Module interfaces
 
+The existing Nanoleaf Wall page embeds **Music effect preview**, with an Audio
+link when that running module declares its Wall page. It offers five built-in
+effects, an unsaved palette/intensity draft and fixed example Lines/NL22
+arrangements. Only **Preview** reads the owning module's bounded synthetic
+content. Scrubbing stays local; edits, disconnect and unmount invalidate results.
+Read-only users can inspect examples. Generated-input labels distinguish this
+from live measurements and configured geometry. Reactive preset persistence,
+live execution and physical timing remain separate work.
+
+Nanoleaf's **Decorative shows** page prepares private cue plans from deterministic
+starters. Audio links to it when the running module declares the page. Edits
+remain in memory until **Save new version**, which uses the shared tracked
+command attempt and an expected-version guard. Saved versions remain immutable.
+The cue storyboard shows timing, palettes and effect names; it plays no music
+and sends no light command. Replay and synchronization are unavailable. The
+existing Nanoleaf browser journey covers the authoring flow, conflict and
+authority refusals, reload without resend, unchanged simulated device state
+and light/dark desktop/phone accessibility.
+
 The authenticated module catalog and static browser build jointly select each
 React page. A missing component, unavailable module or undeclared route opens
 no fallback destination. Module-owned browser entries export `frontend` from

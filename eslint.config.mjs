@@ -79,7 +79,7 @@ export default defineConfig(
   {
     name: 'bunny/excluded',
     ignores: [
-      'modules/bb8/**', 'apps/bb8-windows/**',
+      'modules/bb8/**', 'apps/bb8-windows/**', 'modules/onn/**',
       // Firmware build trees, ignored by the firmware folder's own .gitignore.
       'firmware/chompi-controller/build/**', 'firmware/chompi-controller/.upstream/**',
       // Vendored third-party reference assets: the Scalar bundle and SchemaSpy's generated pages and theme.

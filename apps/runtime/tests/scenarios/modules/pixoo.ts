@@ -5,6 +5,7 @@
 import {mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import type {ArtState} from '@jimmie-potts/event-contracts/v2/art-state';
 import {
   FAMILIES as PIXOO, SIMULATED_SECTION as PIXOO_SIMULATED, frameDigest, renderNowPlaying, schemaOf, writeSyntheticLibrary, type DisplayRecord,
   type PlaylistRecord, type RenditionRecord, type SimulatedPixooState,
@@ -332,7 +333,63 @@ const pixooMoment: Scenario = {
       const display = pixooDisplay(h), done = momentEnding(h, 'moment-media-1', 'completed');
       return done === true ? display?.player.intent === 'active' || `display ${show(display)}` : done;
     }, 8000),
+    act('the operator stops the playlist', h => h.dispatch('operator', 'pixoo-stop', pixooCommand('media-control', 'media.control', {action: 'stop'}), 'pixoo-moment-stop')),
+    expect('the stop completes', h => completedAs(h, 'pixoo-moment-stop', 'succeeded', 'observed'), 8000),
+    act('a flourish arrives over the stopped item', h => dispatchOnce(h, 'operator', 'moment-stopped', momentOf(h, 'moment-stopped', {priorityClass: 'flourish', coversStatus: false}), 'moment-stopped-1')),
+    expect('the moment shows and the item stays stopped', h => {
+      const display = pixooDisplay(h);
+      return (display?.showing === 'moment' && display.player.intent === 'stopped') || `display ${show(display)}`;
+    }, 5000),
+    expect('it completes and the player stays stopped', h => {
+      const display = pixooDisplay(h), done = momentEnding(h, 'moment-stopped-1', 'completed');
+      return done === true ? display?.player.intent === 'stopped' || `display ${show(display)}` : done;
+    }, 8000),
     followsItsOwners(),
+  ],
+};
+
+const stagedArt = (h: Harness) => h.reader.states<ArtState>('art', 'bunny/modules/art')[0]?.data.candidates.find(candidate => candidate.target === 'pixoo');
+/** The producer resolves its target kind to the configured device ID through that owner's live SDK copy. */
+const pixooArt: Scenario = {
+  id: 'pixoo-art', title: 'the real art owner stages exact private Pixoo frames without replacing the display',
+  keepCapturePage: true,
+  seed: {modules: ['core', 'playback', 'pixoo', 'art'], follows: [...(PIXOO_SEED.follows), {owner: 'bunny/modules/art', families: ['art']}],
+    config: {playback: PLAYBACK_SECTION, pixoo: PIXOO_SECTION}, sections: {art: {}}},
+  capture: async (context, harness) => {const {capturePixooArt} = await import('../../../verify/pixoo-art-browser.js'); await capturePixooArt(context, harness);},
+  steps: [
+    expect('the real core, art owner and simulated display are running', h => running(h, ['core', 'playback', 'pixoo', 'art'])),
+    expect('the art owner has completed its initial device sync', h => h.logs().some(({record}) => record.event_name === 'runtime.sync.served'
+      && record.attributes['bunny.participant'] === 'bunny/modules/art' && record.attributes['bunny.pattern'] === 'sync device') || 'the art owner has no current device copy', 5000),
+    act('the owner requests a synthetic scene for Pixoo', async h => {
+      const answer = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/art-request', body: {target: 'art', requestId: 'pixoo-art-create',
+        data: {action: 'start', purpose: 'request', origin: {kind: 'owner'}, targets: ['pixoo'], text: 'SYNTHETIC_PIXOO_MOON'}}});
+      if (answer.status !== 200) throw new StepFailure(`art request returned ${answer.status}`);
+    }),
+    expect('the core confirms staging and the producer offers the exact composition', h => stagedArt(h) !== undefined || 'no successfully staged Pixoo candidate', 20_000),
+    expect('an authenticated reader sees all eight effective frames and their 200 ms timing', async h => {
+      const compositionId = stagedArt(h)?.compositionId;
+      if (compositionId === undefined) return 'no composition';
+      const answer = await h.gateway({as: 'reader', method: 'GET', path: `/modules/pixoo/content/art-preview.${compositionId}`});
+      const manifest = bodyOf<{compositionId: string; width: number; height: number; frameCount: number; durationMs: number; frames: {delayMs: number; ref: string}[]}>(answer);
+      if (answer.status !== 200 || manifest?.compositionId !== compositionId || manifest.width !== 64 || manifest.height !== 64 || manifest.frameCount !== 8
+        || manifest.durationMs !== 1600 || manifest.frames.length !== 8 || manifest.frames.some(frame => frame.delayMs !== 200)) return 'effective art manifest differs';
+      for (const frame of manifest.frames) {
+        const png = await h.gateway({as: 'reader', method: 'GET', path: `/modules/pixoo/content/${frame.ref}`});
+        if (png.status !== 200 || png.headers['content-type'] !== 'image/png') return 'an effective frame is unreadable';
+      }
+      return true;
+    }),
+    expect('anonymous reads cannot retrieve private art', async h => refusedWith(await h.gateway({as: 'anonymous', method: 'GET',
+      path: `/modules/pixoo/content/art-preview.${stagedArt(h)?.compositionId ?? 'missing'}`}), 401, 'unauthenticated')),
+    expect('staging and preview neither import a permanent library entry nor send a display command', h =>
+      pixooState(h).uploads === 0 && h.reader.states<RenditionRecord>(PIXOO.rendition).length === 0 || 'staging changed display or permanent library'),
+    act('the runtime restarts with its private staged copy', h => h.restart()),
+    expect('the same composition remains readable after restart without a replay', async h => {
+      const compositionId = stagedArt(h)?.compositionId;
+      if (compositionId === undefined) return 'the producer lost its staged candidate';
+      const answer = await h.gateway({as: 'reader', method: 'GET', path: `/modules/pixoo/content/art-preview.${compositionId}`});
+      return answer.status === 200 && pixooState(h).uploads === 0 || 'the retained copy is unreadable or replayed';
+    }),
   ],
 };
 
@@ -380,7 +437,7 @@ async function migratePixoo(dataDir: string): Promise<void> {
   }
 }
 
-export const scenarios: readonly Scenario[] = [pixooMonitor, pixooMedia, pixooNowPlaying, pixooMoment, pixooOffline, pixooPages];
+export const scenarios: readonly Scenario[] = [pixooMonitor, pixooMedia, pixooNowPlaying, pixooMoment, pixooArt, pixooOffline, pixooPages];
 
 export const runs: Readonly<Record<string, ModuleRun>> = {
   'pixoo-migrated': {
