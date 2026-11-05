@@ -329,6 +329,12 @@ and a second ingest grant is refused there. The Volcano module's section is admi
 the same way (Hub #615), because the module reaches no device, and its collector's
 credential has the same limit.
 
+Art also declares a simulation for disposable provider tests. Its `hostLocal`
+predicate admits a valid section without secrets. An empty section starts the
+private catalog with no provider keys; paid generation needs the production
+profile and its explicitly configured secrets. This admission adds no device
+module or physical writer.
+
 A future module that sends device commands without declaring a simulation needs
 review against this rule before it ships. Device modules on the Mac wait for the
 one-writer cutover in [Hub #568](https://github.com/jimmie-potts/agent-device-hub/issues/568).
@@ -451,7 +457,7 @@ retain their normal refused, failed or unavailable result.
 
 No host dependency mount is supplied. The operator refuses extra mounts,
 device passthrough, added capabilities, a writable root and privileged mode.
-ONN's qualified ADB server/socket/executable/key setup and Roborock's selected
+ONN is hibernated after device retirement (#1464); omit its configured section from new active profiles. Retain its private stores and the backup compatibility described below. Historical ADB setup is dormant. Roborock's selected
 private target/session remain #565/#568 inputs. Admission or health does not
 qualify those dependencies or physical behavior.
 
@@ -498,9 +504,10 @@ and reaching a physical device remains #568's exact-target check.
 | Tidbyt | Outbound HTTPS to `api.tidbyt.com`. |
 | Pixoo | Outbound HTTP (TCP 80) to the configured device. With the hosted-GIF profile, inbound HTTP from the device to the published private IPv4 at TCP 41240. |
 | Nanoleaf | Outbound HTTP (TCP 16021) to each configured controller address. |
-| ONN | ADB through the configured private server socket, executable and key directory, which reach the television's ADB serial address. The image supplies none of them and the operator mounts no host dependency. A configured section starts `running` and reports every operation `unavailable` until a bounded owning change supplies them; an empty or invalid section refuses with `invalid-request`. Admission and health are not ONN qualification. |
+| ONN | Hibernated after device retirement. The shipped registry excludes it; remove its active configuration during the owning deployment and preserve retained private stores. Historical ADB setup does not select active support. |
 | Wemo | Outbound HTTP (SOAP) to each configured plug at its configured port, which must be in 49151 to 49159. |
 | Roborock | Outbound TCP 58867 to the selected device address for the local protocol and MQTT over TLS (TCP 8883) to the session's broker. The regional `roborock.com` HTTPS API serves only the interactive session setup tool, not the container. Read-only, with the existing private target and session files. |
+| Art | Outbound HTTPS to `api.openai.com` and `api.anthropic.com`, only for keys its section names. |
 | Companions | Outbound HTTPS to `api.anthropic.com` only when the section selects the Anthropic provider for the B.U.N.N.Y. conversation; the synthetic default makes no outbound connection. |
 | Weather | Outbound HTTPS to `api.weather.gov`. The section's coordinates go only there. |
 | Codex Desktop, companions | None. Remote Desktop evidence arrives through the private HTTPS route. |

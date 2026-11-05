@@ -12,6 +12,8 @@ import {chromium, type Browser} from 'playwright';
 import {IDENTITY, sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
 import {showEditorJourney} from './show-editor-journey.ts';
+import {reactivePresetJourney} from './reactive-preset-journey.ts';
+import {musicPreviewJourney} from './music-preview-journey.ts';
 
 const desktop: Identity = {provider: 'codex', client: 'desktop', hostId: 'host-sim', sourceId: 'desktop',
   sessionId: '12345678-abcd-abcd-abcd-1234567890ab'};
@@ -239,4 +241,6 @@ try {
       safeTaskTextAndLinks: true, observedPower: [false, true], reducedMotion: true, axe: ['desktop', 'mobile']})}\n`);
   } finally { await context.close(); }
   await showEditorJourney(browser);
+  await musicPreviewJourney(browser);
+  await reactivePresetJourney(browser);
 } finally { try { await browser?.close(); } finally { await world.close(); } }

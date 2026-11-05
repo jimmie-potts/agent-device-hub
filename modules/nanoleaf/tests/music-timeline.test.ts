@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import type {LayoutEntry} from '../src/devices.js';
-import {MAX_BYTES, MAX_FRAMES, Rejected, render, size} from '../src/effects.js';
+import {MAX_BYTES, MAX_FRAMES, Rejected, display, render, size} from '../src/effects.js';
 import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS, MusicTimelineCursor, prepareMusicTimeline,
-  renderMusicCue, selectMusicCue, type TimelineSample} from '../src/music-timeline.js';
+  locateMusicCuePhase, prepareMusicCueFrames, renderMusicCue, selectMusicCue, type PreparedMusicCue, type TimelineSample} from '../src/music-timeline.js';
 import {decode, test} from './support.js';
 
 const cue = (id: string, offsetMs: number, durationMs = 500) =>
@@ -201,4 +201,135 @@ test('two target cursors have independent generations and no shared running stat
   lines.stop({generation: a.generation});
   assert.equal(selected(panels.sample({generation: b.generation, monotonicMs: 1250})), 'c');
   assert.equal(lines.sample({generation: a.generation, monotonicMs: 1250}), null);
+});
+
+function phaseCue(recipe: object = {pattern: 'pulse', colors: ['#804020']}, durationMs = 30000) {
+  const item = prepareMusicTimeline({version: 1, durationMs, cues: [{id: 'phase', offsetMs: 0, durationMs, recipe, intensity: 0.5}]}).cues[0];
+  assert.ok(item !== undefined);
+  return item;
+}
+function zonePhase(prepared: PreparedMusicCue, elapsedMs: number, zone = 101) {
+  const result = locateMusicCuePhase(prepared, elapsedMs);
+  assert.equal(result.kind, 'active');
+  assert.ok(result.kind === 'active');
+  const selected = result.zones.find(value => value.zone === zone);
+  assert.ok(selected !== undefined);
+  return selected.phase;
+}
+
+test('phase preparation preserves canonical bytes, addressing, intensity and frozen independent values', () => {
+  for (const kind of ['lines', 'panels'] as const) {
+    for (const pattern of ['pulse', 'breathe', 'sparkle', 'wave', 'gradient'] as const) {
+      const item = phaseCue({pattern, colors: ['#804020', '#206080']});
+      const saved = layout(kind);
+      const prepared = prepareMusicCueFrames(item, saved);
+      assert.deepEqual({write: display(prepared.tracks.map(track => [track.zone, track.frames]), true, prepared.loop, kind === 'lines')},
+        renderMusicCue(item, saved));
+      assert.deepEqual(prepared.tracks.map(track => track.zone), saved.elements.flatMap(element => element.zones));
+      assert.ok(prepared.tracks.every(track => track.durationMs === track.frames.reduce((sum, frame) => sum + frame[3] * 100, 0)));
+      assert.ok(Object.isFrozen(prepared));
+      assert.ok(Object.isFrozen(prepared.tracks));
+      for (const track of prepared.tracks) {
+        assert.ok(Object.isFrozen(track));
+        assert.ok(Object.isFrozen(track.frames));
+        assert.ok(track.frames.every(Object.isFrozen));
+      }
+      const before = JSON.stringify(prepared);
+      saved.elements.length = 0;
+      assert.equal(JSON.stringify(prepared), before);
+      assert.deepEqual(prepareMusicCueFrames(prepareMusicTimeline(JSON.parse(JSON.stringify({version: 1,
+        durationMs: item.durationMs, cues: [item]}))).cues[0] ?? item, layout(kind)), prepared);
+    }
+  }
+});
+
+test('phase location reports an unknown initial origin and exact unequal pulse boundaries', () => {
+  const prepared = prepareMusicCueFrames(phaseCue(), layout('lines'));
+  assert.deepEqual(zonePhase(prepared, 0), {kind: 'transition', frameIndex: 0, cycle: 0,
+    origin: {kind: 'unknown'}, target: [64, 32, 16], elapsedMs: 0, remainingMs: 100});
+  assert.deepEqual(zonePhase(prepared, 99.5), {kind: 'transition', frameIndex: 0, cycle: 0,
+    origin: {kind: 'unknown'}, target: [64, 32, 16], elapsedMs: 99.5, remainingMs: 0.5});
+  assert.deepEqual(zonePhase(prepared, 100), {kind: 'transition', frameIndex: 1, cycle: 0,
+    origin: {kind: 'endpoint', color: [64, 32, 16]}, target: [6, 3, 2], elapsedMs: 0, remainingMs: 800});
+  assert.deepEqual(zonePhase(prepared, 900), {kind: 'transition', frameIndex: 0, cycle: 1,
+    origin: {kind: 'endpoint', color: [6, 3, 2]}, target: [64, 32, 16], elapsedMs: 0, remainingMs: 100});
+  const later = zonePhase(prepared, 2750);
+  assert.equal(later.kind === 'transition' && later.cycle, 3);
+  assert.deepEqual(zonePhase(prepared, 99.5), zonePhase(prepared, 99.5));
+  assert.ok(Object.isFrozen(locateMusicCuePhase(prepared, 100)));
+});
+
+test('phase location honors breathe and zone-specific unequal sparkle durations', () => {
+  const breathe = prepareMusicCueFrames(phaseCue({pattern: 'breathe', speed: 'fast', colors: ['#ffffff']}), layout('panels'));
+  const at = zonePhase(breathe, 600);
+  assert.equal(at.kind === 'transition' && at.frameIndex, 1);
+  assert.equal(at.kind === 'transition' && at.remainingMs, 600);
+  const sparkle = prepareMusicCueFrames(phaseCue({pattern: 'sparkle', speed: 'medium', colors: ['#ffffff']}), layout('lines'));
+  const flash = zonePhase(sparkle, 2800);
+  assert.equal(flash.kind === 'transition' && flash.frameIndex, 7);
+  assert.equal(flash.kind === 'transition' && flash.remainingMs, 100);
+  const after = zonePhase(sparkle, 2900);
+  assert.equal(after.kind === 'transition' && after.frameIndex, 8);
+  assert.equal(after.kind === 'transition' && after.remainingMs, 400);
+  assert.deepEqual(zonePhase(sparkle, 2800, 101), zonePhase(sparkle, 2800, 102));
+  assert.notDeepEqual(zonePhase(sparkle, 2800, 101), zonePhase(sparkle, 2800, 103));
+});
+
+test('one-shot completion holds its canonical endpoint while cue end supplies no instruction', () => {
+  const once = prepareMusicCueFrames(phaseCue({pattern: 'pulse', colors: ['#804020'], loop: false}), layout('panels'));
+  assert.deepEqual(zonePhase(once, 900), {kind: 'finished', endpoint: [6, 3, 2]});
+  assert.deepEqual(zonePhase(once, 29000), {kind: 'finished', endpoint: [6, 3, 2]});
+  assert.deepEqual(locateMusicCuePhase(once, 30000), {kind: 'cue-ended'});
+  assert.deepEqual(locateMusicCuePhase(once, 31000), {kind: 'cue-ended'});
+  const short = prepareMusicCueFrames(phaseCue(undefined, 100), layout('lines'));
+  assert.deepEqual(locateMusicCuePhase(short, 100), {kind: 'cue-ended'});
+  for (const elapsed of [-1, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => locateMusicCuePhase(once, elapsed), TypeError);
+  }
+});
+
+test('phase results own frozen endpoints and preparation preserves capability and capacity refusals', () => {
+  const prepared = prepareMusicCueFrames(phaseCue(), layout('lines'));
+  const result = locateMusicCuePhase(prepared, 100);
+  assert.ok(result.kind === 'active');
+  assert.ok(Object.isFrozen(result.zones));
+  for (const value of result.zones) {
+    assert.ok(Object.isFrozen(value));
+    assert.ok(Object.isFrozen(value.phase));
+    if (value.phase.kind === 'transition') {
+      assert.ok(Object.isFrozen(value.phase.target));
+      assert.ok(Object.isFrozen(value.phase.origin));
+      if (value.phase.origin.kind === 'endpoint') assert.ok(Object.isFrozen(value.phase.origin.color));
+    }
+  }
+  const saved = layout('lines');
+  const missing = {...saved, elements: saved.elements.map(element => ({...element, position: null}))};
+  assert.throws(() => prepareMusicCueFrames(phaseCue({preset: 'ocean'}), missing),
+    error => error instanceof Rejected && error.code === 'unsupported-capability');
+  const huge = {...saved, elements: Array.from({length: 300}, (_, i) => ({id: `${1001 + 2 * i}:${1002 + 2 * i}`,
+    number: i + 1, zones: [1001 + 2 * i, 1002 + 2 * i], position: [i, 0]}))};
+  assert.throws(() => prepareMusicCueFrames(phaseCue({preset: 'ocean'}), huge),
+    error => error instanceof Rejected && error.code === 'capacity');
+});
+
+test('pause, resume and seek locate the selected current elapsed phase without sample history', () => {
+  const item = phaseCue();
+  const plan = {version: 1, durationMs: 30000, cues: [item]};
+  const prepared = prepareMusicCueFrames(item, layout('lines'));
+  const cursor = new MusicTimelineCursor(plan);
+  const initial = cursor.startAt({positionMs: 250, monotonicMs: 1000});
+  const paused = playing(cursor.pause({generation: initial.generation, monotonicMs: 1100}));
+  const locate = (sample: TimelineSample | null) => {
+    const selected = playing(sample).selection;
+    assert.ok(selected.kind === 'cue');
+    return locateMusicCuePhase(prepared, selected.elapsedMs);
+  };
+  assert.deepEqual(locate(paused), locateMusicCuePhase(prepared, 350));
+  assert.deepEqual(locate(cursor.sample({generation: paused.generation, monotonicMs: 5000})), locate(paused));
+  const resumed = playing(cursor.resume({generation: paused.generation, monotonicMs: 6000}));
+  assert.deepEqual(locate(resumed), locate(paused));
+  const sought = playing(cursor.seek({generation: resumed.generation, monotonicMs: 6100, positionMs: 2800}));
+  assert.deepEqual(locate(sought), locateMusicCuePhase(prepared, 2800));
+  const back = cursor.seek({generation: sought.generation, monotonicMs: 6200, positionMs: 50});
+  assert.deepEqual(locate(back), locateMusicCuePhase(prepared, 50));
 });

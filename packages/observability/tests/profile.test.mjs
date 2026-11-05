@@ -96,10 +96,10 @@ const failed = {...runtime, schema_version: '1.7', event_name: 'runtime.module.f
 const valid = value => validateRecord(value).ok;
 const at = (value, version) => ({...value, schema_version: version});
 
-test('artifact 1.7.0 adds profile 1.7, and producers still default to profile 1.1', () => {
-  assert.equal(ARTIFACT_VERSION, '1.7.0');
-  assert.equal(catalog.artifact_version, '1.7.0');
-  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7']);
+test('artifact 1.8.0 adds profile 1.8, and producers still default to profile 1.1', () => {
+  assert.equal(ARTIFACT_VERSION, '1.8.0');
+  assert.equal(catalog.artifact_version, '1.8.0');
+  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8']);
   assert.equal(SCHEMA_VERSION, '1.1');
   assert.equal(catalog.default_schema_version, '1.1');
   const omitted = {...hub};
@@ -199,7 +199,7 @@ test('a profile 1.2 record projects to 1.1 only without 1.2 vocabulary, and a 1.
   const raised = projectRecord(hub, '1.2');
   assert.equal(raised.ok, true);
   assert.equal(raised.value.schema_version, '1.2');
-  assert.equal(projectRecord(hub, '1.8').ok, false);
+  assert.equal(projectRecord(hub, '1.9').ok, false);
 });
 
 test('a profile 1.3 record projects to 1.2 only without 1.3 vocabulary, and a 1.2 record projects to 1.3', () => {

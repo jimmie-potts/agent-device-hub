@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import type {SimulationOptions} from '@jimmie-potts/sdk';
+import type {DeviceAction, SimulationOptions} from '@jimmie-potts/sdk';
 import {registration, SimulatedRoborock, type VacuumStatus} from '@jimmie-potts/roborock';
 import {registrations} from '../../src/index.js';
 import {it} from '../support.js';
@@ -47,6 +47,38 @@ for (const transport of TRANSPORTS) {
       const result = await runScenario(selected, h);
       assert.equal(result.outcome, 'passed', JSON.stringify(result.steps.filter(step => step.outcome !== 'passed')));
       assert.equal(delayedReads, 1);
+      assert.deepEqual(h.problems(), []);
+    } finally {await h.close();}
+  });
+
+  it(`Roborock scenario keeps one observation time for a failed read across a millisecond over ${transport}`, async () => {
+    // From the offline action until recovery begins, consecutive module clock reads alternate between two adjacent
+    // milliseconds, never more than 1 ms from the harness clock. A failed read's two clock reads then differ, as a
+    // real clock's can at a millisecond boundary (#1459).
+    let ticking = false, reads = 0;
+    const simulation = registration.simulation;
+    assert.ok(simulation);
+    const memory = simulation.memory;
+    const ticked = {...registration, simulation: {...simulation, memory: {...memory,
+      act(device: unknown, action: DeviceAction) {
+        if (action.action === 'offline') ticking = true;
+        if (action.action === 'empty-history') ticking = false;
+        memory.act(device, action);
+      },
+      build(device: unknown, options: SimulationOptions) {
+        const module = memory.build(device, options);
+        const start = module.start.bind(module);
+        module.start = context => start({...context, clock: {now: () => context.clock.now() + (ticking ? reads++ % 2 : 0)}});
+        return module;
+      },
+    }}};
+    const h = await startMemoryHarness(selected.seed, transport, {
+      registrations: registrations.map(value => value.name === registration.name ? ticked : value),
+    });
+    try {
+      const result = await runScenario(selected, h);
+      assert.equal(result.outcome, 'passed', JSON.stringify(result.steps.filter(step => step.outcome !== 'passed')));
+      assert.ok(reads > 1, 'the module read its clock while it alternated');
       assert.deepEqual(h.problems(), []);
     } finally {await h.close();}
   });
