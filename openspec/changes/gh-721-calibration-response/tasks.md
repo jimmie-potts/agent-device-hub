@@ -1,12 +1,12 @@
 ## 1. Contracts and measurement
 
 - [x] 1.1 Add additive closed control/state 2.2 contracts and migrate bundled version selection/readers; demonstrate failing then passing bounds/compatibility tests with unchanged earlier schema files.
-- [x] 1.2 Implement the bounded quiet-measurement collector connected to core admission; fake clocks verify post-admission coverage, gaps, clipping, format, deadline and distinct clock origins.
+- [x] 1.2 Implement the bounded quiet-measurement collector connected to core admission; fake clocks verify post-admission coverage, gaps, clipping, format, deadline, distinct clock origins and elapsed-time uncertainty boundaries.
 
 ## 2. Core state and responsibility
 
 - [x] 2.1 Persist settings/evidence and current qualification through existing capture transactions; disposable core tests verify Apply conflicts, cancellation, independent Stop and no producer work from tuning commands.
-- [x] 2.2 Fence calibration and application bindings on source/freshness/format/clock loss, restart and storage refusal; restart/failure tests verify retained evidence and no replay or partial settings.
+- [x] 2.2 Fence calibration and application bindings on source/freshness/format/clock loss, restart and storage refusal; restart/failure tests verify retained evidence and no replay or partial settings, including clock loss after Apply without measurement and after candidate completion.
 
 ## 3. Shared response and UI
 

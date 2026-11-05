@@ -564,7 +564,10 @@ continues growing during capture. No PCM enters that history.
 
 Microphone response controls use additive control 2.2 commands. Explicit quiet
 measurement collects 50 consecutive, unclipped 100 ms windows after admission,
-within a ten-second local deadline. It retains the 95th percentile and maximum
+within a ten-second local deadline. Elapsed source, observed-wall and receipt
+times must agree within the existing clock/freshness uncertainty bounds. This
+rejects timestamp bursts while permitting bounded delivery delay. Evidence
+records source duration, not an exact receiver duration. It retains the 95th percentile and maximum
 linear RMS plus a suggested gate of twice that percentile, capped at 16. This is
 a digital baseline heuristic; derived features cannot establish acoustic quiet,
 calibrated loudness or the microphone's physical identity.

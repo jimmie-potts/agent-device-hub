@@ -16,6 +16,14 @@ The core SHALL measure a quiet baseline only after an operator explicitly reques
 - **WHEN** the producer and core monotonic clocks have different origins or a deadline callback runs late
 - **THEN** collection uses source differences and a local monotonic deadline, and no result can succeed at or beyond that deadline
 
+#### Scenario: Coherent source, observation and receipt elapsed time
+- **WHEN** counted windows advance their source clock but repeat their observed timestamp, arrive in an implausibly compressed burst or reverse receiver receipt time
+- **THEN** calibration fails, creates no candidate and retires current gate qualification while preserving preferences and prior evidence
+
+#### Scenario: Bounded delayed delivery
+- **WHEN** the first-window-relative observed and receipt elapsed differences stay within the documented 51 ms and 601 ms uncertainty bounds, including their exact boundaries
+- **THEN** otherwise valid consecutive windows can complete with sourceDurationMs 5000; exceeding either bound refuses the interval, without comparing different monotonic origins
+
 ### Requirement: Retained settings require current gate qualification
 
 The core SHALL retain microphone response settings and calibration evidence privately, while binding an enabled gate's current application to endpoint, generation, alias and format. Retirement, loss, stale coverage, discontinuity, format change or restart SHALL invalidate the application and candidate eligibility. Prior settings and evidence SHALL remain visible; they SHALL NOT reactivate a threshold without a fresh calibration or explicit manual application.

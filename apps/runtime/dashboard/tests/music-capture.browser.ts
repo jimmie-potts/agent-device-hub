@@ -168,6 +168,14 @@ try {
   await responseControls.getByRole('combobox', {name: 'Noise gate', exact: true}).selectOption('manual');
   await applyResponse.click();await expect(preview).toHaveAttribute('value', '0.625');
   await responseControls.getByText(/Manual threshold, uncalibrated/).waitFor();
+  producer.pause();
+  const incoherentAt = Date.now() - 200;
+  await producer.emit({observedAtMs: incoherentAt, validUntilMs: incoherentAt + 400});
+  await responseControls.getByText(/Saved gate is inactive for this capture/).waitFor();
+  await producer.start();await expect(micCard.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.25');
+  await expect(preview).toHaveCount(0);
+  await applyResponse.click();await expect(preview).toHaveAttribute('value', '0.625');
+  assert.equal(producer.commands.length, 4, 'clock retirement and manual reapplication leave raw capture running');
   for (const colorScheme of ['light', 'dark'] as const) for (const width of [1280, 390, 320]) {
     await micPage.emulateMedia({colorScheme});await micPage.setViewportSize({width, height: 900});
     await micCard.getByRole('button', {name: 'Refresh capture status'}).focus();

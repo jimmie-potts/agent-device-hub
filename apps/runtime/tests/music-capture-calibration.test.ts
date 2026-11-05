@@ -41,6 +41,58 @@ void test('duplicate input cannot fill coverage and the deadline applies even wh
   assert.equal(trial.expired(10499), false);assert.equal(trial.expired(10500), true);
   assert.deepEqual(trial.accept(frame(2), 10500), {status: 'failed', reason: 'deadline'});
 });
+
+void test('a burst cannot substitute repeated observed timestamps or compressed receipt time for five source seconds', () => {
+  for (const repeatedWall of [true, false]) {
+    const trial = new QuietCalibration('quiet-burst', binding, clock);
+    let result = trial.accept(frame(1), 800);
+    for (let sequence = 2; sequence <= 50 && result.status === 'pending'; sequence++) {
+      const observedAtMs = repeatedWall ? 100300 : 100200 + sequence * 100;
+      result = trial.accept(frame(sequence, {observedAtMs, validUntilMs: observedAtMs + 400}), 800);
+    }
+    assert.deepEqual(result, {status: 'failed', reason: 'clock'});
+    assert.equal(trial.accept(frame(51), 5800).status, 'ignored');
+  }
+});
+
+void test('source versus observed wall elapsed permits only two drift allowances and timestamp rounding', () => {
+  // Two producer anchor errors of 25 ms plus one millisecond of integer timestamp rounding = 51 ms.
+  for (const drift of [-52, -51, -50, 50, 51, 52]) {
+    const trial = new QuietCalibration('quiet-wall-bound', binding, clock);
+    let result = trial.accept(frame(1), 800);
+    for (let sequence = 2; sequence <= 50 && result.status === 'pending'; sequence++) {
+      const observedAtMs = 100200 + sequence * 100 + drift;
+      result = trial.accept(frame(sequence, {observedAtMs, validUntilMs: observedAtMs + 400}), 700 + sequence * 100);
+    }
+    assert.equal(result.status, Math.abs(drift) <= 51 ? 'complete' : 'failed', String(drift));
+    if (result.status === 'failed') assert.equal(result.reason, 'clock');
+  }
+});
+
+void test('receipt versus source elapsed has an explicit freshness, skew, drift and rounding bound', () => {
+  // 400 ms freshness + 100 ms future skew + two 25 ms core errors + two 25 ms producer errors + 1 ms rounding = 601 ms.
+  for (const drift of [-602, -601, -600, 600, 601, 602]) {
+    const trial = new QuietCalibration('quiet-receipt-bound', binding, clock);
+    let result = trial.accept(frame(1), 800);
+    for (let sequence = 2; sequence <= 50 && result.status === 'pending'; sequence++)
+      result = trial.accept(frame(sequence), 700 + sequence * 100 + drift * (sequence - 1) / 49);
+    assert.equal(result.status, Math.abs(drift) <= 601 ? 'complete' : 'failed', String(drift));
+    if (result.status === 'failed') assert.equal(result.reason, 'clock');
+  }
+});
+
+void test('bounded delayed delivery preserves source duration while backwards receipt time fails', () => {
+  const trial = new QuietCalibration('quiet-delayed', binding, clock);
+  let result = trial.accept(frame(1), 1000);
+  for (let sequence = 2; sequence <= 50; sequence++) {
+    const delay = (3 - ((sequence - 1) % 3) - 1) * 100;
+    result = trial.accept(frame(sequence), 700 + sequence * 100 + delay);
+  }
+  assert.ok(result.status === 'complete');assert.equal(result.evidence.sourceDurationMs, 5000);
+  assert.equal(result.evidence.endedAtMs - result.evidence.startedAtMs, 5000);
+  const reversed = new QuietCalibration('quiet-reversed', binding, clock);reversed.accept(frame(1), 800);
+  assert.deepEqual(reversed.accept(frame(2), 799), {status: 'failed', reason: 'clock'});
+});
 void test('retirement preserves settings and prior evidence but clears gate application and candidate eligibility', () => {
   const previous = {...responseDefaults(), appliedTo: binding, calibration: {status: 'ready' as const, operationId: 'quiet-one'},
     settings: {...responseDefaults().settings, gate: {mode: 'manual' as const, threshold: 0.02}}};

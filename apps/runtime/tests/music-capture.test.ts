@@ -386,16 +386,23 @@ it('response Apply is atomic and revision-bound; calibration Cancel and Stop rem
   await h.progress({operationId: stop.data.operationId, generation: stop.data.generation, status: 'stopped'});
 });
 
-it('a completed quiet interval is a candidate until Apply and restart retains evidence without qualification', async t => {
-  const directory = await stateDir(t), h = await setup(t, directory), {binding, selection} = await activeMicrophone(h, 'quiet-start');
-  await h.tune('quiet-complete', {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
-  for (let sequence = 2; sequence <= 60; sequence++) {
-    await new Promise(resolve => setTimeout(resolve, 100));
-    await h.frame(binding.generation, sequence, {...selection, rms: 0.01, peak: 0.02});
+async function completeQuiet(h: Awaited<ReturnType<typeof setup>>, active: Awaited<ReturnType<typeof activeMicrophone>>, requestId: string) {
+  const {binding, selection} = active;
+  await h.tune(requestId, {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
+  const sourceWall = Date.now();let sequence = 2;
+  for (; sequence <= 60; sequence++) {
+    const observedAtMs = sourceWall + (sequence - 1) * 100;
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, observedAtMs - Date.now())));
+    await h.frame(binding.generation, sequence, {...selection, rms: 0.01, peak: 0.02, observedAtMs, validUntilMs: observedAtMs + 400});
     if ((await h.read()).response?.calibration.status === 'ready') break;
   }
-  await waitFor(() => h.operation('quiet-complete')?.result === 'succeeded');
-  const candidate = await h.read();assert.ok(candidate.response?.evidence);
+  await waitFor(() => h.operation(requestId)?.result === 'succeeded');
+  return {state: await h.read(), sequence};
+}
+
+it('a completed quiet interval is a candidate until Apply and restart retains evidence without qualification', async t => {
+  const directory = await stateDir(t), h = await setup(t, directory), active = await activeMicrophone(h, 'quiet-start'), {binding} = active;
+  const {state: candidate} = await completeQuiet(h, active, 'quiet-complete');assert.ok(candidate.response?.evidence);
   assert.equal(candidate.response.evidence.windowCount, 50);assert.equal(candidate.response.evidence.percentileRms, 0.01);
   assert.equal(candidate.response.evidence.suggestedThreshold, 0.02);assert.equal(candidate.response.settings.gate.mode, 'off');
   assert.equal(candidate.response.appliedTo, null);
@@ -423,6 +430,74 @@ it('clipping fails quiet measurement and a later source discontinuity retires a 
   await h.frame(binding.generation, 3, {...selection, discontinuity: true});
   await waitFor(async () => (await h.read()).response?.appliedTo === null);
   assert.deepEqual((await h.read()).response?.settings, manualSettings);
+});
+
+it('incoherent source and wall elapsed fail calibration and retire the applied gate without replacing preferences', async t => {
+  const h = await setup(t), {binding, selection} = await activeMicrophone(h, 'clock-evidence-start');
+  const before = await h.read();assert.ok(before.response);
+  await h.tune('clock-evidence-apply', {action: 'apply-tuning', binding, expectedRevision: before.revision,
+    expectedSettingsRevision: before.response.settingsRevision, settings: manualSettings});
+  await h.tune('clock-evidence-measure', {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
+  await new Promise(resolve => setTimeout(resolve, 250));
+  const observedAtMs = Date.now(), patch = {...selection, observedAtMs, validUntilMs: observedAtMs + 400};
+  await h.frame(binding.generation, 2, patch);await h.frame(binding.generation, 3, patch);
+  await waitFor(() => h.operation('clock-evidence-measure')?.result === 'failed');
+  const state = await h.read();
+  assert.deepEqual(state.response?.calibration, {status: 'ended', operationId: 'clock-evidence-measure', reason: 'clock'});
+  assert.equal(state.response?.evidence, null);assert.deepEqual(state.response?.settings, manualSettings);
+  assert.equal(state.response?.appliedTo, null);assert.equal(h.work.length, 1);
+});
+
+it('an applied gate without a measurement retires on incoherent clocks and requires explicit reapply', async t => {
+  const h = await setup(t), {binding, selection} = await activeMicrophone(h, 'ordinary-clock-start');
+  const before = await h.read();assert.ok(before.response);
+  await h.tune('ordinary-clock-apply', {action: 'apply-tuning', binding, expectedRevision: before.revision,
+    expectedSettingsRevision: before.response.settingsRevision, settings: manualSettings});
+  const observedAtMs = Date.now();
+  for (let sequence = 2; sequence <= 5; sequence++) await h.frame(binding.generation, sequence, {...selection, observedAtMs, validUntilMs: observedAtMs + 400});
+  const retired = await h.read();assert.equal(retired.session.status, 'active');
+  assert.equal(retired.response?.calibration.status, 'idle');assert.equal(retired.response?.appliedTo, null);
+  assert.deepEqual(retired.response?.settings, manualSettings);
+  const reappliedAt = Date.now();
+  await h.frame(binding.generation, 6, {...selection, observedAtMs: reappliedAt, validUntilMs: reappliedAt + 400});
+  const inactive = await h.read();assert.ok(inactive.response);assert.equal(inactive.response.appliedTo, null);
+  await h.tune('ordinary-clock-reapply', {action: 'apply-tuning', binding, expectedRevision: inactive.revision,
+    expectedSettingsRevision: inactive.response.settingsRevision, settings: manualSettings});
+  assert.deepEqual((await h.read()).response?.appliedTo, binding);
+  const nextAt = reappliedAt + 100;await new Promise(resolve => setTimeout(resolve, Math.max(0, nextAt - Date.now())));
+  await h.frame(binding.generation, 7, {...selection, observedAtMs: nextAt, validUntilMs: nextAt + 400});
+  assert.deepEqual((await h.read()).response?.appliedTo, binding);
+  assert.equal(h.work.length, 1);
+});
+
+it('a ready candidate keeps its timing guard and loses eligibility on later clock drift', async t => {
+  const h = await setup(t), active = await activeMicrophone(h, 'candidate-clock-start');
+  const {state: candidate, sequence} = await completeQuiet(h, active, 'candidate-clock-measure');
+  assert.ok(candidate.response?.evidence);
+  const observedAtMs = candidate.response.evidence.endedAtMs;
+  await h.frame(active.binding.generation, sequence + 1, {...active.selection, observedAtMs, validUntilMs: observedAtMs + 400});
+  await waitFor(async () => (await h.read()).response?.calibration.status === 'ended');
+  const retired = await h.read();assert.equal(retired.session.status, 'active');assert.ok(retired.response);
+  assert.deepEqual(retired.response.calibration, {status: 'ended', operationId: 'candidate-clock-measure', reason: 'clock'});
+  assert.deepEqual(retired.response.evidence, candidate.response.evidence);assert.equal(retired.response.appliedTo, null);
+  assert.equal(h.operation('candidate-clock-measure')?.result, 'succeeded', 'later loss preserves the completed measurement outcome');
+  const refused = await h.tune('candidate-clock-reuse', {action: 'apply-tuning', binding: active.binding, expectedRevision: retired.revision,
+    expectedSettingsRevision: retired.response.settingsRevision, settings: {...manualSettings, gate: {mode: 'calibrated', threshold: 0.02, calibrationId: 'candidate-clock-measure'}}});
+  assert.ok('error' in refused);assert.equal(refused.error.code, 'invalid-state');assert.equal(h.work.length, 1);
+});
+
+it('a refused clock-retirement write disconnects capture and recovery keeps settings inactive', async t => {
+  const h = await setup(t), {binding, selection} = await activeMicrophone(h, 'clock-store-start');
+  const before = await h.read();assert.ok(before.response);
+  await h.tune('clock-store-apply', {action: 'apply-tuning', binding, expectedRevision: before.revision,
+    expectedSettingsRevision: before.response.settingsRevision, settings: manualSettings});
+  await h.failWrites(true);
+  const observedAtMs = Date.now();
+  for (let sequence = 2; sequence <= 3; sequence++) await h.frame(binding.generation, sequence, {...selection, observedAtMs, validUntilMs: observedAtMs + 400}).catch(() => {});
+  await waitFor(() => h.closed() > 0);await h.failWrites(false);
+  await waitFor(async () => {try {return (await h.read()).availability === 'unavailable';} catch {return false;}}, 4000);
+  const recovered = await h.read();assert.deepEqual(recovered.response?.settings, manualSettings);
+  assert.equal(recovered.response?.appliedTo, null);assert.equal(h.work.length, 1);
 });
 
 it('restart settles unfinished calibration and refuses later reuse of its candidate', async t => {

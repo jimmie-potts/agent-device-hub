@@ -41,3 +41,11 @@ The core SHALL commit calibration responsibility, response changes, evidence and
 #### Scenario: Restart and lost reply
 - **WHEN** calibration is unfinished at restart or an Apply reply is lost
 - **THEN** recovery exposes retained committed evidence truthfully and no request or measurement is automatically repeated
+
+#### Scenario: Clock loss after Apply or candidate completion
+- **WHEN** source, observed-wall or receipt elapsed time loses bounded coherence after Apply with no measurement running, or after a candidate completes
+- **THEN** the core atomically retires application and candidate eligibility while preserving raw capture activity, preferences, evidence and already completed outcomes; later coherent input cannot revive qualification
+
+#### Scenario: Refused clock-retirement transaction
+- **WHEN** storage refuses the retirement caused by incoherent response clocks
+- **THEN** the existing fault path disconnects capture, recovery exposes retained settings without active qualification, and no source work is replayed

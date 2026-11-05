@@ -1946,7 +1946,9 @@ and dashboard CI discovery. After `npm run build`, run `npm run typecheck`,
 Core persistence and command-path changes also require the full runtime/scenario
 checks described above. Complete `npm run check:workflow` and
 `npm run test:workflow` for planning/specification changes. Fake clocks and
-synthetic derived windows establish calibration bounds and response parity;
+synthetic derived windows establish calibration bounds and response parity.
+Clock checks cover first-window-relative elapsed time, exact uncertainty bounds,
+repeated timestamps, compressed bursts, backwards receipts and delayed delivery;
 these checks never access a microphone or qualify physical acoustics.
 
 

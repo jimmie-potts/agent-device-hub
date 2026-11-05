@@ -8,7 +8,7 @@ import {CAPTURE_CLOCK_DRIFT_MS, CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_VALIDITY_MS, 
 } from '@jimmie-potts/event-contracts/v2/music-capture';
 import {Outcome, fullDisk, recordLog, type Cancel, type Command, type ModuleScheduler, type Reply, type StateDraft} from '@jimmie-potts/sdk';
 import {Backoff} from './backoff.js';
-import {QuietCalibration, calibrationDurationMs, responseDefaults, retireResponse, sameResponseBinding} from './music-calibration.js';
+import {QuietCalibration, ResponseClock, calibrationDurationMs, responseDefaults, retireResponse, sameResponseBinding} from './music-calibration.js';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreTransaction} from './store.js';
 import type {CompletedOutcome, CoreResponsibility} from './tracker.js';
@@ -19,7 +19,8 @@ const selectedInput = (value: CaptureSelection): CaptureSelection => value.input
 type Responsibility = {authority: CoreResponsibility; action: 'start' | 'stop' | 'calibrate'; generation: string; endpointId: string;
   result: 'pending' | 'uncertain' | 'succeeded' | 'failed'; traceparent: string; selection?: CaptureSelection};
 type ClockAnchor = {wall: number; mono: number};
-type Live = ClockAnchor & {generation: string; sequence: number; sourceEnd: number; untilWall: number; untilMono: number; latest?: CaptureFeatures};
+type Live = ClockAnchor & {generation: string; sequence: number; sourceEnd: number; untilWall: number; untilMono: number;
+  latest?: CaptureFeatures; latestAtMono?: number; appliedClock?: ResponseClock; candidateClock?: ResponseClock};
 type CurrentState = CaptureState & {response: CaptureResponseState};
 export type CaptureAdmission = {
   admit(command: Command<CaptureControl>): boolean;
@@ -226,6 +227,7 @@ export class MusicCapturePart implements CorePart {
       sampleRateHz: live.latest.sampleRateHz, channels: live.latest.channels};
   }
   #invalidate(tx: CoreTransaction, state: CurrentState, reason: CaptureCalibrationReason): {state: CurrentState; complete: () => void} {
+    if (this.#live !== undefined) {delete this.#live.appliedClock;delete this.#live.candidateClock;}
     const attempt = state.response.calibration;
     const record = attempt.status === 'measuring' ? this.#responsibility(attempt.operationId) : undefined;
     const complete = record?.result === 'pending' ? this.#finish(tx, record, 'failed', reason === 'cancelled' || reason === 'stopped' ? 'cancelled' : 'invalid-state') : () => {};
@@ -236,6 +238,7 @@ export class MusicCapturePart implements CorePart {
     if (data.action === 'start' || data.action === 'stop') return errorBody('invalid-request');
     let complete = () => {}, cancelled = () => {};
     let measurement: {operationId: string; trial: QuietCalibration} | undefined;
+    let appliedClock: ResponseClock | undefined;
     const reply = await core.transaction(tx => {
       const current = this.#state(), binding = this.#binding(current), response = current.response;
       if (Date.parse(command.expiresat ?? '') <= tx.atMs) return errorBody('expired');
@@ -263,6 +266,9 @@ export class MusicCapturePart implements CorePart {
         const gate = data.settings.gate, evidence = response.evidence;
         if (gate.mode === 'calibrated' && (attempt.status !== 'ready' || attempt.operationId !== gate.calibrationId || evidence === null ||
           evidence.id !== gate.calibrationId || !sameResponseBinding(evidence.binding, binding))) return errorBody('invalid-state');
+        const live = this.#live;
+        if (live?.latest === undefined || live.latestAtMono === undefined) return errorBody('unavailable');
+        appliedClock = new ResponseClock(live.latest, live.latestAtMono);
         this.#save(tx, {...current, response: {...response, settingsRevision: tx.revision(), settings: structuredClone(data.settings), appliedTo: binding}});
       }
       tx.take(command);
@@ -271,8 +277,9 @@ export class MusicCapturePart implements CorePart {
     });
     complete();cancelled();
     if (!('error' in reply)) {
-      if (data.action === 'calibrate') this.#calibration = measurement;
+      if (data.action === 'calibrate') {this.#calibration = measurement;if (this.#live !== undefined) delete this.#live.candidateClock;}
       else if (data.action === 'cancel-calibration') this.#calibration = undefined;
+      else if (this.#live !== undefined && appliedClock !== undefined) this.#live.appliedClock = appliedClock;
       this.#schedule();
     }
     return reply;
@@ -351,9 +358,10 @@ export class MusicCapturePart implements CorePart {
     const invalidation: CaptureCalibrationReason | undefined = previous !== undefined &&
       (frame.sampleRateHz !== previous.sampleRateHz || frame.channels !== previous.channels) ? 'format' :
       previous !== undefined && (frame.discontinuity || frame.sequence !== previous.sequence + 1 || Math.abs(frame.startMonotonicMs - previous.endMonotonicMs) > 0.01) ? 'discontinuity' :
-      previous !== undefined && (wall >= live.untilWall || mono >= live.untilMono) ? 'stale' : undefined;
+      previous !== undefined && (wall >= live.untilWall || mono >= live.untilMono) ? 'stale' :
+      live.appliedClock?.accept(frame, mono) === false || live.candidateClock?.accept(frame, mono) === false ? 'clock' : undefined;
     live.sequence = frame.sequence;live.sourceEnd = frame.endMonotonicMs;live.untilWall = frame.validUntilMs;
-    live.untilMono = mono + Math.min(CAPTURE_VALIDITY_MS, frame.validUntilMs - wall); live.latest = frame;
+    live.untilMono = mono + Math.min(CAPTURE_VALIDITY_MS, frame.validUntilMs - wall); live.latest = frame;live.latestAtMono = mono;
     const session = current.session;
     if (session.status !== 'active' || invalidation !== undefined) {
       let complete = () => {};
@@ -374,12 +382,15 @@ export class MusicCapturePart implements CorePart {
           const selected = this.#state(), attempt = selected.response.calibration;
           const record = this.#responsibility(calibration.operationId);
           if (record?.result !== 'pending' || attempt.status !== 'measuring' || attempt.operationId !== calibration.operationId) return;
-          const response: CaptureResponseState = {...selected.response, calibration: result.status === 'complete'
+          const retained = result.status === 'failed' && result.reason === 'clock' ? retireResponse(selected.response, 'clock') : selected.response;
+          const response: CaptureResponseState = {...retained, calibration: result.status === 'complete'
             ? {status: 'ready', operationId: calibration.operationId} : {status: 'ended', operationId: calibration.operationId, reason: result.reason},
             ...(result.status === 'complete' ? {evidence: result.evidence} : {})};
           this.#save(tx, {...selected, response});
           complete = this.#finish(tx, record, result.status === 'complete' ? 'succeeded' : 'failed', result.status === 'complete' ? undefined : 'invalid-state');
         });complete();this.#calibration = undefined;
+        if (result.status === 'complete') live.candidateClock = result.timing;
+        else if (result.status === 'failed' && result.reason === 'clock') {delete live.appliedClock;delete live.candidateClock;}
       }
     }
     this.#schedule();
