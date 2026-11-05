@@ -6,7 +6,7 @@
 // changes, at most once every 15 seconds, and pushes an unchanged frame again after 10 minutes. Frames render in a worker
 // thread. The module publishes the Tidbyt's `device/2.0` record. On the cloud every control is unsupported and every
 // general command is refused with `unsupported-capability`, as the old controller did; a Tronbyt server takes brightness
-// and the display's mode (see `control.ts`).
+// the display's mode and bounded moments (see `control.ts`).
 //
 // Under policy A (ADR 0012, "Failure isolation"), start opens only local resources: the database, the private folder
 // with the lease, the API key's secret file and the bus. The module reaches the cloud afterwards, and the cloud's
@@ -18,13 +18,14 @@ import {createHash, randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import {SCHEMA_BASE, errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {Capabilities, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {MomentPlayRequest, PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, errorType, type AddMessage, type BunnyModule, type Cancel, type LogFields, type ModuleContext,
   type StateDraft, type SyncChange, type SyncedCopy, type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import {TidbytCloudConnection, type CloudFetch, type ListResult, type TidbytConnection, type WriteResult} from './cloud.js';
 import {API_KEY_SECRET, configureTidbyt, type TidbytConfig} from './configuration.js';
 import {ControlStore, DEFAULT_MODE, DisplayControl, isControlFamily, settleRequests, type TileName} from './control.js';
 import {acquireLease, type Lease, type LeaseRefusal} from './lease.js';
+import {momentView, type MomentPicture} from './moment-card.js';
 import {PLAYBACK_LOST_MS, nowPlayingView} from './nowplaying.js';
 import {SIMULATED_API_KEY, SIMULATED_DEVICE, SimulatedCloud} from './simulated.js';
 import {statusView} from './status.js';
@@ -54,7 +55,7 @@ export const START_WINDOW_MS = PLAYBACK_LOST_MS;
 export const SYNC_TIMEOUT_MS = 5000;
 export const RESYNC_FIRST_MS = 1000;
 export const RESYNC_MAX_MS = 60_000;
-/** The general device commands (#918). The cloud backend refuses each; a Tronbyt server takes `brightness-set` and `device-mode-set`. */
+/** The general device commands (#918). The cloud backend refuses each; a Tronbyt server takes `brightness-set`, `device-mode-set` and `moment-play`. */
 export const COMMAND_FAMILIES = [
   'power-set', 'brightness-set', 'scene-activate', 'zone-power-set', 'media-start', 'media-control', 'device-mode-set', 'moment-play',
 ] as const;
@@ -90,6 +91,8 @@ export type TidbytModuleOptions = {
   renderWorker?: URL;
   /** How long one render may take. Defaults to `RENDER_TIMEOUT_MS`. */
   renderTimeoutMs?: number;
+  /** What a moment shows, as an encoded frame. Defaults to its mood card, drawn in the render worker. Exact art plugs in here (#679, #681). */
+  momentPicture?: MomentPicture;
   /** The gate, the refresh and the polls. Defaults to the runner's: 15 s, 10 minutes, 30 s and 5 s. */
   timing?: Partial<TidbytTiming>;
 };
@@ -251,6 +254,8 @@ class TidbytRun {
         stopping: () => this.#closing || signal.aborted,
         track: work => { this.#track(work); },
         storageFailed: error => { this.#storageFailed(storageCode(error)); },
+        presentation: () => this.#presentation(),
+        picture: this.#options.momentPicture ?? ((moment, signal) => this.#momentCard(moment, signal)),
       });
     }
     // The API key is read once, at start; a key replaced on disk takes effect at the next start.
@@ -312,6 +317,7 @@ class TidbytRun {
     if (this.#closing) return;
     this.#closing = true;
     this.#queue?.close();
+    this.#control?.close();
     for (const copy of [this.#sessions, this.#playback]) this.#cancel(copy.resync);
     for (const tile of this.#tiles) this.#cancel(tile.timer);
   }
@@ -511,6 +517,7 @@ class TidbytRun {
   }
 
   #updateFor(family: 'session' | 'playback', parent: TraceContext | undefined): void {
+    this.#control?.checkMoment();
     const name: TileName = family === 'session' ? 'status' : 'now-playing';
     const tile = this.#tiles.find(entry => entry.name === name);
     if (tile !== undefined) this.#update(tile, parent);
@@ -646,6 +653,27 @@ class TidbytRun {
         tile.artworkFailing = undefined;
         recordLog(this.#context.log, 'operation.completed', {...fields, 'bunny.outcome': Outcome.succeeded}, parent);
       }
+    }
+    return reply.webp;
+  }
+
+  /** What a moment must yield to, from the sessions' copy. Missing evidence is never read as nothing needing attention. */
+  #presentation(): 'attention' | 'status' | 'idle' | 'unknown' {
+    const copy = this.#sessions;
+    if (!copy.following) return 'unknown';
+    const sessions = (copy.copy?.states() ?? []).map(message => message.data as SessionRecord);
+    if (sessions.some(session => session.attention.length > 0)) return 'attention';
+    return statusView({synced: true, sessions}).idle ? 'idle' : 'status';
+  }
+
+  /** Draws and encodes a moment's mood card in a worker thread, which the module's stop ends. */
+  async #momentCard(moment: MomentPlayRequest, signal: AbortSignal): Promise<Uint8Array> {
+    const request: TileRequest = {tile: 'moment', view: momentView(moment)};
+    const reply = await this.#context.workers.call<TileReply>(this.#options.renderWorker ?? RENDER_WORKER, request, {
+      timeoutMs: this.#options.renderTimeoutMs ?? RENDER_TIMEOUT_MS, signal: AbortSignal.any([this.#context.signal, signal]),
+    });
+    if (typeof reply !== 'object' || reply === null || !reply.ok || !(reply.webp instanceof Uint8Array)) {
+      throw new SdkError(errorBody('internal', {detail: 'the render worker answered without a frame'}));
     }
     return reply.webp;
   }

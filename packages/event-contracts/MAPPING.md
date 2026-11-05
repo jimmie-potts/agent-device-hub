@@ -125,6 +125,11 @@ Codex Desktop module consumes it, and the core ignores it; the module's
 `metadata-observed` and read observations above remain the core's only Desktop
 metadata input.
 
+Hub #615 adds the separate `volcano-observation/2.0` family, which has no 1.x
+field or event to convert. It carries one VOLCANO HYBRID snapshot from a
+host-local collector, published with the feed's source-bound `ingest` credential.
+Only the Volcano module consumes it, and controller 1.x kinds stay unchanged.
+
 1.x had byte limits of its own: 8 KiB for the lifecycle envelope and 2,048 bytes
 for an event the owner admits. In 2.0 only the profile's 256 KiB cap is in the
 contract. The owner and the hook keep their own bounds.

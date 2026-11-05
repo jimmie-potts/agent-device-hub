@@ -80,8 +80,8 @@ the device transition; hosting changes neither.
 
 | Item | Selected |
 | --- | --- |
-| Method | Its own Compose project, `bunny-tronbyt`, on the published `linux/arm64` image |
-| Version | v2.5.2, pinned by digest (`sha256:fb0c08e9…`), from the module's compatibility record |
+| Method | Its own Compose project, `bunny-tronbyt`, on a `linux/arm64` image built from a local clone of the upstream source beside the Compose file |
+| Version | Upstream tag v2.5.2 plus one local commit, tagged `2.5.2-bunny.2`. The published v2.5.2 image (`sha256:fb0c08e9…`) stays on the Mac for rollback |
 | Restart | `unless-stopped`, with Docker Desktop set to start at sign-in |
 | Address | One port on loopback and on the Mac's LAN address, which a DHCP reservation on the router holds. The reservation is for the Ethernet interface |
 | VPN | Reach from the LAN holds with Proton disconnected, the owner's normal state, and was not tested with it connected. Proton has made LAN devices unreachable before, so the Tidbyt may lose the server while Proton is connected |
@@ -92,6 +92,21 @@ the device transition; hosting changes neither.
 Keep the Compose file, data, backups, key and the device ID private. The private
 `backup.sh` beside the Compose file stops the server, copies the data directory and starts it again. Take a backup before
 changing the image, and keep the previous image for rollback.
+
+The local commit fixes [#1411](https://github.com/jimmie-potts/agent-device-hub/issues/1411):
+after a background push saves its image, the server sends the device's loop an empty
+broadcast, so the tile reaches a device with nothing else to show. Interrupting pushes are
+unchanged, because a broadcast ahead of one could take the channel's single slot and drop its image.
+The clone exists only on the Mac, its push URL is disabled, and nothing is published
+upstream. To rebuild after changing the source, take a backup, update the image tag, `VERSION`,
+`COMMIT` and `BUILD_DATE` in the Compose file, and run `docker compose up -d --build`. A restart reuses the
+built image and needs no network. Reaching a later upstream version means rebasing the
+commit and checking it against the
+[compatibility record](../modules/tidbyt/README.md#compatibility-record) first.
+
+To roll back, restore the private copy of the previous Compose file, which names the published
+image, and run `docker compose up -d`. The data needs no change, because the local build is the
+same version.
 
 After a Mac restart and sign-in the server returns by itself; a reboot on 2026-11-03
 proved it, on the same address. Nothing runs before sign-in, so once the Tidbyt is moved,
@@ -218,7 +233,9 @@ section refuses startup as before. The collector's own ingest credential and its
 remote ingress need the [private-access profile](../apps/runtime/PRIVATE-ACCESS.md):
 the host-local profile admits exactly one ingest credential, the selected local
 hook's, and no remote entry, so a collector on another computer cannot reach it
-and a second ingest grant is refused there.
+and a second ingest grant is refused there. The Volcano module's section is admitted
+the same way (Hub #615), because the module reaches no device, and its collector's
+credential has the same limit.
 
 A future module that sends device commands without declaring a simulation needs
 review against this rule before it ships. Device modules on the Mac wait for the

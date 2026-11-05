@@ -34,6 +34,7 @@ export class Player {
   private availability:PlayerState['availability']='unknown';
   private epoch=0;
   private admission=0;
+  private capturing=0;
   private adapterGeneration:number;
   private abort=new AbortController();
   private cancelTimer=()=>{};
@@ -131,9 +132,12 @@ export class Player {
     if(!this.store.captureMedia)return Promise.reject(new PlaybackError('unsupported-operation'));
     return this.admit(hooks=>{if(!this.store.captureMedia)throw new PlaybackError('unsupported-operation');return this.store.captureMedia(renditionId,policy,hooks);});
   }
+  /** Whether a start is still capturing its selection: any pause or resume now would cancel it. */
+  startPending():boolean {return this.capturing>0;}
   private admit(capture:(hooks:CaptureHooks)=>Promise<PlaybackCheckpoint>):Promise<void> {
     if(this.closing)return Promise.reject(new PlaybackError('closed'));
     const admission=++this.admission;
+    this.capturing++;
     return this.queue(async()=>{
       const guard=()=>!this.closing&&admission===this.admission;
       if(!guard())throw new PlaybackError('cancelled');
@@ -147,15 +151,15 @@ export class Player {
       // In-memory test stores may not implement the optional synchronous hooks.
       if(!adopted){if(!guard())throw new PlaybackError('cancelled');const parsed=checkpointSchema.parse(record);prepare(parsed);adopt(parsed);}
       try{await this.persist();if(this.valid(token))this.launch(token);}catch(error){if(token===this.epoch&&!this.closing)this.fatal(codeOf(error));throw error;}
-    });
+    }).finally(()=>{this.capturing--;});
   }
   restartWithChanges():Promise<void> {if(this.record?.source?.kind==='media')return Promise.reject(new PlaybackError('unsupported-operation'));return this.record?this.start(this.record.snapshot.id):Promise.reject(new PlaybackError('no-context'));}
   pause():Promise<void> {return this.dispatch(async()=>{},'paused');}
   /** Upload one monitor picture of one or two complete frames, played at 500 ms each. */
-  async uploadDashboard(frames:readonly Uint8Array[],expectedGeneration:number,options:{signal?:AbortSignal;current?:()=>boolean}={}):Promise<OperationResult<UploadResult>|undefined> {
+  async uploadDashboard(frames:readonly Uint8Array[],expectedGeneration:number,options:{signal?:AbortSignal;current?:()=>boolean;whileStopped?:boolean}={}):Promise<OperationResult<UploadResult>|undefined> {
     if(!Array.isArray(frames)||frames.length<1||frames.length>2||frames.some(rgb=>!(rgb instanceof Uint8Array)||rgb.length!==12288))throw new PlaybackError('invalid-input');
     const cancelled=()=>options.signal?.aborted===true||options.current?.()===false;
-    if(this.closing||expectedGeneration!==this.epoch||this.intent!=='paused'||!this.requestedScreenOn||cancelled()||options.current?.()===false)return undefined;
+    if(this.closing||expectedGeneration!==this.epoch||(this.intent!=='paused'&&!(options.whileStopped===true&&this.intent==='stopped'))||!this.requestedScreenOn||cancelled()||options.current?.()===false)return undefined;
     // Card admission is read again inside the device turn: a write queued ahead (such as brightness) can outlast
     // eligibility (#1074 285-F1). A card no longer admitted ends as a cancellation with no effect, as the adapter reports it.
     const generation=this.adapterGeneration,submittedAtMs=this.clock.now();

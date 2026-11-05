@@ -84,6 +84,11 @@ try {
     await page.getByRole('status').filter({hasText: 'Completed: succeeded.'}).waitFor();
     await page.getByText(/Media option: popup\./).waitFor();
     assert.equal(requests(), 4);
+    await page.getByText('Moments over Monitor: on.', {exact: true}).waitFor();
+    await page.getByRole('button', {name: 'Turn off moments over Monitor', exact: true}).click();
+    await page.getByText('Moments over Monitor: off.', {exact: true}).waitFor();
+    await page.getByRole('button', {name: 'Turn on moments over Monitor', exact: true}).waitFor();
+    assert.equal(requests(), 5);
     const readSessions = () => page.evaluate(async () => {
       const response = await fetch('/modules/pixoo/content/monitor-sessions');
       assertResponse(response);
@@ -95,15 +100,15 @@ try {
     await page.getByText('Notice dismissed on Pixoo.', {exact: true}).waitFor();
     const acknowledged = (await readSessions()).items.find(item => item.id === prior.id)?.notices.find(notice => notice.id === prior.notices[0]?.id);
     assert.deepEqual(acknowledged?.acknowledgedBy, ['pixoo'], 'dismissal affects only this consumer');
-    assert.equal(requests(), 5);
+    assert.equal(requests(), 6);
     await page.reload(); await feed(page, 'connected');
     await page.getByText('Notice dismissed on Pixoo.', {exact: true}).waitFor();
-    assert.equal(requests(), 5, 'reload never replays');
+    assert.equal(requests(), 6, 'reload never replays');
     assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.reload(); await feed(page, 'connected'); await page.getByText('Read-only access.', {exact: true}).waitFor();
-    for (const label of ['Show monitor', 'Select Media', 'Apply monitor view', 'Set now playing']) assert.equal(await page.getByRole('button', {name: label, exact: true}).count(), 0);
-    assert.equal(requests(), 5); assert.deepEqual(errors, []);
+    for (const label of ['Show monitor', 'Select Media', 'Apply monitor view', 'Set now playing', 'Turn on moments over Monitor']) assert.equal(await page.getByRole('button', {name: label, exact: true}).count(), 0);
+    assert.equal(requests(), 6); assert.deepEqual(errors, []);
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-monitor', requests: requests(), consumerOnlyDismissal: true,
       titleOnlyRefresh: true, noOpenEffect: true, noDraftEffect: true, keyboard: true, readOnlyControls: true, noReplay: true, axe: 'passed'})}\n`);
   } finally { await context.close(); }

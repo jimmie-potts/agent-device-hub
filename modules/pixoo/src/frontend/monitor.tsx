@@ -121,6 +121,11 @@ function Controls({context, device, display, live, reading, sessions, current, c
       <button type="button" disabled={blocked !== undefined || choice === display?.nowPlaying.media} onClick={() => { run('pixoo-now-playing-set', {media: choice}); }}>Set now playing</button>
     </>}
     <p className="hint">In Monitor, a new track shows its card briefly unless a session needs attention. In Media, Pop-up and Whole song pause an active playlist for the card. Manual controls cancel automatic resume.</p>
+    <h3>Moments</h3>
+    <p>Moments over Monitor: {display?.moments === undefined ? 'unknown' : display.moments.overMonitor ? 'on' : 'off'}.{display?.showing === 'moment' ? ' A moment is on the display.' : ''}</p>
+    {context.control && display?.moments !== undefined && <button type="button" className="secondary" disabled={blocked !== undefined}
+      onClick={() => { run('pixoo-moments-set', {overMonitor: display.moments?.overMonitor !== true}); }}>{display.moments.overMonitor ? 'Turn off moments over Monitor' : 'Turn on moments over Monitor'}</button>}
+    <p className="hint">A moment plays briefly over Media and the playlist resumes where it was. Over Monitor it plays only when no session needs attention, and attention ends it at once.</p>
     <p role="status">{failure ?? command.text}</p>
     {context.control && blocked !== undefined && <p className="hint">{blocked}</p>}
     <div className="monitor-sessions">{sessions.filter(row => matches(row, display?.monitor.filter ?? {})).map(row => {

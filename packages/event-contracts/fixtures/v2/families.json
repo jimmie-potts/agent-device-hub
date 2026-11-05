@@ -1460,6 +1460,39 @@
     ]
    }
   },
+  "volcano-observation": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "volcano-observation-1",
+   "source": "bunny/parts/hub-0123456789abcdef0123456789abcdef",
+   "type": "org.bunny.volcano-observation.observed",
+   "subject": "5775b75e74e56553e6544894e7ee265f39581401a55f72e4c0ed133f0ec14a3a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/volcano-observation/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "feed": {
+     "provider": "storz-bickel",
+     "client": "volcano",
+     "hostId": "host-a",
+     "sourceId": "volcano-a"
+    },
+    "observedAtMs": 1791287999900,
+    "collectorEpoch": "epoch-a",
+    "sequence": 7,
+    "link": "connected",
+    "reading": {
+     "status1": 1571,
+     "status2": 512,
+     "currentDeciC": 1850,
+     "targetDeciC": 1900,
+     "heatingHours": 12,
+     "heatingMinutes": 34
+    }
+   }
+  },
   "desktop-metadata-unavailable": {
    "specversion": "1.0",
    "bunnyprofile": "2.0",
@@ -3429,6 +3462,51 @@
    },
    "expect": "invalid-message",
    "detail": "payload / required stamp"
+  },
+  {
+   "name": "a Volcano snapshot under another feed's subject",
+   "base": "volcano-observation",
+   "set": {
+    "/subject": "7411f675dd7bb7524a87d51ab971caf54b8ea3dfa367aed92656a4a40560b361"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not the feed"
+  },
+  {
+   "name": "a Volcano snapshot from another provider",
+   "base": "volcano-observation",
+   "set": {
+    "/data/feed/provider": "codex"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /feed/provider const"
+  },
+  {
+   "name": "a Volcano reading on a link that is not connected",
+   "base": "volcano-observation",
+   "set": {
+    "/data/link": "disconnected"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /reading on a link that is not connected"
+  },
+  {
+   "name": "a Volcano snapshot with an undeclared member",
+   "base": "volcano-observation",
+   "set": {
+    "/data/bluetoothAddress": "synthetic"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties bluetoothAddress"
+  },
+  {
+   "name": "a Volcano snapshot without its epoch",
+   "base": "volcano-observation",
+   "set": {
+    "/data/collectorEpoch": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required collectorEpoch"
   },
   {
    "name": "a lifecycle acknowledgment, which the notice-acknowledge command replaced",

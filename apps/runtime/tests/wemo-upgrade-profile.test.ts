@@ -76,6 +76,12 @@ void test('binds the fixed Wemo coverage set and rejects incomplete or unknown o
   const bound = await bindUpgradeAdmission(file, expected);
   assert.ok('coveredOwners' in bound);
   assert.deepEqual(bound.coveredOwners, [...owners].sort());
+  // Volcano's store joins the fixed sets as Wemo's does, alone or beside it.
+  for (const added of [[...owners, 'volcano'], [...owners.filter(owner => owner !== 'wemo'), 'volcano']]) {
+    await writeFile(file, JSON.stringify({...value, coverage: added.map(owner => ({owner, phases: phases.map(phase => ({phase, receipt: pin}))}))}), {mode: 0o600});
+    assert.deepEqual((await bindUpgradeAdmission(file, expected)).coveredOwners, [...added].sort());
+  }
+  await writeFile(file, JSON.stringify(value), {mode: 0o600});
   for (const row of [
     {...value, coverage: value.coverage.filter(owner => owner.owner !== 'core')},
     {...value, coverage: [...value.coverage, {owner: 'unknown', phases: value.coverage[0]?.phases}]},

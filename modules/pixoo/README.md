@@ -267,6 +267,37 @@ remains unknown, and a read never validates frames or writes hosted checks.
 Original media stays private. Invalid queries, missing references and cancelled
 reads return shared refusal codes without changing owner state.
 
+### Moments
+
+[ADR 0013](../../docs/decisions/0013-pixoo-moment-interludes.md) records the
+decision ([#1287](https://github.com/jimmie-potts/agent-device-hub/issues/1287)).
+`capabilities.moments` lists `celebrate`, `setback` and `reminder` and a 10 s
+limit. Its `coversStatus` follows the owner's setting, which is on by default and
+sits on the Monitor page.
+
+A moment never changes the mode. Over Media it pauses a playing playlist under the
+same guard Now Playing uses, then resumes it at the same item. A paused or stopped
+player refuses it, because there would be nothing to give back. So does a Now
+Playing takeover. Over Monitor it plays only with `coversStatus` set, the setting
+on and a current session source that shows nothing needing attention, and the
+current dashboard follows it. A flourish cannot set `coversStatus`, so a moment
+meant to appear over Monitor must be an `event`.
+
+Attention ends a moment at once, with the ending `preempted` and no replay. An
+explicit command that changes what plays ends it as `interrupted`. A manual pause,
+stop or start is never resumed over, and a next or previous keeps playing. When
+nothing follows a moment that showed, one blank frame replaces its picture. The
+picture stays after an uncertain write, which is not rolled back, and once the
+device was offline or under external control, since what it shows by then may be
+the owner's. A moment that never reached the device has no
+`moment-ended`; its outcome says why. After a restart its command reports
+`uncertain`, it does not play, and its ID stays refused for 24 hours. A restart
+during a moment over Media leaves its picture on until someone resumes.
+
+`momentContent` in `src/presentation/moment-content.ts` chooses what a moment shows,
+and `renderMomentContent` draws that choice in the render worker. Everything shown
+is mood-driven for now.
+
 ### Commands
 
 Each command goes to `bunny.cmd.<family>.<device id>`:
@@ -280,6 +311,8 @@ Each command goes to `bunny.cmd.<family>.<device id>`:
 | `pixoo-media-show` | Shows one rendition, with an optional playback policy and `requireMode` | Its upload's |
 | `pixoo-monitor-set` | Monitor's filter and cadence | `observed` |
 | `pixoo-now-playing-set` | Now Playing in Media: `off`, `popup` or `whole` | `observed` |
+| `pixoo-moments-set` | Whether a moment may cover Monitor: `overMonitor` | `observed` |
+| `moment-play` | One time-boxed moment over the current base (see [Moments](#moments)) | Its write's, once it ended and its base was given back; `moment-ended` commits with it |
 | `pixoo-playlist-change` | Creates, renames, sets options, items or order, duplicates or deletes a playlist | `observed` |
 | `pixoo-asset-change` | Imports media (inline up to 160 KiB, or a file staged in `incoming/` under its SHA-256), renders an asset again or deletes it | `observed` |
 | `pixoo-notice-dismiss` | Dismisses a finished turn on the Pixoo only | `observed` |
