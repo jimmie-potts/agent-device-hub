@@ -1,6 +1,6 @@
 ## 1. Accepted inputs and validation coverage
 
-- [ ] 1.1 After the coordinator releases implementation, refresh the owning issue and accepted shared-art/display/frontend interfaces, then record any changed assumption in the plan; verify configured target lookup, durable plan identity, final permits, separate durations and source-only delivery against the actual integrated code.
+- [ ] 1.1 For the authorized isolated implementation, refresh the owning issue and accepted shared-art/display/frontend interfaces, then record any changed assumption in the plan; verify configured target lookup, durable plan identity, final permits, separate durations and source-only delivery against the actual integrated code.
 - [ ] 1.2 Add the affected runtime, Art, weather, display, contract-consumer and browser/scenario commands to the existing development guide and CI discovery before product edits; verify the selector includes every changed consumer and the existing workflow checks pass.
 
 ## 2. Policy, claims and shared admission

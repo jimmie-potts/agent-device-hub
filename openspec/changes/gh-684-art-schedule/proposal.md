@@ -10,7 +10,7 @@
 - Add bounded deterministic rain-forecast notices beside decorative artwork on the browser, Tidbyt and Pixoo. A fresh, enabled weather source supplies typed evidence; a provider supplies no fact or label. Unsupported notice targets skip truthfully. Generated art retains `factual: false`.
 - Expose enabled-source, next-opportunity, suppression and per-target operation evidence in the existing Automation page. Preserve gallery choices, layout pins, device pins, attention, explicit pause, current-base restoration and owner controls.
 
-The owner selected rain notices for the first release and deferred meeting notices on 2026-11-05. The [calendar source](https://github.com/jimmie-potts/agent-device-hub/issues/298) and a later presentation pickup retain their own acceptance and personal-source permission. This release has no calendar reader, meeting control or invented milestone. These are planning artifacts; implementation waits for the coordinator to release the accepted integration inputs.
+The owner selected rain notices for the first release and deferred meeting notices on 2026-11-05. The [calendar source](https://github.com/jimmie-potts/agent-device-hub/issues/298) and a later presentation pickup retain their own acceptance and personal-source permission. This release has no calendar reader, meeting control or invented milestone. The coordinator authorized isolated implementation on the reviewed shared-art candidate. Accepted-source claims, the final integrated comparison and merge remain held until the prerequisites are accepted.
 
 ## Capabilities
 
