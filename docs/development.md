@@ -62,7 +62,7 @@ providers with fixed billed usage and the real authenticated commands, catalog,
 ledger and private store. They cover favorite/reuse/variation, invalid bytes, lost
 responses, restart without replay, recent retention and the monthly ceiling.
 After building, focus them with
-`node --test --test-name-pattern='art-catalog|art-spending-limit' apps/runtime/dist/tests/scenarios/catalog.test.js`.
+`node --test --test-name-pattern='art-gallery|art-catalog|art-spending-limit' apps/runtime/dist/tests/scenarios/catalog.test.js`.
 On a Mac, use `npm run test:runtime:container -- --suite scenarios`.
 
 For the actual gallery UI, select `scenario-art-gallery`; its capture uses visible,

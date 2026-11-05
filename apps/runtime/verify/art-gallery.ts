@@ -18,7 +18,13 @@ export async function captureArtGallery(t: CaptureContext): Promise<void> {
     document.addEventListener('pointermove', event => {cursor.style.left = `${event.clientX - 11}px`;cursor.style.top = `${event.clientY - 11}px`;});
   });
   const click = async (target: Locator, label: string): Promise<void> => {
-    await target.scrollIntoViewIfNeeded();const box = await target.boundingBox();assert.ok(box !== null);
+    const viewport = page.viewportSize();let box = await target.boundingBox();assert.ok(box !== null && viewport !== null);
+    if (box.y < 0 || box.y + box.height > viewport.height) {
+      await page.locator('#art-demo-label').evaluate((element, text) => {element.textContent = `Scripted synthetic review: scroll to ${text}`;}, label);
+      await page.mouse.move(viewport.width - 32, viewport.height / 2);await page.waitForTimeout(350);
+      await page.mouse.wheel(0, box.y - 100);await page.waitForTimeout(500);
+      box = await target.boundingBox();assert.ok(box !== null);
+    }
     await page.locator('#art-demo-label').evaluate((element, text) => {element.textContent = `Scripted synthetic review: ${text}`;}, label);
     await target.evaluate(element => {(element as HTMLElement).style.outline = '3px solid #fbbf24';});
     const reduced = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -38,6 +44,5 @@ export async function captureArtGallery(t: CaptureContext): Promise<void> {
     assert.equal(await page.locator('.art-selected [data-art-image-state="ready"] canvas').count(), 1);
     assert.equal(await tile.getByRole('button', {name: 'Unfavorite', exact: true}).getAttribute('aria-pressed'), 'true');
   });
-  await page.getByRole('heading', {name: 'Art Gallery', exact: true}).scrollIntoViewIfNeeded();
   await page.waitForTimeout(1000);
 }

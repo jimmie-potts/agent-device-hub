@@ -58,6 +58,7 @@ function RequestForm({context, live, command, variation, clearVariation}: {
 }
 
 function GalleryBody({context, state, live, command}: {context: FrontendContext; state: ArtState | undefined; live: boolean; command: FrontendCommand}): React.JSX.Element {
+  const selectedPanel = useRef<HTMLElement>(null);
   const [cursors, setCursors] = useState<number[]>([0]), [selected, setSelected] = useState<ArtworkSummary>(), [variation, setVariation] = useState<ArtworkSummary>();
   const revision = JSON.stringify(state?.artworks.map(art => [art.artworkId, art.favorite, art.feedback, art.compositions.map(value => value.compositionId)]) ?? []);
   const gallery = useGalleryPage(context.api, live, cursors.at(-1) ?? 0, revision);
@@ -68,7 +69,7 @@ function GalleryBody({context, state, live, command}: {context: FrontendContext;
     if (disabled) return;
     void command.run({family: 'art-catalog-edit', target: 'art', requestId: crypto.randomUUID(), data});
   };
-  return <><div className="art-gallery-top"><section className="card art-selected" aria-label="Selected artwork"><h2>Selected artwork</h2>
+  return <><div className="art-gallery-top"><section ref={selectedPanel} tabIndex={-1} className="card art-selected" aria-label="Selected artwork"><h2>Selected artwork</h2>
       <ArtImage api={context.api} artwork={current} live={live} presented/>
       {current?.variationOf !== null && current?.variationOf !== undefined && <p className="hint">Variation of saved art.</p>}
     </section><section className="card"><RequestForm context={context} live={live} command={command} variation={variation} clearVariation={() => {setVariation(undefined);}}/>
@@ -77,7 +78,7 @@ function GalleryBody({context, state, live, command}: {context: FrontendContext;
       {gallery.loading && <p role="status">Loading gallery…</p>}
       {gallery.error && <p role="alert">Gallery content is unavailable. Refresh to try the read again.</p>}
       <div className="art-gallery-grid">{gallery.page?.artworks.map(art => <article className="art-tile" key={art.artworkId} data-gallery-art={art.artworkId}>
-        <button type="button" className="art-open secondary" aria-pressed={current?.artworkId === art.artworkId} onClick={() => {setSelected(art);}}>
+        <button type="button" className="art-open secondary" aria-pressed={current?.artworkId === art.artworkId} onClick={() => {setSelected(art);selectedPanel.current?.focus({preventScroll: true});selectedPanel.current?.scrollIntoView({block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});}}>
           <ArtImage api={context.api} artwork={art} live={live} compact/>
           <span>Open artwork from {new Date(art.createdAtMs).toLocaleString()}</span>
         </button>

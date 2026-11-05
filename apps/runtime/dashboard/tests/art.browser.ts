@@ -50,6 +50,7 @@ try {
   await page.getByRole('button', {name: 'Next art', exact: true}).click();await expect(tiles).toHaveCount(1);
   await tiles.first().getByRole('button', {name: /Open artwork from/}).click();
   await expect(selected.locator('.art-image')).toHaveAttribute('data-artwork', first);
+  await expect(selected).toBeFocused();
   await expect(selected.locator('.art-image')).toHaveAttribute('data-art-image-state', 'ready');
   assert.equal(sent.length, beforeRevisitCommands);assert.equal(world.art.state().imageCalls, beforeRevisit, 'gallery revisit is a read, not reuse or generation');
   // A selected image is replaced only after decode. A late obsolete fetch cannot win selection.

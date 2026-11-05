@@ -26,3 +26,28 @@ Pin, dismiss, restore and format controls SHALL change only the core-owned Home 
 - **WHEN** a valid older save retains the art placement but omits its optional format and pin
 - **THEN** the core preserves those existing options while applying unrelated placement changes
 - **AND** explicit new options, removal and reset still take effect
+
+## MODIFIED Requirements
+
+### Requirement: Accessible layout editing
+Home SHALL offer Edit Home, a source-aware card picker, supported functional-card sizes and art shapes, pointer and keyboard reorder, hide/remove, Cancel, Reset and Done. Editing SHALL disable device controls. It SHALL preserve keyboard focus, reduced motion, desktop and phone accessibility and the approved concise header.
+
+#### Scenario: Draft changes and cancellation
+- **WHEN** the owner rearranges cards, opens the picker, switches breakpoints and cancels
+- **THEN** the saved arrangements remain unchanged and no command was sent
+
+#### Scenario: Balanced visible rows
+- **WHEN** the number of visible functional cards, their supported sizes or the available page width changes
+- **THEN** functional cards wrap in saved order and share each row's available width without empty trailing slots, Small retains a compact width relative to Standard, Wide occupies a full row and phone arrangements and their editor preview use one column
+- **AND** art uses its separate bounded reservation or automatic trailing placement without repacking functional cards on image arrival
+
+#### Scenario: Alert visibility without a notices section
+- **WHEN** a hidden or removed Inbox or session placement has unresolved items or attention
+- **THEN** its ordinary card stays visible until that evidence clears, with no separate notices section, Your space caption or layout caption
+
+### Requirement: Current catalog and unavailable sources
+The picker SHALL include the registered reusable core, device, light, room, music, art and exposed numeric cards, with supported sizes or shapes and availability reasons. A missing source instance SHALL remain unavailable. Unknown retired definitions SHALL be omitted and reported once per saved revision without rewriting the saved layout.
+
+#### Scenario: Source loss and definition retirement
+- **WHEN** a saved card's source becomes unavailable or its definition is removed
+- **THEN** source loss preserves an unavailable card while an unknown definition is omitted with one report, and neither condition sends device commands or silently writes layout metadata
