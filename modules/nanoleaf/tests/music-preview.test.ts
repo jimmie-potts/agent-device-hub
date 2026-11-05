@@ -107,3 +107,26 @@ test('explicit synthetic preview returns bounded RGB without changing module or 
   assert.deepEqual(snapshot(), before);
   world.verifyMessages();
 });
+
+test('full-recipe preview keeps every V1 field and maximal requests fit the unchanged gateway query bound', () => {
+  for (const effect of ['level-glow', 'bass-pulse', 'spectrum', 'traveling-wave', 'ambient']) {
+    const extra = effect === 'bass-pulse' ? {halfLifeMs: 1999.9999999999998}
+      : effect === 'traveling-wave' ? {direction: 'counterclockwise', periodMs: 9999.999999999998}
+        : effect === 'spectrum' ? {direction: 'counterclockwise'} : {};
+    const recipe = freezeMusicRecipe({rendererVersion: 1, effect, palette: Array.from({length: 8}, () => '#abcdef'),
+      intensity: 0.0000010000000000000002, sensitivity: 7.999999999999999, smoothingMs: 1999.9999999999998, ...extra});
+    for (const model of ['lines-demo-v1', 'nl22-demo-v1']) {
+      const request = {version: 1, recipe, model}, encoded = JSON.stringify(request);
+      assert.ok(encoded.length <= 512);
+      // A finite JS number's shortest JSON representation is at most 25 characters; reserve that for every editable numeric value.
+      const upper = encoded.replace(/0\.0000010000000000000002|7\.999999999999999|1999\.9999999999998|9999\.999999999998/g, '9'.repeat(25));
+      assert.ok(upper.length <= 512, `maximal full recipe request upper bound ${String(upper.length)}`);
+      const prepared = prepareMusicPreview(request); assert.deepEqual(prepared.recipe, recipe); assert.equal(prepared.samples.length, 20);
+    }
+  }
+  for (const request of [
+    {version: 1, recipe: {rendererVersion: 2}, model: 'lines-demo-v1'},
+    {version: 1, recipe: {rendererVersion: 1, effect: 'ambient', palette: ['#ffffff'], calibration: 1}, model: 'lines-demo-v1'},
+    {version: 1, recipe: {}, model: 'lines-demo-v1', preset: 'ambient'},
+  ]) assert.throws(() => prepareMusicPreview(request), TypeError);
+});

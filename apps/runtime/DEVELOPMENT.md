@@ -739,6 +739,18 @@ rollback, full storage, deferred publication, core acknowledgment, restart,
 bounded content and delayed-sync freshness. No test uses an installed source,
 personal media or physical controller.
 
+The same Nanoleaf browser entry covers reactive presets (#722): explicit named
+saves, exact reload and restart, full frozen V1 recipes in synthetic preview,
+read-only/Origin/stale/invalid refusals, local drafts through refresh and
+reconnect, uncertainty locks through reload, and light/dark 1440/390/320 px axe.
+The Nanoleaf built suite includes a frozen previous-source SQLite schema,
+full-disk and transaction rollback, deferred outcome publication/core-only
+acknowledgment, mixed-family high water and maximal document/query bounds.
+Run `node --test modules/nanoleaf/dist/tests/music-presets.test.js modules/nanoleaf/dist/tests/module-presets.test.js modules/nanoleaf/dist/tests/reactive-preset-model.test.js`
+after the shared build, then the existing owning suites. These checks use no
+audio, installed state or household devices. A browser journey that cannot
+start its disposable listener has not satisfied acceptance.
+
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use
 Playwright Chromium against the built runtime in the test's own process, with
 the core, its gateway on a free loopback port, a private state directory under
