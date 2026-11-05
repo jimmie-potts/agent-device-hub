@@ -68,6 +68,10 @@ failures = {
     "unsupported-format": "unsupported-capability", "format-changed": "unsupported-capability",
     "source-lost": "unavailable", "sample-invalid": "invalid-message",
     "buffer-invalid": "unsupported-capability", "timestamp-invalid": "invalid-message",
+    "route-changed": "unavailable", "route-changed-poll": "unavailable",
+    "route-changed-during-setup": "unavailable", "route-changed-before-start": "unavailable",
+    "route-unavailable": "unavailable", "route-empty": "unavailable", "route-oversized": "unavailable",
+    "add-route-listener": "unavailable",
 }
 for failure, code in failures.items():
     process = start(failure)
@@ -76,7 +80,7 @@ for failure, code in failures.items():
     stdout, stderr = process.communicate(timeout=3)
     assert process.returncode == 1 and not stdout and not stderr, (failure, stdout, stderr)
 
-for failure in ["stop", "destroy-proc", "remove-listener", "destroy-aggregate", "destroy-tap"]:
+for failure in ["stop", "destroy-proc", "remove-listener", "destroy-aggregate", "destroy-tap", "remove-route-listener"]:
     process = start(failure)
     first(process)
     stdout, stderr = process.communicate("stop\n", timeout=3)

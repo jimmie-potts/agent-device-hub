@@ -25,10 +25,14 @@ opposite-phase stereo, RMS, peak, clipping, bass/mid/treble separation, invalid
 samples and formats, partial windows, timestamp gaps, discontinuity resets and
 newest-value transfer under a concurrent writer. Temporary binaries are removed.
 
-`build.sh` requires macOS and a Command Line Tools SDK containing Core Audio taps.
-It only compiles `build/music-capture`. The deployment target is macOS 14.2, Apple's
-minimum for process taps. Source compilation and synthetic checks do not qualify
-capture on every OS version, output route or protected music source.
+`build.sh` requires macOS SDK 26 or later, selected through Xcode or Command Line
+Tools. The source references `processRestoreEnabled`, introduced in that SDK,
+and guards its runtime use with `@available(macOS 26.0, *)`. CI selects Xcode 26.3
+on its macOS 15 runner; the build SDK and runner OS are separate requirements.
+The script only compiles `build/music-capture`. Its deployment target is macOS
+14.2, Apple's minimum for process taps; this is not tested-OS evidence. Source
+compilation and synthetic checks do not qualify capture on every OS version,
+output route or protected music source.
 
 `adapter-test.sh` builds a different executable whose Core Audio access functions
 are all replaced with test implementations. It checks exact Music inclusion,
@@ -36,7 +40,7 @@ unmuted private-tap configuration, no output subdevice, zero audio access from
 startup, self-test and clock modes, source/format failures, invalid buffers,
 stop, EOF, signals and every cleanup attempt after acquisition failures.
 Its explicit-capture invocations use generated samples and cannot capture audio.
-The script needs macOS Command Line Tools and Python 3.
+The script needs macOS SDK 26 or later and Python 3.
 
 `--self-test` passes generated PCM through the production callback and emits one
 synthetic frame. It calls no Core Audio API. `--clock` emits only
@@ -61,10 +65,22 @@ On macOS 26 and later, process restoration is explicitly disabled. The initial
 process identities remain fixed for this invocation; it never follows a new
 Music process or changes to a microphone or another application.
 
+Before creating the tap, the helper observes each selected Music process's
+`kAudioProcessPropertyDevices` in output scope and installs a listener on that
+property. It admits at most 32 selected processes with at most 32 output device
+IDs each. Empty, unreadable, duplicate or oversized route observations refuse
+capture. IDs stay in memory and are never emitted. A route notification ends the
+session even when its sample rate and channel count remain unchanged. The main
+loop also compares the bounded output device lists once per second. It never
+substitutes the system default output or observes unrelated process routes.
+The helper stops on any selected-route notification because it invalidates the
+session's route qualification. A later session needs an explicit start.
+
 The parent ends capture by writing `stop\n`, closing stdin or sending SIGTERM or
 SIGINT. Any other control bytes end it with `invalid-request`. The loop also ends
 after 24 hours. After deciding to stop, it stops and destroys the IOProc, removes
-the format listener, and destroys its private aggregate and process tap. It
+the format listener, and destroys its private aggregate and process tap. It also
+removes every selected-process route listener it installed. It
 attempts all applicable cleanup steps even after a failure. Capture has no
 automatic restart or retry. A cleanup failure produces a fixed terminal error.
 
@@ -152,7 +168,7 @@ Normal stop exits 0 without a terminal record. Failures exit 1, except usage
 errors, which exit 2. A closed or stalled output may prevent a terminal record.
 
 The helper observes selected process loss once per second and ends on tap-format
-change. It does not classify absence of callbacks as permission revocation,
+or observed output-route change. It does not classify absence of callbacks as permission revocation,
 pause or silence. The parent reports freshness separately. Core Audio acquisition
 failures map to `unavailable`; they do not prove permission was denied. There is
 no automatic fallback, output-route switch or permissions reset.
@@ -166,6 +182,8 @@ Mac installation. Do not infer a stable permission grant from compilation.
 Apple's [Core Audio tap example](https://developer.apple.com/documentation/coreaudio/capturing-system-audio-with-core-audio-taps)
 describes per-process taps and their permission requirement. It does not qualify
 this installation's protected Apple Music material or every AirPlay route.
-There is no DRM bypass or blanket AirPlay support claim. Source tests establish
+An AirPlay destination change that Core Audio does not expose as a selected
+process output-device change is not qualified by this check. There is no DRM
+bypass or blanket AirPlay support claim. Source tests establish
 numeric and lifecycle behavior with generated input; installation and physical
 timing acceptance remain separate work under the owning issue.

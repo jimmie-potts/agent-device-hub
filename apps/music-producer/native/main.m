@@ -15,7 +15,13 @@
 #include <unistd.h>
 
 typedef enum { FAULT_NONE, FAULT_FORMAT, FAULT_SAMPLE, FAULT_TIMESTAMP, FAULT_SOURCE,
-    FAULT_CAPTURE, FAULT_CLEANUP, FAULT_OUTPUT, FAULT_INPUT, FAULT_USAGE, FAULT_CAPACITY } Fault;
+    FAULT_CAPTURE, FAULT_CLEANUP, FAULT_OUTPUT, FAULT_INPUT, FAULT_USAGE, FAULT_CAPACITY, FAULT_ROUTE } Fault;
+
+enum { MAX_MUSIC_PROCESSES = 32, MAX_PROCESS_OUTPUTS = 32 };
+typedef struct {
+    AudioObjectID process, devices[MAX_PROCESS_OUTPUTS];
+    unsigned count;
+} OutputRoute;
 
 typedef struct {
     AudioStreamBasicDescription format;
@@ -54,6 +60,7 @@ static const char *faultDetail(Fault fault) {
         case FAULT_SAMPLE: return "Music capture contains invalid sample values.";
         case FAULT_TIMESTAMP: return "Music capture timestamps are invalid.";
         case FAULT_SOURCE: return "The selected Music audio process is unavailable.";
+        case FAULT_ROUTE: return "The selected Music output route changed or is unavailable.";
         case FAULT_CAPTURE: return "Music capture could not be opened or continued.";
         case FAULT_CLEANUP: return "Music capture cleanup did not complete.";
         case FAULT_OUTPUT: return "The Music feature consumer is unavailable.";
@@ -85,6 +92,34 @@ static size_t frameRecord(char *out,size_t size,const MusicFrame *f,double emitt
 static OSStatus readProperty(AudioObjectID object,AudioObjectPropertySelector selector,UInt32 *size,void *value) {
     AudioObjectPropertyAddress address={selector,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
     return AudioObjectGetPropertyData(object,&address,0,NULL,size,value);
+}
+
+static const AudioObjectPropertyAddress routeAddress={kAudioProcessPropertyDevices,kAudioObjectPropertyScopeOutput,kAudioObjectPropertyElementMain};
+
+/* Main-thread observation of only the selected Music process's output devices. */
+static bool readRoute(AudioObjectID process,OutputRoute *route) {
+    UInt32 size=0;
+    if (AudioObjectGetPropertyDataSize(process,&routeAddress,0,NULL,&size)!=noErr || !size ||
+        size>sizeof(route->devices) || size%sizeof(AudioObjectID)) return false;
+    UInt32 expectedSize=size;
+    if (AudioObjectGetPropertyData(process,&routeAddress,0,NULL,&size,route->devices)!=noErr || size!=expectedSize) return false;
+    route->process=process;
+    route->count=size/sizeof(AudioObjectID);
+    for (unsigned i=0;i<route->count;++i) {
+        if (route->devices[i]==kAudioObjectUnknown) return false;
+        for (unsigned j=i;j>0 && route->devices[j]<route->devices[j-1];--j) {
+            AudioObjectID previous=route->devices[j-1];
+            route->devices[j-1]=route->devices[j]; route->devices[j]=previous;
+        }
+    }
+    for (unsigned i=1;i<route->count;++i) if (route->devices[i]==route->devices[i-1]) return false;
+    return true;
+}
+
+static OSStatus routeChanged(AudioObjectID object,UInt32 count,const AudioObjectPropertyAddress addresses[],void *context) {
+    (void)object; (void)count; (void)addresses;
+    recordFault(context,FAULT_ROUTE);
+    return noErr;
 }
 
 static bool isMusicProcess(AudioObjectID object) {
@@ -197,6 +232,8 @@ static Fault capture(NSArray<NSNumber *> *processes,Capture *state) {
     AudioObjectID tap=kAudioObjectUnknown,aggregate=kAudioObjectUnknown;
     AudioDeviceIOProcID proc=NULL;
     bool started=false,listening=false;
+    OutputRoute routes[MAX_MUSIC_PROCESSES]={0};
+    unsigned routeCount=0;
     Fault fault=FAULT_NONE;
     OSStatus status;
     AudioObjectPropertyAddress formatAddress={kAudioTapPropertyFormat,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
@@ -217,6 +254,16 @@ static Fault capture(NSArray<NSNumber *> *processes,Capture *state) {
         @kAudioAggregateDeviceTapListKey:@[@{@kAudioSubTapUIDKey:description.UUID.UUIDString,
             @kAudioSubTapDriftCompensationKey:@YES}]
     };
+    if (!processes.count || processes.count>MAX_MUSIC_PROCESSES) { fault=FAULT_ROUTE; goto cleanup; }
+    for (NSNumber *process in processes) {
+        AudioObjectID object=process.unsignedIntValue;
+        if (AudioObjectAddPropertyListener(object,&routeAddress,routeChanged,state)!=noErr) { fault=FAULT_ROUTE; goto cleanup; }
+        routes[routeCount].process=object;
+        ++routeCount;
+        if (!readRoute(object,&routes[routeCount-1])) { fault=FAULT_ROUTE; goto cleanup; }
+    }
+    fault=(Fault)atomic_load_explicit(&state->fault,memory_order_acquire);
+    if (fault!=FAULT_NONE || stopRequested || controlClosed(&fault)) goto cleanup;
     status=AudioHardwareCreateProcessTap(description,&tap);
     if (status!=noErr) { fault=FAULT_CAPTURE; goto cleanup; }
     if (stopRequested || controlClosed(&fault)) goto cleanup;
@@ -229,7 +276,8 @@ static Fault capture(NSArray<NSNumber *> *processes,Capture *state) {
     }
     if (AudioHardwareCreateAggregateDevice((__bridge CFDictionaryRef)composition,&aggregate)!=noErr ||
         AudioDeviceCreateIOProcID(aggregate,audioCallback,state,&proc)!=noErr) { fault=FAULT_CAPTURE; goto cleanup; }
-    if (stopRequested || controlClosed(&fault)) goto cleanup;
+    fault=(Fault)atomic_load_explicit(&state->fault,memory_order_acquire);
+    if (fault!=FAULT_NONE || stopRequested || controlClosed(&fault)) goto cleanup;
     if (AudioDeviceStart(aggregate,proc)!=noErr) { fault=FAULT_CAPTURE; goto cleanup; }
     started=true;
     while (!stopRequested && !controlClosed(&fault)) {
@@ -239,6 +287,11 @@ static Fault capture(NSArray<NSNumber *> *processes,Capture *state) {
         if (fault!=FAULT_NONE) break;
         if (now-lastSourceCheck>=1000) {
             for (NSNumber *process in processes) if (!isMusicProcess(process.unsignedIntValue)) { fault=FAULT_SOURCE; break; }
+            for (unsigned i=0;fault==FAULT_NONE && i<routeCount;++i) {
+                OutputRoute current;
+                if (!readRoute(routes[i].process,&current) || current.count!=routes[i].count ||
+                    memcmp(current.devices,routes[i].devices,current.count*sizeof(AudioObjectID))!=0) fault=FAULT_ROUTE;
+            }
             lastSourceCheck=now;
             if (fault!=FAULT_NONE) break;
         }
@@ -252,6 +305,8 @@ static Fault capture(NSArray<NSNumber *> *processes,Capture *state) {
             }
         }
         if (length) {
+            fault=(Fault)atomic_load_explicit(&state->fault,memory_order_acquire);
+            if (fault!=FAULT_NONE) break;
             ssize_t sent=write(STDOUT_FILENO,pending+offset,length-offset);
             if (sent>0) { offset+=(size_t)sent; if (offset==length) length=0; }
             else if (sent<0 && errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR) { fault=FAULT_OUTPUT; break; }
@@ -269,6 +324,8 @@ cleanup:
     if (listening && AudioObjectRemovePropertyListener(tap,&formatAddress,formatChanged,state)!=noErr) fault=FAULT_CLEANUP;
     if (aggregate!=kAudioObjectUnknown && AudioHardwareDestroyAggregateDevice(aggregate)!=noErr) fault=FAULT_CLEANUP;
     if (tap!=kAudioObjectUnknown && AudioHardwareDestroyProcessTap(tap)!=noErr) fault=FAULT_CLEANUP;
+    for (unsigned i=0;i<routeCount;++i)
+        if (AudioObjectRemovePropertyListener(routes[i].process,&routeAddress,routeChanged,state)!=noErr) fault=FAULT_CLEANUP;
     /* A partial record cannot be followed by a terminal record. Exit remains authoritative. */
     if (length && offset) return FAULT_OUTPUT;
     return fault;

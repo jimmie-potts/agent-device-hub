@@ -5,6 +5,13 @@ if [ "$(uname -s)" != Darwin ]; then
   echo 'The Music capture adapter requires macOS; use native/test.sh for portable signal checks.' >&2
   exit 1
 fi
+sdk_version=$(xcrun --sdk macosx --show-sdk-version)
+sdk_major=${sdk_version%%.*}
+case "$sdk_major" in ''|*[!0-9]*) echo 'Cannot determine the macOS SDK version.' >&2; exit 1;; esac
+if [ "$sdk_major" -lt 26 ]; then
+  echo 'The Music capture source requires macOS SDK 26 or later.' >&2
+  exit 1
+fi
 build_dir="$native_dir/build"
 mkdir -p "$build_dir"
 xcrun clang -std=c11 -fobjc-arc -O2 -Wall -Wextra -Werror \
