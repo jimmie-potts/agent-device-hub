@@ -156,7 +156,7 @@ export class MonitorPresentation {
  /**
   * Why a moment could not play now, or null when it could. Over Monitor it needs the hub's permission to cover status,
   * the owner's setting and evidence that nothing needs attention. Over Media it needs a playlist in play or an idle player,
-  * since nothing could repaint a paused or stopped item. A takeover keeps the display, and known attention stops either one.
+  * since nothing could repaint a paused item. A takeover keeps the display, and known attention stops either one.
   */
  momentBlock(coversStatus:boolean):string|null{
   const state=this.player.getState();
@@ -176,12 +176,12 @@ export class MonitorPresentation {
   }
   if(this.takeover!==null||(this.takeoverPending&&this.moment?.phase!=='holding'))return 'Now Playing holds the display';
   if(state.intent==='active'||this.idle(state))return null;
-  return state.itemId===null?'the display may show something else':'a held item could not be repainted';
+  return state.itemId===null||state.intent==='stopped'?'the display may show something else':'a held item could not be repainted';
  }
  /** Whether what the display shows may not be ours: after an uncertain write, or under external control. */
  private displayUnknown(state:PlayerState):boolean{return state.lastError?.priorEffects==='possible'||state.lastError?.code==='external-control';}
- /** Whether nothing is loaded and the player is at rest, whether stopped or paused as Monitor leaves an empty player. */
- private idle(state:PlayerState):boolean{return state.intent!=='active'&&state.itemId===null&&state.state!=='error'&&!this.displayUnknown(state);}
+ /** Whether no item waits to resume: stopped or finished, with or without an item kept, or an empty player Monitor left paused. */
+ private idle(state:PlayerState):boolean{return (state.intent==='stopped'||state.intent==='paused'&&state.itemId===null)&&state.state!=='error'&&!this.displayUnknown(state);}
  /** Whether a moment holds a playlist paused, so that a manual next or previous still means to keep playing. */
  momentHoldsMedia():boolean{return this.takeover?.kind==='moment'||this.moment?.phase==='holding';}
  /**

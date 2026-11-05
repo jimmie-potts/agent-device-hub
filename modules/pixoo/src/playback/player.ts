@@ -207,7 +207,8 @@ export class Player {
     if(generation!==this.adapterGeneration||this.closing)return;
     if(result.ok){this.availability='available';this.notify();return;}
     if(this.pauseOnUncertain && result.priorEffects==='possible'){this.pauseUncertain(result.code);await this.queue(()=>this.persist());return;}
-    this.lastError={code:result.code};
+    // A later failure says nothing about what the display shows, so it never replaces evidence that the display is unknown.
+    if(this.lastError?.priorEffects!=='possible'&&this.lastError?.code!=='external-control')this.lastError={code:result.code};
     if(connectivityErrors.has(result.code))await this.offline();
     else if(result.code==='stale-generation'||result.code==='cancelled')await this.takeover();
     if(generation===this.adapterGeneration)await this.queue(()=>this.persist());
