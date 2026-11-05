@@ -246,6 +246,57 @@ void test('a completion outbox failure rolls back preparation status so repeated
   assert.equal(transport.stages.length, 2);
 });
 
+void test('first-seen child conflict commits both outcomes atomically and later partial callbacks cannot erase it', async t => {
+  const transport = dispatch(), art = await hosted(t, {providers: {openai: fakeImages(distinctDrawing())}, dispatch: transport.seam});
+  const job = await generate(art, 'source', ['pixoo']);
+  await until(() => transport.stages.length === 1);
+  const data = {action: 'prepare', artworkId: job.artworkId, compositionId: composition(art, job.artworkId, 'pixoo'), target: 'desk'};
+  await automatic(art, data, 'conflicting');
+  const stageId = transport.stages[1]?.requestId ?? assert.fail();
+  art.db().exec("CREATE TRIGGER refuse_second_outcome BEFORE INSERT ON bunny_outbox WHEN NEW.routing_key='bunny.event.art-auto.art' AND json_extract(NEW.message,'$.data.result')='succeeded' BEGIN SELECT RAISE(FAIL,'synthetic storage failure'); END");
+  transport.report(stageId, 'conflict');
+  await new Promise<void>(resolve => {setImmediate(resolve);});
+  assert.equal(art.outcomes.some(item => item.data.requestId === 'conflicting'), false, 'the first outcome cannot escape a failed transaction');
+  assert.equal(art.db().prepare('SELECT status FROM art_preparations WHERE request_id=?').get('conflicting')?.status, 'pending');
+  art.db().exec('DROP TRIGGER refuse_second_outcome');
+  transport.report(stageId, 'conflict');
+  await until(() => art.outcomes.filter(item => item.data.requestId === 'conflicting').length === 2);
+  assert.deepEqual(art.outcomes.filter(item => item.data.requestId === 'conflicting').map(item => [item.data.result, item.data.evidence]),
+    [['failed', 'none'], ['succeeded', 'observed']]);
+  const current = () => art.db().prepare('SELECT status FROM art_preparations WHERE request_id=?').get('conflicting')?.status;
+  assert.equal(current(), 'conflict');
+  for (const result of ['succeeded', 'failed', 'uncertain', 'conflict'] as const) transport.report(stageId, result);
+  await new Promise<void>(resolve => {setImmediate(resolve);});
+  assert.equal(art.outcomes.filter(item => item.data.requestId === 'conflicting').length, 2);
+  await art.restart();
+  assert.equal(current(), 'conflict');
+  const outcomes = art.outcomes.length;
+  transport.report(stageId, 'succeeded');
+  await automatic(art, data, 'conflicting');
+  assert.equal(current(), 'conflict');
+  assert.equal(art.outcomes.length, outcomes);
+  assert.equal(art.state.candidates.some(item => item.compositionId === data.compositionId), false);
+  assert.equal(transport.stages.length, 2);
+});
+
+void test('a retained conflicting preparation still owns its request ID after its admission receipt expires', async t => {
+  const transport = dispatch(), art = await hosted(t, {providers: {openai: fakeImages(distinctDrawing())}, dispatch: transport.seam});
+  const job = await generate(art, 'source', ['pixoo']);
+  await until(() => transport.stages.length === 1);
+  const data = {action: 'prepare', artworkId: job.artworkId, compositionId: composition(art, job.artworkId, 'pixoo'), target: 'desk'};
+  await automatic(art, data, 'retained');
+  transport.report(transport.stages[1]?.requestId ?? assert.fail(), 'conflict');
+  await until(() => art.outcomes.filter(item => item.data.requestId === 'retained').length === 2);
+  art.clock.value += 31 * 24 * 3_600_000;
+  await art.restart();
+  assert.equal(art.db().prepare('SELECT 1 FROM art_receipts WHERE request_id=?').get('retained'), undefined);
+  const before = art.db().prepare('SELECT * FROM art_preparations WHERE request_id=?').get('retained');
+  const answer = await automatic(art, data, 'retained');
+  assert.equal(answer.status === 'rejected' && answer.error.error.code, 'duplicate-conflict');
+  assert.deepEqual(art.db().prepare('SELECT * FROM art_preparations WHERE request_id=?').get('retained'), before);
+  assert.equal(transport.stages.length, 2);
+});
+
 void test('terminal preparation retention is bounded while its receipt still prevents staging a trimmed duplicate', async t => {
   const transport = dispatch(), art = await hosted(t, {providers: {openai: fakeImages(distinctDrawing())}, dispatch: transport.seam});
   const job = await generate(art, 'source', ['pixoo']);

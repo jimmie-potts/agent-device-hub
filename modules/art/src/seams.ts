@@ -31,7 +31,7 @@ export async function serveCommands(sdk: Sdk, handlers: ArtCommandHandlers): Pro
 export type ArtStageRequest = {requestId: string; compositionId: string; target: ArtDisplayTarget; format: ArtFormat; width: number; height: number; frames: number; durationMs: number;
   sha256: string; bytes: Uint8Array; lifetimeMs: number; expectedTargetId?: string};
 export type ArtAmbientRequest = {requestId: string; target: 'tidbyt'; compositionId: string | null};
-export type StageResult = 'succeeded' | 'failed' | 'uncertain';
+export type StageResult = 'succeeded' | 'failed' | 'uncertain' | 'conflict';
 /** `art-dispatch` to the core, which forwards tracked `art-stage` and `art-ambient-set`, and the core's operation records back. */
 export type ArtDispatchSeam = {
   stage(request: ArtStageRequest, parent: TraceContext): Promise<Reply>;
@@ -76,8 +76,9 @@ function follow<T extends object>(context: Pick<ModuleContext, 'sdk' | 'schedule
 }
 const asReply = (answer: RequestResult): Reply => answer.status === 'accepted' ? {status: 'accepted'} : answer.status === 'rejected' ? answer.error : errorBody('uncertain-result');
 const stageResultOf = (record: OperationRecord): StageResult | undefined => {
+  if (record.result === 'conflict' || record.status === 'conflict') return 'conflict';
   if (record.result === Outcome.succeeded) return Outcome.succeeded;
-  if (record.result === Outcome.uncertain || record.result === 'conflict' || record.status === Outcome.uncertain) return Outcome.uncertain;
+  if (record.result === Outcome.uncertain || record.status === Outcome.uncertain) return Outcome.uncertain;
   if (record.result === Outcome.failed || record.status === Outcome.rejected || record.status === 'expired') return Outcome.failed;
   return undefined;
 };

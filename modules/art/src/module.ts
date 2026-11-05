@@ -194,6 +194,7 @@ class ArtOwner {
       await this.#outbox.transaction(add => {
         const previous = this.#store.receipt(requestId);
         if (previous !== undefined) {if (previous !== digest) refuse('duplicate-conflict'); return;}
+        if (this.#store.hasPreparation(requestId)) refuse('duplicate-conflict', 'a retained art preparation owns this request ID');
         launch = apply();
         this.#store.remember(requestId, digest, this.#context.clock.now());
         this.#publish(add, command);
@@ -276,13 +277,26 @@ class ArtOwner {
       await this.#stageResult(request.requestId, reply.error.code === 'uncertain-result' ? Outcome.uncertain : Outcome.failed, reply.error);
     }
   }
-  #settlePreparation(add: AddMessage, preparation: Preparation, result: StageResult, error?: ErrorDetail): void {
-    if (preparation.status === result) return;
-    this.#store.savePreparation({...preparation, status: result});
-    const failure = error ?? errorBody(result === Outcome.uncertain ? 'uncertain-result' : 'unavailable', {detail: result === Outcome.uncertain ? 'art preparation has no definitive staging result' : 'the display did not complete art preparation'}).error;
-    add('bunny.event.art-auto.art', {kind: 'outcome', type: 'org.bunny.art.auto.completed', subject: ART_ID, dataschema: 'https://bunny.invalid/events/outcome/2.0',
-      data: {requestId: preparation.requestId, result, evidence: result === Outcome.succeeded ? Outcome.observed : Outcome.none, ...(result === Outcome.succeeded ? {} : {error: failure})}}, {parent: {traceparent: preparation.traceparent}});
+  #settlePreparation(add: AddMessage, preparation: Preparation, result: StageResult, error?: ErrorDetail): StageResult {
+    const prior = preparation.status;
+    if (prior === 'conflict' || prior === result) return prior;
+    const definitive = prior === Outcome.succeeded || prior === Outcome.failed;
+    if (definitive && result === Outcome.uncertain) return prior;
+    const status = definitive && result !== prior ? 'conflict' : result;
+    this.#store.savePreparation({...preparation, status});
+    // A child conflict proves that both definitive outcomes exist. Forward the missing evidence, atomically with
+    // this terminal record, so the parent's tracker keeps the conflict instead of retaining a previous success.
+    // Failure publishes first when both are new: a publication gap must not expose a usable success.
+    const outcomes = status === 'conflict' ? [Outcome.failed, Outcome.succeeded].filter(value => value !== prior) : [status];
+    for (const outcome of outcomes) {
+      const failure = error ?? errorBody(outcome === Outcome.uncertain || status === 'conflict' ? 'uncertain-result' : 'unavailable', {
+        detail: status === 'conflict' ? 'the staging operation has conflicting definitive outcomes' : outcome === Outcome.uncertain ? 'art preparation has no definitive staging result' : 'the display did not complete art preparation',
+      }).error;
+      add('bunny.event.art-auto.art', {kind: 'outcome', type: 'org.bunny.art.auto.completed', subject: ART_ID, dataschema: 'https://bunny.invalid/events/outcome/2.0',
+        data: {requestId: preparation.requestId, result: outcome, evidence: outcome === Outcome.succeeded ? Outcome.observed : Outcome.none, ...(outcome === Outcome.succeeded ? {} : {error: failure})}}, {parent: {traceparent: preparation.traceparent}});
+    }
     this.#store.trim(KEEP_FINISHED_JOBS, this.#context.clock.now() - KEEP_RECEIPTS_MS);
+    return status;
   }
   #favorite(data: Extract<ArtCatalogEdit, {action: 'favorite'}>): void {
     this.#store.saveArtwork({...this.#saved(data.artworkId), favorite: data.favorite});
@@ -553,13 +567,16 @@ class ArtOwner {
     }
     if ('error' in reply) await this.#stageResult(requestId, reply.error.code === 'uncertain-result' ? 'uncertain' : 'failed');
   }
-  async #stageResult(requestId: string, result: StageResult, error?: ErrorDetail): Promise<void> {
+  async #stageResult(requestId: string, reported: StageResult, error?: ErrorDetail): Promise<void> {
     if (this.#closed || this.#context.signal.aborted) return;
-    let row: StageRow | undefined;
+    let row: StageRow | undefined, result = reported === 'conflict' ? Outcome.uncertain : reported;
     try {
       await this.#outbox.transaction(add => {
         const preparation = this.#store.preparationForStage(requestId);
-        if (preparation !== undefined) this.#settlePreparation(add, preparation, result, error);
+        if (preparation !== undefined) {
+          const settled = this.#settlePreparation(add, preparation, reported, error);
+          result = settled === 'conflict' ? Outcome.uncertain : settled;
+        }
         row = this.#store.stage(requestId);
         // A restart leaves a pending stage uncertain, and the core's record can still settle it.
         if (row === undefined || row.status === result) {row = undefined; return;}
