@@ -11,4 +11,4 @@
 ## 3. Integration evidence
 
 - [x] 3.1 Update the module guide and verify instruction/API readback without a runtime restart or device operation.
-- [ ] 3.2 Pass build, typecheck, lint, controller contracts, workflow, full Nanoleaf and direct consumer checks; validate, synchronize and archive the completed OpenSpec change before the frozen review candidate.
+- [x] 3.2 Pass build, typecheck, lint, controller contracts, workflow, full Nanoleaf and direct consumer checks; validate, synchronize and archive the completed OpenSpec change before the frozen review candidate.
