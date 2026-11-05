@@ -185,6 +185,7 @@ export const publishedSchema = (family: string): string => `https://bunny.invali
 export class ModuleWorld {
   /** Fault injection at the publication boundary, after the real module's outbox transaction commits. */
   refuseShowPublication = false;
+  refuseReactivePublication = false;
   readonly clock = new TestClock();
   readonly bus: InProcessBus;
   readonly core: StandInCore;
@@ -243,7 +244,7 @@ export class ModuleWorld {
     const module = createNanoleafModule({transport: this.device.request});
     this.#content = module.manifest.content;
     const wrapped: typeof module = {...module, start: context => module.start({...context, sdk: {...context.sdk,
-      publishMessage: (key, message) => this.refuseShowPublication && key.includes('nanoleaf-show')
+      publishMessage: (key, message) => (this.refuseShowPublication && key.includes('nanoleaf-show') || this.refuseReactivePublication && key.includes('nanoleaf-reactive'))
         ? Promise.reject(new Error('synthetic publication failure')) : context.sdk.publishMessage(key, message),
     }})};
     const harness = new ModuleHarness(wrapped, {

@@ -9,9 +9,10 @@ export const systemClock = (): ClockReading => ({wallMs: Date.now(), monotonicMs
 export const systemScheduler: Scheduler = {after: (delay, callback) => {const timer = setTimeout(callback, delay); return () => clearTimeout(timer);}};
 export type NativeTermination = {status: 'stopped'} | {status: 'failed' | 'uncertain'; error: NativeFailure};
 export type NativeRun = {ended: Promise<NativeTermination>; stop(): Promise<NativeTermination>};
+export type NativeInput = {input: 'music'} | {input: 'microphone'; uid: string};
 export interface NativeSource {
   qualifyClock(): Promise<boolean>;
-  start(onFrame: (frame: NativeFrame) => void): NativeRun;
+  start(onFrame: (frame: NativeFrame) => void, input?: NativeInput): NativeRun;
 }
 export interface ChildPort {
   stdout: Readable; stderr: Readable; stdin: Writable;
@@ -20,7 +21,7 @@ export interface ChildPort {
   onExit(callback: (code: number | null, signal: NodeJS.Signals | null) => void): void;
   kill(signal: NodeJS.Signals): boolean;
 }
-export type NativeLauncher = (mode: '--clock' | '--capture') => ChildPort;
+export type NativeLauncher = (mode: '--clock' | '--capture' | '--capture-microphone') => ChildPort;
 export const nativeLauncher = (helper: string): NativeLauncher => mode => {
   const child = spawn(helper, [mode], {stdio: ['pipe', 'pipe', 'pipe'], shell: false});
   return {stdin: child.stdin, stdout: child.stdout, stderr: child.stderr,
@@ -51,9 +52,10 @@ export class NativeCapture implements NativeSource {
     return valid && end.status === 'stopped' && value !== undefined &&
       nativeClockQualified({beforeMs, nativeMs: value, afterMs: this.#clock().monotonicMs});
   }
-  start(onFrame: (frame: NativeFrame) => void): NativeRun {
+  start(onFrame: (frame: NativeFrame) => void, input: NativeInput = {input: 'music'}): NativeRun {
+    if (input.input === 'microphone' && (input.uid.length === 0 || Buffer.byteLength(input.uid, 'utf8') > 1024)) throw new SdkError(errorBody('invalid-request'));
     let previous: NativeFrame | undefined;
-    return this.#open('--capture', record => {
+    return this.#open(input.input === 'music' ? '--capture' : '--capture-microphone', record => {
       if (record.schema !== 'music-native-frame/1.0') return false;
       const {schema: _schema, ...frame} = record;
       if (previous !== undefined && (frame.sequence <= previous.sequence || frame.endMonotonicMs <= previous.endMonotonicMs ||
@@ -62,9 +64,9 @@ export class NativeCapture implements NativeSource {
       previous = frame;
       onFrame(frame);
       return true;
-    });
+    }, input.input === 'music' ? undefined : `${JSON.stringify({schema: 'music-native-input/1.0', uid: input.uid})}\n`);
   }
-  #open(mode: '--clock' | '--capture', record: (value: NativeRecord) => boolean): NativeRun {
+  #open(mode: Parameters<NativeLauncher>[0], record: (value: NativeRecord) => boolean, startup?: string): NativeRun {
     if (this.#owned !== undefined) throw new SdkError(errorBody('invalid-state', {detail: 'The native helper has not confirmed exit.'}));
     const identity = {};
     this.#owned = identity;
@@ -99,9 +101,9 @@ export class NativeCapture implements NativeSource {
     const invalid = (): void => {failure ??= nativeFailure('invalid-message'); void stop();};
     const lines = new NativeLines(value => {
       if (fenced) return;
-      if (value.schema === 'music-native-terminal/1.0') {
+      if (value.schema === 'music-native-terminal/1.0' || value.schema === 'music-native-terminal/1.1') {
         terminal = true; failure = nativeFailure(value.error.code);
-        cleanupUnknown = value.error.detail === 'Music capture cleanup did not complete.';
+        cleanupUnknown = value.error.detail === 'Music capture cleanup did not complete.' || value.error.detail === 'Microphone capture cleanup did not complete.';
         void stop(); return;
       }
       try {if (!record(value)) invalid();} catch {invalid();}
@@ -111,7 +113,12 @@ export class NativeCapture implements NativeSource {
     child.stderr.on('error', invalid);
     child.stdout.on('data', (bytes: Buffer) => {if (!fenced) lines.push(bytes);});
     child.stderr.on('data', (bytes: Buffer) => {stderrBytes += bytes.length; if (stderrBytes > 8192) invalid();});
-    child.onSpawn(() => {spawned = true;});
+    child.onSpawn(() => {
+      spawned = true;
+      if (!fenced && startup !== undefined) {
+        try {child.stdin.write(startup);} catch {failure = nativeFailure('unavailable'); void stop();}
+      }
+    });
     const exit = (code: number | null, signal: NodeJS.Signals | null): void => {
       if (exited) return;
       exited = true; if (this.#owned === identity) this.#owned = undefined;

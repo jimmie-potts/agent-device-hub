@@ -6,7 +6,8 @@ import type {MusicSample} from './music-input.js';
 import {MUSIC_PREVIEW_MODELS, MUSIC_PREVIEW_PRESETS, MUSIC_PREVIEW_SCHEMA, MUSIC_PREVIEW_STIMULUS,
   type MusicPreview, type MusicPreviewZone} from './music-preview-data.js';
 
-const keys = ['version', 'preset', 'palette', 'intensity', 'model'];
+const builtinKeys = ['version', 'preset', 'palette', 'intensity', 'model'];
+const recipeKeys = ['version', 'recipe', 'model'];
 const binding = {endpointId: 'synthetic-preview', generation: '00000000-0000-4000-8000-000000000722'};
 const bands = [
   [0, 0, 0], [0.2, 0.1, 0.1], [0.9, 0.15, 0.05], [0.4, 0.25, 0.1], [0.1, 0.5, 0.25],
@@ -52,12 +53,16 @@ function rgbZones(payload: Display, count: number): MusicPreviewZone[] {
 
 /** Finite synthetic computation. It reads no device, state, storage, capture or clock. */
 export function prepareMusicPreview(input: unknown): MusicPreview {
-  if (!isObject(input) || Object.keys(input).length !== keys.length || !keys.every(key => Object.hasOwn(input, key))
-      || input.version !== 1 || typeof input.intensity !== 'number') throw new TypeError('Invalid Music preview request.');
-  const preset = MUSIC_PREVIEW_PRESETS.find(value => value.id === input.preset);
+  if (!isObject(input) || input.version !== 1) throw new TypeError('Invalid Music preview request.');
+  const keys = Object.hasOwn(input, 'recipe') ? recipeKeys : builtinKeys;
+  if (Object.keys(input).length !== keys.length || !keys.every(key => Object.hasOwn(input, key))) throw new TypeError('Invalid Music preview request.');
   const model = MUSIC_PREVIEW_MODELS.find(value => value.id === input.model);
-  if (preset === undefined || model === undefined) throw new TypeError('Invalid Music preview request.');
-  const recipe = freezeMusicRecipe({...preset.recipe, palette: input.palette, intensity: input.intensity});
+  if (model === undefined) throw new TypeError('Invalid Music preview request.');
+  const recipe = 'recipe' in input ? freezeMusicRecipe(input.recipe) : (() => {
+    const preset = MUSIC_PREVIEW_PRESETS.find(value => value.id === input.preset);
+    if (preset === undefined || typeof input.intensity !== 'number') throw new TypeError('Invalid Music preview request.');
+    return freezeMusicRecipe({...preset.recipe, palette: input.palette, intensity: input.intensity});
+  })();
   const renderer = new MusicRenderer(recipe, exampleLayout(model), binding);
   const samples = bands.map((levels, index) => {
     const sample = stimulus(index, levels), rendered = renderer.render(sample);

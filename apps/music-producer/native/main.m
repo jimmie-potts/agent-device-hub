@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <AVFoundation/AVFoundation.h>
 #import <CoreAudio/CoreAudio.h>
 #import <CoreAudio/AudioHardwareTapping.h>
 #import <CoreAudio/CATapDescription.h>
@@ -15,7 +16,7 @@
 #include <unistd.h>
 
 typedef enum { FAULT_NONE, FAULT_FORMAT, FAULT_SAMPLE, FAULT_TIMESTAMP, FAULT_SOURCE,
-    FAULT_CAPTURE, FAULT_CLEANUP, FAULT_OUTPUT, FAULT_INPUT, FAULT_USAGE, FAULT_CAPACITY, FAULT_ROUTE } Fault;
+    FAULT_CAPTURE, FAULT_CLEANUP, FAULT_OUTPUT, FAULT_INPUT, FAULT_USAGE, FAULT_CAPACITY, FAULT_ROUTE, FAULT_PERMISSION } Fault;
 
 enum { MAX_MUSIC_PROCESSES = 32, MAX_PROCESS_OUTPUTS = 32 };
 typedef struct {
@@ -36,6 +37,7 @@ typedef struct {
 /* Static lifetime survives a failed IOProc destruction until process exit. */
 static Capture captureState;
 static volatile sig_atomic_t stopRequested;
+static bool microphoneMode;
 static const double maximumCaptureMs=24*60*60*1000.0;
 
 static void handleSignal(int number) { (void)number; stopRequested=1; }
@@ -55,6 +57,18 @@ static const char *faultCode(Fault fault) {
     }
 }
 static const char *faultDetail(Fault fault) {
+    if (microphoneMode) switch (fault) {
+        case FAULT_FORMAT: return "Microphone capture format is unsupported or changed.";
+        case FAULT_SAMPLE: return "Microphone capture contains invalid sample values.";
+        case FAULT_TIMESTAMP: return "Microphone capture timestamps are invalid.";
+        case FAULT_SOURCE: return "The selected microphone is unavailable.";
+        case FAULT_PERMISSION: return "Microphone permission is not granted.";
+        case FAULT_CAPTURE: return "Microphone capture could not be opened or continued.";
+        case FAULT_CLEANUP: return "Microphone capture cleanup did not complete.";
+        case FAULT_OUTPUT: return "The microphone feature consumer is unavailable.";
+        case FAULT_CAPACITY: return "Microphone capture requires lock-free transfer.";
+        default: return "The microphone capture selection or control input is invalid.";
+    }
     switch (fault) {
         case FAULT_FORMAT: return "Music capture format is unsupported or changed.";
         case FAULT_SAMPLE: return "Music capture contains invalid sample values.";
@@ -72,8 +86,8 @@ static const char *faultDetail(Fault fault) {
 static size_t terminalRecord(char *out,size_t size,Fault fault) {
     const char *code=faultCode(fault);
     bool retryable=strcmp(code,"unavailable")==0 || strcmp(code,"capacity")==0;
-    int count=snprintf(out,size,"{\"schema\":\"music-native-terminal/1.0\",\"error\":{\"code\":\"%s\",\"retryable\":%s,\"detail\":\"%s\"}}\n",
-        code,retryable ? "true" : "false",faultDetail(fault));
+    int count=snprintf(out,size,"{\"schema\":\"music-native-terminal/%s\",\"error\":{\"code\":\"%s\",\"retryable\":%s,\"detail\":\"%s\"}}\n",
+        microphoneMode ? "1.1" : "1.0",code,retryable ? "true" : "false",faultDetail(fault));
     return count>0 && (size_t)count<size ? (size_t)count : 0;
 }
 static size_t frameRecord(char *out,size_t size,const MusicFrame *f,double emitted) {
@@ -228,6 +242,46 @@ static bool controlClosed(Fault *fault) {
     return used==sizeof(command);
 }
 
+/* The control thread shares bounded publication; the real-time callback only analyzes PCM. */
+static Fault publishCapture(Capture *state,Fault (^checkSource)(void),bool *partial) {
+    Fault fault=FAULT_NONE;
+    char pending[2048];
+    size_t length=0,offset=0;
+    double outputStarted=0,lastSourceCheck=0,start=hostNowMs(state);
+    while (!stopRequested && !controlClosed(&fault)) {
+        double now=hostNowMs(state);
+        if (now-start>=maximumCaptureMs) break;
+        fault=(Fault)atomic_load_explicit(&state->fault,memory_order_acquire);
+        if (fault!=FAULT_NONE) break;
+        if (now-lastSourceCheck>=1000) {
+            fault=checkSource();
+            lastSourceCheck=now;
+            if (fault!=FAULT_NONE) break;
+        }
+        if (!length) {
+            MusicFrame frame;
+            if (music_latest_take(&state->latest,&frame)) {
+                if (frame.endMonotonicMs>now) { fault=FAULT_TIMESTAMP; break; }
+                length=frameRecord(pending,sizeof(pending),&frame,now);
+                offset=0; outputStarted=now;
+                if (!length) { fault=FAULT_OUTPUT; break; }
+            }
+        }
+        if (length) {
+            fault=(Fault)atomic_load_explicit(&state->fault,memory_order_acquire);
+            if (fault!=FAULT_NONE) break;
+            ssize_t sent=write(STDOUT_FILENO,pending+offset,length-offset);
+            if (sent>0) { offset+=(size_t)sent; if (offset==length) length=0; }
+            else if (sent<0 && errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR) { fault=FAULT_OUTPUT; break; }
+            if (length && now-outputStarted>1000) { fault=FAULT_OUTPUT; break; }
+        }
+        struct pollfd control={.fd=STDIN_FILENO,.events=POLLIN};
+        if (poll(&control,1,10)<0 && errno!=EINTR) { fault=FAULT_INPUT; break; }
+    }
+    *partial=length && offset;
+    return fault;
+}
+
 static Fault capture(NSArray<NSNumber *> *processes,Capture *state) {
     AudioObjectID tap=kAudioObjectUnknown,aggregate=kAudioObjectUnknown;
     AudioDeviceIOProcID proc=NULL;
@@ -237,9 +291,7 @@ static Fault capture(NSArray<NSNumber *> *processes,Capture *state) {
     Fault fault=FAULT_NONE;
     OSStatus status;
     AudioObjectPropertyAddress formatAddress={kAudioTapPropertyFormat,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
-    char pending[2048];
-    size_t length=0,offset=0;
-    double outputStarted=0,lastSourceCheck=0,start=hostNowMs(state);
+    bool partial=false;
     CATapDescription *description=[[CATapDescription alloc] initStereoMixdownOfProcesses:processes];
     description.name=@"Bunny Music input";
     description.UUID=NSUUID.UUID;
@@ -280,41 +332,20 @@ static Fault capture(NSArray<NSNumber *> *processes,Capture *state) {
     if (fault!=FAULT_NONE || stopRequested || controlClosed(&fault)) goto cleanup;
     if (AudioDeviceStart(aggregate,proc)!=noErr) { fault=FAULT_CAPTURE; goto cleanup; }
     started=true;
-    while (!stopRequested && !controlClosed(&fault)) {
-        double now=hostNowMs(state);
-        if (now-start>=maximumCaptureMs) break;
-        fault=(Fault)atomic_load_explicit(&state->fault,memory_order_acquire);
-        if (fault!=FAULT_NONE) break;
-        if (now-lastSourceCheck>=1000) {
-            for (NSNumber *process in processes) if (!isMusicProcess(process.unsignedIntValue)) { fault=FAULT_SOURCE; break; }
-            for (unsigned i=0;fault==FAULT_NONE && i<routeCount;++i) {
+    {
+      OutputRoute *selectedRoutes=routes;
+      fault=publishCapture(state,^Fault {
+        Fault sourceFault=FAULT_NONE;
+            for (NSNumber *process in processes) if (!isMusicProcess(process.unsignedIntValue)) { sourceFault=FAULT_SOURCE; break; }
+            for (unsigned i=0;sourceFault==FAULT_NONE && i<routeCount;++i) {
                 OutputRoute current;
-                if (!readRoute(routes[i].process,&current) || current.count!=routes[i].count ||
-                    memcmp(current.devices,routes[i].devices,current.count*sizeof(AudioObjectID))!=0) fault=FAULT_ROUTE;
+                if (!readRoute(selectedRoutes[i].process,&current) || current.count!=selectedRoutes[i].count ||
+                    memcmp(current.devices,selectedRoutes[i].devices,current.count*sizeof(AudioObjectID))!=0) sourceFault=FAULT_ROUTE;
             }
-            lastSourceCheck=now;
-            if (fault!=FAULT_NONE) break;
-        }
-        if (!length) {
-            MusicFrame frame;
-            if (music_latest_take(&state->latest,&frame)) {
-                if (frame.endMonotonicMs>now) { fault=FAULT_TIMESTAMP; break; }
-                length=frameRecord(pending,sizeof(pending),&frame,now);
-                offset=0; outputStarted=now;
-                if (!length) { fault=FAULT_OUTPUT; break; }
-            }
-        }
-        if (length) {
-            fault=(Fault)atomic_load_explicit(&state->fault,memory_order_acquire);
-            if (fault!=FAULT_NONE) break;
-            ssize_t sent=write(STDOUT_FILENO,pending+offset,length-offset);
-            if (sent>0) { offset+=(size_t)sent; if (offset==length) length=0; }
-            else if (sent<0 && errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR) { fault=FAULT_OUTPUT; break; }
-            if (length && now-outputStarted>1000) { fault=FAULT_OUTPUT; break; }
-        }
-        struct pollfd control={.fd=STDIN_FILENO,.events=POLLIN};
-        if (poll(&control,1,10)<0 && errno!=EINTR) { fault=FAULT_INPUT; break; }
+        return sourceFault;
+      },&partial);
     }
+
 cleanup:
     /* Fence new callbacks and stop publication before resource teardown. */
     stopRequested=1;
@@ -327,8 +358,201 @@ cleanup:
     for (unsigned i=0;i<routeCount;++i)
         if (AudioObjectRemovePropertyListener(routes[i].process,&routeAddress,routeChanged,state)!=noErr) fault=FAULT_CLEANUP;
     /* A partial record cannot be followed by a terminal record. Exit remains authoritative. */
-    if (length && offset) return FAULT_OUTPUT;
+    if (partial) return FAULT_OUTPUT;
     return fault;
+}
+
+static bool microphoneAuthorized(void) {
+    return [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio]==AVAuthorizationStatusAuthorized;
+}
+
+/* One private startup record, followed by the existing stop/EOF control stream. */
+static NSString *selectedMicrophone(Capture *state,Fault *fault) {
+    char bytes[8192];
+    size_t used=0;
+    double deadline=hostNowMs(state)+2000;
+    while (!stopRequested && hostNowMs(state)<deadline) {
+        struct pollfd input={.fd=STDIN_FILENO,.events=POLLIN};
+        int ready=poll(&input,1,10);
+        if (ready<0) { if (errno==EINTR) continue; break; }
+        if (!ready) continue;
+        if (input.revents&(POLLERR|POLLNVAL)) break;
+        char byte;
+        ssize_t count=read(STDIN_FILENO,&byte,1);
+        if (!count) { stopRequested=1; return nil; }
+        if (count<0) { if (errno==EINTR || errno==EAGAIN) continue; break; }
+        if (byte=='\n') {
+            if (used==4 && memcmp(bytes,"stop",4)==0) { stopRequested=1; return nil; }
+            NSData *data=[NSData dataWithBytes:bytes length:used];
+            id value=[NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+            if (![value isKindOfClass:NSDictionary.class] || [value count]!=2 ||
+                ![value[@"schema"] isEqual:@"music-native-input/1.0"] || ![value[@"uid"] isKindOfClass:NSString.class]) break;
+            NSString *uid=value[@"uid"];
+            NSUInteger length=[uid lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+            if (!length || length>1024) break;
+            return uid;
+        }
+        if (used==sizeof(bytes)) break;
+        bytes[used++]=byte;
+    }
+    if (!stopRequested) *fault=FAULT_INPUT;
+    return nil;
+}
+
+static OSStatus readScoped(AudioObjectID object,AudioObjectPropertySelector selector,AudioObjectPropertyScope scope,UInt32 *size,void *value) {
+    AudioObjectPropertyAddress address={selector,scope,kAudioObjectPropertyElementMain};
+    return AudioObjectGetPropertyData(object,&address,0,NULL,size,value);
+}
+
+static Fault microphoneHealth(AudioObjectID device,NSString *uid) {
+    if (!microphoneAuthorized()) return FAULT_PERMISSION;
+    UInt32 alive=0,size=sizeof(alive);
+    if (readProperty(device,kAudioDevicePropertyDeviceIsAlive,&size,&alive)!=noErr || size!=sizeof(alive) || !alive) return FAULT_SOURCE;
+    CFStringRef current=NULL;
+    size=sizeof(current);
+    OSStatus status=readProperty(device,kAudioDevicePropertyDeviceUID,&size,&current);
+    bool matches=status==noErr && size==sizeof(current) && current && CFEqual(current,(__bridge CFStringRef)uid);
+    if (current) CFRelease(current);
+    return matches ? FAULT_NONE : FAULT_SOURCE;
+}
+
+static bool inputOnly(AudioObjectID device,AudioDeviceIOProcID proc) {
+    for (unsigned direction=0;direction<2;++direction) {
+        AudioObjectPropertyScope scope=direction ? kAudioObjectPropertyScopeOutput : kAudioObjectPropertyScopeInput;
+        AudioObjectPropertyAddress streams={kAudioDevicePropertyStreams,scope,kAudioObjectPropertyElementMain};
+        UInt32 size=0;
+        if (AudioObjectGetPropertyDataSize(device,&streams,0,NULL,&size)!=noErr || size%sizeof(AudioStreamID) || size>32*sizeof(AudioStreamID)) return false;
+        UInt32 count=size/sizeof(AudioStreamID);
+        if (!direction && count!=1) return false;
+        if (!count) continue;
+        struct {void *proc;UInt32 count;UInt32 enabled[32];} usage={.proc=(void *)proc,.count=count};
+        if (!direction) usage.enabled[0]=1;
+        size=(UInt32)(offsetof(AudioHardwareIOProcStreamUsage,mStreamIsOn)+count*sizeof(UInt32));
+        AudioObjectPropertyAddress address={kAudioDevicePropertyIOProcStreamUsage,scope,kAudioObjectPropertyElementMain};
+        if (AudioObjectSetPropertyData(device,&address,0,NULL,size,&usage)!=noErr) return false;
+        UInt32 returned=size;
+        if (AudioObjectGetPropertyData(device,&address,0,NULL,&returned,&usage)!=noErr || returned!=size || usage.count!=count || usage.proc!=(void *)proc) return false;
+        for (UInt32 i=0;i<count;++i) if (usage.enabled[i]!=(direction ? 0U : 1U)) return false;
+    }
+    return true;
+}
+
+static OSStatus microphoneChanged(AudioObjectID object,UInt32 count,const AudioObjectPropertyAddress addresses[],void *context) {
+    (void)object;
+    for (UInt32 i=0;i<count;++i) recordFault(context,addresses[i].mSelector==kAudioDevicePropertyDeviceIsAlive ||
+        addresses[i].mSelector==kAudioDevicePropertyDeviceUID ? FAULT_SOURCE : FAULT_FORMAT);
+    return noErr;
+}
+
+static Fault captureMicrophone(NSString *uid,Capture *state) {
+    if (!microphoneAuthorized()) return FAULT_PERMISSION;
+    AudioObjectID device=kAudioObjectUnknown;
+    CFStringRef identity=(__bridge CFStringRef)uid;
+    AudioObjectPropertyAddress translate={kAudioHardwarePropertyTranslateUIDToDevice,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
+    UInt32 size=sizeof(device);
+    if (AudioObjectGetPropertyData(kAudioObjectSystemObject,&translate,sizeof(identity),&identity,&size,&device)!=noErr ||
+        size!=sizeof(device) || device==kAudioObjectUnknown) return FAULT_SOURCE;
+    Fault fault=microphoneHealth(device,uid);
+    if (fault!=FAULT_NONE) return fault;
+    AudioStreamID stream=kAudioObjectUnknown;
+    AudioObjectPropertyAddress streams={kAudioDevicePropertyStreams,kAudioObjectPropertyScopeInput,kAudioObjectPropertyElementMain};
+    size=0;
+    if (AudioObjectGetPropertyDataSize(device,&streams,0,NULL,&size)!=noErr || size!=sizeof(stream) ||
+        AudioObjectGetPropertyData(device,&streams,0,NULL,&size,&stream)!=noErr || size!=sizeof(stream) || stream==kAudioObjectUnknown) return FAULT_FORMAT;
+    struct {AudioObjectID object;AudioObjectPropertyAddress address;} listeners[]={
+        {device,{kAudioDevicePropertyDeviceIsAlive,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain}},
+        {device,{kAudioDevicePropertyDeviceUID,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain}},
+        {device,{kAudioDevicePropertyStreams,kAudioObjectPropertyScopeInput,kAudioObjectPropertyElementMain}},
+        {device,{kAudioDevicePropertyStreams,kAudioObjectPropertyScopeOutput,kAudioObjectPropertyElementMain}},
+        {stream,{kAudioStreamPropertyVirtualFormat,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain}},
+    };
+    unsigned listening=0;
+    AudioDeviceIOProcID proc=NULL;
+    bool started=false,partial=false;
+    for (unsigned i=0;i<sizeof(listeners)/sizeof(listeners[0]);++i) {
+        if (AudioObjectAddPropertyListener(listeners[i].object,&listeners[i].address,microphoneChanged,state)!=noErr) { fault=FAULT_CAPTURE; goto cleanup; }
+        ++listening;
+    }
+    size=sizeof(state->format);
+    if (readProperty(stream,kAudioStreamPropertyVirtualFormat,&size,&state->format)!=noErr || size!=sizeof(state->format) ||
+        !supportedFormat(state->format) || !music_analyzer_init(&state->analyzer,(unsigned)state->format.mSampleRate,state->format.mChannelsPerFrame)) { fault=FAULT_FORMAT; goto cleanup; }
+    struct {UInt32 count;AudioBuffer buffers[2];} configuration={0};
+    size=sizeof(configuration);
+    if (readScoped(device,kAudioDevicePropertyStreamConfiguration,kAudioObjectPropertyScopeInput,&size,&configuration)!=noErr ||
+        configuration.count<1 || configuration.count>2 || size!=offsetof(AudioBufferList,mBuffers)+configuration.count*sizeof(AudioBuffer)) { fault=FAULT_FORMAT; goto cleanup; }
+    unsigned buffers=(state->format.mFormatFlags&kAudioFormatFlagIsNonInterleaved) ? state->format.mChannelsPerFrame : 1;
+    if (configuration.count!=buffers) { fault=FAULT_FORMAT; goto cleanup; }
+    for (unsigned i=0;i<buffers;++i) if (configuration.buffers[i].mNumberChannels!=(buffers==1 ? state->format.mChannelsPerFrame : 1)) { fault=FAULT_FORMAT; goto cleanup; }
+    if (AudioDeviceCreateIOProcID(device,audioCallback,state,&proc)!=noErr) { fault=FAULT_CAPTURE; goto cleanup; }
+    if (!inputOnly(device,proc)) { fault=FAULT_FORMAT; goto cleanup; }
+    fault=(Fault)atomic_load_explicit(&state->fault,memory_order_acquire);
+    if (fault!=FAULT_NONE || stopRequested || controlClosed(&fault)) goto cleanup;
+    fault=microphoneHealth(device,uid);
+    if (fault!=FAULT_NONE) goto cleanup;
+    if (AudioDeviceStart(device,proc)!=noErr) { fault=FAULT_CAPTURE; goto cleanup; }
+    started=true;
+    { fault=publishCapture(state,^Fault {return microphoneHealth(device,uid);},&partial); }
+cleanup:
+    stopRequested=1;
+    atomic_store_explicit(&state->fault,FAULT_CAPTURE,memory_order_release);
+    if (started && AudioDeviceStop(device,proc)!=noErr) fault=FAULT_CLEANUP;
+    if (proc && AudioDeviceDestroyIOProcID(device,proc)!=noErr) fault=FAULT_CLEANUP;
+    for (unsigned i=0;i<listening;++i)
+        if (AudioObjectRemovePropertyListener(listeners[i].object,&listeners[i].address,microphoneChanged,state)!=noErr) fault=FAULT_CLEANUP;
+    return partial ? FAULT_OUTPUT : fault;
+}
+
+static int listMicrophones(void) {
+    AudioObjectPropertyAddress address={kAudioHardwarePropertyDevices,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
+    AudioObjectID devices[64];
+    UInt32 size=0;
+    if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject,&address,0,NULL,&size)!=noErr || size>sizeof(devices) || size%sizeof(AudioObjectID)) return 1;
+    UInt32 capacity=size;
+    if (size && (AudioObjectGetPropertyData(kAudioObjectSystemObject,&address,0,NULL,&size,devices)!=noErr || size!=capacity)) return 1;
+    NSMutableArray *inputs=[NSMutableArray array];
+    for (UInt32 i=0;i<size/sizeof(AudioObjectID);++i) {
+        AudioObjectPropertyAddress streams={kAudioDevicePropertyStreams,kAudioObjectPropertyScopeInput,kAudioObjectPropertyElementMain};
+        UInt32 bytes=0;
+        if (AudioObjectGetPropertyDataSize(devices[i],&streams,0,NULL,&bytes)!=noErr) return 1;
+        if (!bytes) continue;
+        if (bytes%sizeof(AudioStreamID) || bytes>32*sizeof(AudioStreamID)) return 1;
+        CFStringRef uid=NULL,name=NULL;
+        UInt32 uidSize=sizeof(uid),nameSize=sizeof(name);
+        OSStatus u=readProperty(devices[i],kAudioDevicePropertyDeviceUID,&uidSize,&uid);
+        OSStatus n=readProperty(devices[i],kAudioObjectPropertyName,&nameSize,&name);
+        NSString *uidText=CFBridgingRelease(uid),*nameText=CFBridgingRelease(name);
+        if (u!=noErr || n!=noErr || uidSize!=sizeof(uid) || nameSize!=sizeof(name) ||
+            ![uidText isKindOfClass:NSString.class] || ![nameText isKindOfClass:NSString.class] ||
+            !uidText.length || [uidText lengthOfBytesUsingEncoding:NSUTF8StringEncoding]>1024 ||
+            [nameText lengthOfBytesUsingEncoding:NSUTF8StringEncoding]>256) return 1;
+        [inputs addObject:@{@"uid":uidText,@"name":nameText}];
+    }
+    NSData *data=[NSJSONSerialization dataWithJSONObject:@{@"schema":@"music-native-inputs/1.0",@"devices":inputs} options:0 error:NULL];
+    if (!data || data.length>512*1024 || fwrite(data.bytes,1,data.length,stdout)!=data.length || putchar('\n')==EOF) return 1;
+    return 0;
+}
+
+static atomic_int permissionReply;
+static int authorizeMicrophone(void) {
+    signal(SIGTERM,handleSignal);signal(SIGINT,handleSignal);
+    AVAuthorizationStatus status=[AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
+    if (status==AVAuthorizationStatusNotDetermined) {
+        atomic_init(&permissionReply,0);
+        pid_t parent=getppid();
+        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
+            atomic_store_explicit(&permissionReply,granted ? 1 : -1,memory_order_release);
+        }];
+        for (unsigned tick=0;tick<12000 && !stopRequested && getppid()==parent;++tick) {
+            if (atomic_load_explicit(&permissionReply,memory_order_acquire)) break;
+            usleep(10000);
+        }
+        if (stopRequested || getppid()!=parent || !atomic_load_explicit(&permissionReply,memory_order_acquire)) return 1;
+        status=[AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
+    }
+    const char *name=status==AVAuthorizationStatusAuthorized ? "authorized" : status==AVAuthorizationStatusDenied ? "denied" :
+        status==AVAuthorizationStatusRestricted ? "restricted" : "not-determined";
+    printf("{\"schema\":\"music-native-permission/1.0\",\"status\":\"%s\"}\n",name);
+    return status==AVAuthorizationStatusAuthorized ? 0 : 1;
 }
 
 static int selfTest(void) {
@@ -367,12 +591,15 @@ int main(int argc,const char *argv[]) {
             return 0;
         }
         if (argc==2 && strcmp(argv[1],"--self-test")==0) return selfTest();
+        if (argc==2 && strcmp(argv[1],"--list-microphones")==0) return listMicrophones();
+        if (argc==2 && strcmp(argv[1],"--authorize-microphone")==0) return authorizeMicrophone();
+        microphoneMode=argc==2 && strcmp(argv[1],"--capture-microphone")==0;
         Fault fault=FAULT_USAGE;
-        if (argc==2 && strcmp(argv[1],"--capture")==0) {
+        if (microphoneMode || (argc==2 && strcmp(argv[1],"--capture")==0)) {
             signal(SIGTERM,handleSignal); signal(SIGINT,handleSignal);
             fault=FAULT_NONE;
             /* A dead parent cannot start a tap, including after a delayed permission response. */
-            if (controlClosed(&fault)) goto finished;
+            if (!microphoneMode && controlClosed(&fault)) goto finished;
             struct stat output;
             int flags=fcntl(STDOUT_FILENO,F_GETFL);
             if (fstat(STDOUT_FILENO,&output)!=0 || (!S_ISFIFO(output.st_mode) && !S_ISSOCK(output.st_mode)) ||
@@ -383,10 +610,15 @@ int main(int argc,const char *argv[]) {
             atomic_init(&captureState.fault,FAULT_NONE);
             music_latest_init(&captureState.latest);
             if (!music_latest_lock_free(&captureState.latest) || !atomic_is_lock_free(&captureState.fault)) { fault=FAULT_CAPACITY; goto finished; }
-            NSArray<NSNumber *> *processes=musicProcesses();
-            if (processes==nil) fault=FAULT_CAPTURE;
-            else if (!processes.count) fault=FAULT_SOURCE;
-            else if (!stopRequested && !controlClosed(&fault)) fault=capture(processes,&captureState);
+            if (microphoneMode) {
+                NSString *uid=selectedMicrophone(&captureState,&fault);
+                if (uid && !stopRequested && !controlClosed(&fault)) fault=captureMicrophone(uid,&captureState);
+            } else {
+                NSArray<NSNumber *> *processes=musicProcesses();
+                if (processes==nil) fault=FAULT_CAPTURE;
+                else if (!processes.count) fault=FAULT_SOURCE;
+                else if (!stopRequested && !controlClosed(&fault)) fault=capture(processes,&captureState);
+            }
         }
 finished:
         if (fault!=FAULT_NONE && fault!=FAULT_OUTPUT) {
