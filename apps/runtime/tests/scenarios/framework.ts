@@ -239,6 +239,8 @@ export type Scenario = {
   readonly id: string; readonly title: string; readonly seed: Seed; readonly steps: readonly Step[];
   /** Optional browser observations after the same scenario passes in a disposable run. */
   readonly capture?: (context: CaptureContext, harness: Harness) => Promise<void>;
+  /** Keep a browser journey's final view instead of returning to health for its screenshot. */
+  readonly keepCapturePage?: boolean;
   readonly captureTimeoutMs?: number;
 };
 export type StepResult = {name: string; kind: Step['kind']; outcome: 'passed' | 'failed'; detail?: string};

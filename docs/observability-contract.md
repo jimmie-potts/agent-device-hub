@@ -7,9 +7,9 @@ current exclusions. Richer capture and durable retention require a versioned
 implementation with consumer and exporter checks; this policy decision does not
 widen an existing schema or export destination.
 
-The artifact `@jimmie-potts/bunny-observability` version 1.7.0 owns this contract,
+The artifact `@jimmie-potts/bunny-observability` version 1.8.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
-1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6 and 1.7 are independent of the pinned OpenTelemetry semantic
+1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7 and 1.8 are independent of the pinned OpenTelemetry semantic
 conventions 1.44.0. Profiles 1.0 and 1.1 were introduced together: 1.0 is the minimal
 compatibility profile; 1.1 adds optional `bunny.queue.depth`. This is not a
 claim that an older artifact was deployed. Profile 1.2 registers the B.U.N.N.Y.
@@ -26,9 +26,11 @@ registers a store's costly saves
 [Costly saves](#costly-saves-profile-15). Profile 1.6 adds
 [assistant execution](#assistant-execution-profile-16). Profile 1.7 adds the
 runtime's [private exception context](#private-exception-context-profile-17)
-([#777](https://github.com/jimmie-potts/agent-device-hub/issues/777)). The default
+([#777](https://github.com/jimmie-potts/agent-device-hub/issues/777)). Profile 1.8
+adds the [art provider call](#art-provider-call-profile-18) span
+([#680](https://github.com/jimmie-potts/agent-device-hub/issues/680)). The default
 producer profile stays 1.1: existing producers keep it, and a producer selects 1.2
-to 1.7 explicitly.
+to 1.8 explicitly.
 
 The machine-readable dictionary is `src/record.schema.json` and the registered
 vocabulary is `src/catalog.json` in the artifact. These files and this document
@@ -47,7 +49,7 @@ serialization; the strict validator rejects them.
 
 | Local field | Requirement and type | OTLP JSON mapping |
 | --- | --- | --- |
-| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3`, `1.4`, `1.5`, `1.6` or `1.7` | Log attribute `bunny.schema.version`, string |
+| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3`, `1.4`, `1.5`, `1.6`, `1.7` or `1.8` | Log attribute `bunny.schema.version`, string |
 | `timestamp` | Source time if known | `timeUnixNano`, decimal integer string |
 | `observed_timestamp` | Receiver time if applicable; at least one time required | `observedTimeUnixNano`, decimal integer string |
 | `severity_number`, `severity_text` | Required, matching registered pair | `severityNumber`, `severityText` |
@@ -264,6 +266,17 @@ and `assistant.call.settled`, and spans `bunny.assistant.run`,
 are fixed catalog strings. Existing outcome/error fields describe partial,
 succeeded, cancelled, failed or uncertain work; no conversation text or raw
 exception is admitted. Earlier profiles refuse this added vocabulary.
+
+## Art provider call (profile 1.8)
+
+Profile 1.8 is profile 1.7 plus one span name, `bunny.art.call`, which the art
+module records around each call to an image or text provider
+([#680](https://github.com/jimmie-potts/agent-device-hub/issues/680)). The span
+carries `bunny.operation` `media` and `bunny.request.id`. It adds no event or
+attribute. Prompts, responses and keys stay out of the span and of the call's
+`operation.completed` or `operation.failed` record, whose registry code and
+`bunny.outcome` keep failed and uncertain calls distinct. A host on an earlier
+profile records no such span.
 
 ## Private exception context (profile 1.7)
 
