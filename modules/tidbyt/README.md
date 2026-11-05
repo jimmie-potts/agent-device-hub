@@ -12,17 +12,20 @@ owns installation and representative physical evidence. The originals in
 old host for manual return until separately authorized
 [retirement](https://github.com/jimmie-potts/agent-device-hub/issues/839).
 
-The module writes two background installations through the one backend its section
+The module writes background installations through the one backend its section
 selects, Tidbyt's cloud by default or a [Tronbyt server](#the-tronbyt-backend), each in
 the device's normal rotation:
 - the **status tile** follows the module's synced copy of the core's sessions;
 - the **now-playing tile** follows its synced copy of the playback module's
   `playback` record ([#929](../playback/README.md#the-playback-record)).
+- On Tronbyt, an explicitly selected **art tile** joins the rotation with an exact
+  staged composition. [Exact art](#exact-art) describes its bounds and precedence.
 
 It is the one writer for the device. Each tile pushes only when what it
 shows changes, at most once every 15 seconds, and pushes an unchanged frame
 again after 10 minutes. Frames render in a worker thread. The module publishes
-the Tidbyt's `device/2.0` record. On the cloud every control is unsupported, as the old
+the Tidbyt's `device/2.0` record on the cloud, and `device/2.2` with art capabilities
+on Tronbyt. On the cloud every control is unsupported, as the old
 controller declared every controller v1 capability unsupported; a server declares
 [its controls](#the-displays-controls).
 
@@ -257,7 +260,7 @@ is a bounded takeover. It changes no mode and no configuration revision:
 | A status tile stands and the moment may not cover status | Blocks it, and ends it. A `hide-status` tile does not count |
 | The mode pins a tile | Refuses it. Attention and pins outrank moments |
 | A pin set on the server's own page | The takeover yields with nothing written. One set during the hold survives the release, because the server applies the unpin only if the moment holds the pin |
-| Any other accepted command | Ends it |
+| An accepted brightness or mode command | Ends it |
 
 The outcome follows the release. `succeeded` and `transmitted` mean the server took the frame
 and the pin and answered the release. A moment that ended early after its frame went out is
@@ -265,7 +268,8 @@ and the pin and answered the release. A moment that ended early after its frame 
 evidence `none`: `cancelled` for a later command, `invalid-state` for what it yielded to. A push or pin with no definite answer, or a release that
 did not succeed, is `uncertain`. No write goes out twice, and nothing says what the panel showed.
 
-No frame is stored and nothing replays. A stored mark covers a takeover from before its first
+No mood frame or moment command is stored for replay. Exact art has a separate private
+staged copy; a restart never resumes its moment. A stored mark covers a takeover from before its first
 request until a release is answered. While it stands, new moments are refused and a fresh
 release goes out at a tile's next evaluation, at least 60 s after a failed one. The first failure
 logs `operation.failed` with `bunny.operation` `moment`, and the release that works logs
@@ -292,7 +296,70 @@ moment's pin is overwritten, and the release then clears it.
 What a moment shows comes from `TidbytModuleOptions.momentPicture`
 (`(moment: MomentPlayRequest, signal: AbortSignal) => Promise<Uint8Array>`, an encoded WebP), a
 mood card from `moment-card.ts` by default. `signal` aborts once the answer can no longer be used,
-and nothing waits for it after that. Exact art replaces that function and nothing else.
+and nothing waits for it after that. A `moment-play/2.1` command naming art instead captures
+the staged WebP at admission and bypasses this mood function. Expiry or restaging cannot
+change those admitted bytes. An absent or expired copy is refused with `not-found`, and
+an art command from any source except `bunny/core` with `forbidden`. No refusal falls back
+to a mood card. The cloud keeps refusing moments and declares no art capability.
+
+### Exact art
+
+`art-stage/2.0` validates one composition in a worker and commits its private copy, command
+receipt and `succeeded`/`observed` outcome together. This means preparation completed;
+staging sends no display command. Copies are immutable while live. The same composition
+ID and source hash renew its lifetime; another hash is refused. At most 64 live copies
+fit in the module's existing private database, and capacity never evicts a live copy.
+The shared contract permits lifetimes from one minute to 30 days.
+
+| Input/output property | Source-qualified profile |
+| --- | --- |
+| Dimensions | Exactly 64×32; no resize or crop |
+| Source | PNG still or GIF, at most 160 KiB decoded |
+| Animation | 1–20 declared frames, each 100–800 ms, at most 16 s total |
+| Output | Lossless WebP, at most 160 KiB; every frame and delay retained |
+| Transparency | Source disposal/compositing, then an opaque black canvas |
+| Loop | Repeats during the existing 30–60 s Tronbyt takeover |
+
+The playback thumbnail path retains its separate 64 KiB PNG limit. Art rejects malformed
+or trailing framing, false metadata and unsupported bounds before any queue write. The
+existing RGB encoder supplies each WebP frame; a narrow full-frame animation container
+preserves duplicates that the native animated encoder coalesces. Independent libwebp
+decoding checks pixels, disposal, duplicate frames, delays and RIFF lengths.
+
+[Firmware v1.7.4](https://github.com/tronbyt/firmware-esp32/blob/v1.7.4/main/gfx.c)
+uses `WebPAnimDecoder` and its timestamps. Its
+[HTTP buffer default](https://github.com/tronbyt/firmware-esp32/blob/v1.7.4/main/Kconfig.projbuild)
+is 460000 bytes; the Tidbyt Gen 1 defaults do not override it. These sources support the
+chosen bounded envelope; they do not establish the owner's installed build or physical
+frame timing. The current producer's eight 200 ms frames fit this profile.
+
+`art-ambient-set/2.0` commits the selected composition, or null, with an observed outcome.
+That receipt proves selection, never transmission. A separate reserved installation,
+`bunnyart`, uses the existing tile cadence, lease and queue. Its push is always background,
+including interrupt mode. Attention or a lost sessions copy removes eligible ambient art;
+an owner pin, a command/takeover in hand, or an unknown server pin holds mutations. The
+selection remains saved while suppressed. Queued work is invalidated when selection or
+eligibility changes. An uncertain removal keeps presence unknown and follows the existing
+writer's backoff; it never becomes a successful removal from the selection receipt.
+
+Authenticated module content makes the exact output inspectable:
+
+- `art-profile`: supported bounds and the explicit unverified-visible status.
+- `art.<compositionId>`: the staged native WebP, including animation.
+- `art-info.<compositionId>`: exact frames, delays, hashes, size and expiry.
+- `art-status`: saved selection, ambient presence, last answered transmission, suppression
+  and holds. No field asserts that the panel displayed it.
+
+These are read-only `/modules/tidbyt/content/<ref>` routes with the runtime's normal
+authentication. They expose no key, server address or native device/installation identity.
+The reusable card stays illustrative; the art module owns the richer browser composition.
+
+The new tables are additive. Synthetic write/reopen checks cover copies, selection and
+receipts in the existing module database. Installation under #687 must assess this storage,
+verify the selected firmware/server and physical animation, and check attention, manual
+pins, held releases and return to rotation. Older code ignores the art tables and does not
+manage the ambient installation, so recovery must account for that installation while
+preserving private state. This source delivery authorizes no server or device operation.
 
 ### Changing backend
 
