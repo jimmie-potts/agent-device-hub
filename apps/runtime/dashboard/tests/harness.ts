@@ -98,6 +98,7 @@ export type WorldOptions = {
 
 export type World = {
   art: SimulatedArt;
+  presentArt(artworkId: string, compositionId: string): Promise<void>;
   readonly readProducer?: string;
   microduck:SimulatedMicroDuck;
   microduckAdopt(fixtureRoot:string):Promise<void>;
@@ -308,6 +309,13 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const connected = async (): Promise<RemoteParticipant> => hook ??= await connectRemote({url: runtime.url, source: HOOK_SOURCE, token, reconnectDelayMs: 50});
   return {
     art,
+    presentArt: async (artworkId, compositionId) => {
+      assert.equal(options.art, true);assert.ok(core.automation.art !== undefined);
+      const now = Date.now();
+      const result = await core.automation.art.present({id: randomUUID(), artworkId, startAtMs: now, prepareUntilMs: now,
+        toleranceMs: 5000, mood: 'celebrate', priorityClass: 'event', coversStatus: false, displays: [], browser: {compositionId}}, () => undefined);
+      assert.ok(!('error' in result));assert.equal(result.browser?.status, 'tracked');
+    },
     ...(options.readReceipts === true ? {readProducer} : {}),
     readerToken, codingToken, musicCaptureToken,
     credentialAction:async(family,target,data)=>{

@@ -1,4 +1,4 @@
-import type {ArtComposition, ArtOutcome, ArtRendition, ArtTarget, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import type {ArtComposition, ArtOutcome, ArtRendition, ArtSelection, ArtTarget, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 
 export const CATALOG_PAGE_SIZE = 6;
 export const ART_TARGETS: readonly ArtTarget[] = ['ui', 'tidbyt', 'pixoo'];
@@ -57,6 +57,11 @@ export function browserArt(artwork: ArtworkSummary, compact = false): BrowserArt
 }
 export function latestBrowserArt(artworks: readonly ArtworkSummary[]): ArtworkSummary | undefined {
   return [...artworks].filter(artwork => artwork.feedback !== 'dismiss' && browserArt(artwork) !== undefined).sort((a, b) => b.createdAtMs - a.createdAtMs)[0];
+}
+/** A selection names one usable browser composition, never a substitute from the collection. */
+export function selectedBrowserArtwork(value: unknown, selection: ArtSelection): ArtworkSummary | undefined {
+  const artwork = artworkOf(value);
+  return artwork?.artworkId === selection.artworkId && browserArt(artwork)?.compositionId === selection.compositionId ? artwork : undefined;
 }
 export const money = (micros: number): string => new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4}).format(micros / 1_000_000);
 export const reasonText: Readonly<Record<string, string>> = {
