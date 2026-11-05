@@ -151,8 +151,9 @@ a later deployment replaces that container and ends this last refusal. It writes
 `~/.local/share/bunny/signin/signin.log`. Any refusal shows a macOS notification,
 is not retried and never falls back to `docker start`. A failed health check does
 not stop the core, because a degraded module would otherwise become a full outage. The starter imports the operator, so
-[#1410](https://github.com/jimmie-potts/agent-device-hub/issues/1410) does not
-affect it.
+the direct-command hang in operators older than the
+[#1410](https://github.com/jimmie-potts/agent-device-hub/issues/1410) repair does
+not affect it.
 
 Health can read `ok` while devices are unavailable. Proton VPN makes every LAN
 device unavailable whenever it is on, and a first Roborock poll that fails during

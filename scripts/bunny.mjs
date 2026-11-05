@@ -235,11 +235,16 @@ export async function maintain(plan,run=docker,checkPrivate=privateHostDirectory
     return operate({...plan,maintenanceHelper:maintenanceHelperFor(receipt)},run,checkPrivate);
   });
 }
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+async function main(argv) {
   try {
-    const plan=parse(process.argv.slice(2));
-    const result=await maintain(plan);
+    const result=await maintain(parse(argv));
     process.stdout.write(JSON.stringify(result)+'\n');
+    process.exitCode=0;
   }
   catch(error) {process.stderr.write(refusalMessage(error)); process.exitCode = 1;}
+}
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  // Never a top-level await: maintain() loads modules that import this one, and they wait for it to finish evaluating.
+  process.exitCode=1; // A run that somehow doesn't settle must not read as success.
+  void main(process.argv.slice(2));
 }

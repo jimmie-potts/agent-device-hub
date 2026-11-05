@@ -95,7 +95,7 @@ export async function startAtSignIn(selection, {
     await gate(info);
     const {path, compose} = await operatorFor(info, releases, exists);
     const operator = await load(path).catch(() => refuse('operator-unusable'));
-    // Imported rather than run: the operator's entry point hangs on the Mac (#1410), and the same lease and checks apply.
+    // Imported rather than run: an older release's operator hangs at its entry point (#1410), and the same lease and checks apply.
     try {await operator.maintain(operator.parse(['start', '--project', project, '--compose', compose]));}
     catch (error) {
       report({step: 'start', outcome: 'refused', code: error.code ?? error.message});
