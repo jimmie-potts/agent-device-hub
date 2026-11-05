@@ -12,4 +12,4 @@
 
 - [x] 3.1 Run owning build/type/lint, Nanoleaf/events/SDK/runtime/dashboard, contract and workflow checks; document actual results and environmental limits in handoff evidence.
 - [x] 3.2 Complete disposable browser, visual and accessibility acceptance, then synchronize every affected spec and archive before final review.
-- [x] 3.3 Obtain independent Standards/Specification review plus focused storage-migration review on the frozen comparison, and applicable CI through the coordinating writer.
+- [x] 3.3 Complete independent Standards/Specification and focused storage-migration reviews, then hand the tested candidate to the coordinating writer for required exact-head CI before merge.
