@@ -4,8 +4,9 @@
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {ART_SUBJECT, artCommandRefusal, type ArtAuto, type ArtDispatch, type ArtFormat, type ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
 import {ART_CATALOG_EDIT_KEY, type ArtCatalogEdit, type ArtDisplayTarget} from '@jimmie-potts/event-contracts/v2/art-state';
+import {artStageSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {CORE_SOURCE, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {Outcome, type Cancel, type Command, type ModuleContext, type Reply, type RequestResult, type Sdk, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
+import {Outcome, type Cancel, type Command, type ModuleContext, type Reply, type RequestResult, type Sdk, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
 
 export type ArtCommandHandlers = {
   /** `bunny.cmd.art-request.art`: the owner's. The tracker admits it only from the dashboard's source. */
@@ -79,20 +80,71 @@ const stageResultOf = (record: OperationRecord): StageResult | undefined => {
   if (record.result === Outcome.failed || record.status === Outcome.rejected || record.status === 'expired') return Outcome.failed;
   return undefined;
 };
+/** Identity is usable only while this exact owner's SDK copy is current. Connectivity remains the device owner's decision. */
+function followDevices(context: Pick<ModuleContext, 'sdk' | 'scheduler'>, kind: ArtDisplayTarget) {
+  let closed = false, fresh = false, retryMs = 1000, retry: Cancel | undefined, copy: SyncedCopy<DeviceRecord> | undefined;
+  const again = (): void => {
+    if (closed || retry !== undefined) return;
+    const delay = retryMs;
+    retryMs = Math.min(FOLLOW_MAX_MS, retryMs * 2);
+    retry = context.scheduler.after(delay, () => {retry = undefined; void attempt();});
+  };
+  const attempt = async (): Promise<void> => {
+    if (closed) return;
+    fresh = false;
+    try {
+      const result = await context.sdk.sync<DeviceRecord>(['device'], change => {
+        if (change.type === 'synced') fresh = true;
+        else if (change.type === 'failed') {fresh = false; copy = undefined; again();}
+      }, {owner: `bunny/modules/${kind}`, timeoutMs: 5000, onRestarted: () => {fresh = false;}});
+      if (result.status !== 'synced') {again(); return;}
+      if (closed) {await result.copy.close(); return;}
+      copy = result.copy; retryMs = 1000;
+    } catch {fresh = false; again();}
+  };
+  void attempt();
+  return {
+    read: (): DeviceRecord[] | undefined => closed || !fresh || copy === undefined ? undefined : copy.states().map(message => message.data),
+    close: async () => {closed = true; fresh = false; retry?.(); await copy?.close(); copy = undefined;},
+  };
+}
+
 export function realDispatch(context: Pick<ModuleContext, 'sdk' | 'scheduler'>): ArtDispatchSeam {
+  const devices: Partial<Record<ArtDisplayTarget, ReturnType<typeof followDevices>>> = {};
+  const resolve = (kind: ArtDisplayTarget): DeviceRecord | ErrorBody => {
+    const records = devices[kind]?.read();
+    if (records === undefined) return errorBody('unavailable');
+    const matches = records.filter(record => record.kind === kind);
+    if (matches.length > 1) return errorBody('invalid-state');
+    const device = matches[0];
+    if (device === undefined) return errorBody('unavailable');
+    return device.capabilities.moments.supported && device.capabilities.moments.art !== undefined ? device : errorBody('unsupported-capability');
+  };
+
   const send = async (data: ArtDispatch, parent: TraceContext): Promise<Reply> => asReply(await context.sdk.request<ArtDispatch>(`bunny.cmd.art-dispatch.${ART_SUBJECT}`,
     {type: 'org.bunny.art.dispatch.requested', subject: ART_SUBJECT, dataschema: 'https://bunny.invalid/events/art-dispatch/2.0', data}, {requestId: data.requestId, timeoutMs: DISPATCH_TIMEOUT_MS, parent}));
   return {
     stage: ({requestId, target, bytes, ...rest}, parent) => {
       const {compositionId, format, width, height, frames, durationMs, sha256, lifetimeMs} = rest;
-      return send({requestId, target, family: 'art-stage', data: {compositionId, format, width, height, frames, durationMs, sha256, lifetimeMs, base64: Buffer.from(bytes).toString('base64')}}, parent);
+      const device = resolve(target);
+      if ('error' in device) return Promise.resolve(device);
+      const base64 = Buffer.from(bytes).toString('base64');
+      if (!artStageSupported(device.capabilities, {format, base64})) return Promise.resolve(errorBody('unsupported-capability'));
+      return send({requestId, target: device.id, family: 'art-stage', data: {compositionId, format, width, height, frames, durationMs, sha256, lifetimeMs, base64}}, parent);
     },
-    ambient: ({requestId, target, compositionId}, parent) => send({requestId, target, family: 'art-ambient-set', data: {compositionId}}, parent),
-    watch: result => Promise.resolve([follow<OperationRecord>(context, 'operation', CORE_SOURCE, ({data}) => {
-      const final = stageResultOf(data);
-      // The module ignores a request it did not stage, so a sync's whole list costs nothing.
-      if (final !== undefined && data.family === 'art-stage') result(data.requestId, final);
-    })]),
+    ambient: ({requestId, target, compositionId}, parent) => {
+      const device = resolve(target);
+      return 'error' in device ? Promise.resolve(device) : send({requestId, target: device.id, family: 'art-ambient-set', data: {compositionId}}, parent);
+    },
+    watch: result => {
+      const pixoo = followDevices(context, 'pixoo'), tidbyt = followDevices(context, 'tidbyt');
+      devices.pixoo = pixoo; devices.tidbyt = tidbyt;
+      return Promise.resolve([pixoo, tidbyt, follow<OperationRecord>(context, 'operation', CORE_SOURCE, ({data}) => {
+        const final = stageResultOf(data);
+        // The module ignores a request it did not stage, so a sync's whole list costs nothing.
+        if (final !== undefined && data.family === 'art-stage') result(data.requestId, final);
+      })]);
+    },
   };
 }
 

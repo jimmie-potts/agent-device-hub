@@ -136,6 +136,15 @@ payload. Each outcome reports durable admission. A stage is offered only after t
 `operation` record says it succeeded, and a restart resends nothing: the record can still
 settle a stage left uncertain.
 
+Art state keeps display kinds (`pixoo` and `tidbyt`). Before forwarding a stage or
+ambient selection, the module resolves that kind to the configured device ID from
+the exact display owner's current `device` sync. Missing, ambiguous or stale copies
+refuse without forwarding. The selected device must declare `moments.art`; staging
+also checks its supported formats and byte limit. A sync gap withdraws routing until
+a complete replacement arrives, and removals withdraw the removed ID. Physical
+availability does not gate this local-copy handoff; the display owner decides whether
+it can admit the command. No refused command is retried automatically.
+
 `weather-state` comes from the weather module by sync. Only fresh condition words reach a
 prompt, so a temperature or day part in its words is dropped. A job's validated
 `context` is used first as requested inspiration. Without either supplied inspiration

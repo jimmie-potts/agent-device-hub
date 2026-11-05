@@ -9,6 +9,7 @@ import {operationEntityId, registerCoreFamilies, type OperationRecord} from '@ji
 import type {Participant} from '@jimmie-potts/sdk';
 import {createArtModule} from '../src/module.js';
 import {registration} from '../src/registration.js';
+import {artDevice, deviceDraft} from './device-fixtures.js';
 import {drawing, fakeImages} from './fixtures.js';
 import {hosted, until} from './support.js';
 
@@ -33,6 +34,12 @@ async function withCore(t: TestContext) {
     records.set(record.id, record);
     await operator.publish(`bunny.state.operation.${record.id}`, {kind: 'state', type: 'org.bunny.operation.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/operation/2.0', data: {...record, revision}});
   };
+  for (const kind of ['pixoo', 'tidbyt'] as const) {
+    const owner = art.bus.connect(`bunny/modules/${kind}`), device = artDevice(kind, `${kind}-configured`);
+    await owner.serveSync(['device'], () => ({revision: 1, states: [deviceDraft(device)]}));
+    t.after(() => owner.close());
+  }
+  await art.restart();
   return {art, dispatched, publish};
 }
 const stageOf = (message: Message<ArtDispatch> | undefined): Extract<ArtDispatch, {family: 'art-stage'}> => message?.data.family === 'art-stage' ? message.data : assert.fail('not a stage');
@@ -43,7 +50,7 @@ void test('a composition is dispatched through the core as a valid art-stage, an
   await art.finished('req');
   await until(() => dispatched.length === 1, 'the dispatch');
   const stage = stageOf(dispatched[0]), bytes = Buffer.from(stage.data.base64, 'base64');
-  assert.deepEqual([stage.target, stage.data.format, stage.data.width, stage.data.height, stage.data.frames, stage.data.durationMs], ['tidbyt', 'gif', 64, 32, 8, 1600]);
+  assert.deepEqual([stage.target, stage.data.format, stage.data.width, stage.data.height, stage.data.frames, stage.data.durationMs], ['tidbyt-configured', 'gif', 64, 32, 8, 1600]);
   assert.equal(stage.data.sha256, createHash('sha256').update(bytes).digest('hex'));
   assert.equal(stage.data.compositionId, art.state.artworks[0]?.compositions[0]?.compositionId);
   // The module follows the core's records once its own sync has settled, and an accepted operation proves no effect.
@@ -54,6 +61,7 @@ void test('a composition is dispatched through the core as a valid art-stage, an
   await publish(operation(stage.requestId, 'completed', 'succeeded'), 3);
   await until(() => art.state.candidates.length === 1, 'the candidate');
   assert.equal(art.state.candidates[0]?.compositionId, stage.data.compositionId);
+  assert.equal(art.state.candidates[0]?.target, 'tidbyt', 'public art state keeps the display kind');
   assert.equal(dispatched.length, 1, 'never resent');
 });
 
@@ -95,7 +103,7 @@ void test('an ambient job sets the tile through the core once its stage succeede
   await until(() => dispatched.length === 2, 'the ambient set');
   const ambient: ArtDispatch = dispatched[1]?.data ?? assert.fail('no ambient');
   assert.equal(ambient.family, 'art-ambient-set');
-  assert.deepEqual([ambient.target, ambient.data], ['tidbyt', {compositionId: stageOf(dispatched[0]).data.compositionId}]);
+  assert.deepEqual([ambient.target, ambient.data], ['tidbyt-configured', {compositionId: stageOf(dispatched[0]).data.compositionId}]);
 });
 
 async function withWeather(t: TestContext, record: () => object) {
