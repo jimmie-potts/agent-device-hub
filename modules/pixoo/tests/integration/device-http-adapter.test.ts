@@ -4,8 +4,32 @@ import { sendJson } from '../../src/device/http-transport.js';
 import { deviceServer } from '../helpers/http-device-server.js';
 import { present } from '../helpers/present.js';
 import { rgbFrame } from '../helpers/rgb-fixtures.js';
+import {ManualClock} from '../helpers/manual-clock.js';
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { await Promise.all(cleanup.splice(0).map(close => close())); });
+
+it.each(['lookup', 'first-frame'] as const)('passes authoritative effect state to rain admission during %s', async delayed => {
+  const clock = new ManualClock(), commands: string[] = [];
+  const observed: ('none' | 'possible')[] = [];
+  const device = new HttpDeviceAdapter({ip: '192.168.1.2', profile: SPIKE_PROFILE, clock}, body => {
+    if (typeof body.Command !== 'string') throw new Error('the synthetic request has no command');
+    commands.push(body.Command);
+    if (delayed === 'lookup' && body.Command === 'Draw/GetHttpGifId' || delayed === 'first-frame' && body.Command === 'Draw/SendHttpGif' && commands.length === 2) clock.advance(100);
+    return Promise.resolve(body.Command === 'Draw/GetHttpGifId' ? {error_code: 0, PicId: 1} : {error_code: 0});
+  });
+  cleanup.push(async () => { await device.close(); });
+  const result = await device.uploadAnimation({frames: [rgbFrame(1, 500), rgbFrame(2, 500)]}, {generation: 0,
+    current: priorEffects => {observed.push(priorEffects); return priorEffects === 'possible' || clock.now() < 50;}});
+  if (delayed === 'lookup') {
+    expect(result).toMatchObject({ok: false, code: 'cancelled', priorEffects: 'none'});
+    expect(commands).toEqual(['Draw/GetHttpGifId']);
+    expect(observed.every(value => value === 'none')).toBe(true);
+  } else {
+    expect(result.ok).toBe(true);
+    expect(commands.filter(command => command === 'Draw/SendHttpGif')).toHaveLength(2);
+    expect(observed).toContain('possible');
+  }
+});
 
 it('sends one ID query and ordered complete frames before a queued control', async () => {
   const server = await deviceServer((body, res) => {

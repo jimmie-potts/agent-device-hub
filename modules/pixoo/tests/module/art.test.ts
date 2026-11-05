@@ -24,7 +24,7 @@ async function accepted(pending: Promise<RequestResult>): Promise<string> {
   return result.requestId;
 }
 const artMoment = (world: World, compositionId: string, patch: object = {}, core = true): Promise<RequestResult> => (core ? world.core : world.probe).request(`bunny.cmd.moment-play.${DEVICE}`,
-  {type: 'org.bunny.moment.play.requested', subject: DEVICE, dataschema: 'https://bunny.invalid/events/moment-play/2.1',
+  {type: 'org.bunny.moment.play.requested', subject: DEVICE, dataschema: `https://bunny.invalid/events/moment-play/${'notice' in patch ? '2.2' : '2.1'}`,
     data: {momentId: `show-${compositionId}`, mood: 'celebrate', durationMs: 1000, priorityClass: 'event', coversStatus: true,
       startAtMs: Date.now(), toleranceMs: 10_000, art: {compositionId}, ...patch}}, {timeoutMs: 5000});
 const previewSchema = z.object({compositionId: z.string(), frameCount: z.number(), durationMs: z.number(), expiresAtMs: z.number(), profile: z.string(),
@@ -45,6 +45,37 @@ async function monitor(world: World): Promise<string> {
   await world.publishSession();
   return waitFor(() => world.device.state().shown?.digests[0], 'monitor');
 }
+
+void it('plays a labelled rain forecast with every exact art frame and leaves its staged bytes unchanged', async () => {
+  const world = await World.open();
+  try {
+    await world.start();
+    const base = await monitor(world);
+    const data = content('rain-art', hostedGif(19, 8), 8);
+    await world.outcome(await accepted(stage(world, data)));
+    const before = await preview(world, data.compositionId);
+    const now = Date.now();
+    const notice = {kind: 'rain-forecast', likelihood: 'chance', forecastStartAtMs: now + 60_000, forecastEndAtMs: now + 120_000,
+      forecastUpdatedAtMs: now - 1000, observedAtMs: now, staleAtMs: now + 120_000, weatherRevision: 1};
+    const writes = world.device.state().sent;
+    const outsider = await artMoment(world, data.compositionId, {notice}, false);
+    assert.ok(outsider.status === 'rejected'); assert.equal(outsider.error.error.code, 'forbidden');
+    const tooShort = await artMoment(world, data.compositionId, {notice: {...notice, staleAtMs: now + 500}});
+    assert.ok(tooShort.status === 'rejected'); assert.equal(tooShort.error.error.code, 'invalid-message');
+    assert.equal(world.device.state().sent, writes, 'refusals cause no device effect');
+    const requestId = await accepted(artMoment(world, data.compositionId, {notice, durationMs: 1000}));
+    await waitFor(() => world.device.state().shown?.frames === 8 ? true : undefined, 'labelled rain art');
+    const shown = world.device.state().shown;
+    assert.deepEqual(shown?.delaysMs, Array(8).fill(100));
+    assert.notEqual(shown?.digests[0], frameDigest(rgbFrame(19, 0)), 'a separate factual band accompanies the retained art');
+    assert.deepEqual(await preview(world, data.compositionId), before);
+    const outcome = await world.outcome(requestId);
+    assert.equal(outcome.data.result, 'succeeded');
+    assert.equal(outcome.data.evidence, 'transmitted');
+    await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'the current Monitor base');
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
 
 void it('stages bounded still and animation without a display write or permanent import', async () => {
   const world = await World.open();

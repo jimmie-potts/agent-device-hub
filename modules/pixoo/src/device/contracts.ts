@@ -10,7 +10,7 @@ export interface OperationOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   /** Private presentation admission: recheck after queue waits and before each effect. */
-  current?: () => boolean;
+  current?: (priorEffects: 'none' | 'possible') => boolean;
 }
 export interface Timing {
   submittedAtMs: number;

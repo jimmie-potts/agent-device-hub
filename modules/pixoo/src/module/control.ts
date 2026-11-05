@@ -236,6 +236,7 @@ export class PixooControl {
     switch (result.refused) {
       case 'expired': return failed('expired', 'the moment missed its start window');
       case 'blocked': return failed('invalid-state', 'the current presentation no longer admits the moment');
+      case 'notice': return failed('invalid-state', 'rain forecast evidence cannot cover this presentation');
       case 'cancelled': return failed('cancelled', 'a newer request or attention ended the moment before it was sent');
       case 'unknown': return uncertain('the moment\'s write failed after it began');
       case 'content': return failed('internal', 'the moment could not be drawn');
