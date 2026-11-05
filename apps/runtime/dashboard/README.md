@@ -748,3 +748,10 @@ Select a bunny once to inspect it and again to open a qualified Codex Desktop co
 Settings are local to the browser origin. Use **Export habitat settings** in the private preview, then **Move your habitat settings → Import habitat settings** here. The bounded JSON transfer includes only room positions, apron colors, recovery preference and assignments; it never uploads a file. Import validates before writing and retains a browser-local backup. Storage failure keeps the current visit usable; assignments cannot be promised across reload without storage.
 
 The focused `tests/habitat.browser.ts` journey runs through the real disposable runtime with synthetic sessions. It covers ten residents plus overflow, shared connection, lifecycle updates, reconnect, demo isolation, preference import, unmount cleanup, fallback, keyboard and axe in dark/light desktop/phone views. It is included in both the local browser suite and hosted dashboard smoke entry. Unit policy and preference tests run in `test:runtime-dashboard:built`. These checks do not establish mobile app deep links or physical device behavior.
+
+The Wall Music effect preview also lists private saved reactive presets. Saving
+is explicit and requires control access and a current library; read-only users
+can load a saved recipe into the local draft. Frozen effect-local parameters
+remain visible and intact. Save/load changes no device and starts no capture.
+The existing Nanoleaf page browser entry checks persistence, full-recipe preview,
+stale/read-only refusals and no resend through reconnect or uncertain reload.

@@ -241,6 +241,48 @@ calibration, physical geometry or speaker timing. Custom reactive-preset
 save/reload remains part of #722. Static favorites and decorative show versions
 retain their existing recipe contracts.
 
+## Saved reactive presets
+
+The Wall page's **Music effect preview** includes a private reactive library.
+Choose an effect and edit palette/intensity, enter a name, then select **Save
+new preset**. It stores a fully explicit frozen `MusicRecipeV1`, independently
+of static animation favorites and decorative show timelines. **Load into draft**
+changes only the local preview. Every effect-local renderer value is retained
+and shown, including sensitivity, renderer smoothing, direction, pulse half-life
+and wave period where applicable. Capture calibration and live-analysis settings
+remain core-owned. Only an explicit **Preview** prepares generated input on
+example geometry; loading and saving start no capture or device operation.
+
+The metadata-only command `nanoleaf-reactive-preset-save/2.0` uses the fixed
+`reactive-presets` target with `presetId`, `expectedRevision`, `name` and `recipe`.
+The owner checks the current catalog revision and unique ID, freezes all V1
+values, and atomically commits the immutable preset, catalog and observed
+outcome through its existing outbox. Stale saves return `revision-conflict`;
+unsupported parameters return `invalid-request`. Failed or uncertain saves
+retain the draft, and an uncertain shared attempt stays locked through reload.
+No command is automatically resent. The additive tables preserve earlier
+favorites and shows and never touch device journals, configuration revisions,
+last device outcomes or worker scheduling.
+
+The library holds 32 presets, with names of 1–80 Unicode characters without
+control characters. Each exact stored UTF-8 JSON document is limited to 2 KiB;
+the complete serialized catalog is limited to 128 KiB. Capacity refuses new
+saves and preserves earlier presets. There is no replacement, deletion or
+history interface. `nanoleaf-reactive-presets/2.0` serves complete bounded
+recipes through owner-qualified sync. Authenticated read-only users can inspect
+and load them. Refresh and reconnect update the library without replacing the
+local draft. Invalid stored data refuses the library read without repairing or
+discarding the private bytes; other device families remain available.
+
+The full-recipe synthetic preview request `{version:1, recipe, model}` shares
+the existing content route and renderer. The old built-in request is unchanged.
+Maximal requests fit the gateway's existing 512-character query-value bound.
+The module tests exercise old-schema initialization, SQLite and outbox failures,
+CAS, restart and unchanged device state. The existing Nanoleaf page browser
+entry includes save/load, full-recipe preview, stale and unauthorized refusals,
+read-only access, reconnect, uncertainty and phone/desktop accessibility.
+These are source checks, with no raw audio, installed or physical evidence.
+
 ## Offline decorative shows
 
 The declared **Decorative shows** page at `#/module/nanoleaf/shows`, also linked
@@ -290,7 +332,7 @@ or physical acceptance.
 ## Families
 
 The module answers each device's own keys, `bunny.cmd.<family>.<device id>`, and serves
-`device`, `nanoleaf-wall`, `nanoleaf-animations` and `nanoleaf-shows` through sync, as its health entry's
+`device`, `nanoleaf-wall`, `nanoleaf-animations`, `nanoleaf-shows` and `nanoleaf-reactive-presets` through sync, as its health entry's
 `serves` lists. Every device module serves `device` for its own devices (#967), so a
 consumer syncs it from `bunny/modules/nanoleaf` by name. Its own schemas are
 `nanoleafSchemas`; `nanoleafMessageSchemas` adds the general device families.
@@ -307,6 +349,8 @@ the wall pages (#934) apply that rule.
 | `device` | state | Each controller's `device/2.1` record, with `held` while a hold stops its writes |
 | `nanoleaf-wall` | state | Each controller's wall map: settings, palette, projects, elements and tasks with their eviction tokens, whether its last pass failed or no worker runs (`failing`), and whether a hold stops its writes (`held`) |
 | `nanoleaf-animations` | state | Each device's animation options: presets, favorites, patterns, bounds, the queued animation, saved positions and the remembered scene |
+| `nanoleaf-reactive-presets` | state | The bounded private library of frozen reactive recipes at `reactive-presets` |
+| `nanoleaf-reactive-preset-save` | command | Save one immutable named reactive recipe against the current library revision, with a metadata-only outcome |
 | `nanoleaf-shows` | state | The private decorative library's immutable version summaries, with subject `shows` |
 | `nanoleaf-show-save` | command | Append a guarded named decorative version at target `shows`, with a metadata-only outcome |
 | `device-mode-set`, `power-set`, `brightness-set`, `scene-activate` | command | Work, Quiet and Free; power, brightness and scenes |
