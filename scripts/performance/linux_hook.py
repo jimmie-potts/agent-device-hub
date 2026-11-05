@@ -1,4 +1,17 @@
 """Pinned Linux hook measurements in an isolated PID/network/mount namespace."""
+import argparse
+from datetime import datetime, timezone
+import json
+import os
+import platform
+import resource
+import selectors
+import signal
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
 import hashlib
 
@@ -18,19 +31,6 @@ def verify_source(directory=VENDOR):
             raise ValueError('source-hash-mismatch')
     return directory.resolve()
 
-import argparse
-from datetime import datetime, timezone
-import json
-import os
-import platform
-import resource
-import selectors
-import signal
-import shutil
-import subprocess
-import sys
-import tempfile
-import time
 
 WORKER = Path(__file__).with_name('linux_hook_worker.py')
 MAX_OUTPUT = 8_000_000
