@@ -429,7 +429,8 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
             active = null;
             let payload: Display;
             try {
-              payload = animationPayload(db, row.command as AnimationCommand, config.line_groups, config.line_positions ?? null);
+              payload = animationPayload(db, row.command as AnimationCommand, config.line_groups, config.line_positions ?? null,
+                config.kind === 'panels' ? 'panels' : 'lines');
             } catch (error) {
               if (!(error instanceof Refused)) throw error;
               await end(row.id, error.code);

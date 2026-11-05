@@ -120,7 +120,7 @@ consumer syncs it from `bunny/modules/nanoleaf` by name. Its own schemas are
 
 Favorites are private to the owner, so the device record and the wall view never hold a
 favorite or preset name. `nanoleaf-animations` is the one exception, by design: it is the
-Lines' animation options, the view a play request is chosen from, so it lists the saved
+selected device's animation options, the view a play request is chosen from, so it lists the saved
 favorites with their names and recipes and the module's presets, and any principal allowed
 to read the module's families reads them there. Favorites stay out of browser projections;
 the wall pages (#934) apply that rule.
@@ -129,15 +129,24 @@ the wall pages (#934) apply that rule.
 | --- | --- | --- |
 | `device` | state | Each controller's `device/2.1` record, with `held` while a hold stops its writes |
 | `nanoleaf-wall` | state | Each controller's wall map: settings, palette, projects, elements and tasks with their eviction tokens, whether its last pass failed or no worker runs (`failing`), and whether a hold stops its writes (`held`) |
-| `nanoleaf-animations` | state | The Lines' animation options: presets, favorites, patterns, bounds, the queued animation, saved positions and the remembered scene |
+| `nanoleaf-animations` | state | Each device's animation options: presets, favorites, patterns, bounds, the queued animation, saved positions and the remembered scene |
 | `device-mode-set`, `power-set`, `brightness-set`, `scene-activate` | command | Work, Quiet and Free; power, brightness and scenes |
 | `moment-play` | command | Bounded Lines moments in Work or over a named Free base; terminal outcome follows restoration |
 | `zone-power-set`, `media-start`, `media-control` | command | Refused with `unsupported-capability` |
 | `nanoleaf-wall-edit` | command | One edit from the wall editor: settings and palette, element projects and halves, a task's project, a project's color, Locate, an eviction |
 | `nanoleaf-machine-edit` | command | One map edit from a machine, guarded by `expectedConfigurationRevision` |
-| `nanoleaf-animation-play` | command | A preset, a favorite or a recipe, on the Lines in Free |
-| `nanoleaf-favorite-edit` | command | Save, rename or forget a Lines favorite |
+| `nanoleaf-animation-play` | command | A preset, a favorite or a recipe, on Lines or NL22 Light Panels in Free |
+| `nanoleaf-favorite-edit` | command | Save, rename or forget a shared favorite through the Lines command key |
 | `nanoleaf-notice-acknowledge` | command | Acknowledge a finished turn the wall shows, for consumer `nanoleaf` |
+
+Requested animations use the selected device's saved geometry: paired logical zones for
+Lines and one physical zone per NL22 triangle. Each device keeps its own queue, mode,
+scene and worker. Spatial patterns require saved positions, and every effect keeps the
+existing frame and byte bounds. Favorites remain one shared catalog of frozen recipes,
+edited through the Lines command key; an edit updates both devices' animation options.
+A requested animation whose answer is lost ends uncertain without retry or a device
+hold, preserving the existing Lines behavior. Native controls retain their holds.
+Combined Lines-and-Panels placement and physical appearance qualification are separate.
 
 ## Wall editor
 
@@ -183,7 +192,7 @@ physical-device qualification are outside this port.
 ## Commands and outcomes
 
 - **Admission** runs in the module's outbox transaction. It applies the port's domain
-  checks (content in Free only, animations on the Lines only, one waiting animation, 32
+  checks (content in Free only, one waiting animation per device, 32
   waiting native commands, `validFavoriteEdit`, the effect rules) and `commandSupported`,
   and refuses a stale `expectedConfigurationRevision` or `expectedGeneration` with
   `revision-conflict`. A refusal, or a store failure, rolls back and is the reply. A

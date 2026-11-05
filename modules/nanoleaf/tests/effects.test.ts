@@ -7,6 +7,7 @@ import {isObject, pyJson, pyMod} from '../src/compat.js';
 import {pairLines} from '../src/configuration.js';
 import * as effects from '../src/effects.js';
 import {effectPayload} from '../src/renderer.js';
+import {readLayout} from '../src/panels.js';
 import {decode, fixtureJson, suite, test} from './support.js';
 
 type Groups = number[][];
@@ -365,5 +366,43 @@ suite('effects recorded from Python', () => {
       assert.equal(first, -1, `${name}: render ${first} differs`);
       assert.equal(digest.digest('hex'), expected.sha256, name);
     }
+  });
+});
+
+suite('requested NL22 animations', () => {
+  const groups = [[101], [203], [307]];
+  const positions = [[0, 0], [100, 0], [50, 100]];
+
+  test('every preset uses physical triangle IDs and stays within the existing effect bounds', () => {
+    const layout = readLayout((fixtureJson('nl22-panels-fixture.json') as {panelLayout: unknown}).panelLayout);
+    const triangleIds = layout.elements.map(element => element.zones);
+    const centroids = layout.elements.map(element => element.position);
+    for (const preset of Object.keys(effects.PRESETS) as effects.PresetName[]) {
+      const payload = effects.render({kind: 'animation.play', preset}, triangleIds, centroids, 'panels');
+      assert.equal(Object.hasOwn(payload.write, 'logicalPanelsEnabled'), false, preset);
+      const frames = decode(payload);
+      assert.deepEqual([...frames.keys()], triangleIds.flat(), preset);
+      assert.ok([...frames.values()].every(values => values.length <= effects.MAX_FRAMES), preset);
+      assert.ok(effects.size(payload) <= effects.MAX_BYTES, preset);
+    }
+  });
+
+  test('spatial patterns use each triangle position and reverse with the requested direction', () => {
+    const recipe = {kind: 'animation.play', pattern: 'wave', colors: ['#0044aa', '#00aa66']} as const;
+    const right = effects.render({...recipe, colors: [...recipe.colors], direction: 'right'}, groups, positions, 'panels');
+    const left = effects.render({...recipe, colors: [...recipe.colors], direction: 'left'}, groups, positions, 'panels');
+    const a = decode(right);
+    const b = decode(left);
+    assert.notDeepEqual(a.get(101), a.get(203));
+    assert.deepEqual(a.get(101), b.get(203));
+    assert.deepEqual(a.get(203), b.get(101));
+    assert.deepEqual(a.get(307), b.get(307));
+  });
+
+  test('missing spatial positions and oversized effects are refused before encoding a usable write', () => {
+    const rejected = (code: string) => (error: unknown): boolean => error instanceof effects.Rejected && error.code === code;
+    assert.throws(() => effects.render({kind: 'animation.play', preset: 'ocean'}, groups, null, 'panels'), rejected('unsupported-capability'));
+    assert.doesNotThrow(() => effects.render({kind: 'animation.play', preset: 'cozy'}, groups, null, 'panels'));
+    assert.throws(() => effects.render({kind: 'animation.play', preset: 'party'}, Array.from({length: 300}, (_, i) => [i]), null, 'panels'), rejected('capacity'));
   });
 });

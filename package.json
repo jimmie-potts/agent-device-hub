@@ -53,6 +53,8 @@
     "build:dashboard": "node scripts/build-dashboard.mjs",
     "typecheck:dashboard": "tsc -p apps/dashboard/tsconfig.json --noEmit",
     "lint:js": "eslint . --max-warnings=0",
+    "lint:python": "python3 -m ruff check --config ruff.toml",
+    "test:lint:python": "node --test tests/python_lint.test.mjs",
     "test:dashboard": "node --test apps/dashboard/tests/*.test.mjs",
     "test:dashboard:browser": "node apps/dashboard/tests/browser.mjs && node apps/dashboard/tests/matrix.mjs && node apps/dashboard/tests/retirement.mjs && node apps/dashboard/tests/local-controllers.mjs && node apps/dashboard/tests/trusted.mjs && node apps/dashboard/tests/art.mjs && node apps/dashboard/tests/session-metadata.mjs && node apps/dashboard/tests/preview-places.mjs && node apps/dashboard/tests/moments.mjs && node apps/dashboard/tests/pixoo-media.mjs && node apps/dashboard/tests/pixoo-refresh.mjs",
     "test:dashboard:smoke": "node apps/dashboard/tests/smoke.mjs",
@@ -184,7 +186,9 @@
     "test:music-producer:built": "node --test apps/music-producer/dist/tests/*.test.js",
     "test:music-producer:native": "sh apps/music-producer/native/test.sh",
     "build:music-producer:native": "sh apps/music-producer/native/build.sh",
-    "test:music-producer:adapter": "sh apps/music-producer/native/adapter-test.sh"
+    "test:music-producer:adapter": "sh apps/music-producer/native/adapter-test.sh",
+    "typecheck:python": "pyright --warnings",
+    "test:python-types": "node --test tests/python_typecheck.test.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
@@ -206,6 +210,7 @@
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",
     "playwright": "1.63.0",
+    "pyright": "1.1.414",
     "supports-color": "7.2.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.71.1",

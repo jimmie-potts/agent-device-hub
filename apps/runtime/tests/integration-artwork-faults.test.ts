@@ -68,7 +68,13 @@ function oracle(device: 'tidbyt' | 'pixoo', title: 'A' | 'B', artwork: boolean, 
 }
 
 type Upload = {atMs: number; rgb: Uint8Array};
-function fixtures(fetch: Fetch, pollMs?: number, failingRenderer?: 'tidbyt' | 'pixoo') {
+type Decode = NonNullable<NonNullable<PlaybackModuleOptions['artwork']>['decode']>;
+/**
+ * Answers at once, for a test that counts acquisitions. The real decoder's worker runs in real time against a 2 s
+ * deadline on the harness's much faster clock, so a slow runner times it out and the module rightly fetches again (#1431).
+ */
+const instantDecode: Decode = bytes => Promise.resolve({ok: true, value: {mediaType: 'image/png', width: 1, height: 1, base64: Buffer.from(bytes).toString('base64')}});
+function fixtures(fetch: Fetch, pollMs?: number, failingRenderer?: 'tidbyt' | 'pixoo', decode?: Decode) {
   const uploads: Upload[] = [];
   const displays: {atMs: number; digests: string[]}[] = [];
   let detach = (): void => {};
@@ -84,7 +90,7 @@ function fixtures(fetch: Fetch, pollMs?: number, failingRenderer?: 'tidbyt' | 'p
     } finally { if (timeout !== undefined) clearTimeout(timeout); }
   };
   const playback: typeof playbackSimulation = {...playbackSimulation, memory: {...playbackSimulation.memory,
-    build: (speakers, {now}) => createPlaybackModule({transport: speakers, monotonic: now, ...(pollMs === undefined ? {} : {pollMs}), artwork: {fetch}}),
+    build: (speakers, {now}) => createPlaybackModule({transport: speakers, monotonic: now, ...(pollMs === undefined ? {} : {pollMs}), artwork: {fetch, ...(decode === undefined ? {} : {decode})}}),
   }};
   const tidbyt: typeof tidbytSimulation = {...tidbytSimulation, memory: {...tidbytSimulation.memory,
     build: (cloud, {now}) => createTidbytModule({renderTimeoutMs: 3_600_000,
@@ -159,7 +165,7 @@ for (const transport of TRANSPORTS) {
       attempts += 1;
       if (attempts === 1) { signalA = signal; return deferredA; }
       return Promise.resolve(readyBytes());
-    }, 200);
+    }, 200, undefined, instantDecode);
     const h = await startMemoryHarness(seed, transport, {registrations: fixture.registrations});
     try {
       await monitor(h);

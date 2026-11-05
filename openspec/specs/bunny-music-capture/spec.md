@@ -47,8 +47,8 @@ Feature delivery SHALL keep at most one publication in flight and one replaceabl
 - **THEN** current capture state becomes stale or unavailable and consumers cannot treat the last level as live audio
 
 #### Scenario: Clock qualification lost while idle
-- **WHEN** either participant's wall clock changes relative to its monotonic clock beyond the permitted drift after endpoint registration
-- **THEN** a subsequent start is refused before capture work, the endpoint qualification is retired and no duplicate registration or completed stop silently renews that qualification
+- **WHEN** the core's wall clock changes relative to its monotonic clock beyond the permitted drift after endpoint registration
+- **THEN** a subsequent operator start is refused before sending capture work, the core retires the endpoint qualification and no duplicate registration or completed stop silently renews that qualification
 
 #### Scenario: Silence versus failure
 - **WHEN** valid zero-valued windows continue to arrive

@@ -86,7 +86,9 @@ socket.on('error',()=>{require('node:child_process').spawn(process.execPath,['-e
             self.assertTrue(result['result']['node'].startswith('v24.'))
 
     def test_only_locked_cache_bytes_and_safe_metadata_are_staged(self):
-        import base64,hashlib,json
+        import base64
+        import hashlib
+        import json
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);cache=root/'cache';target=root/'staged'
             data=b'locked-tarball';digest=hashlib.sha512(data).digest();hexdigest=digest.hex()
