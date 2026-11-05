@@ -50,6 +50,7 @@ export const FAMILIES = {
   show: 'pixoo-media-show',
   monitor: 'pixoo-monitor-set',
   nowPlaying: 'pixoo-now-playing-set',
+  moments: 'pixoo-moments-set',
   playlistChange: 'pixoo-playlist-change',
   assetChange: 'pixoo-asset-change',
   dismiss: 'pixoo-notice-dismiss',
@@ -68,7 +69,7 @@ export const pixooOwnSchemas: Readonly<Record<string, object>> = {
   [schemaOf(FAMILIES.display)]: closed({
     id: block('routingId'), revision: block('revision'),
     mode: {enum: ['monitor', 'media']}, participating: {type: 'boolean'}, pendingMode: nullable({enum: ['monitor', 'media']}),
-    showing: {enum: ['dashboard', 'card', 'none']},
+    showing: {enum: ['dashboard', 'card', 'moment', 'none']},
     monitor: closed({
       filter, cadenceMs: integer(1000, 10000), connection: {enum: ['current', 'stale', 'unavailable']},
       sessions: integer(0, 10000), matched: integer(0, 10000), attention: integer(0, 10000), page: integer(0, 10000), pages: integer(1, 10000),
@@ -78,7 +79,9 @@ export const pixooOwnSchemas: Readonly<Record<string, object>> = {
       state: {enum: ['idle', 'loading', 'playing', 'paused', 'reconnecting', 'error']}, intent: {enum: ['active', 'paused', 'stopped']},
       playlistId: nullable(uuid), itemId: nullable(uuid), renditionId: nullable(hash), lastError: nullable({type: 'string', pattern: '^[a-z][a-z0-9-]{0,63}$'}),
     }),
-  }),
+    // Optional, so a record stored before moments still reads: `overMonitor` is the setting, `playing` the moment on the display.
+    moments: closed({overMonitor: {type: 'boolean'}, playing: nullable(block('id'))}),
+  }, ['moments']),
   [schemaOf(FAMILIES.rendition)]: closed({
     id: hash, revision: block('revision'), assetId: uuid, name, format: {enum: ['png', 'jpeg', 'gif']},
     frameCount: integer(1, 1000), durationMs: nullable(integer(1, Number.MAX_SAFE_INTEGER)), compatible: {type: 'boolean'},
@@ -91,6 +94,7 @@ export const pixooOwnSchemas: Readonly<Record<string, object>> = {
   [schemaOf(FAMILIES.show)]: guarded({renditionId: hash, playback: policy, requireMode: {enum: ['monitor', 'media']}}, ['playback', 'requireMode']),
   [schemaOf(FAMILIES.monitor)]: guarded({filter, cadenceMs: integer(1000, 10000)}),
   [schemaOf(FAMILIES.nowPlaying)]: guarded({media: {enum: ['off', 'popup', 'whole']}}),
+  [schemaOf(FAMILIES.moments)]: guarded({overMonitor: {type: 'boolean'}}),
   [schemaOf(FAMILIES.playlistChange)]: guarded({change: {oneOf: [
     closed({operation: {const: 'create'}, name, repeat: {type: 'boolean'}, shuffle: {type: 'boolean'}, playlistId: uuid, items: {type: 'array', maxItems: 1000, items: closed({renditionId: hash, playback: policy}, ['playback'])}}, ['repeat', 'shuffle', 'playlistId', 'items']),
     closed({operation: {const: 'rename'}, playlistId: uuid, revision, name}),
@@ -126,13 +130,14 @@ export type Policy = {mode: 'duration'; durationMs: number} | {mode: 'plays'; to
 export type Filter = {q?: string | undefined; provider?: 'codex' | 'claude' | undefined; projectId?: string | undefined; session?: SessionRecord['identity'] | undefined};
 export type DisplayRecord = {
   id: string; revision: number; mode: 'monitor' | 'media'; participating: boolean; pendingMode: 'monitor' | 'media' | null;
-  showing: 'dashboard' | 'card' | 'none';
+  showing: 'dashboard' | 'card' | 'moment' | 'none';
   monitor: {filter: Filter; cadenceMs: number; connection: 'current' | 'stale' | 'unavailable'; sessions: number; matched: number; attention: number; page: number; pages: number};
   nowPlaying: {media: 'off' | 'popup' | 'whole'; card: boolean; stale: boolean; takeover: 'popup' | 'whole' | null};
   player: {
     state: 'idle' | 'loading' | 'playing' | 'paused' | 'reconnecting' | 'error'; intent: 'active' | 'paused' | 'stopped';
     playlistId: string | null; itemId: string | null; renditionId: string | null; lastError: string | null;
   };
+  moments?: {overMonitor: boolean; playing: string | null};
 };
 export type RenditionRecord = {
   id: string; revision: number; assetId: string; name: string; format: 'png' | 'jpeg' | 'gif'; frameCount: number; durationMs: number | null; compatible: boolean;
@@ -144,6 +149,7 @@ export type PlaylistRecord = {
 export type ShowRequest = Guards & {requestId: string; renditionId: string; playback?: Policy; requireMode?: 'monitor' | 'media'};
 export type MonitorSetRequest = Guards & {requestId: string; filter: Filter; cadenceMs: number};
 export type NowPlayingSetRequest = Guards & {requestId: string; media: 'off' | 'popup' | 'whole'};
+export type MomentsSetRequest = Guards & {requestId: string; overMonitor: boolean};
 export type PlaylistChangeRequest = Guards & {requestId: string; change:
   | {operation: 'create'; name: string; repeat?: boolean; shuffle?: boolean; playlistId?: string; items?: {renditionId: string; playback?: Policy}[]}
   | {operation: 'rename'; playlistId: string; revision: number; name: string}

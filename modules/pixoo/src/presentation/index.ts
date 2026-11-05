@@ -5,6 +5,7 @@ export * from './dashboard-pixels.js';
 export * from './dashboard-preview.js';
 export * from './dashboard-service.js';
 export * from './errors.js';
+export * from './moment-content.js';
 export * from './monitor-presentation.js';
 export * from './now-playing.js';
 export * from './pixel-font.js';

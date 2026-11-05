@@ -4,11 +4,14 @@ import type {NowPlayingView} from '../core/index.js';
 import type {DashboardLayout} from '../presentation/agent-dashboard.js';
 import {renderDashboard} from '../presentation/dashboard-pixels.js';
 import {renderArtworkCard} from '../presentation/artwork-card.js';
+import {renderMomentContent, type MomentContent} from '../presentation/moment-content.js';
 export type RenderRequest = {kind: 'dashboard'; layout: DashboardLayout}
-  | {kind: 'card'; view: Extract<NowPlayingView, {card: true}>; artwork?: PlaybackArtwork};
+  | {kind: 'card'; view: Extract<NowPlayingView, {card: true}>; artwork?: PlaybackArtwork}
+  | {kind: 'moment'; content: MomentContent};
 export type RenderReply = {frames: Uint8Array[]; artworkCode?: ErrorCode};
 export async function renderRequest(request: RenderRequest): Promise<RenderReply> {
   if (request.kind === 'dashboard') return {frames: renderDashboard(request.layout)};
+  if (request.kind === 'moment') return {frames: renderMomentContent(request.content)};
   const card = await renderArtworkCard(request.view, request.artwork);
   return {frames: [card.frame], ...(card.artworkCode === undefined ? {} : {artworkCode: card.artworkCode})};
 }

@@ -3,6 +3,7 @@
 Status: Accepted definition under [hub #291](https://github.com/jimmie-potts/agent-device-hub/issues/291),
 2026-09-25. Implementation, installation and physical acceptance remain in the
 linked issues.
+[ADR 0013](0013-pixoo-moment-interludes.md) records how the Pixoo applies this.
 
 ## Context
 
