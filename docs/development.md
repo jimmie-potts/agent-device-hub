@@ -2013,8 +2013,10 @@ checks on Linux or macOS. The shared Checks job runs both producer suites.
 On macOS, also run `npm run build:music-producer:native` to compile the Core Audio
 capture adapter and the separate read-only Music state/position helper. The Music native source workflow runs portable tests and compilation on
 macOS 15 with explicitly selected Xcode 26.3 from the
-[hosted runner image](https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md), including `npm run test:music-producer:adapter` with fake Core Audio
-and AppleEvent access. The position cases cover pinned process identity, partial
+[hosted runner image](https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md), including `npm run test:music-producer:adapter` with substituted Core Audio,
+AVFoundation authorization and AppleEvent access. Capture cases cover Music and
+selected-microphone lifecycle, exact UID selection, input-only IOProc usage and
+separate setup operations. Position cases cover pinned process identity, partial
 results, descriptor validation and bounded read cancellation. These commands
 never start real capture, send application AppleEvents or change permissions.
 The owning [producer guide](../apps/music-producer/README.md) records packaging,
@@ -2022,6 +2024,12 @@ permissions and supported input limits. A successful compile is not evidence of
 permission behavior, protected-content access, speaker routing or physical sync.
 
 Tests use synthetic PCM, fake sources/clocks and disposable loopback SDK peers.
+For microphone contract or selection changes, also run the existing event, SDK,
+runtime/core, dashboard unit and full dashboard browser checks. The Music capture
+journey covers explicit alias selection, refusal/retry, both contract versions,
+reload without replay and desktop/phone axe. Existing shared, core, App verification
+and Music native source CI discovery runs these checks; no real microphone API
+is invoked by the adapter tests.
 Keep real audio-derived observations and camera recordings private. Installed
 capture, microphone and light trials belong to the selected music pilot.
 

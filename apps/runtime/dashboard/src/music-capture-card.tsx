@@ -1,5 +1,6 @@
 import React, {useEffect, useId, useState, useSyncExternalStore} from 'react';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {CaptureInput} from '@jimmie-potts/event-contracts/v2/music-capture-data';
 import type {DashboardConnection} from './connection.ts';
 import {useAttempt} from './command-control.tsx';
 import type {MusicCaptureFeed, MusicCaptureView} from './music-capture-feed.ts';
@@ -14,15 +15,16 @@ function statusText(view: MusicCaptureView, live: boolean): string {
   const state = view.state;
   if (!live || state === undefined) return 'Capture status is unavailable or disconnected.';
   if (state.availability === 'off') return 'Music producer is off.';
-  if (state.availability === 'unavailable') return 'Music input is unavailable.';
+  const microphone = state.session.status !== 'idle' && state.session.input === 'microphone';
+  if (state.availability === 'unavailable') return microphone ? 'Selected microphone is unavailable. Check its connection and microphone permission on the Mac.' : 'Music input is unavailable.';
   switch (state.session.status) {
     case 'idle': return 'Ready to measure Music.';
     case 'starting': return 'Starting measurement. Waiting for source evidence.';
-    case 'active': return view.features !== undefined ? 'Receiving Music measurements.' : view.clockQualified ? 'Waiting for fresh measurements.' : 'Measurement timing is unavailable. Refresh status to check again.';
+    case 'active': return view.features !== undefined ? state.session.input === 'microphone' ? `Receiving ${state.session.microphoneId} measurements.` : 'Receiving Music measurements.' : view.clockQualified ? 'Waiting for fresh measurements.' : 'Measurement timing is unavailable. Refresh status to check again.';
     case 'stale': return 'Measurements are stale.';
     case 'stopping': return 'Stopping measurement. Waiting for confirmed cleanup.';
     case 'uncertain': return 'Capture may still be running. Its result is uncertain.';
-    case 'unavailable': return 'Measurement is unavailable.';
+    case 'unavailable': return microphone ? 'Selected microphone is unavailable. Check its connection and microphone permission on the Mac.' : 'Measurement is unavailable.';
   }
 }
 export function MusicCaptureCard({connection, connected, coreLive, control, operations, operationsLive}: {
@@ -31,6 +33,7 @@ export function MusicCaptureCard({connection, connected, coreLive, control, oper
 }): React.JSX.Element {
   const [scope, setScope] = useState<MusicCaptureFeed | undefined>();
   const [refreshing, setRefreshing] = useState(false);
+  const [input, setInput] = useState<CaptureInput>('music');
   useEffect(() => {
     setScope(undefined);
     if (!connected || !coreLive) return;
@@ -44,19 +47,32 @@ export function MusicCaptureCard({connection, connected, coreLive, control, oper
   const start = useAttempt('music', selected, operationsLive, undefined, 'core/music-capture/start');
   const stop = useAttempt('music', selected, operationsLive, undefined, 'core/music-capture/stop');
   const state = view.state;
+  const shownInput = state !== undefined && state.session.status !== 'idle' && state.session.status !== 'unavailable' ? state.session.input : input;
   const live = connected && coreLive && view.synced;
   const available = live && control && operationsLive && state?.availability === 'available' && state.endpointId !== null;
-  const mayStart = available && (state?.session.status === 'idle' || state?.session.status === 'unavailable') && !start.locked && !stop.locked;
+  const selectionSupported = input === 'music' || state?.microphone !== undefined;
+  const mayStart = available && selectionSupported && (state?.session.status === 'idle' || state?.session.status === 'unavailable') && !start.locked && !stop.locked;
   const mayStop = available && state?.session.status !== 'idle' && state?.session.status !== 'stopping' && !stop.locked;
   const meter = live ? view.features : undefined;
   const meterId = useId();
+  const inputId = useId();
+  const selectedName = shownInput === 'music' ? 'Music' : state?.microphone?.id ?? 'microphone';
   const refresh = async (): Promise<void> => {
     if (scope === undefined || refreshing) return;
     setRefreshing(true); try {await scope.refresh();} finally {setRefreshing(false);}
   };
   return <article className="music-capture-card" aria-label="Music input measurement">
     <h2>Music input measurement</h2>
-    <p className="music-note">Music.app only. Measures audio; lights are not connected.</p>
+    <p className="music-note">Measures the selected input. Lights are not connected.</p>
+    <label htmlFor={inputId}>Audio input</label>
+    <select id={inputId} value={shownInput} disabled={!available || (state?.session.status !== 'idle' && state?.session.status !== 'unavailable') || start.locked || stop.locked}
+      onChange={event => {if (event.target.value === 'music' || event.target.value === 'microphone') setInput(event.target.value);}}>
+      <option value="music">Music.app</option>
+      {(state?.microphone !== undefined || shownInput === 'microphone') && <option value="microphone" disabled={state?.microphone === undefined}>
+        {state?.microphone?.id ?? 'Configured microphone unavailable'}
+      </option>}
+    </select>
+    {state?.microphone !== undefined && <p className="music-note">{state.microphone.id} is configured. Its connection and existing microphone permission are checked when measurement starts. Starting here does not request permission.</p>}
     <p role="status">{statusText(view, live)}</p>
     <div className="music-input-level">
       <label htmlFor={meterId}>Input level</label>
@@ -69,10 +85,10 @@ export function MusicCaptureCard({connection, connected, coreLive, control, oper
     </div>
     <div className="music-capture-actions">
       <button type="button" disabled={!mayStart} onClick={() => {
-        if (!mayStart || state === undefined || state.endpointId === null) return;
+        if (!mayStart || state === undefined || state.endpointId === null || (input === 'microphone' && state.microphone === undefined)) return;
         void start.run({family: 'music-capture-control', target: 'music', requestId: crypto.randomUUID(),
-          data: {action: 'start', input: 'music', endpointId: state.endpointId, expectedRevision: state.revision}});
-      }}>Start measuring Music</button>
+          data: {action: 'start', ...(input === 'music' ? {input: 'music'} : {input: 'microphone', microphoneId: state.microphone?.id}), endpointId: state.endpointId, expectedRevision: state.revision}});
+      }}>Start measuring {selectedName}</button>
       <button type="button" disabled={!mayStop} onClick={() => {
         if (!mayStop || state === undefined) return;
         void stop.run({family: 'music-capture-control', target: 'music', requestId: crypto.randomUUID(), data: {action: 'stop', expectedRevision: state.revision}});
@@ -83,6 +99,6 @@ export function MusicCaptureCard({connection, connected, coreLive, control, oper
     {start.requestId !== undefined && <p role="status">Start: {resultText(start.text)}</p>}
     {stop.requestId !== undefined && <p role="status">Stop: {resultText(stop.text)}</p>}
     <button type="button" className="secondary" disabled={!connected || !coreLive || scope === undefined || refreshing} onClick={() => {void refresh();}}>Refresh capture status</button>
-    <p className="music-note">Microphone input and light effects are unavailable in this control.</p>
+    <p className="music-note">Microphone calibration and light effects are not available yet.</p>
   </article>;
 }

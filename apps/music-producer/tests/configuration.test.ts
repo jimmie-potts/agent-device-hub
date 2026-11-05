@@ -33,3 +33,22 @@ void test('private configuration selects only an origin, opaque token and explic
     await assert.rejects(loadConfiguration(file), /Music producer configuration is invalid\./);
   } finally {await rm(directory, {recursive: true, force: true});}
 });
+
+void test('microphone configuration keeps the bounded UID private and names one explicit alias', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'microphone-config-'));
+  const file = join(directory, 'config.json'), tokenFile = join(directory, 'token');
+  const data = {schema: 'music-producer/1.1', edgeOrigin: 'http://127.0.0.1:8790', tokenFile, helper: '/private/helper',
+    microphone: {id: 'studio-mic', uid: 'synthetic-private-uid'}};
+  const config = async (value: object): Promise<void> => {await writeFile(file, JSON.stringify(value), {mode: 0o600});};
+  try {
+    await writeFile(tokenFile, 'synthetic-credential-1234567890123456\n', {mode: 0o600});
+    await config(data);
+    assert.deepEqual(await loadConfiguration(file), {...data, token: 'synthetic-credential-1234567890123456'});
+    for (const bad of [{...data, schema: 'music-producer/1.0'}, {...data, microphone: {id: 'x'.repeat(65), uid: 'synthetic'}},
+      {...data, microphone: {id: 'room mic', uid: 'synthetic'}}, {...data, microphone: {id: 'studio', uid: ''}},
+      {...data, microphone: {id: 'studio', uid: 'é'.repeat(513)}}, {...data, microphone: {...data.microphone, displayName: 'unused'}}]) {
+      await config(bad);
+      await assert.rejects(loadConfiguration(file), /Music producer configuration is invalid\./);
+    }
+  } finally {await rm(directory, {recursive: true, force: true});}
+});

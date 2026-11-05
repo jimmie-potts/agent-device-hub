@@ -212,11 +212,12 @@ layout editing and audio routing remain separate work.
 ## Music input measurement
 
 Audio also has a separate **Music input measurement** card. It shows the core's
-capture status and explicit **Start measuring Music** and **Stop measuring**
-controls. Opening Audio, another tab, reload and reconnect only read state.
+capture status, an input selector and explicit Start and Stop measuring controls.
+Choose Music.app or the producer's configured microphone alias. Selecting an
+input starts nothing. Opening Audio, another tab, reload and reconnect only read state.
 The existing playback card and its transport controls are unchanged.
 
-The meter uses current Music.app measurements from the selected producer
+The meter uses current measurements for the selected input from the producer
 endpoint and generation. Zero means measured silence; missing or expired data
 shows **Input level unavailable**. Its visual scale ends at digital full scale,
 while the RMS and peak numbers retain measured values above that scale.
@@ -232,8 +233,8 @@ Start. Read-only access, stale command records and unavailable producer state
 disable actions. A stopped session does not invent a result for an older
 uncertain Start; that Start remains locked until its tracked outcome resolves.
 
-This card measures input only. Microphone input and light effects are not
-available here. It cannot enable a missing Mac producer or grant macOS
+This card measures input only and does not drive light effects. It cannot
+enable a missing Mac producer or grant macOS
 permission. `MusicCaptureFeed` owns one state copy and one feature subscription
 on the existing dashboard participant and closes them when Audio unmounts or
 its connection ends. It retains no measurement history.
