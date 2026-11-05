@@ -53,6 +53,9 @@ every possible clock offset must fit within 50 ms. Local wall/monotonic drift
 above 25 ms invalidates that qualification, including while idle. Capture must
 produce its first valid, fresh frame within five seconds. Silence is valid.
 `started` is published only after that first frame, before any features.
+The core also retains its registration-time wall/monotonic anchor through idle
+and ordinary stop. Duplicate registration cannot reset it. An invalid anchor
+refuses a new start and retires the connection before work is sent.
 
 Every frame describes a 100 ms source window. The wrapper checks the closed
 native schema, numeric ranges, fixed terminal errors, frame count, duration,

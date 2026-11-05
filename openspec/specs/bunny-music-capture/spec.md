@@ -1,8 +1,10 @@
+# Music capture Specification
+
 ## Purpose
 
 Measure Music.app audio locally for explicitly started music lighting sessions, while keeping capture authority, freshness and measurement limits visible to consumers.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Explicit capture lifecycle
 
@@ -43,6 +45,10 @@ Feature delivery SHALL keep at most one publication in flight and one replaceabl
 #### Scenario: Stale data
 - **WHEN** the current session receives no valid frame within its declared freshness interval
 - **THEN** current capture state becomes stale or unavailable and consumers cannot treat the last level as live audio
+
+#### Scenario: Clock qualification lost while idle
+- **WHEN** either participant's wall clock changes relative to its monotonic clock beyond the permitted drift after endpoint registration
+- **THEN** a subsequent start is refused before capture work, the endpoint qualification is retired and no duplicate registration or completed stop silently renews that qualification
 
 #### Scenario: Silence versus failure
 - **WHEN** valid zero-valued windows continue to arrive
