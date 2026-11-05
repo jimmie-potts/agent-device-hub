@@ -98,14 +98,23 @@ test('copied successful jobs cannot qualify a rerun with no matching current-att
   const explained = await finalize(join(at, 'explained.json'), {...env, GITHUB_STEP_SUMMARY: summary}, fetch);
   assert.equal(explained.outcome, 'incomplete');
   assert.ok(!Object.keys(explained).includes('reason'), 'the receipt schema stays as it was');
-  assert.match(await readFile(summary, 'utf8'), /partial rerun cannot qualify/);
+  assert.match(await readFile(summary, 'utf8'), /did not rebuild the image/);
   const allGreen = jobs.map(job => ({id: job.id, name: job.name, result: 'success', headSha: sha}));
-  const image = {id: digest};
-  assert.equal(rerunReason('qualified', needs, allGreen, image, true, 2), null);
-  assert.equal(rerunReason('incomplete', needs, allGreen, image, false, 1), null, 'a first attempt reused nothing');
-  assert.equal(rerunReason('incomplete', needs, allGreen, null, false, 2), null, 'no image is a different failure');
-  assert.equal(rerunReason('incomplete', needs, allGreen.slice(1), image, false, 2), null, 'a missing job is a different failure');
-  assert.equal(rerunReason('failed', needs, allGreen, image, false, 2), null);
+  const image = {id: digest, revision: sha};
+  const facts = {needs, checks: allGreen, image, artifacts: [old]}, run = {candidate: sha, runId, runAttempt};
+  assert.match(rerunReason('incomplete', facts, run), /did not rebuild the image/);
+  const ownName = qualificationArtifactNames(sha, runId, runAttempt).image;
+  for (const [name, outcome, changed, at] of [
+    ['a qualified result', 'qualified', {}, run], ['a failed result', 'failed', {}, run],
+    ['a first attempt', 'incomplete', {}, {...run, runAttempt: 1}],
+    ['no image output', 'incomplete', {image: null}, run], ['an image with no revision', 'incomplete', {image: {artifactName: 'x'}}, run],
+    ['an image of another revision', 'incomplete', {image: {id: digest, revision: '0'.repeat(40)}}, run],
+    ['a missing job', 'incomplete', {checks: allGreen.slice(1)}, run],
+    ['a job from another revision', 'incomplete', {checks: allGreen.map((check, i) => i === 0 ? {...check, headSha: '0'.repeat(40)} : check)}, run],
+    ['no artifact at all', 'incomplete', {artifacts: []}, run],
+    ['an expired earlier artifact', 'incomplete', {artifacts: [{...old, expired: true}]}, run],
+    ['this attempt\'s own artifact, duplicated', 'incomplete', {artifacts: [{...old, name: ownName}, {...old, name: ownName}]}, run],
+  ]) assert.equal(rerunReason(outcome, {...facts, ...changed}, at), null, name);
   const current = {...old, name: qualificationArtifactNames(sha, runId, runAttempt).image};
   assert.equal(imageArtifactPresent([current], {candidate: sha, runId, runAttempt}), true);
   const completeFetch = async url => ({ok: true, json: async () => url.includes('/jobs?')

@@ -38,11 +38,19 @@ export function resultOutcome(needs, checks, image, artifactPresent = false) {
     || checks.some(check => check.result !== 'success')) return 'incomplete';
   return 'qualified';
 }
-/** Why every job succeeded and the candidate is still not qualified, when that is a partial rerun: its image belongs to an earlier attempt. */
-export const rerunReason = (outcome, needs, checks, image, artifactPresent, runAttempt) =>
-  outcome === 'incomplete' && runAttempt > 1 && image && !artifactPresent && resultOutcome(needs, checks, image, true) === 'qualified'
-    ? 'This attempt built no image of its own, so a partial rerun cannot qualify this candidate, even with every job green. Rerun all jobs, or qualify a later revision.'
+/**
+ * Why every job succeeded and the candidate is still not qualified, when that is a rerun that kept an earlier attempt's
+ * image: the only image artifacts are earlier ones, and everything else would qualify. Any other fault gets no explanation here.
+ */
+export function rerunReason(outcome, {needs, checks, image, artifacts}, {candidate, runId, runAttempt}) {
+  if (outcome !== 'incomplete' || runAttempt < 2 || image?.revision !== candidate || checks.some(check => check.headSha !== candidate)
+    || resultOutcome(needs, checks, image, true) !== 'qualified') return null;
+  const current = qualificationArtifactNames(candidate, runId, runAttempt).image, prefix = `release-image-${candidate}-${runId}-`;
+  if (artifacts.some(artifact => artifact.name === current)) return null;
+  return artifacts.some(artifact => artifact.name.startsWith(prefix) && artifact.expired === false && artifact.workflow_run?.id === runId)
+    ? 'This rerun did not rebuild the image, so it cannot qualify this candidate, even with every job green. Rerun all jobs, including the image job.'
     : null;
+}
 export async function finalize(destination, env = process.env, fetch = globalThis.fetch) {
   const candidate = env.GITHUB_SHA, runId = Number(env.GITHUB_RUN_ID), runAttempt = Number(env.GITHUB_RUN_ATTEMPT);
   const names = qualificationArtifactNames(candidate, runId, runAttempt);
@@ -69,7 +77,7 @@ export async function finalize(destination, env = process.env, fetch = globalThi
     catch {receipt.outcome = 'incomplete';}
   }
   await writeFile(destination, JSON.stringify(receipt, null, 2) + '\n', {flag: 'wx', mode: 0o600});
-  const reason = rerunReason(receipt.outcome, needs, checks, image, artifactPresent, runAttempt);
+  const reason = rerunReason(receipt.outcome, {needs, checks, image, artifacts}, {candidate, runId, runAttempt});
   if (reason !== null) process.stderr.write(`release-incomplete: ${reason}\n`);
   if (env.GITHUB_STEP_SUMMARY) await appendFile(env.GITHUB_STEP_SUMMARY,
     `### Release ${receipt.outcome}\n\nCandidate: \`${candidate}\`\n\nRun: ${runId}, attempt ${runAttempt}. Evidence binds only this candidate.\n${reason === null ? '' : `\n${reason}\n`}`);
