@@ -3,7 +3,7 @@ import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {TestContext} from 'node:test';
 import type {DatabaseSync} from 'node:sqlite';
 import {observation, sessionStarted} from './fixtures/agents.js';
-import {MUSIC_PRODUCER_SOURCE, type CaptureFeatures, type CaptureProgress, type CaptureSelection, type CaptureState, type CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
+import {MUSIC_PRODUCER_SOURCE, type CaptureResponseSettings, type CaptureFeatures, type CaptureProgress, type CaptureSelection, type CaptureState, type CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {connectRemote, type Command} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import {tokenDigest} from '../src/credentials.js';
@@ -46,7 +46,9 @@ async function setup(t: TestContext, directory?: string) {
       rms: 0, peak: 0, clippedFraction: 0, bands: {bass: 0, mid: 0, treble: 0}, onset: {strength: 0, confidence: 0}, discontinuity: false, ...patch,
     }});
   };
-  return {core, runtime, producer, observer, endpoint, work, liveStates, legacyResponsibilities: async () => {
+  const tune = (requestId: string, data: object) => core.operatorActions.dispatch({key: 'bunny.cmd.music-capture-control.music', requestedBy: 'bunny/parts/operator', requestId,
+    draft: {type: 'org.bunny.music-capture.control.requested', subject: 'music', dataschema: schema('music-capture-control', '2.2'), data}});
+  return {core, runtime, producer, observer, endpoint, work, liveStates, tune, legacyResponsibilities: async () => {
     assert.ok(handle);await handle.transaction(tx => {tx.database.exec("UPDATE music_capture_responsibilities SET record = json_remove(record, '$.selection')");});
   }, stateSchema: () => stateSchema, closed: () => closed, refuseStop: () => {refuseStop = true;}, read, enable, control, progress, frame, operation: (id: string) => handle?.operation(id), failWrites: async (value: boolean) => {
     assert.ok(handle);await handle.transaction(tx => {tx.database.exec(value
@@ -65,7 +67,7 @@ it('a configured microphone is selected explicitly and only its current frames c
   const initial = await h.read();
   assert.deepEqual(initial.microphone, {id: 'studio-mic'});
   assert.equal(initial.session.status, 'idle');
-  assert.equal(h.stateSchema(), schema('music-capture-state', '2.1'));
+  assert.equal(h.stateSchema(), schema('music-capture-state', '2.2'));
   assert.equal(h.work.length, 0);
   const changed = await h.enable('another-mic');
   assert.equal(changed.status, 'rejected');
@@ -100,7 +102,7 @@ it('a configured microphone is selected explicitly and only its current frames c
   assert.equal((await h.read()).microphone, undefined);
   await waitFor(() => h.liveStates.some(message => message.data.availability === 'unavailable'));
   assert.ok(h.liveStates.length > 0);
-  assert.deepEqual([...new Set(h.liveStates.map(message => message.dataschema))], [schema('music-capture-state', '2.1')]);
+  assert.deepEqual([...new Set(h.liveStates.map(message => message.dataschema))], [schema('music-capture-state', '2.2')]);
   assert.deepEqual([...new Set(h.liveStates.map(message => message.subject))], ['music']);
 });
 
@@ -168,7 +170,7 @@ for (const input of ['music', 'microphone'] as const) it(`restart retires pendin
   assert.equal(recovered.session.input, input);
   if (recovered.session.input === 'microphone') assert.equal(recovered.session.microphoneId, 'studio-mic');
   assert.equal(recovered.microphone, undefined);
-  assert.equal(second.stateSchema(), schema('music-capture-state', '2.1'));
+  assert.equal(second.stateSchema(), schema('music-capture-state', '2.2'));
   assert.equal(second.operation('pending-start')?.result, 'uncertain');
   await second.enable();assert.equal(second.work.length, 0);
 });
@@ -336,4 +338,131 @@ it('a full disk during capture table creation keeps the core running and recover
   await sdk.publish(key, draft);
   await waitFor(() => logs.some(record => record.event_name === 'message.received' && record.attributes['bunny.participant'] === 'bunny/modules/capture-recovery-observer' && record.attributes['bunny.outcome'] === 'accepted'));
   assert.equal(runtime.health().modules.find(module => module.name === 'core')?.state, 'running');
+});
+
+
+async function activeMicrophone(h: Awaited<ReturnType<typeof setup>>, name: string) {
+  await h.enable('studio-mic');
+  const selection = {input: 'microphone', microphoneId: 'studio-mic'} as const;
+  await h.control(name, (await h.read()).revision, 'start', selection);await waitFor(() => h.work.length === 1);
+  const start = h.work[0];assert.ok(start);
+  await h.progress({operationId: name, generation: start.data.generation, status: 'started'});
+  await h.frame(start.data.generation, 1, selection);await waitFor(async () => (await h.read()).session.status === 'active');
+  const binding = {endpointId: h.endpoint.id, generation: start.data.generation, microphoneId: 'studio-mic', sampleRateHz: 48000, channels: 2};
+  return {binding, selection};
+}
+const manualSettings: CaptureResponseSettings = {sensitivity: 2, smoothingMs: 150, emphasis: {bass: 2, mid: 1, treble: 0.5}, gate: {mode: 'manual', threshold: 0.02}};
+
+it('response Apply is atomic and revision-bound; calibration Cancel and Stop remain independent', async t => {
+  const h = await setup(t), {binding} = await activeMicrophone(h, 'tuning-start');
+  const initial = await h.read();assert.ok(initial.response);
+  const apply = await h.tune('apply-manual', {action: 'apply-tuning', binding, expectedRevision: initial.revision, expectedSettingsRevision: initial.response.settingsRevision, settings: manualSettings});
+  assert.deepEqual(apply, {status: 'accepted', requestId: 'apply-manual'});
+  await waitFor(() => h.operation('apply-manual')?.result === 'succeeded');
+  const saved = await h.read();assert.deepEqual(saved.response?.settings, manualSettings);assert.deepEqual(saved.response?.appliedTo, binding);
+  const conflict = await h.tune('conflicting-settings', {action: 'apply-tuning', binding, expectedRevision: saved.revision, expectedSettingsRevision: 0, settings: {...manualSettings, sensitivity: 3}});
+  assert.ok('error' in conflict);assert.equal(conflict.error.code, 'revision-conflict');
+  assert.deepEqual((await h.read()).response?.settings, manualSettings);
+  const wrongBinding = await h.tune('wrong-calibration-binding', {action: 'calibrate', expectedRevision: saved.revision, binding: {...binding, microphoneId: 'other'}});
+  assert.ok('error' in wrongBinding);assert.equal(wrongBinding.error.code, 'revision-conflict');
+  await h.tune('quiet-cancel', {action: 'calibrate', binding, expectedRevision: saved.revision});
+  const measuring = await h.read();assert.equal(measuring.response?.calibration.status, 'measuring');
+  assert.notEqual(h.operation('quiet-cancel')?.result, 'succeeded');
+  await h.progress({operationId: 'quiet-cancel', generation: binding.generation, status: 'started'});
+  assert.equal((await h.read()).response?.calibration.status, 'measuring', 'producer progress cannot settle core-only measurement');
+  assert.notEqual(h.operation('quiet-cancel')?.result, 'succeeded');
+  await h.tune('cancel-quiet', {action: 'cancel-calibration', binding, operationId: 'quiet-cancel', expectedRevision: measuring.revision});
+  await waitFor(() => h.operation('cancel-quiet')?.result === 'succeeded');
+  assert.equal(h.operation('quiet-cancel')?.result, 'failed');
+  assert.deepEqual((await h.read()).response?.settings, manualSettings);
+  assert.deepEqual((await h.read()).response?.appliedTo, binding, 'cancel does not retire applied settings or capture');
+  assert.equal(h.work.length, 1, 'tuning commands send no producer work');
+  await h.tune('quiet-stop', {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
+  await h.control('independent-stop', (await h.read()).revision, 'stop');
+  await waitFor(() => h.work.length === 2);
+  assert.equal(h.operation('quiet-stop')?.result, 'failed');
+  assert.equal((await h.read()).response?.appliedTo, null);
+  const stop = h.work[1];assert.ok(stop);
+  await h.progress({operationId: stop.data.operationId, generation: stop.data.generation, status: 'stopped'});
+});
+
+it('a completed quiet interval is a candidate until Apply and restart retains evidence without qualification', async t => {
+  const directory = await stateDir(t), h = await setup(t, directory), {binding, selection} = await activeMicrophone(h, 'quiet-start');
+  await h.tune('quiet-complete', {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
+  for (let sequence = 2; sequence <= 60; sequence++) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await h.frame(binding.generation, sequence, {...selection, rms: 0.01, peak: 0.02});
+    if ((await h.read()).response?.calibration.status === 'ready') break;
+  }
+  await waitFor(() => h.operation('quiet-complete')?.result === 'succeeded');
+  const candidate = await h.read();assert.ok(candidate.response?.evidence);
+  assert.equal(candidate.response.evidence.windowCount, 50);assert.equal(candidate.response.evidence.percentileRms, 0.01);
+  assert.equal(candidate.response.evidence.suggestedThreshold, 0.02);assert.equal(candidate.response.settings.gate.mode, 'off');
+  assert.equal(candidate.response.appliedTo, null);
+  const settings: CaptureResponseSettings = {...manualSettings, gate: {mode: 'calibrated', threshold: 0.025, calibrationId: 'quiet-complete'}};
+  await h.tune('apply-measured', {action: 'apply-tuning', binding, expectedRevision: candidate.revision, expectedSettingsRevision: candidate.response.settingsRevision, settings});
+  await waitFor(() => h.operation('apply-measured')?.result === 'succeeded');
+  assert.deepEqual((await h.read()).response?.settings, settings);
+  await h.runtime.stop();await h.producer.close();
+  const recovered = await setup(t, directory), state = await recovered.read();
+  assert.deepEqual(state.response?.settings, settings);assert.deepEqual(state.response?.evidence, candidate.response.evidence);
+  assert.equal(state.response?.appliedTo, null);assert.equal(state.response?.calibration.status, 'ended');
+  assert.equal(recovered.operation('quiet-complete')?.result, 'succeeded');assert.equal(recovered.work.length, 0);
+});
+
+it('clipping fails quiet measurement and a later source discontinuity retires a manually applied gate', async t => {
+  const h = await setup(t), {binding, selection} = await activeMicrophone(h, 'quiet-failure-start');
+  await h.tune('clipped-quiet', {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
+  await new Promise(resolve => setTimeout(resolve, 250));
+  await h.frame(binding.generation, 2, {...selection, clippedFraction: 0.001});
+  await waitFor(() => h.operation('clipped-quiet')?.result === 'failed');
+  assert.deepEqual((await h.read()).response?.calibration, {status: 'ended', operationId: 'clipped-quiet', reason: 'clipping'});
+  const current = await h.read();assert.ok(current.response);
+  await h.tune('manual-after-clipping', {action: 'apply-tuning', binding, expectedRevision: current.revision, expectedSettingsRevision: current.response.settingsRevision, settings: manualSettings});
+  await waitFor(() => h.operation('manual-after-clipping')?.result === 'succeeded');
+  await h.frame(binding.generation, 3, {...selection, discontinuity: true});
+  await waitFor(async () => (await h.read()).response?.appliedTo === null);
+  assert.deepEqual((await h.read()).response?.settings, manualSettings);
+});
+
+it('restart settles unfinished calibration and refuses later reuse of its candidate', async t => {
+  const directory = await stateDir(t), first = await setup(t, directory), {binding} = await activeMicrophone(first, 'restart-calibration-start');
+  await first.tune('interrupted-quiet', {action: 'calibrate', binding, expectedRevision: (await first.read()).revision});
+  await first.runtime.stop();await first.producer.close();
+  const second = await setup(t, directory), recovered = await second.read();
+  assert.equal(second.operation('interrupted-quiet')?.result, 'uncertain');
+  assert.deepEqual(recovered.response?.calibration, {status: 'ended', operationId: 'interrupted-quiet', reason: 'restart'});
+  assert.equal(recovered.response?.evidence, null);assert.equal(second.work.length, 0);
+  const fresh = await activeMicrophone(second, 'restart-new-generation');
+  const current = await second.read();assert.ok(current.response);
+  const refused = await second.tune('reuse-interrupted', {action: 'apply-tuning', binding: fresh.binding, expectedRevision: current.revision,
+    expectedSettingsRevision: current.response.settingsRevision, settings: {...manualSettings, gate: {mode: 'calibrated', threshold: 0.02, calibrationId: 'interrupted-quiet'}}});
+  assert.ok('error' in refused);assert.equal(refused.error.code, 'invalid-state');
+});
+
+it('a refused tuning write leaves prior preferences intact and storage recovery retires the binding', async t => {
+  const h = await setup(t), {binding} = await activeMicrophone(h, 'tuning-storage-start');
+  const current = await h.read();assert.ok(current.response);await h.failWrites(true);
+  const refused = await h.tune('unsaved-tuning', {action: 'apply-tuning', binding, expectedRevision: current.revision,
+    expectedSettingsRevision: current.response.settingsRevision, settings: manualSettings});
+  assert.ok('error' in refused);assert.equal(refused.error.code, 'internal');await h.failWrites(false);
+  await waitFor(async () => {try {return (await h.read()).availability === 'unavailable';} catch {return false;}}, 4000);
+  assert.deepEqual((await h.read()).response?.settings, current.response.settings);assert.equal((await h.read()).response?.appliedTo, null);
+  assert.equal(h.work.length, 1);assert.equal(h.operation('unsaved-tuning')?.result, 'failed');
+});
+
+for (const interruption of ['format', 'stale', 'clock', 'source-lost'] as const) it(`calibration and an applied gate retire together on ${interruption}`, async t => {
+  const h = await setup(t), {binding, selection} = await activeMicrophone(h, `retire-${interruption}`);
+  const current = await h.read();assert.ok(current.response);
+  await h.tune(`apply-${interruption}`, {action: 'apply-tuning', binding, expectedRevision: current.revision,
+    expectedSettingsRevision: current.response.settingsRevision, settings: manualSettings});
+  await h.tune(`measure-${interruption}`, {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
+  if (interruption === 'format') await h.frame(binding.generation, 2, {...selection, sampleRateHz: 44100, frameCount: 4410});
+  else if (interruption === 'clock') h.wallOffset(1000);
+  else if (interruption === 'source-lost') await h.endpoint.close();
+  await waitFor(async () => (await h.read()).response?.appliedTo === null, 2500);
+  const retired = await h.read();assert.deepEqual(retired.response?.settings, manualSettings);
+  assert.equal(retired.response?.calibration.status, 'ended');
+  assert.notEqual(h.operation(`measure-${interruption}`)?.result, 'succeeded');
+  assert.equal(h.work.length, 1, 'retirement never dispatches more source work');
 });

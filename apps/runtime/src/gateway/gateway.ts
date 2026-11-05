@@ -945,7 +945,8 @@ export class Gateway {
     if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
     if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
     const type = `org.bunny.${family.slice(0, verb)}.${family.slice(verb + 1)}.requested`;
-    const version = family === 'music-capture-control' && data.action === 'start' && data.input === 'microphone' ? '2.1' : '2.0';
+    const version = family === 'music-capture-control' && ['calibrate', 'cancel-calibration', 'apply-tuning'].includes(String(data.action)) ? '2.2' :
+      family === 'music-capture-control' && data.action === 'start' && data.input === 'microphone' ? '2.1' : '2.0';
     const dataschema = `${SCHEMA_BASE}${family}/${version}`;
     const now = this.#options.clock.now();
     const checked = this.#options.validator.validate({

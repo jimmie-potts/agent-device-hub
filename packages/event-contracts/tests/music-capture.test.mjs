@@ -95,3 +95,41 @@ test('selected microphone versions preserve Music and require public source prov
   invalid(v21({...registration, data: {...registration.data, microphone: {id: 'studio-mic', present: true}}}));
   invalid({...v21(work), dataschema: work.dataschema.replace('/2.0', '/2.2')});
 });
+
+const binding = {endpointId: 'endpoint-1', generation, microphoneId: 'studio-mic', sampleRateHz: 48000, channels: 2};
+const settings = {sensitivity: 1, smoothingMs: 100, emphasis: {bass: 1, mid: 1, treble: 1}, gate: {mode: 'off'}};
+const v22 = value => ({...value, dataschema: value.dataschema.replace('/2.0', '/2.2')});
+const tuning = data => v22(message('music-capture-control', 'command', 'org.bunny.music-capture.control.requested',
+  {requestId: 'tuning-one', expectedRevision: 1, ...data}, 'music'));
+
+test('2.2 calibration and tuning have explicit source binding and closed finite settings', () => {
+  valid(tuning({action: 'calibrate', binding}));
+  valid(tuning({action: 'cancel-calibration', binding, operationId: 'calibration-one'}));
+  valid(tuning({action: 'apply-tuning', expectedSettingsRevision: 0, binding, settings}));
+  valid(tuning({action: 'apply-tuning', expectedSettingsRevision: 0, binding, settings: {...settings, gate: {mode: 'manual', threshold: 0.02}}}));
+  valid(tuning({action: 'apply-tuning', expectedSettingsRevision: 0, binding, settings: {...settings, gate: {mode: 'calibrated', threshold: 0.02, calibrationId: 'calibration-one'}}}));
+  invalid(tuning({action: 'calibrate'}));
+  invalid(tuning({action: 'calibrate', binding: {...binding, uid: 'private'}}));
+  invalid(tuning({action: 'cancel-calibration', binding}));
+  for (const patch of [{sensitivity: 0}, {sensitivity: 8.1}, {smoothingMs: -1}, {smoothingMs: 2001},
+    {emphasis: {bass: 5, mid: 1, treble: 1}}, {gate: {mode: 'manual', threshold: NaN}},
+    {gate: {mode: 'manual', threshold: 16.1}}, {gate: {mode: 'off', threshold: 0}},
+    {gate: {mode: 'calibrated', threshold: 0.02}}, {pcm: [0]}])
+    invalid(tuning({action: 'apply-tuning', expectedSettingsRevision: 0, binding, settings: {...settings, ...patch}}));
+  for (const version of ['2.0', '2.1']) invalid({...tuning({action: 'calibrate', binding}), dataschema: `https://bunny.invalid/events/music-capture-control/${version}`});
+});
+
+test('2.2 state carries bounded persisted response evidence while old state shapes remain valid', () => {
+  const data = {id: 'music', revision: 1, endpointId: null, availability: 'off', session: {status: 'idle'}};
+  const state = message('music-capture-state', 'state', 'org.bunny.music-capture.updated', data, 'music');
+  valid(state); valid(v21(state)); invalid(v22(state));
+  const response = {settingsRevision: 0, settings, appliedTo: null, calibration: {status: 'idle'}, evidence: null};
+  valid({...v22(state), data: {...data, response}});
+  invalid({...state, data: {...data, response}});
+  invalid({...v21(state), data: {...data, response}});
+  const evidence = {id: 'calibration-one', binding, windowCount: 50, startedAtMs: at, endedAtMs: at + 5000,
+    sourceDurationMs: 5000, percentileRms: 0.01, maximumRms: 0.02, suggestedThreshold: 0.02};
+  valid({...v22(state), data: {...data, response: {...response, evidence}}});
+  invalid({...v22(state), data: {...data, response: {...response, evidence: {...evidence, windowCount: 49}}}});
+  invalid({...v22(state), data: {...data, response: {...response, evidence: {...evidence, rawAudio: []}}}});
+});

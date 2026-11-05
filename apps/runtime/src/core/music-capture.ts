@@ -4,21 +4,23 @@ import type {DatabaseSync} from 'node:sqlite';
 import {MessageValidator, errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {CAPTURE_CLOCK_DRIFT_MS, CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_VALIDITY_MS, MUSIC_PRODUCER_SOURCE,
-  type CaptureControl, type CaptureEndpointControl, type CaptureFeatures, type CaptureLost, type CaptureProgress, type CaptureSelection, type CaptureState, type CaptureWork,
+  type CaptureCalibrationReason, type CaptureResponseBinding, type CaptureResponseState, type CaptureControl, type CaptureEndpointControl, type CaptureFeatures, type CaptureLost, type CaptureProgress, type CaptureSelection, type CaptureState, type CaptureWork,
 } from '@jimmie-potts/event-contracts/v2/music-capture';
 import {Outcome, fullDisk, recordLog, type Cancel, type Command, type ModuleScheduler, type Reply, type StateDraft} from '@jimmie-potts/sdk';
 import {Backoff} from './backoff.js';
+import {QuietCalibration, calibrationDurationMs, responseDefaults, retireResponse, sameResponseBinding} from './music-calibration.js';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreTransaction} from './store.js';
 import type {CompletedOutcome, CoreResponsibility} from './tracker.js';
 
 const SCHEMA = 'https://bunny.invalid/events/';
-const stateDraft = (data: CaptureState): StateDraft<CaptureState> => ({type: 'org.bunny.music-capture.updated', subject: 'music', dataschema: `${SCHEMA}music-capture-state/2.1`, data});
+const stateDraft = (data: CaptureState): StateDraft<CaptureState> => ({type: 'org.bunny.music-capture.updated', subject: 'music', dataschema: `${SCHEMA}music-capture-state/2.2`, data});
 const selectedInput = (value: CaptureSelection): CaptureSelection => value.input === 'music' ? {input: 'music'} : {input: 'microphone', microphoneId: value.microphoneId};
-type Responsibility = {authority: CoreResponsibility; action: 'start' | 'stop'; generation: string; endpointId: string;
+type Responsibility = {authority: CoreResponsibility; action: 'start' | 'stop' | 'calibrate'; generation: string; endpointId: string;
   result: 'pending' | 'uncertain' | 'succeeded' | 'failed'; traceparent: string; selection?: CaptureSelection};
 type ClockAnchor = {wall: number; mono: number};
-type Live = ClockAnchor & {generation: string; sequence: number; sourceEnd: number; untilWall: number; untilMono: number};
+type Live = ClockAnchor & {generation: string; sequence: number; sourceEnd: number; untilWall: number; untilMono: number; latest?: CaptureFeatures};
+type CurrentState = CaptureState & {response: CaptureResponseState};
 export type CaptureAdmission = {
   admit(command: Command<CaptureControl>): boolean;
   retain(command: Command<CaptureControl>): CoreResponsibility;
@@ -39,6 +41,7 @@ export class MusicCapturePart implements CorePart {
   readonly #backoff = new Backoff(1000, 60_000);
   #queue: Promise<unknown> = Promise.resolve();
   #live: Live | undefined;
+  #calibration: {operationId: string; trial: QuietCalibration} | undefined;
   #endpointClock: ClockAnchor | undefined;
   #timer: Cancel | undefined;
   readonly #deadlines = new Map<string, Cancel>();
@@ -49,7 +52,7 @@ export class MusicCapturePart implements CorePart {
     this.#database = undefined;
     database.exec("CREATE TABLE IF NOT EXISTS music_capture (id TEXT PRIMARY KEY CHECK (id = 'music'), record TEXT NOT NULL) STRICT; " +
       'CREATE TABLE IF NOT EXISTS music_capture_responsibilities (id TEXT PRIMARY KEY, record TEXT NOT NULL) STRICT');
-    const initial: CaptureState = {id: 'music', revision: 0, endpointId: null, availability: 'off', session: {status: 'idle'}};
+    const initial: CaptureState = {id: 'music', revision: 0, endpointId: null, availability: 'off', session: {status: 'idle'}, response: responseDefaults()};
     database.prepare('INSERT INTO music_capture VALUES (?, ?) ON CONFLICT DO NOTHING').run('music', JSON.stringify(initial));
     this.#database = database;
   }
@@ -89,14 +92,14 @@ export class MusicCapturePart implements CorePart {
   async #recover(): Promise<void> {
     if (this.#database === undefined) return;
     const previous = this.#state();
-    if (previous.endpointId === null && previous.microphone === undefined && previous.session.status === 'idle' && this.#responsibilities().every(record => record.result !== 'pending')) return;
+    if (previous.endpointId === null && previous.microphone === undefined && previous.session.status === 'idle' && previous.response.appliedTo === null && !['measuring', 'ready'].includes(previous.response.calibration.status) && this.#responsibilities().every(record => record.result !== 'pending')) return;
     const core = this.#required();
     const completions: (() => void)[] = [];
     await core.transaction(tx => {
       const current = this.#state();
-      if (current.endpointId !== null || current.microphone !== undefined || current.session.status !== 'idle') {
+      if (current.endpointId !== null || current.microphone !== undefined || current.session.status !== 'idle' || current.response.appliedTo !== null || ['measuring', 'ready'].includes(current.response.calibration.status)) {
         delete current.microphone;
-        this.#save(tx, {...current, endpointId: null, availability: 'unavailable',
+        this.#save(tx, {...current, response: retireResponse(current.response, 'restart'), endpointId: null, availability: 'unavailable',
           session: current.session.status === 'idle' ? current.session : {...current.session, status: 'unavailable'}});
       }
       for (const record of this.#responsibilities()) if (record.result === 'pending') completions.push(this.#finish(tx, record, 'uncertain', 'uncertain-result'));
@@ -113,9 +116,10 @@ export class MusicCapturePart implements CorePart {
   }
   #required(): CoreHandle {if (this.#core === undefined) throw new Error('capture-core-unavailable');return this.#core;}
   #db(): DatabaseSync {if (this.#database === undefined) throw new Error('capture-store-unavailable');return this.#database;}
-  #state(): CaptureState {
+  #state(): CurrentState {
     const row = this.#db().prepare("SELECT record FROM music_capture WHERE id = 'music'").get() as {record: string};
-    return JSON.parse(row.record) as CaptureState;
+    const state = JSON.parse(row.record) as CaptureState;
+    return {...state, response: state.response ?? responseDefaults()};
   }
   #responsibilities(): Responsibility[] {
     return this.#db().prepare('SELECT record FROM music_capture_responsibilities').all().map(row => JSON.parse(String(row.record)) as Responsibility);
@@ -129,7 +133,7 @@ export class MusicCapturePart implements CorePart {
       .run(record.authority.requestId, JSON.stringify(record));
   }
   #save(tx: CoreTransaction, record: CaptureState): void {
-    const next = {...record, revision: tx.revision()};
+    const next = {...record, response: record.response ?? responseDefaults(), revision: tx.revision()};
     this.#db().prepare("UPDATE music_capture SET record = ? WHERE id = 'music'").run(JSON.stringify(next));
     tx.add('bunny.state.music-capture-state.music', {kind: 'state', ...stateDraft(next)});
   }
@@ -173,11 +177,14 @@ export class MusicCapturePart implements CorePart {
     try {return await this.#serial(async () => {
       const core = this.#required();await core.ready;
       if (this.#closed || this.#faulted) return errorBody('unavailable');
+      if (command.data.action !== 'start' && command.data.action !== 'stop') return this.#tune(command, authority);
+      const completions: (() => void)[] = [];
       let accepted: Responsibility | undefined, live: Live | undefined;
       let clockInvalid = false;
       const anchor = this.#endpointClock;
       const answer = await core.transaction(tx => {
-        const current = this.#state(), data = command.data;
+        let current = this.#state(); const data = command.data;
+        if (data.action !== 'start' && data.action !== 'stop') return errorBody('invalid-request');
         if (Date.parse(command.expiresat ?? '') <= tx.atMs) return errorBody('expired');
         if (data.expectedRevision !== current.revision) return errorBody('revision-conflict');
         if (current.availability !== 'available' || current.endpointId === null) return errorBody('unavailable');
@@ -192,11 +199,13 @@ export class MusicCapturePart implements CorePart {
         const generation = data.action === 'start' ? randomUUID() : current.session.status === 'idle' ? '' : current.session.generation;
         const record: Responsibility = {authority, action: data.action, generation, endpointId: current.endpointId, result: 'pending', traceparent: command.traceparent, selection};
         this.#write(record);
+        const retired = this.#invalidate(tx, current, 'stopped'); current = retired.state; completions.push(retired.complete);
         this.#save(tx, {...current, session: {status: data.action === 'start' ? 'starting' : 'stopping', generation, operationId: authority.requestId, ...selection}});
         tx.take(command);accepted = record;
         if (data.action === 'start' && anchor !== undefined) live = {...anchor, generation, sequence: 0, sourceEnd: -1, untilWall: 0, untilMono: 0};
         return {status: 'accepted'} as const;
       });
+      for (const complete of completions) complete();
       if (clockInvalid) await this.#retire('unavailable');
       if (accepted !== undefined) {
         this.#fence();this.#live = live;
@@ -208,9 +217,69 @@ export class MusicCapturePart implements CorePart {
     });} catch (error) {return errorBody(fullDisk(error) ? 'capacity' : 'internal');}
     finally {this.admission.end(command);}
   }
+  #binding(state: CurrentState): CaptureResponseBinding | undefined {
+    const live = this.#live, session = state.session, core = this.#required();
+    if (state.availability !== 'available' || state.endpointId === null || session.status !== 'active' || session.input !== 'microphone' ||
+      live?.latest === undefined || live.generation !== session.generation || live.latest.input !== 'microphone' ||
+      core.clock.now() >= live.untilWall || this.monotonic() >= live.untilMono || !this.#clockValid(live, core.clock.now(), this.monotonic())) return undefined;
+    return {endpointId: state.endpointId, generation: session.generation, microphoneId: session.microphoneId,
+      sampleRateHz: live.latest.sampleRateHz, channels: live.latest.channels};
+  }
+  #invalidate(tx: CoreTransaction, state: CurrentState, reason: CaptureCalibrationReason): {state: CurrentState; complete: () => void} {
+    const attempt = state.response.calibration;
+    const record = attempt.status === 'measuring' ? this.#responsibility(attempt.operationId) : undefined;
+    const complete = record?.result === 'pending' ? this.#finish(tx, record, 'failed', reason === 'cancelled' || reason === 'stopped' ? 'cancelled' : 'invalid-state') : () => {};
+    return {state: {...state, response: retireResponse(state.response, reason)}, complete};
+  }
+  async #tune(command: Command<CaptureControl>, authority: CoreResponsibility): Promise<Reply> {
+    const core = this.#required(), data = command.data;
+    if (data.action === 'start' || data.action === 'stop') return errorBody('invalid-request');
+    let complete = () => {}, cancelled = () => {};
+    let measurement: {operationId: string; trial: QuietCalibration} | undefined;
+    const reply = await core.transaction(tx => {
+      const current = this.#state(), binding = this.#binding(current), response = current.response;
+      if (Date.parse(command.expiresat ?? '') <= tx.atMs) return errorBody('expired');
+      if (data.expectedRevision !== current.revision) return errorBody('revision-conflict');
+      if (binding === undefined) return errorBody('unavailable');
+      if (!sameResponseBinding(data.binding, binding)) return errorBody('revision-conflict');
+      const attempt = response.calibration;
+      if (data.action === 'calibrate') {
+        if (attempt.status === 'measuring') return errorBody('invalid-state');
+        const clock = {wall: core.clock.now(), mono: this.monotonic()};
+        this.#write({authority, action: 'calibrate', generation: binding.generation, endpointId: binding.endpointId,
+          result: 'pending', traceparent: command.traceparent});
+        this.#save(tx, {...current, response: {...response, calibration: {status: 'measuring', operationId: authority.requestId,
+          binding, startedAtMs: clock.wall, deadlineAtMs: clock.wall + calibrationDurationMs}}});
+        measurement = {operationId: authority.requestId, trial: new QuietCalibration(authority.requestId, binding, clock)};
+      } else if (data.action === 'cancel-calibration') {
+        if (attempt.status !== 'measuring' || attempt.operationId !== data.operationId) return errorBody('invalid-state');
+        const record = this.#responsibility(attempt.operationId);
+        if (record?.result !== 'pending') return errorBody('invalid-state');
+        cancelled = this.#finish(tx, record, 'failed', 'cancelled');
+        this.#save(tx, {...current, response: {...response, calibration: {status: 'ended', operationId: attempt.operationId, reason: 'cancelled'}}});
+      } else {
+        if (attempt.status === 'measuring') return errorBody('invalid-state');
+        if (data.expectedSettingsRevision !== response.settingsRevision) return errorBody('revision-conflict');
+        const gate = data.settings.gate, evidence = response.evidence;
+        if (gate.mode === 'calibrated' && (attempt.status !== 'ready' || attempt.operationId !== gate.calibrationId || evidence === null ||
+          evidence.id !== gate.calibrationId || !sameResponseBinding(evidence.binding, binding))) return errorBody('invalid-state');
+        this.#save(tx, {...current, response: {...response, settingsRevision: tx.revision(), settings: structuredClone(data.settings), appliedTo: binding}});
+      }
+      tx.take(command);
+      if (data.action !== 'calibrate') complete = this.admission.complete(tx, authority, {result: Outcome.succeeded, evidence: Outcome.observed});
+      return {status: 'accepted'} as const;
+    });
+    complete();cancelled();
+    if (!('error' in reply)) {
+      if (data.action === 'calibrate') this.#calibration = measurement;
+      else if (data.action === 'cancel-calibration') this.#calibration = undefined;
+      this.#schedule();
+    }
+    return reply;
+  }
   async #send(record: Responsibility): Promise<void> {
     const core = this.#required();
-    if (this.#closed) return;
+    if (this.#closed || record.action === 'calibrate') return;
     const selection = record.selection ?? {input: 'music'};
     const data: CaptureWork = {requestId: record.authority.requestId, operationId: record.authority.requestId, generation: record.generation,
       ...(record.action === 'start' ? {action: 'start', ...selection} : {action: 'stop'})};
@@ -229,24 +298,26 @@ export class MusicCapturePart implements CorePart {
     if (selected.status !== 'idle' && selected.operationId === record.authority.requestId) {
       this.#fence();if (result === Outcome.uncertain || record.action === 'stop') this.#disconnect();
     }
-    let complete = () => {};
+    let complete = () => {}, calibrationComplete = () => {};
     await core.transaction(tx => {
       complete = this.#finish(tx, currentRecord, result, code);
       const current = this.#state();
-      if (current.session.status !== 'idle' && current.session.operationId === record.authority.requestId) this.#save(tx, {...current,
-        session: {...current.session, status: result === Outcome.uncertain ? 'uncertain' : 'unavailable'}});
-    });complete();this.#cancelDeadline(record.authority.requestId);
+      if (current.session.status !== 'idle' && current.session.operationId === record.authority.requestId) {
+        const retired = this.#invalidate(tx, current, 'source-lost');calibrationComplete = retired.complete;
+        this.#save(tx, {...retired.state, session: {...current.session, status: result === Outcome.uncertain ? 'uncertain' : 'unavailable'}});
+      }
+    });complete();calibrationComplete();this.#cancelDeadline(record.authority.requestId);
   }
   async #progress(message: Message<CaptureProgress>): Promise<void> {
     const core = this.#required();await core.ready;
     if (this.#closed || this.#faulted || message.source !== MUSIC_PRODUCER_SOURCE || !this.#validator.validate(message).ok) return;
     const data = message.data, record = this.#responsibility(data.operationId);
-    if (record === undefined || record.endpointId !== message.subject || record.generation !== data.generation) return;
+    if (record === undefined || record.action === 'calibrate' || record.endpointId !== message.subject || record.generation !== data.generation) return;
     if (data.status === 'started' && record.action !== 'start' || data.status === 'stopped' && record.action !== 'stop') return;
     const definitive = data.status === 'started' || data.status === 'stopped';
     const result = definitive ? Outcome.succeeded : data.status === 'failed' ? Outcome.failed : Outcome.uncertain;
     if (record.result === result && definitive) return;
-    let complete = () => {};
+    let complete = () => {}, calibrationComplete = () => {};
     const state = this.#state();
     const selected = state.endpointId === record.endpointId && state.session.status !== 'idle' && state.session.operationId === data.operationId;
     if (!definitive && selected) {this.#fence();if (record.action === 'stop') this.#disconnect();}
@@ -260,9 +331,12 @@ export class MusicCapturePart implements CorePart {
         // Late evidence can settle an operation, but only a still-authorized generation can become live.
         if (data.status === 'started' && this.#live?.generation === data.generation) this.#save(tx, {...current, session: {...current.session, status: 'stale'}});
         else if (data.status === 'stopped') this.#save(tx, {...current, session: {status: 'idle'}});
-        else if (!definitive) this.#save(tx, {...current, session: {...current.session, status: data.status === 'uncertain' ? 'uncertain' : 'unavailable'}});
+        else if (!definitive) {
+          const retired = this.#invalidate(tx, current, 'source-lost');calibrationComplete = retired.complete;
+          this.#save(tx, {...retired.state, session: {...current.session, status: data.status === 'uncertain' ? 'uncertain' : 'unavailable'}});
+        }
       }
-    });complete();this.#cancelDeadline(data.operationId);this.#schedule();
+    });complete();calibrationComplete();this.#cancelDeadline(data.operationId);this.#schedule();
   }
   async #features(message: Message<CaptureFeatures>): Promise<void> {
     const core = this.#required(), live = this.#live;
@@ -273,10 +347,41 @@ export class MusicCapturePart implements CorePart {
       !['active', 'stale'].includes(current.session.status) || frame.sequence <= live.sequence || frame.endMonotonicMs <= live.sourceEnd || frame.observedAtMs > wall + CAPTURE_MAX_CLOCK_SKEW_MS || wall >= frame.validUntilMs) return;
     if (frame.input !== current.session.input || (frame.input === 'microphone' &&
       (current.session.input !== 'microphone' || frame.microphoneId !== current.session.microphoneId))) return;
+    const previous = live.latest;
+    const invalidation: CaptureCalibrationReason | undefined = previous !== undefined &&
+      (frame.sampleRateHz !== previous.sampleRateHz || frame.channels !== previous.channels) ? 'format' :
+      previous !== undefined && (frame.discontinuity || frame.sequence !== previous.sequence + 1 || Math.abs(frame.startMonotonicMs - previous.endMonotonicMs) > 0.01) ? 'discontinuity' :
+      previous !== undefined && (wall >= live.untilWall || mono >= live.untilMono) ? 'stale' : undefined;
     live.sequence = frame.sequence;live.sourceEnd = frame.endMonotonicMs;live.untilWall = frame.validUntilMs;
-    live.untilMono = mono + Math.min(CAPTURE_VALIDITY_MS, frame.validUntilMs - wall);
+    live.untilMono = mono + Math.min(CAPTURE_VALIDITY_MS, frame.validUntilMs - wall); live.latest = frame;
     const session = current.session;
-    if (session.status !== 'active') await core.transaction(tx => this.#save(tx, {...current, session: {...session, status: 'active'}}));
+    if (session.status !== 'active' || invalidation !== undefined) {
+      let complete = () => {};
+      await core.transaction(tx => {
+        const retired = invalidation === undefined ? {state: current, complete} : this.#invalidate(tx, current, invalidation);
+        complete = retired.complete;this.#save(tx, {...retired.state, session: {...session, status: 'active'}});
+      });complete();if (invalidation !== undefined) this.#calibration = undefined;
+    }
+    const calibration = this.#calibration;
+    if (calibration !== undefined) {
+      let result = calibration.trial.accept(frame, mono);
+      if (result.status === 'failed' || result.status === 'complete') {
+        let complete = () => {};
+        await core.transaction(tx => {
+          if (calibration.trial.expired(this.monotonic())) result = {status: 'failed', reason: 'deadline'};
+          else if (core.clock.now() >= frame.validUntilMs || !this.#clockValid(live, core.clock.now(), this.monotonic())) result = {status: 'failed', reason: 'stale'};
+          if (result.status !== 'complete' && result.status !== 'failed') return;
+          const selected = this.#state(), attempt = selected.response.calibration;
+          const record = this.#responsibility(calibration.operationId);
+          if (record?.result !== 'pending' || attempt.status !== 'measuring' || attempt.operationId !== calibration.operationId) return;
+          const response: CaptureResponseState = {...selected.response, calibration: result.status === 'complete'
+            ? {status: 'ready', operationId: calibration.operationId} : {status: 'ended', operationId: calibration.operationId, reason: result.reason},
+            ...(result.status === 'complete' ? {evidence: result.evidence} : {})};
+          this.#save(tx, {...selected, response});
+          complete = this.#finish(tx, record, result.status === 'complete' ? 'succeeded' : 'failed', result.status === 'complete' ? undefined : 'invalid-state');
+        });complete();this.#calibration = undefined;
+      }
+    }
     this.#schedule();
   }
   #clockValid(live: ClockAnchor, wall: number, mono: number): boolean {
@@ -296,11 +401,18 @@ export class MusicCapturePart implements CorePart {
     if (!this.#clockValid(live, wall, mono)) {await this.#retire('unavailable');return;}
     const current = this.#state();
     const session = current.session;
-    if (session.status === 'active' && (wall >= live.untilWall || mono >= live.untilMono)) await core.transaction(tx =>
-      this.#save(tx, {...current, session: {...session, status: 'stale'}}));
+    const stale = session.status === 'active' && (wall >= live.untilWall || mono >= live.untilMono);
+    const expired = this.#calibration?.trial.expired(mono) === true;
+    if (stale || expired) {
+      let complete = () => {};
+      await core.transaction(tx => {
+        const retired = this.#invalidate(tx, current, stale ? 'stale' : 'deadline');complete = retired.complete;
+        this.#save(tx, {...retired.state, session: stale ? {...session, status: 'stale'} : session});
+      });complete();this.#calibration = undefined;
+    }
     this.#schedule();
   }
-  #fence(): void {this.#live = undefined;this.#timer?.();this.#timer = undefined;}
+  #fence(): void {this.#calibration = undefined;this.#live = undefined;this.#timer?.();this.#timer = undefined;}
   #cancelDeadline(id: string): void {this.#deadlines.get(id)?.();this.#deadlines.delete(id);}
   #lose(): void {this.#fence();if (!this.#closed) void this.#serial(() => this.#retire('unavailable')).catch(() => {});}
   async #retire(availability: 'off' | 'unavailable'): Promise<void> {
@@ -312,7 +424,7 @@ export class MusicCapturePart implements CorePart {
     await core.transaction(tx => {
       const current = this.#state();
       delete current.microphone;
-      this.#save(tx, {...current, endpointId: null, availability,
+      this.#save(tx, {...current, response: retireResponse(current.response, 'source-lost'), endpointId: null, availability,
         session: current.session.status === 'idle' ? current.session : {...current.session, status: 'unavailable'}});
       for (const record of this.#responsibilities()) if (record.result === 'pending') completions.push(this.#finish(tx, record, 'uncertain', 'uncertain-result'));
     });for (const complete of completions) complete();

@@ -743,12 +743,31 @@ module re-exports them and retains validation. Endpoint capability contains only
 and `microphoneId`, a bounded public alias. Device UIDs and names are forbidden.
 Configured capability says nothing about device presence or authorization.
 
-The core publishes one `music-capture-state/2.1` record through both sync and live
+The core publishes one `music-capture-state/2.2` record through both sync and live
 updates, including for Music-only producers. Bundled readers explicitly accept
-state 2.0 and 2.1. They do not treat an unknown version as compatible. Music start
+state 2.0, 2.1 and 2.2. They do not treat an unknown version as compatible. Music start
 and all stop work remain 2.0; microphone start uses 2.1. Music features remain
 2.0; microphone features use 2.1. Progress and endpoint-loss contracts remain 2.0.
 Existing 2.0 schemas are unchanged and reject microphone fields. This follows the
 same registered-version migration as `device/2.1`; state is never dual-published.
-The capture tests cover both accepted versions, closed fields and bounds, and
+The capture tests cover accepted versions, closed fields and bounds, and
 source/alias association. The dashboard gates each meter by that provenance.
+
+### Quiet calibration and response (`music-capture-control/state/2.2`)
+
+Control 2.2 adds `calibrate`, `cancel-calibration` and `apply-tuning`, each naming
+the current capture revision and exact endpoint/generation/alias/format binding.
+Apply also names `expectedSettingsRevision`; a stale editor cannot overwrite
+newer settings by adopting a later capture revision. Cancel names its measurement
+operation. Existing start/stop commands keep their prior selected versions.
+
+State 2.2 adds a required `response` record: settings revision, bounded settings,
+current application binding, calibration attempt and latest successful evidence.
+Sensitivity is 0.1–8, smoothing 0–2000 ms, each broad-band emphasis 0–4 and a
+linear RMS gate threshold 0–16. Gates are off, explicitly manual or associated
+with a measured candidate. Evidence holds 50 windows/5000 ms, the observed 95th
+percentile and maximum, and a heuristic suggested threshold. It contains no UID,
+PCM, physical loudness or beat estimate. Retired qualification clears the current
+binding while retaining preferences and evidence. All earlier schema files and
+Music/microphone raw feature meanings remain unchanged. The core never
+dual-publishes state.
