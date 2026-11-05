@@ -1823,6 +1823,18 @@ for the acceptance exercise.
 
 ## Nanoleaf port
 
+Offline decorative show authoring (#723) uses the existing Nanoleaf built-test
+discovery for immutable versions, metadata-only commands, content reads and
+restart/rollback checks. After the root build, run
+`node --test modules/nanoleaf/dist/tests/music-shows.test.js modules/nanoleaf/dist/tests/module-shows.test.js`,
+then `npm run test:nanoleaf:built`. The existing
+`node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts` journey covers the
+editor through the authenticated disposable runtime and remains in the full
+local runtime dashboard browser check. Run the existing smoke check as well.
+Keep shared build, typecheck, lint,
+contract and workflow checks. These checks use synthetic plans and establish
+no installation, playback, physical timing or light output.
+
 The internal prepared-music timeline helper (#1273) is covered by
 `modules/nanoleaf/tests/music-timeline.test.ts`, discovered by the existing
 `test:nanoleaf:built` CI suite. After the root build, its focused check is

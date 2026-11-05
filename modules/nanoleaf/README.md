@@ -129,8 +129,10 @@ instruction. `renderMusicCue` validates the supplied saved layout and uses the
 existing Lines/NL22 encoder with cue intensity. It renders the ordinary effect
 from its beginning, so the cursor's elapsed time is not a phase-accurate seek.
 
-This helper has no production caller, timer, store, SDK family or device access.
-It grants no music admission. [#1273](https://github.com/jimmie-potts/agent-device-hub/issues/1273)
+The offline show library calls preparation; its storyboard uses only the
+browser-safe semantic selector in `music-timeline-data.ts`. The cursor and
+renderer have no production playback caller or device access. Preparation
+grants no music admission. [#1273](https://github.com/jimmie-potts/agent-device-hub/issues/1273)
 retains worker scheduling and outcome integration under the
 [#40 policy](https://github.com/jimmie-potts/agent-device-hub/issues/40).
 [Show authoring](https://github.com/jimmie-potts/agent-device-hub/issues/723),
@@ -183,10 +185,56 @@ Existing workers retain sole device-write ownership; #725 owns physical timing.
 `music-effects.test.ts` and `music-input.test.ts` use synthetic inputs and explicit
 times to check these source contracts.
 
+## Offline decorative shows
+
+The declared **Decorative shows** page at `#/module/nanoleaf/shows`, also linked
+from Audio, prepares private cue plans under
+[#723](https://github.com/jimmie-potts/agent-device-hub/issues/723). Choose Ocean
+drift or Warm rise, edit the cue timing, effect, palette and intensity, then
+select **Save new version**. Opening a starter and moving the storyboard's
+position control change only the browser draft. The storyboard shows semantic
+intervals, gaps and palettes, with no exact-frame or audible synchronization
+claim. Replay is unavailable.
+
+Each save supplies a show ID, `expectedVersion` with zero for creation, show
+name, version name and timeline. The fixed `shows` target takes
+`nanoleaf-show-save/2.0` through the core's existing tracked action route. The
+owner freezes explicit recipes and atomically commits the new version, head,
+catalog revision and observed metadata outcome. It changes no device
+configuration, journal, last outcome or worker scheduling. Acceptance is
+separate from completion. A stale save returns `revision-conflict`; reconnect,
+refresh and reload never resend a command. Failed and uncertain saves retain
+the open draft, and uncertainty keeps the shared attempt locked.
+
+The library permits 32 shows and 256 total immutable versions. The 128 KiB
+limit counts the UTF-8 bytes of the exact stored JSON document, including its
+identity and names. Thus plan bodies occupy at most 32 MiB before SQLite
+overhead. Capacity refuses new saves and preserves earlier versions. Names
+permit 1–80 Unicode characters without control characters. The existing
+timeline limits still apply. There is no automatic starter save, deletion,
+audio collection or analysis metadata.
+
+`nanoleaf-shows/2.0` exposes bounded version summaries through owner-qualified
+sync. The authenticated module read
+`show-version?showId=<id>&version=<positive integer>` returns exactly that
+immutable version. Bad identities, unknown versions and invalid stored data
+produce fixed registry refusals; corrupt bytes remain untouched. The additive
+tables start empty and survive restart in the existing private module store.
+Existing favorites retain their separate browser-exclusion rule.
+
+After the root build, the `music-shows`, `module-shows` and `show-model` tests
+run through `npm run test:nanoleaf:built`. The existing
+`node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts` entry includes a
+real disposable gateway/core/module authoring journey, immutable versions,
+stale and unauthorized saves, no device changes, no resend and light/dark
+desktop/phone accessibility. Optional `DASHBOARD_RECEIPTS` keeps synthetic
+screenshots outside the checkout. Source checks do not establish installed
+or physical acceptance.
+
 ## Families
 
 The module answers each device's own keys, `bunny.cmd.<family>.<device id>`, and serves
-`device`, `nanoleaf-wall` and `nanoleaf-animations` through sync, as its health entry's
+`device`, `nanoleaf-wall`, `nanoleaf-animations` and `nanoleaf-shows` through sync, as its health entry's
 `serves` lists. Every device module serves `device` for its own devices (#967), so a
 consumer syncs it from `bunny/modules/nanoleaf` by name. Its own schemas are
 `nanoleafSchemas`; `nanoleafMessageSchemas` adds the general device families.
@@ -203,6 +251,8 @@ the wall pages (#934) apply that rule.
 | `device` | state | Each controller's `device/2.1` record, with `held` while a hold stops its writes |
 | `nanoleaf-wall` | state | Each controller's wall map: settings, palette, projects, elements and tasks with their eviction tokens, whether its last pass failed or no worker runs (`failing`), and whether a hold stops its writes (`held`) |
 | `nanoleaf-animations` | state | Each device's animation options: presets, favorites, patterns, bounds, the queued animation, saved positions and the remembered scene |
+| `nanoleaf-shows` | state | The private decorative library's immutable version summaries, with subject `shows` |
+| `nanoleaf-show-save` | command | Append a guarded named decorative version at target `shows`, with a metadata-only outcome |
 | `device-mode-set`, `power-set`, `brightness-set`, `scene-activate` | command | Work, Quiet and Free; power, brightness and scenes |
 | `moment-play` | command | Bounded Lines moments in Work or over a named Free base; terminal outcome follows restoration |
 | `zone-power-set`, `media-start`, `media-control` | command | Refused with `unsupported-capability` |

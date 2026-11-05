@@ -1,14 +1,8 @@
 import {isObject} from './compat.js';
 import {projection, validateElements, type LayoutEntry} from './devices.js';
-import {freeze, render, rgb, scale, valid, type Display, type Recipe} from './effects.js';
-
-export const MAX_MUSIC_CUES = 256;
-export const MAX_MUSIC_DURATION_MS = 30 * 60 * 1000;
-export const MIN_MUSIC_CUE_MS = 100;
-type FrozenRecipe = Readonly<Omit<Recipe, 'colors'>> & {readonly colors: readonly string[]};
-export type MusicCue = Readonly<{id: string; offsetMs: number; durationMs: number; recipe: FrozenRecipe; intensity: number}>;
-export type MusicTimeline = Readonly<{version: 1; durationMs: number; cues: readonly MusicCue[]}>;
-export type CueSelection = {kind: 'cue'; cue: MusicCue; elapsedMs: number} | {kind: 'gap'} | {kind: 'ended'};
+import {freeze, render, rgb, scale, valid, type Display} from './effects.js';
+import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS, selectMusicCue, type MusicCue, type MusicTimeline, type CueSelection} from './music-timeline-data.js';
+export {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS, selectMusicCue, type MusicCue, type MusicTimeline, type CueSelection} from './music-timeline-data.js';
 
 const fields = (value: object, allowed: readonly string[]): boolean => Object.keys(value).every(key => allowed.includes(key));
 const integer = (value: unknown, min: number, max: number): value is number =>
@@ -48,14 +42,6 @@ export function prepareMusicTimeline(input: unknown): MusicTimeline {
 
 function position(value: number): void {
   if (!Number.isFinite(value) || value < 0 || value > Number.MAX_SAFE_INTEGER) throw new TypeError('Invalid music position.');
-}
-
-/** Half-open semantic intervals; elapsed time is not a phase-accurate physical animation seek. */
-export function selectMusicCue(timeline: MusicTimeline, positionMs: number): CueSelection {
-  position(positionMs);
-  if (positionMs >= timeline.durationMs) return {kind: 'ended'};
-  const cue = timeline.cues.find(candidate => positionMs >= candidate.offsetMs && positionMs < candidate.offsetMs + candidate.durationMs);
-  return cue === undefined ? {kind: 'gap'} : {kind: 'cue', cue, elapsedMs: positionMs - cue.offsetMs};
 }
 
 /** The ordinary animation from its beginning, with cue intensity; no queue, clock or device operation. */
