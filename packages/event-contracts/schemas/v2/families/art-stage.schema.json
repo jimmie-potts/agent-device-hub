@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-stage/2.0",
+  "description": "Command: a device validates one composition's bytes and keeps a private copy, with no display effect (Hub #679). The envelope subject names the device. The core forwards it for `bunny/modules/art`. The in-process bus checks no sender: the rule binds at the gateway and tracker, and at each responder, which refuses any source but `bunny/core`. `compositionId` is the device's key: staging the same ID and hash reuses the copy and renews `lifetimeMs` from then, and the same ID with another hash is refused. The tracked operation keeps none of this payload, so it cannot be resent from the inbox. `base64` is at most 160 KiB decoded. The validator refuses bytes that are not canonical base64, are over that size or do not match `sha256`, `format`, `width` or `height` (art.ts). It never decodes the image.",
+  "type": "object",
+  "$ref": "#/$defs/content",
+  "required": ["requestId"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"}
+  },
+  "unevaluatedProperties": false,
+  "$defs": {
+    "compositionId": {"description": "The lowercase hex SHA-256 of the bytes that define the composition. Not necessarily of this rendition's bytes.", "type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "content": {
+      "type": "object",
+      "required": ["compositionId", "format", "width", "height", "frames", "durationMs", "sha256", "base64", "lifetimeMs"],
+      "properties": {
+        "compositionId": {"$ref": "#/$defs/compositionId"},
+        "format": {"enum": ["png", "gif"]},
+        "width": {"type": "integer", "minimum": 1, "maximum": 512},
+        "height": {"type": "integer", "minimum": 1, "maximum": 512},
+        "frames": {"type": "integer", "minimum": 1, "maximum": 256},
+        "durationMs": {"type": "integer", "minimum": 0, "maximum": 300000},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "base64": {"type": "string", "minLength": 4, "maxLength": 218456},
+        "lifetimeMs": {"description": "From one minute to thirty days.", "type": "integer", "minimum": 60000, "maximum": 2592000000}
+      },
+      "if": {"properties": {"format": {"const": "png"}}},
+      "then": {"properties": {"frames": {"const": 1}, "durationMs": {"const": 0}}}
+    }
+  }
+}

@@ -12,6 +12,7 @@ export type {LightingLayout, LightingLayoutRecord, LightingLayoutSetRequest, Lig
 // shared blocks. `MAPPING.md` shows where each 1.x field lands. The device families are in `devices.ts`.
 import {companionFamilies} from './companions.js';
 import {codingFamilies} from './coding.js';
+import {artFamilies} from './art.js';
 import {createHash} from 'node:crypto';
 import type {ErrorDetail, Message, MessageValidator, PayloadCheck} from './index.js';
 import {defineFamily as define, registerFamilies, routedSubject, type PayloadFamily} from './registry.js';
@@ -85,6 +86,8 @@ export type ModeSetRequest = {requestId: string; mode: Mode; expectedRevision?: 
 export type MomentPlayRequest = {
   requestId: string; momentId: string; mood: string; palette?: string[]; durationMs: number; priorityClass: 'event' | 'flourish';
   coversStatus: boolean; startAtMs: number; toleranceMs: number;
+  /** `moment-play/2.1` only: the staged composition the device plays; it refuses an unknown or expired one before any effect. */
+  art?: {compositionId: string};
 };
 /**
  * `org.bunny.inbox-item.updated`: one failed or uncertain operation in the core's shared inbox. A finished turn is never
@@ -373,6 +376,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('mode-set', 'command', 'org.bunny.mode.set.requested'),
   define('mode-override-set', 'command', 'org.bunny.mode-override.set.requested', routedSubject('routing')),
   define('moment-play', 'command', 'org.bunny.moment.play.requested', checkMoment),
+  define('moment-play', 'command', 'org.bunny.moment.play.requested', checkMoment, '2.1'),
   define('notice-acknowledge', 'command', 'org.bunny.notice.acknowledge.requested', checkSessionSubject),
   define('approval-recover', 'command', 'org.bunny.approval.recover.requested', checkSessionSubject),
   define('notice-clear', 'command', 'org.bunny.notice.clear.requested', checkSessionSubject),
@@ -382,6 +386,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('microduck-dispatch', 'command', 'org.bunny.microduck.dispatch.requested', message => message.subject === 'microduck' ? undefined : 'MicroDuck dispatch subject mismatch'),
   ...companionFamilies,
   ...codingFamilies,
+  ...artFamilies,
   ...assistantFamilies,
   ...lightingLayoutFamilies,
   ...playbackLayoutFamilies,

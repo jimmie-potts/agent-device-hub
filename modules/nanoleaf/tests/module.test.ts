@@ -74,6 +74,16 @@ suite('the device record', () => {
     assert.equal(result.status === 'rejected' && result.error.error.code, 'unsupported-capability');
     world.verify();
   });
+
+  test('a moment that names art is refused before effects, so the mood never plays in its place', async context => {
+    const world = await ModuleWorld.open(context);
+    await world.start();
+    const {key, draft} = deviceCommand('moment-play', {momentId: 'm1', mood: 'celebrate', durationMs: 1000, priorityClass: 'event', coversStatus: false,
+      startAtMs: world.clock.now(), toleranceMs: 100, art: {compositionId: 'a'.repeat(64)}});
+    const result = await world.request(key, {...draft, type: 'org.bunny.moment.play.requested', dataschema: 'https://bunny.invalid/events/moment-play/2.1'});
+    assert.equal(result.status === 'rejected' && result.error.error.code, 'unsupported-capability');
+    world.verify();
+  });
 });
 
 const mode = (world: ModuleWorld, value: string, requestId: string): Promise<RequestResult> => {

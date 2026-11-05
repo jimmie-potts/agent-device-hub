@@ -303,7 +303,8 @@ The coordinator accepted these code mappings on 2026-10-06.
 
 The source is the controller 1.1 `moment` command and the snapshot's
 `state.moment`. The 2.0 homes are `moment-play/2.0`, sent as
-`org.bunny.moment.play.requested`, and `moment-ended/2.0`.
+`org.bunny.moment.play.requested`, and `moment-ended/2.0`. `moment-play/2.1`
+adds an optional `art: {compositionId}` (Hub #679), which has no 1.x source.
 
 | 1.x field | 2.0 home | Notes |
 | --- | --- | --- |
@@ -371,7 +372,7 @@ Hub's controller configuration.
 
 | 1.x field | 2.0 home | Notes |
 | --- | --- | --- |
-| `apiVersion` | envelope `dataschema` | `https://bunny.invalid/events/device/2.0`, or `device/2.1` for a module that reports holds in `held` (Hub #975). |
+| `apiVersion` | envelope `dataschema` | `https://bunny.invalid/events/device/2.0`, `device/2.1` for a module that reports holds in `held` (Hub #975), or `device/2.2` for a module that declares `capabilities.moments.art` (Hub #679), which has no 1.x source. |
 | `identity`, `identity.deviceId` | `device /id` | The envelope subject. It is also the last token of the device's routing keys, so 2.0 narrows it to the blocks' `routingId`: lowercase letters and digits with single hyphens, at most 128 characters. 1.x allowed any neutral ID. It must be unique across modules, because SDK responders may not overlap. |
 | `identity.controllerId`, `identity.sourceId` | envelope `source` | `bunny/modules/<module>`. Controller and source IDs become module-internal. |
 | `identity.controllerEpoch` | owner's store | The module's own continuity. Consumers follow `revision` and resync instead. |
@@ -452,3 +453,10 @@ controllers until #839.
 | `HighestStatusOptions.acknowledgingConsumers` | `HighestStatusOptions.acknowledgingConsumers` | Unchanged: without it, any consumer's acknowledgment retires done. |
 | `Snapshot.collector` | **no 2.0 home** | Owner health is the runtime's module health (#830, #831), as decided for the snapshot's `collector`. A consumer sees an owner that cannot serve it as a sync that fails. |
 | `STATUS_COLORS` | `STATUS_COLORS` | The same colors on every device; a test keeps them equal to 1.x. |
+
+## Art handoff
+
+The `art-request`, `art-auto`, `art-stage`, `art-ambient-set` and `art-dispatch`
+families (Hub #679) are new in 2.0 and have no 1.x source. Controller 1.1 stays as
+released, and its command union gains no art command. See
+[Exact-artwork payloads](README.md#exact-artwork-payloads).

@@ -1,7 +1,8 @@
 // The 2.0 device families (Hub #918): one device's full record, the general commands mapped from controller contract
 // v1's closed command union, v1 admission's capability rule and the fixed Hub-mode table. The record's minor version 2.1
-// adds the optional `held` member (Hub #975). Device-specific families, such as LIFX color or Pixoo media, belong to each
-// module. `MAPPING.md` shows where each v1 field lands.
+// adds the optional `held` member (Hub #975), and 2.2 the optional `moments.art` (Hub #679). Device-specific families,
+// such as LIFX color or Pixoo media, belong to each module. `MAPPING.md` shows where each v1 field lands.
+import type {ArtFormat, ArtStageRequest} from './art.js';
 import type {ErrorDetail, Known, Message, MessageValidator, PayloadCheck, Ticket, Unknown} from './index.js';
 import type {Mode, MomentPlayRequest} from './families.js';
 import {defineFamily, registerFamilies, routedSubject, type PayloadFamily} from './registry.js';
@@ -16,7 +17,8 @@ export type Capabilities = {
   brightness: Unsupported | {supported: true; minimum: 0; maximum: 100};
   /** The device's own native modes, such as Nanoleaf `work` or Pixoo `monitor`. Never the Hub's mode. */
   modes: Unsupported | {supported: true; values: string[]};
-  moments: Unsupported | {supported: true; moods: string[]; maxDurationMs: number; coversStatus: boolean};
+  /** `art`, `device/2.2` only: the device stages these formats and sizes and plays a moment that names its copy. */
+  moments: Unsupported | {supported: true; moods: string[]; maxDurationMs: number; coversStatus: boolean; art?: {formats: ArtFormat[]; maxBytes: number}};
   media: Unsupported | {supported: true; actions: MediaAction[]; playlistIds: string[]; renditionIds: string[]};
   scenes: Unsupported | {supported: true; sceneIds: string[]};
   zones: Unsupported | {supported: true; zoneIds: string[]};
@@ -86,8 +88,9 @@ export type DeviceCommand =
 /**
  * Whether the device's capabilities allow a command, by controller v1 admission's rule: the capability is supported
  * and, where it lists them, the scene, zone, playlist, action, native mode or mood is among them, and a moment fits
- * the device's maximum duration. A module refuses any other command with `unsupported-capability`; whether a moment
- * may cover status is the writer's decision, not admission's.
+ * the device's maximum duration. A moment that names art also needs the device's `moments.art`, so a device without it
+ * refuses rather than playing its mood instead. A module refuses any other command with `unsupported-capability`; whether
+ * a moment may cover status is the writer's decision, not admission's.
  */
 export function commandSupported(capabilities: Capabilities, command: DeviceCommand): boolean {
   const {power, brightness, scenes, zones, media, modes, moments} = capabilities;
@@ -99,8 +102,14 @@ export function commandSupported(capabilities: Capabilities, command: DeviceComm
     case 'media-start': return media.supported && media.playlistIds.includes(command.data.playlistId);
     case 'media-control': return media.supported && media.actions.includes(command.data.action);
     case 'device-mode-set': return modes.supported && modes.values.includes(command.data.mode);
-    case 'moment-play': return moments.supported && moments.moods.includes(command.data.mood) && command.data.durationMs <= moments.maxDurationMs;
+    case 'moment-play': return moments.supported && moments.moods.includes(command.data.mood) && command.data.durationMs <= moments.maxDurationMs &&
+      (command.data.art === undefined || moments.art !== undefined);
   }
+}
+
+/** Whether the device's `moments.art` admits a stage's format and decoded size; a module refuses any other with `unsupported-capability`. */
+export function artStageSupported({moments}: Capabilities, stage: Pick<ArtStageRequest, 'format' | 'base64'>): boolean {
+  return moments.supported && moments.art !== undefined && moments.art.formats.includes(stage.format) && Buffer.byteLength(stage.base64, 'base64') <= moments.art.maxBytes;
 }
 
 /** The device kinds that take part in the Hub mode. LIFX joins under #415; Tidbyt and playback do not take part. */
@@ -148,13 +157,15 @@ const checkDevice: PayloadCheck = message => {
 
 export type {PayloadFamily} from './registry.js';
 /**
- * Every device family, in registration order, each version of `device` on its own: 2.0, and 2.1 with `held`, which a
- * module that holds devices publishes. Each command type is `org.bunny.<entity>.<verb>.requested`, whose verb is the
- * family's last word. Replies, outcomes and removals use the payloads the profile owns.
+ * Every device family, in registration order, each version of `device` on its own: 2.0, 2.1 with `held`, which a module
+ * that holds devices publishes, and 2.2 with `moments.art`, which a module that stages art publishes. Each command type
+ * is `org.bunny.<entity>.<verb>.requested`, whose verb is the family's last word. Replies, outcomes and removals use the
+ * payloads the profile owns.
  */
 export const deviceFamilies: readonly PayloadFamily[] = [
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice),
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.1'),
+  defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.2'),
   defineFamily('power-set', 'command', 'org.bunny.power.set.requested', checkCommand),
   defineFamily('brightness-set', 'command', 'org.bunny.brightness.set.requested', checkCommand),
   defineFamily('scene-activate', 'command', 'org.bunny.scene.activate.requested', checkCommand),

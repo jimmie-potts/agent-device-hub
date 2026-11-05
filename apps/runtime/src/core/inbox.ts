@@ -7,7 +7,7 @@ import {fullDisk, type Command, type Reply, type StateDraft, Outcome} from '@jim
 import type {CoreHandle} from './core.js';
 import {REMOVAL_SCHEMA} from './mapping.js';
 import type {CoreTransaction, Deriver} from './store.js';
-import {OPERATOR_ACTIONS, type Action, type ActionAnswer, type OperationChange} from './tracker.js';
+import {BACKGROUND_ACTIONS, OPERATOR_ACTIONS, type Action, type ActionAnswer, type OperationChange} from './tracker.js';
 
 export const INBOX_SCHEMA = 'https://bunny.invalid/events/inbox-item/2.1';
 export type InboxHandleRequest = {requestId: string; expectedRevision: number; action: 'dismiss' | 'send-again'};
@@ -38,7 +38,7 @@ export class InboxRecords {
   records(): InboxItem[] { return (this.#statements?.all.all() as {record: string}[] | undefined ?? []).map(row => JSON.parse(row.record) as InboxItem); }
   readonly states = (families: readonly string[]): StateDraft[] => families.includes('inbox-item') ? this.records().map(draftOf) : [];
   readonly tracked = ({operation, previous: priorOperation}: OperationChange, tx: CoreTransaction): void => {
-    if (OPERATOR_ACTIONS.includes(operation.family)) return;
+    if (OPERATOR_ACTIONS.includes(operation.family) || BACKGROUND_ACTIONS.includes(operation.family)) return;
     const {result, requestId, command, target, evidence, error} = operation;
     if (result === undefined) return;
     const id = operationEntityId(requestId), row = this.#statements?.get.get(id) as Row | undefined;
@@ -95,8 +95,12 @@ export class InboxRecords {
         if (operation.command.startsWith('org.bunny.microduck.')) return errorBody('forbidden', {
           detail: 'MicroDuck requires a fresh explicit request from its dashboard controls',
         });
+        if (operation.family === 'moment-play' && operation.data.art !== undefined) return errorBody('forbidden', {
+          detail: 'a moment naming art needs a fresh request through the core\'s automation, which arbitrates it',
+        });
         if (operation.payload?.status === 'omitted') return errorBody('unsupported-capability', {
-          detail: 'this input was not retained; enter fresh text as a new request',
+          detail: operation.family === 'onn-text' ? 'this input was not retained; enter fresh text as a new request'
+            : 'this command\'s payload was not retained; make a new request',
         });
         const answer = await this.#resend({key: operation.key,
           draft: {type: operation.command, subject: operation.target, dataschema: operation.dataschema, data: operation.data},
