@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {execFile} from 'node:child_process';
-import {chmod,mkdir,mkdtemp,readFile,writeFile,rm,realpath} from 'node:fs/promises';
+import {chmod,mkdir,mkdtemp,readFile,writeFile,rm,realpath,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -130,6 +130,12 @@ function settled(result) {
   assert.doesNotMatch(result.stderr,/unsettled top-level await/i);
   assert.ok(result.stdout!==''||result.stderr!=='',`exit ${result.code} with no result or refusal`);
 }
+function refused(result) {
+  settled(result);assert.equal(result.code,1);assert.equal(result.stdout,'');
+  const {error}=JSON.parse(result.stderr);
+  assert.equal(typeof error.code,'string',result.stderr);
+  assert.match(error.detail,/^Maintenance stage [a-z]+ refused\./,result.stderr);
+}
 const engineCalls=async machine=>(await machine.calls()).map(args=>args[0]);
 
 test('stop settles through the lease, stops the container and releases the writer',{skip:posix},async t=>{
@@ -160,6 +166,16 @@ for(const command of ['backup','restore']) {
     assert.equal(await machine.status(),'exited');
   });
 }
+test('a symlinked path to the operator still runs the command',{skip:posix},async t=>{
+  // Without this the command exits 0 having done nothing, which reads as success.
+  const machine=await host(t,'running');
+  const link=join(machine.home,'operator-link.mjs');await symlink(operator,link);
+  const result=await new Promise((resolve,reject)=>execFile(process.execPath,[link,'stop','--project',project],
+    {env:machine.env,encoding:'utf8',timeout:LIMIT_MS,killSignal:'SIGKILL'},(error,stdout,stderr)=>error===null?resolve({code:0,stdout,stderr}):reject(error)));
+  settled(result);
+  assert.deepEqual(JSON.parse(result.stdout),{operation:'stop',status:'stopped'});
+  assert.equal(await machine.status(),'exited');
+});
 test('status still answers without taking the lease',{skip:posix},async t=>{
   const machine=await host(t,'running');
   const result=await cli(machine,'status');
@@ -170,8 +186,7 @@ test('a held operation lease refuses the command and leaves the container alone'
   const machine=await host(t,'running');
   await withOperation({project,root:machine.root},async()=>{
     const result=await cli(machine,'stop');
-    settled(result);assert.equal(result.code,1);assert.equal(result.stdout,'');
-    assert.notEqual(result.stderr,'');
+    refused(result);
   });
   assert.equal(await machine.status(),'running');
   assert.deepEqual(await machine.calls(),[]);
@@ -181,8 +196,7 @@ test('an unfinished operation refuses the command and stays pending',{skip:posix
   await assert.rejects(withOperation({project,root:machine.root},async lease=>{
     await lease.record({id:'batch-unfinished',phase:'starting',outcome:'uncertain'});throw Error('interrupted');
   }));
-  const result=await cli(machine,'start');
-  settled(result);assert.equal(result.code,1);assert.equal(result.stdout,'');
+  refused(await cli(machine,'start'));
   assert.equal(await machine.status(),'exited');
   assert.deepEqual(await machine.calls(),[]);
   const pending=JSON.parse(await readFile(join(machine.root,project+'.pending.json'),'utf8'));
@@ -193,12 +207,11 @@ test('the qualification route settles too, and refuses a request it cannot read'
   const machine=await host(t);
   const request=join(machine.home,'missing-request.json');
   const result=await cli(machine,'backup','snapshot-1','--archive-volume','synthetic-archives','--qualification-request',request);
-  settled(result);assert.equal(result.code,1);assert.equal(result.stdout,'');
+  refused(result);
   assert.ok(!(await engineCalls(machine)).includes('run'));
 });
 test('an unknown command is refused at the command line',{skip:posix},async t=>{
   const machine=await host(t);
-  const result=await cli(machine,'delete');
-  settled(result);assert.equal(result.code,1);assert.equal(result.stdout,'');
+  refused(await cli(machine,'delete'));
   assert.deepEqual(await machine.calls(),[]);
 });
