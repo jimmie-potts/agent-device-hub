@@ -52,6 +52,14 @@
       "types": "./dist/v2/art.d.ts",
       "import": "./dist/v2/art.js"
     },
+    "./v2/music-playback-data": {
+      "types": "./dist/v2/music-playback-data.d.ts",
+      "import": "./dist/v2/music-playback-data.js"
+    },
+    "./v2/music-playback": {
+      "types": "./dist/v2/music-playback.d.ts",
+      "import": "./dist/v2/music-playback.js"
+    },
     "./v2/music-capture-data": {
       "types": "./dist/v2/music-capture-data.d.ts",
       "import": "./dist/v2/music-capture-data.js"

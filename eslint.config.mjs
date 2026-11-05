@@ -31,6 +31,7 @@ export const streamOwners = [
   'modules/microduck/src/fixture.ts',
   // The explicit Music producer CLI owns fixed startup and stop notices.
   'apps/music-producer/src/cli.ts',
+  'apps/music-producer/src/playback-cli.ts',
 ];
 // Code under the profile has no inline ESLint comments: each one is ignored and reported, and lint allows no
 // warnings. An exception is a config entry after the profile blocks, scoped to its files, with a comment saying why.
