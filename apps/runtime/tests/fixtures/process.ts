@@ -5,7 +5,7 @@ import type {BunnyModule} from '@jimmie-potts/sdk';
 import {createCoreModule as createRealCore, runMain, type ModuleFactory} from '../../src/index.js';
 import {approvalPrompt, observation} from './agents.js';
 import {createCoreModule} from './core.js';
-import {SimulatedLamps, createLampModule, switchLamp} from './lamp.js';
+import {SimulatedLamps, createLampModule, switchLamp, type LampOptions} from './lamp.js';
 
 const module = (name: string, start: BunnyModule['start']): BunnyModule => ({manifest: {name, apiVersion: '1.0'}, start, stop: () => {}});
 const steady = module('steady', async ({sdk}) => { await sdk.respond('bunny.cmd.mode.steady', () => ({status: 'accepted'})); });
@@ -49,14 +49,32 @@ const leaker = module('leaker', async ({secrets}) => {
   outside.once('tick', () => { throw Object.assign(new Error(`the device refused ${token}`), {code: token}); });
 });
 
-/** Switches lamp-1 on once, shortly after the modules have started. */
-const driver = module('driver', ({sdk, scheduler, log}) => {
-  scheduler.after(100, async () => {
-    const {key, draft} = switchLamp('lamp-1', 'on');
-    const result = await sdk.request(key, draft, {timeoutMs: 5000, requestId: 'req-crash'});
-    log.info('command.completed', {'bunny.request.id': 'req-crash', 'bunny.outcome': result.status});
-  });
+/**
+ * Resolves once the lamp's start has finished. The host starts every module at once and a command with no responder yet
+ * is refused for good (Hub #1455), so the one command waits for this and not for a delay a slow start can outlast.
+ */
+const whenStarted = (lamp: BunnyModule): Promise<void> => new Promise(resolve => {
+  const start = lamp.start.bind(lamp);
+  lamp.start = async context => {
+    await start(context);
+    resolve();
+  };
 });
+
+/** The core, a lamp, and a driver that switches lamp-1 on once, as soon as the lamp answers commands. */
+const lampAndDriver = (options: Omit<LampOptions, 'transport'> = {}): readonly BunnyModule[] => {
+  const lamp = createLampModule({...options, transport: new SimulatedLamps()});
+  const answering = whenStarted(lamp);
+  const driver = module('driver', ({sdk, scheduler, log}) => {
+    scheduler.after(0, async () => {
+      await answering;
+      const {key, draft} = switchLamp('lamp-1', 'on');
+      const result = await sdk.request(key, draft, {timeoutMs: 5000, requestId: 'req-crash'});
+      log.info('command.completed', {'bunny.request.id': 'req-crash', 'bunny.outcome': result.status});
+    });
+  });
+  return [createCoreModule(), lamp, driver];
+};
 
 /** A hook's observation of an approval prompt, shortly after the modules have started. */
 const hook = module('hook', ({sdk, scheduler, clock}) => {
@@ -97,9 +115,9 @@ const scenarios: Record<string, readonly BunnyModule[]> = {
   // The next start, with no hook: the core sends what it stored, once.
   'core-restart': [createRealCore(), listener],
   // The process dies between the lamp's commit and its publish (Hub #882): its outbox holds the outcome.
-  'lamp-crash': [createCoreModule(), createLampModule({transport: new SimulatedLamps(), beforePublish: () => { process.kill(process.pid, 'SIGKILL'); }}), driver],
+  'lamp-crash': lampAndDriver({beforePublish: () => { process.kill(process.pid, 'SIGKILL'); }}),
   // The same modules without the kill: the command is answered and its spans end (Hub #950).
-  'lamp-driven': [createCoreModule(), createLampModule({transport: new SimulatedLamps()}), driver],
+  'lamp-driven': lampAndDriver(),
   // The next start, with no driver: nothing sends the command again.
   'lamp-restart': [createCoreModule(), createLampModule({transport: new SimulatedLamps()})],
   // Errors raised in each module's own flow, outside every SDK handler and runtime timer, reach the process.
