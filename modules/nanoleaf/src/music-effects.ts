@@ -38,7 +38,7 @@ export function freezeMusicRecipe(input: unknown): MusicRecipeV1 {
     smoothingMs: bounded(input.smoothingMs, effect === 'ambient' ? 1500 : 100, 0, 2000)};
   if (effect === 'bass-pulse') return Object.freeze({...base, effect, halfLifeMs: bounded(input.halfLifeMs, 200, 100, 2000)});
   if (effect === 'spectrum' || effect === 'traveling-wave') {
-    const direction = DIRECTIONS.find(known => known === (input.direction ?? 'right'));
+    const direction = DIRECTIONS.find(known => known === (input.direction === undefined ? 'right' : input.direction));
     if (direction === undefined) throw new TypeError('Invalid music direction.');
     if (effect === 'spectrum') return Object.freeze({...base, effect, direction});
     return Object.freeze({...base, effect, direction, periodMs: bounded(input.periodMs, 2000, 400, 10000)});

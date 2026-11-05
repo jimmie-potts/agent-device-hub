@@ -105,6 +105,7 @@ test('recipes are closed, bounded, versioned and frozen through serialization', 
   assert.throws(() => recipe('bass-pulse', {halfLifeMs: 99}));
   assert.throws(() => recipe('traveling-wave', {periodMs: 399}));
   assert.throws(() => recipe('spectrum', {direction: 'diagonal'}));
+  for (const effect of ['spectrum', 'traveling-wave'] as const) assert.throws(() => recipe(effect, {direction: null}));
 });
 
 test('prepared geometry is copied, missing spatial positions and oversized payloads are refused', () => {
