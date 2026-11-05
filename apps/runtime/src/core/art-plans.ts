@@ -3,7 +3,7 @@ import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {commandSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
 import {rainNoticeIssue, rainNoticeRefusal, type RainNotice} from '@jimmie-potts/event-contracts/v2/art-notice';
-import {Outcome, type Cancel, type ModuleScheduler} from '@jimmie-potts/sdk';
+import {Outcome, type Cancel, type ModuleScheduler, type TraceContext} from '@jimmie-potts/sdk';
 import type {Operation} from './operations.js';
 import type {Action, ActionAnswer} from './tracker.js';
 
@@ -78,7 +78,7 @@ export function createArtPlans(options: Options) {
     cancelTimer = options.scheduler.after(Math.max(0, untilMs - options.clock()), wait.inspect);
     wait.inspect();
   });
-  const browser = (plan: ArtPlan, permit: ArtPermit): Promise<ArtPlanAttempt> => new Promise((resolve, reject) => {
+  const browser = (plan: ArtPlan, permit: ArtPermit, parent: TraceContext | undefined): Promise<ArtPlanAttempt> => new Promise((resolve, reject) => {
     let cancelTimer: Cancel | undefined;
     const wait = {cancel: () => {cancelTimer?.(); waits.delete(wait); resolve(notRequested(stopped()));}, inspect: () => {}};
     const present = async (): Promise<ArtPlanAttempt> => {
@@ -89,7 +89,7 @@ export function createArtPlans(options: Options) {
       if (!active()) return notRequested(stopped());
       if (options.clock() > plan.startAtMs + plan.toleranceMs) return notRequested(errorBody('invalid-state', {detail: 'browser art missed its start window'}));
       if (plan.browser === undefined) return notRequested(errorBody('invalid-request'));
-      return attempt({requestId: requestId(plan, 'browser', 'art'), key: 'bunny.cmd.art-auto.art', requestedBy: 'bunny/core',
+      return attempt({requestId: requestId(plan, 'browser', 'art'), key: 'bunny.cmd.art-auto.art', requestedBy: 'bunny/core', ...(parent===undefined?{}:{parent}),
         draft: {type: 'org.bunny.art.auto.requested', subject: 'art', dataschema: 'https://bunny.invalid/events/art-auto/2.1',
           data: {action: 'present', artworkId: plan.artworkId, compositionId: plan.browser.compositionId}}});
     };
@@ -98,7 +98,7 @@ export function createArtPlans(options: Options) {
     if (plan.startAtMs <= options.clock()) run();
     else cancelTimer = options.scheduler.after(plan.startAtMs - options.clock(), run);
   });
-  const display = async (plan: ArtPlan, selected: ArtPlan['displays'][number], permit: ArtPermit): Promise<ArtPlanResult['displays'][number]> => {
+  const display = async (plan: ArtPlan, selected: ArtPlan['displays'][number], permit: ArtPermit, parent: TraceContext | undefined): Promise<ArtPlanResult['displays'][number]> => {
     const blocked = (error: ErrorBody) => ({target: selected.target, prepare: notRequested(error), moment: notRequested(error)});
     if (!active()) return blocked(stopped());
     if (options.clock() >= plan.prepareUntilMs) return blocked(cutoff());
@@ -109,7 +109,7 @@ export function createArtPlans(options: Options) {
       startAtMs: plan.startAtMs, toleranceMs: plan.toleranceMs, art: {compositionId: selected.compositionId},...(plan.notice===undefined?{}:{notice:plan.notice})};
     if (!commandSupported(original.record.capabilities, {family: 'moment-play', data: moment}) || original.kind === 'tidbyt' && selected.durationMs < 30_000)
       return blocked(errorBody('unsupported-capability'));
-    const prepare = await attempt({requestId: requestId(plan, 'prepare', selected.target), key: 'bunny.cmd.art-auto.art', requestedBy: 'bunny/core',
+    const prepare = await attempt({requestId: requestId(plan, 'prepare', selected.target), key: 'bunny.cmd.art-auto.art', requestedBy: 'bunny/core', ...(parent===undefined?{}:{parent}),
       draft: {type: 'org.bunny.art.auto.requested', subject: 'art', dataschema: 'https://bunny.invalid/events/art-auto/2.1',
         data: {action: 'prepare', artworkId: plan.artworkId, compositionId: selected.compositionId, target: selected.target}}});
     const result = (next: ArtPlanAttempt) => ({target: selected.target, prepare, moment: next});
@@ -128,12 +128,12 @@ export function createArtPlans(options: Options) {
     if (policy !== undefined) return result(notRequested(policy));
     if (!active()) return result(notRequested(stopped()));
     if (options.clock() >= plan.prepareUntilMs) return result(notRequested(cutoff()));
-    return result(await attempt({requestId: moment.requestId, key: `bunny.cmd.moment-play.${selected.target}`, requestedBy: 'bunny/core',
+    return result(await attempt({requestId: moment.requestId, key: `bunny.cmd.moment-play.${selected.target}`, requestedBy: 'bunny/core', ...(parent===undefined?{}:{parent}),
       draft: {type: 'org.bunny.moment.play.requested', subject: selected.target, dataschema: `https://bunny.invalid/events/moment-play/${plan.notice===undefined?'2.1':'2.2'}`, data: moment}}));
   };
   return {
     targets: (): readonly ArtPlanTarget[] => options.targets().map(target => ({...target})),
-    present: async (input: ArtPlan, permit: ArtPermit): Promise<ArtPlanResult | ErrorBody> => {
+    present: async (input: ArtPlan, permit: ArtPermit, parent?: TraceContext): Promise<ArtPlanResult | ErrorBody> => {
       const plan = structuredClone(input), now = options.clock();
       if (!active()) return errorBody('unavailable');
       if (!id(plan.id) || !id(plan.artworkId) || !instant(plan.startAtMs) || !instant(plan.prepareUntilMs) || plan.prepareUntilMs > plan.startAtMs
@@ -149,8 +149,8 @@ export function createArtPlans(options: Options) {
       const refused = options.claim(plan.id, planDigest(plan));
       if (refused !== undefined) return refused;
       const [displays, browserResult] = await Promise.all([
-        Promise.all(plan.displays.map(selected => display(plan, selected, permit))),
-        plan.browser === undefined ? undefined : browser(plan, permit),
+        Promise.all(plan.displays.map(selected => display(plan, selected, permit, parent))),
+        plan.browser === undefined ? undefined : browser(plan, permit, parent),
       ]);
       return {id: plan.id, displays, ...(browserResult === undefined ? {} : {browser: browserResult})};
     },

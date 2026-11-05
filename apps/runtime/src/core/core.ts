@@ -248,7 +248,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
       artSchedule:{get:()=>artSchedule().get(),save:(value,parent)=>artSchedule().save(value,parent)},
-      art:{targets:()=>art().targets(),present:(plan,permit)=>art().present(plan,permit)},
+      art:{targets:()=>art().targets(),present:(plan,permit,parent)=>art().present(plan,permit,parent)},
       limits:{list:()=>limits().list(),get:id=>limits().get(id),save:(id,value,parent)=>limits().save(id,value,parent),settled:()=>limits().settled()},
       routines:{list:()=>routines().list(),get:id=>routines().get(id),create:(value,owner)=>routines().create(value,owner),
         update:(id,value)=>routines().update(id,value),setEnabled:(id,enabled)=>routines().setEnabled(id,enabled),

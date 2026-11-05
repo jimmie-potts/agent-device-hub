@@ -7,7 +7,7 @@ import type {ArtOpportunity,ArtScheduleAttempt,ArtScheduleRecord,ArtSuppression}
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {WeatherState} from '@jimmie-potts/weather';
 import type {Cancel,ModuleScheduler,TraceContext} from '@jimmie-potts/sdk';
-import {Outcome} from '@jimmie-potts/sdk';
+import {Outcome,childOf} from '@jimmie-potts/sdk';
 import {AutomationError,inQuietHours,type AutomationSettings} from './automation.js';
 import type {AutomationStore} from './automation-store.js';
 import type {CoreHandle} from './core.js';
@@ -19,8 +19,9 @@ type Inputs={art():ArtRecord|undefined;weather():WeatherState|undefined;set(poli
 type Options={store:ArtScheduleStore;shared:AutomationStore;core:Pick<CoreHandle,'clock'|'dispatch'|'operation'>;scheduler:ModuleScheduler;active:()=>boolean;
   plans:ArtPlans;current:(id:string)=>DeviceRecord|undefined;settings:()=>AutomationSettings;attention:()=>boolean;
   inputs:Inputs;choice?:()=>number;failed:()=>void};
-type Pending={opportunity:ArtOpportunity;settingsRevision:number;saved:ArtworkSummary|undefined;generationRequestId:string|null;
+type Pending={parent:TraceContext;opportunity:ArtOpportunity;settingsRevision:number;saved:ArtworkSummary|undefined;generationRequestId:string|null;
   notice:RainNotice|undefined;preparing:boolean;used:Set<string>};
+type WeatherOccurrence={revision:number;parent?:TraceContext};
 type Grant={pending:Pending;target:string;compositionId:string;expiresAtMs:number};
 const opaque=(value:string):string=>createHash('sha256').update(value).digest('hex');
 const opportunityId=(kind:string,start:number):string=>`art-${kind}-${opaque(String(start))}`;
@@ -30,7 +31,7 @@ const attempt=(pending:Pending):ArtScheduleAttempt=>({...pending.opportunity,art
 /** One schedule inside the existing automation owner. Durable claims are never recovered as executable work. */
 export function createArtSchedule(options:Options) {
   const {store,core}=options,choice=options.choice??Math.random;
-  let closed=false,cancel:Cancel|undefined,serial=Promise.resolve(),pending:Pending|undefined,ambientRunning=false,ambientUntilMs=0,weatherTrigger:number|undefined;
+  let closed=false,cancel:Cancel|undefined,serial=Promise.resolve(),pending:Pending|undefined,ambientRunning=false,ambientUntilMs=0;
   const effects=new Set<Promise<void>>(),grants=new Map<string,Grant>();
   const now=()=>core.clock.now(),active=()=>!closed&&options.active();
   const launch=(work:Promise<void>):void=>{effects.add(work);void work.catch(()=>{options.failed();}).finally(()=>effects.delete(work));};
@@ -93,7 +94,7 @@ export function createArtSchedule(options:Options) {
   };
   const persistFailure=async(item:Pending,reason:ArtSuppression):Promise<void>=>{
     await store.change(data=>{if(data.record.settingsRevision!==item.settingsRevision||data.record.lastOpportunity!==null&&data.record.lastOpportunity.startAtMs>item.opportunity.startAtMs)return;
-      data.record.lastOpportunity={...attempt(item),reason};data.record.status=data.record.policy.enabled?'idle':'disabled';data.record.notice=null;});
+      data.record.lastOpportunity={...attempt(item),reason};data.record.status=data.record.policy.enabled?'idle':'disabled';data.record.notice=null;},item.parent);
   };
   const generated=(item:Pending):ArtworkSummary|undefined=>{
     const catalog=options.inputs.art(),job=catalog?.jobs.find(value=>value.requestId===item.generationRequestId);
@@ -117,9 +118,9 @@ export function createArtSchedule(options:Options) {
       if(!store.claim({...item.opportunity,id:`${item.opportunity.id}-targets`}))throw new AutomationError('duplicate-conflict',409);
       data.record.lastOpportunity={...attempt(item),artworkId:artwork.artworkId,browserRequestId:ui===undefined?null:artPlanRequestId(plan.id,'browser','art'),
         displays:displays.map(value=>({target:value.target,prepareRequestId:artPlanRequestId(plan.id,'prepare',value.target),momentRequestId:artPlanRequestId(plan.id,'moment',value.target),error:null}))};
-      data.record.status='preparing';});
+      data.record.status='preparing';},item.parent);
     if(!active())return;
-    const result=await options.plans.present(plan,surface=>permit(item,surface));
+    const result=await options.plans.present(plan,surface=>permit(item,surface),item.parent);
     if(!active())return;
     await store.change(data=>{
       if(data.record.settingsRevision!==item.settingsRevision)return;
@@ -131,12 +132,12 @@ export function createArtSchedule(options:Options) {
       data.record.status='presenting';
       data.record.notice=item.notice===undefined||ui===undefined||browser===null?null:{opportunityId:item.opportunity.id,artworkId:artwork.artworkId,compositionId:ui,
         browserRequestId:browser,startAtMs:item.opportunity.startAtMs,expiresAtMs:Math.min(item.opportunity.startAtMs+30_000,item.notice.staleAtMs,item.notice.forecastEndAtMs),forecast:item.notice};
-    });
+    },item.parent);
     changed();
   }
   async function begin(startAtMs:number):Promise<void> {
     const before=state();
-    const item:Pending={opportunity:{id:opportunityId('appearance',startAtMs),kind:'appearance',startAtMs,toleranceMs:START_TOLERANCE_MS},
+    const item:Pending={parent:childOf(undefined),opportunity:{id:opportunityId('appearance',startAtMs),kind:'appearance',startAtMs,toleranceMs:START_TOLERANCE_MS},
       settingsRevision:before.record.settingsRevision,saved:savedArtwork(options.inputs.art(),choice),generationRequestId:null,
       notice:before.record.policy.weather?rainForecast(options.inputs.weather(),now(),startAtMs,START_TOLERANCE_MS):undefined,preparing:false,used:new Set()};
     let claimed=false;
@@ -152,27 +153,25 @@ export function createArtSchedule(options:Options) {
       if(data.record.policy.generation)item.generationRequestId=`${item.opportunity.id}-generate`;
       data.record.lastOpportunity=attempt(item);data.record.status='waiting';
       data.ambientAtMs=Math.max(data.ambientAtMs,startAtMs);
-      if(weatherTrigger!==undefined)data.weatherRevision=Math.max(data.weatherRevision,weatherTrigger);
-    });
+    },item.parent);
     if(!claimed)return;
-    pending=item;weatherTrigger=undefined;
+    pending=item;
     const generationRequestId=item.generationRequestId;
     if(generationRequestId!==null) {
       const targets=new Set<'ui'|'pixoo'|'tidbyt'>();const policy=state().record.policy;
       if(policy.browser)targets.add('ui');for(const target of options.plans.targets())if(policy.targets.includes(target.target))targets.add(target.kind);
       if(targets.size>0&&restriction(item)===undefined)launch((async()=>{
-        await core.dispatch({requestId:generationRequestId,key:'bunny.cmd.art-auto.art',requestedBy:'bunny/core',
+        await core.dispatch({requestId:generationRequestId,key:'bunny.cmd.art-auto.art',requestedBy:'bunny/core',parent:item.parent,
           draft:{type:'org.bunny.art.auto.requested',subject:'art',dataschema:'https://bunny.invalid/events/art-auto/2.2',
             data:{action:'start',purpose:'appearance',origin:{kind:'schedule'},targets:[...targets],weatherUse:policy.weather?'current':'omit'}}});
       })());
     }
   }
-  async function ambient():Promise<void> {
+  async function ambient(weather?:WeatherOccurrence):Promise<void> {
     const data=state(),policy=data.record.policy,at=now();
     if(!policy.ambient||ambientRunning||pending!==undefined||at<ambientUntilMs)return;
-    const weather=weatherTrigger;weatherTrigger=undefined;
-    if(at<data.ambientAtMs+3_600_000&&(weather===undefined||weather<=data.weatherRevision))return;
-    const item:Pending={opportunity:{id:`art-ambient-${randomUUID()}`,kind:'ambient',startAtMs:at,toleranceMs:30_000},settingsRevision:data.record.settingsRevision,
+    if(at<data.ambientAtMs+3_600_000&&weather===undefined)return;
+    const item:Pending={parent:childOf(weather?.parent),opportunity:{id:`art-ambient-${randomUUID()}`,kind:'ambient',startAtMs:at,toleranceMs:30_000},settingsRevision:data.record.settingsRevision,
       saved:savedArtwork(options.inputs.art(),choice),generationRequestId:null,notice:undefined,preparing:true,used:new Set()};
     if(restriction(item)!==undefined)return;
     const art=item.saved;if(art===undefined)return;
@@ -182,30 +181,30 @@ export function createArtSchedule(options:Options) {
     if(targets.length===0&&ui===undefined)return;
     await store.change(current=>{if(current.record.settingsRevision!==item.settingsRevision)throw new AutomationError('revision-conflict',409);
       if(!store.claim(item.opportunity))throw new AutomationError('duplicate-conflict',409);current.ambientAtMs=at;
-      if(weather!==undefined)current.weatherRevision=Math.max(current.weatherRevision,weather);
+      if(weather!==undefined)current.weatherRevision=Math.max(current.weatherRevision,weather.revision);
       current.record.status='preparing';current.record.lastOpportunity={...attempt(item),artworkId:art.artworkId,browserRequestId:browserId,
-        displays:targets.map(target=>({target:target.target,prepareRequestId:target.requestId,momentRequestId:null,error:null}))};});
+        displays:targets.map(target=>({target:target.target,prepareRequestId:target.requestId,momentRequestId:null,error:null}))};},item.parent);
     ambientRunning=true;ambientUntilMs=item.opportunity.startAtMs+item.opportunity.toleranceMs;
     launch((async()=>{try {
       await Promise.all([
         ...targets.map(async target=>{
           const denied=restriction(item,{kind:'display',target:target.target});
           if(denied!==undefined){await store.change(current=>{const row=current.record.lastOpportunity?.id===item.opportunity.id?current.record.lastOpportunity.displays.find(value=>value.target===target.target):undefined;
-            if(row!==undefined){row.prepareRequestId=null;row.error='invalid-state';}});return;}
+            if(row!==undefined){row.prepareRequestId=null;row.error='invalid-state';}},item.parent);return;}
           const authorization=randomUUID();grants.set(authorization,{pending:item,target:target.target,compositionId:target.compositionId,expiresAtMs:item.opportunity.startAtMs+item.opportunity.toleranceMs});
-          const answer=await core.dispatch({requestId:target.requestId,key:'bunny.cmd.art-auto.art',requestedBy:'bunny/core',draft:{
+          const answer=await core.dispatch({requestId:target.requestId,key:'bunny.cmd.art-auto.art',requestedBy:'bunny/core',parent:item.parent,draft:{
             type:'org.bunny.art.auto.requested',subject:'art',dataschema:'https://bunny.invalid/events/art-auto/2.2',
             data:{action:'ambient',artworkId:art.artworkId,compositionId:target.compositionId,target:target.target,authorization}}});
           if('error' in answer&&active())await store.change(current=>{const row=current.record.lastOpportunity?.id===item.opportunity.id?current.record.lastOpportunity.displays.find(value=>value.target===target.target):undefined;
-            if(row!==undefined)row.error=answer.error.code;});
+            if(row!==undefined)row.error=answer.error.code;},item.parent);
         }),
         (async()=>{if(ui===undefined||browserId===null||permit(item,{kind:'browser'})!==undefined)return;
-          await core.dispatch({requestId:browserId,key:'bunny.cmd.art-auto.art',requestedBy:'bunny/core',draft:{type:'org.bunny.art.auto.requested',subject:'art',
+          await core.dispatch({requestId:browserId,key:'bunny.cmd.art-auto.art',requestedBy:'bunny/core',parent:item.parent,draft:{type:'org.bunny.art.auto.requested',subject:'art',
             dataschema:'https://bunny.invalid/events/art-auto/2.1',data:{action:'present',artworkId:art.artworkId,compositionId:ui}}});})(),
       ]);
-    }finally{ambientRunning=false;if(active())await store.change(current=>{if(current.record.lastOpportunity?.id===item.opportunity.id)current.record.status='idle';});}})());
+    }finally{ambientRunning=false;if(active())await store.change(current=>{if(current.record.lastOpportunity?.id===item.opportunity.id)current.record.status='idle';},item.parent);}})());
   }
-  async function tick():Promise<void> {
+  async function tick(occurrence?:WeatherOccurrence):Promise<void> {
     let data=state();options.inputs.set(data.record.policy);
     const at=now(),weather=weatherStatus(data);
     const notice=data.record.notice;
@@ -235,7 +234,7 @@ export function createArtSchedule(options:Options) {
       const item=pending;item.preparing=true;
       launch(present(item).finally(()=>{if(pending===item)pending=undefined;changed();}));
     }
-    if(pending===undefined)await ambient();
+    if(pending===undefined)await ambient(occurrence);
     data=state();const upcoming=data.day?.starts[0];
     const nextOpportunity=upcoming===undefined?null:{id:opportunityId('appearance',upcoming),kind:'appearance' as const,startAtMs:upcoming,toleranceMs:START_TOLERANCE_MS};
     if(JSON.stringify(data.record.nextOpportunity)!==JSON.stringify(nextOpportunity))await store.change(value=>{value.record.nextOpportunity=nextOpportunity;});
@@ -249,6 +248,15 @@ export function createArtSchedule(options:Options) {
     cancel=options.scheduler.after(Math.max(1,Math.min(...deadlines)-now()),changed);
   }
   function changed():void {void enqueue(tick).finally(schedule).catch(()=>{});}
+  function consumeWeather(revision:number,live:boolean,parent?:TraceContext):void {
+    void enqueue(async()=>{
+      if(revision<=state().weatherRevision)return;
+      // Receipt is durable even when policy or current restrictions deny this occurrence.
+      await store.change(data=>{data.weatherRevision=revision;},parent);
+      const policy=state().record.policy;
+      if(live&&policy.enabled&&policy.weather)await tick({revision,...(parent===undefined?{}:{parent})});
+    }).finally(schedule).catch(()=>{});
+  }
   const controls={
     get:():ArtScheduleRecord=>structuredClone(state().record),
     save:async(input:unknown,parent?:TraceContext):Promise<ArtScheduleRecord>=>{
@@ -267,11 +275,8 @@ export function createArtSchedule(options:Options) {
       return permit(grant.pending,{kind:'display',target});
     },
     changed,
-    weatherChanged:(revision:number):void=>{const current=state();if(!current.record.policy.enabled||!current.record.policy.weather)return;
-      if(revision>current.weatherRevision){
-      if(pending!==undefined){void enqueue(async()=>{await store.change(data=>{data.weatherRevision=Math.max(data.weatherRevision,revision);});}).catch(()=>{});}
-      else{weatherTrigger=revision;changed();}
-    }},
+    weatherChanged:(revision:number,parent?:TraceContext):void=>consumeWeather(revision,true,parent),
+    weatherSynced:(revision:number):void=>consumeWeather(revision,false),
     settled:async():Promise<void>=>{await serial;},
     close:async():Promise<void>=>{closed=true;cancel?.();pending=undefined;grants.clear();await serial;},
   };

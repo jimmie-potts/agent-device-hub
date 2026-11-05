@@ -5,6 +5,7 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {ArtAuto21} from '@jimmie-potts/event-contracts/v2/art';
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
 import type {BunnyModule, Command, ModuleContext} from '@jimmie-potts/sdk';
+import {childOf} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import type {ArtPlan} from '../src/core/art-plans.js';
 import {deviceRecord, deviceState} from './fixtures/device.js';
@@ -62,6 +63,15 @@ function oneDisplay(now: number, id = 'single-plan'): ArtPlan {
     mood: 'celebrate', priorityClass: 'event', coversStatus: true,
     displays: [{target: 'desk-display', compositionId: PIXOO, durationMs: 8000}]};
 }
+
+it('the caller trace follows real preparation, display and browser commands',async t=>{
+  const w=await world(t),parent=childOf(undefined),plan={...oneDisplay(w.clock.now(),'traced-plan'),browser:{compositionId:BROWSER}};assert.ok(w.core.automation.art);
+  const completion=w.core.automation.art.present(plan,()=>undefined,parent);
+  await waitFor(()=>w.preparations.length===1);const prepare=w.preparations[0];assert.ok(prepare);await w.complete(prepare.data.requestId);
+  await waitFor(()=>w.moments.length===1);w.clock.advance(5000);await flush();const result=await completion;assert.ok(!('error' in result));
+  assert.equal(w.preparations.length,2);assert.equal(result.browser?.status,'tracked');
+  for(const command of [...w.preparations,...w.moments])assert.equal(command.traceparent.split('-')[1],parent.traceparent.split('-')[1]);
+});
 
 for (const restarted of [false, true]) it(`an expired art plan cannot borrow late preparation with changed timing${restarted ? ' after restart' : ''}`, async t => {
   const w = await world(t), plan = oneDisplay(w.clock.now());assert.ok(w.core.automation.art);

@@ -80,7 +80,8 @@ void test('rain facts require a future qualifying hour and cover the complete al
   assert.equal(rainForecast({...record,forecast:[{...hour,startAtMs:local(12),endAtMs:local(13)}]},local(9),local(9,1),1000),undefined);
 });
 
-import {InProcessBus} from '@jimmie-potts/sdk';
+import {InProcessBus,childOf,type TraceContext} from '@jimmie-potts/sdk';
+import {ArtScheduleInputs} from '../src/core/art-schedule-inputs.js';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCoreModule} from '../src/core/core.js';
 import {manualClock,stateDir,flush} from './support.js';
@@ -109,7 +110,7 @@ function scheduledWorld(withDisplay=false,choice:()=>number=()=>0.5,displayId='s
   const provider=(name:'openai'|'anthropic')=>({provider:name,available:false,ceilingMicros:0,paceMicros:0,spentMicros:0,reservedMicros:0,uncertainMicros:0,remainingMicros:0,todayMicros:0,excessMicros:0,earlierUncertainMicros:0});
   const catalog:ArtRecord={id:'art',revision:1,month:'2026-11',day:'2026-11-05',providers:[provider('openai'),provider('anthropic')],guard:{calls:0,limit:30,windowMs:3_600_000},
     gifs:{accepted:0,rejected:0},jobs:[],artworks:[artwork('saved-art')],candidates:[],retention:{recentLimit:24,recent:1,favorites:1,retained:[]}};
-  let currentSettings={...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}};
+  let currentSettings={...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}},attention=false;
   const shared=new AutomationStore(db,()=>{},{settings:currentSettings,interruptSet:[...DEFAULT_INTERRUPT_SET]});
   const store=new ArtScheduleStore(db),dispatch=(action:Action)=>{commands.push(structuredClone(action));return Promise.resolve({requestId:action.requestId??'synthetic',status:'accepted' as const});};
   const display=deviceRecord(displayId,1,'tidbyt','available');
@@ -119,9 +120,9 @@ function scheduledWorld(withDisplay=false,choice:()=>number=()=>0.5,displayId='s
   let enabled=false,artReads=0,weatherReads=0;
   const inputs={set:(value:typeof policy)=>{enabled=value.enabled;},art:()=>{artReads++;return enabled?catalog:undefined;},weather:()=>{weatherReads++;return undefined;}};
   const options={store,shared,core:{clock:{now:clock.now},dispatch,operation:()=>undefined},scheduler:clock.scheduler,active:()=>true,plans,current:()=>withDisplay?display:undefined,
-    settings:()=>currentSettings,attention:()=>false,inputs,choice,failed:()=>{failures.push('storage');}};
+    settings:()=>currentSettings,attention:()=>attention,inputs,choice,failed:()=>{failures.push('storage');}};
   let owner=createArtSchedule(options);
-  return {db,clock,commands,catalog,store,shared,failures,setSettings:(settings:typeof currentSettings)=>{currentSettings=settings;},get owner(){return owner;},reads:()=>({artReads,weatherReads}),
+  return {db,clock,commands,catalog,store,shared,failures,setAttention:(value:boolean)=>{attention=value;},setSettings:(settings:typeof currentSettings)=>{currentSettings=settings;},get owner(){return owner;},reads:()=>({artReads,weatherReads}),
     move:async(at:number)=>{clock.advance(at-clock.now());await flush();await owner.settled();await flush();},
     restart:async()=>{await owner.close();owner=createArtSchedule(options);await flush();await owner.settled();},
     close:async()=>{plans.close();await owner.close();db.close();}};
@@ -144,6 +145,60 @@ void test('held generation falls back once at the fixed cutoff; late output and 
     await w.move(start-45_000);await w.move(start);assert.equal(w.commands.length,2);const selected=w.commands[1]?.draft.data as ArtAuto22;assert.equal(selected.action,'present');if(selected.action==='present')assert.equal(selected.artworkId,'saved-art');
     w.catalog.artworks.unshift(artwork('new-art'));w.catalog.jobs.push({requestId:request,purpose:'appearance',admittedBy:'automatic',status:'finished',outcome:'succeeded',artworkId:'new-art',createdAtMs:start-300_000,finishedAtMs:start+1000,targets:[]});
     w.owner.changed();await w.owner.settled();await w.restart();await w.move(start+10_000);assert.equal(w.commands.length,2);assert.deepEqual(w.failures,[]);
+  }finally{await w.close();}
+});
+void test('one scheduled opportunity carries its trace through generation and browser presentation',async()=>{
+  const w=scheduledWorld();try{
+    const saved=await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false,generation:true}}),start=saved.nextOpportunity?.startAtMs;assert.ok(start!==undefined);
+    await w.move(start-300_000);await w.move(start-45_000);await w.move(start);
+    assert.equal(w.commands.length,2);const traces=w.commands.map(command=>{assert.ok(command.parent);return command.parent.traceparent.split('-')[1];});
+    assert.equal(new Set(traces).size,1,'generation and presentation remain in the same occurrence trace');
+  }finally{await w.close();}
+});
+void test('a suppressed weather occurrence stays consumed through duplicate delivery and restart',async()=>{
+  const w=scheduledWorld();try{
+    await w.owner.save({expectedSettingsRevision:0,policy:{...policy,weather:true}});await flush();assert.equal(w.commands.length,1);
+    await w.move(local(8,1));w.setSettings({...DEFAULT_SETTINGS,noFlourishes:true,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}});
+    w.owner.weatherChanged(9);await w.owner.settled();await flush();assert.equal(w.commands.length,1);
+    w.setSettings({...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}});
+    w.owner.weatherChanged(9);await w.owner.settled();await flush();assert.equal(w.commands.length,1,'duplicate delivery cannot become catch-up');
+    await w.restart();w.owner.weatherChanged(9);await w.owner.settled();await flush();assert.equal(w.commands.length,1,'restart retains the consumed occurrence');
+    const source=childOf(undefined);w.owner.weatherChanged(10,source);await w.owner.settled();await flush();assert.equal(w.commands.length,2);
+    assert.equal(w.commands[1]?.parent?.traceparent.split('-')[1],source.traceparent.split('-')[1]);
+  }finally{await w.close();}
+});
+void test('the live weather input refuses stale or future observations and carries only a current owner trace',async()=>{
+  const clock=manualClock(local(9)),bus=new InProcessBus({now:clock.now}),sdk=bus.connect('bunny/core'),weather=bus.connect('bunny/modules/weather'),foreign=bus.connect('bunny/modules/art');
+  const hour={startAtMs:local(10),endAtMs:local(11),condition:'rain' as const,likely:true,temperatureF:60,precipitationPercent:80,windMph:0,isDaytime:true,dayPart:'morning' as const};
+  let record:WeatherState={id:'local',revision:8,status:'available',observedAtMs:local(8,55),staleAtMs:local(9,30),ageMs:0,forecastUpdatedAtMs:local(8),current:hour,forecast:[hour],alerts:[],words:['rain']};
+  const state=()=>({type:'org.bunny.weather-state.updated',subject:'local',dataschema:'https://bunny.invalid/events/weather-state/2.0',data:record});
+  const calls:{revision:number;parent:TraceContext}[]=[],baselines:number[]=[],inputs=new ArtScheduleInputs({clock:{now:clock.now},sdk},clock.scheduler,()=>true,()=>{},(revision,parent)=>{calls.push({revision,parent});},revision=>{baselines.push(revision);});
+  const source=childOf(undefined),emit=(sender=weather)=>sender.publish('bunny.event.weather-changed.local',{kind:'occurrence',type:'org.bunny.weather.changed',subject:'local',dataschema:'https://bunny.invalid/events/weather-changed/2.0',data:{revision:record.revision,observedAtMs:record.observedAtMs,changes:['condition'],words:['rain']}},{parent:source});
+  try{
+    await weather.serveSync(['weather-state'],()=>({revision:record.revision,states:[state()]}));inputs.set({...policy,weather:true});await flush();
+    assert.deepEqual(baselines,[8]);await emit();await flush();assert.equal(calls.length,0,'a synced revision is not a new live occurrence');
+    record={...record,revision:9,observedAtMs:local(8),staleAtMs:local(8,45)};await weather.publish('bunny.state.weather-state.local',{kind:'state',...state()});await flush();
+    await emit();await flush();assert.equal(calls.length,0,'a matching stale source is not a live trigger');
+    record={...record,revision:10,observedAtMs:local(9)+1,staleAtMs:local(9,30)};await weather.publish('bunny.state.weather-state.local',{kind:'state',...state()});await flush();await emit();await flush();assert.equal(calls.length,0,'a future observation is not a live trigger');
+    record={...record,revision:11,observedAtMs:local(8,55)};await weather.publish('bunny.state.weather-state.local',{kind:'state',...state()});await flush();await emit(foreign);await flush();assert.equal(calls.length,0);
+    await emit();await flush();assert.equal(calls.length,1);assert.equal(calls[0]?.parent.traceparent.split('-')[1],source.traceparent.split('-')[1]);
+    inputs.set({...policy,enabled:false,weather:true});await emit();await flush();assert.equal(calls.length,1,'closed source creates no trigger');
+    inputs.set({...policy,weather:true});await flush();assert.equal(baselines.at(-1),11);await emit();await flush();assert.equal(calls.length,1,'re-enable seeds a baseline without replay');
+  }finally{await inputs.close();await Promise.all([sdk.close(),weather.close(),foreign.close()]);}
+});
+for(const denied of ['attention','no-art','quiet','disabled','weather-disabled'] as const)void test(`weather received under ${denied} cannot become an enabled backlog`,async()=>{
+  const w=scheduledWorld();try{
+    await w.owner.save({expectedSettingsRevision:0,policy:{...policy,weather:true}});await flush();await w.move(local(8,1));assert.equal(w.commands.length,1);
+    const held=w.catalog.artworks.slice();
+    if(denied==='attention')w.setAttention(true);
+    if(denied==='no-art')w.catalog.artworks=[];
+    if(denied==='quiet')w.setSettings({...DEFAULT_SETTINGS,quietHours:{enabled:true,start:'08:00',end:'09:00',timeZone:null},budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}});
+    if(denied==='disabled'||denied==='weather-disabled')await w.owner.save({expectedSettingsRevision:1,policy:{...policy,enabled:denied!=='disabled',weather:denied!=='weather-disabled'}});
+    w.owner.weatherChanged(9);await w.owner.settled();await flush();assert.equal(w.commands.length,1);assert.equal(w.store.get().weatherRevision,9);
+    w.setAttention(false);w.catalog.artworks=held;w.setSettings({...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}});
+    if(denied==='disabled'||denied==='weather-disabled')await w.owner.save({expectedSettingsRevision:2,policy:{...policy,weather:true}});
+    w.owner.weatherChanged(9);await w.owner.settled();await flush();assert.equal(w.commands.length,1);
+    await w.restart();w.owner.weatherChanged(9);await w.owner.settled();await flush();assert.equal(w.commands.length,1);
   }finally{await w.close();}
 });
 void test('policy disable during preparation leaves the reserved opportunity spent and sends no browser selection',async()=>{
@@ -254,5 +309,18 @@ void test('a missed slot records expiration and cannot be refilled by a same-day
     assert.equal(w.shared.handedFlourishes(local(0)),0,'an expired unstarted opportunity reserves no provider or moment effect');
     await w.owner.save({expectedSettingsRevision:1,policy:{...policy,ambient:false,wakingStartMinute:9*60,wakingEndMinute:23*60}});
     assert.equal(w.store.get().day?.claimed,1);assert.equal(w.store.get().day?.starts.length,6);await w.restart();assert.equal(w.store.get().day?.claimed,1);assert.equal(w.commands.length,0);
+  }finally{await w.close();}
+});
+void test('a complete saved-art waking day stays spent through backward clock movement and rolls forward once',async()=>{
+  const w=scheduledWorld();try{
+    await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false}});
+    const starts=w.store.get().day?.starts.slice();assert.ok(starts!==undefined);assert.equal(starts.length,7);
+    for(const start of starts){await w.move(start-45_000);await w.move(start);}
+    assert.equal(w.commands.length,7);assert.equal(w.store.get().day?.claimed,7);
+    assert.ok(w.commands.every(command=>(command.draft.data as ArtAuto22).action==='present'));
+    await w.move(local(8));await w.restart();await w.move(local(22));assert.equal(w.commands.length,7);assert.equal(w.store.get().day?.claimed,7);
+    await w.move(new Date(2026,10,6,8).getTime());assert.equal(w.store.get().day?.claimed,0);assert.equal(w.store.get().day?.starts.length,7);
+    const nextDay=w.store.get().day?.key;await w.move(local(8));await w.restart();assert.equal(w.store.get().day?.key,nextDay);assert.equal(w.commands.length,7);
+    assert.deepEqual(w.failures,[]);
   }finally{await w.close();}
 });

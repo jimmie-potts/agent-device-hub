@@ -51,11 +51,16 @@ clock/store cases are `apps/runtime/tests/art-schedule.test.ts`; the finite
 `art-schedule` scenario uses real owners and synthetic providers/transports.
 After building, select it with
 `node --test --test-name-pattern='art-schedule' apps/runtime/dist/tests/scenarios/catalog.test.js`.
-Its assertions distinguish initial ambient permission from renewal, persisted
-45-minute spacing after the latest permitted start, disabled-source zero reads,
-fresh typed rain evidence and separate target outcomes. Browser checks cover
-revision conflicts and expiring labels on actually decoded art. Native frames
-are inspected separately. None contacts a provider, device or installed runtime.
+The finite scenario checks one saved-art rain appearance, disabled-source zero
+reads, exact submitted frame hashes and independent 10-second Pixoo and
+30-second Tidbyt outcomes. Its portable capture is bounded at 240 seconds.
+Manual-clock cases in the policy suite, `art-plans.test.ts` and
+`modules/art/tests/scheduled.test.ts` separately cover persisted 45-minute
+spacing, held preparation, revocation, renewal, restart and lost outcomes.
+Those cases are not claims about the portable recording. Browser checks cover
+revision conflicts and expiring labels on actually decoded art. Inspect the
+recorded native frames separately. These checks use only synthetic providers
+and transports, with no installed-runtime contact.
 
 Shared saved-art presentation (#297) uses the existing CI discovery. After
 `npm run build`, run `npm run typecheck`, `npm run lint:js`,

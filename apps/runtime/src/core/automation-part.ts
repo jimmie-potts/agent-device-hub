@@ -179,7 +179,7 @@ export class AutomationPart implements CorePart {
           : {kind:'receipt',momentId:moment.momentId,requestId:answer.requestId,status:'accepted'};
       }});
     this.#inputs=new ArtScheduleInputs(handle,this.#scheduler,()=>!this.#closed&&!this.#signal.aborted,
-      ()=>this.#schedule?.changed(),revision=>this.#schedule?.weatherChanged(revision));
+      ()=>this.#schedule?.changed(),(revision,parent)=>this.#schedule?.weatherChanged(revision,parent),revision=>this.#schedule?.weatherSynced(revision));
     this.#schedule=createArtSchedule({store:new ArtScheduleStore(database,work=>handle.transaction(work)),shared:store,core:handle,
       scheduler:this.#scheduler,active:()=>!this.#closed&&!this.#signal.aborted,plans:this.#art,
       current:id=>{const device=this.#configured.find(value=>value.id===id);return device!==undefined&&this.#devices.get(device.owner)?.fresh===true?this.#device(id):undefined;},settings:()=>this.#automation?.settings()??structuredClone(DEFAULT_SETTINGS),
