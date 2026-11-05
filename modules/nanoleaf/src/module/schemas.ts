@@ -5,6 +5,8 @@
 // `validFavoriteEdit`, the Free-only play rule) stay with the module, which applies them at admission.
 import {DIRECTIONS, PATTERNS, PRESETS, SPEEDS} from '../effects.js';
 import {SETTING_NAMES} from '../project-map.js';
+import {MUSIC_DIRECTIONS} from '../music-recipe-data.js';
+import {REACTIVE_ID_PATTERN, REACTIVE_LIMITS, REACTIVE_SCHEMA, REACTIVE_TARGET} from '../music-preset-data.js';
 import {SHOW_ID_PATTERN, SHOW_LIMITS, SHOW_TARGET} from '../music-show-data.js';
 import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS} from '../music-timeline.js';
 
@@ -22,6 +24,8 @@ const list = (items: object, minItems: number, maxItems: number): object => ({ty
 export const NANOLEAF_FAMILIES = {
   wall: {family: 'nanoleaf-wall', kind: 'state', type: 'org.bunny.nanoleaf-wall.updated'},
   animations: {family: 'nanoleaf-animations', kind: 'state', type: 'org.bunny.nanoleaf-animations.updated'},
+  reactivePresets: {family: 'nanoleaf-reactive-presets', kind: 'state', type: 'org.bunny.nanoleaf-reactive-presets.updated'},
+  reactivePresetSave: {family: 'nanoleaf-reactive-preset-save', kind: 'command', type: 'org.bunny.nanoleaf-reactive-preset.save.requested'},
   shows: {family: 'nanoleaf-shows', kind: 'state', type: 'org.bunny.nanoleaf-shows.updated'},
   showSave: {family: 'nanoleaf-show-save', kind: 'command', type: 'org.bunny.nanoleaf-show.save.requested'},
   wallEdit: {family: 'nanoleaf-wall-edit', kind: 'command', type: 'org.bunny.nanoleaf-wall.edit.requested'},
@@ -47,6 +51,17 @@ const RECIPE = closed({
   loop: {type: 'boolean'},
 }, ['speed', 'direction', 'loop']);
 const ANIMATION = {oneOf: [closed({preset: {enum: Object.keys(PRESETS)}}), closed({favorite: text(80)}), RECIPE]};
+const REACTIVE_ID = {type: 'string', pattern: REACTIVE_ID_PATTERN, maxLength: REACTIVE_LIMITS.id};
+const MUSIC_BASE = {rendererVersion: {const: 1}, palette: list(COLOR, 1, 8), intensity: {type: 'number', minimum: 0, maximum: 1},
+  sensitivity: {type: 'number', minimum: 0.1, maximum: 8}, smoothingMs: {type: 'number', minimum: 0, maximum: 2000}};
+const musicRecipe = (explicit: boolean): object => ({oneOf: [
+  closed({...MUSIC_BASE, effect: {enum: ['level-glow', 'ambient']}}, explicit ? [] : ['intensity', 'sensitivity', 'smoothingMs']),
+  closed({...MUSIC_BASE, effect: {const: 'bass-pulse'}, halfLifeMs: {type: 'number', minimum: 100, maximum: 2000}}, explicit ? [] : ['intensity', 'sensitivity', 'smoothingMs', 'halfLifeMs']),
+  closed({...MUSIC_BASE, effect: {const: 'spectrum'}, direction: {enum: [...MUSIC_DIRECTIONS]}}, explicit ? [] : ['intensity', 'sensitivity', 'smoothingMs', 'direction']),
+  closed({...MUSIC_BASE, effect: {const: 'traveling-wave'}, direction: {enum: [...MUSIC_DIRECTIONS]}, periodMs: {type: 'number', minimum: 400, maximum: 10000}},
+    explicit ? [] : ['intensity', 'sensitivity', 'smoothingMs', 'direction', 'periodMs']),
+]});
+const REACTIVE_PRESET = closed({schema: {const: REACTIVE_SCHEMA}, presetId: REACTIVE_ID, name: text(REACTIVE_LIMITS.name), recipe: musicRecipe(true)});
 const SHOW_ID = {type: 'string', pattern: SHOW_ID_PATTERN, maxLength: SHOW_LIMITS.id};
 const SHOW_VERSION = {type: 'integer', minimum: 1, maximum: SHOW_LIMITS.versions};
 const SHOW_TIMELINE = closed({version: {const: 1}, durationMs: {type: 'integer', minimum: MIN_MUSIC_CUE_MS, maximum: MAX_MUSIC_DURATION_MS},
@@ -77,6 +92,14 @@ const POINT = {type: 'array', items: {type: 'number'}, minItems: 2, maxItems: 2}
 
 /** The module's payload schemas, by `dataschema`, for validators, the runtime's edge and the module test kit. */
 export const nanoleafSchemas: Readonly<Record<string, object>> = {
+  [schemaOf('nanoleaf-reactive-presets')]: {
+    description: 'State: the bounded private library of frozen V1 reactive recipes. Metadata only.',
+    ...closed({id: {const: REACTIVE_TARGET}, revision: block('revision'), presets: list(REACTIVE_PRESET, 0, REACTIVE_LIMITS.presets)}),
+  },
+  [schemaOf('nanoleaf-reactive-preset-save')]: {
+    description: 'Command: save one immutable named reactive recipe against the current library revision. Metadata only.',
+    ...closed({requestId: block('requestId'), presetId: REACTIVE_ID, expectedRevision: block('revision'), name: text(REACTIVE_LIMITS.name), recipe: musicRecipe(false)}),
+  },
   [schemaOf('nanoleaf-shows')]: {
     description: 'State: private decorative show heads and immutable named version summaries; no media, device output or execution state.',
     ...closed({id: {const: SHOW_TARGET}, revision: block('revision'), shows: list(closed({id: SHOW_ID, name: text(SHOW_LIMITS.name), version: SHOW_VERSION,

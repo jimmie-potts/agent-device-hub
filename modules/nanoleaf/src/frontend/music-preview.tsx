@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useSyncExternalStore} from 'react';
 import type {FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {MUSIC_PREVIEW_MODELS, MUSIC_PREVIEW_PRESETS} from '../music-preview-data.js';
 import {MusicPreviewDraft, musicPreviewProblem} from './music-preview-model.js';
+import {ReactivePresets} from './reactive-presets.js';
 import './music-preview.css';
 
 export function MusicPreview({context}: {context: FrontendContext}): React.JSX.Element {
@@ -12,6 +13,7 @@ export function MusicPreview({context}: {context: FrontendContext}): React.JSX.E
     model.setConnected(context.connected);
     return () => {model.setConnected(false);};
   }, [model, context.connected]);
+  const recipe = model.recipe();
   const problem = musicPreviewProblem(draft), sample = view.result?.samples[view.sample];
   const example = MUSIC_PREVIEW_MODELS.find(value => value.id === view.result?.model);
   const stride = example?.kind === 'lines' ? 2 : 1;
@@ -22,7 +24,7 @@ export function MusicPreview({context}: {context: FrontendContext}): React.JSX.E
   return <section className="nanoleaf-music-preview" aria-label="Music effect preview"><details>
     <summary>Music effect preview</summary>
     <p>Generated input · example geometry · unsaved draft</p>
-    <p className="hint">Compare effect colors on an example arrangement. Palette and intensity edits last for this page.</p>
+    <p className="hint">Compare effect colors on an example arrangement. Palette and intensity edits last for this page until you explicitly save a named preset.</p>
     <div className="music-preview-fields">
       <label>Built-in effect<select value={draft.preset} onChange={event => {
         const preset = MUSIC_PREVIEW_PRESETS.find(value => value.id === event.currentTarget.value);
@@ -45,6 +47,10 @@ export function MusicPreview({context}: {context: FrontendContext}): React.JSX.E
       </div>)}
     </div><button type="button" className="secondary" disabled={draft.palette.length >= 8}
       onClick={() => {model.edit({palette: [...model.snapshot().draft.palette, '#ffffff']});}}>Add color</button></fieldset>
+    <p className="hint">Renderer V{recipe.rendererVersion} · Sensitivity {recipe.sensitivity} · Renderer smoothing {recipe.smoothingMs} ms
+      {'direction' in recipe && <> · Direction {recipe.direction}</>}{'halfLifeMs' in recipe && <> · Pulse half-life {recipe.halfLifeMs} ms</>}
+      {'periodMs' in recipe && <> · Wave period {recipe.periodMs} ms</>}. These frozen renderer values are read-only here; capture calibration is separate.</p>
+    <ReactivePresets context={context} recipe={recipe} load={saved => {model.load(saved);}}/>
     <div className="music-preview-actions">
       <button type="button" disabled={!view.connected || view.pending || problem !== undefined} onClick={() => {void model.preview();}}>
         {view.pending ? 'Preparing preview…' : 'Preview'}</button>

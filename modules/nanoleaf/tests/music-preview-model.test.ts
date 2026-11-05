@@ -102,3 +102,27 @@ test('content boundary accepts canonical documents for every effect/model and re
   }
   for (const value of changed) assert.throws(() => parseMusicPreview(value, request));
 });
+
+test('loading a full recipe changes only the local draft and preserves all fields through edits and preview', async () => {
+  const paths: string[] = [];
+  const model = new MusicPreviewDraft(path => {
+    paths.push(path); return Promise.resolve(prepareMusicPreview(JSON.parse(new URL(path, 'https://synthetic.invalid').searchParams.get('request') ?? 'null')));
+  });
+  const saved = {rendererVersion: 1, effect: 'traveling-wave', palette: ['#12ab34'], intensity: 0.3, sensitivity: 3,
+    smoothingMs: 900, direction: 'inward', periodMs: 9000} as const;
+  model.setConnected(true); model.load(saved); assert.equal(paths.length, 0); assert.deepEqual(model.recipe(), saved);
+  model.edit({intensity: 0.4, palette: ['#ffffff']}); await model.preview();
+  assert.equal(paths.length, 1); assert.deepEqual(model.snapshot().result?.recipe, {...saved, intensity: 0.4, palette: ['#ffffff']});
+  const request: unknown = JSON.parse(new URL(paths[0] ?? '', 'https://synthetic.invalid').searchParams.get('request') ?? 'null');
+  assert.deepEqual(request, {version: 1, recipe: model.recipe(), model: 'lines-demo-v1'});
+  model.edit({model: 'nl22-demo-v1'}); assert.equal(model.recipe().sensitivity, 3);
+  model.edit({preset: 'ambient'}); assert.equal(model.snapshot().loadedRecipe, undefined); assert.equal(model.recipe().smoothingMs, 1500);
+});
+
+test('loading a saved recipe invalidates an older pending preview', async () => {
+  const pending = deferred<unknown>(), model = new MusicPreviewDraft(() => pending.promise);
+  model.setConnected(true); const reading = model.preview();
+  model.load({rendererVersion: 1, effect: 'bass-pulse', palette: ['#ffffff'], intensity: 0.4, sensitivity: 2, smoothingMs: 600, halfLifeMs: 1000});
+  pending.resolve(prepareMusicPreview(musicPreviewDefault())); await reading;
+  assert.equal(model.snapshot().result, undefined); assert.equal(model.recipe().effect, 'bass-pulse');
+});

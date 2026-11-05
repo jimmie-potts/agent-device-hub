@@ -32,5 +32,10 @@ export const musicCaptureFamilies = [
     message.subject === (message.data as CaptureLost).id ? undefined : 'envelope /subject must name the lost endpoint'),
   defineFamily('music-capture-control', 'command', 'org.bunny.music-capture.control.requested', musicSubject),
   defineFamily('music-capture-state', 'state', 'org.bunny.music-capture.updated', musicSubject),
+  defineFamily('music-capture-endpoint', 'command', 'org.bunny.music-capture.endpoint.requested', endpointSubject, '2.1'),
+  defineFamily('music-capture-work', 'command', 'org.bunny.music-capture.work.requested', endpointSubject, '2.1'),
+  defineFamily('music-capture-features', 'occurrence', 'org.bunny.music-capture.features.observed', checkFeatures, '2.1'),
+  defineFamily('music-capture-control', 'command', 'org.bunny.music-capture.control.requested', musicSubject, '2.1'),
+  defineFamily('music-capture-state', 'state', 'org.bunny.music-capture.updated', musicSubject, '2.1'),
 ] as const;
 export function registerMusicCaptureFamilies(validator: MessageValidator): void {registerFamilies(validator, musicCaptureFamilies);}
