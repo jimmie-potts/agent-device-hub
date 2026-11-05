@@ -33,6 +33,38 @@ synthetic state and isolated simulated targets. The actual pinned vendor
 MuJoCo exercise and physical/installed acceptance remain separate evidence.
 See [the module guide](../modules/reachy-mini/README.md).
 
+## Art checks
+
+Use Node 24. Run `npm run test:art` for the spending ledger, the catalog, local image
+work and the provider adapters, or build once and run `npm run test:art:built`. The
+modules CI group runs the built suite. Tests use fake providers through the transport
+seam and synthetic images, so no key is read and nothing reaches a provider. Run the
+shared build/type/lint/workflow checks, `npm run test:events:built` for the `art` state
+family, and `npm run test:runtime:built`, whose shipped-module run and upgrade preflight
+cover its registration. A contract change to the diagnostic profile also needs
+`npm run test:observability`. Real generation and the GIF rejection rate belong to
+installed acceptance in #687. See [the module guide](../modules/art/README.md).
+
+The registered `art-catalog` and `art-spending-limit` scenarios run through both
+runtime transports in `test:runtime:scenarios:built`. They use synthetic GIF/still
+providers with fixed billed usage and the real authenticated commands, catalog,
+ledger and private store. They cover favorite/reuse/variation, invalid bytes, lost
+responses, restart without replay, recent retention and the monthly ceiling.
+After building, focus them with
+`node --test --test-name-pattern='art-catalog|art-spending-limit' apps/runtime/dist/tests/scenarios/catalog.test.js`.
+On a Mac, use `npm run test:runtime:container -- --suite scenarios`.
+
+For disposable acceptance on a clean committed candidate, select
+`scenario-art-catalog` through the [portable route](../apps/runtime/verify/PORTABLE.md).
+Its recording opens the saved synthetic rendition through the real authenticated
+content route, using a labelled review-only link in the existing shell. It adds no
+gallery UI and exercises no real provider or device. The rendition remains visible
+in the final screenshot. The separate `scenario-art-spending-limit` capture covers
+the ceiling and restart. Existing
+`test:runtime:verify:built` discovery runs both captures; on a Mac use
+`npm run test:runtime:container -- --suite verify`. Inspect the complete video and
+scenario-result attachment before assessing acceptance.
+
 ## Wemo checks
 
 Use Node 24. Run `npm run test:wemo` for configured local SOAP transport and module
@@ -1189,7 +1221,7 @@ absent cases and checks the configuration's owned-origin refusals, so it needs
 no Docker. The stack's own files are checked only by a disposable boot on
 alternate ports, as [the operator guide](bunny-container.md#diagnostics-stack)
 describes: `docker compose -p <disposable name> -f deploy/diagnostics/compose.yaml -f <ports override> up -d`,
-post one profile 1.7 record and one span to the Collector, read them back
+post one profile 1.8 record and one span to the Collector, read them back
 through Grafana's Loki and Tempo proxies, then `down -v`. Hosted CI runs the
 export test with the runtime suites; it does not boot the stack.
 

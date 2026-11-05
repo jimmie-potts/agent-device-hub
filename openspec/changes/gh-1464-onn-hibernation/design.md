@@ -8,7 +8,7 @@ Stop active ONN participation while retaining a reversible source record and pri
 
 ## Decisions
 
-Use the existing manifest flag and exclude the package from workspaces/build/lint. Hiding cards alone would leave the writer and polling active. Retain dedicated checks with dormant suffixes, and remove their active catalog/CI entries. Remove explicit shell imports before excluding the package. Preserve core omitted-payload handling and backup/upgrade readers because historical state outlives a device. Keep generic television-size keyboard checks because they validate shared shell behavior.
+Use the existing manifest flag and exclude the package from workspaces/build/lint. Hiding cards alone would leave the writer and polling active. Retain dedicated checks with dormant suffixes, and remove their active catalog/CI entries. Remove explicit shell imports before excluding the package. Preserve core omitted-payload handling and backup/upgrade readers because historical state outlives a device. Keep the frozen ONN configuration reader in the active runtime compatibility code so backup verification and restoration do not depend on dormant module build output. Keep generic television-size keyboard checks because they validate shared shell behavior.
 
 ## Risks / Trade-offs
 

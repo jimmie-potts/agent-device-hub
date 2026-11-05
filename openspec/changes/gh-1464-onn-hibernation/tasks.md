@@ -8,4 +8,4 @@
 
 - [ ] 2.1 Update active guides and capability specs, synchronize/archive after successful lookups and evidence; verify workflow/spec checks.
 - [ ] 2.2 Reconcile named tracker obligations and deployment ownership; verify issue readbacks.
-- [ ] 2.3 Obtain independent review, disposable acceptance, selected local checks and hosted CI on the committed comparison; retain evidence before merge.
+- [ ] 2.3 Complete disposable absence/preservation acceptance and selected local checks; retain raw evidence for the committed comparison. Independent review, hosted CI and merge remain required delivery gates on #1464 after specification archival.

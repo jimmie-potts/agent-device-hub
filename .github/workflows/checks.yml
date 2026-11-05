@@ -172,6 +172,9 @@ jobs:
         run: npm run test:roborock:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:wemo:built
+      - name: Art module
+        if: contains(fromJSON(needs.select.outputs.groups), 'modules')
+        run: npm run test:art:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'modules')
         run: npm run test:volcano:built
       - name: Weather module

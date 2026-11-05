@@ -20,11 +20,15 @@ class Profiles(unittest.TestCase):
         self.assertEqual(later, ['bunny.outcome.publish', 'bunny.device.call'])
         for version in ('1.0', '1.1', '1.2'):
             self.assertEqual([name for name in _profile_span_names(catalog, version) if name in later], [], version)
-        self.assertEqual(_profile_span_names(catalog, '1.3'), [n for n in catalog['span_names'] if n not in catalog['additions']['1.6']['span_names']])
-        self.assertEqual(_profile_span_names(catalog, '1.4'), [n for n in catalog['span_names'] if n not in catalog['additions']['1.6']['span_names']], 'profile 1.4 adds no span name')
-        self.assertEqual(_profile_span_names(catalog, '1.5'), [n for n in catalog['span_names'] if n not in catalog['additions']['1.6']['span_names']], 'profile 1.5 adds no span name')
-        self.assertEqual(_profile_span_names(catalog, '1.6'), catalog['span_names'])
-        self.assertEqual(_profile_span_names(catalog, '1.7'), catalog['span_names'], 'profile 1.7 adds no span name')
+        art = catalog['additions']['1.8']['span_names']
+        self.assertEqual(art, ['bunny.art.call'])
+        before_assistant = [n for n in catalog['span_names'] if n not in catalog['additions']['1.6']['span_names'] and n not in art]
+        self.assertEqual(_profile_span_names(catalog, '1.3'), before_assistant)
+        self.assertEqual(_profile_span_names(catalog, '1.4'), before_assistant, 'profile 1.4 adds no span name')
+        self.assertEqual(_profile_span_names(catalog, '1.5'), before_assistant, 'profile 1.5 adds no span name')
+        self.assertEqual(_profile_span_names(catalog, '1.6'), [n for n in catalog['span_names'] if n not in art])
+        self.assertEqual(_profile_span_names(catalog, '1.7'), [n for n in catalog['span_names'] if n not in art], 'profile 1.7 adds no span name')
+        self.assertEqual(_profile_span_names(catalog, '1.8'), catalog['span_names'], 'profile 1.8 adds the art provider call')
 
     def test_default_profile_leaves_out_later_attributes(self):
         record = hub_record()
@@ -44,7 +48,7 @@ class Profiles(unittest.TestCase):
         self.assertEqual(newest['value']['attributes'], record['attributes'])
 
     def test_profile_1_5_attributes_stay_in_profile_1_5(self):
-        self.assertEqual(ARTIFACT_VERSION, '1.7.0')
+        self.assertEqual(ARTIFACT_VERSION, '1.8.0')
         record = hub_record()
         record['attributes'].update({'bunny.state.bytes': 8388609, 'bunny.save.duration_ms': 150, 'error.type': 'TypeError'})
         earlier = create_record({**record, 'schema_version': '1.4'})

@@ -89,6 +89,12 @@ Volcano adds private `volcano.sqlite`, which holds usage facts that nothing dele
 the gap threshold and threshold request fences. Configured Volcano requires its
 primary store. Preserve a retained store when its section goes.
 
+Art adds private `art.sqlite`, which holds its job rows, the spending ledger, the
+catalog and its bytes. It is a durable owner: favorites and spend cannot be rebuilt, so
+configured Art requires its primary store and ordinary healthy running state, and a
+retained store stays when its section is gone. A restart leaves every in-flight call
+uncertain with its reservation kept, and resends nothing.
+
 ## Routine operation checklist
 
 1. Verify reviewed merged source, applicable CI and release integrity. Assess
@@ -387,7 +393,7 @@ configuration or silent hook retargeting. The existing readers verify exact
 bytes and resolutions. An empty list still needs accepted completeness evidence.
 
 Configured modules require running, healthy, null-reason health. Unconfigured
-Wispr, BB-8, ONN, Roborock, Wemo, Weather and Volcano may report only the exact absent-module
+Art, Wispr, BB-8, ONN, Roborock, Wemo, Weather and Volcano may report only the exact absent-module
 `refused`/`not-found`/`healthy: false` row and corresponding degraded aggregate.
 Retained inactive files do not convert absence into healthy active ownership.
 Unknown owners and unsafe files still refuse. The always-started companions

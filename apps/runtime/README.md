@@ -61,6 +61,10 @@ The [Volcano module](../../modules/volcano/README.md) keeps private usage facts 
 one VOLCANO HYBRID from a host-local collector, derives sessions when they are read
 and reaches no device.
 
+The [art module](../../modules/art/README.md) generates art through OpenAI's Image
+API and Claude under separate spending limits per provider, and keeps a private
+catalog.
+
 The [Wemo module](../../modules/wemo/README.md) controls up to two explicitly
 qualified local F7C063 plugs. It supplies power/observations only; schedules and
 maximum-on enforcement stay in the core.
