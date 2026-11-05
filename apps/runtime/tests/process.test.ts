@@ -103,7 +103,7 @@ it('the shipped runtime runs every shipped module with --simulate and each facto
   assert.deepEqual(body.modules.map(module => [module.name, module.state]), shippedModules.map(({name}) => [name, 'running']));
   assert.equal(body.status, 'ok');
   // The device modules all serve the shared device family, each for its own devices (#967): none is refused it.
-  assert.deepEqual(body.modules.filter(module => module.serves?.includes('device') === true).map(module => module.name), ['lifx', 'tidbyt', 'pixoo', 'nanoleaf', 'onn', 'wemo', 'reachy-mini', 'microduck', 'roborock', 'volcano']);
+  assert.deepEqual(body.modules.filter(module => module.serves?.includes('device') === true).map(module => module.name), ['lifx', 'tidbyt', 'pixoo', 'nanoleaf', 'wemo', 'reachy-mini', 'microduck', 'roborock', 'volcano']);
   runtime.child.kill('SIGTERM');
   assert.deepEqual(await runtime.exited, {code: 0, signal: null});
   assert.deepEqual(runtime.records().filter(record => record.severity_number >= 17).map(record => record.event_name), [], 'no error record');
@@ -283,7 +283,7 @@ it('a health port already in use names its reason in the runtime.failed record',
   assert.equal(runtime.records().find(record => record.event_name === 'runtime.failed')?.attributes['error.code'], 'EADDRINUSE');
 });
 
-it('an outcome committed before a kill between commit and publish is taken exactly once after the restart, then forgotten once acknowledged, and the command is never sent again', async context => {
+for (const scenario of ['lamp-crash', 'lamp-crash-delayed']) it(`an outcome committed before a kill between commit and publish is taken exactly once after the restart, then forgotten once acknowledged, and the command is never sent again (${scenario})`, async context => {
   // Hub #882: the lamp's outbox holds the outcome across the kill; the core keeps the outcome in its own history.
   const dir = await stateDir(context);
   const args = ['--port', '0', '--state-dir', dir];
@@ -292,7 +292,7 @@ it('an outcome committed before a kill between commit and publish is taken exact
   const taken = (runtime: Spawned): LogRecord[] => of(runtime, 'core', 'message.received')
     .filter(record => record.attributes['bunny.message.kind'] === 'outcome' && record.attributes['bunny.outcome'] === 'accepted');
 
-  const crashed = spawnRuntime(context, FIXTURE, ['lamp-crash', ...args]);
+  const crashed = spawnRuntime(context, FIXTURE, [scenario, ...args]);
   assert.deepEqual(await crashed.exited, {code: null, signal: 'SIGKILL'});
   assert.equal(of(crashed, 'lamp', 'command.executing').length, 1, 'the lamp had the command once');
   assert.equal(of(crashed, 'core', 'message.received').length, 0, 'nothing was published before the kill');

@@ -1,5 +1,7 @@
 # Shared architecture
 
+ONN is hibernated after device retirement. Preserve retained ONN state and compatibility readers without activating its writer or requiring dormant-device qualification. Its historical setup references do not select active ONN use.
+
 ## Current runtime and evidence
 
 B.U.N.N.Y. uses one TypeScript process under `apps/runtime`, with a fixed shipped

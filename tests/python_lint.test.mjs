@@ -35,10 +35,10 @@ test('lint discovery includes surviving tooling and omits retained consumers and
   for (const expected of [
     'apps/maintenance/recommendations/recommendations.py', 'docs/system-design/check.py',
     'docs/skins/skin.py', 'scripts/performance/standalone.py', 'tests/performance/test_validators.py',
-    'modules/nanoleaf/tests/fixtures/record.py', 'modules/onn/native/check.py',
+    'modules/nanoleaf/tests/fixtures/record.py',
   ]) assert.ok(files.includes(expected), expected);
   assert.ok(files.every(file => file.endsWith('.py')), result.stdout);
-  for (const excluded of ['packages/', 'controllers/', 'docs/diagrams/legacy/', 'scripts/performance/vendor/', '.local/']) {
+  for (const excluded of ['modules/onn/', 'packages/', 'controllers/', 'docs/diagrams/legacy/', 'scripts/performance/vendor/', '.local/']) {
     assert.ok(files.every(file => !file.startsWith(excluded)), excluded);
   }
 });

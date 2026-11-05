@@ -225,9 +225,9 @@ export const sparkle: Renderer = (index, colors, step) => {
 
 export const RENDERERS: Readonly<Record<Pattern, Renderer>> = Object.freeze({wave, gradient, pulse, breathe, sparkle});
 
-/** The looped or one-shot display payload for a valid command on this device's elements. */
-export function render(command: ExplicitAnimation | {kind: 'animation.play'; preset: PresetName}, groups: readonly (readonly number[])[],
-  positions: readonly (readonly number[] | null)[] | null, kind: Kind = 'lines'): Display {
+/** Internal canonical preparation. Frame values are immutable; the payload retains ordinary render semantics. */
+export function prepareAnimationFrames(command: ExplicitAnimation | {kind: 'animation.play'; preset: PresetName}, groups: readonly (readonly number[])[],
+  positions: readonly (readonly number[] | null)[] | null, kind: Kind = 'lines'): Readonly<{zones: readonly Zone[]; payload: Display}> {
   const explicit: Readonly<Recipe> = 'preset' in command ? PRESETS[command.preset] : command;
   const speed = explicit.speed ?? DEFAULTS.speed;
   const direction = explicit.direction ?? DEFAULTS.direction;
@@ -247,9 +247,16 @@ export function render(command: ExplicitAnimation | {kind: 'animation.play'; pre
     const frames = RENDERERS[explicit.pattern](index, colors, SPEEDS[speed], phase, circular);
     if (frames.length > MAX_FRAMES) throw new Rejected('capacity');
     // Both zones of a Line share its frames; a Panel has one zone.
-    for (const zone of zoneIds) zones.push([zone, frames]);
+    const frozenFrames = Object.freeze(frames.map(value => Object.freeze(value)));
+    for (const zone of zoneIds) zones.push(Object.freeze([zone, frozenFrames]));
   });
   const payload = {write: display(zones, true, loop, kind === 'lines')};
   if (size(payload) > MAX_BYTES) throw new Rejected('capacity');
-  return payload;
+  return Object.freeze({zones: Object.freeze(zones), payload});
+}
+
+/** The looped or one-shot display payload for a valid command on this device's elements. */
+export function render(command: ExplicitAnimation | {kind: 'animation.play'; preset: PresetName}, groups: readonly (readonly number[])[],
+  positions: readonly (readonly number[] | null)[] | null, kind: Kind = 'lines'): Display {
+  return prepareAnimationFrames(command, groups, positions, kind).payload;
 }
