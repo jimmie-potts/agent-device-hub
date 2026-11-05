@@ -28,10 +28,10 @@ this outcome needs it; the TV sits behind the same tailnet membership, owner
 password and session expiry as the phone. If a guest-safe TV is wanted later,
 that is its own issue.
 
-The route is started by hand on the Mac after sign-in, as the private access
-guide says. The TV view is available only while Caddy and Tailscale Serve run;
-a Mac reboot or sleep makes the bookmark unavailable until the owner starts
-them again. This record does not turn the route into a service.
+The route runs on the Mac as the private access guide says, starting at sign-in
+once its agents are installed. The TV view is available only while Caddy and
+Tailscale Serve run, so a Mac reboot or sleep makes the bookmark unavailable until
+the owner signs in or the Mac wakes.
 
 ## Owner setup on the device
 

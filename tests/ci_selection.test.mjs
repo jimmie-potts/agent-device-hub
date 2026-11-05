@@ -365,7 +365,7 @@ const STEP_GROUPS = {
     'npm run test:observability:built': 'shared', 'npm run test:observability:pilot': 'shared', 'npm run test:observability:python': 'shared',
     'npm run test:observability:query': 'shared', 'npm run test:observability:package:built': 'shared', 'npm run test:contracts:built': 'shared',
     'npm run test:events:built': 'shared', 'npm run test:events:python': 'shared', 'npm run test:sdk:built': 'shared',
-    'npm run test:runtime:built': 'runtime', 'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs': 'runtime', 'npm run test:runtime:scenarios:built': 'runtime',
+    'npm run test:runtime:built': 'runtime', 'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs scripts/tests/mac-host.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs': 'runtime', 'npm run test:runtime:scenarios:built': 'runtime',
     'npm run test:lifecycle:built': 'shared', 'npm run test:lifecycle:python': 'shared', 'npm run test:lifecycle:package:built': 'shared',
     'npm run test:agent-state:built': 'shared', 'npm run test:agent-state:python': 'shared', 'npm run test:agent-state:package:built': 'shared',
     'npm run test:wispr:built': 'shared', 'npm run test:wispr:package:built': 'shared',
@@ -385,7 +385,7 @@ const STEP_GROUPS = {
     'npm run test:dashboard:smoke': 'shared',
     // The runtime dashboard's browser checks, including its module pages, live under apps/runtime.
     'npm run test:runtime-dashboard:smoke': 'runtime', 'node apps/runtime/dashboard/tests/timeline-card.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/room-models.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/music-card.browser.ts': 'runtime', 'node apps/runtime/dashboard/tests/tv.browser.ts': 'runtime',
-    'npm run test:roborock:browser': 'runtime', 'npm run test:onn:browser': 'runtime', 'npm run test:companions:browser': 'runtime', 'npm run test:wemo:browser': 'runtime', 'npm run test:reachy:browser': 'runtime', 'npm run test:microduck:browser': 'runtime', 'npm run test:observability:browser': 'shared',
+    'npm run test:roborock:browser': 'runtime', 'npm run test:volcano:browser': 'runtime', 'npm run test:onn:browser': 'runtime', 'npm run test:companions:browser': 'runtime', 'npm run test:wemo:browser': 'runtime', 'npm run test:reachy:browser': 'runtime', 'npm run test:microduck:browser': 'runtime', 'npm run test:observability:browser': 'shared',
   },
 };
 
@@ -401,13 +401,13 @@ test('a narrow change runs the suites its paths can break', () => {
   const runs = files => selectedCommands(checks, pr(files)).flatMap(job => job.commands);
   const expectations = [
     [['apps/runtime/src/main.ts'], ['npm run test:runtime:built', 'npm run test:runtime:scenarios:built', 'npm run test:runtime-dashboard:built',
-      'npm run test:runtime:verify:built', 'npm run test:runtime-dashboard:smoke', 'npm run test:roborock:browser', 'npm run test:onn:browser',
+      'npm run test:runtime:verify:built', 'npm run test:runtime-dashboard:smoke', 'npm run test:roborock:browser', 'npm run test:volcano:browser', 'npm run test:onn:browser',
       'npm run test:roborock:consumer:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:maintenance:built'],
     ['npm run test:pixoo:built', 'npm run test:chompi-bridge:built', 'npm run test:sdk:built', 'npm run test:firmware']],
     [['modules/pixoo/src/module.ts'], ['npm run test:pixoo:built', 'npm run test:nanoleaf:built', 'npm run test:onn:native', 'npm run test:runtime:built',
       'npm run test:runtime:verify:built', 'npm run test:maintenance:built'], ['npm run test:chompi-bridge:built', 'npm run test:events:built']],
     [['modules/roborock/transport/src/transport/codec.ts'], ['npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built',
-      'npm run test:roborock:browser'], ['npm run test:firmware']],
+      'npm run test:roborock:browser', 'npm run test:volcano:browser'], ['npm run test:firmware']],
     [['apps/chompi-bridge/src/bridge.ts'], ['npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:firmware', 'npm run test:firmware:arm'],
     ['npm run test:runtime:built', 'npm run test:runtime:verify:built', 'npm run test:app-verify:built']],

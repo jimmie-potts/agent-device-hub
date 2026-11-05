@@ -28,6 +28,8 @@ export type Session = {
   startAtMs: number; startedBeforeObservation: boolean; endAtMs: number | null; endedUnobservedBy: number | null; lastObservedOnAtMs: number; open: boolean;
   observedHeatingMs: number; creditedMinutes: number; pumpRuns: number; discontinuities: number;
   stretches: Stretch[]; omittedStretches: number;
+  /** Unobserved intervals between this session's stretches, while the heater was last seen off: it may have run in them. */
+  unobservedBetween: number;
 };
 /** One heater-off interval between two stretches. It is `uncertain` when either of its edges was not seen as it happened. */
 export type Separation = {ms: number; uncertain: boolean};
@@ -39,7 +41,7 @@ export type Derived = {
   credits: readonly {atMs: number; minutes: number}[];
   pumpRunsAtMs: readonly number[];
 };
-export type DerivedStretch = Stretch & {discontinuities: number; segments: readonly {fromMs: number; toMs: number}[]};
+export type DerivedStretch = Stretch & {discontinuities: number; segments: readonly {fromMs: number; toMs: number}[]; unobservedBefore: number};
 
 type Open = {stretch: DerivedStretch; segmentFromMs: number};
 
@@ -52,7 +54,7 @@ const lastEdge = (stretch: Stretch): number => stretch.endAtMs ?? stretch.endedU
 export function derive(facts: Iterable<Fact>, observedThroughMs: number | null): Derived {
   const stretches: DerivedStretch[] = [], credits: {atMs: number; minutes: number}[] = [], pumpRunsAtMs: number[] = [];
   let open: Open | undefined;
-  let pendingDiscontinuities = 0;
+  let pendingDiscontinuities = 0, pendingUnobserved = 0;
   const segment = (current: Open, toMs: number): void => {
     if (toMs <= current.segmentFromMs) return;
     current.stretch.observedHeatingMs += toMs - current.segmentFromMs;
@@ -69,10 +71,11 @@ export function derive(facts: Iterable<Fact>, observedThroughMs: number | null):
             segmentFromMs: fact.observedAtMs,
             stretch: {
               startAtMs: fact.observedAtMs, startedBeforeObservation: firstSeen, endAtMs: null, endedUnobservedBy: null, lastObservedOnAtMs: fact.observedAtMs, open: true,
-              observedHeatingMs: 0, creditedMinutes: 0, pumpRuns: 0, unobserved: [], omittedUnobserved: 0, discontinuities: pendingDiscontinuities, segments: [],
+              observedHeatingMs: 0, creditedMinutes: 0, pumpRuns: 0, unobserved: [], omittedUnobserved: 0, discontinuities: pendingDiscontinuities, segments: [], unobservedBefore: pendingUnobserved,
             },
           };
           pendingDiscontinuities = 0;
+          pendingUnobserved = 0;
           stretches.push(open.stretch);
         } else if (open !== undefined) {
           const {stretch} = open;
@@ -97,7 +100,7 @@ export function derive(facts: Iterable<Fact>, observedThroughMs: number | null):
           stretch.creditedMinutes += fact.creditedMinutes ?? 0;
           if (stretch.unobserved.length < MAX_UNOBSERVED) stretch.unobserved.push({fromMs: fact.fromMs, toMs: fact.toMs, creditedMinutes: fact.creditedMinutes});
           else stretch.omittedUnobserved += 1;
-        }
+        } else pendingUnobserved += 1;
         break;
       case 'pump':
         if (fact.on) {
@@ -129,7 +132,7 @@ export function derive(facts: Iterable<Fact>, observedThroughMs: number | null):
   for (let index = 1; index < stretches.length; index += 1) {
     const before = stretches[index - 1] as DerivedStretch, after = stretches[index] as DerivedStretch;
     const ms = after.startAtMs - lastEdge(before);
-    if (ms >= 0) separations.push({ms, uncertain: before.endAtMs === null || after.startedBeforeObservation});
+    if (ms >= 0) separations.push({ms, uncertain: before.endAtMs === null || after.startedBeforeObservation || after.unobservedBefore > 0});
   }
   return {stretches, separations, credits, pumpRunsAtMs};
 }
@@ -148,10 +151,10 @@ export function groupSessions(derived: Derived, gapMinutes: number): Session[] {
     if (current === undefined || separation === undefined || separation < 0 || separation >= gapMs) {
       current = {
         startAtMs: stretch.startAtMs, startedBeforeObservation: stretch.startedBeforeObservation, endAtMs: null, endedUnobservedBy: null, lastObservedOnAtMs: stretch.lastObservedOnAtMs,
-        open: false, observedHeatingMs: 0, creditedMinutes: 0, pumpRuns: 0, discontinuities: 0, stretches: [], omittedStretches: 0,
+        open: false, observedHeatingMs: 0, creditedMinutes: 0, pumpRuns: 0, discontinuities: 0, stretches: [], omittedStretches: 0, unobservedBetween: 0,
       };
       sessions.push(current);
-    }
+    } else current.unobservedBetween += stretch.unobservedBefore;
     current.endAtMs = stretch.endAtMs;
     current.endedUnobservedBy = stretch.endedUnobservedBy;
     current.lastObservedOnAtMs = stretch.lastObservedOnAtMs;

@@ -5,4 +5,4 @@ export {createVolcanoModule, type GapRequest, type SyntheticFeed} from './module
 export {VOLCANO_SIMULATED_SECTION, registration} from './registration.js';
 export type {Session, Stretch} from './sessions.js';
 export {SIMULATION_ACTIONS, SimulatedVolcano, type SimulationAction} from './simulated.js';
-export type {VolcanoStatus} from './status.js';
+export type {VolcanoStatus} from './status-document.js';

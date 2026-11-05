@@ -8,7 +8,7 @@ import {approvalPrompt} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
 
 const world = await startWorld({lighting: true, pixooPages: true, tidbyt: true, onn: true, wemo: true,
-  roborock: true, companions: true, wispr: {exposeToDashboard: true}});
+  roborock: true, volcano: true, companions: true, wispr: {exposeToDashboard: true}});
 const browser = await chromium.launch({headless: true});
 const receipts = process.env.DASHBOARD_RECEIPTS;
 const frames = [
@@ -16,13 +16,14 @@ const frames = [
   ['Agent status', '.widget[data-widget="sessions"]'], ['Timeline', '.widget[data-widget="timeline"]'],
   ['MicroDuck', '.widget[data-widget="duck-latest"]'], ['Lights', '.light-card:not(.pixoo-card):not(.tidbyt-card)'],
   ['Room', '[data-home-card="light:room:studio"] .light-card'], ['Pixoo', '.pixoo-card'], ['Tidbyt', '.tidbyt-card'],
-  ['Music', '.music-card'], ['Wemo', '.wemo-card'], ['Wispr', '.wispr-card'], ['ONN', '.onn-card'], ['Roborock', '.roborock-card'],
+  ['Music', '.music-card'], ['Wemo', '.wemo-card'], ['Wispr', '.wispr-card'], ['ONN', '.onn-card'], ['Roborock', '.roborock-card'], ['Volcano', '.volcano-card'],
 ] as const;
 const tabbed = [
   ['Lights', '.light-card:not(.pixoo-card):not(.tidbyt-card)', '.light-artwork', true],
   ['Pixoo', '.pixoo-card', '.pixoo-artwork', false], ['Tidbyt', '.tidbyt-card', '.tidbyt-artwork', false],
   ['Wemo', '.wemo-card', '.wemo-art', true], ['ONN', '.onn-card', '.onn-card-hero', true],
   ['Roborock', '.roborock-card', '.roborock-art', true],
+  ['Volcano', '.volcano-card', '.volcano-art', true],
 ] as const;
 async function settle(page: Page): Promise<void> {
   await page.evaluate(async () => {await document.fonts.ready; await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));});
@@ -36,7 +37,7 @@ try {
   const page = await context.newPage(); page.setDefaultTimeout(15_000);
   const errors: string[] = []; context.on('weberror', event => errors.push(event.error().name));
   await page.goto(world.url); await feed(page, 'connected');
-  for (const selector of ['.roborock-card', '.onn-card', '.wispr-card', '.tidbyt-card', '.pixoo-card', '.wemo-card', '.music-card']) await page.locator(selector).first().waitFor();
+  for (const selector of ['.roborock-card', '.volcano-card', '.onn-card', '.wispr-card', '.tidbyt-card', '.pixoo-card', '.wemo-card', '.music-card']) await page.locator(selector).first().waitFor();
   // Setup only: place empty optional cards and a room using the actual core metadata API.
   // No conversation/source is activated, and the command observer starts after fixture setup.
   const ids = await page.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-home-card') ?? ''));
@@ -94,7 +95,7 @@ try {
     const attention = await page.locator('.agent-status-card[data-attention=true]').first().evaluate(node => ({tile: getComputedStyle(node).backgroundColor,
       outer: getComputedStyle(node.closest('.widget') ?? node).backgroundColor}));
     assert.notEqual(attention.tile, attention.outer, 'shared chrome preserves the agent attention surface');
-    const headings = await page.locator('.light-card-heading h3,.onn-card-identity h2,.wispr-card-identity h2,.hub-control-heading h2,.timeline-heading h2,.widget-head h2,.roborock-head h2,.wemo-heading>span:first-child,.agent-status-card .session-id h3')
+    const headings = await page.locator('.light-card-heading h3,.onn-card-identity h2,.wispr-card-identity h2,.hub-control-heading h2,.timeline-heading h2,.widget-head h2,.roborock-head h2,.volcano-head h2,.wemo-heading>span:first-child,.agent-status-card .session-id h3')
       .evaluateAll(nodes => nodes.map(node => ({text: node.textContent, size: getComputedStyle(node).fontSize})));
     assert.ok(headings.length >= 10);
     for (const heading of headings) assert.equal(heading.size, headings[0]?.size, `${heading.text ?? 'Card title'} shares the title hierarchy`);
@@ -135,10 +136,10 @@ try {
     for (const link of await page.locator('.roborock-foot a,.onn-card-foot a,.wispr-card-foot a,.tidbyt-links a,.widget[data-widget=duck-latest]>a,.widget[data-widget=duck-latest]>p>a').all()) {
       const box = await link.boundingBox(); assert.ok(box); assert.ok(box.height >= 44, 'card footer links have touch targets');
     }
-    for (const button of await page.locator('.onn-status-button,.roborock-warning,.wispr-card-actions button').all()) {
+    for (const button of await page.locator('.onn-status-button,.roborock-warning,.volcano-warning,.wispr-card-actions button').all()) {
       const box = await button.boundingBox(); assert.ok(box); assert.ok(box.height >= 44 && box.width >= 44, 'corner controls have touch targets');
     }
-    assert.equal(await page.locator('.light-face:not([hidden]),.onn-control-plane>section:not([hidden]),.roborock-plane>section:not([hidden])')
+    assert.equal(await page.locator('.light-face:not([hidden]),.onn-control-plane>section:not([hidden]),.roborock-plane>section:not([hidden]),.volcano-plane>section:not([hidden])')
       .evaluateAll(nodes => nodes.every(node => getComputedStyle(node).animationName === 'none')), true, 'reduced motion suppresses control flips');
     assert.ok(await page.locator('.onn-card button:disabled').count() > 0, 'unavailable ONN controls remain disabled');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `all cards fit ${width}px ${colorScheme}`);

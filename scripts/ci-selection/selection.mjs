@@ -104,6 +104,7 @@ const PRESENTATION_PATHS = new Set([
   'modules/wispr/src/frontend/wispr.css',
   'modules/wispr/src/frontend/wispr-card.css',
   'modules/roborock/src/frontend/roborock-card.css',
+  'modules/volcano/src/frontend/volcano-card.css',
 ]);
 const presentationPath = file => PRESENTATION_PATHS.has(file);
 

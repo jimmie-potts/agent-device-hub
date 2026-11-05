@@ -36,6 +36,10 @@ export const widgetCatalog: readonly WidgetDefinition[] = [
     sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['roborock-vacuum'], content: ['roborock/status', 'roborock/latest-run']}, commands: false,
   },
   {
+    id: 'volcano', name: 'Volcano', description: 'Observed heater state, heating timeline, sessions, daily totals and the session threshold.',
+    sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['volcano-status'], content: ['volcano/timeline', 'volcano/sessions', 'volcano/totals', 'volcano/gaps']}, commands: true,
+  },
+  {
     id: 'duck-latest', name: 'MicroDuck', description: 'Latest intended meaning from one explicitly selected Reachy–Duck conversation.',
     sizes: ['medium', 'large'], source: {kind: 'module', families: ['assistant-state'], content: ['companions/duck-widget', 'companions/companion-history']}, commands: true,
   },
