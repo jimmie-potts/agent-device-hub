@@ -115,6 +115,8 @@ does not prove that a physical display showed it.
 Stage conflicts identify that exact issued stage, so old evidence cannot clear a
 newer renewal. A definite dispatch refusal preserves the preceding selection;
 an unknown dispatch remains unknown and is not retried.
+Ambient admissions run one at a time and recheck selection before dispatch. Stop
+drops unsent work; restart does not replay it. Generation and staging remain concurrent.
 Conflicting stage evidence withdraws its candidate.
 
 ## Commands and boundaries

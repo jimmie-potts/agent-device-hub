@@ -139,12 +139,38 @@ for (const delayed of [false, true]) void test(`a refused ambient replacement pr
   let artworkId = first.artworkId;
   if (delayed) {
     await art.automatic(request, 'newest'); artworkId = (await art.finished('newest')).artworkId;
-    await until(() => dispatch.ambients.length === 3);
+    await until(() => dispatch.stages.length === 3);
     hold.open();
+    await until(() => dispatch.ambients.length === 3);
   }
   await new Promise(resolve => setTimeout(resolve, 20));
   await art.restart();
   await art.catalog({action: 'delete', artworkId}, 'delete');
+  await until(() => dispatch.ambients.at(-1)?.compositionId === null);
+});
+
+void test('two refused ambient replacements preserve the preceding selection through restart', async t => {
+  const dispatch = fakeDispatch(), second = gate(), third = gate();
+  const seam: ArtDispatchSeam = {...dispatch.seam, ambient: async (request, parent) => {
+    const reply = dispatch.seam.ambient(request, parent), index = dispatch.ambients.length;
+    if (index !== 2 && index !== 3) return reply;
+    await (index === 2 ? second : third).promise;
+    return {error: {code: 'unavailable', retryable: true}};
+  }};
+  const art = await hosted(t, {providers: {openai: fakeImages(distinctDrawing())}, dispatch: seam});
+  const request = {action: 'start', purpose: 'ambient', origin: {kind: 'schedule'}, targets: ['tidbyt']};
+  await art.automatic(request, 'first'); const first = await art.finished('first');
+  await until(() => dispatch.ambients.length === 1);
+  await art.automatic(request, 'second'); await art.finished('second');
+  await until(() => dispatch.ambients.length === 2);
+  await art.automatic(request, 'third'); await art.finished('third');
+  await until(() => dispatch.stages.length === 3);
+  second.open();
+  await until(() => dispatch.ambients.length === 3);
+  third.open();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  await art.restart();
+  await art.catalog({action: 'delete', artworkId: first.artworkId}, 'delete-first');
   await until(() => dispatch.ambients.at(-1)?.compositionId === null);
 });
 

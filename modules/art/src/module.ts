@@ -72,6 +72,7 @@ export function createArtModule(options: ArtModuleOptions = {}): BunnyModule<Art
 type Paid<T> = {status: 'answered'; value: T} | {status: 'refused'; reason: ArtReason} | {status: 'cancelled'} | {status: 'fault'; fault: ProviderFault};
 type Running = {readonly controller: AbortController; readonly work: Promise<void>};
 type Settled = Pick<JobTarget, 'outcome' | 'code' | 'reason'>;
+type AmbientChange = {stage: StageRow} | {clearArtworkId: string} | {clearStageId: string};
 
 class ArtOwner {
   readonly #context: ModuleContext<ArtConfig>;
@@ -90,6 +91,7 @@ class ArtOwner {
   #timers: Cancel[] = [];
   #ambientTimer: Cancel | undefined;
   #ambientGeneration = 0;
+  #ambientWork = Promise.resolve();
   #closed = false;
 
   constructor(context: ModuleContext<ArtConfig>, options: ArtModuleOptions) {
@@ -520,7 +522,11 @@ class ArtOwner {
       this.#renewAmbient();
     }
   }
-  async #sendAmbient(change: {stage: StageRow} | {clearArtworkId: string} | {clearStageId: string}, parent: TraceContext): Promise<void> {
+  #sendAmbient(change: AmbientChange, parent: TraceContext): Promise<void> {
+    this.#ambientWork = this.#ambientWork.then(() => this.#dispatchAmbient(change, parent));
+    return this.#ambientWork;
+  }
+  async #dispatchAmbient(change: AmbientChange, parent: TraceContext): Promise<void> {
     try {
       const requestId = `ambient-${randomUUID()}`;
       const intent = await this.#outbox.transaction(() => {

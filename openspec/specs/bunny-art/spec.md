@@ -154,6 +154,7 @@ The module SHALL send staged compositions through `art-dispatch` and SHALL offer
 - **THEN** the old result and queued renewal cannot select that artwork again, including after restart
 - **AND** deleting the last issued tile artwork clears it even when a renewal or replacement stage is pending; pending staging does not erase the durable record of the issued tile selection
 - **AND** evidence about an old stage cannot clear a newer issued stage of the same artwork, and a definitive replacement refusal preserves the preceding issued selection without overwriting any newer command
+- **AND** ambient admissions are serialized, each selection is rechecked before dispatch, and stop discards unsent commands without replay on restart
 
 #### Scenario: A favorite is reused
 - **WHEN** the owner reuses a favorite
