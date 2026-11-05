@@ -4,6 +4,7 @@ Both generators inline stylesheet() ahead of their own CSS, mark <html> with
 HTML_ATTRIBUTES, put head_script() in <head> and run controls_script(). Each page
 supplies a #theme-toggle button. Stdlib only.
 """
+from collections.abc import Mapping
 from pathlib import Path
 from html import escape
 import json
@@ -25,12 +26,12 @@ ARCHIFY_TOKENS = {'--text-muted': 'var(--muted)', '--text-dim': 'var(--muted)',
                   '--grid': 'var(--edge-faint)', '--mask': 'var(--inset)'}
 
 
-def stylesheet():
+def stylesheet() -> str:
     """Fixed-meaning tokens, then the skin's role tokens and decoration."""
     return ''.join((DIR / name).read_text(encoding='utf-8') for name in ('fixed.css', f'{SKIN}.css'))
 
 
-def places():
+def places() -> list[dict[str, str]]:
     """Read and validate the shared, public-safe destination inventory."""
     data = json.loads((DIR / 'places.json').read_text(encoding='utf-8'))
     result = data['places']
@@ -53,11 +54,11 @@ def places():
     return result
 
 
-def places_stylesheet(include_fixed=False):
+def places_stylesheet(include_fixed: bool = False) -> str:
     return ((DIR / 'fixed.css').read_text(encoding='utf-8') if include_fixed else '') + (DIR / 'places-style.inc').read_text(encoding='utf-8')
 
 
-def places_strip(current, output, public=False):
+def places_strip(current: str, output: str | Path, public: bool = False) -> str:
     """The same labels/order, with source-relative or published destinations."""
     output = Path(output).resolve()
     items = places()
@@ -81,7 +82,7 @@ def places_strip(current, output, public=False):
             f'<span class="places-nav__links">{"".join(links)}</span></nav><!-- places:end -->')
 
 
-def inject_places(document, current, output, public=False):
+def inject_places(document: str, current: str, output: str | Path, public: bool = False) -> str:
     """Insert or refresh one generated strip immediately after the body opens."""
     strip = places_strip(current, output, public=public)
     style = f'<style id="places-style">{places_stylesheet(include_fixed=True)}</style>'
@@ -100,7 +101,7 @@ def inject_places(document, current, output, public=False):
     return changed
 
 
-def head_script():
+def head_script() -> str:
     """Sets data-theme (stored choice, else system preference) before first paint."""
     retired = ''.join(f"localStorage.removeItem('{key}');" for key in RETIRED_KEYS)
     return ('<script>(()=>{const r=document.documentElement;let t=null;'
@@ -108,7 +109,7 @@ def head_script():
             "r.dataset.theme=t==='light'||t==='dark'?t:matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';})();</script>")
 
 
-def controls_script():
+def controls_script() -> str:
     """Theme toggle; the choice is stored for both pages."""
     return f'''(() => {{
  const root = document.documentElement, theme = document.querySelector('#theme-toggle');
@@ -120,10 +121,10 @@ def controls_script():
 '''
 
 
-def archify_variables(classes, scope):
+def archify_variables(classes: Mapping[str, Mapping[str, str]], scope: str) -> str:
     """Per-theme variables for Archify's class rules inside `scope` (the embedded diagram)."""
     used = set(re.findall(r'var\((--[\w-]+)', ''.join(classes['rules'].values())))
-    def palette(theme):
+    def palette(theme: str) -> str:
         return ';'.join(f'{name}:{value}' for name, value in classes[theme].items()
                         if name in used and name not in ARCHIFY_TOKENS and name != '--text')
     tokens = ';'.join(f'{name}:{value}' for name, value in ARCHIFY_TOKENS.items())

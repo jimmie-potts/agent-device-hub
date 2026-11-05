@@ -678,6 +678,12 @@ documentation checks job runs both commands once on ready PRs and full release
 qualification. Main Integration does not run them. Changes to the tool pin,
 configuration or workflow retain conservative admission.
 
+For the selected surviving Python tooling, run `npm run typecheck:python` and
+`npm run test:python-types` after `npm ci`. The [staged typing procedure](static-analysis.md#staged-python-type-checking)
+owns coverage, Python targets and direct consumer checks. The Workflow checks job
+runs both commands on ready PRs and full release qualification; ordinary main
+Integration is separate.
+
 ### Adoption baseline
 
 See [Adoption baseline](static-analysis.md#adoption-baseline) for the authoritative procedure.

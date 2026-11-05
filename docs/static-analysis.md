@@ -1,5 +1,47 @@
 # Static analysis
 
+## Staged Python type checking
+
+`npm run typecheck:python` runs the exact Pyright version in the root development
+dependencies and lockfile. `npm ci` installs it; no global Pyright or Python
+package installation is needed. [`pyrightconfig.json`](../pyrightconfig.json)
+uses standard checking, Python 3.12 and Linux, matching the retained documentation
+job. Its bundled standard-library stubs cover the first slice, with an explicit
+`docs/skins` import root and no ignored imports or diagnostic suppressions.
+
+The first slice is `docs/skins/*.py`: `skin.py`, `check_tokens.py` and
+`test_places.py`. It checks the shared Places/skin generator, the color-token
+checker and the generator's direct Python tests. Function annotations protect
+arguments and return values; they do not replace the existing manifest checks
+or prove that an arbitrary JSON file is valid. The rest of the surviving Python
+tooling keeps its existing tests and lint coverage. Broader documentation,
+performance and maintenance typing stays deferred until a concrete change or
+type-related defect justifies the next useful slice. Retained consumer packages,
+historical copies and hibernated work are outside this adoption.
+
+The existing Workflow checks job runs the same command for every ready PR and
+when reused by full release qualification. Main Integration does not run Pyright.
+`npm run test:python-types` copies the selected tooling into a temporary directory
+and proves that a wrong argument and wrong return each produce the intended
+diagnostic and nonzero exit, then restores a clean result. These expected-failure
+checks run in that same job; they do not themselves claim a failed Actions job.
+Neither command edits source or starts an application.
+
+For changes in this slice, run both commands and its existing consumer checks:
+
+```bash
+npm run typecheck:python
+npm run test:python-types
+python3 docs/skins/test_places.py
+python3 docs/skins/check_tokens.py
+python3 docs/system-design/build.py --check
+python3 docs/system-design/check.py
+```
+
+Use Python 3.12 or 3.14 for the executable checks. Add another slice only with its
+import/dependency inventory, supported target and direct tests. Keep the same
+declared source coverage locally and in CI.
+
 ## Static analysis
 
 `npm run lint:js` runs ESLint with [`eslint.config.mjs`](../eslint.config.mjs).

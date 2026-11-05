@@ -181,7 +181,9 @@
     "test:runtime:container": "node scripts/runtime-container.mjs",
     "test:microduck": "npm run build && npm run test:microduck:built",
     "test:microduck:built": "node --test modules/microduck/dist/tests/*.test.js",
-    "test:microduck:browser": "node apps/runtime/dashboard/tests/microduck.browser.ts"
+    "test:microduck:browser": "node apps/runtime/dashboard/tests/microduck.browser.ts",
+    "typecheck:python": "pyright --warnings",
+    "test:python-types": "node --test tests/python_typecheck.test.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
@@ -203,6 +205,7 @@
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",
     "playwright": "1.63.0",
+    "pyright": "1.1.414",
     "supports-color": "7.2.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.71.1",

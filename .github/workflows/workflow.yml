@@ -31,6 +31,8 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npm run typecheck:python
+      - run: npm run test:python-types
       - run: npm run check:workflow
       - run: npm run test:workflow
       # Manual upgrade checks execute Markdown commands, including recipe-only edits.
