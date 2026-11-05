@@ -6,6 +6,6 @@
 
 ## 2. Validation and integration handoff
 
-- [ ] 2.1 Run build, typecheck, JavaScript lint and the Nanoleaf suite; preserve actual results and distinguish inherited failures from changes.
+- [x] 2.1 Run build, typecheck, JavaScript lint and the Nanoleaf suite; preserve actual results and distinguish inherited failures from changes.
 - [x] 2.2 Run workflow checks and tests with the actual inventory; validate this OpenSpec change.
-- [ ] 2.3 Hand off a focused committed comparison for independent Standards and Specification review and disposable acceptance; preserve policy, worker and physical acceptance as later issue work.
+- [x] 2.3 Hand off a focused committed comparison for independent Standards and Specification review and disposable acceptance; preserve policy, worker and physical acceptance as later issue work.
