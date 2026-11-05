@@ -557,6 +557,10 @@ authorization; the commands are in the
 [diagnostic access procedure](development.md#ci-diagnostic-access). Record
 the first attempt's failure and the retry in the PR evidence instead of pushing
 an empty commit, which would change the reviewed head.
+This doesn't apply to Release qualification: a receipt binds only an image built
+by its own attempt, so a partial rerun ends `incomplete` even with every job
+green. To qualify a candidate after a flaky job, rerun all of its jobs or qualify
+a later revision.
 If required diagnostic evidence is unavailable, report that gap and keep the
 merge or completion gate pending. Preserve independent reviews, the head guard and post-merge verification.
 

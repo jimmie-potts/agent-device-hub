@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
 import YAML from 'yaml';
 import {imageIdentity} from '../build.mjs';
-import {fetchJobs, resultOutcome, finalize, imageArtifactPresent} from '../finalize.mjs';
+import {fetchJobs, resultOutcome, finalize, imageArtifactPresent, rerunReason} from '../finalize.mjs';
 import {EXPECTED_JOB_NAMES} from '../qualification.mjs';
 
 const sha = 'a'.repeat(40), digest = 'sha256:' + 'b'.repeat(64);
@@ -93,6 +93,19 @@ test('copied successful jobs cannot qualify a rerun with no matching current-att
   const receipt = await finalize(join(at, 'qualification.json'), env, fetch);
   assert.equal(receipt.outcome, 'incomplete');
   assert.equal(JSON.parse(await readFile(join(at, 'qualification.json'), 'utf8')).outcome, 'incomplete');
+  // The refusal stands, and the summary says why, since every job reads green.
+  const summary = join(at, 'summary.md');
+  const explained = await finalize(join(at, 'explained.json'), {...env, GITHUB_STEP_SUMMARY: summary}, fetch);
+  assert.equal(explained.outcome, 'incomplete');
+  assert.ok(!Object.keys(explained).includes('reason'), 'the receipt schema stays as it was');
+  assert.match(await readFile(summary, 'utf8'), /partial rerun cannot qualify/);
+  const allGreen = jobs.map(job => ({id: job.id, name: job.name, result: 'success', headSha: sha}));
+  const image = {id: digest};
+  assert.equal(rerunReason('qualified', needs, allGreen, image, true, 2), null);
+  assert.equal(rerunReason('incomplete', needs, allGreen, image, false, 1), null, 'a first attempt reused nothing');
+  assert.equal(rerunReason('incomplete', needs, allGreen, null, false, 2), null, 'no image is a different failure');
+  assert.equal(rerunReason('incomplete', needs, allGreen.slice(1), image, false, 2), null, 'a missing job is a different failure');
+  assert.equal(rerunReason('failed', needs, allGreen, image, false, 2), null);
   const current = {...old, name: qualificationArtifactNames(sha, runId, runAttempt).image};
   assert.equal(imageArtifactPresent([current], {candidate: sha, runId, runAttempt}), true);
   const completeFetch = async url => ({ok: true, json: async () => url.includes('/jobs?')

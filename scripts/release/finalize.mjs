@@ -38,6 +38,11 @@ export function resultOutcome(needs, checks, image, artifactPresent = false) {
     || checks.some(check => check.result !== 'success')) return 'incomplete';
   return 'qualified';
 }
+/** Why every job succeeded and the candidate is still not qualified, when that is a partial rerun: its image belongs to an earlier attempt. */
+export const rerunReason = (outcome, needs, checks, image, artifactPresent, runAttempt) =>
+  outcome === 'incomplete' && runAttempt > 1 && image && !artifactPresent && resultOutcome(needs, checks, image, true) === 'qualified'
+    ? 'This attempt built no image of its own, so a partial rerun cannot qualify this candidate, even with every job green. Rerun all jobs, or qualify a later revision.'
+    : null;
 export async function finalize(destination, env = process.env, fetch = globalThis.fetch) {
   const candidate = env.GITHUB_SHA, runId = Number(env.GITHUB_RUN_ID), runAttempt = Number(env.GITHUB_RUN_ATTEMPT);
   const names = qualificationArtifactNames(candidate, runId, runAttempt);
@@ -55,16 +60,19 @@ export async function finalize(destination, env = process.env, fetch = globalThi
   let image = null;
   try {image = {...JSON.parse(env.RELEASE_IMAGE), artifactName: names.image};}
   catch { /* A failed image build has no promotable artifact. */ }
+  const needs = JSON.parse(env.RELEASE_NEEDS), artifactPresent = imageArtifactPresent(artifacts, {candidate, runId, runAttempt});
   const receipt = {schema: 'bunny-release-qualification/1.0', repository: REPOSITORY, candidate, evaluationRevision: candidate,
-    runId, runAttempt, outcome: resultOutcome(JSON.parse(env.RELEASE_NEEDS), checks, image, imageArtifactPresent(artifacts, {candidate, runId, runAttempt})), architecture: 'linux/arm64',
+    runId, runAttempt, outcome: resultOutcome(needs, checks, image, artifactPresent), architecture: 'linux/arm64',
     evaluationInputs, image, checks, createdAt: new Date().toISOString()};
   if (receipt.outcome === 'qualified') {
     try {validateQualification(receipt, {repository: REPOSITORY, candidate});}
     catch {receipt.outcome = 'incomplete';}
   }
   await writeFile(destination, JSON.stringify(receipt, null, 2) + '\n', {flag: 'wx', mode: 0o600});
+  const reason = rerunReason(receipt.outcome, needs, checks, image, artifactPresent, runAttempt);
+  if (reason !== null) process.stderr.write(`release-incomplete: ${reason}\n`);
   if (env.GITHUB_STEP_SUMMARY) await appendFile(env.GITHUB_STEP_SUMMARY,
-    `### Release ${receipt.outcome}\n\nCandidate: \`${candidate}\`\n\nRun: ${runId}, attempt ${runAttempt}. Evidence binds only this candidate.\n`);
+    `### Release ${receipt.outcome}\n\nCandidate: \`${candidate}\`\n\nRun: ${runId}, attempt ${runAttempt}. Evidence binds only this candidate.\n${reason === null ? '' : `\n${reason}\n`}`);
   return receipt;
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
