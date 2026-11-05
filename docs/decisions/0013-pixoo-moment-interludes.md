@@ -7,6 +7,9 @@ owner's decision of 2026-11-03 is recorded in that epic: art shows over Media an
 resumes in place, shows over Monitor briefly only when nothing needs attention,
 with a setting to turn that off, and attention ends it at once with no replay. The
 other rules below follow from it, from ADR 0006 and from the issue's discussion.
+The [owner's 2026-11-05 amendment](https://github.com/jimmie-potts/agent-device-hub/issues/1288#issuecomment-6650127516)
+allows brief scheduled exact art over empty Media while retaining explicit pauses,
+attention, pins and Now Playing takeovers. Ordinary mood moments keep their policy.
 Physical acceptance belongs to
 [#687](https://github.com/jimmie-potts/agent-device-hub/issues/687).
 
@@ -31,8 +34,10 @@ ADR 0018's rejection stands for raw agent events: they still never select a mode
 A moment is a different thing, and may cover the current base for a short time.
 
 - **Over Media**, a moment pauses a playing playlist and resumes it at the same
-  item when it ends. A paused or stopped player has nothing to give back, so the
-  moment is refused.
+  item when it ends. A paused item refuses the moment, because no call can
+  repaint it. A player with nothing loaded, or a stopped or finished item, takes the
+  moment without being touched, and one blank frame follows it (see the amendments
+  below).
 - **Over Monitor**, a moment plays only when all of these hold: the hub marks it
   as allowed to cover status (ADR 0006's interrupt set), the owner's setting is on,
   and the session source is current and shows nothing needing attention. The
@@ -67,7 +72,8 @@ Return uses the existing path. Over Media, the moment holds the player through t
 Now Playing takeover and resumes only if the generation its own pause produced,
 the paused intent and the screen request are all unchanged. There is no second
 restore path. Over Monitor, the next picture is the current dashboard, not a saved
-one. The Pixoo adds no policy of its own about event kinds or cooldowns; those stay
+one. Empty Media has nothing to restore and uses the existing one-shot blank path.
+The Pixoo adds no policy of its own about event kinds or cooldowns; those stay
 in the hub.
 
 ## Consequences
@@ -80,3 +86,42 @@ The Pixoo declares `capabilities.moments` with its moods and duration bound, and
 
 Source and simulator tests prove the source behavior only. They do not show what a
 physical Pixoo displays.
+
+## Amendment, 2026-11-05
+
+The owner chose to let a Pixoo with nothing loaded show art, and return to its idle
+screen afterwards. This replaces the first decision's refusal of every player that
+is not playing: Media is the default mode, so that refusal would have hidden most
+scheduled art. A paused or stopped item still refuses, because nothing could repaint
+it. So does a player in error, and a display left unknown by an uncertain write or
+external control, until the next start, clear or restart.
+
+The module can't read back what the device showed or return it to a built-in channel,
+so the "idle screen" is one black frame. On a fresh installation the device's own
+display therefore goes black after its first moment. A restart during such a moment
+leaves the art on with nothing to blank it, until something else writes, and it also
+forgets an unknown display on an empty player. How this looks on a real Pixoo belongs
+to [#687](https://github.com/jimmie-potts/agent-device-hub/issues/687).
+
+Scheduled-art pins are enforced by the core's arbitration; no Pixoo pin field is
+introduced here. A pause without a selected
+checkpoint is saved in the module's existing private state store and remains
+paused after restart. Stop or Clear releases that pause; Resume still needs a
+selection. Closing an already stopped empty player does not introduce a pause.
+
+Exact art requires a stopped player when Media is not playing. An explicit empty
+pause therefore refuses scheduled art even though ordinary moments retain their
+idle-player rule. Amendment 2 below permits a stopped player to retain its item.
+## Amendment 2, 2026-11-05
+
+The owner chose to let a stopped or finished item show art too. The saved item would
+otherwise refuse every moment until someone cleared it, so a Pixoo that had ever played
+anything would not have shown scheduled art. The player keeps the item and stays
+stopped, so it can still resume. One black frame replaces the moment's picture, which
+loses the item's frozen picture.
+
+A paused item still refuses, because nothing could repaint it. A restart reloads
+a saved item as paused, and a Monitor visit or turning the screen off also pauses it,
+so art stops again until that item is cleared or stopped. A display left unknown by
+an uncertain write or external control still refuses, stopped or not, until the next
+start, resume or clear. A failed background check doesn't erase that record.

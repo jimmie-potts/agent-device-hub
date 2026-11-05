@@ -26,6 +26,8 @@ import {recordLog, DeviceAvailability, errorType, fullDisk, Outbox, Outcome as O
 } from '@jimmie-potts/sdk';
 import {admitCommand, Refused as PortRefused} from '../controls.js';
 import {initialize} from '../database.js';
+import {saveShow, showCatalog, ShowFailure, SHOW_ERRORS} from '../music-shows.js';
+import {SHOW_TARGET} from '../music-show-data.js';
 import {favoriteEdit, Failure, validFavoriteEdit} from '../favorites.js';
 import {writeJson} from '../jsonfile.js';
 import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, type Report, type Transact} from '../journal.js';
@@ -44,8 +46,10 @@ import {
 } from './edits.js';
 import {CONSUMER, LINES, SessionFeed, sharedConfig, waitsForComet} from './feed.js';
 import {DeviceLink, DeviceUnreachable, LinkStopped, refusesToken, type CommandWrite, type Transmission} from './link.js';
-import {NANOLEAF_FAMILIES, OUTCOME_SCHEMA} from './schemas.js';
+import {NANOLEAF_FAMILIES, OUTCOME_SCHEMA, schemaOf} from './schemas.js';
 import {editorContent} from './editor-content.js';
+import {showContent} from './show-content.js';
+import {musicPreviewContent} from './music-preview-content.js';
 import {
   animationsView, capabilities, configurationRevision, deviceRecord, MODULE_TABLES, nextTransmission, savedLayout, savedTransmission, STATE_TYPES, storeEpoch,
   wallView, type Presence, type ShownTransmission,
@@ -90,7 +94,7 @@ const OUTCOME_TYPES: Readonly<Record<string, string>> = {
   ...Object.fromEntries(Object.entries(NATIVE).map(([family, {completed}]) => [family, completed])),
   ...Object.fromEntries(Object.values(NANOLEAF_FAMILIES).filter(family => family.kind === 'command').map(family => [family.family, completedType(family.type)])),
 };
-const SERVED = ['device', NANOLEAF_FAMILIES.wall.family, NANOLEAF_FAMILIES.animations.family] as const;
+const SERVED = ['device', NANOLEAF_FAMILIES.wall.family, NANOLEAF_FAMILIES.animations.family, NANOLEAF_FAMILIES.shows.family] as const;
 /**
  * The commands that are device writes, whose transmitted evidence is a write to the device, and the operation each write
  * is. A mode command is not one: it completes as its mode commits, and the worker's paints that follow are its own.
@@ -154,6 +158,8 @@ export class NanoleafRuntime {
     this.#config = config;
     this.#directory = directory;
     this.#db = db;
+    const catalogRevision = first(db, 'SELECT revision FROM nanoleaf_show_catalog WHERE id=?', SHOW_TARGET)?.[0];
+    if (typeof catalogRevision === 'number' && Number.isSafeInteger(catalogRevision) && catalogRevision >= 0) this.#revision = catalogRevision;
     this.#ids = config.devices.map(device => device.id);
     const {sdk, clock, log, trace} = context;
     this.#outbox = new Outbox({sdk, database: db, clock, log, trace});
@@ -237,6 +243,8 @@ export class NanoleafRuntime {
     for (const device of this.#ids) this.#changed(device);
     this.#flushNow();
     await sdk.serveSync([...SERVED], request => this.#snapshot(request.data.families));
+    await sdk.respond<{requestId: string} & Record<string, unknown>>(`bunny.cmd.${NANOLEAF_FAMILIES.showSave.family}.${SHOW_TARGET}`,
+      command => this.#showSave(command));
     for (const id of this.#ids) await this.#respond(id);
     await this.#follow();
     for (const id of this.#ids) {
@@ -245,8 +253,10 @@ export class NanoleafRuntime {
     }
   }
 
-  /** Authenticated module content reads use saved state only; the host owns admission and secret exclusion. */
+  /** Authenticated saved or synthetic content; the host owns admission and secret exclusion. */
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
+    if (ref === 'music-preview') return musicPreviewContent(request);
+    if (ref === 'show-version') return showContent(this.#db, request);
     return editorContent(this.#directory, this.#ids, ref, request);
   }
 
@@ -438,11 +448,19 @@ export class NanoleafRuntime {
    * The current records of the families a sync asks for, as published, and no other: a reader may sync any one family
    * the module serves, and the SDK refuses a snapshot that holds another (Hub #970). Serving a sync writes nothing.
    */
-  #snapshot(families: readonly string[]): Snapshot {
+  #snapshot(families: readonly string[]): Snapshot | ErrorBody {
     const states: StateDraft[] = [...this.#published.values()].filter(({family}) => families.includes(family)).map(({family, id, data}) => {
       const {type, dataschema} = STATE_TYPES[family as keyof typeof STATE_TYPES];
       return {type, subject: id, dataschema, data: data as StateDraft['data']};
     });
+    if (families.includes(NANOLEAF_FAMILIES.shows.family)) {
+      try {
+        states.push({type: NANOLEAF_FAMILIES.shows.type, subject: SHOW_TARGET, dataschema: schemaOf(NANOLEAF_FAMILIES.shows.family), data: showCatalog(this.#db)});
+      } catch (error) {
+        return error instanceof ShowFailure ? errorBody(error.code, {detail: SHOW_ERRORS[error.code]})
+          : errorBody('unavailable', {detail: 'The private show library cannot be read.'});
+      }
+    }
     return {revision: this.#revision, states};
   }
 
@@ -724,12 +742,31 @@ export class NanoleafRuntime {
       if (error instanceof CommandRefused) return errorBody(error.code, {requestId, detail: error.detail});
       if (error instanceof PortRefused) return errorBody(error.code, {requestId, detail: PORT_REFUSALS[error.code] ?? OTHER_REFUSAL});
       if (error instanceof Failure) return errorBody(error.code, {requestId, detail: FAVORITE_REFUSALS[error.code]});
+      if (error instanceof ShowFailure) return errorBody(error.code, {requestId, detail: SHOW_ERRORS[error.code]});
       if (fullDisk(error)) return errorBody('capacity', {requestId, detail: 'the module\'s store is full; nothing changed'});
       recordLog(this.#context.log, 'command.rejected', {'bunny.request.id': requestId, 'bunny.code': 'internal', 'error.type': errorType(error)}, command);
       return errorBody('internal', {requestId, detail: 'the module could not take the command; nothing changed'});
     }
     after();
     return ACCEPTED;
+  }
+
+  /** Atomic metadata only: no device journal, configuration change, last-outcome mutation or worker wake. */
+  #showSave(command: Command<{requestId: string} & Record<string, unknown>>): Promise<Reply> {
+    return this.#admit(command, (_report, add) => {
+      if (command.subject !== SHOW_TARGET) throw new CommandRefused('invalid-request', 'Select the show library.');
+      if (expiresMs(command, this.#context.clock.now()) <= this.#context.clock.now()) throw new CommandRefused('expired', 'The show save expired.');
+      const {requestId, ...input} = command.data;
+      this.#revision = Math.max(this.#revision + 1, Math.floor(this.#context.clock.now()));
+      saveShow(this.#db, input, this.#revision);
+      add(`bunny.state.${NANOLEAF_FAMILIES.shows.family}.${SHOW_TARGET}`, {
+        kind: 'state', type: NANOLEAF_FAMILIES.shows.type, subject: SHOW_TARGET, dataschema: schemaOf(NANOLEAF_FAMILIES.shows.family), data: showCatalog(this.#db),
+      }, {parent: command});
+      add(`bunny.event.${NANOLEAF_FAMILIES.showSave.family}.${SHOW_TARGET}`, {
+        kind: 'outcome', type: 'org.bunny.nanoleaf-show.save.completed', subject: SHOW_TARGET, dataschema: OUTCOME_SCHEMA,
+        data: {requestId, result: OutcomeWord.succeeded, evidence: OutcomeWord.observed},
+      }, {parent: command});
+    });
   }
 
   /** Records an accepted command, in its trace, until its outcome is reported. A repeated request ID is refused. */

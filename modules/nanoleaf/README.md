@@ -129,8 +129,28 @@ instruction. `renderMusicCue` validates the supplied saved layout and uses the
 existing Lines/NL22 encoder with cue intensity. It renders the ordinary effect
 from its beginning, so the cursor's elapsed time is not a phase-accurate seek.
 
-This helper has no production caller, timer, store, SDK family or device access.
-It grants no music admission. [#1273](https://github.com/jimmie-potts/agent-device-hub/issues/1273)
+`prepareMusicCueFrames(cue, layout)` provides an internal immutable copy of the
+same canonical keyframes, with each zone's actual cycle duration. It validates
+only the supplied layout values and reads no layout file. The shared internal
+frame preparation keeps ordinary animation payload bytes unchanged. The existing
+package `effects` namespace additively exposes `prepareAnimationFrames`; it
+returns frozen canonical zones and an ordinary mutable display payload, with
+existing capacity checks. Existing namespace exports retain their signatures.
+`locateMusicCuePhase(prepared, elapsedMs)` accepts cue-relative elapsed time
+and returns frozen per-zone transition descriptors: target, previous endpoint
+when known, frame index, cycle and elapsed/remaining transition milliseconds.
+The initial first transition reports an unknown origin. A later loop cycle
+uses the last endpoint as its first origin; a completed one-shot reports its
+final endpoint. At cue duration or later, `cue-ended` supplies no presentation
+instruction. Invalid positions are refused. Sampling order has no effect, so
+callers use the selector's current elapsed time after pause, resume or seek.
+These descriptors infer no interpolated RGB color or controller phase-seek
+support. They add no remote preparation contract, route or playback caller.
+
+The offline show library calls preparation; its storyboard uses only the
+browser-safe semantic selector in `music-timeline-data.ts`. The cursor and
+renderer have no production playback caller or device access. Preparation
+grants no music admission. [#1273](https://github.com/jimmie-potts/agent-device-hub/issues/1273)
 retains worker scheduling and outcome integration under the
 [#40 policy](https://github.com/jimmie-potts/agent-device-hub/issues/40).
 [Show authoring](https://github.com/jimmie-potts/agent-device-hub/issues/723),
@@ -138,10 +158,126 @@ retains worker scheduling and outcome integration under the
 and [installed/physical acceptance](https://github.com/jimmie-potts/agent-device-hub/issues/725)
 remain separately owned. Synthetic payloads establish no physical timing.
 
+## Music rendering source helpers
+
+`src/music-effects.ts` and `src/music-input.ts` provide the deterministic source
+increment for [#1272](https://github.com/jimmie-potts/agent-device-hub/issues/1272).
+They are internal helpers with no runtime subscription, music command, store or
+device-worker integration. They do not grant permission to show music or change a
+controller's mode, power, brightness or scene.
+
+`freezeMusicRecipe(unknown)` validates a closed `MusicRecipeV1` and copies its
+palette and all defaults into an immutable recipe. The five effects are
+`level-glow`, `bass-pulse`, `spectrum`, `traveling-wave` and `ambient`. Version 1
+fixes its defaults and bounds, so a serialized recipe keeps its interpretation.
+The palette has 1–8 hex colors; intensity is 0–1, sensitivity 0.1–8, smoothing
+0–2000 ms, pulse half-life 100–2000 ms and wave period 400–10000 ms. These bounds
+are source constraints and do not qualify a device cadence or flash-safety limit.
+
+`MusicInput(binding, anchor)` holds one immutable latest feature from #721's
+existing profile-2 capture family. `binding` names the endpoint and capture
+generation; the caller must establish that authority. `accept(message, clock)`
+validates the family, binding, increasing sequence and source timing.
+`current(clock)` returns a fresh sample or null. Clock samples carry explicit
+`wallMs` and receiver-local `monotonicMs`; the helper reads no clock itself.
+Expiry uses the original payload deadline and a receipt-monotonic deadline.
+Duplicate messages cannot renew it. The first native discontinuity initializes
+the binding; later discontinuities, clock invalidity and expiry retire it.
+`retire()` also permanently clears it. A later binding needs a new instance.
+
+`MusicRenderer(recipe, layout, binding).render(sample)` returns the existing
+`Display` payload or null for repeated or invalidated input. It copies saved
+geometry, uses source-time differences for smoothing and decorative wave motion,
+and encodes one static RGB keyframe per zone. Lines use paired logical zones;
+NL22 uses one physical zone. Spatial effects require saved positions. Output
+retains the existing frame and byte bounds. Broad bands are bass, mid and treble
+measurements, not FFT bins; onset confidence is not a beat or BPM estimate.
+Silence follows the effect's decay. No frame on expiry does not turn a light off;
+a physical controller would keep its last presentation until another write.
+
+The future integration must bind the core's active session, read current input
+before use, recheck authority and freshness around awaits, and retire on stop,
+replacement, overflow/resync, restart or a newer manual choice. Participation,
+interruptions and source-loss presentation require the owner policy in #40.
+Existing workers retain sole device-write ownership; #725 owns physical timing.
+`music-effects.test.ts` and `music-input.test.ts` use synthetic inputs and explicit
+times to check these source contracts.
+
+## Synthetic Music effect preview
+
+The existing Wall page includes an expandable **Music effect preview**, linked
+from Audio. Choose one of the five built-in effects, edit its palette and
+intensity, select an example Lines or NL22 arrangement, then choose **Preview**.
+The sample slider inspects generated RGB colors locally. Drafts last for the
+page lifetime, and reconnect or changed settings require another explicit read.
+Read-only users can inspect these examples.
+
+The owner uses the unchanged Music renderer with fixed generated input and six
+example elements in a 3 × 2 arrangement. The authenticated module-content ref
+`music-preview` accepts one `request` query containing JSON fields `version: 1`,
+`preset`, `palette`, `intensity` and `model`. Supported models are
+`lines-demo-v1` and `nl22-demo-v1`. The decoded request is at most 2 KiB; the
+`nanoleaf-music-preview/2.0` response is at most 16 KiB with twenty samples and
+at most twelve RGB zones. Invalid, cancelled and unavailable reads use the
+registered error bodies. The preview reads no configured layout, capture or
+stored state and sends no device work. Existing Wall-editor state reads retain
+their behavior independently.
+
+Example offsets are virtual time. The result establishes no live input,
+calibration, physical geometry or speaker timing. Custom reactive-preset
+save/reload remains part of #722. Static favorites and decorative show versions
+retain their existing recipe contracts.
+
+## Offline decorative shows
+
+The declared **Decorative shows** page at `#/module/nanoleaf/shows`, also linked
+from Audio, prepares private cue plans under
+[#723](https://github.com/jimmie-potts/agent-device-hub/issues/723). Choose Ocean
+drift or Warm rise, edit the cue timing, effect, palette and intensity, then
+select **Save new version**. Opening a starter and moving the storyboard's
+position control change only the browser draft. The storyboard shows semantic
+intervals, gaps and palettes, with no exact-frame or audible synchronization
+claim. Replay is unavailable.
+
+Each save supplies a show ID, `expectedVersion` with zero for creation, show
+name, version name and timeline. The fixed `shows` target takes
+`nanoleaf-show-save/2.0` through the core's existing tracked action route. The
+owner freezes explicit recipes and atomically commits the new version, head,
+catalog revision and observed metadata outcome. It changes no device
+configuration, journal, last outcome or worker scheduling. Acceptance is
+separate from completion. A stale save returns `revision-conflict`; reconnect,
+refresh and reload never resend a command. Failed and uncertain saves retain
+the open draft, and uncertainty keeps the shared attempt locked.
+
+The library permits 32 shows and 256 total immutable versions. The 128 KiB
+limit counts the UTF-8 bytes of the exact stored JSON document, including its
+identity and names. Thus plan bodies occupy at most 32 MiB before SQLite
+overhead. Capacity refuses new saves and preserves earlier versions. Names
+permit 1–80 Unicode characters without control characters. The existing
+timeline limits still apply. There is no automatic starter save, deletion,
+audio collection or analysis metadata.
+
+`nanoleaf-shows/2.0` exposes bounded version summaries through owner-qualified
+sync. The authenticated module read
+`show-version?showId=<id>&version=<positive integer>` returns exactly that
+immutable version. Bad identities, unknown versions and invalid stored data
+produce fixed registry refusals; corrupt bytes remain untouched. The additive
+tables start empty and survive restart in the existing private module store.
+Existing favorites retain their separate browser-exclusion rule.
+
+After the root build, the `music-shows`, `module-shows` and `show-model` tests
+run through `npm run test:nanoleaf:built`. The existing
+`node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts` entry includes a
+real disposable gateway/core/module authoring journey, immutable versions,
+stale and unauthorized saves, no device changes, no resend and light/dark
+desktop/phone accessibility. Optional `DASHBOARD_RECEIPTS` keeps synthetic
+screenshots outside the checkout. Source checks do not establish installed
+or physical acceptance.
+
 ## Families
 
 The module answers each device's own keys, `bunny.cmd.<family>.<device id>`, and serves
-`device`, `nanoleaf-wall` and `nanoleaf-animations` through sync, as its health entry's
+`device`, `nanoleaf-wall`, `nanoleaf-animations` and `nanoleaf-shows` through sync, as its health entry's
 `serves` lists. Every device module serves `device` for its own devices (#967), so a
 consumer syncs it from `bunny/modules/nanoleaf` by name. Its own schemas are
 `nanoleafSchemas`; `nanoleafMessageSchemas` adds the general device families.
@@ -158,6 +294,8 @@ the wall pages (#934) apply that rule.
 | `device` | state | Each controller's `device/2.1` record, with `held` while a hold stops its writes |
 | `nanoleaf-wall` | state | Each controller's wall map: settings, palette, projects, elements and tasks with their eviction tokens, whether its last pass failed or no worker runs (`failing`), and whether a hold stops its writes (`held`) |
 | `nanoleaf-animations` | state | Each device's animation options: presets, favorites, patterns, bounds, the queued animation, saved positions and the remembered scene |
+| `nanoleaf-shows` | state | The private decorative library's immutable version summaries, with subject `shows` |
+| `nanoleaf-show-save` | command | Append a guarded named decorative version at target `shows`, with a metadata-only outcome |
 | `device-mode-set`, `power-set`, `brightness-set`, `scene-activate` | command | Work, Quiet and Free; power, brightness and scenes |
 | `moment-play` | command | Bounded Lines moments in Work or over a named Free base; terminal outcome follows restoration |
 | `zone-power-set`, `media-start`, `media-control` | command | Refused with `unsupported-capability` |

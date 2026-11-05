@@ -5,6 +5,8 @@
 // `validFavoriteEdit`, the Free-only play rule) stay with the module, which applies them at admission.
 import {DIRECTIONS, PATTERNS, PRESETS, SPEEDS} from '../effects.js';
 import {SETTING_NAMES} from '../project-map.js';
+import {SHOW_ID_PATTERN, SHOW_LIMITS, SHOW_TARGET} from '../music-show-data.js';
+import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS} from '../music-timeline.js';
 
 const BASE = 'https://bunny.invalid/events/';
 const VERSION = '2.0';
@@ -20,6 +22,8 @@ const list = (items: object, minItems: number, maxItems: number): object => ({ty
 export const NANOLEAF_FAMILIES = {
   wall: {family: 'nanoleaf-wall', kind: 'state', type: 'org.bunny.nanoleaf-wall.updated'},
   animations: {family: 'nanoleaf-animations', kind: 'state', type: 'org.bunny.nanoleaf-animations.updated'},
+  shows: {family: 'nanoleaf-shows', kind: 'state', type: 'org.bunny.nanoleaf-shows.updated'},
+  showSave: {family: 'nanoleaf-show-save', kind: 'command', type: 'org.bunny.nanoleaf-show.save.requested'},
   wallEdit: {family: 'nanoleaf-wall-edit', kind: 'command', type: 'org.bunny.nanoleaf-wall.edit.requested'},
   machineEdit: {family: 'nanoleaf-machine-edit', kind: 'command', type: 'org.bunny.nanoleaf-machine.edit.requested'},
   animationPlay: {family: 'nanoleaf-animation-play', kind: 'command', type: 'org.bunny.nanoleaf-animation.play.requested'},
@@ -43,6 +47,14 @@ const RECIPE = closed({
   loop: {type: 'boolean'},
 }, ['speed', 'direction', 'loop']);
 const ANIMATION = {oneOf: [closed({preset: {enum: Object.keys(PRESETS)}}), closed({favorite: text(80)}), RECIPE]};
+const SHOW_ID = {type: 'string', pattern: SHOW_ID_PATTERN, maxLength: SHOW_LIMITS.id};
+const SHOW_VERSION = {type: 'integer', minimum: 1, maximum: SHOW_LIMITS.versions};
+const SHOW_TIMELINE = closed({version: {const: 1}, durationMs: {type: 'integer', minimum: MIN_MUSIC_CUE_MS, maximum: MAX_MUSIC_DURATION_MS},
+  cues: list(closed({id: {type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$'},
+    offsetMs: {type: 'integer', minimum: 0, maximum: MAX_MUSIC_DURATION_MS},
+    durationMs: {type: 'integer', minimum: MIN_MUSIC_CUE_MS, maximum: MAX_MUSIC_DURATION_MS},
+    recipe: {oneOf: [closed({preset: {enum: Object.keys(PRESETS)}}), RECIPE]}, intensity: {type: 'number', minimum: 0, maximum: 1},
+  }, ['intensity']), 1, MAX_MUSIC_CUES)});
 const ASSIGNMENT = closed({id: ELEMENT, project: nullable(PROJECT), signature: {enum: [0, 1]}}, ['project', 'signature']);
 
 /** The map edits both the wall editor and a machine make; the wall also locates, evicts and recolors its palette. */
@@ -65,6 +77,16 @@ const POINT = {type: 'array', items: {type: 'number'}, minItems: 2, maxItems: 2}
 
 /** The module's payload schemas, by `dataschema`, for validators, the runtime's edge and the module test kit. */
 export const nanoleafSchemas: Readonly<Record<string, object>> = {
+  [schemaOf('nanoleaf-shows')]: {
+    description: 'State: private decorative show heads and immutable named version summaries; no media, device output or execution state.',
+    ...closed({id: {const: SHOW_TARGET}, revision: block('revision'), shows: list(closed({id: SHOW_ID, name: text(SHOW_LIMITS.name), version: SHOW_VERSION,
+      versions: list(closed({version: SHOW_VERSION, versionName: text(SHOW_LIMITS.name)}), 1, SHOW_LIMITS.versions)}), 0, SHOW_LIMITS.shows)}),
+  },
+  [schemaOf('nanoleaf-show-save')]: {
+    description: 'Command: save one new immutable decorative version against the expected head; zero creates a show. Metadata only, with no device instruction.',
+    ...closed({requestId: block('requestId'), showId: SHOW_ID, expectedVersion: {type: 'integer', minimum: 0, maximum: SHOW_LIMITS.versions},
+      name: text(SHOW_LIMITS.name), versionName: text(SHOW_LIMITS.name), timeline: SHOW_TIMELINE}),
+  },
   [schemaOf('nanoleaf-wall')]: {
     description: 'State: one device\'s wall map as the wall editor shows it, from saved state only (Hub #844), with whether its last pass failed or no worker runs (`failing`) and whether a hold after an uncertain write stops its writes until an explicit mode command or fresh control (`held`). It never holds a credential, an address, a favorite or a preset name.',
     ...closed({

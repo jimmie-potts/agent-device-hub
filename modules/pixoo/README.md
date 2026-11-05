@@ -192,9 +192,11 @@ The module keeps only state it owns, in its SQLite file and its private folder:
   SHA-256 digest of its family, subject and data;
 - `pixoo_hosted_checks`, whether each multi-frame rendition's frames fit the
   hosted profile's GIF, by rendition and profile;
+- `pixoo_art_copies`, private composition IDs, source hashes, rendition identities,
+  profile, timing and expiry, with original bytes and rendered media under `art/`;
 - the SDK's outbox.
 
-Each statement the module's store runs is prepared once. A settings save that
+`PixooStore` prepares its statements once. A settings save that
 cannot commit, as on a full disk, throws SQLite's own error and leaves the saved
 settings and the configuration revision as they were.
 
@@ -208,7 +210,7 @@ and a recovery after a warning is one record.
 ### Families
 
 It serves, through sync and as live states:
-- `device/2.0` (#918), kind `pixoo`;
+- `device/2.2`, kind `pixoo`, including the exact-art moment capability;
 - `pixoo-display/2.0`: Monitor's mode, filter, cadence and sessions, what the
   presentation shows, Now Playing, and the player's state, item and last error;
 - `pixoo-rendition/2.0` and `pixoo-playlist/2.0`: one record per catalog entry,
@@ -251,6 +253,8 @@ API 1.3 serves authenticated reads at `/modules/pixoo/content/<ref>`:
 | `preview.<sha256>` | Preview timing, frame indices and warnings |
 | `frame.<sha256>.<index>` | One referenced PNG frame |
 | `thumbnail.<sha256>` | The first referenced PNG frame |
+| `art-preview.<compositionId>` | A live staged copy's frame references, hashes and effective timing |
+| `art-frame.<compositionId>.<index>` | One exact PNG frame of that staged copy |
 
 Only the two catalog references accept query parameters: `q` (up to 120
 characters), `offset` (default 0) and `limit` (default 25, at most 100).
@@ -275,10 +279,21 @@ decision ([#1287](https://github.com/jimmie-potts/agent-device-hub/issues/1287))
 limit. Its `coversStatus` follows the owner's setting, which is on by default and
 sits on the Monitor page.
 
+Exact art over resting Media requires a stopped player, with or without a saved
+item, as accepted in #1450. An explicit pause, including an empty pause, refuses
+art; an empty pause survives restart.
+
 A moment never changes the mode. Over Media it pauses a playing playlist under the
-same guard Now Playing uses, then resumes it at the same item. A paused or stopped
-player refuses it, because there would be nothing to give back. So does a Now
-Playing takeover. Over Monitor it plays only with `coversStatus` set, the setting
+same guard Now Playing uses, then resumes it at the same item. A player with nothing
+loaded, including an empty one Monitor left paused, takes the moment without being
+touched, and so does a stopped or finished playlist. One black frame follows it,
+because the module can't return the device to what it showed before, so a stopped
+item's frozen picture is lost, though the item can still resume. A paused item refuses
+it, because nothing could repaint that item, and a restart, a Monitor visit or
+turning the screen off leaves a saved item paused. A Now Playing takeover, a player
+in error and a display left unknown by an uncertain write or external control refuse
+it too. That last refusal lasts until the next start, resume or clear; a restart
+forgets it only on an empty player. Over Monitor it plays only with `coversStatus` set, the setting
 on and a current session source that shows nothing needing attention, and the
 current dashboard follows it. A flourish cannot set `coversStatus`, so a moment
 meant to appear over Monitor must be an `event`.
@@ -294,9 +309,42 @@ the owner's. A moment that never reached the device has no
 `uncertain`, it does not play, and its ID stays refused for 24 hours. A restart
 during a moment over Media leaves its picture on until someone resumes.
 
-`momentContent` in `src/presentation/moment-content.ts` chooses what a moment shows,
-and `renderMomentContent` draws that choice in the render worker. Everything shown
-is mood-driven for now.
+`momentContent` in `src/presentation/moment-content.ts` chooses a mood picture,
+and `renderMomentContent` draws it in the render worker. A core-forwarded
+`moment-play/2.1` with `art` instead retains the named private composition and
+plays its exact frames and timing through that same presentation and writer.
+An unknown, expired or incompatible reference is refused before any effect;
+it never plays a mood in its place. A moment without art keeps its behavior.
+The core owns scheduled-art pin arbitration; the module does not invent pin state.
+An explicit pause survives restart even without a selected checkpoint. Stop or
+Clear deliberately releases that empty-player pause; Resume still requires a
+selection. A Monitor view change cancels waiting art or interrupts playing art.
+
+### Private generated art
+
+`art-stage/2.0` accepts the core's forwarded PNG or GIF, with its composition ID,
+hash and declared metadata. It is addressed to this module's configured device ID;
+the producer resolves its display kind through the named owner's synced devices.
+The shared validator checks bytes, signature and hash;
+the existing isolated media decoder checks actual 64×64 dimensions, frame count
+and timing. Art is limited to 160 KiB and 20 frames at uniform 100–800 ms delays.
+The selected device profile can narrow those limits: smoke still permits only
+two frames at 500 ms, and hosted animation requires at most 256 exact colors.
+No frames are silently removed or retimed.
+
+Staging makes no display write and completes `succeeded/observed` only after
+the private mapping commits. The original and immutable rendition stay under
+the module's `art/` folder, outside the permanent library. An explicit ordinary
+library import keeps a permanent library copy.
+
+Identical stages reuse the rendition and renew its lifetime from admission;
+different bytes for an unexpired composition are refused. At most 128 live
+compositions and four staging jobs are admitted. Expiry blocks new use, while a
+moment or preview retains its copy until it finishes. Cleanup runs after staging,
+on startup and once a minute, and touches only the transient art directory.
+It cannot remove permanent originals, favorites or referenced library renditions.
+Restart preserves committed live copies, reports unfinished commands uncertain
+and never replays a moment. No provider credential or network fetch is involved.
 
 ### Commands
 
