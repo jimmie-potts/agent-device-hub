@@ -431,9 +431,10 @@ Start once [Review and merge](#review-and-merge) step 6 has confirmed that the
 merged revision's CI jobs succeeded and read back the issue state.
 Cleanup does not wait for installation or physical acceptance unless that work
 still uses the resource. This applies to ordinary delivery and to explicit
-deliver-work alike. While working, note each clone, review copy and staging
-directory in the task's record when you create it, because cleanup depends on that
-record.
+deliver-work alike. While working, note each worktree, branch, scratch folder, clone,
+review copy and staging directory when you create it, and each consumer when one
+arises, because cleanup depends on that record. Keep it in the task's own notes, or
+under `.local/evidence/` for anything private.
 
 Clean up only what this delivery created and still exclusively owns. The positive
 evidence is the task's own record that it created the resource and handed it to
@@ -459,11 +460,16 @@ the resource.
    review copy or staging directory this task created. Find them from the task's
    own record, because a standalone clone is not in the worktree registry. Apply
    step 2's evidence check to each. A clean status does not show that a checkout's
-   commits are safe, so also run `git -C <path> stash list` and
-   `git -C <path> log --oneline HEAD --branches --not --remotes` in each clone or
-   nested worktree. Retain any that lists a stash or a commit, unless the commit
-   belongs to the merged PR, and any that an installation, acceptance exercise or
-   other task still uses. Retaining a nested resource retains its folder. For the rest,
+   commits are safe, so also check them:
+   - In a standalone clone, run `git -C <path> stash list` and
+     `git -C <path> log --oneline HEAD --branches --not --remotes`.
+   - In a nested worktree, run `git -C <path> log --oneline HEAD --not --remotes`.
+     It shares refs and stashes with its repository, and they survive its removal,
+     so only a detached commit is at risk here.
+
+   Retain any that lists a stash or a commit, unless the commit belongs to the merged
+   PR, and any that an installation, acceptance exercise or other task still uses.
+   Retaining a nested resource retains its folder. For the rest,
    remove each worktree registered inside with ordinary `git worktree remove`, confirm
    that `git worktree list` shows none there, then delete the folder and confirm it
    is gone. Step 1's `HEAD` check applies only to the delivery worktree.
@@ -473,7 +479,8 @@ the resource.
 5. Leave a tool-managed worktree, such as a Claude Code session worktree under
    `.claude/worktrees/`, to that tool's own exit flow instead of
    `git worktree remove`; that flow may also delete its branch. Once steps 1 and
-   2 and step 6's use and consumer checks pass on a clean worktree, accepting the
+   2 and step 6's use and consumer checks pass on a clean worktree, ignoring that
+   worktree's own entry in the porcelain list, accepting the
    tool's option to discard the squash-merged commits is allowed. If the flow deleted
    the branch, do step 6's readback instead of its removal. If this session cannot
    run that flow, keep the worktree and report it as retained and ready to remove;
@@ -495,11 +502,12 @@ the resource.
    guard refuses a moved tip but does not stop a concurrent checkout, so it does not
    replace the checks above.
 
-   Read back with `git show-ref --verify --quiet refs/heads/<branch>`, which must exit
-   1. Other exit codes, such as 128 outside the repository, leave the result unknown.
-   If `git config --get-regexp '^branch\.<branch>\.'` lists anything (escape any dots
-   in the branch name), run `git config --remove-section branch.<branch>`, then repeat
-   the query, which must exit 1.
+   Read back with `git show-ref --verify --quiet refs/heads/<branch>`. Exit 1 means
+   the ref is gone; any other exit code, such as 128 outside the repository, leaves
+   the result unknown. If `git config --get-regexp '^branch\.<branch>\.[^.]*$'` lists
+   anything (escape any dots in the branch name), run
+   `git config --remove-section branch.<branch>` and repeat the query, which must then
+   exit 1.
    Judge delivery from the merged PR as in step 1, never `git branch --merged`.
    Never use `git branch -D` or a sweep across branches. Remote branches have a
    separate lifecycle under
