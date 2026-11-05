@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {AgentOccurrence, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {AgentOccurrence, OperationRecord, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog,type Cancel,type ModuleScheduler,type SyncedCopy, Outcome} from '@jimmie-potts/sdk';
 import {LivePublication} from './live-publication.js';
 import {Backoff} from './backoff.js';
@@ -16,15 +16,16 @@ import type {Operation} from './operations.js';
 import {MODE_FAMILIES, createRoutines, routineCommand, type Routines, type PowerDispatchOptions} from './power-schedules.js';
 import {createPowerLimits,PowerLimitStore,type PowerLimits} from './power-limits.js';
 import {checkAutomationDevices, type AutomationDevice} from './automation-devices.js';
+import {createArtPlans, type ArtPlans, type ArtPlanTarget} from './art-plans.js';
 
 const KINDS = new Map([
   ['org.bunny.attention.raised','attention-raised'], ['org.bunny.attention.cleared','attention-cleared'],
   ['org.bunny.turn.ended','turn-ended'], ['org.bunny.session.ended','session-ended'],
 ]);
 const opaque = (value: string): string => createHash('sha256').update(value).digest('hex');
-export type AutomationControls = Omit<Automation,'submit'|'close'|'log'> & {routines?:Omit<Routines,'close'>;limits?:Omit<PowerLimits,'close'|'tick'|'records'>;log(limit:number,before?:number):(LogEntry & {operation?:Operation})[]};
+export type AutomationControls = Omit<Automation,'submit'|'close'|'log'> & {art?:Pick<ArtPlans,'targets'|'present'>;routines?:Omit<Routines,'close'>;limits?:Omit<PowerLimits,'close'|'tick'|'records'>;log(limit:number,before?:number):(LogEntry & {operation?:Operation})[]};
 
-type DeviceFollower = {copy?: SyncedCopy<DeviceRecord>; pending: Promise<void>; retry: Backoff; cancel?: Cancel};
+type DeviceFollower = {copy?: SyncedCopy<DeviceRecord>; fresh:boolean; pending: Promise<void>; retry: Backoff; cancel?: Cancel};
 
 export class AutomationPart implements CorePart {
   readonly families=['power-limit'];
@@ -36,6 +37,7 @@ export class AutomationPart implements CorePart {
   #handle: CoreHandle | undefined;
   #automation: Automation | undefined;
   #routines:Routines|undefined;
+  #art:ArtPlans|undefined;
   #configured:readonly AutomationDevice[]=[];
   #closed = false;
   #participants: readonly ModeParticipant[] = [];
@@ -66,7 +68,7 @@ export class AutomationPart implements CorePart {
       void follow.pending.then(()=>follow.copy?.close());
     }
     for(const owner of owners) if(!this.#devices.has(owner)) {
-      const follow:DeviceFollower={pending:Promise.resolve(),retry:new Backoff(1000,30000)};
+      const follow:DeviceFollower={fresh:false,pending:Promise.resolve(),retry:new Backoff(1000,30000)};
       this.#devices.set(owner,follow);
       this.#syncDevice(owner,follow);
     }
@@ -76,7 +78,8 @@ export class AutomationPart implements CorePart {
     if(handle===undefined || this.#closed || this.#signal.aborted || this.#devices.get(owner)!==follow) return;
     follow.pending=handle.sdk.sync<DeviceRecord>(['device'],change=>{
       if(change.type==='failed') this.#retryDevice(owner,follow);
-    },{owner,timeoutMs:5000}).then(async result=>{
+      else if(change.type==='synced') follow.fresh=true;
+    },{owner,timeoutMs:5000,onRestarted:()=>{follow.fresh=false;}}).then(async result=>{
       if(result.status!=='synced') this.#retryDevice(owner,follow);
       else if(this.#closed || this.#signal.aborted || this.#devices.get(owner)!==follow) await result.copy.close();
       else {follow.copy=result.copy;follow.retry.reset();}
@@ -84,6 +87,7 @@ export class AutomationPart implements CorePart {
   }
   #retryDevice(owner:string,follow:DeviceFollower): void {
     if(this.#closed || this.#signal.aborted || this.#devices.get(owner)!==follow || follow.cancel!==undefined) return;
+    follow.fresh=false;
     delete follow.copy;
     const handle=this.#handle;
     if(handle===undefined) return;
@@ -100,6 +104,14 @@ export class AutomationPart implements CorePart {
     if (handle===undefined) throw new Error('automation-not-started');
     const store=new AutomationStore(database,()=>{if(this.#closed) throw new Error('automation-closed');},
       {settings:DEFAULT_SETTINGS,interruptSet:[...DEFAULT_INTERRUPT_SET]});
+    this.#art=createArtPlans({clock:()=>handle.clock.now(),scheduler:this.#scheduler,active:()=>!this.#closed && !this.#signal.aborted,
+      targets:()=>this.#configured.flatMap((device):ArtPlanTarget[]=>device.owner==='bunny/modules/pixoo'?[{target:device.id,kind:'pixoo'}]
+        :device.owner==='bunny/modules/tidbyt'?[{target:device.id,kind:'tidbyt'}]:[]),
+      current:id=>{
+        const target=this.#configured.find(device=>device.id===id);
+        return target!==undefined && this.#devices.get(target.owner)?.fresh===true?this.#device(id):undefined;
+      },
+      dispatch:action=>handle.dispatch(action),operation:requestId=>handle.operation(requestId)});
     const powerOptions={clock:()=>handle.clock.now(),scheduler:this.#scheduler,active:()=>!this.#closed && !this.#signal.aborted,
       targets:()=>this.#configured.filter(device=>this.#device(device.id)?.capabilities.power.supported===true).map(device=>device.id),
       owner:id=>this.#configured.find(device=>device.id===id)?.owner,
@@ -165,6 +177,9 @@ export class AutomationPart implements CorePart {
     this.#handle=handle;
     this.#followDevices();
     await Promise.all([
+      handle.sdk.subscribe<OperationRecord>('bunny.state.operation.*',message=>{
+        if(message.kind==='state' && message.source===handle.sdk.source) this.#art?.changed(message.data.requestId);
+      },{onOverflow:()=>{this.#art?.changed();}}),
       ...[...KINDS.values()].map(kind=>handle.sdk.subscribe<AgentOccurrence>(`bunny.event.${kind}.*`,message=>{
         if(this.#closed || message.source!==handle.sdk.source || !this.#eligibility.take(message.id)) return;
         const data=message.data;
@@ -177,6 +192,7 @@ export class AutomationPart implements CorePart {
     const engine=this.#automation;
     if(engine===undefined || this.#closed) throw new AutomationError('unavailable',503);
     return {
+      ...(this.#art===undefined?{}:{art:{targets:this.#art.targets,present:this.#art.present}}),
       ...(this.#routines===undefined?{}:{routines:this.#routines}),
       ...(this.#limits===undefined?{}:{limits:this.#limits}),
       rules:()=>engine.rules(),rule:id=>engine.rule(id),
@@ -192,6 +208,7 @@ export class AutomationPart implements CorePart {
   }
   async close(): Promise<void> {
     this.#closed=true;this.#eligibility.clear();
+    this.#art?.close();
     await Promise.all([this.#routines?.close(),this.#limits?.close()]);
     await Promise.all([...this.#devices.values()].map(async follow=>{follow.cancel?.();await follow.pending;await follow.copy?.close();}));
     this.#devices.clear();
