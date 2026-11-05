@@ -25,6 +25,7 @@ import {diagnosticWriter} from '../diagnostics.js';
 import {CORE_MODULE, ContributionFailed, ModuleUnavailable, sourceOf, type HostedModule, type ModuleHost} from '../host.js';
 import type {Redactions, RuntimeLogger} from '../log.js';
 import type {EdgeConfig} from '../state.js';
+import {MUSIC_PRODUCER_SOURCE} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {CODING_WORKER_SOURCE} from '@jimmie-potts/event-contracts/v2/coding';
 import {
   Access, BROWSER_SOURCE, REQUEST_HEADER, carriesSession, contextOf, edgePermissions, endedCookie, principalOf, sessionCookie, type Principal,
@@ -172,8 +173,9 @@ export class Gateway {
       onEndpointClosed: ({source, id}) => {
         const own = this.#own;
         if (own === undefined || this.#closed) return;
-        // A lost speech endpoint and a lost coding-worker endpoint each tell their owner on their own family (Hub #1097, #502).
+        // Each connection-bound endpoint tells its owner when its connection is lost.
         const lost = source === BROWSER_SOURCE ? {family: 'companion-speech-lost', type: 'org.bunny.companion-speech.endpoint-lost'}
+          : source === MUSIC_PRODUCER_SOURCE ? {family: 'music-capture-lost', type: 'org.bunny.music-capture.endpoint-lost'}
           : source === CODING_WORKER_SOURCE ? {family: 'coding-lost', type: 'org.bunny.coding.endpoint-lost'} : undefined;
         if (lost === undefined) return;
         void own.publish(`bunny.event.${lost.family}.${id}`, {

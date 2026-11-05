@@ -1871,6 +1871,26 @@ checkout, as PORTING.md describes; CI does not run it.
 
 Sonos artwork (#1162) uses the existing playback, runtime and scenario test discovery in core CI. After the root build, run `npm run test:playback:built`, `npm run test:tidbyt-module:built`, `npm run test:pixoo:built`, `npm run test:runtime:built`, `npm run test:runtime:scenarios:built` and `node apps/runtime/dashboard/tests/playback-artwork.browser.ts`. The `speaker-artwork` disposable scenario covers both source acquisitions, the no-art handoff and both real display renderers. Unit tests cover Sonos XML extraction, source-specific URL admission, late results and passive content; synthetic evidence does not establish installed or physical acceptance. No workflow change is needed: all of these existing suites are already selected for playback/runtime changes.
 
+## Music producer checks
+
+Use Node 24 and `npm ci`. Run `npm run build`, `npm run typecheck`,
+`npm run lint:js` and `npm run test:music-producer:built`, plus event, SDK,
+runtime and workflow checks for the authenticated capture integration.
+`npm run test:music-producer:native` compiles and runs portable synthetic signal
+checks on Linux or macOS. The shared Checks job runs both producer suites.
+
+On macOS, also run `npm run build:music-producer:native` to compile the Core Audio
+adapter. The Music native source workflow runs portable tests and compilation on
+macOS 15 with explicitly selected Xcode 26.3, including `npm run test:music-producer:adapter` with fake Core Audio
+access. These commands never start real capture or change audio permissions.
+The owning [producer guide](../apps/music-producer/README.md) records packaging,
+permissions and supported input limits. A successful compile is not evidence of
+permission behavior, protected-content access, speaker routing or physical sync.
+
+Tests use synthetic PCM, fake sources/clocks and disposable loopback SDK peers.
+Keep real audio-derived observations and camera recordings private. Installed
+capture, microphone and light trials belong to the selected music pilot.
+
 ## Playback module checks
 
 Hub #929 moves the old Hub's shared playback, with its Sony HT-A9 and Sonos Move

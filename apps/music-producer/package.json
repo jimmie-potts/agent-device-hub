@@ -1,0 +1,14 @@
+{
+  "name": "@jimmie-potts/music-producer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Host-local explicitly started Music.app audio analysis producer",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "dependencies": {
+    "@jimmie-potts/event-contracts": "1.0.0",
+    "@jimmie-potts/sdk": "0.1.0"
+  }
+}
