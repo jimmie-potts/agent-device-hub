@@ -31,9 +31,10 @@ ADR 0018's rejection stands for raw agent events: they still never select a mode
 A moment is a different thing, and may cover the current base for a short time.
 
 - **Over Media**, a moment pauses a playing playlist and resumes it at the same
-  item when it ends. A paused or stopped item refuses the moment, because no call
-  can repaint it. A player with nothing loaded takes the moment without being
-  touched, and one blank frame follows it (see the amendment below).
+  item when it ends. A paused item refuses the moment, because no call can
+  repaint it. A player with nothing loaded, or a stopped or finished item, takes the
+  moment without being touched, and one blank frame follows it (see the amendments
+  below).
 - **Over Monitor**, a moment plays only when all of these hold: the hub marks it
   as allowed to cover status (ADR 0006's interrupt set), the owner's setting is on,
   and the session source is current and shows nothing needing attention. The
@@ -108,4 +109,6 @@ loses the item's frozen picture.
 
 A paused item still refuses, because nothing could repaint it. A restart reloads
 a saved item as paused, and a Monitor visit or turning the screen off also pauses it,
-so art stops again until that item is cleared or stopped.
+so art stops again until that item is cleared or stopped. A display left unknown by
+an uncertain write or external control still refuses, stopped or not, until the next
+start, resume or clear. A failed background check doesn't erase that record.

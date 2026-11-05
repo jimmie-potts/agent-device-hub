@@ -245,13 +245,60 @@ it('a stopped item whose display is unknown still refuses a moment',async()=>{
   expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
  }finally{await s.close();}
 });
-it('a moment over a stopped item is not given a resume by its own end',async()=>{
- const s=await setup({media:'whole'});
+it('a failed background check does not erase external control on a stopped item',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);await s.settle(s.player.takeover());await s.settle(s.player.stop());
+  s.device.setOnline(false);await s.settle(s.player.probe());
+  s.device.setOnline(true);await s.settle(s.player.probe());
+  expect(s.player.getState()).toMatchObject({intent:'stopped',availability:'available',lastError:{code:'external-control'}});
+  expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+ }finally{await s.close();}
+});
+it('a failed background check does not erase an uncertain write on a stopped item, and resume clears it',async()=>{
+ const s=await setup({pauseOnUncertain:true});
+ try{
+  await mediaPlaying(s);
+  s.device.failNextUpload(1);await s.settle(s.player.next());await s.run(200);
+  expect(s.player.getState().lastError?.priorEffects).toBe('possible');
+  await s.settle(s.player.stop());
+  s.device.setOnline(false);await s.settle(s.player.probe());
+  s.device.setOnline(true);await s.settle(s.player.probe());
+  expect(s.player.getState()).toMatchObject({intent:'stopped',lastError:{priorEffects:'possible'}});
+  expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+  await s.settle(s.player.resume());await s.run(200);
+  expect(s.player.getState().lastError).toBeNull();
+ }finally{await s.close();}
+});
+it('a failed background check on an ordinary stopped item is still recorded',async()=>{
+ const s=await setup();
  try{
   await mediaPlaying(s);await s.settle(s.player.stop());
-  const before=s.player.getState().generation;
-  const results=s.play();await s.run(1300);await s.run(3200);ended(results,'completed');await s.run(1100);
-  expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before});
+  s.device.setOnline(false);await s.settle(s.player.probe());
+  expect(s.player.getState().lastError).toMatchObject({code:'offline'});
+ }finally{await s.close();}
+});
+it('a moment still waiting for its start plays over a stop that came first, and nothing resumes',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);
+  const results=s.play({startAtMs:s.clock.now()+1000});await s.run(200);
+  await s.settle(s.player.stop());
+  const generation=s.player.getState().generation;
+  await s.run(2100);expect(s.frames().at(-1)).toEqual(art);
+  await s.run(3200);ended(results,'completed');await s.run(1100);
+  expect(s.frames().at(-1)).toEqual(blank);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',generation});
+ }finally{await s.close();}
+});
+it('external control during a moment over a stopped item ends it with no blank over what may be the owner\'s',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);await s.settle(s.player.stop());
+  const results=s.play();await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
+  await s.settle(s.player.takeover());await s.run(2000);
+  ended(results,'interrupted');
+  expect(s.frames().at(-1)).toEqual(art);
  }finally{await s.close();}
 });
 it('a moment waiting behind other work never pauses a player that has since stopped, so nothing resumes over the stop',async()=>{

@@ -282,9 +282,10 @@ touched, and so does a stopped or finished playlist. One black frame follows it,
 because the module can't return the device to what it showed before, so a stopped
 item's frozen picture is lost, though the item can still resume. A paused item refuses
 it, because nothing could repaint that item, and a restart, a Monitor visit or
-turning the screen off leaves a saved item paused. So does a Now Playing takeover, a player in error, and a display
-left unknown by an uncertain write or external control. That last refusal lasts until
-the next start, clear or restart. Over Monitor it plays only with `coversStatus` set, the setting
+turning the screen off leaves a saved item paused. A Now Playing takeover, a player
+in error and a display left unknown by an uncertain write or external control refuse
+it too. That last refusal lasts until the next start, resume or clear; a restart
+forgets it only on an empty player. Over Monitor it plays only with `coversStatus` set, the setting
 on and a current session source that shows nothing needing attention, and the
 current dashboard follows it. A flourish cannot set `coversStatus`, so a moment
 meant to appear over Monitor must be an `event`.
