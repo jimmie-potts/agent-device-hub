@@ -12,7 +12,7 @@
 ## 3. Catalog and images
 
 - [x] 3.1 Add the store: jobs, artworks, compositions, blobs, stages, feedback
-- [x] 3.2 Add local reduction, sheet slicing and validation, GIF assembly, local motion and procedural art
+- [x] 3.2 Add GIF decoding and validation, local reduction, GIF assembly, local motion and procedural art for the fallback
 - [x] 3.3 Add retention, favorites, feedback and reference-respecting deletion
 - [x] 3.4 Add prompt context limited to the owner's text, imagination, time, season and weather condition words
 
@@ -20,9 +20,9 @@
 
 - [x] 4.1 Add durable admission with a `succeeded`, `observed` outcome in one transaction
 - [x] 4.2 Add job running, recovery after restart, cancellation and the deadline
-- [x] 4.3 Add the typed seams with unwired defaults, and staging, candidates and the ambient tile through them
+- [x] 4.3 Wire `v2/art` and `weather-state`, add `art-catalog-edit`, and stage, offer and set the ambient tile through them
 - [x] 4.4 Add the `art` state, sync and content references
-- [x] 4.5 Test every trace in the record; leave the two gateway and tracker traces as named `todo` tests for #679's integration
+- [x] 4.5 Test every trace in the record, including sender refusal at the responder, on top of #679's gateway and tracker tests
 
 ## 5. Delivery
 

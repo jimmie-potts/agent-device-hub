@@ -42,7 +42,7 @@ seam and synthetic images, so no key is read and nothing reaches a provider. Run
 shared build/type/lint/workflow checks, `npm run test:events:built` for the `art` state
 family, and `npm run test:runtime:built`, whose shipped-module run and upgrade preflight
 cover its registration. A contract change to the diagnostic profile also needs
-`npm run test:observability`. Real generation and the sheet rejection rate belong to
+`npm run test:observability`. Real generation and the GIF rejection rate belong to
 installed acceptance in #687. See [the module guide](../modules/art/README.md).
 
 ## Wemo checks

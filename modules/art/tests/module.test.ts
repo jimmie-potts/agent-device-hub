@@ -9,11 +9,11 @@ import {PROMPT_LIMIT} from '../src/prices.js';
 import {ProviderFault, type ImageAnswer, type TextAnswer} from '../src/provider.js';
 import {MAX_TEXT} from '../src/prompts.js';
 import type {ArtAmbientRequest, ArtDispatchSeam, ArtStageRequest, StageResult} from '../src/seams.js';
-import {distinctDrawing, drawing, fakeIdeas, fakeImages, dimensions, gradientPng, sheetPng} from './fixtures.js';
+import {distinctDrawing, drawing, fakeIdeas, fakeImages, gifBytes, gradientPng} from './fixtures.js';
 import {gate, hosted, until} from './support.js';
 
-const generate = (targets: string[], extra: object = {}) => ({action: 'generate', purpose: 'request', targets, ...extra});
-const reservation = 2 * 102 * 30 + PROMPT_LIMIT * 5;
+const generate = (targets: string[], extra: object = {}) => ({action: 'start', purpose: 'request', origin: {kind: 'owner'}, targets, ...extra});
+const reservation = 2 * 834 * 30 + PROMPT_LIMIT * 5;
 
 function fakeDispatch(answer: 'succeeded' | 'wait' | 'refuse' = 'succeeded') {
   const stages: ArtStageRequest[] = [], ambients: ArtAmbientRequest[] = [];
@@ -26,7 +26,7 @@ function fakeDispatch(answer: 'succeeded' | 'wait' | 'refuse' = 'succeeded') {
       return Promise.resolve({status: 'accepted'});
     },
     ambient: request => {ambients.push(request); return Promise.resolve({status: 'accepted'});},
-    watch: (_sdk, result) => {report = result; return Promise.resolve([]);},
+    watch: result => {report = result; return Promise.resolve([]);},
   };
   return {seam, stages, ambients, report: (requestId: string, result: StageResult) => {report(requestId, result);}};
 }
@@ -59,7 +59,7 @@ void test('durable admission commits the row and a succeeded, observed outcome t
   assert.equal((await art.owner(generate(['tidbyt']), 'once')).status, 'accepted');
   await until(() => art.outcomes.length === 1);
   assert.deepEqual(art.outcomes[0]?.data, {requestId: 'once', result: 'succeeded', evidence: 'observed'});
-  assert.equal(art.outcomes[0]?.type, 'org.bunny.art-request.completed');
+  assert.equal(art.outcomes[0]?.type, 'org.bunny.art.request.completed');
   assert.equal(art.job('once')?.status === 'finished', false, 'the outcome reports admission, not the art');
   assert.equal((await art.owner(generate(['tidbyt']), 'once')).status, 'accepted');
   const conflict = await art.owner(generate(['pixoo']), 'once');
@@ -81,17 +81,11 @@ void test('a failed save admits nothing and calls nothing', async t => {
 
 void test('malformed requests are refused before a row exists', async t => {
   const images = fakeImages(drawing()), art = await hosted(t, {providers: {openai: images}});
-  const bad = [generate([]), generate(['wall']), generate(['ui', 'ui']), generate(['ui'], {text: ''}), generate(['ui'], {text: 'x'.repeat(MAX_TEXT + 1)}), generate(['ui'], {location: 'somewhere'}), generate(['ui'], {variationOf: 'art-none'}), {action: 'mystery'}, {action: 'cancel', job: 'none'}, {action: 'favorite', artworkId: 'none', favorite: true}];
+  const bad = [generate([]), generate(['wall']), generate(['ui', 'ui']), generate(['ui'], {text: ''}), generate(['ui'], {text: 'x'.repeat(MAX_TEXT + 1)}), generate(['ui'], {location: 'somewhere'}), generate(['ui'], {purpose: 'variation', variationOf: 'art-none'}), generate(['ui'], {context: {weather: '48°F'}}), {action: 'mystery'}, {action: 'cancel', jobRequestId: 'none'}];
   let index = 0;
   for (const data of bad) assert.equal((await art.owner(data, `bad-${index++}`)).status, 'rejected', JSON.stringify(data));
   assert.equal(art.state.jobs.length, 0);
   assert.equal(images.requests.length, 0);
-});
-
-void test('an automatic command that is not a generate action makes no art', async t => {
-  const images = fakeImages(drawing()), art = await hosted(t, {providers: {openai: images}});
-  assert.equal((await art.automatic({action: 'cancel', purpose: 'ambient', targets: ['tidbyt']}, 'odd')).status, 'rejected');
-  assert.equal(art.state.jobs.length, 0);
 });
 
 void test('no key: refused before any call, and saved art keeps playing', async t => {
@@ -115,9 +109,9 @@ void test('a key read from its secret file reaches the provider\'s header and no
   const sent: {url: string; authorization: string | undefined}[] = [], key = 'synthetic-secret-value';
   const art = await hosted(t, {section: {secrets: {'openai-api-key': '/synthetic'}}, secrets: {'openai-api-key': `${key}\n`}, transport: async (url, init) => {
     sent.push({url, authorization: init.headers.authorization});
-    return new Response(JSON.stringify({data: [{b64_json: (await gradientPng(1536, 768)).toString('base64')}], usage: {input_tokens: 1, output_tokens: 1}}), {status: 200});
+    return new Response(JSON.stringify({data: [{b64_json: (await gradientPng(1536, 1024)).toString('base64')}], usage: {input_tokens: 1, output_tokens: 1}}), {status: 200});
   }});
-  await art.owner(generate(['tidbyt'], {text: 'a moon bakery'}), 'req');
+  await art.owner(generate(['ui'], {text: 'a moon bakery'}), 'req');
   assert.equal((await art.finished('req')).outcome, 'succeeded');
   assert.equal(sent.length, 1);
   assert.equal(sent[0]?.authorization, `Bearer ${key}`);
@@ -141,26 +135,26 @@ void test('cancelled before dispatch: cancelled, and nothing is stored', async t
   await art.owner(generate(['tidbyt']), 'one');
   await art.owner(generate(['tidbyt']), 'two');
   await art.owner(generate(['tidbyt']), 'waiting');
-  assert.equal((await art.owner({action: 'cancel', job: 'waiting'}, 'cancel-it')).status, 'accepted');
+  assert.equal((await art.owner({action: 'cancel', jobRequestId: 'waiting'}, 'cancel-it')).status, 'accepted');
   const job = await art.finished('waiting');
   assert.equal(job.outcome, 'cancelled');
   hold.open();
   await art.finished('one'); await art.finished('two');
   assert.equal(images.requests.length, 2);
   assert.equal((await art.calls()).filter(call => call.requestId === 'waiting').length, 0);
-  assert.equal((await art.owner({action: 'cancel', job: 'waiting'}, 'too-late')).status, 'rejected');
+  assert.equal((await art.owner({action: 'cancel', jobRequestId: 'waiting'}, 'too-late')).status, 'rejected');
 });
 
 void test('cancelled after dispatch: uncertain, the reservation kept, late bytes discarded, and no resend; later targets are cancelled', async t => {
   const hold = gate<ImageAnswer>(), images = fakeImages(() => hold.promise), art = await hosted(t, {providers: {openai: images}});
   await art.owner(generate(['tidbyt', 'pixoo']), 'req');
   await until(() => images.requests.length === 1);
-  assert.equal((await art.owner({action: 'cancel', job: 'req'}, 'stop-it')).status, 'accepted');
+  assert.equal((await art.owner({action: 'cancel', jobRequestId: 'req'}, 'stop-it')).status, 'accepted');
   const job = await art.finished('req');
   assert.deepEqual(job.targets.map(target => target.outcome), ['uncertain', 'cancelled']);
   assert.equal(job.outcome, 'uncertain');
   assert.equal(art.spend('openai').uncertainMicros, reservation);
-  hold.open({bytes: await gradientPng(1536, 768), usage: {inputTokens: 1, outputTokens: 1}});
+  hold.open({bytes: gifBytes(512, 256), usage: {inputTokens: 1, outputTokens: 1}});
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(art.state.artworks.length, 0);
   assert.equal(art.spend('openai').spentMicros, 0);
@@ -169,18 +163,18 @@ void test('cancelled after dispatch: uncertain, the reservation kept, late bytes
 
 void test('an automatic job can be cancelled by the owner', async t => {
   const hold = gate<ImageAnswer>(), images = fakeImages(() => hold.promise), art = await hosted(t, {providers: {openai: images}});
-  await art.automatic({action: 'generate', purpose: 'ambient', targets: ['tidbyt']}, 'auto');
+  await art.automatic({action: 'start', purpose: 'ambient', origin: {kind: 'schedule'}, targets: ['tidbyt']}, 'auto');
   await until(() => images.requests.length === 1);
-  assert.equal((await art.owner({action: 'cancel', job: 'auto'}, 'stop-auto')).status, 'accepted');
+  assert.equal((await art.owner({action: 'cancel', jobRequestId: 'auto'}, 'stop-auto')).status, 'accepted');
   assert.equal((await art.finished('auto')).outcome, 'uncertain');
   hold.open({bytes: Buffer.alloc(0), usage: null});
 });
 
-void test('4xx answers fail without a resend: moderation, unverified organization and rate limit', async t => {
+void test('on a still, 4xx answers fail without a resend: moderation, unverified organization and rate limit', async t => {
   for (const [code, reason] of [['invalid-request', 'moderation'], ['forbidden', 'provider-refused'], ['capacity', 'provider-refused']] as const) {
     const images = fakeImages(() => Promise.reject(new ProviderFault(code, reason)));
     const art = await hosted(t, {providers: {openai: images}});
-    await art.owner(generate(['tidbyt']), 'req');
+    await art.owner(generate(['ui']), 'req');
     const job = await art.finished('req');
     assert.equal(job.outcome, 'failed');
     assert.deepEqual([job.targets[0]?.code, job.targets[0]?.reason], [code, reason]);
@@ -191,27 +185,37 @@ void test('4xx answers fail without a resend: moderation, unverified organizatio
   }
   const reported = fakeImages(() => Promise.reject(new ProviderFault('capacity', 'provider-refused', {usage: {inputTokens: 10, outputTokens: 0}})));
   const art = await hosted(t, {providers: {openai: reported}});
-  await art.owner(generate(['tidbyt']), 'req');
+  await art.owner(generate(['ui']), 'req');
   await art.finished('req');
   assert.equal(art.spend('openai').spentMicros, 50, 'reported usage counts');
 });
 
-void test('invalid output fails before storage: reported usage settles, otherwise the reservation is kept', async t => {
+void test('invalid still output fails before storage: reported usage settles, otherwise the reservation is kept', async t => {
   const answers: ImageAnswer[] = [{bytes: Buffer.from('corrupt'), usage: {inputTokens: 1, outputTokens: 1}}, {bytes: Buffer.from('corrupt'), usage: null}];
   const images = fakeImages(() => Promise.resolve(answers.shift() ?? assert.fail('resent'))), art = await hosted(t, {providers: {openai: images}});
-  await art.owner(generate(['tidbyt']), 'with-usage');
+  await art.owner(generate(['ui']), 'with-usage');
   const first = await art.finished('with-usage');
   assert.deepEqual([first.outcome, first.targets[0]?.reason], ['failed', 'invalid-output']);
   assert.equal(art.spend('openai').spentMicros, 35);
-  await art.owner(generate(['tidbyt']), 'without');
+  await art.owner(generate(['ui']), 'without');
   assert.equal((await art.finished('without')).outcome, 'failed');
-  assert.equal(art.spend('openai').uncertainMicros, reservation);
+  assert.equal(art.spend('openai').uncertainMicros, 2 * 1372 * 30 + PROMPT_LIMIT * 5);
   assert.equal(art.state.artworks.length, 0);
   assert.equal(art.db().prepare('SELECT COUNT(*) AS blobs FROM art_blobs').get()?.blobs, 0, 'no bytes were kept');
 });
 
+void test('a moderated GIF fails with nothing stored, and a lost one stays uncertain with nothing stored', async t => {
+  for (const [fault, outcome] of [[new ProviderFault('invalid-request', 'moderation'), 'failed'], [new ProviderFault('uncertain-result', 'lost-response', {uncertain: true, keep: true}), 'uncertain']] as const) {
+    const images = fakeImages(() => Promise.reject(fault)), art = await hosted(t, {providers: {openai: images}});
+    await art.owner(generate(['pixoo']), 'req');
+    assert.equal((await art.finished('req')).outcome, outcome);
+    assert.equal(images.requests.length, 1);
+    assert.equal(art.state.artworks.length, 0);
+  }
+});
+
 void test('one of three targets fails: partial, the others are stored, each call on its own terms', async t => {
-  const images = fakeImages(request => request.size === '1024x1024' ? Promise.reject(new ProviderFault('capacity', 'provider-refused')) : drawing()(request));
+  const images = fakeImages(request => request.size === '512x512' ? Promise.reject(new ProviderFault('invalid-request', 'moderation')) : drawing()(request));
   const art = await hosted(t, {providers: {openai: images}});
   await art.owner(generate(['ui', 'pixoo', 'tidbyt']), 'req');
   const job = await art.finished('req');
@@ -223,77 +227,89 @@ void test('one of three targets fails: partial, the others are stored, each call
   assert.equal(result.compositions.find(entry => entry.target === 'pixoo')?.compositionId, null);
 });
 
-void test('renditions: a composition is the SHA-256 of its defining bytes, each display has exactly one rendition, and low and medium quality go where they belong', async t => {
-  const images = fakeImages(drawing()), art = await hosted(t, {providers: {openai: images}});
-  await art.owner(generate(['ui', 'tidbyt', 'pixoo']), 'req');
+void test('renditions: a composition is the SHA-256 of its defining bytes, each display has one GIF rendition, and the browser gets a medium still', async t => {
+  const drawn = new Map<string, Uint8Array>();
+  const images = fakeImages(async request => {const answer = await drawing()(request); drawn.set(request.size, answer.bytes); return answer;}), art = await hosted(t, {providers: {openai: images}});
+  await art.owner(generate(['tidbyt', 'pixoo', 'ui']), 'req');
   await art.finished('req');
-  assert.deepEqual(images.requests.map(request => [request.size, request.quality]), [['1536x1024', 'medium'], ['1536x768', 'low'], ['1024x1024', 'low']]);
+  assert.deepEqual(images.requests.map(request => [request.model, request.size, request.quality, request.gif?.frameCount, request.gif?.frameDurationMs]), [
+    ['gpt-image-2', '1536x1024', 'medium', undefined, undefined], ['gpt-image-2.6-flare', '512x256', 'low', 8, 200], ['gpt-image-2.6-flare', '512x512', 'low', 8, 200]]);
   const artwork = art.state.artworks[0] ?? assert.fail('no artwork');
   assert.equal(artwork.provenance.generatedBy, 'openai');
   assert.equal(artwork.provenance.factual, false);
   assert.ok(artwork.palette.every(colour => /^#[0-9A-F]{6}$/.test(colour)) && artwork.palette.length > 0);
+  const defining = {ui: drawn.get('1536x1024'), tidbyt: drawn.get('512x256'), pixoo: drawn.get('512x512')};
   for (const composition of artwork.compositions) {
-    const defining = await gradientPng(...dimensions(images.requests.find(request => request.size === {ui: '1536x1024', tidbyt: '1536x768', pixoo: '1024x1024'}[composition.target])?.size ?? ''));
-    assert.equal(composition.compositionId, createHash('sha256').update(defining).digest('hex'));
-    const first = composition.renditions[0] ?? assert.fail('no rendition');
-    const bytes = await art.read(first.ref);
+    assert.equal(composition.compositionId, createHash('sha256').update(defining[composition.target] ?? assert.fail('not drawn')).digest('hex'));
+    const first = composition.renditions[0] ?? assert.fail('no rendition'), bytes = await art.read(first.ref);
     assert.ok(bytes !== undefined && !('error' in bytes));
     assert.equal(createHash('sha256').update(bytes.bytes).digest('hex'), first.renditionId);
-    if (composition.target === 'ui') {assert.equal(bytes.type, 'image/webp'); assert.equal(composition.renditions.length, 2);}
-    else {assert.equal(composition.renditions.length, 1); assert.equal(bytes.type, 'image/png');}
-    assert.deepEqual([first.width, first.height], composition.target === 'tidbyt' ? [64, 32] : composition.target === 'pixoo' ? [64, 64] : [1536, 1024]);
+    if (composition.target === 'ui') {
+      assert.deepEqual([bytes.type, composition.motion, composition.renditions.length, first.width, first.height], ['image/webp', 'still', 2, 1536, 1024]);
+    } else {
+      const info = await sharp(bytes.bytes, {animated: true}).metadata(), height = composition.target === 'tidbyt' ? 32 : 64;
+      assert.deepEqual([bytes.type, composition.motion, composition.renditions.length, first.frames, first.durationMs, first.width, first.height, info.pages, info.pageHeight], ['image/gif', 'gif', 1, 8, 1600, 64, height, 8, height]);
+    }
   }
+  assert.deepEqual(art.state.gifs, {accepted: 2, rejected: 0});
 });
 
-void test('a valid sprite sheet makes a GIF composition; one medium call for each display, and the sheet counts as accepted', async t => {
-  const images = fakeImages(async () => ({bytes: await sheetPng(), usage: {inputTokens: 1, outputTokens: 1}})), art = await hosted(t, {providers: {openai: images}});
-  await art.owner(generate(['pixoo'], {animated: true}), 'req');
-  assert.equal((await art.finished('req')).outcome, 'succeeded');
-  assert.deepEqual(images.requests.map(request => [request.size, request.quality]), [['1536x1024', 'medium']]);
-  assert.match(images.requests[0]?.prompt ?? '', /sprite sheet/);
+void test('a wrong GIF still counts as spent, sends nothing more and falls back to local motion', async t => {
+  const answers: Uint8Array[] = [gifBytes(512, 256, {frames: 4}), gifBytes(512, 512, {delayMs: 50}), Buffer.from('not a gif')];
+  const images = fakeImages(() => Promise.resolve({bytes: answers.shift() ?? assert.fail('resent'), usage: {inputTokens: 1, outputTokens: 1}})), art = await hosted(t, {providers: {openai: images}});
+  for (const [id, target] of [['frames', 'tidbyt'], ['timing', 'pixoo'], ['corrupt', 'tidbyt']] as const) {
+    await art.owner(generate([target]), id);
+    const job = await art.finished(id);
+    assert.deepEqual([job.outcome, job.targets[0]?.outcome, job.targets[0]?.reason], ['succeeded', 'succeeded', 'invalid-output'], id);
+  }
+  assert.equal(images.requests.length, 3);
+  assert.equal(art.spend('openai').spentMicros, 3 * 35);
+  assert.deepEqual(art.state.gifs, {accepted: 0, rejected: 3});
   const composition = art.state.artworks[0]?.compositions[0] ?? assert.fail('none'), rendered = composition.renditions[0] ?? assert.fail('none');
-  assert.equal(composition.compositionId, createHash('sha256').update(await sheetPng()).digest('hex'), 'its identity is the sheet');
-  assert.deepEqual([composition.motion, rendered.format, rendered.frames, rendered.width, rendered.height], ['sheet', 'gif', 6, 64, 64]);
-  assert.deepEqual(art.state.sheets, {accepted: 1, rejected: 0});
-  const gif = await art.read(rendered.ref);
-  assert.ok(gif !== undefined && !('error' in gif));
-  assert.equal((await sharp(gif.bytes, {animated: true}).metadata()).pages, 6);
-});
-
-void test('a rejected sheet still costs its call and falls back to local motion, with no second call', async t => {
-  const images = fakeImages(async () => ({bytes: await sheetPng({chaotic: true}), usage: {inputTokens: 1, outputTokens: 1}})), art = await hosted(t, {providers: {openai: images}});
-  await art.owner(generate(['tidbyt'], {animated: true}), 'req');
-  assert.equal((await art.finished('req')).outcome, 'succeeded');
-  assert.equal(images.requests.length, 1);
-  assert.equal(art.spend('openai').spentMicros, 35);
-  assert.deepEqual(art.state.sheets, {accepted: 0, rejected: 1});
-  const composition = art.state.artworks[0]?.compositions[0] ?? assert.fail('none'), rendered = composition.renditions[0] ?? assert.fail('none');
-  assert.deepEqual([composition.motion, rendered.format, rendered.frames, rendered.width, rendered.height], ['local', 'gif', 6, 64, 32]);
+  assert.deepEqual([composition.motion, rendered.format, rendered.frames], ['local', 'gif', 8]);
   assert.equal(composition.compositionId, rendered.renditionId, 'a locally animated result is its own bytes');
+  assert.equal(art.state.artworks[0]?.provenance.generatedBy, 'local');
 });
 
-void test('procedural art reaches no provider, spends nothing and works without a key', async t => {
-  const art = await hosted(t, {providers: {}});
-  await art.owner(generate(['ui', 'pixoo'], {source: 'procedural'}), 'local');
-  const job = await art.finished('local');
+void test('a wrong GIF without usage keeps its reservation, and still falls back', async t => {
+  const images = fakeImages(() => Promise.resolve({bytes: Buffer.from('not a gif'), usage: null})), art = await hosted(t, {providers: {openai: images}});
+  await art.owner(generate(['tidbyt']), 'req');
+  assert.equal((await art.finished('req')).outcome, 'succeeded');
+  assert.equal(art.spend('openai').uncertainMicros, reservation);
+  assert.equal(art.spend('openai').spentMicros, 0);
+});
+
+void test('a preview-access refusal falls back to local motion with no resend, and the browser still lends its look', async t => {
+  const images = fakeImages(request => request.gif === undefined ? drawing()(request) : Promise.reject(new ProviderFault('forbidden', 'preview-refused')));
+  const art = await hosted(t, {providers: {openai: images}});
+  await art.owner(generate(['pixoo', 'ui']), 'req');
+  const job = await art.finished('req');
   assert.equal(job.outcome, 'succeeded');
-  assert.equal((await art.calls()).length, 0);
-  assert.equal(art.state.artworks[0]?.provenance.generatedBy, 'local');
+  assert.deepEqual(job.targets.map(target => [target.target, target.reason]), [['ui', null], ['pixoo', 'preview-refused']]);
+  assert.equal(images.requests.length, 2);
+  const composition = art.state.artworks[0]?.compositions.find(entry => entry.target === 'pixoo') ?? assert.fail('none');
+  assert.equal(composition.motion, 'local');
+  assert.equal(art.state.artworks[0]?.provenance.generatedBy, 'openai', 'the still was drawn');
+  assert.deepEqual(art.state.gifs, {accepted: 0, rejected: 0}, 'no GIF came back to reject');
+  const alone = await hosted(t, {providers: {openai: fakeImages(() => Promise.reject(new ProviderFault('not-found', 'preview-refused')))}});
+  await alone.owner(generate(['tidbyt']), 'req');
+  assert.equal((await alone.finished('req')).outcome, 'succeeded', 'procedural art stands in without a still');
 });
 
 void test('prompts hold only the owner\'s text, imagination, time, season and condition words, within the limit, and Claude writes no idea when told nothing else', async t => {
   const images = fakeImages(drawing()), writer = fakeIdeas(() => Promise.resolve<TextAnswer>({text: 'a baker on the moon', usage: {inputTokens: 1, outputTokens: 1}}));
-  const weather = {start: () => Promise.resolve([]), read: () => ({words: ['cold rain', 'Springfield, USA has commas', '48°F'], staleAtMs: Date.now() + 1e12})};
+  const weather = {start: () => Promise.resolve([]), read: () => ({words: ['chance of rain', 'Springfield, USA has commas', '48°F', 'evening'], staleAtMs: Date.now() + 1e12})};
   const art = await hosted(t, {providers: {openai: images, anthropic: writer}, weather, now: new Date(2026, 9, 3, 19).getTime()});
   await art.owner(generate(['tidbyt'], {text: 'y'.repeat(MAX_TEXT), origin: {kind: 'owner', reference: 'ref-1'}}), 'req');
   await art.finished('req');
   const prompt = images.requests[0]?.prompt ?? assert.fail('no prompt'), idea = writer.requests[0]?.prompt ?? assert.fail('no idea prompt');
   assert.ok(prompt.length <= PROMPT_LIMIT);
   assert.ok(idea.length + (writer.requests[0]?.system.length ?? 0) <= PROMPT_LIMIT);
+  assert.equal(JSON.stringify(art.state).includes('rain'), false, 'weather stays out of the state');
   for (const text of [prompt, idea]) {
     assert.match(text, /evening in autumn/);
-    assert.match(text, /cold rain, 48°F/);
-    assert.equal(text.includes('Springfield'), false, 'words outside the expected shape are dropped');
+    assert.match(text, /mood: chance of rain\./);
+    assert.equal(text.includes('Springfield') || text.includes('48'), false, 'only condition words pass');
     assert.equal(text.includes('ref-1'), false);
   }
   assert.match(prompt, /a baker on the moon/);
@@ -324,14 +340,14 @@ void test('a variation names its source, builds on its idea and sends no input i
   const images = fakeImages(drawing()), art = await hosted(t, {providers: {openai: images}});
   await art.owner(generate(['tidbyt'], {text: 'a moon bakery'}), 'source');
   const source = await art.finished('source');
-  await art.owner({action: 'generate', purpose: 'variation', targets: ['tidbyt'], variationOf: source.artworkId, text: 'at dawn'}, 'variant');
+  await art.owner(generate(['tidbyt'], {purpose: 'variation', variationOf: source.artworkId, text: 'at dawn'}), 'variant');
   await art.finished('variant');
   const prompt = images.requests[1]?.prompt ?? '';
   assert.match(prompt, /variation/);
   assert.match(prompt, /a moon bakery/);
   assert.match(prompt, /at dawn/);
   assert.equal(art.state.artworks.find(entry => entry.variationOf === source.artworkId)?.provenance.generatedBy, 'openai');
-  assert.deepEqual(Object.keys(images.requests[1] ?? {}).sort(), ['model', 'prompt', 'quality', 'size']);
+  assert.deepEqual(Object.keys(images.requests[1] ?? {}).sort(), ['gif', 'model', 'prompt', 'quality', 'size'], 'no input image');
 });
 
 void test('nothing is offered until the core reports staging succeeded; then a device reference is staged by its composition ID', async t => {
@@ -343,7 +359,7 @@ void test('nothing is offered until the core reports staging succeeded; then a d
   const stage = dispatch.stages[0] ?? assert.fail('no stage');
   const artwork = art.state.artworks[0] ?? assert.fail('no artwork'), composition = artwork.compositions.find(entry => entry.target === 'tidbyt') ?? assert.fail('no composition');
   assert.equal(stage.compositionId, composition.compositionId);
-  assert.deepEqual([stage.target, stage.format, stage.width, stage.height, stage.frames, stage.lifetimeMs], ['tidbyt', 'png', 64, 32, 1, STAGE_LIFETIME_MS]);
+  assert.deepEqual([stage.target, stage.format, stage.width, stage.height, stage.frames, stage.durationMs, stage.lifetimeMs], ['tidbyt', 'gif', 64, 32, 8, 1600, STAGE_LIFETIME_MS]);
   assert.equal(stage.sha256, createHash('sha256').update(stage.bytes).digest('hex'));
   assert.ok(stage.bytes.length <= 160 * 1024);
   dispatch.report(stage.requestId, 'succeeded');
@@ -371,12 +387,12 @@ void test('a refused or uncertain stage offers nothing and is never resent', asy
 
 void test('a finished ambient job sets the tile once its copy is staged; deleting it clears the tile', async t => {
   const dispatch = fakeDispatch(), art = await hosted(t, {providers: {openai: fakeImages(drawing())}, dispatch: dispatch.seam});
-  await art.automatic({action: 'generate', purpose: 'ambient', targets: ['tidbyt']}, 'ambient');
+  await art.automatic({action: 'start', purpose: 'ambient', origin: {kind: 'schedule'}, targets: ['tidbyt']}, 'ambient');
   const job = await art.finished('ambient');
   await until(() => dispatch.ambients.length === 1);
   const composition = art.state.artworks[0]?.compositions[0]?.compositionId;
   assert.deepEqual([dispatch.ambients[0]?.target, dispatch.ambients[0]?.compositionId], ['tidbyt', composition]);
-  assert.equal((await art.owner({action: 'delete', artworkId: job.artworkId}, 'drop')).status, 'accepted');
+  assert.equal((await art.catalog({action: 'delete', artworkId: job.artworkId}, 'drop')).status, 'accepted');
   await until(() => dispatch.ambients.length === 2);
   assert.equal(dispatch.ambients[1]?.compositionId, null);
 });
@@ -389,8 +405,8 @@ void test('reusing a favorite stages saved bytes for free, and it stays offered 
   await art.finished('new');
   await until(() => dispatch.stages.length === 2);
   const spent = art.spend('openai').spentMicros;
-  assert.equal((await art.owner({action: 'favorite', artworkId: old.artworkId, favorite: true}, 'keep')).status, 'accepted');
-  assert.equal((await art.owner({action: 'reuse', artworkId: old.artworkId, target: 'pixoo'}, 'again')).status, 'accepted');
+  assert.equal((await art.catalog({action: 'favorite', artworkId: old.artworkId, favorite: true}, 'keep')).status, 'accepted');
+  assert.equal((await art.catalog({action: 'reuse', artworkId: old.artworkId, target: 'pixoo'}, 'again')).status, 'accepted');
   await until(() => dispatch.stages.length === 3);
   assert.equal(images.requests.length, 2, 'no generation');
   assert.equal(art.spend('openai').spentMicros, spent);
@@ -398,7 +414,7 @@ void test('reusing a favorite stages saved bytes for free, and it stays offered 
   await until(() => art.state.candidates.length >= 1);
   assert.equal(art.state.candidates[0]?.artworkId, old.artworkId);
   assert.equal(art.state.candidates[0]?.favorite, true);
-  assert.equal((await art.owner({action: 'reuse', artworkId: old.artworkId, target: 'tidbyt'}, 'none')).status, 'rejected', 'it has no Tidbyt composition');
+  assert.equal((await art.catalog({action: 'reuse', artworkId: old.artworkId, target: 'tidbyt'}, 'none')).status, 'rejected', 'it has no Tidbyt composition');
 });
 
 void test('explicit feedback shapes selection, and silence does not', async t => {
@@ -407,10 +423,10 @@ void test('explicit feedback shapes selection, and silence does not', async t =>
   await until(() => art.state.candidates.length === 4);
   const artworkOf = async (id: string) => (await art.finished(id)).artworkId;
   const [liked, less, dismissed, silent] = await Promise.all(['liked', 'less', 'dismissed', 'silent'].map(artworkOf));
-  assert.equal((await art.owner({action: 'feedback', artworkId: liked, signal: 'more'}, 'more-1')).status, 'accepted');
-  assert.equal((await art.owner({action: 'feedback', artworkId: less, signal: 'less'}, 'less-1')).status, 'accepted');
-  assert.equal((await art.owner({action: 'feedback', artworkId: dismissed, signal: 'dismiss'}, 'dismiss-1')).status, 'accepted');
-  assert.equal((await art.owner({action: 'feedback', artworkId: dismissed, signal: 'angry'}, 'bad-signal')).status, 'rejected');
+  assert.equal((await art.catalog({action: 'feedback', artworkId: liked, signal: 'more'}, 'more-1')).status, 'accepted');
+  assert.equal((await art.catalog({action: 'feedback', artworkId: less, signal: 'less'}, 'less-1')).status, 'accepted');
+  assert.equal((await art.catalog({action: 'feedback', artworkId: dismissed, signal: 'dismiss'}, 'dismiss-1')).status, 'accepted');
+  assert.equal((await art.catalog({action: 'feedback', artworkId: dismissed, signal: 'angry'}, 'bad-signal')).status, 'rejected');
   assert.deepEqual(art.state.candidates.map(candidate => candidate.artworkId), [liked, silent], 'more comes first, less and dismiss leave, and silence stays');
   assert.equal(art.state.artworks.find(entry => entry.artworkId === silent)?.feedback, null, 'silence writes nothing');
   assert.equal(art.db().prepare('SELECT COUNT(*) AS rows FROM art_feedback').get()?.rows, 3);
@@ -421,7 +437,7 @@ void test('recent retention prunes only unsaved, unreferenced art, past the limi
   const dispatch = fakeDispatch('wait'), art = await hosted(t, {providers: {openai: images}, dispatch: dispatch.seam, section: {recentLimit: 1}});
   const make = async (id: string) => {await art.owner(generate(['pixoo']), id); const job = await art.finished(id); art.clock.value += 1000; return job;};
   const saved = await make('saved');
-  await art.owner({action: 'favorite', artworkId: saved.artworkId, favorite: true}, 'keep');
+  await art.catalog({action: 'favorite', artworkId: saved.artworkId, favorite: true}, 'keep');
   // Referenced by a device's staged copy until it expires.
   const staged = await make('staged');
   await until(() => dispatch.stages.length === 2);
@@ -457,30 +473,30 @@ void test('deletion leaves selection at once, reports the device\'s retained cop
   const held = await art.finished('held');
   await until(() => art.state.candidates.length === 1);
   const ref = art.state.artworks[0]?.compositions[0]?.renditions[0]?.ref ?? assert.fail('no rendition');
-  assert.equal((await art.owner({action: 'delete', artworkId: held.artworkId}, 'drop')).status, 'accepted');
+  assert.equal((await art.catalog({action: 'delete', artworkId: held.artworkId}, 'drop')).status, 'accepted');
   assert.deepEqual(art.state.candidates, []);
   assert.equal(art.state.artworks.length, 0);
   assert.deepEqual(art.state.retention.retained.map(entry => [entry.artworkId, entry.target]), [[held.artworkId, 'pixoo']], 'the retained copy is reported');
   assert.equal(await art.read(`artwork.${held.artworkId}`), undefined);
-  assert.equal((await art.owner({action: 'favorite', artworkId: held.artworkId, favorite: true}, 'too-late')).status, 'rejected');
-  assert.equal((await art.owner({action: 'generate', purpose: 'variation', targets: ['pixoo'], variationOf: held.artworkId}, 'no-variant')).status, 'rejected');
+  assert.equal((await art.catalog({action: 'favorite', artworkId: held.artworkId, favorite: true}, 'too-late')).status, 'rejected');
+  assert.equal((await art.owner(generate(['pixoo'], {purpose: 'variation', variationOf: held.artworkId}), 'no-variant')).status, 'rejected');
   assert.ok(await art.read(ref), 'the bytes stay while the device may hold its copy');
   art.clock.value += STAGE_LIFETIME_MS + 1;
-  await art.owner(generate(['tidbyt'], {source: 'procedural'}), 'tick');
+  await art.owner(generate(['tidbyt']), 'tick');
   await art.finished('tick');
   assert.equal(await art.read(ref), undefined, 'and go after it expires');
   assert.deepEqual(art.state.retention.retained, []);
   // The ledger is not the catalog: deletion leaves its calls in place.
-  assert.equal((await art.calls()).length, 1);
+  assert.equal((await art.calls()).length, 2);
 });
 
 void test('an unreferenced artwork is deleted outright, even a favorite', async t => {
   const art = await hosted(t, {providers: {openai: fakeImages(drawing())}});
   await art.owner(generate(['pixoo']), 'req');
   const job = await art.finished('req');
-  await art.owner({action: 'favorite', artworkId: job.artworkId, favorite: true}, 'keep');
+  await art.catalog({action: 'favorite', artworkId: job.artworkId, favorite: true}, 'keep');
   const ref = art.state.artworks[0]?.compositions[0]?.renditions[0]?.ref ?? assert.fail('no rendition');
-  assert.equal((await art.owner({action: 'delete', artworkId: job.artworkId}, 'drop')).status, 'accepted');
+  assert.equal((await art.catalog({action: 'delete', artworkId: job.artworkId}, 'drop')).status, 'accepted');
   assert.equal(await art.read(ref), undefined);
   assert.equal(art.db().prepare('SELECT COUNT(*) AS blobs FROM art_blobs').get()?.blobs, 0);
 });
@@ -523,11 +539,4 @@ void test('the provider call has its registered span; logs and spans stay within
   assert.ok(spans.every(span => span.kind === 'client' && span.attributes['bunny.operation'] === 'media' && span.attributes['bunny.request.id'] === 'req'));
   assert.deepEqual(art.host.logs.flatMap(record => {const problem = checkModuleRecord('art', record); return problem === undefined ? [] : [problem];}), []);
   assert.ok(art.host.logs.some(record => record.event === 'operation.failed' && record.fields['bunny.code'] === 'capacity'));
-});
-
-void test('the seams default to unwired: nothing is admitted and no provider is reached', async t => {
-  const images = fakeImages(drawing()), art = await hosted(t, {providers: {openai: images}, commands: {serve: () => Promise.resolve([])}});
-  const answer = await art.owner(generate(['tidbyt']), 'req');
-  assert.equal(answer.status, 'rejected');
-  assert.equal(images.requests.length, 0);
 });

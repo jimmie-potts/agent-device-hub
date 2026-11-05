@@ -7,10 +7,10 @@
 - A new shipped `modules/art`, with a provider interface over OpenAI's Image API (`gpt-image-2`) and Claude for ideas, through a fetch transport seam.
 - Durable job rows, artworks, per-target compositions, renditions, provenance, bounded recent retention, permanent favorites, explicit feedback and deletion that respects references, in the module's own SQLite file.
 - A spending ledger in integer micro-dollars: per-provider monthly ceilings ($150 by default) and daily paces (about $5), reservations from a price table, settlement from reported usage, a single 30-call loop guard, and no retry.
-- Local Lanczos reduction to 64×64 and 64×32 with a 32-color palette, sprite-sheet slicing and validation, GIF assembly, and local motion as the fallback.
+- OpenAI's preview GIF output for displays, by owner decision of 2026-11-04, with local decoding, validation and Lanczos reduction to 64×64 and 64×32 with a 32-color palette, and local motion as the fallback.
 - Prompt context limited to the owner's text, imagination, time, season and weather condition words. Stale or missing weather makes no claim.
 - A new `art/2.0` state family and `content` references for #682, #683 and #684.
-- Typed seams for `art-request`, `art-auto`, `art-dispatch` (#679) and weather (#1418), none of which is on `main`. Until they are wired the shipped module admits no command.
+- Handlers for #679's `art-request`, `art-auto` and `art-dispatch`, weather from #1418's `weather-state`, and a new module-owned `art-catalog-edit` command for favorites, feedback, deletion and reuse.
 - Diagnostic profile 1.8, which registers the provider call's span, `bunny.art.call`. The runtime writes profile 1.8.
 - The qualification record's limits and traces now state separate limits per provider.
 

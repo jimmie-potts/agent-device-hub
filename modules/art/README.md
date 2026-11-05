@@ -31,7 +31,7 @@ Edit a limit here; it takes effect at the next start. The Anthropic key file is 
 companions names. A key is read once at start and sent only as its request header. A
 provider with no key refuses its calls, and the module still starts, so saved art keeps
 playing. Without Claude, a request uses the owner's words or an imagined scene as its
-idea. Without OpenAI, nothing new is drawn apart from procedural art.
+idea. Without OpenAI, nothing new is drawn.
 
 ## Jobs and results
 
@@ -43,18 +43,21 @@ re-runs after a restart.
 Each job gets one artwork and one image call per target. Each target succeeds or fails
 alone, and the record's rules derive the artwork's outcome.
 
-| Target | Size and quality sent | Local result |
+| Target | Model, size and quality | Local result |
 | --- | --- | --- |
-| Tidbyt | 1536×768, low | One 64×32 PNG, or a GIF, with at most 32 colors |
-| Pixoo | 1024×1024, low | One 64×64 PNG, or a GIF, with at most 32 colors |
-| Browser | 1536×1024, medium | Two WebP renditions |
-| Animated display | 1536×1024, medium | Six-frame GIF from a sprite sheet |
+| Tidbyt | `gpt-image-2.6-flare`, 512×256, low, 8-frame GIF | One 64×32 GIF with at most 32 colors |
+| Pixoo | `gpt-image-2.6-flare`, 512×512, low, 8-frame GIF | One 64×64 GIF with at most 32 colors |
+| Browser | `gpt-image-2`, 1536×1024, medium | Two WebP renditions |
 
-A sheet with misaligned cells or too much change between frames is rejected. It still
-costs its call, and the art falls back to local motion. The state counts accepted and
-rejected sheets, which is how installed use measures the rejection rate. A variation
-builds on its source's idea and sends no input image, since no input image has a price
-entry. Procedural art reaches no provider.
+A returned GIF is decoded under bounded limits and checked for its size, its frame count
+and timing inside Pixoo's observed envelope, then reduced frame by frame with Lanczos and
+rebuilt with one palette and uniform timing. A wrong or undecodable GIF still costs its
+call. That result, a preview-access refusal or another definite failure falls back to free
+local motion with no resend, from the artwork's browser still when it has one and otherwise
+procedural art; the target names why. A moderation refusal stands, and an unknown outcome
+stays uncertain. The state counts accepted and rejected GIFs, which is how installed use
+measures the rejection rate. A variation builds on its source's idea and sends no input
+image: GIF output works on generation only, and no input image has a price entry.
 
 ## Spending
 
@@ -99,21 +102,26 @@ lifetime ends, and the state's `retention.retained` reports it. The module canno
 into a device's own store. Feedback is explicit: `more` raises a candidate, `less` and
 `dismiss` remove it, and silence changes nothing.
 
-## Seams to wire
+## Commands and boundaries
 
-`src/seams.ts` holds what is not on `main` yet. Each has an unwired default, so the shipped
-module admits no command and offers nothing until it is wired in `src/registration.ts`:
+`src/seams.ts` holds the module's boundaries. A responder admits only `bunny/core`
+(`artCommandRefusal`), and the gateway and tracker refuse earlier.
 
-| Seam | Owner | What it binds |
+| Family | Sender | What it does |
 | --- | --- | --- |
-| `ArtCommandSeam` | [#679](https://github.com/jimmie-potts/agent-device-hub/issues/679) | `art-request` and `art-auto` to the owner and automatic handlers |
-| `ArtDispatchSeam` | #679 | `art-dispatch`, for `art-stage` and `art-ambient-set`, and the core's operation record back |
-| `WeatherSeam` | [#1418](https://github.com/jimmie-potts/agent-device-hub/issues/1418) | Condition words from the `weather-state` record, and when they go stale |
+| `art-request` | The dashboard, through the tracked route | Starts a job, or cancels any job |
+| `art-auto` | The core's automation only | Starts an automatic job |
+| `art-catalog-edit` | The dashboard, through the tracked route | Favorite, feedback, delete, or reuse saved art |
+| `art-dispatch` | This module, to the core | Forwards `art-stage` and `art-ambient-set` |
 
 The family that admits a job decides whether it is the owner's or automatic, never its
-payload. Refusing `art-auto` from a client and `art-request` from anything but the
-dashboard happens in the gateway and tracker, under #679. Two unfinished tests in
-`tests/traces.test.ts` name those traces.
+payload. Each outcome reports durable admission. A stage is offered only after the core's
+`operation` record says it succeeded, and a restart resends nothing: the record can still
+settle a stage left uncertain.
+
+`weather-state` comes from the weather module by sync. Only fresh condition words reach a
+prompt, so a temperature or day part in its words is dropped. A job's validated
+`context` is used first. Without a weather section the art says nothing about weather.
 
 ## Checks
 

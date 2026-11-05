@@ -12,10 +12,10 @@ export type Job = {
   requestId: string; artworkId: string; purpose: ArtPurpose; origin: {kind: 'owner' | 'schedule' | 'weather'; reference?: string};
   /** From the command family that admitted the job, never from its payload. */
   admittedBy: ArtAdmission;
-  text: string | null; context: PromptContext; targets: JobTarget[]; variationOf: string | null; animated: boolean; source: 'generate' | 'procedural';
+  text: string | null; context: PromptContext; targets: JobTarget[]; variationOf: string | null;
   status: 'queued' | 'running' | 'finished'; cancelRequested: boolean; outcome: ArtOutcome | null; idea: string | null; traceparent: string; createdAtMs: number; finishedAtMs: number | null;
 };
-export type StoredComposition = ArtComposition & {compositionId: string; promptHash: string | null; originalId: string | null; sheet: 'accepted' | 'misaligned-cells' | 'excess-change' | null};
+export type StoredComposition = ArtComposition & {compositionId: string; promptHash: string | null; originalId: string | null; gif: 'accepted' | 'rejected' | null};
 export type Artwork = {artworkId: string; requestId: string; createdAtMs: number; favorite: boolean; feedback: ArtFeedback | null; variationOf: string | null; palette: string[]; generatedBy: 'openai' | 'local'; deletedAtMs: number | null};
 export type StageStatus = 'pending' | 'succeeded' | 'failed' | 'uncertain';
 export type StageRow = {requestId: string; artworkId: string; compositionId: string; target: ArtDisplayTarget; status: StageStatus; expiresAtMs: number | null; ambient: boolean};
@@ -23,7 +23,7 @@ export type StageRow = {requestId: string; artworkId: string; compositionId: str
 const json = <T>(row: unknown): T => JSON.parse((row as {record: string}).record) as T;
 export class ArtStore {
   constructor(readonly db: DatabaseSync) {
-    db.exec(`CREATE TABLE IF NOT EXISTS art_meta(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL,sheets_accepted INTEGER NOT NULL,sheets_rejected INTEGER NOT NULL) STRICT;
+    db.exec(`CREATE TABLE IF NOT EXISTS art_meta(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL,gifs_accepted INTEGER NOT NULL,gifs_rejected INTEGER NOT NULL) STRICT;
       INSERT OR IGNORE INTO art_meta VALUES(1,0,0,0);
       CREATE TABLE IF NOT EXISTS art_receipts(request_id TEXT PRIMARY KEY,digest TEXT NOT NULL,at_ms INTEGER NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS art_jobs(request_id TEXT PRIMARY KEY,artwork_id TEXT NOT NULL,status TEXT NOT NULL,created_at_ms INTEGER NOT NULL,record TEXT NOT NULL) STRICT;
@@ -40,11 +40,11 @@ export class ArtStore {
   }
   revision(): number {return (this.db.prepare('SELECT revision FROM art_meta').get() as {revision: number}).revision;}
   bump(): number {this.db.prepare('UPDATE art_meta SET revision=revision+1').run(); return this.revision();}
-  sheets(): {accepted: number; rejected: number} {
-    const row = this.db.prepare('SELECT sheets_accepted AS accepted,sheets_rejected AS rejected FROM art_meta').get() as {accepted: number; rejected: number};
+  gifs(): {accepted: number; rejected: number} {
+    const row = this.db.prepare('SELECT gifs_accepted AS accepted,gifs_rejected AS rejected FROM art_meta').get() as {accepted: number; rejected: number};
     return {accepted: row.accepted, rejected: row.rejected};
   }
-  countSheet(accepted: boolean): void {this.db.prepare(`UPDATE art_meta SET ${accepted ? 'sheets_accepted=sheets_accepted+1' : 'sheets_rejected=sheets_rejected+1'}`).run();}
+  countGif(accepted: boolean): void {this.db.prepare(`UPDATE art_meta SET ${accepted ? 'gifs_accepted=gifs_accepted+1' : 'gifs_rejected=gifs_rejected+1'}`).run();}
 
   receipt(requestId: string): string | undefined {return (this.db.prepare('SELECT digest FROM art_receipts WHERE request_id=?').get(requestId) as {digest: string} | undefined)?.digest;}
   remember(requestId: string, digest: string, atMs: number): void {this.db.prepare('INSERT INTO art_receipts VALUES(?,?,?)').run(requestId, digest, atMs);}

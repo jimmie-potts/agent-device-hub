@@ -1,18 +1,18 @@
 // Every worked trace in docs/art-generation-qualification.md, "Spending limits", against the module on fake providers.
 import assert from 'node:assert/strict';
-import {test} from 'node:test';
+import {test, type TestContext} from 'node:test';
 import {IDEA_MAX_TOKENS, PROMPT_LIMIT, reservationOf} from '../src/prices.js';
-import {dimensions, drawing, fakeIdeas, fakeImages, gradientPng} from './fixtures.js';
+import {drawing, fakeIdeas, fakeImages, gifBytes} from './fixtures.js';
 import {gate, hosted, until, usdLimits} from './support.js';
 import type {ImageAnswer, TextAnswer} from '../src/provider.js';
 
-const tidbytReservation = reservationOf({provider: 'openai', model: 'gpt-image-2', quality: 'low', size: '1536x768'}) ?? assert.fail('no entry');
-const pixooReservation = reservationOf({provider: 'openai', model: 'gpt-image-2', quality: 'low', size: '1024x1024'}) ?? assert.fail('no entry');
+const tidbytReservation = reservationOf({provider: 'openai', model: 'gpt-image-2.6-flare', quality: 'low', size: '512x256', frames: 8}) ?? assert.fail('no entry');
+const pixooReservation = reservationOf({provider: 'openai', model: 'gpt-image-2.6-flare', quality: 'low', size: '512x512', frames: 8}) ?? assert.fail('no entry');
 const browserReservation = reservationOf({provider: 'openai', model: 'gpt-image-2', quality: 'medium', size: '1536x1024'}) ?? assert.fail('no entry');
 const ideaReservation = PROMPT_LIMIT * 4 + IDEA_MAX_TOKENS * 20;
 const toUsd = (micros: number): number => micros / 1_000_000;
-const generate = (targets: string[], extra: object = {}) => ({action: 'generate', purpose: 'request', targets, ...extra});
-const auto = (targets: string[], extra: object = {}) => ({action: 'generate', purpose: 'ambient', targets, ...extra});
+const generate = (targets: string[], extra: object = {}) => ({action: 'start', purpose: 'request', origin: {kind: 'owner'}, targets, ...extra});
+const auto = (targets: string[], extra: object = {}) => ({action: 'start', purpose: 'ambient', origin: {kind: 'schedule'}, targets, ...extra});
 const ideas = () => fakeIdeas(() => Promise.resolve<TextAnswer>({text: 'a baker on the moon', usage: {inputTokens: 50, outputTokens: 60}}));
 
 void test('Two concurrent requests with room for one: one reserves, the other is refused before any call', async t => {
@@ -70,11 +70,11 @@ void test('Claude and OpenAI spend near their ceilings: each decides alone, and 
 
 void test('Second target refused at the ceiling after the first succeeds: partial, and the first composition is kept', async t => {
   const images = fakeImages(drawing());
-  const art = await hosted(t, {providers: {openai: images}, section: {limits: {openai: usdLimits(toUsd(3500 + pixooReservation - 1))}}});
-  await art.owner(generate(['tidbyt', 'pixoo']), 'req');
+  const art = await hosted(t, {providers: {openai: images}, section: {limits: {openai: usdLimits(toUsd(3500 + tidbytReservation - 1))}}});
+  await art.owner(generate(['pixoo', 'tidbyt']), 'req');
   const job = await art.finished('req');
   assert.equal(job.outcome, 'partial');
-  assert.deepEqual(job.targets.map(target => [target.target, target.outcome, target.reason]), [['tidbyt', 'succeeded', null], ['pixoo', 'rejected', 'monthly-ceiling']]);
+  assert.deepEqual(job.targets.map(target => [target.target, target.outcome, target.reason]), [['pixoo', 'succeeded', null], ['tidbyt', 'rejected', 'monthly-ceiling']]);
   assert.equal(art.state.artworks[0]?.compositions.length, 1);
   assert.equal(images.requests.length, 1);
 });
@@ -82,15 +82,15 @@ void test('Second target refused at the ceiling after the first succeeds: partia
 void test('Provider failure after dispatch: settled as in the case table, with no resend', async t => {
   const {ProviderFault} = await import('../src/provider.js');
   const answers: (() => Promise<ImageAnswer>)[] = [
-    () => Promise.reject(new ProviderFault('uncertain-result', 'lost-response', {uncertain: true, keep: true})),
     () => Promise.reject(new ProviderFault('capacity', 'provider-refused')),
+    () => Promise.reject(new ProviderFault('uncertain-result', 'lost-response', {uncertain: true, keep: true})),
   ];
   const images = fakeImages(() => (answers.shift() ?? assert.fail('resent'))());
   const art = await hosted(t, {providers: {openai: images}});
-  await art.owner(generate(['tidbyt', 'pixoo']), 'req');
+  await art.owner(generate(['tidbyt', 'ui']), 'req');
   const job = await art.finished('req');
   assert.equal(job.outcome, 'uncertain', 'none succeeded and one is uncertain');
-  assert.deepEqual(job.targets.map(target => target.outcome), ['uncertain', 'failed']);
+  assert.deepEqual(job.targets.map(target => [target.target, target.outcome]), [['ui', 'failed'], ['tidbyt', 'uncertain']], 'the browser still goes first');
   assert.equal(images.requests.length, 2, 'one call per target');
   assert.equal(art.spend('openai').uncertainMicros, tidbytReservation);
   assert.equal(art.spend('openai').spentMicros, 0, 'the 4xx reported no usage');
@@ -111,7 +111,7 @@ void test('Restart with a call in flight: uncertain, reservation kept, no resend
   assert.equal(art.spend('openai').uncertainMicros, tidbytReservation);
   assert.equal(art.spend('openai').reservedMicros, 0);
   // Late bytes from the abandoned call store nothing.
-  hold.open({bytes: await gradientPng(1536, 768), usage: {inputTokens: 1, outputTokens: 1}});
+  hold.open({bytes: gifBytes(512, 256), usage: {inputTokens: 1, outputTokens: 1}});
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(art.state.artworks.length, 0);
   assert.equal(art.spend('openai').spentMicros, 0);
@@ -122,11 +122,11 @@ void test('A crash with a call in flight: the rows alone give uncertain, and an 
   await art.owner(generate(['tidbyt']), 'done');
   await art.finished('done');
   // What a process death leaves behind: a job running with one dispatched and one reserved call, which `stop` never settled.
-  const db = art.db(), key = JSON.stringify({provider: 'openai', model: 'gpt-image-2', quality: 'low', size: '1536x768'});
+  const db = art.db(), key = JSON.stringify({provider: 'openai', model: 'gpt-image-2.6-flare', quality: 'low', size: '512x256', frames: 8});
   const row = db.prepare("SELECT record FROM art_jobs WHERE request_id='done'").get() as {record: string}, record = JSON.parse(row.record) as {requestId: string; artworkId: string; status: string; targets: {outcome: string; target: string}[]};
   const crashed = {...record, requestId: 'crashed', artworkId: 'art-crashed', status: 'running', outcome: null, finishedAtMs: null, targets: [{target: 'tidbyt', outcome: 'pending', code: null, reason: null, compositionId: null}, {target: 'pixoo', outcome: 'pending', code: null, reason: null, compositionId: null}]};
   db.prepare('INSERT INTO art_jobs VALUES(?,?,?,?,?)').run('crashed', 'art-crashed', 'running', Date.now(), JSON.stringify(crashed));
-  const call = db.prepare("INSERT INTO art_calls VALUES(?,'crashed',?,'openai','gpt-image-2',?,'owner','2026-11','2026-11-03',?,?,?,NULL,?)");
+  const call = db.prepare("INSERT INTO art_calls VALUES(?,'crashed',?,'openai','gpt-image-2.6-flare',?,'owner','2026-11','2026-11-03',?,?,?,NULL,?)");
   const at = art.clock.now();
   call.run('sent', 'tidbyt', 'dispatched', at, at, tidbytReservation, key);
   call.run('unsent', 'pixoo', 'reserved', at, null, pixooReservation, key);
@@ -175,10 +175,7 @@ void test('A thirty-first automatic call in 60 minutes: refused; it succeeds onc
 });
 
 void test('Settlement above its reservation near the ceiling: true cost recorded, fault logged, later calls refused', async t => {
-  const images = fakeImages(request => {
-    const [width, height] = dimensions(request.size);
-    return gradientPng(width, height).then(bytes => ({bytes, usage: {inputTokens: 0, outputTokens: 4000}}));
-  });
+  const images = fakeImages(drawing({inputTokens: 0, outputTokens: 4000}));
   const art = await hosted(t, {providers: {openai: images}, section: {limits: {openai: usdLimits(toUsd(tidbytReservation))}}});
   await art.owner(generate(['tidbyt']), 'over');
   assert.equal((await art.finished('over')).outcome, 'succeeded');
@@ -196,7 +193,7 @@ void test('Settlement above its reservation near the ceiling: true cost recorded
 void test('art-auto with an owner label in its payload: treated as automatic; the pace and guard apply', async t => {
   const images = fakeImages(drawing());
   const art = await hosted(t, {providers: {openai: images}, section: {limits: {openai: usdLimits(150, 0)}}});
-  await art.automatic({action: 'generate', purpose: 'request', origin: {kind: 'owner'}, targets: ['tidbyt'], text: 'pretend the owner asked'}, 'labelled');
+  await art.automatic({action: 'start', purpose: 'request', origin: {kind: 'owner'}, targets: ['tidbyt']}, 'labelled');
   const job = await art.finished('labelled');
   assert.equal(job.admittedBy, 'automatic');
   assert.equal(job.outcome, 'rejected');
@@ -204,11 +201,21 @@ void test('art-auto with an owner label in its payload: treated as automatic; th
   assert.equal(images.requests.length, 0);
 });
 
-// These two belong to the core's gateway and tracker, which #679 extends. The module cannot tell a sender apart: every
-// tracked command reaches it from the core. The tests move to `apps/runtime/tests` with that wiring; until then they stay
-// visible here as unfinished, and the integration must turn them into real checks.
-void test('A client sends art-auto: refused by the gateway; nothing is admitted', {todo: 'needs #679\'s gateway refusal for art-auto; wire at integration'});
-void test('A client other than the dashboard sends art-request: refused by the tracker; nothing is admitted', {todo: 'needs #679\'s tracker check of requestedBy; wire at integration'});
+// The gateway refuses `art-auto` from a client and the tracker refuses `art-request` from anything but the dashboard; the
+// runtime's art-handoff tests prove both on the real core. A responder's own guard is the last line, which these prove: a
+// sender that reached the module without the core admits nothing.
+const direct = async (t: TestContext, family: 'art-auto' | 'art-request', type: string, data: object): Promise<void> => {
+  const images = fakeImages(drawing()), art = await hosted(t, {providers: {openai: images}}), client = art.bus.connect('bunny/parts/client');
+  t.after(() => client.close());
+  const answer = await client.request(`bunny.cmd.${family}.art`, {type, subject: 'art', dataschema: `https://bunny.invalid/events/${family}/2.0`, data}, {requestId: 'direct', timeoutMs: 2000});
+  assert.equal(answer.status, 'rejected');
+  assert.ok(answer.status === 'rejected' && answer.error.error.code === 'forbidden');
+  assert.deepEqual(art.state.jobs, [], 'nothing is admitted');
+  assert.equal(images.requests.length, 0);
+  assert.equal(art.outcomes.length, 0);
+};
+void test('A client sends art-auto: refused; nothing is admitted', t => direct(t, 'art-auto', 'org.bunny.art.auto.requested', auto(['tidbyt'])));
+void test('A client other than the dashboard sends art-request: refused; nothing is admitted', t => direct(t, 'art-request', 'org.bunny.art.request.requested', generate(['tidbyt'])));
 
 void test('Monthly ceiling reached: all generation refused; saved art plays', async t => {
   const images = fakeImages(drawing()), art = await hosted(t, {providers: {openai: images}, section: {limits: {openai: usdLimits(toUsd(browserReservation))}}});

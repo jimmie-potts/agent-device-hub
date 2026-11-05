@@ -7,7 +7,7 @@ import {ArtStore} from '../src/store.js';
 import {Ledger, dayKey, monthKey, type CallSpec, type Limits} from '../src/ledger.js';
 import {IDEA_MAX_TOKENS, PROMPT_LIMIT, costOf, priceOf, reservationOf, type PriceKey} from '../src/prices.js';
 
-const low: PriceKey = {provider: 'openai', model: 'gpt-image-2', quality: 'low', size: '1536x768'};
+const low: PriceKey = {provider: 'openai', model: 'gpt-image-2.6-flare', quality: 'low', size: '512x256', frames: 8};
 const idea: PriceKey = {provider: 'anthropic', model: 'claude-opus-5-5', maxTokens: IDEA_MAX_TOKENS};
 const usd = (value: number) => value * 1_000_000;
 const LOW = reservationOf(low) ?? assert.fail('no entry');
@@ -22,11 +22,15 @@ function ledger(given = limits()) {
 const ok = <T extends {ok: boolean}>(value: T): T & {ok: true} => {assert.equal(value.ok, true, JSON.stringify(value)); return value as T & {ok: true};};
 
 void test('reservations come from the table: twice the largest observed output plus the bounded input', () => {
-  // 102 observed output tokens at $30 per million, doubled, and 4,000 input tokens at $5 per million.
-  assert.equal(LOW, 2 * 102 * 30 + PROMPT_LIMIT * 5);
+  // $0.025 observed buys 834 output tokens at $30 per million; doubled, and 4,000 input tokens at $5 per million.
+  assert.equal(LOW, 2 * 834 * 30 + PROMPT_LIMIT * 5);
+  assert.ok(priceOf({provider: 'openai', model: 'gpt-image-2.6-sunburst', quality: 'medium', size: '512x512', frames: 8}));
+  assert.equal(reservationOf({provider: 'openai', model: 'gpt-image-2', quality: 'medium', size: '1536x1024'}), 2 * 1372 * 30 + PROMPT_LIMIT * 5);
   // Text needs no observation: its max_tokens at the listed $20 per million and its bounded input at $4.
   assert.equal(reservationOf(idea), IDEA_MAX_TOKENS * 20 + PROMPT_LIMIT * 4);
   assert.equal(costOf(low, {inputTokens: 120, outputTokens: 102}), 120 * 5 + 102 * 30);
+  assert.equal(priceOf({...low, frames: 16}), undefined, 'an unobserved frame count has no entry');
+  assert.equal(priceOf({provider: 'openai', model: 'gpt-image-2.6-sunburst', quality: 'low', size: '512x256', frames: 8}), undefined, 'nor an unobserved model and size');
   assert.equal(priceOf({provider: 'openai', model: 'gpt-image-2', quality: 'high', size: '1024x1024'}), undefined, 'an unobserved quality has no entry');
   assert.equal(priceOf({provider: 'openai', model: 'gpt-image-2', quality: 'low', size: '1536x1024'}), undefined, 'an unobserved size has no entry');
   assert.equal(priceOf({provider: 'anthropic', model: 'claude-opus-5-5', maxTokens: 64_000}), undefined, 'an unbounded text call has no entry');

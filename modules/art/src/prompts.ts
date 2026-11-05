@@ -2,29 +2,37 @@
 // has no other field, so a location or personal data has nowhere to enter. Nothing here is logged, and every prompt
 // fits `PROMPT_LIMIT`. Stale or missing weather is left out, so the art makes no claim about it.
 import {createHash} from 'node:crypto';
+import type {ArtContext} from '@jimmie-potts/event-contracts/v2/art';
 import type {ArtTarget} from '@jimmie-potts/event-contracts/v2/art-state';
 import {PROMPT_LIMIT} from './prices.js';
 import type {WeatherWords} from './seams.js';
 import type {PromptContext} from './store.js';
 
-export const MAX_TEXT = 1500;
-export const MAX_IDEA = 1500;
-const WEATHER_WORD = /^[A-Za-z0-9° -]{1,32}$/;
+/** `art-request`'s own bound on the owner's text. */
+export const MAX_TEXT = 2000;
+export const MAX_IDEA = 2000;
+/** `v2/art`'s pattern for `context.weather`: lowercase words, so a temperature such as `48°F` cannot pass. */
+const CONDITION_WORD = /^[a-z]+(?: [a-z]+)*$/;
+/** #1418's words also name the hour's part of the day, which the time word already says. */
+const DAY_PARTS: readonly string[] = ['morning', 'afternoon', 'evening', 'night'];
+const MAX_WEATHER = 64;
 const IMAGINATION = ['a moon bakery', 'a lighthouse for lost kites', 'a garden growing clocks', 'a whale crossing a rooftop', 'a tiny train through a teacup valley',
   'a fox who paints constellations', 'a library on a slow turtle', 'a greenhouse in a thundercloud', 'a robot tending paper boats', 'a market of bottled seasons'];
 
 const timeWord = (hour: number): string => hour < 5 ? 'night' : hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
 /** The owner's season, in the northern hemisphere, from the host's local month. */
 const seasonWord = (month: number): string => month < 2 || month === 11 ? 'winter' : month < 5 ? 'spring' : month < 8 ? 'summer' : 'autumn';
-/** Only fresh words of the expected shape count; at most three, as #1418's record bounds them. */
+/** Only fresh condition words count. Anything else in the record, a temperature or a place, has no way in. */
 export function weatherWords(weather: WeatherWords | null, nowMs: number): string | null {
   if (weather === null || nowMs >= weather.staleAtMs) return null;
-  const words = weather.words.filter(word => WEATHER_WORD.test(word)).slice(0, 3);
-  return words.length === 0 ? null : words.join(', ');
+  const words = weather.words.filter(word => CONDITION_WORD.test(word) && !DAY_PARTS.includes(word)).join(' ');
+  return words === '' || words.length > MAX_WEATHER ? null : words;
 }
-export function contextFor(requestId: string, nowMs: number, weather: WeatherWords | null): PromptContext {
+/** The job's words: what the command's validated `context` names, then what the module knows. */
+export function contextFor(requestId: string, nowMs: number, weather: WeatherWords | null, given: ArtContext = {}): PromptContext {
   const date = new Date(nowMs), seed = createHash('sha256').update(requestId).digest()[0] ?? 0;
-  return {imagination: IMAGINATION[seed % IMAGINATION.length] ?? 'a quiet surprise', time: timeWord(date.getHours()), season: seasonWord(date.getMonth()), weather: weatherWords(weather, nowMs)};
+  return {imagination: IMAGINATION[seed % IMAGINATION.length] ?? 'a quiet surprise', time: given.time ?? timeWord(date.getHours()), season: given.season ?? seasonWord(date.getMonth()),
+    weather: given.weather ?? weatherWords(weather, nowMs)};
 }
 const contextLine = (context: PromptContext): string =>
   `It is ${context.time} in ${context.season}.${context.weather === null ? '' : ` The weather's mood: ${context.weather}.`}`;
@@ -46,9 +54,9 @@ const COMPOSITION: Readonly<Record<ArtTarget, string>> = {
   pixoo: 'A square scene with a large central subject and few colors, readable on a tiny square panel.',
   ui: 'A rich, wide composition that still reads when cropped to a narrow card.',
 };
-const SHEET = 'Draw a sprite sheet: six equal frames in three columns and two rows with no gaps or borders. The same stable scene in every frame, with one small gentle movement from frame to frame. Keep every subject fully inside its own frame.';
+const MOTION = 'An animated loop: the same stable scene throughout, with one small gentle movement.';
 const FRAME = 'Original imaginative art. No text, letters, logos or watermarks. It states no facts.';
 /** One image prompt, always within the limit. */
-export function imagePrompt(idea: string, target: ArtTarget, context: PromptContext, sheet: boolean): string {
-  return [`Idea: ${boundIdea(idea)}`, contextLine(context), COMPOSITION[target], ...(sheet ? [SHEET] : []), FRAME].join('\n').slice(0, PROMPT_LIMIT);
+export function imagePrompt(idea: string, target: ArtTarget, context: PromptContext): string {
+  return [`Idea: ${boundIdea(idea)}`, contextLine(context), COMPOSITION[target], ...(target === 'ui' ? [] : [MOTION]), FRAME].join('\n').slice(0, PROMPT_LIMIT);
 }

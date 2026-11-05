@@ -1,8 +1,10 @@
 import {MessageValidator} from '@jimmie-potts/event-contracts/v2';
-import {artSchemas, registerArtStateFamily} from '@jimmie-potts/event-contracts/v2/art-state';
+import {artSchemas as stateSchemas, registerArtStateFamily} from '@jimmie-potts/event-contracts/v2/art-state';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 
-export {artSchemas, registerArtStateFamily};
+/** Only what this module owns. `v2/art`'s families are core families. */
+export const artSchemas = stateSchemas;
+export {registerArtStateFamily};
 export function artValidator(): MessageValidator {
   const validator = new MessageValidator();
   registerCoreFamilies(validator);

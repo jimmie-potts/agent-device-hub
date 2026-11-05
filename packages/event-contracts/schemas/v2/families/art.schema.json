@@ -11,7 +11,7 @@
     "day",
     "providers",
     "guard",
-    "sheets",
+    "gifs",
     "jobs",
     "artworks",
     "candidates",
@@ -136,7 +136,7 @@
         }
       }
     },
-    "sheets": {
+    "gifs": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -289,6 +289,7 @@
                         "moderation",
                         "provider-refused",
                         "invalid-output",
+                        "preview-refused",
                         "lost-response",
                         "restart",
                         "cancelled",
@@ -427,7 +428,7 @@
                 "motion": {
                   "enum": [
                     "still",
-                    "sheet",
+                    "gif",
                     "local"
                   ]
                 },

@@ -32,6 +32,24 @@ void test('OpenAI: one request with the header key and the qualified shape, and 
   assert.deepEqual(answer.usage, {inputTokens: 12, outputTokens: 34});
 });
 
+void test('OpenAI: a GIF request names its frames and duration, and sends no unsupported field', async () => {
+  const {sent, transport} = record(() => json({data: [{b64_json: Buffer.from('gif-bytes').toString('base64')}], usage}));
+  await new OpenAiImages({key: 'test-key', transport}).image({model: 'gpt-image-2.6-flare', quality: 'low', size: '512x256', prompt: 'a campfire', gif: {frameCount: 8, frameDurationMs: 200}}, signal);
+  assert.equal(sent[0]?.url, OPENAI_IMAGES_URL);
+  assert.deepEqual(JSON.parse(sent[0]?.init.body ?? ''), {model: 'gpt-image-2.6-flare', prompt: 'a campfire', size: '512x256', quality: 'low', n: 1, output_format: 'gif', frame_count: 8, frame_duration_ms: 200});
+});
+
+void test('OpenAI: a key without the GIF preview is a named refusal, and the same answers on a still are ordinary refusals', async () => {
+  const gif = {model: 'gpt-image-2.6-flare', quality: 'low', size: '512x512', prompt: 'a campfire', gif: {frameCount: 8, frameDurationMs: 200}};
+  const provider = (body: unknown, status: number) => new OpenAiImages({key: 'test-key', transport: record(() => json(body, status)).transport});
+  for (const [body, status] of [[{error: {code: 'model_not_found'}}, 404], [{error: {}}, 403], [{error: {param: 'output_format'}}, 400]] as const) {
+    assert.equal((await fault(provider(body, status).image(gif, signal))).reason, 'preview-refused');
+    assert.equal((await fault(provider(body, status).image(image, signal))).reason, 'provider-refused');
+  }
+  assert.equal((await fault(provider({error: {code: 'moderation_blocked'}}, 400).image(gif, signal))).reason, 'moderation');
+  assert.equal((await fault(provider({error: {param: 'prompt'}}, 400).image(gif, signal))).reason, 'provider-refused');
+});
+
 void test('Claude: one request with the versioned header and a fixed max_tokens, and text and usage back', async () => {
   const {sent, transport} = record(() => json({content: [{type: 'thinking', thinking: ''}, {type: 'text', text: ' a baker on the moon '}], stop_reason: 'end_turn', usage}));
   const answer = await new AnthropicIdeas({key: 'test-key', transport}).text(text, signal);

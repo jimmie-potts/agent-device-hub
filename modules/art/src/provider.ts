@@ -5,7 +5,8 @@ import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {ArtProviderName, ArtReason} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {Usage} from './prices.js';
 
-export type ImageRequest = {readonly model: string; readonly quality: string; readonly size: string; readonly prompt: string};
+/** `gif` asks for OpenAI's preview GIF output. The API answers with one GIF in place of a PNG, on this endpoint only. */
+export type ImageRequest = {readonly model: string; readonly quality: string; readonly size: string; readonly prompt: string; readonly gif?: {readonly frameCount: number; readonly frameDurationMs: number}};
 export type ImageAnswer = {readonly bytes: Uint8Array; readonly usage: Usage | null};
 export type TextRequest = {readonly model: string; readonly system: string; readonly prompt: string; readonly maxTokens: number};
 export type TextAnswer = {readonly text: string | null; readonly usage: Usage | null};
@@ -43,7 +44,7 @@ const codeOfStatus = (status: number): ErrorCode => status === 401 ? 'unauthenti
  * Sends one request, never twice. The API never redirects, and refusing one keeps the key from following it to another
  * origin. The answer's body is read to at most `maxBytes`; a call whose body is lost stays uncertain.
  */
-export async function post(transport: Transport, url: string, headers: Record<string, string>, body: string, signal: AbortSignal, maxBytes: number): Promise<unknown> {
+export async function post(transport: Transport, url: string, headers: Record<string, string>, body: string, signal: AbortSignal, maxBytes: number, preview = false): Promise<unknown> {
   let response: Response;
   try {
     response = await transport(url, {method: 'POST', headers: {'content-type': 'application/json', ...headers}, body, signal, redirect: 'error'});
@@ -53,26 +54,29 @@ export async function post(transport: Transport, url: string, headers: Record<st
   }
   const declared = Number(response.headers.get('content-length') ?? '0');
   if (Number.isSafeInteger(declared) && declared > maxBytes) {
-    if (!response.ok) throw statusFault(response.status, null);
+    if (!response.ok) throw statusFault(response.status, null, preview);
     throw new ProviderFault('too-large', 'invalid-output', {keep: true});
   }
   let text: string;
   try {text = await response.text();} catch {
-    throw response.ok ? new ProviderFault('uncertain-result', 'lost-response', {uncertain: true, keep: true}) : statusFault(response.status, null);
+    throw response.ok ? new ProviderFault('uncertain-result', 'lost-response', {uncertain: true, keep: true}) : statusFault(response.status, null, preview);
   }
   if (Buffer.byteLength(text) > maxBytes) throw new ProviderFault('too-large', 'invalid-output', {keep: true});
   let parsed: unknown;
   try {parsed = JSON.parse(text);} catch {
-    if (!response.ok) throw statusFault(response.status, null);
+    if (!response.ok) throw statusFault(response.status, null, preview);
     throw new ProviderFault('invalid-message', 'invalid-output', {keep: true});
   }
-  if (!response.ok) throw statusFault(response.status, parsed);
+  if (!response.ok) throw statusFault(response.status, parsed, preview);
   return parsed;
 }
-function statusFault(status: number, body: unknown): ProviderFault {
+const PREVIEW_PARAMETERS: readonly unknown[] = ['model', 'output_format', 'frame_count', 'frame_duration_ms'];
+function statusFault(status: number, body: unknown, preview: boolean): ProviderFault {
   const usage = usageOf(body), detail = object(body) && object(body.error) ? body.error : undefined;
   const moderation = detail?.code === 'moderation_blocked';
   // A 5xx without usage may have run; a 4xx did not, unless it says so.
   if (status >= 500 && usage === null) return new ProviderFault('uncertain-result', 'lost-response', {uncertain: true, keep: true});
-  return new ProviderFault(codeOfStatus(status), moderation ? 'moderation' : 'provider-refused', {usage});
+  // A key without the GIF preview is told so by a 403 or 404, or a 400 naming a preview parameter.
+  const refusedPreview = preview && (status === 403 || status === 404 || (status === 400 && PREVIEW_PARAMETERS.includes(detail?.param)));
+  return new ProviderFault(codeOfStatus(status), moderation ? 'moderation' : refusedPreview ? 'preview-refused' : 'provider-refused', {usage});
 }

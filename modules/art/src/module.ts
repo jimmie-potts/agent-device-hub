@@ -3,18 +3,19 @@
 // provider call can outlast the device deadline. Results appear in the `art` state. A job is never re-run after a restart.
 import {createHash, randomUUID} from 'node:crypto';
 import {errorBody, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
-import {ART_ID, ART_STATE_KEY, ART_STATE_SCHEMA, ART_STATE_TYPE, artContentRef, type ArtCandidate, type ArtDisplayTarget, type ArtOutcome, type ArtProviderName, type ArtProviderSpend, type ArtReason, type ArtState, type ArtTarget, type ArtTargetOutcome, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import type {ArtAutoStart, ArtCancel, ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
+import {ART_ID, ART_STATE_KEY, ART_STATE_SCHEMA, ART_STATE_TYPE, artContentRef, type ArtCandidate, type ArtCatalogEdit, type ArtDisplayTarget, type ArtOutcome, type ArtProviderName, type ArtProviderSpend, type ArtReason, type ArtState, type ArtTarget, type ArtTargetOutcome, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import {Outbox, Outcome, childOf, fullDisk, recordLog, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContent, type ModuleContentRequest, type ModuleContext, type Reply, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
 import {AnthropicIdeas} from './anthropic.js';
 import {ANTHROPIC_KEY, OPENAI_KEY, configureArt, type ArtConfig} from './configuration.js';
 import {artValidator} from './families.js';
 import {GUARD_LIMIT, GUARD_WINDOW_MS, Ledger, dayKey, monthKey} from './ledger.js';
-import {MAX_DISPLAY_BYTES, MediaFault, assembleGif, browserRendition, localMotion, paletteOf, proceduralImage, reduceFrame, reduceStill, sha256, sliceSheet, stillFromSheet, validateImage, validateSheet, FRAME_DELAY_MS, SHEET_COLUMNS, SHEET_ROWS, type SheetReason} from './media.js';
+import {FRAME_COUNT, FRAME_DELAY_MS, MAX_DISPLAY_BYTES, MediaFault, browserRendition, decodeGif, firstFrame, localMotion, paletteOf, proceduralImage, reduceGif, sha256, validateImage} from './media.js';
 import {OpenAiImages} from './openai.js';
-import {IDEA_MAX_TOKENS, IDEA_MODEL, IMAGE_MODEL, type PriceKey, type Usage} from './prices.js';
-import {MAX_TEXT, boundIdea, contextFor, ideaPrompt, ideaSystem, imagePrompt, localIdea, variationIdea} from './prompts.js';
+import {GIF_FRAMES, GIF_MODEL, IDEA_MAX_TOKENS, IDEA_MODEL, IMAGE_MODEL, type PriceKey, type Usage} from './prices.js';
+import {boundIdea, contextFor, ideaPrompt, ideaSystem, imagePrompt, localIdea, variationIdea} from './prompts.js';
 import {ProviderFault, type ArtProvider, type Transport} from './provider.js';
-import {unwiredCommands, unwiredDispatch, unwiredWeather, type ArtCommandSeam, type ArtDispatchSeam, type ArtGenerate, type ArtOwnerAction, type StageResult, type WeatherSeam} from './seams.js';
+import {realDispatch, realWeather, serveCommands, type ArtDispatchSeam, type StageResult, type WeatherSeam} from './seams.js';
 import {ArtStore, type Artwork, type Job, type JobTarget, type StageRow, type StoredComposition} from './store.js';
 
 export const MAX_RUNNING = 2;
@@ -24,15 +25,12 @@ export const CALL_DEADLINE_MS = 150_000;
 /** How long a device keeps a staged copy before the module must stage it again. */
 export const STAGE_LIFETIME_MS = 7 * 24 * 3_600_000;
 const STATE_JOBS = 16, STATE_ARTWORKS = 24, STATE_CANDIDATES = 32, STATE_RETAINED = 16, MAX_PAGE = 100, KEEP_FINISHED_JOBS = 1000, KEEP_RECEIPTS_MS = 30 * 24 * 3_600_000;
-const DISPLAY: Readonly<Record<ArtDisplayTarget, {width: number; height: number; quality: string; size: string}>> = {
-  tidbyt: {width: 64, height: 32, quality: 'low', size: '1536x768'},
-  pixoo: {width: 64, height: 64, quality: 'low', size: '1024x1024'},
+/** Each display gets its own GIF, drawn at a size the trial observed and reduced locally. */
+const DISPLAY: Readonly<Record<ArtDisplayTarget, {width: number; height: number; quality: string; size: string; sourceWidth: number; sourceHeight: number}>> = {
+  tidbyt: {width: 64, height: 32, quality: 'low', size: '512x256', sourceWidth: 512, sourceHeight: 256},
+  pixoo: {width: 64, height: 64, quality: 'low', size: '512x512', sourceWidth: 512, sourceHeight: 512},
 };
 const BROWSER = {width: 1536, height: 1024, quality: 'medium', size: '1536x1024', card: {width: 768, height: 512}};
-/** The sheet entry the trial observed. Low quality at this size has no price entry, so it cannot run. */
-const SHEET = {width: 1536, height: 1024, quality: 'medium', size: '1536x1024'};
-const TARGETS: readonly ArtTarget[] = ['ui', 'tidbyt', 'pixoo'];
-const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const isDisplay = (target: ArtTarget): target is ArtDisplayTarget => target !== 'ui';
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.map(canonical).join(',')}]`
@@ -57,7 +55,7 @@ export type ArtModuleOptions = {
   readonly providers?: Readonly<Partial<Record<ArtProviderName, ArtProvider>>>;
   /** The fetch both providers use. */
   readonly transport?: Transport;
-  readonly commands?: ArtCommandSeam;
+  /** Replace the real handoff and weather boundaries in tests. */
   readonly dispatch?: ArtDispatchSeam;
   readonly weather?: WeatherSeam;
 };
@@ -83,7 +81,6 @@ class ArtOwner {
   readonly #ledger: Ledger;
   readonly #validator: MessageValidator = artValidator();
   readonly #outbox: Outbox;
-  readonly #commands: ArtCommandSeam;
   readonly #dispatch: ArtDispatchSeam;
   readonly #weather: WeatherSeam;
   readonly #running = new Map<string, Running>();
@@ -99,9 +96,8 @@ class ArtOwner {
     this.#store = new ArtStore(context.database());
     this.#ledger = new Ledger(this.#store, this.#config.limits);
     this.#outbox = new Outbox({...context, database: context.database(), validator: this.#validator});
-    this.#commands = options.commands ?? unwiredCommands;
-    this.#dispatch = options.dispatch ?? unwiredDispatch;
-    this.#weather = options.weather ?? unwiredWeather;
+    this.#dispatch = options.dispatch ?? realDispatch(context);
+    this.#weather = options.weather ?? realWeather(context);
   }
 
   async start(): Promise<void> {
@@ -110,11 +106,12 @@ class ArtOwner {
     await this.#outbox.republish();
     const {sdk} = this.#context;
     this.#subscriptions.push(await sdk.serveSync(['art'], () => ({revision: this.#store.revision(), states: [{type: ART_STATE_TYPE, subject: ART_ID, dataschema: ART_STATE_SCHEMA, data: this.state()}]})));
-    this.#subscriptions.push(...await this.#weather.start(sdk));
-    this.#subscriptions.push(...await this.#dispatch.watch(sdk, (requestId, result) => {void this.#stageResult(requestId, result);}));
-    this.#subscriptions.push(...await this.#commands.serve(sdk, {
+    this.#subscriptions.push(...await this.#weather.start());
+    this.#subscriptions.push(...await this.#dispatch.watch((requestId, result) => {void this.#stageResult(requestId, result);}));
+    this.#subscriptions.push(...await serveCommands(sdk, {
       owner: command => this.#owner(command),
-      automatic: command => this.#admit(command, 'art-auto', 'automatic', () => this.#generate(command, 'automatic')),
+      automatic: command => this.#admit(command, 'art-auto', 'automatic', () => this.#start(command, 'automatic')),
+      catalog: command => this.#admit(command, 'art-catalog-edit', 'owner', () => this.#catalog(command)),
     }));
     this.#scheduleMidnight();
     this.#renewAmbient();
@@ -144,7 +141,7 @@ class ArtOwner {
   /** A restart resends nothing: a dispatched call is uncertain, its reservation kept, and its job ends where it stood. */
   #recover(): void {
     const {uncertain} = this.#ledger.recover(), lost = new Set(uncertain);
-    for (const stage of this.#store.pendingStages()) this.#store.saveStage({...stage, status: 'uncertain'});
+    for (const stage of this.#store.pendingStages()) this.#store.saveStage({...stage, status: Outcome.uncertain});
     for (const job of this.#store.unfinished()) {
       const inFlight = new Set(this.#ledger.calls(job.requestId).filter(call => lost.has(call.callId)).map(call => call.target as string));
       for (const target of job.targets) {
@@ -158,25 +155,23 @@ class ArtOwner {
   }
 
   // Admission.
-  #owner(command: Command<ArtOwnerAction>): Promise<Reply> {
-    const data = command.data as ArtOwnerAction & Record<string, unknown>;
-    const apply = (): (() => void) | undefined => {
-      switch (data.action) {
-        case 'generate': return this.#generate(command as Command<ArtGenerate>, 'owner');
-        case 'cancel': return this.#cancel(data);
-        case 'favorite': this.#favorite(data); return undefined;
-        case 'feedback': this.#feedback(data); return undefined;
-        case 'delete': return this.#delete(data);
-        case 'reuse': return this.#reuse(data, command);
-        default: return refuse('invalid-request', 'unknown art action');
-      }
-    };
-    return this.#admit(command, 'art-request', 'owner', apply);
+  #owner(command: Command<ArtRequest>): Promise<Reply> {
+    return this.#admit(command, 'art-request', 'owner', () => command.data.action === 'cancel' ? this.#cancel(command.data) : this.#start(command as Command<ArtAutoStart & {text?: string}>, 'owner'));
+  }
+  #catalog(command: Command<ArtCatalogEdit>): (() => void) | undefined {
+    const {data} = command;
+    switch (data.action) {
+      case 'favorite': this.#favorite(data); return undefined;
+      case 'feedback': this.#feedback(data); return undefined;
+      case 'delete': return this.#delete(data);
+      case 'reuse': return this.#reuse(data, command);
+    }
   }
   /** One transaction holds the row, the receipt, the state and the `succeeded`, `observed` outcome. */
-  async #admit<T extends {requestId: string}>(command: Command<T>, family: 'art-request' | 'art-auto', admittedBy: 'owner' | 'automatic', apply: () => (() => void) | undefined): Promise<Reply> {
+  async #admit<T extends object>(command: Command<T>, family: 'art-request' | 'art-auto' | 'art-catalog-edit', admittedBy: 'owner' | 'automatic', apply: () => (() => void) | undefined): Promise<Reply> {
     if (this.#closed || this.#context.signal.aborted) return errorBody('unavailable');
-    if (command.expiresat !== undefined && Date.parse(command.expiresat) <= this.#context.clock.now()) return errorBody('expired');
+    const checked = this.#validator.validate(command, {nowMs: this.#context.clock.now()});
+    if (!checked.ok) return {error: checked.error};
     const {requestId} = command.data, digest = createHash('sha256').update(canonical({family, admittedBy, data: command.data})).digest('hex');
     let launch: (() => void) | undefined;
     try {
@@ -197,32 +192,24 @@ class ArtOwner {
     launch?.();
     return {status: 'accepted'};
   }
-  /** Reads only the declared fields, so a label cannot widen what a job may do or what a prompt may hold. */
-  #generate(command: Command<ArtGenerate>, admittedBy: 'owner' | 'automatic'): () => void {
-    const data = command.data as Record<string, unknown>, now = this.#context.clock.now();
-    if (Object.keys(data).some(key => !['requestId', 'action', 'purpose', 'origin', 'text', 'targets', 'variationOf', 'animated', 'source'].includes(key))) refuse('invalid-request', 'an art request has only its declared fields');
-    if (data.action !== 'generate') refuse('invalid-request', 'only a generate action makes art');
-    const {requestId} = command.data, text = data.text === undefined ? null : data.text, targets = data.targets, variationOf = data.variationOf === undefined ? null : data.variationOf;
-    if (text !== null && (typeof text !== 'string' || text.trim() === '' || text.length > MAX_TEXT)) refuse('invalid-request', 'the art text is 1 to 1,500 characters');
-    if (!Array.isArray(targets) || targets.length === 0 || new Set(targets).size !== targets.length || !targets.every(target => TARGETS.includes(target as ArtTarget))) refuse('invalid-request', 'an art request names its distinct targets');
-    if (!['request', 'ambient', 'appearance', 'variation'].includes(data.purpose as string)) refuse('invalid-request', 'unknown art purpose');
-    if (data.animated !== undefined && typeof data.animated !== 'boolean') refuse('invalid-request', 'animated is a boolean');
-    if (data.source !== undefined && !['generate', 'procedural'].includes(data.source as string)) refuse('invalid-request', 'unknown art source');
+  /** Reads only the declared fields, which the family's schema closes, so a label cannot widen what a job may do. */
+  #start(command: Command<ArtAutoStart & {text?: string}>, admittedBy: 'owner' | 'automatic'): () => void {
+    const {data} = command, now = this.#context.clock.now(), {requestId} = data, text = data.text ?? null, variationOf = data.variationOf ?? null;
+    if (data.action !== 'start') refuse('invalid-request', 'only a start makes art');
     if (variationOf !== null) {
-      const source = typeof variationOf === 'string' ? this.#store.artwork(variationOf) : undefined;
+      const source = this.#store.artwork(variationOf);
       if (source === undefined || source.deletedAtMs !== null) refuse('not-found', 'no such artwork to vary');
     }
     if (this.#store.pendingJobs() >= MAX_PENDING) refuse('capacity', 'too many art jobs are waiting');
-    const origin = object(data.origin) && ['owner', 'schedule', 'weather'].includes(data.origin.kind as string)
-      ? {kind: data.origin.kind as Job['origin']['kind'], ...(typeof data.origin.reference === 'string' && ID.test(data.origin.reference) ? {reference: data.origin.reference} : {})} : {kind: admittedBy === 'owner' ? 'owner' as const : 'schedule' as const};
-    this.#store.saveJob({requestId, artworkId: `art-${randomUUID()}`, purpose: data.purpose as Job['purpose'], origin, admittedBy, text: text as string | null,
-      context: contextFor(requestId, now, this.#weather.read()), targets: (targets as ArtTarget[]).map(target => ({target, outcome: 'pending', code: null, reason: null, compositionId: null})),
-      variationOf: variationOf as string | null, animated: data.animated === true, source: data.source === 'procedural' ? 'procedural' : 'generate',
-      status: 'queued', cancelRequested: false, outcome: null, idea: null, traceparent: command.traceparent, createdAtMs: now, finishedAtMs: null});
+    // The browser still comes first, so a display's free fallback can reuse its look.
+    const targets = [...data.targets].sort((a, b) => Number(b === 'ui') - Number(a === 'ui'));
+    this.#store.saveJob({requestId, artworkId: `art-${randomUUID()}`, purpose: data.purpose, origin: data.origin, admittedBy, text,
+      context: contextFor(requestId, now, this.#weather.read(), data.context), targets: targets.map(target => ({target, outcome: 'pending', code: null, reason: null, compositionId: null})),
+      variationOf, status: 'queued', cancelRequested: false, outcome: null, idea: null, traceparent: command.traceparent, createdAtMs: now, finishedAtMs: null});
     return () => {this.#queue.push(requestId); this.#pump();};
   }
-  #cancel(data: Extract<ArtOwnerAction, {action: 'cancel'}>): () => void {
-    const job = this.#store.job(data.job) ?? refuse('not-found', 'no such art job');
+  #cancel(data: ArtCancel): () => void {
+    const job = this.#store.job(data.jobRequestId) ?? refuse('not-found', 'no such art job');
     if (job.status === 'finished') refuse('invalid-state', 'that art job has finished');
     job.cancelRequested = true;
     if (job.status === 'queued') {
@@ -239,13 +226,11 @@ class ArtOwner {
     const artwork = typeof artworkId === 'string' ? this.#store.artwork(artworkId) : undefined;
     return artwork !== undefined && artwork.deletedAtMs === null ? artwork : refuse('not-found', 'no such artwork');
   }
-  #favorite(data: Extract<ArtOwnerAction, {action: 'favorite'}>): void {
-    if (typeof data.favorite !== 'boolean') refuse('invalid-request', 'favorite is a boolean');
+  #favorite(data: Extract<ArtCatalogEdit, {action: 'favorite'}>): void {
     this.#store.saveArtwork({...this.#saved(data.artworkId), favorite: data.favorite});
   }
   /** Explicit feedback only. Silence writes nothing, so ignoring a piece is not a negative signal. */
-  #feedback(data: Extract<ArtOwnerAction, {action: 'feedback'}>): void {
-    if (!['more', 'less', 'dismiss'].includes(data.signal)) refuse('invalid-request', 'unknown art feedback');
+  #feedback(data: Extract<ArtCatalogEdit, {action: 'feedback'}>): void {
     const artwork = this.#saved(data.artworkId);
     this.#store.saveArtwork({...artwork, feedback: data.signal});
     this.#store.addFeedback(artwork.artworkId, data.signal, this.#context.clock.now());
@@ -254,16 +239,15 @@ class ArtOwner {
    * Leaves selection at once. The module's bytes go when nothing can still refer to them: a device's staged copy lives on
    * until it expires, and the state says so, so the row stays as a tombstone until then.
    */
-  #delete(data: Extract<ArtOwnerAction, {action: 'delete'}>): () => void {
+  #delete(data: Extract<ArtCatalogEdit, {action: 'delete'}>): () => void {
     const artwork = this.#saved(data.artworkId), now = this.#context.clock.now(), ambient = this.#store.ambient(now);
     this.#store.saveArtwork({...artwork, deletedAtMs: now, favorite: false});
     this.#prune();
     return ambient?.artworkId === artwork.artworkId ? () => {void this.#sendAmbient(null, childOf(undefined));} : () => {};
   }
   /** Saved art plays without generation: reuse stages it again, for free, and offers it once a device confirms. */
-  #reuse(data: Extract<ArtOwnerAction, {action: 'reuse'}>, parent: TraceContext): () => void {
+  #reuse(data: Extract<ArtCatalogEdit, {action: 'reuse'}>, parent: TraceContext): () => void {
     const artwork = this.#saved(data.artworkId);
-    if (data.target !== 'tidbyt' && data.target !== 'pixoo') refuse('invalid-request', 'reuse names a display');
     const composition = this.#store.compositions(artwork.artworkId).find(entry => entry.target === data.target) ?? refuse('not-found', 'that artwork has no composition for this display');
     return () => {void this.#stage(artwork.artworkId, composition, parent, false).catch(() => {});};
   }
@@ -286,17 +270,11 @@ class ArtOwner {
         const job = this.#job(requestId);
         job.status = 'running'; this.#store.saveJob(job); this.#publish(add, job);
       });
-      const first = this.#job(requestId);
-      if (first.source === 'procedural') {
-        const bytes = await proceduralImage(requestId);
-        for (const {target} of first.targets) await this.#composeTarget(requestId, target, bytes, null, 'local');
-      } else {
-        const idea = await this.#idea(requestId, controller.signal);
-        for (const {target} of first.targets) {
-          // A stop ends the job where it stands. Its remaining targets were never sent, and nothing resumes them.
-          if (this.#closed) break;
-          await this.#drawTarget(requestId, target, idea, controller.signal);
-        }
+      const first = this.#job(requestId), idea = await this.#idea(requestId, controller.signal);
+      for (const {target} of first.targets) {
+        // A stop ends the job where it stands. Its remaining targets were never sent, and nothing resumes them.
+        if (this.#closed) break;
+        await this.#drawTarget(requestId, target, idea, controller.signal);
       }
     } catch {
       recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'media', 'bunny.outcome': Outcome.failed, 'bunny.code': 'internal', 'bunny.request.id': requestId}, this.#traceOf(requestId));
@@ -337,28 +315,43 @@ class ArtOwner {
   }
   /** One image call for one target. Each target succeeds or fails alone. */
   async #drawTarget(requestId: string, target: ArtTarget, idea: string, signal: AbortSignal): Promise<void> {
-    const job = this.#job(requestId), animated = job.animated && isDisplay(target);
+    const job = this.#job(requestId);
     if (job.cancelRequested) return this.#settleTarget(requestId, target, {outcome: 'cancelled', code: 'cancelled', reason: 'cancelled'});
     const provider = this.#providers.openai;
     if (provider === undefined) return this.#settleTarget(requestId, target, {outcome: Outcome.rejected, code: 'unavailable', reason: 'no-key'});
     if (provider.image === undefined || !provider.capabilities.image) return this.#settleTarget(requestId, target, {outcome: Outcome.rejected, code: 'unsupported-capability', reason: 'unsupported'});
-    const spec = animated ? SHEET : isDisplay(target) ? DISPLAY[target] : BROWSER, draw = provider.image.bind(provider);
-    const key: PriceKey = {provider: 'openai', model: IMAGE_MODEL, quality: spec.quality, size: spec.size};
-    const prompt = imagePrompt(idea, target, job.context, animated);
-    const answer = await this.#paid(job, target, key, call => draw({model: IMAGE_MODEL, quality: spec.quality, size: spec.size, prompt}, call), signal);
+    const draw = provider.image.bind(provider), prompt = imagePrompt(idea, target, job.context), display = isDisplay(target) ? DISPLAY[target] : undefined;
+    const model = display === undefined ? IMAGE_MODEL : GIF_MODEL, {quality, size} = display ?? BROWSER, frames = display === undefined ? undefined : GIF_FRAMES;
+    const key: PriceKey = {provider: 'openai', model, quality, size, ...(frames === undefined ? {} : {frames})};
+    const answer = await this.#paid(job, target, key, call => draw({model, quality, size, prompt, ...(frames === undefined ? {} : {gif: {frameCount: frames, frameDurationMs: FRAME_DELAY_MS}})}, call), signal);
     if (answer.status === 'refused') return this.#settleTarget(requestId, target, {outcome: Outcome.rejected, code: answer.reason === 'unknown-price' ? 'unsupported-capability' : 'capacity', reason: answer.reason});
     if (answer.status === 'cancelled') return this.#settleTarget(requestId, target, {outcome: 'cancelled', code: 'cancelled', reason: 'cancelled'});
     if (answer.status === 'fault') {
       const {fault} = answer;
+      // A definite failure on a display falls back to free local motion, and nothing is resent. A moderation refusal stands,
+      // and an unknown outcome stays unknown.
+      if (isDisplay(target) && !fault.uncertain && fault.reason !== 'moderation') return this.#fallBack(requestId, target, fault.reason);
       return this.#settleTarget(requestId, target, {outcome: fault.uncertain ? Outcome.uncertain : Outcome.failed, code: fault.code, reason: fault.reason});
     }
-    try {
-      const [width, height] = spec.size.split('x').map(Number);
-      await validateImage(answer.value.bytes, width ?? 0, height ?? 0);
-    } catch (error) {
-      return this.#settleTarget(requestId, target, {outcome: Outcome.failed, code: error instanceof MediaFault && error.reason === 'too-large' ? 'too-large' : 'invalid-message', reason: 'invalid-output'});
+    const promptHash = sha256(Buffer.from(prompt));
+    if (display !== undefined && isDisplay(target)) {
+      let composed: Composed;
+      try {
+        const decoded = await decodeGif(answer.value.bytes, display.sourceWidth, display.sourceHeight, GIF_FRAMES);
+        composed = await this.#gifComposition(target, answer.value.bytes, decoded);
+      } catch {
+        // A wrong or undecodable result still counted as spent.
+        return this.#fallBack(requestId, target, 'invalid-output', true);
+      }
+      return this.#storeComposed(requestId, target, composed, promptHash, 'openai');
     }
-    await this.#composeTarget(requestId, target, answer.value.bytes, sha256(Buffer.from(prompt)), 'openai');
+    try {
+      await validateImage(answer.value.bytes, BROWSER.width, BROWSER.height);
+      return await this.#storeComposed(requestId, target, await this.#browserComposition(answer.value.bytes), promptHash, 'openai');
+    } catch (error) {
+      if (!(error instanceof MediaFault)) throw error;
+      return this.#settleTarget(requestId, target, {outcome: Outcome.failed, code: error.reason === 'too-large' ? 'too-large' : 'invalid-message', reason: 'invalid-output'});
+    }
   }
   async #settleTarget(requestId: string, target: ArtTarget, settled: Settled, change?: (job: Job) => void): Promise<void> {
     await this.#outbox.transaction(add => {
@@ -368,59 +361,47 @@ class ArtOwner {
       this.#store.saveJob(job); this.#publish(add, job);
     });
   }
-  /** Local work, which costs nothing, then one transaction for the bytes, the rows and the state. */
-  async #composeTarget(requestId: string, target: ArtTarget, source: Uint8Array, promptHash: string | null, generatedBy: 'openai' | 'local'): Promise<void> {
-    let composed: Composed;
-    try {
-      composed = await this.#compose(requestId, target, source);
-    } catch {
-      return this.#settleTarget(requestId, target, {outcome: Outcome.failed, code: 'invalid-message', reason: 'invalid-output'});
-    }
+  /**
+   * Free local motion for a display whose GIF did not arrive: from this artwork's browser still when it has one, so the look
+   * holds, and otherwise from procedural art. The target says why, and its motion says `local`.
+   */
+  async #fallBack(requestId: string, target: ArtDisplayTarget, reason: ArtReason, rejectedGif = false): Promise<void> {
+    const job = this.#job(requestId), {width, height} = DISPLAY[target];
+    const original = this.#store.compositions(job.artworkId).find(entry => entry.target === 'ui')?.originalId;
+    const source = (original === undefined || original === null ? undefined : this.#store.blob(original)?.bytes) ?? await proceduralImage(requestId);
+    const bytes = await localMotion(source, width, height), compositionId = sha256(bytes);
+    const composed: Composed = {palette: await paletteOf(source), blobs: [{id: compositionId, type: 'image/gif', bytes}],
+      composition: {target, compositionId, outcome: Outcome.succeeded, motion: 'local', renditions: [rendition(bytes, width, height, 'gif', FRAME_COUNT)], promptHash: null, originalId: null, gif: rejectedGif ? 'rejected' : null}};
+    await this.#storeComposed(requestId, target, composed, null, 'local', reason);
+  }
+  async #gifComposition(target: ArtDisplayTarget, source: Uint8Array, frames: readonly Buffer[]): Promise<Composed> {
+    const {width, height, sourceWidth, sourceHeight} = DISPLAY[target], bytes = await reduceGif(frames, sourceWidth, sourceHeight, width, height);
+    return {palette: await paletteOf(await firstFrame(frames, sourceWidth, sourceHeight)), blobs: [{id: sha256(source), type: 'image/gif', bytes: source}, {id: sha256(bytes), type: 'image/gif', bytes}],
+      composition: {target, compositionId: sha256(source), outcome: Outcome.succeeded, motion: 'gif', renditions: [rendition(bytes, width, height, 'gif', frames.length)], promptHash: null, originalId: sha256(source), gif: 'accepted'}};
+  }
+  async #browserComposition(source: Uint8Array): Promise<Composed> {
+    const wide = await browserRendition(source, BROWSER.width, BROWSER.height), card = await browserRendition(source, BROWSER.card.width, BROWSER.card.height), compositionId = sha256(source);
+    return {palette: await paletteOf(source), blobs: [{id: compositionId, type: 'image/png', bytes: source}, {id: sha256(wide), type: 'image/webp', bytes: wide}, {id: sha256(card), type: 'image/webp', bytes: card}],
+      composition: {target: 'ui', compositionId, outcome: Outcome.succeeded, motion: 'still', renditions: [rendition(wide, BROWSER.width, BROWSER.height, 'webp'), rendition(card, BROWSER.card.width, BROWSER.card.height, 'webp')], promptHash: null, originalId: compositionId, gif: null}};
+  }
+  /** One transaction for the bytes, the rows and the state. A display's copy is then staged. */
+  async #storeComposed(requestId: string, target: ArtTarget, composed: Composed, promptHash: string | null, generatedBy: 'openai' | 'local', reason: ArtReason | null = null): Promise<void> {
     const {composition, blobs, palette} = composed, display = composition.renditions[0];
     if (isDisplay(target) && display !== undefined && display.bytes > MAX_DISPLAY_BYTES) return this.#settleTarget(requestId, target, {outcome: Outcome.failed, code: 'too-large', reason: 'invalid-output'});
     const stored: StoredComposition = {...composition, promptHash};
     let artworkId = '', ambient = false, parent: TraceContext | undefined;
-    await this.#settleTarget(requestId, target, {outcome: Outcome.succeeded, code: null, reason: null}, job => {
+    await this.#settleTarget(requestId, target, {outcome: Outcome.succeeded, code: null, reason}, job => {
       artworkId = job.artworkId; ambient = job.purpose === 'ambient' && target === 'tidbyt'; parent = {traceparent: job.traceparent};
       for (const blob of blobs) this.#store.saveBlob(blob.id, blob.type, blob.bytes);
       this.#store.saveComposition(job.artworkId, stored);
       const artwork = this.#store.artwork(job.artworkId) ?? {artworkId: job.artworkId, requestId, createdAtMs: this.#context.clock.now(), favorite: false, feedback: null, variationOf: job.variationOf, palette: [], generatedBy, deletedAtMs: null};
-      this.#store.saveArtwork(target === 'ui' || artwork.palette.length === 0 ? {...artwork, palette} : artwork);
-      if (composition.sheet !== null) this.#store.countSheet(composition.sheet === 'accepted');
+      // Mixed art names the provider that drew any of it, and the browser still sets the theme's palette.
+      this.#store.saveArtwork({...artwork, palette: target === 'ui' || artwork.palette.length === 0 ? palette : artwork.palette, generatedBy: generatedBy === 'openai' ? 'openai' : artwork.generatedBy});
+      if (composition.gif !== null) this.#store.countGif(composition.gif === 'accepted');
       const entry = job.targets.find(item => item.target === target);
       if (entry !== undefined) entry.compositionId = composition.compositionId;
     });
     if (isDisplay(target) && parent !== undefined) await this.#stage(artworkId, stored, parent, ambient);
-  }
-  async #compose(requestId: string, target: ArtTarget, source: Uint8Array): Promise<Composed> {
-    const job = this.#job(requestId), originalType = 'image/png', compositionIdOf = sha256(source), palette = await paletteOf(source);
-    const original = {id: compositionIdOf, type: originalType, bytes: source};
-    if (target === 'ui') {
-      const wide = await browserRendition(source, BROWSER.width, BROWSER.height), card = await browserRendition(source, BROWSER.card.width, BROWSER.card.height);
-      const renditions = [rendition(wide, BROWSER.width, BROWSER.height, 'webp'), rendition(card, BROWSER.card.width, BROWSER.card.height, 'webp')];
-      return {palette, blobs: [original, {id: sha256(wide), type: 'image/webp', bytes: wide}, {id: sha256(card), type: 'image/webp', bytes: card}],
-        composition: {target, compositionId: compositionIdOf, outcome: Outcome.succeeded, motion: 'still', renditions, promptHash: null, originalId: original.id, sheet: null}};
-    }
-    const {width, height} = DISPLAY[target];
-    if (!job.animated) {
-      const bytes = await reduceStill(source, width, height);
-      return {palette, blobs: [original, {id: sha256(bytes), type: 'image/png', bytes}],
-        composition: {target, compositionId: compositionIdOf, outcome: Outcome.succeeded, motion: 'still', renditions: [rendition(bytes, width, height, 'png')], promptHash: null, originalId: original.id, sheet: null}};
-    }
-    const gifComposition = (bytes: Buffer, compositionId: string, motion: 'sheet' | 'local', sheet: StoredComposition['sheet']): Composed => ({palette, blobs: [original, {id: sha256(bytes), type: 'image/gif', bytes}],
-      composition: {target, compositionId, outcome: Outcome.succeeded, motion, renditions: [rendition(bytes, width, height, 'gif', FRAMES)], promptHash: null, originalId: original.id, sheet}});
-    if (job.source === 'procedural') {
-      const bytes = await localMotion(source, width, height);
-      return gifComposition(bytes, sha256(bytes), 'local', null);
-    }
-    const verdict = await validateSheet(source);
-    if (verdict.ok) {
-      const frames = await Promise.all((await sliceSheet(source)).map(frame => reduceFrame(frame, width, height)));
-      return gifComposition(assembleGif(frames, width, height), compositionIdOf, 'sheet', 'accepted');
-    }
-    // A rejected sheet still cost its call. The art falls back to local motion, which costs nothing, and nothing is resent.
-    const reason: SheetReason = verdict.reason, bytes = await localMotion(await stillFromSheet(source, reason), width, height);
-    return gifComposition(bytes, sha256(bytes), 'local', reason);
   }
 
   // One paid call: reserve, mark dispatched, send, settle. Nothing retries.
@@ -483,12 +464,12 @@ class ArtOwner {
   // The handoff, through #679's seam.
   async #stage(artworkId: string, composition: StoredComposition, parent: TraceContext, ambient: boolean): Promise<void> {
     const target = composition.target, rendered = composition.renditions[0], blob = rendered === undefined ? undefined : this.#store.blob(rendered.renditionId);
-    if (!isDisplay(target) || rendered === undefined || blob === undefined || rendered.format === 'webp') return;
+    if (!isDisplay(target) || rendered === undefined || blob === undefined || rendered.format !== 'gif') return;
     const requestId = `stage-${randomUUID()}`, row: StageRow = {requestId, artworkId, compositionId: composition.compositionId, target, status: 'pending', expiresAtMs: this.#context.clock.now() + STAGE_LIFETIME_MS, ambient};
     let reply: Reply;
     try {
       await this.#outbox.transaction(add => {this.#store.saveStage(row); this.#publish(add, parent);});
-      reply = await this.#dispatch.stage({requestId, compositionId: composition.compositionId, target, format: rendered.format, width: rendered.width, height: rendered.height, frames: rendered.frames,
+      reply = await this.#dispatch.stage({requestId, compositionId: composition.compositionId, target, format: rendered.format, width: rendered.width, height: rendered.height, frames: rendered.frames, durationMs: rendered.durationMs,
         sha256: rendered.renditionId, bytes: blob.bytes, lifetimeMs: STAGE_LIFETIME_MS}, parent);
     } catch {
       reply = errorBody('uncertain-result');
@@ -500,7 +481,8 @@ class ArtOwner {
     try {
       await this.#outbox.transaction(add => {
         row = this.#store.stage(requestId);
-        if (row === undefined || row.status !== 'pending') {row = undefined; return;}
+        // A restart leaves a pending stage uncertain, and the core's record can still settle it.
+        if (row === undefined || (row.status !== 'pending' && row.status !== Outcome.uncertain)) {row = undefined; return;}
         this.#store.saveStage({...row, status: result, expiresAtMs: result === Outcome.failed ? this.#context.clock.now() : this.#context.clock.now() + STAGE_LIFETIME_MS});
         this.#publish(add);
       });
@@ -568,7 +550,7 @@ class ArtOwner {
     const now = this.#context.clock.now(), counts = this.#store.counts();
     const retained = this.#store.deletedArtworks().flatMap(artwork => this.#store.liveStages(now).filter(stage => stage.artworkId === artwork.artworkId).map(stage => ({artworkId: artwork.artworkId, target: stage.target, untilMs: stage.expiresAtMs ?? now}))).slice(0, STATE_RETAINED);
     return {id: ART_ID, revision: this.#store.revision(), month: monthKey(now), day: dayKey(now), providers: [this.#spend('openai', now), this.#spend('anthropic', now)],
-      guard: {calls: this.#ledger.guardCalls(now), limit: GUARD_LIMIT, windowMs: GUARD_WINDOW_MS}, sheets: this.#store.sheets(),
+      guard: {calls: this.#ledger.guardCalls(now), limit: GUARD_LIMIT, windowMs: GUARD_WINDOW_MS}, gifs: this.#store.gifs(),
       jobs: this.#store.recentJobs(STATE_JOBS).map(job => ({requestId: job.requestId, purpose: job.purpose, admittedBy: job.admittedBy, status: job.status, outcome: job.outcome, artworkId: job.artworkId,
         createdAtMs: job.createdAtMs, finishedAtMs: job.finishedAtMs, targets: job.targets.map(({target, outcome, code, reason}) => ({target, outcome, code, reason}))})),
       artworks: this.#store.artworks(0, STATE_ARTWORKS).artworks.map(artwork => this.#summary(artwork)), candidates: this.#candidates(now),
@@ -584,7 +566,7 @@ class ArtOwner {
         const found = compositions.find(entry => entry.target === target.target);
         return {target: target.target, compositionId: found?.compositionId ?? null, outcome: target.outcome, code: target.code, reason: target.reason, promptHash: found?.promptHash ?? null, motion: found?.motion ?? 'still', renditions: found?.renditions ?? []};
       }),
-      provenance: {generatedBy: artwork?.generatedBy ?? (job.source === 'procedural' ? 'local' : 'openai'), factual: false}};
+      provenance: {generatedBy: artwork?.generatedBy ?? 'openai', factual: false}};
   }
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
     const query = request?.query ?? {}, jsonBody = (value: unknown): ModuleContent => ({type: 'application/json', bytes: Buffer.from(JSON.stringify(value))});
@@ -611,8 +593,7 @@ class ArtOwner {
   }
 }
 type Composed = {composition: Omit<StoredComposition, 'promptHash'> & {promptHash: null}; blobs: {id: string; type: string; bytes: Uint8Array}[]; palette: string[]};
-const FRAMES = SHEET_COLUMNS * SHEET_ROWS;
-function rendition(bytes: Uint8Array, width: number, height: number, format: 'png' | 'gif' | 'webp', frames = 1) {
+function rendition(bytes: Uint8Array, width: number, height: number, format: 'gif' | 'webp', frames = 1) {
   const renditionId = sha256(bytes);
   return {renditionId, width, height, frames, durationMs: frames > 1 ? frames * FRAME_DELAY_MS : 0, format, bytes: bytes.length, ref: artContentRef.rendition(renditionId)};
 }

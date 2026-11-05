@@ -9,7 +9,7 @@ The art module generates art through API credits under spending limits per provi
 The art module SHALL commit one job row and a `succeeded`, `observed` outcome in one transaction before any provider call, and SHALL NOT re-run a job after a restart. Whether a job is the owner's or automatic SHALL follow the command family that admitted it, never its payload.
 
 #### Scenario: A request is admitted
-- **WHEN** `art-request` carries a valid request
+- **WHEN** `art-request` from the core carries a valid request
 - **THEN** the row and its outcome commit together, the reply is `accepted`, and the art's result appears later in the `art` state
 
 #### Scenario: An automatic request claims to be the owner's
@@ -81,16 +81,20 @@ A result SHALL be one artwork with one composition per target, whose immutable i
 - **WHEN** the image provider is absent or lacks image output
 - **THEN** the target is refused before any call
 
-### Requirement: Local image work costs nothing
-The module SHALL reduce display art locally with Lanczos to 64×64 and 64×32 with at most 32 colors. It SHALL slice sprite sheets into frames, reject misaligned cells and excess frame-to-frame change, and assemble GIFs locally. A rejected sheet SHALL still count its call and SHALL fall back to local motion with no further call.
+### Requirement: Display art is a reduced provider GIF with a free fallback
+The module SHALL request one eight-frame GIF per display from OpenAI's GIF output on the generation endpoint. It SHALL decode the result under bounded limits, check its size, frame count and timing inside Pixoo's observed envelope, reduce each frame with Lanczos to 64×64 or 64×32, and rebuild one GIF with at most 32 colors. A wrong or undecodable GIF SHALL still count as spent. It, a preview-access refusal or another definite failure SHALL fall back to free local motion with no further call. A moderation refusal SHALL stand, and an unknown outcome SHALL stay uncertain. The browser composition SHALL be its own still.
 
-#### Scenario: A sheet passes
-- **WHEN** a sheet's six cells are aligned and stable
-- **THEN** one looping six-frame GIF is the composition, and its identity is the sheet's hash
+#### Scenario: A GIF passes
+- **WHEN** the returned GIF has the requested size and frame count and timing inside the envelope
+- **THEN** the composition's identity is the returned GIF's hash and its one rendition is the reduced GIF
 
-#### Scenario: A sheet is rejected
-- **WHEN** a sheet fails validation
-- **THEN** the composition is a locally animated GIF, no second call goes out, and the state's rejected count rises
+#### Scenario: A GIF is wrong
+- **WHEN** the returned GIF fails those checks or cannot be decoded
+- **THEN** its usage is settled, or its reservation kept without usage, the composition is local motion, no second call goes out and the state's rejected count rises
+
+#### Scenario: The GIF preview is refused
+- **WHEN** the provider refuses access to the GIF preview
+- **THEN** the target succeeds with local motion from the artwork's browser still or procedural art, names why, and nothing is resent
 
 ### Requirement: Prompt context is limited
 Prompts SHALL hold only the owner's typed text, imagination, time, season and weather condition words, within 4,000 characters. Art SHALL be marked as not factual, and prompts, responses and keys SHALL stay out of state and logs.
@@ -119,7 +123,7 @@ The module SHALL prune only unsaved, unreferenced art past a configured recent l
 - **THEN** nothing is written, and its place in selection does not change
 
 ### Requirement: Saved art is offered only after a device confirms it
-The module SHALL send staged compositions through its dispatch seam and SHALL offer a candidate only after the core reports that staging succeeded. It SHALL NOT start a takeover. Reusing saved art SHALL spend nothing.
+The module SHALL send staged compositions through `art-dispatch` and SHALL offer a candidate only after the core reports that staging succeeded. It SHALL NOT start a takeover. Reusing saved art SHALL spend nothing.
 
 #### Scenario: Staging has not finished
 - **WHEN** a composition is staged and no result has arrived
@@ -140,9 +144,16 @@ The module SHALL serve one `art/2.0` state record with spent, reserved, uncertai
 - **WHEN** a reader syncs `art`
 - **THEN** it receives the complete record and follows its replacements
 
-### Requirement: Undelivered families stay behind typed seams
-The module SHALL reach #679's command and dispatch families and #1418's weather only through typed seams, whose defaults admit no command, offer nothing and supply no weather.
+### Requirement: Art commands reach the module only from the core
+The module SHALL refuse `art-request`, `art-auto` and `art-catalog-edit` from any source but the core before reading them. Starting and cancelling jobs SHALL use `v2/art`'s families, and favorites, feedback, deletion and reuse SHALL use `art-catalog-edit`, which the tracker admits only from the dashboard.
 
-#### Scenario: The seams are unwired
-- **WHEN** the shipped module runs before those stories merge
-- **THEN** it starts, serves its state and content, reaches no provider and admits no command
+#### Scenario: Another sender reaches the responder
+- **WHEN** a participant other than the core sends one of these commands
+- **THEN** the reply is `forbidden` and nothing is admitted
+
+### Requirement: Weather reaches prompts as fresh condition words
+The module SHALL read `weather-state` by sync, and SHALL pass only fresh lowercase condition words to a prompt. A temperature, a day part or any other field SHALL NOT reach a prompt, state or log.
+
+#### Scenario: A record names a temperature
+- **WHEN** a fresh record's words are `chance of rain`, `48°F` and `evening`
+- **THEN** the prompt's weather is `chance of rain`

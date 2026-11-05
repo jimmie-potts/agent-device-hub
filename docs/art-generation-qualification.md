@@ -61,7 +61,7 @@ Weather reaches a prompt as condition words only.
 
 A result is one **artwork**, which is one idea. The module mints its `artworkId`. Each
 target gets its own **composition**, whose immutable `compositionId` is the SHA-256 of
-the bytes that define it: the generated image, the sprite sheet, or a locally animated
+the bytes that define it: the generated still, the returned GIF, or a locally animated
 result. Each composition has local **renditions**. Three
 image calls for one idea therefore give one artwork and three compositions. A
 device refers to a composition, never to an artwork alone.
@@ -110,6 +110,7 @@ validated data for [#683](https://github.com/jimmie-potts/agent-device-hub/issue
 | 5xx answer without usage | `uncertain` | Reservation kept | Nothing stored; no resend |
 | Lost response or restart mid-call | `uncertain` | Reservation kept | Nothing stored; no resend |
 | Invalid, missing or oversized output | `failed` before storage | Reported usage, otherwise reservation kept | Nothing stored for that target |
+| A display's GIF is wrong or undecodable, or the call definitely failed, as a 4xx or a refused preview | `succeeded` with local motion, naming why; a moderation refusal stays `failed` | As the rows above; a wrong GIF still counts as spent | Free local animation for that target; no resend |
 | Extra model call for styling or an idea | Its own call row | Counted separately | Same artwork |
 | A provider without image output | Refused by capability check | None | Nothing stored |
 | One of three targets fails | `partial` | Each call on its own terms | The others are stored |
@@ -232,15 +233,32 @@ pixels, so device art is always downscaled locally.
 - **Browser:** a richer, wide composition of the same idea that also suits a narrow
   card.
 
-The API returns stills only, and
-[OpenAI's guide](https://developers.openai.com/api/docs/guides/video-generation) says
-its Videos API shut down on 2026-09-24. Animated art uses one image request for a
-sprite sheet, cut into frames locally. #680 validates each sheet and rejects misaligned
-cells or excess frame-to-frame change; a rejected sheet still costs its call, and the
-art falls back to a still or local motion. Local motion costs nothing and stays within
-each device profile. #680 assembles the GIF for both displays. #1288 admits it under
-Pixoo's existing limits, and the Tidbyt module, under #681, converts it to animated
-WebP. Its encoder writes stills today, so #681 adds GIF decoding and animated encoding.
+Displays get a GIF, by owner decision on 2026-11-04, and the browser gets a still. Every
+display job uses `gpt-image-2.6-flare` at low quality with `output_format: "gif"`, 8 frames
+of 200 ms, at 512×512 for Pixoo or 512×256 for Tidbyt. The browser uses `gpt-image-2` at
+medium quality, 1536×1024.
+
+- **Requests:** `POST /v1/images/generations` with `frame_count` and `frame_duration_ms`.
+  The API accepted 2 to 16 frames and refused 32, although its guide says 64. `size` is in
+  multiples of 16, and the default `auto` returned 512×512. Streaming, partial images,
+  `output_compression` and `prompt_rewriter` are not supported. GIF output is a preview and
+  no dated model version is listed.
+- **One look:** the API cannot animate an existing image, so a GIF is always a separate
+  drawing. One idea drives every target. The browser keeps its own still, because a frame
+  of a 512-pixel GIF would look soft on a 1536-pixel card. Its palette themes the artwork,
+  and it is what a display's free fallback moves, so a fallback keeps the artwork's look.
+- **Reduction:** #680 decodes each GIF under its bounded limits, checks its size, its frame
+  count and timing inside Pixoo's observed envelope (at most 20 frames, 100 to 800 ms), then
+  reduces each frame with Lanczos and rebuilds one GIF with 32 colors and uniform timing.
+- **Fallback:** a wrong or undecodable GIF still counts as spent. With a preview refusal or
+  another definite failure, it falls back to free local motion with no resend, from the
+  artwork's browser still or else procedural art. A moderation refusal stands, and an
+  unknown outcome stays uncertain. The state counts accepted and rejected GIFs, which
+  measures the rejection rate.
+
+#1288 admits the GIF under Pixoo's existing limits, and the Tidbyt module, under #681,
+converts it to animated WebP. Its encoder writes stills today, so #681 adds GIF decoding and
+animated encoding.
 
 ## Live trial
 
@@ -273,12 +291,30 @@ about $0.17.
   Lanczos to a 32-color palette, the low images read as well as the medium ones, and
   the subject stays recognizable. Nearest-neighbor reduction adds speckle, so it is
   not selected. Medium suits the browser composition.
-- **Cost per idea:** about $0.05 for browser, Pixoo and Tidbyt together, before the
-  idea call.
-- **Animation:** the sheet gave a 22 KB, six-frame, 64×64 GIF with a stable scene and
-  visible motion. Between frames, 93 to 257 of 4,096 pixels changed noticeably. This
-  is one sample, so #680 measures the rejection rate.
+- **Cost per idea:** about $0.05 for browser, Pixoo and Tidbyt stills. With GIFs for both
+  displays it is about $0.08, before the idea call.
+- **Animation:** this sheet route is replaced by the GIF result below.
+
+**Result, 2026-11-04:** GIF output on the owner's key. One request was refused, for
+asking 32 frames, and four GIFs came back for about $0.10. Each response reported `usage`,
+at $5 per million text input tokens and $30 per million image output tokens for both
+models, so a call settles from it. The trial reported cost, so each price table entry
+reserves twice the output tokens that whole cost would buy.
+
+| Model and quality | Frames and size | Time | Cost | Reduced size |
+| --- | --- | --- | --- | --- |
+| Flare, low | 8, 512×512 | 9 s | $0.017 | 7.8 KB at 64×64 |
+| Flare, medium | 8, 512×512 | 10 s | $0.030 | 7.8 KB at 64×64 |
+| Sunburst, medium | 8, 512×512 | 21 s | $0.030 | 8.5 KB at 64×64 |
+| Flare, low | 8, 512×256 | 10 s | $0.025 | 6.3 KB at 64×32 |
+
+Flare at low quality serves automatic and owner art alike: the reduced results did not
+differ in size, and Sunburst took twice as long for the same price. Its entry stays in
+the price table for a later choice. The reduced sizes come from one prompt, and they are
+about 5% of the 160 KiB stage limit.
+
 - **Not established:**
+  - Picture quality of GIFs on the physical panels.
   - Moderation and rate-limit answers were not exercised. They do not block #680:
     the case table treats them as failures with no resend, and #680 tests them with a
     fake provider.
