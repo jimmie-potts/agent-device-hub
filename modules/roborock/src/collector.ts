@@ -76,7 +76,7 @@ type Cycle = {
     cancel: Cancel;
     trace: TraceContext;
 };
-/** One repeated collection fault, from its first failure until a durable commit clears it. */
+/** One repeated collection fault, from its first failure until a durable commit clears it or another fault replaces it. */
 type Fault = {
     operation: 'status' | 'storage';
     code: ErrorCode;
@@ -433,6 +433,9 @@ export class Collector {
         if (!this.#alive() || this.#delivery !== undefined)
             return false;
         let proposed: Control | undefined;
+        // A quiet batch leaves the projection as it was, so the projection alone
+        // cannot tell a commit from a rollback. This attempt's token can.
+        const token = randomUUID();
         const completion = this.#track(this.#outbox.transaction(add => {
             if (!this.#alive())
                 throw fixed('cancelled');
@@ -463,12 +466,14 @@ export class Collector {
             this.#store.saveProjection(status, !publish);
             if (publish && !quiet)
                 this.#addStates(add, status, control.generation, batch.trace);
+            this.#store.saveCommitToken(token);
             proposed = control;
             return control;
         }));
         const candidate = proposed;
         const saved = this.#store.hasIdentity() ? this.#store.loadProjection() : undefined;
         const committed = candidate !== undefined && !this.#store.database.isTransaction
+            && this.#store.commitToken() === token
             && saved?.revision === candidate.status.revision
             && JSON.stringify(saved) === JSON.stringify(candidate.status);
         if (committed) {

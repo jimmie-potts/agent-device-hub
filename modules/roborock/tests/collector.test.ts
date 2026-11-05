@@ -1014,6 +1014,46 @@ void test('repeated failure backs off to its cap, records its transitions and bo
     assert.deepEqual(gapsOf(w).map(gap => gap.reason), ['unavailable']);
     assert.notEqual(gapsOf(w)[0]?.endAtMs, null);
 });
+void test('a refused COMMIT of an unchanged outage poll is a storage failure that a retry recovers', async (context) => {
+    const w = await world(context);
+    const { link } = wired(w, context);
+    const exec = w.database.exec.bind(w.database);
+    let refuse = 0;
+    w.database.exec = (sql: string) => {
+        if (sql === 'COMMIT' && refuse > 0) {
+            refuse -= 1;
+            throw Object.assign(new Error('synthetic private disk detail'), { errcode: 13 });
+        }
+        exec(sql);
+    };
+    w.collector.startlocal();
+    await w.clock.advance(2000);
+    assert.equal(w.collector.state().availability, 'unavailable');
+    const revision = w.collector.state().revision;
+    // The 30-second retry changes nothing public, and its COMMIT is refused once.
+    refuse = 1;
+    await w.clock.advance(30000);
+    assert.equal(refuse, 0);
+    assert.equal(w.collector.storageFailure(), 'capacity');
+    assert.equal(statusReads(w), 1);
+    // The retained attempt commits on the next retry, with its storage gap.
+    await w.clock.advance(30000);
+    assert.equal(w.collector.storageFailure(), undefined);
+    assert.equal(statusReads(w), 2);
+    assert.ok(gapsOf(w).some(gap => gap.reason === 'storage'));
+    link.down = false;
+    await w.clock.advance(600000);
+    const state = w.collector.state();
+    assert.equal(state.availability, 'available');
+    assert.ok(state.revision > revision);
+    assert.equal(w.collector.storageFailure(), undefined);
+    const operations = w.diagnostics.filter(entry => entry.event.startsWith('operation.'));
+    assert.deepEqual(operations.map(entry => [entry.event, entry.fields['bunny.operation'], entry.fields['bunny.code']]), [
+        ['operation.failed', 'storage', 'capacity'],
+        ['operation.completed', 'storage', undefined],
+    ]);
+    assert.equal(JSON.stringify(w.diagnostics).includes('synthetic private disk detail'), false);
+});
 void test('an outage keeps its last observation time apart from unavailable and observed available state', async (context) => {
     const w = await world(context);
     const { link } = wired(w, context);

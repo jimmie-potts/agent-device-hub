@@ -71,16 +71,17 @@ the first failure and doubling to a cap of five minutes. Only observation
 repeats; this module sends no commands. Once the target answers, the next
 attempt returns the status to `available` without a restart. During an
 outage the status stays `unavailable` with its last observation time, each
-attempt stays in the private archive and only the transition publishes a
-revision.
+attempt stays in the private archive and only a change publishes a revision.
 
 One poll is one trace, shared by its `bunny.device.call` spans, records and
 state messages. The reader records an outage as one `device.unavailable` at
 WARN, summaries at DEBUG at most once a minute, and one `device.available` at
 INFO with its failed attempts and duration. A fault of the collection itself, a
 target that cannot load or a store batch or publication that is refused, follows
-the same pattern with `operation.failed` and then `operation.completed`. A record
-of failure with no later recovery record means the condition still holds.
+the same pattern with `operation.failed` and then `operation.completed`. A
+different failure replaces the current one without a recovery record. The
+latest `operation.failed` with no later `operation.completed` is the condition
+that still holds.
 DEBUG summaries are written only when the module's configured level admits them.
 
 The runtime owns one private SQLite connection on its ext4 state root, outside
