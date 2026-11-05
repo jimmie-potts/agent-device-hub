@@ -1,33 +1,33 @@
 // The Tidbyt module's registration (Hub #999): its factory, its place in the shipped list, after the playback module
-// whose record its now-playing tile follows (Hub #930), and how the scenario harnesses simulate its cloud. A disposable
-// run's supervisor holds the simulated cloud, and the runtime's module reaches it one request at a time over its link.
+// whose record its now-playing tile follows (Hub #930), and how the scenario harnesses simulate its selected backend.
+// A disposable run's supervisor holds both synthetic backends; the configured URL selects one through the same link.
 import type {DeviceSimulation, ModuleRegistration} from '@jimmie-potts/sdk';
 import {createTidbytModule, tidbytFactory} from './module.js';
-import {SimulatedCloud} from './simulated.js';
+import {SimulatedTidbyt} from './simulated-backend.js';
 
-/** One request to the cloud as it crosses the link: its method, URL, bearer header with the synthetic token, and JSON body. */
+/** One backend request across the link: its method, URL, synthetic bearer header and JSON body. */
 type CloudCall = {method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; url: string; authorization: string; body?: string};
 /** The cloud's answer, or how it failed: a refused connection, before anything was sent, or no answer. */
 type CloudAnswer = {status: number; headers: Record<string, string>; body: string} | {failed: 'refused' | 'lost'};
 
-/** The cloud stops answering, or answers again. */
-const act = (cloud: SimulatedCloud, action: string): void => {
+/** Both synthetic backends stop answering, or answer again. */
+const act = (cloud: SimulatedTidbyt, action: string): void => {
   if (action === 'online') cloud.online();
   else cloud.offline();
 };
 
-export const tidbytSimulation: DeviceSimulation<SimulatedCloud, SimulatedCloud> = {
+export const tidbytSimulation: DeviceSimulation<SimulatedTidbyt, SimulatedTidbyt> = {
   actions: ['online', 'offline'],
   memory: {
     // It stamps each push with the harness's virtual time.
-    create: ({now}) => new SimulatedCloud({now}),
+    create: ({now}) => new SimulatedTidbyt({now}),
     state: cloud => cloud.state(),
     act: (cloud, {action}) => { act(cloud, action); },
     // A render's worker answers in real time while virtual time runs ahead, so renders get a deadline no step reaches.
     build: cloud => createTidbytModule({transport: cloud.fetch, renderTimeoutMs: 3_600_000}),
   },
   run: {
-    create: () => new SimulatedCloud(),
+    create: ({now}) => new SimulatedTidbyt({now}),
     state: cloud => cloud.state(),
     act: (cloud, {action}) => { act(cloud, action); },
     async serve(cloud, {args, signal}): Promise<CloudAnswer> {

@@ -1,0 +1,48 @@
+import {useEffect, useRef, useState} from 'react';
+import type {ArtState} from '@jimmie-potts/event-contracts/v2/art-state';
+import type {FrontendApi} from '@jimmie-potts/sdk/frontend';
+import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
+import {CATALOG_PAGE_SIZE, catalogOf, type CatalogPage} from './model.js';
+
+export function useArt(api: FrontendApi, connected: boolean) {
+  const [state, setState] = useState<ArtState>(), [live, setLive] = useState(false), [error, setError] = useState<string>();
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let disposed = false, copy: SyncedCopy<ArtState> | undefined;
+    setLive(false); setError(undefined);
+    if (!connected) return;
+    const failed = (): void => {if (!disposed) {setLive(false);setError('Art records are unavailable.');}};
+    void api.sync<ArtState>(['art'], change => {
+      if (disposed) return;
+      if (change.type === 'updated') setState(change.message.data);
+      else if (change.type === 'removed') setState(undefined);
+      else if (change.type === 'synced') setLive(true);
+      else failed();
+    }, {onRestarted: () => {if (!disposed) setLive(false);}}).then(result => {
+      if (result.status !== 'synced') {failed();return;}
+      if (disposed) {void result.copy.close();return;}
+      copy = result.copy;
+      setState(copy.states().find(message => message.data.id === 'art')?.data);
+      setLive(true);
+    }).catch(failed);
+    return () => {disposed = true;void copy?.close();};
+  }, [api, connected, attempt]);
+  return {state, live: connected && live, error, refresh: () => {setAttempt(value => value + 1);}};
+}
+
+export function useGalleryPage(api: FrontendApi, live: boolean, after: number, catalogRevision: string) {
+  const [page, setPage] = useState<CatalogPage>(), [loading, setLoading] = useState(false), [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0), previousAfter = useRef(after);
+  useEffect(() => {
+    let disposed = false;
+    if (previousAfter.current !== after) {setPage(undefined);previousAfter.current = after;}
+    setLoading(live);setError(false);
+    if (!live) return;
+    void api.read(`/modules/art/content/catalog?after=${after}&limit=${CATALOG_PAGE_SIZE}`).then(value => {
+      const next = catalogOf(value);
+      if (!disposed) {setPage(next);setLoading(false);}
+    }).catch(() => {if (!disposed) {setError(true);setLoading(false);}});
+    return () => {disposed = true;};
+  }, [api, live, after, catalogRevision, attempt]);
+  return {page, loading, error, refresh: () => {setAttempt(value => value + 1);}};
+}

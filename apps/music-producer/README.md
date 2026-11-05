@@ -1,14 +1,15 @@
 # Music producer
 
-This host-local application measures explicitly selected Music.app audio for
+This host-local application measures explicitly selected Music.app audio or one configured microphone for
 [#721](https://github.com/jimmie-potts/agent-device-hub/issues/721). The Linux
 runtime owns the capture session. The native macOS helper owns local PCM access
 and analysis; the Node wrapper uses the existing authenticated SDK edge.
 
-Connection advertises availability. Only an explicit capture command starts the
+Connection advertises endpoint availability and any configured microphone alias. Only an explicit capture command starts the
 helper. Stop, disconnect or shutdown retires its generation and pending frames.
-The first source slice supports Music.app only. Microphone support, prepared
-analysis and physical synchronization retain their own acceptance in the issue.
+Microphone calibration, noise gating, sensitivity, smoothing and band emphasis
+remain subsequent work. Prepared analysis and physical synchronization retain
+their own acceptance in the issue.
 
 The separate [local position reader](#local-state-and-position-reader) is a source
 increment for [#571](https://github.com/jimmie-potts/agent-device-hub/issues/571).
@@ -42,6 +43,36 @@ The token may have one trailing newline. Do not put it in command arguments.
 }
 ```
 
+For a microphone, use `music-producer/1.1` with one additional member:
+
+```json
+"microphone": {"id": "studio-mic", "uid": "owner-selected-device-uid"}
+```
+
+The public `id` is 1–64 ASCII letters, digits, dots, underscores or hyphens. Only
+that alias crosses the SDK edge. The exact Core Audio `uid` is private, bounded
+to 1–1024 UTF-8 bytes and passed to the native helper over its startup pipe, never
+in command arguments. No display name is accepted. Existing `music-producer/1.0`
+configuration still selects only Music. Version 1.1 without this member also
+selects only Music. Connecting performs no device enumeration or permission check.
+Configured capability does not prove that the device is present or permission
+is granted. There is no default microphone or automatic fallback.
+
+The helper has two separate, explicit setup operations:
+
+```sh
+/absolute/build/music-capture --list-microphones
+/absolute/build/music-capture --authorize-microphone
+```
+
+Listing prints a bounded local JSON inventory containing private device UIDs and
+names. Keep that output private. It neither requests permission nor captures.
+Authorization checks or requests microphone permission only; granting it starts
+no capture. Capture checks existing authorization and refuses if it is absent.
+Select the UID and alias in the private configuration, restart the foreground
+producer, then explicitly select and start it in Audio. Device removal, alias
+mismatch or permission refusal produces no fallback to another input.
+
 The origin must be HTTP or HTTPS without a path, query, fragment or credentials.
 The helper and token paths must be absolute. Provision the credential separately
 for the fixed source `bunny/parts/music-producer`, with no ordinary SDK scopes.
@@ -52,7 +83,8 @@ current endpoint. A source or grant cannot be supplied in the configuration.
 
 An explicit start first runs the helper's harmless `--clock` mode. Its reading
 must fall between Node's before and after `process.hrtime` readings. Only then
-does the wrapper invoke `--capture`. Registration also checks core's reply time:
+does the wrapper invoke `--capture` for Music or `--capture-microphone` for the
+configured microphone. Registration also checks core's reply time:
 every possible clock offset must fit within 50 ms. Local wall/monotonic drift
 above 25 ms invalidates that qualification, including while idle. Capture must
 produce its first valid, fresh frame within five seconds. Silence is valid.
@@ -105,9 +137,11 @@ npm run test:music-producer:native
 ```
 
 On macOS also run `npm run build:music-producer:native` and
-`sh apps/music-producer/native/adapter-test.sh`. The native tests generate
-synthetic PCM and AppleEvent descriptors in memory; the build only compiles. These checks do not open Music,
-captures audio, changes a speaker route or requests permission. The portable
+`npm run test:music-producer:adapter`. The native tests generate synthetic PCM
+and AppleEvent descriptors in memory, and substitute audio, permission and
+AppleEvent APIs. The build only compiles. These checks do not open Music,
+capture audio, change speaker routes, send application AppleEvents or request
+permission. The portable
 analyzer and Mac adapter have separate checks. See the [native guide](native/README.md)
 for formats and numeric limits.
 
@@ -117,7 +151,8 @@ Authenticated boundary changes also run event, SDK and runtime consumers, plus
 the shared workflow checks listed in [development](../../docs/development.md).
 The producer suite includes a disposable loopback SDK edge and a real child
 process that generates numeric frames. That fixture imports no audio API and
-opens no media. It exercises start, confirmed stop, stream loss and bounded pipe
+opens no media. It exercises both selections, private UID transfer, start, confirmed stop, stream
+loss and bounded pipe
 parsing without starting the production native capture helper.
 
 ## Local state and position reader
@@ -172,6 +207,8 @@ identify that loss. History continues growing during capture.
 
 The disposable probe established Music-only audio access on one selected Mac
 output. It did not qualify every protected recording, AirPlay route, microphone,
-packaged helper identity or physical light delay. The installed pilot owns those
+packaged helper identity or physical light delay. Microphone support requires
+one mono/stereo floating-point input stream. Real device formats, signed-helper
+permission identity, acoustic quality and hardware route behavior remain unqualified. The installed pilot owns those
 checks, credential provisioning and permission prompts. Source delivery starts
 no installed producer and sends no light command.

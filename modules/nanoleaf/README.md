@@ -129,6 +129,24 @@ instruction. `renderMusicCue` validates the supplied saved layout and uses the
 existing Lines/NL22 encoder with cue intensity. It renders the ordinary effect
 from its beginning, so the cursor's elapsed time is not a phase-accurate seek.
 
+`prepareMusicCueFrames(cue, layout)` provides an internal immutable copy of the
+same canonical keyframes, with each zone's actual cycle duration. It validates
+only the supplied layout values and reads no layout file. The shared internal
+frame preparation keeps ordinary animation payload bytes unchanged. The existing
+package `effects` namespace additively exposes `prepareAnimationFrames`; it
+returns frozen canonical zones and an ordinary mutable display payload, with
+existing capacity checks. Existing namespace exports retain their signatures.
+`locateMusicCuePhase(prepared, elapsedMs)` accepts cue-relative elapsed time
+and returns frozen per-zone transition descriptors: target, previous endpoint
+when known, frame index, cycle and elapsed/remaining transition milliseconds.
+The initial first transition reports an unknown origin. A later loop cycle
+uses the last endpoint as its first origin; a completed one-shot reports its
+final endpoint. At cue duration or later, `cue-ended` supplies no presentation
+instruction. Invalid positions are refused. Sampling order has no effect, so
+callers use the selector's current elapsed time after pause, resume or seek.
+These descriptors infer no interpolated RGB color or controller phase-seek
+support. They add no remote preparation contract, route or playback caller.
+
 The offline show library calls preparation; its storyboard uses only the
 browser-safe semantic selector in `music-timeline-data.ts`. The cursor and
 renderer have no production playback caller or device access. Preparation
@@ -185,6 +203,73 @@ Existing workers retain sole device-write ownership; #725 owns physical timing.
 `music-effects.test.ts` and `music-input.test.ts` use synthetic inputs and explicit
 times to check these source contracts.
 
+## Synthetic Music effect preview
+
+The existing Wall page includes an expandable **Music effect preview**, linked
+from Audio. Choose one of the five built-in effects, edit its palette and
+intensity, select an example Lines or NL22 arrangement, then choose **Preview**.
+The sample slider inspects generated RGB colors locally. Drafts last for the
+page lifetime, and reconnect or changed settings require another explicit read.
+Read-only users can inspect these examples.
+
+The owner uses the unchanged Music renderer with fixed generated input and six
+example elements in a 3 × 2 arrangement. The authenticated module-content ref
+`music-preview` accepts one `request` query containing JSON fields `version: 1`,
+`preset`, `palette`, `intensity` and `model`. Supported models are
+`lines-demo-v1` and `nl22-demo-v1`. The decoded request is at most 2 KiB; the
+`nanoleaf-music-preview/2.0` response is at most 16 KiB with twenty samples and
+at most twelve RGB zones. Invalid, cancelled and unavailable reads use the
+registered error bodies. The preview reads no configured layout, capture or
+stored state and sends no device work. Existing Wall-editor state reads retain
+their behavior independently.
+
+Example offsets are virtual time. The result establishes no live input,
+calibration, physical geometry or speaker timing. Custom reactive-preset
+save/reload remains part of #722. Static favorites and decorative show versions
+retain their existing recipe contracts.
+
+## Saved reactive presets
+
+The Wall page's **Music effect preview** includes a private reactive library.
+Choose an effect and edit palette/intensity, enter a name, then select **Save
+new preset**. It stores a fully explicit frozen `MusicRecipeV1`, independently
+of static animation favorites and decorative show timelines. **Load into draft**
+changes only the local preview. Every effect-local renderer value is retained
+and shown, including sensitivity, renderer smoothing, direction, pulse half-life
+and wave period where applicable. Capture calibration and live-analysis settings
+remain core-owned. Only an explicit **Preview** prepares generated input on
+example geometry; loading and saving start no capture or device operation.
+
+The metadata-only command `nanoleaf-reactive-preset-save/2.0` uses the fixed
+`reactive-presets` target with `presetId`, `expectedRevision`, `name` and `recipe`.
+The owner checks the current catalog revision and unique ID, freezes all V1
+values, and atomically commits the immutable preset, catalog and observed
+outcome through its existing outbox. Stale saves return `revision-conflict`;
+unsupported parameters return `invalid-request`. Failed or uncertain saves
+retain the draft, and an uncertain shared attempt stays locked through reload.
+No command is automatically resent. The additive tables preserve earlier
+favorites and shows and never touch device journals, configuration revisions,
+last device outcomes or worker scheduling.
+
+The library holds 32 presets, with names of 1–80 Unicode characters without
+control characters. Each exact stored UTF-8 JSON document is limited to 2 KiB;
+the complete serialized catalog is limited to 128 KiB. Capacity refuses new
+saves and preserves earlier presets. There is no replacement, deletion or
+history interface. `nanoleaf-reactive-presets/2.0` serves complete bounded
+recipes through owner-qualified sync. Authenticated read-only users can inspect
+and load them. Refresh and reconnect update the library without replacing the
+local draft. Invalid stored data refuses the library read without repairing or
+discarding the private bytes; other device families remain available.
+
+The full-recipe synthetic preview request `{version:1, recipe, model}` shares
+the existing content route and renderer. The old built-in request is unchanged.
+Maximal requests fit the gateway's existing 512-character query-value bound.
+The module tests exercise old-schema initialization, SQLite and outbox failures,
+CAS, restart and unchanged device state. The existing Nanoleaf page browser
+entry includes save/load, full-recipe preview, stale and unauthorized refusals,
+read-only access, reconnect, uncertainty and phone/desktop accessibility.
+These are source checks, with no raw audio, installed or physical evidence.
+
 ## Offline decorative shows
 
 The declared **Decorative shows** page at `#/module/nanoleaf/shows`, also linked
@@ -234,7 +319,7 @@ or physical acceptance.
 ## Families
 
 The module answers each device's own keys, `bunny.cmd.<family>.<device id>`, and serves
-`device`, `nanoleaf-wall`, `nanoleaf-animations` and `nanoleaf-shows` through sync, as its health entry's
+`device`, `nanoleaf-wall`, `nanoleaf-animations`, `nanoleaf-shows` and `nanoleaf-reactive-presets` through sync, as its health entry's
 `serves` lists. Every device module serves `device` for its own devices (#967), so a
 consumer syncs it from `bunny/modules/nanoleaf` by name. Its own schemas are
 `nanoleafSchemas`; `nanoleafMessageSchemas` adds the general device families.
@@ -251,6 +336,8 @@ the wall pages (#934) apply that rule.
 | `device` | state | Each controller's `device/2.1` record, with `held` while a hold stops its writes |
 | `nanoleaf-wall` | state | Each controller's wall map: settings, palette, projects, elements and tasks with their eviction tokens, whether its last pass failed or no worker runs (`failing`), and whether a hold stops its writes (`held`) |
 | `nanoleaf-animations` | state | Each device's animation options: presets, favorites, patterns, bounds, the queued animation, saved positions and the remembered scene |
+| `nanoleaf-reactive-presets` | state | The bounded private library of frozen reactive recipes at `reactive-presets` |
+| `nanoleaf-reactive-preset-save` | command | Save one immutable named reactive recipe against the current library revision, with a metadata-only outcome |
 | `nanoleaf-shows` | state | The private decorative library's immutable version summaries, with subject `shows` |
 | `nanoleaf-show-save` | command | Append a guarded named decorative version at target `shows`, with a metadata-only outcome |
 | `device-mode-set`, `power-set`, `brightness-set`, `scene-activate` | command | Work, Quiet and Free; power, brightness and scenes |

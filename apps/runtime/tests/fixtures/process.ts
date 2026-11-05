@@ -1,6 +1,7 @@
 // A runtime process with in-test fixture modules, run as `node process.js <scenario> <runtime arguments>`. It goes
 // through the same entry point as the shipped runtime, with these modules instead of the shipped list.
-import {EventEmitter} from 'node:events';
+import {EventEmitter, once} from 'node:events';
+import {setTimeout as delay} from 'node:timers/promises';
 import type {BunnyModule} from '@jimmie-potts/sdk';
 import {createCoreModule as createRealCore, runMain, type ModuleFactory} from '../../src/index.js';
 import {approvalPrompt, observation} from './agents.js';
@@ -49,14 +50,30 @@ const leaker = module('leaker', async ({secrets}) => {
   outside.once('tick', () => { throw Object.assign(new Error(`the device refused ${token}`), {code: token}); });
 });
 
-/** Switches lamp-1 on once, shortly after the modules have started. */
-const driver = module('driver', ({sdk, scheduler, log}) => {
-  scheduler.after(100, async () => {
+/** Switches lamp-1 on once after every module's start has settled. */
+const driver = module('driver', ({sdk, scheduler, log, signal}) => {
+  scheduler.after(0, async () => {
+    await started;
+    if (signal.aborted) return;
     const {key, draft} = switchLamp('lamp-1', 'on');
     const result = await sdk.request(key, draft, {timeoutMs: 5000, requestId: 'req-crash'});
     log.info('command.completed', {'bunny.request.id': 'req-crash', 'bunny.outcome': result.status});
   });
 });
+
+/** Starts after the driver's former 100 ms assumption, so the crash test exercises responder readiness. */
+const delayedStart = (target: BunnyModule): BunnyModule => ({...target, async start(context) {
+  await delay(250);
+  await target.start(context);
+}});
+
+/** Finishes starting only after the runtime has received a real shutdown signal during this start. */
+const cancelledStart = (target: BunnyModule, signal: 'SIGTERM' | 'SIGINT'): BunnyModule => ({...target, async start(context) {
+  const received = once(process, signal);
+  process.kill(process.pid, signal);
+  await received;
+  await target.start(context);
+}});
 
 /** A hook's observation of an approval prompt, shortly after the modules have started. */
 const hook = module('hook', ({sdk, scheduler, clock}) => {
@@ -98,6 +115,9 @@ const scenarios: Record<string, readonly BunnyModule[]> = {
   'core-restart': [createRealCore(), listener],
   // The process dies between the lamp's commit and its publish (Hub #882): its outbox holds the outcome.
   'lamp-crash': [createCoreModule(), createLampModule({transport: new SimulatedLamps(), beforePublish: () => { process.kill(process.pid, 'SIGKILL'); }}), driver],
+  'lamp-crash-delayed': [createCoreModule(), delayedStart(createLampModule({transport: new SimulatedLamps(), beforePublish: () => { process.kill(process.pid, 'SIGKILL'); }})), driver],
+  'lamp-cancel-SIGTERM': [createCoreModule(), cancelledStart(createLampModule({transport: new SimulatedLamps(), beforePublish: () => { process.kill(process.pid, 'SIGKILL'); }}), 'SIGTERM'), driver],
+  'lamp-cancel-SIGINT': [createCoreModule(), cancelledStart(createLampModule({transport: new SimulatedLamps(), beforePublish: () => { process.kill(process.pid, 'SIGKILL'); }}), 'SIGINT'), driver],
   // The same modules without the kill: the command is answered and its spans end (Hub #950).
   'lamp-driven': [createCoreModule(), createLampModule({transport: new SimulatedLamps()}), driver],
   // The next start, with no driver: nothing sends the command again.
@@ -134,7 +154,8 @@ const [scenario = '', ...args] = process.argv.slice(2);
 const modules = scenarios[scenario];
 if (modules === undefined) throw new Error(`unknown scenario ${scenario}`);
 // Each fixture module is already built with the transport its scenario needs, whether or not the runtime simulates.
-await runMain(args, modules.map((module): ModuleFactory => ({name: module.manifest.name, create: () => module, simulate: () => module})));
+const started = runMain(args, modules.map((module): ModuleFactory => ({name: module.manifest.name, create: () => module, simulate: () => module})));
+await started;
 if (scenario === 'secret-escape') setInterval(() => { outside.emit('tick'); }, 50).unref();
 if (scenario === 'runtime-error') {
   setTimeout(() => { throw Object.assign(new RangeError('a bug outside every module, quoting http://device.invalid/?token=secret'), {code: 'EFIXTURE'}); }, 50);

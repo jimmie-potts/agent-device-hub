@@ -17,7 +17,7 @@ test('safety, backend, shared and unknown changes retain broad coverage', () => 
     'apps/runtime/dashboard/src/credentials.ts', 'apps/runtime/dashboard/src/signin.ts',
     'apps/runtime/dashboard/src/actions.ts', 'apps/runtime/dashboard/src/attempts.ts',
     'apps/runtime/dashboard/src/connection.ts', 'apps/runtime/dashboard/src/device-controls.tsx',
-    'apps/runtime/dashboard/src/new-display.css', 'modules/onn/src/frontend/fresh-panel.tsx', 'packages/sdk/src/store.ts',
+    'apps/runtime/dashboard/src/new-display.css', 'modules/wemo/src/frontend/fresh-panel.tsx', 'packages/sdk/src/store.ts',
     'scripts/ci-selection/selection.mjs', '.github/workflows/checks.yml', 'AGENTS.md', 'docs/sdlc.md', 'docs/development.md', 'new-owner/code.ts']) {
     const result = select([...presentation, path]);
     assert.notEqual(result.mode, 'focused', path);

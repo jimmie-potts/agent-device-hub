@@ -7,12 +7,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
-import {MUSIC_PRODUCER_SOURCE, registerMusicCaptureFamilies, type CaptureFeatures, type CaptureProgress, type CaptureEndpointControl} from '@jimmie-potts/event-contracts/v2/music-capture';
+import {MUSIC_PRODUCER_SOURCE, registerMusicCaptureFamilies, type CaptureFeatures, type CaptureSelection, type CaptureProgress, type CaptureEndpointControl} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {connectRemote, InProcessBus, RemoteEdge} from '@jimmie-potts/sdk';
 import {NativeCapture, nativeLauncher} from '../src/native.js';
 import {MusicProducer} from '../src/producer.js';
 
-void test('real SDK loopback and child pipes deliver only current numeric frames and stop on stream loss', {timeout: 10_000}, async context => {
+for (const input of ['music', 'microphone'] as const) void test(`real SDK loopback and child pipes deliver ${input} numeric frames and stop on stream loss`, {timeout: 10_000}, async context => {
   const directory = await mkdtemp(join(tmpdir(), 'music-loopback-'));
   const helper = join(directory, 'synthetic-native');
   await writeFile(helper, await readFile(new URL('../../tests/fixtures/native-child.mjs', import.meta.url)), {mode: 0o700});
@@ -42,18 +42,24 @@ void test('real SDK loopback and child pipes deliver only current numeric frames
   const remote = await connectRemote({url: `http://127.0.0.1:${address.port}`, source: MUSIC_PRODUCER_SOURCE,
     token: 'synthetic-loopback-credential', maxQueued: 8, onError: error => {errors.push(error);}});
   const modes: string[] = [], launch = nativeLauncher(helper);
-  producer = new MusicProducer({participant: remote, native: new NativeCapture({helper, launch: mode => {modes.push(mode); return launch(mode);}})});
+  const selection: CaptureSelection = input === 'music' ? {input} : {input, microphoneId: 'studio-mic'};
+  const captureMode = input === 'music' ? '--capture' : '--capture-microphone';
+  producer = new MusicProducer({participant: remote, ...(input === 'music' ? {} : {microphone: {id: 'studio-mic', uid: 'synthetic-private-uid'}}), native: new NativeCapture({helper, launch: mode => {modes.push(mode); return launch(mode);}})});
   await producer.start(); assert.notEqual(endpoint, ''); assert.deepEqual(modes, []);
   const generation = randomUUID();
   const work = (action: 'start' | 'stop', selectedGeneration = generation) => core.request(`bunny.cmd.music-capture-work.${endpoint}`, {
-    type: 'org.bunny.music-capture.work.requested', subject: endpoint, dataschema: 'https://bunny.invalid/events/music-capture-work/2.0',
-    data: {requestId: randomUUID(), operationId: randomUUID(), generation: selectedGeneration, action, ...(action === 'start' ? {input: 'music'} : {})},
+    type: 'org.bunny.music-capture.work.requested', subject: endpoint, dataschema: `https://bunny.invalid/events/music-capture-work/${action === 'start' && input === 'microphone' ? '2.1' : '2.0'}`,
+    data: {requestId: randomUUID(), operationId: randomUUID(), generation: selectedGeneration, action, ...(action === 'start' ? selection : {})},
   }, {timeoutMs: 2000});
   const first = new Promise<void>(resolve => {onFeature = resolve;});
   assert.equal((await work('start')).status, 'accepted'); await first;
-  assert.deepEqual(modes, ['--clock', '--capture']); assert.equal(progress[0]?.data.status, 'started');
+  assert.deepEqual(modes, ['--clock', captureMode]); assert.equal(progress[0]?.data.status, 'started');
   assert.equal(features[0]?.data.rms, 0.25); assert.equal(features[0]?.data.generation, generation);
   for (const message of [...features, ...progress]) assert.equal(validator.validate(message).ok, true);
+  assert.equal(features[0]?.data.input, input);
+  assert.equal(features[0]?.dataschema, `https://bunny.invalid/events/music-capture-features/${input === 'music' ? '2.0' : '2.1'}`);
+  if (input === 'microphone') {const feature = features[0]?.data; assert.ok(feature?.input === 'microphone'); assert.equal(feature.microphoneId, 'studio-mic');}
+  assert.equal(JSON.stringify([...features, ...progress]).includes('synthetic-private-uid'), false);
   assert.equal(JSON.stringify(features).includes('pcm'), false);
   const stopped = new Promise<void>(resolve => {onProgress = message => {if (message.data.status === 'stopped') resolve();};});
   assert.equal((await work('stop')).status, 'accepted'); await stopped;
@@ -62,6 +68,6 @@ void test('real SDK loopback and child pipes deliver only current numeric frames
   assert.equal((await work('start', randomUUID())).status, 'accepted'); await second;
   assert.ok(features.length > afterStop); edge.disconnect(MUSIC_PRODUCER_SOURCE);
   assert.deepEqual(await producer.closed, {status: 'stopped'});
-  assert.deepEqual(modes, ['--clock', '--capture', '--clock', '--capture']);
+  assert.deepEqual(modes, ['--clock', captureMode, '--clock', captureMode]);
   assert.deepEqual(errors, []);
 });

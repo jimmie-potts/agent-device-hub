@@ -13,7 +13,7 @@ import type {TestContext} from 'node:test';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, sessionEntityId, type Identity, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {acknowledgmentOf, InProcessBus, type CommandDraft, type Diagnostic, type Participant, type RequestResult, type Scheduler} from '@jimmie-potts/sdk';
+import {acknowledgmentOf, InProcessBus, type CommandDraft, type Diagnostic, type ModuleContentRequest, type ModuleManifest, type Participant, type RequestResult, type Scheduler} from '@jimmie-potts/sdk';
 import {ModuleHarness, type HarnessRecord, type RecordedSpans} from '@jimmie-potts/sdk/testing';
 import {createNanoleafModule, LINES_ADDRESS, lockFile, nanoleafSchemas, SimulatedNanoleaf, SYNTHETIC_TOKEN, type SimulatedKind} from '../src/index.js';
 
@@ -185,6 +185,7 @@ export const publishedSchema = (family: string): string => `https://bunny.invali
 export class ModuleWorld {
   /** Fault injection at the publication boundary, after the real module's outbox transaction commits. */
   refuseShowPublication = false;
+  refuseReactivePublication = false;
   readonly clock = new TestClock();
   readonly bus: InProcessBus;
   readonly core: StandInCore;
@@ -207,6 +208,7 @@ export class ModuleWorld {
   readonly #spans: RecordedSpans | undefined;
   readonly #secrets: Readonly<Record<string, string>>;
   readonly #locks: DatabaseSync[] = [];
+  #content: ModuleManifest['content'];
 
   private constructor(options: WorldOptions) {
     this.stateDir = options.stateDir ?? mkdtempSync(join(tmpdir(), 'nanoleaf-module-'));
@@ -240,8 +242,9 @@ export class ModuleWorld {
 
   #fresh(): ModuleHarness {
     const module = createNanoleafModule({transport: this.device.request});
+    this.#content = module.manifest.content;
     const wrapped: typeof module = {...module, start: context => module.start({...context, sdk: {...context.sdk,
-      publishMessage: (key, message) => this.refuseShowPublication && key.includes('nanoleaf-show')
+      publishMessage: (key, message) => (this.refuseShowPublication && key.includes('nanoleaf-show') || this.refuseReactivePublication && key.includes('nanoleaf-reactive'))
         ? Promise.reject(new Error('synthetic publication failure')) : context.sdk.publishMessage(key, message),
     }})};
     const harness = new ModuleHarness(wrapped, {
@@ -255,6 +258,10 @@ export class ModuleWorld {
   async start(): Promise<void> {
     await this.harness.start();
     await this.advance(0);
+  }
+
+  content(ref: string, request: ModuleContentRequest) {
+    return this.#content?.(ref, request);
   }
 
   /**

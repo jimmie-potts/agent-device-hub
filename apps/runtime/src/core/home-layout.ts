@@ -9,7 +9,7 @@ import type {CompletedOutcome} from './tracker.js';
 
 const ID = 'home';
 const stateDraft = (record: HomeLayoutRecord): StateDraft => ({type: 'org.bunny.home-layout.updated', subject: ID,
-  dataschema: 'https://bunny.invalid/events/home-layout/2.0', data: record});
+  dataschema: 'https://bunny.invalid/events/home-layout/2.1', data: record});
 export type HomeLayoutAdmission = {
   admit(command: Command<HomeLayoutSetRequest>): boolean;
   complete(tx: CoreTransaction, command: Command<HomeLayoutSetRequest>, result: Omit<CompletedOutcome, 'requestId'>): () => void;
@@ -89,7 +89,15 @@ export class HomeLayoutPart implements CorePart {
         if (current === undefined || this.#save === undefined) return errorBody('unavailable', {detail: 'the Home layout store is not open'});
         if (Date.parse(command.expiresat ?? '') <= tx.atMs) return errorBody('expired', {detail: 'the Home layout command expired before saving'});
         if (current.revision !== command.data.expectedRevision) return errorBody('revision-conflict', {detail: 'the Home layout changed; refresh before saving'});
-        const record: HomeLayoutRecord = {id: ID, revision: tx.revision(), version: 1, layouts: command.data.layouts};
+        const layouts = structuredClone(command.data.layouts);
+        // An older client can retain the art card without knowing its optional metadata.
+        // Explicit options replace it; removing the placement (including reset) still removes it.
+        for (const breakpoint of ['desktop', 'phone'] as const) {
+          const art = layouts[breakpoint].find(entry => entry.widget === 'art');
+          const previous = current.layouts?.[breakpoint].find(entry => entry.widget === 'art')?.art;
+          if (art !== undefined && art.art === undefined && previous !== undefined) art.art = structuredClone(previous);
+        }
+        const record: HomeLayoutRecord = {id: ID, revision: tx.revision(), version: 1, layouts};
         this.#save.run(JSON.stringify(record), ID);
         tx.add('bunny.state.home-layout.home', {kind: 'state', ...stateDraft(record)}, {parent: command});tx.take(command);
         committed = this.#admission.complete(tx, command, {result: Outcome.succeeded, evidence: Outcome.observed});

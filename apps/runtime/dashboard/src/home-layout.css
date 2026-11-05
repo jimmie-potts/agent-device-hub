@@ -38,3 +38,21 @@
 .home-phone .home-layout-grid{max-width:390px;margin-inline:auto}
 .home-phone .home-layout-card{flex-basis:100%}
 @media(max-width:600px){.home-catalog{grid-template-columns:minmax(0,1fr)}.home-layout-card,.home-layout-card.home-size-small,.home-layout-card.home-size-large{flex-basis:100%}.home-card-editor button{min-height:44px}.home-card-editor select{font-size:16px}}
+/* Explicit reservations occupy their own row. Automatic art is always after the functional grid. */
+.home-layout-card.home-art-row{flex:1 0 100%;width:100%}
+.home-art-slot{width:100%;min-width:0}
+.home-art-slot[data-art-placement=automatic]{margin-top:16px}
+.home-art-box{max-width:100%;margin-inline:auto;display:flex;flex-direction:column;gap:8px}
+.home-art-controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;flex-shrink:0}
+.home-art-controls label{display:flex;gap:6px;align-items:center;font-size:13px}
+.home-art-controls button,.home-art-controls select{min-height:40px;font-size:13px;padding:6px 8px}
+.home-art-content{min-height:0;flex:1;display:flex;flex-direction:column}
+.home-art-content .art-widget{height:100%;margin:0;display:flex;flex-direction:column;min-height:0;box-sizing:border-box;padding:12px}
+.home-art-content .art-widget>header{flex-shrink:0}
+.home-art-content .art-image{flex:1;min-height:0;display:flex;flex-direction:column;margin:0}
+.home-art-content .art-image-frame{flex:1;min-height:0;aspect-ratio:auto}
+.home-art-content .art-image canvas{width:100%;height:100%;object-fit:contain}
+.home-art-content .art-image figcaption{flex-shrink:0;font-size:11px;line-height:1.4;margin-top:4px}
+.home-art-restore{margin-top:16px}
+.is-editing .home-art-row .home-card-content{pointer-events:auto}
+@media(max-width:600px){.home-art-controls button,.home-art-controls select{min-height:44px}.home-art-controls{gap:4px}}
