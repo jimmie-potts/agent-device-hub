@@ -49,6 +49,7 @@ import {DeviceLink, DeviceUnreachable, LinkStopped, refusesToken, type CommandWr
 import {NANOLEAF_FAMILIES, OUTCOME_SCHEMA, schemaOf} from './schemas.js';
 import {editorContent} from './editor-content.js';
 import {showContent} from './show-content.js';
+import {musicPreviewContent} from './music-preview-content.js';
 import {
   animationsView, capabilities, configurationRevision, deviceRecord, MODULE_TABLES, nextTransmission, savedLayout, savedTransmission, STATE_TYPES, storeEpoch,
   wallView, type Presence, type ShownTransmission,
@@ -252,8 +253,9 @@ export class NanoleafRuntime {
     }
   }
 
-  /** Authenticated module content reads use saved state only; the host owns admission and secret exclusion. */
+  /** Authenticated saved or synthetic content; the host owns admission and secret exclusion. */
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
+    if (ref === 'music-preview') return musicPreviewContent(request);
     if (ref === 'show-version') return showContent(this.#db, request);
     return editorContent(this.#directory, this.#ids, ref, request);
   }
