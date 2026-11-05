@@ -1823,6 +1823,22 @@ for the acceptance exercise.
 
 ## Nanoleaf port
 
+Reactive presets (#722) use the existing Nanoleaf built-test discovery. After
+`npm run build`, run
+`node --test modules/nanoleaf/dist/tests/music-presets.test.js modules/nanoleaf/dist/tests/module-presets.test.js modules/nanoleaf/dist/tests/reactive-preset-model.test.js`,
+then `npm run test:nanoleaf:built`. Tests cover prior-schema initialization,
+frozen recipes, catalog CAS, capacity and SQLite failures, outbox atomicity,
+restart and mixed-family sync without device changes. Run the owning runtime
+Nanoleaf scenario, dashboard unit checks, SDK/events, shared type/lint,
+controller-contract and workflow checks. The existing
+`node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts` entry will include
+save/reload, read-only/Origin refusals, stale/uncertain saves, passive reconnect,
+full-recipe preview and light/dark phone/desktop accessibility. It remains
+required alongside smoke and full dashboard browser checks. Existing modules,
+runtime and App verification CI select these paths; no new job or root script
+is required. All fixtures are synthetic, with no capture, installation or
+physical evidence.
+
 Synthetic Music-effect preview (#722) uses the existing Nanoleaf built-test
 discovery. After the root build, run
 `node --test modules/nanoleaf/dist/tests/music-preview.test.js modules/nanoleaf/dist/tests/music-preview-model.test.js`,
