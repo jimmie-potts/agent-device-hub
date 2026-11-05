@@ -7,7 +7,11 @@ import type {ArtAdmission, ArtComposition, ArtDisplayTarget, ArtFeedback, ArtOut
 
 export type JobTarget = {target: ArtTarget; outcome: ArtTargetOutcome; code: ErrorCode | null; reason: ArtReason | null; compositionId: string | null};
 /** What a prompt may hold: the owner's text, imagination, time, season and weather condition words. */
-export type PromptContext = {imagination: string; time: string; season: string; weather: string | null};
+export type PromptContext = {imagination: string; time: string; season: string} & (
+  | {weather: null; weatherSource: 'none'}
+  | {weather: string; weatherSource: 'request'}
+  | {weather: string; weatherSource: 'observation'; weatherStaleAtMs: number}
+);
 export type Job = {
   requestId: string; artworkId: string; purpose: ArtPurpose; origin: {kind: 'owner' | 'schedule' | 'weather'; reference?: string};
   /** From the command family that admitted the job, never from its payload. */
@@ -36,6 +40,7 @@ export class ArtStore {
       CREATE INDEX IF NOT EXISTS art_compositions_id ON art_compositions(composition_id);
       CREATE TABLE IF NOT EXISTS art_blobs(id TEXT PRIMARY KEY,type TEXT NOT NULL,bytes BLOB NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS art_stages(request_id TEXT PRIMARY KEY,artwork_id TEXT NOT NULL,composition_id TEXT NOT NULL,target TEXT NOT NULL,status TEXT NOT NULL,expires_at_ms INTEGER,ambient INTEGER NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS art_ambient(id INTEGER PRIMARY KEY CHECK(id=1),request_id TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS art_feedback(id INTEGER PRIMARY KEY AUTOINCREMENT,artwork_id TEXT NOT NULL,signal TEXT NOT NULL,at_ms INTEGER NOT NULL) STRICT;`);
   }
   revision(): number {return (this.db.prepare('SELECT revision FROM art_meta').get() as {revision: number}).revision;}
@@ -124,8 +129,13 @@ export class ArtStore {
     return this.db.prepare("SELECT 1 FROM art_stages WHERE artwork_id=? AND status<>'failed' AND expires_at_ms>? LIMIT 1").get(artworkId, nowMs) !== undefined;
   }
   pendingStages(): StageRow[] {return (this.db.prepare("SELECT * FROM art_stages WHERE status='pending'").all() as RawStage[]).map(toStage);}
-  ambient(nowMs: number): StageRow | undefined {
-    const row = this.db.prepare("SELECT * FROM art_stages WHERE ambient=1 AND status='succeeded' AND expires_at_ms>? ORDER BY expires_at_ms DESC LIMIT 1").get(nowMs) as RawStage | undefined;
+  selectAmbient(requestId: string | null): void {
+    if (requestId === null) this.db.prepare('DELETE FROM art_ambient').run();
+    else this.db.prepare('INSERT INTO art_ambient VALUES(1,?) ON CONFLICT(id) DO UPDATE SET request_id=excluded.request_id').run(requestId);
+  }
+  /** The selected stage is durable, independent of receipt order or deletion of older rows. */
+  ambient(): StageRow | undefined {
+    const row = this.db.prepare('SELECT s.* FROM art_stages s JOIN art_ambient a ON a.request_id=s.request_id').get() as RawStage | undefined;
     return row === undefined ? undefined : toStage(row);
   }
 }

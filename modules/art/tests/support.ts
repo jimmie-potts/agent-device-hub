@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import type {ArtState} from '@jimmie-potts/event-contracts/v2/art-state';
-import {InProcessBus} from '@jimmie-potts/sdk';
+import {InProcessBus, type Scheduler} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {RecordedSpans} from '@jimmie-potts/sdk/testing';
 import {createArtModule, type ArtModuleOptions} from '../src/module.js';
@@ -16,7 +16,7 @@ export const USD = 1_000_000;
 export const usdLimits = (monthlyCeilingUsd: number, dailyPaceUsd = 5) => ({monthlyCeilingUsd, dailyPaceUsd});
 
 /** No core or weather owner is on the bus unless a test adds one, so the default seams stay quiet. */
-type HostOptions = ArtModuleOptions & {section?: unknown; now?: number; dir?: string; secrets?: Readonly<Record<string, string>>};
+type HostOptions = ArtModuleOptions & {section?: unknown; now?: number; dir?: string; secrets?: Readonly<Record<string, string>>; scheduler?: Scheduler};
 /** Starts the module. `restart` stops it and starts a new one on the same files. */
 export async function hosted(t: TestContext, options: HostOptions = {}) {
   const dir = options.dir ?? await mkdtemp(join(tmpdir(), 'art-module-'));
@@ -31,7 +31,7 @@ export async function hosted(t: TestContext, options: HostOptions = {}) {
   let module = createArtModule(options);
   const make = (): ModuleHarness => {
     module = createArtModule(options);
-    return new ModuleHarness(module, {bus, clock: {now: () => clock.value}, stateDir: dir, spans, section: options.section ?? {}, ...(options.secrets === undefined ? {} : {secrets: options.secrets})});
+    return new ModuleHarness(module, {bus, clock: {now: () => clock.value}, stateDir: dir, spans, section: options.section ?? {}, ...(options.secrets === undefined ? {} : {secrets: options.secrets}), ...(options.scheduler === undefined ? {} : {scheduler: options.scheduler})});
   };
   const read = async (ref: string, query: Record<string, string> = {}) => {
     const answer = await module.manifest.content?.(ref, {query, signal: new AbortController().signal});

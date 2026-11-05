@@ -7,7 +7,7 @@ import {configureArt} from '../src/configuration.js';
 import {artworkOutcome, STAGE_LIFETIME_MS} from '../src/module.js';
 import {PROMPT_LIMIT} from '../src/prices.js';
 import {ProviderFault, type ImageAnswer, type TextAnswer} from '../src/provider.js';
-import {MAX_TEXT} from '../src/prompts.js';
+import {MAX_TEXT, MAX_IDEA, MAX_VARIATION_IDEA, contextFor, imagePrompt, variationIdea} from '../src/prompts.js';
 import type {ArtAmbientRequest, ArtDispatchSeam, ArtStageRequest, StageResult} from '../src/seams.js';
 import {distinctDrawing, drawing, fakeIdeas, fakeImages, gifBytes, gradientPng} from './fixtures.js';
 import {gate, hosted, until} from './support.js';
@@ -30,6 +30,82 @@ function fakeDispatch(answer: 'succeeded' | 'wait' | 'refuse' = 'succeeded') {
   };
   return {seam, stages, ambients, report: (requestId: string, result: StageResult) => {report(requestId, result);}};
 }
+
+void test('late stages cannot select deleted or superseded ambient art', async t => {
+  const dispatch = fakeDispatch('wait'), art = await hosted(t, {providers: {openai: fakeImages(distinctDrawing())}, dispatch: dispatch.seam});
+  const ambient = {action: 'start', purpose: 'ambient', origin: {kind: 'schedule'}, targets: ['tidbyt']};
+  await art.automatic(ambient, 'old');
+  const old = await art.finished('old');
+  await art.automatic(ambient, 'current');
+  const current = await art.finished('current');
+  dispatch.report(dispatch.stages[0]?.requestId ?? '', 'succeeded');
+  await until(() => art.state.candidates.length === 1);
+  assert.equal(dispatch.ambients.length, 0, 'superseded art must not become ambient');
+  await art.catalog({action: 'delete', artworkId: current.artworkId}, 'delete-current');
+  dispatch.report(dispatch.stages[1]?.requestId ?? '', 'succeeded');
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(dispatch.ambients.length, 0, 'deleted pending art must not become ambient');
+  assert.equal(art.state.artworks[0]?.artworkId, old.artworkId);
+});
+
+void test('deleted ambient art cancels renewal and cannot be restored by an already queued callback', async t => {
+  const timers: {delay: number; callback: () => void; cancelled: boolean}[] = [];
+  const scheduler = {after: (delay: number, callback: () => void) => {const timer = {delay, callback, cancelled: false}; timers.push(timer); return () => {timer.cancelled = true;};}};
+  const dispatch = fakeDispatch(), art = await hosted(t, {providers: {openai: fakeImages(drawing())}, dispatch: dispatch.seam, scheduler});
+  await art.automatic({action: 'start', purpose: 'ambient', origin: {kind: 'schedule'}, targets: ['tidbyt']}, 'ambient');
+  const job = await art.finished('ambient');
+  await until(() => dispatch.ambients.length === 1);
+  const timer = timers.find(entry => entry.delay === STAGE_LIFETIME_MS / 2) ?? assert.fail('no renewal');
+  await art.catalog({action: 'delete', artworkId: job.artworkId}, 'delete');
+  assert.equal(timer.cancelled, true);
+  art.clock.value += STAGE_LIFETIME_MS / 2;
+  timer.callback();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(dispatch.stages.length, 1);
+  assert.equal(dispatch.ambients.at(-1)?.compositionId, null);
+});
+
+void test('conflicting staging evidence withdraws a candidate', async t => {
+  const dispatch = fakeDispatch('wait'), art = await hosted(t, {providers: {openai: fakeImages(drawing())}, dispatch: dispatch.seam});
+  await art.owner(generate(['pixoo']), 'conflict'); await art.finished('conflict');
+  const stage = dispatch.stages[0] ?? assert.fail('no stage');
+  dispatch.report(stage.requestId, 'succeeded');
+  await until(() => art.state.candidates.length === 1);
+  dispatch.report(stage.requestId, 'uncertain');
+  await until(() => art.state.candidates.length === 0);
+});
+
+void test('late staging evidence never extends the admitted copy lifetime', async t => {
+  const dispatch = fakeDispatch('wait'), art = await hosted(t, {providers: {openai: fakeImages(drawing())}, dispatch: dispatch.seam});
+  await art.owner(generate(['pixoo']), 'late'); await art.finished('late');
+  art.clock.value += STAGE_LIFETIME_MS + 1;
+  dispatch.report(dispatch.stages[0]?.requestId ?? '', 'succeeded');
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(art.state.candidates.length, 0);
+});
+
+void test('weather is rechecked when a queued job reaches its provider', async t => {
+  const hold = gate(), now = Date.UTC(2026, 10, 5, 12);
+  let calls = 0;
+  const images = fakeImages(async request => {if (++calls <= 2) await hold.promise; return drawing()(request);});
+  const art = await hosted(t, {providers: {openai: images}, now, weather: {start: () => Promise.resolve([]), read: () => ({words: ['rain'], staleAtMs: now + 50})}});
+  for (const id of ['one', 'two', 'queued']) await art.owner(generate(['ui']), id);
+  await until(() => images.requests.length === 2);
+  art.clock.value += 100; hold.open();
+  await art.finished('queued');
+  assert.equal(images.requests[2]?.prompt.includes('rain'), false);
+});
+
+void test('a variation retains its explicit change even with a maximum-length source idea', () => {
+  const idea = variationIdea('x'.repeat(MAX_IDEA), 'make the sky red');
+  assert.ok(idea.length <= MAX_VARIATION_IDEA);
+  assert.match(idea, /make the sky red/);
+  assert.match(idea, /xxx/);
+  const change = 'r'.repeat(MAX_TEXT), long = variationIdea('x'.repeat(MAX_IDEA), change);
+  const prompt = imagePrompt(long, 'tidbyt', contextFor('variation', 0, null));
+  assert.ok(prompt.includes(change));
+  assert.ok(prompt.length <= PROMPT_LIMIT);
+});
 
 void test('an artwork outcome follows the record\'s rules', () => {
   assert.equal(artworkOutcome(['succeeded', 'succeeded']), 'succeeded');

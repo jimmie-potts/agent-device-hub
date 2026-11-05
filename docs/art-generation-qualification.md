@@ -106,11 +106,11 @@ validated data for [#683](https://github.com/jimmie-potts/agent-device-hub/issue
 | Over a spending limit | `rejected` before any call | None | Saved art keeps playing; the owner sees why |
 | Cancelled before dispatch | `cancelled` | Reservation released | Nothing stored |
 | Cancelled or timed out after dispatch | `uncertain` | Reservation kept | Late bytes are discarded; no resend |
-| 4xx answer: unverified organization, moderation, rate limit | `failed`, never re-sent | Reported usage, otherwise zero | Nothing stored for that target |
+| 4xx answer: unverified organization, moderation, rate limit | Provider call `failed`, never re-sent | Reported usage, otherwise zero | No provider output stored; a non-moderation display failure may use the local fallback below |
 | 5xx answer without usage | `uncertain` | Reservation kept | Nothing stored; no resend |
 | Lost response or restart mid-call | `uncertain` | Reservation kept | Nothing stored; no resend |
-| Invalid, missing or oversized output | `failed` before storage | Reported usage, otherwise reservation kept | Nothing stored for that target |
-| A display's GIF is wrong or undecodable, or the call definitely failed, as a 4xx or a refused preview | `succeeded` with local motion, naming why; a moderation refusal stays `failed` | As the rows above; a wrong GIF still counts as spent | Free local animation for that target; no resend |
+| Invalid, missing or oversized output | Provider output rejected before storage | Reported usage, otherwise reservation kept | No provider output stored; a display may use the local fallback below |
+| A display's GIF is wrong or undecodable, or the call definitely failed with a non-moderation 4xx | `succeeded` with local motion, naming why; a moderation refusal stays `failed` | As the rows above; a wrong GIF still counts as spent | Free local animation for that target; no resend. A generic refusal does not establish preview eligibility |
 | Extra model call for styling or an idea | Its own call row | Counted separately | Same artwork |
 | A provider without image output | Refused by capability check | None | Nothing stored |
 | One of three targets fails | `partial` | Each call on its own terms | The others are stored |
@@ -127,7 +127,8 @@ row names its provider. One provider reaching a limit does not stop the other. T
 loop guard stays a single count across both.
 
 1. Bound each call before sending it: at most 4,000 characters of prompt, and a fixed
-   `max_tokens` for text. A variation's input image has a fixed size.
+   `max_tokens` for text. A variation uses the saved idea and the owner's requested
+   change as text; it sends no input image.
 2. Reserve its worst case from a price table in the module, keyed by provider, model,
    quality and size. An image entry is twice the largest output observed for that
    entry, plus its bounded input at the listed price. A text entry is its `max_tokens`

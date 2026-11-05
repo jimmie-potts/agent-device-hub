@@ -44,7 +44,7 @@ const codeOfStatus = (status: number): ErrorCode => status === 401 ? 'unauthenti
  * Sends one request, never twice. The API never redirects, and refusing one keeps the key from following it to another
  * origin. The answer's body is read to at most `maxBytes`; a call whose body is lost stays uncertain.
  */
-export async function post(transport: Transport, url: string, headers: Record<string, string>, body: string, signal: AbortSignal, maxBytes: number, preview = false): Promise<unknown> {
+export async function post(transport: Transport, url: string, headers: Record<string, string>, body: string, signal: AbortSignal, maxBytes: number): Promise<unknown> {
   let response: Response;
   try {
     response = await transport(url, {method: 'POST', headers: {'content-type': 'application/json', ...headers}, body, signal, redirect: 'error'});
@@ -54,29 +54,44 @@ export async function post(transport: Transport, url: string, headers: Record<st
   }
   const declared = Number(response.headers.get('content-length') ?? '0');
   if (Number.isSafeInteger(declared) && declared > maxBytes) {
-    if (!response.ok) throw statusFault(response.status, null, preview);
+    void response.body?.cancel().catch(() => {});
+    if (!response.ok) throw statusFault(response.status, null);
     throw new ProviderFault('too-large', 'invalid-output', {keep: true});
   }
   let text: string;
-  try {text = await response.text();} catch {
-    throw response.ok ? new ProviderFault('uncertain-result', 'lost-response', {uncertain: true, keep: true}) : statusFault(response.status, null, preview);
+  try {text = await boundedText(response, maxBytes);} catch (error) {
+    if (error instanceof ProviderFault) throw error;
+    throw response.ok ? new ProviderFault('uncertain-result', 'lost-response', {uncertain: true, keep: true}) : statusFault(response.status, null);
   }
-  if (Buffer.byteLength(text) > maxBytes) throw new ProviderFault('too-large', 'invalid-output', {keep: true});
   let parsed: unknown;
   try {parsed = JSON.parse(text);} catch {
-    if (!response.ok) throw statusFault(response.status, null, preview);
+    if (!response.ok) throw statusFault(response.status, null);
     throw new ProviderFault('invalid-message', 'invalid-output', {keep: true});
   }
-  if (!response.ok) throw statusFault(response.status, parsed, preview);
+  if (!response.ok) throw statusFault(response.status, parsed);
   return parsed;
 }
-const PREVIEW_PARAMETERS: readonly unknown[] = ['model', 'output_format', 'frame_count', 'frame_duration_ms'];
-function statusFault(status: number, body: unknown, preview: boolean): ProviderFault {
+async function boundedText(response: Response, maxBytes: number): Promise<string> {
+  if (response.body === null) return '';
+  const reader = response.body.getReader(), chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    for (;;) {
+      const part = await reader.read();
+      if (part.done) return Buffer.concat(chunks, bytes).toString('utf8');
+      bytes += part.value.byteLength;
+      if (bytes > maxBytes) {
+        void reader.cancel().catch(() => {});
+        throw new ProviderFault('too-large', 'invalid-output', {keep: true});
+      }
+      chunks.push(part.value);
+    }
+  } finally {reader.releaseLock();}
+}
+function statusFault(status: number, body: unknown): ProviderFault {
   const usage = usageOf(body), detail = object(body) && object(body.error) ? body.error : undefined;
   const moderation = detail?.code === 'moderation_blocked';
   // A 5xx without usage may have run; a 4xx did not, unless it says so.
   if (status >= 500 && usage === null) return new ProviderFault('uncertain-result', 'lost-response', {uncertain: true, keep: true});
-  // A key without the GIF preview is told so by a 403 or 404, or a 400 naming a preview parameter.
-  const refusedPreview = preview && (status === 403 || status === 404 || (status === 400 && PREVIEW_PARAMETERS.includes(detail?.param)));
-  return new ProviderFault(codeOfStatus(status), moderation ? 'moderation' : refusedPreview ? 'preview-refused' : 'provider-refused', {usage});
+  return new ProviderFault(codeOfStatus(status), moderation ? 'moderation' : 'provider-refused', {usage});
 }

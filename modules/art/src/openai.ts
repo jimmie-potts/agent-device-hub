@@ -23,7 +23,7 @@ export class OpenAiImages implements ArtProvider {
   async image(request: ImageRequest, signal: AbortSignal): Promise<ImageAnswer> {
     const body = JSON.stringify({model: request.model, prompt: request.prompt, size: request.size, quality: request.quality, n: 1,
       ...(request.gif === undefined ? {output_format: 'png'} : {output_format: 'gif', frame_count: request.gif.frameCount, frame_duration_ms: request.gif.frameDurationMs})});
-    const answer = await post(this.#transport, this.#url, {authorization: `Bearer ${this.#key}`}, body, signal, MAX_RESPONSE_BYTES, request.gif !== undefined);
+    const answer = await post(this.#transport, this.#url, {authorization: `Bearer ${this.#key}`}, body, signal, MAX_RESPONSE_BYTES);
     const usage = usageOf(answer);
     const first = typeof answer === 'object' && answer !== null && 'data' in answer && Array.isArray(answer.data) ? answer.data[0] as unknown : undefined;
     const encoded = typeof first === 'object' && first !== null && 'b64_json' in first ? first.b64_json : undefined;

@@ -52,12 +52,16 @@ alone, and the record's rules derive the artwork's outcome.
 A returned GIF is decoded under bounded limits and checked for its size, its frame count
 and timing inside Pixoo's observed envelope, then reduced frame by frame with Lanczos and
 rebuilt with one palette and uniform timing. A wrong or undecodable GIF still costs its
-call. That result, a preview-access refusal or another definite failure falls back to free
+call. That result or a definite provider failure falls back to free
 local motion with no resend, from the artwork's browser still when it has one and otherwise
 procedural art; the target names why. A moderation refusal stands, and an unknown outcome
 stays uncertain. The state counts accepted and rejected GIFs, which is how installed use
 measures the rejection rate. A variation builds on its source's idea and sends no input
 image: GIF output works on generation only, and no input image has a price entry.
+Generic provider refusals do not identify a preview-access problem; the result reports
+`provider-refused` unless the provider establishes a more specific supported reason.
+Sunburst is permitted for owner requests but is not selected by this implementation.
+Procedural art is available only as a failed display call's free fallback.
 
 ## Spending
 
@@ -71,8 +75,10 @@ in the ledger.
 ## Prompts and privacy
 
 A prompt holds only the owner's typed text, an imagined scene, time, season and weather
-condition words. Stale or missing weather is left out, so the art claims nothing about
-it. The job row has no field for a location or personal data. Art is never presented as
+condition words. Weather copied from the live source retains its expiry privately and
+is rechecked before every provider call. Stale or missing observations are left out.
+Weather explicitly supplied in a request is labelled requested inspiration, rather than
+an observation of current conditions. The job row has no field for a location or personal data. Art is never presented as
 fact: provenance always says `factual: false`. Prompts, responses and keys stay out of
 state and logs. Images and prompts stay in the module's private store, outside Git and
 GitHub.
@@ -101,6 +107,9 @@ at once. If a device may still hold a copy, the row and bytes stay until that co
 lifetime ends, and the state's `retention.retained` reports it. The module cannot reach
 into a device's own store. Feedback is explicit: `more` raises a candidate, `less` and
 `dismiss` remove it, and silence changes nothing.
+Ambient selection names one durable stage request. A late result or renewal cannot
+restore deleted or superseded art, and a receipt never extends the staged copy's lifetime.
+Conflicting stage evidence withdraws its candidate.
 
 ## Commands and boundaries
 
@@ -121,7 +130,8 @@ settle a stage left uncertain.
 
 `weather-state` comes from the weather module by sync. Only fresh condition words reach a
 prompt, so a temperature or day part in its words is dropped. A job's validated
-`context` is used first. Without a weather section the art says nothing about weather.
+`context` is used first as requested inspiration. Without either supplied inspiration
+or a fresh weather observation, the art says nothing about weather.
 
 ## Checks
 

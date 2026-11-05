@@ -13,7 +13,7 @@ import {GUARD_LIMIT, GUARD_WINDOW_MS, Ledger, dayKey, monthKey} from './ledger.j
 import {FRAME_COUNT, FRAME_DELAY_MS, MAX_DISPLAY_BYTES, MediaFault, browserRendition, decodeGif, firstFrame, localMotion, paletteOf, proceduralImage, reduceGif, sha256, validateImage} from './media.js';
 import {OpenAiImages} from './openai.js';
 import {GIF_FRAMES, GIF_MODEL, IDEA_MAX_TOKENS, IDEA_MODEL, IMAGE_MODEL, type PriceKey, type Usage} from './prices.js';
-import {boundIdea, contextFor, ideaPrompt, ideaSystem, imagePrompt, localIdea, variationIdea} from './prompts.js';
+import {boundIdea, contextFor, freshContext, ideaPrompt, ideaSystem, imagePrompt, localIdea, variationIdea} from './prompts.js';
 import {ProviderFault, type ArtProvider, type Transport} from './provider.js';
 import {realDispatch, realWeather, serveCommands, type ArtDispatchSeam, type StageResult, type WeatherSeam} from './seams.js';
 import {ArtStore, type Artwork, type Job, type JobTarget, type StageRow, type StoredComposition} from './store.js';
@@ -88,6 +88,8 @@ class ArtOwner {
   #providers: Partial<Record<ArtProviderName, ArtProvider>> = {};
   #subscriptions: Subscription[] = [];
   #timers: Cancel[] = [];
+  #ambientTimer: Cancel | undefined;
+  #ambientGeneration = 0;
   #closed = false;
 
   constructor(context: ModuleContext<ArtConfig>, options: ArtModuleOptions) {
@@ -101,7 +103,7 @@ class ArtOwner {
   }
 
   async start(): Promise<void> {
-    this.#providers = {...await this.#keyed(), ...this.#options.providers};
+    this.#providers = this.#options.providers === undefined ? await this.#keyed() : {...this.#options.providers};
     await this.#outbox.transaction(add => {this.#recover(); this.#prune(); this.#publish(add);});
     await this.#outbox.republish();
     const {sdk} = this.#context;
@@ -118,6 +120,7 @@ class ArtOwner {
   }
   async stop(): Promise<void> {
     this.#closed = true;
+    this.#ambientTimer?.();
     for (const cancel of this.#timers) cancel();
     this.#timers = [];
     this.#queue.length = 0;
@@ -240,10 +243,14 @@ class ArtOwner {
    * until it expires, and the state says so, so the row stays as a tombstone until then.
    */
   #delete(data: Extract<ArtCatalogEdit, {action: 'delete'}>): () => void {
-    const artwork = this.#saved(data.artworkId), now = this.#context.clock.now(), ambient = this.#store.ambient(now);
+    const artwork = this.#saved(data.artworkId), now = this.#context.clock.now(), ambient = this.#store.ambient();
     this.#store.saveArtwork({...artwork, deletedAtMs: now, favorite: false});
+    if (ambient?.artworkId === artwork.artworkId) this.#store.selectAmbient(null);
     this.#prune();
-    return ambient?.artworkId === artwork.artworkId ? () => {void this.#sendAmbient(null, childOf(undefined));} : () => {};
+    return () => {
+      this.#renewAmbient();
+      if (ambient?.artworkId === artwork.artworkId && ambient.status === Outcome.succeeded) void this.#sendAmbient(null, childOf(undefined));
+    };
   }
   /** Saved art plays without generation: reuse stages it again, for free, and offers it once a device confirms. */
   #reuse(data: Extract<ArtCatalogEdit, {action: 'reuse'}>, parent: TraceContext): () => void {
@@ -306,7 +313,7 @@ class ArtOwner {
       const provider = this.#providers.anthropic;
       if (provider?.text !== undefined && provider.capabilities.text) {
         const text = provider.text.bind(provider), key: PriceKey = {provider: 'anthropic', model: IDEA_MODEL, maxTokens: IDEA_MAX_TOKENS};
-        const answer = await this.#paid(job, 'idea', key, call => text({model: IDEA_MODEL, system: ideaSystem(), prompt: ideaPrompt(job.text, job.context), maxTokens: IDEA_MAX_TOKENS}, call), signal);
+        const answer = await this.#paid(job, 'idea', key, call => text({model: IDEA_MODEL, system: ideaSystem(), prompt: ideaPrompt(job.text, freshContext(job.context, this.#context.clock.now())), maxTokens: IDEA_MAX_TOKENS}, call), signal);
         if (answer.status === 'answered' && answer.value.text !== null) idea = boundIdea(answer.value.text);
       }
     }
@@ -320,10 +327,14 @@ class ArtOwner {
     const provider = this.#providers.openai;
     if (provider === undefined) return this.#settleTarget(requestId, target, {outcome: Outcome.rejected, code: 'unavailable', reason: 'no-key'});
     if (provider.image === undefined || !provider.capabilities.image) return this.#settleTarget(requestId, target, {outcome: Outcome.rejected, code: 'unsupported-capability', reason: 'unsupported'});
-    const draw = provider.image.bind(provider), prompt = imagePrompt(idea, target, job.context), display = isDisplay(target) ? DISPLAY[target] : undefined;
+    const draw = provider.image.bind(provider), display = isDisplay(target) ? DISPLAY[target] : undefined;
+    let prompt = '';
     const model = display === undefined ? IMAGE_MODEL : GIF_MODEL, {quality, size} = display ?? BROWSER, frames = display === undefined ? undefined : GIF_FRAMES;
     const key: PriceKey = {provider: 'openai', model, quality, size, ...(frames === undefined ? {} : {frames})};
-    const answer = await this.#paid(job, target, key, call => draw({model, quality, size, prompt, ...(frames === undefined ? {} : {gif: {frameCount: frames, frameDurationMs: FRAME_DELAY_MS}})}, call), signal);
+    const answer = await this.#paid(job, target, key, call => {
+      prompt = imagePrompt(idea, target, freshContext(job.context, this.#context.clock.now()));
+      return draw({model, quality, size, prompt, ...(frames === undefined ? {} : {gif: {frameCount: frames, frameDurationMs: FRAME_DELAY_MS}})}, call);
+    }, signal);
     if (answer.status === 'refused') return this.#settleTarget(requestId, target, {outcome: Outcome.rejected, code: answer.reason === 'unknown-price' ? 'unsupported-capability' : 'capacity', reason: answer.reason});
     if (answer.status === 'cancelled') return this.#settleTarget(requestId, target, {outcome: 'cancelled', code: 'cancelled', reason: 'cancelled'});
     if (answer.status === 'fault') {
@@ -462,13 +473,23 @@ class ArtOwner {
   }
 
   // The handoff, through #679's seam.
-  async #stage(artworkId: string, composition: StoredComposition, parent: TraceContext, ambient: boolean): Promise<void> {
+  async #stage(artworkId: string, composition: StoredComposition, parent: TraceContext, ambient: boolean, renewing?: string): Promise<void> {
     const target = composition.target, rendered = composition.renditions[0], blob = rendered === undefined ? undefined : this.#store.blob(rendered.renditionId);
     if (!isDisplay(target) || rendered === undefined || blob === undefined || rendered.format !== 'gif') return;
     const requestId = `stage-${randomUUID()}`, row: StageRow = {requestId, artworkId, compositionId: composition.compositionId, target, status: 'pending', expiresAtMs: this.#context.clock.now() + STAGE_LIFETIME_MS, ambient};
     let reply: Reply;
     try {
-      await this.#outbox.transaction(add => {this.#store.saveStage(row); this.#publish(add, parent);});
+      const saved = await this.#outbox.transaction(add => {
+        const artwork = this.#store.artwork(artworkId);
+        if (artwork === undefined || artwork.deletedAtMs !== null || this.#closed) return false;
+        if (renewing !== undefined && this.#store.ambient()?.requestId !== renewing) return false;
+        this.#store.saveStage(row);
+        if (ambient) this.#store.selectAmbient(requestId);
+        this.#publish(add, parent);
+        return true;
+      });
+      if (!saved) return;
+      if (ambient) this.#renewAmbient();
       reply = await this.#dispatch.stage({requestId, compositionId: composition.compositionId, target, format: rendered.format, width: rendered.width, height: rendered.height, frames: rendered.frames, durationMs: rendered.durationMs,
         sha256: rendered.renditionId, bytes: blob.bytes, lifetimeMs: STAGE_LIFETIME_MS}, parent);
     } catch {
@@ -482,26 +503,40 @@ class ArtOwner {
       await this.#outbox.transaction(add => {
         row = this.#store.stage(requestId);
         // A restart leaves a pending stage uncertain, and the core's record can still settle it.
-        if (row === undefined || (row.status !== 'pending' && row.status !== Outcome.uncertain)) {row = undefined; return;}
-        this.#store.saveStage({...row, status: result, expiresAtMs: result === Outcome.failed ? this.#context.clock.now() : this.#context.clock.now() + STAGE_LIFETIME_MS});
+        if (row === undefined || row.status === result) {row = undefined; return;}
+        // The receipt cannot extend the device's admission lifetime. Conflicting evidence withdraws a previous success.
+        this.#store.saveStage({...row, status: result});
         this.#publish(add);
       });
     } catch {return;}
-    if (row?.ambient === true && result === Outcome.succeeded) {await this.#sendAmbient(row.compositionId, childOf(undefined)); this.#renewAmbient();}
+    if (row?.ambient === true && this.#store.ambient()?.requestId === requestId) {
+      const artwork = this.#store.artwork(row.artworkId);
+      if (!this.#closed && artwork?.deletedAtMs === null && row.expiresAtMs !== null && row.expiresAtMs > this.#context.clock.now()) {
+        if (result === Outcome.succeeded) await this.#sendAmbient(row.compositionId, childOf(undefined));
+        else if (row.status === Outcome.succeeded) await this.#sendAmbient(null, childOf(undefined));
+      }
+      this.#renewAmbient();
+    }
   }
   async #sendAmbient(compositionId: string | null, parent: TraceContext): Promise<void> {
     try {await this.#dispatch.ambient({requestId: `ambient-${randomUUID()}`, target: 'tidbyt', compositionId}, parent);} catch {/* The tile keeps what it holds. Nothing resends. */}
   }
   /** Keeps the ambient tile's copy alive while generation is paused. Staging is local and free. */
   #renewAmbient(): void {
+    this.#ambientTimer?.();
+    this.#ambientTimer = undefined;
+    const generation = ++this.#ambientGeneration;
     if (this.#closed) return;
-    const row = this.#store.ambient(this.#context.clock.now());
-    if (row === undefined || row.expiresAtMs === null) return;
-    this.#timers.push(this.#context.scheduler.after(Math.max(0, (row.expiresAtMs - this.#context.clock.now()) / 2), () => {
-      if (this.#closed) return;
+    const row = this.#store.ambient();
+    if (row === undefined || row.status !== Outcome.succeeded || row.expiresAtMs === null || row.expiresAtMs <= this.#context.clock.now()) return;
+    if (this.#store.artwork(row.artworkId)?.deletedAtMs !== null) return;
+    this.#ambientTimer = this.#context.scheduler.after((row.expiresAtMs - this.#context.clock.now()) / 2, () => {
+      if (generation !== this.#ambientGeneration) return;
+      this.#ambientTimer = undefined;
+      if (this.#closed || this.#store.ambient()?.requestId !== row.requestId || this.#store.artwork(row.artworkId)?.deletedAtMs !== null) return;
       const found = this.#store.compositions(row.artworkId).find(entry => entry.compositionId === row.compositionId);
-      if (found !== undefined) void this.#stage(row.artworkId, found, childOf(undefined), true).catch(() => {});
-    }));
+      if (found !== undefined) void this.#stage(row.artworkId, found, childOf(undefined), true, row.requestId).catch(() => {});
+    });
   }
   /** Nothing else publishes at the turn of a day, and the dashboard's day and month must follow it. */
   #scheduleMidnight(): void {

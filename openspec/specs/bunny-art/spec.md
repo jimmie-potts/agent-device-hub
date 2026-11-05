@@ -52,11 +52,11 @@ The module SHALL settle each call from its response's reported usage. It SHALL k
 
 #### Scenario: The answer is a refusal
 - **WHEN** a 4xx arrives for moderation, an unverified organization or a rate limit
-- **THEN** the target is `failed`, spend is its reported usage or zero, and nothing is resent
+- **THEN** the call fails, spend is its reported usage or zero, and nothing is resent; a display's non-moderation refusal may still produce the free local composition specified below, while a browser target or moderation refusal remains `failed`
 
 #### Scenario: The output is unusable
 - **WHEN** output is invalid, missing or oversized
-- **THEN** the target is `failed` before storage, spend is its reported usage, and otherwise the reservation is kept
+- **THEN** the provider output is not admitted, spend is its reported usage or its reservation is kept without usage, and a display may produce the free local fallback specified below; an invalid browser result remains `failed`
 
 #### Scenario: The runtime restarts with a call in flight
 - **WHEN** the module starts and finds a dispatched call unsettled
@@ -100,8 +100,16 @@ The module SHALL request one eight-frame GIF per display from OpenAI's GIF outpu
 Prompts SHALL hold only the owner's typed text, imagination, time, season and weather condition words, within 4,000 characters. Art SHALL be marked as not factual, and prompts, responses and keys SHALL stay out of state and logs.
 
 #### Scenario: Weather is stale or missing
-- **WHEN** no fresh condition words exist
+- **WHEN** observed weather is unavailable or past its freshness bound at provider dispatch, including after a job waits in the queue
 - **THEN** the prompt says nothing about weather
+
+#### Scenario: The request supplies weather inspiration
+- **WHEN** the request explicitly supplies condition words in its validated context
+- **THEN** the prompt preserves them as requested inspiration, without claiming they describe current observed conditions
+
+#### Scenario: A variation has a long source idea
+- **WHEN** the source idea reaches its bound and the owner supplies an explicit change
+- **THEN** the complete bounded change survives in the image prompt, with source context fitted inside the total prompt limit
 
 #### Scenario: A request carries another field
 - **WHEN** a request carries a field outside its declared set, such as a location
@@ -132,6 +140,18 @@ The module SHALL send staged compositions through `art-dispatch` and SHALL offer
 #### Scenario: Staging is uncertain or refused
 - **WHEN** staging is refused or uncertain
 - **THEN** it is not offered and not resent
+
+#### Scenario: Staging evidence becomes conflicting
+- **WHEN** a successful stage later becomes uncertain because its outcomes conflict
+- **THEN** its candidate is withdrawn and no new stage is sent automatically
+
+#### Scenario: A receipt arrives late
+- **WHEN** a stage result arrives after the copy's conservatively recorded expiry
+- **THEN** the candidate stays unavailable; the receipt does not grant a new lifetime
+
+#### Scenario: Ambient selection changes during staging or renewal
+- **WHEN** the owner deletes the selected artwork or a later ambient selection supersedes it
+- **THEN** the old result and queued renewal cannot select that artwork again, including after restart
 
 #### Scenario: A favorite is reused
 - **WHEN** the owner reuses a favorite

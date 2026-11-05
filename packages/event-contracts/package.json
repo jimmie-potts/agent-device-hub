@@ -48,10 +48,6 @@
       "types": "./dist/v2/art-state.d.ts",
       "import": "./dist/v2/art-state.js"
     },
-    "./v2/art-state": {
-      "types": "./dist/v2/art-state.d.ts",
-      "import": "./dist/v2/art-state.js"
-    },
     "./v2/coding": {
       "types": "./dist/v2/coding.d.ts",
       "import": "./dist/v2/coding.js"

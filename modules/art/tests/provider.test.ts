@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {AnthropicIdeas, ANTHROPIC_URL} from '../src/anthropic.js';
 import {OpenAiImages, OPENAI_IMAGES_URL} from '../src/openai.js';
-import {ProviderFault, type Transport} from '../src/provider.js';
+import {ProviderFault, post, type Transport} from '../src/provider.js';
 
 const signal = new AbortController().signal;
 const image = {model: 'gpt-image-2', quality: 'low', size: '1024x1024', prompt: 'a moon bakery'};
@@ -19,6 +19,20 @@ const fault = async (work: Promise<unknown>): Promise<ProviderFault> => {
   throw new Error('expected a fault');
 };
 const usage = {input_tokens: 12, output_tokens: 34};
+
+void test('response bounds cancel a chunked or incorrectly sized body before consuming it', async () => {
+  for (const headers of [{}, {'content-length': '1'}, {'content-length': '1000'}]) {
+    let chunks = 0, cancelled = false;
+    const body = new ReadableStream<Uint8Array>({pull(controller) {
+      chunks++; controller.enqueue(new Uint8Array(16));
+      if (chunks === 100) controller.close();
+    }, cancel() {cancelled = true;}});
+    const error = await fault(post(() => Promise.resolve(new Response(body, {headers})), 'https://synthetic.invalid', {}, '{}', signal, 10));
+    assert.equal(error.code, 'too-large');
+    assert.equal(error.keep, true);
+    assert.ok(chunks <= 2 && cancelled, `consumed ${chunks} chunks; cancelled=${String(cancelled)}`);
+  }
+});
 
 void test('OpenAI: one request with the header key and the qualified shape, and bytes and usage back', async () => {
   const {sent, transport} = record(() => json({data: [{b64_json: Buffer.from('png-bytes').toString('base64')}], usage}));
@@ -39,11 +53,11 @@ void test('OpenAI: a GIF request names its frames and duration, and sends no uns
   assert.deepEqual(JSON.parse(sent[0]?.init.body ?? ''), {model: 'gpt-image-2.6-flare', prompt: 'a campfire', size: '512x256', quality: 'low', n: 1, output_format: 'gif', frame_count: 8, frame_duration_ms: 200});
 });
 
-void test('OpenAI: a key without the GIF preview is a named refusal, and the same answers on a still are ordinary refusals', async () => {
+void test('OpenAI: generic GIF refusals do not invent a preview-access diagnosis', async () => {
   const gif = {model: 'gpt-image-2.6-flare', quality: 'low', size: '512x512', prompt: 'a campfire', gif: {frameCount: 8, frameDurationMs: 200}};
   const provider = (body: unknown, status: number) => new OpenAiImages({key: 'test-key', transport: record(() => json(body, status)).transport});
   for (const [body, status] of [[{error: {code: 'model_not_found'}}, 404], [{error: {}}, 403], [{error: {param: 'output_format'}}, 400]] as const) {
-    assert.equal((await fault(provider(body, status).image(gif, signal))).reason, 'preview-refused');
+    assert.equal((await fault(provider(body, status).image(gif, signal))).reason, 'provider-refused');
     assert.equal((await fault(provider(body, status).image(image, signal))).reason, 'provider-refused');
   }
   assert.equal((await fault(provider({error: {code: 'moderation_blocked'}}, 400).image(gif, signal))).reason, 'moderation');

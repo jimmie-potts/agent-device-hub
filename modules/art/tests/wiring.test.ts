@@ -133,7 +133,7 @@ void test('a job takes words from the command\'s validated context first', async
   const images = fakeImages(drawing()), art = await hosted(t, {providers: {openai: images}});
   await art.automatic({...start(['tidbyt'], 'appearance'), context: {time: 'dawn', season: 'winter', weather: 'light snow'}}, 'req');
   await art.finished('req');
-  assert.match(images.requests[0]?.prompt ?? '', /dawn in winter\. The weather's mood: light snow\./);
+  assert.match(images.requests[0]?.prompt ?? '', /dawn in winter\. Requested weather inspiration: light snow\./);
 });
 
 void test('the registration builds the wired module, with no provider until a key is named', async t => {
