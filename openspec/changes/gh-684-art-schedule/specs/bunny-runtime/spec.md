@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: One owner-controlled daily art policy
-The runtime SHALL keep one private, revision-checked art policy under its existing automation owner. The policy SHALL select configured surfaces, host-local waking hours, six, seven or eight appearance opportunities, ambient updates, generation, weather use and explicit permission to cover status. New policy SHALL be disabled until explicitly enabled. Existing event rules, routines, quiet hours and budget settings SHALL retain their shapes and behavior; writing them SHALL NOT reset art settings. Art scheduling SHALL work without an open browser.
+The runtime SHALL keep one private, revision-checked art policy under its existing automation owner. The policy SHALL select configured surfaces, host-local waking hours, six, seven or eight appearance opportunities, ambient updates, generation, weather use and explicit permission to cover status. New policy SHALL be disabled until explicitly enabled, with generation off until explicitly selected. Existing event rules, routines, quiet hours and budget settings SHALL retain their shapes and behavior; writing them SHALL NOT reset art settings. Art scheduling SHALL work without an open browser.
 
 #### Scenario: Owner saves and enables a policy
 - **WHEN** an authenticated control user saves a valid waking interval and seven appearances, then enables the policy
@@ -13,7 +13,7 @@ The runtime SHALL keep one private, revision-checked art policy under its existi
 - **THEN** quiet hours change while the saved art policy and its enabled state remain intact
 
 ### Requirement: A varied waking-day rhythm without catch-up
-The runtime SHALL plan bounded morning, daytime and evening appearance opportunities within the selected waking interval when space permits, with at least 45 elapsed minutes between appearances. Choice and clock inputs SHALL be controllable in tests. Quiet hours, insufficient waking time and missed windows SHALL reduce delivered opportunities rather than compress spacing or create catch-up work. Restart, re-enabling, forward clock jumps and repeated local hours SHALL schedule only future unclaimed opportunities. Crossing midnight SHALL NOT reset spacing or allow a repeated claim.
+The runtime SHALL plan bounded morning, daytime and evening appearance opportunities within the selected waking interval when space permits, with at least 45 elapsed minutes between appearances. Choice and clock inputs SHALL be controllable in tests. Quiet hours, insufficient waking time and missed windows SHALL reduce delivered opportunities rather than compress spacing or create catch-up work. Restart, re-enabling, forward clock jumps and repeated local hours SHALL schedule only future unclaimed opportunities. Crossing midnight SHALL NOT reset spacing or allow a repeated claim. Policy edits and disable/re-enable SHALL retain already claimed counts for that waking day; a clock rollback SHALL NOT reopen an older admitted interval.
 
 #### Scenario: An ordinary waking day
 - **WHEN** a fixed clock and choice input exercise a waking interval that can fit the selected count
@@ -23,8 +23,13 @@ The runtime SHALL plan bounded morning, daytime and evening appearance opportuni
 - **WHEN** the interval cannot fit the count, daylight-saving time skips or repeats an hour, or a restart occurs after several opportunities
 - **THEN** the runtime explains skipped opportunities and plans only eligible future ones, with no repeated slot or compressed spacing
 
+#### Scenario: Policy edits cannot refill the day
+- **WHEN** some opportunities are already claimed and the owner changes waking hours/count or disables and re-enables the policy
+- **THEN** only eligible future opportunities are replanned within the remaining allowance, and the original claims and cross-midnight spacing remain effective
+- **AND** setting the clock back into an older admitted interval authorizes no replacement appearance
+
 ### Requirement: Durable claims precede art effects
-The runtime SHALL durably identify each art opportunity, generation request and per-target attempt before sending it. One appearance SHALL count once across its surfaces, and uncertain or lost answers SHALL remain counted. A committed budget reservation SHALL bind its opportunity, immutable plan, policy revision, budget window and selected target attempts. Shared admission SHALL include pending reservations, and only the matching reserved attempt may use one. Final checks SHALL NOT charge the same appearance again or reject it solely because its own reservation filled the count or spacing allowance. Other claims and current restrictions SHALL still apply. The daily count, 45-minute spacing, existing moment budgets and provider dollar limits SHALL be independent protections. Concurrent triggers, duplicate occurrences, crashes and late outcomes SHALL NOT resend an automatic generation request or a presentation attempt. Storage failure before a claim SHALL cause no effect.
+The runtime SHALL durably identify each art opportunity, generation request and per-target attempt before sending it. One appearance SHALL count once across its surfaces, and uncertain or lost answers SHALL remain counted. A committed budget reservation SHALL bind its opportunity, immutable plan, policy revision, budget window and selected target attempts. Shared admission for ordinary flourishes and scheduled art SHALL include pending reservations, and only the matching reserved attempt may use one. Scheduled art SHALL honor shared global/device limits even when event priority permits status coverage; decorative appearances SHALL also honor noFlourishes. Per-agent/task limits SHALL retain their existing meaning without a fabricated scheduled-art identity. Final checks SHALL NOT charge the same appearance again or reject it solely because its own reservation filled the count or spacing allowance. Other claims and current restrictions SHALL still apply. The daily count, 45-minute spacing, existing moment budgets and provider dollar limits SHALL be independent protections. Concurrent triggers, duplicate occurrences, crashes and late outcomes SHALL NOT resend an automatic generation request or a presentation attempt. Storage failure before a claim SHALL cause no effect.
 
 #### Scenario: A crash follows a durable claim
 - **WHEN** the runtime claims an appearance and crashes before learning whether its first target accepted it
@@ -69,6 +74,11 @@ Before each browser, moment or ambient presentation dispatch, the runtime SHALL 
 - **THEN** art cannot displace the protected presentation and no mode command is sent to make it eligible
 - **AND** an admitted device moment yields and returns through that device's current-base behavior
 
+#### Scenario: Empty Media remains eligible without changing its mode
+- **WHEN** configured Pixoo Media is empty, stopped or finished and its owner declares the exact-art request eligible
+- **THEN** an otherwise permitted appearance may be requested without a mode write
+- **AND** explicit pause, uncertain writer state, attention, owner pin, stale playback generation or Now Playing takeover still blocks replacement
+
 ### Requirement: Ambient reuse and generation have separate authority
 Ambient updates SHALL be noninterrupting, at most hourly from the timer and additionally on eligible live weather changes. The runtime SHALL keep a bounded coalesced opportunity rather than an event backlog. Automatic generation SHALL NOT itself grant presentation permission. Generation-disabled, unavailable-provider, exhausted-budget or late-job conditions SHALL permit one bounded saved-art fallback, with no model call for reuse and no new presentation when no usable saved art exists. An ambient authorization SHALL be limited to its exact live opportunity, target, composition and one attempt, and SHALL be revoked on stop, expiry or policy change.
 
@@ -81,7 +91,7 @@ Ambient updates SHALL be noninterrupting, at most hourly from the timer and addi
 - **THEN** it causes no catch-up ambient update, while fresh state can inform a later future opportunity
 
 ### Requirement: Fresh forecast evidence remains separate from decorative art
-The runtime SHALL derive a factual rain notice only from an enabled, qualified, fresh weather record covering the selected future forecast hour within the next two hours. A notice SHALL distinguish likely rain from a chance and carry its forecast interval, observation/stale times and source revision. The source's current-hour forecast SHALL NOT be described as an observed measurement. Each required factual presentation SHALL carry its deterministic label; unsupported targets SHALL skip. Missing, disabled, stale, unrelated or superseded evidence SHALL authorize no factual notice. Generated artwork SHALL remain decorative with factual provenance false.
+The runtime SHALL derive a factual rain notice only from an enabled, qualified, fresh weather record covering the selected future forecast hour within the next two hours. A notice SHALL distinguish likely rain from a chance and carry its forecast interval, provider forecast-update time, observation/stale times and source revision, using bounded typed values. The notice SHALL remain valid through the latest permitted start and each target's intended hold, with time checks at admission and before a delayed first write. The source's current-hour forecast SHALL NOT be described as an observed measurement. Each required factual presentation SHALL carry its deterministic label; unsupported targets SHALL skip. Missing, disabled, stale, unrelated or superseded evidence SHALL authorize no factual notice. Generated artwork SHALL remain decorative with factual provenance false.
 
 #### Scenario: Fresh approaching rain
 - **WHEN** an enabled weather owner publishes a fresh forecast with a chance of rain in the next two hours and an eligible appearance is selected
@@ -91,12 +101,17 @@ The runtime SHALL derive a factual rain notice only from an enabled, qualified, 
 - **WHEN** schedule weather use is disabled, or its record becomes stale while a factual opportunity waits
 - **THEN** disabled scheduling opens no source subscription or read, stale evidence is not dispatched as fact, and no invented rain or meeting substitutes for it
 
-#### Scenario: There is no qualified meeting source
-- **WHEN** no enabled qualified calendar owner exists, or the only event is an agent turn ending
-- **THEN** the runtime performs no calendar read and makes no meeting, milestone or successful-task claim
+#### Scenario: Meeting presentation is deferred
+- **WHEN** this release starts or an agent turn ends
+- **THEN** no calendar reader, subscription or meeting control is composed and no meeting, milestone or successful-task claim is inferred
+
+#### Scenario: A notice would expire during its hold
+- **WHEN** staging or the device queue delays a factual appearance until its evidence cannot cover the latest start and full target duration
+- **THEN** that target refuses the notice without silently dropping its factual label or showing expired facts
+- **AND** another target with sufficient remaining validity keeps its independent result
 
 ### Requirement: Art results report the evidence actually held
-The existing Automation workspace SHALL expose current policy, upcoming opportunity, suppression reason and separate generation, preparation, browser-selection and display operation references. A tracked dispatch SHALL NOT be presented as completion. A browser selection completion SHALL NOT establish decoding or visibility, and transport evidence SHALL NOT establish a physical observation. Failed, expired, uncertain, conflicting and unsupported results SHALL remain distinguishable without automatic resend.
+The core SHALL publish a bounded art-schedule record through existing transaction/outbox and SDK sync/live paths, carrying policy, upcoming opportunity, suppression reason, current notice and separate generation, preparation, browser-selection and display operation references. The existing Automation workspace SHALL consume that record without polling or creating another catalog owner. A tracked dispatch SHALL NOT be presented as completion. A browser selection completion SHALL NOT establish decoding or visibility, and transport evidence SHALL NOT establish a physical observation. Failed, expired, uncertain, conflicting and unsupported results SHALL remain distinguishable without automatic resend.
 
 #### Scenario: Only some surfaces complete
 - **WHEN** the browser selection commits, one display reports transmission and another loses its reply

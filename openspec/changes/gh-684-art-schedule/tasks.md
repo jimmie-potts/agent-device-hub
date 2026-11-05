@@ -1,0 +1,40 @@
+## 1. Accepted inputs and validation coverage
+
+- [ ] 1.1 After the coordinator releases implementation, refresh the owning issue and accepted shared-art/display/frontend interfaces, then record any changed assumption in the plan; verify configured target lookup, durable plan identity, final permits, separate durations and source-only delivery against the actual integrated code.
+- [ ] 1.2 Add the affected runtime, Art, weather, display, contract-consumer and browser/scenario commands to the existing development guide and CI discovery before product edits; verify the selector includes every changed consumer and the existing workflow checks pass.
+
+## 2. Policy, claims and shared admission
+
+- [ ] 2.1 Add the disabled-by-default revisioned art policy under the existing core lease and authenticated Automation routes; use focused RED/GREEN tests for stale revisions, invalid persisted policy, storage failure, revoked authority during body reads, reopen and legacy settings writes preserving art state.
+- [ ] 2.2 Add bounded host-local day planning with injected clock and choice; prove morning/day/evening distribution, six/seven/eight limits, 45-minute spacing, quiet/short windows, crossing midnight, DST, forward/backward clock changes and future-only restart behavior with fixed-clock examples.
+- [ ] 2.3 Persist opportunity, generation and target claims before effects and retain daily claims through policy edits and disable/re-enable; exercise crashes at each claim boundary and store reopen, asserting no replay, count reset, refill or effect when persistence fails.
+- [ ] 2.4 Extend the existing global/device admission path so ordinary flourishes and scheduled art count pending reservations; prove the last allowed unit admits its own reserved targets once, denies competing work, honors current restrictions and noFlourishes for decorative art, and never invents an agent/task identity or refunds uncertainty into a retry.
+
+## 3. Saved art, generation and ambient authority
+
+- [ ] 3.1 Select one usable saved artwork and its independent target compositions, with bounded favorite/feedback preference and deterministic test choice; prove dismissed/unusable choices are excluded, missing targets remain independent, and saved fallback calls no provider.
+- [ ] 3.2 Add closed explicit current/omit weather use to automatic starts while using the existing appearance-purpose job lifecycle; prove omitted weather makes zero job reads, only fresh condition words reach each paid call, old owner requests retain behavior, and the producer's ceilings, pace, loop guard and uncertain-call accounting remain authoritative.
+- [ ] 3.3 Connect one durable generation request to a bounded preparation deadline and saved fallback; hold job outcomes past that deadline and restart mid-request, proving completion cannot trigger a late appearance, double generation or ambient selection.
+- [ ] 3.4 Add free saved Tidbyt ambient selection and its narrow one-use final core authorization through the existing serialized Art machinery; exercise delayed staging, supersession, deletion, disable/expiry/restart and lost replies, proving no provider/mode/moment write, no grant reuse and preservation of the preceding issued intent after definite refusal.
+- [ ] 3.5 Connect hourly and live-weather ambient opportunities with one coalesced candidate and independent browser selection; prove unchanged/synced/replayed weather creates no effect, simultaneous triggers do not multiply requests, and manual Gallery selection remains intact.
+
+## 4. Fresh rain notices and existing presentation dispatch
+
+- [ ] 4.1 Add the scoped weather sync/live consumer and closed rain-evidence derivation from fresh forecast hours in the next two hours; prove owner/revision/likelihood/interval validation, disabled-source zero subscriptions/reads, close races, stale/superseded refusal and no calendar composition or inferred milestone.
+- [ ] 4.2 Add the closed minor notice and capability schemas and extend the existing shared-art plan digest/dispatch; prove old payload compatibility, rejection of arbitrary fields and foreign command senders, unsupported-target skip, and duplicate-conflict when any notice fact changes under the same plan ID after restart. Run packaged TypeScript/Python contract consumers.
+- [ ] 4.3 Connect opportunity reservations to the existing present/permit API within its 60-second horizon; prove fixed start/cutoff, 30-second Tidbyt and 10-second Pixoo, fresh generation/owner checks, permit revocation after held preparation, mixed outcomes and zero mode writes for empty/stopped/finished Media versus paused/uncertain/attention/pinned/Now Playing states.
+- [ ] 4.4 Render fixed forecast/likelihood/time bands through both display owners while preserving staged bytes and animation timing; independently inspect native 64×32 and 64×64 frames, verify exact hashes and chance/likely meaning, and prove queued expiry refusal and current-base return through real module fixtures.
+
+## 5. Existing Automation and Art frontend
+
+- [ ] 5.1 Publish the core-owned art-schedule projection through its transaction/outbox and SDK sync/live path; test fresh sync, unavailable copies, bounded records, source-disable clearing and distinct generation/preparation/selection/display operation outcomes without polling or physical-success claims.
+- [ ] 5.2 Extend the existing Automation page with saved/draft policy, waking zone/count/surfaces, weather/generation controls, next opportunity and suppression/evidence; browser tests must cover keyboard focus, read-only/disconnected clients, two-tab conflict, lost mutation reply with no resend and no meeting placeholder control.
+- [ ] 5.3 Bind the factual label to a succeeded opportunity selection and the actual decoded-visible composition; browser RED/GREEN tests must cover delayed/obsolete decode, same-image reuse with pending/refused selection, hidden/replaced art, disabled/stale evidence and the bounded 30-second expiry without resetting the image or changing palette provenance.
+- [ ] 5.4 Verify the affected pages at 320, 390 and 1440px, light/dark and reduced motion; retain synthetic screenshots and accessibility results showing readable notice text, usable controls, manual Gallery choice, theme behavior and unchanged Home geometry.
+
+## 6. Integrated evidence and delivery
+
+- [ ] 6.1 Add one finite offline scenario using real core/Art/display owners and synthetic provider/transports; assert shared identity, default durations, mixed per-target evidence, fresh rain, disabled-source zero reads, held-stage revocation, conservative lost outcomes and zero real-provider/device contact.
+- [ ] 6.2 Obtain independent disposable acceptance on the committed scenario artifact; inspect the complete labelled recording, native notice frames, hashes and exact cleanup, and keep installation/optical claims separate.
+- [ ] 6.3 Run the documented owning suites and direct consumers with Node 24 and Python 3.14: build before lint, typecheck, event/contract/package consumers, Art, weather, runtime, dashboard, Tidbyt, Pixoo, focused scenarios/browser and workflow checks; retain actual exit results and unrelated failures, then obtain same-comparison Standards/Specification plus focused persistence/device-safety review.
+- [ ] 6.4 After source acceptance, obtain fresh OpenSpec status/spec/archive lookups, synchronize every affected requirement and archive this change before final review; validate the resulting inventory and workflow tests, then give the coordinator source evidence for tracker reconciliation and the separately owned installation/release batch.

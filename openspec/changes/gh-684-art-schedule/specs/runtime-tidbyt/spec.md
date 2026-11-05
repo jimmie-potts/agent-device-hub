@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Exact Tidbyt art can carry a deterministic forecast notice
-A Tidbyt backend SHALL declare rain-notice support only when its art moment renderer can show a fixed readable forecast annotation beside the exact saved art on 64×32. A notice-bearing moment SHALL require the declared capability, valid bounded notice data and evidence valid through its intended hold. The renderer SHALL reserve enough high-contrast text area to distinguish forecast and chance/likely rain with its hour, fit the unchanged decorative composition separately, and never interpret provider or caller free text as a fact. Existing pin, attention, mode, start-window, one-writer and current-base return protections SHALL apply unchanged.
+A Tidbyt backend SHALL declare rain-notice support only when its art moment renderer can show a fixed readable forecast annotation beside the exact saved art on 64×32. A notice-bearing moment SHALL require the declared capability, valid bounded notice data and evidence valid through its latest permitted start and intended hold, rechecked before a delayed first write. The renderer SHALL reserve enough high-contrast text area to distinguish forecast and chance/likely rain with its hour, fit the unchanged decorative composition separately, and never interpret provider or caller free text as a fact. Existing pin, attention, mode, start-window, one-writer and current-base return protections SHALL apply unchanged.
 
 #### Scenario: A supported forecast appearance
 - **WHEN** a qualified art-capable backend accepts the default 30-second exact art moment with chance-of-rain evidence valid through that hold

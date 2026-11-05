@@ -10,7 +10,7 @@
 - Add bounded deterministic rain-forecast notices beside decorative artwork on the browser, Tidbyt and Pixoo. A fresh, enabled weather source supplies typed evidence; a provider supplies no fact or label. Unsupported notice targets skip truthfully. Generated art retains `factual: false`.
 - Expose enabled-source, next-opportunity, suppression and per-target operation evidence in the existing Automation page. Preserve gallery choices, layout pins, device pins, attention, explicit pause, current-base restoration and owner controls.
 
-Meeting notices require an owner scope decision because no calendar producer is shipped. Planning preserves that acceptance item explicitly; it does not invent calendar observations, infer milestones from a finished turn, or introduce personal-source ingestion. This change contains planning artifacts only until the coordinator releases implementation against accepted prerequisites.
+The owner selected rain notices for the first release and deferred meeting notices on 2026-11-05. The [calendar source](https://github.com/jimmie-potts/agent-device-hub/issues/298) and a later presentation pickup retain their own acceptance and personal-source permission. This release has no calendar reader, meeting control or invented milestone. These are planning artifacts; implementation waits for the coordinator to release the accepted integration inputs.
 
 ## Capabilities
 
@@ -28,6 +28,6 @@ None. Scheduling, art, presentation and display ownership already exist.
 
 ## Impact
 
-Implementation is concentrated in `apps/runtime/src/core/automation-part.ts`, its existing store and a bounded art-schedule helper; `apps/runtime/src/gateway/automation-routes.ts`; the current dashboard Automation page; the Art owner's commands and frontend; and the two display owners' existing art render paths. The shared event package gains closed additive minor schemas for the notice and free ambient action. Existing 2.0/2.1/2.2 payloads keep their exact shapes; no retained controller 1.x or cross-repository controller API changes.
+Implementation is concentrated in `apps/runtime/src/core/automation-part.ts`, its existing store and a bounded art-schedule helper; `apps/runtime/src/gateway/automation-routes.ts`; the current dashboard Automation page; the Art owner's commands and frontend; and the two display owners' existing art render paths. The shared event package gains only the closed minor schemas needed for the rain notice, explicit automatic weather use and free ambient action. One core-owned `art-schedule` state family carries policy and current scheduling evidence to existing authenticated consumers without polling. Existing 2.0/2.1/2.2 payloads keep their exact shapes; no retained controller 1.x or cross-repository controller API changes.
 
 The design consumes the accepted producer, display, widget and shared presentation interfaces linked by the owning issue. It introduces no generic scheduler, public ingestion route, cloud credential, new device writer, model retry, device-mode change or installation operation. Disposable synthetic acceptance is part of source delivery; the selected installation and waking-day/physical observations remain with [#687](https://github.com/jimmie-potts/agent-device-hub/issues/687).
