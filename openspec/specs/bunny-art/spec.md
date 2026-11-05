@@ -152,6 +152,7 @@ The module SHALL send staged compositions through `art-dispatch` and SHALL offer
 #### Scenario: Ambient selection changes during staging or renewal
 - **WHEN** the owner deletes the selected artwork or a later ambient selection supersedes it
 - **THEN** the old result and queued renewal cannot select that artwork again, including after restart
+- **AND** deleting the last issued tile artwork clears it even when a renewal or replacement stage is pending; pending staging does not erase the durable record of the issued tile selection
 
 #### Scenario: A favorite is reused
 - **WHEN** the owner reuses a favorite

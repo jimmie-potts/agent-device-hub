@@ -60,8 +60,9 @@ export async function post(transport: Transport, url: string, headers: Record<st
   }
   let text: string;
   try {text = await boundedText(response, maxBytes);} catch (error) {
+    if (!response.ok) throw statusFault(response.status, null);
     if (error instanceof ProviderFault) throw error;
-    throw response.ok ? new ProviderFault('uncertain-result', 'lost-response', {uncertain: true, keep: true}) : statusFault(response.status, null);
+    throw new ProviderFault('uncertain-result', 'lost-response', {uncertain: true, keep: true});
   }
   let parsed: unknown;
   try {parsed = JSON.parse(text);} catch {

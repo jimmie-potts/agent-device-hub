@@ -109,6 +109,9 @@ into a device's own store. Feedback is explicit: `more` raises a candidate, `les
 `dismiss` remove it, and silence changes nothing.
 Ambient selection names one durable stage request. A late result or renewal cannot
 restore deleted or superseded art, and a receipt never extends the staged copy's lifetime.
+The last issued tile selection is stored separately, so deletion can clear it while
+a renewal or replacement is pending, including after restart. Issuing a tile command
+does not prove that a physical display showed it.
 Conflicting stage evidence withdraws its candidate.
 
 ## Commands and boundaries

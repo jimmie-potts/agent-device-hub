@@ -249,7 +249,7 @@ class ArtOwner {
     this.#prune();
     return () => {
       this.#renewAmbient();
-      if (ambient?.artworkId === artwork.artworkId && ambient.status === Outcome.succeeded) void this.#sendAmbient(null, childOf(undefined));
+      void this.#sendAmbient({clearArtworkId: artwork.artworkId}, childOf(undefined));
     };
   }
   /** Saved art plays without generation: reuse stages it again, for free, and offers it once a device confirms. */
@@ -509,17 +509,33 @@ class ArtOwner {
         this.#publish(add);
       });
     } catch {return;}
+    if (row?.ambient === true && row.status === Outcome.succeeded && result !== Outcome.succeeded) {
+      await this.#sendAmbient({clearArtworkId: row.artworkId}, childOf(undefined));
+    }
     if (row?.ambient === true && this.#store.ambient()?.requestId === requestId) {
       const artwork = this.#store.artwork(row.artworkId);
       if (!this.#closed && artwork?.deletedAtMs === null && row.expiresAtMs !== null && row.expiresAtMs > this.#context.clock.now()) {
-        if (result === Outcome.succeeded) await this.#sendAmbient(row.compositionId, childOf(undefined));
-        else if (row.status === Outcome.succeeded) await this.#sendAmbient(null, childOf(undefined));
+        if (result === Outcome.succeeded) await this.#sendAmbient({stage: row}, childOf(undefined));
       }
       this.#renewAmbient();
     }
   }
-  async #sendAmbient(compositionId: string | null, parent: TraceContext): Promise<void> {
-    try {await this.#dispatch.ambient({requestId: `ambient-${randomUUID()}`, target: 'tidbyt', compositionId}, parent);} catch {/* The tile keeps what it holds. Nothing resends. */}
+  async #sendAmbient(change: {stage: StageRow} | {clearArtworkId: string}, parent: TraceContext): Promise<void> {
+    try {
+      const compositionId = await this.#outbox.transaction(() => {
+        if (this.#closed) return undefined;
+        if ('stage' in change) {
+          const {stage} = change, selected = this.#store.ambient();
+          if (selected?.requestId !== stage.requestId || selected.status !== Outcome.succeeded || this.#store.artwork(stage.artworkId)?.deletedAtMs !== null) return undefined;
+          this.#store.issueAmbient(stage.artworkId);
+          return stage.compositionId;
+        }
+        if (this.#store.issuedAmbient() !== change.clearArtworkId) return undefined;
+        this.#store.issueAmbient(null);
+        return null;
+      });
+      if (compositionId !== undefined) await this.#dispatch.ambient({requestId: `ambient-${randomUUID()}`, target: 'tidbyt', compositionId}, parent);
+    } catch {/* The tile keeps what it holds. Nothing resends. */}
   }
   /** Keeps the ambient tile's copy alive while generation is paused. Staging is local and free. */
   #renewAmbient(): void {

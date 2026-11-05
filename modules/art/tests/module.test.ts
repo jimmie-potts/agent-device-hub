@@ -75,6 +75,30 @@ void test('conflicting staging evidence withdraws a candidate', async t => {
   await until(() => art.state.candidates.length === 0);
 });
 
+for (const next of ['renewal', 'replacement'] as const) void test(`deleting issued ambient art clears it while ${next} is pending, including after restart`, async t => {
+  const timers: {delay: number; callback: () => void}[] = [];
+  const scheduler = {after: (delay: number, callback: () => void) => {timers.push({delay, callback}); return () => {};}};
+  const dispatch = fakeDispatch('wait'), art = await hosted(t, {providers: {openai: fakeImages(drawing())}, dispatch: dispatch.seam, scheduler});
+  const request = {action: 'start', purpose: 'ambient', origin: {kind: 'schedule'}, targets: ['tidbyt']};
+  await art.automatic(request, 'visible');
+  const visible = await art.finished('visible');
+  dispatch.report(dispatch.stages[0]?.requestId ?? '', 'succeeded');
+  await until(() => dispatch.ambients.length === 1);
+  if (next === 'renewal') {
+    art.clock.value += STAGE_LIFETIME_MS / 2;
+    (timers.find(timer => timer.delay === STAGE_LIFETIME_MS / 2) ?? assert.fail('no renewal')).callback();
+  } else {await art.automatic(request, 'replacement'); await art.finished('replacement');}
+  await until(() => dispatch.stages.length === 2);
+  await art.restart();
+  assert.equal(dispatch.ambients.length, 1, 'restart does not replay ambient commands');
+  await art.catalog({action: 'delete', artworkId: visible.artworkId}, 'delete-visible');
+  await until(() => dispatch.ambients.length === 2);
+  assert.equal(dispatch.ambients[1]?.compositionId, null);
+  dispatch.report(dispatch.stages[1]?.requestId ?? '', 'succeeded');
+  if (next === 'replacement') await until(() => dispatch.ambients.length === 3);
+  else {await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(dispatch.ambients.length, 2, 'late renewal cannot restore deleted art');}
+});
+
 void test('late staging evidence never extends the admitted copy lifetime', async t => {
   const dispatch = fakeDispatch('wait'), art = await hosted(t, {providers: {openai: fakeImages(drawing())}, dispatch: dispatch.seam});
   await art.owner(generate(['pixoo']), 'late'); await art.finished('late');

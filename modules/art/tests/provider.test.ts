@@ -34,6 +34,14 @@ void test('response bounds cancel a chunked or incorrectly sized body before con
   }
 });
 
+void test('oversized server errors retain uncertainty regardless of their declared body length', async () => {
+  for (const headers of [{}, {'content-length': '1'}, {'content-length': '1000'}]) {
+    const body = new ReadableStream<Uint8Array>({start(controller) {controller.enqueue(new Uint8Array(32)); controller.close();}});
+    const error = await fault(post(() => Promise.resolve(new Response(body, {status: 503, headers})), 'https://synthetic.invalid', {}, '{}', signal, 16));
+    assert.deepEqual([error.uncertain, error.keep, error.code], [true, true, 'uncertain-result']);
+  }
+});
+
 void test('OpenAI: one request with the header key and the qualified shape, and bytes and usage back', async () => {
   const {sent, transport} = record(() => json({data: [{b64_json: Buffer.from('png-bytes').toString('base64')}], usage}));
   const answer = await new OpenAiImages({key: 'test-key', transport}).image(image, signal);
