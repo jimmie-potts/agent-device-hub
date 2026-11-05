@@ -138,6 +138,51 @@ retains worker scheduling and outcome integration under the
 and [installed/physical acceptance](https://github.com/jimmie-potts/agent-device-hub/issues/725)
 remain separately owned. Synthetic payloads establish no physical timing.
 
+## Music rendering source helpers
+
+`src/music-effects.ts` and `src/music-input.ts` provide the deterministic source
+increment for [#1272](https://github.com/jimmie-potts/agent-device-hub/issues/1272).
+They are internal helpers with no runtime subscription, music command, store or
+device-worker integration. They do not grant permission to show music or change a
+controller's mode, power, brightness or scene.
+
+`freezeMusicRecipe(unknown)` validates a closed `MusicRecipeV1` and copies its
+palette and all defaults into an immutable recipe. The five effects are
+`level-glow`, `bass-pulse`, `spectrum`, `traveling-wave` and `ambient`. Version 1
+fixes its defaults and bounds, so a serialized recipe keeps its interpretation.
+The palette has 1–8 hex colors; intensity is 0–1, sensitivity 0.1–8, smoothing
+0–2000 ms, pulse half-life 100–2000 ms and wave period 400–10000 ms. These bounds
+are source constraints and do not qualify a device cadence or flash-safety limit.
+
+`MusicInput(binding, anchor)` holds one immutable latest feature from #721's
+existing profile-2 capture family. `binding` names the endpoint and capture
+generation; the caller must establish that authority. `accept(message, clock)`
+validates the family, binding, increasing sequence and source timing.
+`current(clock)` returns a fresh sample or null. Clock samples carry explicit
+`wallMs` and receiver-local `monotonicMs`; the helper reads no clock itself.
+Expiry uses the original payload deadline and a receipt-monotonic deadline.
+Duplicate messages cannot renew it. The first native discontinuity initializes
+the binding; later discontinuities, clock invalidity and expiry retire it.
+`retire()` also permanently clears it. A later binding needs a new instance.
+
+`MusicRenderer(recipe, layout, binding).render(sample)` returns the existing
+`Display` payload or null for repeated or invalidated input. It copies saved
+geometry, uses source-time differences for smoothing and decorative wave motion,
+and encodes one static RGB keyframe per zone. Lines use paired logical zones;
+NL22 uses one physical zone. Spatial effects require saved positions. Output
+retains the existing frame and byte bounds. Broad bands are bass, mid and treble
+measurements, not FFT bins; onset confidence is not a beat or BPM estimate.
+Silence follows the effect's decay. No frame on expiry does not turn a light off;
+a physical controller would keep its last presentation until another write.
+
+The future integration must bind the core's active session, read current input
+before use, recheck authority and freshness around awaits, and retire on stop,
+replacement, overflow/resync, restart or a newer manual choice. Participation,
+interruptions and source-loss presentation require the owner policy in #40.
+Existing workers retain sole device-write ownership; #725 owns physical timing.
+`music-effects.test.ts` and `music-input.test.ts` use synthetic inputs and explicit
+times to check these source contracts.
+
 ## Families
 
 The module answers each device's own keys, `bunny.cmd.<family>.<device id>`, and serves
