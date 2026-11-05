@@ -430,7 +430,8 @@ Verification has three tiers.
 Start once step 6 has confirmed that the merged revision's CI jobs succeeded
 and read back the issue state.
 Cleanup does not wait for installation or physical acceptance unless that work
-still uses the worktree. Clean up only what this delivery created:
+still uses the resource. This applies to ordinary delivery and to explicit
+deliver-work alike. Clean up only what this delivery created:
 
 1. Confirm the PR is merged and the delivery worktree's `HEAD` is the PR's
    reviewed head (`headRefOid`, the `--match-head-commit` value), not the squash
@@ -444,22 +445,47 @@ still uses the worktree. Clean up only what this delivery created:
    `.local/evidence/gh-<issue-number>-<slug>/`. The PR and issue are public, so
    private material goes only to `.local/evidence/`. Confirm the other ignored
    files are disposable.
-3. In every case, clean up the canonical local checkout's
-   `.local/scratch/gh-<issue-number>-<slug>/` folder: remove each worktree
-   registered inside it with ordinary `git worktree remove`, confirm that
-   `git worktree list` shows none there, then delete the folder. Step 1's `HEAD`
+3. Clean up the canonical local checkout's
+   `.local/scratch/gh-<issue-number>-<slug>/` folder and any independent clone,
+   review copy or staging directory this task created. Find them from the task's
+   own record, because a standalone clone is not in the worktree registry. Apply
+   step 2's evidence check to each, and keep any that an installation, acceptance
+   exercise or other task still uses. For the rest, remove each worktree registered
+   inside with ordinary `git worktree remove`, confirm that `git worktree list`
+   shows none there, then delete the folder and confirm it is gone. Step 1's `HEAD`
    check applies only to the delivery worktree.
 4. For a delivery worktree created with `git worktree add`, run
    `git worktree remove <path>` from the canonical local checkout and confirm
-   with `git worktree list` that the path is gone. Do not delete the delivery
-   branch yourself.
+   with `git worktree list` that the path is gone.
 5. Leave a tool-managed worktree, such as a Claude Code session worktree under
    `.claude/worktrees/`, to that tool's own exit flow instead of
    `git worktree remove`; that flow may also delete its branch. Once steps 1 and
    2 pass on a clean worktree, accepting the tool's option to discard the
    squash-merged commits is allowed. If this session cannot run that flow, keep
-   the worktree and report it as ready to remove.
-6. Remove the Docker artifacts this task created: its stopped containers, the
+   the worktree and report it as retained and ready to remove; that is not a
+   completed removal.
+6. Once the worktree is gone, remove the delivery's local branch if all of these
+   hold. Otherwise retain it:
+   - `git worktree list --porcelain` names no `branch refs/heads/<branch>`, and no
+     session or other task still uses it. An idle-looking process is not evidence
+     of release, so unknown ownership retains the branch.
+   - No remaining consumer, such as an installation or publication, needs it.
+   - `git rev-parse refs/heads/<branch>` equals the reviewed head from step 1. A
+     moved tip is unfinished or unknown work.
+
+   Delete only that exact ref with the expected head as the guard, from the
+   canonical local checkout, immediately after those checks:
+   `git update-ref -d refs/heads/<branch> <reviewed-head>`. Then remove any
+   `branch.<branch>` configuration and confirm that
+   `git show-ref --verify refs/heads/<branch>` fails. The guard refuses a moved tip
+   but does not stop a concurrent checkout, so it does not replace the checks above.
+   Judge delivery from the merged PR as in step 1, never `git branch --merged`.
+   Never use `git branch -D` or a sweep across branches. Remote branches have a
+   separate lifecycle under
+   [#309](https://github.com/jimmie-potts/agent-device-hub/issues/309): a missing
+   remote branch neither proves local delivery nor authorizes removal, and this
+   step does not delete remote branches.
+7. Remove the Docker artifacts this task created: its stopped containers, the
    images it built and tagged, the untagged `<none>` images its rebuilds of
    those tags left (by ID, from `docker images -f dangling=true`), and its
    synthetic volumes and networks. Give them names that carry the issue number
@@ -481,15 +507,26 @@ still uses the worktree. Clean up only what this delivery created:
    the installed hooks and the running core reference. Confirm with
    `docker ps -a`, `docker images`, `docker volume ls` and `docker network ls`
    filtered by the task's name that nothing remains.
+8. Record the cleanup result in the existing delivery evidence, the PR or issue
+   comment that closes out the work. Give the branch, worktree, scratch, clone,
+   staging directory and remote one outcome each: removed, with the readback that
+   showed it; retained, with the reason, owner and next action; or not applicable.
+   Claim removal only from a current readback. Source and CI completion stay
+   separate from this result. GitHub receipts use neutral labels rather than
+   private paths, configuration or runtime metadata.
 
-Keep the worktree and scratch, and report the path and reason, when a worktree
+Retain the affected resources, and record why under step 8, when a worktree
 is dirty or locked, another process or session uses it, the delivery worktree's
-`HEAD` differs from the reviewed head, evidence is not yet preserved, an ignored
-file is not confirmed disposable, or `git worktree remove` refuses. Without the
+`HEAD` differs from the reviewed head, merged-main CI is unavailable, evidence is
+not yet preserved, an ignored file is not confirmed disposable, a consumer remains,
+ownership is unknown, or `git worktree remove` or the ref guard refuses. Without the
 user's explicit approval, never force removal or reset, clean or discard files
-to make a worktree removable. If main CI fails, or the work failed or was
+to make a resource removable. If main CI fails, or the work failed or was
 abandoned, ask the user whether to keep or remove it and keep it until they
-decide. Leave other sessions' worktrees, branches and scratch alone.
+decide. Leave other sessions' worktrees, branches and scratch alone. Branches and
+worktrees that earlier deliveries left behind need a separately approved candidate
+list ([#477](https://github.com/jimmie-potts/agent-device-hub/issues/477)); this
+procedure covers only the current delivery's resources.
 
 ### Workspace audit
 
@@ -508,7 +545,8 @@ launcher caches and untagged images for the owner's decision, and
 `docker system df`. Act on it
 under the steps above: remove only what the report marks removable or what this
 task created, ask the owner about closed-PR and detached worktrees, and leave
-tool-managed worktrees to their tools. Never prune images, containers, volumes
+tool-managed worktrees to their tools. A `removable` verdict is not proof of
+ownership and does not cover the worktree's branch. Never prune images, containers, volumes
 or the build cache as part of a task: the installed stacks, the qualified
 release images and other sessions' builds share that daemon, and whether a
 build is running cannot be seen from one session. Pruning is the owner's

@@ -107,6 +107,9 @@ the conservative gate for delivery/validation policy changes.
 Validate locally before each push, then review alongside hosted CI; merge only after both. Recheck
 scope, head and base before a squash merge guarded by --match-head-commit.
 Never use --admin. Read all applicable merged-revision main CI jobs before issue closure.
+Then finish [Cleanup after delivery](docs/sdlc.md#cleanup-after-delivery), including
+in ordinary work without shared workflow skills: report each owned resource as removed
+with readback, retained with reason, owner and next action, or not applicable.
 No project UI requires human approval. Preserve applicable automated, browser
 and accessibility validation, independent reviews and CI under the
 [UI verification policy](docs/sdlc.md#ui-approval-scope).
