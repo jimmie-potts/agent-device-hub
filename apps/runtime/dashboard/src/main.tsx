@@ -22,7 +22,6 @@ import {HubMode} from './hub-mode.tsx';
 import {DeviceModesProvider} from './device-mode.tsx';
 import {DeviceCard} from './device-controls.tsx';
 import {WemoDeviceCard} from './wemo-device-card.tsx';
-import {OnnDeviceCard} from './onn-device-card.tsx';
 import {RoborockDeviceCard} from './roborock-device-card.tsx';
 import {RoborockWidget} from '@jimmie-potts/roborock/frontend';
 import {VolcanoDeviceCard} from './volcano-device-card.tsx';
@@ -207,10 +206,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
             control={false} operations={operations} operationsLive={operationsLive} Component={TidbytDisplay}/>
             {route.kind === 'component' && <details><summary>Device evidence</summary><DeviceCard record={record} owner={copy.owner}
               live={state.feed === 'connected' && copy.synced} control={false} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now}/></details>}
-          </> : record.kind === 'onn' && copy.owner === 'bunny/modules/onn' && runtime.modules?.some(module => module.name === 'onn' && module.state === 'running' && module.pages.some(page => page.id === 'controls')) === true
-            ? <OnnDeviceCard record={record} owner={copy.owner} connection={connection} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed}
-              control={runtime.control} operations={operations} operationsLive={operationsLive}/>
-            : record.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <RoborockDeviceCard target={record.id} label={record.label} connection={connection}
+          </> : record.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <RoborockDeviceCard target={record.id} label={record.label} connection={connection}
               live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'roborock' && module.state === 'running' && module.serves.includes('roborock-vacuum')) === true}/>
             : record.kind === 'volcano' && copy.owner === 'bunny/modules/volcano' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <VolcanoDeviceCard target={record.id} label={record.label} connection={connection} control={runtime.control} operations={operations} operationsLive={operationsLive}
               live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'volcano' && module.state === 'running' && module.serves.includes('volcano-status')) === true}/>
