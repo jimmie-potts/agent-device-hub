@@ -13,7 +13,8 @@ export async function run(args: readonly string[]): Promise<void> {
   const config = await loadConfiguration(args[1]);
   const participant = await connectRemote({url: config.edgeOrigin, token: config.token, source: MUSIC_PRODUCER_SOURCE,
     maxQueued: 8, onError: () => {}});
-  const producer = new MusicProducer({participant, native: new NativeCapture({helper: config.helper})});
+  const producer = new MusicProducer({participant, native: new NativeCapture({helper: config.helper}),
+    ...(config.microphone === undefined ? {} : {microphone: config.microphone})});
   const stop = (): void => {void producer.stop().catch(() => {process.exitCode = 1;});};
   process.once('SIGINT', stop); process.once('SIGTERM', stop);
   try {

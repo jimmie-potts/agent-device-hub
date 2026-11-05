@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-catalog-edit/2.0",
+  "description": "Command: the owner marks a favorite, gives explicit feedback, deletes art or stages saved art again (Hub #680). The envelope subject is `art`. The tracker admits it only from the dashboard, and the module only from the core.",
+  "type": "object",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "action",
+        "artworkId",
+        "favorite"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "const": "favorite"
+        },
+        "artworkId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$"
+        },
+        "favorite": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "action",
+        "artworkId",
+        "signal"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "const": "feedback"
+        },
+        "artworkId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$"
+        },
+        "signal": {
+          "enum": [
+            "more",
+            "less",
+            "dismiss"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "action",
+        "artworkId"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "const": "delete"
+        },
+        "artworkId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "action",
+        "artworkId",
+        "target"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "const": "reuse"
+        },
+        "artworkId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$"
+        },
+        "target": {
+          "enum": [
+            "tidbyt",
+            "pixoo"
+          ]
+        }
+      }
+    }
+  ]
+}

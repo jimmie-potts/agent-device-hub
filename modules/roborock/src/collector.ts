@@ -507,10 +507,15 @@ export class Collector {
             normalizationVersion: NORMALIZATION_VERSION,
             ...(requestedRecordId === undefined ? {} : { requestedRecordId }),
         };
-        const failure = (code: ErrorCode): Entry<T> => ({
-            observation: { ...context, observedAtMs: this.#now(), failureCode: code },
-            requestedAt: started, value: undefined, at: this.#now(), ok: false, code, episodeId, gapId,
-        });
+        // One instant for the observation and its entry: the checkpoint refuses a status whose
+        // observation time differs from the time it records, and a retained batch would repeat it.
+        const failure = (code: ErrorCode): Entry<T> => {
+            const at = this.#now();
+            return {
+                observation: { ...context, observedAtMs: at, failureCode: code },
+                requestedAt: started, value: undefined, at, ok: false, code, episodeId, gapId,
+            };
+        };
         if (!this.#alive())
             return failure('cancelled');
         if (cycle.signal.aborted || this.#wirePending)

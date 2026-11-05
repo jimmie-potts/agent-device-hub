@@ -26,6 +26,9 @@ BB-8 is hibernated indefinitely after the owner's battery blocker. Its code and
 private state are retained, with no active development, robot tests or default
 CI feature checks. See the [hibernation guide](modules/bb8/README.md).
 
+ONN is hibernated after device retirement. Its retained [module guide](modules/onn/README.md) describes dormant source and preserved private history. Shared dashboard keyboard/accessibility checks remain active.
+
+
 The current [Tidbyt](modules/tidbyt/README.md), [LIFX](modules/lifx/README.md),
 [Pixoo](modules/pixoo/README.md), [Nanoleaf](modules/nanoleaf/README.md),
 [playback](modules/playback/README.md) and [Codex Desktop](modules/codex-desktop/README.md)

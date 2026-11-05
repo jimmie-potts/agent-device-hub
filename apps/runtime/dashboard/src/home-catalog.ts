@@ -10,7 +10,13 @@ export type HomeCardDefinition = {id: string; name: string; category: string; si
 const ordinarySizes: readonly WidgetSize[] = ['medium', 'large'];
 export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardDefinition[] {
   // Roborock and Volcano metadata describe each existing device placement, not a second default card.
-  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock' && widget.id !== 'volcano').map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: !['wispr', 'duck-latest', 'reachy', 'timeline'].includes(widget.id)}));
+  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock' && widget.id !== 'volcano').map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: !['art', 'wispr', 'duck-latest', 'reachy', 'timeline'].includes(widget.id)}));
+  const art = result.find(card => card.id === 'art');
+  if (art !== undefined) {
+    art.category = 'Art';
+    const exposed = runtime.modules?.some(module => module.name === 'art' && module.state === 'running' && module.pages.some(page => page.id === 'gallery')) === true;
+    if (!exposed || !connected) {art.source = {kind: 'unavailable'};art.reason = !exposed ? 'Art Gallery is unavailable.' : 'Art records are unavailable or stale.';}
+  }
   for (const id of ['duck-latest', 'reachy']) {
     const card = result.find(card => card.id === id);
     if (card === undefined) continue;
@@ -82,7 +88,8 @@ export function addHomeCard(layouts: HomeArrangements, breakpoint: keyof HomeArr
   const next = structuredClone(layouts);
   for (const key of ['desktop', 'phone'] as const) {
     const found = next[key].find(entry => entry.widget === card.id);
-    if (found === undefined) next[key].push({widget: card.id, size: card.sizes.includes('medium') ? 'medium' : card.sizes[0] ?? 'small', hidden: false});
+    if (found === undefined) next[key].push({widget: card.id, size: card.sizes.includes('medium') ? 'medium' : card.sizes[0] ?? 'small', hidden: false,
+      ...(card.id === 'art' ? {art: {format: 'auto', pinned: true}} : {})});
     else if (key === breakpoint) found.hidden = false;
   }
   return next;

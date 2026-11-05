@@ -2,7 +2,8 @@
 // the contracts, so it asks the core to forward its commands to the display modules. A job starts from `art-request`, for
 // the owner, or `art-auto`, which the core's automation sends; the family decides, never `origin` or `purpose`. A display
 // keeps its own private copy of a staged composition and later plays it by `compositionId` under `moment-play/2.1`. The
-// in-process bus checks no sender, so who may send each family binds at the gateway, the tracker and each responder.
+// in-process bus checks no sender. Art families bind requesters at the gateway and tracker; every responder must check
+// its sender. The tracker does not gate moment-play's requester, so automation owns art-moment arbitration.
 import {createHash} from 'node:crypto';
 import {errorBody, type ErrorBody} from './errors.js';
 import type {Message, MessageValidator, PayloadCheck} from './index.js';

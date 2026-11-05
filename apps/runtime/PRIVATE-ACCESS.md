@@ -1,5 +1,7 @@
 # Private access to the Mac dashboard
 
+ONN is hibernated after device retirement. Preserve retained ONN state and compatibility readers without activating its writer or requiring dormant-device qualification. Its historical setup references do not select active ONN use.
+
 This optional entry opens the existing dashboard from the owner's personal
 Tailscale devices, at home or away. The Mac owns the runtime, state and address;
 the PC is only a client. It uses the existing read/control browser sessions and

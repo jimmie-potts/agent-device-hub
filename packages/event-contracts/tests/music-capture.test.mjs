@@ -21,6 +21,7 @@ const message = (family, kind, type, data, subject = 'endpoint-1') => ({
 const feature = data => message('music-capture-features', 'occurrence', 'org.bunny.music-capture.features.observed', data);
 const valid = value => assert.equal(validator.validate(value, {nowMs: at}).ok, true, JSON.stringify(validator.validate(value, {nowMs: at})));
 const invalid = value => assert.equal(validator.validate(value, {nowMs: at}).ok, false);
+const v21 = value => ({...value, dataschema: value.dataschema.replace('/2.0', '/2.1')});
 
 test('capture features accept measured bounded windows without an occurrence expiry attribute', () => {
   valid(feature(frame()));
@@ -67,4 +68,30 @@ test('endpoint registration advertises capability without a session and loss wor
   invalid(endpoint({requestId: 'enable-1', action: 'enable', input: 'microphone'}));
   valid(message('music-capture-lost', 'occurrence', 'org.bunny.music-capture.endpoint-lost', {id: 'endpoint-1'}));
   invalid(message('music-capture-lost', 'occurrence', 'org.bunny.music-capture.endpoint-lost', {id: 'different'}));
+});
+
+test('selected microphone versions preserve Music and require public source provenance', () => {
+  const selection = {input: 'microphone', microphoneId: 'studio-mic'};
+  const registration = message('music-capture-endpoint', 'command', 'org.bunny.music-capture.endpoint.requested',
+    {requestId: 'enable-mic', action: 'enable', input: 'music', microphone: {id: selection.microphoneId}});
+  const work = message('music-capture-work', 'command', 'org.bunny.music-capture.work.requested',
+    {requestId: 'start-mic', operationId: 'start-mic', generation, action: 'start', ...selection});
+  const control = message('music-capture-control', 'command', 'org.bunny.music-capture.control.requested',
+    {requestId: 'start-mic', expectedRevision: 2, endpointId: 'endpoint-1', action: 'start', ...selection}, 'music');
+  const state = message('music-capture-state', 'state', 'org.bunny.music-capture.updated',
+    {id: 'music', revision: 3, endpointId: 'endpoint-1', availability: 'available', microphone: {id: selection.microphoneId},
+      session: {status: 'starting', generation, operationId: 'start-mic', ...selection}}, 'music');
+  for (const value of [registration, work, control, state, feature({...frame(), ...selection})]) {
+    invalid(value);
+    valid(v21(value));
+    invalid({...v21(value), data: {...value.data, uid: 'synthetic-private-device'}});
+  }
+  valid(v21(feature(frame())));
+  valid(v21({...registration, data: {requestId: 'enable-music', action: 'enable', input: 'music'}}));
+  valid(v21({...state, data: {id: 'music', revision: 0, endpointId: null, availability: 'off', session: {status: 'idle'}}}));
+  for (const microphoneId of ['', 'x'.repeat(65), 'room mic', 'bad/alias', 'studio-mic\n']) invalid(v21(feature({...frame(), ...selection, microphoneId})));
+  invalid(v21(feature({...frame(), input: 'microphone'})));
+  invalid(v21(feature({...frame(), microphoneId: 'studio-mic'})));
+  invalid(v21({...registration, data: {...registration.data, microphone: {id: 'studio-mic', present: true}}}));
+  invalid({...v21(work), dataschema: work.dataschema.replace('/2.0', '/2.2')});
 });

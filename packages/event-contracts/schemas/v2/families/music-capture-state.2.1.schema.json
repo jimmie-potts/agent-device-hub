@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/music-capture-state/2.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "endpointId",
+    "availability",
+    "session"
+  ],
+  "properties": {
+    "id": {
+      "const": "music"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "endpointId": {
+      "oneOf": [
+        {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "availability": {
+      "enum": [
+        "off",
+        "available",
+        "unavailable"
+      ]
+    },
+    "session": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "const": "idle"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "generation",
+            "operationId",
+            "input"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "starting",
+                "active",
+                "stale",
+                "stopping",
+                "unavailable",
+                "uncertain"
+              ]
+            },
+            "generation": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            "operationId": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+            },
+            "input": {
+              "const": "music"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "generation",
+            "operationId",
+            "input",
+            "microphoneId"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "starting",
+                "active",
+                "stale",
+                "stopping",
+                "unavailable",
+                "uncertain"
+              ]
+            },
+            "generation": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            "operationId": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+            },
+            "input": {
+              "const": "microphone"
+            },
+            "microphoneId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+            }
+          }
+        }
+      ]
+    },
+    "microphone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+        }
+      }
+    }
+  }
+}

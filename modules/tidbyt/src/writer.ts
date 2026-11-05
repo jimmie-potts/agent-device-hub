@@ -224,6 +224,11 @@ export class TileWriter {
     return this.#presence;
   }
 
+  /** The last frame whose transmission was answered, independently of current presence or selection. */
+  get transmitted(): {key: string; atMs: number} | undefined {
+    return this.#sent === undefined ? undefined : {...this.#sent};
+  }
+
   /** Shows `target`, and answers how long to wait before the next evaluation. */
   async write(target: TileTarget): Promise<number> {
     const {queue, installation, render, stopped, refreshMs, pollMs, now: clock} = this.#options;

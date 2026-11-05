@@ -336,6 +336,7 @@ for(const [name,lastError] of [['an uncertain write',{code:'timeout',priorEffect
    const state=s.player.getState();
    vi.spyOn(s.player,'getState').mockReturnValue({...state,lastError});
    expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+   expect(s.monitor.momentBlock(false,true)).toBe('the display may show something else');
   }finally{vi.restoreAllMocks();await s.close();}
  });
 }
@@ -345,6 +346,7 @@ it('a player in error is not idle, though nothing is loaded',async()=>{
   const state=s.player.getState();
   vi.spyOn(s.player,'getState').mockReturnValue({...state,intent:'paused',state:'error',lastError:{code:'operation-failed'}});
   expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
+   expect(s.monitor.momentBlock(false,true)).toBe('the display may show something else');
  }finally{vi.restoreAllMocks();await s.close();}
 });
 it('a view change during a moment over an idle player ends it',async()=>{
@@ -805,4 +807,37 @@ it('chooses mood content through one seam and draws two complete, distinct frame
  }
  const tinted=renderMomentContent({kind:'mood',mood:'reminder',palette:['#102030']})[0];
  expect(Array.from(tinted??[]).filter(value=>![0,0x10,0x20,0x30].includes(value))).toEqual([]);
+});
+
+it('queued exact art never adopts an idle display after the owner clears playing Media',async()=>{
+ const s=await setup();
+ try{
+  await mediaPlaying(s);
+  const results=s.play({exactArt:true,startAtMs:s.clock.now()+2000});
+  await s.run(200);
+  await s.settle(s.player.clear());
+  await s.run(5000);
+  expect(results).toEqual([expect.objectContaining({ending:null,refused:'blocked'})]);
+  expect(s.frames()).not.toContainEqual(art);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',itemId:null});
+ }finally{await s.close();}
+});
+
+for(const completed of [false,true])it(`exact art preserves a ${completed?'finished':'stopped'} saved item and respects a later resume`,async()=>{
+ const s=await setup();
+ try{
+  s.store.playlist.repeat=!completed;await mediaPlaying(s);
+  if(completed){for(let i=0;i<s.store.playlist.items.length+1&&s.player.getState().intent==='active';i++){await s.settle(s.player.next());await s.run(200);}}
+  else await s.settle(s.player.stop());
+  const before=s.player.getState();expect(before.intent).toBe('stopped');expect(before.itemId).not.toBeNull();
+  expect(s.monitor.momentBlock(false,true)).toBeNull();
+  const results=s.play({exactArt:true,coversStatus:false});await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
+  await s.run(3200);ended(results,'completed');await s.run(1100);expect(s.frames().at(-1)).toEqual(blank);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before.generation,itemId:before.itemId});
+  const again=s.play({exactArt:true,coversStatus:false});await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
+  await s.settle(s.player.resume());await s.run(completed?200:1500);ended(again,'interrupted');
+  expect(s.player.getState()).toMatchObject({intent:'active',state:'playing'});
+  const firsts=s.frames().map(frame=>frame[0]);
+  expect(firsts.slice(firsts.lastIndexOf(7))).toEqual([7,0,1]);
+ }finally{await s.close();}
 });
