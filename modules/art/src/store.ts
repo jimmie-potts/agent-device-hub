@@ -23,7 +23,7 @@ export type StoredComposition = ArtComposition & {compositionId: string; promptH
 export type Artwork = {artworkId: string; requestId: string; createdAtMs: number; favorite: boolean; feedback: ArtFeedback | null; variationOf: string | null; palette: string[]; generatedBy: 'openai' | 'local'; deletedAtMs: number | null};
 export type StageStatus = 'pending' | 'succeeded' | 'failed' | 'uncertain';
 export type StageRow = {requestId: string; artworkId: string; compositionId: string; target: ArtDisplayTarget; status: StageStatus; expiresAtMs: number | null; ambient: boolean};
-export type Preparation = {requestId: string; stageRequestId: string; status: StageStatus; traceparent: string; createdAtMs: number};
+export type Preparation = {requestId: string; stageRequestId: string; status: StageStatus | 'conflict'; traceparent: string; createdAtMs: number};
 export type IssuedAmbient = {requestId: string} & ({stageRequestId: string; artworkId: string} | {stageRequestId: null; artworkId: null});
 
 const json = <T>(row: unknown): T => JSON.parse((row as {record: string}).record) as T;
@@ -121,6 +121,7 @@ export class ArtStore {
     const row = this.db.prepare('SELECT record FROM art_preparations WHERE stage_request_id=?').get(stageRequestId);
     return row === undefined ? undefined : json<Preparation>(row);
   }
+  hasPreparation(requestId: string): boolean {return this.db.prepare('SELECT 1 FROM art_preparations WHERE request_id=?').get(requestId) !== undefined;}
   pendingPreparations(): Preparation[] {return this.db.prepare("SELECT record FROM art_preparations WHERE status='pending'").all().map(row => json<Preparation>(row));}
   savePreparation(preparation: Preparation): void {
     this.db.prepare('INSERT INTO art_preparations VALUES(?,?,?,?) ON CONFLICT(request_id) DO UPDATE SET status=excluded.status,record=excluded.record')
