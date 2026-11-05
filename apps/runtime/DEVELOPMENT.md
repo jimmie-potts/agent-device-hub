@@ -754,6 +754,17 @@ existing contract consumers after the shared build.
 
 The Nanoleaf editor check (#934) uses the actual module with a simulated Lines controller. It covers passive reads, local selection, tracked editing, read-only and Origin refusal, observed power, keyboard/accessibility, reduced motion and re-entry. The `nanoleaf-editor` catalog scenario runs through both tier-1 transports and disposable Acceptance. `test:nanoleaf:built` includes the literal-source Prism adapter test beside the compiled TypeScript tests; retained browser JavaScript does not require a second runtime build policy.
 
+The same `nanoleaf-pages.browser.ts` entry includes offline decorative show
+authoring (#723): starter drafts, immutable named saves, version reads and cue
+storyboards through the real gateway/core/module. It checks stale-save,
+read-only and Origin refusals, cancelled/failed reads retaining drafts, uncertain
+attempts without resend, unchanged simulated device state and light/dark
+desktop/390/320px accessibility. `DASHBOARD_RECEIPTS` keeps synthetic screenshots
+outside the checkout. The Nanoleaf built suite covers atomic save/outcome
+rollback, full storage, deferred publication, core acknowledgment, restart,
+bounded content and delayed-sync freshness. No test uses an installed source,
+personal media or physical controller.
+
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use
 Playwright Chromium against the built runtime in the test's own process, with
 the core, its gateway on a free loopback port, a private state directory under

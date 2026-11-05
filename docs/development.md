@@ -1889,6 +1889,18 @@ for the acceptance exercise.
 
 ## Nanoleaf port
 
+Offline decorative show authoring (#723) uses the existing Nanoleaf built-test
+discovery for immutable versions, metadata-only commands, content reads and
+restart/rollback checks. After the root build, run
+`node --test modules/nanoleaf/dist/tests/music-shows.test.js modules/nanoleaf/dist/tests/module-shows.test.js`,
+then `npm run test:nanoleaf:built`. The existing
+`node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts` journey covers the
+editor through the authenticated disposable runtime and remains in the full
+local runtime dashboard browser check. Run the existing smoke check as well.
+Keep shared build, typecheck, lint,
+contract and workflow checks. These checks use synthetic plans and establish
+no installation, playback, physical timing or light output.
+
 The internal prepared-music timeline helper (#1273) is covered by
 `modules/nanoleaf/tests/music-timeline.test.ts`, discovered by the existing
 `test:nanoleaf:built` CI suite. After the root build, its focused check is
@@ -2143,6 +2155,14 @@ process uses `modules/pixoo/tests/helpers/launch.ts`. Both retry instead of
 keeping an installed service's port, such as 41230 or 41231. On 2026-10-07 the
 Vitest suite took about 8 s locally for 31 files and 310 tests, and the module's
 node:test suites about 35 s for 37 tests.
+
+Generated-art admission uses `modules/pixoo/tests/module/art.test.ts` and the
+existing `test:pixoo:built` CI suite. It exercises synthetic PNG/GIF staging,
+original preservation, decoded previews and timing, sender/profile refusals,
+duplicate renewal, reference-safe cleanup, restart and exact-art moments through
+the simulated writer. The `pixoo-art` runtime scenario covers the core handoff.
+Run these alongside the module and affected runtime checks above; no real art,
+provider key or device is needed.
 
 After the import, divoom-app-upgrade takes only bug fixes. Mirror each one here.
 
