@@ -29,12 +29,12 @@ async function world(t: TestContext) {
     const module: BunnyModule = {manifest: {name: kind, apiVersion: '1.3', configure: section => ({config: section, devices: [id]})},
       start: async given => {
         context = given;
-        await given.sdk.serveSync(['device'], () => {syncs++; return {revision: record.revision, states: [{...deviceState(record), dataschema: 'https://bunny.invalid/events/device/2.2'}]};});
+        await given.sdk.serveSync(['device'], () => {syncs++; return {revision: record.revision, states: [{...deviceState(record), dataschema: record.capabilities.moments.supported&&record.capabilities.moments.art?.notices!==undefined?'https://bunny.invalid/events/device/2.3':'https://bunny.invalid/events/device/2.2'}]};});
         await given.sdk.respond<MomentPlayRequest>(`bunny.cmd.moment-play.${id}`, command => {moments.push(command); return {status: 'accepted'};});
       }, stop() {}};
     return {id, record, module, syncs: () => syncs, publish: async () => {
       assert.ok(context); record.revision++;
-      await context.sdk.publish(`bunny.state.device.${id}`, {kind: 'state', ...deviceState(record), dataschema: 'https://bunny.invalid/events/device/2.2'});
+      await context.sdk.publish(`bunny.state.device.${id}`, {kind: 'state', ...deviceState(record), dataschema: record.capabilities.moments.supported&&record.capabilities.moments.art?.notices!==undefined?'https://bunny.invalid/events/device/2.3':'https://bunny.invalid/events/device/2.2'});
     }};
   });
   const files = await edgeConfig(t, [], {modules: {pixoo: {}, tidbyt: {}}});
@@ -212,4 +212,27 @@ it('shared art uses configured IDs and hands a ready display off while another p
     {target: 'desk-display', prepare: {status: 'tracked', requestId: pixoo.data.requestId}, moment: {status: 'tracked', requestId: w.moments[0]?.data.requestId}},
     {target: 'shelf-display', prepare: {status: 'tracked', requestId: tidbyt.data.requestId}, moment: {status: 'not-requested', error: errorBody('invalid-state', {detail: 'art presentation passed its preparation cutoff'})}},
   ], browser: {status: 'tracked', requestId: browser.data.requestId}});
+});
+
+it('rain notice uses negotiated 2.2 and every changed fact conflicts under the retained plan identity',async t=>{
+  const w=await world(t);const display=w.displays[0];assert.ok(display);assert.ok(display.record.capabilities.moments.supported&&display.record.capabilities.moments.art!==undefined);
+  display.record.capabilities.moments.art.notices=['rain-forecast'];await display.publish();await flush();
+  const at=w.clock.now();const plan:ArtPlan={...oneDisplay(at,'rain-plan'),notice:{kind:'rain-forecast',likelihood:'chance',forecastStartAtMs:at+3_600_000,
+    forecastEndAtMs:at+7_200_000,forecastUpdatedAtMs:at-120_000,observedAtMs:at-60_000,staleAtMs:at+2_600_000,weatherRevision:7}};
+  assert.ok(w.core.automation.art);const pending=w.core.automation.art.present(plan,()=>undefined);
+  await waitFor(()=>w.preparations.length===1);const prepare=w.preparations[0];assert.ok(prepare);await w.complete(prepare.data.requestId);const result=await pending;
+  assert.equal('error' in result,false);assert.equal(w.moments[0]?.dataschema,'https://bunny.invalid/events/moment-play/2.2');assert.deepEqual(w.moments[0]?.data.notice,plan.notice);
+  await w.restart();assert.ok(plan.notice!==undefined);
+  for(const notice of [{...plan.notice,likelihood:'likely' as const},{...plan.notice,weatherRevision:8},{...plan.notice,observedAtMs:at-60_001},
+    {...plan.notice,staleAtMs:at+2_500_000},{...plan.notice,forecastStartAtMs:at+3_600_001},{...plan.notice,forecastEndAtMs:at+7_199_999}]) {
+    const changed=await w.core.automation.art.present({...plan,notice},()=>undefined);
+    assert.ok('error' in changed);assert.equal(changed.error.code,'duplicate-conflict');
+  }
+  assert.equal(w.moments.length,1);
+});
+it('rain notice skips a plain-art target without preparation or a substitute mood',async t=>{
+  const w=await world(t),at=w.clock.now();assert.ok(w.core.automation.art);
+  const result=await w.core.automation.art.present({...oneDisplay(at,'unsupported-rain'),notice:{kind:'rain-forecast',likelihood:'likely',forecastStartAtMs:at+3_600_000,
+    forecastEndAtMs:at+7_200_000,forecastUpdatedAtMs:at,observedAtMs:at,staleAtMs:at+2_700_000,weatherRevision:7}},()=>undefined);
+  assert.ok(!('error' in result));assert.equal(result.displays[0]?.prepare.status,'not-requested');assert.equal(w.preparations.length,0);assert.equal(w.moments.length,0);
 });

@@ -96,3 +96,70 @@ void test('actual core exposes revisioned policy, publishes it, and reopens with
   await harness.stop();assert.deepEqual(harness.failures,[]);core=make();harness=new ModuleHarness(core,{stateDir:directory,bus,clock:{now:clock.now},scheduler:clock.scheduler});
   await harness.start();await flush();assert.ok(core.automation.artSchedule);assert.equal(core.automation.artSchedule.get().settingsRevision,1);assert.equal(core.automation.artSchedule.get().policy.enabled,true);
 });
+
+import {createArtPlans} from '../src/core/art-plans.js';
+import {createArtSchedule} from '../src/core/art-schedule.js';
+import type {Action} from '../src/core/tracker.js';
+import type {ArtAuto22} from '@jimmie-potts/event-contracts/v2/art';
+const artwork=(id:string):ArtworkSummary=>({artworkId:id,createdAtMs:local(7),favorite:true,feedback:null,variationOf:null,palette:['#112233'],provenance:{generatedBy:'local',factual:false},
+  compositions:[{target:'ui',compositionId:(id==='new-art'?'b':'a').repeat(64),outcome:'succeeded',motion:'still',renditions:[{renditionId:'c'.repeat(64),width:320,height:320,frames:1,durationMs:0,format:'png',bytes:1,ref:'rendition.synthetic'}]}]});
+function scheduledWorld() {
+  const db=new DatabaseSync(':memory:'),clock=manualClock(local(8)),commands:Action[]=[],failures:string[]=[];
+  const provider=(name:'openai'|'anthropic')=>({provider:name,available:false,ceilingMicros:0,paceMicros:0,spentMicros:0,reservedMicros:0,uncertainMicros:0,remainingMicros:0,todayMicros:0,excessMicros:0,earlierUncertainMicros:0});
+  const catalog:ArtRecord={id:'art',revision:1,month:'2026-11',day:'2026-11-05',providers:[provider('openai'),provider('anthropic')],guard:{calls:0,limit:30,windowMs:3_600_000},
+    gifs:{accepted:0,rejected:0},jobs:[],artworks:[artwork('saved-art')],candidates:[],retention:{recentLimit:24,recent:1,favorites:1,retained:[]}};
+  const shared=new AutomationStore(db,()=>{},{settings:{...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}},interruptSet:[...DEFAULT_INTERRUPT_SET]});
+  const store=new ArtScheduleStore(db),dispatch=(action:Action)=>{commands.push(structuredClone(action));return Promise.resolve({requestId:action.requestId??'synthetic',status:'accepted' as const});};
+  const plans=createArtPlans({clock:clock.now,scheduler:clock.scheduler,active:()=>true,targets:()=>[],current:()=>undefined,dispatch,operation:()=>undefined,claim:(id,digest)=>{assert.equal(shared.claimArtPlan(id,digest),true);return undefined;}});
+  let enabled=false,artReads=0,weatherReads=0;
+  const inputs={set:(value:typeof policy)=>{enabled=value.enabled;},art:()=>{artReads++;return enabled?catalog:undefined;},weather:()=>{weatherReads++;return undefined;}};
+  const options={store,shared,core:{clock:{now:clock.now},dispatch,operation:()=>undefined},scheduler:clock.scheduler,active:()=>true,plans,current:()=>undefined,
+    settings:()=>({...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}}),attention:()=>false,inputs,choice:()=>0.5,failed:()=>{failures.push('storage');}};
+  let owner=createArtSchedule(options);
+  return {db,clock,commands,catalog,store,shared,failures,get owner(){return owner;},reads:()=>({artReads,weatherReads}),
+    move:async(at:number)=>{clock.advance(at-clock.now());await flush();await owner.settled();await flush();},
+    restart:async()=>{await owner.close();owner=createArtSchedule(options);await flush();await owner.settled();},
+    close:async()=>{plans.close();await owner.close();db.close();}};
+}
+void test('saved browser appearance consumes its own last unit once, and disabled source performs zero reads',async()=>{
+  const w=scheduledWorld();try{
+    await w.owner.settled();assert.deepEqual(w.reads(),{artReads:0,weatherReads:0});
+    const saved=await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false}});const start=saved.nextOpportunity?.startAtMs;assert.ok(start!==undefined);
+    await w.move(start-45_000);assert.equal(w.commands.length,0,'preparation does not select the browser early');
+    assert.equal(w.shared.handedFlourishes(start-3_600_000),1);
+    await w.move(start);assert.equal(w.commands.length,1);assert.equal((w.commands[0]?.draft.data as ArtAuto22).action,'present');
+    assert.equal(w.reads().weatherReads,0);await w.restart();await w.move(start+1000);assert.equal(w.commands.length,1,'restart cannot replay selection');assert.deepEqual(w.failures,[]);
+  }finally{await w.close();}
+});
+void test('held generation falls back once at the fixed cutoff; late output and restart cannot trigger selection',async()=>{
+  const w=scheduledWorld();try{
+    const saved=await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false,generation:true}});const start=saved.nextOpportunity?.startAtMs;assert.ok(start!==undefined);
+    await w.move(start-300_000);assert.equal(w.commands.length,1);const request=w.commands[0]?.requestId;assert.ok(request!==undefined);
+    assert.equal((w.commands[0]?.draft.data as ArtAuto22).action,'start');
+    await w.move(start-45_000);await w.move(start);assert.equal(w.commands.length,2);const selected=w.commands[1]?.draft.data as ArtAuto22;assert.equal(selected.action,'present');if(selected.action==='present')assert.equal(selected.artworkId,'saved-art');
+    w.catalog.artworks.unshift(artwork('new-art'));w.catalog.jobs.push({requestId:request,purpose:'appearance',admittedBy:'automatic',status:'finished',outcome:'succeeded',artworkId:'new-art',createdAtMs:start-300_000,finishedAtMs:start+1000,targets:[]});
+    w.owner.changed();await w.owner.settled();await w.restart();await w.move(start+10_000);assert.equal(w.commands.length,2);assert.deepEqual(w.failures,[]);
+  }finally{await w.close();}
+});
+void test('policy disable during preparation leaves the reserved opportunity spent and sends no browser selection',async()=>{
+  const w=scheduledWorld();try{
+    const saved=await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false}});const start=saved.nextOpportunity?.startAtMs;assert.ok(start!==undefined);
+    await w.move(start-45_000);await w.owner.save({expectedSettingsRevision:1,policy:{...policy,enabled:false,ambient:false}});await w.move(start);assert.equal(w.commands.length,0);
+    const count=w.store.get().day?.claimed;assert.equal(count,1);await w.owner.save({expectedSettingsRevision:2,policy:{...policy,ambient:false}});assert.equal(w.store.get().day?.claimed,count);
+    assert.ok((w.owner.get().nextOpportunity?.startAtMs??Infinity)>=start+1000+45*60_000);
+  }finally{await w.close();}
+});
+void test('failed opportunity commit launches neither automatic generation nor presentation',async()=>{
+  const w=scheduledWorld();try{
+    const saved=await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false,generation:true}});const start=saved.nextOpportunity?.startAtMs;assert.ok(start!==undefined);
+    w.db.exec("CREATE TRIGGER refuse_claim BEFORE INSERT ON automation_art_claims BEGIN SELECT RAISE(ABORT,'synthetic'); END");
+    await w.move(start-300_000);assert.equal(w.commands.length,0);assert.equal(w.store.get().day?.claimed,0);assert.ok(w.failures.length>0);
+  }finally{await w.close();}
+});
+void test('host-local DST skips a nonexistent waking boundary and keeps repeated hours in one day',()=>{
+  const previous=process.env.TZ;try{process.env.TZ='America/New_York';
+    assert.equal(wakingDay(new Date(2026,2,8,3,30).getTime(),{...policy,wakingStartMinute:150,wakingEndMinute:600}),undefined);
+    const early=Date.parse('2026-11-01T01:30:00-04:00'),late=Date.parse('2026-11-01T01:30:00-05:00');
+    const midnight={...policy,wakingStartMinute:0,wakingEndMinute:240};assert.deepEqual(wakingDay(early,midnight),wakingDay(late,midnight));
+  }finally{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}
+});

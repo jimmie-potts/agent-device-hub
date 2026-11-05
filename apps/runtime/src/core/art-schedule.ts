@@ -16,7 +16,7 @@ import {artPolicyWrite,GENERATION_MS,planArtDay,PREPARATION_MS,rainForecast,save
 import {ArtScheduleStore,type ArtScheduleData} from './art-schedule-store.js';
 
 type Inputs={art():ArtRecord|undefined;weather():WeatherState|undefined;set(policy:ArtScheduleRecord['policy']):void};
-type Options={store:ArtScheduleStore;shared:AutomationStore;core:CoreHandle;scheduler:ModuleScheduler;active:()=>boolean;
+type Options={store:ArtScheduleStore;shared:AutomationStore;core:Pick<CoreHandle,'clock'|'dispatch'|'operation'>;scheduler:ModuleScheduler;active:()=>boolean;
   plans:ArtPlans;current:(id:string)=>DeviceRecord|undefined;settings:()=>AutomationSettings;attention:()=>boolean;
   inputs:Inputs;choice?:()=>number;failed:()=>void};
 type Pending={opportunity:ArtOpportunity;settingsRevision:number;saved:ArtworkSummary|undefined;generationRequestId:string|null;
@@ -30,7 +30,7 @@ const attempt=(pending:Pending):ArtScheduleAttempt=>({...pending.opportunity,art
 /** One schedule inside the existing automation owner. Durable claims are never recovered as executable work. */
 export function createArtSchedule(options:Options) {
   const {store,core}=options,choice=options.choice??Math.random;
-  let closed=false,cancel:Cancel|undefined,serial=Promise.resolve(),pending:Pending|undefined,ambientRunning=false,weatherTrigger:number|undefined;
+  let closed=false,cancel:Cancel|undefined,serial=Promise.resolve(),pending:Pending|undefined,ambientRunning=false,ambientUntilMs=0,weatherTrigger:number|undefined;
   const effects=new Set<Promise<void>>(),grants=new Map<string,Grant>();
   const now=()=>core.clock.now(),active=()=>!closed&&options.active();
   const launch=(work:Promise<void>):void=>{effects.add(work);void work.catch(()=>{options.failed();}).finally(()=>effects.delete(work));};
@@ -63,7 +63,11 @@ export function createArtSchedule(options:Options) {
       }
     }
     if(surface?.kind==='browser'&&!policy.browser)return 'no-surfaces';
-    if(surface?.kind==='display'&&!policy.targets.includes(surface.target))return 'no-surfaces';
+    if(surface?.kind==='display') {
+      if(!policy.targets.includes(surface.target))return 'no-surfaces';
+      const current=options.current(surface.target);
+      if(current===undefined||current.availability!=='available'||current.held!==undefined||current.externalControl.status==='known'&&current.externalControl.owner==='external')return 'unavailable';
+    }
     return undefined;
   };
   const permit=(item:Pending,surface:ArtSurface):ErrorBody|undefined=>{
@@ -134,9 +138,11 @@ export function createArtSchedule(options:Options) {
       options.shared.reserveMoment(item.opportunity.id,data.record.policy.targets,startAtMs,startAtMs+item.opportunity.toleranceMs);
       if(data.record.policy.generation)item.generationRequestId=`${item.opportunity.id}-generate`;
       data.record.lastOpportunity=attempt(item);data.record.status='waiting';
+      data.ambientAtMs=Math.max(data.ambientAtMs,startAtMs);
+      if(weatherTrigger!==undefined)data.weatherRevision=Math.max(data.weatherRevision,weatherTrigger);
     });
     if(!claimed)return;
-    pending=item;
+    pending=item;weatherTrigger=undefined;
     const generationRequestId=item.generationRequestId;
     if(generationRequestId!==null) {
       const targets=new Set<'ui'|'pixoo'|'tidbyt'>();const policy=state().record.policy;
@@ -150,7 +156,7 @@ export function createArtSchedule(options:Options) {
   }
   async function ambient():Promise<void> {
     const data=state(),policy=data.record.policy,at=now();
-    if(!policy.ambient||ambientRunning||pending!==undefined)return;
+    if(!policy.ambient||ambientRunning||pending!==undefined||at<ambientUntilMs)return;
     const weather=weatherTrigger;weatherTrigger=undefined;
     if(at<data.ambientAtMs+3_600_000&&(weather===undefined||weather<=data.weatherRevision))return;
     const item:Pending={opportunity:{id:`art-ambient-${randomUUID()}`,kind:'ambient',startAtMs:at+30_000,toleranceMs:START_TOLERANCE_MS},settingsRevision:data.record.settingsRevision,
@@ -161,13 +167,13 @@ export function createArtSchedule(options:Options) {
       if(!store.claim(item.opportunity))throw new AutomationError('duplicate-conflict',409);current.ambientAtMs=at;
       if(weather!==undefined)current.weatherRevision=Math.max(current.weatherRevision,weather);
       current.record.lastOpportunity={...attempt(item),artworkId:art.artworkId};});
-    ambientRunning=true;
+    ambientRunning=true;ambientUntilMs=item.opportunity.startAtMs+item.opportunity.toleranceMs;
     launch((async()=>{try {
       const targets=options.plans.targets().filter(value=>value.kind==='tidbyt'&&policy.targets.includes(value.target));
       for(const target of targets) {
         const id=composition(art,'tidbyt');if(id===undefined||restriction(item,{kind:'display',target:target.target})!==undefined)continue;
         const authorization=randomUUID();grants.set(authorization,{pending:item,target:target.target,compositionId:id,expiresAtMs:item.opportunity.startAtMs});
-        await core.dispatch({requestId:`${item.opportunity.id}-ambient`,key:'bunny.cmd.art-auto.art',requestedBy:'bunny/core',draft:{
+        await core.dispatch({requestId:`ambient-${opaque(`${item.opportunity.id}\0${target.target}`)}`,key:'bunny.cmd.art-auto.art',requestedBy:'bunny/core',draft:{
           type:'org.bunny.art.auto.requested',subject:'art',dataschema:'https://bunny.invalid/events/art-auto/2.2',
           data:{action:'ambient',artworkId:art.artworkId,compositionId:id,target:target.target,authorization}}});
       }
@@ -210,7 +216,7 @@ export function createArtSchedule(options:Options) {
     cancel?.();cancel=undefined;if(!active()||!state().record.policy.enabled)return;
     const data=state(),next=data.day?.starts[0];
     const deadlines=[now()+60_000,...(next===undefined?[]:[next-(data.record.policy.generation?GENERATION_MS:PREPARATION_MS)]),
-      ...(pending===undefined||pending.preparing?[]:[pending.opportunity.startAtMs-PREPARATION_MS])].filter(at=>at>now());
+      ...(pending===undefined||pending.preparing?[]:[pending.opportunity.startAtMs-PREPARATION_MS]),ambientUntilMs].filter(at=>at>now());
     cancel=options.scheduler.after(Math.max(1,Math.min(...deadlines)-now()),changed);
   }
   function changed():void {void enqueue(tick).finally(schedule).catch(()=>{});}
@@ -232,7 +238,10 @@ export function createArtSchedule(options:Options) {
       return permit(grant.pending,{kind:'display',target});
     },
     changed,
-    weatherChanged:(revision:number):void=>{if(revision>state().weatherRevision){weatherTrigger=revision;changed();}},
+    weatherChanged:(revision:number):void=>{if(revision>state().weatherRevision){
+      if(pending!==undefined){void enqueue(async()=>{await store.change(data=>{data.weatherRevision=Math.max(data.weatherRevision,revision);});}).catch(()=>{});}
+      else{weatherTrigger=revision;changed();}
+    }},
     settled:async():Promise<void>=>{await serial;},
     close:async():Promise<void>=>{closed=true;cancel?.();pending=undefined;grants.clear();await serial;},
   };

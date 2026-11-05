@@ -182,7 +182,7 @@ export class AutomationPart implements CorePart {
       ()=>this.#schedule?.changed(),revision=>this.#schedule?.weatherChanged(revision));
     this.#schedule=createArtSchedule({store:new ArtScheduleStore(database,work=>handle.transaction(work)),shared:store,core:handle,
       scheduler:this.#scheduler,active:()=>!this.#closed&&!this.#signal.aborted,plans:this.#art,
-      current:id=>this.#device(id),settings:()=>this.#automation?.settings()??structuredClone(DEFAULT_SETTINGS),
+      current:id=>{const device=this.#configured.find(value=>value.id===id);return device!==undefined&&this.#devices.get(device.owner)?.fresh===true?this.#device(id):undefined;},settings:()=>this.#automation?.settings()??structuredClone(DEFAULT_SETTINGS),
       attention:()=>[...this.#sessions.values()].some(session=>session.attention.length>0),inputs:this.#inputs,choice:this.choice,
       failed:()=>recordLog(handle.log,'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal'})});
   }
