@@ -315,3 +315,96 @@ for these reasons:
 | An alias, a helper, a custom type guard, an untyped callback parameter, `any`, a computed member in an `instanceof` test, a reassigned narrowed binding | Not checked | Each needs data flow or type information that a syntax rule does not have |
 
 <a id="depot-diagnostic-access"></a>
+
+## Python tooling
+
+`npm run lint:python` runs Ruff 0.17.3 over the surviving Python tooling listed
+in [`ruff.toml`](../ruff.toml). It does not format or fix files. The tool pin is in
+[`requirements-tooling.txt`](../requirements-tooling.txt), separate from product
+and consumer dependencies. Ruff refuses a different version.
+
+Use Python 3.12 or later in a development environment. For example, with the
+repository's Python 3.14 toolchain:
+
+```bash
+python3.14 -m venv .local/python-tooling
+source .local/python-tooling/bin/activate
+python3 -m pip install -r requirements-tooling.txt
+npm run lint:python
+npm run test:lint:python
+```
+
+The syntax target is Python 3.12 for every included group. This keeps the
+system-Python documentation and performance tooling compatible with its current
+Ubuntu runner. It does not change the Python versions used by consumer tests.
+
+### Included tooling
+
+The configuration is the authoritative include list. These groups contained 38
+Python files at adoption; matching new files join the check automatically.
+Use `npm run lint:python -- --show-files` to inspect the actual inventory.
+Python typing slices use this same surviving-tooling inventory and declare their
+smaller coverage separately.
+
+| Included group | Purpose |
+| --- | --- |
+| `apps/maintenance/**/*.py` | Recommendation parsing, closeout helpers and their fixtures |
+| `docs/*.py`, `docs/diagrams/*.py`, `docs/skins/*.py`, `docs/system-design/**/*.py` | Drift checks and maintained generators/checks for retained documentation |
+| `scripts/performance/*.py`, `scripts/check-performance.py` | Measurement and isolated-supervision tooling |
+| `tests/performance/**/*.py`, `tests/performance_linux/**/*.py`, `tests/performance_standalone/**/*.py` | The measurement and supervision tests |
+| `modules/nanoleaf/tests/fixtures/*.py` | Synthetic reference-fixture generation for the maintained port |
+| `modules/onn/native/**/*.py` | Offline native-reader checks, reproduction and tests |
+
+Retained Python consumer packages and their controller tests are outside this
+adoption under the [October 6 scope decision](https://github.com/jimmie-potts/agent-device-hub/issues/766#issuecomment-6009423886).
+Their existing checks continue until separately authorized retirement. The
+removed Work Guide adds no files. Saved source snapshots under
+`docs/diagrams/legacy/`, third-party reference assets and generated reference
+pages, `scripts/performance/vendor/`, private `.local/` data and Git-ignored
+outputs are excluded. BB-8 remains hibernated. Adding a maintained tooling group
+requires an explicit include entry and its Python target and purpose here.
+
+### Rules and exceptions
+
+The selected base is `E4`, `E7`, `E9` and `F`, Ruff's original defect-focused
+default set. It is explicit because newer Ruff defaults include more rules.
+The selected bugbear rules reject mutable defaults, calls in defaults,
+control flow that swallows exceptions in `finally`, unbound loop closures and
+implicit exception chaining: `B006`, `B008`, `B012`, `B023` and `B904`.
+
+The exact-file exceptions in `ruff.toml` keep existing compact statements and
+assigned lambdas in fixtures and documentation/performance generators.
+They suppress only `E701`, `E702` and `E731`; every selected correctness rule
+still runs in those files. This avoids a formatting migration during adoption.
+Remove an exception when its file no longer needs that notation.
+
+Inline exceptions name one rule and its reason. Existing source-path setup
+requires `E402` exceptions before importing a selected reference checkout.
+`B023` exceptions identify callbacks consumed synchronously before their loop
+advances. Two CLI exits retain their existing implicit exception context with
+`B904` exceptions. The Nanoleaf recorder retains one upstream initialization
+import with `F401`. Do not suppress a file or rule group to conceal a new defect.
+
+### Validation and hosted evidence
+
+`npm run test:lint:python` invokes the configured lint command with synthetic
+source on stdin. An undefined name and a mutable default each exit with status 1;
+a clean replacement exits with status 0. It also checks that file discovery
+includes the maintained tooling and omits retained consumers and source copies.
+No probe writes into a production source file or reads installed data.
+
+The existing Retained documentation checks job installs the pinned tool and runs
+lint plus these controls once on each ready PR and full Release qualification.
+A lint failure stops that job. The job is outside product test matrices and keeps
+its existing name, so the delivery preflight already requires its success.
+Workflow and selector fixtures preserve this routing and conservative admission
+for toolchain changes. A green main Integration job does not prove Ruff ran.
+
+The expected-failure controls prove the checker rejects bad input when the test
+runs. They do not prove that a native Actions job failed. For initial hosted gate
+acceptance, use an isolated disposable candidate containing an undefined name
+and mutable default in a temporary file under `tests/performance/`. Read the
+failed lint step and job, remove the probe, then verify the clean exact PR head
+and a pinned integrated qualification revision. Keep the source, run links and
+results in the delivery issue/PR; no permanent bad example belongs in the linted
+inventory.

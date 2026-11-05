@@ -85,6 +85,8 @@ test('shared, toolchain, CI, selector and unknown paths select full coverage wit
     ['package-lock.json', /not mapped/],
     ['tsconfig.json', /not mapped/],
     ['eslint.config.mjs', /not mapped/],
+    ['ruff.toml', /not mapped/],
+    ['requirements-tooling.txt', /not mapped/],
     ['.github/workflows/checks.yml', /CI configuration/],
     ['scripts/ci-selection/selection.mjs', /repository script/],
     ['scripts/delivery-preflight/ci.mjs', /repository script/],

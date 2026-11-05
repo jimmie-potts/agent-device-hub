@@ -671,6 +671,13 @@ and keep the waits that test safety behavior.
 
 See [Static analysis](static-analysis.md#static-analysis) for the authoritative procedure.
 
+For Python development tooling, install the separate pinned requirements and run
+`npm run lint:python` and `npm run test:lint:python` as described in
+[Python tooling](static-analysis.md#python-tooling). The existing Retained
+documentation checks job runs both commands once on ready PRs and full release
+qualification. Main Integration does not run them. Changes to the tool pin,
+configuration or workflow retain conservative admission.
+
 ### Adoption baseline
 
 See [Adoption baseline](static-analysis.md#adoption-baseline) for the authoritative procedure.

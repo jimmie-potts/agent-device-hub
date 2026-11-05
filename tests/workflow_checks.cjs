@@ -516,6 +516,29 @@ test('retained documents keep static checks, browser checks and review artifacts
   for (const folder of ['bunny-places-review', 'bunny-design-review']) assert.ok(upload.with.path.includes(folder));
 });
 
+test('Python lint runs once for ready PRs and full qualification, with failures retained', () => {
+  const workflows = ['checks.yml', 'workflow.yml', 'integration.yml', 'release-qualification.yml']
+    .map(file => YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8')));
+  const allSteps = workflows.flatMap(workflow => Object.values(workflow.jobs).flatMap(job => job.steps ?? []));
+  for (const command of ['npm run lint:python', 'npm run test:lint:python']) {
+    const steps = allSteps.filter(step => step.run === command);
+    assert.equal(steps.length, 1, command);
+    assert.equal(steps[0].if, undefined, command);
+    assert.equal(steps[0]['continue-on-error'], undefined, command);
+  }
+  const documents = workflows[1].jobs.documents;
+  assert.equal(documents.strategy, undefined, 'Python tooling has no runtime matrix');
+  assert.equal(documents['continue-on-error'], undefined);
+  const setup = documents.steps.find(step => step.uses?.startsWith('actions/setup-python@'));
+  assert.equal(setup.with['python-version'], '3.12');
+  assert.equal(setup.with['cache-dependency-path'], 'requirements-tooling.txt');
+  const install = documents.steps.findIndex(step => step.run === 'python3 -m pip install -r requirements-tooling.txt');
+  const lint = documents.steps.findIndex(step => step.run === 'npm run lint:python');
+  assert.ok(install >= 0 && install < lint);
+  assert.equal(workflows[3].jobs.workflow.uses, './.github/workflows/workflow.yml');
+  assert.equal(workflows[3].jobs.workflow.with.qualification, true);
+});
+
 test('documentation drift has full local history and read-only summary reporting', () => {
   const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/workflow.yml'), 'utf8'));
   assert.deepEqual(workflow.permissions, { contents: 'read' });
