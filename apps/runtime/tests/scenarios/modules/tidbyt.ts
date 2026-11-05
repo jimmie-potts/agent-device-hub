@@ -137,6 +137,13 @@ const {nowPlaying: _card, ...ART_SECTION} = TRONBYT_SIMULATED_SECTION;
 const tidbytArt: Scenario = {
   id: 'tidbyt-art', title: 'exact animated art is staged privately and joins the synthetic Tronbyt rotation without a takeover',
   seed: {modules: ['core', 'tidbyt', 'art'], config: {tidbyt: ART_SECTION}, sections: {art: {}}, follows: [CORE_FAMILIES, {owner: 'bunny/modules/art', families: ['art']}, {owner: TIDBYT_OWNER, families: ['device']}]},
+  keepCapturePage: true,
+  capture: async (context, harness) => {
+    const compositionId = staged(harness);
+    if (compositionId === undefined) throw new StepFailure('the exact Tidbyt preview is missing');
+    const {captureTidbytArt} = await import('../../../verify/tidbyt-art-browser.js');
+    await captureTidbytArt(context, harness, compositionId);
+  },
   steps: [
     expect('the producer and exact-art Tidbyt are running', h => running(h, ['core', 'art', 'tidbyt'])),
     expect('the Tidbyt declares implemented art while visible output remains unknown', h => {
