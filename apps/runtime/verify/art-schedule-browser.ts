@@ -33,6 +33,7 @@ export async function captureArtSchedule(t: CaptureContext, proof: ScheduleProof
     await page.locator('#schedule-proof-cursor').evaluate(node => {(node as HTMLElement).style.background = 'transparent';});
     if (await control.count() > 0) await control.evaluate(node => {(node as HTMLElement).style.outline = '';});
   };
+  await click(page.getByRole('tab', {name: 'Art', exact: true}), 'Open the Daily art tab');
   const panel = page.getByRole('region', {name: 'Daily art', exact: true});
   await panel.waitFor();
   await click(panel.getByText('Latest art opportunity', {exact: true}), 'Open the independently tracked opportunity');
