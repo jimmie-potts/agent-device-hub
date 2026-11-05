@@ -110,6 +110,34 @@ Work admits an interlude only with `coversStatus`, set by the core for an owner-
 
 The start window and persistent moment ID memory prevent a repeated or stale moment. At restart, an unfinished journal entry ends without replay. A lost write response uses the existing uncertain outcome and device hold, without retry. Accepted, transmitted, completed and physically visible remain separate claims.
 
+## Prepared music timelines
+
+The internal `src/music-timeline.ts` helper prepares immutable version-one
+semantic cue plans and evaluates them on caller-supplied local monotonic time.
+It accepts 1 to 256 ordered, non-overlapping cues, at most 30 minutes, and cue
+durations of at least 100 ms. These are software bounds, not a qualified light
+cadence or a flash-cap policy. Recipes use the existing explicit values and
+preset defaults; callers resolve favorites through their owner first.
+
+`MusicTimelineCursor` starts only on `startAt`. Pause freezes its position;
+resume, seek and stop invalidate previous callback generations. Late samples
+select only the current cue and report wholly missed cues once. Intentional
+seeks select directly without reporting skipped cues as missed. Stop and a
+backward local clock permanently retire the cursor. Half-open intervals keep
+boundaries deterministic; gaps and end-of-show supply no blackout or restoration
+instruction. `renderMusicCue` validates the supplied saved layout and uses the
+existing Lines/NL22 encoder with cue intensity. It renders the ordinary effect
+from its beginning, so the cursor's elapsed time is not a phase-accurate seek.
+
+This helper has no production caller, timer, store, SDK family or device access.
+It grants no music admission. [#1273](https://github.com/jimmie-potts/agent-device-hub/issues/1273)
+retains worker scheduling and outcome integration under the
+[#40 policy](https://github.com/jimmie-potts/agent-device-hub/issues/40).
+[Show authoring](https://github.com/jimmie-potts/agent-device-hub/issues/723),
+[qualified playback position](https://github.com/jimmie-potts/agent-device-hub/issues/571)
+and [installed/physical acceptance](https://github.com/jimmie-potts/agent-device-hub/issues/725)
+remain separately owned. Synthetic payloads establish no physical timing.
+
 ## Families
 
 The module answers each device's own keys, `bunny.cmd.<family>.<device id>`, and serves

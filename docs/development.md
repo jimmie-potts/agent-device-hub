@@ -1823,6 +1823,13 @@ for the acceptance exercise.
 
 ## Nanoleaf port
 
+The internal prepared-music timeline helper (#1273) is covered by
+`modules/nanoleaf/tests/music-timeline.test.ts`, discovered by the existing
+`test:nanoleaf:built` CI suite. After the root build, its focused check is
+`node --test modules/nanoleaf/dist/tests/music-timeline.test.js`; run the full
+Nanoleaf, typecheck, lint and workflow checks before delivery. Its explicit-clock
+and synthetic Lines/NL22 results establish no worker admission or physical timing.
+
 Hub #26 ports the Nanoleaf domain logic to TypeScript in `modules/nanoleaf`, under
 the strict profile, and Hub #844 runs it as the runtime's shipped module
 `nanoleaf` ([README](../modules/nanoleaf/README.md)).
