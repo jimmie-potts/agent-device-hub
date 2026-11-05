@@ -72,7 +72,9 @@ test('each family has one kind and one type, and its schema is built from the sh
     usesBlocks(coreFamilies.find(family => family.dataschema === uri)?.schema ?? {}));
   for (const {family, kind, type, dataschema, schema} of coreFamilies) {
     assert.equal(schema.$id, dataschema, family);
-    assert.ok(dataschema === `https://bunny.invalid/events/${family}/2.0` || (['inbox-item', 'playback', 'mode', 'session', 'moment-play', 'home-layout', 'art-auto', 'art-dispatch'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.1`) || (['moment-play', 'art-auto'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.2`));
+    assert.ok(dataschema === `https://bunny.invalid/events/${family}/2.0` || (['inbox-item', 'playback', 'mode', 'session', 'moment-play', 'home-layout', 'art-auto', 'art-dispatch',
+      'music-capture-endpoint', 'music-capture-work', 'music-capture-features', 'music-capture-control', 'music-capture-state'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.1`)
+      || (['moment-play', 'art-auto'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.2`));
     assert.ok(usesBlocks(schema), `${family} uses the blocks`);
     for (const uri of refs(schema)) assert.ok(profile(uri) || coreFamilies.some(other => other.dataschema === uri), `${family}: ${uri}`);
     assert.ok(['state', 'occurrence', 'command'].includes(kind), family);

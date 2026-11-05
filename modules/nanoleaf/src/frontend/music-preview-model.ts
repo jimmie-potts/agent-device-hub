@@ -1,6 +1,6 @@
-import type {MusicRecipeV1} from '../music-recipe-data.js';
+import {freezeMusicRecipe, type MusicRecipeV1} from '../music-recipe-data.js';
 import {MUSIC_PREVIEW_LIMITS, MUSIC_PREVIEW_MODELS, MUSIC_PREVIEW_PRESETS, MUSIC_PREVIEW_SCHEMA, MUSIC_PREVIEW_STIMULUS,
-  musicPreviewDefault, type MusicPreview, type MusicPreviewRequest, type MusicPreviewSample, type MusicPreviewZone} from '../music-preview-data.js';
+  musicPreviewDefault, type MusicPreview, type MusicPreviewInput, type MusicPreviewRequest, type MusicPreviewSample, type MusicPreviewZone} from '../music-preview-data.js';
 
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const exact = (value: object, keys: readonly string[]): boolean => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
@@ -24,12 +24,13 @@ export function musicPreviewProblem(request: MusicPreviewRequest): string | unde
 }
 
 /** Only the bounded document for this exact local draft can become a visible result. */
-export function parseMusicPreview(value: unknown, request: MusicPreviewRequest): MusicPreview {
-  const preset = MUSIC_PREVIEW_PRESETS.find(item => item.id === request.preset), model = MUSIC_PREVIEW_MODELS.find(item => item.id === request.model);
-  if (preset === undefined || model === undefined || !object(value) || !exact(value, ['schema', 'recipe', 'model', 'stimulus', 'samples'])
+export function parseMusicPreview(value: unknown, request: MusicPreviewInput): MusicPreview {
+  const preset = 'preset' in request ? MUSIC_PREVIEW_PRESETS.find(item => item.id === request.preset) : undefined, model = MUSIC_PREVIEW_MODELS.find(item => item.id === request.model);
+  if (!('recipe' in request) && preset === undefined || model === undefined || !object(value) || !exact(value, ['schema', 'recipe', 'model', 'stimulus', 'samples'])
       || value.schema !== MUSIC_PREVIEW_SCHEMA || value.model !== request.model || value.stimulus !== MUSIC_PREVIEW_STIMULUS
       || !object(value.recipe) || !Array.isArray(value.samples) || value.samples.length !== MUSIC_PREVIEW_LIMITS.samples) throw invalid();
-  const recipe: MusicRecipeV1 = {...preset.recipe, palette: request.palette.map(color => color.toLowerCase()), intensity: request.intensity};
+  const recipe = 'recipe' in request ? freezeMusicRecipe(request.recipe)
+    : freezeMusicRecipe({...preset?.recipe, palette: request.palette, intensity: request.intensity});
   const receivedRecipe = value.recipe;
   if (!exact(receivedRecipe, Object.keys(recipe)) || Object.entries(recipe).some(([key, expected]) => key !== 'palette' && receivedRecipe[key] !== expected)
       || !Array.isArray(receivedRecipe.palette) || receivedRecipe.palette.length !== recipe.palette.length
@@ -51,14 +52,14 @@ export function parseMusicPreview(value: unknown, request: MusicPreviewRequest):
 }
 
 export type MusicPreviewView = Readonly<{draft: MusicPreviewRequest; connected: boolean; pending: boolean;
-  result: MusicPreview | undefined; sample: number; error: string | undefined}>;
+  loadedRecipe: MusicRecipeV1 | undefined; result: MusicPreview | undefined; sample: number; error: string | undefined}>;
 type DraftEdit = Partial<Pick<MusicPreviewRequest, 'preset' | 'palette' | 'intensity' | 'model'>>;
 
 /** One unsaved draft, one explicit read and local sample selection. No timers or commands. */
 export class MusicPreviewDraft {
   readonly #read: (path: string) => Promise<unknown>;
   readonly #listeners = new Set<() => void>();
-  #view: MusicPreviewView = {draft: musicPreviewDefault(), connected: false, pending: false, result: undefined, sample: 0, error: undefined};
+  #view: MusicPreviewView = {draft: musicPreviewDefault(), connected: false, pending: false, loadedRecipe: undefined, result: undefined, sample: 0, error: undefined};
   #generation = 0;
   #flight: object | undefined;
   constructor(read: (path: string) => Promise<unknown>) {this.#read = read;}
@@ -79,11 +80,24 @@ export class MusicPreviewDraft {
   edit(patch: DraftEdit): void {
     this.#generation += 1;
     const draft = {...this.#view.draft, ...patch};
-    this.#show({...this.#view, draft: {...draft, palette: [...draft.palette]}, result: undefined, sample: 0, error: undefined});
+    const loadedRecipe = patch.preset !== undefined ? undefined : this.#view.loadedRecipe;
+    this.#show({...this.#view, draft: {...draft, palette: [...draft.palette]},
+      loadedRecipe: loadedRecipe === undefined ? undefined : freezeMusicRecipe({...loadedRecipe, palette: draft.palette, intensity: draft.intensity}),
+      result: undefined, sample: 0, error: undefined});
   }
   reset(): void {
     this.#generation += 1;
-    this.#show({...this.#view, draft: musicPreviewDefault(), result: undefined, sample: 0, error: undefined});
+    this.#show({...this.#view, draft: musicPreviewDefault(), loadedRecipe: undefined, result: undefined, sample: 0, error: undefined});
+  }
+  recipe(): MusicRecipeV1 {
+    const draft = this.#view.draft, preset = MUSIC_PREVIEW_PRESETS.find(value => value.id === draft.preset);
+    return freezeMusicRecipe({...this.#view.loadedRecipe ?? preset?.recipe, palette: draft.palette, intensity: draft.intensity});
+  }
+  load(recipe: MusicRecipeV1): void {
+    const frozen = freezeMusicRecipe(recipe);
+    this.#generation += 1;
+    this.#show({...this.#view, draft: {...this.#view.draft, preset: frozen.effect, palette: [...frozen.palette], intensity: frozen.intensity},
+      loadedRecipe: frozen, result: undefined, sample: 0, error: undefined});
   }
   selectSample(sample: number): void {
     if (this.#view.result === undefined || !Number.isInteger(sample) || sample < 0 || sample >= this.#view.result.samples.length) return;
@@ -93,7 +107,9 @@ export class MusicPreviewDraft {
     if (!this.#view.connected || this.#flight !== undefined) return;
     const problem = musicPreviewProblem(this.#view.draft);
     if (problem !== undefined) {this.#show({...this.#view, error: problem}); return;}
-    const request = {...this.#view.draft, palette: [...this.#view.draft.palette]}, generation = this.#generation;
+    const request: MusicPreviewInput = this.#view.loadedRecipe === undefined ? {...this.#view.draft, palette: [...this.#view.draft.palette]}
+      : {version: 1, recipe: this.recipe(), model: this.#view.draft.model};
+    const generation = this.#generation;
     const flight = {};
     this.#flight = flight;
     this.#show({...this.#view, pending: true, result: undefined, sample: 0, error: undefined});
