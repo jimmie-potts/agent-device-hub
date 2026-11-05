@@ -1,4 +1,5 @@
 import {HabitatPage} from './habitat.tsx';
+import {ArtPresentationProvider, ArtWidget} from '@jimmie-potts/art/frontend';
 import {HomeLayout} from './home-layout.tsx';
 import type {HomeCardDefinition} from './home-catalog.ts';
 import type {HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
@@ -20,7 +21,6 @@ import {HubMode} from './hub-mode.tsx';
 import {DeviceModesProvider} from './device-mode.tsx';
 import {DeviceCard} from './device-controls.tsx';
 import {WemoDeviceCard} from './wemo-device-card.tsx';
-import {OnnDeviceCard} from './onn-device-card.tsx';
 import {RoborockDeviceCard} from './roborock-device-card.tsx';
 import {RoborockWidget} from '@jimmie-potts/roborock/frontend';
 import {VolcanoDeviceCard} from './volcano-device-card.tsx';
@@ -205,10 +205,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
             control={false} operations={operations} operationsLive={operationsLive} Component={TidbytDisplay}/>
             {route.kind === 'component' && <details><summary>Device evidence</summary><DeviceCard record={record} owner={copy.owner}
               live={state.feed === 'connected' && copy.synced} control={false} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now}/></details>}
-          </> : record.kind === 'onn' && copy.owner === 'bunny/modules/onn' && runtime.modules?.some(module => module.name === 'onn' && module.state === 'running' && module.pages.some(page => page.id === 'controls')) === true
-            ? <OnnDeviceCard record={record} owner={copy.owner} connection={connection} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed}
-              control={runtime.control} operations={operations} operationsLive={operationsLive}/>
-            : record.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <RoborockDeviceCard target={record.id} label={record.label} connection={connection}
+          </> : record.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <RoborockDeviceCard target={record.id} label={record.label} connection={connection}
               live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'roborock' && module.state === 'running' && module.serves.includes('roborock-vacuum')) === true}/>
             : record.kind === 'volcano' && copy.owner === 'bunny/modules/volcano' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <VolcanoDeviceCard target={record.id} label={record.label} connection={connection} control={runtime.control} operations={operations} operationsLive={operationsLive}
               live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'volcano' && module.state === 'running' && module.serves.includes('volcano-status')) === true}/>
@@ -227,6 +224,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     if (definition.source.kind === 'light') return <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={{kind: 'home'}} homeSelection={definition.source.selection} homeSelections={selections}/>;
     if (definition.source.kind === 'music') return <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={{kind: 'home'}} homeSource={definition.source}/>;
 
+    if (placement.widget === 'art') return <ModuleFrontend module="art" connection={connection}
+      connected={state.feed === 'connected' && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'art' && module.state === 'running') === true}
+      control={runtime.control} operations={operations} operationsLive={operationsLive} Component={ArtWidget}/>;
     if (placement.widget === 'module:roborock') return <ModuleFrontend module="roborock" connection={connection}
       connected={state.feed === 'connected' && !runtime.catalogFailed}
       control={false} operations={[]} operationsLive={false} Component={RoborockWidget}/>;
@@ -252,7 +252,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       synced={state.sessions.synced} live={live} control={state.runtime.control} now={now}/></Widget>;
     return null;
   };
-  return <DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className="shell">
+  return <ArtPresentationProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className="shell">
     <a className="skip" href="#main" onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
     <aside>
       <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
@@ -304,7 +304,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </div></section>}
       <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer>
     </main>
-  </div></DeviceModesProvider>;
+  </div></DeviceModesProvider></ArtPresentationProvider>;
 }
 
 /** Where sign-in stands: checking, signed in with a connection, or signed out with the reason the page shows. */

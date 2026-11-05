@@ -1,5 +1,7 @@
 # Set up a fresh runtime
 
+ONN is hibernated after device retirement. Preserve retained ONN state and compatibility readers without activating its writer or requiring dormant-device qualification. Its historical setup references do not select active ONN use.
+
 This is the established WSL installation's fresh-cutover and manual-return
 procedure. The [Mac primary-host decision](../../docs/decisions/0008-runtime-hosting.md)
 uses the separate [container operator guide](../../docs/bunny-container.md).
