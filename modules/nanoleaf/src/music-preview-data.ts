@@ -23,6 +23,8 @@ export const MUSIC_PREVIEW_PRESETS = Object.freeze([
 
 export type MusicPreviewRequest = Readonly<{version: 1; preset: MusicPreviewEffect; palette: readonly string[];
   intensity: number; model: MusicPreviewModel}>;
+export type MusicRecipePreviewRequest = Readonly<{version: 1; recipe: MusicRecipeV1; model: MusicPreviewModel}>;
+export type MusicPreviewInput = MusicPreviewRequest | MusicRecipePreviewRequest;
 export type MusicPreviewZone = Readonly<{id: number; rgb: readonly [number, number, number]}>;
 export type MusicPreviewSample = Readonly<{offsetMs: number; rms: number;
   bands: Readonly<{bass: number; mid: number; treble: number}>; zones: readonly MusicPreviewZone[]}>;

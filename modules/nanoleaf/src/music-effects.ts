@@ -1,44 +1,11 @@
-import {isObject, pyRound} from './compat.js';
+import {pyRound} from './compat.js';
 import {projection, validateElements, type LayoutEntry} from './devices.js';
-import {COLOR, DIRECTIONS, display, MAX_BYTES, MAX_COLORS, MAX_FRAMES, MIN_COLORS, phases, Rejected, rgb, scale, size,
+import {display, MAX_BYTES, MAX_FRAMES, phases, Rejected, rgb, scale, size,
   type Display, type Rgb, type Zone} from './effects.js';
 import {musicBinding, type MusicBinding, type MusicSample} from './music-input.js';
-import type {MusicRecipeBase, MusicRecipeV1} from './music-recipe-data.js';
+import {freezeMusicRecipe, type MusicRecipeV1} from './music-recipe-data.js';
+export {freezeMusicRecipe} from './music-recipe-data.js';
 export type {MusicRecipeV1} from './music-recipe-data.js';
-
-function bounded(value: unknown, fallback: number, min: number, max: number): number {
-  const result = value === undefined ? fallback : value;
-  if (typeof result !== 'number' || !Number.isFinite(result) || result < min || result > max) throw new TypeError('Invalid music parameter.');
-  return result;
-}
-
-/** Version-one defaults are part of the interpretation and must not change when a later version is added. */
-export function freezeMusicRecipe(input: unknown): MusicRecipeV1 {
-  if (!isObject(input) || input.rendererVersion !== 1) throw new TypeError('Unsupported music recipe version.');
-  const effect = input.effect;
-  if (effect !== 'level-glow' && effect !== 'bass-pulse' && effect !== 'spectrum' && effect !== 'traveling-wave' && effect !== 'ambient')
-    throw new TypeError('Unsupported music effect.');
-  const keys = ['rendererVersion', 'effect', 'palette', 'intensity', 'sensitivity', 'smoothingMs'];
-  if (effect === 'bass-pulse') keys.push('halfLifeMs');
-  if (effect === 'spectrum' || effect === 'traveling-wave') keys.push('direction');
-  if (effect === 'traveling-wave') keys.push('periodMs');
-  if (Object.keys(input).some(key => !keys.includes(key))) throw new TypeError('Unknown music recipe field.');
-  const palette = input.palette;
-  if (!Array.isArray(palette) || palette.length < MIN_COLORS || palette.length > MAX_COLORS
-      || !palette.every((color: unknown): color is string => typeof color === 'string' && COLOR.test(color)))
-    throw new TypeError('Invalid music palette.');
-  const base: MusicRecipeBase = {rendererVersion: 1, palette: Object.freeze(palette.map(color => color.toLowerCase())),
-    intensity: bounded(input.intensity, 1, 0, 1), sensitivity: bounded(input.sensitivity, 1, 0.1, 8),
-    smoothingMs: bounded(input.smoothingMs, effect === 'ambient' ? 1500 : 100, 0, 2000)};
-  if (effect === 'bass-pulse') return Object.freeze({...base, effect, halfLifeMs: bounded(input.halfLifeMs, 200, 100, 2000)});
-  if (effect === 'spectrum' || effect === 'traveling-wave') {
-    const direction = DIRECTIONS.find(known => known === (input.direction === undefined ? 'right' : input.direction));
-    if (direction === undefined) throw new TypeError('Invalid music direction.');
-    if (effect === 'spectrum') return Object.freeze({...base, effect, direction});
-    return Object.freeze({...base, effect, direction, periodMs: bounded(input.periodMs, 2000, 400, 10000)});
-  }
-  return Object.freeze({...base, effect});
-}
 
 const clamp = (value: number): number => Math.max(0, Math.min(1, value));
 const mix = (before: number, after: number, alpha: number): number => before + (after - before) * alpha;
