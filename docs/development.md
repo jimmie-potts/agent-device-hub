@@ -1906,10 +1906,12 @@ runtime and workflow checks for the authenticated capture integration.
 checks on Linux or macOS. The shared Checks job runs both producer suites.
 
 On macOS, also run `npm run build:music-producer:native` to compile the Core Audio
-adapter. The Music native source workflow runs portable tests and compilation on
+capture adapter and the separate read-only Music state/position helper. The Music native source workflow runs portable tests and compilation on
 macOS 15 with explicitly selected Xcode 26.3 from the
 [hosted runner image](https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md), including `npm run test:music-producer:adapter` with fake Core Audio
-access. These commands never start real capture or change audio permissions.
+and AppleEvent access. The position cases cover pinned process identity, partial
+results, descriptor validation and bounded read cancellation. These commands
+never start real capture, send application AppleEvents or change permissions.
 The owning [producer guide](../apps/music-producer/README.md) records packaging,
 permissions and supported input limits. A successful compile is not evidence of
 permission behavior, protected-content access, speaker routing or physical sync.
