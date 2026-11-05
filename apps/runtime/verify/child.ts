@@ -14,6 +14,7 @@ import {createWisprModule} from '@jimmie-potts/wispr';
 import {registrations, runMain, type ModuleFactory} from '../src/index.js';
 import {createChimeModule, type ChimeRing, type ChimeTransport} from '../tests/fixtures/chime.js';
 import {createCoreModule} from '../tests/fixtures/core.js';
+import {SCHEDULE_FIXTURE, ScheduledFixture} from '../tests/fixtures/scheduled.js';
 import {createPresentationFixture} from '../tests/fixtures/presentation.js';
 import {createLampModule, lampSchemas, type Indicator, type LampTransport, type Power} from '../tests/fixtures/lamp.js';
 import {createSignModule, signSchemas, type SignTransport} from '../tests/fixtures/sign.js';
@@ -145,9 +146,11 @@ const harness = fixture('harness', () => ({
 }));
 
 let fixtureCore: ReturnType<typeof createCoreModule> | undefined;
+const scheduled = new ScheduledFixture();
 const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
   wispr: {name: 'wispr', create: () => createWisprModule(), simulate: () => createWisprModule()},
-  core: fixture('core', () => fixtureCore = createCoreModule()),
+  core: fixture('core', () => fixtureCore = createCoreModule(scheduled.coreOptions(names))),
+  [SCHEDULE_FIXTURE]: fixture(SCHEDULE_FIXTURE, () => scheduled.module()),
   'presentation-fixture': fixture('presentation-fixture', () => createPresentationFixture(() => fixtureCore)),
   lamp: fixture('lamp', () => createLampModule({
     transport: lamps,
@@ -173,7 +176,8 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
   })),
   // Every registered module, with the link to its simulated device in the supervisor (Hub #999).
   ...Object.fromEntries(registrations.map(({name, schemas, simulation, simulate}) =>
-    [name, fixture(name, () => simulation === undefined ? simulate() : simulation.run.remote(links.link(name)), schemas)] as const)),
+    [name, fixture(name, () => scheduled.remote(name, names, () => links.link(name))
+      ?? (simulation === undefined ? simulate() : simulation.run.remote(links.link(name))), schemas)] as const)),
 };
 
 const names = [...(list === '-' ? [] : list.split(',')), ...(fault === 'installed-port' ? ['prober'] : [])];
