@@ -18,7 +18,7 @@ export type Capabilities = {
   /** The device's own native modes, such as Nanoleaf `work` or Pixoo `monitor`. Never the Hub's mode. */
   modes: Unsupported | {supported: true; values: string[]};
   /** `art`, `device/2.2` only: the device stages these formats and sizes and plays a moment that names its copy. */
-  moments: Unsupported | {supported: true; moods: string[]; maxDurationMs: number; coversStatus: boolean; art?: {formats: ArtFormat[]; maxBytes: number}};
+  moments: Unsupported | {supported: true; moods: string[]; maxDurationMs: number; coversStatus: boolean; art?: {formats: ArtFormat[]; maxBytes: number; notices?: 'rain-forecast'[]}};
   media: Unsupported | {supported: true; actions: MediaAction[]; playlistIds: string[]; renditionIds: string[]};
   scenes: Unsupported | {supported: true; sceneIds: string[]};
   zones: Unsupported | {supported: true; zoneIds: string[]};
@@ -103,7 +103,8 @@ export function commandSupported(capabilities: Capabilities, command: DeviceComm
     case 'media-control': return media.supported && media.actions.includes(command.data.action);
     case 'device-mode-set': return modes.supported && modes.values.includes(command.data.mode);
     case 'moment-play': return moments.supported && moments.moods.includes(command.data.mood) && command.data.durationMs <= moments.maxDurationMs &&
-      (command.data.art === undefined || moments.art !== undefined);
+      (command.data.art === undefined || moments.art !== undefined) &&
+      (command.data.notice === undefined || command.data.art !== undefined && moments.art?.notices?.includes(command.data.notice.kind) === true);
   }
 }
 
@@ -166,6 +167,7 @@ export const deviceFamilies: readonly PayloadFamily[] = [
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice),
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.1'),
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.2'),
+  defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.3'),
   defineFamily('power-set', 'command', 'org.bunny.power.set.requested', checkCommand),
   defineFamily('brightness-set', 'command', 'org.bunny.brightness.set.requested', checkCommand),
   defineFamily('scene-activate', 'command', 'org.bunny.scene.activate.requested', checkCommand),

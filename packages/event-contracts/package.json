@@ -63,6 +63,14 @@
     "./v2/music-capture": {
       "types": "./dist/v2/music-capture.d.ts",
       "import": "./dist/v2/music-capture.js"
+    },
+    "./v2/art-notice": {
+      "types": "./dist/v2/art-notice.d.ts",
+      "import": "./dist/v2/art-notice.js"
+    },
+    "./v2/art-schedule": {
+      "types": "./dist/v2/art-schedule.d.ts",
+      "import": "./dist/v2/art-schedule.js"
     }
   },
   "dependencies": {
