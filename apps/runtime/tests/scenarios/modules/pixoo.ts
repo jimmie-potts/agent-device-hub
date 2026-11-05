@@ -338,14 +338,17 @@ const pixooMoment: Scenario = {
 };
 
 const stagedArt = (h: Harness) => h.reader.states<ArtState>('art', 'bunny/modules/art')[0]?.data.candidates.find(candidate => candidate.target === 'pixoo');
-/** The producer names its display target `pixoo`; the disposable device explicitly takes that identity. */
+/** The producer resolves its target kind to the configured device ID through that owner's live SDK copy. */
 const pixooArt: Scenario = {
   id: 'pixoo-art', title: 'the real art owner stages exact private Pixoo frames without replacing the display',
+  keepCapturePage: true,
   seed: {modules: ['core', 'playback', 'pixoo', 'art'], follows: [...(PIXOO_SEED.follows), {owner: 'bunny/modules/art', families: ['art']}],
-    config: {playback: PLAYBACK_SECTION, pixoo: {device: {...PIXOO_SECTION.device, id: 'pixoo'}}}, sections: {art: {}}},
+    config: {playback: PLAYBACK_SECTION, pixoo: PIXOO_SECTION}, sections: {art: {}}},
   capture: async (context, harness) => {const {capturePixooArt} = await import('../../../verify/pixoo-art-browser.js'); await capturePixooArt(context, harness);},
   steps: [
     expect('the real core, art owner and simulated display are running', h => running(h, ['core', 'playback', 'pixoo', 'art'])),
+    expect('the art owner has completed its initial device sync', h => h.logs().some(({record}) => record.event_name === 'runtime.sync.served'
+      && record.attributes['bunny.participant'] === 'bunny/modules/art' && record.attributes['bunny.pattern'] === 'sync device') || 'the art owner has no current device copy', 5000),
     act('the owner requests a synthetic scene for Pixoo', async h => {
       const answer = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/art-request', body: {target: 'art', requestId: 'pixoo-art-create',
         data: {action: 'start', purpose: 'request', origin: {kind: 'owner'}, targets: ['pixoo'], text: 'SYNTHETIC_PIXOO_MOON'}}});

@@ -995,7 +995,7 @@ class PixooRuntime {
     if (this.#context.clock.now() > moment.startAtMs + moment.toleranceMs) return errorBody('expired', {detail: 'the moment missed its start window'});
     if (monitor.momentBusy()) return errorBody('capacity', {detail: 'another moment waits or plays'});
     if ((this.#store?.pending() ?? []).some(command => command.family === 'device-mode-set')) return errorBody('invalid-state', {detail: 'a mode change is pending'});
-    const block = monitor.momentBlock(moment.coversStatus);
+    const block = monitor.momentBlock(moment.coversStatus, moment.art !== undefined);
     return block === null ? undefined : errorBody('invalid-state', {detail: block});
   }
 
@@ -1006,7 +1006,7 @@ class PixooRuntime {
     const {momentId, coversStatus, durationMs, startAtMs, toleranceMs} = moment;
     if (moment.art !== undefined && art === undefined) return Promise.resolve({result: Outcome.failed, evidence: Outcome.none, error: errorBody('not-found').error});
     return control.moment({momentId, coversStatus, durationMs, startAtMs, toleranceMs,
-      ...(art === undefined ? {frames: () => this.#render({kind: 'moment', content: momentContent(moment)})} : {frames: art.frames, delayMs: art.delayMs})});
+      ...(art === undefined ? {frames: () => this.#render({kind: 'moment', content: momentContent(moment)})} : {frames: art.frames, delayMs: art.delayMs, exactArt: true})});
   }
 
   /**

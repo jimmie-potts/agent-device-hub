@@ -308,14 +308,15 @@ and `renderMomentContent` draws it in the render worker. A core-forwarded
 plays its exact frames and timing through that same presentation and writer.
 An unknown, expired or incompatible reference is refused before any effect;
 it never plays a mood in its place. A moment without art keeps its behavior.
+The core owns scheduled-art pin arbitration; the module does not invent pin state.
+The player's existing persistence records a pause only with a selected checkpoint;
+a pause with no selection does not survive restart.
 
 ### Private generated art
 
 `art-stage/2.0` accepts the core's forwarded PNG or GIF, with its composition ID,
-hash and declared metadata. It is addressed to this module's configured device ID.
-The art producer currently addresses its Pixoo target as `pixoo`; installation
-must check that identity explicitly before enabling delivery. The disposable art
-scenario selects that ID rather than the usual simulator's `pixoo-1`.
+hash and declared metadata. It is addressed to this module's configured device ID;
+the producer resolves its display kind through the named owner's synced devices.
 The shared validator checks bytes, signature and hash;
 the existing isolated media decoder checks actual 64×64 dimensions, frame count
 and timing. Art is limited to 160 KiB and 20 frames at uniform 100–800 ms delays.
@@ -325,9 +326,8 @@ No frames are silently removed or retimed.
 
 Staging makes no display write and completes `succeeded/observed` only after
 the private mapping commits. The original and immutable rendition stay under
-the module's `art/` folder, outside the permanent library. These are generated
-bytes, not a claim of originality, licensing or suitability. An explicit ordinary
-library import remains the way to keep a permanent library copy.
+the module's `art/` folder, outside the permanent library. An explicit ordinary
+library import keeps a permanent library copy.
 
 Identical stages reuse the rendition and renew its lifetime from admission;
 different bytes for an unexpired composition are refused. At most 128 live

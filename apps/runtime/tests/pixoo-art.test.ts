@@ -14,10 +14,13 @@ it('the real producer stages exact frames through the core and its moment transm
   const device = new SimulatedPixoo({mode: 'online'}), pixoo = createPixooModule({transport: device});
   const observer = fixture('observer', async ({sdk}) => {await sdk.subscribe<ArtState>('bunny.state.art.art', message => {state = message.data;});});
   const playback = fixture('playback', async ({sdk}) => {await sdk.serveSync(['playback'], () => ({revision: 1, states: []}));});
-  const files = await edgeConfig(context, [], {modules: {art: {}, pixoo: {device: {...SIMULATED_SECTION.config.device, id: 'pixoo'}}}});
-  await run(context, {modules: [core, observer, playback, pixoo, artRegistration.simulate()], configFile: files.config});
+  const files = await edgeConfig(context, [], {modules: {art: {}, pixoo: {device: {...SIMULATED_SECTION.config.device, id: 'desk-pixoo-art'}}}});
+  const {logs} = await run(context, {modules: [core, observer, playback, pixoo, artRegistration.simulate()], configFile: files.config});
   assert.ok(handle !== undefined);
   const coreHandle = handle;
+  // Startup is concurrent; a synthetic generation can finish before the owner's first successful device sync.
+  await waitFor(() => logs.some(record => record.event_name === 'runtime.sync.served'
+    && record.attributes['bunny.participant'] === 'bunny/modules/art' && record.attributes['bunny.pattern'] === 'sync device'), 5000, 'producer device sync');
   const request = await coreHandle.dispatch({key: 'bunny.cmd.art-request.art', requestId: 'exact-art-create', requestedBy: 'bunny/parts/dashboard',
     draft: {type: 'org.bunny.art.request.requested', subject: 'art', dataschema: 'https://bunny.invalid/events/art-request/2.0',
       data: {action: 'start', purpose: 'request', origin: {kind: 'owner'}, targets: ['pixoo'], text: 'SYNTHETIC_PIXOO_EXACT'}}});
@@ -37,12 +40,21 @@ it('the real producer stages exact frames through the core and its moment transm
     digests.push(frameDigest(await sharp(image.bytes).removeAlpha().raw().toBuffer()));
   }
   assert.equal(device.state().uploads, 0, 'real staging alone never plays');
-  const mode = await coreHandle.dispatch({key: 'bunny.cmd.device-mode-set.pixoo', requestId: 'art-monitor', requestedBy: 'bunny/parts/operator',
-    draft: {type: 'org.bunny.device-mode.set.requested', subject: 'pixoo', dataschema: 'https://bunny.invalid/events/device-mode-set/2.0', data: {mode: 'monitor'}}});
+  const empty = await coreHandle.dispatch({key: 'bunny.cmd.moment-play.desk-pixoo-art', requestId: 'exact-art-empty', requestedBy: 'bunny/core',
+    draft: {type: 'org.bunny.moment.play.requested', subject: 'desk-pixoo-art', dataschema: 'https://bunny.invalid/events/moment-play/2.1',
+      data: {momentId: 'exact-art-empty', mood: 'celebrate', durationMs: 1000, priorityClass: 'flourish', coversStatus: false,
+        startAtMs: Date.now(), toleranceMs: 5000, art: {compositionId: composition.compositionId}}}});
+  assert.deepEqual(empty, {status: 'accepted', requestId: 'exact-art-empty'});
+  await waitFor(() => device.state().shown?.frames === 8);
+  assert.deepEqual(device.state().shown?.digests, digests);
+  await waitFor(() => coreHandle.operation('exact-art-empty')?.result === 'succeeded');
+  await waitFor(() => device.state().shown?.digests[0] === frameDigest(new Uint8Array(12288)));
+  const mode = await coreHandle.dispatch({key: 'bunny.cmd.device-mode-set.desk-pixoo-art', requestId: 'art-monitor', requestedBy: 'bunny/parts/operator',
+    draft: {type: 'org.bunny.device-mode.set.requested', subject: 'desk-pixoo-art', dataschema: 'https://bunny.invalid/events/device-mode-set/2.0', data: {mode: 'monitor'}}});
   assert.deepEqual(mode, {status: 'accepted', requestId: 'art-monitor'});
   await waitFor(() => coreHandle.operation('art-monitor')?.result === 'succeeded');
-  const moment = await coreHandle.dispatch({key: 'bunny.cmd.moment-play.pixoo', requestId: 'exact-art-play', requestedBy: 'bunny/core',
-    draft: {type: 'org.bunny.moment.play.requested', subject: 'pixoo', dataschema: 'https://bunny.invalid/events/moment-play/2.1',
+  const moment = await coreHandle.dispatch({key: 'bunny.cmd.moment-play.desk-pixoo-art', requestId: 'exact-art-play', requestedBy: 'bunny/core',
+    draft: {type: 'org.bunny.moment.play.requested', subject: 'desk-pixoo-art', dataschema: 'https://bunny.invalid/events/moment-play/2.1',
       data: {momentId: 'exact-art', mood: 'celebrate', durationMs: 1000, priorityClass: 'event', coversStatus: true,
         startAtMs: Date.now(), toleranceMs: 5000, art: {compositionId: composition.compositionId}}}});
   assert.deepEqual(moment, {status: 'accepted', requestId: 'exact-art-play'});

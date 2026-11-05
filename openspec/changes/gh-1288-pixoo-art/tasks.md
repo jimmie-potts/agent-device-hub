@@ -9,8 +9,9 @@
 - [x] 2.1 Carry admitted art timing through the existing moment writer; verify full animation, current-base return and no mood substitution.
 - [x] 2.2 Exercise sender, attention, expiry, interruption and restart cases using simulated transport with no physical contact.
 - [ ] 2.3 Add a disposable runtime art scenario using synthetic fixtures; run it and provide independently repeatable acceptance evidence.
+- [x] 2.4 Apply the owner-approved art-only empty-Media exception; observe the previous refusal, verify blank restoration and no-effect refusals for pauses, retained selected content, attention and Now Playing, and cancellation on manual change. Keep pin arbitration with the core.
 
 ## 3. Validation and documentation
 
-- [ ] 3.1 Update the module guide and development checks, and run build, typecheck, lint, Pixoo, affected runtime/maintenance and workflow checks.
+- [x] 3.1 Update the module guide and development checks, and run build, typecheck, lint, Pixoo, affected runtime/maintenance and workflow checks.
 - [ ] 3.2 Synchronize the affected spec and archive the complete change after successful current lookups and applicable acceptance evidence.

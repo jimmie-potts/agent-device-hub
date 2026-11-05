@@ -51,9 +51,9 @@ The module SHALL declare `capabilities.moments` with the moods `celebrate`, `set
 
 Before accepting, the module SHALL refuse with `unsupported-capability` a mood or duration the capability does not offer; with `invalid-state` a moment ID it accepted in the last 24 hours, across restarts, or a moment the current presentation does not admit; with `expired` a moment past its start window; and with `capacity` a moment while another waits or plays. The presentation SHALL check admission again at the start, and a moment no longer admitted SHALL complete `failed` with no device write.
 
-Over Monitor a moment SHALL be admitted only while Monitor participates, the request's `coversStatus` is true, the setting is on, the session source is current and no session needs attention. Over Media a moment SHALL be admitted only while a playlist is in play, no Now Playing takeover holds the display and no session needs attention. A paused or stopped player SHALL refuse it.
+Over Monitor a moment SHALL be admitted only while Monitor participates, the request's `coversStatus` is true, the setting is on, the session source is current and no session needs attention. Over Media a moment SHALL be admitted while a playlist is in play, no Now Playing takeover holds the display and no session needs attention. Exact art MAY additionally play when the player is idle and stopped with no session or item checkpoint, under the same gates and generation checks. A paused player or stopped selected content SHALL refuse it; plain mood moments SHALL refuse empty Media. Core arbitration SHALL retain ownership of scheduled-art pins.
 
-Over Media the moment SHALL pause the player through the Now Playing takeover and SHALL resume it only while the generation its own pause produced, the paused intent and the screen request are unchanged. No other restore path SHALL exist. Over Monitor the moment SHALL write under Monitor's generation and the next picture SHALL be the current dashboard.
+Over playing Media the moment SHALL pause the player through the Now Playing takeover and SHALL resume it only while the generation its own pause produced, the paused intent and the screen request are unchanged. Empty-Media art SHALL leave player intent and selection unchanged and use the existing blank path when it ends. No additional restore path SHALL exist. Over Monitor the moment SHALL write under Monitor's generation and the next picture SHALL be the current dashboard.
 
 A moment SHALL end when its duration has passed since its first acknowledged write. Attention SHALL end it at once on either base, and a session source that stops being current SHALL end it over Monitor; either ending is `preempted`. An explicit command that changes what plays, turning the setting off over Monitor, or a Monitor view change SHALL end it as `interrupted`. A pause, stop or new start, including a start still capturing its selection, SHALL never be resumed over; a next or previous SHALL keep the playlist playing; a view change in Media SHALL resume the playlist. A moment SHALL NOT pause over a start still capturing. When a moment's picture was confirmed on the device and no dashboard, card or playlist follows, one blank frame SHALL replace it, never retried, and it SHALL be dropped after an uncertain write, or once the device was offline or under external control. A song that wants a whole takeover when the moment ends SHALL take the display with the player still paused.
 
@@ -92,3 +92,9 @@ A moment that reached the device SHALL complete `succeeded` with `transmitted` a
 #### Scenario: A restart during a moment
 - **WHEN** the module restarts with a moment accepted and unfinished
 - **THEN** its command is reported `uncertain`, it does not play, and its moment ID stays refused
+
+#### Scenario: Exact art over empty Media
+- **WHEN** the core sends exact art while Media is idle and stopped without a selected session or item
+- **THEN** the bounded art plays through the existing writer without pausing or starting playback and clears to blank when complete
+- **AND** a manual change cancels it without replay, while explicit pauses, selected content, attention and Now Playing remain protected
+- **AND** ordinary mood moments remain refused in empty Media
