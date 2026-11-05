@@ -3,7 +3,7 @@
 // two compositions with one image share one copy. Records are JSON beside the columns the queries need.
 import type {DatabaseSync} from 'node:sqlite';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import type {ArtAdmission, ArtComposition, ArtDisplayTarget, ArtFeedback, ArtOutcome, ArtPurpose, ArtReason, ArtTarget, ArtTargetOutcome} from '@jimmie-potts/event-contracts/v2/art-state';
+import type {ArtAdmission, ArtComposition, ArtDisplayTarget, ArtFeedback, ArtOutcome, ArtPurpose, ArtReason, ArtSelection, ArtTarget, ArtTargetOutcome} from '@jimmie-potts/event-contracts/v2/art-state';
 
 export type JobTarget = {target: ArtTarget; outcome: ArtTargetOutcome; code: ErrorCode | null; reason: ArtReason | null; compositionId: string | null};
 /** What a prompt may hold: the owner's text, imagination, time, season and weather condition words. */
@@ -23,6 +23,7 @@ export type StoredComposition = ArtComposition & {compositionId: string; promptH
 export type Artwork = {artworkId: string; requestId: string; createdAtMs: number; favorite: boolean; feedback: ArtFeedback | null; variationOf: string | null; palette: string[]; generatedBy: 'openai' | 'local'; deletedAtMs: number | null};
 export type StageStatus = 'pending' | 'succeeded' | 'failed' | 'uncertain';
 export type StageRow = {requestId: string; artworkId: string; compositionId: string; target: ArtDisplayTarget; status: StageStatus; expiresAtMs: number | null; ambient: boolean};
+export type Preparation = {requestId: string; stageRequestId: string; status: StageStatus; traceparent: string; createdAtMs: number};
 export type IssuedAmbient = {requestId: string} & ({stageRequestId: string; artworkId: string} | {stageRequestId: null; artworkId: null});
 
 const json = <T>(row: unknown): T => JSON.parse((row as {record: string}).record) as T;
@@ -43,6 +44,8 @@ export class ArtStore {
       CREATE TABLE IF NOT EXISTS art_stages(request_id TEXT PRIMARY KEY,artwork_id TEXT NOT NULL,composition_id TEXT NOT NULL,target TEXT NOT NULL,status TEXT NOT NULL,expires_at_ms INTEGER,ambient INTEGER NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS art_ambient(id INTEGER PRIMARY KEY CHECK(id=1),request_id TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS art_ambient_issued(id INTEGER PRIMARY KEY CHECK(id=1),record TEXT NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS art_preparations(request_id TEXT PRIMARY KEY,stage_request_id TEXT UNIQUE NOT NULL,status TEXT NOT NULL,record TEXT NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS art_browser_selection(id INTEGER PRIMARY KEY CHECK(id=1),record TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS art_feedback(id INTEGER PRIMARY KEY AUTOINCREMENT,artwork_id TEXT NOT NULL,signal TEXT NOT NULL,at_ms INTEGER NOT NULL) STRICT;`);
   }
   revision(): number {return (this.db.prepare('SELECT revision FROM art_meta').get() as {revision: number}).revision;}
@@ -112,6 +115,24 @@ export class ArtStore {
   trim(keepFinishedJobs: number, receiptsBeforeMs: number): void {
     this.db.prepare("DELETE FROM art_jobs WHERE status='finished' AND artwork_id NOT IN (SELECT artwork_id FROM art_artworks) AND rowid NOT IN (SELECT rowid FROM art_jobs ORDER BY rowid DESC LIMIT ?)").run(keepFinishedJobs);
     this.db.prepare('DELETE FROM art_receipts WHERE at_ms<?').run(receiptsBeforeMs);
+    this.db.prepare("DELETE FROM art_preparations WHERE status<>'pending' AND rowid NOT IN (SELECT rowid FROM art_preparations WHERE status<>'pending' ORDER BY rowid DESC LIMIT ?)").run(keepFinishedJobs);
+  }
+  preparationForStage(stageRequestId: string): Preparation | undefined {
+    const row = this.db.prepare('SELECT record FROM art_preparations WHERE stage_request_id=?').get(stageRequestId);
+    return row === undefined ? undefined : json<Preparation>(row);
+  }
+  pendingPreparations(): Preparation[] {return this.db.prepare("SELECT record FROM art_preparations WHERE status='pending'").all().map(row => json<Preparation>(row));}
+  savePreparation(preparation: Preparation): void {
+    this.db.prepare('INSERT INTO art_preparations VALUES(?,?,?,?) ON CONFLICT(request_id) DO UPDATE SET status=excluded.status,record=excluded.record')
+      .run(preparation.requestId, preparation.stageRequestId, preparation.status, JSON.stringify(preparation));
+  }
+  selection(): ArtSelection | null {
+    const row = this.db.prepare('SELECT record FROM art_browser_selection').get();
+    return row === undefined ? null : json<ArtSelection>(row);
+  }
+  select(selection: ArtSelection | null): void {
+    if (selection === null) this.db.prepare('DELETE FROM art_browser_selection').run();
+    else this.db.prepare('INSERT INTO art_browser_selection VALUES(1,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record').run(JSON.stringify(selection));
   }
   addFeedback(artworkId: string, signal: ArtFeedback, atMs: number): void {this.db.prepare('INSERT INTO art_feedback(artwork_id,signal,at_ms) VALUES(?,?,?)').run(artworkId, signal, atMs);}
 

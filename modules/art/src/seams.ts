@@ -1,8 +1,8 @@
 // The boundaries the module reaches other owners through, on the real families: `v2/art` for jobs and the handoff, the
 // module's own `art-catalog-edit`, and #1418's `weather-state`. A module imports only the SDK and the contracts, so the
 // weather family is read here by its name and fields. Tests pass fakes for `dispatch` and `weather`.
-import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {ART_SUBJECT, artCommandRefusal, type ArtAuto, type ArtDispatch, type ArtFormat, type ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
+import {errorBody, type ErrorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
+import {ART_SUBJECT, artCommandRefusal, type ArtAuto21, type ArtDispatch, type ArtFormat, type ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
 import {ART_CATALOG_EDIT_KEY, type ArtCatalogEdit, type ArtDisplayTarget} from '@jimmie-potts/event-contracts/v2/art-state';
 import {artStageSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {CORE_SOURCE, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
@@ -12,7 +12,7 @@ export type ArtCommandHandlers = {
   /** `bunny.cmd.art-request.art`: the owner's. The tracker admits it only from the dashboard's source. */
   readonly owner: (command: Command<ArtRequest>) => Promise<Reply>;
   /** `bunny.cmd.art-auto.art`: automatic, under the pace and the guard, whatever its payload says. Only the core can send it. */
-  readonly automatic: (command: Command<ArtAuto>) => Promise<Reply>;
+  readonly automatic: (command: Command<ArtAuto21>) => Promise<Reply>;
   /** `bunny.cmd.art-catalog-edit.art`: the owner's change to saved art. */
   readonly catalog: (command: Command<ArtCatalogEdit>) => Promise<Reply>;
 };
@@ -22,14 +22,14 @@ const fromCore = <T extends {requestId: string}>(handler: (command: Command<T>) 
 export async function serveCommands(sdk: Sdk, handlers: ArtCommandHandlers): Promise<Subscription[]> {
   return [
     await sdk.respond<ArtRequest>(`bunny.cmd.art-request.${ART_SUBJECT}`, fromCore(handlers.owner)),
-    await sdk.respond<ArtAuto>(`bunny.cmd.art-auto.${ART_SUBJECT}`, fromCore(handlers.automatic)),
+    await sdk.respond<ArtAuto21>(`bunny.cmd.art-auto.${ART_SUBJECT}`, fromCore(handlers.automatic)),
     await sdk.respond<ArtCatalogEdit>(ART_CATALOG_EDIT_KEY, fromCore(handlers.catalog)),
   ];
 }
 
 /** What a stage needs. A display composition has exactly one rendition. */
 export type ArtStageRequest = {requestId: string; compositionId: string; target: ArtDisplayTarget; format: ArtFormat; width: number; height: number; frames: number; durationMs: number;
-  sha256: string; bytes: Uint8Array; lifetimeMs: number};
+  sha256: string; bytes: Uint8Array; lifetimeMs: number; expectedTargetId?: string};
 export type ArtAmbientRequest = {requestId: string; target: 'tidbyt'; compositionId: string | null};
 export type StageResult = 'succeeded' | 'failed' | 'uncertain';
 /** `art-dispatch` to the core, which forwards tracked `art-stage` and `art-ambient-set`, and the core's operation records back. */
@@ -37,7 +37,7 @@ export type ArtDispatchSeam = {
   stage(request: ArtStageRequest, parent: TraceContext): Promise<Reply>;
   ambient(request: ArtAmbientRequest, parent: TraceContext): Promise<Reply>;
   /** Reports each staged request's final operation result. Nothing is offered until this says `succeeded`. */
-  watch(result: (requestId: string, result: StageResult) => void): Promise<Subscription[]>;
+  watch(result: (requestId: string, result: StageResult, error?: ErrorDetail) => void): Promise<Subscription[]>;
 };
 /** Condition words from #1418's state record and when they stop being facts. A location never passes through here. */
 export type WeatherWords = {readonly words: readonly string[]; readonly staleAtMs: number};
@@ -127,9 +127,10 @@ export function realDispatch(context: Pick<ModuleContext, 'sdk' | 'scheduler' | 
     {type: 'org.bunny.art.dispatch.requested', subject: ART_SUBJECT, dataschema: 'https://bunny.invalid/events/art-dispatch/2.0', data}, {requestId: data.requestId, timeoutMs: DISPATCH_TIMEOUT_MS, parent}));
   return {
     stage: ({requestId, target, bytes, ...rest}, parent) => {
-      const {compositionId, format, width, height, frames, durationMs, sha256, lifetimeMs} = rest;
+      const {compositionId, format, width, height, frames, durationMs, sha256, lifetimeMs, expectedTargetId} = rest;
       const device = resolve(target);
       if ('error' in device) return Promise.resolve(device);
+      if (expectedTargetId !== undefined && device.id !== expectedTargetId) return Promise.resolve(errorBody('invalid-state', {detail: 'the configured display no longer matches the preparation target'}));
       const base64 = Buffer.from(bytes).toString('base64');
       if (!artStageSupported(device.capabilities, {format, base64})) return Promise.resolve(errorBody('unsupported-capability'));
       return send({requestId, target: device.id, family: 'art-stage', data: {compositionId, format, width, height, frames, durationMs, sha256, lifetimeMs, base64}}, parent);
@@ -144,7 +145,7 @@ export function realDispatch(context: Pick<ModuleContext, 'sdk' | 'scheduler' | 
       return Promise.resolve([pixoo, tidbyt, follow<OperationRecord>(context, 'operation', CORE_SOURCE, ({data}) => {
         const final = stageResultOf(data);
         // The module ignores a request it did not stage, so a sync's whole list costs nothing.
-        if (final !== undefined && data.family === 'art-stage') result(data.requestId, final);
+        if (final !== undefined && data.family === 'art-stage') result(data.requestId, final, data.error);
       })]);
     },
   };

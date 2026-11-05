@@ -1,10 +1,10 @@
-// The art owner (Hub #680; docs/art-generation-qualification.md). One admitted request is one durable job row, committed
-// with its `succeeded`, `observed` outcome, as `assistant-input` does: the tracked effect is durable admission, since a
-// provider call can outlast the device deadline. Results appear in the `art` state. A job is never re-run after a restart.
+// The art owner (Hub #680; docs/art-generation-qualification.md). Generation completes at durable admission because a
+// provider call can outlast the device deadline. Saved-art preparation (#297) completes only after tracked staging.
+// Results appear in `art` state. Restart never re-runs generation or preparation.
 import {createHash, randomUUID} from 'node:crypto';
-import {errorBody, type ErrorBody, type ErrorCode, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
-import type {ArtAutoStart, ArtCancel, ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
-import {ART_ID, ART_STATE_KEY, ART_STATE_SCHEMA, ART_STATE_TYPE, artContentRef, type ArtCandidate, type ArtCatalogEdit, type ArtDisplayTarget, type ArtOutcome, type ArtProviderName, type ArtProviderSpend, type ArtReason, type ArtState, type ArtTarget, type ArtTargetOutcome, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import {errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
+import type {ArtAuto21, ArtAutoStart, ArtCancel, ArtPrepare, ArtPresent, ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
+import {ART_ID, ART_STATE_KEY, ART_STATE_21_SCHEMA, ART_STATE_TYPE, artContentRef, type ArtCandidate, type ArtCatalogEdit, type ArtDisplayTarget, type ArtOutcome, type ArtProviderName, type ArtProviderSpend, type ArtReason, type ArtState21, type ArtTarget, type ArtTargetOutcome, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import {Outbox, Outcome, childOf, fullDisk, recordLog, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContent, type ModuleContentRequest, type ModuleContext, type Reply, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
 import {AnthropicIdeas} from './anthropic.js';
 import {ANTHROPIC_KEY, OPENAI_KEY, configureArt, type ArtConfig} from './configuration.js';
@@ -15,8 +15,8 @@ import {OpenAiImages} from './openai.js';
 import {GIF_FRAMES, GIF_MODEL, IDEA_MAX_TOKENS, IDEA_MODEL, IMAGE_MODEL, type PriceKey, type Usage} from './prices.js';
 import {boundIdea, contextFor, freshContext, ideaPrompt, ideaSystem, imagePrompt, localIdea, variationIdea} from './prompts.js';
 import {ProviderFault, type ArtProvider, type Transport} from './provider.js';
-import {realDispatch, realWeather, serveCommands, type ArtDispatchSeam, type StageResult, type WeatherSeam} from './seams.js';
-import {ArtStore, type Artwork, type Job, type JobTarget, type StageRow, type StoredComposition} from './store.js';
+import {realDispatch, realWeather, serveCommands, type ArtDispatchSeam, type ArtStageRequest, type StageResult, type WeatherSeam} from './seams.js';
+import {ArtStore, type Artwork, type Job, type JobTarget, type Preparation, type StageRow, type StoredComposition} from './store.js';
 
 export const MAX_RUNNING = 2;
 export const MAX_PENDING = 8;
@@ -107,15 +107,15 @@ class ArtOwner {
 
   async start(): Promise<void> {
     this.#providers = this.#options.providers === undefined ? await this.#keyed() : {...this.#options.providers};
-    await this.#outbox.transaction(add => {this.#recover(); this.#prune(); this.#publish(add);});
+    await this.#outbox.transaction(add => {this.#recover(add); this.#prune(); this.#publish(add);});
     await this.#outbox.republish();
     const {sdk} = this.#context;
-    this.#subscriptions.push(await sdk.serveSync(['art'], () => ({revision: this.#store.revision(), states: [{type: ART_STATE_TYPE, subject: ART_ID, dataschema: ART_STATE_SCHEMA, data: this.state()}]})));
+    this.#subscriptions.push(await sdk.serveSync(['art'], () => ({revision: this.#store.revision(), states: [{type: ART_STATE_TYPE, subject: ART_ID, dataschema: ART_STATE_21_SCHEMA, data: this.state()}]})));
     this.#subscriptions.push(...await this.#weather.start());
-    this.#subscriptions.push(...await this.#dispatch.watch((requestId, result) => {void this.#stageResult(requestId, result);}));
+    this.#subscriptions.push(...await this.#dispatch.watch((requestId, result, error) => {void this.#stageResult(requestId, result, error);}));
     this.#subscriptions.push(...await serveCommands(sdk, {
       owner: command => this.#owner(command),
-      automatic: command => this.#admit(command, 'art-auto', 'automatic', () => this.#start(command, 'automatic')),
+      automatic: command => this.#automatic(command),
       catalog: command => this.#admit(command, 'art-catalog-edit', 'owner', () => this.#catalog(command)),
     }));
     this.#scheduleMidnight();
@@ -145,9 +145,10 @@ class ArtOwner {
     return {...(openai === undefined ? {} : {openai: new OpenAiImages({key: openai, ...transport})}), ...(anthropic === undefined ? {} : {anthropic: new AnthropicIdeas({key: anthropic, ...transport})})};
   }
   /** A restart resends nothing: a dispatched call is uncertain, its reservation kept, and its job ends where it stood. */
-  #recover(): void {
+  #recover(add: AddMessage): void {
     const {uncertain} = this.#ledger.recover(), lost = new Set(uncertain);
     for (const stage of this.#store.pendingStages()) this.#store.saveStage({...stage, status: Outcome.uncertain});
+    for (const preparation of this.#store.pendingPreparations()) this.#settlePreparation(add, preparation, Outcome.uncertain);
     for (const job of this.#store.unfinished()) {
       const inFlight = new Set(this.#ledger.calls(job.requestId).filter(call => lost.has(call.callId)).map(call => call.target as string));
       for (const target of job.targets) {
@@ -164,6 +165,15 @@ class ArtOwner {
   #owner(command: Command<ArtRequest>): Promise<Reply> {
     return this.#admit(command, 'art-request', 'owner', () => command.data.action === 'cancel' ? this.#cancel(command.data) : this.#start(command as Command<ArtAutoStart & {text?: string}>, 'owner'));
   }
+  #automatic(command: Command<ArtAuto21>): Promise<Reply> {
+    return this.#admit(command, 'art-auto', 'automatic', () => {
+      switch (command.data.action) {
+        case 'start': return this.#start(command as Command<ArtAutoStart>, 'automatic');
+        case 'prepare': return this.#prepare(command.data, command);
+        case 'present': this.#present(command.data); return undefined;
+      }
+    }, command.data.action === 'prepare');
+  }
   #catalog(command: Command<ArtCatalogEdit>): (() => void) | undefined {
     const {data} = command;
     switch (data.action) {
@@ -173,8 +183,8 @@ class ArtOwner {
       case 'reuse': return this.#reuse(data, command);
     }
   }
-  /** One transaction holds the row, the receipt, the state and the `succeeded`, `observed` outcome. */
-  async #admit<T extends object>(command: Command<T>, family: 'art-request' | 'art-auto' | 'art-catalog-edit', admittedBy: 'owner' | 'automatic', apply: () => (() => void) | undefined): Promise<Reply> {
+  /** Admission is atomic. Preparation alone waits for its child's tracked effect before completing. */
+  async #admit<T extends object>(command: Command<T>, family: 'art-request' | 'art-auto' | 'art-catalog-edit', admittedBy: 'owner' | 'automatic', apply: () => (() => void) | undefined, pending = false): Promise<Reply> {
     if (this.#closed || this.#context.signal.aborted) return errorBody('unavailable');
     const checked = this.#validator.validate(command, {nowMs: this.#context.clock.now()});
     if (!checked.ok) return {error: checked.error};
@@ -187,7 +197,7 @@ class ArtOwner {
         launch = apply();
         this.#store.remember(requestId, digest, this.#context.clock.now());
         this.#publish(add, command);
-        add(`bunny.event.${family}.${ART_ID}`, {kind: 'outcome', type: command.type.replace(/\.requested$/, '.completed'), subject: ART_ID,
+        if (!pending) add(`bunny.event.${family}.${ART_ID}`, {kind: 'outcome', type: command.type.replace(/\.requested$/, '.completed'), subject: ART_ID,
           dataschema: 'https://bunny.invalid/events/outcome/2.0', data: {requestId, result: Outcome.succeeded, evidence: Outcome.observed}}, {parent: command});
       });
     } catch (error) {
@@ -195,7 +205,7 @@ class ArtOwner {
       recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.failed, 'bunny.code': fullDisk(error) ? 'capacity' : 'internal', 'bunny.request.id': requestId}, command);
       return errorBody(fullDisk(error) ? 'capacity' : 'internal', {detail: 'the art request was not saved'});
     }
-    launch?.();
+    if (!this.#closed && !this.#context.signal.aborted) launch?.();
     return {status: 'accepted'};
   }
   /** Reads only the declared fields, which the family's schema closes, so a label cannot widen what a job may do. */
@@ -232,6 +242,48 @@ class ArtOwner {
     const artwork = typeof artworkId === 'string' ? this.#store.artwork(artworkId) : undefined;
     return artwork !== undefined && artwork.deletedAtMs === null ? artwork : refuse('not-found', 'no such artwork');
   }
+  #savedComposition(artworkId: string, compositionId: string): StoredComposition {
+    this.#saved(artworkId);
+    const found = this.#store.compositions(artworkId).find(composition => composition.compositionId === compositionId);
+    if (found === undefined) return refuse('not-found', 'no such composition in this artwork');
+    if (found.outcome !== Outcome.succeeded) return refuse('invalid-state', 'that composition did not succeed');
+    return found;
+  }
+  #present(data: ArtPresent): void {
+    const composition = this.#savedComposition(data.artworkId, data.compositionId);
+    if (composition.target !== 'ui' || composition.renditions.length === 0 || composition.renditions.some(rendered => this.#store.blob(rendered.renditionId) === undefined)) refuse('invalid-state', 'that composition is not a saved browser image');
+    this.#store.select({artworkId: data.artworkId, compositionId: data.compositionId});
+  }
+  #prepare(data: ArtPrepare, parent: TraceContext): () => void {
+    const composition = this.#savedComposition(data.artworkId, data.compositionId), target = composition.target;
+    const rendered = composition.renditions[0], blob = rendered === undefined ? undefined : this.#store.blob(rendered.renditionId);
+    if (!isDisplay(target) || rendered === undefined || rendered.format !== 'gif' || blob === undefined) return refuse('invalid-state', 'that composition is not a saved display animation');
+    if (this.#store.pendingPreparations().length >= MAX_PENDING) return refuse('capacity', 'too many art preparations are waiting');
+    const requestId = `stage-${randomUUID()}`, now = this.#context.clock.now();
+    this.#store.saveStage({requestId, artworkId: data.artworkId, compositionId: data.compositionId, target, status: 'pending', expiresAtMs: now + STAGE_LIFETIME_MS, ambient: false});
+    this.#store.savePreparation({requestId: data.requestId, stageRequestId: requestId, status: 'pending', traceparent: parent.traceparent, createdAtMs: now});
+    const request: ArtStageRequest = {requestId, compositionId: data.compositionId, target, expectedTargetId: data.target, format: rendered.format, width: rendered.width, height: rendered.height,
+      frames: rendered.frames, durationMs: rendered.durationMs, sha256: rendered.renditionId, bytes: blob.bytes, lifetimeMs: STAGE_LIFETIME_MS};
+    return () => {void this.#dispatchPreparation(request, parent);};
+  }
+  async #dispatchPreparation(request: ArtStageRequest, parent: TraceContext): Promise<void> {
+    if (this.#closed || this.#context.signal.aborted) return;
+    let reply: Reply;
+    try {reply = await this.#dispatch.stage(request, parent);} catch {reply = errorBody('uncertain-result');}
+    if (this.#closed || this.#context.signal.aborted) return;
+    // A lost admission reply cannot supersede a tracked completion that arrived while the request was waiting.
+    if ('error' in reply && this.#store.preparationForStage(request.requestId)?.status === 'pending') {
+      await this.#stageResult(request.requestId, reply.error.code === 'uncertain-result' ? Outcome.uncertain : Outcome.failed, reply.error);
+    }
+  }
+  #settlePreparation(add: AddMessage, preparation: Preparation, result: StageResult, error?: ErrorDetail): void {
+    if (preparation.status === result) return;
+    this.#store.savePreparation({...preparation, status: result});
+    const failure = error ?? errorBody(result === Outcome.uncertain ? 'uncertain-result' : 'unavailable', {detail: result === Outcome.uncertain ? 'art preparation has no definitive staging result' : 'the display did not complete art preparation'}).error;
+    add('bunny.event.art-auto.art', {kind: 'outcome', type: 'org.bunny.art.auto.completed', subject: ART_ID, dataschema: 'https://bunny.invalid/events/outcome/2.0',
+      data: {requestId: preparation.requestId, result, evidence: result === Outcome.succeeded ? Outcome.observed : Outcome.none, ...(result === Outcome.succeeded ? {} : {error: failure})}}, {parent: {traceparent: preparation.traceparent}});
+    this.#store.trim(KEEP_FINISHED_JOBS, this.#context.clock.now() - KEEP_RECEIPTS_MS);
+  }
   #favorite(data: Extract<ArtCatalogEdit, {action: 'favorite'}>): void {
     this.#store.saveArtwork({...this.#saved(data.artworkId), favorite: data.favorite});
   }
@@ -248,6 +300,7 @@ class ArtOwner {
   #delete(data: Extract<ArtCatalogEdit, {action: 'delete'}>): () => void {
     const artwork = this.#saved(data.artworkId), now = this.#context.clock.now(), ambient = this.#store.ambient();
     this.#store.saveArtwork({...artwork, deletedAtMs: now, favorite: false});
+    if (this.#store.selection()?.artworkId === artwork.artworkId) this.#store.select(null);
     if (ambient?.artworkId === artwork.artworkId) this.#store.selectAmbient(null);
     this.#prune();
     return () => {
@@ -500,10 +553,13 @@ class ArtOwner {
     }
     if ('error' in reply) await this.#stageResult(requestId, reply.error.code === 'uncertain-result' ? 'uncertain' : 'failed');
   }
-  async #stageResult(requestId: string, result: StageResult): Promise<void> {
+  async #stageResult(requestId: string, result: StageResult, error?: ErrorDetail): Promise<void> {
+    if (this.#closed || this.#context.signal.aborted) return;
     let row: StageRow | undefined;
     try {
       await this.#outbox.transaction(add => {
+        const preparation = this.#store.preparationForStage(requestId);
+        if (preparation !== undefined) this.#settlePreparation(add, preparation, result, error);
         row = this.#store.stage(requestId);
         // A restart leaves a pending stage uncertain, and the core's record can still settle it.
         if (row === undefined || row.status === result) {row = undefined; return;}
@@ -580,7 +636,7 @@ class ArtOwner {
   // Retention. Only unsaved, unreferenced art past the limit goes, and a deleted row goes once nothing refers to it.
   #prune(): void {
     const now = this.#context.clock.now(), unfinished = new Set(this.#store.unfinished().map(job => job.artworkId));
-    const free = (artwork: Artwork): boolean => !unfinished.has(artwork.artworkId) && !this.#store.referenced(artwork.artworkId, now);
+    const free = (artwork: Artwork): boolean => this.#store.selection()?.artworkId !== artwork.artworkId && !unfinished.has(artwork.artworkId) && !this.#store.referenced(artwork.artworkId, now);
     for (const artwork of [...this.#store.pruneCandidates(this.#config.recentLimit), ...this.#store.deletedArtworks()]) if (free(artwork)) this.#store.purge(artwork.artworkId);
     this.#store.trim(KEEP_FINISHED_JOBS, now - KEEP_RECEIPTS_MS);
   }
@@ -588,7 +644,7 @@ class ArtOwner {
   // Reads.
   #publish(add: AddMessage, parent?: TraceContext): void {
     this.#store.bump();
-    add(ART_STATE_KEY, {kind: 'state', type: ART_STATE_TYPE, subject: ART_ID, dataschema: ART_STATE_SCHEMA, data: this.state()}, parent === undefined ? {} : {parent});
+    add(ART_STATE_KEY, {kind: 'state', type: ART_STATE_TYPE, subject: ART_ID, dataschema: ART_STATE_21_SCHEMA, data: this.state()}, parent === undefined ? {} : {parent});
   }
   #spend(provider: ArtProviderName, now: number): ArtProviderSpend {
     const limits = this.#config.limits[provider], totals = this.#ledger.totals(provider, now);
@@ -610,21 +666,21 @@ class ArtOwner {
     }
     return rows.sort((a, b) => (Number(b.favorite) * 2 + Number(b.more)) - (Number(a.favorite) * 2 + Number(a.more))).slice(0, STATE_CANDIDATES).map(({more, ...candidate}) => {void more; return candidate;});
   }
-  state(): ArtState {
+  state(): ArtState21 {
     const now = this.#context.clock.now(), counts = this.#store.counts();
     const retained = this.#store.deletedArtworks().flatMap(artwork => this.#store.liveStages(now).filter(stage => stage.artworkId === artwork.artworkId).map(stage => ({artworkId: artwork.artworkId, target: stage.target, untilMs: stage.expiresAtMs ?? now}))).slice(0, STATE_RETAINED);
     return {id: ART_ID, revision: this.#store.revision(), month: monthKey(now), day: dayKey(now), providers: [this.#spend('openai', now), this.#spend('anthropic', now)],
       guard: {calls: this.#ledger.guardCalls(now), limit: GUARD_LIMIT, windowMs: GUARD_WINDOW_MS}, gifs: this.#store.gifs(),
       jobs: this.#store.recentJobs(STATE_JOBS).map(job => ({requestId: job.requestId, purpose: job.purpose, admittedBy: job.admittedBy, status: job.status, outcome: job.outcome, artworkId: job.artworkId,
         createdAtMs: job.createdAtMs, finishedAtMs: job.finishedAtMs, targets: job.targets.map(({target, outcome, code, reason}) => ({target, outcome, code, reason}))})),
-      artworks: this.#store.artworks(0, STATE_ARTWORKS).artworks.map(artwork => this.#summary(artwork)), candidates: this.#candidates(now),
+      artworks: this.#store.artworks(0, STATE_ARTWORKS).artworks.map(artwork => this.#summary(artwork)), candidates: this.#candidates(now), selection: this.#store.selection(),
       retention: {recentLimit: this.#config.recentLimit, recent: counts.recent, favorites: counts.favorites, retained}};
   }
   #result(artworkId: string): object | undefined {
     const job = this.#store.jobOfArtwork(artworkId), artwork = this.#store.artwork(artworkId);
     if (job === undefined || artwork?.deletedAtMs !== undefined && artwork.deletedAtMs !== null) return undefined;
     const compositions = this.#store.compositions(artworkId);
-    return {artworkId, requestId: job.requestId, purpose: job.purpose, admittedBy: job.admittedBy, outcome: job.outcome, palette: artwork?.palette ?? [], favorite: artwork?.favorite ?? false, feedback: artwork?.feedback ?? null, variationOf: job.variationOf,
+    return {artworkId, createdAtMs: job.createdAtMs, requestId: job.requestId, purpose: job.purpose, admittedBy: job.admittedBy, outcome: job.outcome, palette: artwork?.palette ?? [], favorite: artwork?.favorite ?? false, feedback: artwork?.feedback ?? null, variationOf: job.variationOf,
       calls: this.#ledger.calls(job.requestId).map(call => ({callId: call.callId, target: call.target, provider: call.provider, model: call.model, status: call.status, reservedMicros: call.reservedMicros, costMicros: call.costMicros})),
       compositions: job.targets.map(target => {
         const found = compositions.find(entry => entry.target === target.target);
