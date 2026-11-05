@@ -8,7 +8,9 @@ const connectivityErrors=new Set(['offline','timeout','http-error']);
 const codeOf=(error:unknown)=>typeof (error as {code?:unknown})?.code==='string'?String((error as {code:string}).code):'operation-failed';
 /** Runs work now and settles with its result or synchronous throw, as an async body without await would. */
 const attempt=<T>(work:()=>T):Promise<T>=>new Promise<T>(resolve=>{resolve(work());});
-interface Options {store:PlaybackStore;device:DeviceAdapter;clock?:Clock;random?:()=>number;retryBaseMs?:number;maxRetries?:number;operationTimeoutMs?:number;pauseOnUncertain?:boolean}
+type EmptyIntent='paused'|'stopped';
+interface EmptyIntentStore {read():EmptyIntent;save(intent:EmptyIntent):void}
+interface Options {emptyIntent?:EmptyIntentStore;store:PlaybackStore;device:DeviceAdapter;clock?:Clock;random?:()=>number;retryBaseMs?:number;maxRetries?:number;operationTimeoutMs?:number;pauseOnUncertain?:boolean}
 
 /** The Player operation that produced the latest transport evidence. Dashboard uploads stay distinct from media uploads. */
 export type DisplayEvidenceSource = 'brightness'|'screen'|'probe'|'upload'|'dashboard';
@@ -65,7 +67,7 @@ export class Player {
   private cache=new Map<string,Animation>();
   private preparing=new Map<string,Promise<Animation>>();
   private constructor(private store:PlaybackStore,private device:DeviceAdapter,private clock:Clock,private random:()=>number,
-    private retryBaseMs:number,private maxRetries:number,private operationTimeoutMs:number,private release:()=>void,private pauseOnUncertain=false){this.adapterGeneration=device.generation;}
+    private retryBaseMs:number,private maxRetries:number,private operationTimeoutMs:number,private release:()=>void,private pauseOnUncertain=false,private emptyIntent?:EmptyIntentStore){this.adapterGeneration=device.generation;}
 
   static async open(options:Options):Promise<Player> {
     const {store,device}=options,clock=options.clock??systemClock;
@@ -76,10 +78,11 @@ export class Player {
     let release:()=>void;
     try{release=store.claim();}catch{throw new PlaybackError('busy');}
     owners.add(device);
-    const player=new Player(store,device,clock,options.random??Math.random,retryBase,maxRetries,timeout,()=>{release();owners.delete(device);},options.pauseOnUncertain??false);
+    const player=new Player(store,device,clock,options.random??Math.random,retryBase,maxRetries,timeout,()=>{release();owners.delete(device);},options.pauseOnUncertain??false,options.emptyIntent);
     try{
       const saved=await store.read();
       if(saved){player.record=checkpointSchema.parse(saved);player.intent='paused';player.state='paused';player.requestedScreenOn=saved.requestedScreenOn;player.lastError=saved.lastError;await player.persist();}
+      else if(options.emptyIntent?.read()==='paused'){player.intent='paused';player.state='paused';}
       return player;
     }catch{player.release();throw new PlaybackError('storage-error');}
   }
@@ -97,7 +100,7 @@ export class Player {
   private valid(token:number):boolean {return token===this.epoch && !this.closing && this.intent==='active';}
   private queue(action:()=>Promise<void>):Promise<void> {const work=this.tail.then(action);this.tail=work.catch(()=>{});return work;}
   private async persist():Promise<void> {
-    if(!this.record){this.notify();return;}
+    if(!this.record){this.emptyIntent?.save(this.intent==='paused'?'paused':'stopped');this.notify();return;}
     Object.assign(this.record,{state:this.state,intent:this.intent,requestedScreenOn:this.requestedScreenOn,lastError:this.lastError});
     await this.store.save(structuredClone(this.record));this.notify();
   }
@@ -155,9 +158,11 @@ export class Player {
   }
   restartWithChanges():Promise<void> {if(this.record?.source?.kind==='media')return Promise.reject(new PlaybackError('unsupported-operation'));return this.record?this.start(this.record.snapshot.id):Promise.reject(new PlaybackError('no-context'));}
   pause():Promise<void> {return this.dispatch(async()=>{},'paused');}
-  /** Upload one monitor picture of one or two complete frames, played at 500 ms each. */
-  async uploadDashboard(frames:readonly Uint8Array[],expectedGeneration:number,options:{signal?:AbortSignal;current?:()=>boolean;whileStopped?:boolean}={}):Promise<OperationResult<UploadResult>|undefined> {
-    if(!Array.isArray(frames)||frames.length<1||frames.length>2||frames.some(rgb=>!(rgb instanceof Uint8Array)||rgb.length!==12288))throw new PlaybackError('invalid-input');
+  /** Upload a monitor picture at 500 ms, or bounded exact art with timing validated by its staging owner. */
+  async uploadDashboard(frames:readonly Uint8Array[],expectedGeneration:number,options:{signal?:AbortSignal;current?:()=>boolean;whileStopped?:boolean;artDelayMs?:number}={}):Promise<OperationResult<UploadResult>|undefined> {
+    const delayMs=options.artDelayMs??500,maxFrames=options.artDelayMs===undefined?2:20;
+    if(!Array.isArray(frames)||frames.length<1||frames.length>maxFrames||frames.some(rgb=>!(rgb instanceof Uint8Array)||rgb.length!==12288)
+      ||!Number.isSafeInteger(delayMs)||delayMs<100||delayMs>800)throw new PlaybackError('invalid-input');
     const cancelled=()=>options.signal?.aborted===true||options.current?.()===false;
     if(this.closing||expectedGeneration!==this.epoch||(this.intent!=='paused'&&!(options.whileStopped===true&&this.intent==='stopped'))||!this.requestedScreenOn||cancelled()||options.current?.()===false)return undefined;
     // Card admission is read again inside the device turn: a write queued ahead (such as brightness) can outlast
@@ -166,7 +171,7 @@ export class Player {
     const notAdmitted=():OperationResult<UploadResult>=>{const completedAtMs=this.clock.now();
       return {ok:false,code:'cancelled',priorEffects:Outcome.none,generation,timing:{submittedAtMs,startedAtMs:null,completedAtMs,queueMs:completedAtMs-submittedAtMs,serviceMs:0}};};
     let waiting=true;
-    const turn=this.deviceTurns('device',async fresh=>{waiting=false;return fresh(cancelled)?notAdmitted():this.device.uploadAnimation({frames:frames.map(rgb=>({rgb:new Uint8Array(rgb),delayMs:500}))},
+    const turn=this.deviceTurns('device',async fresh=>{waiting=false;return fresh(cancelled)?notAdmitted():this.device.uploadAnimation({frames:frames.map(rgb=>({rgb:new Uint8Array(rgb),delayMs}))},
       {generation,signal:options.signal===undefined?this.abort.signal:AbortSignal.any([this.abort.signal,options.signal]),timeoutMs:this.operationTimeoutMs,...(options.current===undefined?{}:{current:options.current})});});
     // A card aborted while it waits for its turn ends at once, as it did in the device queue; its turn then finds it cancelled.
     const signal=options.signal;
@@ -256,7 +261,7 @@ export class Player {
   }
   close():Promise<void> {
     if(this.closePromise)return this.closePromise;
-    this.closing=true;this.admission++;this.retire();this.intent='paused';this.state=this.record?'paused':'idle';
+    this.closing=true;this.admission++;this.retire();if(this.record)this.intent='paused';this.state=this.intent==='paused'?'paused':'idle';
     this.closePromise=this.queue(()=>this.persist()).finally(()=>this.release());return this.closePromise;
   }
 

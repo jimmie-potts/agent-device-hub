@@ -2139,6 +2139,14 @@ keeping an installed service's port, such as 41230 or 41231. On 2026-10-07 the
 Vitest suite took about 8 s locally for 31 files and 310 tests, and the module's
 node:test suites about 35 s for 37 tests.
 
+Generated-art admission uses `modules/pixoo/tests/module/art.test.ts` and the
+existing `test:pixoo:built` CI suite. It exercises synthetic PNG/GIF staging,
+original preservation, decoded previews and timing, sender/profile refusals,
+duplicate renewal, reference-safe cleanup, restart and exact-art moments through
+the simulated writer. The `pixoo-art` runtime scenario covers the core handoff.
+Run these alongside the module and affected runtime checks above; no real art,
+provider key or device is needed.
+
 After the import, divoom-app-upgrade takes only bug fixes. Mirror each one here.
 
 For artwork, after the root build, run from `modules/pixoo`:
