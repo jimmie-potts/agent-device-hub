@@ -155,9 +155,11 @@ export class Player {
   }
   restartWithChanges():Promise<void> {if(this.record?.source?.kind==='media')return Promise.reject(new PlaybackError('unsupported-operation'));return this.record?this.start(this.record.snapshot.id):Promise.reject(new PlaybackError('no-context'));}
   pause():Promise<void> {return this.dispatch(async()=>{},'paused');}
-  /** Upload one monitor picture of one or two complete frames, played at 500 ms each. */
-  async uploadDashboard(frames:readonly Uint8Array[],expectedGeneration:number,options:{signal?:AbortSignal;current?:()=>boolean;whileStopped?:boolean}={}):Promise<OperationResult<UploadResult>|undefined> {
-    if(!Array.isArray(frames)||frames.length<1||frames.length>2||frames.some(rgb=>!(rgb instanceof Uint8Array)||rgb.length!==12288))throw new PlaybackError('invalid-input');
+  /** Upload a monitor picture at 500 ms, or bounded exact art with timing validated by its staging owner. */
+  async uploadDashboard(frames:readonly Uint8Array[],expectedGeneration:number,options:{signal?:AbortSignal;current?:()=>boolean;whileStopped?:boolean;artDelayMs?:number}={}):Promise<OperationResult<UploadResult>|undefined> {
+    const delayMs=options.artDelayMs??500,maxFrames=options.artDelayMs===undefined?2:20;
+    if(!Array.isArray(frames)||frames.length<1||frames.length>maxFrames||frames.some(rgb=>!(rgb instanceof Uint8Array)||rgb.length!==12288)
+      ||!Number.isSafeInteger(delayMs)||delayMs<100||delayMs>800)throw new PlaybackError('invalid-input');
     const cancelled=()=>options.signal?.aborted===true||options.current?.()===false;
     if(this.closing||expectedGeneration!==this.epoch||(this.intent!=='paused'&&!(options.whileStopped===true&&this.intent==='stopped'))||!this.requestedScreenOn||cancelled()||options.current?.()===false)return undefined;
     // Card admission is read again inside the device turn: a write queued ahead (such as brightness) can outlast
@@ -166,7 +168,7 @@ export class Player {
     const notAdmitted=():OperationResult<UploadResult>=>{const completedAtMs=this.clock.now();
       return {ok:false,code:'cancelled',priorEffects:Outcome.none,generation,timing:{submittedAtMs,startedAtMs:null,completedAtMs,queueMs:completedAtMs-submittedAtMs,serviceMs:0}};};
     let waiting=true;
-    const turn=this.deviceTurns('device',async fresh=>{waiting=false;return fresh(cancelled)?notAdmitted():this.device.uploadAnimation({frames:frames.map(rgb=>({rgb:new Uint8Array(rgb),delayMs:500}))},
+    const turn=this.deviceTurns('device',async fresh=>{waiting=false;return fresh(cancelled)?notAdmitted():this.device.uploadAnimation({frames:frames.map(rgb=>({rgb:new Uint8Array(rgb),delayMs}))},
       {generation,signal:options.signal===undefined?this.abort.signal:AbortSignal.any([this.abort.signal,options.signal]),timeoutMs:this.operationTimeoutMs,...(options.current===undefined?{}:{current:options.current})});});
     // A card aborted while it waits for its turn ends at once, as it did in the device queue; its turn then finds it cancelled.
     const signal=options.signal;

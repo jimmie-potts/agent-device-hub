@@ -1,0 +1,252 @@
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {it} from 'node:test';
+import sharp from 'sharp';
+import {z} from 'zod';
+import type {ArtStageContent} from '@jimmie-potts/event-contracts/v2/art';
+import type {RequestResult} from '@jimmie-potts/sdk';
+import {DEVICE, SECTION, World, bytesOf, hostedGif, manyColorGif, sleep, waitFor} from './support.js';
+import {FAMILIES} from '../../src/module/schemas.js';
+import {frameDigest} from '../../src/module/transport.js';
+
+const digest = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
+const content = (id: string, bytes: Buffer, frames = 1): ArtStageContent => ({compositionId: digest(Buffer.from(id)), format: frames === 1 ? 'png' : 'gif', width: 64, height: 64,
+  frames, durationMs: frames === 1 ? 0 : frames * 100, sha256: digest(bytes), base64: bytes.toString('base64'), lifetimeMs: 60_000});
+const stage = (world: World, data: ArtStageContent): Promise<RequestResult> => world.core.request(`bunny.cmd.art-stage.${DEVICE}`,
+  {type: 'org.bunny.art.stage.requested', subject: DEVICE, dataschema: 'https://bunny.invalid/events/art-stage/2.0', data}, {timeoutMs: 10_000});
+async function accepted(pending: Promise<RequestResult>): Promise<string> {
+  const result = await pending;
+  assert.equal(result.status, 'accepted', JSON.stringify(result));
+  assert.ok(result.status === 'accepted');
+  return result.requestId;
+}
+const artMoment = (world: World, compositionId: string, patch: object = {}, core = true): Promise<RequestResult> => (core ? world.core : world.probe).request(`bunny.cmd.moment-play.${DEVICE}`,
+  {type: 'org.bunny.moment.play.requested', subject: DEVICE, dataschema: 'https://bunny.invalid/events/moment-play/2.1',
+    data: {momentId: `show-${compositionId}`, mood: 'celebrate', durationMs: 1000, priorityClass: 'event', coversStatus: true,
+      startAtMs: Date.now(), toleranceMs: 10_000, art: {compositionId}, ...patch}}, {timeoutMs: 5000});
+const previewSchema = z.object({compositionId: z.string(), frameCount: z.number(), durationMs: z.number(), expiresAtMs: z.number(), profile: z.string(),
+  frames: z.array(z.object({index: z.number(), delayMs: z.number().nullable(), sha256: z.string(), ref: z.string()}))});
+async function preview(world: World, id: string) {
+  const result = await world.module.manifest.content?.(`art-preview.${id}`);
+  assert.ok(result !== undefined && !('error' in result));
+  return previewSchema.parse(JSON.parse(Buffer.from(result.bytes).toString('utf8')));
+}
+const rgbFrame = (index: number, phase: number): Buffer => {
+  const bytes = Buffer.alloc(12288);
+  for (let pixel = 0; pixel < 4096; pixel += 1) bytes.set((pixel + phase) % 2 === 0 ? [index % 256, 0, 0] : [0, index % 256, 255], pixel * 3);
+  return bytes;
+};
+async function monitor(world: World): Promise<string> {
+  const mode = await accepted(world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'monitor'}));
+  await world.outcome(mode);
+  await world.publishSession();
+  return waitFor(() => world.device.state().shown?.digests[0], 'monitor');
+}
+
+void it('stages bounded still and animation without a display write or permanent import', async () => {
+  const world = await World.open();
+  try {
+    await world.start();
+    const before = world.device.state().uploads;
+    const png = await sharp({create: {width: 64, height: 64, channels: 3, background: '#1764ca'}}).png().toBuffer();
+    for (const data of [content('art-still', png), content('art-animation', hostedGif(19, 8), 8)]) {
+      const outcome = await world.outcome(await accepted(stage(world, data)));
+      assert.equal(outcome.data.result, 'succeeded');
+      assert.equal(outcome.data.evidence, 'observed');
+      const shown = await preview(world, data.compositionId);
+      assert.equal(shown.frameCount, data.frames);
+      assert.equal(shown.durationMs, data.durationMs);
+      for (const [index, frame] of shown.frames.entries()) {
+        const result = await world.module.manifest.content?.(frame.ref);
+        assert.ok(result !== undefined && !('error' in result));
+        assert.equal(digest(result.bytes), frame.sha256);
+        const actual = await sharp(result.bytes).removeAlpha().raw().toBuffer();
+        const expected = data.format === 'gif' ? rgbFrame(19, index) : Buffer.from(Array.from({length: 4096}, () => [23, 100, 202]).flat());
+        assert.deepEqual(actual, expected);
+        assert.equal(frame.delayMs, data.format === 'gif' ? 100 : null);
+      }
+      const row = world.withDatabase(db => db.prepare('SELECT rendition_id FROM pixoo_art_copies WHERE composition_id = ?').get(data.compositionId));
+      assert.equal(typeof row?.rendition_id, 'string');
+      assert.deepEqual(await readFile(join(world.folder, 'art', String(row?.rendition_id), 'originals', data.sha256)), Buffer.from(data.base64, 'base64'));
+    }
+    assert.equal(world.device.state().uploads, before);
+    assert.equal((await world.synced('pixoo-rendition')).length, 0);
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
+
+void it('refuses an unknown art reference without a mood fallback', async () => {
+  const world = await World.open();
+  try {
+    await world.start();
+    const shown = await monitor(world), before = world.device.state().uploads;
+    const result = await artMoment(world, '0'.repeat(64));
+    assert.ok(result.status === 'rejected');
+    assert.equal(result.error.error.code, 'not-found');
+    await sleep(100);
+    assert.equal(world.device.state().uploads, before);
+    assert.equal(world.device.state().shown?.digests[0], shown);
+  } finally { await world.close(); }
+});
+
+void it('renews identical staging, refuses conflicting bytes and keeps copies across restart', async () => {
+  const world = await World.open();
+  try {
+    await world.start();
+    const data = content('reuse', hostedGif(21, 8), 8);
+    await world.outcome(await accepted(stage(world, data)));
+    const first = await preview(world, data.compositionId);
+    await sleep(5);
+    await world.outcome(await accepted(stage(world, data)));
+    const second = await preview(world, data.compositionId);
+    assert.ok(second.expiresAtMs > first.expiresAtMs);
+    assert.deepEqual(second.frames, first.frames);
+    const other = content('reuse', hostedGif(22, 8), 8);
+    const conflict = await stage(world, other);
+    assert.ok(conflict.status === 'rejected');
+    assert.equal(conflict.error.error.code, 'duplicate-conflict');
+    assert.deepEqual(await preview(world, data.compositionId), second);
+    const writes = world.device.state().uploads;
+    await world.restart();
+    assert.deepEqual(await preview(world, data.compositionId), second);
+    assert.equal(world.device.state().uploads, writes);
+    assert.equal((await world.synced(FAMILIES.rendition)).length, 0);
+  } finally { await world.close(); }
+});
+
+void it('refuses forged callers, bad bytes, decoded metadata and excessive resources without display effects', async () => {
+  const world = await World.open();
+  try {
+    await world.start();
+    const data = content('bad', hostedGif(21, 8), 8), before = world.device.state().uploads;
+    const forged = await world.probe.request(`bunny.cmd.art-stage.${DEVICE}`, {type: 'org.bunny.art.stage.requested', subject: DEVICE,
+      dataschema: 'https://bunny.invalid/events/art-stage/2.0', data}, {timeoutMs: 5000});
+    assert.ok(forged.status === 'rejected'); assert.equal(forged.error.error.code, 'forbidden');
+    for (const bad of [{...data, sha256: '0'.repeat(64)}, {...data, width: 32}, {...data, frames: 21},
+      content('signature', Buffer.alloc(32), 8), content('bytes-limit', Buffer.concat([hostedGif(21, 8), Buffer.alloc(163_840)]), 8)]) {
+      const result = await stage(world, bad);
+      assert.ok(result.status === 'rejected');
+    }
+    for (const bad of [{...data, frames: 7, durationMs: 700}, content('broken', hostedGif(21, 8).subarray(0, 30), 8)]) {
+      const result = await world.outcome(await accepted(stage(world, bad)));
+      assert.equal(result.data.result, 'failed'); assert.equal(result.data.evidence, 'none');
+    }
+    const shown = await world.module.manifest.content?.(`art-preview.${data.compositionId}`);
+    assert.ok(shown !== undefined && 'error' in shown); assert.equal(shown.error.code, 'not-found');
+    assert.equal(world.device.state().uploads, before);
+  } finally { await world.close(); }
+});
+
+void it('plays all staged frames at their exact delay and returns to the current Monitor base', async () => {
+  const world = await World.open();
+  try {
+    await world.start();
+    const data = content('exact', hostedGif(31, 8), 8);
+    await world.outcome(await accepted(stage(world, data)));
+    const base = await monitor(world);
+    const request = await accepted(artMoment(world, data.compositionId));
+    const showing = await waitFor(() => world.device.state().shown?.frames === 8 ? world.device.state().shown : undefined, 'eight art frames');
+    assert.deepEqual(showing?.delaysMs, Array(8).fill(100));
+    assert.deepEqual(showing?.digests, Array.from({length: 8}, (_, index) => frameDigest(rgbFrame(31, index))));
+    world.withDatabase(db => db.prepare('UPDATE pixoo_art_copies SET expires_at_ms = ? WHERE composition_id = ?').run(Date.now() - 1, data.compositionId));
+    const result = await world.outcome(request);
+    assert.equal(result.data.result, 'succeeded'); assert.equal(result.data.evidence, 'transmitted');
+    await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'base restored');
+    const expired = await artMoment(world, data.compositionId, {momentId: 'expired-art'});
+    assert.ok(expired.status === 'rejected'); assert.equal(expired.error.error.code, 'not-found');
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
+
+void it('keeps profile restrictions and never falls back to a mood for refused art', async () => {
+  for (const profile of ['pixoo64-smoke-2026-09-06', 'pixoo64-hosted-2026-10-01']) {
+    const world = await World.open({section: {device: {...SECTION.device, profile}}});
+    try {
+      await world.start();
+      const bytes = profile.includes('smoke') ? hostedGif(21, 8) : manyColorGif();
+      const data = content(profile, bytes, profile.includes('smoke') ? 8 : 2);
+      const result = await world.outcome(await accepted(stage(world, data)));
+      assert.equal(result.data.result, 'failed'); assert.equal(result.data.error?.code, 'unsupported-capability');
+      const refused = await artMoment(world, data.compositionId);
+      assert.ok(refused.status === 'rejected'); assert.equal(refused.error.error.code, 'not-found');
+      assert.equal(world.device.state().uploads, 0);
+    } finally { await world.close(); }
+  }
+});
+
+void it('requires the core for art moments and preserves attention and Media admission', async () => {
+  const world = await World.open();
+  try {
+    await world.start();
+    const data = content('gated', hostedGif(21, 8), 8);
+    await world.outcome(await accepted(stage(world, data)));
+    const forged = await artMoment(world, data.compositionId, {}, false);
+    assert.ok(forged.status === 'rejected'); assert.equal(forged.error.error.code, 'forbidden');
+    const paused = await artMoment(world, data.compositionId);
+    assert.ok(paused.status === 'rejected'); assert.equal(paused.error.error.code, 'invalid-state');
+    await monitor(world);
+    await world.publishSession({attention: [{kind: 'approval', id: {status: 'known', id: 'approval-art'}, turn: {status: 'known', id: 'turn-1'}}]});
+    const blocked = await artMoment(world, data.compositionId);
+    assert.ok(blocked.status === 'rejected'); assert.equal(blocked.error.error.code, 'invalid-state');
+    assert.equal(world.display()?.moments?.playing, null);
+  } finally { await world.close(); }
+});
+
+void it('returns exact art to the same Media item and lets a manual pause end the art', async () => {
+  const world = await World.open();
+  try {
+    let playlistId = '';
+    await world.populate(async library => {
+      const png = await sharp({create: {width: 64, height: 64, channels: 3, background: '#132537'}}).png().toBuffer();
+      const imported = await library.importMedia(bytesOf(png), 'Synthetic base');
+      const list = await library.createPlaylist('Synthetic list', {}, {items: [{renditionId: imported.rendition.id}]});
+      playlistId = list.id;
+    });
+    await world.start();
+    await world.outcome(await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId})));
+    const base = await waitFor(() => world.display()?.player.state === 'playing' ? world.display() : undefined, 'base playing');
+    const pixels = world.device.state().shown?.digests;
+    const data = content('media-art', hostedGif(33, 8), 8);
+    await world.outcome(await accepted(stage(world, data)));
+    const first = await accepted(artMoment(world, data.compositionId, {momentId: 'media-art-first', coversStatus: false}));
+    await waitFor(() => world.device.state().shown?.frames === 8 ? true : undefined, 'exact art over Media');
+    assert.equal((await world.outcome(first)).data.result, 'succeeded');
+    const returned = await waitFor(() => world.display()?.player.state === 'playing' ? world.display() : undefined, 'same item resumed');
+    assert.equal(returned.player.itemId, base.player.itemId);
+    assert.deepEqual(world.device.state().shown?.digests, pixels);
+    const second = await accepted(artMoment(world, data.compositionId, {momentId: 'media-art-second', durationMs: 10_000, coversStatus: false}));
+    await waitFor(() => world.device.state().shown?.frames === 8 ? true : undefined, 'second exact art over Media');
+    await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause'})));
+    assert.equal((await world.outcome(second)).data.result, 'succeeded');
+    await waitFor(() => world.device.state().shown?.digests[0] === frameDigest(new Uint8Array(12288)) ? true : undefined, 'manual pause blanks art');
+    assert.equal(world.display()?.player.intent, 'paused');
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
+
+void it('attention interrupts exact art and restart never replays an admitted art moment', async () => {
+  const world = await World.open();
+  try {
+    await world.start(); await monitor(world);
+    const data = content('interrupt-art', hostedGif(35, 8), 8);
+    await world.outcome(await accepted(stage(world, data)));
+    const first = await accepted(artMoment(world, data.compositionId, {momentId: 'attention-art', durationMs: 10_000}));
+    await waitFor(() => world.device.state().shown?.frames === 8 ? true : undefined, 'exact art before attention');
+    await world.publishSession({attention: [{kind: 'approval', id: {status: 'known', id: 'attention-interrupt'}, turn: {status: 'known', id: 'turn-1'}}]});
+    assert.equal((await world.outcome(first)).data.result, 'succeeded');
+    await waitFor(() => world.device.state().shown?.frames === 2 ? true : undefined, 'attention dashboard replaces art');
+    await world.publishSession({attention: []});
+    await waitFor(() => world.device.state().shown?.frames === 1 ? true : undefined, 'calm dashboard');
+    const queued = await accepted(artMoment(world, data.compositionId, {momentId: 'restart-art', startAtMs: Date.now() + 200, durationMs: 10_000}));
+    await world.restart();
+    assert.equal((await world.outcome(queued)).data.result, 'uncertain');
+    await sleep(600);
+    assert.notEqual(world.device.state().shown?.frames, 8);
+    assert.equal((await preview(world, data.compositionId)).frameCount, 8);
+    const repeated = await artMoment(world, data.compositionId, {momentId: 'restart-art'});
+    assert.ok(repeated.status === 'rejected'); assert.equal(repeated.error.error.code, 'invalid-state');
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});

@@ -26,6 +26,8 @@ const BLANK=new Uint8Array(12288);
 export interface MomentPlay {
  momentId:string;coversStatus:boolean;durationMs:number;startAtMs:number;toleranceMs:number;
  frames:()=>Promise<readonly Uint8Array[]>;
+ /** Staged exact art has uniform timing checked against the selected device profile. Mood frames use 500 ms. */
+ delayMs?:number;
 }
 /**
  * How a moment ended. A moment that reached the display carries its `ending` and its upload. One that never did has no
@@ -500,7 +502,8 @@ export class MonitorPresentation {
    &&(this.active?this.popupUntil>this.clock()&&!this.attention():this.takeover===takeover&&takeover!==null&&this.clock()<takeover.until);
   const write=frame.card?{abort,current,key:frame.key}:null;this.cardWrite=write;
   this.inFlight=true;this.lastStart=this.clock();this.lastFrame=frame.key;this.onChange();
-  const upload=this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration,moment!==undefined?{current,whileStopped:moment.over==='idle'}:write===null?{}:{signal:abort.signal,current});
+  const upload=this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration,
+   moment!==undefined?{current,whileStopped:moment.over==='idle',...(moment.delayMs===undefined?{}:{artDelayMs:moment.delayMs})}:write===null?{}:{signal:abort.signal,current});
   if(moment!==undefined){
    moment.writtenAt=this.lastStart;
    moment.writing=upload.then(result=>{this.momentUploaded(moment,result);},()=>{moment.rejected=true;this.momentUploaded(moment,undefined);}).finally(()=>{this.inFlight=false;this.onChange();});
