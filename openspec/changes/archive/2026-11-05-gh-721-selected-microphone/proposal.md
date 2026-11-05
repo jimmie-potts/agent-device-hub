@@ -22,6 +22,7 @@ None.
 - `bunny-music-capture`: explicit selected microphone, separate permission setup, input provenance and native refusal/teardown behavior.
 - `shared-event-contract`: additive selected-microphone schemas and one-version state production with both-version consumer acceptance.
 - `bunny-runtime`: current input capability, selected-source binding and compatibility of core state and operator controls.
+- `runtime-dashboard`: configured alias selection, both-version state consumption, source-bound meters and accessible bounded presentation.
 
 ## Impact
 

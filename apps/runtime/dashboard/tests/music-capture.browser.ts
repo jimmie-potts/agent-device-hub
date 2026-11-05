@@ -128,6 +128,22 @@ try {
   await input.selectOption('music');await micCard.getByRole('button', {name: 'Start measuring Music', exact: true}).click();
   await expect(micCard.getByRole('meter')).toHaveCount(1);
   assert.equal(producer.commands[3]?.dataschema, 'https://bunny.invalid/events/music-capture-work/2.0');
-  await micContext.close();assert.deepEqual(errors, []);
+  await micContext.close();await producer.close();
+  const longAlias = 'm'.repeat(64);
+  producer = await musicCaptureProducer(world.url, world.musicCaptureToken, longAlias);
+  const boundedContext = await browser.newContext({viewport: {width: 320, height: 900}, reducedMotion: 'reduce'});
+  const boundedPage = await boundedContext.newPage();boundedPage.setDefaultTimeout(10_000);
+  await boundedPage.goto(world.url + '/#/audio');await feed(boundedPage, 'connected');
+  const boundedCard = boundedPage.getByRole('article', {name: 'Music input measurement', exact: true});
+  await boundedCard.getByRole('combobox', {name: 'Audio input'}).selectOption('microphone');
+  assert.equal(await boundedPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'maximum alias fits before capture');
+  await boundedCard.getByRole('button', {name: `Start measuring ${longAlias}`, exact: true}).focus();
+  await boundedPage.keyboard.press('Enter');await boundedCard.getByRole('meter').waitFor();
+  assert.equal(producer.commands.length, 1);
+  assert.equal(await boundedPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'maximum alias fits during capture');
+  const boundedA11y = await new AxeBuilder({page: boundedPage}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
+  assert.deepEqual(boundedA11y.violations.map(value => value.id), []);
+  await boundedPage.screenshot({path: join(artifacts, 'selected-microphone-max-alias-320.png'), fullPage: true});
+  await boundedContext.close();assert.deepEqual(errors, []);
   await context.close();
 } finally {await browser.close(); await producer?.close(); await world.close();}

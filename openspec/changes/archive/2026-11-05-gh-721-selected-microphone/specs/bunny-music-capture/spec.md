@@ -14,13 +14,13 @@ The producer SHALL capture only after an explicit start for its selected input a
 
 #### Scenario: Permission or source unavailable
 - **WHEN** the selected capture path cannot start or loses its source
-- **THEN** the producer reports unavailable or failure with a registered code, requests no new permission and starts no substitute input
+- **THEN** the producer reports unavailable or failure with a registered code and starts no substitute input; microphone capture requests no new permission
 
 ## ADDED Requirements
 
 ### Requirement: Selected microphone and explicit permission setup
 
-The producer SHALL resolve the explicitly selected microphone alias to its private configured device identity. Input discovery and permission requests SHALL require separate explicit local operations. Discovery SHALL perform no capture or permission request. Permission setup SHALL perform no capture, including after a grant. A normal capture start SHALL check existing authorization and SHALL NOT prompt for permission. A configured capability SHALL NOT claim observed device presence or authorization.
+The producer SHALL resolve the explicitly selected microphone alias to its private configured device identity. Input discovery and permission requests SHALL require separate explicit local operations. Discovery SHALL perform no capture or permission request. Permission setup SHALL perform no capture, including after a grant. A microphone capture start SHALL check existing authorization and SHALL NOT prompt for permission. A configured capability SHALL NOT claim observed device presence or authorization.
 
 #### Scenario: Permission granted without a start
 - **WHEN** an explicit permission setup operation receives a grant

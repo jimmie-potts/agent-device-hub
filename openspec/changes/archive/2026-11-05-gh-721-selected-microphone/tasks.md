@@ -19,6 +19,6 @@
 ## 4. Source verification and delivery
 
 - [x] 4.1 Update owning guides and the scoped development check paragraph; verify commands and coverage against existing CI selection, documenting source/installation/physical boundaries and remaining calibration/tuning without adding unused code.
-- [ ] 4.2 Run Node 24 setup, build, typecheck, lint, event and retained Python fixtures, SDK, runtime/core scenarios, producer, portable native, macOS compile/adapter, dashboard and applicable browser checks; retain exact command outcomes and report unrelated failures without expanding scope.
-- [ ] 4.3 Run workflow validation/tests and strict OpenSpec validation; report actual spec/change/archive inventory, synchronize all affected specs and archive only after implementation and disposable evidence are complete.
-- [ ] 4.4 Freeze the candidate for independent Standards/Specification review and applicable focused safety review; provide the coordinator with commit, source evidence, physical limits and any remaining findings before publication.
+- [x] 4.2 Run Node 24 setup, build, typecheck, lint, event and retained Python fixtures, SDK, runtime/core scenarios, producer, portable native, macOS compile/adapter, dashboard and applicable browser checks; retain exact command outcomes and report unrelated failures without expanding scope.
+- [x] 4.3 Run workflow validation/tests and strict OpenSpec validation; report actual spec/change/archive inventory, synchronize all affected specs and archive only after implementation and disposable evidence are complete.
+- [x] 4.4 Freeze the candidate for independent Standards/Specification review and applicable focused safety review; provide the coordinator with commit, source evidence, physical limits and any remaining findings before publication.

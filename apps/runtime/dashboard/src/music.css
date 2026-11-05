@@ -29,11 +29,13 @@
 .music-placement label{display:flex;gap:var(--space-s);align-items:center;min-height:44px}.music-placement input[type=checkbox]{width:20px;height:20px}
 .music-placement button{min-height:44px;border-radius:var(--light-control-radius)}
 .music-room{padding-block:var(--space-m)}
-.music-capture-card{margin-block:var(--space-l);max-width:660px;min-width:0;padding:var(--space-l);border:1px solid var(--light-edge);border-radius:var(--light-radius);background:var(--light-surface);box-shadow:var(--light-shadow)}
+.music-capture-card{overflow-wrap:anywhere;margin-block:var(--space-l);max-width:660px;min-width:0;padding:var(--space-l);border:1px solid var(--light-edge);border-radius:var(--light-radius);background:var(--light-surface);box-shadow:var(--light-shadow)}
 .music-capture-card h2{font-size:var(--type-title);font-weight:500}
 .music-input-level{margin-block:var(--space-l);padding:var(--space-m);border-radius:var(--light-control-radius);background:var(--light-inset)}
 .music-input-level label{display:block;font-weight:600;margin-bottom:var(--space-s)}
 .music-input-level meter{display:block;width:100%;height:24px;accent-color:var(--accent)}
 .music-input-level p{overflow-wrap:anywhere}
 .music-capture-actions{display:flex;flex-wrap:wrap;gap:var(--space-s);margin-block:var(--space-m)}
-.music-capture-card button{min-height:44px;border-radius:var(--light-control-radius);white-space:normal}
+.music-capture-card button{min-width:0;max-width:100%;min-height:44px;border-radius:var(--light-control-radius);white-space:normal}
+
+.music-capture-card select{min-width:0;max-width:100%}
