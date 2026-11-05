@@ -1781,7 +1781,24 @@ Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:tidbyt-module` from the worktree root. `test:tidbyt-module`
 builds, then runs `test:tidbyt-module:built`: the compiled tests in
 `modules/tidbyt/dist/tests/`. The core CI job runs
-`npm run test:tidbyt-module:built` after its fresh build. The suite covers the
+`npm run test:tidbyt-module:built` after its fresh build.
+
+Exact staged art (#681) adds `art-render.test.ts` and `art.test.ts` to that
+existing module suite. After the root build, run
+`node --test modules/tidbyt/dist/tests/art-render.test.js modules/tidbyt/dist/tests/art.test.js`
+for independent animated-WebP decoding, media bounds, private staging/reopen,
+exact moments, and ambient queue/attention/pin interleavings. The runtime
+scenario catalog exercises the same module through the registered synthetic
+Tronbyt transport; `test:runtime:scenarios:built` and disposable scenario runs
+cover that gateway path. These files are discovered by the existing core CI
+module and scenario commands. The playback thumbnail limit and its current
+tests remain separate from the art profile.
+The `scenario-tidbyt-art` capture follows a labelled synthetic link to the
+authenticated exact preview and retains that animation in the recording. After
+the build, run `node --test --test-name-pattern='^scenario-tidbyt-art passes in a fresh run$' apps/runtime/dist/verify/tests/steps.test.js`
+for its image-load and final-page checks in the existing verification suite.
+
+The suite also covers the
 copied renderer, status, now-playing, cloud and cadence cases; the golden frames
 decoded by an independent libwebp build through `sharp`, pixel by pixel, with a
 corrupted golden as its negative control, in place of the controller's Pillow
@@ -2115,6 +2132,19 @@ suite under [Runtime verification runs](#runtime-verification-runs).
 The build compiles the module and its tests
 (`tsc -p modules/pixoo/tsconfig.json`) before the runtime, which ships it. The
 core CI job runs `test:pixoo:built` after its fresh build.
+
+`apps/runtime/tests/moment-refusal.test.ts` runs the actual Pixoo and Tidbyt
+modules with simulated transports through the core tracker. It checks that a
+missed moment start is recorded as an owner refusal with no effect, retains the
+window explanation, and is not replayed. After the build, run
+`node --test apps/runtime/dist/tests/moment-refusal.test.js`; the existing
+`test:runtime:built` CI suite includes it. The registered `missed-moment-start`
+scenario adds the authenticated HTTP gateway and both real handlers, with
+Pixoo and Tronbyt simulations. It checks the reply, owner, operation record,
+zero moment writes and duplicate refusal. Run it after the build with
+`node --test --test-name-pattern='missed-moment-start' apps/runtime/dist/tests/scenarios/catalog.test.js`;
+the existing `test:runtime:scenarios:built` CI suite discovers it, and
+`scenario-missed-moment-start` is its disposable acceptance capture.
 
 The reusable Pixoo controls (#1154) add atomic populated creation coverage to
 `modules/pixoo/tests/integration/library.test.ts` and browser journeys to

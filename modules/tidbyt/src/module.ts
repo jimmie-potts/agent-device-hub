@@ -19,15 +19,20 @@ import type {DatabaseSync} from 'node:sqlite';
 import {SCHEMA_BASE, errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {Capabilities, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {MomentPlayRequest, PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {artCommandRefusal} from '@jimmie-potts/event-contracts/v2/art';
 import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, errorType, type AddMessage, type BunnyModule, type Cancel, type LogFields, type ModuleContext,
-  type StateDraft, type SyncChange, type SyncedCopy, type TraceContext, Outcome} from '@jimmie-potts/sdk';
+  type ModuleContent, type StateDraft, type SyncChange, type SyncedCopy, type TraceContext, Outcome} from '@jimmie-potts/sdk';
+import type {ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import {TidbytArt} from './art.js';
+import {ART_INSTALLATION} from './art-profile.js';
 import {TidbytCloudConnection, type CloudFetch, type ListResult, type TidbytConnection, type WriteResult} from './cloud.js';
 import {API_KEY_SECRET, configureTidbyt, type TidbytConfig} from './configuration.js';
 import {ControlStore, DEFAULT_MODE, DisplayControl, isControlFamily, settleRequests, type TileName} from './control.js';
 import {acquireLease, type Lease, type LeaseRefusal} from './lease.js';
 import {momentView, type MomentPicture} from './moment-card.js';
 import {PLAYBACK_LOST_MS, nowPlayingView} from './nowplaying.js';
-import {SIMULATED_API_KEY, SIMULATED_DEVICE, SimulatedCloud} from './simulated.js';
+import {SIMULATED_DEVICE} from './simulated.js';
+import {SimulatedTidbyt} from './simulated-backend.js';
 import {statusView} from './status.js';
 import type {TileRequest, TileReply} from './tiles.js';
 import {TronbytConnection} from './tronbyt.js';
@@ -104,7 +109,7 @@ export const deviceKey = (id: string): string => `bunny.state.device.${id}`;
 export function createTidbytModule(options: TidbytModuleOptions): BunnyModule<TidbytConfig> {
   let run: TidbytRun | undefined;
   return {
-    manifest: {name: TIDBYT_MODULE, apiVersion: '1.3', configure: configureTidbyt,
+    manifest: {name: TIDBYT_MODULE, apiVersion: '1.3', configure: configureTidbyt, content: ref => run?.content(ref),
       pages: [{id: 'display', title: 'Tidbyt display', presentation: 'react'}]},
     async start(context) {
       // The runtime starts a module with `configure` only with what `configure` accepted.
@@ -136,9 +141,9 @@ type Copy = {
 
 /** One tile: its writer, its evaluation loop and what it last decided to show. */
 type Tile = {
-  readonly name: TileName;
+  readonly name: TileName | 'art';
   /** The diagnostic contract's `bunny.operation` for the tile's records and spans. */
-  readonly operation: 'status' | 'playback';
+  readonly operation: 'status' | 'playback' | 'media';
   readonly installation: string;
   readonly writer: TileWriter;
   readonly poll: number;
@@ -191,6 +196,9 @@ class TidbytRun {
   #saveTile: ((installation: string, memory: TileMemory) => void) | undefined;
   /** The Tronbyt display's controls; undefined on the cloud backend. */
   #control: DisplayControl | undefined;
+  #art: TidbytArt | undefined;
+  #server: TronbytConnection | undefined;
+  #ambientUnpinned = false;
 
   constructor(context: ModuleContext<TidbytConfig>, config: TidbytConfig, options: TidbytModuleOptions) {
     this.#context = context;
@@ -244,6 +252,18 @@ class TidbytRun {
     const store = new ControlStore(db);
     if (this.#lease !== undefined) await this.#selectConnection(db, store, outbox);
     if (tronbyt !== undefined) {
+      this.#art = new TidbytArt({db, now: () => clock.now(), available: () => this.#lease !== undefined && !this.#closing && !signal.aborted,
+        prepare: stage => this.#context.workers.call<TileReply>(this.#options.renderWorker ?? RENDER_WORKER, {tile: 'art', stage}, {
+          timeoutMs: this.#options.renderTimeoutMs ?? RENDER_TIMEOUT_MS, signal,
+        }),
+        commit: (command, extra) => this.#commitWanted(command, extra),
+        changed: command => {
+          if (this.#queue === undefined) return;
+          let tile = this.#tiles.find(entry => entry.name === 'art');
+          if (tile === undefined) {tile = this.#tile('art', ART_INSTALLATION, ART_INSTALLATION, this.#timing.nowPlayingPollMs, undefined); this.#tiles.push(tile);}
+          this.#update(tile, command);
+        },
+      });
       this.#control = new DisplayControl({
         context: this.#context, device: id, store, nowPlaying: this.#config.nowPlaying !== undefined,
         installationOf: tile => tile === 'status' ? undefined : this.#config.nowPlaying?.installation,
@@ -256,6 +276,7 @@ class TidbytRun {
         storageFailed: error => { this.#storageFailed(storageCode(error)); },
         presentation: () => this.#presentation(),
         picture: this.#options.momentPicture ?? ((moment, signal) => this.#momentCard(moment, signal)),
+        art: compositionId => this.#art?.reference(compositionId) ?? errorBody('unavailable'),
       });
     }
     // The API key is read once, at start; a key replaced on disk takes effect at the next start.
@@ -273,8 +294,17 @@ class TidbytRun {
     for (const family of COMMAND_FAMILIES) {
       await sdk.respond(`bunny.cmd.${family}.${id}`, command => {
         if (command.subject !== id) return errorBody('invalid-request', {detail: 'the command\'s subject is not the Tidbyt its key names'});
+        if (family === 'moment-play' && command.data.art !== undefined) {const refused = artCommandRefusal(command.source); if (refused !== undefined) return refused;}
         if (this.#control !== undefined && isControlFamily(family)) return this.#control.handle(family, command, this.#epoch);
         return errorBody('unsupported-capability', {detail: this.#control === undefined ? 'the Tidbyt offers no controls: it shows agent status and what plays' : 'the Tidbyt does not offer this operation'});
+      });
+    }
+    for (const family of ['art-stage', 'art-ambient-set'] as const) {
+      await sdk.respond(`bunny.cmd.${family}.${id}`, command => {
+        const refused = artCommandRefusal(command.source);
+        if (refused !== undefined) return refused;
+        if (command.subject !== id) return errorBody('invalid-request', {detail: 'the command names another device'});
+        return this.#art?.handle(family, command) ?? errorBody('unsupported-capability', {detail: 'this backend does not offer exact art'});
       });
     }
     // Without the lease another writer may hold the cloud device, so the module writes nothing (one writer per device).
@@ -282,9 +312,10 @@ class TidbytRun {
 
     const {cloudDeviceId, statusInstallation, nowPlaying} = this.#config;
     const installations = {
-      apiKey: key, installationId: statusInstallation, additionalInstallationIds: nowPlaying === undefined ? [] : [nowPlaying.installation], fetch: this.#options.transport,
+      apiKey: key, installationId: statusInstallation, additionalInstallationIds: [...(nowPlaying === undefined ? [] : [nowPlaying.installation]), ...(tronbyt === undefined ? [] : [ART_INSTALLATION])], fetch: this.#options.transport,
     };
     const server = tronbyt === undefined ? undefined : new TronbytConnection({url: tronbyt.url, deviceId: tronbyt.deviceId, ...installations, now: () => clock.now()});
+    this.#server = server;
     // Exactly one connection exists in a run. Nothing here can reach the other backend.
     const connection: TidbytConnection = server ?? new TidbytCloudConnection({deviceId: cloudDeviceId ?? '', ...installations});
     this.#queue = new CloudQueue({connection, scheduler: this.#context.scheduler, now: () => clock.now(), timeoutMs: this.#options.callTimeoutMs ?? CALL_TIMEOUT_MS});
@@ -300,6 +331,7 @@ class TidbytRun {
     if (nowPlaying !== undefined) {
       this.#tiles.push(this.#tile('now-playing', nowPlaying.installation, nowPlaying.installation, this.#timing.nowPlayingPollMs, remembered.get(nowPlaying.installation)));
     }
+    if (server !== undefined && (this.#art?.selected() !== null || remembered.has(ART_INSTALLATION))) this.#tiles.push(this.#tile('art', ART_INSTALLATION, ART_INSTALLATION, this.#timing.nowPlayingPollMs, remembered.get(ART_INSTALLATION)));
     // Both copies sync at once; each tile writes nothing until its copy first syncs, for at most the start window.
     await Promise.all([this.#follow('session'), ...(nowPlaying === undefined ? [] : [this.#follow('playback')])]);
     for (const tile of this.#tiles) this.#update(tile, undefined);
@@ -310,6 +342,22 @@ class TidbytRun {
     while (this.#work.size > 0) await Promise.allSettled([...this.#work]);
     this.#lease?.release();
     this.#lease = undefined;
+  }
+
+  content(ref: string): ModuleContent | ErrorBody | undefined {
+    if (this.#closing) return errorBody('unavailable');
+    try {
+      if (ref === 'art-status' && this.#art !== undefined) {
+        const tile = this.#tiles.find(entry => entry.name === 'art');
+        const sent = tile?.writer.transmitted;
+        return {type: 'application/json', bytes: Buffer.from(JSON.stringify({selected: this.#art.selected(), presence: tile?.writer.presence ?? 'unknown',
+          transmitted: sent === undefined ? null : {compositionId: sent.key.split(':')[0], sha256: sent.key.split(':')[1], atMs: sent.atMs},
+          suppressed: this.#presentation() === 'attention' || this.#presentation() === 'unknown', held: !this.#ambientUnpinned || this.#control?.holdsAmbient() === true, visible: 'unverified'}))};
+      }
+      return this.#art?.content(ref);
+    } catch {
+      return errorBody('unavailable', {detail: 'the private art state could not be read'});
+    }
   }
 
   /** Stops writing: the queue ends the call in flight and sends nothing more, and no tile evaluates again. */
@@ -521,21 +569,22 @@ class TidbytRun {
     const name: TileName = family === 'session' ? 'status' : 'now-playing';
     const tile = this.#tiles.find(entry => entry.name === name);
     if (tile !== undefined) this.#update(tile, parent);
+    if (family === 'session') {const art = this.#tiles.find(entry => entry.name === 'art'); if (art !== undefined) this.#update(art, parent);}
   }
 
   // Tiles
 
-  #tile(name: TileName, installation: string, target: string | undefined, poll: number, restored: TileMemory | undefined): Tile {
+  #tile(name: Tile['name'], installation: string, target: string | undefined, poll: number, restored: TileMemory | undefined): Tile {
     const queue = this.#queue;
     if (queue === undefined) throw new Error('the Tidbyt queue is not open');
     const {clock, signal} = this.#context;
     const tile: Tile = {
-      name, operation: name === 'status' ? 'status' : 'playback', installation, poll, trigger: undefined, requested: false, running: undefined, timer: undefined,
+      name, operation: name === 'status' ? 'status' : name === 'art' ? 'media' : 'playback', installation, poll, trigger: undefined, requested: false, running: undefined, timer: undefined,
       failing: undefined, faulting: false, targetIdentity: '', association: randomUUID(), artworkFailing: undefined,
       writer: new TileWriter({
         queue, installation: target, minIntervalMs: this.#timing.minIntervalMs, refreshMs: this.#timing.refreshMs, pollMs: poll, now: () => clock.now(),
         stopped: () => this.#closing || signal.aborted, current: target => !this.#closing && !signal.aborted && target.association === tile.association && target.association === this.#captureTarget(tile).association,
-        immediate: () => this.#control?.immediate() ?? false,
+        immediate: () => name !== 'art' && (this.#control?.immediate() ?? false),
         render: request => this.#render(request, tile), report: call => { this.#report(tile, call); },
         begin: call => this.#begin(tile, call),
         remember: memory => { this.#remember(installation, memory); }, ...(restored === undefined ? {} : {restored}),
@@ -546,6 +595,14 @@ class TidbytRun {
 
   /** What the tile should show now, from its copy. */
   #target(tile: Tile): TileTarget {
+    if (tile.name === 'art') {
+      if (!this.#ambientUnpinned || this.#control?.holdsAmbient() === true) return {kind: 'hold'};
+      const selected = this.#art?.selected();
+      if (selected === undefined || selected === null || this.#presentation() === 'attention' || this.#presentation() === 'unknown') return {kind: 'remove'};
+      const held = this.#art?.reference(selected.compositionId);
+      if (held === undefined || 'error' in held || held.sha256 !== selected.sha256) return {kind: 'remove'};
+      return {kind: 'show', key: `${held.compositionId}:${held.sha256}`, request: {tile: 'art-copy', compositionId: held.compositionId, sha256: held.sha256}};
+    }
     if (this.#control?.hides(tile.name) === true) return {kind: 'remove'};
     const now = this.#context.clock.now();
     // Times in the future, after the wall clock was set back, count as now.
@@ -609,6 +666,19 @@ class TidbytRun {
       let wakeMs = tile.poll;
       try {
         if (this.#dirty) await this.#commitWanted(undefined);
+        if (tile.name === 'art') {
+          // The pin read shares the writer's holds and serialization. Unknown pin state holds every ambient mutation.
+          this.#ambientUnpinned = false;
+          const server = this.#server;
+          if (server !== undefined && this.#control?.holdsAmbient() !== true) {
+            await this.#queue?.control(async signal => {
+              const pin = await server.serverPin(signal);
+              if ('outcome' in pin) return pin;
+              this.#ambientUnpinned = !pin.pinned;
+              return {outcome: 'sent'};
+            });
+          }
+        }
         wakeMs = await tile.writer.write(this.#captureTarget(tile));
         await this.#control?.reconcile();
         this.#healthy(tile);
@@ -636,6 +706,11 @@ class TidbytRun {
 
   /** Draws and encodes a frame in a worker thread, which the module's stop ends. */
   async #render(request: TileRequest, tile: Tile): Promise<Uint8Array> {
+    if (request.tile === 'art-copy') {
+      const held = this.#art?.reference(request.compositionId);
+      if (held === undefined || 'error' in held || held.sha256 !== request.sha256) throw new SdkError(errorBody('not-found', {detail: 'the ambient art copy is no longer current'}));
+      return held.webp;
+    }
     const association = this.#captureTarget(tile).association;
     const parent = tile.trigger;
     const reply = await this.#context.workers.call<TileReply>(this.#options.renderWorker ?? RENDER_WORKER, request, {
@@ -821,11 +896,11 @@ function availabilityAfter(result: WriteResult | ListResult, answered: boolean):
 
 /** The state message that carries the Tidbyt's device record. */
 export const deviceState = (record: DeviceRecord): StateDraft<DeviceRecord> =>
-  ({type: 'org.bunny.device.updated', subject: record.id, dataschema: DEVICE_SCHEMA, data: structuredClone(record)});
+  ({type: 'org.bunny.device.updated', subject: record.id, dataschema: record.capabilities.moments.supported && record.capabilities.moments.art !== undefined ? `${SCHEMA_BASE}device/2.2` : DEVICE_SCHEMA, data: structuredClone(record)});
 
 /** Whether a message is a Tidbyt device record that reports it unavailable, for the module test kit's policy A check. */
 export const reportsUnavailable = (message: Message): boolean =>
-  message.dataschema === DEVICE_SCHEMA && message.source === `bunny/modules/${TIDBYT_MODULE}` &&
+  (message.dataschema === DEVICE_SCHEMA || message.dataschema === `${SCHEMA_BASE}device/2.2`) && message.source === `bunny/modules/${TIDBYT_MODULE}` &&
   (message.data as Partial<DeviceRecord>).availability === 'unavailable';
 
 /**
@@ -849,6 +924,6 @@ export const tidbytFactory: {
 } = {
   name: TIDBYT_MODULE,
   create: () => createTidbytModule({transport: (url, init) => fetch(url, init)}),
-  simulate: () => createTidbytModule({transport: new SimulatedCloud({key: SIMULATED_API_KEY}).fetch}),
+  simulate: () => createTidbytModule({transport: new SimulatedTidbyt().fetch}),
   simulatedSection: {config: SIMULATED_SECTION, secrets: [API_KEY_SECRET]},
 };
