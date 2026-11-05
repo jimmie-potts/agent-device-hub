@@ -31,9 +31,10 @@ ADR 0018's rejection stands for raw agent events: they still never select a mode
 A moment is a different thing, and may cover the current base for a short time.
 
 - **Over Media**, a moment pauses a playing playlist and resumes it at the same
-  item when it ends. A paused or stopped item refuses the moment, because no call
-  can repaint it. A player with nothing loaded takes the moment without being
-  touched, and one blank frame follows it (see the amendment below).
+  item when it ends. A paused item refuses the moment, because no call can
+  repaint it. A player with nothing loaded, or a stopped or finished item, takes the
+  moment without being touched, and one blank frame follows it (see the amendments
+  below).
 - **Over Monitor**, a moment plays only when all of these hold: the hub marks it
   as allowed to cover status (ADR 0006's interrupt set), the owner's setting is on,
   and the session source is current and shows nothing needing attention. The
@@ -97,3 +98,17 @@ display therefore goes black after its first moment. A restart during such a mom
 leaves the art on with nothing to blank it, until something else writes, and it also
 forgets an unknown display on an empty player. How this looks on a real Pixoo belongs
 to [#687](https://github.com/jimmie-potts/agent-device-hub/issues/687).
+
+## Amendment 2, 2026-11-05
+
+The owner chose to let a stopped or finished item show art too. The saved item would
+otherwise refuse every moment until someone cleared it, so a Pixoo that had ever played
+anything would not have shown scheduled art. The player keeps the item and stays
+stopped, so it can still resume. One black frame replaces the moment's picture, which
+loses the item's frozen picture.
+
+A paused item still refuses, because nothing could repaint it. A restart reloads
+a saved item as paused, and a Monitor visit or turning the screen off also pauses it,
+so art stops again until that item is cleared or stopped. A display left unknown by
+an uncertain write or external control still refuses, stopped or not, until the next
+start, resume or clear. A failed background check doesn't erase that record.

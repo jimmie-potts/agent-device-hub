@@ -6,6 +6,7 @@ import type {SyncChange, SyncedCopy} from '@jimmie-potts/sdk/remote';
 import {editorGeometry, legacyWall, wallAction, type ConnectorGraph, type LegacyWall, type WallDevice, type WallRecord} from './model.js';
 import {mountWall, type MountedWall} from './wall.js';
 import './wall.css';
+import {Shows} from './shows.js';
 
 type Record = DeviceRecord | WallRecord;
 type Catalog = {live: boolean; pending: boolean; error: boolean; walls: WallRecord[]; devices: DeviceRecord[]};
@@ -134,7 +135,7 @@ function Wall({context}: {context: FrontendContext}): React.JSX.Element {
   </>;
 }
 
-export const frontend: FrontendContribution = {module: 'nanoleaf', pages: [{id: 'wall', Component: Wall}]};
+export const frontend: FrontendContribution = {module: 'nanoleaf', pages: [{id: 'wall', Component: Wall}, {id: 'shows', Component: Shows}]};
 
 export type {WallRecord} from './model.js';
 export {NanoleafLightVisual} from './light-visual.js';
