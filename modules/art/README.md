@@ -202,7 +202,8 @@ may retain the last visible image, whose identity stays explicit. `stale` means
 the underlying sync is unavailable; it is not fresh theme evidence. When no
 image intersects the viewport or the view unmounts, `presented` is null. This context owns no
 catalog, preference or durable state. Theme consumers may use only ready visible
-art; theme application belongs to the separate theme story.
+art. The runtime shell applies bounded decorative colors from that evidence;
+browser-local lock/default preferences remain outside the art catalog.
 
 The existing core Home owner stores optional art shape and pin metadata. A pinned
 art row reserves space independently of image arrival. Unpinned art uses only
@@ -219,6 +220,11 @@ Use Node 24. Run `npm run test:art`, or build once and run `npm run test:art:bui
 the browser. The `scenario-art-gallery` disposable capture shows the actual
 gallery with visible, labelled synthetic interactions. It contacts no provider
 or device.
+The `warm-colors` and `cool-colors` simulation actions select fixed synthetic
+pixels for later image requests. The real local image processor derives their
+palettes. Normal simulation output is unchanged until an action selects one.
+`scenario-art-theme` uses these fixtures to demonstrate the shell's local theme
+controls without contacting a provider or device.
 
 An older Home save that retains the art placement but omits its optional options
 preserves the saved format and pin. Explicit options replace them; removing the

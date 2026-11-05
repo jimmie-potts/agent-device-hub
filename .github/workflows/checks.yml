@@ -297,6 +297,9 @@ jobs:
       - name: Art gallery and safe Home placement
         if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:art:browser
+      - name: Art theme and browser preferences
+        if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:art-theme:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:browser
   runtime-verify:

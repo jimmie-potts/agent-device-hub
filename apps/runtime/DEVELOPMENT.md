@@ -571,6 +571,19 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Art-derived decoration (#683) uses `npm run test:art-theme:browser` after
+`npm run build`. App verification runs it in the runtime group, and the full
+local browser suite includes it. Synthetic contrasting artworks drive the
+real presentation context. Check light/dark at 1440, 390 and 320px, fixed
+semantic colors, readable text/focus, unchanged control bounds, explicit
+follow/lock/default persistence and storage failures. Delayed or invalid
+artwork and malformed saved palette/texture data must keep a valid theme.
+Theme application and controls must produce zero provider calls, device
+commands and layout saves. Keep screenshots and recordings private.
+The registered `art-theme` scenario runs through both runtime transports. Its
+`scenario-art-theme` disposable capture demonstrates contrasting saved art and
+the real lock/default/follow controls with labelled pointer actions.
+
 Adaptive art and Gallery (#682) use `npm run test:art:browser` after
 `npm run build`. App verification runs this focused journey in its runtime group;
 the full local browser suite includes it. It uses the real authenticated core/art
