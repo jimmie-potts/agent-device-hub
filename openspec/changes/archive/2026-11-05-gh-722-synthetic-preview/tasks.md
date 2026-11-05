@@ -10,10 +10,10 @@
 ## 3. Shared interface
 
 - [x] 3.1 Add local draft/result generation handling and an embedded Wall preview with an Audio link; verify explicit-only reads, invalidation, one in-flight read, late/malformed responses and local scrubbing with focused model tests.
-- [ ] 3.2 Exercise all five effects, both example models, palette/intensity edits, disconnect/unmount, read-only access, keyboard and phone layouts through the actual disposable browser; inspect screenshots and accessibility results.
+- [x] 3.2 Exercise all five effects, both example models, palette/intensity edits, disconnect/unmount, read-only access, keyboard and phone layouts through the actual disposable browser; inspect screenshots and accessibility results.
 
 ## 4. Source delivery
 
-- [ ] 4.1 Run owning build/type/lint, Nanoleaf/runtime/dashboard, shared contracts and workflow checks; retain actual failures and applicable successful evidence without weakening assertions.
-- [ ] 4.2 Refresh current main and issue alignment, obtain independent Standards/Specification and disposable Acceptance on the frozen comparison, and resolve findings with focused rechecks.
-- [ ] 4.3 After successful current lookups and completed source evidence, synchronize/archive the affected spec, confirm the final delta and publish through a reviewed PR with exact-head CI; preserve all remaining #722 and physical acceptance.
+- [x] 4.1 Run owning build/type/lint, Nanoleaf/runtime/dashboard, shared contracts and workflow checks; retain actual failures and applicable successful evidence without weakening assertions.
+- [x] 4.2 Refresh current main and issue alignment, obtain independent Standards/Specification and disposable Acceptance on the frozen comparison, and resolve findings with focused rechecks.
+- [x] 4.3 After successful current lookups and completed source evidence, synchronize/archive the affected spec, confirm the final delta and publish through a reviewed PR with exact-head CI; preserve all remaining #722 and physical acceptance.

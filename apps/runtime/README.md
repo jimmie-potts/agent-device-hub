@@ -61,6 +61,10 @@ The [Volcano module](../../modules/volcano/README.md) keeps private usage facts 
 one VOLCANO HYBRID from a host-local collector, derives sessions when they are read
 and reaches no device.
 
+The [art module](../../modules/art/README.md) generates art through OpenAI's Image
+API and Claude under separate spending limits per provider, and keeps a private
+catalog.
+
 The [Wemo module](../../modules/wemo/README.md) controls up to two explicitly
 qualified local F7C063 plugs. It supplies power/observations only; schedules and
 maximum-on enforcement stay in the core.
@@ -91,10 +95,7 @@ they do not install the Mac container or qualify cross-host state transfer.
 
 ## Adding a module
 
-The [ONN module](../../modules/onn/README.md) owns one configured streaming
-device, its fixed controls and its shared-dashboard React remote. Its
-`onn_status` tool reads cached neutral app/connection evidence; commands use
-the core dispatcher. Pairing and device addresses remain private manual setup.
+The [ONN module](../../modules/onn/README.md) is hibernated after device retirement. Its source and private historical state remain retained; the shipped runtime and dashboard do not register it.
 
 A module registers itself from its own folder (#999), so adding runtime and
 harness registration needs no shared module list:
