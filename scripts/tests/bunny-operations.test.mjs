@@ -202,12 +202,17 @@ test('an unfinished operation refuses the command and stays pending',{skip:posix
   const pending=JSON.parse(await readFile(join(machine.root,project+'.pending.json'),'utf8'));
   assert.equal(pending.id,'batch-unfinished');
 });
-test('the qualification route settles too, and refuses a request it cannot read',{skip:posix},async t=>{
+test('the qualification route settles too, and its own reader refuses a request in a shared folder',{skip:posix},async t=>{
   // That route's modules import bunny.mjs back as well, so it hung the same way.
+  // A shared folder is refused by the route's own request reader, which only runs once the route's modules have
+  // loaded; a broken import on the route would give the generic worker refusal instead.
   const machine=await host(t);
-  const request=join(machine.home,'missing-request.json');
+  const shared=join(machine.home,'shared');await mkdir(shared,{mode:0o755});await chmod(shared,0o755);
+  const request=join(shared,'request.json');
   const result=await cli(machine,'backup','snapshot-1','--archive-volume','synthetic-archives','--qualification-request',request);
   refused(result);
+  const {error}=JSON.parse(result.stderr);
+  assert.equal(error.code,'invalid-request',result.stderr);assert.match(error.detail,/^Maintenance stage selection refused\./);
   assert.ok(!(await engineCalls(machine)).includes('run'));
 });
 test('an unknown command is refused at the command line',{skip:posix},async t=>{
