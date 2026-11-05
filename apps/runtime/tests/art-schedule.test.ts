@@ -100,20 +100,24 @@ void test('actual core exposes revisioned policy, publishes it, and reopens with
 import {createArtPlans} from '../src/core/art-plans.js';
 import {createArtSchedule} from '../src/core/art-schedule.js';
 import type {Action} from '../src/core/tracker.js';
+import {deviceRecord} from './fixtures/device.js';
 import type {ArtAuto22} from '@jimmie-potts/event-contracts/v2/art';
 const artwork=(id:string):ArtworkSummary=>({artworkId:id,createdAtMs:local(7),favorite:true,feedback:null,variationOf:null,palette:['#112233'],provenance:{generatedBy:'local',factual:false},
   compositions:[{target:'ui',compositionId:(id==='new-art'?'b':'a').repeat(64),outcome:'succeeded',motion:'still',renditions:[{renditionId:'c'.repeat(64),width:320,height:320,frames:1,durationMs:0,format:'png',bytes:1,ref:'rendition.synthetic'}]}]});
-function scheduledWorld() {
+function scheduledWorld(withDisplay=false) {
   const db=new DatabaseSync(':memory:'),clock=manualClock(local(8)),commands:Action[]=[],failures:string[]=[];
   const provider=(name:'openai'|'anthropic')=>({provider:name,available:false,ceilingMicros:0,paceMicros:0,spentMicros:0,reservedMicros:0,uncertainMicros:0,remainingMicros:0,todayMicros:0,excessMicros:0,earlierUncertainMicros:0});
   const catalog:ArtRecord={id:'art',revision:1,month:'2026-11',day:'2026-11-05',providers:[provider('openai'),provider('anthropic')],guard:{calls:0,limit:30,windowMs:3_600_000},
     gifs:{accepted:0,rejected:0},jobs:[],artworks:[artwork('saved-art')],candidates:[],retention:{recentLimit:24,recent:1,favorites:1,retained:[]}};
   const shared=new AutomationStore(db,()=>{},{settings:{...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}},interruptSet:[...DEFAULT_INTERRUPT_SET]});
   const store=new ArtScheduleStore(db),dispatch=(action:Action)=>{commands.push(structuredClone(action));return Promise.resolve({requestId:action.requestId??'synthetic',status:'accepted' as const});};
-  const plans=createArtPlans({clock:clock.now,scheduler:clock.scheduler,active:()=>true,targets:()=>[],current:()=>undefined,dispatch,operation:()=>undefined,claim:(id,digest)=>{assert.equal(shared.claimArtPlan(id,digest),true);return undefined;}});
+  const display=deviceRecord('shelf-display',1,'tidbyt','available');
+  const targets=()=>withDisplay?[{target:'shelf-display',kind:'tidbyt' as const}]:[];
+  if(withDisplay)catalog.artworks[0]?.compositions.push({target:'tidbyt',compositionId:'d'.repeat(64),outcome:'succeeded',motion:'gif',renditions:[{renditionId:'e'.repeat(64),width:64,height:32,frames:8,durationMs:1600,format:'gif',bytes:100,ref:'rendition.synthetic-display'}]});
+  const plans=createArtPlans({clock:clock.now,scheduler:clock.scheduler,active:()=>true,targets,current:()=>withDisplay?display:undefined,dispatch,operation:()=>undefined,claim:(id,digest)=>{assert.equal(shared.claimArtPlan(id,digest),true);return undefined;}});
   let enabled=false,artReads=0,weatherReads=0;
   const inputs={set:(value:typeof policy)=>{enabled=value.enabled;},art:()=>{artReads++;return enabled?catalog:undefined;},weather:()=>{weatherReads++;return undefined;}};
-  const options={store,shared,core:{clock:{now:clock.now},dispatch,operation:()=>undefined},scheduler:clock.scheduler,active:()=>true,plans,current:()=>undefined,
+  const options={store,shared,core:{clock:{now:clock.now},dispatch,operation:()=>undefined},scheduler:clock.scheduler,active:()=>true,plans,current:()=>withDisplay?display:undefined,
     settings:()=>({...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}}),attention:()=>false,inputs,choice:()=>0.5,failed:()=>{failures.push('storage');}};
   let owner=createArtSchedule(options);
   return {db,clock,commands,catalog,store,shared,failures,get owner(){return owner;},reads:()=>({artReads,weatherReads}),
@@ -162,4 +166,26 @@ void test('host-local DST skips a nonexistent waking boundary and keeps repeated
     const early=Date.parse('2026-11-01T01:30:00-04:00'),late=Date.parse('2026-11-01T01:30:00-05:00');
     const midnight={...policy,wakingStartMinute:0,wakingEndMinute:240};assert.deepEqual(wakingDay(early,midnight),wakingDay(late,midnight));
   }finally{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}
+});
+void test('ambient grant binds one exact target/composition and exposes separate tracked selection identities',async()=>{
+  const w=scheduledWorld(true);try{
+    await w.owner.save({expectedSettingsRevision:0,policy:{...policy,targets:['shelf-display']}});await flush();
+    const ambient=w.commands.find(value=>(value.draft.data as ArtAuto22).action==='ambient'),browser=w.commands.find(value=>(value.draft.data as ArtAuto22).action==='present');assert.ok(ambient);assert.ok(browser);
+    const data=ambient.draft.data as ArtAuto22;assert.equal(data.action,'ambient');if(data.action!=='ambient')return;
+    const last=w.owner.get().lastOpportunity;assert.equal(last?.kind,'ambient');assert.equal(last?.displays[0]?.prepareRequestId,ambient.requestId);assert.equal(last?.displays[0]?.momentRequestId,null);assert.equal(last?.browserRequestId,browser.requestId);
+    assert.equal(w.owner.authorizeAmbient(data.authorization,'shelf-display',data.compositionId),undefined);
+    assert.equal(w.owner.authorizeAmbient(data.authorization,'shelf-display',data.compositionId)?.error.code,'forbidden');
+    w.owner.weatherChanged(9);await w.move(w.clock.now()+31_000);assert.equal(w.commands.length,2,'disabled weather cannot add an ambient opportunity');
+    assert.equal(w.shared.handedFlourishes(local(0)),0,'ambient does not acquire an appearance budget or moment');
+    await w.restart();assert.equal(w.owner.authorizeAmbient(data.authorization,'shelf-display',data.compositionId)?.error.code,'forbidden');assert.equal(w.commands.length,2);
+  }finally{await w.close();}
+});
+void test('ambient grant is revoked by policy edit or exact-target mismatch without being reusable',async()=>{
+  for(const revoke of ['policy','target'] as const){const w=scheduledWorld(true);try{
+    await w.owner.save({expectedSettingsRevision:0,policy:{...policy,browser:false,targets:['shelf-display']}});await flush();const command=w.commands[0];assert.ok(command);
+    const data=command.draft.data as ArtAuto22;assert.equal(data.action,'ambient');if(data.action!=='ambient')continue;
+    if(revoke==='policy')await w.owner.save({expectedSettingsRevision:1,policy:{...policy,enabled:false,browser:false,targets:['shelf-display']}});
+    assert.equal(w.owner.authorizeAmbient(data.authorization,revoke==='target'?'other-target':'shelf-display',data.compositionId)?.error.code,'forbidden');
+    assert.equal(w.owner.authorizeAmbient(data.authorization,'shelf-display',data.compositionId)?.error.code,'forbidden');assert.equal(w.commands.length,1);
+  }finally{await w.close();}}
 });

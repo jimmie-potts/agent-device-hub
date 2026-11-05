@@ -15,6 +15,7 @@ export type ArtOpportunity = {id: string; kind: 'appearance' | 'ambient'; startA
 export type ArtScheduleAttempt = ArtOpportunity & {
   artworkId: string | null; reason: ArtSuppression | null; generationRequestId: string | null;
   browserRequestId: string | null;
+  /** For ambient opportunities, prepareRequestId is the tracked stage-and-selection parent; no moment is requested. */
   displays: {target: string; prepareRequestId: string | null; momentRequestId: string | null; error: ErrorCode | null}[];
 };
 /** The matching selection outcome and actual decoded-visible image are both required before showing this label. */

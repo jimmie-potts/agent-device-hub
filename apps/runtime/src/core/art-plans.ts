@@ -32,8 +32,9 @@ const instant = (value: number): boolean => Number.isSafeInteger(value) && value
 const notRequested = (error: ErrorBody): ArtPlanAttempt => ({status: 'not-requested', error});
 const cutoff = (): ErrorBody => errorBody('invalid-state', {detail: 'art presentation passed its preparation cutoff'});
 const stopped = (): ErrorBody => errorBody('cancelled', {detail: 'art presentation stopped before handoff'});
-const requestId = (plan: ArtPlan, phase: string, target: string): string =>
-  `art-plan-${createHash('sha256').update(`${plan.id}\0${phase}\0${target}`).digest('hex')}`;
+export const artPlanRequestId = (id: string, phase: 'prepare'|'browser'|'moment'|'intent', target: string): string =>
+  `art-plan-${createHash('sha256').update(`${id}\0${phase}\0${target}`).digest('hex')}`;
+const requestId = (plan: ArtPlan, phase: 'prepare'|'browser'|'moment'|'intent', target: string): string => artPlanRequestId(plan.id,phase,target);
 const planDigest = (plan: ArtPlan): string => createHash('sha256').update(JSON.stringify([
   plan.artworkId, plan.startAtMs, plan.prepareUntilMs, plan.toleranceMs, plan.mood, plan.priorityClass, plan.coversStatus,
   [...plan.displays].sort((a, b) => a.target < b.target ? -1 : a.target > b.target ? 1 : 0).map(value => [value.target, value.compositionId, value.durationMs]),

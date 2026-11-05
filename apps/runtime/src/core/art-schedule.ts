@@ -11,7 +11,7 @@ import {Outcome} from '@jimmie-potts/sdk';
 import {AutomationError,inQuietHours,type AutomationSettings} from './automation.js';
 import type {AutomationStore} from './automation-store.js';
 import type {CoreHandle} from './core.js';
-import type {ArtPlan,ArtPlans,ArtSurface} from './art-plans.js';
+import {artPlanRequestId,type ArtPlan,type ArtPlans,type ArtSurface} from './art-plans.js';
 import {artPolicyWrite,GENERATION_MS,planArtDay,PREPARATION_MS,rainForecast,savedArtwork,START_TOLERANCE_MS,wakingDay,nextArtStart} from './art-schedule-model.js';
 import {ArtScheduleStore,type ArtScheduleData} from './art-schedule-store.js';
 
@@ -103,7 +103,8 @@ export function createArtSchedule(options:Options) {
     // The immutable plan and all target identities commit before preparation or browser selection can start.
     await store.change(data=>{if(data.record.settingsRevision!==item.settingsRevision)throw new AutomationError('revision-conflict',409);
       if(!store.claim({...item.opportunity,id:`${item.opportunity.id}-targets`}))throw new AutomationError('duplicate-conflict',409);
-      data.record.lastOpportunity={...attempt(item),artworkId:artwork.artworkId,displays:displays.map(value=>({target:value.target,prepareRequestId:null,momentRequestId:null,error:null}))};
+      data.record.lastOpportunity={...attempt(item),artworkId:artwork.artworkId,browserRequestId:ui===undefined?null:artPlanRequestId(plan.id,'browser','art'),
+        displays:displays.map(value=>({target:value.target,prepareRequestId:artPlanRequestId(plan.id,'prepare',value.target),momentRequestId:artPlanRequestId(plan.id,'moment',value.target),error:null}))};
       data.record.status='preparing';});
     if(!active())return;
     const result=await options.plans.present(plan,surface=>permit(item,surface));
@@ -159,28 +160,38 @@ export function createArtSchedule(options:Options) {
     if(!policy.ambient||ambientRunning||pending!==undefined||at<ambientUntilMs)return;
     const weather=weatherTrigger;weatherTrigger=undefined;
     if(at<data.ambientAtMs+3_600_000&&(weather===undefined||weather<=data.weatherRevision))return;
-    const item:Pending={opportunity:{id:`art-ambient-${randomUUID()}`,kind:'ambient',startAtMs:at+30_000,toleranceMs:START_TOLERANCE_MS},settingsRevision:data.record.settingsRevision,
+    const item:Pending={opportunity:{id:`art-ambient-${randomUUID()}`,kind:'ambient',startAtMs:at,toleranceMs:30_000},settingsRevision:data.record.settingsRevision,
       saved:savedArtwork(options.inputs.art(),choice),generationRequestId:null,notice:undefined,preparing:true,used:new Set()};
     if(restriction(item)!==undefined)return;
     const art=item.saved;if(art===undefined)return;
+    const targets=options.plans.targets().filter(value=>value.kind==='tidbyt'&&policy.targets.includes(value.target)).flatMap(target=>{
+      const id=composition(art,'tidbyt');return id===undefined?[]:[{target:target.target,compositionId:id,requestId:`ambient-${opaque(`${item.opportunity.id}\0${target.target}`)}`}];});
+    const ui=policy.browser?composition(art,'ui'):undefined,browserId=ui===undefined?null:`${item.opportunity.id}-browser`;
+    if(targets.length===0&&ui===undefined)return;
     await store.change(current=>{if(current.record.settingsRevision!==item.settingsRevision)throw new AutomationError('revision-conflict',409);
       if(!store.claim(item.opportunity))throw new AutomationError('duplicate-conflict',409);current.ambientAtMs=at;
       if(weather!==undefined)current.weatherRevision=Math.max(current.weatherRevision,weather);
-      current.record.lastOpportunity={...attempt(item),artworkId:art.artworkId};});
+      current.record.status='preparing';current.record.lastOpportunity={...attempt(item),artworkId:art.artworkId,browserRequestId:browserId,
+        displays:targets.map(target=>({target:target.target,prepareRequestId:target.requestId,momentRequestId:null,error:null}))};});
     ambientRunning=true;ambientUntilMs=item.opportunity.startAtMs+item.opportunity.toleranceMs;
     launch((async()=>{try {
-      const targets=options.plans.targets().filter(value=>value.kind==='tidbyt'&&policy.targets.includes(value.target));
-      for(const target of targets) {
-        const id=composition(art,'tidbyt');if(id===undefined||restriction(item,{kind:'display',target:target.target})!==undefined)continue;
-        const authorization=randomUUID();grants.set(authorization,{pending:item,target:target.target,compositionId:id,expiresAtMs:item.opportunity.startAtMs});
-        await core.dispatch({requestId:`ambient-${opaque(`${item.opportunity.id}\0${target.target}`)}`,key:'bunny.cmd.art-auto.art',requestedBy:'bunny/core',draft:{
-          type:'org.bunny.art.auto.requested',subject:'art',dataschema:'https://bunny.invalid/events/art-auto/2.2',
-          data:{action:'ambient',artworkId:art.artworkId,compositionId:id,target:target.target,authorization}}});
-      }
-      const ui=policy.browser?composition(art,'ui'):undefined;
-      if(ui!==undefined&&permit(item,{kind:'browser'})===undefined)await core.dispatch({requestId:`${item.opportunity.id}-browser`,key:'bunny.cmd.art-auto.art',requestedBy:'bunny/core',
-        draft:{type:'org.bunny.art.auto.requested',subject:'art',dataschema:'https://bunny.invalid/events/art-auto/2.1',data:{action:'present',artworkId:art.artworkId,compositionId:ui}}});
-    }finally{ambientRunning=false;}})());
+      await Promise.all([
+        ...targets.map(async target=>{
+          const denied=restriction(item,{kind:'display',target:target.target});
+          if(denied!==undefined){await store.change(current=>{const row=current.record.lastOpportunity?.id===item.opportunity.id?current.record.lastOpportunity.displays.find(value=>value.target===target.target):undefined;
+            if(row!==undefined){row.prepareRequestId=null;row.error='invalid-state';}});return;}
+          const authorization=randomUUID();grants.set(authorization,{pending:item,target:target.target,compositionId:target.compositionId,expiresAtMs:item.opportunity.startAtMs+item.opportunity.toleranceMs});
+          const answer=await core.dispatch({requestId:target.requestId,key:'bunny.cmd.art-auto.art',requestedBy:'bunny/core',draft:{
+            type:'org.bunny.art.auto.requested',subject:'art',dataschema:'https://bunny.invalid/events/art-auto/2.2',
+            data:{action:'ambient',artworkId:art.artworkId,compositionId:target.compositionId,target:target.target,authorization}}});
+          if('error' in answer&&active())await store.change(current=>{const row=current.record.lastOpportunity?.id===item.opportunity.id?current.record.lastOpportunity.displays.find(value=>value.target===target.target):undefined;
+            if(row!==undefined)row.error=answer.error.code;});
+        }),
+        (async()=>{if(ui===undefined||browserId===null||permit(item,{kind:'browser'})!==undefined)return;
+          await core.dispatch({requestId:browserId,key:'bunny.cmd.art-auto.art',requestedBy:'bunny/core',draft:{type:'org.bunny.art.auto.requested',subject:'art',
+            dataschema:'https://bunny.invalid/events/art-auto/2.1',data:{action:'present',artworkId:art.artworkId,compositionId:ui}}});})(),
+      ]);
+    }finally{ambientRunning=false;if(active())await store.change(current=>{if(current.record.lastOpportunity?.id===item.opportunity.id)current.record.status='idle';});}})());
   }
   async function tick():Promise<void> {
     let data=state();options.inputs.set(data.record.policy);
@@ -238,7 +249,8 @@ export function createArtSchedule(options:Options) {
       return permit(grant.pending,{kind:'display',target});
     },
     changed,
-    weatherChanged:(revision:number):void=>{if(revision>state().weatherRevision){
+    weatherChanged:(revision:number):void=>{const current=state();if(!current.record.policy.enabled||!current.record.policy.weather)return;
+      if(revision>current.weatherRevision){
       if(pending!==undefined){void enqueue(async()=>{await store.change(data=>{data.weatherRevision=Math.max(data.weatherRevision,revision);});}).catch(()=>{});}
       else{weatherTrigger=revision;changed();}
     }},
