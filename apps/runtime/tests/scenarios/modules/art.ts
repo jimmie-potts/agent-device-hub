@@ -20,6 +20,16 @@ const seed: Scenario['seed'] = {modules: ['core', 'art'], sections: {art: {recen
 const initialCalls = new WeakMap<Harness, number>();
 
 export const scenarios: readonly Scenario[] = [{
+  id: 'art-gallery', title: 'the real Art Gallery displays a saved synthetic browser composition',
+  seed: {...seed, sections: {art: {recentLimit: 8}}}, keepCapturePage: true,
+  capture: async context => {const {captureArtGallery} = await import('../../../verify/art-gallery.js');await captureArtGallery(context);},
+  steps: [
+    expect('core and art are running', h => running(h, ['core', 'art'])),
+    act('the owner prepares one synthetic browser composition', h => request(h, 'art-gallery-seed')),
+    ended('art-gallery-seed', 'succeeded'),
+    expect('the saved browser composition is available', h => artwork(h, 'art-gallery-seed')?.compositions[0]?.target === 'ui' || 'browser art missing'),
+  ],
+}, {
   id: 'art-catalog', title: 'synthetic creation, private catalog edits and restart use the real authenticated art owner', seed,
   keepCapturePage: true,
   capture: async (context, harness) => {const {captureArtRendition} = await import('../../../verify/art-browser.js'); await captureArtRendition(context, harness);},

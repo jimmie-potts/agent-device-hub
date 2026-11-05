@@ -285,6 +285,9 @@ jobs:
       - name: MicroDuck controls browser
         if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:microduck:browser
+      - name: Art gallery and safe Home placement
+        if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
+        run: npm run test:art:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:browser
   runtime-verify:
