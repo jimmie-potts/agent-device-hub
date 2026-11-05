@@ -19,7 +19,7 @@ type Inputs={art():ArtRecord|undefined;weather():WeatherState|undefined;set(poli
 type Options={store:ArtScheduleStore;shared:AutomationStore;core:Pick<CoreHandle,'clock'|'dispatch'|'operation'>;scheduler:ModuleScheduler;active:()=>boolean;
   plans:ArtPlans;current:(id:string)=>DeviceRecord|undefined;settings:()=>AutomationSettings;attention:()=>boolean;
   inputs:Inputs;choice?:()=>number;failed:()=>void};
-type Pending={parent:TraceContext;opportunity:ArtOpportunity;settingsRevision:number;saved:ArtworkSummary|undefined;generationRequestId:string|null;
+type Pending={parent:TraceContext;weatherRevision?:number;opportunity:ArtOpportunity;settingsRevision:number;saved:ArtworkSummary|undefined;generationRequestId:string|null;
   notice:RainNotice|undefined;preparing:boolean;used:Set<string>};
 type WeatherOccurrence={revision:number;parent?:TraceContext};
 type Grant={pending:Pending;target:string;compositionId:string;expiresAtMs:number};
@@ -43,6 +43,10 @@ export function createArtSchedule(options:Options) {
     if(!data.record.policy.enabled||!data.record.policy.weather)return 'disabled';
     const weather=options.inputs.weather();return weather?.status!=='available'?'unavailable':weather.observedAtMs>now()||weather.staleAtMs<=now()?'stale':'fresh';
   };
+  const currentWeather=(revision:number):boolean=>{
+    const weather=options.inputs.weather(),at=now();
+    return weather?.status==='available'&&weather.revision===revision&&weather.observedAtMs<=at&&weather.staleAtMs>at;
+  };
   const restriction=(item:Pending,surface?:ArtSurface):ArtSuppression|undefined=>{
     const data=state(),policy=data.record.policy,settings=options.settings(),at=now();
     if(!active()||!policy.enabled)return 'disabled';
@@ -52,6 +56,7 @@ export function createArtSchedule(options:Options) {
       ||item.opportunity.kind==='appearance'&&inQuietHours(settings.quietHours,item.opportunity.startAtMs+item.opportunity.toleranceMs+30_000))return 'quiet-hours';
     if(options.attention())return 'attention';
     if(settings.noFlourishes&&item.notice===undefined)return 'no-flourishes';
+    if(item.weatherRevision!==undefined&&(!policy.weather||!currentWeather(item.weatherRevision)))return 'source-unavailable';
     if(item.notice!==undefined) {
       const current=options.inputs.weather();
       if(!policy.weather||current?.status!=='available'||current.revision!==item.notice.weatherRevision
@@ -171,7 +176,7 @@ export function createArtSchedule(options:Options) {
     const data=state(),policy=data.record.policy,at=now();
     if(!policy.ambient||ambientRunning||pending!==undefined||at<ambientUntilMs)return;
     if(at<data.ambientAtMs+3_600_000&&weather===undefined)return;
-    const item:Pending={parent:childOf(weather?.parent),opportunity:{id:`art-ambient-${randomUUID()}`,kind:'ambient',startAtMs:at,toleranceMs:30_000},settingsRevision:data.record.settingsRevision,
+    const item:Pending={parent:childOf(weather?.parent),...(weather===undefined?{}:{weatherRevision:weather.revision}),opportunity:{id:`art-ambient-${randomUUID()}`,kind:'ambient',startAtMs:at,toleranceMs:30_000},settingsRevision:data.record.settingsRevision,
       saved:savedArtwork(options.inputs.art(),choice),generationRequestId:null,notice:undefined,preparing:true,used:new Set()};
     if(restriction(item)!==undefined)return;
     const art=item.saved;if(art===undefined)return;
@@ -254,7 +259,7 @@ export function createArtSchedule(options:Options) {
       // Receipt is durable even when policy or current restrictions deny this occurrence.
       await store.change(data=>{data.weatherRevision=revision;},parent);
       const policy=state().record.policy;
-      if(live&&policy.enabled&&policy.weather)await tick({revision,...(parent===undefined?{}:{parent})});
+      if(live&&policy.enabled&&policy.weather&&currentWeather(revision))await tick({revision,...(parent===undefined?{}:{parent})});
     }).finally(schedule).catch(()=>{});
   }
   const controls={

@@ -105,6 +105,10 @@ import {deviceRecord} from './fixtures/device.js';
 import type {ArtAuto22} from '@jimmie-potts/event-contracts/v2/art';
 const artwork=(id:string):ArtworkSummary=>({artworkId:id,createdAtMs:local(7),favorite:true,feedback:null,variationOf:null,palette:['#112233'],provenance:{generatedBy:'local',factual:false},
   compositions:[{target:'ui',compositionId:(id==='new-art'?'b':'a').repeat(64),outcome:'succeeded',motion:'still',renditions:[{renditionId:'c'.repeat(64),width:320,height:320,frames:1,durationMs:0,format:'png',bytes:1,ref:'rendition.synthetic'}]}]});
+const syntheticWeather=(revision=9,observedAtMs=local(8),staleAtMs=local(8,45)):WeatherState=>{
+  const hour={startAtMs:local(10),endAtMs:local(11),condition:'rain' as const,likely:true,temperatureF:60,precipitationPercent:80,windMph:0,isDaytime:true,dayPart:'morning' as const};
+  return {id:'local',revision,status:'available',observedAtMs,staleAtMs,ageMs:0,forecastUpdatedAtMs:observedAtMs,current:hour,forecast:[hour],alerts:[],words:['rain']};
+};
 function scheduledWorld(withDisplay=false,choice:()=>number=()=>0.5,displayId='shelf-display') {
   const db=new DatabaseSync(':memory:'),clock=manualClock(local(8)),commands:Action[]=[],failures:string[]=[];
   const provider=(name:'openai'|'anthropic')=>({provider:name,available:false,ceilingMicros:0,paceMicros:0,spentMicros:0,reservedMicros:0,uncertainMicros:0,remainingMicros:0,todayMicros:0,excessMicros:0,earlierUncertainMicros:0});
@@ -117,12 +121,12 @@ function scheduledWorld(withDisplay=false,choice:()=>number=()=>0.5,displayId='s
   const targets=()=>withDisplay?[{target:displayId,kind:'tidbyt' as const}]:[];
   if(withDisplay)catalog.artworks[0]?.compositions.push({target:'tidbyt',compositionId:'d'.repeat(64),outcome:'succeeded',motion:'gif',renditions:[{renditionId:'e'.repeat(64),width:64,height:32,frames:8,durationMs:1600,format:'gif',bytes:100,ref:'rendition.synthetic-display'}]});
   const plans=createArtPlans({clock:clock.now,scheduler:clock.scheduler,active:()=>true,targets,current:()=>withDisplay?display:undefined,dispatch,operation:()=>undefined,claim:(id,digest)=>{assert.equal(shared.claimArtPlan(id,digest),true);return undefined;}});
-  let enabled=false,artReads=0,weatherReads=0;
-  const inputs={set:(value:typeof policy)=>{enabled=value.enabled;},art:()=>{artReads++;return enabled?catalog:undefined;},weather:()=>{weatherReads++;return undefined;}};
+  let enabled=false,artReads=0,weatherReads=0,weatherState:WeatherState|undefined;
+  const inputs={set:(value:typeof policy)=>{enabled=value.enabled;},art:()=>{artReads++;return enabled?catalog:undefined;},weather:()=>{weatherReads++;return weatherState;}};
   const options={store,shared,core:{clock:{now:clock.now},dispatch,operation:()=>undefined},scheduler:clock.scheduler,active:()=>true,plans,current:()=>withDisplay?display:undefined,
     settings:()=>currentSettings,attention:()=>attention,inputs,choice,failed:()=>{failures.push('storage');}};
   let owner=createArtSchedule(options);
-  return {db,clock,commands,catalog,store,shared,failures,setAttention:(value:boolean)=>{attention=value;},setSettings:(settings:typeof currentSettings)=>{currentSettings=settings;},get owner(){return owner;},reads:()=>({artReads,weatherReads}),
+  return {db,clock,commands,catalog,store,shared,failures,setWeather:(value:WeatherState|undefined)=>{weatherState=value;},setAttention:(value:boolean)=>{attention=value;},setSettings:(settings:typeof currentSettings)=>{currentSettings=settings;},get owner(){return owner;},reads:()=>({artReads,weatherReads}),
     move:async(at:number)=>{clock.advance(at-clock.now());await flush();await owner.settled();await flush();},
     restart:async()=>{await owner.close();owner=createArtSchedule(options);await flush();await owner.settled();},
     close:async()=>{plans.close();await owner.close();db.close();}};
@@ -163,8 +167,30 @@ void test('a suppressed weather occurrence stays consumed through duplicate deli
     w.setSettings({...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}});
     w.owner.weatherChanged(9);await w.owner.settled();await flush();assert.equal(w.commands.length,1,'duplicate delivery cannot become catch-up');
     await w.restart();w.owner.weatherChanged(9);await w.owner.settled();await flush();assert.equal(w.commands.length,1,'restart retains the consumed occurrence');
-    const source=childOf(undefined);w.owner.weatherChanged(10,source);await w.owner.settled();await flush();assert.equal(w.commands.length,2);
+    const source=childOf(undefined);w.setWeather(syntheticWeather(10));w.owner.weatherChanged(10,source);await w.owner.settled();await flush();assert.equal(w.commands.length,2);
     assert.equal(w.commands[1]?.parent?.traceparent.split('-')[1],source.traceparent.split('-')[1]);
+  }finally{await w.close();}
+});
+for(const changed of ['stale','future','superseded'] as const)void test(`a queued weather occurrence stays consumed when its source becomes ${changed}`,async()=>{
+  const w=scheduledWorld();try{
+    w.setWeather(syntheticWeather(9,local(8,1)));await w.owner.save({expectedSettingsRevision:0,policy:{...policy,weather:true}});await flush();await w.move(local(8,1));assert.equal(w.commands.length,1);
+    w.owner.weatherChanged(9);
+    if(changed==='stale')w.clock.advance(local(8,46)-w.clock.now());
+    if(changed==='future')w.clock.advance(-20_000);
+    if(changed==='superseded')w.setWeather(syntheticWeather(10,local(8,1)));
+    await w.owner.settled();await flush();assert.equal(w.commands.length,1,'invalidated source cannot authorize a queued ambient selection');assert.equal(w.store.get().weatherRevision,9);
+    w.setWeather(syntheticWeather(9,w.clock.now(),w.clock.now()+45*60_000));w.owner.weatherChanged(9);await w.owner.settled();await flush();assert.equal(w.commands.length,1,'consumption is not refunded');
+  }finally{await w.close();}
+});
+for(const changed of ['stale','superseded'] as const)void test(`a held weather ambient grant refuses a ${changed} source before its initial handoff`,async()=>{
+  const w=scheduledWorld(true);try{
+    await w.owner.save({expectedSettingsRevision:0,policy:{...policy,weather:true,targets:['shelf-display']}});await flush();await w.move(local(8,1));
+    w.setWeather(syntheticWeather(9,w.clock.now(),w.clock.now()+5000));w.owner.weatherChanged(9);await w.owner.settled();await flush();
+    assert.equal(w.commands.filter(value=>(value.draft.data as ArtAuto22).action==='ambient').length,2);
+    const command=w.commands.filter(value=>(value.draft.data as ArtAuto22).action==='ambient').at(-1)?.draft.data as ArtAuto22;assert.equal(command.action,'ambient');if(command.action!=='ambient')throw new Error('ambient command missing');
+    if(changed==='stale')await w.move(w.clock.now()+6000);else w.setWeather(syntheticWeather(10,w.clock.now()));
+    assert.equal(w.owner.authorizeAmbient(command.authorization,command.target,command.compositionId)?.error.code,'invalid-state');
+    assert.equal(w.owner.authorizeAmbient(command.authorization,command.target,command.compositionId)?.error.code,'forbidden','refused grant remains one-use');
   }finally{await w.close();}
 });
 void test('the live weather input refuses stale or future observations and carries only a current owner trace',async()=>{
