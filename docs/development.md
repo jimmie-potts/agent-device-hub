@@ -1925,6 +1925,18 @@ for the acceptance exercise.
 
 ## Nanoleaf port
 
+Synthetic Music-effect preview (#722) uses the existing Nanoleaf built-test
+discovery. After the root build, run
+`node --test modules/nanoleaf/dist/tests/music-preview.test.js modules/nanoleaf/dist/tests/music-preview-model.test.js`,
+then `npm run test:nanoleaf:built`. The existing Wall browser journey at
+`node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts` covers explicit
+preview reads, local drafts and scrubbing, result fencing, read-only access and
+phone/keyboard/accessibility behavior. CI runs that journey in App verification
+for the runtime group and discovers the focused tests through the core
+Nanoleaf suite. Keep build/type/lint, runtime/dashboard, shared contract and
+workflow checks. Generated input and example geometry establish no live capture,
+device output, configured-layout fidelity or physical timing.
+
 Offline decorative show authoring (#723) uses the existing Nanoleaf built-test
 discovery for immutable versions, metadata-only commands, content reads and
 restart/rollback checks. After the root build, run

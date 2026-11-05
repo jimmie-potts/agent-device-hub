@@ -1,16 +1,10 @@
 import {isObject, pyRound} from './compat.js';
 import {projection, validateElements, type LayoutEntry} from './devices.js';
 import {COLOR, DIRECTIONS, display, MAX_BYTES, MAX_COLORS, MAX_FRAMES, MIN_COLORS, phases, Rejected, rgb, scale, size,
-  type Direction, type Display, type Rgb, type Zone} from './effects.js';
+  type Display, type Rgb, type Zone} from './effects.js';
 import {musicBinding, type MusicBinding, type MusicSample} from './music-input.js';
-
-type BaseRecipe = Readonly<{rendererVersion: 1; palette: readonly string[]; intensity: number; sensitivity: number; smoothingMs: number}>;
-export type MusicRecipeV1 = BaseRecipe & (
-  {readonly effect: 'level-glow' | 'ambient'}
-  | {readonly effect: 'bass-pulse'; readonly halfLifeMs: number}
-  | {readonly effect: 'spectrum'; readonly direction: Direction}
-  | {readonly effect: 'traveling-wave'; readonly direction: Direction; readonly periodMs: number}
-);
+import type {MusicRecipeBase, MusicRecipeV1} from './music-recipe-data.js';
+export type {MusicRecipeV1} from './music-recipe-data.js';
 
 function bounded(value: unknown, fallback: number, min: number, max: number): number {
   const result = value === undefined ? fallback : value;
@@ -33,7 +27,7 @@ export function freezeMusicRecipe(input: unknown): MusicRecipeV1 {
   if (!Array.isArray(palette) || palette.length < MIN_COLORS || palette.length > MAX_COLORS
       || !palette.every((color: unknown): color is string => typeof color === 'string' && COLOR.test(color)))
     throw new TypeError('Invalid music palette.');
-  const base: BaseRecipe = {rendererVersion: 1, palette: Object.freeze(palette.map(color => color.toLowerCase())),
+  const base: MusicRecipeBase = {rendererVersion: 1, palette: Object.freeze(palette.map(color => color.toLowerCase())),
     intensity: bounded(input.intensity, 1, 0, 1), sensitivity: bounded(input.sensitivity, 1, 0.1, 8),
     smoothingMs: bounded(input.smoothingMs, effect === 'ambient' ? 1500 : 100, 0, 2000)};
   if (effect === 'bass-pulse') return Object.freeze({...base, effect, halfLifeMs: bounded(input.halfLifeMs, 200, 100, 2000)});

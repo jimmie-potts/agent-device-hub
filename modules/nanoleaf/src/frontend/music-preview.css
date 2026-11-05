@@ -1,0 +1,19 @@
+.nanoleaf-music-preview { color: var(--text); margin: 1rem 0; max-width: 100%; }
+.nanoleaf-music-preview details { padding: 1rem; border: 1px solid var(--edge-dense); border-radius: 16px; background: var(--panel); }
+.nanoleaf-music-preview summary { cursor: pointer; min-height: 44px; font-weight: 650; }
+.music-preview-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 1rem; margin: 1rem 0; }
+.nanoleaf-music-preview label { display: grid; gap: .45rem; min-width: 0; }
+.nanoleaf-music-preview select, .nanoleaf-music-preview input { width: 100%; min-width: 0; box-sizing: border-box; }
+.nanoleaf-music-preview input[type=range] { min-height: 44px; }
+.nanoleaf-music-preview fieldset { margin: 1rem 0; min-width: 0; }
+.music-preview-palette { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: .8rem; }
+.music-preview-palette > div { display: grid; gap: .4rem; width: 110px; }
+.music-preview-palette input[type=color] { height: 44px; }
+.music-preview-actions { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1rem 0; }
+.music-preview-result { max-width: 660px; margin: 1.2rem 0 0; }
+.music-preview-result figcaption { line-height: 1.6; overflow-wrap: anywhere; }
+.music-preview-elements { list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .7rem; padding: 0; }
+.music-preview-elements li { display: grid; gap: .4rem; text-align: center; }
+.music-preview-swatches { display: flex; height: 50px; gap: 2px; }
+.music-preview-zone { display: block; flex: 1; border: 1px solid var(--edge-dense); min-width: 0; }
+.music-preview-panels .music-preview-zone { clip-path: polygon(50% 0, 0 100%, 100% 100%); }
