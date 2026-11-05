@@ -393,9 +393,9 @@ Java or Actions-language scan is selected.
 Require both language analysis jobs to succeed, including upload and processing.
 Then inspect the native Code scanning results check and its findings for the same
 PR. Its default failure levels are new `error`, `high` and `critical` findings.
-Review every new `error`, `high` or `critical` finding before merge, independently
-of the native result's configured threshold. New blocking findings need a fix or
-an explicit reviewed disposition. Record pre-existing findings and reasoned
+Treat every new `error`, `high` or `critical` finding as blocking until fixed or
+explicitly dispositioned through review, independently of the native result's
+configured threshold. Record pre-existing findings and reasoned
 dispositions in the delivery evidence. Do not broadly ignore or automatically
 dismiss them.
 
