@@ -1,15 +1,16 @@
 // The Tidbyt module's scenarios (Hub #930, #999): agent status and now playing as two tiles in the Tidbyt's rotation, on
 // a simulated cloud. The catalog collects this file.
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {OperationRecord, PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {ArtState} from '@jimmie-potts/event-contracts/v2/art-state';
 import {
   SIMULATED_API_KEY, SIMULATED_DEVICE, SIMULATED_SECTION as TIDBYT_SIMULATED_SECTION, nowPlayingFrame, nowPlayingView, picture, statusFrame, statusView,
-  TRONBYT_SIMULATED_SECTION, type CloudState, type TronbytState,
+  MOMENT_INSTALLATION, TRONBYT_SIMULATED_SECTION, type CloudState, type TronbytState,
 } from '@jimmie-potts/tidbyt';
 import {approvalPrompt, approvalResolved, sessionStarted, turnStarted} from '../../fixtures/agents.js';
 import {CORE_FAMILIES, StepFailure, act, answers, bodyOf, deviceState, expect, holds, publish, recorded, refusedWith, running, show, waiting, type Harness, type Outcome, type Scenario} from '../framework.js';
 import {PLAYBACK_SECTION, playbackShows} from './playback.js';
+import {PIXOO_FAMILIES, PIXOO_ID, PIXOO_SECTION, pixooDevice, pixooState} from './pixoo.js';
 
 /** What the simulated cloud shows. */
 const cloudState = (h: Harness): CloudState => deviceState<CloudState>(h, 'tidbyt');
@@ -203,4 +204,70 @@ const tidbytArt: Scenario = {
   ],
 };
 
-export const scenarios: readonly Scenario[] = [tidbytTiles, tidbytArt];
+const missedTargets = [
+  {target: PIXOO_ID, owner: 'bunny/modules/pixoo', detail: 'the moment missed its start window'},
+  {target: TIDBYT_SECTION.id, owner: TIDBYT_OWNER, detail: "the moment's start window has passed"},
+] as const;
+const missedRequest = (target: string): string => `missed-window-${target}`;
+const missedOperation = (h: Harness, target: string): OperationRecord | undefined =>
+  h.reader.states<OperationRecord>('operation').find(state => state.data.requestId === missedRequest(target))?.data;
+const missedDecisions = (h: Harness, target: string): string[] => h.logs().map(({record}) => record)
+  .filter(record => record.event_name.startsWith('runtime.command.') && record.attributes['bunny.request.id'] === missedRequest(target))
+  .map(record => `${record.event_name} ${record.severity_text} ${String(record.attributes['bunny.code'] ?? '')}`.trim());
+const missedRecords = (h: Harness): string => show(missedTargets.map(({target}) => ({operation: missedOperation(h, target), decisions: missedDecisions(h, target)})));
+const beforeDuplicate = new WeakMap<Harness, string>();
+const noMissedWrites = (h: Harness): Outcome => {
+  const server = serverState(h);
+  return pixooState(h).sent === 0 && server.pinWrites === 0 && server.anonymous === 0
+    && !server.calls.some(call => call.method !== 'GET' && (call.path.endsWith(`/${MOMENT_INSTALLATION}`) || call.path.endsWith('/push')))
+    || 'a refused moment uploaded, pinned or removed display content';
+};
+async function sendMissed(h: Harness): Promise<void> {
+  const failures: string[] = [];
+  for (const {target, detail} of missedTargets) {
+    const answer = await h.gateway({as: 'operator', method: 'POST', path: '/api/v2/commands/moment-play', body: {
+      target, requestId: missedRequest(target), data: {momentId: `missed-${target}`, mood: 'celebrate', durationMs: 8000,
+        priorityClass: 'event', coversStatus: true, startAtMs: 1, toleranceMs: 1000},
+    }});
+    const refusal = refusedWith(answer, 409, 'invalid-state');
+    if (refusal !== true || bodyOf<{error: {detail?: string}}>(answer)?.error.detail !== detail) {
+      failures.push(`${target}: ${refusal === true ? 'the missed-window detail changed' : refusal}`);
+    }
+  }
+  if (failures.length > 0) throw new StepFailure(failures.join('; '));
+}
+
+/** Refused after delivery, before admission: both owners must remain distinguishable from an undelivered command. */
+const missedMomentStart: Scenario = {
+  id: 'missed-moment-start', title: 'both displays report a delivered moment refused for its missed start, without replay or device writes',
+  seed: {modules: ['core', 'playback', 'pixoo', 'tidbyt'], config: {playback: PLAYBACK_SECTION, pixoo: PIXOO_SECTION, tidbyt: TRONBYT_SIMULATED_SECTION},
+    follows: [CORE_FAMILIES, {owner: 'bunny/core', families: ['operation']}, PIXOO_FAMILIES, {owner: TIDBYT_OWNER, families: ['device']}]},
+  steps: [
+    expect('both real display owners are running with their declared moment capability', h => {
+      const devices = [pixooDevice(h), tidbytDevice(h)];
+      return devices.every(device => device?.availability === 'available' && device.capabilities.moments.supported) || 'a moment owner is unavailable';
+    }),
+    act('the operator sends a missed moment through the authenticated gateway to each display', sendMissed),
+    expect('each declared owner replied after delivery, with a tracked missed-window refusal and no effect', h => {
+      for (const {target, owner, detail} of missedTargets) {
+        const record = missedOperation(h, target);
+        if (record?.status !== 'rejected' || record.result !== 'failed' || record.evidence !== 'none'
+          || record.target !== target || record.reply !== 'invalid-state' || record.requestedBy !== 'bunny/parts/operator'
+          || record.error?.code !== 'invalid-state' || record.error.detail !== detail) {
+          return `${target}: ${show(record)}`;
+        }
+        if (!h.reader.states<DeviceRecord>('device', owner).some(state => state.data.id === target)) return `${target}: its declared owner is missing`;
+        const decisions = missedDecisions(h, target);
+        if (show(decisions) !== show(['runtime.command.admitted INFO', 'runtime.command.replied INFO invalid-state'])) return `${target}: ${show(decisions)}`;
+      }
+      return true;
+    }),
+    act('the operator repeats each identical request after its refusal', async h => {beforeDuplicate.set(h, missedRecords(h)); await sendMissed(h);}),
+    holds('duplicates retain the same refusal records and send no native display command', h => {
+      if (missedRecords(h) !== beforeDuplicate.get(h)) return 'a duplicate changed its saved operation';
+      return noMissedWrites(h);
+    }, 2000),
+  ],
+};
+
+export const scenarios: readonly Scenario[] = [tidbytTiles, tidbytArt, missedMomentStart];
