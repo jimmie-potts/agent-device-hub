@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {TestContext} from 'node:test';
+import type {DatabaseSync} from 'node:sqlite';
+import {observation, sessionStarted} from './fixtures/agents.js';
 import {MUSIC_PRODUCER_SOURCE, type CaptureFeatures, type CaptureProgress, type CaptureState, type CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {connectRemote, type Command} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
@@ -235,4 +237,44 @@ it('a core clock jump after registration refuses start before any capture work',
   assert.equal(h.work.length, 0);
   await waitFor(() => h.closed() === 1);
   h.wallOffset(0);
+});
+
+
+it('a full disk during capture table creation keeps the core running and recovers without restart', async t => {
+  const core = createCoreModule(), start = core.start.bind(core);
+  let database: DatabaseSync | undefined, injected = false;
+  core.start = context => {
+    const db = context.database(), exec = db.exec.bind(db);
+    database = db;
+    db.exec = sql => {
+      if (!injected && sql.startsWith('CREATE TABLE IF NOT EXISTS music_capture ')) {
+        injected = true;
+        const pages = db.prepare('PRAGMA page_count').get()?.page_count;
+        assert.equal(typeof pages, 'number');
+        exec(`PRAGMA max_page_count = ${String(pages)}`);
+      }
+      return exec(sql);
+    };
+    return start(context);
+  };
+  const observer = fixture('capture-recovery-observer');
+  const {runtime, logs} = await run(t, {modules: [core, observer]});
+  assert.equal(injected, true);
+  assert.equal(runtime.health().modules.find(module => module.name === 'core')?.state, 'running');
+  const sdk = contextOf(observer).sdk;
+  const refused = await sdk.sync(['music-capture-state'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
+  assert.equal(refused.status, 'rejected');
+  assert.ok(database);
+  database.exec('PRAGMA max_page_count = 1073741823');
+  await waitFor(async () => {
+    const synced = await sdk.sync<CaptureState>(['music-capture-state'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
+    if (synced.status !== 'synced') return false;
+    assert.equal(synced.copy.states()[0]?.data.availability, 'off');
+    assert.deepEqual(synced.copy.states()[0]?.data.session, {status: 'idle'});
+    await synced.copy.close();return true;
+  }, 5000, 'the capture state after storage recovery');
+  const {key, draft} = observation(sessionStarted, Date.now());
+  await sdk.publish(key, draft);
+  await waitFor(() => logs.some(record => record.event_name === 'message.received' && record.attributes['bunny.participant'] === 'bunny/modules/capture-recovery-observer' && record.attributes['bunny.outcome'] === 'accepted'));
+  assert.equal(runtime.health().modules.find(module => module.name === 'core')?.state, 'running');
 });

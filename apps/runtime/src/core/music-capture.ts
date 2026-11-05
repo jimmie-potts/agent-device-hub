@@ -45,11 +45,12 @@ export class MusicCapturePart implements CorePart {
     registerCoreFamilies(this.#validator);
   }
   open(database: DatabaseSync): void {
-    this.#database = database;
+    this.#database = undefined;
     database.exec("CREATE TABLE IF NOT EXISTS music_capture (id TEXT PRIMARY KEY CHECK (id = 'music'), record TEXT NOT NULL) STRICT; " +
       'CREATE TABLE IF NOT EXISTS music_capture_responsibilities (id TEXT PRIMARY KEY, record TEXT NOT NULL) STRICT');
     const initial: CaptureState = {id: 'music', revision: 0, endpointId: null, availability: 'off', session: {status: 'idle'}};
     database.prepare('INSERT INTO music_capture VALUES (?, ?) ON CONFLICT DO NOTHING').run('music', JSON.stringify(initial));
+    this.#database = database;
   }
   states(families: readonly string[]): StateDraft[] {
     if (!families.includes('music-capture-state')) return [];
