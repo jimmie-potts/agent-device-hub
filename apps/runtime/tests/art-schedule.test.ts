@@ -247,3 +247,12 @@ void test('failed final handoff persistence emits no selection and keeps the opp
     w.db.exec('DROP TRIGGER refuse_handoff');await w.restart();await w.move(start+1000);assert.equal(w.commands.length,0);
   }finally{await w.close();}
 });
+void test('a missed slot records expiration and cannot be refilled by a same-day policy replan',async()=>{
+  const w=scheduledWorld();try{
+    const saved=await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false,generation:true}});const start=saved.nextOpportunity?.startAtMs;assert.ok(start!==undefined);
+    await w.move(start+1001);assert.equal(w.commands.length,0);assert.equal(w.store.get().day?.claimed,1);assert.equal(w.owner.get().lastOpportunity?.reason,'expired');
+    assert.equal(w.shared.handedFlourishes(local(0)),0,'an expired unstarted opportunity reserves no provider or moment effect');
+    await w.owner.save({expectedSettingsRevision:1,policy:{...policy,ambient:false,wakingStartMinute:9*60,wakingEndMinute:23*60}});
+    assert.equal(w.store.get().day?.claimed,1);assert.equal(w.store.get().day?.starts.length,6);await w.restart();assert.equal(w.store.get().day?.claimed,1);assert.equal(w.commands.length,0);
+  }finally{await w.close();}
+});

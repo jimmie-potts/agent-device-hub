@@ -80,8 +80,19 @@ export function createArtSchedule(options:Options) {
     catch{options.failed();return errorBody('unavailable');}
     item.used.add(key);return undefined;
   };
+  const expireSlots=(data:ArtScheduleData,at:number):void=>{
+    const day=data.day;if(day===null)return;
+    const missed=day.starts.filter(start=>start<=at);day.starts=day.starts.filter(start=>start>at);
+    for(const startAtMs of missed) {
+      const opportunity:ArtOpportunity={id:opportunityId('appearance',startAtMs),kind:'appearance',startAtMs,toleranceMs:START_TOLERANCE_MS};
+      if(!store.claim(opportunity))continue;
+      day.claimed=Math.min(8,day.claimed+1);data.latestStartMs=Math.max(data.latestStartMs??0,startAtMs+START_TOLERANCE_MS);
+      if(data.record.lastOpportunity===null||data.record.lastOpportunity.startAtMs<=startAtMs)
+        data.record.lastOpportunity={...opportunity,artworkId:null,reason:'expired',generationRequestId:null,browserRequestId:null,displays:[]};
+    }
+  };
   const persistFailure=async(item:Pending,reason:ArtSuppression):Promise<void>=>{
-    await store.change(data=>{if(data.record.settingsRevision!==item.settingsRevision)return;
+    await store.change(data=>{if(data.record.settingsRevision!==item.settingsRevision||data.record.lastOpportunity!==null&&data.record.lastOpportunity.startAtMs>item.opportunity.startAtMs)return;
       data.record.lastOpportunity={...attempt(item),reason};data.record.status=data.record.policy.enabled?'idle':'disabled';data.record.notice=null;});
   };
   const generated=(item:Pending):ArtworkSummary|undefined=>{
@@ -217,7 +228,7 @@ export function createArtSchedule(options:Options) {
       });data=state();
     }
     // A restart or a forward clock jump never replays a past opportunity.
-    if(current.starts.some(start=>start<=at)) {await store.change(value=>{if(value.day!==null)value.day.starts=value.day.starts.filter(start=>start>at);});data=state();}
+    if(current.starts.some(start=>start<=at)) {await store.change(value=>{expireSlots(value,at);});data=state();}
     const next=data.day?.starts[0];
     if(pending===undefined&&next!==undefined&&at>=next-(data.record.policy.generation?GENERATION_MS:PREPARATION_MS))await begin(next);
     if(pending!==undefined&&!pending.preparing&&at>=pending.opportunity.startAtMs-PREPARATION_MS) {
@@ -244,7 +255,7 @@ export function createArtSchedule(options:Options) {
       const parsed=artPolicyWrite(input,options.plans.targets().map(target=>target.target));
       if(!active())throw new AutomationError('unavailable',503);
       await store.change(data=>{if(data.record.settingsRevision!==parsed.expectedSettingsRevision)throw new AutomationError('revision-conflict',409);
-        data.record.settingsRevision++;data.record.policy=parsed.policy;data.record.status=parsed.policy.enabled?'idle':'disabled';data.record.notice=null;
+        expireSlots(data,now());data.record.settingsRevision++;data.record.policy=parsed.policy;data.record.status=parsed.policy.enabled?'idle':'disabled';data.record.notice=null;
         data.record.nextOpportunity=null;data.record.weather=parsed.policy.enabled&&parsed.policy.weather?'unavailable':'disabled';
         if(data.day!==null)data.day.starts=[]; // Its old revision keeps replanning due until the new waking window begins.
       },parent);
