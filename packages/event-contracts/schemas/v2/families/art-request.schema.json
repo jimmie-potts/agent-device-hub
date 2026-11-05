@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-request/2.0",
+  "description": "Command: the owner starts an art job or cancels any job, automatic or not (Hub #679). The envelope subject is `art`. The tracker admits it only when `requestedBy` is the dashboard's source, and the art module treats it as the owner's whatever `origin` or `purpose` say. It reaches the art module from `bunny/core`; its responder refuses any other source, because the in-process bus checks none. A cancel names the job's `requestId` and admits no work. Weather reaches a prompt as condition words only, and nothing here carries a location, path or credential. The validator refuses blank text, lone surrogates, and `variationOf` without the purpose `variation` or the reverse (art.ts).",
+  "type": "object",
+  "oneOf": [{"$ref": "#/$defs/start"}, {"$ref": "#/$defs/cancel"}],
+  "$defs": {
+    "start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "action", "purpose", "origin", "targets"],
+      "properties": {
+        "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+        "action": {"const": "start"},
+        "purpose": {"$ref": "#/$defs/purpose"},
+        "origin": {"$ref": "#/$defs/origin"},
+        "text": {"description": "The owner's typed request, when there is one.", "type": "string", "minLength": 1, "maxLength": 2000},
+        "context": {"$ref": "#/$defs/context"},
+        "targets": {"$ref": "#/$defs/targets"},
+        "variationOf": {"$ref": "#/$defs/artworkId"}
+      }
+    },
+    "cancel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "action", "jobRequestId"],
+      "properties": {
+        "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+        "action": {"const": "cancel"},
+        "jobRequestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"}
+      }
+    },
+    "purpose": {"enum": ["request", "ambient", "appearance", "variation"]},
+    "origin": {
+      "description": "Where the job came from, for display. Never decides whether a job is the owner's.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {"enum": ["owner", "schedule", "weather"]},
+        "reference": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "time": {"enum": ["dawn", "morning", "midday", "afternoon", "evening", "night"]},
+        "season": {"enum": ["spring", "summer", "autumn", "winter"]},
+        "weather": {"description": "Condition words such as `cold rain`.", "type": "string", "maxLength": 64, "pattern": "^[a-z]+(?: [a-z]+)*$"}
+      }
+    },
+    "targets": {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": {"enum": ["ui", "tidbyt", "pixoo"]}},
+    "artworkId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
+  }
+}

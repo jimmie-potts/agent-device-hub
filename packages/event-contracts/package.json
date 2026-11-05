@@ -55,6 +55,10 @@
     "./v2/coding": {
       "types": "./dist/v2/coding.d.ts",
       "import": "./dist/v2/coding.js"
+    },
+    "./v2/art": {
+      "types": "./dist/v2/art.d.ts",
+      "import": "./dist/v2/art.js"
     }
   },
   "dependencies": {

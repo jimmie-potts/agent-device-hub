@@ -14,14 +14,14 @@ import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type ErrorD
 import {
   commandSupported, registerDeviceFamilies, type Capabilities, type CompletedOutcome, type DeviceCommand, type DeviceRecord,
 } from '@jimmie-potts/event-contracts/v2/devices';
-import {registerCoreFamilies, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {registerCoreFamilies, type MomentEnded, type MomentPlayRequest, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog, DeviceAvailability, MAX_UPLOAD_BYTES, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext, type Reply,
   type ModuleStagedUpload, type ModuleUploadRequest,
   type ModuleContent, type ModuleContentRequest, type Snapshot, type StateDraft, type SyncChange, type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import type {Clock as DeviceClock} from '../device/index.js';
 import {Library} from '../library/index.js';
 import {Player, LibraryPlaybackStore} from '../playback/index.js';
-import {MonitorPresentation, defaultNowPlaying, defaultPresentation, monitorView, nowPlayingView} from '../presentation/index.js';
+import {MOMENT_MAX_MS, MOMENT_MOODS, MonitorPresentation, defaultMoments, defaultNowPlaying, defaultPresentation, momentContent, monitorView, nowPlayingView} from '../presentation/index.js';
 import {SIMULATED_SECTION, configurePixoo, HOSTED_PROFILE, type PixooConfig} from './configuration.js';
 import {pixooSettings} from './settings.js';
 import {OBSERVED, PixooControl, errorCompletion, type Completion, type MediaAction} from './control.js';
@@ -34,7 +34,7 @@ import type {RenderRequest, RenderReply} from './render-worker.js';
 import {artworkKey, type CardContext} from '../presentation/card-context.js';
 import {
   DEVICE_SCHEMA, FAMILIES, MAX_INLINE_BYTES, OUTCOME_SCHEMA, PIXOO_KIND, REMOVAL_SCHEMA, pixooOwnSchemas, schemaOf,
-  type AssetChangeRequest, type DisplayRecord, type MonitorSetRequest, type NoticeDismissRequest, type NowPlayingSetRequest, type PlaylistChangeRequest,
+  type AssetChangeRequest, type DisplayRecord, type MomentsSetRequest, type MonitorSetRequest, type NoticeDismissRequest, type NowPlayingSetRequest, type PlaylistChangeRequest,
   type PlaylistRecord, type RenditionRecord, type ShowRequest,
 } from './schemas.js';
 import {PixooStore} from './store.js';
@@ -64,6 +64,7 @@ const MAX_DELAY_MS = 2_147_483_647;
 const MEDIA_ACTIONS: readonly MediaAction[] = ['pause', 'resume', 'stop', 'next', 'previous', 'restart-with-changes', 'clear'];
 const RENDER_WORKER = new URL('./render-worker.js', import.meta.url);
 const NOTICE_ACKNOWLEDGE_SCHEMA = schemaOf('notice-acknowledge');
+const MOMENT_ENDED_SCHEMA = schemaOf('moment-ended');
 /** The consumer ID the core records the Pixoo's acknowledgments under, its source's last segment. */
 const CONSUMER = 'pixoo';
 
@@ -266,6 +267,11 @@ class PixooRuntime {
         store.saveNowPlaying(value);
         return Promise.resolve();
       },
+      moments: store.moments() ?? defaultMoments,
+      saveMoments: value => {
+        store.saveMoments(value);
+        return Promise.resolve();
+      },
       clock: () => clock.now(),
       renderDashboard: layout => this.#render({kind: 'dashboard', layout}),
       renderCard: (view, context) => {
@@ -460,8 +466,9 @@ class PixooRuntime {
   // Rendering
 
   /**
-   * Draws a dashboard or a card in a worker thread. A failed render is no evidence about the device: the presentation
-   * keeps its last picture and tries again. One record reports a run of failures, and one its end.
+   * Draws a dashboard, a card or a moment in a worker thread. A failed render is no evidence about the device: the
+   * presentation keeps its last picture and tries again, and one record reports a run of failures, and one its end. A
+   * moment is drawn once, and its own outcome reports a failure.
    */
   async #render(request: RenderRequest, cardInputKey?: string): Promise<Uint8Array[]> {
     const {workers, signal, log} = this.#context;
@@ -481,13 +488,13 @@ class PixooRuntime {
           this.#artworkFailing = undefined; recordLog(log, 'operation.completed', {...fields, 'bunny.outcome': Outcome.succeeded}, parent);
         }
       }
-      if (this.#renderFailing && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
+      if (this.#renderFailing && request.kind !== 'moment' && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
         this.#renderFailing = false;
         recordLog(log, 'operation.completed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.outcome': Outcome.succeeded}, parent);
       }
       return frames;
     } catch (error) {
-      if (!this.#renderFailing && !signal.aborted && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
+      if (!this.#renderFailing && !signal.aborted && request.kind !== 'moment' && (request.kind !== 'card' || cardInputKey === this.#cardInputKey)) {
         this.#renderFailing = true;
         recordLog(log, 'operation.failed', {'bunny.device.id': this.#device, 'bunny.operation': 'feed', 'bunny.code': error instanceof SdkError ? error.body.error.code : 'internal'}, parent);
       }
@@ -598,7 +605,7 @@ class PixooRuntime {
     const catalog = this.#catalog;
     return {
       power: {supported: true}, brightness: {supported: true, minimum: 0, maximum: 100}, modes: {supported: true, values: ['monitor', 'media']},
-      moments: {supported: false},
+      moments: {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_MS, coversStatus: this.#monitor?.momentSummary().overMonitor ?? defaultMoments.overMonitor},
       media: {
         supported: true, actions: [...MEDIA_ACTIONS], playlistIds: admitted?.playlistIds ?? (catalog?.playlists ?? []).slice(0, MAX_LISTED).map(item => item.id),
         renditionIds: (catalog?.renditions ?? []).slice(0, MAX_LISTED).map(item => item.id),
@@ -663,6 +670,7 @@ class PixooRuntime {
         attention: layout?.attentionTotal ?? 0, page: layout?.page ?? 0, pages: layout?.pages ?? 1,
       },
       nowPlaying: {media: playing.setting.media, card: playing.view.card, stale: playing.view.card && playing.view.stale, takeover: playing.takeover},
+      moments: monitor.momentSummary(),
       player: {
         state: state.state, intent: state.intent, playlistId: state.playlistId, itemId: state.itemId, renditionId: item?.renditionId ?? null,
         lastError: state.lastError?.code ?? null,
@@ -913,6 +921,11 @@ class PixooRuntime {
       this.#admit(command, FAMILIES.monitor, undefined, () => control().present({operation: 'view', filter: command.data.filter, cadenceMs: command.data.cadenceMs})));
     await sdk.respond<NowPlayingSetRequest>(key(FAMILIES.nowPlaying), command =>
       this.#admit(command, FAMILIES.nowPlaying, undefined, () => control().nowPlaying(command.data.media)));
+    await sdk.respond<MomentsSetRequest>(key(FAMILIES.moments), command =>
+      this.#admit(command, FAMILIES.moments, undefined, () => control().moments(command.data.overMonitor)));
+    await sdk.respond<MomentPlayRequest>(key('moment-play'), command =>
+      this.#admit(command, 'moment-play', {family: 'moment-play', data: command.data}, () => this.#playMoment(command.data), () => this.#momentRefused(command.data),
+        false, () => { this.#store?.rememberMoment(command.data.momentId, this.#context.clock.now()); }));
     await sdk.respond<PlaylistChangeRequest>(key(FAMILIES.playlistChange), command =>
       this.#admit(command, FAMILIES.playlistChange, undefined, () => control().playlist(command.data.change), undefined, true));
     await sdk.respond<AssetChangeRequest>(key(FAMILIES.assetChange), command =>
@@ -922,6 +935,29 @@ class PixooRuntime {
         const session = this.#sessions.records.get(command.data.session);
         return session?.notices.some(notice => notice.id === command.data.noticeId) === true ? undefined : errorBody('not-found', {detail: 'no such notice'});
       }));
+  }
+
+  /**
+   * Whether a moment is refused before it is accepted: one seen before, one that missed its window, one while another
+   * waits or plays, or one the current presentation does not admit. The start checks the presentation again.
+   */
+  #momentRefused(moment: MomentPlayRequest): ErrorBody | undefined {
+    const monitor = this.#monitor;
+    if (monitor === undefined) return errorBody('invalid-state', {detail: 'the Pixoo has no presentation'});
+    if (this.#store?.momentSeen(moment.momentId) === true) return errorBody('invalid-state', {detail: 'this moment was already accepted'});
+    if (this.#context.clock.now() > moment.startAtMs + moment.toleranceMs) return errorBody('expired', {detail: 'the moment missed its start window'});
+    if (monitor.momentBusy()) return errorBody('capacity', {detail: 'another moment waits or plays'});
+    if ((this.#store?.pending() ?? []).some(command => command.family === 'device-mode-set')) return errorBody('invalid-state', {detail: 'a mode change is pending'});
+    const block = monitor.momentBlock(moment.coversStatus);
+    return block === null ? undefined : errorBody('invalid-state', {detail: block});
+  }
+
+  /** Runs an accepted moment. `momentContent` chose what it shows, and the render worker draws that before anything else happens. */
+  #playMoment(moment: MomentPlayRequest): Promise<Completion> {
+    const control = this.#control;
+    if (control === undefined) return Promise.resolve(errorCompletion(new Error('no control')));
+    const {momentId, coversStatus, durationMs, startAtMs, toleranceMs} = moment;
+    return control.moment({momentId, coversStatus, durationMs, startAtMs, toleranceMs, frames: () => this.#render({kind: 'moment', content: momentContent(moment)})});
   }
 
   /**
@@ -951,7 +987,7 @@ class PixooRuntime {
    * transaction that publishes the device's new pending count, replies accepted, and runs the work; its outcome follows
    * through the outbox. Admissions run one at a time, after the publishes before them.
    */
-  async #admit(command: Command<object>, family: string, general: DeviceCommand | undefined, work: () => Promise<Completion>, check?: Check, catalog = false): Promise<Reply> {
+  async #admit(command: Command<object>, family: string, general: DeviceCommand | undefined, work: () => Promise<Completion>, check?: Check, catalog = false, accepted?: () => void): Promise<Reply> {
     const {log, clock} = this.#context;
     const {requestId} = command.data;
     const fields: LogFields = {'bunny.device.id': this.#device, ...requestField(requestId)};
@@ -989,7 +1025,7 @@ class PixooRuntime {
         // The record of the work commits before the reply, in the transaction that publishes the device's new pending count.
         await this.#publishNow({
           parent: command,
-          before: () => { store.accept({source: command.source, requestId, digest, family, type: command.type, traceparent: command.traceparent, acceptedAtMs: clock.now()}); },
+          before: () => { store.accept({source: command.source, requestId, digest, family, type: command.type, traceparent: command.traceparent, acceptedAtMs: clock.now()}); accepted?.(); },
         });
       } catch {
         return refuse(errorBody('capacity', {detail: 'the Pixoo could not store the command'}));
@@ -1024,6 +1060,8 @@ class PixooRuntime {
     }
     call.end(completion.result === Outcome.succeeded ? 'unset' : 'error');
     if (this.#stopping) return;
+    // The runtime aborts a stopping module's workers first, so a moment cut off there reports at the next start, as any other does.
+    if (family === 'moment-play' && this.#context.signal.aborted) return;
     if (catalog) await this.#readCatalog('command');
     try {
       await this.#complete(command, family, completion);
@@ -1065,6 +1103,7 @@ class PixooRuntime {
     const {requestId} = command.data;
     const {clock} = this.#context;
     const outcome = {requestId, result: completion.result, evidence: completion.evidence, ...(completion.error === undefined ? {} : {error: completion.error})};
+    const {ended} = completion;
     // The outcome commits with the device's new pending count, last outcome and last transmission, and any catalog change.
     // The outbox records its publication, at INFO or, for a failed or uncertain one, WARN, so the module adds no record.
     await this.#publish({
@@ -1078,6 +1117,15 @@ class PixooRuntime {
         add(`bunny.event.${family}.${this.#device}`, {
           kind: 'outcome', type: command.type.replace(/\.requested$/, '.completed'), subject: this.#device, dataschema: OUTCOME_SCHEMA, data: outcome,
         }, {parent: command});
+        if (ended !== undefined) {
+          const {momentId} = command.data as {momentId?: string};
+          if (momentId !== undefined) {
+            add(`bunny.event.moment-ended.${this.#device}`, {
+              kind: 'occurrence', type: 'org.bunny.moment.ended', subject: this.#device, dataschema: MOMENT_ENDED_SCHEMA,
+              data: {requestId, momentId, ...ended} satisfies MomentEnded,
+            }, {parent: command});
+          }
+        }
       },
     });
   }

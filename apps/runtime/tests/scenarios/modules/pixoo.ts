@@ -267,6 +267,66 @@ const pixooNowPlaying: Scenario = {
   ],
 };
 
+/**
+ * A moment through the core's dispatcher, over Monitor and over Media (Hub #1287): it shows on the simulated Pixoo, ends
+ * on its own, and gives back the base it covered, without a mode change. Attention ends one at once.
+ */
+const momentOf = (h: Harness, id: string, patch: object = {}): {key: string; draft: CommandDraft<object>} => ({
+  key: `bunny.cmd.moment-play.${PIXOO_ID}`,
+  draft: {type: 'org.bunny.moment.play.requested', subject: PIXOO_ID, dataschema: 'https://bunny.invalid/events/moment-play/2.0',
+    data: {momentId: id, mood: 'celebrate', durationMs: 2000, priorityClass: 'event', coversStatus: true, startAtMs: h.now(), toleranceMs: 10_000, ...patch}},
+});
+const momentEnding = (h: Harness, requestId: string, ending: string): Outcome => {
+  const data = h.reader.heard().find(message => message.type === 'org.bunny.moment.ended' && (message.data as {requestId?: unknown}).requestId === requestId)?.data as {ending?: string} | undefined;
+  return data?.ending === ending || `${requestId} ended ${show(data)}`;
+};
+const pixooMoment: Scenario = {
+  id: 'pixoo-moment',
+  title: 'a moment plays over Monitor and over Media and gives back what it covered',
+  seed: PIXOO_SEED,
+  steps: [
+    expect('the core, the playback module and the Pixoo are running', h => running(h, PIXOO_MODULES)),
+    expect('the Pixoo declares its moods and whether it can cover status', h => {
+      const moments = pixooDevice(h)?.capabilities.moments;
+      return (moments?.supported === true && moments.coversStatus && moments.moods.includes('celebrate')) || `moments ${show(moments)}`;
+    }),
+    act('the operator selects Monitor', h => dispatchOnce(h, 'operator', 'pixoo-monitor', pixooMode('monitor'), 'pixoo-moment-mode')),
+    act('the hook observes a session start', h => publish(h, sessionStarted)),
+    expect('the Pixoo shows the session\'s dashboard', h => (pixooState(h).shown !== null && pixooDisplay(h)?.showing === 'dashboard') || `display ${show(pixooDisplay(h))}`, 5000),
+    act('a moment the hub allows to cover status arrives', h => dispatchOnce(h, 'operator', 'moment-monitor', momentOf(h, 'moment-monitor'), 'moment-monitor-1')),
+    expect('the moment takes the display and Monitor stays selected', h => {
+      const display = pixooDisplay(h);
+      return (display?.showing === 'moment' && display.mode === 'monitor' && display.participating) || `display ${show(display)}`;
+    }, 5000),
+    expect('it completes with a transmission and a completed ending', h => {
+      const done = completedAs(h, 'moment-monitor-1', 'succeeded', 'transmitted');
+      return done === true ? momentEnding(h, 'moment-monitor-1', 'completed') : done;
+    }, 8000),
+    expect('Monitor shows the dashboard again', h => (pixooDisplay(h)?.showing === 'dashboard' && pixooDisplay(h)?.moments?.playing === null) || `display ${show(pixooDisplay(h))}`, 5000),
+    act('a second moment starts', h => dispatchOnce(h, 'operator', 'moment-attention', momentOf(h, 'moment-attention', {durationMs: 10_000}), 'moment-attention-1')),
+    expect('the moment takes the display', h => pixooDisplay(h)?.showing === 'moment' || `display ${show(pixooDisplay(h))}`, 5000),
+    act('the hook observes an approval prompt', h => publish(h, approvalPrompt('approve-moment'))),
+    expect('attention ends it at once with a preempted ending', h => momentEnding(h, 'moment-attention-1', 'preempted'), 5000),
+    expect('Monitor shows the session that needs attention', h => (pixooDisplay(h)?.showing === 'dashboard' && pixooDisplay(h)?.monitor.attention === 1) || `display ${show(pixooDisplay(h))}`, 5000),
+    act('the approval resolves', h => publish(h, approvalResolved('approve-moment'))),
+    act('the operator selects Media', h => dispatchOnce(h, 'operator', 'pixoo-media', pixooMode('media'), 'pixoo-moment-media')),
+    ...pixooPlaylist(),
+    act('the operator starts the playlist', h => startPlaylist(h, 'pixoo-start', 'pixoo-moment-start')),
+    expect('the start completes', h => completedAs(h, 'pixoo-moment-start', 'succeeded', 'transmitted'), 8000),
+    expect('the playlist plays', h => pixooDisplay(h)?.player.state === 'playing' || `display ${show(pixooDisplay(h))}`, 8000),
+    act('a flourish arrives over Media', h => dispatchOnce(h, 'operator', 'moment-media', momentOf(h, 'moment-media', {priorityClass: 'flourish', coversStatus: false}), 'moment-media-1')),
+    expect('the moment pauses the playlist for the display without changing the mode', h => {
+      const display = pixooDisplay(h);
+      return (display?.showing === 'moment' && display.mode === 'media' && display.player.intent === 'paused') || `display ${show(display)}`;
+    }, 5000),
+    expect('it ends and the playlist resumes', h => {
+      const display = pixooDisplay(h), done = momentEnding(h, 'moment-media-1', 'completed');
+      return done === true ? display?.player.intent === 'active' || `display ${show(display)}` : done;
+    }, 8000),
+    followsItsOwners(),
+  ],
+};
+
 /** The Pixoo module's records of `event` at `level` from the runtime's `from`th start on. */
 const pixooLogged = (h: Harness, event: string, level: string, from: number): number =>
   logged(h, 'pixoo', event, from).filter(({record}) => record.severity_text === level).length;
@@ -311,7 +371,7 @@ async function migratePixoo(dataDir: string): Promise<void> {
   }
 }
 
-export const scenarios: readonly Scenario[] = [pixooMonitor, pixooMedia, pixooNowPlaying, pixooOffline, pixooPages];
+export const scenarios: readonly Scenario[] = [pixooMonitor, pixooMedia, pixooNowPlaying, pixooMoment, pixooOffline, pixooPages];
 
 export const runs: Readonly<Record<string, ModuleRun>> = {
   'pixoo-migrated': {

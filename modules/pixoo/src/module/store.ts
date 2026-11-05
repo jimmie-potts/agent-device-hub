@@ -5,7 +5,7 @@
 // owners' state, the core's sessions and the playback record, are rebuilt by sync and never stored. Each statement is
 // prepared once.
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
-import {nowPlayingSetting, presentationConfiguration, type NowPlayingSetting, type PresentationConfiguration} from '../core/index.js';
+import {momentSetting, nowPlayingSetting, presentationConfiguration, type MomentSetting, type NowPlayingSetting, type PresentationConfiguration} from '../core/index.js';
 
 /** How long a completed command's `(source, requestId)` is kept, so a repeated request is accepted again and changes nothing. */
 export const HANDLED_MS = 86_400_000;
@@ -39,6 +39,9 @@ export class PixooStore {
   readonly #hostedCheck: StatementSync;
   readonly #saveHostedCheck: StatementSync;
   readonly #dropHostedChecks: StatementSync;
+  readonly #momentSeen: StatementSync;
+  readonly #rememberMoment: StatementSync;
+  readonly #pruneMoments: StatementSync;
 
   constructor(db: DatabaseSync) {
     this.#db = db;
@@ -48,7 +51,8 @@ export class PixooStore {
       CREATE TABLE IF NOT EXISTS pixoo_handled (source TEXT NOT NULL, request_id TEXT NOT NULL, digest TEXT NOT NULL, completed_at_ms INTEGER NOT NULL,
         PRIMARY KEY (source, request_id)) STRICT;
       CREATE TABLE IF NOT EXISTS pixoo_hosted_checks (rendition_id TEXT NOT NULL, profile TEXT NOT NULL, fits INTEGER NOT NULL,
-        PRIMARY KEY (rendition_id, profile)) STRICT`);
+        PRIMARY KEY (rendition_id, profile)) STRICT;
+      CREATE TABLE IF NOT EXISTS pixoo_moments (id TEXT PRIMARY KEY, accepted_at_ms INTEGER NOT NULL) STRICT`);
     this.#read = db.prepare('SELECT value FROM pixoo_state WHERE key = ?');
     this.#write = db.prepare('INSERT INTO pixoo_state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value');
     this.#request = db.prepare('SELECT digest FROM pixoo_commands WHERE source = ? AND request_id = ? UNION ALL SELECT digest FROM pixoo_handled WHERE source = ? AND request_id = ?');
@@ -61,6 +65,9 @@ export class PixooStore {
     this.#hostedCheck = db.prepare('SELECT fits FROM pixoo_hosted_checks WHERE rendition_id = ? AND profile = ?');
     this.#saveHostedCheck = db.prepare('INSERT OR REPLACE INTO pixoo_hosted_checks (rendition_id, profile, fits) VALUES (?, ?, ?)');
     this.#dropHostedChecks = db.prepare('DELETE FROM pixoo_hosted_checks WHERE rendition_id = ?');
+    this.#momentSeen = db.prepare('SELECT id FROM pixoo_moments WHERE id = ?');
+    this.#rememberMoment = db.prepare('INSERT OR IGNORE INTO pixoo_moments (id, accepted_at_ms) VALUES (?, ?)');
+    this.#pruneMoments = db.prepare('DELETE FROM pixoo_moments WHERE accepted_at_ms < ?');
   }
 
   #get(key: string): string | undefined {
@@ -103,6 +110,25 @@ export class PixooStore {
   nowPlaying(): NowPlayingSetting | undefined {
     const parsed = nowPlayingSetting.safeParse(json(this.#get('nowPlaying')));
     return parsed.success ? parsed.data : undefined;
+  }
+
+  moments(): MomentSetting | undefined {
+    const parsed = momentSetting.safeParse(json(this.#get('moments')));
+    return parsed.success ? parsed.data : undefined;
+  }
+
+  saveMoments(value: MomentSetting): void {
+    this.#saveSetting('moments', value);
+  }
+
+  /** Whether this moment was accepted before, across restarts: a moment ID plays once. */
+  momentSeen(momentId: string): boolean {
+    return this.#momentSeen.get(momentId) !== undefined;
+  }
+
+  /** Call it inside the transaction that accepts the moment's command. */
+  rememberMoment(momentId: string, atMs: number): void {
+    this.#rememberMoment.run(momentId, atMs);
   }
 
   /** Saves the presentation and raises the configuration revision, in one transaction. */
@@ -164,9 +190,10 @@ export class PixooStore {
     });
   }
 
-  /** Forgets completed commands older than `HANDLED_MS`. */
+  /** Forgets completed commands and moment IDs older than `HANDLED_MS`. */
   prune(nowMs: number): void {
     this.#prune.run(nowMs - HANDLED_MS);
+    this.#pruneMoments.run(nowMs - HANDLED_MS);
   }
 
   /** Whether a multi-frame rendition's frames fit a profile's hosted GIF, as the library found, or undefined before it checked. */

@@ -35,7 +35,7 @@ import {TOOL_TIMEOUT_MS, createGatewayMcp} from './mcp.js';
 import {retiredRoute} from './retired.js';
 import {privateProxyOrigin, wifiProxyOrigin} from './wifi-proxy.js';
 import {GatewayRefusals, methodOf} from './refusals.js';
-import {checkDesktopFeedIdentity, checkKeyFamily, checkProducerIdentity, checkReadReceiptIdentity} from './producer-admission.js';
+import {checkDesktopFeedIdentity, checkKeyFamily, checkProducerIdentity, checkReadReceiptIdentity, checkVolcanoFeedIdentity} from './producer-admission.js';
 
 /** The gateway's own participant, which keeps its synced copies and is no caller's. */
 export const GATEWAY_SOURCE = 'bunny/runtime/gateway';
@@ -161,12 +161,12 @@ export class Gateway {
       authenticate: request => {
         const principal = this.#admitted.get(request);
         if (principal === undefined) return undefined;
-        // On every entry a lifecycle observation or Desktop snapshot travels on its own family's key, and a snapshot is
-        // bound to its feed's collector credential; a lifecycle observation is bound to its producer's identity on the
+        // On every entry a lifecycle observation, Desktop snapshot or Volcano observation travels on its own family's key,
+        // and a snapshot is bound to its feed's collector credential; a lifecycle observation is bound to its producer's identity on the
         // private entry only, so released local producer configuration stays admitted.
         const permissions = edgePermissions(principal);
         const privateEntry = privateProxyOrigin(request, options.edge.privateProxy) !== undefined;
-        return {...permissions, checkPublication: (message, key) => checkKeyFamily(message, key) ?? checkDesktopFeedIdentity(message) ?? checkReadReceiptIdentity(message) ??
+        return {...permissions, checkPublication: (message, key) => checkKeyFamily(message, key) ?? checkDesktopFeedIdentity(message) ?? checkVolcanoFeedIdentity(message) ?? checkReadReceiptIdentity(message) ??
           (privateEntry ? checkProducerIdentity(message) : undefined)};
       },
       onEndpointClosed: ({source, id}) => {
@@ -938,6 +938,7 @@ export class Gateway {
     if (family.startsWith('companion-speech-')) return errorBody('forbidden', {detail: 'speech requires its current browser endpoint and companions owner'});
     if (family === 'reachy-auto' || family === 'reachy-dispatch') return errorBody('forbidden', {detail: 'automatic Reachy dispatch belongs to its module'});
     if (family === 'microduck-auto' || family === 'microduck-dispatch') return errorBody('forbidden', {detail: 'automatic MicroDuck dispatch belongs to its module'});
+    if (family === 'art-auto' || family === 'art-dispatch' || family === 'art-stage' || family === 'art-ambient-set') return errorBody('forbidden', {detail: 'automatic art and its forwarded commands belong to the core and the art module'});
     if (family.startsWith('coding-')) return errorBody('forbidden', {detail: 'coding delegation goes through the companions owner and its worker endpoint'});
     if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
     if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});

@@ -50,6 +50,14 @@ test('a narrow module change selects its suites and known consumers, and omits u
   assert.deepEqual(pr(['apps/bb8-windows/src/link.ts']).groups, []);
 });
 
+test('a change to the Volcano collector alone runs its adapter tests in the modules group', () => {
+  for (const path of ['apps/runtime/src/collector/volcano.ts', 'apps/runtime/bin/volcano-collector.mjs']) {
+    assert.deepEqual(pr([path]).groups, ['runtime', 'maintenance', 'modules'], path);
+  }
+  assert.deepEqual(pr(['apps/volcano-collector/src/noble-transport.ts']).groups.toSorted(), ['modules', 'runtime']);
+  assert.deepEqual(pr(['apps/runtime/src/collector/codex-desktop.ts']).groups, ['runtime', 'maintenance'], 'another collector stays with the runtime');
+});
+
 test('a runtime dashboard change selects the runtime and its maintenance consumer only', () => {
   const result = pr(['apps/runtime/dashboard/src/music.css', 'apps/runtime/dashboard/src/card-chrome.css']);
   assert.deepEqual(result.groups, ['runtime', 'maintenance']);
@@ -368,7 +376,7 @@ const STEP_GROUPS = {
     'npm run test:wispr-module:built': 'modules', 'npm run test:companions:built': 'modules', 'npm run test:roborock-transport:built': 'modules',
     // The Roborock consumer tests import the built runtime registry.
     'npm run test:roborock-transport:consumer:built': 'runtime', 'npm run test:roborock:built': 'modules',
-    'npm run test:roborock:consumer:built': 'runtime', 'npm run test:wemo:built': 'modules', 'npm run test:art:built': 'modules', 'npm run test:reachy:built': 'modules', 'npm run test:microduck:built': 'modules', 'npm run test:onn:built': 'modules', 'actions/setup-java': 'modules',
+    'npm run test:roborock:consumer:built': 'runtime', 'npm run test:volcano:consumer:built': 'runtime', 'npm run test:volcano:built': 'modules', 'npm run test:wemo:built': 'modules', 'npm run test:art:built': 'modules', 'npm run test:weather:built': 'modules', 'npm run test:reachy:built': 'modules', 'npm run test:microduck:built': 'modules', 'npm run test:onn:built': 'modules', 'actions/setup-java': 'modules',
     'npm run test:onn:native': 'modules', 'npm run test:dashboard': 'shared', 'npm run test:runtime-dashboard:built': 'runtime',
   },
   'app-verify': {

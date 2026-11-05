@@ -452,6 +452,215 @@
     }
    }
   },
+  "device-pixoo-art": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-device-pixoo-art",
+   "source": "bunny/modules/pixoo",
+   "type": "org.bunny.device.updated",
+   "subject": "pixoo-art",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/device/2.2",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "pixoo-art",
+    "revision": 9,
+    "kind": "pixoo",
+    "label": "Desk display",
+    "availability": "degraded",
+    "configurationRevision": 3,
+    "generation": {
+     "epoch": "generation-1",
+     "sequence": 4
+    },
+    "capabilities": {
+     "power": {
+      "supported": true
+     },
+     "brightness": {
+      "supported": true,
+      "minimum": 0,
+      "maximum": 100
+     },
+     "modes": {
+      "supported": true,
+      "values": [
+       "monitor",
+       "media"
+      ]
+     },
+     "moments": {
+      "supported": true,
+      "moods": [
+       "celebrate",
+       "setback",
+       "reminder",
+       "cozy"
+      ],
+      "maxDurationMs": 60000,
+      "coversStatus": true,
+      "art": {
+       "formats": [
+        "png",
+        "gif"
+       ],
+       "maxBytes": 163840
+      }
+     },
+     "media": {
+      "supported": true,
+      "actions": [
+       "pause",
+       "resume",
+       "stop",
+       "next",
+       "previous",
+       "restart-with-changes",
+       "clear"
+      ],
+      "playlistIds": [
+       "playlist-1"
+      ],
+      "renditionIds": [
+       "rendition-1"
+      ]
+     },
+     "scenes": {
+      "supported": false
+     },
+     "zones": {
+      "supported": false
+     },
+     "preview": {
+      "supported": true,
+      "profiles": [
+       {
+        "profileId": "pixoo-64",
+        "profileVersion": "1.0.0"
+       }
+      ]
+     }
+    },
+    "desired": {
+     "power": {
+      "status": "known",
+      "value": true
+     },
+     "brightness": {
+      "status": "unknown"
+     },
+     "mode": {
+      "status": "known",
+      "value": "monitor"
+     }
+    },
+    "observed": {
+     "status": "unknown"
+    },
+    "pending": 0,
+    "pendingKinds": [],
+    "lastOutcome": {
+     "status": "unknown"
+    },
+    "lastTransmission": {
+     "status": "unknown"
+    },
+    "externalControl": {
+     "status": "unknown"
+    }
+   }
+  },
+  "device-tidbyt-art": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-device-tidbyt-art",
+   "source": "bunny/modules/tidbyt",
+   "type": "org.bunny.device.updated",
+   "subject": "tidbyt-art",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/device/2.2",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "tidbyt-art",
+    "revision": 9,
+    "kind": "tidbyt",
+    "availability": "degraded",
+    "configurationRevision": 3,
+    "generation": {
+     "epoch": "generation-1",
+     "sequence": 4
+    },
+    "capabilities": {
+     "power": {
+      "supported": false
+     },
+     "brightness": {
+      "supported": false
+     },
+     "modes": {
+      "supported": false
+     },
+     "moments": {
+      "supported": true,
+      "moods": [
+       "celebrate",
+       "setback",
+       "reminder"
+      ],
+      "maxDurationMs": 60000,
+      "coversStatus": false,
+      "art": {
+       "formats": [
+        "png",
+        "gif"
+       ],
+       "maxBytes": 163840
+      }
+     },
+     "media": {
+      "supported": false
+     },
+     "scenes": {
+      "supported": false
+     },
+     "zones": {
+      "supported": false
+     },
+     "preview": {
+      "supported": false
+     }
+    },
+    "desired": {
+     "power": {
+      "status": "unknown"
+     },
+     "brightness": {
+      "status": "unknown"
+     },
+     "mode": {
+      "status": "unknown"
+     }
+    },
+    "observed": {
+     "status": "unknown"
+    },
+    "pending": 0,
+    "pendingKinds": [],
+    "lastOutcome": {
+     "status": "unknown"
+    },
+    "lastTransmission": {
+     "status": "unknown"
+    },
+    "externalControl": {
+     "status": "unknown"
+    }
+   }
+  },
   "device-removed": {
    "specversion": "1.0",
    "bunnyprofile": "2.0",
@@ -1247,10 +1456,10 @@
    "name": "a device record at an unregistered version",
    "base": "device-nanoleaf",
    "set": {
-    "/dataschema": "https://bunny.invalid/events/device/2.2"
+    "/dataschema": "https://bunny.invalid/events/device/2.3"
    },
    "expect": "unsupported-version",
-   "detail": "https://bunny.invalid/events/device/2.2"
+   "detail": "https://bunny.invalid/events/device/2.3"
   },
   {
    "name": "a hold without its request",

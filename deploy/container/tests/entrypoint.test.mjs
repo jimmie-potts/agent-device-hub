@@ -169,14 +169,16 @@ test('the host-local profile over the real shipped list starts admitted modules 
   const edge = {credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback', launcher: false, mcp: false};
   const listed = runtimeModules.shippedModules.slice(1);
   // The container guide names this admissible set; a new module that declares no simulation must update it.
-  assert.deepEqual(listed.filter(registration => registration.simulation === undefined).map(({name}) => name).sort(), ['art', 'companions', 'wispr']);
+  assert.deepEqual(listed.filter(registration => registration.simulation === undefined).map(({name}) => name).sort(), ['companions', 'weather', 'wispr']);
   const devices = listed.filter(registration => registration.simulation !== undefined);
   assert.ok(devices.some(({name}) => name === 'playback'));
   for (const {name} of devices) {
     assert.throws(() => hostLocalModules({modules: {[name]: {}}, edge}, runtimeModules, checkConfiguration), {message: 'container-browser-config-refused'});
   }
-  // The Codex Desktop module is the one device module with a host-local section: remote sources only, no local home (Hub #567).
-  assert.deepEqual(listed.filter(registration => registration.hostLocal !== undefined).map(({name}) => name), ['codex-desktop']);
+  // Two device modules have a host-local section: Codex Desktop with remote sources only and no local home (Hub #567), and
+  // Volcano, whose collector runs beside the runtime (Hub #615).
+  assert.deepEqual(listed.filter(registration => registration.hostLocal !== undefined).map(({name}) => name), ['codex-desktop', 'volcano']);
+  assert.deepEqual(hostLocalModules({modules: {volcano: {id: 'volcano', hostId: 'mac-sim', sourceId: 'volcano-sim'}}, edge}, runtimeModules, checkConfiguration).factories.map(({name}) => name), ['core', 'volcano']);
   const remote = {sources: [{hostId: 'pc-sim', sourceId: 'codex-desktop'}]};
   assert.deepEqual(hostLocalModules({modules: {'codex-desktop': remote}, edge}, runtimeModules, checkConfiguration).factories.map(({name}) => name), ['core', 'codex-desktop']);
   assert.throws(() => hostLocalModules({modules: {'codex-desktop': {home: '/home/owner-sim/.codex', hostId: 'pc-sim', sourceId: 'codex-desktop'}}, edge}, runtimeModules, checkConfiguration), {message: 'container-browser-config-refused'});

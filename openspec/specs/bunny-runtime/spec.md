@@ -784,7 +784,7 @@ With an edge, the runtime's gateway SHALL serve every route of the listener but 
 
 A browser SHALL sign in only from this origin's own page, naming it and carrying `bunny-request: 1`: with a launch code at `POST /api/v2/browser/launch`, or, when the edge section sets `browserAccess` `trusted-loopback`, at `POST /api/v2/browser/session`, which otherwise answers `not-found` unless the request uses an authenticated home-Wi-Fi or private entry. The runtime SHALL serve the launcher's socket, `bunny-launch.sock` in its state directory, owner-only, unless the edge section sets `launcher` false; each connection SHALL get the runtime's origin and a code good once for 30 seconds, at most eight waiting. A socket path over 107 bytes SHALL refuse the start with `launcher-path-too-long`. `POST /api/v2/browser/logout` SHALL end the cookie's session and its streams and clear the cookie, and a session evicted by the seventeenth or ended at its expiry SHALL have its streams ended at once too. A session token SHALL travel only in `Set-Cookie`.
 
-At the SDK edge, each caller's scopes SHALL become its grant's calls, routing keys and families: `read` SHALL subscribe and sync every state and event key, `ingest` SHALL publish the `lifecycle` family on `bunny.event.lifecycle.*` and the `desktop-metadata` family on `bunny.event.desktop-metadata.*` only (Hub #567), `control` SHALL request the core's operator commands only, `bunny.cmd.approval-recover.*` and `bunny.cmd.notice-acknowledge.*`, which the core's dispatcher names (Hub #782), and send every other command through the action routes (see "Action routes"), and `admin` SHALL add nothing. So a hook's credential with `ingest` SHALL be refused with `forbidden` for any command, read, subscription or other family's message. On every entry, a `desktop-metadata` message SHALL be published only by a credential whose source is derived from the snapshot's feed with the `feed: desktop-metadata` member (`producerSource`); a hook's derived credential, a credential of another feed or any other source SHALL be refused with `forbidden` before the bus has the message, and the lifecycle identity binding of the private entry SHALL stay as it is.
+At the SDK edge, each caller's scopes SHALL become its grant's calls, routing keys and families: `read` SHALL subscribe and sync every state and event key, `ingest` SHALL publish the `lifecycle` family on `bunny.event.lifecycle.*`, the `desktop-metadata` family on `bunny.event.desktop-metadata.*` and the `volcano-observation` family on `bunny.event.volcano-observation.*` only (Hub #567, #615), `control` SHALL request the core's operator commands only, `bunny.cmd.approval-recover.*` and `bunny.cmd.notice-acknowledge.*`, which the core's dispatcher names (Hub #782), and send every other command through the action routes (see "Action routes"), and `admin` SHALL add nothing. So a hook's credential with `ingest` SHALL be refused with `forbidden` for any command, read, subscription or other family's message. On every entry, a `desktop-metadata` message SHALL be published only by a credential whose source is derived from the snapshot's feed with the `feed: desktop-metadata` member (`producerSource`); a hook's derived credential, a credential of another feed or any other source SHALL be refused with `forbidden` before the bus has the message, and the lifecycle identity binding of the private entry SHALL stay as it is. On every entry, a `volcano-observation` message SHALL be published only by a credential whose source is derived from the snapshot's feed with the `feed: volcano-observation` member; any other source SHALL be refused with `forbidden` before the bus has the message.
 
 The optional private HTTPS entry SHALL require an explicitly configured canonical origin and valid private proxy proof, preserve Host/Origin, and refuse absent, forged, mixed private/Wi-Fi proof or mismatched hosts. Network membership and forwarded identity headers SHALL grant no authority. It SHALL admit owner-password-authenticated browsers into existing Secure sessions and ordinary source-scoped read/control/ingest machine credentials through the existing gateway. Bearer credentials SHALL NOT create browser sessions; health, launcher, MCP, administrative credentials and special device roles SHALL be refused at this entry, including after credential reload. Revocation SHALL end the affected streams and further access. Local access and the browser-only Wi-Fi entry SHALL retain their existing behavior.
 
@@ -981,9 +981,11 @@ The operation's state machine SHALL be: `sent`, then `accepted` on the owner's `
 
 The exact ONN focused-text family SHALL omit plaintext from durable operations and retain an omitted-payload marker plus a domain-separated private HMAC over canonical caller, request ID, target/key, type, schema, guards and input. Transport time and trace SHALL be excluded. One independently stored private key SHALL have a pinned identity; a missing, replaced or unsafe key SHALL refuse sensitive effects without erasing prior fences. Private identity storage exhaustion SHALL refuse with `capacity` before sending. This exception SHALL preserve normal action tracking and outcome/history semantics for all other commands.
 
+The exact `art-stage` family SHALL omit its payload from durable operations in the same way, under its own digest domain, so a stage's bytes never grow the tracker or enter history. The bytes SHALL still reach the command's responder. Any stored omitted payload, of either family, SHALL forbid creating a replacement private key, and the core SHALL look for one only when no key is pinned. The dispatcher SHALL refuse, with `forbidden` and no operation, `art-request` unless `requestedBy` is `bunny/parts/dashboard`, `art-auto` unless it is `bunny/core`, and `art-stage` and `art-ambient-set` unless it is `bunny/modules/art`.
+
 #### Scenario: Sent, accepted, completed
 - **WHEN** an operator's action reaches a module that accepts it and reports its outcome
-- **THEN** the operation is `completed` with the outcome's result and evidence, its owner and command kept, and its payload kept except omitted ONN focused text; history holds the steps `sent`, `reply accepted` and `outcome completed` with the outcome itself; each change reached the parts; the module got the command once, from `bunny/core`; and the core logged `command.queued`, `command.admitted` and `command.completed` in one trace with the outcome
+- **THEN** the operation is `completed` with the outcome's result and evidence, its owner and command kept, and its payload kept except an omitted ONN focused text or art stage; history holds the steps `sent`, `reply accepted` and `outcome completed` with the outcome itself; each change reached the parts; the module got the command once, from `bunny/core`; and the core logged `command.queued`, `command.admitted` and `command.completed` in one trace with the outcome
 
 #### Scenario: A refusal, a stopped module and an expiry
 - **WHEN** a module refuses an action, an action's family has no running module, and an action waits behind one the module's handler holds past the reply deadline
@@ -1022,6 +1024,14 @@ The exact ONN focused-text family SHALL omit plaintext from durable operations a
 - **THEN** its retained reply is returned without transmission and no plaintext is retained
 - **WHEN** caller, target, schema, guards or input differs under the same request ID
 - **THEN** duplicate-conflict is returned without an effect
+
+#### Scenario: A stage's bytes are omitted
+- **WHEN** a stage is dispatched, repeated, repeated with other bytes, and repeated after a restart
+- **THEN** its responder got the whole bytes once; the operation has an empty payload and an omitted marker; neither the core store, its write-ahead log nor the logs hold the bytes; the repeats answer what the first got and send nothing; and other bytes are `duplicate-conflict`
+
+#### Scenario: An art command from another requester
+- **WHEN** any source other than a family's one requester asks for that art family
+- **THEN** the dispatcher answers `forbidden`, records no operation and delivers nothing
 
 ### Requirement: Outcome intake and acknowledgment
 
@@ -1534,3 +1544,35 @@ Receipt evidence SHALL commit with the session revision, history and outbox. It 
 - **WHEN** the enrolled Codex producer observes the same qualified native action after an application update
 - **THEN** the existing credential and full feed identity still qualify the receipt without re-enrollment
 - **AND** all generation, turn, notice, replay and source checks still apply
+
+### Requirement: Core forwarding of art commands
+
+A core part SHALL answer `bunny.cmd.art-dispatch.art`. It SHALL refuse any source other than `bunny/modules/art` with `forbidden`, refuse an invalid or expired command with its validator's error, and forward a valid one through the tracked dispatcher as `art-stage` or `art-ambient-set` to the named target, with `requestedBy` the command's source and the dispatch's request ID. It SHALL never forward `moment-play`, so the art module cannot start a takeover. A module SHALL learn a stage's result by following the `operation` record for its request ID.
+
+#### Scenario: Forwarded once and tracked
+- **WHEN** the art module dispatches a stage, and another module sends the same dispatch
+- **THEN** the first is one tracked operation requested by the art module and delivered once from `bunny/core`, and the second is `forbidden` with no operation and no delivery
+
+#### Scenario: A lost answer
+- **WHEN** a display's handler fails after it took a stage, and the art module repeats the dispatch
+- **THEN** each answer is `uncertain-result`, the operation is uncertain, and the stage is delivered once
+
+#### Scenario: A lapsed copy through the tracker
+- **WHEN** a display refuses a moment because its copy lapsed
+- **THEN** the operation is `rejected` with reply `not-found`, failed with evidence `none`, and is not `expired`
+
+#### Scenario: A cancel admits no work
+- **WHEN** a dashboard session cancels a job through `art-request`, including an automatic one, and a control credential sends the same cancel
+- **THEN** the session's reaches the art owner, admits no new job and causes no display command, and the credential's is `forbidden` with no operation
+
+#### Scenario: A module follows its stage
+- **WHEN** the art module syncs `operation`, dispatches a stage, and the display reports its outcome
+- **THEN** the record for the request ID moves from `accepted` with no result to `succeeded`, with no payload
+
+### Requirement: Gateway refusal of core-only art commands
+
+The gateway SHALL refuse `art-auto`, `art-dispatch`, `art-stage` and `art-ambient-set` from any client with `forbidden` before any dispatch. A client's `art-request` SHALL reach the tracker, which admits only a dashboard session's. A client's `moment-play` SHALL be built as version 2.0, which refuses `art`.
+
+#### Scenario: A client asks directly
+- **WHEN** a control credential and a dashboard session send each core-only art family, and each sends `art-request`
+- **THEN** every core-only family is `forbidden`, the credential's `art-request` is `forbidden`, the session's is accepted, and only that one reaches a responder

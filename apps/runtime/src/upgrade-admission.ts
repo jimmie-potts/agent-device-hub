@@ -38,7 +38,7 @@ const coverageSets = [owners, onnOwners, bb8Owners, bb8OnnOwners]
   .flatMap(names => [names, [...names, 'companions']])
   .flatMap(names => [names, [...names, 'roborock']])
   .flatMap(names => [names, [...names, 'wemo']])
-  .flatMap(names => [names, [...names, 'art']]);
+  .flatMap(names => [names, [...names, 'volcano']]);
 const phases = ['baseline', 'candidate', 'recovery', 'reupgrade'];
 const revision = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
 const digest = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);

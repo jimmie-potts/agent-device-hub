@@ -14,13 +14,16 @@ export class PrivateRequestDigest {
     database.exec('CREATE TABLE IF NOT EXISTS bunny_private_request_key (id INTEGER PRIMARY KEY CHECK(id = 1), digest TEXT NOT NULL) STRICT');
   }
 
-  /** Admission transaction only. Initialization requires proof that no old sensitive fence exists. */
-  digest(domain: string, canonical: string, initialize: boolean): string {
+  /**
+   * Admission transaction only. Initialization requires proof that no old sensitive fence exists; a function gives that
+   * proof only when no key is pinned, so a routine digest does not pay for it.
+   */
+  digest(domain: string, canonical: string, initialize: boolean | (() => boolean)): string {
     if (!this.database.isTransaction) return refused();
     let key: Buffer | undefined;
     try {
       const pin = this.#pin();
-      if (pin === undefined && !initialize) return refused();
+      if (pin === undefined && !(typeof initialize === 'function' ? initialize() : initialize)) return refused();
       key = this.#key(pin, pin === undefined);
       if (pin === undefined) this.database.prepare('INSERT INTO bunny_private_request_key VALUES (1, ?)').run(createHash('sha256').update(key).digest('hex'));
       return createHmac('sha256', key).update(domain).update('\0').update(canonical).digest('hex');

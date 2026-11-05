@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-auto/2.0",
+  "description": "Command: the core's automation starts an automatic art job (Hub #679, #684). The envelope subject is `art`. The gateway refuses it from any client, the tracker admits it only when `requestedBy` is `bunny/core`, and its responder refuses any source but `bunny/core`, because the in-process bus checks none. The art module applies the automatic limits to every job this family admits, even one whose `origin` or `purpose` says otherwise. It has `art-request`'s start without typed text, and no cancel: the owner cancels any job with `art-request`. The validator refuses `variationOf` without the purpose `variation` or the reverse (art.ts).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "action", "purpose", "origin", "targets"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "action": {"const": "start"},
+    "purpose": {"$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/purpose"},
+    "origin": {"$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/origin"},
+    "context": {"$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/context"},
+    "targets": {"$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/targets"},
+    "variationOf": {"$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/artworkId"}
+  }
+}

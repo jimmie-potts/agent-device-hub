@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-ambient-set/2.0",
+  "description": "Command: a device's ambient art tile shows this staged composition, or none when `compositionId` is null, with no takeover (Hub #679, #681). The envelope subject names the device. The core forwards it for `bunny/modules/art`. The in-process bus checks no sender: the rule binds at the gateway and tracker, and at each responder, which refuses any source but `bunny/core`.",
+  "type": "object",
+  "$ref": "#/$defs/content",
+  "required": ["requestId"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"}
+  },
+  "unevaluatedProperties": false,
+  "$defs": {
+    "content": {
+      "type": "object",
+      "required": ["compositionId"],
+      "properties": {
+        "compositionId": {"oneOf": [{"type": "null"}, {"$ref": "https://bunny.invalid/events/art-stage/2.0#/$defs/compositionId"}]}
+      }
+    }
+  }
+}

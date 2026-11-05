@@ -27,6 +27,7 @@ import {LightingLayoutPart} from './lighting-layout.js';
 import {PlaybackLayoutPart} from './playback-layout.js';
 import {HomeLayoutPart} from './home-layout.js';
 import {AutomationError} from './automation.js';
+import {ArtPart} from './art-part.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
 import type {AutomationDevice} from './automation-devices.js';
@@ -277,6 +278,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
 class Core {
   readonly #automation: AutomationPart;
   readonly #companions = new CompanionPart();
+  readonly #art = new ArtPart();
   get automation(): AutomationControls {return this.#automation.controls;}
   setAutomationDevices(devices:readonly AutomationDevice[]):void {this.#automation.setDevices(devices);}
   readonly #mode: ModePart;
@@ -341,7 +343,7 @@ class Core {
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
     });
-    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, ...added];
+    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, this.#art, ...added];
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);
@@ -449,6 +451,7 @@ class Core {
     await this.#queue;
     await this.#automation.close();
     this.#companions.close();
+    this.#art.close();
     await this.#tracker.stop();
     const owner = this.#owner;
     this.#owner = undefined;

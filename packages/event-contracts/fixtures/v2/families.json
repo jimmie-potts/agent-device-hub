@@ -1460,6 +1460,39 @@
     ]
    }
   },
+  "volcano-observation": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "volcano-observation-1",
+   "source": "bunny/parts/hub-0123456789abcdef0123456789abcdef",
+   "type": "org.bunny.volcano-observation.observed",
+   "subject": "5775b75e74e56553e6544894e7ee265f39581401a55f72e4c0ed133f0ec14a3a",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "occurrence",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/volcano-observation/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "feed": {
+     "provider": "storz-bickel",
+     "client": "volcano",
+     "hostId": "host-a",
+     "sourceId": "volcano-a"
+    },
+    "observedAtMs": 1791287999900,
+    "collectorEpoch": "epoch-a",
+    "sequence": 7,
+    "link": "connected",
+    "reading": {
+     "status1": 1571,
+     "status2": 512,
+     "currentDeciC": 1850,
+     "targetDeciC": 1900,
+     "heatingHours": 12,
+     "heatingMinutes": 34
+    }
+   }
+  },
   "desktop-metadata-unavailable": {
    "specversion": "1.0",
    "bunnyprofile": "2.0",
@@ -2714,7 +2747,13 @@
    "availability": "available",
    "active": null
   }
- }
+ },
+  "art-request": {"specversion": "1.0", "bunnyprofile": "2.0", "id": "msg-art-request", "source": "bunny/core", "type": "org.bunny.art.request.requested", "subject": "art", "time": "2026-10-06T12:00:00.000Z", "kind": "command", "datacontenttype": "application/json", "dataschema": "https://bunny.invalid/events/art-request/2.0", "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", "data": {"requestId": "req-art-1", "action": "start", "purpose": "request", "origin": {"kind": "owner"}, "text": "a moon bakery at closing time", "context": {"time": "evening", "season": "autumn", "weather": "cold rain"}, "targets": ["ui", "tidbyt", "pixoo"]}, "expiresat": "2026-10-06T12:00:05.000Z"},
+  "art-auto": {"specversion": "1.0", "bunnyprofile": "2.0", "id": "msg-art-auto", "source": "bunny/core", "type": "org.bunny.art.auto.requested", "subject": "art", "time": "2026-10-06T12:00:00.000Z", "kind": "command", "datacontenttype": "application/json", "dataschema": "https://bunny.invalid/events/art-auto/2.0", "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", "data": {"requestId": "req-auto-1", "action": "start", "purpose": "ambient", "origin": {"kind": "schedule", "reference": "hourly"}, "context": {"time": "morning", "season": "winter", "weather": "light snow"}, "targets": ["ui", "tidbyt"]}, "expiresat": "2026-10-06T12:00:05.000Z"},
+  "art-stage": {"specversion": "1.0", "bunnyprofile": "2.0", "id": "msg-art-stage", "source": "bunny/core", "type": "org.bunny.art.stage.requested", "subject": "pixoo-art", "time": "2026-10-06T12:00:00.000Z", "kind": "command", "datacontenttype": "application/json", "dataschema": "https://bunny.invalid/events/art-stage/2.0", "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", "data": {"requestId": "req-stage-1", "compositionId": "1ae9cd710e1a6b269cfedee37741218d666b24c88b14c3237297e5486d1fd904", "format": "png", "width": 64, "height": 32, "frames": 1, "durationMs": 0, "sha256": "1ae9cd710e1a6b269cfedee37741218d666b24c88b14c3237297e5486d1fd904", "base64": "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAIAAAAt/+nTAAAAOElEQVR42u3PQQkAAAgEsAvh2yT2z2UGn8JgBZbqeS0CAgICAgICAgICAgICAgICAgICAgICAlcLRihwLqlUaH0AAAAASUVORK5CYII=", "lifetimeMs": 86400000}, "expiresat": "2026-10-06T12:00:05.000Z"},
+  "art-ambient-set": {"specversion": "1.0", "bunnyprofile": "2.0", "id": "msg-art-ambient-set", "source": "bunny/core", "type": "org.bunny.art-ambient.set.requested", "subject": "tidbyt", "time": "2026-10-06T12:00:00.000Z", "kind": "command", "datacontenttype": "application/json", "dataschema": "https://bunny.invalid/events/art-ambient-set/2.0", "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", "data": {"requestId": "req-ambient-1", "compositionId": "1ae9cd710e1a6b269cfedee37741218d666b24c88b14c3237297e5486d1fd904"}, "expiresat": "2026-10-06T12:00:05.000Z"},
+  "art-dispatch": {"specversion": "1.0", "bunnyprofile": "2.0", "id": "msg-art-dispatch", "source": "bunny/modules/art", "type": "org.bunny.art.dispatch.requested", "subject": "art", "time": "2026-10-06T12:00:00.000Z", "kind": "command", "datacontenttype": "application/json", "dataschema": "https://bunny.invalid/events/art-dispatch/2.0", "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", "data": {"requestId": "req-stage-1", "family": "art-stage", "target": "pixoo-art", "data": {"compositionId": "1ae9cd710e1a6b269cfedee37741218d666b24c88b14c3237297e5486d1fd904", "format": "png", "width": 64, "height": 32, "frames": 1, "durationMs": 0, "sha256": "1ae9cd710e1a6b269cfedee37741218d666b24c88b14c3237297e5486d1fd904", "base64": "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAIAAAAt/+nTAAAAOElEQVR42u3PQQkAAAgEsAvh2yT2z2UGn8JgBZbqeS0CAgICAgICAgICAgICAgICAgICAgICAlcLRihwLqlUaH0AAAAASUVORK5CYII=", "lifetimeMs": 86400000}}, "expiresat": "2026-10-06T12:00:05.000Z"},
+  "moment-play-art": {"specversion": "1.0", "bunnyprofile": "2.0", "id": "msg-moment-play-art", "source": "bunny/core", "type": "org.bunny.moment.play.requested", "subject": "pixoo-art", "time": "2026-10-06T12:00:00.000Z", "kind": "command", "datacontenttype": "application/json", "dataschema": "https://bunny.invalid/events/moment-play/2.1", "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", "data": {"requestId": "req-moment-art", "momentId": "moment-art", "mood": "celebrate", "palette": ["#ff8800", "#00AAFF"], "durationMs": 8000, "priorityClass": "event", "coversStatus": true, "startAtMs": 1791288001000, "toleranceMs": 10000, "art": {"compositionId": "1ae9cd710e1a6b269cfedee37741218d666b24c88b14c3237297e5486d1fd904"}}, "expiresat": "2026-10-06T12:00:05.000Z"}
  },
  "invalid": [
   {
@@ -3423,6 +3462,51 @@
    },
    "expect": "invalid-message",
    "detail": "payload / required stamp"
+  },
+  {
+   "name": "a Volcano snapshot under another feed's subject",
+   "base": "volcano-observation",
+   "set": {
+    "/subject": "7411f675dd7bb7524a87d51ab971caf54b8ea3dfa367aed92656a4a40560b361"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not the feed"
+  },
+  {
+   "name": "a Volcano snapshot from another provider",
+   "base": "volcano-observation",
+   "set": {
+    "/data/feed/provider": "codex"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /feed/provider const"
+  },
+  {
+   "name": "a Volcano reading on a link that is not connected",
+   "base": "volcano-observation",
+   "set": {
+    "/data/link": "disconnected"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /reading on a link that is not connected"
+  },
+  {
+   "name": "a Volcano snapshot with an undeclared member",
+   "base": "volcano-observation",
+   "set": {
+    "/data/bluetoothAddress": "synthetic"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties bluetoothAddress"
+  },
+  {
+   "name": "a Volcano snapshot without its epoch",
+   "base": "volcano-observation",
+   "set": {
+    "/data/collectorEpoch": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload / required collectorEpoch"
   },
   {
    "name": "a lifecycle acknowledgment, which the notice-acknowledge command replaced",

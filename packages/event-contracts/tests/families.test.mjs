@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {MessageValidator, errorCodes} from '../dist/v2/index.js';
-import {coreFamilies, desktopFeedId, registerCoreFamilies, sessionEntityId, sessionTitle} from '../dist/v2/families.js';
+import {coreFamilies, desktopFeedId, registerCoreFamilies, sessionEntityId, sessionTitle, volcanoFeedId, volcanoObservationKey} from '../dist/v2/families.js';
 import {consumerCopy, familyOf} from './consumer.mjs';
 
 const fixtures = JSON.parse(readFileSync(new URL('../fixtures/v2/families.json', import.meta.url), 'utf8'));
@@ -72,7 +72,7 @@ test('each family has one kind and one type, and its schema is built from the sh
     usesBlocks(coreFamilies.find(family => family.dataschema === uri)?.schema ?? {}));
   for (const {family, kind, type, dataschema, schema} of coreFamilies) {
     assert.equal(schema.$id, dataschema, family);
-    assert.ok(dataschema === `https://bunny.invalid/events/${family}/2.0` || (['inbox-item', 'playback', 'mode', 'session'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.1`));
+    assert.ok(dataschema === `https://bunny.invalid/events/${family}/2.0` || (['inbox-item', 'playback', 'mode', 'session', 'moment-play'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.1`));
     assert.ok(usesBlocks(schema), `${family} uses the blocks`);
     for (const uri of refs(schema)) assert.ok(profile(uri) || coreFamilies.some(other => other.dataschema === uri), `${family}: ${uri}`);
     assert.ok(['state', 'occurrence', 'command'].includes(kind), family);
@@ -119,6 +119,24 @@ test('a Desktop snapshot names its feed by the feed ID and admits its sets up to
   assert.equal(v.validate(snapshot({titles: ids(513).map(title)})).ok, false, 'the title bound');
   for (const stamp of ['', 'x'.repeat(65), 'has space', 'slash/stamp']) assert.equal(v.validate(snapshot({stamp})).ok, false, stamp);
   assert.equal(v.validate(snapshot({unread: ['not an id']})).ok, false, 'an unread ID is an identifier');
+});
+
+test('a Volcano snapshot names its feed by the feed ID and carries only a connected link\'s reading (Hub #615)', () => {
+  const v = validator();
+  const base = fixtures.valid['volcano-observation'];
+  assert.equal(volcanoFeedId(base.data.feed), base.subject);
+  assert.equal(volcanoFeedId(Object.fromEntries(Object.entries(base.data.feed).reverse())), base.subject);
+  assert.equal(volcanoObservationKey(base.data.feed), `bunny.event.volcano-observation.${base.subject}`);
+  assert.notEqual(volcanoFeedId({...base.data.feed, hostId: 'host-b'}), base.subject);
+  const snapshot = data => ({...structuredClone(base), data: {...structuredClone(base.data), ...data}});
+  for (const link of ['disconnected', 'unavailable', 'identity-mismatch']) assert.equal(v.validate(snapshot({link, reading: null})).ok, true, link);
+  assert.equal(v.validate(snapshot({reading: null})).ok, true, 'a connected link may have read nothing yet');
+  const reading = {...base.data.reading, currentDeciC: null, targetDeciC: null, heatingHours: null, heatingMinutes: null};
+  assert.equal(v.validate(snapshot({reading})).ok, true, 'an unread register is null');
+  for (const bad of [{status1: 65536}, {status2: -1}, {currentDeciC: 1.5}, {heatingMinutes: -1}, {serial: 'synthetic'}, {address: 'synthetic'}, {firmware: 'synthetic'}]) {
+    assert.equal(v.validate(snapshot({reading: {...base.data.reading, ...bad}})).ok, false, JSON.stringify(bad));
+  }
+  for (const sequence of [-1, 1.5, '1']) assert.equal(v.validate(snapshot({sequence})).ok, false, String(sequence));
 });
 
 test('the title keeps its precedence: the winning label, then the title, then the consumer fallback', () => {
