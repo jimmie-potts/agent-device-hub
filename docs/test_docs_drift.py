@@ -104,7 +104,7 @@ class DocumentationTests(unittest.TestCase):
                           [{'default_branch': 'main'}, {'sha': 'not-a-sha'}]]:
             compare = drift.Comparisons(self.root)
             responses = iter(responses)
-            compare.api = lambda route: next(responses)
+            compare.api = lambda route: next(responses)  # noqa: B023 -- The comparison consumes this iterator in the same iteration.
             self.assertIsNotNone(compare('codex-nanoleaf', 'a' * 40)[2])
 
     def test_revision_cannot_be_a_git_option(self):
@@ -124,7 +124,7 @@ class DocumentationTests(unittest.TestCase):
         for data in [None, [], {'status': [], 'files': []}, {'status': 'ahead', 'files': [None]}, {'status': 'behind', 'files': []}]:
             compare = drift.Comparisons(self.root)
             responses = iter([{'default_branch': 'main'}, {'sha': 'b' * 40}, data])
-            compare.api = lambda route: next(responses)
+            compare.api = lambda route: next(responses)  # noqa: B023 -- The comparison consumes this iterator in the same iteration.
             self.assertIsNotNone(compare('codex-nanoleaf', 'a' * 40)[2])
 
     def test_annotation_text_and_properties_use_distinct_escaping(self):

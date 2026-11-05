@@ -716,7 +716,7 @@ def parsing_values():
     for name, points in pairing.items():
         layout = reported(points)
         result['pairLines'].append({'name': name, 'layout': layout,
-                                    'outcome': outcome_of(lambda: configuration.pair_lines(copy.deepcopy(layout)))})
+                                    'outcome': outcome_of(lambda: configuration.pair_lines(copy.deepcopy(layout)))})  # noqa: B023 -- This callback runs before the loop advances.
     for name, (groups, points) in loading.items():
         layout = reported(points)
         with tempfile.TemporaryDirectory() as temporary:
@@ -725,9 +725,9 @@ def parsing_values():
             if groups is not None:
                 jsonfile.write_json(directory / 'layout.json', {'line_groups': groups})
             def load():
-                config = configuration.load_config(directory, request=lambda *_: {'panelLayout': copy.deepcopy(layout)})
+                config = configuration.load_config(directory, request=lambda *_: {'panelLayout': copy.deepcopy(layout)})  # noqa: B023 -- This callback runs before the loop advances.
                 return {'line_groups': config['line_groups'], 'line_positions': config['line_positions'],
-                        'layout': json.loads((directory / 'layout.json').read_text())}
+                        'layout': json.loads((directory / 'layout.json').read_text())}  # noqa: B023 -- This callback runs before the loop advances.
             result['loadConfig'].append({'name': name, 'savedGroups': groups, 'layout': layout, 'outcome': outcome_of(load)})
     return result
 
@@ -735,7 +735,7 @@ def parsing_values():
 def color_values():
     """palette_rgb on well-formed and malformed color text."""
     colors = ['#aabbcc', '#AABBCC', '#0a1866', '#1g2233', '#abc', '#12345', 'xaabbcc', '#aabbccdd', '#+1aabb', '# 1aabb', '']
-    return [{'color': color, 'outcome': outcome_of(lambda: list(wall.palette_rgb({'base': color})['base']))} for color in colors]
+    return [{'color': color, 'outcome': outcome_of(lambda: list(wall.palette_rgb({'base': color})['base']))} for color in colors]  # noqa: B023 -- This callback runs before the loop advances.
 
 
 def geometry_values():
@@ -1168,7 +1168,7 @@ def edit_values():
             edit_setup(path, record['setup'], feed)
             config = copy.deepcopy(layouts[record['layout']])
             for step in record['steps']:
-                step['outcome'] = outcome_of(lambda: edit_step(path, config, step, feed))
+                step['outcome'] = outcome_of(lambda: edit_step(path, config, step, feed))  # noqa: B023 -- This callback runs before the loop advances.
             record['rows'] = edit_rows(path)
     shared_input.check_envelope = original
     write_nested('edits.json', {'layouts': layouts, 'cases': cases}, 3)
@@ -1228,7 +1228,7 @@ class SceneDevice:
         for hook in list(self.hooks):
             if self.matches(hook, method, endpoint, payload):
                 self.hooks = [item for item in self.hooks if item is not hook]
-                hook['results'].append(outcome_of(lambda: hook['run'](hook['step'])))
+                hook['results'].append(outcome_of(lambda: hook['run'](hook['step'])))  # noqa: B023 -- This callback runs before the loop advances.
         self.calls.append([self.clock.now(), method, endpoint, copy.deepcopy(payload)])
         if self.fail is not None and self.matches(self.fail, method, endpoint, payload):
             self.fail = None
@@ -1573,7 +1573,7 @@ def worker_values():
             with tempfile.TemporaryDirectory() as temporary:
                 path = Path(temporary)
                 run = WorkerCase(path, record)
-                record['outcomes'] = [outcome_of(lambda: run.apply(step)) for step in record['steps']]
+                record['outcomes'] = [outcome_of(lambda: run.apply(step)) for step in record['steps']]  # noqa: B023 -- This callback runs before the loop advances.
                 record['calls'] = run.device.calls
                 record['sends'] = run.sends
                 record['rows'] = run.rows()
@@ -1950,7 +1950,7 @@ def control_values():
                 path = Path(temporary)
                 run = ControlCase(path, record)
                 try:
-                    record['outcomes'] = [outcome_of(lambda: run.apply(step)) for step in record['steps']]
+                    record['outcomes'] = [outcome_of(lambda: run.apply(step)) for step in record['steps']]  # noqa: B023 -- This callback runs before the loop advances.
                     record['hooks'] = run.hooks
                     record['calls'] = run.device.calls
                     record['rows'] = run.rows()
@@ -2030,7 +2030,7 @@ class DeviceCase(ControlCase):
 
     def apply(self, step):
         import configuration
-        import controller_state
+        import controller_state  # noqa: F401 -- Keep the original fixture import and its upstream initialization.
         import edits
         import sqlite3
         op, args = step[0], step[1:]
@@ -2313,7 +2313,7 @@ def device_values():
                 run = DeviceCase(path, record)
                 setups.setdefault(str(record.get('panels', 18)), run.setup())
                 try:
-                    record['outcomes'] = [outcome_of(lambda: run.apply(step)) for step in record['steps']]
+                    record['outcomes'] = [outcome_of(lambda: run.apply(step)) for step in record['steps']]  # noqa: B023 -- This callback runs before the loop advances.
                     record['hooks'] = run.hooks
                     record['calls'] = run.lines.calls
                     record['panelsCalls'] = run.panels.calls

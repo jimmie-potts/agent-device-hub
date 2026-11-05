@@ -3,7 +3,6 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 print('{"ready":true}', flush=True)
 assert sys.stdin.read(1) == '1'

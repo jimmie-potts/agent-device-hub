@@ -31,6 +31,8 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npm run typecheck:python
+      - run: npm run test:python-types
       - run: npm run check:workflow
       - run: npm run test:workflow
       # Manual upgrade checks execute Markdown commands, including recipe-only edits.
@@ -65,6 +67,14 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-tooling.txt
+      - name: Install Python development checks
+        run: python3 -m pip install -r requirements-tooling.txt
+      - name: Lint surviving Python tooling
+        run: npm run lint:python
+      - name: Verify Python lint failures and scope
+        run: npm run test:lint:python
       - name: Check documentation drift fixtures
         run: python3 -m unittest discover -s docs -p test_docs_drift.py
       - name: Report source pins and validate documented commands and paths

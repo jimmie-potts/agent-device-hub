@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-import json, pathlib, subprocess, shlex, unittest, os, fcntl, math, tempfile, re, socket
+import json
+import pathlib
+import subprocess
+import shlex
+import unittest
+import os
+import fcntl
+import math
+import tempfile
+import re
+import socket
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 CLASSES=pathlib.Path(os.environ["ONN_NATIVE_TEST_CLASSES"]).resolve()
 class ReaderTests(unittest.TestCase):
