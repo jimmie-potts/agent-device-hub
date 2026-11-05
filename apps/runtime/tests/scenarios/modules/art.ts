@@ -21,6 +21,7 @@ const initialCalls = new WeakMap<Harness, number>();
 
 export const scenarios: readonly Scenario[] = [{
   id: 'art-catalog', title: 'synthetic creation, private catalog edits and restart use the real authenticated art owner', seed,
+  keepCapturePage: true,
   capture: async (context, harness) => {const {captureArtRendition} = await import('../../../verify/art-browser.js'); await captureArtRendition(context, harness);},
   steps: [
     expect('core and art are running', h => running(h, ['core', 'art'])),
