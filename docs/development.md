@@ -1759,6 +1759,10 @@ Tronbyt transport; `test:runtime:scenarios:built` and disposable scenario runs
 cover that gateway path. These files are discovered by the existing core CI
 module and scenario commands. The playback thumbnail limit and its current
 tests remain separate from the art profile.
+The `scenario-tidbyt-art` capture follows a labelled synthetic link to the
+authenticated exact preview and retains that animation in the recording. After
+the build, run `node --test --test-name-pattern='^scenario-tidbyt-art passes in a fresh run$' apps/runtime/dist/verify/tests/steps.test.js`
+for its image-load and final-page checks in the existing verification suite.
 
 The suite also covers the
 copied renderer, status, now-playing, cloud and cadence cases; the golden frames

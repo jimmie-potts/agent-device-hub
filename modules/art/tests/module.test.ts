@@ -65,6 +65,29 @@ void test('deleted ambient art cancels renewal and cannot be restored by an alre
   assert.equal(dispatch.ambients.at(-1)?.compositionId, null);
 });
 
+for (const remaining of [STAGE_LIFETIME_MS - 1, 1]) void test(`ambient art survives restart with ${remaining} milliseconds remaining and renews without generation`, async t => {
+  const timers: {delay: number; callback: () => void; cancelled: boolean}[] = [];
+  const scheduler = {after: (delay: number, callback: () => void) => {
+    const timer = {delay, callback, cancelled: false}; timers.push(timer);
+    return () => {timer.cancelled = true;};
+  }};
+  const images = fakeImages(drawing()), dispatch = fakeDispatch();
+  const art = await hosted(t, {providers: {openai: images}, dispatch: dispatch.seam, scheduler});
+  await art.automatic({action: 'start', purpose: 'ambient', origin: {kind: 'schedule'}, targets: ['tidbyt']}, 'ambient-odd');
+  await art.finished('ambient-odd');
+  await until(() => dispatch.ambients.length === 1);
+  const calls = images.requests.length;
+  art.clock.value += STAGE_LIFETIME_MS - remaining;
+  await art.restart();
+  assert.equal(dispatch.stages.length, 1, 'restart does not replay staging');
+  assert.equal(dispatch.ambients.length, 1, 'restart does not replay the display choice');
+  const timer = timers.find(entry => !entry.cancelled && entry.delay === Math.floor(remaining / 2)) ?? assert.fail('no whole-millisecond renewal');
+  art.clock.value += timer.delay;
+  timer.callback();
+  await until(() => dispatch.stages.length === 2);
+  assert.equal(images.requests.length, calls, 'renewal reuses saved pixels without a provider call');
+});
+
 void test('conflicting staging evidence withdraws a candidate', async t => {
   const dispatch = fakeDispatch('wait'), art = await hosted(t, {providers: {openai: fakeImages(drawing())}, dispatch: dispatch.seam});
   await art.owner(generate(['pixoo']), 'conflict'); await art.finished('conflict');

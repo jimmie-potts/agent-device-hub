@@ -132,12 +132,20 @@ const staged = (h: Harness): string | undefined => artState(h)?.candidates.find(
 const serverState = (h: Harness): TronbytState => deviceState<TronbytState>(h, 'tidbyt');
 const nativeArt = (h: Harness) => serverState(h).installations.bunnyart;
 const artCalls = (h: Harness) => deviceState<{imageCalls: number; ideaCalls: number}>(h, 'art');
+const artSyncBeforeRestart = new WeakMap<Harness, number>();
 const {nowPlaying: _card, ...ART_SECTION} = TRONBYT_SIMULATED_SECTION;
 
 /** Real producer, tracker, worker and queue, through strict simulated transports and authenticated content. */
 const tidbytArt: Scenario = {
   id: 'tidbyt-art', title: 'exact animated art is staged privately and joins the synthetic Tronbyt rotation without a takeover',
   seed: {modules: ['core', 'tidbyt', 'art'], config: {tidbyt: ART_SECTION}, sections: {art: {}}, follows: [CORE_FAMILIES, {owner: 'bunny/modules/art', families: ['art']}, {owner: TIDBYT_OWNER, families: ['device']}]},
+  keepCapturePage: true,
+  capture: async (context, harness) => {
+    const compositionId = staged(harness);
+    if (compositionId === undefined) throw new StepFailure('the exact Tidbyt preview is missing');
+    const {captureTidbytArt} = await import('../../../verify/tidbyt-art-browser.js');
+    await captureTidbytArt(context, harness, compositionId);
+  },
   steps: [
     expect('the producer and exact-art Tidbyt are running', h => running(h, ['core', 'art', 'tidbyt'])),
     expect('the Tidbyt declares implemented art while visible output remains unknown', h => {
@@ -172,7 +180,14 @@ const tidbytArt: Scenario = {
       const allowed = await h.gateway({as: 'reader', method: 'GET', path});
       return allowed.status === 200 && allowed.headers['content-type']?.startsWith('image/webp') === true || 'authenticated exact preview was unreadable';
     }),
-    act('the runtime restarts with its saved selection and private copy', h => h.restart()),
+    act('the runtime restarts with its saved selection and private copy', async h => {
+      artSyncBeforeRestart.set(h, h.reader.syncs('art', 'bunny/modules/art'));
+      await h.restart();
+    }),
+    expect('the restarted art and display owners are running', h => running(h, ['core', 'art', 'tidbyt'])),
+    expect('the reader has synchronized the restarted art owner before inspecting saved state', h =>
+      h.reader.syncs('art', 'bunny/modules/art') > (artSyncBeforeRestart.get(h) ?? Number.POSITIVE_INFINITY) && staged(h) !== undefined
+      || 'the restarted art copy has not completed its sync', 5000),
     expect('selection survives independently of server evidence', async h => {
       const response = await h.gateway({as: 'reader', method: 'GET', path: '/modules/tidbyt/content/art-status'});
       const status = bodyOf<{selected: {compositionId: string} | null; visible: string}>(response);
