@@ -118,7 +118,7 @@ for failure, code in {
     "mic-permission-revoked": "unavailable", "mic-removed": "unavailable", "mic-uid-changed": "unavailable",
     "mic-format": "unsupported-capability", "mic-many-inputs": "unsupported-capability",
     "mic-output-enabled": "unsupported-capability", "mic-output-refused": "unsupported-capability",
-    "mic-change-before-start": "unsupported-capability", "mic-listener": "unavailable",
+    "mic-change-before-start": "unsupported-capability", "mic-format-changed": "unsupported-capability", "mic-listener": "unavailable",
     "create-proc": "unavailable", "start": "unavailable",
     "sample-invalid": "invalid-message", "timestamp-invalid": "invalid-message",
 }.items():
@@ -160,6 +160,10 @@ for failure, status, code in [("", "authorized", 0), ("mic-permission-needed", "
                           env=dict(os.environ, BUNNY_NATIVE_TEST_FAILURE=failure), timeout=3, check=False)
     assert done.returncode == code and not done.stderr
     assert json.loads(done.stdout) == {"schema": "music-native-permission/1.0", "status": status}
+
+done = subprocess.run([binary, "--authorize-microphone"], capture_output=True, text=True,
+                      env=dict(os.environ, BUNNY_NATIVE_TEST_FAILURE="mic-permission-parent-lost"), timeout=3, check=False)
+assert done.returncode == 1 and not done.stdout and not done.stderr
 
 process = subprocess.Popen([binary, "--authorize-microphone"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                            env=dict(os.environ, BUNNY_NATIVE_TEST_FAILURE="mic-permission-no-answer"), text=True)

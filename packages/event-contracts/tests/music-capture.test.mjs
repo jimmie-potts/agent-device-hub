@@ -89,7 +89,7 @@ test('selected microphone versions preserve Music and require public source prov
   valid(v21(feature(frame())));
   valid(v21({...registration, data: {requestId: 'enable-music', action: 'enable', input: 'music'}}));
   valid(v21({...state, data: {id: 'music', revision: 0, endpointId: null, availability: 'off', session: {status: 'idle'}}}));
-  for (const microphoneId of ['', 'x'.repeat(65), 'room mic', 'bad/alias']) invalid(v21(feature({...frame(), ...selection, microphoneId})));
+  for (const microphoneId of ['', 'x'.repeat(65), 'room mic', 'bad/alias', 'studio-mic\n']) invalid(v21(feature({...frame(), ...selection, microphoneId})));
   invalid(v21(feature({...frame(), input: 'microphone'})));
   invalid(v21(feature({...frame(), microphoneId: 'studio-mic'})));
   invalid(v21({...registration, data: {...registration.data, microphone: {id: 'studio-mic', present: true}}}));

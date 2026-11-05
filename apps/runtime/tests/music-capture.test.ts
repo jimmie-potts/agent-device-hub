@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {TestContext} from 'node:test';
 import type {DatabaseSync} from 'node:sqlite';
 import {observation, sessionStarted} from './fixtures/agents.js';
@@ -22,6 +22,8 @@ async function setup(t: TestContext, directory?: string) {
   t.after(() => producer.close());
   const work: Command<CaptureWork>[] = [];let closed = 0, refuseStop = false;
   const endpoint = await producer.openEndpoint<CaptureWork>({family: 'music-capture-work', onClosed: () => {closed += 1;}, respond: command => {work.push(command);return refuseStop && command.data.action === 'stop' ? errorBody('unavailable') : {status: 'accepted'};}});
+  const liveStates: Message<CaptureState>[] = [];
+  await contextOf(observer).sdk.subscribe<CaptureState>('bunny.state.music-capture-state.music', message => {liveStates.push(message);});
   let stateSchema: string | undefined;
   const read = async (): Promise<CaptureState> => {
     const result = await contextOf(observer).sdk.sync<CaptureState>(['music-capture-state'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
@@ -44,7 +46,9 @@ async function setup(t: TestContext, directory?: string) {
       rms: 0, peak: 0, clippedFraction: 0, bands: {bass: 0, mid: 0, treble: 0}, onset: {strength: 0, confidence: 0}, discontinuity: false, ...patch,
     }});
   };
-  return {core, runtime, producer, observer, endpoint, work, stateSchema: () => stateSchema, closed: () => closed, refuseStop: () => {refuseStop = true;}, read, enable, control, progress, frame, operation: (id: string) => handle?.operation(id), failWrites: async (value: boolean) => {
+  return {core, runtime, producer, observer, endpoint, work, liveStates, legacyResponsibilities: async () => {
+    assert.ok(handle);await handle.transaction(tx => {tx.database.exec("UPDATE music_capture_responsibilities SET record = json_remove(record, '$.selection')");});
+  }, stateSchema: () => stateSchema, closed: () => closed, refuseStop: () => {refuseStop = true;}, read, enable, control, progress, frame, operation: (id: string) => handle?.operation(id), failWrites: async (value: boolean) => {
     assert.ok(handle);await handle.transaction(tx => {tx.database.exec(value
       ? "CREATE TEMP TRIGGER refuse_capture BEFORE UPDATE ON music_capture BEGIN SELECT RAISE(ABORT, 'synthetic-capture-store-refusal'); END"
       : 'DROP TRIGGER refuse_capture');});
@@ -94,6 +98,10 @@ it('a configured microphone is selected explicitly and only its current frames c
   await h.endpoint.close();
   await waitFor(async () => (await h.read()).availability === 'unavailable');
   assert.equal((await h.read()).microphone, undefined);
+  await waitFor(() => h.liveStates.some(message => message.data.availability === 'unavailable'));
+  assert.ok(h.liveStates.length > 0);
+  assert.deepEqual([...new Set(h.liveStates.map(message => message.dataschema))], [schema('music-capture-state', '2.1')]);
+  assert.deepEqual([...new Set(h.liveStates.map(message => message.subject))], ['music']);
 });
 
 it('registration never captures; explicit start and stop have observed outcomes and fence delayed frames', async t => {
@@ -146,14 +154,21 @@ it('silence is live, expired and reversed frames do not refresh it, and a discon
   assert.equal(h.operation('freshness-start')?.result, 'succeeded', 'later source loss cannot rewrite an observed start');
 });
 
-it('restart retires a pending generation and resolves responsibility without replay', async t => {
+for (const input of ['music', 'microphone'] as const) it(`restart retires pending ${input} without replay, including old Music records`, async t => {
   const directory = await stateDir(t), first = await setup(t, directory);
-  await first.enable();await first.control('pending-start', (await first.read()).revision, 'start');
+  const selection: CaptureSelection = input === 'music' ? {input} : {input, microphoneId: 'studio-mic'};
+  await first.enable(input === 'music' ? undefined : 'studio-mic');
+  await first.control('pending-start', (await first.read()).revision, 'start', selection);
   await waitFor(() => first.work.length === 1);
+  if (input === 'music') await first.legacyResponsibilities();
   await first.runtime.stop();await first.producer.close();
-  const second = await setup(t, directory);
-  assert.equal((await second.read()).availability, 'unavailable');
-  assert.equal((await second.read()).session.status, 'unavailable');
+  const second = await setup(t, directory), recovered = await second.read();
+  assert.equal(recovered.availability, 'unavailable');
+  assert.ok(recovered.session.status === 'unavailable');
+  assert.equal(recovered.session.input, input);
+  if (recovered.session.input === 'microphone') assert.equal(recovered.session.microphoneId, 'studio-mic');
+  assert.equal(recovered.microphone, undefined);
+  assert.equal(second.stateSchema(), schema('music-capture-state', '2.1'));
   assert.equal(second.operation('pending-start')?.result, 'uncertain');
   await second.enable();assert.equal(second.work.length, 0);
 });

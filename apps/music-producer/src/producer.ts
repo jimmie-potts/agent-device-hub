@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {CAPTURE_WINDOW_MS, type CaptureFeatures, type CaptureProgress, type CaptureSelection, type CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {Outcome, SdkError, type Command, type RemoteEndpoint, type RemoteParticipant, type Reply, type Scheduler} from '@jimmie-potts/sdk';
-import {systemClock, systemScheduler, type NativeRun, type NativeSource, type NativeTermination} from './native.js';
+import {systemClock, systemScheduler, type NativeInput, type NativeRun, type NativeSource, type NativeTermination} from './native.js';
 import {nativeFailure, type NativeFailure, type NativeFrame} from './protocol.js';
 import {CaptureClock, coreClockQualified, type ClockReading} from './timing.js';
 import type {ConfiguredMicrophone} from './configuration.js';
@@ -141,9 +141,13 @@ export class MusicProducer {
       if (!this.#current(session) || session.phase !== 'qualifying') return;
       if (!qualified || !session.clock.valid) {this.#fail(session, nativeFailure('unavailable')); return;}
       session.phase = 'starting';
-      if (session.selection.input === 'microphone' && this.#microphone === undefined) {this.#fail(session, nativeFailure('unsupported-capability')); return;}
-      session.run = this.#native.start(frame => this.#frame(session, frame), session.selection.input === 'music'
-        ? {input: 'music'} : {input: 'microphone', uid: this.#microphone?.uid ?? ''});
+      let input: NativeInput;
+      if (session.selection.input === 'music') input = {input: 'music'};
+      else {
+        if (this.#microphone === undefined) {this.#fail(session, nativeFailure('unsupported-capability')); return;}
+        input = {input: 'microphone', uid: this.#microphone.uid};
+      }
+      session.run = this.#native.start(frame => this.#frame(session, frame), input);
       void session.run.ended.then(result => this.#ended(session, result), () => this.#ended(session, {status: Outcome.uncertain, error: nativeFailure('uncertain-result')}));
     } catch {this.#fail(session, nativeFailure('unavailable'));}
   }

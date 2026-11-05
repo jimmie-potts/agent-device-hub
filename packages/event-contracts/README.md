@@ -732,3 +732,23 @@ configured target, notice/attention, original opportunity/expiry and current
 configuration/generation guards. Only that module may request it; the core
 tracks one microduck-auto operation. Public HTTP/SDK grants and MCP cannot invoke
 internal dispatch. Robot-local schemas remain owned by the module.
+
+### Selected microphone capture (`music-capture-*/2.1`)
+
+`registerMusicCaptureFamilies` registers unchanged 2.0 schemas and five additive
+2.1 schemas for endpoint, work, features, control and state. The browser-safe
+`v2/music-capture-data` export owns their shared constants and types; the server
+module re-exports them and retains validation. Endpoint capability contains only
+`microphone: {id}`. Microphone start and feature records use `input: "microphone"`
+and `microphoneId`, a bounded public alias. Device UIDs and names are forbidden.
+Configured capability says nothing about device presence or authorization.
+
+The core publishes one `music-capture-state/2.1` record through both sync and live
+updates, including for Music-only producers. Bundled readers explicitly accept
+state 2.0 and 2.1. They do not treat an unknown version as compatible. Music start
+and all stop work remain 2.0; microphone start uses 2.1. Music features remain
+2.0; microphone features use 2.1. Progress and endpoint-loss contracts remain 2.0.
+Existing 2.0 schemas are unchanged and reject microphone fields. This follows the
+same registered-version migration as `device/2.1`; state is never dual-published.
+The capture tests cover both accepted versions, closed fields and bounds, and
+source/alias association. The dashboard gates each meter by that provenance.

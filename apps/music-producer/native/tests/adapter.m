@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static unsigned hardwareCalls, tapCreated, tapDestroyed, aggregateCreated, aggregateDestroyed;
 static unsigned procCreated, procDestroyed, started, stopped, listenerAdded, listenerRemoved;
@@ -30,12 +31,12 @@ static OSStatus result(const char *stage) { return fails(stage) ? kAudioHardware
 + (AVAuthorizationStatus)authorizationStatusForMediaType:(AVMediaType)mediaType {
     assert([mediaType isEqual:AVMediaTypeAudio]);++authorizationCalls;
     if (fails("mic-permission-denied") || (permissionRequests && fails("mic-permission-declined")) || (started && fails("mic-permission-revoked"))) return AVAuthorizationStatusDenied;
-    if ((fails("mic-permission-needed") || fails("mic-permission-no-answer") || fails("mic-permission-declined")) && !permissionGranted) return AVAuthorizationStatusNotDetermined;
+    if ((fails("mic-permission-needed") || fails("mic-permission-no-answer") || fails("mic-permission-parent-lost") || fails("mic-permission-declined")) && !permissionGranted) return AVAuthorizationStatusNotDetermined;
     return AVAuthorizationStatusAuthorized;
 }
 + (void)requestAccessForMediaType:(AVMediaType)mediaType completionHandler:(void (^)(BOOL))handler {
     assert([mediaType isEqual:AVMediaTypeAudio]);++permissionRequests;
-    if (fails("mic-permission-no-answer")) return;
+    if (fails("mic-permission-no-answer") || fails("mic-permission-parent-lost")) return;
     permissionGranted=!fails("mic-permission-declined");handler(permissionGranted);
 }
 @end
@@ -194,6 +195,12 @@ static OSStatus fakeRemoveListener(AudioObjectID object,const AudioObjectPropert
     ++listenerRemoved; return result("remove-listener");
 }
 
+static pid_t fakeParent(void) {
+    static unsigned calls;
+    if (fails("mic-permission-parent-lost")) return ++calls==1 ? 100 : 101;
+    return getppid();
+}
+#define getppid fakeParent
 #define AudioObjectGetPropertyDataSize fakeGetSize
 #define AudioObjectGetPropertyData fakeGetData
 #define AudioObjectSetPropertyData fakeSetData
@@ -211,12 +218,17 @@ static OSStatus fakeRemoveListener(AudioObjectID object,const AudioObjectPropert
 #define main nativeMain
 #include "../main.m"
 #undef main
+#undef getppid
 
 static OSStatus fakeStart(AudioObjectID object,AudioDeviceIOProcID proc) {
     ++hardwareCalls; assert((object==200 || object==300) && proc);
     if (object==300) assert(inputEnabled && outputDisabled && permissionRequests==0);
     if (fails("start")) return kAudioHardwareUnspecifiedError;
     ++started;
+    if (fails("mic-format-changed")) {
+        AudioObjectPropertyAddress address={kAudioStreamPropertyVirtualFormat,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
+        listener(400,1,&address,listenerContext);return noErr;
+    }
     if (fails("format-changed")) {
         AudioObjectPropertyAddress address={kAudioTapPropertyFormat,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
         listener(100,1,&address,listenerContext); return noErr;
