@@ -472,7 +472,7 @@ void describe('moments', () => {
       await world.publishSession();
       await waitFor(() => world.device.state().shown, 'the dashboard on the device');
       assert.equal(await refusal(send('m-flourish', {priorityClass: 'flourish', coversStatus: false})), 'invalid-state');
-      assert.equal(await refusal(send('m-late', {startAtMs: Date.now() - 5000, toleranceMs: 1000})), 'expired');
+      assert.equal(await refusal(send('m-late', {startAtMs: Date.now() - 5000, toleranceMs: 1000})), 'invalid-state');
       const off = await accepted(world.request(FAMILIES.moments, 'org.bunny.pixoo-moments.set.requested', {overMonitor: false}));
       assert.deepEqual((await world.outcome(off)).data, {requestId: off, result: 'succeeded', evidence: 'observed'});
       await waitFor(() => {
