@@ -23,3 +23,11 @@ The core SHALL select an existing successful browser composition through the Art
 - **WHEN** an explicit owner deletion succeeds for the selected artwork
 - **THEN** the selection is cleared atomically and consumers receive the updated state
 
+## MODIFIED Requirements
+
+### Requirement: The module publishes authenticated reads
+The module SHALL serve one `art/2.1` state record with spent, reserved, uncertain and remaining amounts per provider and the selected browser composition reference, and SHALL offer `catalog`, `ledger`, `artwork.<id>` and `rendition.<id>` content references. Consumers SHALL retain support for `art/2.0` records. The record SHALL carry no prompt, key, location or image bytes.
+
+#### Scenario: A dashboard syncs
+- **WHEN** a reader syncs `art`
+- **THEN** it receives the complete record and follows its replacements

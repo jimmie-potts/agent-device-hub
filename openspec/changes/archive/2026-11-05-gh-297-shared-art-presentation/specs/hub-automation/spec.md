@@ -37,4 +37,3 @@ Runtime art dispatch SHALL resolve actual configured identities from current own
 #### Scenario: Capability becomes stale
 - **WHEN** the device owner's copy becomes stale or no longer declares art support before hand-off
 - **THEN** that target receives no art command while other independently qualified targets remain eligible
-

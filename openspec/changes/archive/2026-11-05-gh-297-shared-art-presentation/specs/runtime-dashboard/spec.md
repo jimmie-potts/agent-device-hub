@@ -10,4 +10,3 @@ The widget SHALL acquire the selected existing browser composition through authe
 #### Scenario: Selection changes before decoding finishes
 - **WHEN** a newer authoritative selection arrives before the old image finishes decoding
 - **THEN** the old result cannot replace the newer choice or its presented palette
-
