@@ -79,13 +79,13 @@ export function ArtSchedulePanel({connection, live, control}: {connection: Dashb
     <p>Saved art can appear through the waking day. Quiet hours, attention and each display's controls take precedence.</p>
     {!fresh && <p role="status">Art settings are unavailable or stale. No changes can be sent.</p>}
     <p role="status" className="art-schedule-feedback">{message}</p>
-    {draft !== undefined && <form className="edit wide" onSubmit={event => {event.preventDefault();void save();}}><fieldset disabled={!mayEdit}><legend>Daily art settings</legend>
+    {draft !== undefined && <form className="edit" onSubmit={event => {event.preventDefault();void save();}}><fieldset disabled={!mayEdit}><legend>Daily art settings</legend>
       <label className="check"><input type="checkbox" checked={draft.policy.enabled} onChange={event => {update({enabled: event.target.checked});}}/>Enable daily art</label>
       <p className="hint">Times use the runtime's clock: {record?.timeZone ?? 'Unavailable'}. At least 45 minutes separate appearances; short or quiet windows may fit fewer.</p>
       <div className="art-schedule-times"><label>Waking day starts<input type="time" required value={draft.start} onChange={event => {setDirty(true);setDraft({...draft, start: event.target.value});}}/></label>
         <label>Waking day ends<input type="time" required value={draft.end} onChange={event => {setDirty(true);setDraft({...draft, end: event.target.value});}}/></label>
-        <label>Appearances per day<select value={draft.policy.appearances} onChange={event => {const value = event.target.value;if (value === '6' || value === '7' || value === '8') update({appearances: value === '6' ? 6 : value === '7' ? 7 : 8});}}>
-          {[6, 7, 8].map(value => <option key={value} value={value}>{value}</option>)}</select></label></div>
+        <div><label htmlFor="art-appearances">Appearances per day</label><select id="art-appearances" value={draft.policy.appearances} onChange={event => {const value = event.target.value;if (value === '6' || value === '7' || value === '8') update({appearances: value === '6' ? 6 : value === '7' ? 7 : 8});}}>
+          {[6, 7, 8].map(value => <option key={value} value={value}>{value}</option>)}</select></div></div>
       <fieldset><legend>Art surfaces</legend><label className="check"><input type="checkbox" checked={draft.policy.browser} onChange={event => {update({browser: event.target.checked});}}/>Browser</label>
         {targets.map(target => {const device = devices.find(value => value.id === target);return <label className="check" key={target}><input type="checkbox" checked={draft.policy.targets.includes(target)} onChange={event => {
           update({targets: event.target.checked ? [...draft.policy.targets, target] : draft.policy.targets.filter(value => value !== target)});
@@ -104,8 +104,8 @@ export function ArtSchedulePanel({connection, live, control}: {connection: Dashb
       {last != null && <details><summary>Latest art opportunity</summary><p>{artTime(last.startAtMs, record.timeZone)}{last.reason === null ? '' : ` · ${reasons[last.reason]}`}</p>
         <p>Generation request: {outcome(last.generationRequestId, 'art-auto', 'art', operations, operationsLive)}</p>
         <p>Browser selection: {outcome(last.browserRequestId, 'art-auto', 'art', operations, operationsLive)}</p>
-        <ul>{last.displays.map(display => <li key={display.target}>{display.target}: preparation {outcome(display.prepareRequestId, 'art-auto', 'art', operations, operationsLive)};
-          {' '}appearance {outcome(display.momentRequestId, 'moment-play', display.target, operations, operationsLive)}{display.error === null ? '' : ` · ${display.error}`}</li>)}</ul>
+        <ul>{last.displays.map(display => <li key={display.target}>{display.target}: {last.kind === 'ambient' ? 'ambient selection' : 'preparation'} {outcome(display.prepareRequestId, 'art-auto', 'art', operations, operationsLive)}
+          {last.kind === 'appearance' && <>; appearance {outcome(display.momentRequestId, 'moment-play', display.target, operations, operationsLive)}</>}{display.error === null ? '' : ` · ${display.error}`}</li>)}</ul>
         <p className="hint">Generation, selection and display transmission are separate. A successful command does not establish visible pixels.</p></details>}
     </section>}
   </section>;
