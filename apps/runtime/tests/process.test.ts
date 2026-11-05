@@ -283,7 +283,7 @@ it('a health port already in use names its reason in the runtime.failed record',
   assert.equal(runtime.records().find(record => record.event_name === 'runtime.failed')?.attributes['error.code'], 'EADDRINUSE');
 });
 
-it('an outcome committed before a kill between commit and publish is taken exactly once after the restart, then forgotten once acknowledged, and the command is never sent again', async context => {
+for (const scenario of ['lamp-crash', 'lamp-crash-delayed']) it(`an outcome committed before a kill between commit and publish is taken exactly once after the restart, then forgotten once acknowledged, and the command is never sent again (${scenario})`, async context => {
   // Hub #882: the lamp's outbox holds the outcome across the kill; the core keeps the outcome in its own history.
   const dir = await stateDir(context);
   const args = ['--port', '0', '--state-dir', dir];
@@ -292,7 +292,7 @@ it('an outcome committed before a kill between commit and publish is taken exact
   const taken = (runtime: Spawned): LogRecord[] => of(runtime, 'core', 'message.received')
     .filter(record => record.attributes['bunny.message.kind'] === 'outcome' && record.attributes['bunny.outcome'] === 'accepted');
 
-  const crashed = spawnRuntime(context, FIXTURE, ['lamp-crash', ...args]);
+  const crashed = spawnRuntime(context, FIXTURE, [scenario, ...args]);
   assert.deepEqual(await crashed.exited, {code: null, signal: 'SIGKILL'});
   assert.equal(of(crashed, 'lamp', 'command.executing').length, 1, 'the lamp had the command once');
   assert.equal(of(crashed, 'core', 'message.received').length, 0, 'nothing was published before the kill');
