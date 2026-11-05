@@ -47,7 +47,8 @@ export function createArtSchedule(options:Options) {
     if(!active()||!policy.enabled)return 'disabled';
     if(data.record.settingsRevision!==item.settingsRevision)return 'policy-changed';
     if(at>item.opportunity.startAtMs+item.opportunity.toleranceMs)return 'expired';
-    if(wakingDay(at,policy)===undefined||inQuietHours(settings.quietHours,at)||inQuietHours(settings.quietHours,item.opportunity.startAtMs))return 'quiet-hours';
+    if(wakingDay(at,policy)===undefined||inQuietHours(settings.quietHours,at)||inQuietHours(settings.quietHours,item.opportunity.startAtMs)
+      ||item.opportunity.kind==='appearance'&&inQuietHours(settings.quietHours,item.opportunity.startAtMs+item.opportunity.toleranceMs+30_000))return 'quiet-hours';
     if(options.attention())return 'attention';
     if(settings.noFlourishes&&item.notice===undefined)return 'no-flourishes';
     if(item.notice!==undefined) {
@@ -71,7 +72,7 @@ export function createArtSchedule(options:Options) {
     return undefined;
   };
   const permit=(item:Pending,surface:ArtSurface):ErrorBody|undefined=>{
-    const key=surface.kind==='browser'?'browser':surface.target;
+    const key=surface.kind==='browser'?'browser':`display:${surface.target}`;
     const denied=restriction(item,surface);
     if(denied!==undefined)return errorBody('invalid-state',{detail:`scheduled art is suppressed: ${denied}`});
     if(item.used.has(key))return errorBody('invalid-state',{detail:'scheduled art already used this surface'});
@@ -203,12 +204,18 @@ export function createArtSchedule(options:Options) {
     }
     if(!data.record.policy.enabled)return;
     const day=wakingDay(at,data.record.policy);if(day===undefined)return;
-    if(data.day===null||day.startAtMs>=data.day.endAtMs&&day.startAtMs>=data.dayWatermarkMs) {
+    if(data.day===null||day.key!==data.day.key&&day.startAtMs>=data.day.endAtMs&&day.startAtMs>=data.dayWatermarkMs) {
       await store.change(value=>{value.day={...day,settingsRevision:value.record.settingsRevision,claimed:0,
         starts:planArtDay(day,value.record.policy.appearances,at,value.latestStartMs,options.settings().quietHours,choice)};value.dayWatermarkMs=Math.max(value.dayWatermarkMs,day.startAtMs);});data=state();
     }
     const current=data.day;
     if(current===null||day.key!==current.key)return;
+    if(current.settingsRevision!==data.record.settingsRevision) {
+      await store.change(value=>{if(value.day===null)return;
+        value.day.starts=planArtDay(day,value.record.policy.appearances,at,value.latestStartMs,options.settings().quietHours,choice).slice(0,Math.max(0,value.record.policy.appearances-value.day.claimed));
+        value.day.startAtMs=Math.min(value.day.startAtMs,day.startAtMs);value.day.endAtMs=Math.max(value.day.endAtMs,day.endAtMs);value.day.settingsRevision=value.record.settingsRevision;
+      });data=state();
+    }
     // A restart or a forward clock jump never replays a past opportunity.
     if(current.starts.some(start=>start<=at)) {await store.change(value=>{if(value.day!==null)value.day.starts=value.day.starts.filter(start=>start>at);});data=state();}
     const next=data.day?.starts[0];
@@ -239,7 +246,7 @@ export function createArtSchedule(options:Options) {
       await store.change(data=>{if(data.record.settingsRevision!==parsed.expectedSettingsRevision)throw new AutomationError('revision-conflict',409);
         data.record.settingsRevision++;data.record.policy=parsed.policy;data.record.status=parsed.policy.enabled?'idle':'disabled';data.record.notice=null;
         data.record.nextOpportunity=null;data.record.weather=parsed.policy.enabled&&parsed.policy.weather?'unavailable':'disabled';
-        if(data.day!==null){const day=wakingDay(now(),parsed.policy);data.day.starts=day?.key===data.day.key?planArtDay(day,parsed.policy.appearances,now(),data.latestStartMs,options.settings().quietHours,choice).slice(0,Math.max(0,parsed.policy.appearances-data.day.claimed)):[];data.day.settingsRevision=data.record.settingsRevision;}
+        if(data.day!==null)data.day.starts=[]; // Its old revision keeps replanning due until the new waking window begins.
       },parent);
       pending=undefined;grants.clear();options.inputs.set(parsed.policy);await enqueue(tick);schedule();return controls.get();
     },

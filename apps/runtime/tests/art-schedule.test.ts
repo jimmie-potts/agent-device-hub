@@ -104,23 +104,24 @@ import {deviceRecord} from './fixtures/device.js';
 import type {ArtAuto22} from '@jimmie-potts/event-contracts/v2/art';
 const artwork=(id:string):ArtworkSummary=>({artworkId:id,createdAtMs:local(7),favorite:true,feedback:null,variationOf:null,palette:['#112233'],provenance:{generatedBy:'local',factual:false},
   compositions:[{target:'ui',compositionId:(id==='new-art'?'b':'a').repeat(64),outcome:'succeeded',motion:'still',renditions:[{renditionId:'c'.repeat(64),width:320,height:320,frames:1,durationMs:0,format:'png',bytes:1,ref:'rendition.synthetic'}]}]});
-function scheduledWorld(withDisplay=false) {
+function scheduledWorld(withDisplay=false,choice:()=>number=()=>0.5,displayId='shelf-display') {
   const db=new DatabaseSync(':memory:'),clock=manualClock(local(8)),commands:Action[]=[],failures:string[]=[];
   const provider=(name:'openai'|'anthropic')=>({provider:name,available:false,ceilingMicros:0,paceMicros:0,spentMicros:0,reservedMicros:0,uncertainMicros:0,remainingMicros:0,todayMicros:0,excessMicros:0,earlierUncertainMicros:0});
   const catalog:ArtRecord={id:'art',revision:1,month:'2026-11',day:'2026-11-05',providers:[provider('openai'),provider('anthropic')],guard:{calls:0,limit:30,windowMs:3_600_000},
     gifs:{accepted:0,rejected:0},jobs:[],artworks:[artwork('saved-art')],candidates:[],retention:{recentLimit:24,recent:1,favorites:1,retained:[]}};
-  const shared=new AutomationStore(db,()=>{},{settings:{...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}},interruptSet:[...DEFAULT_INTERRUPT_SET]});
+  let currentSettings={...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}};
+  const shared=new AutomationStore(db,()=>{},{settings:currentSettings,interruptSet:[...DEFAULT_INTERRUPT_SET]});
   const store=new ArtScheduleStore(db),dispatch=(action:Action)=>{commands.push(structuredClone(action));return Promise.resolve({requestId:action.requestId??'synthetic',status:'accepted' as const});};
-  const display=deviceRecord('shelf-display',1,'tidbyt','available');
-  const targets=()=>withDisplay?[{target:'shelf-display',kind:'tidbyt' as const}]:[];
+  const display=deviceRecord(displayId,1,'tidbyt','available');
+  const targets=()=>withDisplay?[{target:displayId,kind:'tidbyt' as const}]:[];
   if(withDisplay)catalog.artworks[0]?.compositions.push({target:'tidbyt',compositionId:'d'.repeat(64),outcome:'succeeded',motion:'gif',renditions:[{renditionId:'e'.repeat(64),width:64,height:32,frames:8,durationMs:1600,format:'gif',bytes:100,ref:'rendition.synthetic-display'}]});
   const plans=createArtPlans({clock:clock.now,scheduler:clock.scheduler,active:()=>true,targets,current:()=>withDisplay?display:undefined,dispatch,operation:()=>undefined,claim:(id,digest)=>{assert.equal(shared.claimArtPlan(id,digest),true);return undefined;}});
   let enabled=false,artReads=0,weatherReads=0;
   const inputs={set:(value:typeof policy)=>{enabled=value.enabled;},art:()=>{artReads++;return enabled?catalog:undefined;},weather:()=>{weatherReads++;return undefined;}};
   const options={store,shared,core:{clock:{now:clock.now},dispatch,operation:()=>undefined},scheduler:clock.scheduler,active:()=>true,plans,current:()=>withDisplay?display:undefined,
-    settings:()=>({...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}}),attention:()=>false,inputs,choice:()=>0.5,failed:()=>{failures.push('storage');}};
+    settings:()=>currentSettings,attention:()=>false,inputs,choice,failed:()=>{failures.push('storage');}};
   let owner=createArtSchedule(options);
-  return {db,clock,commands,catalog,store,shared,failures,get owner(){return owner;},reads:()=>({artReads,weatherReads}),
+  return {db,clock,commands,catalog,store,shared,failures,setSettings:(settings:typeof currentSettings)=>{currentSettings=settings;},get owner(){return owner;},reads:()=>({artReads,weatherReads}),
     move:async(at:number)=>{clock.advance(at-clock.now());await flush();await owner.settled();await flush();},
     restart:async()=>{await owner.close();owner=createArtSchedule(options);await flush();await owner.settled();},
     close:async()=>{plans.close();await owner.close();db.close();}};
@@ -188,4 +189,61 @@ void test('ambient grant is revoked by policy edit or exact-target mismatch with
     assert.equal(w.owner.authorizeAmbient(data.authorization,revoke==='target'?'other-target':'shelf-display',data.compositionId)?.error.code,'forbidden');
     assert.equal(w.owner.authorizeAmbient(data.authorization,'shelf-display',data.compositionId)?.error.code,'forbidden');assert.equal(w.commands.length,1);
   }finally{await w.close();}}
+});
+void test('waking edits extend readable accounting bounds without refilling claimed appearances',async()=>{
+  const w=scheduledWorld();try{
+    await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false}});
+    await w.owner.save({expectedSettingsRevision:1,policy:{...policy,ambient:false,wakingEndMinute:1439}});
+    const extended=new ArtScheduleStore(w.db).get();assert.equal(extended.day?.claimed,0);assert.equal(extended.day?.endAtMs,local(23,59));
+    assert.ok(extended.day?.starts.every(at=>at<local(23,59)));assert.ok(extended.day?.starts.some(at=>at>local(22)));
+    const start=w.owner.get().nextOpportunity?.startAtMs;assert.ok(start!==undefined);await w.move(start-45_000);assert.equal(w.store.get().day?.claimed,1);
+    await w.owner.save({expectedSettingsRevision:2,policy:{...policy,ambient:false,enabled:false,wakingEndMinute:20*60}});
+    await w.owner.save({expectedSettingsRevision:3,policy:{...policy,ambient:false,wakingEndMinute:20*60}});
+    const shrunk=new ArtScheduleStore(w.db).get();assert.equal(shrunk.day?.claimed,1);assert.equal(shrunk.day?.endAtMs,local(23,59),'shrinking cannot shorten the spent accounting interval');
+    assert.ok(shrunk.day?.starts.every(at=>at<local(20)));await w.restart();assert.equal(w.store.get().day?.claimed,1);assert.deepEqual(w.failures,[]);
+  }finally{await w.close();}
+});
+void test('a quiet-hours edit after claim refuses an appearance whose full hold crosses the boundary',async()=>{
+  const w=scheduledWorld(false,()=>0.52);try{
+    const saved=await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false}});const start=saved.nextOpportunity?.startAtMs;assert.ok(start!==undefined);
+    await w.move(start-45_000);const boundary=Math.floor(start/60_000)*60_000+60_000;assert.ok(boundary<start+30_000);
+    const time=(at:number)=>{const date=new Date(at);return `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;};
+    w.setSettings({...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1},quietHours:{enabled:true,start:time(boundary),end:time(boundary+3_600_000),timeZone:null}});
+    await w.move(start);assert.equal(w.commands.length,0);assert.equal(w.store.get().day?.claimed,1);
+  }finally{await w.close();}
+});
+for(const originalEnd of [9*60,22*60])void test(`a same-day future waking start replans from end ${originalEnd} without resetting a prior claim`,async()=>{
+  const w=scheduledWorld();try{
+    const saved=await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false,wakingEndMinute:originalEnd}});const start=saved.nextOpportunity?.startAtMs;assert.ok(start!==undefined);
+    await w.move(start-45_000);assert.equal(w.store.get().day?.claimed,1);
+    await w.owner.save({expectedSettingsRevision:1,policy:{...policy,ambient:false,wakingStartMinute:10*60}});assert.equal(w.owner.get().nextOpportunity,null);
+    await w.move(local(10));const next=w.owner.get().nextOpportunity;assert.ok(next!==null);assert.ok(next.startAtMs>local(10)+45_000);
+    assert.equal(w.store.get().day?.claimed,1);await w.restart();assert.equal(w.store.get().day?.claimed,1);assert.deepEqual(w.failures,[]);
+  }finally{await w.close();}
+});
+void test('browser and an exact configured display named browser have separate one-use permits',async()=>{
+  const w=scheduledWorld(true,()=>0.5,'browser');try{
+    await w.owner.save({expectedSettingsRevision:0,policy:{...policy,targets:['browser']}});await flush();
+    const selected=w.commands.find(command=>(command.draft.data as ArtAuto22).action==='ambient');assert.ok(selected);const data=selected.draft.data as ArtAuto22;
+    assert.equal(data.action,'ambient');if(data.action!=='ambient')return;
+    assert.equal(w.commands.filter(command=>(command.draft.data as ArtAuto22).action==='present').length,1);
+    assert.equal(w.owner.authorizeAmbient(data.authorization,'browser',data.compositionId),undefined);
+    assert.equal(w.owner.authorizeAmbient(data.authorization,'browser',data.compositionId)?.error.code,'forbidden');
+  }finally{await w.close();}
+});
+void test('restart after a generation claim never replays it or presents its later completion',async()=>{
+  const w=scheduledWorld();try{
+    const saved=await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false,generation:true}});const start=saved.nextOpportunity?.startAtMs;assert.ok(start!==undefined);
+    await w.move(start-300_000);assert.equal(w.commands.length,1);const request=w.commands[0]?.requestId;assert.ok(request!==undefined);await w.restart();
+    w.catalog.artworks.unshift(artwork('new-art'));w.catalog.jobs.push({requestId:request,purpose:'appearance',admittedBy:'automatic',status:'finished',outcome:'succeeded',artworkId:'new-art',createdAtMs:start-300_000,finishedAtMs:start-60_000,targets:[]});
+    await w.move(start-45_000);await w.move(start);assert.equal(w.commands.length,1);assert.equal(w.store.get().day?.claimed,1);assert.deepEqual(w.failures,[]);
+  }finally{await w.close();}
+});
+void test('failed final handoff persistence emits no selection and keeps the opportunity spent',async()=>{
+  const w=scheduledWorld();try{
+    const saved=await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false}});const start=saved.nextOpportunity?.startAtMs;assert.ok(start!==undefined);
+    await w.move(start-45_000);w.db.exec("CREATE TRIGGER refuse_handoff BEFORE INSERT ON automation_art_claims WHEN NEW.id LIKE '%-handoff-%' BEGIN SELECT RAISE(ABORT,'synthetic'); END");
+    await w.move(start);assert.equal(w.commands.length,0);assert.equal(w.store.get().day?.claimed,1);assert.ok(w.failures.length>0);
+    w.db.exec('DROP TRIGGER refuse_handoff');await w.restart();await w.move(start+1000);assert.equal(w.commands.length,0);
+  }finally{await w.close();}
 });
