@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
-import {runCaptureStep, type CaptureStepResult} from '@jimmie-potts/app-verify';
+import type {Page} from 'playwright';
+import {runCaptureStep, type CaptureContext, type CaptureStepResult} from '@jimmie-potts/app-verify';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {SYNTHETIC_TOKEN} from '../../tests/fixtures/sign.js';
 import {SCENARIOS, TOKEN_PREFIX, runScenario, scenario} from '../../tests/scenarios/catalog.js';
@@ -20,7 +21,22 @@ async function judge(context: TestContext, at: string, step: string): Promise<Ca
   const run = await startRun(context, at, scenario);
   try {
     outputs += 1;
-    const result = await runCaptureStep(plugin, step, {
+    const original = plugin.captureSteps[step]; assert.ok(original);
+    const selected = step !== 'scenario-tidbyt-art' ? plugin : {...plugin, captureSteps: {...plugin.captureSteps, [step]: {...original,
+      run: async (given: CaptureContext) => {
+        await original.run(given);
+        await given.expect('the finalized capture stays on the authenticated exact Tidbyt preview', async () => {
+          const page = given.page as Page;
+          assert.match(new URL(page.url()).pathname, /^\/modules\/tidbyt\/content\/art\.[0-9a-f]{64}$/);
+          assert.deepEqual(await page.locator('img').evaluate(element => {
+            const image = element as HTMLImageElement;
+            return [image.complete, image.naturalWidth, image.naturalHeight];
+          }), [true, 64, 32]);
+          assert.equal(await page.getByText('Synthetic Tidbyt art preview · physical display unverified', {exact: true}).isVisible(), true);
+        });
+      },
+    }}};
+    const result = await runCaptureStep(selected, step, {
       url: run.url, outputDir: join(at, `o${outputs}`), scenario, dataDir: run.dataDir, runtimeDir: run.runtimeDir, endpoints: {harness: run.harness},
     });
     const log = await readFile(result.log, 'utf8');

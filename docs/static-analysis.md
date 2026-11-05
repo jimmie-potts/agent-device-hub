@@ -16,7 +16,7 @@ arguments and return values; they do not replace the existing manifest checks
 or prove that an arbitrary JSON file is valid. The rest of the surviving Python
 tooling keeps its existing tests and lint coverage. Broader documentation,
 performance and maintenance typing stays deferred until a concrete change or
-type-related defect justifies the next useful slice. Retained consumer packages,
+type-related defect justifies the next useful slice. Hibernated ONN native tooling is excluded from active lint discovery. Retained consumer packages,
 historical copies and hibernated work are outside this adoption.
 
 The existing Workflow checks job runs the same command for every ready PR and

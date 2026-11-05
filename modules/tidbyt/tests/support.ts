@@ -9,7 +9,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {MessageValidator, errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, sessionEntityId, type Identity, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {InProcessBus, type Participant, type Scheduler, type Snapshot} from '@jimmie-potts/sdk';
+import {InProcessBus, type ModuleManifest, type Participant, type Scheduler, type Snapshot} from '@jimmie-potts/sdk';
 import {ModuleHarness, RecordedSpans, type HarnessRecord} from '@jimmie-potts/sdk/testing';
 import type {CloudFetch} from '../src/cloud.js';
 import {DEVICE_SCHEMA, SIMULATED_SECTION, createTidbytModule, type TidbytModuleOptions} from '../src/module.js';
@@ -199,7 +199,7 @@ export class StandIn<T extends {id: string; revision: number}> {
 }
 
 /** Whether a message is a Tidbyt device record. */
-export const isDevice = (message: Message): boolean => message.dataschema === DEVICE_SCHEMA;
+export const isDevice = (message: Message): boolean => message.dataschema === DEVICE_SCHEMA || message.dataschema === 'https://bunny.invalid/events/device/2.2';
 
 export type HostOptions = {
   /** The core's sessions at start. `absent` hosts no core, so the first sync of the sessions is refused. */
@@ -228,6 +228,7 @@ export type HostOptions = {
 };
 
 export type Hosted = {
+  content: NonNullable<ModuleManifest['content']>;
   harness: ModuleHarness;
   clock: ReturnType<typeof manualClock>;
   cloud: SimulatedCloud;
@@ -311,8 +312,10 @@ export async function host(context: TestContext, options: HostOptions = {}): Pro
     }
     return cloud.fetch(url, init);
   };
+  let content: ModuleManifest['content'];
   const build = (): ModuleHarness => {
     const inner = createTidbytModule({transport, renderTimeoutMs: RENDER_TIMEOUT_MS, ...options.module});
+    content = inner.manifest.content;
     const module: import('@jimmie-potts/sdk').BunnyModule<TidbytConfig> = {
       manifest: inner.manifest,
       start: context => inner.start({...context, database: () => {
@@ -337,6 +340,7 @@ export async function host(context: TestContext, options: HostOptions = {}): Pro
     await flush();
   };
   const hosted: Hosted = {
+    content: (ref, request) => content?.(ref, request),
     harness: build(), clock, cloud, core, playback: owner, bus, published, spans, stateDir, instances, started: Promise.resolve(), wall,
     stepWall: ms => { offset += ms; },
     devices: () => published.filter(isDevice).map(message => message.data as DeviceRecord),

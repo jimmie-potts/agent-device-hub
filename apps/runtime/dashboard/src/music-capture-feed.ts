@@ -8,7 +8,7 @@ const finite = (value: number): boolean => Number.isFinite(value) && value >= 0 
 const validReading = (value: CaptureReading): boolean => Number.isSafeInteger(value.wallMs) && finite(value.wallMs) && finite(value.monotonicMs);
 type ClockAnchor = {sent: CaptureReading; received: CaptureReading; replyAt: number; lastMono: number};
 const identity = (state: CaptureState | undefined): string => state?.session.status !== undefined && state.session.status !== 'idle'
-  ? `${state.endpointId ?? ''}/${state.session.generation}` : '';
+  ? `${state.endpointId ?? ''}/${state.session.generation}/${state.session.input}/${state.session.input === 'microphone' ? state.session.microphoneId : ''}` : '';
 export class CaptureProjection {
   view: MusicCaptureView = {synced: false, state: undefined, features: undefined, clockQualified: false};
   #clock: ClockAnchor | undefined;
@@ -30,8 +30,9 @@ export class CaptureProjection {
     const bounds = this.bounds(now), state = this.view.state, frame = message.data;
     if (bounds === undefined || !this.view.synced || state?.availability !== 'available' || state.session.status !== 'active' ||
       message.source !== MUSIC_PRODUCER_SOURCE || message.subject !== state.endpointId || message.kind !== 'occurrence' ||
-      message.dataschema !== 'https://bunny.invalid/events/music-capture-features/2.0' || message.type !== 'org.bunny.music-capture.features.observed' ||
-      frame.generation !== state.session.generation || frame.input !== 'music') return;
+      !['https://bunny.invalid/events/music-capture-features/2.0', 'https://bunny.invalid/events/music-capture-features/2.1'].includes(message.dataschema) ||
+      message.type !== 'org.bunny.music-capture.features.observed' || frame.generation !== state.session.generation || frame.input !== state.session.input ||
+      (frame.input === 'microphone' && (message.dataschema.endsWith('/2.0') || state.session.input !== 'microphone' || frame.microphoneId !== state.session.microphoneId))) return;
     if (!Number.isSafeInteger(frame.sequence) || frame.sequence <= this.#sequence || !finite(frame.startMonotonicMs) || !finite(frame.endMonotonicMs) ||
       frame.endMonotonicMs <= this.#sourceEnd || Math.abs(frame.endMonotonicMs - frame.startMonotonicMs - CAPTURE_WINDOW_MS) > 0.01 ||
       !finite(frame.emittedMonotonicMs) || frame.emittedMonotonicMs < frame.endMonotonicMs ||
@@ -134,7 +135,7 @@ export class MusicCaptureFeed implements Subscription {
     const message = messages.length === 1 ? messages[0] : undefined;
     return message?.kind === 'state' && message.type === 'org.bunny.music-capture.updated' &&
       message.source === 'bunny/core' && message.subject === 'music' && message.data.id === 'music' &&
-      message.dataschema === 'https://bunny.invalid/events/music-capture-state/2.0' ? message.data : undefined;
+      ['https://bunny.invalid/events/music-capture-state/2.0', 'https://bunny.invalid/events/music-capture-state/2.1'].includes(message.dataschema) ? message.data : undefined;
   }
   #state(): void {
     const state = this.#record();

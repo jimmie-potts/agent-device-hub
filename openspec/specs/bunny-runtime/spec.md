@@ -1591,8 +1591,35 @@ A host music-producer credential SHALL have a fixed producer source, no ordinary
 
 ### Requirement: Capture state is a core responsibility
 
-The runtime SHALL publish and sync one authoritative current music-capture record through its core. It SHALL apply existing durable operator admission, command outcome, history and safe-error rules. Capture state SHALL NOT change device modes, send speaker commands or establish light participation.
+The runtime SHALL publish and sync one authoritative current music-capture record through its core, using `/2.1` while accepting supported `/2.0` inputs. It SHALL apply existing durable operator admission, command outcome, history and safe-error rules. Configured microphone capability SHALL describe selection support only. The core SHALL bind a microphone start to the advertised alias, endpoint and generation, and refuse another input's features. Capture state SHALL NOT change device modes, send speaker commands or establish light participation.
 
 #### Scenario: Explicit capture without lights
-- **WHEN** an admitted operator starts the supported capture input
-- **THEN** the core reports the resulting capture lifecycle while every device's mode and presentation remain unchanged
+- **WHEN** an admitted operator starts a supported Music or configured microphone input
+- **THEN** the core records the selected input before dispatch, reports the resulting capture lifecycle and leaves every device's mode and presentation unchanged
+
+#### Scenario: Another input's frame
+- **WHEN** a feature names the current generation but another input or microphone alias
+- **THEN** it cannot make the session active or refresh its validity
+
+#### Scenario: Changed capability
+- **WHEN** a producer attempts to replace the configured microphone on an existing endpoint
+- **THEN** the core refuses the replacement without refreshing its clock qualification; a changed selection requires an explicit new producer invocation
+
+#### Scenario: Old durable state and restart
+- **WHEN** the upgraded runtime reads a prior Music-only state or restarts after microphone capture
+- **THEN** it can serve its single current record, retires old endpoint capability and unfinished authority truthfully, and sends no prior start again
+
+#### Scenario: Configured microphone in shared controls
+- **WHEN** the shared controls receive a supported state record with a configured microphone alias
+- **THEN** they offer that alias for explicit selection without claiming device presence or permission; Start names the selection and an unavailable or refused input is reported honestly
+### Requirement: ONN hibernation governs active availability
+
+The system SHALL keep ONN dormant until a new owner decision and restored verification. Hibernation SHALL override the active ONN behavior described by this capability. It SHALL expose no ONN controls, observations, title-history pages, MCP tools or runtime registration. Dedicated ONN default checks SHALL be dormant. Retained source, private history, stored-command privacy and backup/upgrade compatibility SHALL remain intact without data migration or deletion. Shared dashboard authentication, keyboard accessibility and reconnect checks SHALL remain active.
+
+#### Scenario: Start and browse after hibernation
+- **WHEN** a hibernated release starts or a client opens a saved ONN page
+- **THEN** no ONN writer starts or command is replayed, no ONN page/control is advertised, and the shared shell handles the unavailable route
+
+#### Scenario: Preserve historical state
+- **WHEN** an upgrade encounters retained ONN stores or historical omitted-text commands
+- **THEN** those files and private identities remain preserved, without reactivating ONN or exposing text

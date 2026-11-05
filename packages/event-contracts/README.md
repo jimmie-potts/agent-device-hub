@@ -742,3 +742,42 @@ configured target, notice/attention, original opportunity/expiry and current
 configuration/generation guards. Only that module may request it; the core
 tracks one microduck-auto operation. Public HTTP/SDK grants and MCP cannot invoke
 internal dispatch. Robot-local schemas remain owned by the module.
+
+### Home art reservations
+
+The core publishes `home-layout/2.1`. It keeps the version-1 arrangement record
+and adds optional `art: {format, pinned}` metadata on the `art` widget only.
+`format` is `auto`, `banner`, `square` or `tall`; `pinned` is a boolean. Old
+arrangements remain valid. The registered `home-layout/2.0` schema is unchanged.
+The existing `home-layout-set/2.0` command accepts this optional metadata, using
+the additive optional-command-field convention; its revision guard and outcomes
+are unchanged. The private core store needs no migration.
+
+Art placement stores no artwork identity, media, provider settings or feedback.
+Only explicit owner actions save layout options. Automatic free-space fitting
+never publishes a command. The art module continues to own the catalog and
+`art-catalog-edit/2.0` handles explicit favorite and feedback changes.
+
+An older Home save that retains the art placement but omits its optional options
+preserves the saved format and pin. Explicit options replace them; removing the
+reservation or resetting the arrangement still removes them.
+
+### Selected microphone capture (`music-capture-*/2.1`)
+
+`registerMusicCaptureFamilies` registers unchanged 2.0 schemas and five additive
+2.1 schemas for endpoint, work, features, control and state. The browser-safe
+`v2/music-capture-data` export owns their shared constants and types; the server
+module re-exports them and retains validation. Endpoint capability contains only
+`microphone: {id}`. Microphone start and feature records use `input: "microphone"`
+and `microphoneId`, a bounded public alias. Device UIDs and names are forbidden.
+Configured capability says nothing about device presence or authorization.
+
+The core publishes one `music-capture-state/2.1` record through both sync and live
+updates, including for Music-only producers. Bundled readers explicitly accept
+state 2.0 and 2.1. They do not treat an unknown version as compatible. Music start
+and all stop work remain 2.0; microphone start uses 2.1. Music features remain
+2.0; microphone features use 2.1. Progress and endpoint-loss contracts remain 2.0.
+Existing 2.0 schemas are unchanged and reject microphone fields. This follows the
+same registered-version migration as `device/2.1`; state is never dual-published.
+The capture tests cover both accepted versions, closed fields and bounds, and
+source/alias association. The dashboard gates each meter by that provenance.

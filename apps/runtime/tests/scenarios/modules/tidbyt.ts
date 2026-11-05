@@ -1,14 +1,16 @@
 // The Tidbyt module's scenarios (Hub #930, #999): agent status and now playing as two tiles in the Tidbyt's rotation, on
 // a simulated cloud. The catalog collects this file.
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {OperationRecord, PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {ArtState} from '@jimmie-potts/event-contracts/v2/art-state';
 import {
   SIMULATED_API_KEY, SIMULATED_DEVICE, SIMULATED_SECTION as TIDBYT_SIMULATED_SECTION, nowPlayingFrame, nowPlayingView, picture, statusFrame, statusView,
-  type CloudState,
+  MOMENT_INSTALLATION, TRONBYT_SIMULATED_SECTION, type CloudState, type TronbytState,
 } from '@jimmie-potts/tidbyt';
 import {approvalPrompt, approvalResolved, sessionStarted, turnStarted} from '../../fixtures/agents.js';
-import {CORE_FAMILIES, act, deviceState, expect, holds, publish, running, show, waiting, type Harness, type Outcome, type Scenario} from '../framework.js';
+import {CORE_FAMILIES, StepFailure, act, answers, bodyOf, deviceState, expect, holds, publish, recorded, refusedWith, running, show, waiting, type Harness, type Outcome, type Scenario} from '../framework.js';
 import {PLAYBACK_SECTION, playbackShows} from './playback.js';
+import {PIXOO_FAMILIES, PIXOO_ID, PIXOO_SECTION, pixooDevice, pixooState} from './pixoo.js';
 
 /** What the simulated cloud shows. */
 const cloudState = (h: Harness): CloudState => deviceState<CloudState>(h, 'tidbyt');
@@ -125,4 +127,147 @@ const tidbytTiles: Scenario = {
   ],
 };
 
-export const scenarios: readonly Scenario[] = [tidbytTiles];
+const artState = (h: Harness): ArtState | undefined => h.reader.states<ArtState>('art', 'bunny/modules/art')[0]?.data;
+const staged = (h: Harness): string | undefined => artState(h)?.candidates.find(candidate => candidate.target === 'tidbyt')?.compositionId;
+const serverState = (h: Harness): TronbytState => deviceState<TronbytState>(h, 'tidbyt');
+const nativeArt = (h: Harness) => serverState(h).installations.bunnyart;
+const artCalls = (h: Harness) => deviceState<{imageCalls: number; ideaCalls: number}>(h, 'art');
+const artSyncBeforeRestart = new WeakMap<Harness, number>();
+const {nowPlaying: _card, ...ART_SECTION} = TRONBYT_SIMULATED_SECTION;
+
+/** Real producer, tracker, worker and queue, through strict simulated transports and authenticated content. */
+const tidbytArt: Scenario = {
+  id: 'tidbyt-art', title: 'exact animated art is staged privately and joins the synthetic Tronbyt rotation without a takeover',
+  seed: {modules: ['core', 'tidbyt', 'art'], config: {tidbyt: ART_SECTION}, sections: {art: {}}, follows: [CORE_FAMILIES, {owner: 'bunny/modules/art', families: ['art']}, {owner: TIDBYT_OWNER, families: ['device']}]},
+  keepCapturePage: true,
+  capture: async (context, harness) => {
+    const compositionId = staged(harness);
+    if (compositionId === undefined) throw new StepFailure('the exact Tidbyt preview is missing');
+    const {captureTidbytArt} = await import('../../../verify/tidbyt-art-browser.js');
+    await captureTidbytArt(context, harness, compositionId);
+  },
+  steps: [
+    expect('the producer and exact-art Tidbyt are running', h => running(h, ['core', 'art', 'tidbyt'])),
+    expect('the Tidbyt declares implemented art while visible output remains unknown', h => {
+      const record = tidbytDevice(h);
+      return record?.capabilities.moments.supported === true && record.capabilities.moments.art?.maxBytes === 163_840 && record.observed.status === 'unknown' || 'exact art capability or unknown visible status missing';
+    }),
+    expect('anonymous profile reads are refused', answers({as: 'anonymous', method: 'GET', path: '/modules/tidbyt/content/art-profile'}, answer => refusedWith(answer, 401, 'unauthenticated'))),
+    expect('the producer has synchronized the available display owner', h => h.logs().some(({record}) => record.event_name === 'runtime.sync.served'
+      && record.attributes['bunny.participant'] === 'bunny/modules/art' && record.attributes['bunny.pattern'] === 'sync device') || 'the producer has not yet resolved its display', 5000),
+    act('the owner requests one synthetic ambient composition for Tidbyt', async h => {
+      const answer = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/art-request', body: {target: 'art', requestId: 'tidbyt-ambient-art', data: {
+        action: 'start', purpose: 'ambient', origin: {kind: 'owner'}, targets: ['tidbyt'], text: 'SYNTHETIC_TIDBYT_MOON',
+      }}});
+      if (answer.status !== 200) throw new StepFailure(`art request returned ${answer.status}`);
+    }),
+    expect('the real producer receives confirmed staging', h => staged(h) !== undefined || `no confirmed staged candidate; jobs ${show(artState(h)?.jobs)}`, 15_000),
+    expect('the owner request has its own durable observed admission', h => recorded(h, 'tidbyt-ambient-art', 'succeeded', 'observed')),
+    expect('the native animation has eight preserved frames and delays, in the background', h => {
+      const shown = nativeArt(h), animation = shown?.animation;
+      return shown?.immediate === 0 && animation?.frames.length === 8 && animation.delaysMs.every(delay => delay === 200) && serverState(h).pinnedApp === null || 'the exact background animation is missing';
+    }, 17_000),
+    expect('authenticated metadata identifies exactly the WebP the server decoded', async h => {
+      const response = await h.gateway({as: 'reader', method: 'GET', path: `/modules/tidbyt/content/art-info.${String(staged(h))}`});
+      const info = bodyOf<{frames: number; delaysMs: number[]; sha256: string; bytes: number; visible: string}>(response), animation = nativeArt(h)?.animation;
+      return response.status === 200 && info?.sha256 === animation?.sha256 && info?.bytes === animation?.byteLength && info?.frames === 8
+        && show(info.delaysMs) === show(animation?.delaysMs) && info.visible === 'unverified' || 'metadata does not match the independently decoded native bytes';
+    }),
+    expect('the exact preview is authenticated and readable as WebP', async h => {
+      const path = `/modules/tidbyt/content/art.${String(staged(h))}`;
+      const denied = await h.gateway({as: 'anonymous', method: 'GET', path});
+      if (refusedWith(denied, 401, 'unauthenticated') !== true) return 'anonymous exact preview was not refused';
+      const allowed = await h.gateway({as: 'reader', method: 'GET', path});
+      return allowed.status === 200 && allowed.headers['content-type']?.startsWith('image/webp') === true || 'authenticated exact preview was unreadable';
+    }),
+    act('the runtime restarts with its saved selection and private copy', async h => {
+      artSyncBeforeRestart.set(h, h.reader.syncs('art', 'bunny/modules/art'));
+      await h.restart();
+    }),
+    expect('the restarted art and display owners are running', h => running(h, ['core', 'art', 'tidbyt'])),
+    expect('the reader has synchronized the restarted art owner before inspecting saved state', h =>
+      h.reader.syncs('art', 'bunny/modules/art') > (artSyncBeforeRestart.get(h) ?? Number.POSITIVE_INFINITY) && staged(h) !== undefined
+      || 'the restarted art copy has not completed its sync', 5000),
+    expect('selection survives independently of server evidence', async h => {
+      const response = await h.gateway({as: 'reader', method: 'GET', path: '/modules/tidbyt/content/art-status'});
+      const status = bodyOf<{selected: {compositionId: string} | null; visible: string}>(response);
+      return status?.selected?.compositionId === staged(h) && status?.visible === 'unverified' || 'saved selection or unknown visible status was lost';
+    }),
+    holds('restart neither regenerates nor repeats the completed ambient push', h => artCalls(h).imageCalls === 1 && nativeArt(h)?.pushes === 1 || 'generation or completed frame replayed', 500),
+    act('an agent asks for attention', async h => {await publish(h, sessionStarted); await publish(h, turnStarted); await publish(h, approvalPrompt('tidbyt-art-attention'));}),
+    expect('attention removes ambient art through the existing tile gate', h => nativeArt(h) === undefined || 'ambient art still stands', 18_000),
+    expect('suppression keeps selection but does not claim visible art', async h => {
+      const response = await h.gateway({as: 'reader', method: 'GET', path: '/modules/tidbyt/content/art-status'});
+      const status = bodyOf<{selected: {compositionId: string} | null; presence: string; suppressed: boolean; visible: string}>(response);
+      return status?.selected?.compositionId === staged(h) && status?.presence === 'absent' && status.suppressed && status.visible === 'unverified' || 'selection and effect evidence were conflated';
+    }),
+  ],
+};
+
+const missedTargets = [
+  {target: PIXOO_ID, owner: 'bunny/modules/pixoo', detail: 'the moment missed its start window'},
+  {target: TIDBYT_SECTION.id, owner: TIDBYT_OWNER, detail: "the moment's start window has passed"},
+] as const;
+const missedRequest = (target: string): string => `missed-window-${target}`;
+const missedOperation = (h: Harness, target: string): OperationRecord | undefined =>
+  h.reader.states<OperationRecord>('operation').find(state => state.data.requestId === missedRequest(target))?.data;
+const missedDecisions = (h: Harness, target: string): string[] => h.logs().map(({record}) => record)
+  .filter(record => record.event_name.startsWith('runtime.command.') && record.attributes['bunny.request.id'] === missedRequest(target))
+  .map(record => `${record.event_name} ${record.severity_text} ${String(record.attributes['bunny.code'] ?? '')}`.trim());
+const missedRecords = (h: Harness): string => show(missedTargets.map(({target}) => ({operation: missedOperation(h, target), decisions: missedDecisions(h, target)})));
+const beforeDuplicate = new WeakMap<Harness, string>();
+const noMissedWrites = (h: Harness): Outcome => {
+  const server = serverState(h);
+  return pixooState(h).sent === 0 && server.pinWrites === 0 && server.anonymous === 0
+    && !server.calls.some(call => call.method !== 'GET' && (call.path.endsWith(`/${MOMENT_INSTALLATION}`) || call.path.endsWith('/push')))
+    || 'a refused moment uploaded, pinned or removed display content';
+};
+async function sendMissed(h: Harness): Promise<void> {
+  const failures: string[] = [];
+  for (const {target, detail} of missedTargets) {
+    const answer = await h.gateway({as: 'operator', method: 'POST', path: '/api/v2/commands/moment-play', body: {
+      target, requestId: missedRequest(target), data: {momentId: `missed-${target}`, mood: 'celebrate', durationMs: 8000,
+        priorityClass: 'event', coversStatus: true, startAtMs: 1, toleranceMs: 1000},
+    }});
+    const refusal = refusedWith(answer, 409, 'invalid-state');
+    if (refusal !== true || bodyOf<{error: {detail?: string}}>(answer)?.error.detail !== detail) {
+      failures.push(`${target}: ${refusal === true ? 'the missed-window detail changed' : refusal}`);
+    }
+  }
+  if (failures.length > 0) throw new StepFailure(failures.join('; '));
+}
+
+/** Refused after delivery, before admission: both owners must remain distinguishable from an undelivered command. */
+const missedMomentStart: Scenario = {
+  id: 'missed-moment-start', title: 'both displays report a delivered moment refused for its missed start, without replay or device writes',
+  seed: {modules: ['core', 'playback', 'pixoo', 'tidbyt'], config: {playback: PLAYBACK_SECTION, pixoo: PIXOO_SECTION, tidbyt: TRONBYT_SIMULATED_SECTION},
+    follows: [CORE_FAMILIES, {owner: 'bunny/core', families: ['operation']}, PIXOO_FAMILIES, {owner: TIDBYT_OWNER, families: ['device']}]},
+  steps: [
+    expect('both real display owners are running with their declared moment capability', h => {
+      const devices = [pixooDevice(h), tidbytDevice(h)];
+      return devices.every(device => device?.availability === 'available' && device.capabilities.moments.supported) || 'a moment owner is unavailable';
+    }),
+    act('the operator sends a missed moment through the authenticated gateway to each display', sendMissed),
+    expect('each declared owner replied after delivery, with a tracked missed-window refusal and no effect', h => {
+      for (const {target, owner, detail} of missedTargets) {
+        const record = missedOperation(h, target);
+        if (record?.status !== 'rejected' || record.result !== 'failed' || record.evidence !== 'none'
+          || record.target !== target || record.reply !== 'invalid-state' || record.requestedBy !== 'bunny/parts/operator'
+          || record.error?.code !== 'invalid-state' || record.error.detail !== detail) {
+          return `${target}: ${show(record)}`;
+        }
+        if (!h.reader.states<DeviceRecord>('device', owner).some(state => state.data.id === target)) return `${target}: its declared owner is missing`;
+        const decisions = missedDecisions(h, target);
+        if (show(decisions) !== show(['runtime.command.admitted INFO', 'runtime.command.replied INFO invalid-state'])) return `${target}: ${show(decisions)}`;
+      }
+      return true;
+    }),
+    act('the operator repeats each identical request after its refusal', async h => {beforeDuplicate.set(h, missedRecords(h)); await sendMissed(h);}),
+    holds('duplicates retain the same refusal records and send no native display command', h => {
+      if (missedRecords(h) !== beforeDuplicate.get(h)) return 'a duplicate changed its saved operation';
+      return noMissedWrites(h);
+    }, 2000),
+  ],
+};
+
+export const scenarios: readonly Scenario[] = [tidbytTiles, tidbytArt, missedMomentStart];

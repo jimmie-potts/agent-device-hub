@@ -11,7 +11,7 @@
 //
 // A moment (ADR 0006) is a bounded takeover: one queue turn reads the server's pin, pushes the frame to interrupt the
 // display and pins it; a timer holds it; another turn releases it, and the display returns to whatever the rotation is
-// then. It yields to attention and to any pin, and any other command ends it. No frame is stored and nothing replays. A
+// then. It yields to attention and to any pin, and another display-control command ends it. No mood frame is stored or replayed. A
 // row marks a takeover that may stand on the server from before its first write until its release was answered, so a
 // release that failed, or a stop or a crash during the hold, is a fresh release later.
 import {createHash} from 'node:crypto';
@@ -19,6 +19,10 @@ import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MessageValidator, SCHEMA_BASE, errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {commandSupported, registerDeviceFamilies, type Capabilities, type CompletedOutcome, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, type MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
+import {artCommandRefusal} from '@jimmie-potts/event-contracts/v2/art';
+import type {ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import {ART_PROFILE} from './art-profile.js';
+import type {HeldArt} from './art.js';
 import {SdkError, fullDisk, recordLog, type AddMessage, type Cancel, type Command, type LogFields, type ModuleContext, type Reply, type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import type {WriteResult} from './cloud.js';
 import {MOMENT_MOODS, type MomentPicture} from './moment-card.js';
@@ -78,10 +82,10 @@ export function displayModes(nowPlaying: boolean): string[] {
 const pinnedTile = (mode: string): TileName | undefined => mode === 'pin-status' ? 'status' : mode === 'pin-now-playing' ? 'now-playing' : undefined;
 
 /** What the Tronbyt backend offers. Every capability not listed stays unsupported, and the cloud's stay all unsupported. */
-export function displayCapabilities(nowPlaying: boolean): Capabilities {
+export function displayCapabilities(nowPlaying: boolean, art = false): Capabilities {
   return {
     power: UNSUPPORTED, brightness: {supported: true, minimum: 0, maximum: 100}, modes: {supported: true, values: displayModes(nowPlaying)},
-    moments: {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_DURATION_MS, coversStatus: true},
+    moments: {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_DURATION_MS, coversStatus: true, ...(art ? {art: {formats: ['png', 'gif'] as ('png' | 'gif')[], maxBytes: ART_PROFILE.maxBytes}} : {})},
     media: UNSUPPORTED, scenes: UNSUPPORTED, zones: UNSUPPORTED, preview: UNSUPPORTED,
   };
 }
@@ -249,10 +253,11 @@ export type DisplayControlOptions = {
   presentation: () => 'attention' | 'status' | 'idle' | 'unknown';
   /** Supplies the frame a moment shows. */
   picture: MomentPicture;
+  art?: (compositionId: string) => HeldArt | ErrorBody;
 };
 
 /** The one moment in hand, from its acceptance to its outcome. `ended` says why it stops before its time, and `taking` that its takeover's turn is queued. */
-type Moment = {data: MomentPlayRequest; ended: 'yielded' | 'command' | undefined; wake: (() => void) | undefined; taking: boolean};
+type Moment = {data: MomentPlayRequest; exact?: Uint8Array; ended: 'yielded' | 'command' | undefined; wake: (() => void) | undefined; taking: boolean};
 
 /** The display's mode, brightness and pin, and the commands that change them. */
 export class DisplayControl {
@@ -286,7 +291,7 @@ export class DisplayControl {
   snapshot(): Pick<DeviceRecord, 'capabilities' | 'desired' | 'pending' | 'pendingKinds' | 'lastOutcome' | 'configurationRevision'> {
     const {mode, brightness, configurationRevision} = this.#display;
     return {
-      capabilities: displayCapabilities(this.#options.nowPlaying), configurationRevision, pending: this.#pending.size, pendingKinds: [...new Set(this.#pending.values())],
+      capabilities: displayCapabilities(this.#options.nowPlaying, this.#options.art !== undefined), configurationRevision, pending: this.#pending.size, pendingKinds: [...new Set(this.#pending.values())],
       desired: {power: UNKNOWN, brightness: brightness === undefined ? UNKNOWN : known(brightness), mode: known(mode)},
       lastOutcome: this.#lastOutcome === undefined ? UNKNOWN : {status: 'known', outcome: this.#lastOutcome},
     };
@@ -301,6 +306,11 @@ export class DisplayControl {
   immediate(): boolean {
     const moment = this.#moment;
     return this.#display.mode === 'interrupt' && (moment === undefined || !moment.taking || moment.ended !== undefined);
+  }
+
+  /** Ambient changes wait for owner pins, commands and the existing takeover/release owner. */
+  holdsAmbient(): boolean {
+    return pinnedTile(this.#display.mode) !== undefined || this.#pending.size > 0 || this.#mayStand;
   }
 
   /** Ends the moment in hand when what the display must show now outranks it. */
@@ -318,10 +328,11 @@ export class DisplayControl {
     const {store, commit, track} = this.#options;
     const spec = COMMANDS[family];
     // A refusal here proves no effect: nothing has been stored or sent.
-    if (command.dataschema !== spec.dataschema) return errorBody('invalid-request', {detail: 'the command is not of the family its key names'});
+    if (command.dataschema !== spec.dataschema && !(family === 'moment-play' && command.dataschema === `${SCHEMA_BASE}moment-play/2.1`)) return errorBody('invalid-request', {detail: 'the command is not of the family its key names'});
     const checked = validator().validate(command);
     if (!checked.ok) return errorBody(checked.error.code, {detail: 'the command does not match its family\'s schema'});
     const {data} = command;
+    if (family === 'moment-play' && data.art !== undefined) {const refused = artCommandRefusal(command.source); if (refused !== undefined) return refused;}
     const {requestId} = data;
     const digest = createHash('sha256').update(canonical({family, subject: command.subject, data})).digest('hex');
     let earlier;
@@ -347,9 +358,16 @@ export class DisplayControl {
     if (this.#options.stopping()) return errorBody('unavailable', {detail: 'the Tidbyt module is stopping'});
     if (this.#pending.size >= MAX_PENDING) return errorBody('capacity', {detail: 'too many commands wait for the Tidbyt'});
     const moment = family === 'moment-play' ? data as unknown as MomentPlayRequest : undefined;
+    let exact: Uint8Array | undefined;
     if (moment !== undefined) {
       const refusal = this.#refusal(moment);
       if (refusal !== undefined) return refusal;
+      if (moment.art !== undefined) {
+        const copy = this.#options.art?.(moment.art.compositionId);
+        if (copy === undefined) return errorBody('unsupported-capability', {detail: 'the Tidbyt does not offer exact art'});
+        if ('error' in copy) return copy;
+        exact = copy.webp;
+      }
     }
 
     // Store the accepted command before replying, with the record that shows it pending.
@@ -359,7 +377,7 @@ export class DisplayControl {
     if (moment === undefined) this.#display.configurationRevision += 1;
     if (family === 'brightness-set') this.#display.brightness = Number(data.percent);
     this.#pending.set(key, family);
-    const inHand: Moment | undefined = moment === undefined ? undefined : {data: moment, ended: undefined, wake: undefined, taking: false};
+    const inHand: Moment | undefined = moment === undefined ? undefined : {data: moment, ...(exact === undefined ? {} : {exact}), ended: undefined, wake: undefined, taking: false};
     if (inHand !== undefined) this.#moment = inHand;
     const accepted = await commit(command, () => {
       store.accept(command.source, requestId, digest, family, command.traceparent);
@@ -481,10 +499,10 @@ export class DisplayControl {
   /** A moment's refusal at admission, which proves no effect: nothing was stored or sent. */
   #refusal(moment: MomentPlayRequest): Reply | undefined {
     const {store, context: {clock}} = this.#options;
-    if (!commandSupported(displayCapabilities(this.#options.nowPlaying), {family: 'moment-play', data: moment})) {
+    if (!commandSupported(displayCapabilities(this.#options.nowPlaying, this.#options.art !== undefined), {family: 'moment-play', data: moment})) {
       return errorBody('unsupported-capability', {detail: 'the Tidbyt does not offer this moment'});
     }
-    if (clock.now() > moment.startAtMs + moment.toleranceMs) return errorBody('expired', {detail: 'the moment\'s start window has passed'});
+    if (clock.now() > moment.startAtMs + moment.toleranceMs) return errorBody('invalid-state', {detail: 'the moment\'s start window has passed'});
     if (this.#pending.size > 0) return errorBody('capacity', {detail: 'a command or a moment is in hand on the Tidbyt'});
     if (this.#mayStand) return errorBody('unavailable', {detail: 'the last moment has not been released yet'});
     let seen: boolean;
@@ -557,7 +575,7 @@ export class DisplayControl {
     const giveUp = new AbortController();
     let webp: Uint8Array | undefined;
     let pictureFailed: unknown;
-    const pictured = (async (): Promise<void> => { webp = await picture(data, giveUp.signal); })().catch((error: unknown) => { pictureFailed = error; });
+    const pictured = (async (): Promise<void> => { webp = moment.exact ?? await picture(data, giveUp.signal); })().catch((error: unknown) => { pictureFailed = error; });
     await Promise.race([pictured, this.#wait(moment, MOMENT_PICTURE_TIMEOUT_MS)]);
     moment.wake?.();
     giveUp.abort();

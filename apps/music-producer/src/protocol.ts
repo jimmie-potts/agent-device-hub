@@ -6,7 +6,7 @@ export type NativeFrame = Omit<CaptureFeatures, 'generation' | 'input' | 'observ
 export type NativeFailure = Pick<ErrorDetail, 'code' | 'retryable'>;
 export type NativeRecord = ({schema: 'music-native-frame/1.0'} & NativeFrame) |
   {schema: 'music-native-clock/1.0'; monotonicMs: number} |
-  {schema: 'music-native-terminal/1.0'; error: ErrorDetail};
+  {schema: 'music-native-terminal/1.0' | 'music-native-terminal/1.1'; error: ErrorDetail};
 export const MAX_NATIVE_LINE_BYTES = 2048;
 const number = (maximum: number) => ({type: 'number', minimum: 0, maximum});
 const integer = (minimum: number, maximum: number) => ({type: 'integer', minimum, maximum});
@@ -26,6 +26,18 @@ const errors = [
   ['unavailable', true, 'Music capture cleanup did not complete.'],
   ['unavailable', true, 'The Music feature consumer is unavailable.'],
 ] as const;
+const microphoneErrors = [
+  ['invalid-request', false, 'The microphone capture selection or control input is invalid.'],
+  ['invalid-message', false, 'Microphone capture contains invalid sample values.'],
+  ['invalid-message', false, 'Microphone capture timestamps are invalid.'],
+  ['unsupported-capability', false, 'Microphone capture format is unsupported or changed.'],
+  ['capacity', true, 'Microphone capture requires lock-free transfer.'],
+  ['unavailable', true, 'The selected microphone is unavailable.'],
+  ['unavailable', true, 'Microphone permission is not granted.'],
+  ['unavailable', true, 'Microphone capture could not be opened or continued.'],
+  ['unavailable', true, 'Microphone capture cleanup did not complete.'],
+  ['unavailable', true, 'The microphone feature consumer is unavailable.'],
+] as const;
 const validate = ajv.compile<NativeRecord>({oneOf: [
   closed({schema: {const: 'music-native-frame/1.0'}, sequence: integer(1, Number.MAX_SAFE_INTEGER),
     sampleRateHz: {...integer(8000, 192000), multipleOf: 10}, channels: {enum: [1, 2]}, frameCount: integer(800, 19200),
@@ -34,6 +46,8 @@ const validate = ajv.compile<NativeRecord>({oneOf: [
     onset: closed({strength: number(1), confidence: number(1)}), discontinuity: {type: 'boolean'}}),
   closed({schema: {const: 'music-native-clock/1.0'}, monotonicMs: time}),
   closed({schema: {const: 'music-native-terminal/1.0'}, error: {oneOf: errors.map(([code, retryable, detail]) =>
+    closed({code: {const: code}, retryable: {const: retryable}, detail: {const: detail}}))}}),
+  closed({schema: {const: 'music-native-terminal/1.1'}, error: {oneOf: microphoneErrors.map(([code, retryable, detail]) =>
     closed({code: {const: code}, retryable: {const: retryable}, detail: {const: detail}}))}}),
 ]});
 
