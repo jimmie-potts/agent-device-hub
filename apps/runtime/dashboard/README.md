@@ -314,8 +314,9 @@ sessions, independent of an unresolved Start. Start and Stop keep separate
 tracked attempts per light, and every disabled control states its reason.
 
 A failed read or a lost connection keeps the last fresh records as **Last
-known**, with controls disabled. Only **Refresh lighting status** reads again. A
-lost Start reply stays locked across reload and is never resent.
+known**, with controls disabled until a fresh read. A reconnect reads again on its
+own and sends nothing; after a failed or restarted read, **Refresh lighting status**
+reads again. A lost Start reply stays locked across reload and is never resent.
 `MusicLightingFeed` owns the lighting copy and the preset follower on the existing
 participant, and closes both when Audio unmounts or the connection ends.
 
