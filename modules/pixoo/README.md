@@ -589,6 +589,12 @@ the return step.
 
 ## Library migration
 
+The installed v3 reader checks its source format’s historical 1,000-frame
+profile boundary. The retained 1.x controller catalog also keeps its released
+read bounds. Current runtime imports, catalog records and previews use the media
+resource budgets and command rules described above.
+
+
 The optional offline tool `apps/runtime/dist/src/migrate-pixoo.js` can carry
 the Pixoo service's library into this module's store
 ([#931](https://github.com/jimmie-potts/agent-device-hub/issues/931)). The
