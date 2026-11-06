@@ -12,7 +12,7 @@ The core serves one `music-lighting-state/2.0` record per qualified Nanoleaf lig
 
 ### D1. A read-only lighting scope beside the capture scope
 
-`DashboardConnection.openMusicLighting(follow)` creates a `MusicLightingFeed` on the shell participant, like `openMusicCapture`. It syncs the core's lighting records and calls the Wall page's `followReactivePresets` for the Nanoleaf preset library. The follower is passed in, so the shell's Node-tested modules never import Nanoleaf frontend source. A connection loss closes the scope. A read failure or restart marks it stale, and only **Refresh lighting status** reads again. One malformed or foreign record makes the copy unavailable instead of showing a partial set.
+`DashboardConnection.openMusicLighting(follow)` creates a `MusicLightingFeed` on the shell participant, like `openMusicCapture`. It syncs the core's lighting records and calls the Wall page's `followReactivePresets` for the Nanoleaf preset library. The follower is passed in, so the shell's Node-tested modules never import Nanoleaf frontend source. A connection loss closes the scope. A read failure or restart marks it stale. A restarted copy re-syncs on its own and a reconnect reads again, both without sending anything; after a failed read only **Refresh lighting status** reads again. One malformed or foreign record makes the copy unavailable instead of showing a partial set.
 
 ### D2. Three separate kinds of evidence
 
