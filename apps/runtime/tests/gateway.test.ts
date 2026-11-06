@@ -1167,3 +1167,43 @@ it('Hub mode HTTP control refuses invalid/read-only/stale choices and deduplicat
   assert.deepEqual(await selected(), saved);
   await g.runtime.stop(); assertNoToken(g);
 });
+
+it('authenticated malformed capture actions return invalid-request without dispatching work', async context => {
+  const operator = OPERATOR(), core = createCoreModule();
+  const dispatched: Parameters<typeof core.operatorActions.dispatch>[0][] = [];
+  core.operatorActions.dispatch = async action => {dispatched.push(action); return errorBody('unavailable');};
+  const g = await gateway(context, [operator], {modules: [core]});
+  const answers: Answer[] = [];
+  for (const [index, action] of [{toString: null}, {toString: 42}, ['calibrate'], null, 42, true].entries()) {
+    answers.push(await g.ask(g.url, '/api/v2/commands/music-capture-control', {method: 'POST', token: operator.token,
+      body: {target: 'music', requestId: `malformed-capture-${index}`, data: {action, expectedRevision: 0}}}));
+  }
+  context.diagnostic(JSON.stringify({malformedActionStatuses: answers.map(answer => answer.status), codes: answers.map(codeOf), dispatched: dispatched.length}));
+  assert.deepEqual(dispatched, [], 'malformed input must not reach the capture owner');
+  assert.deepEqual(answers.map(answer => answer.status), [400, 400, 400, 400, 400, 400]);
+  assert.deepEqual(answers.map(codeOf), Array.from({length: 6}, () => 'invalid-request'));
+  assert.equal(g.logs.filter(record => record.event_name === 'command.queued').length, 0);
+  assertNoToken(g);
+});
+
+it('authenticated capture actions preserve canonical 2.0, 2.1 and 2.2 selection', async context => {
+  const operator = OPERATOR(), core = createCoreModule();
+  const dispatched: Parameters<typeof core.operatorActions.dispatch>[0][] = [];
+  core.operatorActions.dispatch = async action => {dispatched.push(action); return errorBody('unavailable');};
+  const g = await gateway(context, [operator], {modules: [core]});
+  const binding = {endpointId: 'synthetic-endpoint', generation: '00000000-0000-4000-8000-000000000721', microphoneId: 'studio-mic', sampleRateHz: 48000, channels: 2};
+  const settings = {sensitivity: 1, smoothingMs: 100, emphasis: {bass: 1, mid: 1, treble: 1}, gate: {mode: 'off'}};
+  const data = [{action: 'start', expectedRevision: 0, endpointId: 'synthetic-endpoint', input: 'music'},
+    {action: 'stop', expectedRevision: 0},
+    {action: 'start', expectedRevision: 0, endpointId: 'synthetic-endpoint', input: 'microphone', microphoneId: 'studio-mic'},
+    {action: 'calibrate', expectedRevision: 0, binding},
+    {action: 'cancel-calibration', expectedRevision: 0, binding, operationId: 'quiet-one'},
+    {action: 'apply-tuning', expectedRevision: 0, binding, expectedSettingsRevision: 0, settings}];
+  for (const [index, value] of data.entries()) {
+    const answer = await g.ask(g.url, '/api/v2/commands/music-capture-control', {method: 'POST', token: operator.token,
+      body: {target: 'music', requestId: `valid-capture-${index}`, data: value}});
+    assert.equal(answer.status, 503); assert.equal(codeOf(answer), 'unavailable', 'only the inert owner fixture refuses a valid command');
+  }
+  assert.deepEqual(dispatched.map(action => action.draft.dataschema), ['2.0', '2.0', '2.1', '2.2', '2.2', '2.2'].map(version => `https://bunny.invalid/events/music-capture-control/${version}`));
+  assertNoToken(g);
+});
