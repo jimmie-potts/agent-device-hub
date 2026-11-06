@@ -1,10 +1,10 @@
 // One durable Hub selection (#924). Saving completes the core action; native commands have independent outcomes.
 // Starts, syncs and participant assignment never apply or replay a selection.
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
-import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {nativeMode} from '@jimmie-potts/event-contracts/v2/devices';
 import {MAX_MODE_OVERRIDES, normalizeModeState} from '@jimmie-potts/event-contracts/v2/mode';
-import {registerCoreFamilies, type ModeSetRequest, type ModeState} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator, type ModeSetRequest, type ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import {fullDisk, type Command, type Reply, type StateDraft, Outcome} from '@jimmie-potts/sdk';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreTransaction} from './store.js';
@@ -27,7 +27,7 @@ const noAdmission: ModeAdmission = {admit: () => false, complete: () => {throw n
 export class ModePart implements CorePart {
   readonly families = ['mode'] as const;
   readonly #admission: ModeAdmission;
-  readonly #validator = new MessageValidator();
+  readonly #validator = coreValidator();
   #core: CoreHandle | undefined;
   #read: StatementSync | undefined;
   #save: StatementSync | undefined;
@@ -38,7 +38,6 @@ export class ModePart implements CorePart {
 
   constructor(admission: ModeAdmission = noAdmission) {
     this.#admission = admission;
-    registerCoreFamilies(this.#validator);
   }
 
   /** Assigned once after qualified host startup, before the gateway serves; sends nothing. */

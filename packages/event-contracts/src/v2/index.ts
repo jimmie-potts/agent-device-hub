@@ -90,6 +90,7 @@ export class MessageValidator {
   readonly #envelope: ValidateFunction;
   readonly #payloads = new Map<string, ValidateFunction>();
   readonly #checks = new Map<string, PayloadCheck>();
+  #sealed = false;
 
   constructor() {
     this.#ajv.addSchema(schemas.blocks as object);
@@ -102,9 +103,11 @@ export class MessageValidator {
 
   /**
    * Registers a payload schema under `https://bunny.invalid/events/<family>/<major>.<minor>`, with an optional check
-   * for rules the schema cannot state. A message that fails the check is refused with `invalid-message`.
+   * for rules the schema cannot state. A message that fails the check is refused with `invalid-message`. A sealed
+   * validator refuses every registration.
    */
   register(dataschema: string, schema: object, check?: PayloadCheck): void {
+    if (this.#sealed) throw new Error(`sealed validator: ${dataschema}`);
     const id = parseSchemaId(dataschema);
     if (id === undefined || !/^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)*$/.test(id.family) || !/^[0-9]+\.[0-9]+$/.test(id.version)) {
       throw new Error(`invalid dataschema: ${dataschema}`);
@@ -115,6 +118,12 @@ export class MessageValidator {
     if (this.#payloads.has(dataschema)) throw new Error(`schema already registered: ${dataschema}`);
     this.#payloads.set(dataschema, this.#ajv.compile(schema));
     if (check !== undefined) this.#checks.set(dataschema, check);
+  }
+
+  /** Refuses every later registration, so that owners sharing this validator all accept the same messages. */
+  seal(): this {
+    this.#sealed = true;
+    return this;
   }
 
   // A registered check never makes validation throw: an empty or non-string answer, or a throw, still refuses.

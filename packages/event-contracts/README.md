@@ -99,7 +99,8 @@ follows the strict profile for new code.
     throws or returns an empty or non-string answer still refuses the message
     with `invalid-message`, and validation never throws. `validate(input, {nowMs})`
     returns `{ok:true,value}` or `{ok:false,error}`, where `error` is the
-    registry's error detail.
+    registry's error detail. `seal()` makes every later `register` throw, so
+    owners that share one validator accept the same messages.
   - `ErrorCode`, the registry's codes as a literal type, and `RETRYABLE`, each
     code's fixed `retryable` flag, from `src/v2/errors.ts`. A test keeps that
     table equal to `errors.json`, code for code and flag for flag. A code
@@ -288,7 +289,11 @@ The rules:
   entity. A sync replaces the consumer's membership of the synced families.
 
 `registerCoreFamilies(validator)` registers every family. A family's messages
-must use its kind and type. `MessageValidator.register` takes an optional check
+must use its kind and type. `coreValidator()` returns the process's one sealed
+validator with exactly these families, compiled on first use. An owner that
+needs only the core families uses it rather than compiling its own copy, because
+each copy blocks the event loop while Ajv compiles it, about 90 ms on a fast
+machine (Hub #1503). `MessageValidator.register` takes an optional check
 for rules a schema cannot state. The core families use it to refuse:
 - a known parent in another provider, client, host or source, or with the same
   session ID (cross-source parentage);
