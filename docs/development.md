@@ -569,9 +569,9 @@ rename) and maps it to check groups with the small explicit table in
 | chompi | The CHOMPI bridge, `packages/chompi-protocol/**` and `firmware/**` | The bridge's suites, verification steps and browser check, and the Firmware job |
 | shared | Only full coverage | The shared packages' and contracts' suites, the Python consumers, the old dashboard's tests, the app-verify core and the observability browser check |
 
-Build, typecheck, lint and the workspace-audit tests always run for ready
-candidates. Ordinary Markdown, `openspec/**` and documentation tooling select
-no product group. Delivery and validation policy paths, `AGENTS.md`,
+Build, typecheck, lint and the workspace-audit and tracker-audit tests always
+run for ready candidates. Ordinary Markdown, `openspec/**` and documentation
+tooling select no product group. Delivery and validation policy paths, `AGENTS.md`,
 `docs/sdlc.md`, `docs/development.md` and the admission capability spec, retain
 full coverage. Every other path selects
 full coverage: shared packages and contracts, root manifests, the lockfile and
@@ -1365,6 +1365,33 @@ PR states and Docker Desktop for the Docker sections; a missing tool, a PR older
 than the newest 300, or no record naming an image is reported as a note, not a
 failure. Its classification and collection tests are
 `npm run test:workspace-audit`, run in core CI.
+
+### Tracker audit
+
+`npm run audit:tracker` prints the read-only report that
+[Tracker audit](sdlc.md#tracker-audit) acts on, and exits 0 when clean, 1 with
+findings, 2 when a read failed or an item could not be checked, and 3 on a
+usage error. Every GitHub request goes through the delivery preflight's
+read-only client (`scripts/delivery-preflight/github.mjs`), which refuses any
+request other than a GET to the GitHub API or one of the preflight's own
+GraphQL queries, so the audit cannot write. It needs a token from `GH_TOKEN`,
+`GITHUB_TOKEN` or `gh auth token`. Pass `-- --hours <n>` for the 72-hour
+window, `-- --stale-review-days <n>` for the five-day review threshold and
+`-- --json` for the raw report. Two parts of it are heuristics:
+
+- A PR references an issue when its body names it in a `Refs` or closing
+  clause, such as `Refs #12, #13` or `Closes #14`; a bare mention or
+  `Part of #N` does not count. A merged PR that refs an epic or other parent
+  therefore reports that parent when nobody has commented since, even where
+  [Tracker reconciliation](sdlc.md#tracker-reconciliation) needed no update.
+- A cleanup outcome is recorded when a comment on the PR, or on an issue its
+  body references, was updated at or after the merge, names cleanup or a
+  worktree, and uses one of step 8's outcome words: removed, retained or not
+  applicable. It does not check that each resource has an outcome or that a
+  removal cites its readback, and a comment that only quotes the rule passes.
+
+Its fixture tests, `npm run test:tracker-audit`, run in core CI without
+network access.
 
 ## Runtime dashboard checks
 

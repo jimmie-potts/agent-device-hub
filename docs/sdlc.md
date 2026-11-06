@@ -584,6 +584,24 @@ release images and other sessions' builds share that daemon, and whether a
 build is running cannot be seen from one session. Pruning is the owner's
 decision, taken when no session is building.
 
+### Tracker audit
+
+Run `npm run audit:tracker` from any checkout after a batch of deliveries,
+before a handoff or session closeout, and about weekly; nothing schedules it.
+It is read-only and makes no tracker write. Within the window (72 hours by
+default, `-- --hours <n>`) it lists closed issues that keep a workflow label
+and merged PRs with no cleanup outcome under
+[Cleanup after delivery](#cleanup-after-delivery) step 8. Across all open
+issues it lists those without exactly one `status:*` label, leaving out `idea`
+issues; `status:in-progress` or `status:review` issues with no comment since a
+PR that references them merged; and `status:review` issues with no update for
+more than five days (`-- --stale-review-days <n>`). Each finding names its
+rule. Treat a finding as a prompt to check that record, not as proof: the PR
+link and the cleanup signal are heuristics
+([Tracker audit](development.md#tracker-audit)). Correct a confirmed gap under
+[Tracker reconciliation](#tracker-reconciliation), within the owning writer's
+authority; the audit itself never writes.
+
 <a id="depot-ci-evidence"></a>
 
 ### CI evidence
