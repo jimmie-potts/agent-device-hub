@@ -19,6 +19,13 @@ Pixoo SHALL accept supported `art-stage` minors only from the core and SHALL pre
 - **WHEN** the same unexpired composition is staged with different bytes
 - **THEN** it is refused with duplicate-conflict and the original copy is unchanged
 
+#### Scenario: A retained copy is verified during renewal
+
+- **WHEN** the request expires or the module stops while it verifies the retained bytes
+- **THEN** the renewal fails and the previous copy keeps its expiry
+- **WHEN** a matching renewal remains valid with a shorter requested lifetime
+- **THEN** the existing longer lifetime is preserved
+
 #### Scenario: Retention and restart preserve ownership
 - **WHEN** a staged copy expires or staging fails and cleanup runs
 - **THEN** unused transient copies are removed without removing any permanent library original or referenced rendition
@@ -50,3 +57,16 @@ The Pixoo SHALL preserve originals, immutable renditions and ordered frames with
 - **THEN** rendering reports the exhausted resource and preserves previously committed media
 - **WHEN** an existing installation reopens old rendition and playlist references
 - **THEN** their original identities and selected route remain readable
+
+#### Scenario: A playback dwell exceeds one native timer interval
+
+- **WHEN** physical playback holds one item for longer than the largest native timer interval
+- **THEN** the player preserves its generation and dwell until the requested elapsed duration
+- **AND** a pause or replacement cancels the remaining wait without advancing the superseded item
+
+#### Scenario: Hosted bytes and filesystem capacity
+
+- **WHEN** the losslessly encoded whole GIF exceeds the listener’s single-file budget
+- **THEN** the library keeps its original and preview, reports incompatibility, and playing or staging it reports `too-large` before a write
+- **WHEN** an admissible file cannot be stored because the filesystem or quota is full
+- **THEN** the operation reports `capacity` and preserves previous media

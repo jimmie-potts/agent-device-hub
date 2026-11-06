@@ -336,8 +336,11 @@ Above 256 frames, the core forwards `art-stage/2.1` only to a hosted Pixoo
 declaring that support in `device/2.4`. That route fetches a
 64×64 GIF and preserves every frame and delay. Each physical animation uses
 one delay, and hosted encoding requires exact GIF centiseconds and at most 256
-colors across the animation. Divoom specifies square dimensions for hosted
-GIFs and gives no frame maximum. Its earlier 20-frame direct and 500-frame
+colors across the animation. Hosted admission measures the encoded whole GIF
+against the listener’s 10 MiB file budget. The library keeps the original and
+its preview when the hosted file is too large. A full filesystem or quota
+reports `capacity`; a single file over its budget reports `too-large`.
+Divoom specifies square dimensions for hosted GIFs and gives no frame maximum. Its earlier 20-frame direct and 500-frame
 hosted trials provide examples of observed playback. [Direct command](https://docin.divoom-gz.com/web/#/5/57) · [Hosted command](https://docin.divoom-gz.com/web/#/5/54)
 
 The local library keeps mixed-delay GIFs playable in preview. Import checks

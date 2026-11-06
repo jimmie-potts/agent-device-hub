@@ -51,7 +51,7 @@ const uncertain = (detail: string): Completion => ({result: Outcome.uncertain, e
 // Device failure codes. A connectivity failure is the device being unavailable; nothing in the result says it acted.
 const DEVICE_CODES: Readonly<Record<string, ErrorCode>> = {
   offline: 'unavailable', timeout: 'unavailable', 'http-error': 'unavailable', 'protocol-error': 'unavailable', 'upload-failed': 'unavailable',
-  'device-error': 'invalid-state', 'invalid-input': 'invalid-request', cancelled: 'cancelled', 'stale-generation': 'cancelled',
+  'device-error': 'invalid-state', 'too-large': 'too-large', 'invalid-input': 'invalid-request', cancelled: 'cancelled', 'stale-generation': 'cancelled',
 };
 /** Failures in which the Pixoo answered, so the request reached it: with an error status or code, or unreadably. */
 const ANSWERED: readonly string[] = ['device-error', 'http-error', 'protocol-error'];
@@ -83,7 +83,7 @@ const REFUSALS: Readonly<Record<string, ErrorCode>> = {
   cancelled: 'cancelled', busy: 'capacity', 'not-found': 'not-found', 'revision-conflict': 'revision-conflict', 'no-context': 'invalid-state',
   'screen-off': 'invalid-state', closed: 'unavailable', 'invalid-input': 'invalid-request', 'unsupported-operation': 'invalid-request',
   'profile-limit': 'unsupported-capability', unsupported: 'invalid-request', 'decode-failed': 'invalid-request', 'upload-limit': 'too-large',
-  'pixel-limit': 'too-large', 'storage-limit': 'too-large', 'asset-referenced': 'invalid-state', 'checkpoint-owned': 'invalid-state', timeout: 'unavailable',
+  'pixel-limit': 'too-large', 'asset-referenced': 'invalid-state', 'checkpoint-owned': 'invalid-state', timeout: 'unavailable',
 };
 /** A domain error's code: the player's, the library's, the media store's and the presentation's errors each carry one. */
 function domainCode(error: unknown): string | undefined {
@@ -99,6 +99,8 @@ function domainCode(error: unknown): string | undefined {
  */
 export function errorCompletion(error: unknown): Completion {
   if (error instanceof PlaybackRouteError) return failed('unsupported-capability', error.detail);
+  if (error instanceof MediaError && error.code === 'storage-limit') return failed('too-large', 'The media exceeds the byte limit for one file.');
+  if (error instanceof MediaError && error.code === 'storage-capacity') return failed('capacity', 'Pixoo media storage is full.');
   const code = domainCode(error);
   if (code === undefined) return uncertain('the request failed after it began');
   const mapped = REFUSALS[code];

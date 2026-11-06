@@ -9,7 +9,7 @@ import type {MomentEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {ArtStageContent} from '@jimmie-potts/event-contracts/v2/art';
 import type {RequestResult} from '@jimmie-potts/sdk';
 import {DEVICE, SECTION, World, bytesOf, hostedGif, manyColorGif, sleep, waitFor} from './support.js';
-import {gifFixture} from '../helpers/media-fixtures.js';
+import {gifFixture, oversizedHostedSourceGif} from '../helpers/media-fixtures.js';
 import {FAMILIES} from '../../src/module/schemas.js';
 import {frameDigest} from '../../src/module/transport.js';
 
@@ -542,5 +542,26 @@ void it('retains and plays a 1,001-frame private whole GIF through the extended 
     const showing = await waitFor(() => world.device.state().shown?.frames === frames ? world.device.state().shown : undefined, 'whole GIF');
     assert.deepEqual(showing?.delaysMs, Array<number>(frames).fill(100));
     assert.equal((await world.outcome(moment)).data.result, 'succeeded');
+  } finally { await world.close(); }
+});
+
+void it('refuses an oversized encoded hosted stage before use and keeps the prior private copy', async () => {
+  const world = await World.open({section: {device: {...SECTION.device, profile: 'pixoo64-hosted-2026-10-01'}}});
+  try {
+    await world.start();
+    const prior = content('existing-hosted-copy', hostedGif(7, 8), 8);
+    assert.equal((await world.outcome(await accepted(stage(world, prior)))).data.result, 'succeeded');
+    const committed = await preview(world, prior.compositionId);
+    const data = content('excess-hosted-bytes', oversizedHostedSourceGif(), 2200);
+    const result = await world.outcome(await accepted(world.core.request(`bunny.cmd.art-stage.${DEVICE}`, {
+      type: 'org.bunny.art.stage.requested', subject: DEVICE, dataschema: 'https://bunny.invalid/events/art-stage/2.1', data,
+    }, {timeoutMs: 10_000})), 30_000);
+    assert.equal(result.data.result, 'failed');
+    assert.equal(result.data.error?.code, 'too-large');
+    assert.equal(result.data.evidence, 'none');
+    const absent = await world.module.manifest.content?.(`art-preview.${data.compositionId}`);
+    assert.ok(absent !== undefined && 'error' in absent); assert.equal(absent.error.code, 'not-found');
+    assert.deepEqual(await preview(world, prior.compositionId), committed);
+    assert.equal(world.device.state().sent, 0);
   } finally { await world.close(); }
 });

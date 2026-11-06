@@ -14,6 +14,8 @@ Refuse excessive source or scaled decoded pixels before materializing frames. Ve
 
 Use compatible minor documents where counts exceed the old closed schemas. The old stage and catalog schemas continue validating their own ranges. The core forwards only authorized Art commands and keeps the byte and duration bounds. The producer’s usual eight frames continue along their established route.
 
+Measure the encoded hosted GIF against the listener’s existing 10 MiB budget before marking a rendition compatible or committing its private stage. Keep a versioned reason for a refused hosted rendition. A full filesystem or exhausted quota reports capacity independently of per-file limits. After verification, an identical stage rechecks stop and its own expiry before renewing a live copy. Physical playback dwells longer than one native timer use cancellable elapsed-time slices and advance only at the requested end.
+
 ## Risks / Trade-offs
 
 Long inputs can exhaust time, storage or queue capacity even when the count is valid on the command. Report the observed limit distinctly and leave previous storage readable. A device may reject or interrupt a documented command. Report the actual route, error and uncertainty, with physical outcomes evaluated only by an authorized operator. No evidence from this change establishes device connectivity or optical performance.

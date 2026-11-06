@@ -5,7 +5,7 @@ import {z} from 'zod';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {artReferenceRefusal, artStageDecision, MAX_ART_BYTES, type ArtCopy, type ArtStageRequest} from '@jimmie-potts/event-contracts/v2/art';
 import {SdkError, type ModuleContent, type ModuleContentRequest} from '@jimmie-potts/sdk';
-import {DEFAULT_TRANSFORM, LIBRARY_PROFILE, hostedPalette, MediaError, MediaStore, type MediaProfile, type Rendition} from '../media/index.js';
+import {DEFAULT_TRANSFORM, LIBRARY_PROFILE, encodeHostedGif, MediaError, MediaStore, type MediaProfile, type Rendition} from '../media/index.js';
 import {animationRoute, frameCountRefusal, timingRefusal} from '../device/animation-policy.js';
 import {PlaybackRouteError} from '../library/playback-policy.js';
 import {isFrameIndex} from './content.js';
@@ -76,8 +76,10 @@ export class PixooArt {
       if (this.signal.aborted) throw new MediaError('cancelled');
       const expiresAtMs = admittedAtMs + stage.lifetimeMs;
       if (decision.action === 'reuse' && row !== undefined && row.profile === this.profile.name) {
-        const retained = await this.#media(row.rendition_id).getRendition(row.rendition_id);
+        const media = this.#media(row.rendition_id);
+        const retained = await media.getRendition(row.rendition_id);
         if (mismatch(stage, retained)) throw new MediaError('invalid-input');
+        await this.#checkHosted(media, retained, row.delay_ms);
         this.#requireLiveStage(expiresAtMs);
         this.db.prepare('UPDATE pixoo_art_copies SET expires_at_ms = ? WHERE composition_id = ?')
           .run(Math.max(row.expires_at_ms, expiresAtMs), stage.compositionId);
@@ -97,10 +99,7 @@ export class PixooArt {
         }
         const delayIssue = timingRefusal(route, rendition.frames.map(frame => frame.delayMs ?? delayMs));
         if (delayIssue !== undefined) throw new PlaybackRouteError(delayIssue);
-        if (route === 'hosted' && rendition.frames.length > 1) {
-          const loaded = await media.readFrames(id, this.signal);
-          hostedPalette(loaded.frames.map(rgb => ({rgb, delayMs})));
-        }
+        await this.#checkHosted(media, rendition, delayMs);
         this.#requireLiveStage(expiresAtMs);
         const active = this.db.prepare('SELECT count(*) AS count FROM pixoo_art_copies WHERE expires_at_ms > ? AND composition_id != ?').get(this.now(), stage.compositionId)?.count;
         if (typeof active === 'number' && active >= MAX_ART_COPIES) throw new MediaError('busy');
@@ -110,6 +109,12 @@ export class PixooArt {
           .run(stage.compositionId, stage.sha256, id, expiresAtMs, this.profile.name, delayMs);
       } finally { await this.#prune(); }
     }).finally(() => { this.#queued -= 1; });
+  }
+
+  async #checkHosted(media: MediaStore, rendition: Rendition, delayMs: number): Promise<void> {
+    if (animationRoute(this.profile.name) !== 'hosted' || rendition.frames.length < 2) return;
+    const loaded = await media.readFrames(rendition.id, this.signal);
+    encodeHostedGif(loaded.frames.map(rgb => ({rgb, delayMs})));
   }
 
   #requireLiveStage(expiresAtMs: number): void {
