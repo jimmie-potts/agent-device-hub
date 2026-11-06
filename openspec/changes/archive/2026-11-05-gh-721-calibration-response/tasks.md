@@ -17,6 +17,6 @@
 ## 4. Source qualification and handoff
 
 - [x] 4.1 Update owning guides and scoped development checks, retaining existing CI discovery; verify instruction/readback and no installed or physical claims.
-- [ ] 4.2 Run required build/type/lint, event/SDK/runtime/producer/Nanoleaf/dashboard and workflow checks; record exact results and specification inventory, keeping unrelated failures separate.
-- [ ] 4.3 Reconcile the private candidate onto actual merged prerequisites, renew affected evidence, synchronize every affected specification and archive this exact change after current successful lookups.
-- [ ] 4.4 Freeze a committed comparison for independent Standards/Specification and focused state-safety review; hand publication and tracker reconciliation to the coordinator.
+- [x] 4.2 Run required build/type/lint, event/SDK/runtime/producer/Nanoleaf/dashboard and workflow checks; record exact results and specification inventory, keeping unrelated failures separate.
+- [x] 4.3 Reconcile the private candidate onto actual merged prerequisites, renew affected evidence, synchronize every affected specification and archive this exact change after current successful lookups.
+- [x] 4.4 Freeze a committed comparison for independent Standards/Specification and focused state-safety review; hand publication and tracker reconciliation to the coordinator.
