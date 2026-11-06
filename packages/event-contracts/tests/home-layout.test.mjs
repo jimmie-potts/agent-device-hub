@@ -27,3 +27,30 @@ test('Home registers versioned metadata and guarded saves without retaining disp
   const future = envelope();future.data.version = 2;assert.equal(validator.validate(future).ok, false);
   const wrongOwner = envelope();wrongOwner.source = 'bunny/modules/pixoo';assert.equal(validator.validate(wrongOwner).ok, false);
 });
+
+test('Home art options are bounded, art-only and additive to legacy arrangements', () => {
+  const validator = new MessageValidator(); registerCoreFamilies(validator);
+  const art = {widget: 'art', size: 'medium', hidden: false, art: {format: 'square', pinned: true}};
+  const state = envelope(); state.dataschema = 'https://bunny.invalid/events/home-layout/2.1';
+  state.data.layouts.desktop.push(art);
+  assert.equal(validator.validate(state).ok, true, 'the additive state carries an explicit art reservation');
+  const command = envelope(true); command.data.layouts.desktop.push(art);
+  assert.equal(validator.validate(command).ok, true, 'the existing save accepts optional art metadata');
+  assert.equal(validator.validate(envelope()).ok, true, 'legacy state remains valid');
+  assert.equal(validator.validate({...state, dataschema: 'https://bunny.invalid/events/home-layout/2.0'}).ok, false, 'legacy state has no art fields');
+  for (const format of ['auto', 'banner', 'square', 'tall']) {
+    const value = structuredClone(state); value.data.layouts.desktop[1].art.format = format;
+    assert.equal(validator.validate(value).ok, true, format);
+  }
+  for (const mutate of [
+    entry => {entry.widget = 'inbox';},
+    entry => {entry.art.format = 'freeform';},
+    entry => {entry.art.pinned = 'true';},
+    entry => {entry.art.width = 1000;},
+    entry => {entry.art.artworkId = 'private-art';},
+    entry => {delete entry.art.format;},
+  ]) {
+    const value = structuredClone(command); mutate(value.data.layouts.desktop[1]);
+    assert.equal(validator.validate(value).ok, false, String(mutate));
+  }
+});

@@ -3,6 +3,7 @@ import type {HomeCardDefinition} from './home-catalog.ts';
 
 // Neutral identifiers only: no observed state, media reads or control adapters.
 const paths: Readonly<Record<string, string>> = {
+  art: 'M3 3h18v18H3V3m2 14 5-6 4 4 3-3 2 5M8 7h.01',
   'hub-mode': 'M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0',
   sessions: 'M15 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0M5 20v-2a7 7 0 0 1 14 0v2',
   inbox: 'M4 5h16l2 10v5H2v-5L4 5m-2 10h6l2 3h4l2-3h6',

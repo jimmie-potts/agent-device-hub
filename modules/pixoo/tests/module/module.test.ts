@@ -443,7 +443,7 @@ void describe('moments', () => {
     await within(world, async () => {
       await world.start();
       const capabilities = await waitFor(() => world.deviceRecord()?.capabilities.moments, 'the capability');
-      assert.deepEqual(capabilities, {supported: true, moods: ['celebrate', 'setback', 'reminder'], maxDurationMs: 10_000, coversStatus: true});
+      assert.deepEqual(capabilities, {supported: true, moods: ['celebrate', 'setback', 'reminder'], maxDurationMs: 10_000, coversStatus: true, art: {formats: ['png', 'gif'], maxBytes: 163_840}});
       await world.outcome(await mode(world, 'monitor'));
       await world.publishSession();
       const dashboard = await waitFor(() => world.device.state().shown?.digests[0], 'the dashboard on the device');
@@ -472,7 +472,7 @@ void describe('moments', () => {
       await world.publishSession();
       await waitFor(() => world.device.state().shown, 'the dashboard on the device');
       assert.equal(await refusal(send('m-flourish', {priorityClass: 'flourish', coversStatus: false})), 'invalid-state');
-      assert.equal(await refusal(send('m-late', {startAtMs: Date.now() - 5000, toleranceMs: 1000})), 'expired');
+      assert.equal(await refusal(send('m-late', {startAtMs: Date.now() - 5000, toleranceMs: 1000})), 'invalid-state');
       const off = await accepted(world.request(FAMILIES.moments, 'org.bunny.pixoo-moments.set.requested', {overMonitor: false}));
       assert.deepEqual((await world.outcome(off)).data, {requestId: off, result: 'succeeded', evidence: 'observed'});
       await waitFor(() => {
@@ -629,7 +629,7 @@ void describe('the device', () => {
       assert.equal(recoveries.length, 1);
       assert.ok(Number(recoveries[0]?.fields['bunny.attempt_count']) > 1, 'the recovery counts the failed probes');
       // Nothing published a device record that changed nothing.
-      const records = world.seen.filter(message => message.subject === DEVICE && message.dataschema.endsWith('/device/2.0')).map(message => JSON.stringify({...message.data, revision: 0}));
+      const records = world.seen.filter(message => message.subject === DEVICE && message.dataschema.endsWith('/device/2.2')).map(message => JSON.stringify({...message.data, revision: 0}));
       assert.equal(new Set(records).size, records.length, 'each device record differs from the one before');
     });
   });
@@ -649,7 +649,7 @@ void describe('another module\'s devices', () => {
       const synced = await world.probe.sync<{id: string}>(['device', FAMILIES.display], () => {}, {timeoutMs: 2000, owner: 'bunny/modules/pixoo'});
       assert.equal(synced.status, 'synced');
       if (synced.status === 'synced') {
-        assert.deepEqual(synced.copy.states().filter(state => state.dataschema.endsWith('/device/2.0')).map(state => state.data.id), [DEVICE]);
+        assert.deepEqual(synced.copy.states().filter(state => state.dataschema.endsWith('/device/2.2')).map(state => state.data.id), [DEVICE]);
         await synced.copy.close();
       }
       // Without an owner, a sync of device is refused, since two modules serve it.

@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {Command, RemoteEndpoint, RemoteParticipant, Reply} from '@jimmie-potts/sdk';
 import type {CaptureFeatures, CaptureProgress, CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
-import type {NativeSource, NativeTermination} from '../src/native.js';
+import type {NativeInput, NativeSource, NativeTermination} from '../src/native.js';
 import type {NativeFrame} from '../src/protocol.js';
 import {MusicProducer} from '../src/producer.js';
 import {flush, timerWorld} from './support.js';
 
 const traceparent = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
 const generation = '00000000-0000-4000-8000-000000000001';
-function fixture({qualified = true, skew = 0, deferredClock = false} = {}) {
+function fixture({qualified = true, skew = 0, deferredClock = false, microphoneId}: {qualified?: boolean; skew?: number; deferredClock?: boolean; microphoneId?: string} = {}) {
   const time = timerWorld();
   let captures = 0, stopped = 0, closed = 0, held = false;
   let onFrame: (frame: NativeFrame) => void = () => {};
@@ -19,11 +19,12 @@ function fixture({qualified = true, skew = 0, deferredClock = false} = {}) {
   let releaseFeature = () => {};
   let releaseClock: (value: boolean) => void = () => {};
   const clockResult = new Promise<boolean>(resolve => {releaseClock = resolve;});
-  const publications: {family: string; data: object; at: number}[] = [];
+  const publications: {family: string; data: object; at: number; dataschema: string}[] = [];
   const requests: object[] = [];
+  const inputs: NativeInput[] = [];
   const endpoint: RemoteEndpoint = {id: 'capture-1', close: () => {onClosed(); return Promise.resolve();},
     publish: async (family, draft) => {
-      publications.push({family, data: draft.data, at: time.clock().monotonicMs});
+      publications.push({family, data: draft.data, at: time.clock().monotonicMs, dataschema: draft.dataschema});
       if (held && family === 'music-capture-features') await new Promise<void>(resolve => {releaseFeature = resolve;});
       return {specversion: '1.0', bunnyprofile: '2.0', id: 'event-1', source: 'bunny/parts/music-producer', subject: 'capture-1',
         time: new Date(time.clock().wallMs).toISOString(), traceparent, datacontenttype: 'application/json', ...draft};
@@ -40,17 +41,19 @@ function fixture({qualified = true, skew = 0, deferredClock = false} = {}) {
       respond = command => options.respond(command as never);
       return Promise.resolve(endpoint);
     }};
-  const native: NativeSource = {qualifyClock: () => deferredClock ? clockResult : Promise.resolve(qualified), start: callback => {
+  const native: NativeSource = {qualifyClock: () => deferredClock ? clockResult : Promise.resolve(qualified), start: (callback, input = {input: 'music'}) => {
+    inputs.push(input);
     captures += 1; onFrame = callback;
     const ended = new Promise<NativeTermination>(resolve => {finish = resolve;});
     return {ended, stop: () => {stopped += 1; return ended;}};
   }};
-  const producer = new MusicProducer({participant, native, clock: time.clock, scheduler: time.scheduler});
+  const producer = new MusicProducer({participant, native, clock: time.clock, scheduler: time.scheduler,
+    ...(microphoneId === undefined ? {} : {microphone: {id: microphoneId, uid: 'synthetic-private-uid'}})});
   const work = (data: CaptureWork, source = 'bunny/core') => respond({specversion: '1.0', bunnyprofile: '2.0', id: `cmd-${data.requestId}`, source,
     type: 'org.bunny.music-capture.work.requested', subject: 'capture-1', time: new Date(time.clock().wallMs).toISOString(), kind: 'command',
-    datacontenttype: 'application/json', dataschema: 'https://bunny.invalid/events/music-capture-work/2.0', traceparent,
+    datacontenttype: 'application/json', dataschema: `https://bunny.invalid/events/music-capture-work/${data.action === 'start' && data.input === 'microphone' ? '2.1' : '2.0'}`, traceparent,
     expiresat: new Date(time.clock().wallMs + 2000).toISOString(), data});
-  return {...time, producer, publications, requests, captures: () => captures, stopped: () => stopped, closed: () => closed,
+  return {...time, producer, publications, requests, inputs, captures: () => captures, stopped: () => stopped, closed: () => closed,
     start: () => work({requestId: 'start', operationId: 'start', generation, action: 'start', input: 'music'}),
     stop: () => work({requestId: 'stop', operationId: 'stop', generation, action: 'stop'}), work,
     finish: (end: NativeTermination) => finish(end), lose: () => onClosed(), releaseClock: () => releaseClock(true),
@@ -65,6 +68,26 @@ function fixture({qualified = true, skew = 0, deferredClock = false} = {}) {
     progress: () => publications.filter(value => value.family === 'music-capture-progress').map(value => value.data as CaptureProgress),
   };
 }
+
+void test('microphone capability is configured without capture and only its selected alias is published', async () => {
+  const world = fixture({microphoneId: 'studio-mic'}); await world.producer.start();
+  assert.equal(world.captures(), 0);
+  const request = world.requests[0];assert.ok(request && 'microphone' in request);
+  assert.deepEqual(request.microphone, {id: 'studio-mic'});
+  const selection = {input: 'microphone', microphoneId: 'studio-mic'} as const;
+  const start = {requestId: 'start', operationId: 'start', generation, action: 'start', ...selection} as const;
+  assert.deepEqual(await world.work({...start, microphoneId: 'another-mic'}), {error: {code: 'unsupported-capability', retryable: false}});
+  assert.equal(world.captures(), 0);
+  assert.deepEqual(await world.work(start), {status: 'accepted'}); await flush();
+  assert.equal(world.captures(), 1);
+  assert.deepEqual(world.inputs, [{input: 'microphone', uid: 'synthetic-private-uid'}]);
+  world.frame(1);await flush();
+  const feature = world.features()[0];assert.ok(feature?.input === 'microphone');
+  assert.equal(feature.microphoneId, selection.microphoneId);
+  assert.equal(world.publications.find(value => value.family === 'music-capture-features')?.dataschema, 'https://bunny.invalid/events/music-capture-features/2.1');
+  assert.ok(!JSON.stringify([...world.requests, ...world.publications]).includes('synthetic-private-uid'));
+  await world.stop();world.finish({status: 'stopped'});await flush();await world.producer.stop();
+});
 
 void test('registration declares one endpoint but never launches capture', async () => {
   let opened = 0, captures = 0;

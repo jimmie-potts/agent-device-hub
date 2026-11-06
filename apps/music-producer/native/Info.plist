@@ -6,4 +6,6 @@
 <key>CFBundleVersion</key><string>1</string>
 <key>NSAudioCaptureUsageDescription</key>
 <string>Measure Music audio locally for the selected lighting session. Audio is not recorded or uploaded.</string>
+<key>NSMicrophoneUsageDescription</key>
+<string>Measure the explicitly selected microphone locally. Audio is not recorded or uploaded.</string>
 </dict></plist>

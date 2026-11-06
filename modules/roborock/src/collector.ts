@@ -587,8 +587,9 @@ export class Collector {
             normalizationVersion: NORMALIZATION_VERSION,
             ...(requestedRecordId === undefined ? {} : { requestedRecordId }),
         };
+        // One instant for the observation and its entry: the checkpoint refuses a status whose
+        // observation time differs from the time it records, and a retained batch would repeat it.
         const failure = (code: ErrorCode): Entry<T> => {
-            // One reading: the store refuses a checkpoint whose time differs from its observation's.
             const at = this.#now();
             return {
                 observation: { ...context, observedAtMs: at, failureCode: code },

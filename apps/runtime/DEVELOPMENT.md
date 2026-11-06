@@ -95,18 +95,7 @@ browser journey establish forwarding and UI behavior separately from actual
 installed iPhone acceptance; no physical device command is required by these tests.
 
 
-After the root build, run
-`node --test apps/runtime/dist/tests/onn-upgrade-profile.test.js apps/runtime/dist/tests/onn-upgrade-qualification.test.js apps/runtime/dist/tests/upgrade-inputs.test.js apps/runtime/dist/tests/upgrade-admission.test.js apps/runtime/dist/tests/upgrade-preflight.test.js apps/runtime/dist/tests/upgrade-source.test.js`.
-Existing `test:runtime:built` discovery runs these checks in active core CI; no
-additional workflow is needed. They cover private inventory, exact qualification
-coverage, configured health and preserved absent-ONN refusals. Four separate
-synthetic processes use the production ONN module, its history/command stores and
-SDK outbox to retain original observations, reported progress, gaps, private
-identities and truthful interrupted outcomes without replay. All four processes
-use the same built implementation: this checks restart semantics, not compatibility
-between historical release artifacts. Actual previous/target/recovery artifacts,
-coordinator admission, installed readers/clients and physical acceptance require
-their own evidence under [UPGRADE.md](UPGRADE.md).
+ONN dedicated qualification is dormant under #1464. Shared upgrade inventory/admission/preflight/source checks remain active to preserve retained state. Run `node --test tests/onn_hibernation.test.mjs` for runtime/frontend registration absence and the ordinary runtime upgrade and core privacy tests for retained compatibility. The ONN module guide retains historical qualification instructions.
 
 Roborock configured-owner qualification also runs
 `node --test apps/runtime/dist/tests/roborock-upgrade-profile.test.js apps/runtime/dist/tests/roborock-upgrade-qualification.test.js apps/runtime/dist/tests/upgrade-inputs.test.js apps/runtime/dist/tests/upgrade-admission.test.js apps/runtime/dist/tests/upgrade-preflight.test.js`
@@ -571,6 +560,21 @@ outside-checkout `TMPDIR`, as the app verification tests do.
 
 ## Runtime dashboard checks
 
+Adaptive art and Gallery (#682) use `npm run test:art:browser` after
+`npm run build`. App verification runs this focused journey in its runtime group;
+the full local browser suite includes it. It uses the real authenticated core/art
+owners with synthetic providers and an outside-checkout private `TMPDIR`.
+The journey checks saved pin/dismiss/restore, independent desktop/phone layout,
+revision conflicts and restart; banner/square/tall fit and full-screen omission;
+pointer/focus/attention preservation; rich rendition decode, stale/unavailable
+content and late-load cancellation; and request/favorite/feedback/variation with
+truthful allowance and job outcomes. Layout-only operations and gallery reads
+must send no device command or provider request. Check 1440, 390 and 320px in
+light/dark appearance and reduced motion with axe. `DASHBOARD_RECEIPTS` keeps
+synthetic screenshots private. Run the full browser suite below for dashboard
+changes. Disposable acceptance uses the same synthetic art owner with the actual
+Gallery controls; this establishes no installed or physical result.
+
 Qualified read receipts (#1354) use
 `node apps/runtime/dashboard/tests/read-receipts.browser.ts` after the root
 build. The real helper and authenticated owner publish session/2.1 to the
@@ -713,7 +717,7 @@ node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed no
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
 node apps/runtime/dashboard/tests/automation.browser.ts # routine/rule tabs, drafts, lost replies and accessibility
-node apps/runtime/dashboard/tests/music-capture.browser.ts # Music-only measurement, tracked start/stop and freshness; also in hosted smoke and Music-card browser entry
+node apps/runtime/dashboard/tests/music-capture.browser.ts # Music/microphone measurement, tracked start/stop and freshness; also in hosted smoke and Music-card browser entry
 node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # shared Pixoo cards, playlist drafts and trusted editor bundle
 node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal
 node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts # create, rename, options, items, order and deletion
@@ -727,7 +731,9 @@ node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts # retained wall edit
 The Music input check uses a numeric-only producer fixture through the real core
 and gateway. It verifies passive load/reload/reconnect, measured silence,
 expiry, delayed clock qualification, pending and lost Start replies, independent
-Stop, read-only refusal, replacement generations and endpoint loss. Desktop and
+Stop, read-only refusal, replacement generations and endpoint loss. The configured
+microphone journey checks selection without capture, 2.1 starts, fixed refusal,
+retry, reload and a return to unchanged 2.0 Music work. Desktop and
 320/390 px light/dark checks include keyboard use, reduced motion, overflow and
 axe. It opens no native helper or media source. The dashboard unit suite covers
 clock jumps, source identity/order, exact conservative expiry and late scope
@@ -749,6 +755,18 @@ outside the checkout. The Nanoleaf built suite covers atomic save/outcome
 rollback, full storage, deferred publication, core acknowledgment, restart,
 bounded content and delayed-sync freshness. No test uses an installed source,
 personal media or physical controller.
+
+The same Nanoleaf browser entry covers reactive presets (#722): explicit named
+saves, exact reload and restart, full frozen V1 recipes in synthetic preview,
+read-only/Origin/stale/invalid refusals, local drafts through refresh and
+reconnect, uncertainty locks through reload, and light/dark 1440/390/320 px axe.
+The Nanoleaf built suite includes a frozen previous-source SQLite schema,
+full-disk and transaction rollback, deferred outcome publication/core-only
+acknowledgment, mixed-family high water and maximal document/query bounds.
+Run `node --test modules/nanoleaf/dist/tests/music-presets.test.js modules/nanoleaf/dist/tests/module-presets.test.js modules/nanoleaf/dist/tests/reactive-preset-model.test.js`
+after the shared build, then the existing owning suites. These checks use no
+audio, installed state or household devices. A browser journey that cannot
+start its disposable listener has not satisfied acceptance.
 
 The core CI job runs `test:runtime-dashboard:built`. The browser checks use
 Playwright Chromium against the built runtime in the test's own process, with

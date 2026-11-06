@@ -16,4 +16,5 @@ paths-ignore:
   - 'docs/diagrams/legacy/sources/**'
   - 'scripts/performance/vendor/**'
   - 'modules/bb8/**'
+  - 'modules/onn/**'
   - 'apps/bb8-windows/**'

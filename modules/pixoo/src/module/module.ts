@@ -11,6 +11,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
+import {artCommandRefusal, MAX_ART_BYTES, type ArtStageRequest} from '@jimmie-potts/event-contracts/v2/art';
 import {
   commandSupported, registerDeviceFamilies, type Capabilities, type CompletedOutcome, type DeviceCommand, type DeviceRecord,
 } from '@jimmie-potts/event-contracts/v2/devices';
@@ -38,6 +39,7 @@ import {
   type PlaylistRecord, type RenditionRecord, type ShowRequest,
 } from './schemas.js';
 import {PixooStore} from './store.js';
+import {PixooArt, type ArtLease} from './art.js';
 import {SimulatedPixoo, httpPixooTransport, type OpenedDevice, type PixooTransport} from './transport.js';
 
 export const PIXOO_MODULE = 'pixoo';
@@ -163,6 +165,8 @@ class PixooRuntime {
   readonly #timers = new Set<Cancel>();
   #store: PixooStore | undefined;
   #library: Library | undefined;
+  #art: PixooArt | undefined;
+  #artCleanupFailed = false;
   #uploads: PixooUploads | undefined;
   #outbox: Outbox | undefined;
   #opened: OpenedDevice | undefined;
@@ -237,6 +241,8 @@ class PixooRuntime {
       database: db, directory: files(),
       hostedChecks: {get: (renditionId, profile) => store.hostedCheck(renditionId, profile), set: (renditionId, profile, fits) => { store.saveHostedCheck(renditionId, profile, fits); }},
     });
+    this.#art = new PixooArt(db, join(files(), 'art'), this.#config.device.profile, () => clock.now(), this.#context.signal);
+    await this.#art.initialize();
     store.prune(clock.now());
     const outbox = this.#outbox = new Outbox({sdk, database: db, clock, log, trace});
     // The outbox follows the core's acknowledgments itself (Hub #782), first, so one of a resent outcome is not missed,
@@ -253,6 +259,7 @@ class PixooRuntime {
       address: device.address, profile: device.profile, clock: this.#deviceClock, ...(hostedGif === undefined ? {} : {hostedGif}),
     });
     const player = this.#player = await Player.open({
+      emptyIntent: {read: () => store.emptyIntent(), save: intent => { store.saveEmptyIntent(intent); }},
       store: new LibraryPlaybackStore(library, {profile: device.profile, stillDelayMs}), device: this.#opened.adapter, clock: this.#deviceClock,
       pauseOnUncertain: !simulated, operationTimeoutMs: device.profile.name === HOSTED_PROFILE ? 15_000 : 5000,
     });
@@ -306,6 +313,7 @@ class PixooRuntime {
     if (!simulated) await monitor.restore();
     this.#after(0, () => this.#tick());
     this.#after(0, () => this.#probe(0));
+    this.#after(60_000, () => this.#pruneArt());
     // Read at once after the start, not on the runtime's scheduler, so a sync that waits for the catalog never waits
     // for time to pass.
     void Promise.resolve().then(() => this.#readCatalog('start'));
@@ -351,6 +359,7 @@ class PixooRuntime {
   content(ref: string, request?: ModuleContentRequest): Promise<ModuleContent | ErrorBody> | ModuleContent | ErrorBody {
     const library = this.#library;
     if (library === undefined || this.#stopping) return errorBody('unavailable', {detail: 'the Pixoo is not running'});
+    if (ref.startsWith('art-preview.') || ref.startsWith('art-frame.')) return this.#art?.content(ref, request) ?? errorBody('unavailable');
     if (ref === 'player') {
       if (Object.keys(request?.query ?? {}).length !== 0) return errorBody('invalid-request', {detail: 'the content read takes no query'});
       if (request?.signal.aborted === true) return errorBody('cancelled', {detail: 'the content read was cancelled'});
@@ -386,6 +395,7 @@ class PixooRuntime {
       try {
         await this.#opened?.close();
       } finally {
+        await this.#art?.close();
         await this.#library?.close();
       }
     }
@@ -605,7 +615,8 @@ class PixooRuntime {
     const catalog = this.#catalog;
     return {
       power: {supported: true}, brightness: {supported: true, minimum: 0, maximum: 100}, modes: {supported: true, values: ['monitor', 'media']},
-      moments: {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_MS, coversStatus: this.#monitor?.momentSummary().overMonitor ?? defaultMoments.overMonitor},
+      moments: {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_MS, coversStatus: this.#monitor?.momentSummary().overMonitor ?? defaultMoments.overMonitor,
+        art: {formats: ['png', 'gif'], maxBytes: MAX_ART_BYTES}},
       media: {
         supported: true, actions: [...MEDIA_ACTIONS], playlistIds: admitted?.playlistIds ?? (catalog?.playlists ?? []).slice(0, MAX_LISTED).map(item => item.id),
         renditionIds: (catalog?.renditions ?? []).slice(0, MAX_LISTED).map(item => item.id),
@@ -923,9 +934,21 @@ class PixooRuntime {
       this.#admit(command, FAMILIES.nowPlaying, undefined, () => control().nowPlaying(command.data.media)));
     await sdk.respond<MomentsSetRequest>(key(FAMILIES.moments), command =>
       this.#admit(command, FAMILIES.moments, undefined, () => control().moments(command.data.overMonitor)));
-    await sdk.respond<MomentPlayRequest>(key('moment-play'), command =>
-      this.#admit(command, 'moment-play', {family: 'moment-play', data: command.data}, () => this.#playMoment(command.data), () => this.#momentRefused(command.data),
-        false, () => { this.#store?.rememberMoment(command.data.momentId, this.#context.clock.now()); }));
+    await sdk.respond<MomentPlayRequest>(key('moment-play'), command => this.#momentCommand(command));
+    await sdk.respond<ArtStageRequest>(key('art-stage'), command => {
+      const art = this.#art;
+      if (art === undefined) return errorBody('unavailable', {detail: 'the private art store is not running'});
+      let admittedAtMs = this.#context.clock.now();
+      return this.#admit(command, 'art-stage', undefined, async () => {
+        try {
+          await art.stage(command.data, admittedAtMs);
+          return OBSERVED;
+        } catch (error) {
+          return error instanceof SdkError ? {result: Outcome.failed, evidence: Outcome.none, error: error.body.error} : errorCompletion(error);
+        }
+      }, () => artCommandRefusal(command.source) ?? art.stageRefusal(command.data), false,
+      () => { admittedAtMs = this.#context.clock.now(); });
+    });
     await sdk.respond<PlaylistChangeRequest>(key(FAMILIES.playlistChange), command =>
       this.#admit(command, FAMILIES.playlistChange, undefined, () => control().playlist(command.data.change), undefined, true));
     await sdk.respond<AssetChangeRequest>(key(FAMILIES.assetChange), command =>
@@ -937,6 +960,31 @@ class PixooRuntime {
       }));
   }
 
+  async #pruneArt(): Promise<void> {
+    try {
+      await this.#art?.prune();
+      if (this.#artCleanupFailed) recordLog(this.#context.log, 'operation.completed', {'bunny.device.id': this.#device, 'bunny.operation': 'storage', 'bunny.outcome': Outcome.succeeded});
+      this.#artCleanupFailed = false;
+    } catch (error) {
+      if (!this.#artCleanupFailed) this.#failedWrite(error);
+      this.#artCleanupFailed = true;
+    }
+    if (!this.#stopping) this.#after(60_000, () => this.#pruneArt());
+  }
+
+  async #momentCommand(command: Command<MomentPlayRequest>): Promise<Reply> {
+    let art: ArtLease | undefined;
+    const result = await this.#admit(command, 'moment-play', {family: 'moment-play', data: command.data},
+      () => this.#playMoment(command.data, art).finally(() => { art?.release(); }),
+      () => (command.data.art === undefined ? undefined : artCommandRefusal(command.source) ?? this.#art?.referenceRefusal(command.data.art.compositionId))
+        ?? this.#momentRefused(command.data), false, () => {
+        if (command.data.art !== undefined) art = this.#art?.retain(command.data.art.compositionId);
+        this.#store?.rememberMoment(command.data.momentId, this.#context.clock.now());
+      });
+    if ('error' in result) art?.release();
+    return result;
+  }
+
   /**
    * Whether a moment is refused before it is accepted: one seen before, one that missed its window, one while another
    * waits or plays, or one the current presentation does not admit. The start checks the presentation again.
@@ -945,19 +993,21 @@ class PixooRuntime {
     const monitor = this.#monitor;
     if (monitor === undefined) return errorBody('invalid-state', {detail: 'the Pixoo has no presentation'});
     if (this.#store?.momentSeen(moment.momentId) === true) return errorBody('invalid-state', {detail: 'this moment was already accepted'});
-    if (this.#context.clock.now() > moment.startAtMs + moment.toleranceMs) return errorBody('expired', {detail: 'the moment missed its start window'});
+    if (this.#context.clock.now() > moment.startAtMs + moment.toleranceMs) return errorBody('invalid-state', {detail: 'the moment missed its start window'});
     if (monitor.momentBusy()) return errorBody('capacity', {detail: 'another moment waits or plays'});
     if ((this.#store?.pending() ?? []).some(command => command.family === 'device-mode-set')) return errorBody('invalid-state', {detail: 'a mode change is pending'});
-    const block = monitor.momentBlock(moment.coversStatus);
+    const block = monitor.momentBlock(moment.coversStatus, moment.art !== undefined);
     return block === null ? undefined : errorBody('invalid-state', {detail: block});
   }
 
-  /** Runs an accepted moment. `momentContent` chose what it shows, and the render worker draws that before anything else happens. */
-  #playMoment(moment: MomentPlayRequest): Promise<Completion> {
+  /** Runs an accepted moment with its retained exact art, or mood content drawn by the render worker. */
+  #playMoment(moment: MomentPlayRequest, art?: ArtLease): Promise<Completion> {
     const control = this.#control;
     if (control === undefined) return Promise.resolve(errorCompletion(new Error('no control')));
     const {momentId, coversStatus, durationMs, startAtMs, toleranceMs} = moment;
-    return control.moment({momentId, coversStatus, durationMs, startAtMs, toleranceMs, frames: () => this.#render({kind: 'moment', content: momentContent(moment)})});
+    if (moment.art !== undefined && art === undefined) return Promise.resolve({result: Outcome.failed, evidence: Outcome.none, error: errorBody('not-found').error});
+    return control.moment({momentId, coversStatus, durationMs, startAtMs, toleranceMs,
+      ...(art === undefined ? {frames: () => this.#render({kind: 'moment', content: momentContent(moment)})} : {frames: art.frames, delayMs: art.delayMs, exactArt: true})});
   }
 
   /**

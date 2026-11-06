@@ -28,6 +28,10 @@ export type WidgetDefinition = {
 
 export const widgetCatalog: readonly WidgetDefinition[] = [
   {
+    id: 'art', name: 'Art', description: 'A rich generated composition, private gallery and explicit owner requests.',
+    sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['art'], content: ['art/catalog', 'art/rendition']}, commands: true,
+  },
+  {
     id: 'reachy', name: 'Reachy', description: 'Latest fixed-text reaction, guarded text controls and separately enabled browser speech.',
     sizes: ['medium', 'large'], source: {kind: 'module', families: ['companion-state', 'companion-speech-state']}, commands: true,
   },
