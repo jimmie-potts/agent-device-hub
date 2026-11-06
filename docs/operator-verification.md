@@ -3,8 +3,8 @@
 Use this after changing `scripts/bunny*.mjs`, `scripts/deployment/`,
 `scripts/operator-refusal.mjs`, `scripts/mac-signin.mjs` or
 `scripts/mac-host-install.mjs`, and before claiming that a source revision, host
-operator and Linux ARM64 image are the intended ones. It reuses existing tests and release
-evidence. The [container guide](bunny-container.md) owns the commands themselves,
+operator and Linux ARM64 image are the intended ones. It reuses existing tests and
+release evidence. The [container guide](bunny-container.md) owns the commands themselves,
 and [development](development.md) owns the wider check lists.
 
 Everything here runs against fakes, disposable Docker resources or read-only GitHub
@@ -83,14 +83,22 @@ Run from the worktree root with Node 24, prefixing commands with
    - Exactly one `release-image-<sha>-<run>-<attempt>` and exactly one
      `release-evidence-<sha>-<run>-<attempt>` exist, neither expired.
 
-   To record the image identity, download only the evidence artifact into a scratch
-   directory and read the receipt's image fields:
+   `gh run list` shows only each run's latest attempt; read an earlier one with
+   `/attempts/<n>`.
+
+   For a candidate that passed every rule above, record the image identity. Download
+   only the evidence artifact into a new, empty scratch directory, because the
+   download is untrusted data, and read its receipt:
    ```bash
    gh run download <run> --repo jimmie-potts/agent-device-hub --name release-evidence-<sha>-<run>-<attempt> --dir <scratch>
    ```
    ```bash
-   jq '.image|[.id,.revision,.archiveSha256]' <scratch>/qualification.json
+   jq '[.outcome,.candidate,.runId,.runAttempt,.image.artifactName,.image.id,.image.revision,.image.archiveSha256]' <scratch>/qualification.json
    ```
+   Use the identity only when the outcome is `qualified`, the candidate and revision
+   are `<sha>`, the run and attempt are `<run>` and `<attempt>`, and the artifact
+   name is `release-image-<sha>-<run>-<attempt>`. An incomplete attempt's receipt
+   can still carry a plausible image identity.
 
    This shows that the candidate is qualified, not that a host runs it. The deployment
    owner confirms the rest: `npm run deploy:batch` verifies the downloaded archive hash
