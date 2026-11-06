@@ -45,6 +45,10 @@ Their deployment target is macOS
 compilation and synthetic checks do not qualify capture on every OS version,
 output route or protected music source.
 
+The scripts select no persistent signing identity; a linker may apply an ad-hoc
+signature. Embedded plist identifiers can differ from code-signing identifiers.
+Actual permission attribution and grant persistence need installed qualification.
+
 `adapter-test.sh` builds a different executable whose Core Audio access functions
 and AVFoundation authorization class are all replaced with test implementations. It checks exact Music inclusion,
 unmuted private-tap configuration, no output subdevice, zero audio access from
@@ -157,11 +161,10 @@ The parent separately limits discarded stderr to 4 KiB.
 
 The helper writes no file or diagnostic log and opens no network. Listening
 metadata and output names belong only in the owner's private declared records,
-never published source evidence. Its distinct identity is
-`local.bunny.music-playback` with an automation usage description. This source
-build is unsigned. Signing, automation entitlement, packaged permission behavior,
-actual field availability and physical control/timing remain separate installed
-qualification. Fake descriptor success is not evidence of any of those results.
+never published source evidence. Its embedded bundle identifier is
+`local.bunny.music-playback` with an automation usage description. Signing,
+automation entitlement, packaged permission behavior, actual field availability
+and physical control/timing remain separate installed qualification. Fake descriptor success is not evidence of any of those results.
 
 ## Explicit state and position reads
 
@@ -211,8 +214,8 @@ five-second deadline because synchronous OS calls and a blocked stdout cannot
 be bounded by the event timeout alone. Do not use an unbounded standalone read
 as an installed polling service.
 
-The distinct embedded identity is `local.bunny.music-position`, with
-`NSAppleEventsUsageDescription`. This source build is unsigned. A packaged
+The distinct embedded bundle identifier is `local.bunny.music-position`, with
+`NSAppleEventsUsageDescription`. A packaged
 hardened-runtime build needs its selected signing and automation entitlement
 reviewed separately. Apple's [automation permission API](https://developer.apple.com/documentation/coreservices/3025784-aedeterminepermissiontoautomatet)
 and [usage-description documentation](https://developer.apple.com/documentation/bundleresources/information-property-list/nsappleeventsusagedescription)
@@ -374,8 +377,8 @@ pause or silence. The parent reports freshness separately. Core Audio acquisitio
 failures map to `unavailable`; they do not prove permission was denied. There is
 no automatic fallback, output-route switch or permissions reset.
 
-The embedded identity is `local.bunny.music-producer`, with
-`NSAudioCaptureUsageDescription` and `NSMicrophoneUsageDescription`. This source build is unsigned. Packaging,
+The embedded bundle identifier is `local.bunny.music-producer`, with
+`NSAudioCaptureUsageDescription` and `NSMicrophoneUsageDescription`. Packaging,
 signing, responsible-process identity, the system audio recording permission
 flow, microphone authorization identity and installed parent/child termination
 need qualification in the selected
