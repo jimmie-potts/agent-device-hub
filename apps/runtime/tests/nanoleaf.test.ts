@@ -12,11 +12,17 @@ import {partTokens, writeConfiguration} from './scenarios/parts.js';
 import {entry, fixture, it, run, stateDir, waitFor} from './support.js';
 
 /**
- * How long the event loop may stall while the wall holds the worker's request and the commands are answered: a module
- * that waited on its device, or blocked while a request is out, would stall it for the device's wait. Only that window
- * is measured, under a second, so a busy machine's load elsewhere in the test does not count.
+ * How long both commands may take to be answered while the wall holds the worker's request: a module that waited on its
+ * device would answer only once the wall does, after this test releases it.
  */
-const STALL_MS = 250;
+const ANSWER_MS = 250;
+/**
+ * How long the event loop may stall while the wall holds the request, the commands are answered and their outcomes
+ * stored. A module that blocked while a request is out would stall it for the device's wait, up to the link's own
+ * deadline. A correct module still commits synchronously in this window, and other test files run beside it: a
+ * hosted runner measured 319 ms (Hub #1416), so, as for the send window, the bound is half the link's deadline.
+ */
+const HELD_STALL_MS = REQUEST_MS / 2;
 /**
  * How long the event loop may stall from just before the wall holds until its held request has started, a window that
  * waits for the module's next request, up to one poll. A link that blocked as it sent would stall it for the device's
@@ -50,7 +56,7 @@ function heartbeat(): {stop: () => number} {
 }
 
 it('a mode command and an edit are answered while the worker waits on the wall, and the lag check never trips', async context => {
-  assert.ok(STALL_MS + OUTCOMES_MS + HOLD_MS < REQUEST_MS, 'the hold is asserted before the link\'s deadline');
+  assert.ok(ANSWER_MS + OUTCOMES_MS + HOLD_MS < REQUEST_MS, 'the hold is asserted before the link\'s deadline');
   const wall = new SimulatedNanoleaf();
   const outcomes: Message[] = [];
   let operator: Sdk | undefined;
@@ -84,7 +90,7 @@ it('a mode command and an edit are answered while the worker waits on the wall, 
     ]);
     const elapsed = performance.now() - heldAt;
     assert.deepEqual(answers.map(answer => answer.status), ['accepted', 'accepted']);
-    assert.ok(elapsed < STALL_MS, `both answered in ${Math.round(elapsed)} ms, without waiting for the wall`);
+    assert.ok(elapsed < ANSWER_MS, `both answered in ${Math.round(elapsed)} ms, without waiting for the wall`);
     // The edit and the mode command complete while the wall still holds the request: both are the module's own state.
     await waitFor(() => ['held-edit', 'held-mode'].every(id => outcomes.some(message => (message.data as {requestId?: string}).requestId === id)), OUTCOMES_MS,
       'both outcomes');
@@ -97,7 +103,7 @@ it('a mode command and an edit are answered while the worker waits on the wall, 
     // Still the link's own request, not one it gave up on at its deadline: that would have logged the wall unavailable.
     assert.equal(logs.some(record => record.event_name === 'device.unavailable'), false, 'the link still waits on the held request');
     assert.ok(sendStall < SEND_STALL_MS, `the event loop stalled at most ${Math.round(sendStall)} ms while the held request started`);
-    assert.ok(stalled < STALL_MS, `the event loop stalled at most ${Math.round(stalled)} ms while the wall held the request`);
+    assert.ok(stalled < HELD_STALL_MS, `the event loop stalled at most ${Math.round(stalled)} ms while the wall held the request`);
   } finally {
     // Released even when an assertion failed, so the runtime's stop never waits on a held request.
     sending.stop();
