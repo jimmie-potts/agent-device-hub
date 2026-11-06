@@ -32,6 +32,7 @@ const attempt=(pending:Pending):ArtScheduleAttempt=>({...pending.opportunity,art
 export function createArtSchedule(options:Options) {
   const {store,core}=options,choice=options.choice??Math.random;
   let closed=false,cancel:Cancel|undefined,serial=Promise.resolve(),pending:Pending|undefined,ambientRunning=false,ambientUntilMs=0;
+  let lastEvaluatedAtMs = 0;
   const effects=new Set<Promise<void>>(),grants=new Map<string,Grant>();
   const now=()=>core.clock.now(),active=()=>!closed&&options.active();
   const launch=(work:Promise<void>):void=>{effects.add(work);void work.catch(()=>{options.failed();}).finally(()=>effects.delete(work));};
@@ -212,6 +213,7 @@ export function createArtSchedule(options:Options) {
   async function tick(occurrence?:WeatherOccurrence):Promise<void> {
     let data=state();options.inputs.set(data.record.policy);
     const at=now(),weather=weatherStatus(data);
+    lastEvaluatedAtMs = at;
     const notice=data.record.notice;
     if(data.record.weather!==weather||notice!==null&&(at>=notice.expiresAtMs||weather!=='fresh'||options.inputs.weather()?.revision!==notice.forecast.weatherRevision
       ||core.operation(notice.browserRequestId)?.result===Outcome.failed)) {
@@ -247,10 +249,18 @@ export function createArtSchedule(options:Options) {
   }
   function schedule():void {
     cancel?.();cancel=undefined;if(!active()||!state().record.policy.enabled)return;
-    const data=state(),next=data.day?.starts[0];
-    const deadlines=[now()+60_000,...(next===undefined?[]:[next-(data.record.policy.generation?GENERATION_MS:PREPARATION_MS)]),
-      ...(pending===undefined||pending.preparing?[]:[pending.opportunity.startAtMs-PREPARATION_MS]),ambientUntilMs].filter(at=>at>now());
-    cancel=options.scheduler.after(Math.max(1,Math.min(...deadlines)-now()),changed);
+    const at = now(), data = state(), policy = data.record.policy, next = data.day?.starts[0];
+    const deadlines = [at + 60_000];
+    if (pending === undefined && next !== undefined && next > at && wakingDay(at, policy)?.key === data.day?.key) {
+      deadlines.push(next - (policy.generation ? GENERATION_MS : PREPARATION_MS));
+    }
+    if (pending !== undefined && !pending.preparing && at <= pending.opportunity.startAtMs + pending.opportunity.toleranceMs) {
+      deadlines.push(pending.opportunity.startAtMs - PREPARATION_MS);
+    }
+    if (policy.ambient && pending === undefined && !ambientRunning && ambientUntilMs > 0) deadlines.push(ambientUntilMs);
+    // A deadline crossed since the tick read its clock still needs a turn. Already evaluated deadlines do not.
+    const after = Math.min(lastEvaluatedAtMs, at);
+    cancel = options.scheduler.after(Math.max(1, Math.min(...deadlines.filter(deadline => deadline > after)) - at), changed);
   }
   function changed():void {void enqueue(tick).finally(schedule).catch(()=>{});}
   function consumeWeather(revision:number,live:boolean,parent?:TraceContext):void {

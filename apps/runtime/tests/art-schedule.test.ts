@@ -109,8 +109,8 @@ const syntheticWeather=(revision=9,observedAtMs=local(8),staleAtMs=local(8,45)):
   const hour={startAtMs:local(10),endAtMs:local(11),condition:'rain' as const,likely:true,temperatureF:60,precipitationPercent:80,windMph:0,isDaytime:true,dayPart:'morning' as const};
   return {id:'local',revision,status:'available',observedAtMs,staleAtMs,ageMs:0,forecastUpdatedAtMs:observedAtMs,current:hour,forecast:[hour],alerts:[],words:['rain']};
 };
-function scheduledWorld(withDisplay=false,choice:()=>number=()=>0.5,displayId='shelf-display') {
-  const db=new DatabaseSync(':memory:'),clock=manualClock(local(8)),commands:Action[]=[],failures:string[]=[];
+function scheduledWorld(withDisplay=false,choice:()=>number=()=>0.5,displayId='shelf-display',clock=manualClock(local(8))) {
+  const db=new DatabaseSync(':memory:'),commands:Action[]=[],failures:string[]=[];
   const provider=(name:'openai'|'anthropic')=>({provider:name,available:false,ceilingMicros:0,paceMicros:0,spentMicros:0,reservedMicros:0,uncertainMicros:0,remainingMicros:0,todayMicros:0,excessMicros:0,earlierUncertainMicros:0});
   const catalog:ArtRecord={id:'art',revision:1,month:'2026-11',day:'2026-11-05',providers:[provider('openai'),provider('anthropic')],guard:{calls:0,limit:30,windowMs:3_600_000},
     gifs:{accepted:0,rejected:0},jobs:[],artworks:[artwork('saved-art')],candidates:[],retention:{recentLimit:24,recent:1,favorites:1,retained:[]}};
@@ -141,6 +141,36 @@ void test('saved browser appearance consumes its own last unit once, and disable
     assert.equal(w.reads().weatherReads,0);await w.restart();await w.move(start+1000);assert.equal(w.commands.length,1,'restart cannot replay selection');assert.deepEqual(w.failures,[]);
   }finally{await w.close();}
 });
+void test('preparation comes due between the tick and its next timer', async () => {
+  const source = manualClock(local(8));
+  let boundary: number | undefined, crossed = false, shortTimers = 0;
+  const clock = {...source, now: () => {
+    const at = source.now();
+    if (!crossed && boundary !== undefined && at === boundary - 1) {crossed = true; source.advance(1);}
+    return at;
+  }, scheduler: {after: (delayMs: number, callback: () => void) => {
+    if (delayMs <= 1) shortTimers++;
+    return source.scheduler.after(delayMs, callback);
+  }}};
+  const w = scheduledWorld(false, () => 0.5, 'shelf-display', clock);
+  try {
+    const saved = await w.owner.save({expectedSettingsRevision: 0, policy: {...policy, ambient: false}});
+    const start = saved.nextOpportunity?.startAtMs; assert.ok(start !== undefined);
+    boundary = start - 45_000;
+    await w.move(boundary - 1); // The tick reads the earlier instant; the next clock read is at the boundary.
+    await w.move(boundary + 1);
+    assert.equal(crossed, true);
+    assert.equal(w.owner.get().lastOpportunity?.startAtMs, start, 'preparation claims the fixed start on its next timer turn');
+    assert.equal(w.commands.length, 0, 'the browser still waits for the scheduled start');
+    await w.move(start);
+    assert.equal(w.commands.length, 1);
+    const beforeIdle = shortTimers;
+    for (let ms = 1; ms <= 5; ms++) await w.move(start + ms);
+    assert.equal(shortTimers, beforeIdle, 'an idle schedule does not rearm an overdue or absent timer');
+    assert.equal(w.commands.length, 1, 'the completed opportunity is never replayed');
+  } finally {await w.close();}
+});
+
 void test('held generation falls back once at the fixed cutoff; late output and restart cannot trigger selection',async()=>{
   const w=scheduledWorld();try{
     const saved=await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false,generation:true}});const start=saved.nextOpportunity?.startAtMs;assert.ok(start!==undefined);
