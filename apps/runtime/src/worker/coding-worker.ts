@@ -149,6 +149,8 @@ export class CodingWorker {
   }
   #stopping = false;
   #redeclaring = false;
+  /** Set once the first declaration is accepted; only then does a reconnect declare again. */
+  #declared = false;
   /**
    * Connects and declares the one endpoint. A first declaration that fails closes the connection and throws the original
    * failure, so the process ends and its supervisor owns any later fresh start; nothing here sends the declaration again.
@@ -159,9 +161,10 @@ export class CodingWorker {
       onDiagnostic: diagnostic => {
         this.log(`coding-worker ${diagnostic.event}`);
         // A lost stream closed the connection-bound endpoint; the new stream needs a fresh declaration, which the core hears as a new endpoint.
-        if (diagnostic.event === 'remote.reconnected' && !this.#stopping) void this.#redeclare();
+        // During the first declaration, start() alone decides: a reconnect then must not send a second enable.
+        if (diagnostic.event === 'remote.reconnected' && this.#declared && !this.#stopping) void this.#redeclare();
       }});
-    try {await this.#declare();} catch (error) {
+    try {await this.#declare(); this.#declared = true;} catch (error) {
       this.#stopping = true;
       this.#stopChild();
       await this.#participant.close().catch(() => {});
@@ -185,8 +188,9 @@ export class CodingWorker {
   }
   /**
    * Opens the one endpoint on the current stream and declares it available. A declaration that was not accepted closes
-   * the endpoint again and throws its code and its command's trace and request IDs, never the refusal's text: `refused`
-   * when the core had no effect, `uncertain` when it may have selected this endpoint, which the close then releases.
+   * the endpoint again and throws its code and request ID, never the refusal's text: `refused` when the core had no
+   * effect, `uncertain` when it may have selected this endpoint, which the close then releases. The command's trace ID
+   * comes with the answer, so a declaration that could not be sent at all is uncertain without one.
    */
   async #declare(): Promise<void> {
     const participant = this.#participant;

@@ -36,7 +36,8 @@ async function repository(t: TestContext): Promise<string> {
 function fakeEdge() {
   const requests: {family: string; data: unknown}[] = [], progress: CodingProgress[] = [];
   let responder: ((command: Command<CodingWork>) => Reply) | undefined, closed = 0, opened = 0, refuse = 0, disconnected = 0, onClosed: (() => void) | undefined, onDiagnostic: ((diagnostic: {event: string}) => void) | undefined;
-  const endpoint: RemoteEndpoint = {id: 'worker-endpoint-1', close: () => {closed += 1; return Promise.resolve();},
+  let held: Promise<void> | undefined, releaseClose = (): void => {};
+  const endpoint: RemoteEndpoint = {id: 'worker-endpoint-1', close: () => {closed += 1; const closing = held ?? Promise.resolve(); held = undefined; return closing;},
     publish: (family, draft) => {progress.push(draft.data as CodingProgress); return Promise.resolve({} as never);},
     request: (family, draft) => {
       requests.push({family, data: draft.data});
@@ -49,6 +50,8 @@ function fakeEdge() {
   const connect = (options: {onDiagnostic?: (diagnostic: {event: string}) => void}) => {onDiagnostic = options.onDiagnostic; return Promise.resolve(participant);};
   return {connect: connect as unknown as typeof connectRemote, requests, progress, respond: (given: Command<CodingWork>) => (responder ?? assert.fail('endpoint opened'))(given), closed: () => closed, opened: () => opened, disconnected: () => disconnected,
     refuseNextEnable: () => {refuse += 1;},
+    // The next endpoint close waits until released, as one that waits for the edge's answer does.
+    holdNextClose: () => {held = new Promise(resolve => {releaseClose = resolve;});}, releaseClose: () => {releaseClose();},
     // The stream is lost: the SDK closes the connection-bound endpoint, reconnects and reports it.
     lose: () => {onClosed?.(); onDiagnostic?.({event: 'remote.disconnected'}); onDiagnostic?.({event: 'remote.reconnected'});}};
 }
@@ -128,6 +131,20 @@ void test('a refused first declaration closes the endpoint and the connection, k
   assert.equal(edge.closed(), 1); assert.equal(edge.disconnected(), 1);
   edge.lose(); await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(edge.opened(), 1); assert.equal(edge.requests.length, 1, 'no second enable');
+});
+
+void test('a reconnect while the refused first declaration is still closing declares nothing: the process sends one enable', async () => {
+  const edge = fakeEdge();
+  edge.refuseNextEnable(); edge.holdNextClose();
+  const worker = new CodingWorker(parseConfiguration(configuration('/tmp/repo')), 'token-'.padEnd(43, 'x'), undefined, () => {}, edge.connect);
+  const starting = worker.start();
+  await until(() => edge.closed() === 1);
+  // The stream drops on its own and comes back before start() has given up.
+  edge.lose(); await new Promise(resolve => setTimeout(resolve, 20));
+  edge.releaseClose();
+  await assert.rejects(starting, {message: 'coding-worker-enable-refused: invalid-state request r'});
+  assert.equal(edge.opened(), 1); assert.equal(edge.requests.length, 1, 'one enable');
+  assert.equal(edge.disconnected(), 1);
 });
 
 void test('a refused re-declaration after a reconnect keeps the connection and tries again, unlike a refused first one', async () => {

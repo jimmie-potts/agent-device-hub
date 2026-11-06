@@ -117,6 +117,9 @@ off, or when it dies and the gateway reports its connection lost.
 
 Each of these exits with status 1. The trace and request IDs name the
 declaration's command, so you can find it in the runtime's diagnostic records.
+The trace ID is there only when the command was sent: if the worker's own
+endpoint closed before it could send the declaration, the uncertain line names
+the request alone.
 Losing the stream after the first declaration is different: the running worker
 keeps its process, reconnects and declares again with backoff, as above.
 
