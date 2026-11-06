@@ -514,8 +514,10 @@ the resource.
    PR's head branch on merge: the repository's `delete_branch_on_merge` setting
    has been on since 2026-11-06
    ([#309](https://github.com/jimmie-potts/agent-device-hub/issues/309)). Read
-   the result back with `git ls-remote --heads origin <branch>`, and if the branch
-   is still there, report it under step 8 rather than deleting it. A missing
+   the result back with
+   `git ls-remote --exit-code --heads origin refs/heads/<branch>`. Exit 2 means
+   the branch is gone. Exit 0 means it is still there, so report it under step 8
+   rather than deleting it. Any other exit code leaves the result unknown. A missing
    remote branch neither proves local delivery nor authorizes removing the local
    one, and this step deletes no remote branch.
 7. Remove the Docker artifacts this task created: its stopped containers, the
