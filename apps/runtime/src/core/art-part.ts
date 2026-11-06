@@ -3,7 +3,7 @@
 // moment. The in-process bus checks no sender, so a module could address a display's key directly: the rule binds here,
 // at the tracker and gateway, and at each responder, which refuses any source but `bunny/core` (`artCommandRefusal`).
 import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
-import {ART_FORWARDED, ART_MODULE_SOURCE, ART_SUBJECT, type ArtDispatch} from '@jimmie-potts/event-contracts/v2/art';
+import {ART_FORWARDED, ART_MODULE_SOURCE, ART_SUBJECT, EXTENDED_ART_DISPATCH_SCHEMA, EXTENDED_ART_STAGE_SCHEMA, type ArtDispatch} from '@jimmie-potts/event-contracts/v2/art';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
 
@@ -19,7 +19,8 @@ export class ArtPart implements CorePart {
       const {requestId, family, target, data} = command.data;
       // The schema closes the family; this lookup keeps the allowlist explicit where the dispatch happens.
       if (!Object.hasOwn(ART_FORWARDED, family)) return errorBody('invalid-request', {detail: 'the art module may dispatch only a stage or an ambient set'});
-      const {type, dataschema} = ART_FORWARDED[family];
+      const {type} = ART_FORWARDED[family];
+      const dataschema = command.dataschema === EXTENDED_ART_DISPATCH_SCHEMA ? EXTENDED_ART_STAGE_SCHEMA : ART_FORWARDED[family].dataschema;
       const answer = await core.dispatch({key: `bunny.cmd.${family}.${target}`, requestedBy: command.source, requestId, parent: command,
         draft: {type, subject: target, dataschema, data}});
       return 'error' in answer ? answer : {status: 'accepted'};

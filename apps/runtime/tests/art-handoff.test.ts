@@ -12,7 +12,8 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {ART_FORWARDED, ART_MODULE_SOURCE, MAX_ART_BYTES, artReferenceRefusal, type ArtStageContent} from '@jimmie-potts/event-contracts/v2/art';
 import {operationEntityId, type InboxItem, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {createCoreModule, type CoreHandle} from '../src/index.js';
-import {contextOf, edgeConfig, fixture, it, run, stateDir, waitFor} from './support.js';
+import {deviceRecord, deviceState} from './fixtures/device.js';
+import {contextOf, edgeConfig, fixture, flush, it, run, stateDir, waitFor} from './support.js';
 
 const COMPOSITION = 'c'.repeat(64);
 const MARKER = 'SYNTHETIC-ART-BYTES-679';
@@ -88,6 +89,63 @@ it('only the art module can dispatch, and the core forwards a tracked stage or a
   assert.equal(w.handle.operation('ambient-1')?.requestedBy, ART_MODULE_SOURCE);
   assert.deepEqual(w.handle.operation('ambient-1')?.data, {compositionId: COMPOSITION});
   assert.equal(w.seen[1]?.type, 'org.bunny.art-ambient.set.requested');
+});
+
+it('extended staging requires the current Pixoo owner declaration and keeps a tracked, omitted-payload command', async t => {
+  const content = JSON.parse(readFileSync(new URL('../../../../packages/event-contracts/fixtures/v2/art-extended-stage.json', import.meta.url), 'utf8')) as ArtStageContent;
+  const record = deviceRecord('desk-art', 1, 'pixoo', 'unknown');
+  const artCapability = {formats: ['gif' as const], maxBytes: 100, stageVersion: '2.1' as const};
+  record.capabilities.moments = {supported: true, moods: ['celebrate', 'reminder', 'setback'], maxDurationMs: 10_000, coversStatus: true, art: artCapability};
+  let version = '2.4', syncs = 0;
+  const state = () => ({...deviceState(record), dataschema: `https://bunny.invalid/events/device/${version}`});
+  const seen: Command<Record<string, unknown>>[] = [];
+  let pixooSdk: Sdk | undefined, handle: CoreHandle | undefined;
+  const pixoo: BunnyModule = {manifest: {name: 'pixoo', apiVersion: '1.3', configure: section => ({config: section, devices: [record.id]})}, start: async ({sdk}) => {
+    pixooSdk = sdk;
+    await sdk.serveSync(['device'], () => {syncs++; return {revision: record.revision, states: [state()]};});
+    await sdk.respond<Record<string, unknown>>(`bunny.cmd.art-stage.${record.id}`, command => {seen.push(command); return {status: 'accepted'};});
+  }, stop() {}};
+  const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}]});
+  const art = fixture('art'), other = fixture('other');
+  const config = await edgeConfig(t, [], {modules: {pixoo: {}}});
+  await run(t, {modules: [core, pixoo, art, other], configFile: config.config});
+  await waitFor(() => syncs > 0); await flush();
+  assert.ok(handle); assert.ok(pixooSdk);
+  const send = (sdk: Sdk, requestId: string, target = record.id) => sdk.request('bunny.cmd.art-dispatch.art',
+    {...dispatchDraft({family: 'art-stage', target, data: content}), dataschema: 'https://bunny.invalid/events/art-dispatch/2.2'},
+    {requestId, timeoutMs: 8000, parent: {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'}});
+  const owner = contextOf(art).sdk;
+  const denied = await send(contextOf(other).sdk, 'foreign'); assert.equal('error' in denied && denied.error.error.code, 'forbidden');
+  assert.equal((await send(owner, 'unknown', 'other-panel')).status, 'rejected'); assert.equal(handle.operation('unknown'), undefined);
+  assert.equal((await send(owner, 'long-stage')).status, 'accepted');
+  assert.equal((await send(owner, 'long-stage')).status, 'accepted');
+  assert.equal(seen.length, 1); assert.equal(seen[0]?.source, CORE);
+  assert.equal(seen[0]?.dataschema, 'https://bunny.invalid/events/art-stage/2.1');
+  assert.equal(seen[0]?.traceparent.split('-')[1], '0af7651916cd43dd8448eb211c80319c');
+  const operation = handle.operation('long-stage'); assert.ok(operation);
+  assert.equal(operation.requestedBy, ART_MODULE_SOURCE); assert.equal(operation.payload?.status, 'omitted');
+  assert.deepEqual(operation.data, {});
+
+  const publish = async () => {
+    assert.ok(pixooSdk); record.revision++; await pixooSdk.publish(`bunny.state.device.${record.id}`, {kind: 'state', ...state()}); await flush();
+  };
+  version = '2.2'; await publish(); // A field smuggled into an older document grants nothing.
+  assert.equal((await send(owner, 'unversioned')).status, 'rejected');
+  version = '2.4'; artCapability.maxBytes = 1; await publish();
+  assert.equal((await send(owner, 'too-big')).status, 'rejected');
+  artCapability.maxBytes = 100; record.kind = 'tidbyt'; await publish();
+  assert.equal((await send(owner, 'wrong-kind')).status, 'rejected');
+  record.kind = 'pixoo';
+  let otherSyncs = 0;
+  await contextOf(other).sdk.serveSync(['device'], () => {otherSyncs++; return {revision: record.revision, states: [state()]};});
+  core.setAutomationDevices([{id: record.id, owner: 'bunny/modules/other'}]);
+  await waitFor(() => otherSyncs > 0); await flush();
+  assert.equal((await send(owner, 'wrong-owner')).status, 'rejected');
+  core.setAutomationDevices([]); await flush();
+  assert.equal((await send(owner, 'withdrawn')).status, 'rejected');
+  assert.equal((await send(owner, 'long-stage')).status, 'accepted', 'an identical retry returns its prior answer after withdrawal');
+  for (const id of ['foreign', 'unversioned', 'too-big', 'wrong-kind', 'wrong-owner', 'withdrawn']) assert.equal(handle.operation(id), undefined);
+  assert.equal(seen.length, 1);
 });
 
 it('a dispatch is refused before transport when it names a moment, another family or bytes that are not what it says', async context => {

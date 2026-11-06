@@ -24,7 +24,8 @@
 import {createHash, randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MessageValidator, compareDelivery, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
-import {ART_MODULE_SOURCE} from '@jimmie-potts/event-contracts/v2/art';
+import {ART_MODULE_SOURCE, EXTENDED_ART_STAGE_SCHEMA} from '@jimmie-potts/event-contracts/v2/art';
+import {extendedArtStageSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {CORE_SOURCE, registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {PrivateRequestDigest, SdkError,
   acknowledgmentOf, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
@@ -55,9 +56,9 @@ const ART_REQUESTERS: Readonly<Record<string, string>> = Object.freeze({
  * payload, so it cannot be sent again. ONN text is private; a stage's bytes would grow the tracker. Each identity and
  * digest domain is fixed: a stored digest compares only under its own domain.
  */
-const OMITTED_PAYLOADS: readonly {family: string; type: string; dataschema: string; domain: string}[] = Object.freeze([
-  {family: 'onn-text', type: 'org.bunny.onn.text.requested', dataschema: 'https://bunny.invalid/events/onn-text/2.0', domain: 'bunny/onn-text-admission/1'},
-  {family: 'art-stage', type: 'org.bunny.art.stage.requested', dataschema: 'https://bunny.invalid/events/art-stage/2.0', domain: 'bunny/art-stage-admission/1'},
+const OMITTED_PAYLOADS: readonly {family: string; type: string; schemas: readonly string[]; domain: string}[] = Object.freeze([
+  {family: 'onn-text', type: 'org.bunny.onn.text.requested', schemas: ['https://bunny.invalid/events/onn-text/2.0'], domain: 'bunny/onn-text-admission/1'},
+  {family: 'art-stage', type: 'org.bunny.art.stage.requested', schemas: ['https://bunny.invalid/events/art-stage/2.0', EXTENDED_ART_STAGE_SCHEMA], domain: 'bunny/art-stage-admission/1'},
 ]);
 
 /** One action for the dispatcher: a command, as `request` takes it, and who asks for it. */
@@ -117,6 +118,7 @@ export type TrackerOptions = {
   clock: Clock;
   scheduler: ModuleScheduler;
   files?: () => string;
+  currentDevice?: (id: string) => Message<DeviceRecord> | undefined;
   /** The parts' derivers of tracked actions' changes. */
   tracked?: readonly Tracked[];
   /** Resolves once the core's store is open. */
@@ -384,8 +386,8 @@ export class Tracker {
     if (family === 'moment-play' && Object.hasOwn(draft.data, 'art') && action.requestedBy !== CORE_SOURCE) {
       return refuse('forbidden', 'art moments are requested only by the core');
     }
-    const omitted = OMITTED_PAYLOADS.find(each => each.family === family || each.type === draft.type || each.dataschema === draft.dataschema);
-    if (omitted !== undefined && (omitted.family !== family || omitted.type !== draft.type || omitted.dataschema !== draft.dataschema)) {
+    const omitted = OMITTED_PAYLOADS.find(each => each.family === family || each.type === draft.type || each.schemas.includes(draft.dataschema));
+    if (omitted !== undefined && (omitted.family !== family || omitted.type !== draft.type || !omitted.schemas.includes(draft.dataschema))) {
       return refuse('invalid-request', 'the identity of a command with an omitted payload is invalid');
     }
     await ready;
@@ -407,6 +409,10 @@ export class Tracker {
     try {
       earlier = await this.#transaction(tx => {
         const known = this.#read(requestId);
+        if (known === undefined && draft.dataschema === EXTENDED_ART_STAGE_SCHEMA &&
+            !extendedArtStageSupported(this.#options.currentDevice?.(target), {format: data.format, base64: data.base64})) {
+          throw new Refused('unsupported-capability', 'the target must be a configured Pixoo declaring extended GIF staging within its byte limit');
+        }
         if (omitted !== undefined) {
           if (this.#options.files === undefined) throw new Refused('unavailable', 'the private request identity is unavailable');
           // Every family's fence uses one key, so any stored digest forbids creating a replacement key. Asked only when no key is pinned.

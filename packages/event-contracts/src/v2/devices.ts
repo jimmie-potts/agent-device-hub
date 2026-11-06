@@ -17,8 +17,8 @@ export type Capabilities = {
   brightness: Unsupported | {supported: true; minimum: 0; maximum: 100};
   /** The device's own native modes, such as Nanoleaf `work` or Pixoo `monitor`. Never the Hub's mode. */
   modes: Unsupported | {supported: true; values: string[]};
-  /** `art`, `device/2.2` only: the device stages these formats and sizes and plays a moment that names its copy. */
-  moments: Unsupported | {supported: true; moods: string[]; maxDurationMs: number; coversStatus: boolean; art?: {formats: ArtFormat[]; maxBytes: number}};
+  /** `device/2.2` adds the staged formats and byte limit. `device/2.4` adds the supported stage minor. */
+  moments: Unsupported | {supported: true; moods: string[]; maxDurationMs: number; coversStatus: boolean; art?: {formats: ArtFormat[]; maxBytes: number; stageVersion?: '2.1'}};
   media: Unsupported | {supported: true; actions: MediaAction[]; playlistIds: string[]; renditionIds: string[]};
   scenes: Unsupported | {supported: true; sceneIds: string[]};
   zones: Unsupported | {supported: true; zoneIds: string[]};
@@ -112,6 +112,17 @@ export function artStageSupported({moments}: Capabilities, stage: Pick<ArtStageR
   return moments.supported && moments.art !== undefined && moments.art.formats.includes(stage.format) && Buffer.byteLength(stage.base64, 'base64') <= moments.art.maxBytes;
 }
 
+export const EXTENDED_ART_DEVICE_SCHEMA = 'https://bunny.invalid/events/device/2.4';
+
+/** The declared stage minor, owner and advertised limits all apply to a long stage. */
+export function extendedArtStageSupported(device: Pick<Message<DeviceRecord>, 'dataschema' | 'source' | 'data'> | undefined,
+  stage: {format: unknown; base64: unknown}): boolean {
+  if (device?.dataschema !== EXTENDED_ART_DEVICE_SCHEMA || device.source !== 'bunny/modules/pixoo' || device.data.kind !== 'pixoo') return false;
+  const {moments} = device.data.capabilities;
+  return moments.supported && moments.art?.stageVersion === '2.1' && stage.format === 'gif' && typeof stage.base64 === 'string' &&
+    artStageSupported(device.data.capabilities, {format: stage.format, base64: stage.base64});
+}
+
 /** The device kinds that take part in the Hub mode. LIFX joins under #415; Tidbyt and playback do not take part. */
 export type HubModeKind = 'nanoleaf' | 'pixoo';
 /**
@@ -166,6 +177,7 @@ export const deviceFamilies: readonly PayloadFamily[] = [
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice),
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.1'),
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.2'),
+  defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.4'),
   defineFamily('power-set', 'command', 'org.bunny.power.set.requested', checkCommand),
   defineFamily('brightness-set', 'command', 'org.bunny.brightness.set.requested', checkCommand),
   defineFamily('scene-activate', 'command', 'org.bunny.scene.activate.requested', checkCommand),

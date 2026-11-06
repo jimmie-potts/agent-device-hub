@@ -647,6 +647,13 @@ owns the handoff and its policy.
   validator checks the encoding, size, hash, format and header dimensions, and never
   decodes the image. A PNG has one frame and `durationMs` 0. The largest stage and its
   dispatch fit the 256 KiB message cap.
+- Art uses `art-dispatch/2.0` and the core forwards `art-stage/2.0` through 256 frames.
+  For a longer GIF, Art sends `art-dispatch/2.2` only to a Pixoo whose current
+  `device/2.4` record declares `capabilities.moments.art.stageVersion: "2.1"`,
+  GIF support and sufficient `maxBytes`. The core checks its copy from the configured
+  device owner before admitting the tracked `art-stage/2.1`. This stage accepts a
+  positive safe-integer frame count. Both versions bound decoded media at 160 KiB
+  and duration at 300,000 ms. The device verifies decoded frames during staging.
 - **A device's copy.** `artStageDecision(held, stage, nowMs)` answers `store` or `reuse`
   with the renewed record, and `duplicate-conflict` for the same ID with other bytes.
   `artReferenceRefusal(held, nowMs)` answers `not-found` for a copy the device does not

@@ -1,10 +1,10 @@
 // The boundaries the module reaches other owners through, on the real families: `v2/art` for jobs and the handoff, the
 // module's own `art-catalog-edit`, and #1418's `weather-state`. A module imports only the SDK and the contracts, so the
 // weather family is read here by its name and fields. Tests pass fakes for `dispatch` and `weather`.
-import {errorBody, type ErrorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
-import {ART_SUBJECT, artCommandRefusal, type ArtAuto21, type ArtDispatch, type ArtFormat, type ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
+import {errorBody, type ErrorBody, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
+import {ART_SUBJECT, EXTENDED_ART_DISPATCH_SCHEMA, LEGACY_ART_STAGE_MAX_FRAMES, artCommandRefusal, type ArtAuto21, type ArtDispatch, type ArtFormat, type ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
 import {ART_CATALOG_EDIT_KEY, type ArtCatalogEdit, type ArtDisplayTarget} from '@jimmie-potts/event-contracts/v2/art-state';
-import {artStageSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import {artStageSupported, extendedArtStageSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {CORE_SOURCE, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {Outcome, type Cancel, type Command, type ModuleContext, type Reply, type RequestResult, type Sdk, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
 
@@ -107,38 +107,41 @@ function followDevices(context: Pick<ModuleContext, 'sdk' | 'scheduler' | 'signa
   };
   void attempt();
   return {
-    read: (): DeviceRecord[] | undefined => closed || context.signal.aborted || !fresh || copy === undefined ? undefined : copy.states().map(message => message.data),
+    read: (): Message<DeviceRecord>[] | undefined => closed || context.signal.aborted || !fresh || copy === undefined ? undefined : copy.states(),
     close: async () => {closed = true; fresh = false; retry?.(); await copy?.close(); copy = undefined;},
   };
 }
 
 export function realDispatch(context: Pick<ModuleContext, 'sdk' | 'scheduler' | 'signal'>): ArtDispatchSeam {
   const devices: Partial<Record<ArtDisplayTarget, ReturnType<typeof followDevices>>> = {};
-  const resolve = (kind: ArtDisplayTarget): DeviceRecord | ErrorBody => {
+  const resolve = (kind: ArtDisplayTarget): Message<DeviceRecord> | ErrorBody => {
     const records = devices[kind]?.read();
     if (records === undefined) return errorBody('unavailable');
-    const matches = records.filter(record => record.kind === kind);
+    const matches = records.filter(record => record.data.kind === kind);
     if (matches.length > 1) return errorBody('invalid-state');
     const device = matches[0];
     if (device === undefined) return errorBody('unavailable');
-    return device.capabilities.moments.supported && device.capabilities.moments.art !== undefined ? device : errorBody('unsupported-capability');
+    return device.data.capabilities.moments.supported && device.data.capabilities.moments.art !== undefined ? device : errorBody('unsupported-capability');
   };
 
-  const send = async (data: ArtDispatch, parent: TraceContext): Promise<Reply> => asReply(await context.sdk.request<ArtDispatch>(`bunny.cmd.art-dispatch.${ART_SUBJECT}`,
-    {type: 'org.bunny.art.dispatch.requested', subject: ART_SUBJECT, dataschema: 'https://bunny.invalid/events/art-dispatch/2.0', data}, {requestId: data.requestId, timeoutMs: DISPATCH_TIMEOUT_MS, parent}));
+  const send = async (data: ArtDispatch, parent: TraceContext, dataschema = 'https://bunny.invalid/events/art-dispatch/2.0'): Promise<Reply> => asReply(await context.sdk.request<ArtDispatch>(`bunny.cmd.art-dispatch.${ART_SUBJECT}`,
+    {type: 'org.bunny.art.dispatch.requested', subject: ART_SUBJECT, dataschema, data}, {requestId: data.requestId, timeoutMs: DISPATCH_TIMEOUT_MS, parent}));
   return {
     stage: ({requestId, target, bytes, ...rest}, parent) => {
       const {compositionId, format, width, height, frames, durationMs, sha256, lifetimeMs, expectedTargetId} = rest;
       const device = resolve(target);
       if ('error' in device) return Promise.resolve(device);
-      if (expectedTargetId !== undefined && device.id !== expectedTargetId) return Promise.resolve(errorBody('invalid-state', {detail: 'the configured display no longer matches the preparation target'}));
+      if (expectedTargetId !== undefined && device.data.id !== expectedTargetId) return Promise.resolve(errorBody('invalid-state', {detail: 'the configured display no longer matches the preparation target'}));
       const base64 = Buffer.from(bytes).toString('base64');
-      if (!artStageSupported(device.capabilities, {format, base64})) return Promise.resolve(errorBody('unsupported-capability'));
-      return send({requestId, target: device.id, family: 'art-stage', data: {compositionId, format, width, height, frames, durationMs, sha256, lifetimeMs, base64}}, parent);
+      const extended = frames > LEGACY_ART_STAGE_MAX_FRAMES;
+      const allowed = extended ? extendedArtStageSupported(device, {format, base64}) : artStageSupported(device.data.capabilities, {format, base64});
+      if (!allowed) return Promise.resolve(errorBody('unsupported-capability'));
+      return send({requestId, target: device.data.id, family: 'art-stage', data: {compositionId, format, width, height, frames, durationMs, sha256, lifetimeMs, base64}},
+        parent, extended ? EXTENDED_ART_DISPATCH_SCHEMA : undefined);
     },
     ambient: ({requestId, target, compositionId}, parent) => {
       const device = resolve(target);
-      return 'error' in device ? Promise.resolve(device) : send({requestId, target: device.id, family: 'art-ambient-set', data: {compositionId}}, parent);
+      return 'error' in device ? Promise.resolve(device) : send({requestId, target: device.data.id, family: 'art-ambient-set', data: {compositionId}}, parent);
     },
     watch: result => {
       const pixoo = followDevices(context, 'pixoo'), tidbyt = followDevices(context, 'tidbyt');

@@ -15,10 +15,10 @@ const flush = () => new Promise<void>(resolve => {setImmediate(resolve);});
 async function world(t: TestContext) {
   const errors: unknown[] = [];
   const bus = new InProcessBus({maxQueued: 1, onError: error => {errors.push(error);}}), core = bus.connect('bunny/core'), sdk = bus.connect('bunny/modules/art');
-  const forwarded: ArtDispatch[] = [], scheduled = new Set<() => void | Promise<void>>();
+  const schemas: string[] = [], forwarded: ArtDispatch[] = [], scheduled = new Set<() => void | Promise<void>>();
   const scheduler: ModuleScheduler = {after: (_delay, callback) => {scheduled.add(callback); return () => {scheduled.delete(callback);};}};
   await core.serveSync(['operation'], () => ({revision: 0, states: []}));
-  await core.respond<ArtDispatch>('bunny.cmd.art-dispatch.art', command => {forwarded.push(command.data); return {status: 'accepted'};});
+  await core.respond<ArtDispatch>('bunny.cmd.art-dispatch.art', command => {schemas.push(command.dataschema); forwarded.push(command.data); return {status: 'accepted'};});
   const dispatch = realDispatch({sdk, scheduler, signal: new AbortController().signal});
   let watches: Awaited<ReturnType<typeof dispatch.watch>> = [];
   const results: {requestId: string; result: StageResult; error?: ErrorDetail}[] = [];
@@ -49,8 +49,31 @@ async function world(t: TestContext) {
   const stage = (target: 'pixoo' | 'tidbyt', extra: Partial<ArtStageRequest> = {}) => dispatch.stage({requestId: `stage-${forwarded.length}`, target,
     compositionId: 'synthetic-composition', format: 'png', width: 64, height: 64, frames: 1, durationMs: 0, sha256: createHash('sha256').update(bytes).digest('hex'), bytes, lifetimeMs: 60_000, ...extra}, parent);
   const ambient = () => dispatch.ambient({requestId: `ambient-${forwarded.length}`, target: 'tidbyt', compositionId: 'synthetic-composition'}, parent);
-  return {owner, start, stop, stage, ambient, forwarded, scheduled, core, results, retry: async () => {const waiting = [...scheduled]; scheduled.clear(); for (const callback of waiting) await callback(); await flush();}};
+  return {owner, start, stop, stage, ambient, forwarded, schemas, scheduled, core, results, retry: async () => {const waiting = [...scheduled]; scheduled.clear(); for (const callback of waiting) await callback(); await flush();}};
 }
+
+void test('only a declared Pixoo receives extended staging; ordinary stages use the original contract', async t => {
+  const w = await world(t);
+  const extended = (kind: 'pixoo' | 'tidbyt', id: string, revision: number) => {
+    const record = artDevice(kind, id, revision);
+    const moments = record.capabilities.moments;
+    assert.ok(moments.supported && moments.art);
+    moments.art.stageVersion = '2.1';
+    return record;
+  };
+  const pixoo = await w.owner('pixoo', [artDevice('pixoo', 'panel')]);
+  await w.owner('tidbyt', [extended('tidbyt', 'tile', 1)]);
+  await w.start();
+  const extra = {format: 'gif' as const, durationMs: 10_010, frames: 1001};
+  for (const kind of ['pixoo', 'tidbyt'] as const) {
+    const denied = await w.stage(kind, extra);
+    assert.equal('error' in denied && denied.error.code, 'unsupported-capability');
+  }
+  await pixoo.update(extended('pixoo', 'panel', 2));
+  await flush();
+  for (const frames of [8, 256, 257, 1001]) assert.deepEqual(await w.stage('pixoo', {...extra, frames}), {status: 'accepted'});
+  assert.deepEqual(w.schemas.map(uri => uri.split('/').pop()), ['2.0', '2.0', '2.2', '2.2']);
+});
 
 void test('saved preparation refuses a changed or stale target identity and never falls back to the replacement display', async t => {
   const w = await world(t), owner = await w.owner('pixoo', [artDevice('pixoo', 'planned')]); await w.start();

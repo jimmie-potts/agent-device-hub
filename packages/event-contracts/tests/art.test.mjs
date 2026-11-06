@@ -55,6 +55,8 @@ test('each art family keeps one kind and the type the gateway derives from its n
     ['art-ambient-set', 'command', 'org.bunny.art-ambient.set.requested', 'art-ambient-set/2.0'],
     ['art-dispatch', 'command', 'org.bunny.art.dispatch.requested', 'art-dispatch/2.0'],
     ['art-auto', 'command', 'org.bunny.art.auto.requested', 'art-auto/2.1'],
+    ['art-stage', 'command', 'org.bunny.art.stage.requested', 'art-stage/2.1'],
+    ['art-dispatch', 'command', 'org.bunny.art.dispatch.requested', 'art-dispatch/2.2'],
   ]);
   for (const {family: name, type} of artFamilies) {
     const verb = name.lastIndexOf('-');
@@ -69,6 +71,47 @@ test('each art family keeps one kind and the type the gateway derives from its n
   const own = new MessageValidator();
   registerArtFamilies(own);
   assert.equal(own.validate(family('art-stage'), atTime(family('art-stage'))).ok, true, 'the art families register on their own');
+});
+
+test('extended staging retains byte, duration and safe-count bounds and closes the dispatch to stages', () => {
+  const data = JSON.parse(readFileSync(new URL('../fixtures/v2/art-extended-stage.json', import.meta.url), 'utf8'));
+  const make = (name, version, content) => {
+    const draft = family(name);
+    draft.dataschema = `https://bunny.invalid/events/${name}/${version}`;
+    draft.data = name === 'art-stage' ? {requestId: 'long-stage', ...content} : {requestId: 'long-stage', family: 'art-stage', target: 'panel', data: content};
+    return draft;
+  };
+  for (const [name, minor] of [['art-stage', '2.1'], ['art-dispatch', '2.2']]) {
+    valid(make(name, minor, data));
+    valid(make(name, minor, {...data, frames: Number.MAX_SAFE_INTEGER}));
+    invalid(make(name, '2.0', data));
+    valid(make(name, '2.0', {...data, frames: 256}));
+    for (const patch of [{frames: Number.MAX_SAFE_INTEGER + 1}, {frames: 1000.5}, {durationMs: 300001}, {durationMs: 0}, {sha256: 'a'.repeat(64)},
+      {base64: data.base64 + '!'}, {width: 32}, {path: '/tmp/asset'}]) invalid(make(name, minor, {...data, ...patch}));
+    const bytes = Buffer.alloc(MAX_ART_BYTES + 1);
+    gif().copy(bytes);
+    invalid(make(name, minor, {...data, sha256: sha256(bytes), base64: bytes.toString('base64')}), /base64/);
+  }
+  const dispatch = make('art-dispatch', '2.2', data);
+  invalid({...dispatch, data: {...dispatch.data, authorization: 'ticket'}});
+  invalid({...dispatch, data: {...dispatch.data, family: 'art-ambient-set', data: {compositionId: data.compositionId}}});
+  invalid(make('art-dispatch', '2.2', {...data, frames: 256}));
+});
+
+test('only device/2.4 declares the extended stage version', () => {
+  const message = structuredClone(Object.values(devices.valid).find(each => each.dataschema.endsWith('/device/2.2')));
+  const older = deviceFamilies.find(each => each.dataschema.endsWith('/device/2.2')).schema;
+  const newer = structuredClone(deviceFamilies.find(each => each.dataschema.endsWith('/device/2.4')).schema);
+  delete newer.$defs.capabilities.properties.moments.oneOf[1].properties.art.properties.stageVersion;
+  assert.deepEqual({...newer, $id: older.$id, description: older.description}, older);
+
+  const art = message.data.capabilities.moments.art;
+  art.stageVersion = '2.1';
+  invalid(message);
+  message.dataschema = 'https://bunny.invalid/events/device/2.4';
+  valid(message);
+  art.stageVersion = '2.2'; invalid(message);
+  delete art.stageVersion; valid(message);
 });
 
 test('art families carry no location, path or credential: every payload is closed', () => {
