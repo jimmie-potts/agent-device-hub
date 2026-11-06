@@ -161,3 +161,22 @@ for (const failure of ['CRC', 'truncated', 'already-aborted']) test(`archive ${f
   assert.equal(child.status, 0, child.stderr);
   assert.match(child.stdout, /archive refusal settled/);
 });
+// A packaged lane tests only the archive its own attempt's build reported (#1512).
+test('a verification lane accepts only the exact archive the build reported, loaded as that image', async t => {
+  const {expectedImage, loadedIdentity} = await import('../verify.mjs');
+  const f = fixture(), a = await archive(t, f.entries);
+  const reported = await savedImageMetadata(a.path, candidate, f.production);
+  const expected = expectedImage(JSON.stringify(reported), candidate);
+  assert.equal(await loadedIdentity(a.path, f.production, candidate, expected), f.configId);
+  await assert.rejects(loadedIdentity(a.path, f.production, candidate, {...expected, archiveSha256: 'c'.repeat(64)}), /release-image-refused/);
+  await assert.rejects(loadedIdentity(a.path, f.production, candidate, {...expected, id: 'sha256:' + 'c'.repeat(64)}), /release-image-refused/);
+  const other = fixture({mutateConfig: value => {value.config.Labels.extra = 'another build';}}), b = await archive(t, other.entries);
+  await assert.rejects(loadedIdentity(b.path, other.production, candidate, expected), /release-(image|archive)-refused/, 'another build of the same source');
+  const reordered = structuredClone(f.production); reordered.RootFS.Layers.reverse();
+  await assert.rejects(loadedIdentity(a.path, reordered, candidate, expected), /release-archive-refused/, 'a loaded image with other layers');
+  await assert.rejects(loadedIdentity(a.path, {...f.production, Architecture: 'amd64'}, candidate, expected), /release-image-refused/);
+  for (const text of ['', 'null', '{}', JSON.stringify({...reported, revision: 'b'.repeat(40)}), JSON.stringify({...reported, extra: 1}),
+    JSON.stringify({...reported, archive: 'other.tar.gz'}), JSON.stringify({...reported, id: 'mutable:tag'})]) {
+    assert.throws(() => expectedImage(text, candidate), /release-verify-refused/, text);
+  }
+});

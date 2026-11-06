@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
 import {spawnSync} from 'node:child_process';
-import {packagedTests} from '../packaged.mjs';
+import {LANES, lanePlan, packagedTests} from '../packaged.mjs';
 
 test('sealed-image inventory keeps every verification file except the exact checkout-only build file', async context => {
   const root = await mkdtemp(join(tmpdir(), 'packaged-inventory-'));
@@ -35,4 +35,28 @@ test('packaged backup helper failure is executed and blocks qualification',async
   const program=`import{runPackaged}from ${JSON.stringify(new URL('../packaged.mjs',import.meta.url).href)};process.exitCode=await runPackaged(${JSON.stringify(root)});`;
   const child=spawnSync(process.execPath,['--input-type=module','-e',program],{env,encoding:'utf8'});
   assert.equal(child.status,1);assert.match(child.stdout+child.stderr,/synthetic helper negative control/);
+});
+
+// The parallel lanes run the same inventory as one serial job (#1512): every file in one lane, except the capture file,
+// whose two complementary shards run in two lanes. Each lane keeps the serial runner wherever the job had it.
+test('the packaged lanes together run every packaged file once, and split only the capture cases', () => {
+  const steps = 'apps/runtime/dist/verify/tests/steps.test.js';
+  const tests = {helpers: ['scripts/tests/bunny-backup.test.mjs'],
+    scenarios: ['apps/runtime/dist/tests/scenarios/catalog.test.js', 'apps/runtime/dist/tests/scenarios/runner.test.js'],
+    verification: ['apps/runtime/dist/verify/tests/adapter.test.js', steps, 'apps/runtime/dist/verify/tests/supervisor.test.js', 'apps/runtime/dist/verify/tests/future.test.js'],
+    excluded: ['apps/runtime/dist/verify/tests/build.test.js']};
+  const files = plan => plan.flatMap(({args}) => args.filter(arg => !arg.startsWith('--')));
+  const serial = lanePlan(tests, undefined);
+  assert.deepEqual(serial.map(({args}) => args), [['--test', ...tests.scenarios], ['--test', '--test-concurrency=1', ...tests.verification], ['--test', ...tests.helpers]]);
+  assert.ok(serial.every(({env}) => env === undefined), 'the serial run takes every capture case');
+  const lanes = LANES.map(lane => lanePlan(tests, lane));
+  const all = lanes.flatMap(files);
+  assert.deepEqual(all.filter(file => file !== steps).sort(), files(serial).filter(file => file !== steps).sort(), 'every other file runs exactly once');
+  const shards = lanes.flat().filter(({args}) => args.includes(steps));
+  assert.deepEqual(shards.map(({env}) => env?.BUNNY_CAPTURE_SHARD).sort(), ['1/2', '2/2'], 'the capture file runs as two complementary shards');
+  for (const {args} of lanes.flat()) {
+    if (args.some(file => tests.verification.includes(file))) assert.equal(args[1], '--test-concurrency=1', 'verification files stay serial');
+  }
+  assert.throws(() => lanePlan(tests, 'other'), /packaged-lane-refused/);
+  assert.throws(() => lanePlan({...tests, verification: tests.verification.filter(file => file !== steps)}, 'captures'), /packaged-test-inventory-refused/);
 });
