@@ -59,7 +59,7 @@ function LightingTarget({record, device, live, control, operations, operationsLi
     <label htmlFor={presetId}>Saved reactive preset</label>
     <select id={presetId} value={chosen ?? ''} disabled={list.length === 0 || session.status !== 'idle' || start.locked}
       onChange={event => {setChoice(event.currentTarget.value);}}>
-      {list.length === 0 && <option value="">No saved presets</option>}
+      {list.length === 0 && <option value="">{presets.live ? 'No saved presets' : presets.failed ? 'Preset library unavailable' : 'Loading saved presets'}</option>}
       {list.map(preset => <option key={preset.presetId} value={preset.presetId}>{preset.name}</option>)}
     </select>
     <div className="music-capture-actions">

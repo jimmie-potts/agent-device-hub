@@ -101,7 +101,7 @@ export function MusicResponseControls({view, available, operations, operationsLi
         <p>Level {(view.response.level * 100).toFixed(1)}% · Bass {(view.response.bass * 100).toFixed(1)}% · Mid {(view.response.mid * 100).toFixed(1)}% · Treble {(view.response.treble * 100).toFixed(1)}%</p>
         <p className="music-note">{response?.settings.gate.mode === 'off' ? 'Gate off. Preview is uncalibrated.' : response?.settings.gate.mode === 'manual' ? 'Manual threshold, uncalibrated.' : 'Gate uses the applied measured candidate.'} {response?.settings.gate.mode !== 'off' && (view.response.gateOpen ? 'Gate open.' : 'Gate closed; smoothing may still decay.')}</p>
       </>}
-      <p className="music-note">Numerical response only. The raw input meter is unchanged. Lights are not connected.</p>
+      <p className="music-note">Numerical response only. The raw input meter is unchanged. This preview drives no lights; live Music lighting sessions use saved presets.</p>
     </div>
   </section>;
 }
