@@ -231,14 +231,20 @@ retain their existing recipe contracts.
 ## Saved reactive presets
 
 The Wall page's **Music effect preview** includes a private reactive library.
-Choose an effect and edit palette/intensity, enter a name, then select **Save
-new preset**. It stores a fully explicit frozen `MusicRecipeV1`, independently
+Choose an effect, edit its palette, intensity or motion, enter a name, then
+select **Save new preset**. It stores a fully explicit frozen `MusicRecipeV1`, independently
 of static animation favorites and decorative show timelines. **Load into draft**
-changes only the local preview. Every effect-local renderer value is retained
-and shown, including sensitivity, renderer smoothing, direction, pulse half-life
-and wave period where applicable. Capture calibration and live-analysis settings
-remain core-owned. Only an explicit **Preview** prepares generated input on
-example geometry; loading and saving start no capture or device operation.
+changes only the local preview. Every effect-local renderer value is retained.
+Direction is editable for spectrum and traveling wave, pulse half-life for bass pulse, and wave cycle for traveling
+wave. Pulse half-life accepts 100–2000 ms and wave cycle 400–10000 ms; direction
+uses the existing eight choices. These edits change only the local full V1 draft
+and invalidate any prior or pending preview. Switching effects uses its existing
+built-in defaults without carrying fields from another effect. Sensitivity and
+renderer smoothing are shown read-only, preserving loaded values exactly.
+Capture calibration and live-analysis settings remain core-owned. Only an
+explicit **Preview** prepares twenty generated samples spanning 1.9 seconds on
+example geometry, so a long wave cycle or decay is only partly shown. Loading
+and saving start no capture or device operation.
 
 The metadata-only command `nanoleaf-reactive-preset-save/2.0` uses the fixed
 `reactive-presets` target with `presetId`, `expectedRevision`, `name` and `recipe`.

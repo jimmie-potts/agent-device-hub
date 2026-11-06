@@ -1,5 +1,6 @@
 import React, {useEffect, useMemo, useSyncExternalStore} from 'react';
 import type {FrontendContext} from '@jimmie-potts/sdk/frontend';
+import {MUSIC_DIRECTIONS} from '../music-recipe-data.js';
 import {MUSIC_PREVIEW_MODELS, MUSIC_PREVIEW_PRESETS} from '../music-preview-data.js';
 import {MusicPreviewDraft, musicPreviewProblem} from './music-preview-model.js';
 import {ReactivePresets} from './reactive-presets.js';
@@ -47,9 +48,23 @@ export function MusicPreview({context}: {context: FrontendContext}): React.JSX.E
       </div>)}
     </div><button type="button" className="secondary" disabled={draft.palette.length >= 8}
       onClick={() => {model.edit({palette: [...model.snapshot().draft.palette, '#ffffff']});}}>Add color</button></fieldset>
-    <p className="hint">Renderer V{recipe.rendererVersion} · Sensitivity {recipe.sensitivity} · Renderer smoothing {recipe.smoothingMs} ms
-      {'direction' in recipe && <> · Direction {recipe.direction}</>}{'halfLifeMs' in recipe && <> · Pulse half-life {recipe.halfLifeMs} ms</>}
-      {'periodMs' in recipe && <> · Wave period {recipe.periodMs} ms</>}. These frozen renderer values are read-only here; capture calibration is separate.</p>
+    {('direction' in recipe || 'halfLifeMs' in recipe) && <fieldset><legend>Effect motion</legend>
+      <div className="music-preview-fields">
+        {'direction' in recipe && <label>Direction<select value={recipe.direction} onChange={event => {
+          const direction = MUSIC_DIRECTIONS.find(value => value === event.currentTarget.value);
+          if (direction !== undefined) model.editMotion({kind: 'direction', value: direction});
+        }}>{MUSIC_DIRECTIONS.map(direction => <option key={direction} value={direction}>{direction}</option>)}</select></label>}
+        {'halfLifeMs' in recipe && <label>Pulse half-life <span aria-hidden="true">{recipe.halfLifeMs} ms</span>
+          <input type="range" aria-label="Pulse half-life" aria-valuetext={`${recipe.halfLifeMs} milliseconds`} min="100" max="2000" step="any" value={recipe.halfLifeMs}
+            onChange={event => {model.editMotion({kind: 'pulse-half-life', value: event.currentTarget.valueAsNumber});}}/></label>}
+        {'periodMs' in recipe && <label>Wave cycle <span aria-hidden="true">{recipe.periodMs} ms</span>
+          <input type="range" aria-label="Wave cycle" aria-valuetext={`${recipe.periodMs} milliseconds`} min="400" max="10000" step="any" value={recipe.periodMs}
+            onChange={event => {model.editMotion({kind: 'wave-period', value: event.currentTarget.valueAsNumber});}}/></label>}
+      </div>
+      <p className="hint">Motion edits affect this draft and its generated example. Save a new preset to retain them.</p>
+    </fieldset>}
+    <p className="hint">Renderer V{recipe.rendererVersion} · Sensitivity {recipe.sensitivity} · Renderer smoothing {recipe.smoothingMs} ms.
+      These sensitivity and smoothing values are read-only here; microphone response settings are separate.</p>
     <ReactivePresets context={context} recipe={recipe} load={saved => {model.load(saved);}}/>
     <div className="music-preview-actions">
       <button type="button" disabled={!view.connected || view.pending || problem !== undefined} onClick={() => {void model.preview();}}>
