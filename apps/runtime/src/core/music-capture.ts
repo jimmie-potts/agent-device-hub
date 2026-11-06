@@ -66,6 +66,15 @@ export class MusicCapturePart implements CorePart {
     if (this.#faulted || this.#live !== undefined || (this.#database?.isOpen === true && this.#state().endpointId !== null)) this.#failure();
   }
   available(): boolean {return !this.#faulted && this.#database !== undefined;}
+  /** The current session a lighting Start may bind to (#1272): only while the endpoint is available and the session active. */
+  activeCapture(): {endpointId: string; generation: string; input: CaptureSelection['input']} | undefined {
+    if (this.#closed || !this.available()) return undefined;
+    try {
+      const state = this.#state(), session = state.session;
+      if (state.availability !== 'available' || state.endpointId === null || session.status !== 'active') return undefined;
+      return {endpointId: state.endpointId, generation: session.generation, input: session.input};
+    } catch {return undefined;}
+  }
   setRetirement(retire: () => void): void {
     if (this.#retireEndpoint !== undefined) throw new Error('capture-retirement-already-bound');
     this.#retireEndpoint = retire;

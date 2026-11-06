@@ -435,6 +435,105 @@
    "id": "endpoint-1"
   }
  },
+ "music-lighting-control": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "test-music-lighting-control",
+  "source": "bunny/core",
+  "type": "org.bunny.music-lighting.control.requested",
+  "subject": "lines",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-lighting-control/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "req-1",
+   "expectedRevision": 1,
+   "action": "start",
+   "capture": {
+    "endpointId": "endpoint-1",
+    "generation": "6a1b3c9d-2e3f-4a5b-9c60-123456789abc"
+   },
+   "presetId": "preset-warm"
+  },
+  "expiresat": "2026-11-05T00:00:05.000Z"
+ },
+ "music-lighting-work": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "test-music-lighting-work",
+  "source": "bunny/core",
+  "type": "org.bunny.music-lighting.work.requested",
+  "subject": "lines",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-lighting-work/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "req-2",
+   "generation": "5f0c2a8e-1b2c-4d3e-8f40-0123456789ab",
+   "action": "stop"
+  },
+  "expiresat": "2026-11-05T00:00:05.000Z"
+ },
+ "music-lighting-state": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "test-music-lighting-state",
+  "source": "bunny/core",
+  "type": "org.bunny.music-lighting.updated",
+  "subject": "lines",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-lighting-state/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "lines",
+   "revision": 2,
+   "session": {
+    "status": "active",
+    "generation": "5f0c2a8e-1b2c-4d3e-8f40-0123456789ab",
+    "operationId": "req-1",
+    "capture": {
+     "endpointId": "endpoint-1",
+     "generation": "6a1b3c9d-2e3f-4a5b-9c60-123456789abc"
+    },
+    "presetId": "preset-warm",
+    "startedAtMs": 1762300000000
+   },
+   "last": null
+  }
+ },
+ "music-lighting-device": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "test-music-lighting-device",
+  "source": "bunny/modules/nanoleaf",
+  "type": "org.bunny.music-lighting-device.updated",
+  "subject": "lines",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-lighting-device/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "lines",
+   "revision": 3,
+   "session": {
+    "generation": "5f0c2a8e-1b2c-4d3e-8f40-0123456789ab",
+    "status": "ended",
+    "ended": {
+     "generation": "5f0c2a8e-1b2c-4d3e-8f40-0123456789ab",
+     "reason": "alert",
+     "restoration": "restored",
+     "atMs": 1762300005000
+    }
+   }
+  }
+ },
  "music-capture-control": {
   "specversion": "1.0",
   "bunnyprofile": "2.0",

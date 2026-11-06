@@ -28,6 +28,7 @@ import {PlaybackLayoutPart} from './playback-layout.js';
 import {HomeLayoutPart} from './home-layout.js';
 import {AutomationError} from './automation.js';
 import {MusicCapturePart} from './music-capture.js';
+import {MusicLightingPart} from './music-lighting.js';
 import {ArtPart} from './art-part.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
@@ -290,6 +291,7 @@ class Core {
   setAutomationDevices(devices:readonly AutomationDevice[]):void {this.#automation.setDevices(devices);}
   readonly #mode: ModePart;
   readonly #music: MusicCapturePart;
+  readonly #lighting: MusicLightingPart;
   readonly #sdk: Sdk;
   readonly #log: Logger;
   readonly #clock: Clock;
@@ -341,6 +343,11 @@ class Core {
       complete: (tx, authority, result) => this.#tracker.completeOwnedCore(tx, authority, result),
       end: command => this.#tracker.endOperator(command),
     }, context.scheduler);
+    this.#lighting = new MusicLightingPart({
+      admit: command => this.#tracker.admitOperator(command),
+      complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
+      end: command => this.#tracker.endOperator(command),
+    }, context.scheduler, () => this.#music.activeCapture());
     const lightingLayout = new LightingLayoutPart({
       admit: command => this.#tracker.admitOperator(command),
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
@@ -357,7 +364,7 @@ class Core {
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
     });
-    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, this.#art, this.#music, ...added];
+    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, this.#art, this.#music, this.#lighting, ...added];
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);
@@ -447,6 +454,7 @@ class Core {
         });
         this.#opened();
         await this.#music.recover();
+        await this.#lighting.recover();
         this.#schedule();
         // Every action still pending after a restart waits for its deadline, never to be sent again.
         this.#tracker.resume();
@@ -468,6 +476,7 @@ class Core {
     this.#companions.close();
     this.#art.close();
     await this.#music.close();
+    await this.#lighting.close();
     await this.#tracker.stop();
     const owner = this.#owner;
     this.#owner = undefined;
@@ -740,6 +749,7 @@ class Core {
   setModeParticipants(participants: readonly ModeParticipant[]): void {
     this.#mode.setParticipants(participants);
     this.#automation.setParticipants(participants);
+    this.#lighting.setParticipants(participants);
   }
 
   inbox(): ReturnType<InboxRecords['records']> { return this.#inbox.records(); }

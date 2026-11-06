@@ -71,6 +71,14 @@
     "./v2/music-capture": {
       "types": "./dist/v2/music-capture.d.ts",
       "import": "./dist/v2/music-capture.js"
+    },
+    "./v2/music-lighting-data": {
+      "types": "./dist/v2/music-lighting-data.d.ts",
+      "import": "./dist/v2/music-lighting-data.js"
+    },
+    "./v2/music-lighting": {
+      "types": "./dist/v2/music-lighting.d.ts",
+      "import": "./dist/v2/music-lighting.js"
     }
   },
   "dependencies": {

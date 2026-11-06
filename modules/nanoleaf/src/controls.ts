@@ -14,6 +14,7 @@ import {resolveAnimation} from './favorites.js';
 import {ANIMATION, CONTROLS, MODE, answerCode, finish, hold, held, journal, journalRow, outcomeOf, release, type ErrorCode, type JournalRow,
   type Report, type Transact} from './journal.js';
 import {changeMode, isMode, type Mode} from './modes.js';
+import {MUSIC_PLAY} from './music-store.js';
 import {execute, first, text, transaction, type Db} from './sqlite.js';
 import {controlState, markDirty} from './store.js';
 import {HttpError} from './transport.js';
@@ -171,11 +172,13 @@ function insert(db: Db, admission: Admission, device: string, command: ControlCo
 }
 
 /**
- * The device's queued native controls at this revision and its queued animations, in admission order. An animation is
- * only ever queued in Free, since any mode command retires it.
+ * The device's queued native controls, moments and Music starts at this revision and its queued animations, in admission
+ * order. An animation is only ever queued in Free, since any mode command retires it. A Music stop is not content: the
+ * running session's own loop takes it.
  */
 export function queuedContent(db: Db, device: string, revision: number): JournalRow[] {
-  return journal(db, device, "AND phase='queued' AND ((kind IN (?, ?, ?, ?) AND mode_revision=?) OR kind=?)", ...CONTROLS, 'moment.play', revision, ANIMATION);
+  return journal(db, device, "AND phase='queued' AND ((kind IN (?, ?, ?, ?, ?) AND mode_revision=?) OR kind=?)", ...CONTROLS, 'moment.play', MUSIC_PLAY,
+    revision, ANIMATION);
 }
 
 /** The queued mode command this revision applies, if one was admitted (Python's Execution without a sequence). */
@@ -274,10 +277,10 @@ export class Execution {
         const row = this.id === null ? undefined : journalRow(db, this.id);
         if (row === undefined) return;
         if (answered !== undefined) {
-          finish(db, row, {kind: 'answered', code: answered}, report);
+          finish(db, row, {kind: 'answered', code: answered}, report, this.nowMs());
           return;
         }
-        finish(db, row, {kind: 'uncertain'}, report);
+        finish(db, row, {kind: 'uncertain'}, report, this.nowMs());
         hold(db, this.device, row.revision, {requestId: row.id, heldAtMs: this.nowMs()});
       });
       if (answered !== undefined) throw new Cancelled('The device refused the write.', {cause: error});

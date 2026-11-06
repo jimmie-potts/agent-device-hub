@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/music-lighting-state/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "session",
+    "last"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "session": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "const": "idle"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "generation",
+            "operationId",
+            "capture",
+            "presetId",
+            "startedAtMs"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "starting",
+                "active",
+                "stopping",
+                "uncertain"
+              ]
+            },
+            "generation": {
+              "$ref": "#/$defs/generation"
+            },
+            "operationId": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+            },
+            "capture": {
+              "$ref": "#/$defs/capture"
+            },
+            "presetId": {
+              "$ref": "#/$defs/presetId"
+            },
+            "startedAtMs": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+            }
+          }
+        }
+      ]
+    },
+    "last": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/ended"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "generation": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "presetId": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^preset-[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "endpointId",
+        "generation"
+      ],
+      "properties": {
+        "endpointId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        }
+      }
+    },
+    "ended": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "reason",
+        "restoration",
+        "atMs"
+      ],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "reason": {
+          "enum": [
+            "stopped",
+            "alert",
+            "manual",
+            "source-lost",
+            "device",
+            "restart",
+            "expired",
+            "refused"
+          ]
+        },
+        "restoration": {
+          "enum": [
+            "restored",
+            "skipped",
+            "none"
+          ]
+        },
+        "atMs": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+        }
+      }
+    }
+  }
+}

@@ -812,3 +812,24 @@ PCM, physical loudness or beat estimate. Retired qualification clears the curren
 binding while retaining preferences and evidence. All earlier schema files and
 Music/microphone raw feature meanings remain unchanged. The core never
 dual-publishes state.
+
+### Music lighting sessions (`music-lighting-*/2.0`)
+
+`registerMusicLightingFamilies` registers four new families, all at 2.0, for the first live Music lighting trial (#1272, #722, policy in #40). The browser-safe `v2/music-lighting-data` export owns their types and reason lists.
+
+| Family | Kind | Sender to owner | Subject |
+|---|---|---|---|
+| `music-lighting-control` | command | operator to core | target light |
+| `music-lighting-state` | state | core | target light |
+| `music-lighting-work` | command | core to the light's module | target light |
+| `music-lighting-device` | state | light's module | target light |
+
+Control starts with `capture: {endpointId, generation}` and a saved `presetId`, or stops, both with `expectedRevision`. It never carries a mode, an inline recipe or an input choice. Work carries the core's session `generation`.
+
+State records name their own light. An ending is `{generation, reason, restoration, atMs}`:
+
+- Reasons: `stopped`, `alert`, `manual`, `source-lost`, `device`, `restart`, `expired` or `refused`.
+- Restorations: `restored`, `skipped` or `none`.
+
+A device record's ending must name its session's generation. The tests are in `tests/music-lighting.test.mjs`.
+
