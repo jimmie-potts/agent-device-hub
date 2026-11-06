@@ -8,6 +8,7 @@
 // (Hub #975); Python's hold had none.
 import {errorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import {DEFAULT, metaKey} from './devices.js';
+import {initMusicSessions, liveSession, MUSIC_PLAY, MUSIC_STOP, startEnded} from './music-store.js';
 import {execute, first, number, rows, text, transaction, type Db, type Row, type Synchronous} from './sqlite.js';
 import {Outcome as OutcomeWord} from '@jimmie-potts/sdk';
 
@@ -66,8 +67,14 @@ export interface ScenesChanged {
   device: string;
 }
 
+/** The device's live Music session record changed (#1272); the runtime publishes its `music-lighting-device` record. */
+export interface MusicChanged {
+  type: 'music';
+  device: string;
+}
+
 /** Called inside the transaction whose change it reports, so the message commits with that change. */
-export type Report = (message: Outcome | ScenesChanged) => void;
+export type Report = (message: Outcome | ScenesChanged | MusicChanged) => void;
 
 /**
  * Runs `work` in one synchronous transaction on the module's database, with a `report` that stores each message in that
@@ -107,6 +114,8 @@ export function initJournal(db: Db): void {
     completed INTEGER NOT NULL DEFAULT 0, uncertain INTEGER NOT NULL DEFAULT 0, accepted REAL NOT NULL, expires REAL NOT NULL)`);
   db.exec('CREATE TABLE IF NOT EXISTS control_scenes (device TEXT PRIMARY KEY, scene_key TEXT NOT NULL, names TEXT NOT NULL)');
   db.exec('CREATE TABLE IF NOT EXISTS control_holds (device TEXT PRIMARY KEY, request_id TEXT NOT NULL, held_at_ms INTEGER NOT NULL)');
+  // A Music start that ends in the journal ends its session record too (#1272).
+  initMusicSessions(db);
 }
 
 const COLUMNS = 'seq,id,device,kind,command,mode_revision,phase,completed,uncertain,expires';
@@ -198,8 +207,10 @@ const OVERRIDES: Readonly<Record<string, string>> = {'power.set': 'controller_po
 /**
  * End a command: delete its row and report its outcome in the same transaction. A power or brightness command that
  * failed had no effect, so the desired state it set goes with it, unless another of its kind still waits on the device.
+ * A Music start that ends before its first frame ends its session at `nowMs`, and the stops that waited on it (#1272);
+ * without `nowMs`, at the start's expiry, the latest it could have ended.
  */
-export function finish(db: Db, row: JournalRow, end: End, report: Report): void {
+export function finish(db: Db, row: JournalRow, end: End, report: Report, nowMs?: number): void {
   execute(db, 'DELETE FROM control_journal WHERE seq=?', row.seq);
   const outcome = outcomeOf(row, end);
   const override = OVERRIDES[row.kind];
@@ -207,6 +218,16 @@ export function finish(db: Db, row: JournalRow, end: End, report: Report): void 
     execute(db, 'DELETE FROM meta WHERE key=?', metaKey(override, row.device));
   }
   report(outcome);
+  if (row.kind !== MUSIC_PLAY) return;
+  const generation = startEnded(db, row, end, nowMs ?? row.expires * 1000, report);
+  if (generation !== undefined) finishMusicStops(db, row.device, generation, {kind: 'refused', code: 'invalid-state'}, report, nowMs);
+}
+
+/** Ends every queued Music stop for `generation` (#1272): its session ended, so nothing is left for it to stop. */
+export function finishMusicStops(db: Db, device: string, generation: string, end: End, report: Report, nowMs?: number): void {
+  for (const stop of journal(db, device, 'AND kind=?', MUSIC_STOP)) {
+    if ((stop.command as {generation?: unknown}).generation === generation) finish(db, stop, end, report, nowMs);
+  }
 }
 
 /**
@@ -214,8 +235,8 @@ export function finish(db: Db, row: JournalRow, end: End, report: Report): void 
  * controller_state.changed did, and its queued animations, as integration_api.retire did. An animation mid-attempt
  * finishes its one write.
  */
-export function retireQueued(db: Db, device: string, report: Report): void {
-  for (const row of journal(db, device, "AND (phase='queued' OR kind<>?)", ANIMATION)) finish(db, row, {kind: 'retired'}, report);
+export function retireQueued(db: Db, device: string, report: Report, nowMs?: number): void {
+  for (const row of journal(db, device, "AND (phase='queued' OR kind<>?)", ANIMATION)) finish(db, row, {kind: 'retired'}, report, nowMs);
 }
 
 /**
@@ -225,7 +246,7 @@ export function retireQueued(db: Db, device: string, report: Report): void {
  */
 export function recoverAttempts(db: Db, device: string, report: Report, nowMs: number): void {
   for (const row of journal(db, device, "AND phase='attempting'")) {
-    finish(db, row, {kind: 'uncertain'}, report);
+    finish(db, row, {kind: 'uncertain'}, report, nowMs);
     if (row.kind !== ANIMATION) hold(db, device, row.revision, {requestId: row.id, heldAtMs: nowMs});
   }
 }
@@ -237,6 +258,8 @@ export function recoverAttempts(db: Db, device: string, report: Report, nowMs: n
  */
 export function expireQueued(db: Db, device: string, now: number, report: Report, nativeOnly = false): void {
   for (const row of journal(db, device, "AND phase='queued' AND expires<=? AND (kind<>? OR ?)", now, ANIMATION, nativeOnly ? 0 : 1)) {
-    finish(db, row, {kind: 'expired'}, report);
+    // A Music stop waits for its live session's loop, which ends it with the session; a late Stop never strands one (#1272).
+    if (row.kind === MUSIC_STOP && liveSession(db, device, String((row.command as {generation?: unknown}).generation))) continue;
+    finish(db, row, {kind: 'expired'}, report, now * 1000);
   }
 }

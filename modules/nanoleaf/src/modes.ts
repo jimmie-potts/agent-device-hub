@@ -21,7 +21,7 @@ export const isMode = (value: unknown): value is Mode => MODES.some(mode => mode
 export function changeMode(db: Db, mode: string, instant: number, report: Report, device: string = DEFAULT): boolean {
   const key = (name: string): string => metaKey(name, device);
   release(db, device);
-  retireQueued(db, device, report);
+  retireQueued(db, device, report, instant * 1000);
   const state = controlState(db, device);
   const current = overrides(db, device);
   const overridden = current.power !== null || current.brightness !== null;

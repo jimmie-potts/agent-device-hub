@@ -13,6 +13,7 @@ export type {LightingLayout, LightingLayoutRecord, LightingLayoutSetRequest, Lig
 import {companionFamilies} from './companions.js';
 import {codingFamilies} from './coding.js';
 import {musicCaptureFamilies} from './music-capture.js';
+import {musicLightingFamilies} from './music-lighting.js';
 import {musicPlaybackFamilies} from './music-playback.js';
 import {artFamilies} from './art.js';
 import {rainNoticeIssue, rainNoticeRefusal, type RainNotice} from './art-notice.js';
@@ -410,6 +411,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   ...companionFamilies,
   ...codingFamilies,
   ...musicCaptureFamilies,
+  ...musicLightingFamilies,
   ...musicPlaybackFamilies,
   ...artFamilies,
   define('art-schedule', 'state', 'org.bunny.art-schedule.updated', checkArtSchedule),

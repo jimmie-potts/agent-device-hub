@@ -5,6 +5,7 @@
 // restarts the worker (PORTING.md).
 import {join} from 'node:path';
 import {MOMENT, playMoment} from './moments.js';
+import {endInterruptedMusic, MUSIC_PLAY, playMusic, type MusicFeeds, type MusicStart} from './music-session.js';
 import {pyJsonAllowNan, pyJsonCompact} from './compat.js';
 import {currentComet, pruneComets} from './comets.js';
 import {followRegistry, loadConfig, readRegisteredDevices, registeredDevices} from './configuration.js';
@@ -51,6 +52,8 @@ export interface WorkerOptions {
   scenes?: boolean;
   /** Runs each transaction that ends commands, so their outcomes commit with it (the runtime's outbox). */
   transact: Transact;
+  /** The runtime's current Music features, for a live session (#1272); without it a session ends as source loss. */
+  music?: MusicFeeds;
 }
 
 /** The worker's stop signal ended a wait. */
@@ -271,6 +274,8 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
     // Only the device's locked worker ends its unfinished attempts: one without a result may have reached the device.
     // A native control unsent past its expiry fails here; an animation's expiry waits for the pass, as in Python.
     const heldAtStart = await transact(report => {
+      // A Music session whose loop ended with the last worker ends first, so its Start's recovery is not its ending.
+      endInterruptedMusic(db, device, clock.now(), report);
       recoverAttempts(db, device, report, clock.now());
       expireQueued(db, device, now(), report, true);
       return held(db, controlState(db, device).revision, device) && !selected(db);
@@ -402,20 +407,30 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
         const row = journalRow(db, id);
         if (row !== undefined) finish(db, row, {kind: 'refused', code}, report);
       });
+      // A bounded effect's current indications, recomputed from the store, including current alerts and status.
+      const current=():Indication[]=>transaction(db,()=>{
+        const latest=dashboard(db,config,now());
+        config._comet=currentComet(db,now(),device);
+        config._locate=locateState(db,config,now(),controlState(db,device).mode);
+        renderConfig(db,config,latest);sharedRenderConfig(db,config);
+        return latest;
+      });
+      const taken=():void=>{scenes?.save({owned:true});if(scenes!==null) scenes.selected='*Dynamic*';};
       const applyControls = async (): Promise<void> => {
         // Native one-shot writes and requested animations, in admission order.
         for (const row of queuedContent(db, device, control.revision)) {
+          if(row.kind===MUSIC_PLAY) {
+            // A live Music session runs in this locked pass until it ends, as a moment does (#1272).
+            active=null;
+            await playMusic({db,device,row,config,transact,request,now:()=>clock.now(),sleep,current,taken,
+              input:options.music?.input(device,(row.command as MusicStart).generation),
+              clock:options.music?.clock ?? (()=>({wallMs:clock.now(),monotonicMs:clock.now()})),stopping:()=>signal.aborted});
+            execute(db,'DELETE FROM display_v3 WHERE device=?',device);
+            throw new Cancelled('Start a fresh display pass after a Music session.');
+          }
           if(row.kind===MOMENT) {
             active=null;
-            const current=():Indication[]=>transaction(db,()=>{
-              const latest=dashboard(db,config,now());
-              config._comet=currentComet(db,now(),device);
-              config._locate=locateState(db,config,now(),controlState(db,device).mode);
-              renderConfig(db,config,latest);sharedRenderConfig(db,config);
-              return latest;
-            });
-            await playMoment({db,device,row,config,transact,request,now:()=>clock.now(),sleep,current,
-              taken:()=>{scenes?.save({owned:true});if(scenes!==null) scenes.selected='*Dynamic*';},
+            await playMoment({db,device,row,config,transact,request,now:()=>clock.now(),sleep,current,taken,
               restore:async(snapshot,momentExecution)=>{
                 active=momentExecution;
                 execute(db,'DELETE FROM display_v3 WHERE device=?',device);

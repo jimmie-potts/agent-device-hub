@@ -945,6 +945,7 @@ export class Gateway {
     if (family === 'art-auto' || family === 'art-dispatch' || family === 'art-stage' || family === 'art-ambient-set') return errorBody('forbidden', {detail: 'automatic art and its forwarded commands belong to the core and the art module'});
     if (family.startsWith('coding-')) return errorBody('forbidden', {detail: 'coding delegation goes through the companions owner and its worker endpoint'});
     if (family.startsWith('music-playback-')) return errorBody('forbidden', {detail: 'Music playback work belongs to the playback owner and its producer endpoint'});
+    if (family.startsWith('music-lighting-') && family !== 'music-lighting-control') return errorBody('forbidden', {detail: 'Music lighting work belongs to the core\'s session owner and the light\'s module'});
     if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
     if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
     const type = `org.bunny.${family.slice(0, verb)}.${family.slice(verb + 1)}.requested`;

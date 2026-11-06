@@ -667,6 +667,53 @@ calibration nor Apply sends capture work, changes permissions or writes lights.
 This source path supports Music.app and one configured microphone. The installed
 pilot separately qualifies helper identity, permissions, real routes and timing.
 
+## Music lighting sessions
+
+The core owns one Music lighting session per qualified Nanoleaf light (#1272).
+It serves each light's `music-lighting-state/2.0` record, idle until an explicit
+`music-lighting-control` Start. Control is an operator action: the gateway and
+MCP admit it through tracked operator dispatch, and Start and Stop each carry
+the record's `expectedRevision`.
+
+A Start names the core's current Music capture endpoint and generation and a
+saved preset. It is refused while capture is not active (`unavailable`), when
+the capture changed (`revision-conflict`), and for a microphone session
+(`unsupported-capability`). It is also refused for a target that is not a
+Nanoleaf participant (`unavailable`) and while a session is under way
+(`invalid-state`). Saving `starting` with a new session generation completes the
+operator command as observed. The core then dispatches one tracked
+`music-lighting-work` command to the light's module, with a request ID derived
+from the operator request and the light.
+
+The module's synced `music-lighting-device` record settles the session. `playing`
+for the current generation makes it `active`, and `ended` copies the module's
+ending unchanged: `stopped`, `alert`, `manual`, `source-lost` or `device`, its
+restoration (`restored`, `skipped`, `none` or `uncertain`) and any error `code`.
+A refused work reply ends the session `refused`, or `expired`, with the reply's
+`code`; a lost reply leaves it `uncertain`. A lost Start the module never
+reported ends once its command can no longer be admitted. This needs a fresh
+device copy showing no session of that generation and the Start's tracked
+outcome deadline passed. It then ends `expired`, or `refused` with a known
+refusal code, and restoration `none`.
+
+Stop saves `stopping` and sends work stop. When the module no longer holds the
+session, the Stop stands as `stopped` with no restoration. Another Stop is
+accepted while stopping, because a module's stop can expire unseen. It is a new
+explicit command with its own work, and only the latest Stop's answer counts. A
+Stop whose accepted work fails or reaches its outcome deadline without a device
+ending leaves the session `uncertain`. A core restart leaves every unfinished
+session `uncertain`. The next fresh device snapshot resolves it. A session the
+module once held but no longer holds ends `restart`; a Start it never held is
+settled as above. The core keeps the work IDs and whether the module reported the
+generation as private notes beside the published record.
+
+Only the core dispatches lighting work, and only in direct answer to an operator
+Start or Stop. No ending resumes a session, nothing is resent after restart or
+reconnection, and no path selects the microphone or another light. No edge grant
+requests lighting work or publishes a device record. Device admission, frames
+and restoration belong to the [Nanoleaf module](../../modules/nanoleaf/README.md).
+This source path does not qualify installed or physical behavior.
+
 ## Agent hooks
 
 Qualified explicit read actions use the separate
