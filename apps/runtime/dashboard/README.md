@@ -236,7 +236,9 @@ Choose Music.app or the producer's configured microphone alias. Selecting an
 input starts nothing. Opening Audio, another tab, reload and reconnect only read state.
 The existing playback card and its transport controls are unchanged.
 
-The meter uses current measurements for the selected input from the producer
+A configured microphone alias is not evidence of device presence or permission.
+
+The raw meter uses current measurements for the selected input from the producer
 endpoint and generation. Zero means measured silence; missing or expired data
 shows **Input level unavailable**. Its visual scale ends at digital full scale,
 while the RMS and peak numbers retain measured values above that scale.
@@ -252,11 +254,26 @@ Start. Read-only access, stale command records and unavailable producer state
 disable actions. A stopped session does not invent a result for an older
 uncertain Start; that Start remains locked until its tracked outcome resolves.
 
-This card measures input only and does not drive light effects. It cannot
-enable a missing Mac producer or grant macOS
+The microphone response section offers an explicit five-second quiet interval,
+its digital baseline and a heuristic gate suggestion. Completing it leaves the
+saved settings unchanged. Sensitivity, frequency emphasis, smoothing and the
+gate remain a draft until **Apply response settings** succeeds. Another editor's
+saved revision leaves the draft intact and requires **Keep my draft** or **Load
+saved settings** before another Apply. Measurement, Cancel, Apply and Stop use
+separate tracked attempts; an uncertain edit never disables an otherwise permitted Stop.
+
+**Response preview** uses committed settings and the browser-safe Nanoleaf
+response implementation, with one smoothing stage. **Input level** remains raw
+linear RMS/peak. Gate-off and explicit manual thresholds are labeled uncalibrated;
+a retained enabled gate is visibly inactive after its capture binding retires.
+Reload reads saved settings and current qualification without restarting capture
+or calibration. The browser accepts state 2.0, 2.1 and 2.2 explicitly and retains
+no measurement history.
+
+This card controls no lights. It cannot enable a missing Mac producer or grant macOS
 permission. `MusicCaptureFeed` owns one state copy and one feature subscription
 on the existing dashboard participant and closes them when Audio unmounts or
-its connection ends. It retains no measurement history.
+its connection ends.
 
 The numeric-only source fixture in `tests/music-capture.browser.ts` exercises
 the real disposable core and gateway. It runs through both the Music-card

@@ -31,6 +31,16 @@ const colors = (payload: Display | null): number[][] => {
   });
 };
 
+test('a rejected oversized frame cannot change V1 response state', () => {
+  const large = layout('lines', Array.from({length: 184}, (_, index) => index));
+  const make = () => new MusicRenderer(recipe('level-glow', {palette: ['#ffffff'], smoothingMs: 200}), large, binding);
+  const rejected = make(), reference = make();
+  const silence = (delta: number) => sample(delta, {rms: 0, peak: 0, bands: {bass: 0, mid: 0, treble: 0}});
+  rejected.render(silence(0));reference.render(silence(0));
+  assert.throws(() => rejected.render(sample(100)), /capacity/);
+  assert.deepEqual(rejected.render(silence(200)), reference.render(silence(200)));
+});
+
 test('level, bass and three-band spectrum have exact measured vectors on both device kinds', () => {
   for (const kind of ['lines', 'panels'] as const) {
     const multiplier = kind === 'lines' ? 2 : 1;
@@ -167,4 +177,28 @@ test('smoothing follows source elapsed time despite skipped windows', () => {
   sparse.render(sample());
   frequent.render(sample(100, {rms: 0}));
   assert.deepEqual(frequent.render(sample(200, {rms: 0})), sparse.render(sample(200, {rms: 0})));
+});
+
+test('explicit V2 and numerical response share a single gate, emphasis and smoothing interpretation', async () => {
+  const {musicResponse} = await import('../src/music-response.js');
+  const {freezeMusicRecipeV2} = await import('../src/music-effects.js');
+  const settings = {sensitivity: 2, smoothingMs: 200, emphasis: {bass: 2, mid: 0.5, treble: 0}, gate: {mode: 'manual', threshold: 0.1}};
+  const frozen = freezeMusicRecipeV2({rendererVersion: 2, effect: 'spectrum', palette: ['#ffffff'], response: settings});
+  assert.throws(() => freezeMusicRecipeV2({...frozen, sensitivity: 1}));
+  assert.throws(() => freezeMusicRecipeV2({...frozen, smoothingMs: 100}));
+  for (const kind of ['lines', 'panels'] as const) {
+    const render = new MusicRenderer(frozen, layout(kind), binding);
+    let preview: import('../src/music-response.js').MusicResponseValue | undefined;
+    for (const [delta, rms, bands] of [[0, 0.5, {bass: 0.2, mid: 0.4, treble: 1}], [100, 0.01, {bass: 0.01, mid: 0.01, treble: 0.01}]] as const) {
+      const observation = sample(delta, {rms, bands}), value = musicResponse(settings, observation.feature, delta === 0 ? 0 : 100, preview);
+      preview = value;
+      assert.equal(value.gateOpen, delta === 0);
+      const expected = [value.bass, value.mid, value.treble].flatMap(level => Array.from({length: kind === 'lines' ? 2 : 1}, () => {
+        const channel = Math.round(255 * level);return [channel, channel, channel];
+      }));
+      assert.deepEqual(colors(render.render(observation)), expected);
+    }
+    assert.deepEqual(colors(new MusicRenderer(JSON.parse(JSON.stringify(frozen)), layout(kind), binding).render(sample())),
+      colors(new MusicRenderer(frozen, layout(kind), binding).render(sample())));
+  }
 });

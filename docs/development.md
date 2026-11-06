@@ -2088,6 +2088,22 @@ is invoked by the adapter tests.
 Keep real audio-derived observations and camera recordings private. Installed
 capture, microphone and light trials belong to the selected music pilot.
 
+
+Calibration and response tuning (#721) use the existing event, runtime, Nanoleaf
+and dashboard CI discovery. After `npm run build`, run `npm run typecheck`,
+`npm run lint:js`, `npm run test:events:built`, `npm run test:sdk:built`,
+`npm run test:music-producer:built`, `npm run test:nanoleaf:built`,
+`npm run test:runtime-dashboard:built`, the focused
+`node --test apps/runtime/dist/tests/music-capture*.test.js` suites and
+`node apps/runtime/dashboard/tests/music-capture.browser.ts`.
+Core persistence and command-path changes also require the full runtime/scenario
+checks described above. Complete `npm run check:workflow` and
+`npm run test:workflow` for planning/specification changes. Fake clocks and
+synthetic derived windows establish calibration bounds and response parity.
+Clock checks cover first-window-relative elapsed time, exact uncertainty bounds,
+repeated timestamps, compressed bursts, backwards receipts and delayed delivery;
+these checks never access a microphone or qualify physical acoustics.
+
 The Music playback adapter (#571) uses those same producer/native commands and
 the existing event, SDK, runtime and playback test discovery. Native playback
 tests substitute process discovery, permission and every AppleEvent call; the

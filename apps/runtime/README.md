@@ -588,7 +588,7 @@ Start and stop use tracked operator admission with the current revision. A
 received start report proves activation; an accepted request alone does not.
 Stop fences features immediately, and clean teardown has its own outcome.
 The separate [Mac producer](../music-producer/README.md) opens the selected input.
-The core emits one `music-capture-state/2.1` entity for sync and live updates.
+The core emits one `music-capture-state/2.2` entity for sync and live updates.
 It accepts unchanged 2.0 Music producers and commands alongside explicit 2.1
 microphone commands. A configured alias is not evidence of device presence or
 permission. Audio selection alone starts nothing; missing permission must be
@@ -608,7 +608,29 @@ clean stop. Restart retires pending responsibility and never sends the old start
 again. Private history retains published derived measurements, so its storage
 continues growing during capture. No PCM enters that history.
 
-This source path supports Music.app only and controls no lights. The installed
+Microphone response controls use additive control 2.2 commands. Explicit quiet
+measurement collects 50 consecutive, unclipped 100 ms windows after admission,
+within a ten-second local deadline. Elapsed source, observed-wall and receipt
+times must agree within the existing clock/freshness uncertainty bounds. This
+rejects timestamp bursts while permitting bounded delivery delay. Evidence
+records source duration, not an exact receiver duration. It retains the 95th percentile and maximum
+linear RMS plus a suggested gate of twice that percentile, capped at 16. This is
+a digital baseline heuristic; derived features cannot establish acoustic quiet,
+calibrated loudness or the microphone's physical identity.
+
+The core retains settings and the latest successful evidence privately in its
+existing capture record. Apply checks both the capture revision and the draft's
+settings revision, commits once and binds the settings to the current endpoint,
+generation, public alias and format. Measurement completion creates a candidate;
+it does not apply it. Cancel ends only that measurement, while Stop remains an
+independent command. Source gaps, format changes, expiry, stop, clock failure,
+loss and restart retire qualification without deleting preferences or evidence.
+A new generation requires fresh measurement or an explicitly applied manual
+threshold. Alias reuse never establishes the same physical microphone. Gate-off
+settings can show an uncalibrated response without qualification. Neither
+calibration nor Apply sends capture work, changes permissions or writes lights.
+
+This source path supports Music.app and one configured microphone. The installed
 pilot separately qualifies helper identity, permissions, real routes and timing.
 
 ## Agent hooks

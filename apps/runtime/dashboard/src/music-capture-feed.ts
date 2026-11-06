@@ -1,9 +1,10 @@
+import {musicResponse, type MusicResponseValue} from '@jimmie-potts/nanoleaf/music-response';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {CAPTURE_CLOCK_DRIFT_MS, CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_REGISTRATION_SKEW_MS, CAPTURE_VALIDITY_MS,
   CAPTURE_WINDOW_MS, MUSIC_PRODUCER_SOURCE, type CaptureFeatures, type CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture-data';
 import type {RemoteParticipant, Scheduler, Subscription, SyncedCopy, SyncCompleted} from '@jimmie-potts/sdk/remote';
 export type CaptureReading = {wallMs: number; monotonicMs: number};
-export type MusicCaptureView = {synced: boolean; state: CaptureState | undefined; features: CaptureFeatures | undefined; clockQualified: boolean};
+export type MusicCaptureView = {synced: boolean; state: CaptureState | undefined; features: CaptureFeatures | undefined; response?: MusicResponseValue; clockQualified: boolean};
 const finite = (value: number): boolean => Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER;
 const validReading = (value: CaptureReading): boolean => Number.isSafeInteger(value.wallMs) && finite(value.wallMs) && finite(value.monotonicMs);
 type ClockAnchor = {sent: CaptureReading; received: CaptureReading; replyAt: number; lastMono: number};
@@ -14,17 +15,23 @@ export class CaptureProjection {
   #clock: ClockAnchor | undefined;
   #sequence = 0;
   #sourceEnd = -1;
+  #response: MusicResponseValue | undefined;
+  #retiredResponseKey = '';
+  #responseKey = '';
+  #responseSequence = 0;
+  #responseEnd = 0;
   synchronize(state: CaptureState, replyAt: number, sent: CaptureReading, received: CaptureReading): void {
     this.state(state);
     const elapsed = received.monotonicMs - sent.monotonicMs;
     const qualified = validReading(sent) && validReading(received) && Number.isSafeInteger(replyAt) && finite(replyAt) && elapsed >= 0 &&
       elapsed <= CAPTURE_REGISTRATION_SKEW_MS * 2 && Math.abs(received.wallMs - sent.wallMs - elapsed) <= CAPTURE_CLOCK_DRIFT_MS;
     this.#clock = qualified ? {sent, received, replyAt, lastMono: received.monotonicMs} : undefined;
-    this.view = {...this.view, synced: true, clockQualified: qualified, features: undefined};
+    this.view = {...this.view, synced: true, clockQualified: qualified, features: undefined};this.#preview();
   }
   state(state: CaptureState): void {
     if (identity(state) !== identity(this.view.state)) {this.#sequence = 0; this.#sourceEnd = -1; this.view = {...this.view, features: undefined};}
     this.view = {...this.view, state, ...(state.availability !== 'available' || state.session.status !== 'active' ? {features: undefined} : {})};
+    this.#preview();
   }
   feature(message: Message<CaptureFeatures>, now: CaptureReading): void {
     const bounds = this.bounds(now), state = this.view.state, frame = message.data;
@@ -39,26 +46,57 @@ export class CaptureProjection {
       !Number.isSafeInteger(frame.observedAtMs) || !finite(frame.observedAtMs) || !Number.isSafeInteger(frame.validUntilMs) ||
       frame.validUntilMs - frame.observedAtMs !== CAPTURE_VALIDITY_MS || frame.observedAtMs > bounds.lower + CAPTURE_MAX_CLOCK_SKEW_MS || frame.validUntilMs <= bounds.upper ||
       !finite(frame.rms) || frame.rms > 16 || !finite(frame.peak) || frame.peak > 16 || frame.rms > frame.peak + 1e-12 ||
-      !finite(frame.clippedFraction) || frame.clippedFraction > 1) return;
+      !finite(frame.clippedFraction) || frame.clippedFraction > 1 ||
+      !Number.isSafeInteger(frame.sampleRateHz) || frame.sampleRateHz < 8000 || frame.sampleRateHz > 192000 || frame.sampleRateHz % 10 !== 0 ||
+      (frame.channels !== 1 && frame.channels !== 2) || frame.frameCount * 1000 !== frame.sampleRateHz * CAPTURE_WINDOW_MS ||
+      typeof frame.bands !== 'object' || frame.bands === null || ![frame.bands.bass, frame.bands.mid, frame.bands.treble].every(value => finite(value) && value <= 32)) return;
+    const before = this.view.features;
+    if (this.#sequence > 0 && (frame.discontinuity || frame.sequence !== this.#sequence + 1 || Math.abs(frame.startMonotonicMs - this.#sourceEnd) > 0.01 ||
+      (before !== undefined && (before.validUntilMs <= bounds.upper || before.sampleRateHz !== frame.sampleRateHz || before.channels !== frame.channels)))) this.#retirePreview();
     const discontinuity = frame.discontinuity || this.#sequence === 0 || frame.sequence !== this.#sequence + 1;
     this.#sequence = frame.sequence; this.#sourceEnd = frame.endMonotonicMs;
     this.view = {...this.view, features: {...frame, discontinuity}};
+    this.#preview();
   }
   bounds(now: CaptureReading): {lower: number; upper: number} | undefined {
     const clock = this.#clock;
     if (clock === undefined) return undefined;
     if (!validReading(now) || now.monotonicMs < clock.lastMono ||
       Math.abs(now.wallMs - clock.received.wallMs - (now.monotonicMs - clock.received.monotonicMs)) > CAPTURE_CLOCK_DRIFT_MS) {
-      this.#clock = undefined; this.view = {...this.view, clockQualified: false, features: undefined}; return undefined;
+      this.#clock = undefined; this.view = {...this.view, clockQualified: false, features: undefined}; this.#preview(); return undefined;
     }
     clock.lastMono = now.monotonicMs;
     return {lower: clock.replyAt + now.monotonicMs - clock.received.monotonicMs, upper: clock.replyAt + now.monotonicMs - clock.sent.monotonicMs};
   }
   tick(now: CaptureReading): void {
     const bounds = this.bounds(now);
-    if (this.view.features !== undefined && (bounds === undefined || this.view.features.validUntilMs <= bounds.upper)) this.view = {...this.view, features: undefined};
+    if (this.view.features !== undefined && (bounds === undefined || this.view.features.validUntilMs <= bounds.upper)) {
+      this.#retirePreview();this.view = {...this.view, features: undefined};this.#preview();
+    }
   }
-  invalidate(): void {this.#clock = undefined; this.view = {...this.view, synced: false, features: undefined, clockQualified: false};}
+  invalidate(): void {this.#clock = undefined; this.view = {...this.view, synced: false, features: undefined, clockQualified: false};this.#preview();}
+  #retirePreview(): void {
+    const state = this.view.state;
+    if (state?.response !== undefined) this.#retiredResponseKey = JSON.stringify([identity(state), state.response.settingsRevision, state.response.appliedTo]);
+  }
+  #preview(): void {
+    const state = this.view.state, frame = this.view.features, response = state?.response;
+    const key = JSON.stringify([identity(state), response?.settingsRevision, response?.appliedTo]);
+    const binding = response?.appliedTo;
+    const qualified = frame?.input === 'microphone' && binding !== undefined && binding !== null && binding.endpointId === state?.endpointId &&
+      binding.generation === frame.generation && binding.microphoneId === frame.microphoneId && binding.sampleRateHz === frame.sampleRateHz && binding.channels === frame.channels;
+    if (frame?.input !== 'microphone' || response === undefined || (response.settings.gate.mode !== 'off' && (!qualified || key === this.#retiredResponseKey))) {
+      this.#response = undefined;this.#responseKey = '';this.#responseSequence = 0;
+      const {response: _previous, ...view} = this.view;this.view = view;return;
+    }
+    if (key !== this.#responseKey) {this.#response = undefined;this.#responseSequence = 0;this.#responseKey = key;}
+    if (frame.sequence === this.#responseSequence) return;
+    if (frame.discontinuity) this.#response = undefined;
+    const value = musicResponse(response.settings, frame, this.#responseSequence === 0 ? 0 : Math.max(0, frame.endMonotonicMs - this.#responseEnd), this.#response);
+    this.#response = value;
+    this.#responseSequence = frame.sequence;this.#responseEnd = frame.endMonotonicMs;
+    this.view = {...this.view, response: value};
+  }
 }
 
 const reading = (): CaptureReading => ({wallMs: Date.now(), monotonicMs: performance.now()});
@@ -135,7 +173,7 @@ export class MusicCaptureFeed implements Subscription {
     const message = messages.length === 1 ? messages[0] : undefined;
     return message?.kind === 'state' && message.type === 'org.bunny.music-capture.updated' &&
       message.source === 'bunny/core' && message.subject === 'music' && message.data.id === 'music' &&
-      ['https://bunny.invalid/events/music-capture-state/2.0', 'https://bunny.invalid/events/music-capture-state/2.1'].includes(message.dataschema) ? message.data : undefined;
+      ['https://bunny.invalid/events/music-capture-state/2.0', 'https://bunny.invalid/events/music-capture-state/2.1', 'https://bunny.invalid/events/music-capture-state/2.2'].includes(message.dataschema) ? message.data : undefined;
   }
   #state(): void {
     const state = this.#record();
