@@ -45,6 +45,13 @@ export class ArtworkController {
     return this.#artwork === undefined ? undefined : structuredClone(this.#artwork);
   }
 
+  /** A source without receiver artwork retires the old receiver's image and pending results. */
+  retire(): void {
+    this.#clear();
+    this.#association = undefined;
+    this.#artwork = undefined;
+  }
+
   /** Synchronous state update: the caller incorporates snapshot() in its next publication. */
   update(view: ArtworkPresentation): void {
     if (this.#options.signal.aborted) return;

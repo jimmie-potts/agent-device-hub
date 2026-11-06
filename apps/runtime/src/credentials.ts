@@ -8,6 +8,7 @@ import {createHash, randomUUID, timingSafeEqual} from 'node:crypto';
 import {chmod, link, open, readdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {basename, dirname, join} from 'node:path';
 import {MUSIC_PRODUCER_SOURCE} from '@jimmie-potts/event-contracts/v2/music-capture';
+import {MUSIC_PLAYBACK_SOURCE} from '@jimmie-potts/event-contracts/v2/music-playback';
 import {CODING_WORKER_SOURCE} from '@jimmie-potts/event-contracts/v2/coding';
 import {PrivateFileError, RuntimeError, readPrivateFile} from './state.js';
 
@@ -33,7 +34,7 @@ export type EdgeCredential = {
    * Explicit ownership roles that carry no ordinary scopes: the BB-8 transport bound to the Windows helper source, and
    * the coding worker and Music producer, each bound to its own source and one connection-bound endpoint.
    */
-  readonly role?: 'bb8-link' | 'coding-worker' | 'music-producer';
+  readonly role?: 'bb8-link' | 'coding-worker' | 'music-producer' | 'music-playback-producer';
   readonly robotId?: string;
 };
 
@@ -86,6 +87,10 @@ export function parseCredentials(document: unknown): EdgeCredential[] {
     if (typeof digest !== 'string' || !DIGEST.test(digest)) throw invalid(`gives ${id} a digest that is not a lowercase hexadecimal SHA-256`);
     const known = (scope: unknown): scope is Scope => typeof scope === 'string' && (SCOPES as readonly string[]).includes(scope);
     if (!Array.isArray(scopes) || !scopes.every(known) || new Set(scopes).size !== scopes.length) throw invalid(`gives ${id} scopes other than distinct read, control, ingest and admin`);
+    if (entry.role === 'music-playback-producer') {
+      if (source !== MUSIC_PLAYBACK_SOURCE || scopes.length !== 0 || entry.robotId !== undefined) throw invalid('has an invalid music-playback-producer role');
+      return {id, source, digest, scopes: [], role: 'music-playback-producer'};
+    }
     if (entry.role === 'music-producer') {
       if (source !== MUSIC_PRODUCER_SOURCE || scopes.length !== 0 || entry.robotId !== undefined) throw invalid('has an invalid music-producer role');
       return {id, source, digest, scopes: [], role: 'music-producer'};
@@ -100,6 +105,7 @@ export function parseCredentials(document: unknown): EdgeCredential[] {
     }
     if (source === 'bunny/parts/bb8-windows') throw invalid('requires the BB-8 transport role for its reserved helper source');
     if (source === MUSIC_PRODUCER_SOURCE) throw invalid('requires the music-producer role for its reserved producer source');
+    if (source === MUSIC_PLAYBACK_SOURCE) throw invalid('requires the music-playback-producer role for its reserved producer source');
     if (source === CODING_WORKER_SOURCE) throw invalid('requires the coding-worker role for its reserved worker source');
     return {id, source, digest, scopes: [...scopes]};
   });

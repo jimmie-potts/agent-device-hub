@@ -470,15 +470,20 @@ it('the kit catches a configuration the module refuses or lacks: the module neve
 
 it('the kit catches a module that puts a secret it read in a log record, a message, a span, a reply, a command it sends or a synced state, and never quotes it', async () => {
   const starting = [CHECKS.lifecycle, CHECKS.offline, CHECKS.serves, CHECKS.refuses];
-  assert.deepEqual(await failing(beaconSpec({leak: 'log'})), starting);
-  assert.deepEqual(await failing(beaconSpec({leak: 'message'})), starting);
-  assert.deepEqual(await failing(beaconSpec({leak: 'command'})), starting, 'a command the module sends, which no responder answers');
-  assert.deepEqual(await failing(beaconSpec({leak: 'span'})), starting, 'an attribute of a span the module records');
-  assert.deepEqual(await failing(beaconSpec({leak: 'reply'})), [CHECKS.refuses]);
-  assert.deepEqual(await failing(beaconSpec({leak: 'sync'})), [CHECKS.serves], 'a state only the sync it serves carries');
   const reasons: string[] = [];
-  for (const leak of ['log', 'message', 'command', 'span', 'reply', 'sync'] as const) {
-    for (const check of conformanceChecks(beaconSpec({leak}))) await check.run().catch((error: unknown) => { reasons.push(String(error instanceof Error ? error.message : error)); });
+  const leaks: readonly NonNullable<BeaconFault['leak']>[] = ['log', 'message', 'command', 'span', 'reply', 'sync'];
+  for (const leak of leaks) {
+    const failed: string[] = [];
+    for (const check of conformanceChecks(beaconSpec({leak}))) {
+      try {
+        await check.run();
+      } catch (error: unknown) {
+        failed.push(check.name);
+        reasons.push(String(error instanceof Error ? error.message : error));
+      }
+    }
+    const expected = leak === 'reply' ? [CHECKS.refuses] : leak === 'sync' ? [CHECKS.serves] : starting;
+    assert.deepEqual(failed, expected, `${leak} leak`);
   }
   assert.equal(reasons.length, 18);
   assert.ok(reasons.every(reason => reason.includes('carries a secret') && !reason.includes(SECRET)), 'each names where the secret appeared, never the secret');
