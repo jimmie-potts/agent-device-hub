@@ -381,6 +381,9 @@ export class Tracker {
     if (!COMMAND_TYPE.test(draft.type) || typeof draft.dataschema !== 'string' || typeof draft.data !== 'object' || draft.data === null || Array.isArray(draft.data)) {
       return refuse('invalid-request', 'an action is a command: a type org.bunny.<entity>.<verb>.requested, a dataschema and an object payload');
     }
+    if (family === 'moment-play' && Object.hasOwn(draft.data, 'art') && action.requestedBy !== CORE_SOURCE) {
+      return refuse('forbidden', 'art moments are requested only by the core');
+    }
     const omitted = OMITTED_PAYLOADS.find(each => each.family === family || each.type === draft.type || each.dataschema === draft.dataschema);
     if (omitted !== undefined && (omitted.family !== family || omitted.type !== draft.type || omitted.dataschema !== draft.dataschema)) {
       return refuse('invalid-request', 'the identity of a command with an omitted payload is invalid');

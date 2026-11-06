@@ -63,6 +63,6 @@ for (const scenario of SCENARIOS) {
       } finally {
         await h.close();
       }
-    });
+    }, scenario.memoryTimeoutMs);
   }
 }

@@ -27,6 +27,14 @@ they do not require current runtime pages to restore cyan chrome or the grid.
 The [runtime dashboard guide](../apps/runtime/dashboard/README.md) owns its
 five-destination navigation, Settings and reusable cards.
 
+The owner-selected art decoration in [#683](https://github.com/jimmie-potts/agent-device-hub/issues/683)
+adds bounded palette-derived values over Quiet glass. Only fresh decoded visible
+art can supply a new palette. Settings offers browser-local follow, lock and
+restore-default choices. This exception covers decorative backgrounds, surfaces,
+borders, action/link accents and static washes behind content. Fixed semantic
+state/device/focus colors, typography and geometry remain unchanged. Palette
+data never supplies CSS, JavaScript, selectors, private paths or external assets.
+
 Verified source revisions for this revision of the guide:
 
 | Source | Revision | What was read |
@@ -207,9 +215,10 @@ semantics, keyboard order, text cues, or which control is primary.
    nothing.
 3. Run the owning checks: the token check rejects color literals outside the
    token files, and the browser checks verify motion off and readability.
-4. Selecting a skin with a picker and saving that preference remain deferred.
-   The current runtime ships Quiet glass and follows browser light/dark
-   appearance; retained legacy v1 ships Neon Geometry Wars only.
+4. The current runtime supports bounded art decoration and its browser-local
+   follow/lock/default preference under #683, while following browser light/dark
+   appearance. Additional skin selection remains deferred. Retained legacy v1
+   ships Neon Geometry Wars only.
 
 ### 4.5 Ownership of the layers
 
@@ -217,6 +226,10 @@ semantics, keyboard order, text cues, or which control is primary.
   over its retained Neon roles. The legacy application keeps
   `apps/dashboard/src/skins/neon-geometry-wars.css`. Pages read their owning
   layer's tokens and add no raw colors to layout files.
+- Runtime `skins/art-theme.ts` derives a closed set of light/dark decorative
+  color values from bounded palette data. `skins/art-theme.css` supplies the
+  static background washes. The shared shell applies only this allowlist and
+  removes it for the default preference; no generated styling program is used.
 - The wall status tokens moved into the application token layer with the
   shared device art of [ADR 0007](decisions/0007-bunny-shell.md) (Hub #355),
   together with the art's canvas and edge tokens. The wall map's remaining

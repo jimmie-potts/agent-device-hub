@@ -5,7 +5,8 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
-import type {ArtState} from '@jimmie-potts/event-contracts/v2/art-state';
+import type {ErrorDetail} from '@jimmie-potts/event-contracts/v2';
+import type {ArtState21} from '@jimmie-potts/event-contracts/v2/art-state';
 import {InProcessBus, type Scheduler} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {RecordedSpans} from '@jimmie-potts/sdk/testing';
@@ -22,9 +23,9 @@ export async function hosted(t: TestContext, options: HostOptions = {}) {
   const dir = options.dir ?? await mkdtemp(join(tmpdir(), 'art-module-'));
   const clock = {value: options.now ?? new Date(2026, 10, 3, 12).getTime(), now(): number {return this.value;}};
   const bus = new InProcessBus({now: () => clock.value}), operator = bus.connect('bunny/core'), spans = new RecordedSpans();
-  let state: ArtState | undefined;
-  const outcomes: {subject: string; type: string; data: {requestId: string; result: string; evidence: string}}[] = [];
-  await operator.subscribe<ArtState>('bunny.state.art.art', message => {state = message.data;});
+  let state: ArtState21 | undefined;
+  const outcomes: {subject: string; type: string; data: {requestId: string; result: string; evidence: string; error?: ErrorDetail}}[] = [];
+  await operator.subscribe<ArtState21>('bunny.state.art.art', message => {state = message.data;});
   await operator.subscribe<{requestId: string; result: string; evidence: string}>('bunny.event.art-request.art', message => {outcomes.push({subject: message.subject, type: message.type, data: message.data});});
   await operator.subscribe<{requestId: string; result: string; evidence: string}>('bunny.event.art-catalog-edit.art', message => {outcomes.push({subject: message.subject, type: message.type, data: message.data});});
   await operator.subscribe<{requestId: string; result: string; evidence: string}>('bunny.event.art-auto.art', message => {outcomes.push({subject: message.subject, type: message.type, data: message.data});});
@@ -48,7 +49,7 @@ export async function hosted(t: TestContext, options: HostOptions = {}) {
   const value = {
     dir, clock, bus, operator, spans,
     get host(): ModuleHarness {return host;},
-    get state(): ArtState {return state ?? assert.fail('no art state yet');},
+    get state(): ArtState21 {return state ?? assert.fail('no art state yet');},
     outcomes,
     owner: (data: object, requestId: string) => operator.request('bunny.cmd.art-request.art', {type: 'org.bunny.art.request.requested', subject: 'art', dataschema: 'https://bunny.invalid/events/art-request/2.0', data}, {requestId, timeoutMs: 2000}),
     automatic: (data: object, requestId: string) => operator.request('bunny.cmd.art-auto.art', {type: 'org.bunny.art.auto.requested', subject: 'art', dataschema: 'https://bunny.invalid/events/art-auto/2.0', data}, {requestId, timeoutMs: 2000}),

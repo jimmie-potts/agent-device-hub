@@ -7,7 +7,21 @@ import type {ArtState} from '@jimmie-potts/event-contracts/v2/art-state';
 import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {registration} from '../src/registration.js';
+import {SimulatedArt} from '../src/simulated.js';
+import {paletteOf} from '../src/media.js';
 import {until} from './support.js';
+
+void test('contrasting synthetic artworks supply different palettes through the real image processor', async () => {
+  const provider = new SimulatedArt(), palettes: string[][] = [];
+  for (const action of ['warm-colors', 'cool-colors']) {
+    provider.act(action);
+    const answer = await provider.call('image', {size: '1536x1024', frames: 1, delayMs: 200}, new AbortController().signal);
+    assert.equal(answer.kind, 'image');if (answer.kind !== 'image') throw new Error('synthetic image missing');
+    palettes.push(await paletteOf(Buffer.from(answer.base64, 'base64')));
+  }
+  assert.notDeepEqual(palettes[0], palettes[1]);assert.notEqual(palettes[0]?.[0], palettes[1]?.[0]);
+  assert.equal(provider.state().imageCalls, 2);
+});
 
 void test('the simulated registration creates billable synthetic art without any key or network', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'art-simulation-'));

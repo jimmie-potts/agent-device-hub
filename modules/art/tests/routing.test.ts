@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {test, type TestContext} from 'node:test';
-import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import type {ArtDispatch} from '@jimmie-potts/event-contracts/v2/art';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {InProcessBus, SdkError, type ModuleScheduler, type Participant, type Snapshot, type TraceContext} from '@jimmie-potts/sdk';
-import {realDispatch, realWeather, type ArtStageRequest} from '../src/seams.js';
+import {realDispatch, realWeather, type ArtStageRequest, type StageResult} from '../src/seams.js';
 import {artDevice, deviceDraft} from './device-fixtures.js';
 import {gradientPng} from './fixtures.js';
 import {gate, until} from './support.js';
@@ -21,7 +21,8 @@ async function world(t: TestContext) {
   await core.respond<ArtDispatch>('bunny.cmd.art-dispatch.art', command => {forwarded.push(command.data); return {status: 'accepted'};});
   const dispatch = realDispatch({sdk, scheduler, signal: new AbortController().signal});
   let watches: Awaited<ReturnType<typeof dispatch.watch>> = [];
-  const start = async () => {watches = await dispatch.watch(() => {}); await flush();};
+  const results: {requestId: string; result: StageResult; error?: ErrorDetail}[] = [];
+  const start = async () => {watches = await dispatch.watch((requestId, result, error) => {results.push({requestId, result, ...(error === undefined ? {} : {error})});}); await flush();};
   const stop = async () => {for (const subscription of watches) await subscription.close(); watches = [];};
   t.after(async () => {await stop(); await sdk.close(); await core.close();
     assert.ok(errors.every(error => error instanceof SdkError && error.body.error.code === 'capacity'), 'only the deliberately induced SDK overflow is expected');
@@ -48,8 +49,34 @@ async function world(t: TestContext) {
   const stage = (target: 'pixoo' | 'tidbyt', extra: Partial<ArtStageRequest> = {}) => dispatch.stage({requestId: `stage-${forwarded.length}`, target,
     compositionId: 'synthetic-composition', format: 'png', width: 64, height: 64, frames: 1, durationMs: 0, sha256: createHash('sha256').update(bytes).digest('hex'), bytes, lifetimeMs: 60_000, ...extra}, parent);
   const ambient = () => dispatch.ambient({requestId: `ambient-${forwarded.length}`, target: 'tidbyt', compositionId: 'synthetic-composition'}, parent);
-  return {owner, start, stop, stage, ambient, forwarded, scheduled, retry: async () => {const waiting = [...scheduled]; scheduled.clear(); for (const callback of waiting) await callback(); await flush();}};
+  return {owner, start, stop, stage, ambient, forwarded, scheduled, core, results, retry: async () => {const waiting = [...scheduled]; scheduled.clear(); for (const callback of waiting) await callback(); await flush();}};
 }
+
+void test('saved preparation refuses a changed or stale target identity and never falls back to the replacement display', async t => {
+  const w = await world(t), owner = await w.owner('pixoo', [artDevice('pixoo', 'planned')]); await w.start();
+  assert.deepEqual(await w.stage('pixoo', {expectedTargetId: 'planned'}), {status: 'accepted'});
+  const replacement = gate<Snapshot | ErrorBody>(); owner.answer = replacement.promise;
+  await Promise.all([owner.update(artDevice('pixoo', 'planned', 2)), owner.update(artDevice('pixoo', 'planned', 3))]);
+  await until(() => owner.reads === 2);
+  const stale = await w.stage('pixoo', {expectedTargetId: 'planned'});
+  assert.equal('error' in stale && stale.error.code, 'unavailable');
+  owner.replace([artDevice('pixoo', 'replacement', 4)], 4); replacement.open(owner.snapshot()); await flush();
+  const changed = await w.stage('pixoo', {expectedTargetId: 'planned'});
+  assert.equal('error' in changed && changed.error.code, 'invalid-state');
+  assert.deepEqual(w.forwarded.map(item => item.target), ['planned']);
+  assert.deepEqual(await w.stage('pixoo', {expectedTargetId: 'replacement'}), {status: 'accepted'});
+});
+
+void test('tracked staging errors retain their safe code and detail at the Art owner boundary', async t => {
+  const w = await world(t); await w.start();
+  const error = errorBody('unsupported-capability', {detail: 'synthetic display does not accept art'}).error;
+  await w.core.publish('bunny.state.operation.operation-stage-test', {kind: 'state', type: 'org.bunny.operation.changed', subject: 'operation-stage-test',
+    dataschema: 'https://bunny.invalid/events/operation/2.0', data: {id: 'operation-stage-test', revision: 1, requestId: 'stage-test', kind: 'device', family: 'art-stage',
+      command: 'org.bunny.art.stage.requested', target: 'desk', requestedBy: 'bunny/modules/art', status: 'rejected', result: 'failed', evidence: 'none', error,
+      sentAtMs: 1, updatedAtMs: 2, deadlineAtMs: 30_001}});
+  await until(() => w.results.length === 1);
+  assert.deepEqual(w.results, [{requestId: 'stage-test', result: 'failed', error}]);
+});
 
 void test('art stage and ambient route display kinds to the exact owners noncanonical device IDs', async t => {
   const w = await world(t);

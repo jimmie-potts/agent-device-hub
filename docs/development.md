@@ -35,6 +35,41 @@ See [the module guide](../modules/reachy-mini/README.md).
 
 ## Art checks
 
+Shared saved-art presentation (#297) uses the existing CI discovery. After
+`npm run build`, run `npm run typecheck`, `npm run lint:js`,
+`npm run test:events:built`, `npm run test:art:built`,
+`npm run test:runtime:built`, `npm run test:runtime-dashboard:built` and
+`npm run test:art:browser`. The event suite checks the closed additive
+`art-auto/2.1` and `art/2.1` contracts and unchanged 2.0 payloads;
+`modules/art/tests/shared-art.test.ts` checks durable preparation, selection,
+pruning and restart; `apps/runtime/tests/art-plans.test.ts` checks configured
+identities, current capabilities, independent deadlines and tracked results.
+The existing Art browser check covers selected off-page content and obsolete
+loads. Keep the retained contract, Python, package and workflow checks described
+below. Profile 2.1 adds no Python mirror.
+
+The `shared-art` runtime scenario exercises one saved idea through the real
+producer, core tracker, browser, Pixoo and Tidbyt against synthetic transports.
+After building, focus it with
+`node --test --test-name-pattern='shared-art' apps/runtime/dist/tests/scenarios/catalog.test.js`.
+The existing runtime scenario and verification CI globs discover this path;
+`scenario-shared-art` is the disposable capture. It verifies zero provider calls
+during reuse, independent target results and no replay, without a device or
+installed-runtime claim.
+Its named `presentation-fixture` module calls the real core's internal presentation
+control only after a new synthetic request completes. It adds no production
+command route. Initial sync after restart seeds its seen IDs without dispatching.
+Its tier-1 case allows 60 seconds because it observes the Tidbyt's complete
+qualified 30-second hold as well as generation, preparation and restart. Other
+catalog cases keep their existing 20-second default.
+
+Art-derived decoration (#683) uses `npm run test:art-theme:browser` after the
+root build, in the existing App verification runtime group and full local
+dashboard browser suite. Bounded palette and preference cases are discovered
+by `npm run test:runtime-dashboard:built`. Keep shared build/type/lint,
+contract/package and workflow checks; no new backend contract is introduced.
+See the runtime dashboard guide for synthetic theme and zero-effect evidence.
+
 The adaptive widget and Gallery checks for #682 use
 `npm run test:art:browser` after the root build. They run in the existing App
 verification runtime group and the full local runtime dashboard browser suite.
@@ -56,15 +91,19 @@ cover its registration. A contract change to the diagnostic profile also needs
 `npm run test:observability`. Real generation and the GIF rejection rate belong to
 installed acceptance in #687. See [the module guide](../modules/art/README.md).
 
-The registered `art-gallery`, `art-catalog` and `art-spending-limit` scenarios run through both
+The registered `art-theme`, `art-gallery`, `art-catalog` and `art-spending-limit` scenarios run through both
 runtime transports in `test:runtime:scenarios:built`. They use synthetic GIF/still
 providers with fixed billed usage and the real authenticated commands, catalog,
 ledger and private store. They cover favorite/reuse/variation, invalid bytes, lost
 responses, restart without replay, recent retention and the monthly ceiling.
 After building, focus them with
-`node --test --test-name-pattern='art-gallery|art-catalog|art-spending-limit' apps/runtime/dist/tests/scenarios/catalog.test.js`.
+`node --test --test-name-pattern='art-theme|art-gallery|art-catalog|art-spending-limit' apps/runtime/dist/tests/scenarios/catalog.test.js`.
 On a Mac, use `npm run test:runtime:container -- --suite scenarios`.
 
+For local theme controls, select `scenario-art-theme`; its labelled capture shows
+contrasting saved art, locking the colors, restoring defaults and following again,
+with no additional provider call or device command. The simulation's warm/cool
+fixtures pass through the real pixel palette processor.
 For the actual gallery UI, select `scenario-art-gallery`; its capture uses visible,
 labelled controls and leaves decoded synthetic art on screen. For the producer API
 exercise on a clean committed candidate, select `scenario-art-catalog` through the [portable route](../apps/runtime/verify/PORTABLE.md).
@@ -73,7 +112,7 @@ content route, using a labelled review-only link in the existing shell. It adds 
 gallery UI and exercises no real provider or device. The rendition remains visible
 in the final screenshot. The separate `scenario-art-spending-limit` capture covers
 the ceiling and restart. Existing
-`test:runtime:verify:built` discovery runs both captures; on a Mac use
+`test:runtime:verify:built` discovery runs these captures; on a Mac use
 `npm run test:runtime:container -- --suite verify`. Inspect the complete video and
 scenario-result attachment before assessing acceptance.
 
@@ -2391,6 +2430,10 @@ Collector regressions cover a completed cleaning record followed by returning
 and docking: eligible cleaning samples and an unverified map capture remain
 available, while returning-only observations cannot attach an old run or fetch
 its map. Returning originals remain private even when outside the run window.
+They also cover a failed first poll that recovers without a restart, including
+with a clock that moves between reads, repeated failure at the capped backoff,
+shutdown during a failed observation, and steady polling with timer lag that
+records no `missed-poll` gap, over the real reader and a synthetic wire.
 
 Run the affected event, SDK, runtime, MCP and runtime-dashboard suites, plus
 `npm run check:workflow` and `npm run test:workflow`. The Roborock catalog

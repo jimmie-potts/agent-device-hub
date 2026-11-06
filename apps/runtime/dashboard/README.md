@@ -72,8 +72,10 @@ catalog or observation evidence stays explicit. Browsing sends no device command
 selection. `directory.ts` projects the existing copies without acquiring state.
 `skins/quiet-glass.css` supplies light/dark semantic values over the retained
 fixed attention/art tokens; `shell.css` owns shared responsive geometry. The
-legacy dashboard and documentation keep their own skins. A theme picker is
-separate future scope.
+legacy dashboard and documentation keep their own skins. Settings can follow
+displayed art colors, lock the current colors or restore Quiet glass. These
+browser-local choices preserve fixed semantic colors, typography and geometry.
+Additional skin selection remains separate scope.
 
 Every page has a hash address: `#/` (also `#/home` and `#/activity`) for the
 home, `#/devices`, `#/settings`, `#/lights/<brand>` and `#/rooms` for lighting, `#/audio`, `#/connections`, `#/component/<device>`, `#/music/<source>` and
@@ -595,6 +597,23 @@ colored chips have a contrasting surface while neutral Idle uses the ordinary
 inset surface. Device artwork keeps its own material and status meanings.
 Control faces retain their card-flip motion without fading text below contrast;
 reduced-motion appearance removes the animation.
+
+**Artwork colors** in Settings follows the palette of a ready, visibly decoded
+artwork. The shell maps bounded hex colors to decorative surfaces, borders,
+action/link colors and two static background washes. Fixed text, focus,
+attention, warning, error, pending and device colors do not change. Loading,
+stale, hidden or unavailable art retains the last valid theme; it supplies no
+new palette. No generated CSS, script, texture URL or extra image is accepted.
+
+**Lock current colors** freezes the current palette, including a default with
+no palette. **Restore default** keeps Quiet glass until **Follow artwork** is
+selected again. These explicit preferences use the versioned browser-origin
+key `bunny.art-theme.v1`, containing only the mode and an optional locked
+palette. They survive reload and runtime restart and synchronize across tabs
+of that origin. They do not change Home layout, catalog preferences or device
+state. Invalid stored data preserves a valid current/default theme and shows
+a notice; failed storage writes apply only for the current page and say that
+the preference was not saved. Theme changes make no model or device request.
 
 `card-chrome.css` applies the shared frame spacing, compact titles, tab track and
 selection, actionable corner targets and footer links after the shell styles

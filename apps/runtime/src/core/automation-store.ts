@@ -19,6 +19,8 @@ export const EVENT_LIMIT = 10000;
  * shared connection. `check` throws once the lease is released.
  */
 export class AutomationStore {
+  readonly #artPlan: StatementSync;
+  readonly #insertArtPlan: StatementSync;
   private readonly statements: Record<'rules'|'rule'|'insertRule'|'updateRule'|'deleteRule'|'countRules'|'interruptSet'|'clearInterruptSet'|'insertKind'|'settings'|'writeSettings'|'meta'|'writeMeta'|'seenEvent'|'recordEvent'|'pruneEvents'|'appendLog'|'pruneLog'|'readLog'|'handed'|'handedByAgent'|'handedByTask'|'lastToTarget'|'powerGuard'|'claimPower'|'deletePowerGuard',StatementSync>;
   constructor(private readonly db: DatabaseSync, private readonly check: () => void, seed: {interruptSet:string[]; settings:unknown}) {
     db.exec(`CREATE TABLE IF NOT EXISTS automation_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -26,6 +28,7 @@ export class AutomationStore {
         kind TEXT NOT NULL CHECK(kind IN ('event','routine')), trigger TEXT NOT NULL, action TEXT NOT NULL,
         created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS automation_power_guard (rule_id TEXT PRIMARY KEY, at_ms INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS automation_art_plans (id TEXT PRIMARY KEY, digest TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS interrupt_set (kind TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS automation_settings (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS automation_events (key TEXT PRIMARY KEY, seq INTEGER NOT NULL);
@@ -36,6 +39,8 @@ export class AutomationStore {
         outcome TEXT NOT NULL CHECK(outcome IN ('blocked','receipt','not-sent','uncertain')), reason TEXT, detail TEXT);
       CREATE INDEX IF NOT EXISTS automation_log_handed ON automation_log(priority_class, outcome, at_ms);`);
     const prepare = (sql:string) => db.prepare(sql);
+    this.#artPlan = prepare('SELECT digest FROM automation_art_plans WHERE id=?');
+    this.#insertArtPlan = prepare('INSERT INTO automation_art_plans VALUES(?,?)');
     this.statements = {
       rules:prepare('SELECT * FROM rules ORDER BY created_at_ms, id'),
       rule:prepare('SELECT * FROM rules WHERE id=?'),
@@ -81,6 +86,14 @@ export class AutomationStore {
   private static rule(row: Record<string,unknown>): RuleRow {
     return {id:String(row.id),name:String(row.name),enabled:row.enabled === 1,kind:String(row.kind),trigger:String(row.trigger),action:String(row.action),
       createdAtMs:Number(row.created_at_ms),updatedAtMs:Number(row.updated_at_ms)};
+  }
+  /** Like core_operations, immutable plan identities are never evicted or recovered as executable work. */
+  claimArtPlan(id: string, digest: string): boolean {
+    return this.transaction(() => {
+      const existing = this.#artPlan.get(id);
+      if (existing !== undefined) return existing.digest === digest;
+      this.#insertArtPlan.run(id, digest);return true;
+    });
   }
   rules(): RuleRow[] { this.check(); return this.statements.rules.all().map(row => AutomationStore.rule(row)); }
   rule(id: string): RuleRow|undefined { this.check(); const row = this.statements.rule.get(id); return row ? AutomationStore.rule(row) : undefined; }

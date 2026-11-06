@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { errorBody, isErrorCode, type ErrorCode, } from '@jimmie-potts/event-contracts/v2';
-import {recordLog, fullDisk, SdkError, type AddMessage, type Cancel, type ModuleContext, type Outbox, Outcome} from '@jimmie-potts/sdk';
+import {recordLog, fullDisk, SdkError, SUMMARY_MS, type AddMessage, type Cancel, type ModuleContext, type Outbox, type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import type { ReadOptions, ReadTransport, Reading, VendorJson, } from '@jimmie-potts/roborock-transport';
 import type { RoborockConfig } from './configuration.js';
 import { emptyStatus, UNKNOWN, type RunRecord, type VacuumStatus } from './contracts.js';
@@ -17,6 +17,11 @@ const TRANSPORT_READ_MS = 9000;
 const CYCLE_MS = 120000;
 const MAP_WINDOW_MS = 60000;
 const MAX_BACKOFF_MS = 300000;
+// A request admitted this long after its policy deadline is on time. Timers and a poll's
+// own admission take milliseconds; serialized work that holds a poll back takes whole reads.
+const MISSED_POLL_GRACE_MS = 500;
+// The diagnostic contract's bound on a duration.
+const MAX_DURATION_MS = 86400000;
 const RECORD_BATCH = 4;
 const NORMALIZATION_VERSION = 1;
 type Guarded<T> = {
@@ -58,6 +63,8 @@ type Control = {
 };
 type Batch = {
     work: (control: Control) => Control;
+    /** The poll that made the batch. Its records and state messages keep it across a retry. */
+    trace: TraceContext;
     privateOnly?: boolean;
     publishOnly?: boolean;
     capturedCandidateId?: string;
@@ -67,6 +74,16 @@ type Cycle = {
     signal: AbortSignal;
     deadline: number;
     cancel: Cancel;
+    trace: TraceContext;
+};
+/** One repeated collection fault, from its first failure until a durable commit clears it or another fault replaces it. */
+type Fault = {
+    operation: 'status' | 'storage';
+    code: ErrorCode;
+    sinceMs: number;
+    failed: number;
+    unsummarized: number;
+    summarizedAtMs: number;
 };
 const codeOf = (error: unknown): ErrorCode => fullDisk(error) ? 'capacity'
     : error instanceof SdkError && isErrorCode(error.body.error.code)
@@ -115,7 +132,7 @@ export class Collector {
     #pendingMap: Candidate | undefined;
     #storageBlockedAt: number | undefined;
     #failure: ErrorCode | undefined;
-    #reported: ErrorCode | undefined;
+    #fault: Fault | undefined;
     #cycles = 0;
     #identityPending: Promise<string> | undefined;
     #storageFailure: ErrorCode | undefined;
@@ -175,7 +192,7 @@ export class Collector {
         if (this.#started || !this.#alive())
             return;
         this.#started = true;
-        const work = this.#startup().catch(error => { this.#report(codeOf(error)); });
+        const work = this.#startup().catch((error: unknown) => { this.#failed(error); });
         this.#inflight = work.finally(() => {
             this.#inflight = undefined;
             this.#schedule(1);
@@ -191,7 +208,9 @@ export class Collector {
             return this.#inflight;
         this.#timer?.();
         this.#timer = undefined;
-        const work = this.#perform().catch(error => { this.#report(codeOf(error)); });
+        // One poll is one trace: its device calls, records and state messages.
+        const trace = this.#context.trace.span();
+        const work = this.#perform(trace).catch((error: unknown) => { this.#failed(error, trace); });
         this.#inflight = work.finally(() => {
             this.#inflight = undefined;
             this.#schedule();
@@ -210,7 +229,7 @@ export class Collector {
         this.#trailing = current.then(() => {
             this.#trailing = undefined;
             return this.#alive() ? this.poll() : undefined;
-        }).catch(error => { this.#report(codeOf(error)); });
+        }).catch((error: unknown) => { this.#failed(error); });
         return this.#trailing;
     }
     stop(): Promise<void> {
@@ -241,16 +260,56 @@ export class Collector {
     #copy(): Control {
         return structuredClone(this.#control);
     }
-    #report(code: ErrorCode): void {
+    /**
+     * A fault of the collection itself. A device that cannot be reached is the reader's
+     * record. ADR 0012 "Repetition": the first failure is logged at its level, repeats are
+     * summarized at DEBUG at most once a minute, and #recovered counts them all.
+     */
+    #report(code: ErrorCode, trace?: TraceContext, operation: Fault['operation'] = 'status'): void {
         this.#failure = code;
-        if (this.#reported === code)
+        const fields = { 'bunny.operation': operation, 'bunny.outcome': Outcome.failed, 'bunny.code': code };
+        const now = this.#context.clock.now();
+        const fault = this.#fault;
+        try {
+            if (fault === undefined || fault.code !== code || fault.operation !== operation) {
+                this.#fault = { operation, code, sinceMs: now, failed: 1, unsummarized: 0, summarizedAtMs: now };
+                recordLog(this.#context.log, 'operation.failed', { ...fields, 'bunny.attempt_count': 1 }, trace);
+                return;
+            }
+            fault.failed += 1;
+            fault.unsummarized += 1;
+            if (now - fault.summarizedAtMs < SUMMARY_MS)
+                return;
+            fault.summarizedAtMs = now;
+            const attempts = fault.unsummarized;
+            fault.unsummarized = 0;
+            this.#context.log.debug('operation.failed', { ...fields, 'bunny.attempt_count': attempts }, trace);
+        }
+        catch {
+            // Telemetry is never acknowledged: a failing logger loses the record, and collection goes on.
+        }
+    }
+    /** An escaped error. Once the module stops its scheduler and database refuse use, which is no fault. */
+    #failed(error: unknown, trace?: TraceContext): void {
+        if (this.#alive())
+            this.#report(codeOf(error), trace);
+    }
+    #recovered(trace: TraceContext): void {
+        const fault = this.#fault;
+        if (fault === undefined)
             return;
-        this.#reported = code;
-        recordLog(this.#context.log, 'operation.failed', {
-            'bunny.operation': 'status',
-            'bunny.outcome': Outcome.failed,
-            'bunny.code': code,
-        });
+        this.#fault = undefined;
+        try {
+            recordLog(this.#context.log, 'operation.completed', {
+                'bunny.operation': fault.operation,
+                'bunny.outcome': Outcome.succeeded,
+                'bunny.attempt_count': fault.failed,
+                'bunny.duration_ms': Math.min(MAX_DURATION_MS, Math.max(0, this.#context.clock.now() - fault.sinceMs)),
+            }, trace);
+        }
+        catch {
+            // As in #report.
+        }
     }
     #schedule(explicit?: number): void {
         if (!this.#started || !this.#alive() || this.#halted)
@@ -273,13 +332,13 @@ export class Collector {
                 this.#report('internal');
         }
     }
-    #cycle(): Cycle {
+    #cycle(trace: TraceContext): Cycle {
         const controller = new AbortController();
         const signal = AbortSignal.any([
             controller.signal, this.#stopController.signal, this.#context.signal,
         ]);
         const cancel = this.#context.scheduler.after(CYCLE_MS, () => { controller.abort(); });
-        return { controller, signal, deadline: this.#now() + CYCLE_MS, cancel };
+        return { controller, signal, deadline: this.#now() + CYCLE_MS, cancel, trace };
     }
     /** Race even a dependency that ignores its signal; discard every late result. */
     #guard<T>(call: (signal: AbortSignal) => Promise<T>, milliseconds: number, parent: AbortSignal = this.#stopController.signal): Promise<Guarded<T>> {
@@ -339,20 +398,25 @@ export class Collector {
         return result.ok && this.#delivery === undefined;
     }
     /** A settled refusal permits private work; a hung send pauses admission. */
-    async #drain(): Promise<boolean> {
+    async #drain(trace: TraceContext): Promise<boolean> {
         if (!await this.#waitDelivery())
             return false;
         if (!this.#alive())
             return false;
         const result = await this.#guard(() => this.#track(this.#outbox.republish()), READ_MS);
         if (!result.ok && this.#alive())
-            this.#report(result.code);
+            this.#report(result.code, trace);
         return result.ok;
     }
-    #addStates(add: AddMessage, status: VacuumStatus, generation: number): void {
+    #addStates(add: AddMessage, status: VacuumStatus, generation: number, trace: TraceContext): void {
         const [vacuum, device] = stateDrafts(status, generation);
-        add(`bunny.state.roborock-vacuum.${status.id}`, vacuum);
-        add(`bunny.state.device.${status.id}`, device);
+        add(`bunny.state.roborock-vacuum.${status.id}`, vacuum, { parent: trace });
+        add(`bunny.state.device.${status.id}`, device, { parent: trace });
+    }
+    /** ADR 0012 "Repetition": a poll of a device that stays offline publishes no state that changed nothing. */
+    #unchangedOutage(status: VacuumStatus): boolean {
+        return status.availability === 'unavailable' && !this.#store.needsPublication()
+            && JSON.stringify({ ...status, revision: this.#control.status.revision }) === JSON.stringify(this.#control.status);
     }
     /**
      * The SDK commits SQL synchronously before waiting for publication. Confirm
@@ -365,25 +429,32 @@ export class Collector {
         this.#pending = batch;
         if (!await this.#waitDelivery())
             return false;
-        const publish = batch.privateOnly === true ? false : await this.#drain();
+        const publish = batch.privateOnly === true ? false : await this.#drain(batch.trace);
         if (!this.#alive() || this.#delivery !== undefined)
             return false;
         let proposed: Control | undefined;
+        // A quiet batch leaves the projection as it was, so the projection alone
+        // cannot tell a commit from a rollback. This attempt's token can.
+        const token = randomUUID();
         const completion = this.#track(this.#outbox.transaction(add => {
             if (!this.#alive())
                 throw fixed('cancelled');
             const control = batch.work(this.#copy());
             const counts = this.#store.counts();
-            const status: VacuumStatus = {
+            const collected: VacuumStatus = {
                 ...control.status,
-                revision: batch.publishOnly === true
-                    ? control.status.revision : control.status.revision + 1,
                 collection: {
                     ...control.status.collection,
                     retainedRuns: counts.runs,
                     observedSamples: counts.samples,
                     gaps: counts.gaps,
                 },
+            };
+            const quiet = publish && this.#unchangedOutage(collected);
+            const status: VacuumStatus = {
+                ...collected,
+                revision: batch.publishOnly === true || quiet
+                    ? collected.revision : collected.revision + 1,
             };
             control.status = status;
             this.#store.saveCheckpoint({
@@ -393,14 +464,16 @@ export class Collector {
                 activeEpisodeId: control.activeId,
             });
             this.#store.saveProjection(status, !publish);
-            if (publish)
-                this.#addStates(add, status, control.generation);
+            if (publish && !quiet)
+                this.#addStates(add, status, control.generation, batch.trace);
+            this.#store.saveCommitToken(token);
             proposed = control;
             return control;
         }));
         const candidate = proposed;
         const saved = this.#store.hasIdentity() ? this.#store.loadProjection() : undefined;
         const committed = candidate !== undefined && !this.#store.database.isTransaction
+            && this.#store.commitToken() === token
             && saved?.revision === candidate.status.revision
             && JSON.stringify(saved) === JSON.stringify(candidate.status);
         if (committed) {
@@ -414,6 +487,9 @@ export class Collector {
                 if (candidate.candidate !== undefined)
                     this.#pendingMap = candidate.candidate;
                 this.#control.candidate = undefined;
+                // A refused publication stays a fault until its state goes out.
+                if (publish || batch.privateOnly === true)
+                    this.#recovered(batch.trace);
             }
         }
         const settled = await this.#guard(() => completion, READ_MS);
@@ -422,7 +498,7 @@ export class Collector {
                 const code = settled.ok ? 'internal' : settled.code;
                 this.#storageBlockedAt ??= this.#now();
                 this.#storageFailure = code;
-                this.#report(code);
+                this.#report(code, batch.trace, 'storage');
             }
             return false;
         }
@@ -440,6 +516,7 @@ export class Collector {
             endAtMs: at, reason: 'restart',
         };
         await this.#commit({
+            trace: this.#context.trace.span(),
             privateOnly: true,
             work: control => {
                 if (gap !== undefined)
@@ -453,7 +530,7 @@ export class Collector {
             },
         });
     }
-    async #ensureIdentity(): Promise<boolean> {
+    async #ensureIdentity(trace: TraceContext): Promise<boolean> {
         if (this.#control.identityReady)
             return true;
         if (this.#identityPending !== undefined)
@@ -468,17 +545,19 @@ export class Collector {
             void pending.then(clear, clear);
             return pending;
         }, READ_MS);
-        if (!result.ok) {
-            this.#report(result.code);
-            return false;
-        }
         if (!this.#alive())
             return false;
+        if (!result.ok) {
+            // Each retry loop has capped backoff, also while its evidence is overdue.
+            this.#control.failureStreak += 1;
+            this.#report(result.code, trace);
+            return false;
+        }
         const identity = result.value;
         if (this.#store.hasIdentity()) {
             if (this.#store.identity() !== identity) {
                 this.#halted = true;
-                this.#report('invalid-state');
+                this.#report('invalid-state', trace);
                 this.#transport.stop();
                 return false;
             }
@@ -486,6 +565,7 @@ export class Collector {
             return true;
         }
         return this.#commit({
+            trace,
             privateOnly: true,
             work: control => {
                 this.#store.bindIdentity(identity);
@@ -507,10 +587,15 @@ export class Collector {
             normalizationVersion: NORMALIZATION_VERSION,
             ...(requestedRecordId === undefined ? {} : { requestedRecordId }),
         };
-        const failure = (code: ErrorCode): Entry<T> => ({
-            observation: { ...context, observedAtMs: this.#now(), failureCode: code },
-            requestedAt: started, value: undefined, at: this.#now(), ok: false, code, episodeId, gapId,
-        });
+        // One instant for the observation and its entry: the checkpoint refuses a status whose
+        // observation time differs from the time it records, and a retained batch would repeat it.
+        const failure = (code: ErrorCode): Entry<T> => {
+            const at = this.#now();
+            return {
+                observation: { ...context, observedAtMs: at, failureCode: code },
+                requestedAt: started, value: undefined, at, ok: false, code, episodeId, gapId,
+            };
+        };
         if (!this.#alive())
             return failure('cancelled');
         if (cycle.signal.aborted || this.#wirePending)
@@ -519,7 +604,7 @@ export class Collector {
             this.#wirePending = true;
             let promise: Promise<Reading<T>>;
             try {
-                promise = call({ signal, timeoutMs: Math.min(TRANSPORT_READ_MS, Math.max(1, cycle.deadline - started - 1000)) });
+                promise = call({ signal, timeoutMs: Math.min(TRANSPORT_READ_MS, Math.max(1, cycle.deadline - started - 1000)), trace: cycle.trace });
             }
             catch (error) {
                 this.#wirePending = false;
@@ -610,7 +695,7 @@ export class Collector {
             const cadence = control.status.activity === 'cleaning' || control.status.activity === 'returning'
                 ? 15000 : 60000;
             const expected = control.status.observedAtMs.value + cadence;
-            if (entry.requestedAt > expected + 1) {
+            if (entry.requestedAt > expected + MISSED_POLL_GRACE_MS) {
                 this.#store.appendGap({
                     id: entry.gapId, episodeId: control.activeId,
                     startAtMs: expected, endAtMs: entry.at, reason: 'missed-poll',
@@ -724,7 +809,7 @@ export class Collector {
         this.#store.saveEpisodeRecoveryCursor(after);
         return control;
     }
-    async #perform(): Promise<void> {
+    async #perform(trace: TraceContext): Promise<void> {
         if (!this.#alive() || this.#halted)
             return;
         if (this.#pending !== undefined) {
@@ -737,6 +822,7 @@ export class Collector {
                 const id = randomUUID();
                 this.#storageBlockedAt = undefined;
                 await this.#commit({
+                    trace: pending.trace,
                     work: control => {
                         this.#store.appendGap({
                             id, episodeId: control.activeId,
@@ -751,16 +837,17 @@ export class Collector {
         }
         if (!await this.#waitDelivery() || this.#wirePending)
             return;
-        if (!await this.#ensureIdentity() || !this.#alive())
+        if (!await this.#ensureIdentity(trace) || !this.#alive())
             return;
-        if (this.#store.needsPublication() && this.#cycles > 0 && await this.#drain()) {
-            await this.#commit({ publishOnly: true, work: control => control });
+        if (this.#store.needsPublication() && this.#cycles > 0 && await this.#drain(trace)) {
+            await this.#commit({ trace, publishOnly: true, work: control => control });
             return;
         }
         if (this.#delivery !== undefined)
             return;
         if (this.#store.hasGapRecoveryWork()) {
             await this.#commit({
+                trace,
                 work: control => {
                     this.#store.recoverOpenGaps(100);
                     return control;
@@ -768,7 +855,7 @@ export class Collector {
             });
             return;
         }
-        const cycle = this.#cycle();
+        const cycle = this.#cycle(trace);
         try {
             if (this.#pendingMap !== undefined) {
                 await this.#capture(this.#pendingMap, cycle);
@@ -796,6 +883,7 @@ export class Collector {
             const observations = [status, consumables, summary, rooms]
                 .filter((entry): entry is Entry<VendorJson> => entry !== undefined);
             if (!await this.#commit({
+                trace,
                 work: control => {
                     for (const entry of observations)
                         this.#store.appendObservation(entry.observation);
@@ -849,6 +937,7 @@ export class Collector {
             const candidateId = randomUUID();
             if (entries.length > 0) {
                 if (!await this.#commit({
+                    trace,
                     work: control => {
                         for (const { item, entry, run } of entries) {
                             this.#store.appendObservation(entry.observation);
@@ -910,6 +999,7 @@ export class Collector {
                 && this.#store.hasHistoricalEpisodes(this.#control.generation)) {
                 const recoveryAt = this.#now();
                 if (!await this.#commit({
+                    trace,
                     work: control => this.#recoverHistorical(control, recoveryAt),
                 }))
                     return;
@@ -993,6 +1083,7 @@ export class Collector {
             reasons: [],
         };
         await this.#commit({
+            trace: cycle.trace,
             capturedCandidateId: candidate.id,
             work: control => {
                 for (const entry of entries)
