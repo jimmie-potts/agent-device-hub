@@ -198,7 +198,8 @@ export class MusicLightingPart implements CorePart {
   #expireAt(target: string, generation: string, workId: string): void {
     const core = this.#core, operation = core?.operation(workId);
     if (core === undefined || operation === undefined || this.#closed) return;
-    const timer = this.#scheduler.after(Math.max(0, operation.deadlineAtMs - core.clock.now()) + 1, () => {
+    let timer: Cancel;
+    try {timer = this.#scheduler.after(Math.max(0, operation.deadlineAtMs - core.clock.now()) + 1, () => {
       this.#timers.delete(timer);
       void this.#serial(async () => {
         if (this.#closed) return;
@@ -209,7 +210,10 @@ export class MusicLightingPart implements CorePart {
           if (ending !== undefined) this.#end(tx, row, ending);
         });
       }).catch(() => {this.#failed();});
-    });
+    });} catch {
+      // The module is stopping, and its scheduler refuses new timers: nothing is left to settle in this run.
+      return;
+    }
     this.#timers.add(timer);
   }
   #failed(): void {
@@ -351,10 +355,14 @@ export class MusicLightingPart implements CorePart {
     void copy?.close();
     const now = core.clock.now();
     follow.retry.failed(now);
-    follow.cancel = this.#scheduler.after(follow.retry.next - now, () => {
-      delete follow.cancel;
-      this.#sync(follow);
-    });
+    try {
+      follow.cancel = this.#scheduler.after(follow.retry.next - now, () => {
+        delete follow.cancel;
+        this.#sync(follow);
+      });
+    } catch {
+      // The module is stopping (its scheduler refuses new timers); a stopped core follows nothing.
+    }
   }
 
   /** The session's next record from its own generation's device record, or undefined when it does not change it. */
