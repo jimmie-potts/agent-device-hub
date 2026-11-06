@@ -280,6 +280,53 @@ the real disposable core and gateway. It runs through both the Music-card
 browser entry and hosted smoke. Its screenshots and accessibility checks are
 source evidence; installation and physical acceptance remain separate.
 
+## Music lighting
+
+Below Music input measurement, the **Music lighting** card (#722) has one section
+per light in the core's synced `music-lighting-state` records. See
+[Music lighting sessions](../README.md#music-lighting-sessions). Each section
+shows the session status, the saved preset in use and the last ending, in plain
+words. The ending includes its reason, its restoration (restored, skipped, none
+or uncertain) and any error code. Opening Audio, reload, reconnect and record
+changes only read. Nothing restarts a session after any ending.
+
+The card keeps three kinds of evidence apart:
+
+- **Start/Stop request** is the operator command's outcome. Completion means the
+  core saved the request, not that the light did anything.
+- **Light work** is the light module's answer to the core's work command, found
+  by the request ID the core derives. A written frame is still not physically
+  observed.
+- **Session status** comes from the light's own report through the core. Only
+  **Active** means the light reported playing.
+
+Choose a saved reactive preset from the private Nanoleaf library, read with the
+Wall page's own follower. With no saved preset, the card links to the Music
+effect preview and Start stays disabled. **Start Music lighting** sends one
+tracked `music-lighting-control` start. It carries the record's revision, the
+chosen preset and the current Music.app capture endpoint and generation. Start
+needs active Music.app measurement, so a microphone session is never offered.
+The light must be on, already in Free and showing a named scene. A light
+outside Free is refused, never switched. The card notes a saved mode other than
+Free, and the light's refusal appears as the recorded ending. **Stop Music
+lighting** stays available for starting, active, stopping and uncertain
+sessions, independent of an unresolved Start. Start and Stop keep separate
+tracked attempts per light, and every disabled control states its reason.
+
+A failed read or a lost connection keeps the last fresh records as **Last
+known**, with controls disabled. Only **Refresh lighting status** reads again. A
+lost Start reply stays locked across reload and is never resent.
+`MusicLightingFeed` owns the lighting copy and the preset follower on the existing
+participant, and closes both when Audio unmounts or the connection ends.
+
+`tests/music-lighting.browser.ts` runs the real disposable core, gateway and
+Nanoleaf module on a simulated Lines controller with the numeric producer
+fixture. It covers the passive lifecycle, the stopped, source-lost and
+refused-outside-Free endings, stale reads, a lost reply, read-only access and
+microphone exclusion. It also runs axe at 1280, 390 and 320 px in both themes.
+It runs in the Music-card browser entry and hosted smoke. This is source
+evidence only; installed and physical acceptance belong to #725.
+
 ## Reusable Pixoo controls
 
 Home, the Pixoo device page and Player mount the module's `PixooDisplay` through

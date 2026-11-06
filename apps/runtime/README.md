@@ -712,6 +712,8 @@ Start or Stop. No ending resumes a session, nothing is resent after restart or
 reconnection, and no path selects the microphone or another light. No edge grant
 requests lighting work or publishes a device record. Device admission, frames
 and restoration belong to the [Nanoleaf module](../../modules/nanoleaf/README.md).
+The dashboard's Audio page reads these records and sends explicit Start and Stop
+from its [Music lighting](dashboard/README.md#music-lighting) card (#722).
 This source path does not qualify installed or physical behavior.
 
 ## Agent hooks
