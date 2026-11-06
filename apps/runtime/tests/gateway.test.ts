@@ -1171,7 +1171,7 @@ it('Hub mode HTTP control refuses invalid/read-only/stale choices and deduplicat
 it('authenticated malformed capture actions return invalid-request without dispatching work', async context => {
   const operator = OPERATOR(), core = createCoreModule();
   const dispatched: Parameters<typeof core.operatorActions.dispatch>[0][] = [];
-  core.operatorActions.dispatch = async action => {dispatched.push(action); return errorBody('unavailable');};
+  core.operatorActions.dispatch = action => {dispatched.push(action); return Promise.resolve(errorBody('unavailable'));};
   const g = await gateway(context, [operator], {modules: [core]});
   const answers: Answer[] = [];
   for (const [index, action] of [{toString: null}, {toString: 42}, ['calibrate'], null, 42, true].entries()) {
@@ -1189,7 +1189,7 @@ it('authenticated malformed capture actions return invalid-request without dispa
 it('authenticated capture actions preserve canonical 2.0, 2.1 and 2.2 selection', async context => {
   const operator = OPERATOR(), core = createCoreModule();
   const dispatched: Parameters<typeof core.operatorActions.dispatch>[0][] = [];
-  core.operatorActions.dispatch = async action => {dispatched.push(action); return errorBody('unavailable');};
+  core.operatorActions.dispatch = action => {dispatched.push(action); return Promise.resolve(errorBody('unavailable'));};
   const g = await gateway(context, [operator], {modules: [core]});
   const binding = {endpointId: 'synthetic-endpoint', generation: '00000000-0000-4000-8000-000000000721', microphoneId: 'studio-mic', sampleRateHz: 48000, channels: 2};
   const settings = {sensitivity: 1, smoothingMs: 100, emphasis: {bass: 1, mid: 1, treble: 1}, gate: {mode: 'off'}};
