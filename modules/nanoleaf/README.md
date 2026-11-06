@@ -250,8 +250,12 @@ existing locked worker, as for a bounded moment.
 - **Per-frame check.** Immediately before each frame, `GET /effects/select` must still
   report the session's frame selection. Otherwise a scene chosen in the Nanoleaf app is
   a manual takeover: the session ends `manual`, no frame paints over the choice, and a
-  later Stop has no session to restore. Each frame now costs two requests, which lowers
-  the effective frame rate.
+  later Stop has no session to restore. After that read, and after every other read,
+  every ending check runs again before anything is written: the Stop, a newer choice,
+  an alert, the input's freshness and, before the first frame, the Start's expiry. The
+  frame then renders the sample read after the selection. A Stop or alert during the
+  first frame's read ends the session with no write and restoration `none`, since nothing
+  was shown. Each frame now costs two requests, which lowers the effective frame rate.
 - **Endings**, checked on every wake in this order: a queued `music.stop` (`stopped`,
   then restore); a newer mode, configuration, override, hold, scene, animation, power,
   brightness or moment (`manual`, no restoration); an alert (`alert`, then restore); a

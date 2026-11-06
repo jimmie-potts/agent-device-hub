@@ -242,14 +242,30 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   }
   const deadline = now() + FIRST_FEATURE_MS;
   let first: {sample: MusicSample; payload: Display} | undefined;
-  while (first === undefined) {
+  // The selection the light reported, read since the last checks: every check runs again after that read, and the frame
+  // is written with no wait between the last check and the write. Nothing was shown yet, so an ending restores nothing.
+  let selection: {value: unknown} | undefined;
+  for (;;) {
     const stop = stopRow();
     if (stop !== undefined) return end('stopped', 'none', {kind: 'refused', code: 'cancelled'}, stop);
     if (stale()) return end('manual', 'none');
     if (alerting(current())) return end('alert', 'none', {kind: 'refused', code: 'invalid-state'});
     if (now() >= row.expires * 1000) return end('expired', 'none', {kind: 'expired'});
     const sample = input?.current(clock()) ?? null;
-    if (sample !== null) {
+    const answered = selection;
+    selection = undefined;
+    if (sample !== null && answered === undefined) {
+      // The light must still show its base: a scene chosen since the Start's read is a newer manual choice.
+      try {
+        selection = {value: await read('/effects/select')};
+      } catch (error) {
+        deviceFailure(error);
+        return end('device', 'none', {kind: 'refused', code: 'unavailable'});
+      }
+      continue;
+    }
+    if (sample !== null && answered !== undefined) {
+      if (answered.value !== freeBase.name) return end('manual', 'none');
       let payload: Display | null;
       try {
         payload = renderer.render(sample);
@@ -267,14 +283,6 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   }
   const {payload} = first;
   const shown = shownBy(payload);
-  // The light must still show its base: a scene chosen since the Start's read is a newer manual choice.
-  try {
-    if (await read('/effects/select') !== freeBase.name) return end('manual', 'none');
-  } catch (error) {
-    deviceFailure(error);
-    return end('device', 'none', {kind: 'refused', code: 'unavailable'});
-  }
-  if (stale()) return end('manual', 'none');
   // The first frame is the Start's own journaled write: a lost answer ends it uncertain and holds the device, and an
   // answered refusal fails it; either way `finish` ends the session as a device failure.
   try {
@@ -323,14 +331,44 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   let lastWrite = now();
   let lastSequence = first.sample.feature.sequence;
   let lastCheck = now();
+  // As before the first frame: the selection read since the last checks, after which every check runs again.
+  let reported: {value: unknown} | undefined;
   for (;;) {
-    await sleep(Math.max(POLL_MS, lastWrite + FRAME_MS - now()) / 1000);
+    if (reported === undefined) await sleep(Math.max(POLL_MS, lastWrite + FRAME_MS - now()) / 1000);
+    const checked = reported;
+    reported = undefined;
     const stop = stopRow();
     if (stop !== undefined) return end('stopped', await restore(stop), undefined, stop);
     if (stale()) return end('manual', 'none');
     if (alerting(current())) return end('alert', await restore(undefined));
     const next = input?.current(clock()) ?? null;
     if (next === null) return end('source-lost', await restore(undefined));
+    if (checked !== undefined) {
+      // Immediately before each frame, the light must still show the session's frames: a scene chosen in the app since
+      // the last frame is a manual takeover, and the frame would paint over it. Only the short read-to-write gap is unseen.
+      if (checked.value !== shown) return end('manual', 'none');
+      // The sample read after the selection: no wait separates these checks from the write.
+      if (next.feature.sequence === lastSequence) continue;
+      let frame: Display | null;
+      try {
+        frame = renderer.render(next);
+      } catch (error) {
+        if (error instanceof Rejected) return end('device', 'none', undefined, undefined, error.code);
+        throw error;
+      }
+      if (frame === null) continue;
+      try {
+        await paint.call(() => send('/effects', frame));
+      } catch (error) {
+        // A hold or a mode command overtook the write before it was sent: the next check ends the session.
+        if (error instanceof Cancelled) continue;
+        deviceFailure(error);
+        return end('device', 'none', undefined, undefined, failureCode(error));
+      }
+      lastWrite = now();
+      lastSequence = next.feature.sequence;
+      continue;
+    }
     if (now() - lastCheck >= EXTERNAL_CHECK_MS) {
       lastCheck = now();
       let showing: boolean;
@@ -348,32 +386,11 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
       continue;
     }
     if (next.feature.sequence === lastSequence || now() - lastWrite < FRAME_MS) continue;
-    let frame: Display | null;
     try {
-      frame = renderer.render(next);
-    } catch (error) {
-      if (error instanceof Rejected) return end('device', 'none', undefined, undefined, error.code);
-      throw error;
-    }
-    if (frame === null || stale()) continue;
-    // Immediately before each frame, the light must still show the session's frames: a scene chosen in the app since the
-    // last frame is a manual takeover, and the next frame would paint over it. Only the short read-to-write gap is unseen.
-    try {
-      if (await read('/effects/select') !== shown) return end('manual', 'none');
+      reported = {value: await read('/effects/select')};
     } catch (error) {
       deviceFailure(error);
       return end('device', 'none', undefined, undefined, 'unavailable');
     }
-    if (stale() || stopRow() !== undefined) continue;
-    try {
-      await paint.call(() => send('/effects', frame));
-    } catch (error) {
-      // A hold or a mode command overtook the write before it was sent: the next check ends the session.
-      if (error instanceof Cancelled) continue;
-      deviceFailure(error);
-      return end('device', 'none', undefined, undefined, failureCode(error));
-    }
-    lastWrite = now();
-    lastSequence = next.feature.sequence;
   }
 }

@@ -27,6 +27,8 @@ type World = {
   db: DatabaseSync; outcomes: Outcome[]; writes: {endpoint: string; payload: unknown; atMs: number}[]; inFlight: number; maxInFlight: number;
   now: number; selected: string; brightness: number; alert: boolean; feeding: boolean; sequence: number; input: MusicInput;
   onWrite: (endpoint: string, payload: unknown) => void; lose: string | undefined; refuse: number | undefined;
+  /** Runs while a read is in flight, before it is answered: what changes during the read. */
+  onRead: (endpoint: string) => void;
 };
 
 function open(): World {
@@ -41,7 +43,7 @@ function open(): World {
   const now = 1_793_836_800_000;
   const clock: MusicClock = {wallMs: now, monotonicMs: now};
   return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, now, selected: 'Ocean', brightness: 50, alert: false, feeding: true, sequence: 0,
-    input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined};
+    input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined, onRead: () => {}};
 }
 
 const feature = (world: World): CaptureFeatures => {
@@ -71,6 +73,7 @@ async function run(world: World, step: (world: World) => void): Promise<void> {
     await Promise.resolve();
     world.inFlight -= 1;
     if (method === 'GET') {
+      world.onRead(endpoint);
       if (endpoint === '/effects/select') return world.selected;
       return endpoint === '/effects' ? {select: world.selected, effectsList: ['Ocean', 'New scene']} : {on: {value: true}, brightness: {value: world.brightness}};
     }
@@ -287,3 +290,61 @@ test('the expiry sweep leaves a live session\'s Stop for its loop and a second S
     world.db.close();
   }
 });
+
+/** Each device write as `endpoint` and what it set: a frame, a brightness or a scene. */
+const sequence = (world: World): string[] => world.writes.map(write => {
+  const body = write.payload as {write?: unknown; select?: string; brightness?: {value: number}};
+  return body.write !== undefined ? 'frame' : body.select !== undefined ? `select ${body.select}` : `brightness ${body.brightness?.value}`;
+});
+
+for (const change of ['alert', 'stop'] as const) {
+  test(`a${change === 'alert' ? 'n' : ''} ${change} during the first frame's base read ends the session with no write`, async () => {
+    const world = open();
+    try {
+      let raised = false;
+      world.onRead = endpoint => {
+        if (endpoint !== '/effects/select' || raised) return;
+        raised = true;
+        if (change === 'alert') world.alert = true;
+        else transaction(world.db, () => admitMusicStop(world.db, 'wall', {kind: 'music.stop', requestId: 'stop', generation: GENERATION}, world.now, world.now + 5000));
+      };
+      await run(world, () => {});
+      assert.ok(raised);
+      assert.deepEqual(sequence(world), [], 'nothing was shown, so nothing is written or restored');
+      assert.deepEqual(ended(world), {reason: change === 'alert' ? 'alert' : 'stopped', restoration: 'none'});
+      const start = world.outcomes.find(outcome => outcome.requestId === 'start');
+      assert.equal(start?.result, 'failed');
+      assert.equal(start?.error?.code, change === 'alert' ? 'invalid-state' : 'cancelled');
+      if (change === 'stop') assert.deepEqual(world.outcomes.find(outcome => outcome.requestId === 'stop')?.evidence, 'observed');
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
+for (const change of ['alert', 'stop', 'source-loss'] as const) {
+  test(`${change} during a later frame's selection read ends the session before that frame`, async () => {
+    const world = open();
+    try {
+      let raised = false;
+      world.onRead = endpoint => {
+        if (endpoint !== '/effects/select' || raised || frameWrites(world).length !== 3) return;
+        raised = true;
+        if (change === 'alert') world.alert = true;
+        else if (change === 'stop') transaction(world.db, () => admitMusicStop(world.db, 'wall', {kind: 'music.stop', requestId: 'stop', generation: GENERATION}, world.now, world.now + 5000));
+        else {
+          // The read outlasts the input's validity, as a slow light's can.
+          world.feeding = false;
+          world.now += 500;
+        }
+      };
+      await run(world, () => {});
+      assert.ok(raised);
+      assert.deepEqual(sequence(world), ['frame', 'frame', 'frame', 'brightness 50', 'select Ocean'], 'no frame after the read; the base is restored');
+      assert.deepEqual(ended(world), {reason: change === 'alert' ? 'alert' : change === 'stop' ? 'stopped' : 'source-lost', restoration: 'restored'});
+      assert.equal(world.maxInFlight, 1);
+    } finally {
+      world.db.close();
+    }
+  });
+}
