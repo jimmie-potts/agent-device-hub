@@ -26,11 +26,27 @@ export async function musicCaptureProducer(url: string, token: string, microphon
       }}, {parent: current});
   };
   const pause = (): void => {if (timer !== undefined) clearInterval(timer); timer = undefined;};
+  let draining = false;
+  /**
+   * Emits every 100 ms window that has ended by the real clock, as a capture producer delivers its backlog after a delay
+   * (#1511). One frame per tick would let a late timer push the windows ever further behind real time, until the core
+   * drops every frame as stale or retires the response clock.
+   */
+  const drain = async (): Promise<void> => {
+    if (draining) return;
+    draining = true;
+    try {
+      while (timer !== undefined && sourceMono + sequence * 100 <= performance.now()) {
+        const before = sequence; await emit();
+        if (sequence === before) return;
+      }
+    } finally {draining = false;}
+  };
   const start = async (): Promise<void> => {
     if (current === undefined) return;
     sourceMono = performance.now() - sequence * 100;sourceWall = Date.now() - sequence * 100;
     await progress(current, 'started'); await emit(); pause();
-    timer = setInterval(() => {void emit().catch(() => {pause();});}, 100);
+    timer = setInterval(() => {void drain().catch(() => {pause();});}, 100);
   };
   endpoint = await edge.openEndpoint<CaptureWork>({family: 'music-capture-work', onClosed: pause, respond: command => {
     commands.push(command);
