@@ -16,6 +16,10 @@
     "./music-response": {
       "types": "./dist/src/music-response.d.ts",
       "import": "./src/music-response.ts"
+    },
+    "./reactive-presets": {
+      "types": "./dist/src/frontend/reactive-preset-model.d.ts",
+      "import": "./src/frontend/reactive-preset-model.ts"
     }
   },
   "dependencies": {

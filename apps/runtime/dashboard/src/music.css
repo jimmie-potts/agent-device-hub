@@ -45,3 +45,7 @@
 .music-response-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 0.75rem; }
 .music-response-fields label { display: grid; gap: 0.35rem; min-width: 0; }
 .music-response-fields input, .music-response-fields select { min-width: 0; max-width: 100%; width: 100%; box-sizing: border-box; }
+
+.music-lighting-target { border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 1rem; min-width: 0; }
+.music-lighting-target h3 { font-size: var(--type-subheading); font-weight: 600; overflow-wrap: anywhere; }
+.music-lighting-target label { display: block; font-weight: 600; margin-top: var(--space-m); }

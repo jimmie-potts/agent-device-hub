@@ -2131,6 +2131,14 @@ Clock checks cover first-window-relative elapsed time, exact uncertainty bounds,
 repeated timestamps, compressed bursts, backwards receipts and delayed delivery;
 these checks never access a microphone or qualify physical acoustics.
 
+The Audio Music lighting controls (#722 over #1272) use the existing dashboard
+unit discovery and the hosted smoke entry. After `npm run build`, run
+`npm run typecheck`, `npm run lint:js`, `npm run test:runtime-dashboard:built`
+and `node apps/runtime/dashboard/tests/music-lighting.browser.ts`. The journey
+uses the real disposable core and Nanoleaf module on a simulated Lines controller
+with the numeric producer fixture. It sends no physical device command and
+qualifies no installed or physical behavior.
+
 The Music playback adapter (#571) uses those same producer/native commands and
 the existing event, SDK, runtime and playback test discovery. Native playback
 tests substitute process discovery, permission and every AppleEvent call; the
