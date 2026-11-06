@@ -290,7 +290,9 @@ class Owner {
       for(const [index,target] of targets.entries()) {
         signal.throwIfAborted();
         const guard=this.#guard(command,action);if(guard!==undefined){code=guard;throw new Error('MicroDuck command fenced');}
-        await this.#change(()=>{row.started=true;this.#store.save(row);if(this.#state.active?.requestId===row.requestId)this.#state.active.phase=index===0?(action.gesture==='neutral'?'neutral':'outbound'):'return';},command);
+        // The return phase is saved with the first move's transmission, before the 800 ms hold: a commit here would
+        // spend the 100 ms return window (#1491).
+        if(index===0)await this.#change(()=>{row.started=true;this.#store.save(row);},command);
         let sentAt:bigint|undefined;
         const baseline=this.#latest?.sensorNs;
         try {
@@ -303,7 +305,7 @@ class Owner {
           }));
         }catch(error){if(error instanceof VendorRefusal&&!transmitted){possible=false;code='invalid-state';}throw error;}
         if(sentAt===undefined)throw new Error('MicroDuck send evidence missing');
-        transmitted=true;await this.#transmitted(row);
+        transmitted=true;await this.#transmitted(row,index+1<targets.length);
         if(target===0) {
           let count=0,last=baseline;
           while(this.#transport.nowNs()-sentAt<=800000000n) {
@@ -323,7 +325,10 @@ class Owner {
       await this.#finish(row,{requestId:row.requestId,result:possible?Outcome.uncertain:Outcome.failed,evidence:transmitted?Outcome.transmitted:Outcome.none,error:errorBody(possible?'uncertain-result':signal.aborted?'cancelled':code).error});
     }
   }
-  async #transmitted(row: Row): Promise<void> {await this.#change(() => {this.#state.lastTransmission = {status:'known',requestId:row.requestId,transmittedAtMs:this.#context.clock.now(),operationIds:[]};},row);}
+  async #transmitted(row: Row, returning: boolean): Promise<void> {await this.#change(() => {
+    this.#state.lastTransmission = {status:'known',requestId:row.requestId,transmittedAtMs:this.#context.clock.now(),operationIds:[]};
+    if (returning && this.#state.active?.requestId === row.requestId) this.#state.active.phase = 'return';
+  },row);}
   async #finish(row: Row, outcome: CompletedOutcome): Promise<void> {
     try {await this.#change(add => {
       row.outcome = outcome; this.#store.save(row);

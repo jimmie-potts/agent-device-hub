@@ -3,8 +3,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
-import {setImmediate as turn} from 'node:timers/promises';
-import {InProcessBus,type Scheduler} from '@jimmie-potts/sdk';
+import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import type {ModeState,SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CompanionOpportunity} from '@jimmie-potts/event-contracts/v2/companions';
@@ -12,18 +11,7 @@ import {createMicroDuckModule} from '../src/module.js';
 import {SimulatedMicroDuck} from '../src/simulated.js';
 import {MICRODUCK_SIMULATED_SECTION as section} from '../src/registration.js';
 import type {MicroDuckState} from '../src/contracts.js';
-/**
- * Moved only by the test, and shared by the module, the bus and the simulator. Automatic expression refuses sensor
- * evidence older than 500 ms, and its path to the first write runs eight synchronous commits with no observation between
- * them, so on the real clock a slow disk or a stalled host could refuse the reaction this test waits for.
- */
-class TestClock {
- ms=Date.now();
- readonly #timers=new Set<{at:number;callback:()=>void}>();
- readonly now=():number=>this.ms;
- readonly scheduler:Scheduler={after:(delayMs,callback)=>{const timer={at:this.ms+delayMs,callback};this.#timers.add(timer);return ()=>{this.#timers.delete(timer);};}};
- async advance(ms:number):Promise<void>{for(let moved=0;moved<ms;moved+=5){this.ms+=5;for(const timer of [...this.#timers].sort((a,b)=>a.at-b.at)){if(timer.at>this.ms)break;if(this.#timers.delete(timer))timer.callback();}await turn();}}
-}
+import {TestClock} from './support.js';
 /** A synchronous stall of the host, as a slow commit or a descheduled runner gives; only the real clock sees it. */
 const stallHost=(ms:number):void=>{Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,ms);};
 void test('only opted-in current live attention reacts; repeats, other sessions, Quiet and takeover stay silent',{timeout:10000},async t=>{
