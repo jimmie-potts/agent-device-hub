@@ -148,6 +148,10 @@ const routineActions:Scenario={
       saved.set(h,{...enabled,plannedAtMs:when.atMs});
     }),
     expect('at its minute the routine runs both actions once, in order',async h=>{
+      // The minute is about 60 virtual seconds away, polled every 10 ms. A gateway read of the log on each of those ~6000
+      // polls spent most of the case's 20 s limit (#1507), so the log is read from the chosen minute on.
+      const plannedAtMs=savedOf(h).plannedAtMs??0;
+      if(h.now()<plannedAtMs) return `${plannedAtMs-h.now()} ms before its minute`;
       const rows=rowsOf(await entries(h),'routine-scheduled');
       return (rows.length===2 && rows[0]==='0 pixoo-1 receipt' && rows[1]==='1 pendant-1 receipt') || `rows ${JSON.stringify(rows)}`;
     },75000),
