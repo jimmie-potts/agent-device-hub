@@ -6,8 +6,9 @@ import {usePresentArt, type PresentedArt} from './presentation.js';
 
 type Decoded = {bitmap: ImageBitmap; evidence: PresentedArt; label: string};
 /** A still is complete only after authenticated bytes decode. Obsolete selections release their bitmap. */
-export function ArtImage({api, artwork, live, compact = false, presented = false}: {
+export function ArtImage({api, artwork, live, compact = false, presented = false, metadataStatus}: {
   api: FrontendApi; artwork: ArtworkSummary | undefined; live: boolean; compact?: boolean; presented?: boolean;
+  metadataStatus?: 'loading' | 'unavailable' | undefined;
 }): React.JSX.Element {
   const frame = useRef<HTMLElement>(null), [visible, setVisible] = useState(false);
   const canvas = useRef<HTMLCanvasElement>(null), kept = useRef<Decoded | undefined>(undefined);
@@ -29,7 +30,7 @@ export function ArtImage({api, artwork, live, compact = false, presented = false
   }, [imageKey, compact]);
   useEffect(() => {
     let disposed = false;
-    if (!live) return;
+    if (!live || metadataStatus !== undefined) return;
     if (selected === undefined) {kept.current?.bitmap.close();kept.current = undefined;setDecoded(undefined);setStatus('unavailable');return;}
     const {rendition, compositionId, artwork: value} = selected;
     setStatus('loading');
@@ -45,7 +46,7 @@ export function ArtImage({api, artwork, live, compact = false, presented = false
     }).catch(() => {if (!disposed) setStatus('unavailable');});
     return () => {disposed = true;};
     // Immutable rendition identity owns the image load; favorite and budget updates cannot restart it.
-  }, [api, live, selected]);
+  }, [api, live, selected, metadataStatus]);
   useEffect(() => () => {kept.current?.bitmap.close();kept.current = undefined;}, []);
   useLayoutEffect(() => {
     const element = canvas.current;
@@ -56,14 +57,15 @@ export function ArtImage({api, artwork, live, compact = false, presented = false
       drawing.drawImage(decoded.bitmap, 0, 0);setDrawn(decoded.evidence.renditionId);
     } catch {setDrawn(undefined);setStatus('unavailable');}
   }, [decoded]);
+  const currentStatus = !live ? 'stale' : metadataStatus ?? status;
   useEffect(() => {
-    if (presented) publish(visible ? {presented: decoded !== undefined && drawn === decoded.evidence.renditionId ? decoded.evidence : null, status: !live ? 'stale' : status} : {presented: null, status: 'idle'});
-  }, [decoded, drawn, live, status, presented, visible, publish]);
+    if (presented) publish(visible ? {presented: decoded !== undefined && drawn === decoded.evidence.renditionId ? decoded.evidence : null, status: currentStatus} : {presented: null, status: 'idle'});
+  }, [decoded, drawn, currentStatus, presented, visible, publish]);
   useEffect(() => () => {if (presented) publish({presented: null, status: 'idle'});}, [presented, publish]);
-  return <figure ref={frame} className="art-image" data-art-image-state={!live ? 'stale' : status} data-artwork={decoded?.evidence.artworkId ?? ''}>
+  return <figure ref={frame} className="art-image" data-art-image-state={currentStatus} data-artwork={decoded?.evidence.artworkId ?? ''}>
     <div className="art-image-frame">{decoded !== undefined && <canvas ref={canvas} role="img" aria-label={decoded.label}/>}
-      {decoded === undefined && <span className="hint">{!live ? 'Art is unavailable or stale.' : status === 'loading' ? 'Loading artwork…' : 'No browser image is available.'}</span>}
+      {decoded === undefined && <span className="hint">{currentStatus === 'stale' ? 'Art is unavailable or stale.' : currentStatus === 'loading' ? 'Loading artwork…' : 'No browser image is available.'}</span>}
     </div>
-    <figcaption>{decoded?.label ?? 'Generated artwork.'}{!live ? ' Stale.' : status === 'loading' ? ' Loading selected artwork.' : status === 'unavailable' ? ' Selected artwork is unavailable.' : ''}</figcaption>
+    <figcaption>{decoded?.label ?? 'Generated artwork.'}{currentStatus === 'stale' ? ' Stale.' : currentStatus === 'loading' ? ' Loading selected artwork.' : currentStatus === 'unavailable' ? ' Selected artwork is unavailable.' : ''}</figcaption>
   </figure>;
 }

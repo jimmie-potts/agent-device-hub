@@ -35,6 +35,34 @@ See [the module guide](../modules/reachy-mini/README.md).
 
 ## Art checks
 
+Shared saved-art presentation (#297) uses the existing CI discovery. After
+`npm run build`, run `npm run typecheck`, `npm run lint:js`,
+`npm run test:events:built`, `npm run test:art:built`,
+`npm run test:runtime:built`, `npm run test:runtime-dashboard:built` and
+`npm run test:art:browser`. The event suite checks the closed additive
+`art-auto/2.1` and `art/2.1` contracts and unchanged 2.0 payloads;
+`modules/art/tests/shared-art.test.ts` checks durable preparation, selection,
+pruning and restart; `apps/runtime/tests/art-plans.test.ts` checks configured
+identities, current capabilities, independent deadlines and tracked results.
+The existing Art browser check covers selected off-page content and obsolete
+loads. Keep the retained contract, Python, package and workflow checks described
+below. Profile 2.1 adds no Python mirror.
+
+The `shared-art` runtime scenario exercises one saved idea through the real
+producer, core tracker, browser, Pixoo and Tidbyt against synthetic transports.
+After building, focus it with
+`node --test --test-name-pattern='shared-art' apps/runtime/dist/tests/scenarios/catalog.test.js`.
+The existing runtime scenario and verification CI globs discover this path;
+`scenario-shared-art` is the disposable capture. It verifies zero provider calls
+during reuse, independent target results and no replay, without a device or
+installed-runtime claim.
+Its named `presentation-fixture` module calls the real core's internal presentation
+control only after a new synthetic request completes. It adds no production
+command route. Initial sync after restart seeds its seen IDs without dispatching.
+Its tier-1 case allows 60 seconds because it observes the Tidbyt's complete
+qualified 30-second hold as well as generation, preparation and restart. Other
+catalog cases keep their existing 20-second default.
+
 Art-derived decoration (#683) uses `npm run test:art-theme:browser` after the
 root build, in the existing App verification runtime group and full local
 dashboard browser suite. Bounded palette and preference cases are discovered

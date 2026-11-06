@@ -1,4 +1,10 @@
-import type {ArtJobSummary, ArtState, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import type {ArtJobSummary, ArtState, ArtRecord, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {TRONBYT_SIMULATED_SECTION, type TronbytState} from '@jimmie-potts/tidbyt';
+import type {SharedArtFixture} from '../../fixtures/presentation.js';
+import {PIXOO_SECTION} from './pixoo.js';
+import {PLAYBACK_SECTION} from './playback.js';
 import {StepFailure, act, answers, bodyOf, deviceState, expect, holds, recorded, refusedWith, running, type Harness, type Scenario} from '../framework.js';
 
 const OWNER = 'bunny/modules/art';
@@ -18,8 +24,79 @@ const request = (h: Harness, id: string, targets = ['ui'], extra: object = {}) =
 const seed: Scenario['seed'] = {modules: ['core', 'art'], sections: {art: {recentLimit: 1}},
   follows: [{owner: OWNER, families: ['art']}, {owner: 'bunny/core', families: ['operation']}]};
 const initialCalls = new WeakMap<Harness, number>();
+const sharedState = (h: Harness): ArtRecord | undefined => h.reader.states<ArtRecord>('art', OWNER)[0]?.data;
+const moments = (h: Harness) => h.reader.states<OperationRecord>('operation', 'bunny/core').map(message => message.data).filter(record => record.family === 'moment-play');
+const fixture = async (h: Harness): Promise<SharedArtFixture | undefined> => bodyOf<SharedArtFixture>(await h.gateway({as: 'reader', method: 'GET', path: '/modules/presentation-fixture/content/result'}));
+const sharedSyncs = new WeakMap<Harness, number>();
+const {nowPlaying: _unusedCard, ...sharedTidbyt} = TRONBYT_SIMULATED_SECTION;
 
 export const scenarios: readonly Scenario[] = [{
+  id: 'shared-art', title: 'one saved idea selects the browser and gives exact displays independent tracked outcomes',
+  memoryTimeoutMs: 60_000,
+  seed: {modules: ['core', 'playback', 'pixoo', 'tidbyt', 'art', 'presentation-fixture'], sections: {art: {recentLimit: 1}},
+    config: {playback: PLAYBACK_SECTION, pixoo: {device: {...PIXOO_SECTION.device, id: 'desk-display'}}, tidbyt: {...sharedTidbyt, id: 'shelf-display'}},
+    follows: [{owner: OWNER, families: ['art']}, {owner: 'bunny/core', families: ['operation']},
+      {owner: 'bunny/modules/pixoo', families: ['device']}, {owner: 'bunny/modules/tidbyt', families: ['device']}]},
+  keepCapturePage: true,
+  capture: async (context, h) => {
+    const value = sharedState(h);
+    if (value === undefined || !('selection' in value) || value.selection === null) throw new StepFailure('the browser selection is missing');
+    const {captureSharedArt} = await import('../../../verify/shared-art-browser.js');await captureSharedArt(context, value.selection.artworkId);
+  },
+  steps: [
+    expect('the producer and both configured display owners are ready', h => running(h, ['core', 'art', 'pixoo', 'tidbyt', 'presentation-fixture'])),
+    expect('the synthetic caller holds its initial Art copy without starting a plan', async h => {const value = await fixture(h);return value?.ready === true && value.plan === undefined || (value?.failure ?? 'fixture copy not ready');}),
+    expect('current noncanonical display records declare exact art', h => ['desk-display', 'shelf-display'].every(id => h.reader.states<DeviceRecord>('device').some(message =>
+      message.data.id === id && message.data.availability === 'available' && message.data.capabilities.moments.supported && message.data.capabilities.moments.art !== undefined)) || 'current art-capable display records missing', 5000),
+    expect('the producer has synchronized both display routes', h => h.logs().filter(({record}) => record.event_name === 'runtime.sync.served'
+      && record.attributes['bunny.participant'] === OWNER && record.attributes['bunny.pattern'] === 'sync device').length >= 2 || 'producer display routes are not current', 5000),
+    act('the owner creates one synthetic idea for the browser and both displays', h => request(h, 'shared-art-seed', ['ui', 'pixoo', 'tidbyt'])),
+    ended('shared-art-seed', 'succeeded'),
+    expect('both display preparations succeed before their moment admissions', h => {
+      const tracked = h.reader.states<OperationRecord>('operation', 'bunny/core').map(message => message.data);
+      return tracked.filter(record => record.family === 'art-auto' && record.result === 'succeeded').length >= 2
+        && moments(h).length === 2 && moments(h).every(record => record.status === 'accepted') || 'independent preparation or moment admission missing';
+    }, 4000),
+    act('an explicit favorite edit asks the synthetic caller to submit the identical pending plan again', h => command(h, 'art-catalog-edit', 'shared-art-duplicate', {action: 'favorite', artworkId: created(h, 'shared-art-seed'), favorite: true})),
+    expect('duplicate intent is observed without another moment operation', async h => (await fixture(h))?.duplicates === 1 && moments(h).length === 2 || 'duplicate intent changed the operation count'),
+    act('the synthetic Pixoo disconnects before the planned start', h => {h.simulate({device: 'pixoo', action: 'offline'});}),
+    expect('the browser commits the original exact composition at the common start', async h => {
+      const proof = await fixture(h), current = sharedState(h);
+      if (proof?.failure !== undefined) return proof.failure;
+      return proof?.plan !== undefined && proof.result !== undefined && !('error' in proof.result)
+        && proof.result.displays.every(value => value.prepare.status === 'tracked' && value.moment.status === 'tracked')
+        && current !== undefined && 'selection' in current && current.selection?.artworkId === proof.plan.artworkId
+        && current.selection.compositionId === proof.plan.browser?.compositionId || 'exact browser selection or independently tracked handoffs missing';
+    }, 6000),
+    expect('the lost Pixoo leaves its own failure while the Tidbyt animation remains independently visible in simulation', h => {
+      const pixoo = moments(h).find(record => record.target === 'desk-display'), server = deviceState<TronbytState>(h, 'tidbyt');
+      return pixoo?.result === 'failed' && server.installations.bunnymoment?.animation?.frames.length === 8 || 'independent failed Pixoo or exact Tidbyt animation missing';
+    }, 15_000),
+    expect('the Tidbyt completes its own longer hold without changing the Pixoo result', h => moments(h).find(record => record.target === 'shelf-display')?.result === 'succeeded'
+      && moments(h).find(record => record.target === 'desk-display')?.result === 'failed' || 'the independent outcomes did not settle', 35_000),
+    expect('saved-art preparation and browser selection made no additional provider calls', h => calls(h).imageCalls === 3 && calls(h).ideaCalls === 1 || 'reuse regenerated art'),
+    act('the owner removes the favorite flag and creates a newer browser composition', async h => {
+      await command(h, 'art-catalog-edit', 'shared-art-unfavorite', {action: 'favorite', artworkId: created(h, 'shared-art-seed'), favorite: false});
+      await request(h, 'shared-art-newer');
+    }),
+    ended('shared-art-newer', 'succeeded'),
+    expect('newer art and recent pruning cannot replace the selected idea', h => {
+      const current = sharedState(h), original = created(h, 'shared-art-seed');
+      return current !== undefined && 'selection' in current && current.selection?.artworkId === original && current.artworks.some(value => value.artworkId === original)
+        && current.retention.recentLimit === 1 && current.retention.recent === 2 || 'selection or selected bytes were pruned';
+    }),
+    act('the runtime restarts with its selected art and completed independent results', async h => {sharedSyncs.set(h, h.reader.syncs('art', OWNER));await h.restart();}),
+    expect('restarted owners run and the reader obtains a fresh selected-art copy', async h => {
+      const current = sharedState(h);
+      return await running(h, ['core', 'art', 'pixoo', 'tidbyt', 'presentation-fixture']) === true && h.reader.syncs('art', OWNER) > (sharedSyncs.get(h) ?? Infinity)
+        && current !== undefined && 'selection' in current && current.selection?.artworkId === created(h, 'shared-art-seed') || 'fresh retained selection missing';
+    }, 5000),
+    holds('restart initiates no presentation and repeats no provider call or moment', async h => {
+      const proof = await fixture(h);
+      return proof?.plan === undefined && proof?.duplicates === 0 && calls(h).imageCalls === 4 && calls(h).ideaCalls === 2 && moments(h).length === 2 || 'restart replayed saved intent';
+    }, 250),
+  ],
+}, {
   id: 'art-theme', title: 'decoded contrasting art changes decoration while local lock and default remain under owner control',
   seed: {...seed, sections: {art: {recentLimit: 8}}}, keepCapturePage: true,
   capture: async (context, harness) => {const {captureArtTheme} = await import('../../../verify/art-theme.js');await captureArtTheme(context, harness);},
