@@ -11,6 +11,11 @@ The Pixoo SHALL advertise rain-notice support only with a renderer that shows a 
 - **WHEN** notice support is absent, evidence becomes invalid before admission, or an explicit pause/manual takeover wins
 - **THEN** the target reports refusal or its typed terminal outcome without silently stripping the label, changing mode or restoring an obsolete base
 
+#### Scenario: The selected route cannot carry the labelled art
+- **WHEN** the hosted route's 256-color GIF palette cannot hold the annotation beside an otherwise admissible exact original
+- **THEN** the moment fails `unsupported-capability` with no transmission evidence, before any file is published or command sent
+- **AND** the current base stays current, so Monitor is not suspended by that refusal
+
 #### Scenario: Transport consumes the forecast hold
 - **WHEN** a slow upload or push consumes the remaining notice validity after effects begin
 - **THEN** the existing owner caps its hold at source stale time or forecast end and reports an interrupted/cancelled attempt rather than completion of the full requested duration
