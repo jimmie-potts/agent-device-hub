@@ -493,24 +493,28 @@ void it('stages and plays exact art at the direct command boundary on the histor
   const world = await World.open({section: {device: {...SECTION.device, profile: 'pixoo64-smoke-2026-09-06'}}});
   try {
     await world.start();
-    await monitor(world);
+    const admitted: ArtStageContent[] = [];
+    const before = world.device.state().uploads;
     for (const count of [21, 59, 60]) {
       const data = content(`direct-${count}`, hostedGif(37, count), count);
-      const before = world.device.state().uploads;
       const answer = await stage(world, data);
       if (count === 60) {
         assert.ok(answer.status === 'rejected');
         assert.match(answer.error.error.detail ?? '', /direct.*59/i);
-        assert.equal(world.device.state().uploads, before);
-        continue;
+      } else {
+        assert.ok(answer.status === 'accepted', JSON.stringify(answer));
+        assert.equal((await world.outcome(answer.requestId)).data.result, 'succeeded');
+        admitted.push(data);
       }
-      assert.ok(answer.status === 'accepted', JSON.stringify(answer));
-      assert.equal((await world.outcome(answer.requestId)).data.result, 'succeeded');
       assert.equal(world.device.state().uploads, before);
-      const shown = waitFor(() => world.device.state().shown?.frames === count ? world.device.state().shown : undefined, 'exact direct art');
+    }
+    const base = await monitor(world);
+    for (const data of admitted) {
       const moment = await accepted(artMoment(world, data.compositionId, {coversStatus: true}));
-      assert.deepEqual((await shown)?.delaysMs, Array<number>(count).fill(100));
+      const shown = await waitFor(() => world.device.state().shown?.frames === data.frames ? world.device.state().shown : undefined, 'exact direct art');
+      assert.deepEqual(shown?.delaysMs, Array<number>(data.frames).fill(100));
       assert.equal((await world.outcome(moment)).data.result, 'succeeded');
+      await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'monitor restored');
     }
   } finally { await world.close(); }
 });
