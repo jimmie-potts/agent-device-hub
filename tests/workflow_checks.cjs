@@ -397,7 +397,7 @@ test('CI runs ten GitHub-hosted Linux jobs and retains every suite once', () => 
       name: 'Check isolated Linux hook qualification',
       if: "runner.os == 'Linux'",
       'timeout-minutes': hookAptMinutes,
-      run: `${aptRetry(180, `bash -c '${hookAptScript}'`)}\nsudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict\nbwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true\nnpm run test:performance:linux\nnpm run test:performance:standalone\n`,
+      run: `${aptRetry(180, `bash -c '${hookAptScript}'`)}\nprofile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict\ntest -f "$profile" || profile=/etc/apparmor.d/bwrap-userns-restrict\nsudo apparmor_parser -r "$profile"\nbwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true\nnpm run test:performance:linux\nnpm run test:performance:standalone\n`,
     }] : []);
     // Hub #494: no job may provide or require a systemd user manager. App verification hides the runner's manager
     // until app-verify works under its systemd 255 (#873), so lifecycle tests skip as they did on Depot.

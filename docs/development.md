@@ -1508,8 +1508,12 @@ perform no timing benchmark or device operations. CI runs them once in the
 Ubuntu workflow job; the other Ubuntu jobs remain required.
 Hosted setup refreshes the package index before installing Ubuntu's `bubblewrap`
 and `apparmor-profiles` packages,
-then loads `/usr/share/apparmor/extra-profiles/bwrap-userns-restrict` and checks
-namespace startup before running the tests. It does not disable
+then loads the `bwrap-userns-restrict` AppArmor profile and checks namespace
+startup before running the tests. Ubuntu 24.04 ships that profile as
+`/usr/share/apparmor/extra-profiles/bwrap-userns-restrict` in `apparmor-profiles`;
+Ubuntu 26.04 ships it as `/etc/apparmor.d/bwrap-userns-restrict` in `apparmor`
+([#871](https://github.com/jimmie-potts/agent-device-hub/issues/871)). The step
+loads whichever exists and fails when neither does. It does not disable
 AppArmor or change a global namespace restriction. A host that cannot create the
 required namespaces fails this check rather than running the hook unconfined.
 
