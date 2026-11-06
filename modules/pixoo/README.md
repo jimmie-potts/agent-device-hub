@@ -375,7 +375,8 @@ changes neither the staged bytes nor their hash, frame count or delays.
 On the hosted route the black and white labels must still fit the GIF's 256
 colors. An original that already uses them all fails `unsupported-capability`
 with evidence `none` before any file is published or command sent, and Monitor
-stays current.
+stays current. The same holds when the labels push the encoded GIF past the hosted
+file budget: that moment fails `too-large` with evidence `none`.
 
 The owner checks evidence freshness at admission and immediately before the
 first native effect. The internal adapter `current(priorEffects)` guard receives

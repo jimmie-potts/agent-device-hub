@@ -453,5 +453,6 @@ The Pixoo SHALL preserve originals, immutable renditions and ordered frames with
 
 - **WHEN** the losslessly encoded whole GIF exceeds the listener’s single-file budget
 - **THEN** the library keeps its original and preview, reports incompatibility, and playing or staging it reports `too-large` before a write
+- **AND** an art moment refused this way over Monitor records no device evidence and leaves Monitor current
 - **WHEN** an admissible file cannot be stored because the filesystem or quota is full
 - **THEN** the operation reports `capacity` and preserves previous media

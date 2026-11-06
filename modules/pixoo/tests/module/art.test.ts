@@ -14,6 +14,7 @@ import {FAMILIES} from '../../src/module/schemas.js';
 import {frameDigest} from '../../src/module/transport.js';
 import {HttpDeviceAdapter} from '../../src/device/http-adapter.js';
 import {encodeHostedGif} from '../../src/media/hosted-gif.js';
+import {MediaError} from '../../src/media/contracts.js';
 
 const digest = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 const content = (id: string, bytes: Buffer, frames = 1): ArtStageContent => ({compositionId: digest(Buffer.from(id)), format: frames === 1 ? 'png' : 'gif', width: 64, height: 64,
@@ -80,6 +81,26 @@ void it('plays a labelled rain forecast with every exact art frame and leaves it
   } finally { await world.close(); }
 });
 
+void it('labels rain art past the former 20-frame cap within the direct route limit', async () => {
+  const world = await World.open();
+  try {
+    await world.start();
+    const base = await monitor(world);
+    const data = content('rain-art-21', hostedGif(19, 21), 21);
+    await world.outcome(await accepted(stage(world, data)));
+    const now = Date.now();
+    const notice = {kind: 'rain-forecast', likelihood: 'chance', forecastStartAtMs: now + 60_000, forecastEndAtMs: now + 120_000,
+      forecastUpdatedAtMs: now - 1000, observedAtMs: now, staleAtMs: now + 120_000, weatherRevision: 1};
+    const requestId = await accepted(artMoment(world, data.compositionId, {notice, durationMs: 1000}));
+    await waitFor(() => world.device.state().shown?.frames === 21 ? true : undefined, 'all 21 labelled frames');
+    const outcome = await world.outcome(requestId);
+    assert.equal(outcome.data.result, 'succeeded');
+    assert.equal(outcome.data.evidence, 'transmitted');
+    await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'the current Monitor base');
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
+
 void it('refuses a hosted rain notice whose label cannot fit the GIF palette, with no transmission claim and Monitor kept', async () => {
   // The production adapter and hosted encoder, over an in-memory transport: a full 256-color original is admissible on
   // its own, and the label's black and white push it to 258 colors before any file is published or command sent.
@@ -114,6 +135,40 @@ void it('refuses a hosted rain notice whose label cannot fit the GIF palette, wi
     assert.deepEqual(published, [], 'no hosted file is published');
     assert.ok(!commands.slice(before).includes('Device/PlayTFGif'), 'no hosted play command is sent');
     // Nothing reached the panel, so Monitor stays the current base and draws itself again instead of stopping.
+    await waitFor(() => commands.slice(before).includes('Draw/SendHttpGif') ? true : undefined, 'the Monitor base after the refusal');
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
+
+void it('refuses a hosted art moment whose encoded file is too large, with no transmission claim and Monitor kept', async () => {
+  // The hosted encoder's byte budget, like its palette, is checked locally before any file is published or command sent.
+  // A rain label can push an admissible original past it; the encoder here refuses every animated upload the same way.
+  const world = await World.open({section: {device: {...SECTION.device, profile: 'pixoo64-hosted-2026-10-01'}}});
+  const commands: string[] = [], published: number[] = [];
+  let encoded = 0;
+  world.device.open = ({address, clock, profile}) => {
+    const adapter = new HttpDeviceAdapter({ip: address, clock, profile: {...profile, evidence: 'observed', readyDelayMs: 0}, hosted: {
+      files: {publish: bytes => { published.push(bytes.length); return {url: 'http://example.invalid/art.gif', transferred: Promise.resolve(), revoke() {}}; }},
+      encode: () => { encoded += 1; throw new MediaError('storage-limit'); },
+    }}, body => { commands.push(String(body.Command)); return Promise.resolve({error_code: 0, SelectIndex: 0, Brightness: 80, LightSwitch: 1, PicId: 27}); });
+    return Promise.resolve({adapter, close: () => adapter.close()});
+  };
+  try {
+    await world.start();
+    await world.outcome(await accepted(world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'monitor'})));
+    await world.publishSession();
+    await waitFor(() => commands.includes('Draw/SendHttpGif') ? true : undefined, 'the Monitor base');
+    const data = content('oversized-hosted-art', hostedGif(19, 8), 8);
+    assert.equal((await world.outcome(await accepted(stage(world, data)))).data.result, 'succeeded');
+    const before = commands.length;
+    const outcome = await world.outcome(await accepted(artMoment(world, data.compositionId)));
+    assert.equal(outcome.data.result, 'failed', JSON.stringify(outcome.data));
+    assert.equal(outcome.data.evidence, 'none');
+    assert.equal(outcome.data.error?.code, 'too-large');
+    assert.ok(!('transmission' in outcome.data), 'no transmission is recorded');
+    assert.ok(encoded > 0, 'the hosted encoder was reached');
+    assert.deepEqual(published, [], 'no hosted file is published');
+    assert.ok(!commands.slice(before).includes('Device/PlayTFGif'), 'no hosted play command is sent');
     await waitFor(() => commands.slice(before).includes('Draw/SendHttpGif') ? true : undefined, 'the Monitor base after the refusal');
     assert.deepEqual(world.invalid, []);
   } finally { await world.close(); }

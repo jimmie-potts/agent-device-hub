@@ -7,7 +7,7 @@ Art SHALL use the existing dispatch and stage contracts through 256 frames. Abov
 #### Scenario: Extended stage on a declared Pixoo
 
 - **WHEN** Art presents more than 256 frames to a current hosted Pixoo declaring extended staging
-- **THEN** the core accepts its authorized `art-dispatch/2.2` and forwards one `art-stage/2.1` to that target
+- **THEN** the core accepts the Art module's `art-dispatch/2.2` and forwards one `art-stage/2.1` to that target
 - **AND** an identical retry returns the existing tracked result without replay
 
 #### Scenario: An ineligible target or dispatch
