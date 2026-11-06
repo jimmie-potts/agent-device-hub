@@ -138,6 +138,22 @@ test('exit status distinguishes findings, unreadable items, failed lists and usa
   assert.equal(await main({argv: ['--close'], client: broken, now, ...quiet}), 3);
 });
 
+test('an unexpected internal error exits 3, never the findings status', async () => {
+  const errors = [];
+  const malformed = world({open: [{...issue(10, []), labels: [null]}]});
+  assert.equal(await main({argv: [], client: malformed.client, now, write: () => {}, error: text => errors.push(text)}), 3);
+  assert.match(errors.join(''), /^tracker audit: internal error: TypeError/);
+});
+
+test('a status label outside the four workflow values does not count as the issue\'s status', async () => {
+  const {client} = world({open: [issue(10, ['status:blocked']), issue(11, ['status:ready', 'status:later'])]});
+  const report = await collect(client, {hours: 72, staleReviewDays: 5}, now);
+  assert.deepEqual(report.findings.map(item => `${item.type} #${item.number} ${item.detail}`), [
+    'status-label #10 has status:blocked, which is not one of status:backlog, status:ready, status:in-progress, status:review',
+    'status-label #11 has status:ready, status:later',
+  ]);
+});
+
 test('the audit\'s client refuses every tracker write before the transport sees it', async () => {
   const {client, requests} = world({});
   const issuePath = `/repos/${repository}/issues/10`;

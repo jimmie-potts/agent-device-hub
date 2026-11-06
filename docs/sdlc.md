@@ -592,11 +592,12 @@ It is read-only and makes no tracker write. Within the window (72 hours by
 default, `-- --hours <n>`) it lists closed issues that keep a workflow label
 and merged PRs with no cleanup outcome under
 [Cleanup after delivery](#cleanup-after-delivery) step 8. Across all open
-issues it lists those without exactly one `status:*` label, leaving out `idea`
-issues; `status:in-progress` or `status:review` issues with no comment since a
-PR that references them merged; and `status:review` issues with no update for
-more than five days (`-- --stale-review-days <n>`). Each finding names its
-rule. Treat a finding as a prompt to check that record, not as proof: the PR
+issues it lists those without exactly one of the four status labels above,
+leaving out `idea` issues; `status:in-progress` or `status:review` issues with
+no comment since a PR that references them merged; and `status:review` issues
+with no update for more than five days (`-- --stale-review-days <n>`). No
+document sets a time limit on review: five days is the audit's default,
+proposed in #1508. Each finding names its rule. Treat a finding as a prompt to check that record, not as proof: the PR
 link and the cleanup signal are heuristics
 ([Tracker audit](development.md#tracker-audit)). Correct a confirmed gap under
 [Tracker reconciliation](#tracker-reconciliation), within the owning writer's

@@ -14,15 +14,15 @@ const day = 24 * hour;
 /** Each finding type, the rule it checks and where that rule is written. */
 export const rules = Object.freeze({
   'closed-workflow-label': 'docs/sdlc.md "Authority and preparation": remove workflow status/blocked labels on closure',
-  'status-label': 'docs/sdlc.md "Authority and preparation": each open delivery issue has one status:* label; idea issues carry none (docs/issue-conventions.md "Classify and connect", owner decisions on #1254 and #1289)',
+  'status-label': 'docs/sdlc.md "Authority and preparation": each open delivery issue has one of status:backlog, status:ready, status:in-progress or status:review; idea issues carry none (docs/issue-conventions.md "Classify and connect", owner decisions on #1254 and #1289)',
   'merged-without-update': 'docs/sdlc.md "Tracker reconciliation" and "Review and merge" step 6: update the selected issue at completion',
   'cleanup-unrecorded': 'docs/sdlc.md "Cleanup after delivery" step 8: record each resource\'s cleanup outcome in the PR or issue comment that closes out the work',
-  'stale-review': 'docs/tracker-reconciliation.md "Report the checkpoint": pending acceptance and blocked reconciliation name their owner, reason and next trigger',
+  'stale-review': 'docs/tracker-reconciliation.md "Report the checkpoint": the closeout receipt records acceptance still pending, "including observation dates and the next checkpoint where relevant". No document sets a time limit on status:review; the day threshold is this audit\'s default, proposed in #1508',
 });
 
 const headings = Object.freeze({
   'closed-workflow-label': 'Closed issues that keep a workflow label',
-  'status-label': 'Open issues without exactly one status:* label (idea issues left out)',
+  'status-label': 'Open issues without exactly one workflow status label (idea issues left out)',
   'merged-without-update': 'Open in-progress or review issues with no comment since a referencing PR merged',
   'cleanup-unrecorded': 'Merged PRs with no cleanup outcome on the PR or its issue',
   'stale-review': 'Open review issues with no update',
@@ -66,6 +66,8 @@ export const recordsCleanup = body => /\b(?:clean-?up|worktrees?)\b/i.test(body 
 
 const labelNames = item => (item.labels ?? []).map(label => (typeof label === 'string' ? label : label.name));
 const workflowLabel = name => name.startsWith('status:') || name === 'blocked';
+/** The four workflow status values docs/sdlc.md "Authority and preparation" names. */
+export const statusValues = Object.freeze(['status:backlog', 'status:ready', 'status:in-progress', 'status:review']);
 const finding = (type, item, detail) => ({type, number: item.number, title: item.title, url: item.html_url, detail, rule: rules[type]});
 const time = text => new Date(text).getTime();
 
@@ -78,11 +80,12 @@ export function closedWithWorkflowLabels(closed, start) {
     });
 }
 
-/** Open issues, other than `idea` issues, with no `status:*` label or more than one. */
+/** Open issues, other than `idea` issues, without exactly one `status:*` label that is one of the four workflow values. */
 export function statusLabelGaps(open) {
   return open.filter(item => !item.pull_request && !labelNames(item).includes('idea')).flatMap(item => {
     const status = labelNames(item).filter(name => name.startsWith('status:'));
-    if (status.length === 1) return [];
+    if (status.length === 1 && statusValues.includes(status[0])) return [];
+    if (status.length === 1) return [finding('status-label', item, `has ${status[0]}, which is not one of ${statusValues.join(', ')}`)];
     return [finding('status-label', item, status.length ? `has ${status.join(', ')}` : `has no status label (labels: ${labelNames(item).join(', ') || 'none'})`)];
   });
 }
@@ -168,7 +171,7 @@ export function render(report) {
   return lines.join('\n');
 }
 
-/** Exit status: 0 clean, 1 findings, 2 a read failed or an item could not be checked, 3 usage. */
+/** Exit status: 0 clean, 1 findings, 2 a read failed or an item could not be checked, 3 usage or internal error. */
 export async function main({argv, client, now = new Date(), write = text => process.stdout.write(text), error = text => process.stderr.write(text)}) {
   let options;
   try {options = parseArguments(argv);} catch (failure) {
@@ -176,12 +179,18 @@ export async function main({argv, client, now = new Date(), write = text => proc
     return 3;
   }
   let report;
-  try {report = await collect(client, options, now);} catch (failure) {
-    if (!(failure instanceof ReadFailure)) throw failure;
-    error(`tracker audit: ${failure.message}\n`);
-    return 2;
+  try {
+    report = await collect(client, options, now);
+    write(`${options.json ? JSON.stringify(report, null, 2) : render(report)}\n`);
+  } catch (failure) {
+    if (failure instanceof ReadFailure) {
+      error(`tracker audit: ${failure.message}\n`);
+      return 2;
+    }
+    // Anything else is a defect or malformed data, never a finding: keep it off exit 1.
+    error(`tracker audit: internal error: ${failure?.stack ?? failure}\n`);
+    return 3;
   }
-  write(`${options.json ? JSON.stringify(report, null, 2) : render(report)}\n`);
   if (report.unknown.length) return 2;
   return report.findings.length ? 1 : 0;
 }

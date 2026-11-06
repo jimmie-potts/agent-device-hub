@@ -1371,13 +1371,17 @@ failure. Its classification and collection tests are
 `npm run audit:tracker` prints the read-only report that
 [Tracker audit](sdlc.md#tracker-audit) acts on, and exits 0 when clean, 1 with
 findings, 2 when a read failed or an item could not be checked, and 3 on a
-usage error. Every GitHub request goes through the delivery preflight's
+usage error or an internal error, such as malformed GitHub data. Every GitHub request goes through the delivery preflight's
 read-only client (`scripts/delivery-preflight/github.mjs`), which refuses any
 request other than a GET to the GitHub API or one of the preflight's own
 GraphQL queries, so the audit cannot write. It needs a token from `GH_TOKEN`,
 `GITHUB_TOKEN` or `gh auth token`. Pass `-- --hours <n>` for the 72-hour
 window, `-- --stale-review-days <n>` for the five-day review threshold and
-`-- --json` for the raw report. Two parts of it are heuristics:
+`-- --json` for the raw report. The status check accepts only the four values
+[the label rule](sdlc.md#authority-and-preparation) names, so any other
+`status:*` label is a finding. The five-day review threshold is the audit's
+default, proposed in #1508; no document sets a time limit on `status:review`.
+Two parts of it are heuristics:
 
 - A PR references an issue when its body names it in a `Refs` or closing
   clause, such as `Refs #12, #13` or `Closes #14`; a bare mention or
@@ -1389,6 +1393,8 @@ window, `-- --stale-review-days <n>` for the five-day review threshold and
   worktree, and uses one of step 8's outcome words: removed, retained or not
   applicable. It does not check that each resource has an outcome or that a
   removal cites its readback, and a comment that only quotes the rule passes.
+  One such comment on a shared referenced issue, such as an epic, clears every
+  PR merged before it that refs that issue.
 
 Its fixture tests, `npm run test:tracker-audit`, run in core CI without
 network access.
