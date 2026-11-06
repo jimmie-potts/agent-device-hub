@@ -130,7 +130,9 @@ class FakeTransport implements CollectorTransport {
         this.stopped = true;
     }
 }
-async function world(context: TestContext) {
+async function world(context: TestContext, options: {
+    moduleNow?: (now: () => number) => () => number;
+} = {}) {
     const dir = await mkdtemp(join(tmpdir(), 'rr-collector-'));
     await chmod(dir, 0o700);
     const file = join(dir, 'module.sqlite');
@@ -166,7 +168,7 @@ async function world(context: TestContext) {
         error: (event: string, fields: LogFields = {}) => { logs.push(fields); diagnostics.push({ level: 'error', event, fields }); },
     };
     const moduleContext = {
-        sdk, clock: { now: clock.now }, scheduler: clock.scheduler,
+        sdk, clock: { now: options.moduleNow?.(clock.now) ?? clock.now }, scheduler: clock.scheduler,
         signal: controller.signal, config: { id: 'vacuum' }, log,
         secrets: { read: () => Promise.reject(new Error('unexpected secret access')) },
         database: () => database,
@@ -199,6 +201,34 @@ for (const code of ['capacity', 'internal', 'invalid-state'] as const) {
         assert.equal(checkModuleRecord('roborock', record), undefined);
     });
 }
+void test('a failed status read that crosses a millisecond keeps one observation time and publishes unavailable', async (context) => {
+    // Every module clock read during the failed read lands in a later millisecond, as a real clock can between
+    // two reads. The recorded observation and the checkpoint's time must still be the same instant.
+    let ticking = false, extra = 0;
+    const w = await world(context, { moduleNow: now => () => now() + (ticking ? ++extra : extra) });
+    w.collector.startlocal();
+    await w.clock.advance(1);
+    const before = w.collector.state();
+    assert.equal(before.availability, 'available');
+    w.transport.statusHook = () => Promise.resolve({ ok: false, error: errorBody('unavailable') });
+    ticking = true;
+    await w.collector.poll();
+    ticking = false;
+    assert.equal(w.collector.storageFailure(), undefined);
+    assert.equal(w.diagnostics.some(item => item.fields['bunny.code'] === 'invalid-state'), false);
+    const after = w.collector.state();
+    assert.equal(after.availability, 'unavailable');
+    assert.ok(after.revision > before.revision);
+    assert.deepEqual(after.observedAtMs, before.observedAtMs, 'the last available observation time is kept');
+    const checkpoint = w.store.loadCheckpoint();
+    assert.ok(checkpoint?.lastObservationId !== null && checkpoint?.lastObservationId !== undefined);
+    assert.equal(w.store.getObservation(checkpoint.lastObservationId)?.observedAtMs, checkpoint.lastObservedAtMs);
+    const published = w.publication.messages.filter(message => message.type === 'org.bunny.roborock-vacuum.updated').at(-1)?.data as {
+        revision: number;
+        availability: string;
+    } | undefined;
+    assert.deepEqual([published?.revision, published?.availability], [after.revision, 'unavailable']);
+});
 void test('local start is inert, first cycle retains private originals and publishes exact records', async (context) => {
     const w = await world(context);
     w.collector.startlocal();
