@@ -26,6 +26,7 @@ import {CORE_MODULE, ContributionFailed, ModuleUnavailable, sourceOf, type Hoste
 import type {Redactions, RuntimeLogger} from '../log.js';
 import type {EdgeConfig} from '../state.js';
 import {MUSIC_PRODUCER_SOURCE} from '@jimmie-potts/event-contracts/v2/music-capture';
+import {MUSIC_PLAYBACK_SOURCE} from '@jimmie-potts/event-contracts/v2/music-playback';
 import {CODING_WORKER_SOURCE} from '@jimmie-potts/event-contracts/v2/coding';
 import {
   Access, BROWSER_SOURCE, REQUEST_HEADER, carriesSession, contextOf, edgePermissions, endedCookie, principalOf, sessionCookie, type Principal,
@@ -176,6 +177,7 @@ export class Gateway {
         // Each connection-bound endpoint tells its owner when its connection is lost.
         const lost = source === BROWSER_SOURCE ? {family: 'companion-speech-lost', type: 'org.bunny.companion-speech.endpoint-lost'}
           : source === MUSIC_PRODUCER_SOURCE ? {family: 'music-capture-lost', type: 'org.bunny.music-capture.endpoint-lost'}
+          : source === MUSIC_PLAYBACK_SOURCE ? {family: 'music-playback-lost', type: 'org.bunny.music-playback.endpoint-lost'}
           : source === CODING_WORKER_SOURCE ? {family: 'coding-lost', type: 'org.bunny.coding.endpoint-lost'} : undefined;
         if (lost === undefined) return;
         void own.publish(`bunny.event.${lost.family}.${id}`, {
@@ -942,6 +944,7 @@ export class Gateway {
     if (family === 'microduck-auto' || family === 'microduck-dispatch') return errorBody('forbidden', {detail: 'automatic MicroDuck dispatch belongs to its module'});
     if (family === 'art-auto' || family === 'art-dispatch' || family === 'art-stage' || family === 'art-ambient-set') return errorBody('forbidden', {detail: 'automatic art and its forwarded commands belong to the core and the art module'});
     if (family.startsWith('coding-')) return errorBody('forbidden', {detail: 'coding delegation goes through the companions owner and its worker endpoint'});
+    if (family.startsWith('music-playback-')) return errorBody('forbidden', {detail: 'Music playback work belongs to the playback owner and its producer endpoint'});
     if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
     if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
     const type = `org.bunny.${family.slice(0, verb)}.${family.slice(verb + 1)}.requested`;

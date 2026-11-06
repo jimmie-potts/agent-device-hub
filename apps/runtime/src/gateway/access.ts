@@ -10,6 +10,7 @@ import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {Call, Cancel, Clock, EdgePrincipal, Scheduler} from '@jimmie-potts/sdk';
 import {DIRECT_COMMANDS} from '../core/tracker.js';
 import {MUSIC_PRODUCER_SOURCE} from '@jimmie-potts/event-contracts/v2/music-capture';
+import {MUSIC_PLAYBACK_SOURCE} from '@jimmie-potts/event-contracts/v2/music-playback';
 import {CODING_WORKER_SOURCE} from '@jimmie-potts/event-contracts/v2/coding';
 import {DASHBOARD_SOURCE, tokenMatches, type EdgeCredential, type Scope} from '../credentials.js';
 
@@ -65,6 +66,10 @@ export const CONTROL_KEYS: readonly string[] = DIRECT_COMMANDS.map(family => `bu
  * authority.
  */
 export function edgePermissions(principal: Principal): EdgePrincipal {
+  if (principal.kind === 'credential' && principal.role === 'music-playback-producer' && principal.source === MUSIC_PLAYBACK_SOURCE && principal.scopes.size === 0) {
+    return {id: principal.id, source: principal.source, calls: [], keys: [], publishes: [],
+      endpoint: {respond: ['music-playback-work'], publish: ['music-playback-observation', 'music-playback-result'], request: ['music-playback-endpoint']}};
+  }
   if (principal.kind === 'credential' && principal.role === 'music-producer' && principal.source === MUSIC_PRODUCER_SOURCE && principal.scopes.size === 0) {
     return {id: principal.id, source: principal.source, calls: [], keys: [], publishes: [],
       endpoint: {respond: ['music-capture-work'], publish: ['music-capture-progress', 'music-capture-features'], request: ['music-capture-endpoint']}};

@@ -2100,6 +2100,21 @@ Clock checks cover first-window-relative elapsed time, exact uncertainty bounds,
 repeated timestamps, compressed bursts, backwards receipts and delayed delivery;
 these checks never access a microphone or qualify physical acoustics.
 
+The Music playback adapter (#571) uses those same producer/native commands and
+the existing event, SDK, runtime and playback test discovery. Native playback
+tests substitute process discovery, permission and every AppleEvent call; the
+portable operation tests run in `test:music-producer:native`, and the macOS
+descriptor cases run in `test:music-producer:adapter`. The native build also
+compiles the separate playback helper without invoking its observation/control
+modes. The existing Music native workflow runs all three commands.
+After build, run `npm run test:events:built`, `npm run test:music-producer:built`,
+`npm run test:playback:built`, `npm run test:sdk:built`,
+`npm run test:runtime:built` and `npm run test:runtime:scenarios:built`.
+The connected fixture uses the actual gateway/core/playback owner and a native
+substitute, with authenticated actions, separate producer grants, synthetic
+metadata and zero real playback calls. Receiver scenarios must retain both
+in-process and remote coverage. These checks do not qualify app permissions,
+selected speaker routing, physical controls or timed-show synchronization.
 
 ## Playback module checks
 

@@ -1,13 +1,15 @@
 # Native audio input
 
 This directory contains Music.app audio capture, selected microphone capture
-and a separate Music state/position reader. They are source components of the
-Music producer, not installed services. For capture, the owning Node process
-admits the session, consumes its records and uses the authenticated SDK edge.
-The runtime owns the capture session and Nanoleaf owns rendering and device
-writes. The position reader has no SDK integration. This directory adds no
-network connection, device command,
-playback control, Music metadata or prepared track analysis.
+and a read-only Music state/position reader, plus a distinct playback adapter.
+These are source components of the Music producer, not installed services.
+For capture, the owning Node process admits the session, consumes its records
+and uses the authenticated SDK edge. The runtime owns the capture session and
+Nanoleaf owns rendering and device writes. The position reader has no SDK
+integration. The playback adapter observes the selected Music process and
+accepts only four explicit transport actions through its parent. None of the
+helpers opens a network connection, selects an output or analyzes a prepared
+track.
 
 ## Build and source checks
 
@@ -23,17 +25,21 @@ apps/music-producer/native/build/music-position --self-test
 apps/music-producer/native/build/music-position --clock
 ```
 
-`test.sh` builds portable C11 signal and concurrent transfer tests with `cc`, `libm`
-and pthreads. It runs on Linux and macOS. Generated samples cover silence,
+`test.sh` builds portable C11 signal, concurrent transfer and playback-operation
+tests with `cc`, `libm` and pthreads. It runs on Linux and macOS. Generated samples cover silence,
 opposite-phase stereo, RMS, peak, clipping, bass/mid/treble separation, invalid
 samples and formats, partial windows, timestamp gaps, discontinuity resets and
-newest-value transfer under a concurrent writer. Temporary binaries are removed.
+newest-value transfer under a concurrent writer. The playback cases substitute
+the selected process, clock, permission, reads and control calls. They cover
+partial item identity, output limits, deadlines and transmission evidence.
+Temporary binaries are removed.
 
 `build.sh` requires macOS SDK 26 or later, selected through Xcode or Command Line
 Tools. The source references `processRestoreEnabled`, introduced in that SDK,
 and guards its runtime use with `@available(macOS 26.0, *)`. CI selects Xcode 26.3
 on its macOS 15 runner; the build SDK and runner OS are separate requirements.
-The script compiles `build/music-capture` and the separate `build/music-position`.
+The script compiles `build/music-capture`, `build/music-position` and
+`build/music-playback`.
 Their deployment target is macOS
 14.2, Apple's minimum for process taps; this is not tested-OS evidence. Source
 compilation and synthetic checks do not qualify capture on every OS version,
@@ -51,6 +57,10 @@ It also builds a separate position executable with fake process lookup,
 permission preflight and AppleEvent sends. Its scenarios check exact getter
 descriptors and flags, process replacement, partial reads, five state enums,
 numeric descriptor validation and harmless modes. No event reaches an application.
+The playback executable similarly substitutes every process, permission and
+AppleEvent call. It checks the exact property/action allowlist, before/after
+identity, selected-output bounds, malformed descriptors, partial fields,
+known-unsent failures, uncertain sends and late definitive replies.
 The script needs macOS SDK 26 or later and Python 3.
 
 `--self-test` passes generated PCM through the production callback and emits one
@@ -58,6 +68,100 @@ synthetic frame. It calls no Core Audio API. `--clock` emits only
 `{"schema":"music-native-clock/1.0","monotonicMs":...}` and calls no audio API.
 The parent uses the latter to qualify the native clock against its own local
 monotonic clock before accepting source age calculations.
+
+## Explicit playback observations and controls
+
+The separate `music-playback` helper implements the native boundary for
+[#571](https://github.com/jimmie-potts/agent-device-hub/issues/571). It accepts
+`--clock`, `--self-test`, `--read-existing-music`, or exactly:
+
+```text
+--control-existing-music <play|pause|next|previous> <sourceInstance> <deadlineMonotonicMs>
+```
+
+The parent supplies the 64-character lowercase process digest from an admitted
+observation and a deadline in the qualified local continuous clock domain.
+Neither value selects another application. The helper requires exactly one
+already-running `com.apple.Music` process, pins its PID and launch identity, and
+rechecks both around operations. It never launches, activates or reconnects
+Music. Unknown or absent arguments perform no process discovery or automation.
+Clock and self-test modes also perform no process discovery, permission query
+or application event. The older `music-position` and audio helper keep their
+separate commands and formats unchanged.
+
+Permission preflight uses `askUserIfNeeded: false`. Reads send only `core/getd`;
+controls send only `hook/Play`, `hook/Paus`, `hook/Next` or `hook/Prev`, without
+an item argument. Every send uses the same nonprompting, never-interact,
+no-recording and no-reconnect flags as the position reader. A control is sent
+once. A wrong process digest, expired budget or permission refusal sends nothing.
+An explicit Music reply is transmitted evidence, including a reply received
+after the deadline. A timeout, malformed reply or process replacement is
+uncertain and is never retried.
+
+Read work has a five-second budget. Track reads use at most four seconds;
+optional display fields leave one second for the closing identity read.
+Selected-output reads have at most one second, including any unused overall
+budget. A control has at most three seconds or the supplied remaining budget.
+Each AppleEvent waits at most two seconds and never more than its phase's
+remaining whole ticks. These budgets bound new calls, not an OS call that fails
+to return or a blocked stdout. The parent must retain its termination watchdog
+and child ownership until exit is known.
+
+Read allowlists are player state/position, current track, persistent item ID,
+title, artist, album and duration. Before/after item IDs must match to associate
+position and display fields with that local item. Matching establishes a bounded
+observation interval, not an atomic snapshot or a particular recording's audio.
+A missing or changed item leaves association unavailable while preserving valid
+position evidence. The digest identifies a process lifetime; an item ID is
+uppercase hexadecimal and identifies a Music item in its separately declared
+local library scope. The helper claims no recording fingerprint or audible time.
+
+Output evidence reads Music's `current AirPlay devices`, `AirPlay enabled`, and
+only the returned selected references' name, kind, active, available and selected
+properties. It processes at most eight references. An empty list is valid;
+an oversized list refuses rather than truncates. The provenance is
+`music-declared-selection`, with separate list/property intervals and explicit
+partial fields. Indices belong only to that observation. A `computer` entry
+does not identify a Core Audio output, and Music's `active` report does not prove
+sound reached a speaker. The helper reads no network/MAC address, volume, entire
+device catalog, file, artwork, lyrics or broad `properties` object. It sets no
+property and changes no output route.
+
+The internal pipe emits exactly one closed NDJSON record. `music-playback-read/1.0`
+contains either `status: "unavailable"` with a fixed registry error, or `sample`
+with `sourceInstance`, `state`, `position`, `item`, `itemAssociation`, `metadata`
+and `outputSelection`. Every scalar field is either
+`{status: "observed", value, interval}` or
+`{status: "unavailable", error, interval}`. The overall record, each field,
+item association and output selection retain continuous-clock request/reply
+intervals. A forbidden result or process replacement invalidates the whole read.
+
+`music-playback-control/1.0` contains the action, `expectedSourceInstance`, overall
+interval, `sendInterval`, and `sent`, `refused`, `unsent` or `uncertain` status.
+Only `sent` omits its fixed error. `sendInterval: null` means no control event was
+attempted; otherwise it records the actual send/reply interval. Samples and sent
+controls exit zero. Unavailable reads and other control results exit one.
+Harmless modes use `music-playback-clock/1.0` and
+`music-playback-self-test/1.0`. All fixed errors use the shared registry's
+retryable flags; those flags grant no command retry.
+
+The record limit is 16,384 UTF-8 bytes including its newline. Display strings
+are at most 256 UTF-8 bytes, output labels 128 bytes and item IDs 128 ASCII hex
+characters. Oversized fields become unavailable. If the complete escaped JSON
+exceeds the record limit, the helper returns a fixed capacity refusal instead
+of partial JSON. Descriptor data above 65,536 bytes is refused before application
+copying/decoding; this does not bound allocations inside Apple's event delivery.
+Embedded NUL, malformed types, invalid UTF-8 and nonfinite numeric values refuse.
+Numbers preserve real zero and the position reader's safe millisecond bound.
+The parent separately limits discarded stderr to 4 KiB.
+
+The helper writes no file or diagnostic log and opens no network. Listening
+metadata and output names belong only in the owner's private declared records,
+never published source evidence. Its distinct identity is
+`local.bunny.music-playback` with an automation usage description. This source
+build is unsigned. Signing, automation entitlement, packaged permission behavior,
+actual field availability and physical control/timing remain separate installed
+qualification. Fake descriptor success is not evidence of any of those results.
 
 ## Explicit state and position reads
 

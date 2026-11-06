@@ -1,13 +1,13 @@
 // The playback module (Hub #929): `@jimmie-potts/playback`. The runtime's shipped list takes `playbackFactory`; the
 // cutover's installer (#935) takes `convertHostPlayback`; tests and disposable runs take `SimulatedSpeakers`.
 export {
-  CALL_TIMEOUT_MS, OUTCOME_RETRY_MAX_MS, OUTCOME_RETRY_MS, PLAYBACK_CONTROL_SCHEMA, PLAYBACK_MODULE, PLAYBACK_SCHEMA, POLL_MS, RETAINED, controlPlayback,
+  CALL_TIMEOUT_MS, OUTCOME_RETRY_MAX_MS, OUTCOME_RETRY_MS, PLAYBACK_CONTROL_SCHEMA, PLAYBACK_MODULE, PLAYBACK_SCHEMA, PLAYBACK_POSITION_SCHEMA, POLL_MS, RETAINED, controlPlayback,
   createPlaybackModule, playbackFactory,
   playbackKey, type PlaybackModuleOptions,
 } from './module.js';
 export {playbackSimulation, registration} from './registration.js';
 export {
-  configurePlayback, convertHostPlayback, routingIdOf, type ConvertedPlayback, type PlaybackConfig, type PlaybackSection,
+  configurePlayback, convertHostPlayback, routingIdOf, type ConvertedPlayback, type PlaybackConfig, type PlaybackSection, type PlaybackSourceConfiguration,
 } from './configuration.js';
 export {
   ACTIONS, Presentation, STALE_MS, UNAVAILABLE_MS, isAction, type Availability, type PlaybackAction, type PlaybackObservation, type PlaybackStatus,

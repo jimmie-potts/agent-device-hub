@@ -1,6 +1,327 @@
 {
  "description": "Core payload families of profile 2.0 (Hub #842 and #918). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy in tests/consumer.mjs and names the messages whose payloads remain. The root session's state, occurrence and removal messages are what the real owner published in one reference history, which apps/runtime/tests/reference-history.test.ts replays (Hub #831). Only those messages come from it: the Claude session, inbox item and sync fixtures keep revisions of their own, chosen for the consumer rules they show, so `sync-completed` at revisions 14 and 15 still lists the root session that the reference history retires at 12. A finished turn is never an inbox item (Hub #782 removed the turn-ended item), so the inbox items are operations only.",
  "valid": {
+ "music-playback-endpoint": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "fixture-music-playback-endpoint",
+  "source": "bunny/parts/music-playback",
+  "type": "org.bunny.music-playback.endpoint.requested",
+  "subject": "endpoint-1",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-playback-endpoint/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "enable-1",
+   "action": "enable",
+   "libraryScopeId": "synthetic-library"
+  },
+  "expiresat": "2026-11-05T00:00:05.000Z"
+ },
+ "music-playback-observation": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "fixture-music-playback-observation",
+  "source": "bunny/parts/music-playback",
+  "type": "org.bunny.music-playback.observed",
+  "subject": "endpoint-1",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "occurrence",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-playback-observation/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "sequence": 1,
+   "interval": {
+    "earliestAtMs": 1793836799970,
+    "latestAtMs": 1793836800000
+   },
+   "clockUncertaintyMs": 50,
+   "discontinuity": true,
+   "status": "sample",
+   "processEpoch": "9df02246-518e-44f2-9412-a942735e63cd",
+   "libraryScopeId": "synthetic-library",
+   "state": {
+    "status": "observed",
+    "value": "paused",
+    "interval": {
+     "earliestAtMs": 1793836799970,
+     "latestAtMs": 1793836800000
+    }
+   },
+   "position": {
+    "status": "observed",
+    "value": 0,
+    "interval": {
+     "earliestAtMs": 1793836799970,
+     "latestAtMs": 1793836800000
+    }
+   },
+   "item": {
+    "status": "observed",
+    "value": "0123456789ABCDEF",
+    "interval": {
+     "earliestAtMs": 1793836799970,
+     "latestAtMs": 1793836800000
+    }
+   },
+   "itemAssociation": {
+    "status": "bounded-match",
+    "interval": {
+     "earliestAtMs": 1793836799970,
+     "latestAtMs": 1793836800000
+    }
+   },
+   "metadata": {
+    "title": {
+     "status": "observed",
+     "value": "Synthetic song",
+     "interval": {
+      "earliestAtMs": 1793836799970,
+      "latestAtMs": 1793836800000
+     }
+    },
+    "artist": {
+     "status": "unavailable",
+     "error": {
+      "code": "unavailable",
+      "retryable": true
+     },
+     "interval": {
+      "earliestAtMs": 1793836799970,
+      "latestAtMs": 1793836800000
+     }
+    },
+    "album": {
+     "status": "unavailable",
+     "error": {
+      "code": "unavailable",
+      "retryable": true
+     },
+     "interval": {
+      "earliestAtMs": 1793836799970,
+      "latestAtMs": 1793836800000
+     }
+    },
+    "durationSeconds": {
+     "status": "observed",
+     "value": 120,
+     "interval": {
+      "earliestAtMs": 1793836799970,
+      "latestAtMs": 1793836800000
+     }
+    }
+   },
+   "outputSelection": {
+    "status": "observed",
+    "provenance": "music-declared-selection",
+    "interval": {
+     "earliestAtMs": 1793836799970,
+     "latestAtMs": 1793836800000
+    },
+    "selectionInterval": {
+     "earliestAtMs": 1793836799970,
+     "latestAtMs": 1793836800000
+    },
+    "airPlayEnabled": {
+     "status": "observed",
+     "value": true,
+     "interval": {
+      "earliestAtMs": 1793836799970,
+      "latestAtMs": 1793836800000
+     }
+    },
+    "devices": []
+   }
+  }
+ },
+ "music-playback-work": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "fixture-music-playback-work",
+  "source": "bunny/parts/music-playback",
+  "type": "org.bunny.music-playback.work.requested",
+  "subject": "endpoint-1",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "command",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-playback-work/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "requestId": "work-1",
+   "operationId": "operation-1",
+   "processEpoch": "9df02246-518e-44f2-9412-a942735e63cd",
+   "action": "pause"
+  },
+  "expiresat": "2026-11-05T00:00:05.000Z"
+ },
+ "music-playback-result": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "fixture-music-playback-result",
+  "source": "bunny/parts/music-playback",
+  "type": "org.bunny.music-playback.result.observed",
+  "subject": "endpoint-1",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "occurrence",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-playback-result/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "operationId": "operation-1",
+   "processEpoch": "9df02246-518e-44f2-9412-a942735e63cd",
+   "action": "pause",
+   "status": "sent"
+  }
+ },
+ "music-playback-lost": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "fixture-music-playback-lost",
+  "source": "bunny/parts/music-playback",
+  "type": "org.bunny.music-playback.endpoint-lost",
+  "subject": "endpoint-1",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "occurrence",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/music-playback-lost/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "endpoint-1"
+  }
+ },
+ "playback-position": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "fixture-playback-position",
+  "source": "bunny/parts/music-playback",
+  "type": "org.bunny.playback.position.updated",
+  "subject": "living-room",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/playback-position/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "living-room",
+   "revision": 2,
+   "playbackRevision": 2,
+   "presentationGeneration": "9df02246-518e-44f2-9412-a942735e63cd",
+   "source": "music",
+   "availability": "available",
+   "recordingAssociation": "unqualified",
+   "evidence": {
+    "status": "observed",
+    "endpointId": "endpoint-1",
+    "observation": {
+     "sequence": 1,
+     "interval": {
+      "earliestAtMs": 1793836799970,
+      "latestAtMs": 1793836800000
+     },
+     "clockUncertaintyMs": 50,
+     "discontinuity": true,
+     "status": "sample",
+     "processEpoch": "9df02246-518e-44f2-9412-a942735e63cd",
+     "libraryScopeId": "synthetic-library",
+     "state": {
+      "status": "observed",
+      "value": "paused",
+      "interval": {
+       "earliestAtMs": 1793836799970,
+       "latestAtMs": 1793836800000
+      }
+     },
+     "position": {
+      "status": "observed",
+      "value": 0,
+      "interval": {
+       "earliestAtMs": 1793836799970,
+       "latestAtMs": 1793836800000
+      }
+     },
+     "item": {
+      "status": "observed",
+      "value": "0123456789ABCDEF",
+      "interval": {
+       "earliestAtMs": 1793836799970,
+       "latestAtMs": 1793836800000
+      }
+     },
+     "itemAssociation": {
+      "status": "bounded-match",
+      "interval": {
+       "earliestAtMs": 1793836799970,
+       "latestAtMs": 1793836800000
+      }
+     },
+     "metadata": {
+      "title": {
+       "status": "observed",
+       "value": "Synthetic song",
+       "interval": {
+        "earliestAtMs": 1793836799970,
+        "latestAtMs": 1793836800000
+       }
+      },
+      "artist": {
+       "status": "unavailable",
+       "error": {
+        "code": "unavailable",
+        "retryable": true
+       },
+       "interval": {
+        "earliestAtMs": 1793836799970,
+        "latestAtMs": 1793836800000
+       }
+      },
+      "album": {
+       "status": "unavailable",
+       "error": {
+        "code": "unavailable",
+        "retryable": true
+       },
+       "interval": {
+        "earliestAtMs": 1793836799970,
+        "latestAtMs": 1793836800000
+       }
+      },
+      "durationSeconds": {
+       "status": "observed",
+       "value": 120,
+       "interval": {
+        "earliestAtMs": 1793836799970,
+        "latestAtMs": 1793836800000
+       }
+      }
+     },
+     "outputSelection": {
+      "status": "observed",
+      "provenance": "music-declared-selection",
+      "interval": {
+       "earliestAtMs": 1793836799970,
+       "latestAtMs": 1793836800000
+      },
+      "selectionInterval": {
+       "earliestAtMs": 1793836799970,
+       "latestAtMs": 1793836800000
+      },
+      "airPlayEnabled": {
+       "status": "observed",
+       "value": true,
+       "interval": {
+        "earliestAtMs": 1793836799970,
+        "latestAtMs": 1793836800000
+       }
+      },
+      "devices": []
+     }
+    }
+   }
+  }
+ },
  "music-capture-features": {
   "specversion": "1.0",
   "bunnyprofile": "2.0",

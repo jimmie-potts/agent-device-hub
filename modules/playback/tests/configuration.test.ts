@@ -13,6 +13,17 @@ const sony = {kind: 'sony', endpoint: 'http://192.168.1.20:10000/sony'};
 const sonos = {kind: 'sonos', endpoint: 'http://192.168.1.30:1400/MediaRenderer/AVTransport/Control'};
 const accepted = (section: unknown): boolean => !('error' in configurePlayback(section));
 
+test('Music is one explicit source in the existing order and is never added by legacy conversion', () => {
+  for (const sources of [[{kind: 'music'}], [sonos, {kind: 'music'}, sony], [{kind: 'music'}, sony]]) {
+    assert.deepEqual(configurePlayback({id: 'living-room', sources}), {config: {id: 'living-room', sources}, devices: ['living-room']});
+  }
+  for (const sources of [[{kind: 'music'}, {kind: 'music'}], [{kind: 'music', endpoint: 'synthetic'}], [{kind: 'music', id: 'chosen'}]]) {
+    assert.equal(accepted({id: 'living-room', sources}), false);
+  }
+  assert.ok('error' in convertHostPlayback({id: 'living-room', sources: [{kind: 'music'}]}));
+  assert.deepEqual(convertHostPlayback({id: 'living-room', sources: [sonos, sony]}), {section: {id: 'living-room', sources: [sonos, sony]}});
+});
+
 /** The endpoint shapes both the Hub and the module refuse, for each kind. */
 const BAD_SONY = [
   'https://192.168.1.20:10000/sony', 'http://8.8.8.8:10000/sony', 'http://172.32.0.1:10000/sony', 'http://soundbar.local:10000/sony',

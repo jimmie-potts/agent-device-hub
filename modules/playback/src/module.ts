@@ -4,6 +4,8 @@
 // with a reply and an outcome from its outbox. Under policy A (ADR 0012, "Failure isolation") a speaker's errors and
 // timeouts are outcomes and an `unavailable` record, never a module failure, and start never waits on a speaker.
 import {SCHEMA_BASE, errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import {randomUUID} from 'node:crypto';
+import type {MusicPlaybackResult, PlaybackPositionState} from '@jimmie-potts/event-contracts/v2/music-playback';
 import type {CompletedOutcome} from '@jimmie-potts/event-contracts/v2/devices';
 import type {PlaybackControlRequest, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, type BunnyModule, type Cancel, type Command, type CommandDraft, type LogFields, type Reply, type StateDraft,
@@ -18,10 +20,12 @@ import {ArtworkController} from './artwork.js';
 import {ARTWORK_DECODE_MS, type ArtworkFetch, type ArtworkResult} from './artwork-fetch.js';
 import type {ArtworkDecode, ArtworkThumbnail} from './artwork-decode.js';
 import {readArtworkContent} from './artwork-content.js';
+import {MusicPlaybackInput} from './music-input.js';
 
 export const PLAYBACK_MODULE = 'playback';
 export const PLAYBACK_SCHEMA = `${SCHEMA_BASE}playback/2.1`;
 export const PLAYBACK_CONTROL_SCHEMA = `${SCHEMA_BASE}playback-control/2.0`;
+export const PLAYBACK_POSITION_SCHEMA = `${SCHEMA_BASE}playback-position/2.0`;
 const OUTCOME_SCHEMA = `${SCHEMA_BASE}outcome/2.0`;
 /** How often each speaker is read, as the old Hub did. */
 export const POLL_MS = 2000;
@@ -64,6 +68,8 @@ export const controlPlayback = (id: string, action: PlaybackAction, expectedRevi
 
 const stateOf = (record: PlaybackState): StateDraft<PlaybackState> =>
   ({type: 'org.bunny.playback.updated', subject: record.id, dataschema: PLAYBACK_SCHEMA, data: structuredClone(record)});
+const positionStateOf = (record: PlaybackPositionState): StateDraft<PlaybackPositionState> =>
+  ({type: 'org.bunny.playback.position.updated', subject: record.id, dataschema: PLAYBACK_POSITION_SCHEMA, data: structuredClone(record)});
 /** What a revision says: availability, presented playback and current artwork. `observedAtMs` alone never makes a new revision. */
 const content = (record: PlaybackState): string => JSON.stringify([record.availability, record.playback, record.artwork]);
 /** The record for what is presented now. An unavailable source shows no playback, and old metadata is withheld. */
@@ -151,9 +157,10 @@ BunnyModule<PlaybackConfig> {
           cancel();
         }
       };
-      const sources = config.sources.map(source => createSource(source, transport, deadline));
+      const musicIndex = config.sources.findIndex(source => source.kind === 'music');
+      const sources = config.sources.map(source => source.kind === 'music' ? undefined : createSource(source, transport, deadline));
       // A source has no ID of its own; its records name it by the playback ID and its kind, never by its address.
-      const devices = sources.map(source => `${id}.${source.kind}`);
+      const devices = config.sources.map(source => `${id}.${source.kind}`);
       const deviceField = (device: string): LogFields => DEVICE_ID.test(device) ? {'bunny.device.id': device} : {};
       const reach = new DeviceAvailability({log, clock});
 
@@ -172,25 +179,72 @@ BunnyModule<PlaybackConfig> {
       };
 
       // The optimistic record drives existing revision admission/rollback; content uses only successful commits.
-      const stored = db.prepare('SELECT revision FROM playback_records WHERE id = ?').get(id) as {revision: number} | undefined;
-      let record = recordOf(id, (stored?.revision ?? 0) + 1, presentation.view());
+      const readRevision = db.prepare('SELECT revision FROM playback_records WHERE id = ?');
+      const stored = readRevision.get(id) as {revision: number} | undefined;
+      let highWater = (stored?.revision ?? 0) + 1;
+      let record = recordOf(id, highWater, presentation.view());
       let committedRecord: PlaybackState | undefined;
+      // Receiver artwork keeps its existing publication-attempt gate, independently
+      // of the durable snapshot used for command admission and sync.
+      let artworkRecord: PlaybackState | undefined;
+      let committedPosition: PlaybackPositionState | undefined;
+      let committedHighWater = stored?.revision ?? 0;
+      let presentationGeneration = randomUUID();
+      let sourceSignature: string | undefined;
+      let committedSourceSignature: string | undefined;
+      let committedGeneration = presentationGeneration;
+      let musicChanged: () => void = () => {};
+      let lateResult: (result: MusicPlaybackResult) => Promise<void> = async () => {};
+      const music = new MusicPlaybackInput({sdk, clock, scheduler, monotonic, signal, enabled: musicIndex >= 0,
+        onChange: () => {musicChanged();}, onLateResult: value => lateResult(value)});
+      const signatureOf = (view: PresentedView): string | undefined => view.availability === 'unavailable' ? undefined
+        : `${view.index}/${config.sources[view.index]?.kind === 'music' ? music.generation : ''}`;
+      const positionOf = (revision: number, playbackRevision: number, view: PresentedView): PlaybackPositionState => {
+        const source = config.sources[view.index]?.kind ?? null;
+        const sample = music.sample, endpointId = music.endpointId;
+        const observed = source === 'music' && view.availability !== 'unavailable' && sample !== undefined && endpointId !== undefined;
+        return {id, revision, playbackRevision, presentationGeneration, source, availability: view.availability,
+          recordingAssociation: 'unqualified', evidence: observed ? {status: 'observed', endpointId, observation: sample}
+            : {status: 'unavailable', reason: source === 'music' ? music.reason : 'unsupported'}};
+      };
+      let position = musicIndex >= 0 ? positionOf(highWater, record.revision, presentation.view()) : undefined;
+      const positionContent = (state: PlaybackPositionState | undefined): string => state === undefined ? ''
+        : JSON.stringify([state.playbackRevision, state.presentationGeneration, state.source, state.availability, state.evidence]);
       /** Whether the last commit failed, so the next evaluation publishes whatever it finds. */
       let dirty = false;
-      const commit = (next: PlaybackState): Promise<void> => {
-        const previous = record;
+      let commitSequence = 0;
+      const commit = (next: PlaybackState, nextPosition: PlaybackPositionState | undefined = position, publishPlayback = true): Promise<void> => {
+        const sequence = ++commitSequence;
+        const signature = sourceSignature;
+        const previousPosition = position;
         record = next;
-        return outbox.transaction(add => {
-          saveRevision.run(id, next.revision);
-          add(playbackKey(id), {kind: 'state', ...stateOf(next)});
-        }).then(() => {
+        position = nextPosition;
+        highWater = Math.max(next.revision, nextPosition?.revision ?? 0);
+        const candidateHighWater = highWater, candidateGeneration = presentationGeneration;
+        const writing = outbox.transaction(add => {
+          saveRevision.run(id, candidateHighWater);
+          if (publishPlayback) add(playbackKey(id), {kind: 'state', ...stateOf(next)});
+          if (nextPosition !== undefined) add(`bunny.state.playback-position.${id}`, {kind: 'state', ...positionStateOf(nextPosition)});
+        });
+        // Outbox commits synchronously before publishing. Confirm the owner row so a
+        // slow publication does not block admission, and a rolled-back handoff cannot redirect it.
+        const persisted = readRevision.get(id) as {revision: number} | undefined;
+        if (persisted?.revision === candidateHighWater && candidateHighWater > committedHighWater) {
+          committedRecord = next; committedPosition = nextPosition; committedHighWater = candidateHighWater;
+          committedSourceSignature = signature; committedGeneration = candidateGeneration;
+        }
+        return writing.then(() => {
           // Outbox resolves after its publish attempt; a committed deferred publish still stands.
-          if (committedRecord === undefined || next.revision > committedRecord.revision) committedRecord = next;
+          if (artworkRecord === undefined || next.revision > artworkRecord.revision) artworkRecord = next;
           storageWorked();
         }, (error: unknown) => {
           // Nothing committed, and the next evaluation tries again.
-          if (record === next) {
-            record = previous;
+          if (sequence === commitSequence) {
+            record = committedRecord ?? recordOf(id, committedHighWater, {availability: 'unavailable', index: 0});
+            position = committedPosition ?? previousPosition;
+            highWater = committedHighWater;
+            sourceSignature = committedSourceSignature;
+            presentationGeneration = committedGeneration;
             dirty = true;
           }
           storageFailed(error);
@@ -203,7 +257,7 @@ BunnyModule<PlaybackConfig> {
        * have, nothing is presented, so a speaker that answers first never stands in for one still being read: after a
        * restart, an HT-A9 on another input would otherwise publish a record that says nothing plays while the Move does.
        */
-      const firstRead = sources.map(() => false);
+      const firstRead = sources.map(source => source === undefined);
       const allFirstReadsSettled = (): boolean => firstRead.every(Boolean);
       let markSettled: () => void = () => {};
       const firstReads = new Promise<void>(resolve => { markSettled = resolve; });
@@ -227,9 +281,9 @@ BunnyModule<PlaybackConfig> {
       if (!signal.aborted) readContent = ref => {
         if (signal.aborted) return undefined;
         const view = presentation.view(), observation = view.observation;
-        const playback = committedRecord?.playback;
+        const playback = artworkRecord?.playback;
         return readArtworkContent(ref, {
-          record: committedRecord, current: artwork.snapshot(), stopped: signal.aborted,
+          record: artworkRecord, current: artwork.snapshot(), stopped: signal.aborted,
           presentedSourceIsEligible: view.availability === 'available' && config.sources[view.index] !== undefined
             && observation !== undefined && (observation.status === 'playing' || observation.status === 'paused'),
           presentedMetadataMatchesRecord: playback?.status === 'known' && observation !== undefined
@@ -243,18 +297,31 @@ BunnyModule<PlaybackConfig> {
         if (signal.aborted || !allFirstReadsSettled()) return;
         const view = presentation.view();
         const sourceConfig = config.sources[view.index];
-        if (sourceConfig !== undefined) artwork.update({...view, kind: sourceConfig.kind, endpoint: sourceConfig.endpoint});
+        if (sourceConfig?.kind === 'music') artwork.retire();
+        else if (sourceConfig !== undefined) artwork.update({...view, kind: sourceConfig.kind, endpoint: sourceConfig.endpoint});
         const image = artwork.snapshot();
-        const next = {...recordOf(id, record.revision + 1, view), ...(image === undefined ? {} : {artwork: image})};
-        if (dirty || content(next) !== content(record)) {
+        const signature = signatureOf(view);
+        const sourceChanged = signature !== sourceSignature;
+        if (sourceChanged) {sourceSignature = signature; presentationGeneration = randomUUID();}
+        const next = {...recordOf(id, highWater + 1, view), ...(image === undefined ? {} : {artwork: image})};
+        const playbackChanged = dirty || sourceChanged || content(next) !== content(record);
+        const nextPosition = position === undefined ? undefined : positionOf(highWater + 1, playbackChanged ? next.revision : record.revision, view);
+        if (playbackChanged || positionContent(nextPosition) !== positionContent(position)) {
           dirty = false;
-          void commit(next);
+          void commit(playbackChanged ? next : record, nextPosition, playbackChanged);
         }
         // Wake when a source's last observation crosses the stale or unavailable threshold.
         freshness?.();
         freshness = undefined;
         const wait = presentation.nextChangeInMs();
         if (wait !== undefined) freshness = scheduler.after(Math.ceil(wait), evaluate);
+      };
+      musicChanged = () => {
+        if (signal.aborted || musicIndex < 0) return;
+        const observed = music.observation();
+        if (observed === undefined) presentation.invalidate(musicIndex);
+        else presentation.reportAt(musicIndex, observed.value, observed.observedAtMs);
+        evaluate();
       };
 
       // Each speaker is read now and then about every `pollMs`, without overlapping reads: a read still in progress when
@@ -287,6 +354,7 @@ BunnyModule<PlaybackConfig> {
       };
       /** A read that starts after this moment: after the read in progress, if there is one. */
       const readAfter = (index: number): Promise<void> => {
+        if (index === musicIndex) return music.readAfter(timeoutMs);
         const running = inFlight[index];
         return running === undefined ? readNow(index) : running.then(() => readNow(index));
       };
@@ -336,7 +404,12 @@ BunnyModule<PlaybackConfig> {
       const saveOutcome = async (command: Command<object>, requestId: string, outcome: CompletedOutcome, attempt = 0): Promise<void> => {
         try {
           await outbox.transaction(add => {
-            finish.run(outcome.result, command.source, requestId);
+            const prior = handled.get(command.source, requestId) as Handled | undefined;
+            if (prior === undefined) return;
+            if (outcome.result === Outcome.uncertain && prior.result !== null && prior.result !== Outcome.uncertain) return;
+            const conflict = prior.result === 'conflict' || (prior.result === Outcome.succeeded && outcome.result === Outcome.failed)
+              || (prior.result === Outcome.failed && outcome.result === Outcome.succeeded);
+            finish.run(conflict ? 'conflict' : outcome.result, command.source, requestId);
             forget.run(RETAINED);
             add(outcomeKey, completed(outcome), {parent: command});
           });
@@ -347,8 +420,22 @@ BunnyModule<PlaybackConfig> {
           scheduler.after(Math.min(OUTCOME_RETRY_MAX_MS, OUTCOME_RETRY_MS * 2 ** attempt), () => saveOutcome(command, requestId, outcome, attempt + 1));
         }
       };
-
-      await sdk.serveSync(['playback'], () => ({revision: record.revision, states: [stateOf(record)]}));
+      const musicCommands = new Map<string, {command: Command<object>; requestId: string}>();
+      const musicOutcome = (requestId: string, value: MusicPlaybackResult): CompletedOutcome => value.status === 'sent'
+        ? {requestId, result: Outcome.succeeded, evidence: Outcome.transmitted}
+        : {requestId, result: value.status === 'uncertain' ? Outcome.uncertain : Outcome.failed,
+          evidence: value.status === 'refused' ? Outcome.transmitted : Outcome.none,
+          error: errorBody(value.error.code, {detail: value.status === 'uncertain' ? 'the Music action has no definitive reply'
+            : value.status === 'refused' ? 'Music refused the action' : 'the Music action was not transmitted'}).error};
+      lateResult = async value => {
+        const original = musicCommands.get(value.operationId);
+        if (original !== undefined && !signal.aborted) await saveOutcome(original.command, original.requestId, musicOutcome(original.requestId, value));
+      };
+      await music.start();
+      await sdk.serveSync(musicIndex < 0 ? ['playback'] : ['playback', 'playback-position'], request => committedRecord === undefined
+        ? errorBody('unavailable', {detail: 'the playback owner has no committed snapshot'})
+        : {revision: committedHighWater, states: [...(request.data.families.includes('playback') ? [stateOf(committedRecord)] : []),
+          ...(request.data.families.includes('playback-position') && committedPosition !== undefined ? [positionStateOf(committedPosition)] : [])]});
       await sdk.respond<Omit<PlaybackControlRequest, 'requestId'>>(`bunny.cmd.playback-control.${id}`,
         async (command: Command<Omit<PlaybackControlRequest, 'requestId'>>): Promise<Reply> => {
           const {requestId, action, expectedRevision} = command.data as Partial<PlaybackControlRequest> & {requestId: string};
@@ -395,7 +482,11 @@ BunnyModule<PlaybackConfig> {
           // The presented source is fixed here, at admission; a source that takes over meanwhile is never a redirect target.
           const index = presentation.presented();
           const source = sources[index], device = devices[index];
-          if (source === undefined || device === undefined || presentation.availability(index) !== 'available') {
+          const musicTarget = index === musicIndex ? music.target() : undefined;
+          if (signatureOf(presentation.view()) !== committedSourceSignature) {
+            return errorBody('unavailable', {detail: 'the presented source has not been committed; read playback again'});
+          }
+          if ((source === undefined && musicTarget === undefined) || device === undefined || presentation.availability(index) !== 'available') {
             return errorBody('unavailable', {detail: 'the presented speaker has not answered recently'});
           }
           if (!(presentation.observation(index)?.controls ?? []).includes(action)) {
@@ -418,8 +509,15 @@ BunnyModule<PlaybackConfig> {
           try {
             // Sent once, and never retried. A speaker that answers with a refusal heard the command, so its evidence is
             // `transmitted`; no answer, or an answer that is neither, is uncertain.
-            const sent = await source.command(action);
-            switch (sent) {
+            if (musicTarget !== undefined) {
+              const operationId = randomUUID();
+              musicCommands.set(operationId, {command, requestId});
+              while (musicCommands.size > RETAINED) {const oldest = musicCommands.keys().next().value; if (oldest !== undefined) musicCommands.delete(oldest);}
+              outcome = musicOutcome(requestId, await music.dispatch(action, musicTarget, operationId, expiresAtMs, command));
+              call.end(outcome.result === Outcome.succeeded ? 'unset' : 'error');
+            } else if (source !== undefined) {
+              const sent = await source.command(action);
+              switch (sent) {
               case 'sent':
                 outcome = {requestId, result: Outcome.succeeded, evidence: Outcome.transmitted};
                 break;
@@ -429,8 +527,12 @@ BunnyModule<PlaybackConfig> {
               case 'unsent':
                 outcome = {requestId, result: Outcome.failed, evidence: Outcome.none, error: errorBody('unsupported-capability', {detail: 'the speaker has no command for this action'}).error};
                 break;
+              }
+              call.end(sent === 'sent' ? 'unset' : 'error');
+            } else {
+              outcome = {requestId, result: Outcome.failed, evidence: Outcome.none, error: errorBody('unavailable').error};
+              call.end('error');
             }
-            call.end(sent === 'sent' ? 'unset' : 'error');
           } catch {
             outcome = {requestId, result: Outcome.uncertain, evidence: Outcome.none, error: errorBody('uncertain-result', {detail: 'the speaker did not answer the action'}).error};
             call.end('error');
@@ -442,7 +544,7 @@ BunnyModule<PlaybackConfig> {
           return {status: 'accepted'};
         });
 
-      sources.forEach((_, index) => { tick(index); });
+      sources.forEach((source, index) => { if (source !== undefined) tick(index); });
     },
     stop: () => { readContent = undefined; },
   };
