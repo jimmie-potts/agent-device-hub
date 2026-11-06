@@ -7,7 +7,9 @@ import {ProviderFault, type ArtProvider, type ImageRequest} from './provider.js'
 
 const {GIFEncoder} = createRequire(import.meta.url)('gifenc') as typeof import('gifenc');
 const USAGE = {inputTokens: 100, outputTokens: 100};
-export const ART_SIMULATION_ACTIONS = ['invalid-next', 'lose-next', 'hold', 'release'] as const;
+export const ART_SIMULATION_ACTIONS = ['invalid-next', 'lose-next', 'hold', 'release', 'warm-colors', 'cool-colors'] as const;
+type Colors = 'standard' | 'warm' | 'cool';
+type Rgb = [number, number, number];
 type Drawing = {size: string; frames: number; delayMs: number};
 type Answer = {kind: 'image'; base64: string} | {kind: 'idea'; text: string};
 export type ArtSimulationState = {imageCalls: number; ideaCalls: number; pending: number};
@@ -19,11 +21,13 @@ function drawing(value: unknown): Drawing {
   return {size: value.size, frames: value.frames, delayMs: value.delayMs};
 }
 
-async function pixels({size, frames, delayMs}: Drawing, call: number): Promise<Buffer> {
+async function pixels({size, frames, delayMs}: Drawing, call: number, colors: Colors): Promise<Buffer> {
   const width = size === '1536x1024' ? 1536 : 512, height = size === '512x256' ? 256 : size === '512x512' ? 512 : 1024;
-  const palette = [[20, 35, 65], [235, 180, 70], [70, 130, 160 + call % 90]];
-  if (frames === 1) return sharp({create: {width, height, channels: 3, background: {r: 20, g: 35, b: 65}}})
-    .composite([{input: Buffer.from(`<svg width="${width}" height="${height}"><circle cx="${width / 2}" cy="${height / 2}" r="${height / 4}" fill="#ebb446"/><rect x="0" y="${height * 3 / 4}" width="${width}" height="${height / 4}" fill="rgb(70,130,${160 + call % 90})"/></svg>`)}]).png().toBuffer();
+  const palette: [Rgb, Rgb, Rgb] = colors === 'warm' ? [[95, 25, 15], [245, 150, 55], [155, 65, 35]]
+    : colors === 'cool' ? [[10, 35, 95], [60, 190, 230], [45, 95, 170]] : [[20, 35, 65], [235, 180, 70], [70, 130, 160 + call % 90]];
+  const [r, g, b] = palette[0];
+  if (frames === 1) return sharp({create: {width, height, channels: 3, background: {r, g, b}}})
+    .composite([{input: Buffer.from(`<svg width="${width}" height="${height}"><circle cx="${width / 2}" cy="${height / 2}" r="${height / 4}" fill="rgb(${palette[1].join(',')})"/><rect x="0" y="${height * 3 / 4}" width="${width}" height="${height / 4}" fill="rgb(${palette[2].join(',')})"/></svg>`)}]).png().toBuffer();
   const gif = GIFEncoder();
   for (let frame = 0; frame < frames; frame++) {
     const indexes = new Uint8Array(width * height);
@@ -41,10 +45,13 @@ export class SimulatedArt {
   #ideaCalls = 0;
   #next: 'image' | 'invalid' | 'lost' = 'image';
   #held = false;
+  #colors: Colors = 'standard';
   readonly #pending = new Set<() => void>();
   state(): ArtSimulationState {return {imageCalls: this.#imageCalls, ideaCalls: this.#ideaCalls, pending: this.#pending.size};}
   act(action: string): void {
-    if (action === 'invalid-next') this.#next = 'invalid';
+    if (action === 'warm-colors') this.#colors = 'warm';
+    else if (action === 'cool-colors') this.#colors = 'cool';
+    else if (action === 'invalid-next') this.#next = 'invalid';
     else if (action === 'lose-next') this.#next = 'lost';
     else if (action === 'hold') this.#held = true;
     else if (action === 'release') {this.#held = false; for (const release of [...this.#pending]) release();}
@@ -52,7 +59,7 @@ export class SimulatedArt {
   async call(method: string, args: unknown, signal: AbortSignal): Promise<Answer> {
     if (method === 'idea') {this.#ideaCalls += 1; return {kind: 'idea', text: 'A synthetic moon above a small blue garden.'};}
     if (method !== 'image') throw new Error('unknown synthetic art call');
-    const request = drawing(args), next = this.#next;
+    const request = drawing(args), next = this.#next, colors = this.#colors;
     this.#next = 'image'; this.#imageCalls += 1;
     if (this.#held) await new Promise<void>((resolve, reject) => {
       const finish = (): void => {this.#pending.delete(finish); signal.removeEventListener('abort', abort); resolve();};
@@ -61,7 +68,7 @@ export class SimulatedArt {
       if (signal.aborted) abort();
     });
     if (next === 'lost') throw new ProviderFault('uncertain-result', 'lost-response', {uncertain: true, keep: true});
-    return {kind: 'image', base64: (next === 'invalid' ? Buffer.from('synthetic-invalid-image') : await pixels(request, this.#imageCalls)).toString('base64')};
+    return {kind: 'image', base64: (next === 'invalid' ? Buffer.from('synthetic-invalid-image') : await pixels(request, this.#imageCalls, colors)).toString('base64')};
   }
 }
 

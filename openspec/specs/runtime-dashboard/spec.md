@@ -8,7 +8,7 @@ Define the B.U.N.N.Y. dashboard that the runtime serves (Hub #922), copied from 
 
 ### Requirement: The dashboard on the runtime
 
-The runtime SHALL serve the B.U.N.N.Y. dashboard (`apps/runtime/dashboard`), copied from `apps/dashboard` with provenance notes that name each copied file, its source commit and what changed, while the old Hub's `apps/dashboard` source remains retained for manual return until separately authorized retirement (#839). The dashboard SHALL keep its hash routes and back-button history, an address that names nothing shown as not found with nothing sent, and the Places links accessible through Settings. The current runtime SHALL use the accepted Quiet glass skin, whose role and private tokens are the only colors its styles use, following light/dark browser appearance. It SHALL read only through the runtime's gateway and the SDK, and SHALL poll nothing. Approval and input attention SHALL use the fixed blocked chip token; a continuing question SHALL use the separate question token.
+The runtime SHALL serve the B.U.N.N.Y. dashboard (`apps/runtime/dashboard`), copied from `apps/dashboard` with provenance notes that name each copied file, its source commit and what changed, while the old Hub's `apps/dashboard` source remains retained for manual return until separately authorized retirement (#839). The dashboard SHALL keep its hash routes and back-button history, an address that names nothing shown as not found with nothing sent, and the Places links accessible through Settings. The current runtime SHALL use the accepted Quiet glass skin, whose role and private tokens are the only colors its styles use, following light/dark browser appearance. Bounded artwork-derived decorative values SHALL be supported over that skin under the owner's theme preference while fixed state meanings, readable contrast, typography and geometry remain unchanged. It SHALL read only through the runtime's gateway and the SDK, and SHALL poll nothing. Approval and input attention SHALL use the fixed blocked chip token; a continuing question SHALL use the separate question token.
 
 #### Scenario: Routes and the shell
 - **WHEN** a signed-in page opens Settings, follows the Connections link, goes back, and opens an address that names no page
@@ -492,3 +492,22 @@ The art frontend SHALL expose only the identity, validated palette and readiness
 #### Scenario: A new catalog entry is pending
 - **WHEN** the catalog announces new art while its rendition is loading
 - **THEN** presentation consumers retain the visible artwork's palette until the new image is decoded and displayed
+
+### Requirement: Owner-controlled art theme
+Settings SHALL offer Follow artwork, Lock current colors and Restore default as browser-local presentation controls. A successful save SHALL preserve the chosen mode and locked palette or locked default across reload and restart. Restore default SHALL remain effective until an explicit later choice. Storage failure or invalid saved input SHALL leave a usable prior/default theme with truthful save status and no automatic write retry.
+
+#### Scenario: Lock and restore
+- **WHEN** the owner locks displayed colors and another artwork appears, then the browser or runtime restarts
+- **THEN** the locked colors remain, and Restore default returns to Quiet glass without changing layout or spending provider allowance
+
+#### Scenario: Lock the default
+- **WHEN** no valid art theme is applied and the owner locks current colors
+- **THEN** the default remains locked across artwork arrivals and restart without inventing a palette
+
+#### Scenario: Contrast and fixed meanings
+- **WHEN** contrasting art palettes are applied in light and dark appearance across ordinary, warning, error, pending, disabled and focused controls
+- **THEN** only allowed decorative roles change, text and focus remain readable, semantic/device colors retain their meanings and control geometry stays fixed
+
+#### Scenario: Browser storage fails
+- **WHEN** saving an explicit preference fails or another tab supplies invalid preference data
+- **THEN** the page keeps a valid theme and clearly reports that the attempted preference was not saved or could not be read
