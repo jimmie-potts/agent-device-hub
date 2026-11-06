@@ -223,6 +223,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     return controls;
   };
   const limits=()=>{const value=automation().limits;if(value===undefined)throw new AutomationError('unavailable',503);return value;};
+  const art=()=>{const value=automation().art;if(value===undefined)throw new AutomationError('unavailable',503);return value;};
   const module = {
     manifest: {name: CORE_MODULE, apiVersion: '1.3',
       content: (ref, request) => contentContext === undefined || contentContext.signal.aborted
@@ -243,6 +244,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'})},
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
+      art:{targets:()=>art().targets(),present:(plan,permit)=>art().present(plan,permit)},
       limits:{list:()=>limits().list(),get:id=>limits().get(id),save:(id,value,parent)=>limits().save(id,value,parent),settled:()=>limits().settled()},
       routines:{list:()=>routines().list(),get:id=>routines().get(id),create:(value,owner)=>routines().create(value,owner),
         update:(id,value)=>routines().update(id,value),setEnabled:(id,enabled)=>routines().setEnabled(id,enabled),

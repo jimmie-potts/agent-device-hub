@@ -141,6 +141,25 @@ it('each art family admits only its one requester, beside the speech check', asy
   assert.equal(w.seen.length, delivered);
 });
 
+it('only the core may request an art-bearing moment while ordinary moments keep their requesters', async context => {
+  const w = await world(context);
+  const data = {momentId: 'saved-art', mood: 'celebrate', durationMs: 8000, priorityClass: 'event', coversStatus: true,
+    startAtMs: Date.now(), toleranceMs: 1000, art: {compositionId: COMPOSITION}};
+  const draft = {type: 'org.bunny.moment.play.requested', subject: 'panel', dataschema: 'https://bunny.invalid/events/moment-play/2.1', data};
+  for (const [index, requestedBy] of [DASHBOARD, 'bunny/parts/operator', ART_MODULE_SOURCE, 'bunny/modules/tidbyt'].entries()) {
+    const requestId = `refused-art-moment-${index}`;
+    assert.equal(codeOf(await w.core.actions.dispatch({key: 'bunny.cmd.moment-play.panel', requestedBy, requestId, draft})), 'forbidden');
+    assert.equal(w.handle.operation(requestId), undefined, 'a refused requester creates no dispatch receipt');
+  }
+  assert.equal(w.seen.length, 0, 'no art moment reached the display');
+  assert.deepEqual(await w.core.actions.dispatch({key: 'bunny.cmd.moment-play.panel', requestedBy: CORE, requestId: 'core-art-moment', draft}), accepted('core-art-moment'));
+  assert.equal(w.seen.length, 1);
+  const {art: _art, ...ordinary} = data;
+  assert.deepEqual(await w.core.actions.dispatch({key: 'bunny.cmd.moment-play.panel', requestedBy: DASHBOARD, requestId: 'ordinary-moment',
+    draft: {...draft, dataschema: 'https://bunny.invalid/events/moment-play/2.0', data: ordinary}}), accepted('ordinary-moment'));
+  assert.equal(w.seen.length, 2);
+});
+
 it('the gateway refuses the core-only families from any client, and only a dashboard session sends art-request', async context => {
   const operator = {id: 'operator', source: 'bunny/parts/operator', token: 'synthetic-art-control', scopes: ['read', 'control'] as const};
   const files = await edgeConfig(context, [operator], {browserAccess: 'trusted-loopback'});

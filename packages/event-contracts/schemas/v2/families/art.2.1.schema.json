@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art/2.1",
+  "description": "Art state with its authoritative browser selection (Hub #297). The remaining fields retain their 2.0 definitions. Selection is a committed reference, not evidence that a browser decoded or displayed the image. It can name saved art outside the recent page and carries no bytes, prompt or private path.",
+  "type": "object", "additionalProperties": false,
+  "required": ["id", "revision", "month", "day", "providers", "guard", "gifs", "jobs", "artworks", "candidates", "retention", "selection"],
+  "properties": {
+    "id": {"$ref": "https://bunny.invalid/events/art/2.0#/properties/id"},
+    "revision": {"$ref": "https://bunny.invalid/events/art/2.0#/properties/revision"},
+    "month": {"$ref": "https://bunny.invalid/events/art/2.0#/properties/month"},
+    "day": {"$ref": "https://bunny.invalid/events/art/2.0#/properties/day"},
+    "providers": {"$ref": "https://bunny.invalid/events/art/2.0#/properties/providers"},
+    "guard": {"$ref": "https://bunny.invalid/events/art/2.0#/properties/guard"},
+    "gifs": {"$ref": "https://bunny.invalid/events/art/2.0#/properties/gifs"},
+    "jobs": {"$ref": "https://bunny.invalid/events/art/2.0#/properties/jobs"},
+    "artworks": {"$ref": "https://bunny.invalid/events/art/2.0#/properties/artworks"},
+    "candidates": {"$ref": "https://bunny.invalid/events/art/2.0#/properties/candidates"},
+    "retention": {"$ref": "https://bunny.invalid/events/art/2.0#/properties/retention"},
+    "selection": {"oneOf": [
+      {"type": "null"},
+      {"type": "object", "additionalProperties": false, "required": ["artworkId", "compositionId"], "properties": {
+        "artworkId": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_.-]+$"},
+        "compositionId": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }}
+    ]}
+  }
+}

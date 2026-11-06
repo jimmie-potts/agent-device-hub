@@ -1,0 +1,5 @@
+/* Palette values enter only through the bounded token layer in art-theme.ts.
+   These two static washes are behind content and perform no asset request. */
+:root{--art-wash-start:transparent;--art-wash-end:transparent}
+:root[data-art-theme="applied"]{--shell-background:radial-gradient(ellipse at 0 0,var(--art-wash-start),transparent 65%),radial-gradient(ellipse at 100% 100%,var(--art-wash-end),transparent 65%),var(--bg)}
+@media print{:root[data-art-theme="applied"]{--shell-background:none}}

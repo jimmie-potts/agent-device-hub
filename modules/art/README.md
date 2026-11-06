@@ -85,7 +85,7 @@ GitHub.
 
 ## What it offers others
 
-- **State:** `art/2.0` on `bunny.state.art.art`, read with `sdk.sync(['art'], …)`. It holds
+- **State:** `art/2.1` on `bunny.state.art.art`, read with `sdk.sync(['art'], …)`. It holds
   spent, reserved, uncertain and remaining amounts per provider, recent jobs and
   artworks, staged candidates and retained copies.
 - **Content**, at `/modules/art/content/<ref>`, for an authenticated reader:
@@ -94,7 +94,7 @@ GitHub.
   | --- | --- |
   | `catalog` | Saved artworks, newest first; query `after` and `limit` (at most 100) |
   | `ledger` | Every call, oldest first; query `after` and `limit` (at most 100) |
-  | `artwork.<artworkId>` | One artwork's result, with its calls |
+  | `artwork.<artworkId>` | One artwork's result, creation time and calls |
   | `rendition.<renditionId>` | The bytes of one rendition |
 
 - **Span:** `bunny.art.call`, diagnostic profile 1.8.
@@ -119,6 +119,11 @@ Ambient admissions run one at a time and recheck selection before dispatch. Stop
 drops unsent work; restart does not replay it. Generation and staging remain concurrent.
 Conflicting stage evidence withdraws its candidate.
 
+Browser selection retains one exact artwork and composition independently of the
+recent catalog window. It survives pruning and restart until replaced or explicitly
+deleted. Selection commits no display effect and does not claim that a browser
+decoded the image. The private `art_browser_selection` table holds this pointer.
+
 ## Commands and boundaries
 
 `src/seams.ts` holds the module's boundaries. A responder admits only `bunny/core`
@@ -127,14 +132,30 @@ Conflicting stage evidence withdraws its candidate.
 | Family | Sender | What it does |
 | --- | --- | --- |
 | `art-request` | The dashboard, through the tracked route | Starts a job, or cancels any job |
-| `art-auto` | The core's automation only | Starts an automatic job |
+| `art-auto` | The core's automation only | Starts an automatic job; 2.1 also prepares saved art or selects its browser composition |
 | `art-catalog-edit` | The dashboard, through the tracked route | Favorite, feedback, delete, or reuse saved art |
 | `art-dispatch` | This module, to the core | Forwards `art-stage` and `art-ambient-set` |
 
 The family that admits a job decides whether it is the owner's or automatic, never its
-payload. Each outcome reports durable admission. A stage is offered only after the core's
+payload. Generation outcomes report durable job admission. A stage is offered only after the core's
 `operation` record says it succeeded, and a restart resends nothing: the record can still
 settle a stage left uncertain.
+
+`art-auto/2.1` preparation names the saved artwork, exact composition and configured
+display ID. It performs no provider call and starts no moment. Admission commits a
+private preparation before staging; its successful outcome waits for the tracked
+child stage to succeed. Failure and uncertainty retain their separate meanings.
+Conflicting staging evidence gives the parent both definitive outcomes, so its
+operation remains in conflict. Restart marks pending preparations uncertain and
+never stages again. The additive `art_preparations` table retains at most eight
+pending rows and 1,000 terminal rows; retained rows keep ownership of their request
+IDs after the ordinary 30-day admission receipt expires.
+
+The same version's `present` action names a saved artwork and exact browser
+composition. Its successful outcome means the selection committed. The state
+contains `selection: {artworkId, compositionId}` or `null`, while authenticated
+content supplies metadata for a selected artwork outside the recent state window.
+The 2.0 command and state contracts remain supported unchanged.
 
 Art state keeps display kinds (`pixoo` and `tidbyt`). Before forwarding a stage or
 ambient selection, the module resolves that kind to the configured device ID from
@@ -161,6 +182,13 @@ replays a display. The request form identifies Browser, Tidbyt and Pixoo targets
 selected by default. Creating prepares those compositions; it does not start a
 display moment. The job result is separate from command admission.
 
+The Home widget follows the owner's exact browser selection, including selected
+art outside the recent state window. With no selection, it keeps the latest-art
+fallback. Authenticated artwork metadata and image bytes must both match the
+selected identity; obsolete or failed reads cannot select a newer image instead.
+Gallery browsing retains its own local manual choice. Home pinning reserves
+layout space and is not a pin on an artwork.
+
 Browser compositions use the rich still rendition. Bytes must match its declared
 size and media type and decode to its declared dimensions before replacing the
 visible canvas. Failed or obsolete loads never replace it. No browser animation
@@ -174,7 +202,8 @@ may retain the last visible image, whose identity stays explicit. `stale` means
 the underlying sync is unavailable; it is not fresh theme evidence. When no
 image intersects the viewport or the view unmounts, `presented` is null. This context owns no
 catalog, preference or durable state. Theme consumers may use only ready visible
-art; theme application belongs to the separate theme story.
+art. The runtime shell applies bounded decorative colors from that evidence;
+browser-local lock/default preferences remain outside the art catalog.
 
 The existing core Home owner stores optional art shape and pin metadata. A pinned
 art row reserves space independently of image arrival. Unpinned art uses only
@@ -191,6 +220,11 @@ Use Node 24. Run `npm run test:art`, or build once and run `npm run test:art:bui
 the browser. The `scenario-art-gallery` disposable capture shows the actual
 gallery with visible, labelled synthetic interactions. It contacts no provider
 or device.
+The `warm-colors` and `cool-colors` simulation actions select fixed synthetic
+pixels for later image requests. The real local image processor derives their
+palettes. Normal simulation output is unchanged until an action selects one.
+`scenario-art-theme` uses these fixtures to demonstrate the shell's local theme
+controls without contacting a provider or device.
 
 An older Home save that retains the art placement but omits its optional options
 preserves the saved format and pin. Explicit options replace them; removing the

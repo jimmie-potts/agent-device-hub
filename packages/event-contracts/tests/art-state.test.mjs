@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {MessageValidator, SCHEMA_BASE} from '../dist/v2/index.js';
 import {registerCoreFamilies} from '../dist/v2/families.js';
-import {ART_CATALOG_EDIT_SCHEMA, ART_CATALOG_EDIT_TYPE, ART_ID, ART_STATE_SCHEMA, ART_STATE_TYPE, artContentRef, artSchemas, registerArtStateFamily} from '../dist/v2/art-state.js';
+import {ART_CATALOG_EDIT_SCHEMA, ART_CATALOG_EDIT_TYPE, ART_ID, ART_STATE_SCHEMA, ART_STATE_21_SCHEMA, ART_STATE_TYPE, artContentRef, artSchemas, registerArtStateFamily} from '../dist/v2/art-state.js';
 
 const fixtures = JSON.parse(readFileSync(new URL('../fixtures/v2/families.json', import.meta.url), 'utf8'));
 const sha = 'a'.repeat(64);
@@ -25,7 +25,7 @@ const check = value => validator.validate(value, {nowMs: Date.parse(value.time)}
 
 test('the art family carries spend per provider and recent work by reference', () => {
   assert.equal(ART_STATE_SCHEMA, `${SCHEMA_BASE}art/2.0`);
-  assert.deepEqual(Object.keys(artSchemas), [ART_STATE_SCHEMA, ART_CATALOG_EDIT_SCHEMA]);
+  assert.deepEqual(Object.keys(artSchemas), [ART_STATE_SCHEMA, ART_STATE_21_SCHEMA, ART_CATALOG_EDIT_SCHEMA]);
   const answer = check(message(data()));
   assert.equal(answer.ok, true, JSON.stringify(answer));
 });

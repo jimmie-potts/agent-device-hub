@@ -6,6 +6,7 @@ import {defineFamily, registerFamilies} from './registry.js';
 
 export const ART_ID = 'art';
 export const ART_STATE_SCHEMA = `${SCHEMA_BASE}art/2.0`;
+export const ART_STATE_21_SCHEMA = `${SCHEMA_BASE}art/2.1`;
 export const ART_STATE_TYPE = 'org.bunny.art.updated';
 export const ART_STATE_KEY = 'bunny.state.art.art';
 
@@ -54,6 +55,9 @@ export type ArtState = {
   jobs: ArtJobSummary[]; artworks: ArtworkSummary[]; candidates: ArtCandidate[];
   retention: {recentLimit: number; recent: number; favorites: number; retained: {artworkId: string; target: ArtDisplayTarget; untilMs: number}[]};
 };
+export type ArtSelection = {artworkId: string; compositionId: string};
+export type ArtState21 = ArtState & {selection: ArtSelection | null};
+export type ArtRecord = ArtState | ArtState21;
 
 /** The module's content references, read at `/modules/art/content/<ref>`. */
 export const artContentRef = {
@@ -79,6 +83,6 @@ export const ART_CATALOG_EDIT_SCHEMA = `${SCHEMA_BASE}art-catalog-edit/2.0`;
 export const ART_CATALOG_EDIT_TYPE = 'org.bunny.art-catalog.edit.requested';
 
 const onArt = (message: {subject: string}): string | undefined => message.subject === ART_ID ? undefined : 'envelope /subject must be art';
-const families = [defineFamily('art', 'state', ART_STATE_TYPE, onArt), defineFamily('art-catalog-edit', 'command', ART_CATALOG_EDIT_TYPE, onArt)];
+const families = [defineFamily('art', 'state', ART_STATE_TYPE, onArt), defineFamily('art', 'state', ART_STATE_TYPE, onArt, '2.1'), defineFamily('art-catalog-edit', 'command', ART_CATALOG_EDIT_TYPE, onArt)];
 export const artSchemas: Readonly<Record<string, object>> = Object.fromEntries(families.map(family => [family.dataschema, family.schema]));
 export function registerArtStateFamily(validator: MessageValidator): void {registerFamilies(validator, families);}
