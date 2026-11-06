@@ -35,6 +35,17 @@ See [the module guide](../modules/reachy-mini/README.md).
 
 ## Art checks
 
+The adaptive widget and Gallery checks for #682 use
+`npm run test:art:browser` after the root build. They run in the existing App
+verification runtime group and the full local runtime dashboard browser suite.
+See [runtime dashboard checks](../apps/runtime/DEVELOPMENT.md#runtime-dashboard-checks)
+for viewport, interaction, private-content and synthetic-provider evidence.
+Home metadata validation uses `npm run test:events:built`, core persistence uses
+`npm run test:runtime:built`, and frontend models use `npm run test:art:built`
+and `npm run test:runtime-dashboard:built`; these are already discovered by CI.
+Keep shared build/type/lint, contract/package and workflow checks. These checks
+never qualify an installed provider or physical display.
+
 Use Node 24. Run `npm run test:art` for the spending ledger, the catalog, local image
 work and the provider adapters, or build once and run `npm run test:art:built`. The
 modules CI group runs the built suite. Tests use fake providers through the transport
@@ -45,17 +56,18 @@ cover its registration. A contract change to the diagnostic profile also needs
 `npm run test:observability`. Real generation and the GIF rejection rate belong to
 installed acceptance in #687. See [the module guide](../modules/art/README.md).
 
-The registered `art-catalog` and `art-spending-limit` scenarios run through both
+The registered `art-gallery`, `art-catalog` and `art-spending-limit` scenarios run through both
 runtime transports in `test:runtime:scenarios:built`. They use synthetic GIF/still
 providers with fixed billed usage and the real authenticated commands, catalog,
 ledger and private store. They cover favorite/reuse/variation, invalid bytes, lost
 responses, restart without replay, recent retention and the monthly ceiling.
 After building, focus them with
-`node --test --test-name-pattern='art-catalog|art-spending-limit' apps/runtime/dist/tests/scenarios/catalog.test.js`.
+`node --test --test-name-pattern='art-gallery|art-catalog|art-spending-limit' apps/runtime/dist/tests/scenarios/catalog.test.js`.
 On a Mac, use `npm run test:runtime:container -- --suite scenarios`.
 
-For disposable acceptance on a clean committed candidate, select
-`scenario-art-catalog` through the [portable route](../apps/runtime/verify/PORTABLE.md).
+For the actual gallery UI, select `scenario-art-gallery`; its capture uses visible,
+labelled controls and leaves decoded synthetic art on screen. For the producer API
+exercise on a clean committed candidate, select `scenario-art-catalog` through the [portable route](../apps/runtime/verify/PORTABLE.md).
 Its recording opens the saved synthetic rendition through the real authenticated
 content route, using a labelled review-only link in the existing shell. It adds no
 gallery UI and exercises no real provider or device. The rendition remains visible
@@ -2159,6 +2171,19 @@ suite under [Runtime verification runs](#runtime-verification-runs).
 The build compiles the module and its tests
 (`tsc -p modules/pixoo/tsconfig.json`) before the runtime, which ships it. The
 core CI job runs `test:pixoo:built` after its fresh build.
+
+`apps/runtime/tests/moment-refusal.test.ts` runs the actual Pixoo and Tidbyt
+modules with simulated transports through the core tracker. It checks that a
+missed moment start is recorded as an owner refusal with no effect, retains the
+window explanation, and is not replayed. After the build, run
+`node --test apps/runtime/dist/tests/moment-refusal.test.js`; the existing
+`test:runtime:built` CI suite includes it. The registered `missed-moment-start`
+scenario adds the authenticated HTTP gateway and both real handlers, with
+Pixoo and Tronbyt simulations. It checks the reply, owner, operation record,
+zero moment writes and duplicate refusal. Run it after the build with
+`node --test --test-name-pattern='missed-moment-start' apps/runtime/dist/tests/scenarios/catalog.test.js`;
+the existing `test:runtime:scenarios:built` CI suite discovers it, and
+`scenario-missed-moment-start` is its disposable acceptance capture.
 
 The reusable Pixoo controls (#1154) add atomic populated creation coverage to
 `modules/pixoo/tests/integration/library.test.ts` and browser journeys to

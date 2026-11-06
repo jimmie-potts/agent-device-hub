@@ -240,7 +240,7 @@ at most 60 s, able to cover status. The cloud refuses `moment-play` and declares
 is a bounded takeover. It changes no mode and no configuration revision:
 
 1. It is refused with nothing stored or sent when its mood or duration is not declared
-   (`unsupported-capability`), its start window has passed (`expired`), a command or another
+   (`unsupported-capability`), its start window has passed (`invalid-state`), a command or another
    moment is in hand (`capacity`), the last moment has not been released (`unavailable`), its
    moment ID was accepted before, or it is blocked (`invalid-state`).
 2. Its frame is made once. A failure, or 30 s without one, ends it `failed` with nothing sent:

@@ -1,4 +1,5 @@
 import {HabitatPage} from './habitat.tsx';
+import {ArtPresentationProvider, ArtWidget} from '@jimmie-potts/art/frontend';
 import {HomeLayout} from './home-layout.tsx';
 import type {HomeCardDefinition} from './home-catalog.ts';
 import type {HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
@@ -223,6 +224,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     if (definition.source.kind === 'light') return <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={{kind: 'home'}} homeSelection={definition.source.selection} homeSelections={selections}/>;
     if (definition.source.kind === 'music') return <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={{kind: 'home'}} homeSource={definition.source}/>;
 
+    if (placement.widget === 'art') return <ModuleFrontend module="art" connection={connection}
+      connected={state.feed === 'connected' && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'art' && module.state === 'running') === true}
+      control={runtime.control} operations={operations} operationsLive={operationsLive} Component={ArtWidget}/>;
     if (placement.widget === 'module:roborock') return <ModuleFrontend module="roborock" connection={connection}
       connected={state.feed === 'connected' && !runtime.catalogFailed}
       control={false} operations={[]} operationsLive={false} Component={RoborockWidget}/>;
@@ -248,7 +252,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       synced={state.sessions.synced} live={live} control={state.runtime.control} now={now}/></Widget>;
     return null;
   };
-  return <DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className="shell">
+  return <ArtPresentationProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className="shell">
     <a className="skip" href="#main" onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
     <aside>
       <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
@@ -300,7 +304,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </div></section>}
       <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer>
     </main>
-  </div></DeviceModesProvider>;
+  </div></DeviceModesProvider></ArtPresentationProvider>;
 }
 
 /** Where sign-in stands: checking, signed in with a connection, or signed out with the reason the page shows. */

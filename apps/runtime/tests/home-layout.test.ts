@@ -3,13 +3,15 @@ import type {HomeArrangements, HomeLayoutRecord} from '@jimmie-potts/event-contr
 import {createCoreModule} from '../src/core/core.js';
 import type {Action} from '../src/core/tracker.js';
 import {contextOf, edgeConfig, fixture, it, run, stateDir, waitFor} from './support.js';
+import {World} from './fixtures/store-world.js';
 
 type Saved = {id: string; revision: number; version: number; layouts: object | null};
-const arrangements = (): HomeArrangements => ({desktop: [{widget: 'hub-mode', size: 'medium', hidden: false}], phone: [{widget: 'inbox', size: 'small', hidden: false}]});
+const arrangements = (): HomeArrangements => ({desktop: [{widget: 'hub-mode', size: 'medium', hidden: false}, {widget: 'art', size: 'medium', hidden: false, art: {format: 'banner', pinned: true}}],
+  phone: [{widget: 'inbox', size: 'small', hidden: false}, {widget: 'art', size: 'small', hidden: true, art: {format: 'square', pinned: false}}]});
 const action = (requestId: string, expectedRevision: number, layouts: object = arrangements()): Action => ({key: 'bunny.cmd.home-layout-set.home', requestedBy: 'bunny/parts/operator', requestId,
   draft: {type: 'org.bunny.home-layout.set.requested', subject: 'home', dataschema: 'https://bunny.invalid/events/home-layout-set/2.0', data: {expectedRevision, layouts}}});
 
-it('Home layouts persist with guarded operator admission and no device effects', async context => {
+it('Home layouts and independent art options persist with guarded operator admission and no device effects', async context => {
   let refuse = false;
   const core = createCoreModule({parts: [{tracked: ({operation, outcome}) => {if (refuse && operation.family === 'home-layout-set' && outcome !== undefined) throw new Error('synthetic-home-commit-refusal');}}]}), watcher = fixture('home-watcher');
   const files = await edgeConfig(context, []), dir = await stateDir(context);
@@ -76,7 +78,8 @@ it('grouping visible lights preserves unrelated hidden and phone placements', as
     draft: {type: 'org.bunny.lighting-layout.set.requested', subject: 'lighting', dataschema: 'https://bunny.invalid/events/lighting-layout-set/2.0', data: {expectedRevision, layout}}});
   await core.operatorActions.dispatch(lighting('hidden-initial', 0, initial));
   const entries = ['a', 'b', 'c'].map(id => ({widget: `light:device:${id}`, size: 'medium', hidden: false}));
-  const layouts = {desktop: entries.map(entry => ({...entry, hidden: entry.widget.endsWith(':b')})), phone: entries};
+  const art = {widget: 'art', size: 'medium', hidden: false, art: {format: 'tall', pinned: true}};
+  const layouts = {desktop: [...entries.map(entry => ({...entry, hidden: entry.widget.endsWith(':b')})), art], phone: [...entries, {...art, hidden: true}]};
   await core.operatorActions.dispatch(action('hidden-home', 0, layouts));
   const read = await contextOf(watcher).sdk.sync<{revision: number}>(['lighting-layout'], () => {}, {timeoutMs: 2000, owner: 'bunny/core'});
   assert.equal(read.status, 'synced');if (read.status !== 'synced') throw new Error('lighting-hidden-sync');
@@ -87,6 +90,8 @@ it('grouping visible lights preserves unrelated hidden and phone placements', as
   assert.equal(saved.status, 'synced');if (saved.status !== 'synced') throw new Error('saved-hidden-sync');
   const value = saved.copy.states()[0]?.data.layouts;assert.ok(value != null);
   assert.deepEqual(value.desktop.find(entry => entry.widget === 'light:device:b'), layouts.desktop[1]);
+  assert.deepEqual(value.desktop.find(entry => entry.widget === 'art'), art);
+  assert.deepEqual(value.phone.find(entry => entry.widget === 'art'), {...art, hidden: true});
   assert.deepEqual(value.phone.find(entry => entry.widget === 'light:device:b'), layouts.phone[1]);await saved.copy.close();
 });
 
@@ -130,4 +135,40 @@ it('Home expiry is checked at the transaction boundary without a saved metadata 
     assert.deepEqual((part.states(['home-layout'])[0]?.data as HomeLayoutRecord).layouts, null);
     assert.equal(completed, 0); assert.equal(ended, 1);
   } finally {db.close();}
+});
+
+it('older Home saves preserve art options and original command identity while explicit changes remain deliberate', async context => {
+  const world = await World.open(context);let responder: Responder<HomeLayoutSetRequest> | undefined, sequence = 0;
+  const part = new HomeLayoutPart({admit: () => true, complete: () => () => {}, end: () => {}});
+  const now = world.clock.now();
+  const sdk = {respond: (_pattern: string, receive: Responder<HomeLayoutSetRequest>) => {responder = receive;return Promise.resolve();}} as unknown as Sdk;
+  const core = {sdk, ready: Promise.resolve(), transaction: world.store.transaction.bind(world.store)} as CoreHandle;
+  const saved = (): HomeLayoutRecord => part.states(['home-layout'])[0]?.data as HomeLayoutRecord;
+  const save = async (layouts: HomeArrangements): Promise<void> => {
+    assert.ok(responder !== undefined);
+    const requestId = `art-options-${sequence++}`;
+    const command: Command<HomeLayoutSetRequest> = {specversion: '1.0', bunnyprofile: '2.0', id: requestId, source: 'bunny/core',
+      type: 'org.bunny.home-layout.set.requested', subject: 'home', time: new Date(now).toISOString(), expiresat: new Date(now + 1000).toISOString(),
+      kind: 'command', datacontenttype: 'application/json', dataschema: 'https://bunny.invalid/events/home-layout-set/2.0',
+      traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01', data: {requestId, expectedRevision: saved().revision, layouts}};
+    const original = JSON.stringify(command);
+    assert.deepEqual(await responder(command), {status: 'accepted'});
+    const intake = world.db.prepare('SELECT message FROM core_taken WHERE source = ? AND id = ?').get(command.source, command.id) as {message: string};
+    assert.equal(intake.message, original, 'the durable intake keeps the exact command, independently of normalized layout metadata');
+    assert.equal(world.store.received(command), 'duplicate', 'redelivery of the original envelope remains a duplicate');
+  };
+  try {
+    part.open(world.db);await part.start(core);await save(arrangements());
+    const legacy = arrangements();
+    for (const breakpoint of ['desktop', 'phone'] as const) for (const entry of legacy[breakpoint]) {delete entry.art;if (entry.widget !== 'art') entry.size = 'large';}
+    await save(legacy);
+    assert.deepEqual(saved().layouts?.desktop.find(entry => entry.widget === 'art')?.art, {format: 'banner', pinned: true});
+    assert.deepEqual(saved().layouts?.phone.find(entry => entry.widget === 'art')?.art, {format: 'square', pinned: false});
+    assert.equal(saved().layouts?.desktop[0]?.size, 'large');
+    assert.equal(part.states(['home-layout'])[0]?.dataschema, 'https://bunny.invalid/events/home-layout/2.1');
+    const explicit = arrangements(), art = explicit.desktop.find(entry => entry.widget === 'art');assert.ok(art !== undefined);art.art = {format: 'tall', pinned: false};
+    await save(explicit);assert.deepEqual(saved().layouts?.desktop.find(entry => entry.widget === 'art')?.art, art.art);
+    await save({desktop: [], phone: explicit.phone});assert.deepEqual(saved().layouts?.desktop, []);
+    await save({desktop: [], phone: []});assert.deepEqual(saved().layouts, {desktop: [], phone: []});
+  } finally {await world.store.drain();}
 });
