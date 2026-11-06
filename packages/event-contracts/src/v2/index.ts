@@ -86,7 +86,8 @@ const fail = (code: ErrorCode, detail: string): {ok: false; error: ErrorDetail} 
  * their own payload schemas, built from the shared blocks (`https://bunny.invalid/events/blocks/2.0#/$defs/...`).
  */
 export class MessageValidator {
-  readonly #ajv = new Ajv2020({strict: true, allErrors: false});
+  // Ajv's optimizing pass over the code it generates took half of each compile and left validation no faster (Hub #1503).
+  readonly #ajv = new Ajv2020({strict: true, allErrors: false, code: {optimize: false}});
   readonly #envelope: ValidateFunction;
   readonly #payloads = new Map<string, ValidateFunction>();
   readonly #checks = new Map<string, PayloadCheck>();

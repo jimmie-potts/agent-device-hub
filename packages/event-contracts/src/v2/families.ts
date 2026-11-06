@@ -432,7 +432,7 @@ export function registerCoreFamilies(validator: MessageValidator): void {
 let shared: MessageValidator | undefined;
 /**
  * The process's one sealed validator with exactly the core families, compiled on first use. Compiling them takes Ajv
- * about 90 ms on a fast machine, and a runtime that gave each of its parts its own copy blocked its event loop for
+ * about 50 ms on a fast machine, and a runtime that gave each of its parts its own copy blocked its event loop for
  * seconds while starting (Hub #1503). An owner that needs more families builds its own validator.
  */
 export function coreValidator(): MessageValidator {

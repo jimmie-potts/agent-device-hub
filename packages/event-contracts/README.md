@@ -292,7 +292,7 @@ The rules:
 must use its kind and type. `coreValidator()` returns the process's one sealed
 validator with exactly these families, compiled on first use. An owner that
 needs only the core families uses it rather than compiling its own copy, because
-each copy blocks the event loop while Ajv compiles it, about 90 ms on a fast
+each copy blocks the event loop while Ajv compiles it, about 50 ms on a fast
 machine (Hub #1503). `MessageValidator.register` takes an optional check
 for rules a schema cannot state. The core families use it to refuse:
 - a known parent in another provider, client, host or source, or with the same
