@@ -559,6 +559,18 @@ CREATE INDEX IF NOT EXISTS rr_gap_recovery_success
         this.run(`UPDATE rr_gap_recovery SET recovered_at=?
      WHERE generation=? AND recovered_at IS NULL`, at, generation);
     }
+    /** A token each collection transaction writes, so a rolled-back commit cannot pass for a committed one. */
+    saveCommitToken(token: string): void {
+        this.write();
+        identifier(token);
+        this.run(`INSERT INTO rr_meta(key,value) VALUES('commit',?)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value`, token);
+    }
+    commitToken(): string | undefined {
+        return this.one<{
+            value: string;
+        }>("SELECT value FROM rr_meta WHERE key='commit'")?.value;
+    }
     loadEpisodeRecoveryCursor(): number {
         this.identity();
         const row = this.one<{
