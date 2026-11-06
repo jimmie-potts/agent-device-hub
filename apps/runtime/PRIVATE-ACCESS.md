@@ -104,7 +104,9 @@ With [start at sign-in](../../docs/bunny-container.md#start-at-sign-in) installe
 (#1426), the `org.bunny.private-forwarder` and `org.bunny.private-serve` launchd
 agents run the forwarder's `start-forwarder.sh` and the Serve command below, and
 restart them if they exit. Their output goes to `forwarder.log` and `serve.log` in
-the private directory. To stop the route, boot out both agents; it returns at the
+the private directory. The serve agent sets `TAILSCALE_BE_CLI=1`, because without
+a terminal the Tailscale app binary starts as the GUI, logs a `CLIError` and exits
+0 instead of serving. To stop the route, boot out both agents; it returns at the
 next sign-in unless you also delete their plists. Never run a manual copy beside them. The route holds no state and sends no device command, and its
 authentication is unchanged.
 
