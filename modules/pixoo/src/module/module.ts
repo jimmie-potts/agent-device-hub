@@ -993,7 +993,7 @@ class PixooRuntime {
     const monitor = this.#monitor;
     if (monitor === undefined) return errorBody('invalid-state', {detail: 'the Pixoo has no presentation'});
     if (this.#store?.momentSeen(moment.momentId) === true) return errorBody('invalid-state', {detail: 'this moment was already accepted'});
-    if (this.#context.clock.now() > moment.startAtMs + moment.toleranceMs) return errorBody('expired', {detail: 'the moment missed its start window'});
+    if (this.#context.clock.now() > moment.startAtMs + moment.toleranceMs) return errorBody('invalid-state', {detail: 'the moment missed its start window'});
     if (monitor.momentBusy()) return errorBody('capacity', {detail: 'another moment waits or plays'});
     if ((this.#store?.pending() ?? []).some(command => command.family === 'device-mode-set')) return errorBody('invalid-state', {detail: 'a mode change is pending'});
     const block = monitor.momentBlock(moment.coversStatus, moment.art !== undefined);

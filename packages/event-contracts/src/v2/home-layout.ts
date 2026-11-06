@@ -1,7 +1,9 @@
 import type {Message} from './index.js';
 import {defineFamily} from './registry.js';
 
-export type HomePlacement = {widget: string; size: 'small' | 'medium' | 'large'; hidden: boolean};
+export type HomeArtFormat = 'auto' | 'banner' | 'square' | 'tall';
+export type HomeArtPlacement = {format: HomeArtFormat; pinned: boolean};
+export type HomePlacement = {widget: string; size: 'small' | 'medium' | 'large'; hidden: boolean; art?: HomeArtPlacement};
 export type HomeArrangements = {desktop: HomePlacement[]; phone: HomePlacement[]};
 export type HomeLayoutRecord = {id: 'home'; revision: number; version: 1; layouts: HomeArrangements | null};
 export type HomeLayoutSetRequest = {requestId: string; expectedRevision: number; layouts: HomeArrangements};
@@ -14,5 +16,6 @@ function checkHome(message: Message): string | undefined {
 }
 export const homeLayoutFamilies = [
   defineFamily('home-layout', 'state', 'org.bunny.home-layout.updated', checkHome),
+  defineFamily('home-layout', 'state', 'org.bunny.home-layout.updated', checkHome, '2.1'),
   defineFamily('home-layout-set', 'command', 'org.bunny.home-layout.set.requested', checkHome),
 ] as const;

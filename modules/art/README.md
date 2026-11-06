@@ -150,7 +150,48 @@ prompt, so a temperature or day part in its words is dropped. A job's validated
 `context` is used first as requested inspiration. Without either supplied inspiration
 or a fresh weather observation, the art says nothing about weather.
 
+## Browser gallery and Home art
+
+The module's `./frontend` entry supplies the Art Gallery page and Home widget.
+They share the shell's authenticated module scope and SDK connection. The gallery
+reads the paginated private catalog, requests owner art or variations, saves
+favorites and records explicit feedback through `art-catalog-edit`. Opening a
+saved artwork reads its existing browser rendition; it neither regenerates nor
+replays a display. The request form identifies Browser, Tidbyt and Pixoo targets,
+selected by default. Creating prepares those compositions; it does not start a
+display moment. The job result is separate from command admission.
+
+Browser compositions use the rich still rendition. Bytes must match its declared
+size and media type and decode to its declared dimensions before replacing the
+visible canvas. Failed or obsolete loads never replace it. No browser animation
+is started, including with reduced motion enabled. Allowance displays retain
+reserved and uncertain amounts and never suggest an automatic retry.
+
+`ArtPresentationProvider` and `useArtPresentation` expose transient evidence for
+the currently visible decoded artwork: artwork, composition and rendition IDs
+and its palette. `ready` means that image decoded; `loading` or `unavailable`
+may retain the last visible image, whose identity stays explicit. `stale` means
+the underlying sync is unavailable; it is not fresh theme evidence. When no
+image intersects the viewport or the view unmounts, `presented` is null. This context owns no
+catalog, preference or durable state. Theme consumers may use only ready visible
+art; theme application belongs to the separate theme story.
+
+The existing core Home owner stores optional art shape and pin metadata. A pinned
+art row reserves space independently of image arrival. Unpinned art uses only
+unused viewport space after functional cards, and disappears when no complete
+bounded shape fits. Pointer/focus interaction freezes automatic placement.
+Dismiss/restore concern that widget placement; they do not submit dislike
+feedback. Gallery favorites are distinct from Home pinning.
+
 ## Checks
 
 Use Node 24. Run `npm run test:art`, or build once and run `npm run test:art:built`. See
-[Art checks](../../docs/development.md#art-checks).
+[Art checks](../../docs/development.md#art-checks). After building,
+`npm run test:art:browser` exercises the real owner and synthetic provider through
+the browser. The `scenario-art-gallery` disposable capture shows the actual
+gallery with visible, labelled synthetic interactions. It contacts no provider
+or device.
+
+An older Home save that retains the art placement but omits its optional options
+preserves the saved format and pin. Explicit options replace them; removing the
+reservation or resetting the arrangement still removes them.

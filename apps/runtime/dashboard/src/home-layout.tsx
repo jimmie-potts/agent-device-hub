@@ -4,6 +4,8 @@ import type {RuntimeData} from './runtime-feeds.ts';
 import {useAttempt} from './command-control.tsx';
 import {NavLink} from './navigation.tsx';
 import {addHomeCard, defaultHomeArrangements, homeCatalog, savedHomeCard, type HomeCardDefinition} from './home-catalog.ts';
+import {HomeArtSlot} from './home-art-slot.tsx';
+import {changeArtPlacement} from './home-art.ts';
 import {HomeCardIcon} from './home-card-icon.tsx';
 import './home-layout.css';
 
@@ -60,7 +62,9 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   useEffect(() => {
     if (record !== undefined && unknown.length > 0 && !reported.current.has(record.revision)) {reported.current.add(record.revision);setMessage('Some saved cards are no longer registered and were omitted. Review the layout before saving.');}
   }, [record, unknown.length]);
-  const shown = entries.filter(entry => (!entry.hidden || protectedCard(entry.widget)) && savedHomeCard(entry.widget, catalog) !== undefined);
+  const artEntry = entries.find(entry => entry.widget === 'art'), artCard = savedHomeCard('art', catalog);
+  const automaticArt = !editing && artEntry?.hidden !== true && (artEntry === undefined || artEntry.art?.pinned === false) && artCard !== undefined && artCard.reason === undefined;
+  const shown = entries.filter(entry => (entry.widget !== 'art' || editing || entry.art?.pinned !== false) && (!entry.hidden || protectedCard(entry.widget)) && savedHomeCard(entry.widget, catalog) !== undefined);
   for (const id of ['inbox', 'sessions']) if (protectedCard(id) && !shown.some(entry => entry.widget === id)) shown.push({widget: id, size: id === 'inbox' ? 'small' : 'medium', hidden: false});
   const change = (next: HomeArrangements): void => {if (draft !== undefined && editable && !conflict && pending === undefined) setDraft({...draft, layouts: next});};
   const move = (id: string, target: string): void => {
@@ -78,6 +82,20 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
     const id = crypto.randomUUID();setPending({id, base: draft.base, layouts: value});setMessage('Saving Home layout…');
     void command.run({family: 'home-layout-set', target: 'home', requestId: id, data: {expectedRevision: draft.base, layouts: value}});
   };
+  const updateArt = (next: HomeArrangements): void => {
+    if (draft !== undefined) {change(next);return;}
+    if (!editable || record === undefined || pending !== undefined) return;
+    const id = crypto.randomUUID();setPending({id, base: record.revision, layouts: next});setMessage('Saving Art placement…');
+    void command.run({family: 'home-layout-set', target: 'home', requestId: id, data: {expectedRevision: record.revision, layouts: next}});
+  };
+  const artControls = (entry: HomePlacement | undefined, automatic: boolean): React.ReactNode => <div className="home-art-controls" role="group" aria-label="Art placement">
+    <label>Art shape <select value={entry?.art?.format ?? 'auto'} disabled={!editable || pending !== undefined || conflict} onChange={event => {
+      const value = event.target.value;
+      if (value === 'auto' || value === 'banner' || value === 'square' || value === 'tall') updateArt(changeArtPlacement(layouts, breakpoint, {art: {format: value, pinned: true}}));
+    }}><option value="auto">Auto</option><option value="banner">Banner</option><option value="square">Square</option><option value="tall">Tall</option></select></label>
+    <button type="button" className="secondary" disabled={!editable || pending !== undefined || conflict} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {art: {format: entry?.art?.format ?? 'auto', pinned: automatic}}));}}>{automatic ? 'Pin art' : 'Unpin art'}</button>
+    <button type="button" className="secondary" disabled={!editable || pending !== undefined || conflict} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: true}));}}>Dismiss art widget</button>
+  </div>;
   const locked = !editable || conflict || pending !== undefined;
   const categories = ['All', ...new Set(catalog.map(card => card.category))];
   const query = search.trim().toLocaleLowerCase();
@@ -107,7 +125,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
       const size = definition.sizes.includes(entry.size) ? entry.size : definition.sizes[0] ?? 'medium';
       const placed = entries.some(value => value.widget === entry.widget);
       const required = protectedCard(entry.widget), reason = required ? 'This card stays visible while it needs attention.' : undefined;
-      return <div key={entry.widget} className={`home-layout-card home-size-${size}`} data-home-card={entry.widget} onDragOver={event => {if (editing && drag.current !== undefined) event.preventDefault();}} onDrop={event => {
+      return <div key={entry.widget} className={`home-layout-card home-size-${size}${entry.widget === 'art' ? ' home-art-row' : ''}`} data-home-card={entry.widget} onDragOver={event => {if (editing && drag.current !== undefined) event.preventDefault();}} onDrop={event => {
         if (!editing || drag.current === undefined) return;event.preventDefault();event.stopPropagation();const source = drag.current;drag.current = undefined;move(source, entry.widget);
       }}>
         {editing && <div className="home-card-editor" role="group" aria-label={`Edit ${definition.name}`}>
@@ -116,16 +134,18 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
           }}>↕</button>
           <button type="button" className="secondary" aria-label={`Move ${definition.name} earlier`} disabled={locked || !placed || index === 0} onClick={() => {step(entry.widget, -1);}}>↑</button>
           <button type="button" className="secondary" aria-label={`Move ${definition.name} later`} disabled={locked || !placed || index === shown.length - 1} onClick={() => {step(entry.widget, 1);}}>↓</button>
-          <select aria-label={`Size of ${definition.name}`} value={size} disabled={locked || !placed} onChange={event => {
+          {entry.widget !== 'art' && <select aria-label={`Size of ${definition.name}`} value={size} disabled={locked || !placed} onChange={event => {
             const next = structuredClone(layouts), found = next[breakpoint].find(value => value.widget === entry.widget);if (found !== undefined) found.size = event.target.value as HomePlacement['size'];change(next);
-          }}>{definition.sizes.map(value => <option key={value} value={value}>{sizes[value]}</option>)}</select>
+          }}>{definition.sizes.map(value => <option key={value} value={value}>{sizes[value]}</option>)}</select>}
           <button type="button" className="secondary" aria-label={`Hide ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts), found = next[breakpoint].find(value => value.widget === entry.widget);if (found !== undefined) found.hidden = true;change(next);focusAfterRemoval(index);}}>Hide</button>
-          <button type="button" className="secondary" aria-label={`Remove ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts);next[breakpoint] = next[breakpoint].filter(value => value.widget !== entry.widget);change(next);focusAfterRemoval(index);}}>×</button>
+          <button type="button" className="secondary" aria-label={entry.widget === 'art' ? 'Remove Art reservation and allow automatic placement' : `Remove ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts);next[breakpoint] = next[breakpoint].filter(value => value.widget !== entry.widget);change(next);focusAfterRemoval(index);}}>{entry.widget === 'art' ? 'Auto' : '×'}</button>
           {required && <small>{reason}</small>}
         </div>}
-        <div className="home-card-content" inert={editing}>{definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, {...entry, size}, shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];}))}</div>
+        <div className="home-card-content" inert={editing && entry.widget !== 'art'}>{entry.widget === 'art' ? <HomeArtSlot automatic={false} format={entry.art?.format ?? 'auto'} home={host}>{artControls(entry, entry.art?.pinned === false)}<div className="home-art-content" inert={editing}>{renderCard(definition, entry, [])}</div></HomeArtSlot> : definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, {...entry, size}, shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];}))}</div>
       </div>;
     })}</div>
+    {automaticArt && <HomeArtSlot automatic format={artEntry?.art?.format ?? 'auto'} home={host}>{artControls(artEntry, true)}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></HomeArtSlot>}
+    {!editing && artEntry?.hidden === true && <button type="button" className="secondary home-art-restore" disabled={locked} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: false}));}}>Restore art widget</button>}
     {shown.length === 0 && <p>No cards here. Choose Edit Home to add one.</p>}
     {editing && entries.some(entry => entry.hidden) && <div className="home-hidden"><span>Hidden</span>{entries.filter(entry => entry.hidden).map(entry => {
       const card = savedHomeCard(entry.widget, catalog);return card === undefined ? null : <button type="button" key={entry.widget} className="secondary" disabled={locked || card.reason !== undefined} onClick={() => {change(addHomeCard(layouts, breakpoint, card));}}>Show {card.name}</button>;

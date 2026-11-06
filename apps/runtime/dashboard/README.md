@@ -124,6 +124,23 @@ keeps a compact preferred width, Standard has more room, and Wide occupies its
 own row. Incomplete rows fill the available space without empty grid slots;
 phone layouts and the Phone editor preview stack cards in one column.
 
+Art is an optional module card. **Add Art** reserves its own row; choose Auto,
+Banner, Square or Tall and pin it separately from a gallery favorite. **Unpin art**
+allows bounded placement in unused space after the functional cards. Automatic
+art does not repack those cards or save its chosen geometry. Active pointer and
+keyboard controls freeze automatic fitting. **Dismiss art widget** and
+**Restore art widget** persist placement without sending art feedback. Reset
+returns the selected breakpoint to its defaults, including automatic art. The art
+editor’s **Auto** action removes its explicit reservation and allows automatic
+placement; use Dismiss or Hide to keep it out of Home.
+
+The module-owned Art Gallery requests art for the visibly selected targets,
+favorites and varies saved work, records explicit feedback, and pages through
+the shared collection. Revisit reads existing browser art without a display
+command. Provider allowance, job results and uncertain spending remain visible.
+The browser uses a completely decoded rich still before changing the canvas;
+failed/stale images remain labelled and controls lock without fresh authority.
+
 The versioned `home-layout` record lives in `modules/core.sqlite`, with IDs,
 sizes and flags only. Reload, another browser and restart read the same state;
 no layout is stored in localStorage. A concurrent change requires loading and
