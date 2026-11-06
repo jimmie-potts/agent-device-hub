@@ -1,4 +1,6 @@
 import {createArtModule, registration as artRegistration} from '@jimmie-potts/art';
+import {createWeatherModule, weatherSchemas} from '@jimmie-potts/weather';
+import {SYNTHETIC_SECTION as WEATHER_SECTION, pointsBody, hourlyBody, alertsBody, json as weatherJson} from '../../../../modules/weather/dist/src/simulated.js';
 import {SimulatedArt, simulatedProviders} from '../../../../modules/art/dist/src/simulated.js';
 import {createMicroDuckModule,SimulatedMicroDuck,MICRODUCK_SIMULATED_SECTION,microduckSchemas,type MicroDuckTransport} from '@jimmie-potts/microduck';
 import {createReachyModule,SimulatedReachy,REACHY_SIMULATED_SECTION,reachySchemas,type ReachyTransport} from '@jimmie-potts/reachy-mini';
@@ -21,7 +23,7 @@ import {createLifxModule, LIFX_SIMULATED_SECTION, PACKET, SimulatedLifx, lifxSch
 import {createNanoleafModule, SIMULATED_SECTION as NANOLEAF_SECTION, SYNTHETIC_TOKEN as NANOLEAF_TOKEN,
   LINES_ADDRESS, SimulatedNanoleaf, nanoleafSchemas, type SimulatedState} from '@jimmie-potts/nanoleaf';
 import {SIGN_SECTION, SYNTHETIC_TOKEN, SimulatedSigns, createSignModule, signSchemas} from '../../dist/tests/fixtures/sign.js';
-import {connectRemote, type BunnyModule, type RemoteParticipant, type Sdk} from '@jimmie-potts/sdk';
+import {connectRemote, type BunnyModule, type RemoteParticipant, type Sdk, type Clock, type Scheduler} from '@jimmie-potts/sdk';
 import type {Page} from 'playwright';
 import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, createCoreModule, startRuntime, tokenDigest, type LogRecord, type Runtime} from '../../dist/src/index.js';
 import {IDENTITY, observation, type ObservationOptions} from '../../dist/tests/fixtures/agents.js';
@@ -45,6 +47,8 @@ const HOOK_SOURCE = 'bunny/parts/hook';
 export type WorldOptions = {
   /** Synthetic art provider through the real catalog and ledger; no credentials or device routes. */
   art?: boolean;
+  /** Deterministic core schedule over a real weather owner with invented responses and no network fallback. */
+  artSchedule?: {clock: Clock; scheduler: Scheduler; choice: () => number};
   /** A numeric-only fake Music producer may use the existing endpoint role; no native helper. */
   musicCapture?: boolean;
   /** A dedicated synthetic Claude terminal receipt producer for the real helper. */
@@ -226,6 +230,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   });
   const moduleConfig = {
     ...(options.art === true ? {art: {}} : {}),
+    ...(options.artSchedule === undefined ? {} : {weather: WEATHER_SECTION}),
     ...(options.tidbyt === true ? {tidbyt: {...TIDBYT_SECTION, secrets: {token: join(configDir, 'tidbyt-token')}}} : {}),
     ...(options.wemo===true?{wemo:WEMO_SIMULATED_SECTION}:{}),
     ...(options.companions === true ? {companions: {assistant: {tools: ['read_sessions', 'set_mode', ...(options.coding === true ? ['delegate_coding'] : [])]}}} : {}),
@@ -249,7 +254,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.privateProxy === undefined ? {} : {privateProxy: options.privateProxy}),
   }}));
   const logs: LogRecord[] = [];
-  let core = createCoreModule();
+  const coreOptions = options.artSchedule === undefined ? {} : {artScheduleChoice: options.artSchedule.choice};
+  let core = createCoreModule(coreOptions);
   let wispr = createWisprModule();
   const nano = new ModeDevice('nanoleaf', 'wall'); nano.result = 'failed';
   const pixoo = new ModeDevice('pixoo', 'pixoo-1');
@@ -275,12 +281,15 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   };
   const start = (port: number): Promise<Runtime> => startRuntime({
     modules: [
-      core = createCoreModule(), ...(options.art === true ? [createArtModule({providers: simulatedProviders(art.call.bind(art))})] : []), ...(options.microduck===true?[options.microduckVendor===true?createMicroDuckModule():createMicroDuckModule({transport:options.microduckTransport??microduck})]:[]), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]),...(options.volcano===true?[createVolcanoModule({feed:volcano})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+      core = createCoreModule(coreOptions), ...(options.artSchedule === undefined ? [] : [createWeatherModule({fetch: clock => url => Promise.resolve(
+        url.includes('/points/') ? weatherJson(pointsBody()) : url.includes('/alerts/') ? weatherJson(alertsBody())
+          : weatherJson(hourlyBody(clock.now(), [{shortForecast: 'Sunny', precipitation: 0}, {shortForecast: 'Chance Rain Showers', precipitation: 40}], clock.now() - 1000)))})]), ...(options.art === true ? [createArtModule({providers: simulatedProviders(art.call.bind(art))})] : []), ...(options.microduck===true?[options.microduckVendor===true?createMicroDuckModule():createMicroDuckModule({transport:options.microduckTransport??microduck})]:[]), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]),...(options.volcano===true?[createVolcanoModule({feed:volcano})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}})]
         : options.pixooPages === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
       ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request})] : [])],
-    port, stateDir, configFile: config, edge: {schemas: {...(options.art === true ? artRegistration.schemas : {}),...(options.microduck===true?microduckSchemas:{}),...(options.reachy===true?reachySchemas:{}),...(options.wemo===true?wemoSchemas:{}),...options.roborock===true?roborockSchemas:{}, ...options.volcano===true?volcanoSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
+    ...(options.artSchedule === undefined ? {} : {clock: options.artSchedule.clock, scheduler: options.artSchedule.scheduler}),
+    port, stateDir, configFile: config, edge: {schemas: {...(options.artSchedule === undefined ? {} : weatherSchemas),...(options.art === true ? artRegistration.schemas : {}),...(options.microduck===true?microduckSchemas:{}),...(options.reachy===true?reachySchemas:{}),...(options.wemo===true?wemoSchemas:{}),...options.roborock===true?roborockSchemas:{}, ...options.volcano===true?volcanoSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime: Runtime;
   try {

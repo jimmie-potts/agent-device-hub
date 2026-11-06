@@ -35,6 +35,12 @@ export async function automationRoute(controls: AutomationControls, request: Aut
     return work();
   };
   try {
+    if(path==='art') {
+      noQuery();const schedule=controls.artSchedule;if(schedule===undefined)throw new AutomationError('unavailable',503);
+      if(method==='GET')return {status:200,body:{schema:'art-schedule/2.0',...schedule.get()}};
+      if(method==='PUT'){const input=await request.body(4096);request.authorize();return {status:200,body:{schema:'art-schedule/2.0',...await schedule.save(input,request.parent)}};}
+      return undefined;
+    }
     if(path==='power-limits'||path.startsWith('power-limits/')) {
       const limits=controls.limits;if(limits===undefined)throw new AutomationError('unavailable',503);
       noQuery();

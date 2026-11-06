@@ -35,6 +35,33 @@ See [the module guide](../modules/reachy-mini/README.md).
 
 ## Art checks
 
+Scheduled art (#684) extends the existing runtime automation owner. After the root
+build, run `npm run typecheck`, `npm run lint:js`, `npm run test:events:built`,
+`npm run test:art:built`, `npm run test:weather:built`,
+`npm run test:tidbyt-module:built`, `npm run test:pixoo:built`,
+`npm run test:runtime:built`, `npm run test:runtime-dashboard:built` and
+`npm run test:art:browser`. The existing event, module and runtime CI
+globs discover the new contract, policy/claim, producer and display cases; the
+App verification runtime group runs the schedule journey through the existing Art browser check. Keep the
+shared controller contract, Python consumer, package and workflow checks.
+
+The focused contract check is
+`node --test packages/event-contracts/tests/art-schedule.test.mjs`. The bounded
+clock/store cases are `apps/runtime/tests/art-schedule.test.ts`; the finite
+`art-schedule` scenario uses real owners and synthetic providers/transports.
+After building, select it with
+`node --test --test-name-pattern='art-schedule' apps/runtime/dist/tests/scenarios/catalog.test.js`.
+The finite scenario checks one saved-art rain appearance, disabled-source zero
+reads, exact submitted frame hashes and independent 10-second Pixoo and
+30-second Tidbyt outcomes. Its portable capture is bounded at 240 seconds.
+Manual-clock cases in the policy suite, `art-plans.test.ts` and
+`modules/art/tests/scheduled.test.ts` separately cover persisted 45-minute
+spacing, held preparation, revocation, renewal, restart and lost outcomes.
+Those cases are not claims about the portable recording. Browser checks cover
+revision conflicts and expiring labels on actually decoded art. Inspect the
+recorded native frames separately. These checks use only synthetic providers
+and transports, with no installed-runtime contact.
+
 Shared saved-art presentation (#297) uses the existing CI discovery. After
 `npm run build`, run `npm run typecheck`, `npm run lint:js`,
 `npm run test:events:built`, `npm run test:art:built`,

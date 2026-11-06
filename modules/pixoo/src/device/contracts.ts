@@ -10,7 +10,7 @@ export interface OperationOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   /** Private presentation admission: recheck after queue waits and before each effect. */
-  current?: () => boolean;
+  current?: (priorEffects: 'none' | 'possible') => boolean;
 }
 export interface Timing {
   submittedAtMs: number;
@@ -19,7 +19,8 @@ export interface Timing {
   queueMs: number;
   serviceMs: number;
 }
-export type FailureCode = 'invalid-input' | 'offline' | 'upload-failed' | 'cancelled' | 'timeout' | 'stale-generation' | 'http-error' | 'device-error' | 'protocol-error';
+/** `profile-limit`: the selected route cannot carry this animation, found before any file was published or command sent. */
+export type FailureCode = 'invalid-input' | 'profile-limit' | 'offline' | 'upload-failed' | 'cancelled' | 'timeout' | 'stale-generation' | 'http-error' | 'device-error' | 'protocol-error';
 export type OperationResult<T> = { generation: number; timing: Timing } & (
   | { ok: true; value: T }
   | { ok: false; code: FailureCode; priorEffects: 'none' | 'possible'; details?: { httpStatus?: number; deviceCode?: number } }

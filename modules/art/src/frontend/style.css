@@ -8,3 +8,5 @@
 @media(max-width:900px){.art-gallery-top{grid-template-columns:minmax(0,1fr)}.art-gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.art-gallery-grid,.art-provider-grid{grid-template-columns:minmax(0,1fr)}.art-request textarea{font-size:16px}.art-gallery .card{padding:16px}.art-tile-actions button{flex:1 0 auto}}
 @media(prefers-reduced-motion:reduce){.art-gallery *,.art-widget *{animation:none!important;transition:none!important}}
+
+.art-notice{display:grid;gap:.25rem;margin-top:.6rem;padding:.6rem;border:1px solid var(--edge-dense);border-radius:.5rem;color:var(--text);background:var(--panel);overflow-wrap:anywhere}.art-notice strong{font-size:.95rem}

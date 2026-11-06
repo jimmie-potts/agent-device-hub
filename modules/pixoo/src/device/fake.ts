@@ -136,7 +136,7 @@ export class FakeDeviceAdapter implements DeviceAdapter {
       };
       const interruption = (): FailureCode | undefined => {
         if (generation !== this.currentGeneration) return 'stale-generation';
-        if (signal?.aborted === true || options.current?.() === false) return 'cancelled';
+        if (signal?.aborted === true || options.current?.(count === 0 ? 'none' : 'possible') === false) return 'cancelled';
         if (this.clock.now() >= deadline) return 'timeout';
         return undefined;
       };

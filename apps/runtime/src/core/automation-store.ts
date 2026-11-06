@@ -28,6 +28,7 @@ export class AutomationStore {
         kind TEXT NOT NULL CHECK(kind IN ('event','routine')), trigger TEXT NOT NULL, action TEXT NOT NULL,
         created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS automation_power_guard (rule_id TEXT PRIMARY KEY, at_ms INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS automation_moment_reservations(moment_id TEXT NOT NULL,target TEXT NOT NULL,at_ms INTEGER NOT NULL,latest_ms INTEGER NOT NULL,agent TEXT,task TEXT,PRIMARY KEY(moment_id,target)) STRICT;
       CREATE TABLE IF NOT EXISTS automation_art_plans (id TEXT PRIMARY KEY, digest TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS interrupt_set (kind TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS automation_settings (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL);
@@ -64,10 +65,10 @@ export class AutomationStore {
       appendLog:prepare('INSERT INTO automation_log (at_ms,rule_id,event_source,event_id,event_kind,event_alias,agent,task,moment_id,priority_class,covers_status,target,outcome,reason,detail) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
       pruneLog:prepare(`DELETE FROM automation_log WHERE seq <= (SELECT MAX(seq) FROM automation_log) - ${LOG_LIMIT}`),
       readLog:prepare('SELECT * FROM automation_log WHERE seq < ? ORDER BY seq DESC LIMIT ?'),
-      handed:prepare(`SELECT COUNT(DISTINCT moment_id) AS count FROM automation_log WHERE priority_class='flourish' AND outcome<>'blocked' AND at_ms > ?`),
-      handedByAgent:prepare(`SELECT COUNT(DISTINCT moment_id) AS count FROM automation_log WHERE priority_class='flourish' AND outcome<>'blocked' AND at_ms > ? AND agent=?`),
-      handedByTask:prepare(`SELECT COUNT(DISTINCT moment_id) AS count FROM automation_log WHERE priority_class='flourish' AND outcome<>'blocked' AND agent=? AND task=?`),
-      lastToTarget:prepare(`SELECT MAX(at_ms) AS at FROM automation_log WHERE priority_class='flourish' AND outcome<>'blocked' AND target=?`)
+      handed:prepare(`SELECT COUNT(DISTINCT moment_id) AS count FROM (SELECT moment_id,at_ms FROM automation_log WHERE priority_class='flourish' AND outcome<>'blocked' UNION ALL SELECT moment_id,at_ms FROM automation_moment_reservations) WHERE at_ms > ?`),
+      handedByAgent:prepare(`SELECT COUNT(DISTINCT moment_id) AS count FROM (SELECT moment_id,at_ms,agent FROM automation_log WHERE priority_class='flourish' AND outcome<>'blocked' UNION ALL SELECT moment_id,at_ms,agent FROM automation_moment_reservations) WHERE at_ms > ? AND agent=?`),
+      handedByTask:prepare(`SELECT COUNT(DISTINCT moment_id) AS count FROM (SELECT moment_id,agent,task FROM automation_log WHERE priority_class='flourish' AND outcome<>'blocked' UNION ALL SELECT moment_id,agent,task FROM automation_moment_reservations) WHERE agent=? AND task=?`),
+      lastToTarget:prepare(`SELECT MAX(latest_ms) AS at FROM (SELECT at_ms AS latest_ms,target FROM automation_log WHERE priority_class='flourish' AND outcome<>'blocked' UNION ALL SELECT latest_ms,target FROM automation_moment_reservations) WHERE target=?`)
     };
     // Seed the owner-approved defaults exactly once. A later owner edit, including an empty set, is never re-seeded.
     this.transaction(() => {
@@ -79,6 +80,7 @@ export class AutomationStore {
   }
   private transaction<T>(work: () => T): T {
     this.check();
+    if(this.db.isTransaction)return work();
     this.db.exec('BEGIN IMMEDIATE');
     try { const result = work(); this.db.exec('COMMIT'); return result; }
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
@@ -169,6 +171,22 @@ export class AutomationStore {
       agent:row.agent === null ? null : String(row.agent),task:row.task === null ? null : String(row.task),momentId:String(row.moment_id),
       priorityClass:String(row.priority_class),coversStatus:row.covers_status === 1,target:String(row.target),outcome:String(row.outcome) as LogRow['outcome'],
       reason:row.reason === null ? null : String(row.reason),detail:row.detail === null ? null : String(row.detail)}));
+  }
+  /** Reservations precede effects and survive uncertainty. One shared moment counts once across its targets. */
+  reserveMoment(id:string,targets:readonly string[],atMs:number,latestMs:number,agent?:string,task?:string):void {
+    this.transaction(()=>{for(const target of targets.length===0?['']:targets)
+      this.db.prepare('INSERT OR IGNORE INTO automation_moment_reservations VALUES(?,?,?,?,?,?)').run(id,target,atMs,latestMs,agent??null,task??null);});
+  }
+  reservedUsage(sinceMs:number,except:string):number {
+    this.check();return Number(this.db.prepare(`SELECT COUNT(DISTINCT moment_id) AS n FROM (
+      SELECT moment_id,at_ms FROM automation_log WHERE priority_class='flourish' AND outcome<>'blocked'
+      UNION ALL SELECT moment_id,at_ms FROM automation_moment_reservations) WHERE at_ms>? AND moment_id<>?`).get(sinceMs,except)?.n??0);
+  }
+  reservedLatest(target:string,except:string):number|undefined {
+    this.check();const at=this.db.prepare(`SELECT MAX(latest_ms) AS at FROM (
+      SELECT moment_id,target,at_ms AS latest_ms FROM automation_log WHERE priority_class='flourish' AND outcome<>'blocked'
+      UNION ALL SELECT moment_id,target,latest_ms FROM automation_moment_reservations) WHERE target=? AND moment_id<>?`).get(target,except)?.at;
+    return at===null||at===undefined?undefined:Number(at);
   }
   /** Distinct flourish moments handed to the sender after `sinceMs`, optionally for one agent. */
   handedFlourishes(sinceMs: number, agent?: string): number {

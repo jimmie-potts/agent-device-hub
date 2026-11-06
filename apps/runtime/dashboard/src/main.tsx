@@ -1,5 +1,6 @@
+import {artScheduleCopy} from './art-schedule-client.ts';
 import {HabitatPage} from './habitat.tsx';
-import {ArtPresentationProvider, ArtWidget} from '@jimmie-potts/art/frontend';
+import {ArtPresentationProvider, ArtWidget, scheduledArtNotice} from '@jimmie-potts/art/frontend';
 import {ArtThemeProvider, ArtThemeSettings} from './art-theme.tsx';
 import {HomeLayout} from './home-layout.tsx';
 import type {HomeCardDefinition} from './home-catalog.ts';
@@ -253,7 +254,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       synced={state.sessions.synced} live={live} control={state.runtime.control} now={now}/></Widget>;
     return null;
   };
-  return <ArtPresentationProvider><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className="shell">
+  const schedule = artScheduleCopy(runtime);
+  const artNotice = scheduledArtNotice(schedule.record, state.feed === 'connected' && schedule.synced, operations, operationsLive, now);
+  return <ArtPresentationProvider notice={artNotice} timeZone={schedule.record?.timeZone}><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className="shell">
     <a className="skip" href="#main" onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
     <aside>
       <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>

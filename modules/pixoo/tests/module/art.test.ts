@@ -11,6 +11,8 @@ import type {RequestResult} from '@jimmie-potts/sdk';
 import {DEVICE, SECTION, World, bytesOf, hostedGif, manyColorGif, sleep, waitFor} from './support.js';
 import {FAMILIES} from '../../src/module/schemas.js';
 import {frameDigest} from '../../src/module/transport.js';
+import {HttpDeviceAdapter} from '../../src/device/http-adapter.js';
+import {encodeHostedGif} from '../../src/media/hosted-gif.js';
 
 const digest = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 const content = (id: string, bytes: Buffer, frames = 1): ArtStageContent => ({compositionId: digest(Buffer.from(id)), format: frames === 1 ? 'png' : 'gif', width: 64, height: 64,
@@ -24,7 +26,7 @@ async function accepted(pending: Promise<RequestResult>): Promise<string> {
   return result.requestId;
 }
 const artMoment = (world: World, compositionId: string, patch: object = {}, core = true): Promise<RequestResult> => (core ? world.core : world.probe).request(`bunny.cmd.moment-play.${DEVICE}`,
-  {type: 'org.bunny.moment.play.requested', subject: DEVICE, dataschema: 'https://bunny.invalid/events/moment-play/2.1',
+  {type: 'org.bunny.moment.play.requested', subject: DEVICE, dataschema: `https://bunny.invalid/events/moment-play/${'notice' in patch ? '2.2' : '2.1'}`,
     data: {momentId: `show-${compositionId}`, mood: 'celebrate', durationMs: 1000, priorityClass: 'event', coversStatus: true,
       startAtMs: Date.now(), toleranceMs: 10_000, art: {compositionId}, ...patch}}, {timeoutMs: 5000});
 const previewSchema = z.object({compositionId: z.string(), frameCount: z.number(), durationMs: z.number(), expiresAtMs: z.number(), profile: z.string(),
@@ -45,6 +47,76 @@ async function monitor(world: World): Promise<string> {
   await world.publishSession();
   return waitFor(() => world.device.state().shown?.digests[0], 'monitor');
 }
+
+void it('plays a labelled rain forecast with every exact art frame and leaves its staged bytes unchanged', async () => {
+  const world = await World.open();
+  try {
+    await world.start();
+    const base = await monitor(world);
+    const data = content('rain-art', hostedGif(19, 8), 8);
+    await world.outcome(await accepted(stage(world, data)));
+    const before = await preview(world, data.compositionId);
+    const now = Date.now();
+    const notice = {kind: 'rain-forecast', likelihood: 'chance', forecastStartAtMs: now + 60_000, forecastEndAtMs: now + 120_000,
+      forecastUpdatedAtMs: now - 1000, observedAtMs: now, staleAtMs: now + 120_000, weatherRevision: 1};
+    const writes = world.device.state().sent;
+    const outsider = await artMoment(world, data.compositionId, {notice}, false);
+    assert.ok(outsider.status === 'rejected'); assert.equal(outsider.error.error.code, 'forbidden');
+    const tooShort = await artMoment(world, data.compositionId, {notice: {...notice, staleAtMs: now + 500}});
+    assert.ok(tooShort.status === 'rejected'); assert.equal(tooShort.error.error.code, 'invalid-message');
+    assert.equal(world.device.state().sent, writes, 'refusals cause no device effect');
+    const requestId = await accepted(artMoment(world, data.compositionId, {notice, durationMs: 1000}));
+    await waitFor(() => world.device.state().shown?.frames === 8 ? true : undefined, 'labelled rain art');
+    const shown = world.device.state().shown;
+    assert.deepEqual(shown?.delaysMs, Array(8).fill(100));
+    assert.notEqual(shown?.digests[0], frameDigest(rgbFrame(19, 0)), 'a separate factual band accompanies the retained art');
+    assert.deepEqual(await preview(world, data.compositionId), before);
+    const outcome = await world.outcome(requestId);
+    assert.equal(outcome.data.result, 'succeeded');
+    assert.equal(outcome.data.evidence, 'transmitted');
+    await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'the current Monitor base');
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
+
+void it('refuses a hosted rain notice whose label cannot fit the GIF palette, with no transmission claim and Monitor kept', async () => {
+  // The production adapter and hosted encoder, over an in-memory transport: a full 256-color original is admissible on
+  // its own, and the label's black and white push it to 258 colors before any file is published or command sent.
+  const source = new Uint8Array(12288);
+  for (let pixel = 0; pixel < 4096; pixel += 1) source.set([(Math.floor(pixel / 64) * 19 + (pixel % 64) * 53) % 256, 13, 249], pixel * 3);
+  const gif = encodeHostedGif([source, source].map(rgb => ({rgb, delayMs: 100})));
+  const world = await World.open({section: {device: {...SECTION.device, profile: 'pixoo64-hosted-2026-10-01'}}});
+  const commands: string[] = [], published: number[] = [];
+  world.device.open = ({address, clock, profile}) => {
+    const adapter = new HttpDeviceAdapter({ip: address, clock, profile: {...profile, evidence: 'observed', readyDelayMs: 0}, hosted: {
+      files: {publish: bytes => { published.push(bytes.length); return {url: 'http://example.invalid/art.gif', transferred: Promise.resolve(), revoke() {}}; }},
+      encode: animation => encodeHostedGif(animation.frames),
+    }}, body => { commands.push(String(body.Command)); return Promise.resolve({error_code: 0, SelectIndex: 0, Brightness: 80, LightSwitch: 1, PicId: 27}); });
+    return Promise.resolve({adapter, close: () => adapter.close()});
+  };
+  try {
+    await world.start();
+    await world.outcome(await accepted(world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'monitor'})));
+    await world.publishSession();
+    await waitFor(() => commands.includes('Draw/SendHttpGif') ? true : undefined, 'the Monitor base');
+    const data = {...content('full-palette-rain', gif, 2), compositionId: digest(gif)};
+    assert.equal((await world.outcome(await accepted(stage(world, data)))).data.result, 'succeeded');
+    const now = Date.now();
+    const notice = {kind: 'rain-forecast', likelihood: 'chance', forecastStartAtMs: now + 60_000, forecastEndAtMs: now + 120_000,
+      forecastUpdatedAtMs: now - 1000, observedAtMs: now, staleAtMs: now + 120_000, weatherRevision: 1};
+    const before = commands.length;
+    const outcome = await world.outcome(await accepted(artMoment(world, data.compositionId, {notice})));
+    assert.equal(outcome.data.result, 'failed', JSON.stringify(outcome.data));
+    assert.equal(outcome.data.evidence, 'none');
+    assert.equal(outcome.data.error?.code, 'unsupported-capability');
+    assert.ok(!('transmission' in outcome.data), 'no transmission is recorded');
+    assert.deepEqual(published, [], 'no hosted file is published');
+    assert.ok(!commands.slice(before).includes('Device/PlayTFGif'), 'no hosted play command is sent');
+    // Nothing reached the panel, so Monitor stays the current base and draws itself again instead of stopping.
+    await waitFor(() => commands.slice(before).includes('Draw/SendHttpGif') ? true : undefined, 'the Monitor base after the refusal');
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
 
 void it('stages bounded still and animation without a display write or permanent import', async () => {
   const world = await World.open();

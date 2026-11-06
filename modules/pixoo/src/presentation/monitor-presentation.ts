@@ -8,6 +8,7 @@ import {renderNowPlaying,trackKey,type NowPlayingView} from './now-playing.js';
 import type {DashboardLayout} from './agent-dashboard.js';
 import type {PlaybackSourceStatus} from './sources.js';
 import {ApiError} from './errors.js';
+import {rainNoticeRefusal,type RainNotice} from '@jimmie-potts/event-contracts/v2/art-notice';
 export const defaultPresentation:PresentationConfiguration={version:1,mode:'media',filter:{},cadenceMs:1000};
 export const defaultNowPlaying:NowPlayingSetting={version:1,media:'off'};
 export const defaultMoments:MomentSetting={version:1,overMonitor:true};
@@ -30,6 +31,7 @@ export interface MomentPlay {
  delayMs?:number;
  /** Exact art also uses stopped Media, while explicit pauses and later player changes retain precedence. */
  exactArt?:true;
+ notice?:RainNotice;
 }
 /**
  * How a moment ended. A moment that reached the display carries its `ending` and its upload. One that never did has no
@@ -38,7 +40,7 @@ export interface MomentPlay {
 export type MomentResult={ending:MomentEnding;upload:OperationResult<UploadResult>;endedAtMs:number}
  |{ending:null;refused:MomentRefusal;upload?:OperationResult<UploadResult>|undefined};
 export type MomentEnding='completed'|'preempted'|'interrupted';
-export type MomentRefusal='expired'|'blocked'|'cancelled'|'content'|'upload'|'unknown';
+export type MomentRefusal='expired'|'blocked'|'cancelled'|'content'|'upload'|'unknown'|'notice';
 type Moment=MomentPlay&{
  /** `preparing` gets its frames, `waiting` waits for its start, `holding` waits for the player's pause, and `showing` owns the display. */
  phase:'preparing'|'waiting'|'holding'|'showing';
@@ -46,6 +48,7 @@ type Moment=MomentPlay&{
  over:'monitor'|'media'|'idle'|'stopped-media';
  rgb:readonly Uint8Array[];generation:number;until:number;resolve:(result:MomentResult)=>void;
  upload?:OperationResult<UploadResult>|undefined;writing?:Promise<void>|undefined;writtenAt?:number;missed?:boolean;rejected?:boolean;
+ noticeRefused?:boolean;noticeShortened?:boolean;
 };
 interface Options {
  configuration?:PresentationConfiguration;save:(value:PresentationConfiguration)=>Promise<void>;clock?:()=>number;renderCadenceMs?:number;
@@ -244,7 +247,7 @@ export class MonitorPresentation {
  private tickMoment(){
   const moment=this.moment;if(moment===null)return;
   const now=this.clock();
-  if(moment.phase==='showing'){if(this.attentionEnds())this.endMoment('preempted');else if(now>=moment.until)this.endMoment('completed');return;}
+  if(moment.phase==='showing'){if(this.attentionEnds())this.endMoment('preempted');else if(now>=moment.until)this.endMoment(moment.noticeShortened===true?'interrupted':'completed');return;}
   if(moment.phase!=='waiting'||now<moment.startAtMs)return;
   if(now>moment.startAtMs+moment.toleranceMs){this.refuseMoment(moment,'expired');return;}
   if(this.momentBlock(moment.coversStatus,moment.exactArt)!==null){this.refuseMoment(moment,'blocked');return;}
@@ -287,17 +290,25 @@ export class MonitorPresentation {
    if(upload?.ok===true){if(this.lastStart===moment.writtenAt)this.artShown=true;moment.resolve({ending,upload,endedAtMs:this.clock()});return;}
    // Nothing it wrote is known to have shown, so it has no ending: its outcome says why.
    const superseded=upload===undefined||(upload.priorEffects==='none'&&(upload.code==='cancelled'||upload.code==='stale-generation'));
-   moment.resolve({ending:null,refused:moment.rejected===true?'unknown':moment.missed===true?'expired':superseded?'cancelled':'upload',upload});
+   moment.resolve({ending:null,refused:moment.rejected===true?'unknown':moment.missed===true?'expired':superseded&&moment.noticeRefused===true?'notice':superseded?'cancelled':'upload',upload});
   });
   this.onChange();
  }
  /** Records what the moment's write did. A failed write ends the moment and gives its base back; a sent one starts its duration. */
  private momentUploaded(moment:Moment,result:OperationResult<UploadResult>|undefined){
   moment.upload=result;
-  const failed=result!==undefined&&!result.ok&&result.code!=='cancelled'&&result.code!=='stale-generation';
+  // A route refusal found before any effect is the moment's own limit, not the device's failure: its base stays current.
+  const failed=result!==undefined&&!result.ok&&result.code!=='cancelled'&&result.code!=='stale-generation'
+   &&!(result.code==='profile-limit'&&result.priorEffects==='none');
   if(moment.over==='monitor'&&failed)this.lastOutcome={generation:this.generation,renditionGeneration:this.dashboard.status().rendition?.generation??0,status:result.priorEffects==='possible'?'uncertain':'failed',code:result.code};
   if(this.moment!==moment)return;
-  if(result?.ok===true){moment.until=this.clock()+moment.durationMs;return;}
+  if(result?.ok===true){
+   const normalUntil=this.clock()+moment.durationMs;
+   moment.until=moment.notice===undefined?normalUntil:Math.min(normalUntil,moment.notice.staleAtMs,moment.notice.forecastEndAtMs);
+   moment.noticeShortened=moment.until<normalUntil;
+   if(this.clock()>=moment.until)this.endMoment('interrupted');
+   return;
+  }
   // Over Monitor a failed write is the device's failure, as a dashboard's is: Monitor stops until it is chosen again.
   if(moment.over==='monitor'&&failed)this.suspend();
   else this.endMoment('interrupted');
@@ -513,7 +524,12 @@ export class MonitorPresentation {
   // latest card afterward without cancelling a native write with possible effects.
   const observation=this.observation(),playback=JSON.stringify(this.playback),abort=new AbortController();
   // Stopped Media has no active base to resume: recheck its permission before each effect. Other moments retain their existing generation guard.
-  const current=moment!==undefined?()=>!this.closed&&playerGeneration===this.player.getState().generation
+  const noticeCurrent=(priorEffects:'none'|'possible'):boolean=>{
+   if(moment?.notice===undefined)return true;
+   if(priorEffects==='none'&&rainNoticeRefusal(moment.notice,moment,this.clock())!==undefined){moment.noticeRefused=true;return false;}
+   return this.clock()<Math.min(moment.notice.staleAtMs,moment.notice.forecastEndAtMs);
+  };
+  const current=moment!==undefined?(priorEffects:'none'|'possible'='none')=>!this.closed&&playerGeneration===this.player.getState().generation&&noticeCurrent(priorEffects)
     &&(moment.over!=='stopped-media'||this.moment===moment&&this.configuration.mode==='media'&&this.stoppedMedia()&&this.momentBlock(moment.coversStatus,true)===null)
    :()=>!this.closed&&generation===this.generation&&playerGeneration===this.player.getState().generation
    &&observation===this.observation()&&playback===JSON.stringify(this.playback)

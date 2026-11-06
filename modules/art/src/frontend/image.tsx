@@ -1,3 +1,4 @@
+import {ArtNotice} from './notice-label.js';
 import React, {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import type {FrontendApi} from '@jimmie-potts/sdk/frontend';
 import type {ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
@@ -66,6 +67,6 @@ export function ArtImage({api, artwork, live, compact = false, presented = false
     <div className="art-image-frame">{decoded !== undefined && <canvas ref={canvas} role="img" aria-label={decoded.label}/>}
       {decoded === undefined && <span className="hint">{currentStatus === 'stale' ? 'Art is unavailable or stale.' : currentStatus === 'loading' ? 'Loading artwork…' : 'No browser image is available.'}</span>}
     </div>
-    <figcaption>{decoded?.label ?? 'Generated artwork.'}{currentStatus === 'stale' ? ' Stale.' : currentStatus === 'loading' ? ' Loading selected artwork.' : currentStatus === 'unavailable' ? ' Selected artwork is unavailable.' : ''}</figcaption>
+    <figcaption>{decoded?.label ?? 'Generated artwork.'}{currentStatus === 'stale' ? ' Stale.' : currentStatus === 'loading' ? ' Loading selected artwork.' : currentStatus === 'unavailable' ? ' Selected artwork is unavailable.' : ''}<ArtNotice image={decoded?.evidence} ready={presented && visible && currentStatus === 'ready' && drawn === decoded?.evidence.renditionId}/></figcaption>
   </figure>;
 }

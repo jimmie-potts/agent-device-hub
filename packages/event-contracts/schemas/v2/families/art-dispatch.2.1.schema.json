@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-dispatch/2.1",
+  "description": "Existing forwarding plus a one-use initial ambient authorization. Maintenance retains the existing ungranted payload; core permits only the exact live initial opportunity.",
+  "type": "object",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "family",
+        "target",
+        "data"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "family": {
+          "const": "art-stage"
+        },
+        "target": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        "data": {
+          "type": "object",
+          "$ref": "https://bunny.invalid/events/art-stage/2.0#/$defs/content",
+          "unevaluatedProperties": false
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "family",
+        "target",
+        "data"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "family": {
+          "const": "art-ambient-set"
+        },
+        "target": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        "data": {
+          "type": "object",
+          "$ref": "https://bunny.invalid/events/art-ambient-set/2.0#/$defs/content",
+          "unevaluatedProperties": false
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "family",
+        "target",
+        "data",
+        "authorization"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "family": {
+          "const": "art-ambient-set"
+        },
+        "target": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "compositionId"
+          ],
+          "properties": {
+            "compositionId": {
+              "$ref": "https://bunny.invalid/events/art-stage/2.0#/$defs/compositionId"
+            }
+          }
+        },
+        "authorization": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+        }
+      }
+    }
+  ]
+}

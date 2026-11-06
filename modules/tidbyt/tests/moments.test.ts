@@ -65,7 +65,7 @@ async function onIdle(context: Parameters<typeof host>[0], server: SimulatedTron
 test('the Tronbyt backend declares moments, and the cloud refuses them and declares none', async context => {
   const server = new SimulatedTronbyt();
   const h = await onIdle(context, server);
-  assert.deepEqual(h.device().capabilities.moments, {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_DURATION_MS, coversStatus: true, art: {formats: ['png', 'gif'], maxBytes: 163_840}});
+  assert.deepEqual(h.device().capabilities.moments, {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_DURATION_MS, coversStatus: true, art: {formats: ['png', 'gif'], maxBytes: 163_840, notices: ['rain-forecast']}});
   const onCloud = await host(context, {sessions: [], playback: 'absent'});
   assert.deepEqual(onCloud.device().capabilities.moments, {supported: false});
   assert.deepEqual(await play(onCloud), {status: 'rejected', code: 'unsupported-capability'});

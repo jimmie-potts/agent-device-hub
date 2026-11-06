@@ -164,3 +164,15 @@ void test('read-only server markup has a labelled Automation page and disabled f
     'Saving or enabling runs nothing; Run now runs one occurrence.']) assert.ok(routines.includes(label), label);
   assert.equal(calls, 0);
 });
+
+void test('Automation exposes daily art without enabling it or writing during render', context => {
+  let writes = 0;
+  context.mock.method(globalThis, 'fetch', () => {writes += 1;throw new Error('render must not fetch');});
+  const state: DashboardState = {feed: 'connected', sessions: {synced: true, records: [], revision: 1, syncs: 1, changedAtMs: 1, refused: undefined},
+    runtime: {modules: [], control: false, copies: [], catalogFailed: false}};
+  const html = renderToStaticMarkup(createElement(page.AutomationPage,
+    {connection: {subscribe: () => () => {}, getState: () => state}, live: true, control: false}));
+  assert.match(html, /role="tab"[^>]*>Art<\/button>/);
+  assert.match(html, /Daily art/);
+  assert.equal(writes, 0);
+});

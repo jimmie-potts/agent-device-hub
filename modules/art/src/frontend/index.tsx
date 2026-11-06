@@ -1,3 +1,4 @@
+export {scheduledArtNotice} from './notice.js';
 import React, {useEffect, useId, useRef, useState} from 'react';
 import type {ArtState, ArtTarget, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {FrontendCommand, FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';

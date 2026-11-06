@@ -1,9 +1,10 @@
 // The art owner (Hub #680; docs/art-generation-qualification.md). Generation completes at durable admission because a
-// provider call can outlast the device deadline. Saved-art preparation (#297) completes only after tracked staging.
+// provider call can outlast the device deadline. Saved-art preparation (#297) and ambient selection (#684) wait for
+// their tracked children. Successful selection is never evidence of physical presentation.
 // Results appear in `art` state. Restart never re-runs generation or preparation.
 import {createHash, randomUUID} from 'node:crypto';
 import {errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
-import type {ArtAuto21, ArtAutoStart, ArtCancel, ArtPrepare, ArtPresent, ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
+import type {ArtAmbientSelect, ArtAuto22, ArtAutoStart, ArtCancel, ArtPrepare, ArtPresent, ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
 import {ART_ID, ART_STATE_KEY, ART_STATE_21_SCHEMA, ART_STATE_TYPE, artContentRef, type ArtCandidate, type ArtCatalogEdit, type ArtDisplayTarget, type ArtOutcome, type ArtProviderName, type ArtProviderSpend, type ArtReason, type ArtState21, type ArtTarget, type ArtTargetOutcome, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import {Outbox, Outcome, childOf, fullDisk, recordLog, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContent, type ModuleContentRequest, type ModuleContext, type Reply, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
 import {AnthropicIdeas} from './anthropic.js';
@@ -16,7 +17,7 @@ import {GIF_FRAMES, GIF_MODEL, IDEA_MAX_TOKENS, IDEA_MODEL, IMAGE_MODEL, type Pr
 import {boundIdea, contextFor, freshContext, ideaPrompt, ideaSystem, imagePrompt, localIdea, variationIdea} from './prompts.js';
 import {ProviderFault, type ArtProvider, type Transport} from './provider.js';
 import {realDispatch, realWeather, serveCommands, type ArtDispatchSeam, type ArtStageRequest, type StageResult, type WeatherSeam} from './seams.js';
-import {ArtStore, type Artwork, type Job, type JobTarget, type Preparation, type StageRow, type StoredComposition} from './store.js';
+import {ArtStore, type AmbientIntent, type Artwork, type Job, type JobTarget, type Preparation, type PromptContext, type StageRow, type StoredComposition} from './store.js';
 
 export const MAX_RUNNING = 2;
 export const MAX_PENDING = 8;
@@ -73,7 +74,7 @@ export function createArtModule(options: ArtModuleOptions = {}): BunnyModule<Art
 type Paid<T> = {status: 'answered'; value: T} | {status: 'refused'; reason: ArtReason} | {status: 'cancelled'} | {status: 'fault'; fault: ProviderFault};
 type Running = {readonly controller: AbortController; readonly work: Promise<void>};
 type Settled = Pick<JobTarget, 'outcome' | 'code' | 'reason'>;
-type AmbientChange = {stage: StageRow} | {clearArtworkId: string} | {clearStageId: string};
+type AmbientChange = {stage: StageRow} | {initialStageId: string} | {clearArtworkId: string} | {clearStageId: string};
 
 class ArtOwner {
   readonly #context: ModuleContext<ArtConfig>;
@@ -93,6 +94,7 @@ class ArtOwner {
   #ambientTimer: Cancel | undefined;
   #ambientGeneration = 0;
   #ambientWork = Promise.resolve();
+  readonly #ambientGrants = new Map<string, string>();
   #closed = false;
 
   constructor(context: ModuleContext<ArtConfig>, options: ArtModuleOptions) {
@@ -112,7 +114,10 @@ class ArtOwner {
     const {sdk} = this.#context;
     this.#subscriptions.push(await sdk.serveSync(['art'], () => ({revision: this.#store.revision(), states: [{type: ART_STATE_TYPE, subject: ART_ID, dataschema: ART_STATE_21_SCHEMA, data: this.state()}]})));
     this.#subscriptions.push(...await this.#weather.start());
-    this.#subscriptions.push(...await this.#dispatch.watch((requestId, result, error) => {void this.#stageResult(requestId, result, error);}));
+    this.#subscriptions.push(...await this.#dispatch.watch((requestId, result, error) => {
+      if (this.#closed || this.#context.signal.aborted) return;
+      void (this.#store.preparationForAmbient(requestId) === undefined ? this.#stageResult(requestId, result, error) : this.#ambientResult(requestId, result, error));
+    }));
     this.#subscriptions.push(...await serveCommands(sdk, {
       owner: command => this.#owner(command),
       automatic: command => this.#automatic(command),
@@ -123,6 +128,7 @@ class ArtOwner {
   }
   async stop(): Promise<void> {
     this.#closed = true;
+    this.#ambientGrants.clear();
     this.#ambientTimer?.();
     for (const cancel of this.#timers) cancel();
     this.#timers = [];
@@ -165,14 +171,15 @@ class ArtOwner {
   #owner(command: Command<ArtRequest>): Promise<Reply> {
     return this.#admit(command, 'art-request', 'owner', () => command.data.action === 'cancel' ? this.#cancel(command.data) : this.#start(command as Command<ArtAutoStart & {text?: string}>, 'owner'));
   }
-  #automatic(command: Command<ArtAuto21>): Promise<Reply> {
+  #automatic(command: Command<ArtAuto22>): Promise<Reply> {
     return this.#admit(command, 'art-auto', 'automatic', () => {
       switch (command.data.action) {
-        case 'start': return this.#start(command as Command<ArtAutoStart>, 'automatic');
+        case 'start': return this.#start(command as Command<ArtAutoStart & {weatherUse?: 'current' | 'omit'}>, 'automatic');
         case 'prepare': return this.#prepare(command.data, command);
+        case 'ambient': return this.#prepare(command.data, command);
         case 'present': this.#present(command.data); return undefined;
       }
-    }, command.data.action === 'prepare');
+    }, command.data.action === 'prepare' || command.data.action === 'ambient');
   }
   #catalog(command: Command<ArtCatalogEdit>): (() => void) | undefined {
     const {data} = command;
@@ -183,7 +190,7 @@ class ArtOwner {
       case 'reuse': return this.#reuse(data, command);
     }
   }
-  /** Admission is atomic. Preparation alone waits for its child's tracked effect before completing. */
+  /** Admission is atomic. Preparation and ambient selection wait for their tracked children before completing. */
   async #admit<T extends object>(command: Command<T>, family: 'art-request' | 'art-auto' | 'art-catalog-edit', admittedBy: 'owner' | 'automatic', apply: () => (() => void) | undefined, pending = false): Promise<Reply> {
     if (this.#closed || this.#context.signal.aborted) return errorBody('unavailable');
     const checked = this.#validator.validate(command, {nowMs: this.#context.clock.now()});
@@ -210,7 +217,7 @@ class ArtOwner {
     return {status: 'accepted'};
   }
   /** Reads only the declared fields, which the family's schema closes, so a label cannot widen what a job may do. */
-  #start(command: Command<ArtAutoStart & {text?: string}>, admittedBy: 'owner' | 'automatic'): () => void {
+  #start(command: Command<ArtAutoStart & {text?: string; weatherUse?: 'current' | 'omit'}>, admittedBy: 'owner' | 'automatic'): () => void {
     const {data} = command, now = this.#context.clock.now(), {requestId} = data, text = data.text ?? null, variationOf = data.variationOf ?? null;
     if (data.action !== 'start') refuse('invalid-request', 'only a start makes art');
     if (variationOf !== null) {
@@ -221,7 +228,10 @@ class ArtOwner {
     // The browser still comes first, so a display's free fallback can reuse its look.
     const targets = [...data.targets].sort((a, b) => Number(b === 'ui') - Number(a === 'ui'));
     this.#store.saveJob({requestId, artworkId: `art-${randomUUID()}`, purpose: data.purpose, origin: data.origin, admittedBy, text,
-      context: contextFor(requestId, now, this.#weather.read(), data.context), targets: targets.map(target => ({target, outcome: 'pending', code: null, reason: null, compositionId: null})),
+      ...(data.weatherUse === undefined ? {} : {weatherUse: data.weatherUse}),
+      context: contextFor(requestId, now, data.weatherUse === 'omit' ? null : this.#weather.read(), data.weatherUse === undefined ? data.context
+        : {...(data.context?.time === undefined ? {} : {time: data.context.time}), ...(data.context?.season === undefined ? {} : {season: data.context.season})}),
+      targets: targets.map(target => ({target, outcome: 'pending', code: null, reason: null, compositionId: null})),
       variationOf, status: 'queued', cancelRequested: false, outcome: null, idea: null, traceparent: command.traceparent, createdAtMs: now, finishedAtMs: null});
     return () => {this.#queue.push(requestId); this.#pump();};
   }
@@ -255,17 +265,21 @@ class ArtOwner {
     if (composition.target !== 'ui' || composition.renditions.length === 0 || composition.renditions.some(rendered => this.#store.blob(rendered.renditionId) === undefined)) refuse('invalid-state', 'that composition is not a saved browser image');
     this.#store.select({artworkId: data.artworkId, compositionId: data.compositionId});
   }
-  #prepare(data: ArtPrepare, parent: TraceContext): () => void {
+  #prepare(data: ArtPrepare | ArtAmbientSelect, parent: TraceContext): () => void {
     const composition = this.#savedComposition(data.artworkId, data.compositionId), target = composition.target;
     const rendered = composition.renditions[0], blob = rendered === undefined ? undefined : this.#store.blob(rendered.renditionId);
     if (!isDisplay(target) || rendered === undefined || rendered.format !== 'gif' || blob === undefined) return refuse('invalid-state', 'that composition is not a saved display animation');
+    if (data.action === 'ambient' && target !== 'tidbyt') return refuse('invalid-state', 'ambient art requires a saved Tidbyt composition');
     if (this.#store.pendingPreparations().length >= MAX_PENDING) return refuse('capacity', 'too many art preparations are waiting');
     const requestId = `stage-${randomUUID()}`, now = this.#context.clock.now();
-    this.#store.saveStage({requestId, artworkId: data.artworkId, compositionId: data.compositionId, target, status: 'pending', expiresAtMs: now + STAGE_LIFETIME_MS, ambient: false});
-    this.#store.savePreparation({requestId: data.requestId, stageRequestId: requestId, status: 'pending', traceparent: parent.traceparent, createdAtMs: now});
+    this.#store.saveStage({requestId, artworkId: data.artworkId, compositionId: data.compositionId, target, targetId: data.target, status: 'pending', expiresAtMs: now + STAGE_LIFETIME_MS, ambient: data.action === 'ambient'});
+    this.#store.savePreparation({requestId: data.requestId, stageRequestId: requestId, status: 'pending', traceparent: parent.traceparent, createdAtMs: now, ...(data.action === 'ambient' ? {kind: 'ambient' as const} : {})});
     const request: ArtStageRequest = {requestId, compositionId: data.compositionId, target, expectedTargetId: data.target, format: rendered.format, width: rendered.width, height: rendered.height,
       frames: rendered.frames, durationMs: rendered.durationMs, sha256: rendered.renditionId, bytes: blob.bytes, lifetimeMs: STAGE_LIFETIME_MS};
-    return () => {void this.#dispatchPreparation(request, parent);};
+    return () => {
+      if (data.action === 'ambient') this.#ambientGrants.set(requestId, data.authorization);
+      void this.#dispatchPreparation(request, parent);
+    };
   }
   async #dispatchPreparation(request: ArtStageRequest, parent: TraceContext): Promise<void> {
     if (this.#closed || this.#context.signal.aborted) return;
@@ -273,7 +287,7 @@ class ArtOwner {
     try {reply = await this.#dispatch.stage(request, parent);} catch {reply = errorBody('uncertain-result');}
     if (this.#closed || this.#context.signal.aborted) return;
     // A lost admission reply cannot supersede a tracked completion that arrived while the request was waiting.
-    if ('error' in reply && this.#store.preparationForStage(request.requestId)?.status === 'pending') {
+    if ('error' in reply && this.#store.stage(request.requestId)?.status === 'pending' && this.#store.preparationForStage(request.requestId)?.status === 'pending') {
       await this.#stageResult(request.requestId, reply.error.code === 'uncertain-result' ? Outcome.uncertain : Outcome.failed, reply.error);
     }
   }
@@ -284,13 +298,16 @@ class ArtOwner {
     if (definitive && result === Outcome.uncertain) return prior;
     const status = definitive && result !== prior ? 'conflict' : result;
     this.#store.savePreparation({...preparation, status});
+    if (status === Outcome.failed && preparation.kind === 'ambient' && preparation.ambientRequestId !== undefined && preparation.previous !== undefined) {
+      this.#store.replaceAmbientPredecessor(preparation.ambientRequestId, this.#priorAmbient(preparation.previous));
+    }
     // A child conflict proves that both definitive outcomes exist. Forward the missing evidence, atomically with
     // this terminal record, so the parent's tracker keeps the conflict instead of retaining a previous success.
     // Failure publishes first when both are new: a publication gap must not expose a usable success.
     const outcomes = status === 'conflict' ? [Outcome.failed, Outcome.succeeded].filter(value => value !== prior) : [status];
     for (const outcome of outcomes) {
       const failure = error ?? errorBody(outcome === Outcome.uncertain || status === 'conflict' ? 'uncertain-result' : 'unavailable', {
-        detail: status === 'conflict' ? 'the staging operation has conflicting definitive outcomes' : outcome === Outcome.uncertain ? 'art preparation has no definitive staging result' : 'the display did not complete art preparation',
+        detail: status === 'conflict' ? 'the art operation has conflicting definitive outcomes' : outcome === Outcome.uncertain ? 'the art operation has no definitive child result' : 'the display did not complete the art operation',
       }).error;
       add('bunny.event.art-auto.art', {kind: 'outcome', type: 'org.bunny.art.auto.completed', subject: ART_ID, dataschema: 'https://bunny.invalid/events/outcome/2.0',
         data: {requestId: preparation.requestId, result: outcome, evidence: outcome === Outcome.succeeded ? Outcome.observed : Outcome.none, ...(outcome === Outcome.succeeded ? {} : {error: failure})}}, {parent: {traceparent: preparation.traceparent}});
@@ -383,7 +400,7 @@ class ArtOwner {
       const provider = this.#providers.anthropic;
       if (provider?.text !== undefined && provider.capabilities.text) {
         const text = provider.text.bind(provider), key: PriceKey = {provider: 'anthropic', model: IDEA_MODEL, maxTokens: IDEA_MAX_TOKENS};
-        const answer = await this.#paid(job, 'idea', key, call => text({model: IDEA_MODEL, system: ideaSystem(), prompt: ideaPrompt(job.text, freshContext(job.context, this.#context.clock.now())), maxTokens: IDEA_MAX_TOKENS}, call), signal);
+        const answer = await this.#paid(job, 'idea', key, call => text({model: IDEA_MODEL, system: ideaSystem(), prompt: ideaPrompt(job.text, this.#promptContext(job)), maxTokens: IDEA_MAX_TOKENS}, call), signal);
         if (answer.status === 'answered' && answer.value.text !== null) idea = boundIdea(answer.value.text);
       }
     }
@@ -402,7 +419,7 @@ class ArtOwner {
     const model = display === undefined ? IMAGE_MODEL : GIF_MODEL, {quality, size} = display ?? BROWSER, frames = display === undefined ? undefined : GIF_FRAMES;
     const key: PriceKey = {provider: 'openai', model, quality, size, ...(frames === undefined ? {} : {frames})};
     const answer = await this.#paid(job, target, key, call => {
-      prompt = imagePrompt(idea, target, freshContext(job.context, this.#context.clock.now()));
+      prompt = imagePrompt(idea, target, this.#promptContext(job));
       return draw({model, quality, size, prompt, ...(frames === undefined ? {} : {gif: {frameCount: frames, frameDurationMs: FRAME_DELAY_MS}})}, call);
     }, signal);
     if (answer.status === 'refused') return this.#settleTarget(requestId, target, {outcome: Outcome.rejected, code: answer.reason === 'unknown-price' ? 'unsupported-capability' : 'capacity', reason: answer.reason});
@@ -542,11 +559,18 @@ class ArtOwner {
     }
   }
 
+  #promptContext(job: Job): PromptContext {
+    if (job.weatherUse === undefined) return freshContext(job.context, this.#context.clock.now());
+    return {...contextFor(job.requestId, this.#context.clock.now(), job.weatherUse === 'omit' ? null : this.#weather.read()),
+      imagination: job.context.imagination, time: job.context.time, season: job.context.season};
+  }
+
   // The handoff, through #679's seam.
   async #stage(artworkId: string, composition: StoredComposition, parent: TraceContext, ambient: boolean, renewing?: string): Promise<void> {
     const target = composition.target, rendered = composition.renditions[0], blob = rendered === undefined ? undefined : this.#store.blob(rendered.renditionId);
     if (!isDisplay(target) || rendered === undefined || blob === undefined || rendered.format !== 'gif') return;
-    const requestId = `stage-${randomUUID()}`, row: StageRow = {requestId, artworkId, compositionId: composition.compositionId, target, status: 'pending', expiresAtMs: this.#context.clock.now() + STAGE_LIFETIME_MS, ambient};
+    const targetId = renewing === undefined ? undefined : this.#store.stage(renewing)?.targetId;
+    const requestId = `stage-${randomUUID()}`, row: StageRow = {requestId, artworkId, compositionId: composition.compositionId, target, ...(targetId === undefined ? {} : {targetId}), status: 'pending', expiresAtMs: this.#context.clock.now() + STAGE_LIFETIME_MS, ambient};
     let reply: Reply;
     try {
       const saved = await this.#outbox.transaction(add => {
@@ -561,7 +585,7 @@ class ArtOwner {
       if (!saved) return;
       if (ambient) this.#renewAmbient();
       reply = await this.#dispatch.stage({requestId, compositionId: composition.compositionId, target, format: rendered.format, width: rendered.width, height: rendered.height, frames: rendered.frames, durationMs: rendered.durationMs,
-        sha256: rendered.renditionId, bytes: blob.bytes, lifetimeMs: STAGE_LIFETIME_MS}, parent);
+        sha256: rendered.renditionId, bytes: blob.bytes, lifetimeMs: STAGE_LIFETIME_MS, ...(targetId === undefined ? {} : {expectedTargetId: targetId})}, parent);
     } catch {
       reply = errorBody('uncertain-result');
     }
@@ -569,11 +593,17 @@ class ArtOwner {
   }
   async #stageResult(requestId: string, reported: StageResult, error?: ErrorDetail): Promise<void> {
     if (this.#closed || this.#context.signal.aborted) return;
-    let row: StageRow | undefined, result = reported === 'conflict' ? Outcome.uncertain : reported;
+    let row: StageRow | undefined, initial = false, result = reported === 'conflict' ? Outcome.uncertain : reported;
     try {
       await this.#outbox.transaction(add => {
         const preparation = this.#store.preparationForStage(requestId);
-        if (preparation !== undefined) {
+        if (preparation?.kind === 'ambient') {
+          initial = true;
+          // Staging is preparation only. A lost grant never becomes a renewable selection after restart.
+          if (preparation.ambientRequestId === undefined && result !== Outcome.succeeded) {
+            this.#settlePreparation(add, preparation, result, error);
+          }
+        } else if (preparation !== undefined) {
           const settled = this.#settlePreparation(add, preparation, reported, error);
           result = settled === 'conflict' ? Outcome.uncertain : settled;
         }
@@ -585,6 +615,13 @@ class ArtOwner {
         this.#publish(add);
       });
     } catch {return;}
+    if (initial) {
+      if (result !== Outcome.succeeded) this.#ambientGrants.delete(requestId);
+      else if (this.#ambientGrants.has(requestId)) await this.#sendAmbient({initialStageId: requestId}, childOf(undefined));
+      if (row?.status === Outcome.succeeded && result !== Outcome.succeeded) await this.#sendAmbient({clearStageId: requestId}, childOf(undefined));
+      this.#renewAmbient();
+      return;
+    }
     if (row?.ambient === true && row.status === Outcome.succeeded && result !== Outcome.succeeded) {
       await this.#sendAmbient({clearStageId: row.requestId}, childOf(undefined));
     }
@@ -600,7 +637,77 @@ class ArtOwner {
     this.#ambientWork = this.#ambientWork.then(() => this.#dispatchAmbient(change, parent));
     return this.#ambientWork;
   }
+  /** Initial authority is memory-only. The durable intent is written before sending, so a lost reply stays uncertain. */
+  async #dispatchInitialAmbient(stageRequestId: string): Promise<void> {
+    const authorization = this.#ambientGrants.get(stageRequestId);
+    if (authorization === undefined || this.#closed || this.#context.signal.aborted) return;
+    const requestId = `ambient-${randomUUID()}`;
+    try {
+      const intent = await this.#outbox.transaction(add => {
+        const preparation = this.#store.preparationForStage(stageRequestId), stage = this.#store.stage(stageRequestId);
+        if (this.#closed || this.#context.signal.aborted || preparation?.kind !== 'ambient' || preparation.ambientRequestId !== undefined || preparation.status !== 'pending') return undefined;
+        if (stage?.status !== Outcome.succeeded || (stage.expiresAtMs ?? 0) <= this.#context.clock.now() || this.#store.artwork(stage.artworkId)?.deletedAtMs !== null) {
+          this.#settlePreparation(add, preparation, Outcome.failed, errorBody('invalid-state', {detail: 'the saved ambient composition is no longer available'}).error);
+          return undefined;
+        }
+        const previous: AmbientIntent = {issued: this.#store.issuedAmbient() ?? null, stageRequestId: this.#store.ambient()?.requestId ?? null};
+        this.#store.savePreparation({...preparation, ambientRequestId: requestId, previous});
+        this.#store.issueAmbient({requestId, stageRequestId, artworkId: stage.artworkId, ...(stage.targetId === undefined ? {} : {targetId: stage.targetId})});
+        this.#store.selectAmbient(stageRequestId);
+        return {stage, parent: {traceparent: preparation.traceparent}};
+      });
+      this.#ambientGrants.delete(stageRequestId);
+      if (intent === undefined) return;
+      this.#renewAmbient();
+      let reply: Reply;
+      try {
+        reply = await this.#dispatch.ambient({requestId, target: 'tidbyt', compositionId: intent.stage.compositionId, authorization,
+          ...(intent.stage.targetId === undefined ? {} : {expectedTargetId: intent.stage.targetId})}, intent.parent);
+      } catch {reply = errorBody('uncertain-result');}
+      if ('error' in reply && this.#store.preparationForAmbient(requestId)?.status === 'pending') {
+        await this.#ambientResult(requestId, reply.error.code === 'uncertain-result' ? Outcome.uncertain : Outcome.failed, reply.error);
+      }
+    } catch {/* Storage failure sends nothing; restart reports the pending responsibility as uncertain. */}
+  }
+  /** Skip definitively refused predecessors: C's failure cannot restore an earlier, also-refused B. */
+  #priorAmbient(previous: AmbientIntent): AmbientIntent {
+    let intent = previous;
+    const seen = new Set<string>();
+    while (intent.issued !== null && !seen.has(intent.issued.requestId)) {
+      seen.add(intent.issued.requestId);
+      const preparation = this.#store.preparationForAmbient(intent.issued.requestId);
+      if (preparation?.status !== Outcome.failed || preparation.previous === undefined) break;
+      intent = preparation.previous;
+    }
+    return intent;
+  }
+  /** A prior explicit deletion still applies if a later replacement fails. Clearing remains guarded by issued identity. */
+  #restoreAmbient(previous: AmbientIntent, restoreSelection: boolean): string | undefined {
+    const prior = this.#priorAmbient(previous), artworkId = prior.issued?.artworkId;
+    const deleted = artworkId !== null && artworkId !== undefined && this.#store.artwork(artworkId)?.deletedAtMs !== null;
+    this.#store.issueAmbient(prior.issued ?? undefined);
+    if (restoreSelection) this.#store.selectAmbient(deleted ? null : prior.stageRequestId);
+    return deleted ? artworkId : undefined;
+  }
+  async #ambientResult(requestId: string, result: StageResult, error?: ErrorDetail): Promise<void> {
+    if (this.#closed || this.#context.signal.aborted) return;
+    try {
+      let clearArtworkId: string | undefined;
+      await this.#outbox.transaction(add => {
+        const preparation = this.#store.preparationForAmbient(requestId);
+        if (preparation === undefined) return;
+        const status = this.#settlePreparation(add, preparation, result, error);
+        if (status === Outcome.failed && preparation.previous !== undefined && this.#store.issuedAmbient()?.requestId === requestId) {
+          clearArtworkId = this.#restoreAmbient(preparation.previous, true);
+        }
+        this.#publish(add);
+      });
+      if (clearArtworkId !== undefined) void this.#sendAmbient({clearArtworkId}, childOf(undefined));
+      this.#renewAmbient();
+    } catch {/* The same tracked evidence may be delivered again; no command is retried. */}
+  }
   async #dispatchAmbient(change: AmbientChange, parent: TraceContext): Promise<void> {
+    if ('initialStageId' in change) {await this.#dispatchInitialAmbient(change.initialStageId); return;}
     try {
       const requestId = `ambient-${randomUUID()}`;
       const intent = await this.#outbox.transaction(() => {
@@ -609,18 +716,21 @@ class ArtOwner {
         if ('stage' in change) {
           const {stage} = change, selected = this.#store.ambient();
           if (selected?.requestId !== stage.requestId || selected.status !== Outcome.succeeded || (selected.expiresAtMs ?? 0) <= this.#context.clock.now() || this.#store.artwork(stage.artworkId)?.deletedAtMs !== null) return undefined;
-          this.#store.issueAmbient({requestId, stageRequestId: stage.requestId, artworkId: stage.artworkId});
-          return {compositionId: stage.compositionId, previous};
+          this.#store.issueAmbient({requestId, stageRequestId: stage.requestId, artworkId: stage.artworkId, ...(stage.targetId === undefined ? {} : {targetId: stage.targetId})});
+          return {compositionId: stage.compositionId, previous, targetId: stage.targetId};
         }
-        if ('clearArtworkId' in change ? previous?.artworkId !== change.clearArtworkId : previous?.stageRequestId !== change.clearStageId) return undefined;
-        this.#store.issueAmbient({requestId, stageRequestId: null, artworkId: null});
-        return {compositionId: null, previous};
+        if (previous === undefined || ('clearArtworkId' in change ? previous.artworkId !== change.clearArtworkId : previous.stageRequestId !== change.clearStageId)) return undefined;
+        this.#store.issueAmbient({requestId, stageRequestId: null, artworkId: null, ...(previous.targetId === undefined ? {} : {targetId: previous.targetId})});
+        return {compositionId: null, previous, targetId: previous.targetId};
       });
       if (intent === undefined) return;
-      const reply = await this.#dispatch.ambient({requestId, target: 'tidbyt', compositionId: intent.compositionId}, parent);
-      if ('error' in reply && reply.error.code !== 'uncertain-result') await this.#outbox.transaction(() => {
-        if (this.#store.issuedAmbient()?.requestId === requestId) this.#store.issueAmbient(intent.previous);
-      });
+      const reply = await this.#dispatch.ambient({requestId, target: 'tidbyt', compositionId: intent.compositionId, ...(intent.targetId === undefined ? {} : {expectedTargetId: intent.targetId})}, parent);
+      if ('error' in reply && reply.error.code !== 'uncertain-result') {
+        const clearArtworkId = await this.#outbox.transaction(() => this.#store.issuedAmbient()?.requestId === requestId
+          ? this.#restoreAmbient({issued: intent.previous ?? null, stageRequestId: null}, false) : undefined);
+        // A refused clear is not retried. Only a failed replacement can uncover the earlier explicit deletion.
+        if ('stage' in change && clearArtworkId !== undefined) void this.#sendAmbient({clearArtworkId}, childOf(undefined));
+      }
     } catch {/* The tile keeps what it holds. Nothing resends. */}
   }
   /** Keeps the ambient tile's copy alive while generation is paused. Staging is local and free. */

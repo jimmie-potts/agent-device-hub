@@ -19,6 +19,7 @@ import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {MessageValidator, SCHEMA_BASE, errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {commandSupported, registerDeviceFamilies, type Capabilities, type CompletedOutcome, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, type MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
+import {rainNoticeRefusal, type RainNotice} from '@jimmie-potts/event-contracts/v2/art-notice';
 import {artCommandRefusal} from '@jimmie-potts/event-contracts/v2/art';
 import type {ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {ART_PROFILE} from './art-profile.js';
@@ -85,7 +86,7 @@ const pinnedTile = (mode: string): TileName | undefined => mode === 'pin-status'
 export function displayCapabilities(nowPlaying: boolean, art = false): Capabilities {
   return {
     power: UNSUPPORTED, brightness: {supported: true, minimum: 0, maximum: 100}, modes: {supported: true, values: displayModes(nowPlaying)},
-    moments: {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_DURATION_MS, coversStatus: true, ...(art ? {art: {formats: ['png', 'gif'] as ('png' | 'gif')[], maxBytes: ART_PROFILE.maxBytes}} : {})},
+    moments: {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_DURATION_MS, coversStatus: true, ...(art ? {art: {formats: ['png', 'gif'] as ('png' | 'gif')[], maxBytes: ART_PROFILE.maxBytes, notices: ['rain-forecast'] as ['rain-forecast']}} : {})},
     media: UNSUPPORTED, scenes: UNSUPPORTED, zones: UNSUPPORTED, preview: UNSUPPORTED,
   };
 }
@@ -253,11 +254,12 @@ export type DisplayControlOptions = {
   presentation: () => 'attention' | 'status' | 'idle' | 'unknown';
   /** Supplies the frame a moment shows. */
   picture: MomentPicture;
+  noticePicture: (art: HeldArt, notice: RainNotice, signal: AbortSignal) => Promise<Uint8Array>;
   art?: (compositionId: string) => HeldArt | ErrorBody;
 };
 
 /** The one moment in hand, from its acceptance to its outcome. `ended` says why it stops before its time, and `taking` that its takeover's turn is queued. */
-type Moment = {data: MomentPlayRequest; exact?: Uint8Array; ended: 'yielded' | 'command' | undefined; wake: (() => void) | undefined; taking: boolean};
+type Moment = {data: MomentPlayRequest; exact?: HeldArt; ended: 'yielded' | 'command' | 'notice-expired' | undefined; wake: (() => void) | undefined; taking: boolean};
 
 /** The display's mode, brightness and pin, and the commands that change them. */
 export class DisplayControl {
@@ -328,7 +330,7 @@ export class DisplayControl {
     const {store, commit, track} = this.#options;
     const spec = COMMANDS[family];
     // A refusal here proves no effect: nothing has been stored or sent.
-    if (command.dataschema !== spec.dataschema && !(family === 'moment-play' && command.dataschema === `${SCHEMA_BASE}moment-play/2.1`)) return errorBody('invalid-request', {detail: 'the command is not of the family its key names'});
+    if (command.dataschema !== spec.dataschema && !(family === 'moment-play' && [`${SCHEMA_BASE}moment-play/2.1`, `${SCHEMA_BASE}moment-play/2.2`].includes(command.dataschema))) return errorBody('invalid-request', {detail: 'the command is not of the family its key names'});
     const checked = validator().validate(command);
     if (!checked.ok) return errorBody(checked.error.code, {detail: 'the command does not match its family\'s schema'});
     const {data} = command;
@@ -358,7 +360,7 @@ export class DisplayControl {
     if (this.#options.stopping()) return errorBody('unavailable', {detail: 'the Tidbyt module is stopping'});
     if (this.#pending.size >= MAX_PENDING) return errorBody('capacity', {detail: 'too many commands wait for the Tidbyt'});
     const moment = family === 'moment-play' ? data as unknown as MomentPlayRequest : undefined;
-    let exact: Uint8Array | undefined;
+    let exact: HeldArt | undefined;
     if (moment !== undefined) {
       const refusal = this.#refusal(moment);
       if (refusal !== undefined) return refusal;
@@ -366,7 +368,7 @@ export class DisplayControl {
         const copy = this.#options.art?.(moment.art.compositionId);
         if (copy === undefined) return errorBody('unsupported-capability', {detail: 'the Tidbyt does not offer exact art'});
         if ('error' in copy) return copy;
-        exact = copy.webp;
+        exact = copy;
       }
     }
 
@@ -503,6 +505,9 @@ export class DisplayControl {
       return errorBody('unsupported-capability', {detail: 'the Tidbyt does not offer this moment'});
     }
     if (clock.now() > moment.startAtMs + moment.toleranceMs) return errorBody('invalid-state', {detail: 'the moment\'s start window has passed'});
+    if (moment.notice !== undefined && moment.durationMs < MOMENT_MIN_HOLD_MS) return errorBody('unsupported-capability', {detail: 'a rain notice requires the full native hold'});
+    const noticeRefused = rainNoticeRefusal(moment.notice, moment, clock.now());
+    if (noticeRefused !== undefined) return noticeRefused;
     if (this.#pending.size > 0) return errorBody('capacity', {detail: 'a command or a moment is in hand on the Tidbyt'});
     if (this.#mayStand) return errorBody('unavailable', {detail: 'the last moment has not been released yet'});
     let seen: boolean;
@@ -568,6 +573,8 @@ export class DisplayControl {
       if (moment.ended === 'command') return outcome(Outcome.failed, Outcome.none, 'cancelled', 'a later command ended the moment before it started');
       const blocked = moment.ended === 'yielded' ? 'the moment yielded before it started' : this.#blocked(data);
       if (blocked !== undefined) return outcome(Outcome.failed, Outcome.none, 'invalid-state', blocked);
+      const noticeRefused = rainNoticeRefusal(data.notice, data, clock.now());
+      if (noticeRefused !== undefined) return outcome(Outcome.failed, Outcome.none, noticeRefused.error.code, noticeRefused.error.detail);
       return clock.now() > data.startAtMs + data.toleranceMs ? outcome(Outcome.failed, Outcome.none, 'expired', 'the moment\'s start window passed') : undefined;
     };
 
@@ -575,7 +582,10 @@ export class DisplayControl {
     const giveUp = new AbortController();
     let webp: Uint8Array | undefined;
     let pictureFailed: unknown;
-    const pictured = (async (): Promise<void> => { webp = moment.exact ?? await picture(data, giveUp.signal); })().catch((error: unknown) => { pictureFailed = error; });
+    const pictured = (async (): Promise<void> => {
+      webp = moment.exact === undefined ? await picture(data, giveUp.signal) : data.notice === undefined ? moment.exact.webp
+        : await this.#options.noticePicture(moment.exact, data.notice, giveUp.signal);
+    })().catch((error: unknown) => { pictureFailed = error; });
     await Promise.race([pictured, this.#wait(moment, MOMENT_PICTURE_TIMEOUT_MS)]);
     moment.wake?.();
     giveUp.abort();
@@ -621,7 +631,7 @@ export class DisplayControl {
         if (pushed.outcome !== 'sent') return pushed;
         transmitted = true;
         // Without a pin, this moment ends at the hold below, at once.
-        if (moment.ended !== undefined) return pushed;
+        if (moment.ended !== undefined || (data.notice !== undefined && clock.now() >= Math.min(data.notice.staleAtMs, data.notice.forecastEndAtMs))) return pushed;
         return await writes.connection.pinMoment(signal);
       }, () => {
         store.setState(command.source, requestId, 'started');
@@ -654,8 +664,11 @@ export class DisplayControl {
     }
     this.#options.reached(result, 'moment', command, requestId);
     if (result.outcome === 'sent') {
-      await this.#wait(moment, Math.max(MOMENT_MIN_HOLD_MS, data.durationMs));
+      const normalUntil = clock.now() + Math.max(MOMENT_MIN_HOLD_MS, data.durationMs);
+      const until = data.notice === undefined ? normalUntil : Math.min(normalUntil, data.notice.staleAtMs, data.notice.forecastEndAtMs);
+      await this.#wait(moment, until - clock.now());
       if (stopping()) return;
+      if (until < normalUntil && moment.ended === undefined) moment.ended = 'notice-expired';
     } else if (!transmitted && result.outcome === Outcome.failed) {
       // The server refused the push, so nothing of this moment stands.
       this.#standsNot();
@@ -671,7 +684,8 @@ export class DisplayControl {
     } else if (result.outcome === Outcome.failed) {
       await end(outcome(Outcome.failed, Outcome.transmitted, codeOf(result), 'the server took the frame and refused its pin'));
     } else if (endedEarly !== undefined) {
-      await end(outcome(Outcome.failed, Outcome.transmitted, 'cancelled', endedEarly === 'command' ? 'a later command ended the moment' : 'the moment yielded before its time'));
+      await end(outcome(Outcome.failed, Outcome.transmitted, 'cancelled', endedEarly === 'command' ? 'a later command ended the moment'
+        : endedEarly === 'notice-expired' ? 'rain forecast evidence expired during the presentation' : 'the moment yielded before its time'));
     } else {
       await end(outcome(Outcome.succeeded, Outcome.transmitted));
     }
