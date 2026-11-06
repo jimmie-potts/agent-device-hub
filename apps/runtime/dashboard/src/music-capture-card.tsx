@@ -1,10 +1,12 @@
 import React, {useEffect, useId, useState, useSyncExternalStore} from 'react';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CaptureInput} from '@jimmie-potts/event-contracts/v2/music-capture-data';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {DashboardConnection} from './connection.ts';
 import {useAttempt} from './command-control.tsx';
 import type {MusicCaptureFeed, MusicCaptureView} from './music-capture-feed.ts';
 import {MusicResponseControls} from './music-response-controls.tsx';
+import {MusicLightingCard} from './music-lighting-card.tsx';
 import './music.css';
 
 const empty: MusicCaptureView = {synced: false, state: undefined, features: undefined, clockQualified: false};
@@ -28,9 +30,9 @@ function statusText(view: MusicCaptureView, live: boolean): string {
     case 'unavailable': return microphone ? 'Selected microphone is unavailable. Check its connection and microphone permission on the Mac.' : 'Measurement is unavailable.';
   }
 }
-export function MusicCaptureCard({connection, connected, coreLive, control, operations, operationsLive}: {
+export function MusicCaptureCard({connection, connected, coreLive, control, operations, operationsLive, devices = [], presetPage = false}: {
   connection: DashboardConnection; connected: boolean; coreLive: boolean; control: boolean;
-  operations: readonly OperationRecord[]; operationsLive: boolean;
+  operations: readonly OperationRecord[]; operationsLive: boolean; devices?: readonly DeviceRecord[]; presetPage?: boolean;
 }): React.JSX.Element {
   const [scope, setScope] = useState<MusicCaptureFeed | undefined>();
   const [refreshing, setRefreshing] = useState(false);
@@ -62,9 +64,9 @@ export function MusicCaptureCard({connection, connected, coreLive, control, oper
     if (scope === undefined || refreshing) return;
     setRefreshing(true); try {await scope.refresh();} finally {setRefreshing(false);}
   };
-  return <article className="music-capture-card" aria-label="Music input measurement">
+  return <><article className="music-capture-card" aria-label="Music input measurement">
     <h2>Music input measurement</h2>
-    <p className="music-note">Measures the selected input. Lights are not connected.</p>
+    <p className="music-note">Measures the selected input. This card controls no lights; Music lighting below can render the Music.app measurement.</p>
     <label htmlFor={inputId}>Audio input</label>
     <select id={inputId} value={shownInput} disabled={!available || (state?.session.status !== 'idle' && state?.session.status !== 'unavailable') || start.locked || stop.locked}
       onChange={event => {if (event.target.value === 'music' || event.target.value === 'microphone') setInput(event.target.value);}}>
@@ -101,5 +103,7 @@ export function MusicCaptureCard({connection, connected, coreLive, control, oper
     {stop.requestId !== undefined && <p role="status">Stop: {resultText(stop.text)}</p>}
     <button type="button" className="secondary" disabled={!connected || !coreLive || scope === undefined || refreshing} onClick={() => {void refresh();}}>Refresh capture status</button>
     <MusicResponseControls view={view} available={Boolean(available)} operations={selected} operationsLive={operationsLive}/>
-  </article>;
+  </article>
+  <MusicLightingCard connection={connection} connected={connected} coreLive={coreLive} control={control} operations={operations} operationsLive={operationsLive}
+    capture={view} captureLive={live} devices={devices} presetPage={presetPage}/></>;
 }

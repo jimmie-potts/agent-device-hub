@@ -1,4 +1,5 @@
 import React, {useEffect, useState} from 'react';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {LightingLayoutRecord, OperationRecord, PlaybackLayoutRecord, PlaybackPlacement, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {PlaybackCard} from './device-controls.tsx';
 import {playbackArtworkUrl} from './playback-artwork.ts';
@@ -63,17 +64,18 @@ export function PlaybackWorkspace({runtime, connected, operations, operationsLiv
     {layoutLive && roomsLive && !rooms.some(room => players.some(player => layout?.assignments.some(item => item.playback === player.record.id && item.rooms.includes(room.id)) === true)) && <p className="hint">Choose room placement on the <a href="#/audio">Audio page</a>.</p>}
   </section>;
   if (route.kind !== 'home' && route.kind !== 'audio' && route.kind !== 'playback') return null;
+  const wallPage = !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'nanoleaf' && module.state === 'running' && module.pages.some(page => page.id === 'wall')) === true;
   const selected = homeSource !== undefined ? players.filter(player => player.copy.owner === homeSource.owner && player.record.id === homeSource.instance) : route.kind === 'playback' ? players.filter(player => player.record.id === route.sourceId) : players;
   return <section className="music-workspace" aria-label="Music">
     {route.kind === 'audio' ? <header className="page"><h1>Audio</h1></header> : route.kind === 'home' && homeSource === undefined ? <h2>Music</h2> : null}
     {route.kind === 'audio' && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'nanoleaf' && module.state === 'running'
       && module.pages.some(page => page.id === 'shows')) === true && <p><a href="#/module/nanoleaf/shows">Decorative shows</a> · Prepare private cue plans. Replay is unavailable.</p>}
-    {route.kind === 'audio' && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'nanoleaf' && module.state === 'running'
-      && module.pages.some(page => page.id === 'wall')) === true && <p><a href="#/module/nanoleaf/wall">Music effect preview</a> · Compare generated examples in the Wall page.</p>}
+    {route.kind === 'audio' && wallPage && <p><a href="#/module/nanoleaf/wall">Music effect preview</a> · Compare generated examples in the Wall page.</p>}
     {selected.length === 0 && <p className="hint">No playback records are available.</p>}
     <div className="music-grid">{selected.map(card)}</div>
     {route.kind === 'audio' && <MusicCaptureCard connection={connection} connected={connected} coreLive={coreLive && !runtime.catalogFailed}
-      control={runtime.control} operations={operations} operationsLive={operationsLive}/>}
+      control={runtime.control} operations={operations} operationsLive={operationsLive} presetPage={wallPage}
+      devices={runtime.copies.filter(copy => copy.owner === 'bunny/modules/nanoleaf' && copy.family === 'device').flatMap(copy => copy.records as readonly DeviceRecord[])}/>}
     {route.kind === 'audio' && <details className="music-placement"><summary>Show in rooms</summary>
       <p className="hint">Place the shared Music card in any room. This does not select a speaker or change AirPlay output.</p>
       {rooms.length === 0 && <p>Create rooms on the Rooms page first.</p>}
