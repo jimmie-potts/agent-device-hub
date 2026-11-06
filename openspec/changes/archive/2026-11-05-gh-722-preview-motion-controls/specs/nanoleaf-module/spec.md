@@ -50,4 +50,3 @@ The existing Wall Music effect preview SHALL show the owner-synced library throu
 - **WHEN** the operator loads a saved V1 recipe, edits its supported motion values and explicitly saves a new named preset
 - **THEN** the new preset and its generated preview retain the complete edited recipe, including unchanged sensitivity and smoothing
 - **AND** earlier saved presets remain byte-for-byte unchanged across reload while no source input, calibration, admission or lighting operation starts
-
