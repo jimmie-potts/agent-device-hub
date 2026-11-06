@@ -37,6 +37,33 @@ test('full runtime verification is independently required without dropping App c
   assert.match(gateVerdict(missing).problems.join(), /runtime-verify: missing/);
 });
 
+test('the runtime unit and scenario suites run in their own selected jobs, outside core (#1506)', () => {
+  const suites = { 'runtime-unit': 'npm run test:runtime:built', 'runtime-scenarios': 'npm run test:runtime:scenarios:built' };
+  const core = checks.jobs.core.steps.map(step => step.run);
+  const runtime = pr(['apps/runtime/src/main.ts']);
+  for (const [id, suite] of Object.entries(suites)) {
+    const job = checks.jobs[id];
+    assert.ok(job, `${id}: the suite has its own runner, so the core job keeps its headroom`);
+    assert.equal(job['timeout-minutes'], 40, `${id} keeps the 40-minute limit the suite ran under in core`);
+    assert.deepEqual(job.steps.filter(step => step.run).map(step => step.run), ['npm ci', 'npm run build', suite]);
+    assert.equal(core.includes(suite), false, `${suite} runs once, in ${id}`);
+    assert.ok(checks.jobs.gate.needs.includes(id), `the gate covers ${id}`);
+    assert.equal(runtime.jobs[id], true, `a runtime change runs ${id}`);
+    // Focused presentation admission kept both suites while they ran in core; it omits only the broad jobs.
+    assert.equal(pr(['apps/runtime/dashboard/src/music.css']).jobs[id], true, `focused admission keeps ${id}`);
+    assert.equal(pr(['modules/wispr/src/frontend/wispr.css']).jobs[id], true, `focused module admission keeps ${id}`);
+    assert.equal(pr(['apps/maintenance/src/planner.ts']).jobs[id], false, `a maintenance change skips ${id}`);
+    assert.equal(pr(['apps/chompi-bridge/src/bridge.ts']).jobs[id], false, `a CHOMPI change skips ${id}`);
+    assert.equal(selectChecks({ event: 'release_qualification', paths: [], complete: true }).jobs[id], true, `qualification runs ${id}`);
+    for (const result of ['failure', 'cancelled', 'skipped']) {
+      assert.equal(gateVerdict(needs(runtime, { [id]: { result, outputs: {} } })).ok, false, `${id}: ${result}`);
+    }
+    const missing = needs(runtime);
+    delete missing[id];
+    assert.match(gateVerdict(missing).problems.join(), new RegExp(`${id}: missing`));
+  }
+});
+
 // ---- Path selection ----
 
 test('a narrow module change selects its suites and known consumers, and omits unrelated work', () => {
@@ -45,7 +72,7 @@ test('a narrow module change selects its suites and known consumers, and omits u
   // The runtime composes every module, and maintenance imports the runtime.
   assert.deepEqual(result.groups, ['runtime', 'maintenance', 'modules']);
   assert.deepEqual(result.omitted, ['chompi', 'shared']);
-  assert.deepEqual(result.jobs, { firmware: false, 'app-verify': true, 'runtime-verify': true });
+  assert.deepEqual(result.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: false, 'app-verify': true, 'runtime-verify': true });
   assert.deepEqual(result.reasons.find(item => item.path === 'modules/pixoo/src/module.ts').groups, ['modules', 'runtime', 'maintenance']);
   assert.deepEqual(pr(['apps/bb8-windows/src/link.ts']).groups, []);
 });
@@ -62,7 +89,7 @@ test('a runtime dashboard change selects the runtime and its maintenance consume
   const result = pr(['apps/runtime/dashboard/src/music.css', 'apps/runtime/dashboard/src/card-chrome.css']);
   assert.deepEqual(result.groups, ['runtime', 'maintenance']);
   assert.equal(result.mode, 'focused');
-  assert.deepEqual(result.jobs, { firmware: false, 'app-verify': false, 'runtime-verify': false });
+  assert.deepEqual(result.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: false, 'app-verify': false, 'runtime-verify': false });
   // The old dashboard is shared with the old Hub and the runtime's dashboard copy, so it keeps the full gate.
   assert.equal(pr(['apps/dashboard/src/main.tsx']).mode, 'full');
 });
@@ -71,11 +98,11 @@ test('CHOMPI changes run the bridge suites and the firmware job, and maintenance
   for (const file of ['apps/chompi-bridge/src/bridge.ts', 'packages/chompi-protocol/fixtures/frames.json', 'firmware/chompi-controller/src/main.cpp']) {
     const result = pr([file]);
     assert.deepEqual(result.groups, ['chompi'], file);
-    assert.deepEqual(result.jobs, { firmware: true, 'app-verify': true, 'runtime-verify': false }, file);
+    assert.deepEqual(result.jobs, { 'runtime-unit': false, 'runtime-scenarios': false, firmware: true, 'app-verify': true, 'runtime-verify': false }, file);
   }
   const maintenance = pr(['apps/maintenance/src/planner.ts']);
   assert.deepEqual(maintenance.groups, ['maintenance']);
-  assert.deepEqual(maintenance.jobs, { firmware: false, 'app-verify': false, 'runtime-verify': false });
+  assert.deepEqual(maintenance.jobs, { 'runtime-unit': false, 'runtime-scenarios': false, firmware: false, 'app-verify': false, 'runtime-verify': false });
 });
 
 test('shared, toolchain, CI, selector and unknown paths select full coverage with their reason', () => {
@@ -102,7 +129,7 @@ test('shared, toolchain, CI, selector and unknown paths select full coverage wit
     assert.equal(result.mode, 'full', file);
     assert.deepEqual(result.groups, GROUPS, file);
     assert.deepEqual(result.omitted, [], file);
-    assert.deepEqual(result.jobs, { firmware: true, 'app-verify': true, 'runtime-verify': true }, file);
+    assert.deepEqual(result.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: true, 'app-verify': true, 'runtime-verify': true }, file);
     assert.ok(result.full.some(item => item.path === file && reason.test(item.reason)), `${file}: ${JSON.stringify(result.full)}`);
   }
 });
@@ -112,7 +139,7 @@ test('Markdown, documentation tooling and OpenSpec change no Checks suite, and t
     const result = pr([file]);
     assert.equal(result.mode, 'selected', file);
     assert.deepEqual(result.groups, [], file);
-    assert.deepEqual(result.jobs, { firmware: false, 'app-verify': false, 'runtime-verify': false }, file);
+    assert.deepEqual(result.jobs, { 'runtime-unit': false, 'runtime-scenarios': false, firmware: false, 'app-verify': false, 'runtime-verify': false }, file);
   }
   assert.deepEqual(pr(['tests/roborock_consumer.test.mjs']).groups, ['runtime']);
   // A Markdown file never widens a mixed change.
@@ -157,9 +184,7 @@ const outputs = selection => ({
 const needs = (selection, results = {}) => ({
   select: { result: 'success', outputs: outputs(selection) },
   core: { result: 'success', outputs: {} },
-  firmware: { result: selection.jobs.firmware ? 'success' : 'skipped', outputs: {} },
-  'app-verify': { result: selection.jobs['app-verify'] ? 'success' : 'skipped', outputs: {} },
-  'runtime-verify': { result: selection.jobs['runtime-verify'] ? 'success' : 'skipped', outputs: {} },
+  ...Object.fromEntries(Object.keys(JOBS).map(id => [id, { result: selection.jobs[id] ? 'success' : 'skipped', outputs: {} }])),
   ...results,
 });
 
@@ -167,7 +192,7 @@ test('the gate passes when every selected job succeeded and only unselected jobs
   const narrow = pr(['apps/maintenance/src/planner.ts']);
   const verdict = gateVerdict(needs(narrow));
   assert.equal(verdict.ok, true, verdict.problems.join('; '));
-  assert.deepEqual(verdict.lines.filter(line => /not selected/.test(line)).length, 3);
+  assert.deepEqual(verdict.lines.filter(line => /not selected/.test(line)).length, 5);
   assert.equal(gateVerdict(needs(pr(['packages/sdk/src/x.ts']))).ok, true);
   // An unselected job that ran anyway was executed, so it is reported as executed, not as skipped.
   const extra = gateVerdict(needs(narrow, { firmware: { result: 'success', outputs: {} } }));
@@ -243,7 +268,7 @@ test('select reads the exact PR comparison, counts renamed paths and writes outp
   assert.equal(requests[0].url, `https://api.github.com/repos/jimmie-potts/agent-device-hub/compare/${'a'.repeat(40)}...${'b'.repeat(40)}`);
   assert.equal(requests[0].init.method, 'GET');
   assert.equal(requests[0].init.headers.authorization, 'Bearer token-value');
-  assert.deepEqual(readOutputs(env.GITHUB_OUTPUT), { mode: 'selected', groups: '["maintenance","chompi"]', owners:'[]',head:'b'.repeat(40),firmware: 'true', 'app-verify': 'true', 'runtime-verify': 'false' });
+  assert.deepEqual(readOutputs(env.GITHUB_OUTPUT), { mode: 'selected', groups: '["maintenance","chompi"]', owners:'[]',head:'b'.repeat(40),'runtime-unit': 'false', 'runtime-scenarios': 'false', firmware: 'true', 'app-verify': 'true', 'runtime-verify': 'false' });
   const summary = fs.readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8');
   assert.match(summary, /Selected: maintenance, chompi/);
   assert.match(summary, /Omitted \(no changed path selects them\): runtime, modules, shared/);
@@ -305,7 +330,7 @@ test('local selection lists the same commands CI runs for the selection', () => 
   assert.ok(core.commands.includes('npm run lint:js'));
   assert.ok(core.commands.includes('npm run test:maintenance:built'));
   assert.equal(core.commands.includes('npm run test:runtime:built'), false);
-  assert.deepEqual(narrow.filter(job => !job.selected).map(job => job.id).sort(), ['app-verify', 'firmware', 'runtime-verify']);
+  assert.deepEqual(narrow.filter(job => !job.selected).map(job => job.id).sort(), ['app-verify', 'firmware', 'runtime-scenarios', 'runtime-unit', 'runtime-verify']);
   const full = selectedCommands(checks, pr(['package.json']));
   assert.ok(full.every(job => job.selected));
   const all = full.flatMap(job => job.commands);
@@ -368,7 +393,7 @@ const STEP_GROUPS = {
     'npm run test:observability:built': 'shared', 'npm run test:observability:pilot': 'shared', 'npm run test:observability:python': 'shared',
     'npm run test:observability:query': 'shared', 'npm run test:observability:package:built': 'shared', 'npm run test:contracts:built': 'shared',
     'npm run test:events:built': 'shared', 'npm run test:music-producer:built': 'shared', 'npm run test:music-producer:native': 'shared', 'npm run test:events:python': 'shared', 'npm run test:sdk:built': 'shared',
-    'npm run test:runtime:built': 'runtime', 'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs scripts/tests/mac-host.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs': 'runtime', 'npm run test:runtime:scenarios:built': 'runtime',
+    'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs scripts/tests/mac-host.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs': 'runtime',
     'npm run test:lifecycle:built': 'shared', 'npm run test:lifecycle:python': 'shared', 'npm run test:lifecycle:package:built': 'shared',
     'npm run test:agent-state:built': 'shared', 'npm run test:agent-state:python': 'shared', 'npm run test:agent-state:package:built': 'shared',
     'npm run test:wispr:built': 'shared', 'npm run test:wispr:package:built': 'shared',
@@ -425,7 +450,7 @@ test('a narrow change runs the suites its paths can break', () => {
 });
 
 test('Checks selects jobs and steps only through the selection outputs, and the gate covers every job', () => {
-  assert.deepEqual(Object.keys(checks.jobs), ['select', 'core', 'firmware', 'app-verify', 'runtime-verify', 'gate']);
+  assert.deepEqual(Object.keys(checks.jobs), ['select', 'core', 'runtime-unit', 'runtime-scenarios', 'firmware', 'app-verify', 'runtime-verify', 'gate']);
   const select = checks.jobs.select;
   assert.equal(select.name, 'Select affected checks');
   assert.equal(select.needs, undefined);
