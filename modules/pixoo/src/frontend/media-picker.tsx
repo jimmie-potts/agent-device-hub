@@ -10,7 +10,7 @@ function pageOf(value: unknown): Page {
   if (!object(value) || !Number.isSafeInteger(value.total) || (value.total as number) < 0 || !Array.isArray(value.items)
     || value.items.length > PICKER_PAGE_SIZE || !value.items.every((item: unknown) => object(item)
       && typeof item.renditionId === 'string' && /^[a-f0-9]{64}$/.test(item.renditionId) && typeof item.name === 'string'
-      && item.name.length <= 120 && Number.isSafeInteger(item.frameCount) && (item.frameCount as number) >= 1 && (item.frameCount as number) <= 1000
+      && item.name.length <= 120 && Number.isSafeInteger(item.frameCount) && (item.frameCount as number) >= 1
       && (item.compatible === undefined || typeof item.compatible === 'boolean'))) throw new Error('invalid catalog');
   return value as Page;
 }
@@ -36,32 +36,40 @@ export function AnimatedMedia({api, renditionId, label, active, animate = true}:
   const playing = active && animate && !reduced;
   useEffect(() => {
     let disposed = false, timer: number | undefined;
-    const frames: ImageBitmap[] = [];
+    const frames = new Map<number, ImageBitmap>();
     setBitmap(undefined); setFrame(0); setStatus('still');
     if (!active || !visible || !foreground) return;
-    setStatus('loading');
+    const closeFrames = (): void => { for (const image of frames.values()) image.close(); frames.clear(); };
     void (async () => {
+      setStatus('loading');
       const preview = previewOf(await api.read(`/modules/pixoo/content/preview.${renditionId}`), renditionId);
-      if (disposed) return;
       const count = playing ? preview.frameCount : 1;
-      // A visible page has at most six tiles; each rendition has at most 1,000 64 × 64 frames.
-      for (let index = 0; index < count; index++) {
-        const blob = await api.image(`/modules/pixoo/content/frame.${renditionId}.${index}`);
+      const show = async (index: number): Promise<void> => {
         if (disposed) return;
-        const image = await createImageBitmap(blob);
-        if (disposed) { image.close(); return; }
-        frames.push(image);
-        if (index === 0) setBitmap(image);
-      }
-      if (disposed) return;
-      setStatus(count > 1 ? 'animating' : 'still');
-      const show = (index: number): void => {
-        setBitmap(frames[index]); setFrame(index);
-        timer = window.setTimeout(() => { show((index + 1) % count); }, preview.frames[index]?.delayMs ?? 100);
+        let image = frames.get(index);
+        if (image === undefined) {
+          const blob = await api.image(`/modules/pixoo/content/frame.${renditionId}.${index}`);
+          if (disposed) return;
+          image = await createImageBitmap(blob);
+          if (disposed) { image.close(); return; }
+          // A tile keeps at most 128 KiB of decoded RGBA pixels, independent of the animation length.
+          if (frames.size >= 8) {
+            const oldest = frames.keys().next().value;
+            if (oldest !== undefined) { frames.get(oldest)?.close(); frames.delete(oldest); }
+          }
+          frames.set(index, image);
+        }
+        setBitmap(image); setFrame(index); setStatus(count > 1 ? 'animating' : 'still');
+        if (count > 1) timer = window.setTimeout(() => {
+          void show((index + 1) % count).catch(failed);
+        }, preview.frames[index]?.delayMs ?? 100);
       };
-      if (count > 1) show(0);
-    })().catch(() => { if (!disposed) { setStatus('unavailable'); frames.forEach(image => { image.close(); }); setBitmap(undefined); } });
-    return () => { disposed = true; window.clearTimeout(timer); frames.forEach(image => { image.close(); }); };
+      await show(0);
+    })().catch(failed);
+    function failed(): void {
+      if (!disposed) { setStatus('unavailable'); closeFrames(); setBitmap(undefined); }
+    }
+    return () => { disposed = true; window.clearTimeout(timer); closeFrames(); };
   }, [api, renditionId, active, visible, foreground, playing]);
   return <div ref={ref} className="pixoo-thumbnail" data-preview-state={status} data-preview-frame={frame}>
     <PreviewFrame bitmap={bitmap} label={label}/>

@@ -99,7 +99,7 @@ function PlaylistItem({context, item, index, length, disabled, edit, move, remov
     void Promise.all([context.api.read(`/modules/pixoo/content/preview.${item.renditionId}`),
       context.api.image(`/modules/pixoo/content/thumbnail.${item.renditionId}`)]).then(async ([value, image]) => {
       if (!object(value) || value.renditionId !== item.renditionId || !Number.isSafeInteger(value.frameCount)
-        || (value.frameCount as number) < 1 || (value.frameCount as number) > 1000) throw new Error('invalid preview');
+        || (value.frameCount as number) < 1) throw new Error('invalid preview');
       const loaded = await createImageBitmap(image);
       if (disposed) loaded.close();
       else { bitmap = loaded; setPreview(loaded); setAnimated((value.frameCount as number) > 1); }

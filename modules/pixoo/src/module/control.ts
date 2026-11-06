@@ -1,3 +1,4 @@
+import {PlaybackRouteError} from '../library/playback-policy.js';
 // The Pixoo's command handling (Hub #843). It replaces divoom-app-upgrade's ControlService for Monitor, Media, player,
 // playlist and catalog requests: each request becomes a call on the player, the Monitor presentation or the library, and
 // its result becomes a completed outcome under ADR 0012's "Errors, effects and outcomes". It knows nothing of the bus;
@@ -82,7 +83,7 @@ const REFUSALS: Readonly<Record<string, ErrorCode>> = {
   cancelled: 'cancelled', busy: 'capacity', 'not-found': 'not-found', 'revision-conflict': 'revision-conflict', 'no-context': 'invalid-state',
   'screen-off': 'invalid-state', closed: 'unavailable', 'invalid-input': 'invalid-request', 'unsupported-operation': 'invalid-request',
   'profile-limit': 'unsupported-capability', unsupported: 'invalid-request', 'decode-failed': 'invalid-request', 'upload-limit': 'too-large',
-  'pixel-limit': 'too-large', 'asset-referenced': 'invalid-state', 'checkpoint-owned': 'invalid-state', timeout: 'unavailable',
+  'pixel-limit': 'too-large', 'storage-limit': 'too-large', 'asset-referenced': 'invalid-state', 'checkpoint-owned': 'invalid-state', timeout: 'unavailable',
 };
 /** A domain error's code: the player's, the library's, the media store's and the presentation's errors each carry one. */
 function domainCode(error: unknown): string | undefined {
@@ -97,6 +98,7 @@ function domainCode(error: unknown): string | undefined {
  * `uncertain`, because an effect may have begun. The exception itself stays in memory.
  */
 export function errorCompletion(error: unknown): Completion {
+  if (error instanceof PlaybackRouteError) return failed('unsupported-capability', error.detail);
   const code = domainCode(error);
   if (code === undefined) return uncertain('the request failed after it began');
   const mapped = REFUSALS[code];
@@ -266,8 +268,7 @@ export class PixooControl {
   /**
    * One media change (`pixoo-asset-change`). An import or a new rendition decodes in the media child process, under its
    * heap cap, so a corrupt or oversized image fails only its own job; the library commits the result before the
-   * completion. Import admission uses the lenient simulator profile, as the old upload route did; playback checks the
-   * active profile.
+   * completion. Imports preserve source timing. Playback checks the selected command.
    */
   async asset(change: AssetChange, signal?: AbortSignal): Promise<Completion> {
     const library = this.#library;

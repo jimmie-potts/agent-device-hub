@@ -12,6 +12,7 @@ Earlier physical trials demonstrated two and twenty raw frames and five hundred 
 
 ### Modified Capabilities
 
+- `bunny-message-profile` covers explicit support for extended Pixoo staging and its forwarding.
 - `bunny-pixoo-module` covers admission, private staging, compatible catalog records, preview and playback.
 
 ## Impact

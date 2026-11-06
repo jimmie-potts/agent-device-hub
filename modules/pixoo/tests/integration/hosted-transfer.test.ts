@@ -1,6 +1,8 @@
 import {afterEach,expect,it,vi} from 'vitest';
 import {startHostedFiles} from '../../src/device/hosted-files.js';
 import {HttpDeviceAdapter} from '../../src/device/http-adapter.js';
+import {inspectGif} from '../../src/media/gif.js';
+import {DEFAULT_LIMITS, LIBRARY_PROFILE} from '../../src/media/contracts.js';
 import {encodeHostedGif} from '../../src/media/hosted-gif.js';
 import {ManualClock} from '../helpers/manual-clock.js';
 import {outsideInstalledPorts} from '../helpers/loopback.js';
@@ -57,4 +59,24 @@ it('expires access at fifteen seconds and bounds cumulative transfers',async()=>
  const file=h.publish(Buffer.alloc(10),new AbortController().signal);
  for(let i=0;i<5;i++){const response=await fetch(file.url);expect(response.status).toBe(200);await response.arrayBuffer();}
  expect((await fetch(file.url)).status).toBe(429);expect((await fetch(file.url)).status).toBe(404);
+});
+
+it('transfers every frame of a long animation in one whole-GIF command with its original timing', async () => {
+  const files = await host();
+  const commands: string[] = [];
+  let downloaded: Buffer | undefined;
+  const adapter = new HttpDeviceAdapter({ip: '192.168.1.2', profile, hosted: {files, encode: value => encodeHostedGif(value.frames)}}, async body => {
+    commands.push(String(body.Command));
+    expect(body.FileType).toBe(2);
+    const response = await fetch(String(body.FileName));
+    downloaded = Buffer.from(await response.arrayBuffer());
+    return {error_code: 0};
+  });
+  cleanup.push(() => adapter.close());
+  const long = Array.from({length: 1001}, (_, index) => ({rgb: Buffer.alloc(12288, index % 2), delayMs: 10}));
+  expect((await adapter.uploadAnimation({frames: long}, {generation: 0})).ok).toBe(true);
+  expect(commands).toEqual(['Device/PlayTFGif']);
+  expect(downloaded).toBeDefined();
+  const gif = inspectGif(downloaded as Buffer, DEFAULT_LIMITS, LIBRARY_PROFILE);
+  expect(gif.patches.map(patch => patch.delay)).toEqual(Array<number>(1001).fill(10));
 });

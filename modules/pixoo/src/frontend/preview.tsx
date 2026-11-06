@@ -9,7 +9,7 @@ const object = (value: unknown): value is Record<string, unknown> => typeof valu
 const positive = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 export function previewOf(value: unknown, id: string): PreviewData {
   if (!object(value) || value.renditionId !== id || value.width !== 64 || value.height !== 64
-    || !positive(value.frameCount) || value.frameCount > 1000 || !(value.durationMs === null || positive(value.durationMs))
+    || !positive(value.frameCount) || !(value.durationMs === null || positive(value.durationMs))
     || !Array.isArray(value.frames) || value.frames.length !== value.frameCount
     || !value.frames.every((frame: unknown, index) => object(frame) && frame.index === index && (frame.delayMs === null || positive(frame.delayMs)))
     || !Array.isArray(value.warnings) || !value.warnings.every((warning: unknown) => object(warning)

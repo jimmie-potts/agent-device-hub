@@ -24,6 +24,8 @@ const json = <T>(value:unknown):T => JSON.parse(String(value)) as T;
 /** The tables of a database the caller owns that are not the catalog's: the SDK's outbox and a module's own. */
 export const CALLER_TABLES=/^(?:bunny|pixoo)_/;
 const HOSTED='pixoo64-hosted-2026-10-01';
+// Results under the former profile name included historical sample-count and speed restrictions.
+const HOSTED_CHECK_POLICY = 'hosted-gif-protocol-v2';
 /**
  * Where an attached library keeps each multi-frame rendition's hosted check, by rendition and profile: whether its frames
  * fit the hosted GIF's palette and timing. The check reads every frame, so it runs once per rendition and profile.
@@ -136,15 +138,15 @@ export class Library {
   private async validateHosted(id:string,profile?:Readonly<MediaProfile>,signal?:AbortSignal):Promise<void> {
     const rendition=this.manifest(id);
     if(profile?.name!==HOSTED||rendition.frames.length<2)return;
-    const kept=this.checks?.get(id,profile.name);
+    const kept=this.checks?.get(id,HOSTED_CHECK_POLICY);
     if(kept===true)return;
     if(kept===false)throw new MediaError('profile-limit');
     if(signal?.aborted===true)throw new LibraryError('cancelled');
     const loaded=await this.media.readFrames(id,signal);
     if(JSON.stringify(rendition)!==JSON.stringify(loaded.rendition))throw new LibraryError('catalog-corrupt');
     try{hostedPalette(loaded.frames.map((rgb,index)=>({rgb,delayMs:rendition.frames[index]?.delayMs??100})));}
-    catch(error){if(error instanceof MediaError&&error.code==='profile-limit')this.checks?.set(id,profile.name,false);throw error;}
-    this.checks?.set(id,profile.name,true);
+    catch(error){if(error instanceof MediaError&&error.code==='profile-limit')this.checks?.set(id,HOSTED_CHECK_POLICY,false);throw error;}
+    this.checks?.set(id,HOSTED_CHECK_POLICY,true);
   }
   /**
    * Every rendition, oldest first, with its compatibility with `profile` from its manifest and its kept hosted check. It
@@ -157,7 +159,7 @@ export class Library {
     const rendition=json<Rendition>(row.manifest_json);
     let compatible:boolean|undefined=true;
     try{renditionTiming(rendition,profile,stillDelayMs);}catch(error){if(error instanceof MediaError&&error.code==='profile-limit')compatible=false;else throw error;}
-    if(compatible&&profile.name===HOSTED&&rendition.frames.length>=2)compatible=this.checks?.get(rendition.id,profile.name);
+    if(compatible&&profile.name===HOSTED&&rendition.frames.length>=2)compatible=this.checks?.get(rendition.id,HOSTED_CHECK_POLICY);
     return {assetId:String(row.asset_id),renditionId:String(row.id),name:String(row.name),format:rendition.source.format,frameCount:rendition.frames.length,durationMs:rendition.effectiveDurationMs,compatible};
   }
   /** SQL pages with the same kept compatibility evidence as catalogMedia; never validates frames or writes checks. */
@@ -214,7 +216,7 @@ export class Library {
         json_array_length(manifest_json,'$.frames') AS frame_count,json_extract(manifest_json,'$.effectiveDurationMs') AS duration_ms
         FROM renditions WHERE asset_id=? ORDER BY id`).all(id);
       return {catalogRevision:this.catalogRevision,asset,renditions:rows.map(row=>({
-        id:String(row.id),transform:json<Rendition['transform']>(row.transform_json),profile:json<MediaProfile>(row.profile_json),
+        id:String(row.id),transform:json<Rendition['transform']>(row.transform_json),profile:json<Rendition['profile']>(row.profile_json),
         format:String(row.format),frameCount:Number(row.frame_count),durationMs:row.duration_ms===null?null:Number(row.duration_ms),
       }))};
     },signal);

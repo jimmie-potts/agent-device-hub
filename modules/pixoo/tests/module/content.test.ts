@@ -142,7 +142,8 @@ void it('returns safe invalid/not-found refusals and remains usable after bad re
       [`playlist.${playlistId}`, {q: 'x'}, 'invalid-request'],
       ['playlist.bad-id', {}, 'invalid-request'],
       [`playlist.${randomUUID()}`, {}, 'not-found'],
-      [`frame.${'a'.repeat(64)}.99999`, {}, 'invalid-request'],
+      [`frame.${'a'.repeat(64)}.99999`, {}, 'not-found'],
+      [`frame.${'a'.repeat(64)}.9007199254740992`, {}, 'invalid-request'],
       [`preview.${'a'.repeat(64)}`, {}, 'not-found'],
       ['unknown', {}, 'not-found'],
     ] as const) {

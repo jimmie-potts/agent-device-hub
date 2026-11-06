@@ -2,6 +2,7 @@ import {
   systemClock, type Animation, type Clock, type DeviceAdapter, type FailureCode,
   type OperationOptions, type OperationResult, type ProbeResult, type UploadResult,
 } from './contracts.js';
+import {frameCountRefusal, timingRefusal} from './animation-policy.js';
 import { snapshotAnimation } from './frames.js';
 import type {HostedFiles} from './hosted-files.js';
 import { createDeviceTransport, DeviceRequestError, validateDeviceIp, type DeviceTransport } from './http-transport.js';
@@ -69,9 +70,14 @@ export class HttpDeviceAdapter implements DeviceAdapter {
   }
   uploadAnimation(animation: Animation, options: OperationOptions): Promise<OperationResult<UploadResult>> {
     const p = this.profile;
-    const snapshot = Array.isArray(animation?.frames) && animation.frames.length <= p.maxFrames ? snapshotAnimation(animation) : undefined;
-    const valid = !!snapshot && snapshot.frames.length <= p.maxFrames && snapshot.frames.every(frame =>
-      frame.delayMs >= p.minDelayMs && frame.delayMs <= p.maxDelayMs && (!p.uniformTiming || frame.delayMs === snapshot.frames[0]?.delayMs));
+    const route = this.options.hosted === undefined ? 'direct' : 'hosted';
+    const snapshot = Array.isArray(animation?.frames) && frameCountRefusal(route, animation.frames.length) === undefined
+      ? snapshotAnimation(animation) : undefined;
+    // Qualification runs may deliberately restrict their sample or try heterogeneous timing.
+    const valid = snapshot !== undefined && (p.evidence === 'unverified'
+      ? snapshot.frames.length <= p.maxFrames && snapshot.frames.every(frame => frame.delayMs >= p.minDelayMs
+        && frame.delayMs <= p.maxDelayMs && (!p.uniformTiming || frame.delayMs === snapshot.frames[0]?.delayMs))
+      : timingRefusal(route, snapshot.frames.map(frame => frame.delayMs)) === undefined);
     return this.enqueue(options, valid, async context => {
       // enqueue runs only valid work, which always has a snapshot.
       if(snapshot===undefined)throw new DeviceRequestError('invalid-input');

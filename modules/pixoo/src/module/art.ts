@@ -5,16 +5,17 @@ import {z} from 'zod';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {artReferenceRefusal, artStageDecision, MAX_ART_BYTES, type ArtCopy, type ArtStageRequest} from '@jimmie-potts/event-contracts/v2/art';
 import {SdkError, type ModuleContent, type ModuleContentRequest} from '@jimmie-potts/sdk';
-import {DEFAULT_TRANSFORM, hostedPalette, MediaError, MediaStore, type MediaProfile, type Rendition} from '../media/index.js';
-import {PIXOO64_HOSTED_PROFILE} from '../media/contracts.js';
+import {DEFAULT_TRANSFORM, LIBRARY_PROFILE, hostedPalette, MediaError, MediaStore, type MediaProfile, type Rendition} from '../media/index.js';
+import {animationRoute, frameCountRefusal, timingRefusal} from '../device/animation-policy.js';
+import {PlaybackRouteError} from '../library/playback-policy.js';
+import {isFrameIndex} from './content.js';
 import {renditionId} from '../media/store.js';
 
 const HASH = /^[a-f0-9]{64}$/;
 const rowSchema = z.object({composition_id: z.string().regex(HASH), sha256: z.string().regex(HASH), rendition_id: z.string().regex(HASH),
-  expires_at_ms: z.number().int().nonnegative(), profile: z.string(), delay_ms: z.number().int().min(100).max(800)});
+  expires_at_ms: z.number().int().nonnegative(), profile: z.string(), delay_ms: z.number().int().positive()});
 type Row = z.infer<typeof rowSchema>;
 export const MAX_ART_COPIES = 128;
-export const MAX_ART_FRAMES = 20;
 const MAX_QUEUED = 4;
 const copyOf = (row: Row): ArtCopy => ({compositionId: row.composition_id, sha256: row.sha256, expiresAtMs: row.expires_at_ms});
 const refusal = (detail: string): ErrorBody => errorBody('invalid-request', {detail});
@@ -47,12 +48,14 @@ export class PixooArt {
 
   #media(id: string): MediaStore {
     return new MediaStore({directory: join(this.directory, id), limits: {maxUploadBytes: MAX_ART_BYTES,
-      maxSourcePixels: 64 * 64 * MAX_ART_FRAMES, maxGifCanvasPixels: 64 * 64, concurrency: 1, maxQueued: 0}});
+      maxGifCanvasPixels: 64 * 64, concurrency: 1, maxQueued: 0}});
   }
 
   stageRefusal(stage: ArtStageRequest): ErrorBody | undefined {
     if (this.#queued >= MAX_QUEUED) return errorBody('capacity', {detail: 'the art staging queue is full'});
-    if (stage.width !== 64 || stage.height !== 64 || stage.frames > MAX_ART_FRAMES) return refusal('Pixoo art must be 64 by 64 with at most twenty frames');
+    if (stage.width !== 64 || stage.height !== 64) return refusal('Pixoo art must be 64 by 64');
+    const limit = frameCountRefusal(animationRoute(this.profile.name), stage.frames);
+    if (limit !== undefined) return errorBody('unsupported-capability', {detail: limit});
     const row = this.#row(stage.compositionId), decision = artStageDecision(row === undefined ? undefined : copyOf(row), stage, this.now());
     if ('error' in decision) return decision;
     const active = this.db.prepare('SELECT count(*) AS count FROM pixoo_art_copies WHERE expires_at_ms > ?').get(this.now())?.count;
@@ -72,16 +75,27 @@ export class PixooArt {
       if ('error' in decision) throw new SdkError(decision);
       if (this.signal.aborted) throw new MediaError('cancelled');
       const expiresAtMs = admittedAtMs + stage.lifetimeMs;
-      const id = renditionId(stage.sha256, DEFAULT_TRANSFORM, this.profile), media = this.#media(id);
+      if (decision.action === 'reuse' && row !== undefined && row.profile === this.profile.name) {
+        const retained = await this.#media(row.rendition_id).getRendition(row.rendition_id);
+        if (mismatch(stage, retained)) throw new MediaError('invalid-input');
+        this.db.prepare('UPDATE pixoo_art_copies SET expires_at_ms = ? WHERE composition_id = ?').run(expiresAtMs, stage.compositionId);
+        return;
+      }
+      const id = renditionId(stage.sha256, DEFAULT_TRANSFORM, LIBRARY_PROFILE), media = this.#media(id);
       const bytes = Buffer.from(stage.base64, 'base64');
       const input = async function* (): AsyncGenerator<Buffer> { yield await Promise.resolve(bytes); };
       try {
-        const rendition = await media.render(input(), {profile: this.profile, signal: this.signal});
+        const rendition = await media.render(input(), {signal: this.signal});
         if (mismatch(stage, rendition)) throw new MediaError('invalid-input');
         const delayMs = rendition.frames[0]?.delayMs ?? 500;
-        if (rendition.frames.length > MAX_ART_FRAMES || delayMs < 100 || delayMs > 800
-          || rendition.frames.some(frame => frame.delayMs !== null && frame.delayMs !== delayMs)) throw new MediaError('profile-limit');
-        if (this.profile.name === PIXOO64_HOSTED_PROFILE.name && rendition.frames.length > 1) {
+        const route = animationRoute(this.profile.name);
+        // The transient player transmits one native delay for the whole composition.
+        if (rendition.frames.some(frame => frame.delayMs !== null && frame.delayMs !== delayMs)) {
+          throw new PlaybackRouteError('Pixoo art playback requires one frame delay.');
+        }
+        const delayIssue = timingRefusal(route, rendition.frames.map(frame => frame.delayMs ?? delayMs));
+        if (delayIssue !== undefined) throw new PlaybackRouteError(delayIssue);
+        if (route === 'hosted' && rendition.frames.length > 1) {
           const loaded = await media.readFrames(id, this.signal);
           hostedPalette(loaded.frames.map(rgb => ({rgb, delayMs})));
         }
@@ -116,7 +130,7 @@ export class PixooArt {
     const parts = ref.split('.'), [kind, compositionId, frame] = parts;
     if (parts.length !== (kind === 'art-frame' ? 3 : 2) || compositionId === undefined || !HASH.test(compositionId)
       || Object.keys(request?.query ?? {}).length !== 0 || (kind !== 'art-preview' && kind !== 'art-frame')
-      || (kind === 'art-frame' && (frame === undefined || !/^(0|[1-9][0-9]?)$/.test(frame)))) return refusal('the art content reference is invalid');
+      || (kind === 'art-frame' && (frame === undefined || !isFrameIndex(frame)))) return refusal('the art content reference is invalid');
     const refused = this.referenceRefusal(compositionId);
     if (refused !== undefined) return refused;
     const row = this.#row(compositionId);
@@ -128,7 +142,7 @@ export class PixooArt {
       if (loaded.bytes !== undefined) return {type: 'image/png', bytes: loaded.bytes};
       return {type: 'application/json', bytes: Buffer.from(JSON.stringify({compositionId, width: 64, height: 64, format: rendition.source.format,
         frameCount: rendition.frames.length, durationMs: rendition.effectiveDurationMs ?? 0, sha256: row.sha256, expiresAtMs: row.expires_at_ms,
-        profile: rendition.profile.name, frames: rendition.frames.map(item => ({index: item.index, delayMs: item.delayMs, sha256: item.previewHash,
+        profile: row.profile, frames: rendition.frames.map(item => ({index: item.index, delayMs: item.delayMs, sha256: item.previewHash,
           ref: `art-frame.${compositionId}.${item.index}`}))}))};
     } catch (error) {
       if (error instanceof MediaError) return errorBody(error.code === 'cancelled' ? 'cancelled' : error.code === 'invalid-input' ? 'invalid-request' : 'unavailable', {detail: 'the private art copy could not be read'});

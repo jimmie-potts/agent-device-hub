@@ -9,6 +9,7 @@ import type {MomentEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {ArtStageContent} from '@jimmie-potts/event-contracts/v2/art';
 import type {RequestResult} from '@jimmie-potts/sdk';
 import {DEVICE, SECTION, World, bytesOf, hostedGif, manyColorGif, sleep, waitFor} from './support.js';
+import {gifFixture} from '../helpers/media-fixtures.js';
 import {FAMILIES} from '../../src/module/schemas.js';
 import {frameDigest} from '../../src/module/transport.js';
 
@@ -143,7 +144,7 @@ void it('refuses forged callers, bad bytes, decoded metadata and excessive resou
     const forged = await world.probe.request(`bunny.cmd.art-stage.${DEVICE}`, {type: 'org.bunny.art.stage.requested', subject: DEVICE,
       dataschema: 'https://bunny.invalid/events/art-stage/2.0', data}, {timeoutMs: 5000});
     assert.ok(forged.status === 'rejected'); assert.equal(forged.error.error.code, 'forbidden');
-    for (const bad of [{...data, sha256: '0'.repeat(64)}, {...data, width: 32}, {...data, frames: 21},
+    for (const bad of [{...data, sha256: '0'.repeat(64)}, {...data, width: 32}, {...data, frames: 60},
       content('signature', Buffer.alloc(32), 8), content('bytes-limit', Buffer.concat([hostedGif(21, 8), Buffer.alloc(163_840)]), 8)]) {
       const result = await stage(world, bad);
       assert.ok(result.status === 'rejected');
@@ -184,8 +185,8 @@ void it('keeps profile restrictions and never falls back to a mood for refused a
     const world = await World.open({section: {device: {...SECTION.device, profile}}});
     try {
       await world.start();
-      const bytes = profile.includes('smoke') ? hostedGif(21, 8) : manyColorGif();
-      const data = content(profile, bytes, profile.includes('smoke') ? 8 : 2);
+      const bytes = profile.includes('smoke') ? gifFixture(64, 64, [5, 15].map(delay => ({width: 1, height: 1, pixels: [1], delay}))) : manyColorGif();
+      const data = content(profile, bytes, 2);
       const result = await world.outcome(await accepted(stage(world, data)));
       assert.equal(result.data.result, 'failed'); assert.equal(result.data.error?.code, 'unsupported-capability');
       const refused = await artMoment(world, data.compositionId);
@@ -485,5 +486,57 @@ void it('attention interrupts exact art and restart never replays an admitted ar
     const repeated = await artMoment(world, data.compositionId, {momentId: 'restart-art'});
     assert.ok(repeated.status === 'rejected'); assert.equal(repeated.error.error.code, 'invalid-state');
     assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
+
+void it('stages and plays exact art at the direct command boundary on the historic smoke configuration', async () => {
+  const world = await World.open({section: {device: {...SECTION.device, profile: 'pixoo64-smoke-2026-09-06'}}});
+  try {
+    await world.start();
+    await monitor(world);
+    for (const count of [21, 59, 60]) {
+      const data = content(`direct-${count}`, hostedGif(37, count), count);
+      const before = world.device.state().uploads;
+      const answer = await stage(world, data);
+      if (count === 60) {
+        assert.ok(answer.status === 'rejected');
+        assert.match(answer.error.error.detail ?? '', /direct.*59/i);
+        assert.equal(world.device.state().uploads, before);
+        continue;
+      }
+      assert.ok(answer.status === 'accepted', JSON.stringify(answer));
+      assert.equal((await world.outcome(answer.requestId)).data.result, 'succeeded');
+      assert.equal(world.device.state().uploads, before);
+      const shown = waitFor(() => world.device.state().shown?.frames === count ? world.device.state().shown : undefined, 'exact direct art');
+      const moment = await accepted(artMoment(world, data.compositionId, {coversStatus: true}));
+      assert.deepEqual((await shown)?.delaysMs, Array<number>(count).fill(100));
+      assert.equal((await world.outcome(moment)).data.result, 'succeeded');
+    }
+  } finally { await world.close(); }
+});
+
+void it('retains and plays a 1,001-frame private whole GIF through the extended Pixoo stage', async () => {
+  const world = await World.open({section: {device: {...SECTION.device, profile: 'pixoo64-hosted-2026-10-01'}}});
+  try {
+    await world.start();
+    const frames = 1001;
+    const bytes = gifFixture(64, 64, Array.from({length: frames}, (_, index) => ({width: 1, height: 1, pixels: [1 + index % 2], delay: 10})));
+    const data = content('whole-gif-1001', bytes, frames);
+    const id = await accepted(world.core.request(`bunny.cmd.art-stage.${DEVICE}`, {
+      type: 'org.bunny.art.stage.requested', subject: DEVICE, dataschema: 'https://bunny.invalid/events/art-stage/2.1', data,
+    }, {timeoutMs: 10_000}));
+    assert.equal((await world.outcome(id, 30_000)).data.result, 'succeeded');
+    assert.equal(world.device.state().uploads, 0);
+    const stored = await preview(world, data.compositionId);
+    assert.equal(stored.frameCount, frames);
+    const last = stored.frames.at(-1);
+    assert.ok(last !== undefined); assert.equal(last.delayMs, 100);
+    const png = await world.module.manifest.content?.(last.ref);
+    assert.ok(png !== undefined && !('error' in png)); assert.equal(digest(png.bytes), last.sha256);
+    await monitor(world);
+    const moment = await accepted(artMoment(world, data.compositionId, {coversStatus: true}));
+    const showing = await waitFor(() => world.device.state().shown?.frames === frames ? world.device.state().shown : undefined, 'whole GIF');
+    assert.deepEqual(showing?.delaysMs, Array<number>(frames).fill(100));
+    assert.equal((await world.outcome(moment)).data.result, 'succeeded');
   } finally { await world.close(); }
 });
