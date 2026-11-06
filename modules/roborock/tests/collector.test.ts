@@ -6,13 +6,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { errorBody, type Message, } from '@jimmie-potts/event-contracts/v2';
-import { InProcessBus, Outbox, SdkError, openModuleDatabaseFile, type LogFields, type ModuleContext, type Scheduler, } from '@jimmie-potts/sdk';
-import { checkModuleRecord, type HarnessRecord } from '@jimmie-potts/sdk/testing';
+import { childOf, InProcessBus, noSpans, Outbox, SdkError, SUMMARY_MS, openModuleDatabaseFile, traceFields, type LogFields, type ModuleContext, type Scheduler, type Tracing, } from '@jimmie-potts/sdk';
+import { checkModuleRecord, RecordedSpans, type HarnessRecord } from '@jimmie-potts/sdk/testing';
 import type { Reading, ReadOptions, VendorJson, } from '@jimmie-potts/roborock-transport';
 import { Collector, type CollectorTransport } from '../src/collector.js';
 import type { RoborockConfig } from '../src/configuration.js';
 import { RoborockStore } from '../src/store.js';
 import { roborockValidator, validateStatus } from '../src/families.js';
+import { ConnectionFailure } from '../transport/src/transport/failure.js';
 import { reader } from '../transport/src/transport/reader.js';
 const BEGIN = 1700000000;
 const START = BEGIN * 1000;
@@ -28,16 +29,21 @@ function manualClock() {
         at: number;
         callback: () => void;
     }>();
+    // `tick` moves the clock on every read, as a real clock can between two reads.
+    // `lag` fires each timer late, as a real event loop does.
+    const real = { tick: 0, lag: 0 };
     const scheduler: Scheduler = {
         after: (delay, callback) => {
             const id = sequence++;
-            timers.set(id, { at: now + delay, callback });
+            timers.set(id, { at: now + delay + real.lag, callback });
             return () => { timers.delete(id); };
         },
     };
     return {
-        now: () => now,
+        now: () => { now += real.tick; return now; },
         jump: (milliseconds: number): void => { now += milliseconds; },
+        real,
+        timers: (): number => timers.size,
         scheduler,
         advance: async (milliseconds: number): Promise<void> => {
             const end = now + milliseconds;
@@ -103,10 +109,10 @@ class FakeTransport implements CollectorTransport {
         return this.#invoke('status', async () => this.statusHook === undefined
             ? this.#success(this.status) : this.statusHook(options));
     }
-    readConsumables(): Promise<Reading<VendorJson>> {
+    readConsumables(_options?: ReadOptions): Promise<Reading<VendorJson>> {
         return this.#invoke('consumables', () => this.#success(this.consumables));
     }
-    readCleanSummary(): Promise<Reading<VendorJson>> {
+    readCleanSummary(_options?: ReadOptions): Promise<Reading<VendorJson>> {
         return this.#invoke('summary', () => this.#success(this.summary));
     }
     readCleanRecord(id: number): Promise<Reading<VendorJson>> {
@@ -117,7 +123,7 @@ class FakeTransport implements CollectorTransport {
                 : this.#success(value);
         });
     }
-    readRoomMapping(): Promise<Reading<VendorJson>> {
+    readRoomMapping(_options?: ReadOptions): Promise<Reading<VendorJson>> {
         return this.#invoke('rooms', () => this.#success(this.rooms));
     }
     readCurrentMap(_options?: ReadOptions): Promise<Reading<Buffer>> {
@@ -162,14 +168,16 @@ async function world(context: TestContext, options: {
     const controller = new AbortController();
     const logs: unknown[] = [];
     const diagnostics: HarnessRecord[] = [];
-    const log = {
-        debug: () => { }, info: () => { },
-        warn: (event: string, fields: LogFields = {}) => { logs.push(fields); diagnostics.push({ level: 'warn', event, fields }); },
-        error: (event: string, fields: LogFields = {}) => { logs.push(fields); diagnostics.push({ level: 'error', event, fields }); },
+    const record = (level: HarnessRecord['level']) => (event: string, fields: LogFields = {}, trace?: HarnessRecord['trace']): void => {
+        logs.push(fields);
+        diagnostics.push({ level, event, fields, ...(trace === undefined ? {} : { trace }) });
     };
+    const log = { debug: record('debug'), info: record('info'), warn: record('warn'), error: record('error') };
+    const trace: Tracing = { span: parent => childOf(parent), start: (name, options) => noSpans.start(name, options) };
     const moduleContext = {
         sdk, clock: { now: options.moduleNow?.(clock.now) ?? clock.now }, scheduler: clock.scheduler,
         signal: controller.signal, config: { id: 'vacuum' }, log,
+        trace,
         secrets: { read: () => Promise.reject(new Error('unexpected secret access')) },
         database: () => database,
     } as unknown as ModuleContext<RoborockConfig>;
@@ -184,8 +192,55 @@ async function world(context: TestContext, options: {
         await participant.close();
         await rm(dir, { recursive: true, force: true });
     });
-    return { collector, store, database, clock, transport, publication, controller, logs, diagnostics, outbox };
+    return { collector, store, database, clock, transport, publication, controller, logs, diagnostics, outbox, log, moduleContext };
 }
+/** The real reader over a synthetic wire, so reads fail as a refused connection does: at once, then once more after 250 ms. */
+function wired(w: Awaited<ReturnType<typeof world>>, context: TestContext) {
+    const config = {
+        schemaVersion: 1 as const, deviceId: 'synthetic-a97', address: '192.168.10.20',
+        broker: 'mqtts://mqtt-us.roborock.com:8883', region: 'us' as const,
+    };
+    const session = {
+        schemaVersion: 1 as const, deviceId: config.deviceId, model: 'roborock.vacuum.a97' as const,
+        protocol: '1.0' as const, localKey: '0123456789abcdef', broker: config.broker,
+        rriot: { u: 'synthetic-user', s: 'sentinel-auth-secret', k: 'sentinel-auth-key' },
+    };
+    const link = { down: true, statusAttempts: [] as number[], attempts: 0, active: 0, maximumActive: 0 };
+    const answer = (method: string): VendorJson => method === 'get_status' ? w.transport.status
+        : method === 'get_consumable' ? w.transport.consumables
+            : method === 'get_clean_summary' ? w.transport.summary : w.transport.rooms;
+    const wire = async (_config: unknown, _session: unknown, request: { method: string }): Promise<{ kind: 'json'; value: VendorJson }> => {
+        link.attempts += 1;
+        link.active += 1;
+        link.maximumActive = Math.max(link.maximumActive, link.active);
+        if (request.method === 'get_status')
+            link.statusAttempts.push(w.clock.now());
+        try {
+            if (link.down)
+                throw new ConnectionFailure();
+            return await Promise.resolve({ kind: 'json', value: answer(request.method) });
+        }
+        finally {
+            link.active -= 1;
+        }
+    };
+    const spans = new RecordedSpans();
+    const owner = reader(config, session, {
+        clock: { now: w.clock.now }, scheduler: w.clock.scheduler, local: wire, mqtt: wire, log: w.log, trace: spans,
+    });
+    w.transport.readStatus = options => owner.readStatus(options);
+    w.transport.readConsumables = options => owner.readConsumables(options);
+    w.transport.readCleanSummary = options => owner.readCleanSummary(options);
+    w.transport.readRoomMapping = options => owner.readRoomMapping(options);
+    w.transport.stop = () => { w.transport.stopped = true; owner.stop(); };
+    context.after(() => { owner.stop(); });
+    return { link, spans };
+}
+const gapsOf = (w: Awaited<ReturnType<typeof world>>) => w.database.prepare('SELECT data FROM rr_gaps ORDER BY seq').all()
+    .map(row => JSON.parse(String(row.data)) as { startAtMs: number; endAtMs: number | null; reason: string });
+const eventsOf = (w: Awaited<ReturnType<typeof world>>) => w.diagnostics.map(entry => [entry.level, entry.event]);
+const traceOf = (entry: { trace?: HarnessRecord['trace'] } | undefined): string | undefined => entry?.trace === undefined ? undefined : traceFields(entry.trace)?.traceId;
+const statusReads = (w: Awaited<ReturnType<typeof world>>): number => Number(w.database.prepare("SELECT COUNT(*) AS n FROM rr_observations WHERE operation='status'").get()?.n);
 for (const code of ['capacity', 'internal', 'invalid-state'] as const) {
     void test(`collector ${code} failures produce admissible module diagnostics`, async (context) => {
         const w = await world(context);
@@ -907,4 +962,324 @@ void test('hung publication pauses capture admission and late candidate never re
     assert.equal(capture.blobHash, null);
     assert.equal(capture.association, 'unverified');
     assert.equal(w.transport.calls.includes('map'), false);
+});
+// Hub #1331. A real clock can move between two reads of it. The status read that failed then held a checkpoint time
+// that differed from its observation's, the store refused the batch, and the retained batch was replayed unchanged
+// for as long as the process lived, with no further reads.
+for (const tick of [0, 1]) {
+    void test(`a first poll that fails reaches available without a restart once the target is reachable (clock moves ${String(tick)} ms per read)`, async (context) => {
+        const w = await world(context);
+        const { link } = wired(w, context);
+        w.clock.real.tick = tick;
+        w.collector.startlocal();
+        await w.clock.advance(2000);
+        assert.equal(w.collector.storageFailure(), undefined);
+        assert.equal(w.collector.state().availability, 'unavailable');
+        assert.deepEqual(w.collector.state().observedAtMs, { status: 'unknown' });
+        assert.equal(gapsOf(w).length, 1);
+        // Its one retry after 30 seconds is the poll the owner's record names, 31 seconds after the start.
+        await w.clock.advance(30000);
+        assert.equal(w.collector.storageFailure(), undefined);
+        assert.equal(w.collector.failure(), undefined);
+        assert.equal(w.collector.state().availability, 'unavailable');
+        assert.equal(statusReads(w), 2);
+        link.down = false;
+        await w.clock.advance(60000);
+        const state = w.collector.state();
+        assert.equal(w.collector.storageFailure(), undefined);
+        assert.equal(state.availability, 'available');
+        assert.equal(state.observedAtMs.status, 'known');
+        assert.deepEqual(state.collection.lastFailure, { status: 'unknown' });
+        const gaps = gapsOf(w);
+        assert.equal(gaps.length, 1);
+        assert.equal(gaps[0]?.reason, 'unavailable');
+        assert.equal(gaps[0]?.endAtMs, state.observedAtMs.status === 'known' ? state.observedAtMs.value : undefined);
+        assert.deepEqual(w.diagnostics.filter(entry => entry.event === 'operation.failed'), []);
+    });
+}
+void test('repeated failure backs off to its cap, records its transitions and bounded summaries, then recovers', async (context) => {
+    const w = await world(context);
+    const { link, spans } = wired(w, context);
+    w.collector.startlocal();
+    await w.clock.advance(2000);
+    const published = w.publication.messages.length;
+    const first = w.collector.state();
+    assert.equal(first.availability, 'unavailable');
+    // The first poll's reads are one trace, and so are its state messages.
+    assert.equal(spans.spans.length, 4);
+    const trace = spans.spans[0]?.traceId;
+    assert.ok(trace !== undefined && trace !== '');
+    assert.ok(spans.spans.every(span => span.name === 'bunny.device.call' && span.traceId === trace && span.parentSpanId !== undefined));
+    assert.equal(traceOf(w.diagnostics.find(entry => entry.event === 'device.unavailable')), trace);
+    assert.ok(w.publication.messages.slice(-2).every(message => traceFields(message)?.traceId === trace));
+    await w.clock.advance(1800000);
+    const polls = link.statusAttempts.filter((_, index) => index % 2 === 0);
+    assert.deepEqual(polls.slice(1).map((at, index) => at - (polls[index] ?? 0)), [31000, 60250, 120250, 240250, 300250, 300250, 300250, 300250]);
+    assert.equal(link.maximumActive, 1);
+    assert.equal(w.transport.maximumActive <= 1, true);
+    // An unchanged outage publishes nothing, while each attempt stays in the private archive.
+    assert.equal(w.publication.messages.length, published);
+    assert.deepEqual(w.collector.state(), first);
+    assert.equal(statusReads(w), polls.length);
+    assert.deepEqual(eventsOf(w).filter(([level]) => level !== 'debug'), [['warn', 'device.unavailable']]);
+    const summaries = w.diagnostics.filter(entry => entry.level === 'debug');
+    assert.ok(summaries.length > 0 && summaries.length <= polls.length);
+    assert.ok(summaries.every(entry => entry.event === 'device.unavailable' && entry.fields['bunny.code'] === 'unavailable'
+        && Number(entry.fields['bunny.attempt_count']) > 0 && traceOf(entry) !== undefined));
+    link.down = false;
+    await w.clock.advance(300250);
+    const state = w.collector.state();
+    assert.equal(state.availability, 'available');
+    assert.equal(w.collector.storageFailure(), undefined);
+    assert.ok(state.revision > first.revision);
+    const recovery = w.diagnostics.filter(entry => entry.event === 'device.available');
+    assert.equal(recovery.length, 1);
+    assert.equal(recovery[0]?.level, 'info');
+    assert.ok(Number(recovery[0]?.fields['bunny.attempt_count']) >= polls.length);
+    assert.ok(Number(recovery[0]?.fields['bunny.duration_ms']) > 0);
+    assert.ok(traceOf(recovery[0]) !== undefined);
+    for (const entry of w.diagnostics)
+        assert.equal(checkModuleRecord('roborock', entry), undefined);
+    assert.equal(JSON.stringify(w.diagnostics).includes('sentinel'), false);
+    assert.deepEqual(gapsOf(w).map(gap => gap.reason), ['unavailable']);
+    assert.notEqual(gapsOf(w)[0]?.endAtMs, null);
+});
+void test('a refused COMMIT of an unchanged outage poll is a storage failure that a retry recovers', async (context) => {
+    const w = await world(context);
+    const { link } = wired(w, context);
+    const exec = w.database.exec.bind(w.database);
+    let refuse = 0;
+    w.database.exec = (sql: string) => {
+        if (sql === 'COMMIT' && refuse > 0) {
+            refuse -= 1;
+            throw Object.assign(new Error('synthetic private disk detail'), { errcode: 13 });
+        }
+        exec(sql);
+    };
+    w.collector.startlocal();
+    await w.clock.advance(2000);
+    assert.equal(w.collector.state().availability, 'unavailable');
+    const revision = w.collector.state().revision;
+    // The 30-second retry changes nothing public, and its COMMIT is refused once.
+    refuse = 1;
+    await w.clock.advance(30000);
+    assert.equal(refuse, 0);
+    assert.equal(w.collector.storageFailure(), 'capacity');
+    assert.equal(statusReads(w), 1);
+    // The retained attempt commits on the next retry, with its storage gap.
+    await w.clock.advance(30000);
+    assert.equal(w.collector.storageFailure(), undefined);
+    assert.equal(statusReads(w), 2);
+    assert.ok(gapsOf(w).some(gap => gap.reason === 'storage'));
+    link.down = false;
+    await w.clock.advance(600000);
+    const state = w.collector.state();
+    assert.equal(state.availability, 'available');
+    assert.ok(state.revision > revision);
+    assert.equal(w.collector.storageFailure(), undefined);
+    const operations = w.diagnostics.filter(entry => entry.event.startsWith('operation.'));
+    assert.deepEqual(operations.map(entry => [entry.event, entry.fields['bunny.operation'], entry.fields['bunny.code']]), [
+        ['operation.failed', 'storage', 'capacity'],
+        ['operation.completed', 'storage', undefined],
+    ]);
+    assert.equal(JSON.stringify(w.diagnostics).includes('synthetic private disk detail'), false);
+});
+void test('an outage keeps its last observation time apart from unavailable and observed available state', async (context) => {
+    const w = await world(context);
+    const { link } = wired(w, context);
+    link.down = false;
+    w.collector.startlocal();
+    await w.clock.advance(1);
+    const observed = w.collector.state();
+    assert.equal(observed.availability, 'available');
+    const published = w.publication.messages.length;
+    link.down = true;
+    await w.clock.advance(60300);
+    const unavailable = w.collector.state();
+    assert.equal(unavailable.availability, 'unavailable');
+    assert.deepEqual(unavailable.observedAtMs, observed.observedAtMs);
+    assert.deepEqual(unavailable.status, observed.status);
+    assert.deepEqual(unavailable.consumables, observed.consumables);
+    assert.deepEqual(unavailable.collection.lastFailure, { status: 'known', value: 'unavailable' });
+    // One transition: the vacuum and device records of the unavailable revision.
+    assert.equal(w.publication.messages.length, published + 2);
+    await w.clock.advance(100000);
+    assert.equal(w.publication.messages.length, published + 2);
+    assert.deepEqual(w.collector.state(), unavailable);
+    link.down = false;
+    await w.clock.advance(120000);
+    const recovered = w.collector.state();
+    assert.equal(recovered.availability, 'available');
+    assert.ok(recovered.observedAtMs.status === 'known' && observed.observedAtMs.status === 'known'
+        && recovered.observedAtMs.value > observed.observedAtMs.value);
+    // Care keeps its own time until an ancillary cycle reads it again.
+    assert.deepEqual(recovered.consumables, observed.consumables);
+    assert.equal(w.publication.messages.length, published + 4);
+});
+for (const how of ['stop', 'abort'] as const) {
+    void test(`shutdown by ${how} during a failed observation sends nothing more and commits nothing`, async (context) => {
+        const w = await world(context);
+        const { link } = wired(w, context);
+        w.collector.startlocal();
+        await w.clock.advance(2000);
+        const before = w.collector.state();
+        const reads = statusReads(w);
+        // The next poll's read has failed once and waits in the reader's 250 ms backoff.
+        await w.clock.advance(29100);
+        const attempts = link.attempts;
+        assert.equal(attempts, 9);
+        const records = w.diagnostics.length;
+        if (how === 'stop')
+            await w.collector.stop();
+        else
+            w.controller.abort();
+        await w.clock.advance(600000);
+        assert.equal(link.attempts, attempts);
+        assert.equal(w.transport.stopped, true);
+        assert.equal(statusReads(w), reads);
+        assert.deepEqual(w.collector.state(), before);
+        assert.equal(w.diagnostics.length, records);
+        assert.equal(w.collector.failure(), undefined);
+        assert.equal(w.clock.timers(), 0);
+        assert.equal(await w.collector.poll(), undefined);
+        assert.equal(link.attempts, attempts);
+    });
+}
+void test('shutdown during a held identity load records no failure', async (context) => {
+    const w = await world(context);
+    w.transport.identity = () => new Promise<string>(() => { });
+    w.collector.startlocal();
+    await w.clock.advance(1);
+    await w.collector.stop();
+    await flush();
+    assert.deepEqual(w.diagnostics, []);
+    assert.equal(w.collector.failure(), undefined);
+});
+void test('steady polling with ordinary timer lag and reply latency records no missed-poll gaps', async (context) => {
+    const w = await world(context);
+    w.clock.real.lag = 20;
+    w.transport.statusHook = async () => {
+        await new Promise<void>(resolve => { w.clock.scheduler.after(15, resolve); });
+        return { ok: true, value: w.transport.status, observedAt: new Date(w.clock.now()).toISOString() };
+    };
+    w.collector.startlocal();
+    await w.clock.advance(600000);
+    assert.ok(statusReads(w) >= 9);
+    assert.deepEqual(gapsOf(w), []);
+    assert.equal(w.collector.state().collection.gaps, 0);
+    assert.equal(w.collector.state().availability, 'available');
+});
+void test('active polling with ordinary timer lag keeps its observed battery samples eligible', async (context) => {
+    const w = await world(context);
+    w.clock.real.lag = 20;
+    w.transport.status = { state: 5, battery: 90, in_cleaning: 1, in_returning: 0 };
+    w.collector.startlocal();
+    await w.clock.advance(45100);
+    assert.deepEqual(gapsOf(w), []);
+    w.transport.status = { state: 8, battery: 85, in_cleaning: 0, in_returning: 0 };
+    w.transport.summary = { records: [BEGIN] };
+    w.transport.records.set(BEGIN, { begin: BEGIN, end: BEGIN + 60, complete: 1 });
+    await w.clock.advance(15100);
+    assert.deepEqual(gapsOf(w), []);
+    assert.equal(w.store.listSamples(BEGIN).samples.length >= 3, true);
+    assert.deepEqual(w.store.listSamples(BEGIN).gaps, []);
+});
+void test('a poll admitted more than half a second after its deadline still records its missed interval', async (context) => {
+    const w = await world(context);
+    w.collector.startlocal();
+    await w.clock.advance(1);
+    w.clock.real.lag = 500;
+    // The timer already set fires on time, and the next two exactly half a second late.
+    await w.clock.advance(60000);
+    await w.clock.advance(60500);
+    assert.deepEqual(gapsOf(w), []);
+    w.clock.real.lag = 501;
+    await w.clock.advance(60500);
+    assert.deepEqual(gapsOf(w), []);
+    await w.clock.advance(60501);
+    const late = START + 241502;
+    assert.deepEqual(gapsOf(w).map(gap => ({ startAtMs: gap.startAtMs, endAtMs: gap.endAtMs, reason: gap.reason })), [{
+        startAtMs: late - 501, endAtMs: late, reason: 'missed-poll',
+    }]);
+});
+void test('a storage fault logs its start, bounded summaries and recovery, and a later fault logs again', async (context) => {
+    const w = await world(context);
+    w.collector.startlocal();
+    await w.clock.advance(1);
+    const save = w.store.saveProjection.bind(w.store);
+    let failing = true;
+    w.store.saveProjection = (status, needed) => {
+        if (failing)
+            throw Object.assign(new Error('synthetic private storage detail'), { errcode: 13 });
+        save(status, needed);
+    };
+    const operations = () => w.diagnostics.filter(entry => entry.event.startsWith('operation.'));
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+        await w.collector.poll();
+        w.clock.jump(SUMMARY_MS / 2);
+    }
+    assert.equal(w.collector.storageFailure(), 'capacity');
+    const failed = operations();
+    assert.deepEqual(failed.map(entry => [entry.level, entry.event, entry.fields['bunny.attempt_count']]), [
+        ['warn', 'operation.failed', 1],
+        ['debug', 'operation.failed', 2],
+        ['debug', 'operation.failed', 2],
+    ]);
+    assert.ok(failed.every(entry => entry.fields['bunny.operation'] === 'storage'
+        && entry.fields['bunny.code'] === 'capacity' && traceOf(entry) !== undefined));
+    failing = false;
+    await w.collector.poll();
+    assert.equal(w.collector.storageFailure(), undefined);
+    const recovered = operations().at(-1);
+    assert.equal(recovered?.level, 'info');
+    assert.equal(recovered?.event, 'operation.completed');
+    assert.equal(recovered?.fields['bunny.operation'], 'storage');
+    assert.equal(recovered?.fields['bunny.outcome'], 'succeeded');
+    assert.equal(recovered?.fields['bunny.attempt_count'], 5);
+    assert.equal(recovered?.fields['bunny.duration_ms'], 2 * SUMMARY_MS + SUMMARY_MS / 2);
+    assert.ok(traceOf(recovered) !== undefined);
+    await w.collector.poll();
+    assert.equal(operations().filter(entry => entry.event === 'operation.completed').length, 1);
+    failing = true;
+    await w.collector.poll();
+    assert.deepEqual(operations().at(-1)?.fields['bunny.attempt_count'], 1);
+    assert.equal(operations().at(-1)?.level, 'warn');
+    for (const entry of w.diagnostics)
+        assert.equal(checkModuleRecord('roborock', entry), undefined);
+    assert.equal(JSON.stringify(w.diagnostics).includes('synthetic private storage detail'), false);
+});
+void test('a target that cannot load backs off and recovers, with stale evidence and no tight loop', async (context) => {
+    const w = await world(context);
+    w.collector.startlocal();
+    await w.clock.advance(1);
+    assert.equal(w.collector.state().availability, 'available');
+    await w.collector.stop();
+    w.transport.stopped = false;
+    w.clock.jump(120000);
+    let loads = 0;
+    let missing = true;
+    w.transport.identity = () => {
+        loads += 1;
+        return missing ? Promise.reject(new SdkError(errorBody('not-found'))) : Promise.resolve('synthetic-a97');
+    };
+    const collector = new Collector(w.moduleContext, w.store, w.outbox, w.transport);
+    context.after(() => collector.stop());
+    collector.startlocal();
+    await w.clock.advance(2000);
+    assert.equal(loads, 1);
+    await w.clock.advance(30000);
+    assert.equal(loads, 2);
+    assert.equal(collector.state().availability, 'unknown');
+    const failed = w.diagnostics.filter(entry => entry.event === 'operation.failed');
+    assert.deepEqual(failed.map(entry => [entry.level, entry.fields['bunny.code']]), [['warn', 'not-found']]);
+    assert.ok(traceOf(failed[0]) !== undefined);
+    missing = false;
+    await w.clock.advance(60000);
+    assert.equal(collector.state().availability, 'available');
+    const recovered = w.diagnostics.filter(entry => entry.event === 'operation.completed');
+    assert.equal(recovered.length, 1);
+    assert.equal(recovered[0]?.level, 'info');
+    assert.equal(recovered[0]?.fields['bunny.attempt_count'], 2);
+    for (const entry of w.diagnostics)
+        assert.equal(checkModuleRecord('roborock', entry), undefined);
 });
