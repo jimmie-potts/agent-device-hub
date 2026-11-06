@@ -333,4 +333,6 @@ export const STATE_TYPES = {
   device: {type: 'org.bunny.device.updated', dataschema: 'https://bunny.invalid/events/device/2.1'},
   [NANOLEAF_FAMILIES.wall.family]: {type: NANOLEAF_FAMILIES.wall.type, dataschema: 'https://bunny.invalid/events/nanoleaf-wall/2.0'},
   [NANOLEAF_FAMILIES.animations.family]: {type: NANOLEAF_FAMILIES.animations.type, dataschema: 'https://bunny.invalid/events/nanoleaf-animations/2.0'},
+  // The light's own live Music session record (#1272), a core family the module serves for its lights.
+  'music-lighting-device': {type: 'org.bunny.music-lighting-device.updated', dataschema: 'https://bunny.invalid/events/music-lighting-device/2.0'},
 } as const;

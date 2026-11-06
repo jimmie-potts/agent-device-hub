@@ -95,7 +95,7 @@ const nanoleafWall: Scenario = {
     expect('the core and the Nanoleaf module are running', h => running(h, ['core', 'nanoleaf'])),
     expect('health names the Nanoleaf module as serving device, beside its own families', async h => {
       const serves = (await h.health()).find(module => module.name === 'nanoleaf')?.serves;
-      return show(serves) === show(['device', NANOLEAF_FAMILIES.wall.family, NANOLEAF_FAMILIES.animations.family, NANOLEAF_FAMILIES.shows.family, NANOLEAF_FAMILIES.reactivePresets.family]) || `nanoleaf serves ${show(serves)}`;
+      return show(serves) === show(['device', NANOLEAF_FAMILIES.wall.family, NANOLEAF_FAMILIES.animations.family, NANOLEAF_FAMILIES.shows.family, NANOLEAF_FAMILIES.reactivePresets.family, 'music-lighting-device']) || `nanoleaf serves ${show(serves)}`;
     }),
     expect('the reader\'s copy shows the wall available, with the power the wall reported', h =>
       wallAvailability(h, 'available') === true ? observedPower(h, true) : wallAvailability(h, 'available'), 10_000),

@@ -35,8 +35,9 @@ import {writeJson} from '../jsonfile.js';
 import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, type Report, type Transact} from '../journal.js';
 import {changeMode} from '../modes.js';
 import {Metadata} from '../project-map.js';
-import {admitMoment, initMoments, momentRevision, type FreeBase} from '../moments.js';
-import {isObject} from '../compat.js';
+import {admitMoment, initMoments, momentRevision, readFreeBase, type FreeBase} from '../moments.js';
+import type {LightingWork} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
+import {admitMusicStart, admitMusicStop, checkMusicStart, endMusicAtStart, MusicFeeds, musicDeviceState, MUSIC_STOP} from '../music-session.js';
 import {presented} from '../shared-input.js';
 import {execute, first, rows, text, type Db, type Synchronous} from '../sqlite.js';
 import {controlState} from '../store.js';
@@ -91,18 +92,24 @@ type NativeFamily = keyof typeof NATIVE;
 /** The general device families a Nanoleaf controller does not offer. */
 const UNSUPPORTED = ['zone-power-set', 'media-start', 'media-control'] as const;
 const completedType = (requested: string): string => requested.replace(/\.requested$/, '.completed');
+/** The core's live Music work for one light (#1272): only the core may send it. */
+const MUSIC_WORK = 'music-lighting-work';
+const MUSIC_DEVICE = 'music-lighting-device';
+const CORE_SOURCE = 'bunny/core';
 const OUTCOME_TYPES: Readonly<Record<string, string>> = {
   'moment-play':'org.bunny.moment.play.completed',
+  [MUSIC_WORK]: 'org.bunny.music-lighting.work.completed',
   ...Object.fromEntries(Object.entries(NATIVE).map(([family, {completed}]) => [family, completed])),
   ...Object.fromEntries(Object.values(NANOLEAF_FAMILIES).filter(family => family.kind === 'command').map(family => [family.family, completedType(family.type)])),
 };
-const SERVED = ['device', NANOLEAF_FAMILIES.wall.family, NANOLEAF_FAMILIES.animations.family, NANOLEAF_FAMILIES.shows.family, NANOLEAF_FAMILIES.reactivePresets.family] as const;
+const SERVED = ['device', NANOLEAF_FAMILIES.wall.family, NANOLEAF_FAMILIES.animations.family, NANOLEAF_FAMILIES.shows.family, NANOLEAF_FAMILIES.reactivePresets.family,
+  MUSIC_DEVICE] as const;
 /**
  * The commands that are device writes, whose transmitted evidence is a write to the device, and the operation each write
  * is. A mode command is not one: it completes as its mode commits, and the worker's paints that follow are its own.
  */
 const WRITE_OPERATIONS: Readonly<Record<string, string>> = {
-  'moment-play':'media', 'power-set': 'power', 'brightness-set': 'brightness', 'scene-activate': 'media', [NANOLEAF_FAMILIES.animationPlay.family]: 'media',
+  'moment-play':'media', [MUSIC_WORK]: 'media', 'power-set': 'power', 'brightness-set': 'brightness', 'scene-activate': 'media', [NANOLEAF_FAMILIES.animationPlay.family]: 'media',
 };
 
 type Accepted = {status: 'accepted'};
@@ -154,6 +161,8 @@ export class NanoleafRuntime {
   readonly #edits = new Map<string, Cancel>();
   /** Each device's status read while it waits out a backoff: when it is due, and how to cancel it. */
   readonly #backoffs = new Map<string, {atMs: number; cancel: Cancel}>();
+  /** The current Music features of each light's admitted session, in memory only (#1272). */
+  readonly #feeds: MusicFeeds;
 
   private constructor(context: ModuleContext<NanoleafConfig>, config: NanoleafConfig, directory: string, db: Db) {
     this.#context = context;
@@ -171,6 +180,8 @@ export class NanoleafRuntime {
     const metadata = config.codexMetadata === undefined ? null
       : new Metadata({metadata_path: config.codexMetadata.path, ...(config.codexMetadata.titleIndexPath === undefined ? {} : {title_index_path: config.codexMetadata.titleIndexPath})});
     this.#feed = new SessionFeed({database: () => db, now: () => clock.now() / 1000, targets: this.#ids, metadata});
+    // The module has one clock, the runtime's: it is both of an input's readings, so a step back in it retires the input.
+    this.#feeds = new MusicFeeds(() => ({wallMs: clock.now(), monotonicMs: clock.now()}));
   }
 
   /**
@@ -251,6 +262,9 @@ export class NanoleafRuntime {
       command => this.#showSave(command));
     await sdk.respond<{requestId: string} & Record<string, unknown>>(`bunny.cmd.${NANOLEAF_FAMILIES.reactivePresetSave.family}.${REACTIVE_TARGET}`,
       command => this.#reactiveSave(command));
+    // Music features reach a live session by subscription only; a gap in them is source loss for every session (#1272).
+    await sdk.subscribe('bunny.event.music-capture-features.*', message => { this.#feeds.accept(message); },
+      {onOverflow: () => { this.#feeds.retireAll(); }});
     for (const id of this.#ids) await this.#respond(id);
     await this.#follow();
     for (const id of this.#ids) {
@@ -280,7 +294,7 @@ export class NanoleafRuntime {
 
   #reporter(add: AddMessage): Report {
     return message => {
-      if (message.type === 'scenes') {
+      if (message.type !== 'outcome') {
         this.#changed(message.device);
         return;
       }
@@ -314,6 +328,8 @@ export class NanoleafRuntime {
     return this.#transact(report => {
       const db = this.#db;
       for (const device of this.#ids) {
+        // A Music session never survives a start: it ends as a restart with no device write and no replay (#1272).
+        endMusicAtStart(db, device, this.#context.clock.now(), report);
         recoverAttempts(db, device, report, this.#context.clock.now());
         for (const row of journal(db, device, "AND phase='queued'")) finish(db, row, {kind: 'refused', code: 'cancelled'}, report);
       }
@@ -394,6 +410,7 @@ export class NanoleafRuntime {
       this.#publish('device', id, deviceRecord(db, link, epoch, presence, this.#transmission(id)));
       this.#publish(NANOLEAF_FAMILIES.wall.family, id, wallView(db, this.#feed.copy, this.#directory, id, section.kind, presence));
       this.#publish(NANOLEAF_FAMILIES.animations.family, id, animationsView(db, this.#directory, id));
+      this.#publish(MUSIC_DEVICE, id, musicDeviceState(db, id));
       this.#noteHold(id, presence.hold !== undefined);
     }
   }
@@ -589,7 +606,7 @@ export class NanoleafRuntime {
     const whole = {after: (delayMs: number, callback: () => void): Cancel => scheduler.after(Math.max(0, Math.ceil(delayMs)), callback)};
     const running: Promise<void> = superviseWorker({
       directory: this.#directory, database: this.#context.database, device, clock, scheduler: whole, signal, request: link.request,
-      transact: this.#transact, onFailure: (error, failed) => { this.#passFailed(failed, error); },
+      transact: this.#transact, music: this.#feeds, onFailure: (error, failed) => { this.#passFailed(failed, error); },
     }).then((end: SupervisorEnd) => {
       this.#supervisors.delete(device);
       // Another instance held the lock, or a failure could not even be recorded, as on a busy or full store.
@@ -732,6 +749,7 @@ export class NanoleafRuntime {
         errorBody('unsupported-capability', {requestId: command.data.requestId, detail: 'a Nanoleaf controller does not take this command'}));
     }
     await sdk.respond<MomentPlayRequest>(`bunny.cmd.moment-play.${device}`, command=>this.#moment(device,command));
+    await sdk.respond<LightingWork>(`bunny.cmd.${MUSIC_WORK}.${device}`, command => this.#musicWork(device, command));
     const {wallEdit, machineEdit, animationPlay, favoriteEdit: favorite, acknowledge} = NANOLEAF_FAMILIES;
     await sdk.respond<{requestId: string; edit: unknown}>(`bunny.cmd.${wallEdit.family}.${device}`, command => this.#wallEdit(device, command));
     await sdk.respond<Guards & {edit: unknown}>(`bunny.cmd.${machineEdit.family}.${device}`, command => this.#machineEdit(device, command));
@@ -755,7 +773,10 @@ export class NanoleafRuntime {
       await this.#outbox.transaction(add => { work(this.#reporter(add), add); });
     } catch (error) {
       if (error instanceof CommandRefused) return errorBody(error.code, {requestId, detail: error.detail});
-      if (error instanceof PortRefused) return errorBody(error.code, {requestId, detail: PORT_REFUSALS[error.code] ?? OTHER_REFUSAL});
+      if (error instanceof PortRefused) {
+        const texts = command.type.startsWith('org.bunny.music-lighting.') ? MUSIC_REFUSALS : PORT_REFUSALS;
+        return errorBody(error.code, {requestId, detail: texts[error.code] ?? OTHER_REFUSAL});
+      }
       if (error instanceof Failure) return errorBody(error.code, {requestId, detail: FAVORITE_REFUSALS[error.code]});
       if (error instanceof ReactiveFailure) return errorBody(error.code, {requestId, detail: REACTIVE_ERRORS[error.code]});
       if (error instanceof ShowFailure) return errorBody(error.code, {requestId, detail: SHOW_ERRORS[error.code]});
@@ -863,14 +884,10 @@ export class NanoleafRuntime {
       // the device never sees the context (Hub #813). The effect list and the state are two requests of one call.
       const call=this.#context.trace.start('bunny.device.call',{parent:command,kind:'client',attributes:{'bunny.device.id':device,'bunny.operation':'snapshot','bunny.request.id':requestId}});
       try {
-        const listing=await link.request({ip:'',token:''},'GET','/effects');
-        const state=await link.request({ip:'',token:''},'GET','/state');
-        if(!isObject(listing) || typeof listing.select!=='string' || listing.select.startsWith('*') || !Array.isArray(listing.effectsList) || !listing.effectsList.includes(listing.select) ||
-            !isObject(state) || !isObject(state.brightness) || typeof state.brightness.value!=='number' || !Number.isInteger(state.brightness.value) ||
-            state.brightness.value<0 || state.brightness.value>100) { call.end(); return errorBody('unsupported-capability',{requestId}); }
-        freeBase={name:listing.select,brightness:state.brightness.value};
+        freeBase=await readFreeBase(endpoint=>link.request({ip:'',token:''},'GET',endpoint));
         call.end();
       } catch { call.end('error'); return errorBody('unavailable',{requestId}); }
+      if(freeBase===undefined) return errorBody('unsupported-capability',{requestId});
     }
     return this.#admit(command,()=>{
       if(momentRevision(this.#db,device)!==revision || controlState(this.#db,device).mode!==mode) throw new CommandRefused('revision-conflict','the device choice changed during the read');
@@ -881,6 +898,62 @@ export class NanoleafRuntime {
       this.#accepted(device);
       this.#context.scheduler.after(Math.max(0,command.data.startAtMs+command.data.toleranceMs-this.#context.clock.now())+1,
         ()=>this.#transact(report=>{expireQueued(this.#db,device,this.#seconds(),report);}).catch(()=>{}));
+    });
+  }
+
+  /**
+   * The core's live Music work for one light (#1272, design D4). A Start is checked before the device read, reads the
+   * named Free base as the work command's first device call, and is admitted only if nothing changed during the read; it
+   * opens the session's input after commit and wakes the worker. A Stop is journaled for the running session's loop.
+   */
+  async #musicWork(device: string, command: Command<LightingWork>): Promise<Reply> {
+    const {requestId} = command.data;
+    const {clock} = this.#context;
+    if (command.source !== CORE_SOURCE) return errorBody('forbidden', {requestId, detail: 'only the core starts or stops a Music session'});
+    if (!this.#links.has(device)) return errorBody('not-found', {requestId});
+    const data = command.data;
+    if (data.action === 'stop') {
+      return this.#admit(command, () => {
+        this.#record(command, device, MUSIC_WORK);
+        admitMusicStop(this.#db, device, {kind: MUSIC_STOP, requestId, generation: data.generation}, clock.now(), expiresMs(command, clock.now()));
+      }, () => { this.#accepted(device, command); });
+    }
+    const start = {requestId, generation: data.generation, capture: data.capture, presetId: data.presetId};
+    // What the read must not overlap: a mode or configuration change, or any journaled command, even one that already
+    // ran (a scene shown during the read would leave the Free base stale, and a finished row is no longer in the journal).
+    const control = controlState(this.#db, device), revision = momentRevision(this.#db, device), journaled = journalHighWater(this.#db);
+    try {
+      checkMusicStart(this.#db, device, start, savedLayout(this.#directory, device), clock.now(), expiresMs(command, clock.now()));
+    } catch (error) {
+      if (error instanceof PortRefused) return errorBody(error.code, {requestId, detail: MUSIC_REFUSALS[error.code] ?? OTHER_REFUSAL});
+      throw error;
+    }
+    let freeBase: FreeBase | undefined;
+    // The read of the current scene and brightness is the work command's first device call, as a moment's is (Hub #813).
+    const call = this.#context.trace.start('bunny.device.call', {parent: command, kind: 'client',
+      attributes: {'bunny.device.id': device, 'bunny.operation': 'snapshot', 'bunny.request.id': requestId}});
+    try {
+      const link = this.#links.get(device);
+      freeBase = link === undefined ? undefined : await readFreeBase(endpoint => link.request({ip: '', token: ''}, 'GET', endpoint), true);
+      call.end();
+    } catch {
+      call.end('error');
+      return errorBody('unavailable', {requestId, detail: 'the light did not answer the read of its current scene'});
+    }
+    if (freeBase === undefined) return errorBody('invalid-state', {requestId, detail: 'live Music starts only over a listed named scene on a light that is on'});
+    const base = freeBase;
+    return this.#admit(command, report => {
+      const latest = controlState(this.#db, device);
+      // The read is stale, not the light's state wrong: `revision-conflict` says a Start sent again reads it afresh. The
+      // journal's high-water mark is shared by every light, so a command for another light during the read also refuses.
+      if (latest.revision !== control.revision || momentRevision(this.#db, device) !== revision || journalHighWater(this.#db) !== journaled) {
+        throw new CommandRefused('revision-conflict', 'a command or change reached the light during the read of its scene');
+      }
+      this.#record(command, device, MUSIC_WORK);
+      admitMusicStart(this.#db, device, start, savedLayout(this.#directory, device), base, revision, clock.now(), expiresMs(command, clock.now()), report);
+    }, () => {
+      this.#feeds.open(device, start.generation, start.capture);
+      this.#accepted(device, command);
     });
   }
 
@@ -1046,6 +1119,9 @@ function expiresMs(command: {expiresat?: string}, nowMs: number): number {
 
 const ended = (signal: AbortSignal): boolean => signal.aborted;
 
+/** The control journal's highest sequence ever issued, finished rows included (its AUTOINCREMENT counter). */
+const journalHighWater = (db: Db): number => Number(first(db, "SELECT seq FROM sqlite_sequence WHERE name='control_journal'")?.[0] ?? 0);
+
 /** Fixed text for each refusal of a control or an animation the port decides; the port's own messages are not repeated. */
 const PORT_REFUSALS: Partial<Readonly<Record<ErrorCode, string>>> = {
   'unsupported-capability': 'the device does not take this now: scenes and animations play in Free only',
@@ -1053,6 +1129,16 @@ const PORT_REFUSALS: Partial<Readonly<Record<ErrorCode, string>>> = {
   'not-found': 'no such device',
 };
 const OTHER_REFUSAL = 'the command is not one the device takes';
+/** Fixed text for each refusal of a live Music Start or Stop (`music-session.ts`). */
+const MUSIC_REFUSALS: Partial<Readonly<Record<ErrorCode, string>>> = {
+  'unsupported-capability': 'live Music plays on the Lines with a preset the saved layout renders',
+  'invalid-state': 'live Music needs a light already in Free showing a named scene, and no session already starting or playing',
+  unavailable: 'a device hold waits for an explicit choice',
+  capacity: 'other content waits on the light',
+  'not-found': 'no saved reactive preset has this ID',
+  expired: 'the work expired',
+  'invalid-request': 'the capture binding is invalid',
+};
 /** Fixed text for each refusal of a favorite edit (`favorites.ts`). */
 const FAVORITE_REFUSALS: Readonly<Record<Failure['code'], string>> = {
   capacity: 'the Lines keep as many favorites as they can; forget one first',

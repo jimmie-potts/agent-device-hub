@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/music-lighting-control/2.0",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "action",
+        "capture",
+        "presetId"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "action": {
+          "const": "start"
+        },
+        "capture": {
+          "$ref": "#/$defs/capture"
+        },
+        "presetId": {
+          "$ref": "#/$defs/presetId"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "action"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "action": {
+          "const": "stop"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "generation": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "presetId": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^preset-[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "endpointId",
+        "generation"
+      ],
+      "properties": {
+        "endpointId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        }
+      }
+    },
+    "ended": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "reason",
+        "restoration",
+        "atMs"
+      ],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "reason": {
+          "enum": [
+            "stopped",
+            "alert",
+            "manual",
+            "source-lost",
+            "device",
+            "restart",
+            "expired",
+            "refused"
+          ]
+        },
+        "restoration": {
+          "enum": [
+            "restored",
+            "skipped",
+            "none",
+            "uncertain"
+          ]
+        },
+        "atMs": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+        },
+        "code": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorCode"
+        }
+      }
+    }
+  }
+}

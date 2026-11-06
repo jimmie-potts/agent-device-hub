@@ -44,7 +44,7 @@ import type {CoreStore, CoreTransaction} from './store.js';
  */
 export const DIRECT_COMMANDS: readonly string[] = Object.freeze(['approval-recover', 'notice-acknowledge', 'inbox-handle']);
 /** Tracked actions admitted only by the authenticated gateway's dedicated capability. */
-export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['session-label-set', 'notice-clear', 'lighting-layout-set', 'playback-layout-set', 'home-layout-set', 'music-capture-control']);
+export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['session-label-set', 'notice-clear', 'lighting-layout-set', 'playback-layout-set', 'home-layout-set', 'music-capture-control', 'music-lighting-control']);
 /** Routine background art (ADR 0012's 2026-11-03 amendment): a failure raises no inbox item, and the art state reports it. */
 export const BACKGROUND_ACTIONS: readonly string[] = Object.freeze(['art-auto', 'art-stage', 'art-ambient-set']);
 /** Each art family's only requester. The dashboard's source is a browser session's, which no client credential can take. */
@@ -372,6 +372,9 @@ export class Tracker {
     if (DIRECT_COMMANDS.includes(family)) return refuse('invalid-request', 'the core\'s operator commands are not tracked actions; send them as they are');
     if (OPERATOR_ACTIONS.includes(family) !== operator) return refuse('forbidden', 'this action requires its dedicated operator admission');
     if (family.startsWith('music-capture-') && family !== 'music-capture-control') return refuse('forbidden', 'capture endpoint work belongs to the capture owner');
+    if (family.startsWith('music-lighting-') && family !== 'music-lighting-control' && (family !== 'music-lighting-work' || action.requestedBy !== CORE_SOURCE)) {
+      return refuse('forbidden', 'music lighting work is dispatched only by the core\'s session owner');
+    }
     if (family.startsWith('companion-speech-') && (family !== 'companion-speech-play' || action.requestedBy !== 'bunny/modules/companions')) {
       return refuse('forbidden', 'speech is dispatched only by its companions owner');
     }

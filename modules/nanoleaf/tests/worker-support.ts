@@ -10,7 +10,7 @@ import {connectState, withState} from '../src/database.js';
 import {DEFAULT} from '../src/devices.js';
 import * as edits from '../src/edits.js';
 import {dashboard, type Indication} from '../src/line-projection.js';
-import {transactWith, type Outcome as ControlOutcome, type Report, type ScenesChanged, type Transact} from '../src/journal.js';
+import {transactWith, type MusicChanged, type Outcome as ControlOutcome, type Report, type ScenesChanged, type Transact} from '../src/journal.js';
 import {modeStatus, setMode as commandMode} from '../src/modes.js';
 import type {RenderConfig} from '../src/renderer.js';
 import {SceneRestorer} from '../src/scenes.js';
@@ -212,7 +212,7 @@ export class WorkerCase {
   readonly feed = new Feed();
   readonly sends: [Indication[], number, boolean][] = [];
   /** Every outcome and scene list change the worker and steps reported, in order. */
-  readonly reported: (ControlOutcome | ScenesChanged)[] = [];
+  readonly reported: (ControlOutcome | ScenesChanged | MusicChanged)[] = [];
   readonly report: Report = message => {
     this.reported.push(message);
   };

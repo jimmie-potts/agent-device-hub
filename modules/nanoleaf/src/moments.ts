@@ -8,8 +8,9 @@ import {finish, held, journal, journalRow, type JournalRow, type Transact} from 
 import type {Indication} from './line-projection.js';
 import type {RenderConfig} from './renderer.js';
 import {execute, first, type Db} from './sqlite.js';
-import {controlState, overrides} from './store.js';
+import {controlState, overrides, type Overrides} from './store.js';
 import type {LightRequest} from './transport.js';
+import {isObject} from './compat.js';
 
 export const MOMENT = 'moment.play';
 export const MOMENT_MOODS = ['celebrate','setback','reminder'];
@@ -18,6 +19,55 @@ export const MOMENT_DURATION_MS = 10_000;
 export type FreeBase = {name:string;brightness:number};
 export type MomentCommand = MomentPlayRequest & {kind:typeof MOMENT;configurationRevision:number;freeBase?:FreeBase};
 export const momentRevision=(db:Db,device:string):number=>Number(first(db,'SELECT configuration_revision FROM nanoleaf_devices WHERE device=?',device)?.[0]??0);
+
+/** One device read: the effect list (`/effects`) or the state (`/state`). */
+export type DeviceRead=(endpoint:'/effects'|'/effects/select'|'/state')=>Promise<unknown>;
+/**
+ * The Free base a moment or a Music session returns to (#925, #1272): the listed named scene the device shows and its
+ * integer brightness. Undefined when the device shows no such scene, such as an effect write or an animation, or, with
+ * `requireOn`, when the light reports itself off. A failed read rejects.
+ */
+export async function readFreeBase(read:DeviceRead,requireOn=false):Promise<FreeBase|undefined> {
+  const listing=await read('/effects');
+  const state=await read('/state');
+  if(!isObject(listing) || typeof listing.select!=='string' || listing.select.startsWith('*') || !Array.isArray(listing.effectsList) || !listing.effectsList.includes(listing.select) ||
+      !isObject(state) || !isObject(state.brightness) || typeof state.brightness.value!=='number' || !Number.isInteger(state.brightness.value) ||
+      state.brightness.value<0 || state.brightness.value>100 || (requireOn && isObject(state.on) && state.on.value===false)) return undefined;
+  return {name:listing.select,brightness:state.brightness.value};
+}
+export const sameBrightness=async(read:DeviceRead,base:FreeBase):Promise<boolean>=>
+  (await read('/state') as {brightness?:{value?:unknown}}).brightness?.value===base.brightness;
+
+/** A blocked or question indication: an alert a bounded effect yields to. */
+export const alerting=(snapshot:readonly Indication[]):boolean=>snapshot.some(item=>item!==null && (item[0]==='blocked' || item[0]==='question'));
+
+/** What a bounded effect started over: its journal position, the mode and configuration revisions, and the overrides. */
+export type Admitted={seq:number;revision:number;configurationRevision:number;overrides:Overrides};
+/** The newer choices a moment yields to; a Music session also yields to a newer moment. */
+export const NEWER_CHOICES=['scene.activate','animation.play','power.set','brightness.set'] as const;
+/** A newer explicit choice took over the device since `since`: a mode, configuration or override change, or a newer row of `kinds`. */
+export function newerChoice(db:Db,device:string,since:Admitted,kinds:readonly string[]=NEWER_CHOICES):boolean {
+  return controlState(db,device).revision!==since.revision || momentRevision(db,device)!==since.configurationRevision ||
+    JSON.stringify(overrides(db,device))!==JSON.stringify(since.overrides) ||
+    journal(db,device,`AND seq>? AND kind IN (${kinds.map(()=>'?').join(',')})`,since.seq,...kinds).length>0;
+}
+/**
+ * Returns a Free light to its named base only while it still shows `shown`, the base is listed, the light is not off,
+ * its brightness is unchanged and nothing newer took over; then brightness, then the scene, each through `write`, which
+ * guards it. False: skipped without a write. A guard that finds a newer choice between the writes throws `Cancelled`.
+ */
+export async function restoreFreeBase(read:DeviceRead,base:FreeBase,shown:string,stale:()=>boolean,
+  write:(endpoint:string,payload:unknown)=>Promise<unknown>):Promise<boolean> {
+  const listing=await read('/effects') as {select?:unknown;effectsList?:unknown};
+  if(listing.select!==shown || !Array.isArray(listing.effectsList) || !listing.effectsList.includes(base.name)) return false;
+  // A light switched off by hand is a newer choice: restoring brightness and a scene would override it.
+  const state=await read('/state') as {on?:{value?:unknown};brightness?:{value?:unknown}};
+  if(state.on?.value===false || state.brightness?.value!==base.brightness) return false;
+  if(stale()) return false;
+  await write('/state',{brightness:{value:base.brightness,duration:0}});
+  await write('/effects',{select:base.name});
+  return true;
+}
 export function initMoments(db:Db):void {
   db.exec('CREATE TABLE IF NOT EXISTS nanoleaf_moments (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE)');
 }
@@ -61,26 +111,21 @@ export async function playMoment(options:MomentPlayback):Promise<void> {
   const {db,device,row,config,transact,request,now,sleep,current,restore}=options;
   const command=row.command as MomentCommand;
   const target={ip:config.ip??'',token:config.token??''};
-  const initialOverrides=overrides(db,device);
-  const stale=()=>journalRow(db,row.id)===undefined || controlState(db,device).revision!==row.revision ||
-    momentRevision(db,device)!==command.configurationRevision || JSON.stringify(overrides(db,device))!==JSON.stringify(initialOverrides) ||
-    journal(db,device,'AND seq>? AND kind IN (?,?,?,?)',row.seq,'scene.activate','animation.play','power.set','brightness.set').length>0;
+  const since:Admitted={seq:row.seq,revision:row.revision,configurationRevision:command.configurationRevision,overrides:overrides(db,device)};
+  const stale=()=>journalRow(db,row.id)===undefined || newerChoice(db,device,since);
+  const read:DeviceRead=endpoint=>request(target,'GET',endpoint);
   const end=async(kind:'retired'|'expired'|'refused',code:'unsupported-capability'='unsupported-capability'):Promise<void>=>{
     await transact(report=>{const live=journalRow(db,row.id);if(live!==undefined) finish(db,live,kind==='refused'?{kind,code}:{kind},report);});
   };
-  const alerts=(snapshot:readonly Indication[])=>snapshot.some(item=>item!==null && (item[0]==='blocked' || item[0]==='question'));
+  const alerts=alerting;
   while(now()<command.startAtMs) {if(stale()) {await end('retired');return;}await sleep(Math.min(.25,(command.startAtMs-now())/1000));}
   if(stale()) {await end('retired');return;}
   if(now()>command.startAtMs+command.toleranceMs) {await end('expired');return;}
-  const sameBrightness=async():Promise<boolean>=>{
-    const state=await request(target,'GET','/state') as {brightness?:{value?:unknown}};
-    return state.brightness?.value===command.freeBase?.brightness;
-  };
   const snapshot=current();
   if(controlState(db,device).mode==='quiet' || (controlState(db,device).mode==='work' && !command.coversStatus) || overrides(db,device).power===false || alerts(snapshot)) {await end('refused');return;}
   if(command.freeBase!==undefined) {
     const listing=await request(target,'GET','/effects') as {select?:unknown;effectsList?:unknown};
-    if(listing.select!==command.freeBase.name || !Array.isArray(listing.effectsList) || !listing.effectsList.includes(command.freeBase.name) || !await sameBrightness()) {await end('refused');return;}
+    if(listing.select!==command.freeBase.name || !Array.isArray(listing.effectsList) || !listing.effectsList.includes(command.freeBase.name) || !await sameBrightness(read,command.freeBase)) {await end('refused');return;}
   }
   if(stale()) {await end('retired');return;}
   if(now()>command.startAtMs+command.toleranceMs) {await end('expired');return;}
@@ -104,7 +149,7 @@ export async function playMoment(options:MomentPlayback):Promise<void> {
     if(alerts(current())) {interrupted=true;break;}
     if(command.freeBase!==undefined) {
       const listing=await request(target,'GET','/effects') as {select?:unknown};
-      if(listing.select!=='*Dynamic*' || !await sameBrightness()) {await end('retired');return;}
+      if(listing.select!=='*Dynamic*' || !await sameBrightness(read,command.freeBase)) {await end('retired');return;}
     }
   }
   if(stale()) {await end('retired');return;}
@@ -112,11 +157,7 @@ export async function playMoment(options:MomentPlayback):Promise<void> {
   restoring=true;
   try {
     if(freeBase!==undefined) {
-      const listing=await request(target,'GET','/effects') as {select?:unknown;effectsList?:unknown};
-      if(listing.select!=='*Dynamic*' || !Array.isArray(listing.effectsList) || !listing.effectsList.includes(freeBase.name) || !await sameBrightness()) {await end('retired');return;}
-      if(stale()) {await end('retired');return;}
-      await execution.call(()=>request(target,'PUT','/state',{brightness:{value:freeBase.brightness,duration:0}}));
-      await execution.call(()=>request(target,'PUT','/effects',{select:freeBase.name}));
+      if(!await restoreFreeBase(read,freeBase,'*Dynamic*',stale,(endpoint,payload)=>execution.call(()=>request(target,'PUT',endpoint,payload)))) {await end('retired');return;}
     } else {
       // The worker supplies a current Work rendering, and routes every restoration write through this execution.
       await restore(current(),execution);
