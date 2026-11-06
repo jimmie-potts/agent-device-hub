@@ -232,6 +232,7 @@ void test('a worker that cannot reach the core at start ends non-zero as before,
     assert.deepEqual(await exitOf(worker, EXIT_BOUND_MS), {code: 1, signal: null}, worker.stderr());
     assert.match(worker.stderr(), /^coding-worker failed: SdkError$/m);
     assert.equal(world.controls.length, 0);
-    assert.equal(world.streams(), 0);
+    // The edge's refused stream may finish its own close a moment after the worker has gone.
+    await waitFor(() => world.streams() === 0, EXIT_BOUND_MS, 'the refused stream to close');
   }
 });
