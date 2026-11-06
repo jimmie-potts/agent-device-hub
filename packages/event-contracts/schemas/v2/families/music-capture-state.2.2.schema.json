@@ -1,0 +1,470 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/music-capture-state/2.2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "endpointId",
+    "availability",
+    "session",
+    "response"
+  ],
+  "properties": {
+    "id": {
+      "const": "music"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "endpointId": {
+      "oneOf": [
+        {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "availability": {
+      "enum": [
+        "off",
+        "available",
+        "unavailable"
+      ]
+    },
+    "session": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "const": "idle"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "generation",
+            "operationId",
+            "input"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "starting",
+                "active",
+                "stale",
+                "stopping",
+                "unavailable",
+                "uncertain"
+              ]
+            },
+            "generation": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            "operationId": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+            },
+            "input": {
+              "const": "music"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "generation",
+            "operationId",
+            "input",
+            "microphoneId"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "starting",
+                "active",
+                "stale",
+                "stopping",
+                "unavailable",
+                "uncertain"
+              ]
+            },
+            "generation": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            "operationId": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+            },
+            "input": {
+              "const": "microphone"
+            },
+            "microphoneId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+            }
+          }
+        }
+      ]
+    },
+    "microphone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+        }
+      }
+    },
+    "response": {
+      "$ref": "#/$defs/response"
+    }
+  },
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "endpointId",
+        "generation",
+        "microphoneId",
+        "sampleRateHz",
+        "channels"
+      ],
+      "properties": {
+        "endpointId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        "generation": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "microphoneId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+        },
+        "sampleRateHz": {
+          "type": "integer",
+          "minimum": 8000,
+          "maximum": 192000,
+          "multipleOf": 10
+        },
+        "channels": {
+          "enum": [
+            1,
+            2
+          ]
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sensitivity",
+        "smoothingMs",
+        "emphasis",
+        "gate"
+      ],
+      "properties": {
+        "sensitivity": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 8
+        },
+        "smoothingMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2000
+        },
+        "emphasis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bass",
+            "mid",
+            "treble"
+          ],
+          "properties": {
+            "bass": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 4
+            },
+            "mid": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 4
+            },
+            "treble": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 4
+            }
+          }
+        },
+        "gate": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "off"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "threshold"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "manual"
+                },
+                "threshold": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 16
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "threshold",
+                "calibrationId"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "calibrated"
+                },
+                "threshold": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 16
+                },
+                "calibrationId": {
+                  "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "binding",
+        "windowCount",
+        "startedAtMs",
+        "endedAtMs",
+        "sourceDurationMs",
+        "percentileRms",
+        "maximumRms",
+        "suggestedThreshold"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "binding": {
+          "$ref": "#/$defs/binding"
+        },
+        "windowCount": {
+          "const": 50
+        },
+        "startedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "endedAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sourceDurationMs": {
+          "const": 5000
+        },
+        "percentileRms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "maximumRms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "suggestedThreshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 16
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "settingsRevision",
+        "settings",
+        "appliedTo",
+        "calibration",
+        "evidence"
+      ],
+      "properties": {
+        "settingsRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "settings": {
+          "$ref": "#/$defs/settings"
+        },
+        "appliedTo": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/binding"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "calibration": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "const": "idle"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "operationId",
+                "binding",
+                "startedAtMs",
+                "deadlineAtMs"
+              ],
+              "properties": {
+                "status": {
+                  "const": "measuring"
+                },
+                "operationId": {
+                  "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+                },
+                "binding": {
+                  "$ref": "#/$defs/binding"
+                },
+                "startedAtMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "deadlineAtMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "operationId"
+              ],
+              "properties": {
+                "status": {
+                  "const": "ready"
+                },
+                "operationId": {
+                  "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "operationId",
+                "reason"
+              ],
+              "properties": {
+                "status": {
+                  "const": "ended"
+                },
+                "operationId": {
+                  "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+                },
+                "reason": {
+                  "enum": [
+                    "cancelled",
+                    "stopped",
+                    "stale",
+                    "discontinuity",
+                    "source-lost",
+                    "clock",
+                    "format",
+                    "clipping",
+                    "deadline",
+                    "restart"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/evidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

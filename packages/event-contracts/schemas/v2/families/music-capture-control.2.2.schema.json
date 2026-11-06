@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/music-capture-control/2.2",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "action",
+        "endpointId",
+        "input"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "action": {
+          "const": "start"
+        },
+        "endpointId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        "input": {
+          "const": "music"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "action"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "action": {
+          "const": "stop"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "action",
+        "endpointId",
+        "input",
+        "microphoneId"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "action": {
+          "const": "start"
+        },
+        "endpointId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        "input": {
+          "const": "microphone"
+        },
+        "microphoneId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "action",
+        "binding"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "action": {
+          "const": "calibrate"
+        },
+        "binding": {
+          "$ref": "https://bunny.invalid/events/music-capture-state/2.2#/$defs/binding"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "action",
+        "binding",
+        "operationId"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "action": {
+          "const": "cancel-calibration"
+        },
+        "binding": {
+          "$ref": "https://bunny.invalid/events/music-capture-state/2.2#/$defs/binding"
+        },
+        "operationId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "action",
+        "binding",
+        "settings",
+        "expectedSettingsRevision"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "action": {
+          "const": "apply-tuning"
+        },
+        "binding": {
+          "$ref": "https://bunny.invalid/events/music-capture-state/2.2#/$defs/binding"
+        },
+        "settings": {
+          "$ref": "https://bunny.invalid/events/music-capture-state/2.2#/$defs/settings"
+        },
+        "expectedSettingsRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        }
+      }
+    }
+  ]
+}

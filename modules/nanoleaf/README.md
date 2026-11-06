@@ -174,6 +174,19 @@ The palette has 1–8 hex colors; intensity is 0–1, sensitivity 0.1–8, smoot
 0–2000 ms, pulse half-life 100–2000 ms and wave period 400–10000 ms. These bounds
 are source constraints and do not qualify a device cadence or flash-safety limit.
 
+`freezeMusicRecipeV2(unknown)` requires an explicit `rendererVersion: 2` and a
+closed `response` setting in place of V1's top-level sensitivity/smoothing.
+The browser-safe `@jimmie-potts/nanoleaf/music-response` export supplies the same
+`musicResponse` calculation used by V2 and the microphone numerical preview:
+gate linear RMS, apply sensitivity and broad-band emphasis, clamp targets to
+0–1, then smooth once using source-time deltas. Gate closure lets existing
+smoothing decay; it does not add another envelope. V2 ambient color uses the
+processed band centroid without a second color filter. Its decorative pulse
+envelope remains effect behavior. V1's defaults and interpretation are unchanged.
+The caller supplies already qualified input and owns the settings revision,
+freshness and retirement. This pure helper grants no microphone or light
+authority; `MusicInput` still accepts only its existing Music feature contract.
+
 `MusicInput(binding, anchor)` holds one immutable latest feature from #721's
 existing profile-2 capture family. `binding` names the endpoint and capture
 generation; the caller must establish that authority. `accept(message, clock)`

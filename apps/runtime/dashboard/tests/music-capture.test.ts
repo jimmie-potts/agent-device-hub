@@ -18,6 +18,7 @@ const frame = (overrides: Partial<Omit<CaptureFeatures, 'input' | 'microphoneId'
     rms: 0.25, peak: 0.5, clippedFraction: 0, bands: {bass: 0.1, mid: 0.2, treble: 0.1}, onset: {strength: 0, confidence: 0}, discontinuity: false, ...overrides, ...(overrides.input === 'microphone' ? {input: 'microphone', microphoneId: overrides.microphoneId} : {input: 'music'})},
 });
 const level = (projection: CaptureProjection) => projection.view.features?.rms;
+const responseLevel = (projection: CaptureProjection) => projection.view.response?.level;
 const ready = () => {const projection = new CaptureProjection(); projection.synchronize(state(), 101005, now(1000), now(1010)); return projection;};
 void test('microphone projection requires its explicit alias and a supporting feature version', () => {
   const selected: CaptureState = {...state(), microphone: {id: 'studio-mic'},
@@ -135,8 +136,8 @@ void test('an initial sync result retained across a restart cannot revive old fr
   await feed.close();
 });
 
-void test('Audio scope reads both registered state versions and ignores unregistered versions', async () => {
-  for (const version of ['2.0', '2.1', '2.2']) {
+void test('Audio scope reads registered state versions and ignores unregistered versions', async () => {
+  for (const version of ['2.0', '2.1', '2.2', '2.3']) {
     let mono = 1000;
     const source = {...stateMessage(), dataschema: `https://bunny.invalid/events/music-capture-state/${version}`};
     const participant = {
@@ -147,7 +148,57 @@ void test('Audio scope reads both registered state versions and ignores unregist
       },
     };
     const feed = new MusicCaptureFeed({participant: participant as unknown as ConstructorParameters<typeof MusicCaptureFeed>[0]['participant'], now: () => now(mono)});
-    await feed.refresh();assert.equal(feed.getSnapshot().state?.id, version === '2.2' ? undefined : 'music');
+    await feed.refresh();assert.equal(feed.getSnapshot().state?.id, version === '2.3' ? undefined : 'music');
     await feed.close();
+  }
+});
+
+
+void test('response preview uses committed settings while raw levels retain their measured meaning', () => {
+  const selected: CaptureState = {...state(), microphone: {id: 'studio-mic'},
+    session: {status: 'active', generation: 'one', operationId: 'operation-one', input: 'microphone', microphoneId: 'studio-mic'},
+    response: {settingsRevision: 2, settings: {sensitivity: 2, smoothingMs: 0, emphasis: {bass: 3, mid: 0.5, treble: 0}, gate: {mode: 'off'}},
+      appliedTo: null, calibration: {status: 'idle'}, evidence: null}};
+  const projection = new CaptureProjection();projection.synchronize(selected, 101005, now(1000), now(1010));
+  const microphone = {...frame({input: 'microphone', microphoneId: 'studio-mic'}), dataschema: 'https://bunny.invalid/events/music-capture-features/2.1'};
+  projection.feature(microphone, now(1020));assert.equal(level(projection), 0.25);assert.equal(projection.view.response?.level, 0.5);
+  assert.ok(Math.abs((projection.view.response?.bass ?? 0) - 0.6) < 1e-12);assert.equal(projection.view.response?.mid, 0.2);assert.equal(projection.view.response?.treble, 0);
+  const before = projection.view;projection.tick(now(1395));assert.equal(projection.view.response, undefined);
+  assert.equal(before.response?.level, 0.5, 'a retired snapshot is not mutated');
+});
+
+void test('enabled retained gates require the exact application binding and preview resets after a new revision', () => {
+  const binding = {endpointId: 'selected', generation: 'one', microphoneId: 'studio-mic', sampleRateHz: 48000, channels: 2 as const};
+  const settings = {sensitivity: 1, smoothingMs: 1000, emphasis: {bass: 1, mid: 1, treble: 1}, gate: {mode: 'manual' as const, threshold: 0.1}};
+  const response = {settingsRevision: 2, settings, appliedTo: null, calibration: {status: 'idle' as const}, evidence: null};
+  const selected: CaptureState = {...state(), session: {status: 'active', generation: 'one', operationId: 'operation-one', input: 'microphone', microphoneId: 'studio-mic'}, response};
+  const projection = new CaptureProjection();projection.synchronize(selected, 101005, now(1000), now(1010));
+  const microphone = {...frame({input: 'microphone', microphoneId: 'studio-mic'}), dataschema: 'https://bunny.invalid/events/music-capture-features/2.1'};
+  projection.feature(microphone, now(1020));assert.equal(level(projection), 0.25);assert.equal(projection.view.response, undefined);
+  projection.state({...selected, response: {...response, appliedTo: {...binding, generation: 'old'}}});assert.equal(projection.view.response, undefined);
+  projection.state({...selected, response: {...response, appliedTo: binding}});assert.equal(responseLevel(projection), 0.25);
+  projection.state({...selected, response: {...response, appliedTo: binding, settingsRevision: 3, settings: {...settings, sensitivity: 2}}});
+  assert.equal(responseLevel(projection), 0.5, 'a new settings revision does not reuse the old filter');
+  projection.invalidate();assert.equal(projection.view.response, undefined);
+});
+
+void test('locally observed source interruption cannot revive an enabled preview before a new Apply', () => {
+  const binding = {endpointId: 'selected', generation: 'one', microphoneId: 'studio-mic', sampleRateHz: 48000, channels: 2 as const};
+  const response = {settingsRevision: 2, settings: {sensitivity: 1, smoothingMs: 0, emphasis: {bass: 1, mid: 1, treble: 1}, gate: {mode: 'manual' as const, threshold: 0.1}},
+    appliedTo: binding, calibration: {status: 'idle' as const}, evidence: null};
+  const selected: CaptureState = {...state(), session: {status: 'active', generation: 'one', operationId: 'operation-one', input: 'microphone', microphoneId: 'studio-mic'}, response};
+  const mic = (sequence: number, discontinuity = false) => ({...frame({input: 'microphone', microphoneId: 'studio-mic', sequence, discontinuity,
+    startMonotonicMs: sequence * 100, endMonotonicMs: (sequence + 1) * 100, emittedMonotonicMs: (sequence + 1) * 100 + 5,
+    observedAtMs: 100900 + sequence * 100, validUntilMs: 101300 + sequence * 100}), dataschema: 'https://bunny.invalid/events/music-capture-features/2.1'});
+  for (const interruption of ['discontinuity', 'expiry', 'gap', 'source-time'] as const) {
+    const projection = new CaptureProjection();projection.synchronize(selected, 101005, now(1000), now(1010));
+    projection.feature(mic(1), now(1020));assert.equal(responseLevel(projection), 0.25);
+    if (interruption === 'expiry') {projection.tick(now(1395));projection.feature(mic(5), now(1420));}
+    else if (interruption === 'gap') projection.feature(mic(3), now(1220));
+    else if (interruption === 'source-time') {const next = mic(2);projection.feature({...next, data: {...next.data, startMonotonicMs: 250, endMonotonicMs: 350, emittedMonotonicMs: 355}}, now(1120));}
+    else projection.feature(mic(2, true), now(1120));
+    assert.equal(level(projection), 0.25);assert.equal(responseLevel(projection), undefined, interruption);
+    projection.state(selected);assert.equal(responseLevel(projection), undefined, 'unchanged core qualification cannot erase the observed interruption');
+    projection.state({...selected, response: {...response, settingsRevision: 3}});assert.equal(responseLevel(projection), 0.25, 'a newly applied revision qualifies the latest input');
   }
 });

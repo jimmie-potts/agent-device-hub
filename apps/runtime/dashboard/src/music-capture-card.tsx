@@ -4,6 +4,7 @@ import type {CaptureInput} from '@jimmie-potts/event-contracts/v2/music-capture-
 import type {DashboardConnection} from './connection.ts';
 import {useAttempt} from './command-control.tsx';
 import type {MusicCaptureFeed, MusicCaptureView} from './music-capture-feed.ts';
+import {MusicResponseControls} from './music-response-controls.tsx';
 import './music.css';
 
 const empty: MusicCaptureView = {synced: false, state: undefined, features: undefined, clockQualified: false};
@@ -99,6 +100,6 @@ export function MusicCaptureCard({connection, connected, coreLive, control, oper
     {start.requestId !== undefined && <p role="status">Start: {resultText(start.text)}</p>}
     {stop.requestId !== undefined && <p role="status">Stop: {resultText(stop.text)}</p>}
     <button type="button" className="secondary" disabled={!connected || !coreLive || scope === undefined || refreshing} onClick={() => {void refresh();}}>Refresh capture status</button>
-    <p className="music-note">Microphone calibration and light effects are not available yet.</p>
+    <MusicResponseControls view={view} available={Boolean(available)} operations={selected} operationsLive={operationsLive}/>
   </article>;
 }

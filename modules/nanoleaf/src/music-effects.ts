@@ -1,11 +1,29 @@
-import {pyRound} from './compat.js';
+import type {CaptureResponseSettings} from '@jimmie-potts/event-contracts/v2/music-capture-data';
+import {musicResponse, freezeResponseSettings, type MusicResponseValue} from './music-response.js';
+import {isObject, pyRound} from './compat.js';
 import {projection, validateElements, type LayoutEntry} from './devices.js';
 import {display, MAX_BYTES, MAX_FRAMES, phases, Rejected, rgb, scale, size,
-  type Display, type Rgb, type Zone} from './effects.js';
+  type Direction, type Display, type Rgb, type Zone} from './effects.js';
 import {musicBinding, type MusicBinding, type MusicSample} from './music-input.js';
+
 import {freezeMusicRecipe, type MusicRecipeV1} from './music-recipe-data.js';
 export {freezeMusicRecipe} from './music-recipe-data.js';
 export type {MusicRecipeV1} from './music-recipe-data.js';
+type EffectParameters = (
+  {readonly effect: 'level-glow' | 'ambient'}
+  | {readonly effect: 'bass-pulse'; readonly halfLifeMs: number}
+  | {readonly effect: 'spectrum'; readonly direction: Direction}
+  | {readonly effect: 'traveling-wave'; readonly direction: Direction; readonly periodMs: number}
+);
+export type MusicRecipeV2 = Readonly<{rendererVersion: 2; palette: readonly string[]; intensity: number; response: CaptureResponseSettings}> & EffectParameters;
+
+export function freezeMusicRecipeV2(input: unknown): MusicRecipeV2 {
+  if (!isObject(input) || input.rendererVersion !== 2 || Object.hasOwn(input, 'sensitivity') || Object.hasOwn(input, 'smoothingMs'))
+    throw new TypeError('Unsupported version-two music recipe.');
+  const {response, ...other} = input;
+  const {rendererVersion: _version, sensitivity: _sensitivity, smoothingMs: _smoothing, ...effect} = freezeMusicRecipe({...other, rendererVersion: 1});
+  return Object.freeze({...effect, rendererVersion: 2, response: freezeResponseSettings(response)});
+}
 
 const clamp = (value: number): number => Math.max(0, Math.min(1, value));
 const mix = (before: number, after: number, alpha: number): number => before + (after - before) * alpha;
@@ -21,20 +39,23 @@ function paletteAt(colors: readonly Rgb[], position: number): Rgb {
 
 /** Deterministic source-time math only. The caller owns freshness and authority; this class cannot contact a device. */
 export class MusicRenderer {
-  readonly #recipe: MusicRecipeV1;
+  readonly #recipe: MusicRecipeV1 | MusicRecipeV2;
+  readonly #settings: CaptureResponseSettings;
+  #response: MusicResponseValue | undefined;
   readonly #binding: MusicBinding;
   readonly #colors: readonly Rgb[];
   readonly #zones: readonly (readonly number[])[];
   readonly #phases: readonly number[];
   readonly #lines: boolean;
   #previous: {sequence: number; endMs: number; elapsedMs: number} | null = null;
-  #levels: readonly [number, number, number, number] = [0, 0, 0, 0];
   #pulse = 0;
   #retired = false;
   #ambient: Rgb | null = null;
 
   constructor(recipe: unknown, layout: LayoutEntry, binding: MusicBinding) {
-    this.#recipe = freezeMusicRecipe(recipe);
+    this.#recipe = isObject(recipe) && recipe.rendererVersion === 2 ? freezeMusicRecipeV2(recipe) : freezeMusicRecipe(recipe);
+    this.#settings = freezeResponseSettings(this.#recipe.rendererVersion === 2 ? this.#recipe.response :
+      {sensitivity: this.#recipe.sensitivity, smoothingMs: this.#recipe.smoothingMs, emphasis: {bass: 1, mid: 1, treble: 1}, gate: {mode: 'off'}});
     this.#binding = musicBinding(binding);
     this.#colors = this.#recipe.palette.map(rgb);
     const saved = projection({kind: layout.kind, elements: validateElements(layout.kind, layout.elements)});
@@ -60,17 +81,16 @@ export class MusicRenderer {
     }
     const delta = before === null ? 0 : frame.endMonotonicMs - before.endMs;
     const recipe = this.#recipe;
-    const alpha = before === null || recipe.smoothingMs === 0 ? 1 : -Math.expm1(-delta / recipe.smoothingMs);
-    const response = (value: number): number => clamp(value * recipe.sensitivity);
-    const target = [response(frame.rms), response(frame.bands.bass), response(frame.bands.mid), response(frame.bands.treble)] as const;
-    const smooth = (index: 0 | 1 | 2 | 3): number => mix(this.#levels[index], target[index], alpha);
-    const levels = [smooth(0), smooth(1), smooth(2), smooth(3)] as const;
+    const response = musicResponse(this.#settings, frame, delta, this.#response);
+    const {alpha} = response;
+    const levels = [response.level, response.bass, response.mid, response.treble] as const;
     const pulse = recipe.effect === 'bass-pulse' ? Math.max(levels[1], this.#pulse * 2 ** (-delta / recipe.halfLifeMs)) : 0;
-    const sum = frame.bands.bass + frame.bands.mid + frame.bands.treble;
-    const centroid = sum === 0 ? null : (0.5 * frame.bands.mid + frame.bands.treble) / sum;
+    const bands = recipe.rendererVersion === 1 ? frame.bands : response;
+    const sum = bands.bass + bands.mid + bands.treble;
+    const centroid = sum === 0 ? null : (0.5 * bands.mid + bands.treble) / sum;
     const desired = centroid === null ? this.#ambient ?? this.#colors[0] ?? [0, 0, 0] : paletteAt(this.#colors, centroid);
     const priorColor = this.#ambient ?? desired;
-    const ambient: Rgb = [mix(priorColor[0], desired[0], alpha), mix(priorColor[1], desired[1], alpha), mix(priorColor[2], desired[2], alpha)];
+    const ambient: Rgb = recipe.rendererVersion === 2 ? desired : [mix(priorColor[0], desired[0], alpha), mix(priorColor[1], desired[1], alpha), mix(priorColor[2], desired[2], alpha)];
     const zones: Zone[] = [];
     this.#zones.forEach((ids, index) => {
       const phase = this.#phases[index] ?? 0;
@@ -92,7 +112,7 @@ export class MusicRenderer {
     const payload: Display = {write: display(zones, false, false, this.#lines)};
     if (zones.some(([, frames]) => frames.length > MAX_FRAMES) || size(payload) > MAX_BYTES) throw new Rejected('capacity');
     this.#previous = {sequence: frame.sequence, endMs: frame.endMonotonicMs, elapsedMs: sample.elapsedMs};
-    this.#levels = levels;
+    this.#response = response;
     this.#pulse = pulse;
     this.#ambient = ambient;
     return payload;

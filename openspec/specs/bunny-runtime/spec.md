@@ -1591,7 +1591,7 @@ A host music-producer credential SHALL have a fixed producer source, no ordinary
 
 ### Requirement: Capture state is a core responsibility
 
-The runtime SHALL publish and sync one authoritative current music-capture record through its core, using `/2.1` while accepting supported `/2.0` inputs. It SHALL apply existing durable operator admission, command outcome, history and safe-error rules. Configured microphone capability SHALL describe selection support only. The core SHALL bind a microphone start to the advertised alias, endpoint and generation, and refuse another input's features. Capture state SHALL NOT change device modes, send speaker commands or establish light participation.
+The runtime SHALL publish and sync one authoritative current music-capture record through its core, using `/2.2` while accepting supported `/2.0` and `/2.1` inputs. It SHALL apply existing durable operator admission, command outcome, history and safe-error rules. Configured microphone capability SHALL describe selection support only. The core SHALL bind a microphone start to the advertised alias, endpoint and generation, and refuse another input's features. Capture state SHALL NOT change device modes, send speaker commands or establish light participation.
 
 #### Scenario: Explicit capture without lights
 - **WHEN** an admitted operator starts a supported Music or configured microphone input
@@ -1745,3 +1745,27 @@ The core SHALL publish a bounded art-schedule record through existing transactio
 #### Scenario: Only some surfaces complete
 - **WHEN** the browser selection commits, one display reports transmission and another loses its reply
 - **THEN** the workspace identifies those separate facts, shows uncertainty for the lost reply and claims neither all-surface delivery nor physical visibility
+
+### Requirement: Atomic calibration and tuning responsibility
+
+The core SHALL commit calibration responsibility, response changes, evidence and command outcomes through its existing transaction/history owner. Cancellation SHALL leave capture and committed settings unchanged. Stop SHALL remain independent. Conflicting revision/source bindings SHALL produce no partial application. Restart SHALL retain settings/evidence, retire qualification and settle pending measurement without replay.
+
+#### Scenario: Apply conflict and storage refusal
+- **WHEN** Apply has an obsolete revision/binding or its transaction cannot commit
+- **THEN** it reports the existing refusal or failed/uncertain outcome, no partial settings become active, and existing storage recovery fences capture
+
+#### Scenario: Cancel or Stop during measurement
+- **WHEN** the operator cancels measurement or independently stops capture
+- **THEN** cancellation leaves capture unchanged; Stop retires capture and qualification, and neither path can later accept the old candidate
+
+#### Scenario: Restart and lost reply
+- **WHEN** calibration is unfinished at restart or an Apply reply is lost
+- **THEN** recovery exposes retained committed evidence truthfully and no request or measurement is automatically repeated
+
+#### Scenario: Clock loss after Apply or candidate completion
+- **WHEN** source, observed-wall or receipt elapsed time loses bounded coherence after Apply with no measurement running, or after a candidate completes
+- **THEN** the core atomically retires application and candidate eligibility while preserving raw capture activity, preferences, evidence and already completed outcomes; later coherent input cannot revive qualification
+
+#### Scenario: Refused clock-retirement transaction
+- **WHEN** storage refuses the retirement caused by incoherent response clocks
+- **THEN** the existing fault path disconnects capture, recovery exposes retained settings without active qualification, and no source work is replayed
