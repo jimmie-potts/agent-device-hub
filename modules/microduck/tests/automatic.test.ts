@@ -3,8 +3,8 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
-import {setTimeout as pause} from 'node:timers/promises';
-import {InProcessBus} from '@jimmie-potts/sdk';
+import {setImmediate as turn} from 'node:timers/promises';
+import {InProcessBus,type Scheduler} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import type {ModeState,SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CompanionOpportunity} from '@jimmie-potts/event-contracts/v2/companions';
@@ -12,11 +12,25 @@ import {createMicroDuckModule} from '../src/module.js';
 import {SimulatedMicroDuck} from '../src/simulated.js';
 import {MICRODUCK_SIMULATED_SECTION as section} from '../src/registration.js';
 import type {MicroDuckState} from '../src/contracts.js';
-const until=async(check:()=>boolean):Promise<void>=>{for(let n=0;n<400;n++){if(check())return;await pause(5);}assert.fail('missing evidence');};
+/**
+ * Moved only by the test, and shared by the module, the bus and the simulator. Automatic expression refuses sensor
+ * evidence older than 500 ms, and its path to the first write runs eight synchronous commits with no observation between
+ * them, so on the real clock a slow disk or a stalled host could refuse the reaction this test waits for.
+ */
+class TestClock {
+ ms=Date.now();
+ readonly #timers=new Set<{at:number;callback:()=>void}>();
+ readonly now=():number=>this.ms;
+ readonly scheduler:Scheduler={after:(delayMs,callback)=>{const timer={at:this.ms+delayMs,callback};this.#timers.add(timer);return ()=>{this.#timers.delete(timer);};}};
+ async advance(ms:number):Promise<void>{for(let moved=0;moved<ms;moved+=5){this.ms+=5;for(const timer of [...this.#timers].sort((a,b)=>a.at-b.at)){if(timer.at>this.ms)break;if(this.#timers.delete(timer))timer.callback();}await turn();}}
+}
+/** A synchronous stall of the host, as a slow commit or a descheduled runner gives; only the real clock sees it. */
+const stallHost=(ms:number):void=>{Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,ms);};
 void test('only opted-in current live attention reacts; repeats, other sessions, Quiet and takeover stay silent',{timeout:10000},async t=>{
- const dir=await mkdtemp(join(tmpdir(),'microduck-auto-')),bus=new InProcessBus(),core=bus.connect('bunny/core'),robot=new SimulatedMicroDuck();
- let mode:ModeState={id:'hub',revision:1,mode:'work',selectedAtMs:Date.now()},state:MicroDuckState|undefined;
- const session:SessionRecord={id:'session-1',revision:1,generation:1,identity:{provider:'codex',client:'desktop',hostId:'host',sourceId:'desktop',sessionId:'s-1'},parent:{status:'top-level'},turn:{status:'unknown'},activity:'active',attention:[{id:{status:'known',id:'a-1'},kind:'approval',turn:{status:'unknown'}}],notices:[],read:'unknown',unavailable:[],ordering:{status:'unknown'},observedAtMs:Date.now(),lastEvidenceAtMs:Date.now(),freshness:'current',restartUncertain:false,children:{active:0,uncertain:0}};
+ const dir=await mkdtemp(join(tmpdir(),'microduck-auto-')),clock=new TestClock(),bus=new InProcessBus({now:clock.now,scheduler:clock.scheduler}),core=bus.connect('bunny/core'),robot=new SimulatedMicroDuck(clock);
+ const pause=(ms:number):Promise<void>=>clock.advance(ms),until=async(check:()=>boolean):Promise<void>=>{for(let n=0;n<400;n++){if(check())return;await pause(5);}assert.fail('missing evidence');};
+ let mode:ModeState={id:'hub',revision:1,mode:'work',selectedAtMs:clock.now()},state:MicroDuckState|undefined;
+ const session:SessionRecord={id:'session-1',revision:1,generation:1,identity:{provider:'codex',client:'desktop',hostId:'host',sourceId:'desktop',sessionId:'s-1'},parent:{status:'top-level'},turn:{status:'unknown'},activity:'active',attention:[{id:{status:'known',id:'a-1'},kind:'approval',turn:{status:'unknown'}}],notices:[],read:'unknown',unavailable:[],ordering:{status:'unknown'},observedAtMs:clock.now(),lastEvidenceAtMs:clock.now(),freshness:'current',restartUncertain:false,children:{active:0,uncertain:0}};
  await core.serveSync(['session','mode'],()=>({revision:1,states:[{type:'org.bunny.session.updated',subject:session.id,dataschema:'https://bunny.invalid/events/session/2.0',data:session},{type:'org.bunny.mode.updated',subject:'hub',dataschema:'https://bunny.invalid/events/mode/2.0',data:mode}]}));
  let firstReaction:'unarmed'|'waiting'|'transmitted'|'quiet'='unarmed';
  await core.subscribe<MicroDuckState>('bunny.state.microduck-state.*',async m=>{
@@ -30,12 +44,12 @@ void test('only opted-in current live attention reacts; repeats, other sessions,
  });
  let dispatches=0;
  await core.respond<Record<string,unknown>&{requestId:string;target:string}>('bunny.cmd.microduck-dispatch.microduck',async c=>{dispatches++;const {target,...data}=c.data;const r=await core.request(`bunny.cmd.microduck-auto.${target}`,{type:'org.bunny.microduck.auto.requested',subject:target,dataschema:'https://bunny.invalid/events/microduck-auto/2.0',data},{requestId:c.data.requestId,timeoutMs:3000});return r.status==='accepted'?{status:'accepted'}:{error:{code:'internal',retryable:false}};});
- let host=new ModuleHarness(createMicroDuckModule({transport:robot}),{bus,stateDir:dir,section});t.after(async()=>{await host.stop();await core.close();await rm(dir,{recursive:true,force:true});});await host.start();await until(()=>state?.connection==='available');await pause(30);
+ let host=new ModuleHarness(createMicroDuckModule({transport:robot}),{bus,stateDir:dir,section,clock,scheduler:clock.scheduler});t.after(async()=>{await host.stop();await core.close();await rm(dir,{recursive:true,force:true});});await host.start();await until(()=>state?.connection==='available');await pause(30);
  const control=async(action:string)=>{const id=crypto.randomUUID();const r=await core.request('bunny.cmd.microduck-control.microduck-sim',{type:'org.bunny.microduck.control.requested',subject:'microduck-sim',dataschema:'https://bunny.invalid/events/microduck-control/2.0',data:{action,expectedConfigurationRevision:state?.configurationRevision,expectedGeneration:state?.generation}},{requestId:id,timeoutMs:3000});assert.equal(r.status,'accepted');await until(()=>state?.lastOutcome?.requestId===id);};
- const event=(id:string):CompanionOpportunity=>({origin:{id,source:'bunny/core',type:'org.bunny.attention.raised'},sourceKind:'coding',context:'live',category:'coding-attention',cue:'approval',revision:1,generation:1,session:session.id,identity:session.identity,turn:session.turn,attention:session.attention[0]??null,noticeId:null,evidence:'lifecycle-metadata',occurredAtMs:Date.now(),observedAtMs:Date.now(),validUntilMs:Date.now()+30000,busy:null,media:null,visitor:null,location:null});
- const publish=async(data:CompanionOpportunity,lateContinuation=false)=>{await core.publish('bunny.event.companion-opportunity.reachy',{kind:'occurrence',type:'org.bunny.companion-opportunity.raised',subject:'reachy',dataschema:'https://bunny.invalid/events/companion-opportunity/2.0',data});await pause(lateContinuation?2*900:30);};
+ const event=(id:string):CompanionOpportunity=>({origin:{id,source:'bunny/core',type:'org.bunny.attention.raised'},sourceKind:'coding',context:'live',category:'coding-attention',cue:'approval',revision:1,generation:1,session:session.id,identity:session.identity,turn:session.turn,attention:session.attention[0]??null,noticeId:null,evidence:'lifecycle-metadata',occurredAtMs:clock.now(),observedAtMs:clock.now(),validUntilMs:clock.now()+30000,busy:null,media:null,visitor:null,location:null});
+ const publish=async(data:CompanionOpportunity,lateContinuation=false)=>{const published=core.publish('bunny.event.companion-opportunity.reachy',{kind:'occurrence',type:'org.bunny.companion-opportunity.raised',subject:'reachy',dataschema:'https://bunny.invalid/events/companion-opportunity/2.0',data});if(lateContinuation)stallHost(600);await published;await pause(lateContinuation?2*900:30);};
  const suppressed=event('disabled');await publish(suppressed);assert.equal(dispatches,0);await control('enable-auto');assert.equal(dispatches,0,'snapshots and enablement are passive');await publish(suppressed);assert.equal(dispatches,0,'suppressed origins cannot replay after enablement');
- await host.stop();host=new ModuleHarness(createMicroDuckModule({transport:robot}),{bus,stateDir:dir,section});await host.start();await until(()=>state?.connection==='available');await pause(30);await control('resume-auto');await publish(suppressed);assert.equal(dispatches,0,'suppressed origin fence survives restart and explicit resume');
+ await host.stop();host=new ModuleHarness(createMicroDuckModule({transport:robot}),{bus,stateDir:dir,section,clock,scheduler:clock.scheduler});await host.start();await until(()=>state?.connection==='available');await pause(30);await control('resume-auto');await publish(suppressed);assert.equal(dispatches,0,'suppressed origin fence survives restart and explicit resume');
  await publish({...event('bare-turn'),category:'coding-notice',attention:null,noticeId:null});assert.equal(dispatches,0,'a bare turn end is no notice');
  const wrongSession=event('wrong-session');await publish({...wrongSession,session:'other-session'});assert.equal(dispatches,0);await publish(wrongSession);assert.equal(dispatches,0,'an origin discarded for session mismatch cannot become a new reaction');const first=event('first');firstReaction='waiting';await publish(first,true);await until(()=>firstReaction==='quiet');assert.equal(dispatches,1);
  await until(()=>state?.active===null);assert.equal(robot.state().moves,1,'Quiet fences the neutral stage');assert.equal(state?.held!==null,true,'Quiet preserves uncertainty without a vendor stop');
