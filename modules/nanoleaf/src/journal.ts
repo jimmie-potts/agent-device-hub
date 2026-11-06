@@ -8,7 +8,7 @@
 // (Hub #975); Python's hold had none.
 import {errorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import {DEFAULT, metaKey} from './devices.js';
-import {initMusicSessions, MUSIC_PLAY, MUSIC_STOP, startEnded} from './music-store.js';
+import {initMusicSessions, liveSession, MUSIC_PLAY, MUSIC_STOP, startEnded} from './music-store.js';
 import {execute, first, number, rows, text, transaction, type Db, type Row, type Synchronous} from './sqlite.js';
 import {Outcome as OutcomeWord} from '@jimmie-potts/sdk';
 
@@ -258,6 +258,8 @@ export function recoverAttempts(db: Db, device: string, report: Report, nowMs: n
  */
 export function expireQueued(db: Db, device: string, now: number, report: Report, nativeOnly = false): void {
   for (const row of journal(db, device, "AND phase='queued' AND expires<=? AND (kind<>? OR ?)", now, ANIMATION, nativeOnly ? 0 : 1)) {
+    // A Music stop waits for its live session's loop, which ends it with the session; a late Stop never strands one (#1272).
+    if (row.kind === MUSIC_STOP && liveSession(db, device, String((row.command as {generation?: unknown}).generation))) continue;
     finish(db, row, {kind: 'expired'}, report, now * 1000);
   }
 }

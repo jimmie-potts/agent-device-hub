@@ -30,7 +30,7 @@ test('lighting families are new 2.0 commands and states registered with the core
     ['music-lighting-control:command', 'music-lighting-state:state', 'music-lighting-work:command', 'music-lighting-device:state']);
   assert.ok(musicLightingFamilies.every(family => family.dataschema.endsWith('/2.0')));
   assert.deepEqual([...LIGHTING_END_REASONS], ['stopped', 'alert', 'manual', 'source-lost', 'device', 'restart', 'expired', 'refused']);
-  assert.deepEqual([...LIGHTING_RESTORATIONS], ['restored', 'skipped', 'none']);
+  assert.deepEqual([...LIGHTING_RESTORATIONS], ['restored', 'skipped', 'none', 'uncertain']);
 });
 
 test('control names a saved preset and the current Music capture, never a mode or a recipe', () => {
@@ -66,6 +66,9 @@ test('device state ties an ending to its own session generation', () => {
   valid(device({id: 'lines', revision: 0, session: null}));
   valid(device({id: 'lines', revision: 1, session: {generation, status: 'playing'}}));
   valid(device({id: 'lines', revision: 2, session: {generation, status: 'ended', ended}}));
+  valid(device({id: 'lines', revision: 3, session: {generation, status: 'ended', ended: {...ended, reason: 'refused', code: 'invalid-state'}}}));
+  valid(device({id: 'lines', revision: 3, session: {generation, status: 'ended', ended: {...ended, reason: 'alert', restoration: 'uncertain'}}}));
+  invalid(device({id: 'lines', revision: 3, session: {generation, status: 'ended', ended: {...ended, code: 'not-a-code'}}}));
   invalid(device({id: 'lines', revision: 2, session: {generation, status: 'ended', ended: {...ended, generation: capture.generation}}}));
   invalid(device({id: 'lines', revision: 2, session: {generation, status: 'playing', ended}}));
   invalid(device({id: 'lines', revision: 2, session: {generation, status: 'ended'}}));

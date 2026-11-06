@@ -4,12 +4,13 @@
 // journaled write; later frames are the module's own paints of the admitted session. A Stop, an alert or source loss
 // restores the named base only while nothing newer took over; a newer choice, an external change or a failed write
 // ends it with no restoration. Nothing retries, resends, resumes or falls back to another input or light.
+import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {LightingCapture, LightingEndReason, LightingRestoration} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import {Cancelled, Execution, Refused} from './controls.js';
 import {DEFAULT, type Element, type Kind, type LayoutEntry} from './devices.js';
 import {Rejected, type Display} from './effects.js';
 import {ValueError} from './errors.js';
-import {finish, finishMusicStops, held, journal, journalRow, type End, type JournalRow, type Report, type Transact} from './journal.js';
+import {answerCode, finish, finishMusicStops, held, journal, journalRow, type End, type JournalRow, type Report, type Transact} from './journal.js';
 import type {Indication} from './line-projection.js';
 import {alerting, newerChoice, NEWER_CHOICES, restoreFreeBase, type Admitted, type DeviceRead, type FreeBase} from './moments.js';
 import {MusicRenderer, type MusicRecipeV1} from './music-effects.js';
@@ -19,7 +20,7 @@ import {endSession, liveSession, markPlaying, musicSession, MUSIC_PLAY, MUSIC_ST
 import type {RenderConfig} from './renderer.js';
 import {execute, type Db} from './sqlite.js';
 import {controlState, markDirty, overrides, type Overrides} from './store.js';
-import type {LightRequest} from './transport.js';
+import {HttpError, type LightRequest} from './transport.js';
 
 export {MUSIC_PLAY, MUSIC_STOP, musicDeviceState, initMusicSessions} from './music-store.js';
 
@@ -89,6 +90,8 @@ export function checkMusicStart(db: Db, device: string, start: StartRequest, lay
   const control = controlState(db, device);
   if (control.mode !== 'free' || control.revision !== control.applied) throw new Refused('invalid-state', 'Live Music starts only on a light already in Free.');
   if (held(db, control.revision, device)) throw new Refused('unavailable', 'A device hold waits for an explicit choice.');
+  // The hub's own choice of power off is a choice Music must not override, as a moment does not.
+  if (overrides(db, device).power === false) throw new Refused('invalid-state', 'The light is switched off.');
   if (liveSession(db, device)) throw new Refused('invalid-state', 'A Music session is already starting or playing.');
   if (journal(db, device).length > 0) throw new Refused('capacity', 'Other content waits on the Lines.');
   let recipe: MusicRecipeV1 | undefined;
@@ -208,11 +211,20 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   const deviceFailure = (error: unknown): void => {
     if (!deviceFailed || stopping()) throw error;
   };
-  /** Ends the session, its Start if it is still journaled, the Stop that ended it, and any other Stop for it, in one transaction. */
-  const end = (reason: LightingEndReason, restoration: LightingRestoration, startEnd: End = {kind: 'retired'}, stop?: JournalRow): Promise<void> =>
+  /** The code a device failure ends with: the device's answer, or an uncertain result when no answer came. */
+  const failureCode = (error: unknown): ErrorCode => error instanceof HttpError ? answerCode(error.status) : 'uncertain-result';
+  /** The code a Start's ending names, from how its journal row ends. */
+  const startCode = (startEnd: End): ErrorCode | undefined => startEnd.kind === 'refused' || startEnd.kind === 'answered' ? startEnd.code
+    : startEnd.kind === 'expired' ? 'expired' : startEnd.kind === 'uncertain' ? 'uncertain-result' : undefined;
+  /**
+   * Ends the session, with the refusal or failure `code` behind a refused, expired or device ending, its Start if it is
+   * still journaled, the Stop that ended it, and any other Stop for it, in one transaction.
+   */
+  const end = (reason: LightingEndReason, restoration: LightingRestoration, startEnd: End = {kind: 'retired'}, stop?: JournalRow,
+    code: ErrorCode | undefined = startCode(startEnd)): Promise<void> =>
     transact(report => {
       const at = now();
-      endSession(db, device, generation, reason, restoration, at, report);
+      endSession(db, device, generation, reason, restoration, at, report, code);
       const start = journalRow(db, row.id);
       if (start !== undefined) finish(db, start, startEnd, report, at);
       const live = stop === undefined ? undefined : journalRow(db, stop.id);
@@ -255,6 +267,14 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   }
   const {payload} = first;
   const shown = shownBy(payload);
+  // The light must still show its base: a scene chosen since the Start's read is a newer manual choice.
+  try {
+    if (await read('/effects/select') !== freeBase.name) return end('manual', 'none');
+  } catch (error) {
+    deviceFailure(error);
+    return end('device', 'none', {kind: 'refused', code: 'unavailable'});
+  }
+  if (stale()) return end('manual', 'none');
   // The first frame is the Start's own journaled write: a lost answer ends it uncertain and holds the device, and an
   // answered refusal fails it; either way `finish` ends the session as a device failure.
   try {
@@ -274,19 +294,30 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   // Later frames are the module's own paints of the admitted session: no command waits on them, so a lost answer holds
   // nothing (as the worker's indicator paints) and ends the session as a device failure, with no retry.
   const paint = new Execution(db, row.revision, null, device, transact, now);
-  /** Each restoration write is guarded before and after, so a newer choice wins over the rest of it. */
+  /**
+   * Each restoration write is guarded before and after, so a newer choice wins over the rest of it. A write whose answer
+   * was lost may have landed: the restoration is uncertain, never retried. A Stop's own write also holds the light.
+   */
   const restore = async (stop: JournalRow | undefined): Promise<LightingRestoration> => {
     const writer = stop === undefined ? paint : new Execution(db, row.revision, stop.id, device, transact, now);
+    let lost = false;
     try {
       return await restoreFreeBase(read, freeBase, shown, stale, async (endpoint, body) => {
         if (stale()) throw new Cancelled();
-        const result = await writer.call(() => send(endpoint, body));
+        let result: unknown;
+        try {
+          result = await writer.call(() => send(endpoint, body));
+        } catch (error) {
+          // An answered refusal heard the write and did not apply it (`Execution` turns a Stop's into `Cancelled`).
+          lost = !(error instanceof Cancelled) && !(error instanceof HttpError);
+          throw error;
+        }
         if (stale()) throw new Cancelled();
         return result;
       }) ? 'restored' : 'skipped';
     } catch (error) {
       if (!(error instanceof Cancelled)) deviceFailure(error);
-      return 'skipped';
+      return lost ? 'uncertain' : 'skipped';
     }
   };
   let lastWrite = now();
@@ -304,14 +335,13 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
       lastCheck = now();
       let showing: boolean;
       try {
-        // An external scene, brightness or power choice is a manual takeover. A scene chosen between two frames is
-        // painted over by the next one, so only a read that lands before that frame sees it.
+        // An external scene, brightness or power choice is a manual takeover. Each frame also reads the selection first.
         const listing = await read('/effects') as {select?: unknown};
         const state = listing.select === shown ? await read('/state') as {on?: {value?: unknown}; brightness?: {value?: unknown}} : undefined;
         showing = state?.brightness?.value === freeBase.brightness && state.on?.value !== false;
       } catch (error) {
         deviceFailure(error);
-        return end('device', 'none');
+        return end('device', 'none', undefined, undefined, 'unavailable');
       }
       if (!showing) return end('manual', 'none');
       // The read took time: every check runs again before the next write.
@@ -322,17 +352,26 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     try {
       frame = renderer.render(next);
     } catch (error) {
-      if (error instanceof Rejected) return end('device', 'none');
+      if (error instanceof Rejected) return end('device', 'none', undefined, undefined, error.code);
       throw error;
     }
     if (frame === null || stale()) continue;
+    // Immediately before each frame, the light must still show the session's frames: a scene chosen in the app since the
+    // last frame is a manual takeover, and the next frame would paint over it. Only the short read-to-write gap is unseen.
+    try {
+      if (await read('/effects/select') !== shown) return end('manual', 'none');
+    } catch (error) {
+      deviceFailure(error);
+      return end('device', 'none', undefined, undefined, 'unavailable');
+    }
+    if (stale() || stopRow() !== undefined) continue;
     try {
       await paint.call(() => send('/effects', frame));
     } catch (error) {
       // A hold or a mode command overtook the write before it was sent: the next check ends the session.
       if (error instanceof Cancelled) continue;
       deviceFailure(error);
-      return end('device', 'none');
+      return end('device', 'none', undefined, undefined, failureCode(error));
     }
     lastWrite = now();
     lastSequence = next.feature.sequence;

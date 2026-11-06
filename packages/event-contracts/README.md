@@ -829,7 +829,8 @@ Control starts with `capture: {endpointId, generation}` and a saved `presetId`, 
 State records name their own light. An ending is `{generation, reason, restoration, atMs}`:
 
 - Reasons: `stopped`, `alert`, `manual`, `source-lost`, `device`, `restart`, `expired` or `refused`.
-- Restorations: `restored`, `skipped` or `none`.
+- Restorations: `restored`, `skipped`, `none` or `uncertain` (a restoration write's answer was lost).
+- An optional `code`, an error code, names the refusal or failure behind a `refused`, `expired` or `device` ending.
 
 A device record's ending must name its session's generation. The tests are in `tests/music-lighting.test.mjs`.
 

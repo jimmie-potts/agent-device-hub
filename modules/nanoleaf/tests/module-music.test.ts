@@ -267,22 +267,99 @@ for (const change of ['scene', 'brightness', 'power', 'mode'] as const) {
   });
 }
 
-test('an external scene choice that the once-per-second read sees ends the session as manual without restoration', async context => {
+test('a scene chosen in the app between two frames ends the session as manual, and a later Stop restores nothing', async context => {
   const session = await playing(context);
   const {world} = session;
+  await world.device.request({ip: LINES_ADDRESS, token: SYNTHETIC_TOKEN}, 'PUT', '/effects', {select: 'Northern Lights'});
   const changed = world.clock.now();
-  // The app chooses its scene again after each frame, so the next read finds it before a frame paints over it.
-  for (let step = 0; step < 15 && ended(world) === undefined; step += 1) {
-    await publish(session, frame(session));
-    await world.device.request({ip: LINES_ADDRESS, token: SYNTHETIC_TOKEN}, 'PUT', '/effects', {select: 'Northern Lights'});
-    await world.advance(100);
-  }
-  await world.until(() => ended(world) !== undefined, 500, 'the manual ending');
+  await play(session, 1500);
   assert.equal(ended(world)?.reason, 'manual');
   assert.equal(ended(world)?.restoration, 'none');
+  assert.equal(frames(world, changed).length, 0, 'no music frame paints over the app\'s choice');
+  assert.deepEqual(await stop(session, 'stop-after-manual'), {status: 'rejected', code: 'invalid-state'});
+  await play(session, 500);
   assert.equal(lines(world)?.select, 'Northern Lights');
-  assert.equal(world.writes().filter(write => write.atMs > changed && write.select === 'Beach Waves').length, 0, 'no base restoration');
+  assert.equal(world.writes().filter(write => write.atMs > changed && (write.select !== undefined || write.brightness !== undefined)).length, 0, 'nothing restores the old base');
   world.verify();
+});
+
+test('a Start is refused while the hub power override or the light itself is off', async context => {
+  const session = await lightsInFree(context);
+  const {world} = session;
+  world.device.setPower(LINES_ADDRESS, false);
+  assert.deepEqual(await start(session, 'device-off'), {status: 'rejected', code: 'invalid-state'});
+  world.device.setPower(LINES_ADDRESS, true);
+  const off = deviceCommand('power-set', {requestId: 'hub-off', on: false});
+  assert.equal((await world.request(off.key, off.draft)).status, 'accepted');
+  await world.until(() => world.outcomes('hub-off').length === 1, 5000, 'the power command');
+  // The light answers on again, as after the app turned it on: the hub's own choice is still off.
+  world.device.setPower(LINES_ADDRESS, true);
+  const before = lines(world)?.writes;
+  assert.deepEqual(await start(session, 'override-off', generation(2)), {status: 'rejected', code: 'invalid-state'});
+  assert.equal(lines(world)?.writes, before);
+  assert.equal(deviceState(world)?.session, null);
+  world.verify();
+});
+
+test('a scene chosen and shown during the Start\'s base read refuses the Start', async context => {
+  const session = await lightsInFree(context);
+  const {world} = session;
+  const scene = world.device_()?.capabilities.scenes;
+  const sceneId = scene?.supported === true ? scene.sceneIds[1] : undefined;
+  world.device.hold();
+  let answer: Answer | undefined;
+  void start(session, 'raced-start').then(value => { answer = value; });
+  await world.until(() => world.device.state().held === 1, 1000, 'the held base read');
+  const choice = deviceCommand('scene-activate', {requestId: 'raced-scene', sceneId});
+  let admitted: string | undefined;
+  void world.operator.request(choice.key, choice.draft, {timeoutMs: 5000, requestId: 'raced-scene'}).then(value => { admitted = value.status; });
+  await world.until(() => admitted !== undefined && world.device.state().held === 2, 3000, 'the scene write behind the read');
+  world.device.release();
+  await world.until(() => answer !== undefined, 3000, 'the Start answer');
+  assert.deepEqual(answer, {status: 'rejected', code: 'revision-conflict'});
+  assert.equal(lines(world)?.select, 'Northern Lights');
+  assert.equal(deviceState(world)?.session, null);
+  world.verify();
+});
+
+test('a Stop that waits while a frame write is slow still ends the session', async context => {
+  const session = await playing(context);
+  const {world} = session;
+  world.device.hold();
+  await play(session, 200);
+  assert.equal(world.device.state().held, 1);
+  let answered: RequestResult | undefined;
+  void session.core.request('bunny.cmd.music-lighting-work.wall', {type: 'org.bunny.music-lighting.work.requested', subject: 'wall',
+    dataschema: 'https://bunny.invalid/events/music-lighting-work/2.0', data: {requestId: 'slow-stop', generation: generation(1), action: 'stop'}},
+  {timeoutMs: 300, requestId: 'slow-stop'}).then(value => { answered = value; });
+  await world.until(() => answered !== undefined, 1000, 'the Stop answer');
+  assert.equal(answered?.status, 'accepted');
+  // Past the Stop's expiry and the expiry sweep after it, and still within the light's request deadline.
+  await world.advance(400);
+  assert.equal(world.outcomes('slow-stop').length, 0, 'the sweep leaves the Stop for the session\'s loop');
+  world.device.release();
+  await play(session, 600);
+  await world.until(() => world.outcomes('slow-stop').length === 1, 2000, 'the Stop outcome');
+  assert.equal(outcome(world, 'slow-stop')?.result, 'succeeded');
+  assert.equal(ended(world)?.reason, 'stopped');
+  assert.equal(lines(world)?.select, 'Beach Waves');
+  world.verifyMessages();
+});
+
+test('a second Stop for a session still playing is accepted and both complete', async context => {
+  const session = await playing(context);
+  const {world} = session;
+  world.device.hold();
+  await play(session, 200);
+  assert.deepEqual(await stop(session, 'stop-a'), {status: 'accepted'});
+  assert.deepEqual(await stop(session, 'stop-b'), {status: 'accepted'});
+  world.device.release();
+  await play(session, 600);
+  await world.until(() => world.outcomes('stop-a').length === 1 && world.outcomes('stop-b').length === 1, 2000, 'both outcomes');
+  assert.equal(outcome(world, 'stop-a')?.result, 'succeeded');
+  assert.equal(outcome(world, 'stop-b')?.result, 'succeeded');
+  assert.deepEqual({reason: ended(world)?.reason, restoration: ended(world)?.restoration}, {reason: 'stopped', restoration: 'restored'});
+  world.verifyMessages();
 });
 
 test('an external brightness or power change ends the session as manual without restoration', async context => {

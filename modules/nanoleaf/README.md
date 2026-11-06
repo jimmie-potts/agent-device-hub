@@ -223,52 +223,71 @@ existing locked worker, as for a bounded moment.
   - the light is the Lines device (`unsupported-capability`);
   - it is already in Free with no pending mode (`invalid-state`);
   - it is not held (`unavailable`);
+  - the hub's own power choice is not off (`invalid-state`);
   - no session is starting or playing (`invalid-state`) and no other content waits (`capacity`);
   - the saved reactive preset exists (`not-found`);
   - the renderer accepts it with the saved layout (`unsupported-capability`);
-  - the light shows a listed named scene with a readable brightness (`invalid-state`; a failed read is `unavailable`).
+  - the light is on and shows a listed named scene with a readable brightness (`invalid-state`; a failed read is `unavailable`).
 
   That scene and brightness become the Free base. The read is the work command's first
-  device call in its trace. Accepted, the Start journals `music.play` with the command's
+  device call in its trace. If a mode or configuration change, or any journaled command
+  (even one that already ran), lands during the read, the Start is refused
+  `revision-conflict`, so a Start sent again reads afresh. The check uses the journal's
+  shared counter, so a command for another light during the read also refuses. Accepted, the Start journals `music.play` with the command's
   expiry. It freezes the preset's recipe, the layout and the Free base, saves the session
   as `starting` and opens an in-memory `MusicInput` for the capture binding.
 - **Features** arrive only through the module's subscription to
   `bunny.event.music-capture-features.*`, and each input takes only its own endpoint and
   generation. A subscription overflow retires every input. Features are never stored.
-- **The first frame** is the Start's journaled write. It completes the work command
+- **The first frame** is written only if the light still shows the base scene; a scene
+  chosen since the read ends the session `manual`. The frame is the Start's journaled write. It completes the work command
   `succeeded`/`transmitted`, and the session becomes `playing`. Without a fresh feature
   within 2 s, the session ends `source-lost` and the Start fails `unavailable`; an alert
   before the first frame fails it `invalid-state`.
 - **Pacing.** Later frames are the module's own paints of the admitted session. Each
   renders the newest fresh sample only, with one request in flight, at least 100 ms
   between writes and no catch-up. Silent valid frames keep playing.
+- **Per-frame check.** Immediately before each frame, `GET /effects/select` must still
+  report the session's frame selection. Otherwise a scene chosen in the Nanoleaf app is
+  a manual takeover: the session ends `manual`, no frame paints over the choice, and a
+  later Stop has no session to restore. Each frame now costs two requests, which lowers
+  the effective frame rate.
 - **Endings**, checked on every wake in this order: a queued `music.stop` (`stopped`,
   then restore); a newer mode, configuration, override, hold, scene, animation, power,
   brightness or moment (`manual`, no restoration); an alert (`alert`, then restore); a
   retired or stale input (`source-lost`, then restore); a once-per-second read that finds
-  another selection, brightness or power off (`manual`, no restoration); a failed frame
-  write (`device`, no restoration, no retry). A paint whose answer is lost holds
+  another selection, a changed brightness or the power off (`manual`, no restoration);
+  another selection before a frame (`manual`, no restoration); a failed frame write or
+  read (`device`, no restoration, no retry). A paint whose answer is lost holds
   nothing, since no command waits on it.
 - **Restoration** re-reads the light and writes brightness, then the base scene. It
   writes only while the light still shows the session's frames, the base is listed, the
-  brightness is unchanged and nothing newer exists before and after each write. The
-  result is `restored`, or `skipped` with no further write.
+  light is not off, the brightness is unchanged and nothing newer exists before and
+  after each write. Moments use the same guard. The result is `restored`; `skipped`
+  with no further write; or `uncertain` when a restoration write's answer was lost,
+  since it may have landed. A lost write is never retried.
 - **Stop** is accepted only for a session of that generation that is starting or
-  playing; otherwise it gets `invalid-state`. Its restoration writes are its own
-  journaled writes, so its outcome follows the restoration: `succeeded`/`transmitted`
-  if restored, `succeeded`/`observed` if skipped.
+  playing, including when an earlier Stop for it still waits; otherwise it gets
+  `invalid-state`. The expiry sweep never expires a Stop while its session is live,
+  because the session's loop ends it. Its restoration writes are its own journaled
+  writes, so its outcome follows the restoration: `succeeded`/`transmitted` if restored,
+  `succeeded`/`observed` if skipped, `uncertain` with a device hold if a write's answer
+  was lost. A second Stop completes `succeeded`/`observed`.
 - **Restarts.** At module start, a session left starting or playing ends `restart` with
   restoration `none`, with no device write and no replay. A worker that starts again
   ends a session its previous loop was running the same way.
 
 Each light's record is served as `music-lighting-device` (subject: the light) and
 republished on every change. An ended record keeps `{generation, reason, restoration,
-atMs}`. A Lines session never writes the Panels.
+atMs}`. A `refused`, `expired` or `device` ending also keeps the `code` behind it, such as
+`expired`, `unsupported-capability`, the device's answer, `unavailable` for a read without
+an answer or `uncertain-result` for a lost write answer. A Lines session never writes the Panels.
 
 Known limits:
 
 - A frame shows the device's `*Static*` selection, which the external read expects.
-- A scene chosen in the Nanoleaf app between two frames is painted over by the next frame, so the once-per-second read sees it only when the read lands first. Brightness and power changes are always seen.
+- A scene chosen in the Nanoleaf app in the short gap between the per-frame read and the frame write is still painted over.
+- Brightness and power changes made outside the hub are seen within about a second.
 - The input reads the runtime's one clock for both its wall and monotonic readings.
 - #725 owns physical cadence and appearance.
 
@@ -519,8 +538,9 @@ physical-device qualification are outside this port.
 - **Live Music.** A `music-lighting-work` Start ends `succeeded`/`transmitted` with its
   first frame, or fails before it (`unavailable` for no fresh feature, `invalid-state` for
   an alert, `cancelled` for a newer choice or Stop, `expired`). A Stop ends after its
-  restoration: `transmitted` if restored, `observed` if skipped, and `invalid-state` if
-  its session ended another way first.
+  restoration: `transmitted` if restored, `observed` if skipped, `uncertain` if a
+  restoration write's answer was lost, and `invalid-state` if its session ended another
+  way first.
 - **Restarts.** Each command accepted before a restart with no outcome ends at the start
   and never runs. An attempt without a result is uncertain, and so is an acknowledgment
   whose request may have reached the core. A queued command fails `cancelled`, and so does

@@ -106,11 +106,15 @@
           "enum": [
             "restored",
             "skipped",
-            "none"
+            "none",
+            "uncertain"
           ]
         },
         "atMs": {
           "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+        },
+        "code": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorCode"
         }
       }
     }

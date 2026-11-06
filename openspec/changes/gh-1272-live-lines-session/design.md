@@ -72,7 +72,7 @@ On acceptance the part saves `starting` with a new UUID generation, and saving c
 - A record for another generation is ignored.
 - If a fresh device snapshot shows another generation, or no session, while the core holds `active`, `stopping` or `uncertain`, the core records `restart` with restoration `none`.
 
-**Stop** is accepted from `starting`, `active` or `uncertain`. It saves `stopping` and dispatches work stop for the current generation. If the module answers `invalid-state` because the session already ended, the device record decides the outcome. Any other refusal leaves the record `uncertain`.
+**Stop** is accepted from `starting`, `active`, `uncertain` or `stopping`. It saves `stopping` and dispatches work stop for the current generation. If the module answers `invalid-state` because the session already ended, the device record decides the outcome. Any other refusal leaves the record `uncertain`.
 
 **Core restart** moves every non-idle record to `uncertain`. Nothing is resent; a device sync resolves it.
 
@@ -102,7 +102,7 @@ Each iteration checks, in this order:
 5. **External change** (a once-per-second read finds the device no longer on the music frame's selection, or its brightness or power changed): `manual`, with no restoration.
 6. **Failed frame write:** `device`, with no restoration and no retry.
 
-Restoration re-reads the device and writes brightness and then the named base scene. It does so only if the device still shows the music frame's selection, the base is still listed, the brightness is unchanged and no newer change exists before and after each write. Otherwise it is `skipped`. A Stop's outcome follows its restoration. Valid silent frames keep the session playing.
+Restoration re-reads the device and writes brightness and then the named base scene. It does so only if the device still shows the music frame's selection, the base is still listed, the brightness is unchanged and no newer change exists before and after each write. Otherwise it is `skipped`, or `uncertain` when a write's answer was lost. A Stop's outcome follows its restoration. Valid silent frames keep the session playing.
 
 At module start, a session left `starting` or `playing` becomes `ended` with reason `restart`. No device write is made and nothing replays.
 
@@ -112,11 +112,14 @@ At module start, a session left `starting` or `playing` becomes `ended` with rea
 - **First frame and later frames.** Only the first frame goes through the Start row's `Execution`. A lost answer there keeps the existing uncertain outcome and hold. Later frames are the module's own paints, using `Execution` without a command, like indicator paints. A failed or lost frame ends the session `device`, with no hold and no retry.
 - **Stop restoration.** Stop restores through its own journaled row. Its outcome is transmitted when it restored, observed when restoration was skipped, and uncertain with a hold when an answer is lost. Alert and source-loss restorations are the module's own writes.
 - **Start outcomes before the first frame.** A Stop or a newer choice gives `cancelled`, an alert `invalid-state`, no feature within 2 s `unavailable`, and expiry `expired`. A Stop whose session already ended another way finishes `invalid-state`.
-- **External change.** The once-per-second read also treats an external power-off as manual.
-- **Start deadline.** Core dispatch gives work the device class's 5 s reply deadline as its expiry. Worker pickup, the Free-base read and the 2 s first-feature wait fit inside it.
-- **Clock.** The module's `MusicInput` uses the runtime clock for both its wall and monotonic readings. A backward clock step therefore ends the session as `source-lost`.
-- **Inbox.** A failed work operation, such as a light outside Free, appears in the inbox like any failed device command. The tracker refuses "Send again" for work, so nothing is resent.
-- **Known limit.** A scene picked in the Nanoleaf app between two frames can be repainted by the next frame before the once-per-second read sees it. Brightness and power changes are always caught. Reading the effect before every write, or following the controller's event stream, is left to #725 or a later change.
+- **Selection check before each frame.** Immediately before every frame write, the worker reads `/effects/select`. Any selection other than the music frame's ends the session `manual`, restoration `none`. The first frame also requires the light to still show the base scene. The once-per-second read still covers brightness and power, and an external power-off is manual.
+- **Power.** Start is refused `invalid-state` when the hub's power override is off or the light reports `on: false`. Free-base restoration, shared with moments, also refuses while the light is off.
+- **Changes during the base read.** The module records the control journal's high-water mark before reading the Free base, and refuses Start `revision-conflict` if it moved or the mode or configuration revision changed. The mark is shared across lights, so a command for another light during the read also refuses; this errs on the safe side. Moments are unchanged.
+- **Stop expiry and repeats.** The expiry sweep never ends a `music.stop` while its session is live, because the session loop finishes it. A Stop can therefore complete after its own expiry. A second Stop for a live session is accepted. The core accepts a Stop from `stopping` as a new explicit command with its own request ID, and moves a Stop whose work fails or times out without a device ending to `uncertain`.
+- **Lost restoration answers.** A restoration write whose answer was lost records `uncertain`. The Stop row keeps its hold and its outcome is uncertain. An answered refusal or a cancelled write records `skipped`. Nothing is retried.
+- **Codes.** `refused`, `expired` and `device` endings carry an error `code` when one is known, and the core copies it into its record.
+- **Start the module never held.** The core keeps private, unpublished notes per record. A Start whose reply was lost, and which the module never reported or accepted, settles once its tracked operation is refused or reaches the 30 s outcome deadline while a fresh device record shows no session for it. It ends `refused` with the code, or `expired`. A work command carries its expiry, so an expired Start can never be admitted later. `restart` is used only for a session the module did hold.
+- **Known limit.** A scene chosen in the short gap between the selection read and the following frame write can still be painted over. Following the controller's event stream is left to #725 or a later change.
 
 ### D5. No polling, resend or fallback
 

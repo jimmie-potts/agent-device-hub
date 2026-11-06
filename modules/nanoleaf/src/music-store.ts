@@ -2,6 +2,7 @@
 // as `music-lighting-device` publishes it. Every function runs inside the caller's synchronous transaction and reports a
 // change through `report`, so the record commits with the change it describes. It imports only the journal's types, so
 // the journal can end a session whose start ends before its first frame.
+import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {LightingDeviceState, LightingEnded, LightingEndReason, LightingRestoration} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import type {End, JournalRow, Report} from './journal.js';
 import {execute, first, text, type Db} from './sqlite.js';
@@ -43,26 +44,33 @@ export function markPlaying(db: Db, device: string, generation: string, report: 
   }
 }
 
-/** Ends the session of `generation` if it is still starting or playing; false when it had already ended. */
+/** The reasons whose ending names the refusal or failure behind it. */
+const CODED: ReadonlySet<LightingEndReason> = new Set(['refused', 'expired', 'device']);
+
+/**
+ * Ends the session of `generation` if it is still starting or playing; false when it had already ended. A `refused`,
+ * `expired` or `device` ending keeps `code`, the refusal or failure behind it.
+ */
 export function endSession(db: Db, device: string, generation: string, reason: LightingEndReason, restoration: LightingRestoration, atMs: number,
-  report: Report): boolean {
-  const ended: LightingEnded = {generation, reason, restoration, atMs: Math.max(0, Math.round(atMs))};
+  report: Report, code?: ErrorCode): boolean {
+  const ended: LightingEnded = {generation, reason, restoration, atMs: Math.max(0, Math.round(atMs)),
+    ...(code !== undefined && CODED.has(reason) ? {code} : {})};
   const changed = execute(db, "UPDATE nanoleaf_music_sessions SET status='ended', ended=? WHERE device=? AND generation=? AND status<>'ended'",
     JSON.stringify(ended), device, generation) > 0;
   if (changed) report({type: 'music', device});
   return changed;
 }
 
-/** Why a session ends when its Start ends before the first frame, by how the Start's journal row ended. */
-function startReason(end: End): LightingEndReason | undefined {
+/** Why a session ends when its Start ends before the first frame, by how the Start's journal row ended, and its code. */
+function startReason(end: End): {reason: LightingEndReason; code?: ErrorCode} | undefined {
   switch (end.kind) {
-    case 'expired': return 'expired';
+    case 'expired': return {reason: 'expired', code: 'expired'};
     // Only an explicit mode command retires a queued Start.
-    case 'retired': return 'manual';
+    case 'retired': return {reason: 'manual'};
     // A stored Start the module's restart ended never ran.
-    case 'refused': return end.code === 'cancelled' ? 'restart' : 'refused';
-    case 'uncertain':
-    case 'answered': return 'device';
+    case 'refused': return end.code === 'cancelled' ? {reason: 'restart'} : {reason: 'refused', code: end.code};
+    case 'uncertain': return {reason: 'device', code: 'uncertain-result'};
+    case 'answered': return {reason: 'device', code: end.code};
     case 'sent':
     case 'unchanged': return undefined;
   }
@@ -74,9 +82,9 @@ function startReason(end: End): LightingEndReason | undefined {
  */
 export function startEnded(db: Db, row: JournalRow, end: End, atMs: number, report: Report): string | undefined {
   const session = musicSession(db, row.device);
-  const reason = startReason(end);
-  if (session?.status !== 'starting' || session.startId !== row.id || reason === undefined) return undefined;
-  return endSession(db, row.device, session.generation, reason, 'none', atMs, report) ? session.generation : undefined;
+  const ending = startReason(end);
+  if (session?.status !== 'starting' || session.startId !== row.id || ending === undefined) return undefined;
+  return endSession(db, row.device, session.generation, ending.reason, 'none', atMs, report, ending.code) ? session.generation : undefined;
 }
 
 /** The device's record as `music-lighting-device` carries it, without the revision the runtime adds. */

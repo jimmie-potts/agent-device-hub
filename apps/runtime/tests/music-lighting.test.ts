@@ -15,6 +15,7 @@ import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import {CREDENTIALS_SCHEMA, tokenDigest} from '../src/credentials.js';
 import {edgePermissions, principalOf} from '../src/gateway/access.js';
 import type {Action, ActionAnswer} from '../src/core/tracker.js';
+import type {InboxItem} from '@jimmie-potts/event-contracts/v2/families';
 import {contextOf, deferred, edgeConfig, fixture, it, run, stateDir, waitFor} from './support.js';
 
 const schema = (family: string, version = '2.0') => `https://bunny.invalid/events/${family}/${version}`;
@@ -25,8 +26,8 @@ const OLD_GENERATION = '00000000-0000-4000-8000-000000001272';
 const PRESET = 'preset-pulse';
 const sleep = (ms: number) => new Promise(resolve => { setTimeout(resolve, ms); });
 const codeOf = (answer: ActionAnswer): ErrorCode | undefined => 'error' in answer ? answer.error.code : undefined;
-const ended = (generation: string, reason: LightingEnded['reason'], restoration: LightingEnded['restoration'] = 'none'): LightingDeviceState['session'] =>
-  ({generation, status: 'ended', ended: {generation, reason, restoration, atMs: Date.now()}});
+const ended = (generation: string, reason: LightingEnded['reason'], restoration: LightingEnded['restoration'] = 'none', code?: ErrorCode): LightingDeviceState['session'] =>
+  ({generation, status: 'ended', ended: {generation, reason, restoration, atMs: Date.now(), ...(code === undefined ? {} : {code})}});
 
 /** A scripted Nanoleaf owner: it answers `music-lighting-work` and serves and publishes `music-lighting-device`. */
 class FakeLines {
@@ -64,6 +65,13 @@ class FakeLines {
     const record = this.set(id, session);
     assert.ok(this.#context);
     await this.#context.sdk.publish(`bunny.state.music-lighting-device.${id}`, {kind: 'state', ...this.#draft(record)});
+  }
+  /** The work command's outcome, as the module reports it after accepting it. */
+  async outcome(command: Command<LightingWork>, result: 'succeeded' | 'failed', code: ErrorCode = 'expired'): Promise<void> {
+    assert.ok(this.#context);
+    await this.#context.sdk.publish(`bunny.event.music-lighting-work.${command.subject}`, {kind: 'outcome', type: 'org.bunny.music-lighting.work.completed', subject: command.subject,
+      dataschema: schema('outcome'), data: {requestId: command.data.requestId, result, evidence: result === 'succeeded' ? 'transmitted' : 'none',
+        ...(result === 'succeeded' ? {} : {error: errorBody(code).error})}}, {parent: command});
   }
 }
 
@@ -216,7 +224,7 @@ it('device endings settle the session; nothing resumes when capture restarts and
   await h.enable();
   let capture = await h.liveCapture();
   let previous = OLD_GENERATION;
-  for (const [index, reason] of (['alert', 'manual', 'source-lost'] as const).entries()) {
+  for (const [index, reason] of (['alert', 'manual', 'source-lost', 'device'] as const).entries()) {
     assert.deepEqual(await h.start(`start-${reason}`, capture), {status: 'accepted', requestId: `start-${reason}`});
     await waitFor(() => h.lines.work.length === index + 1);
     const generation = h.lines.work[index]?.data.generation;assert.ok(generation !== undefined);
@@ -230,7 +238,7 @@ it('device endings settle the session; nothing resumes when capture restarts and
     await h.lines.publish('wall', ended(previous, 'stopped', 'restored'));
     await sleep(100);
     assert.equal((await h.light()).session.status, 'active', 'a stale generation is ignored');
-    const ending = ended(generation, reason, reason === 'manual' ? 'none' : 'restored');
+    const ending = ended(generation, reason, reason === 'manual' || reason === 'device' ? 'none' : 'restored', reason === 'device' ? 'unavailable' : undefined);
     await h.lines.publish('wall', ending);
     await h.status('wall', 'idle');
     assert.ok(ending?.status === 'ended');
@@ -242,8 +250,9 @@ it('device endings settle the session; nothing resumes when capture restarts and
     assert.equal((await h.light()).session.status, 'idle');
     previous = generation;
   }
-  assert.equal(new Set(h.lines.work.map(command => command.data.generation)).size, 3, 'each explicit Start is a new generation');
-  assert.equal(new Set(h.lines.work.map(command => command.data.requestId)).size, 3);
+  assert.equal(new Set(h.lines.work.map(command => command.data.generation)).size, 4, 'each explicit Start is a new generation');
+  assert.equal(new Set(h.lines.work.map(command => command.data.requestId)).size, 4);
+  assert.equal((await h.light()).last?.code, 'unavailable', 'a device ending keeps its code');
 });
 
 it('Stop saves stopping and ends through the device record, an already-ended session or another refusal', async t => {
@@ -269,7 +278,6 @@ it('Stop saves stopping and ends through the device record, an already-ended ses
   assert.notEqual(stopWork.data.requestId, h.lines.work[0]?.data.requestId);
   const stopping = (await h.light()).session;
   assert.ok(stopping.status === 'stopping');assert.equal(stopping.generation, first);assert.equal(stopping.operationId, 'stop-one');
-  assert.equal(codeOf(await h.stop('stop-twice')), 'invalid-state');
   const stopped = ended(first, 'stopped', 'restored');
   await h.lines.publish('wall', stopped);
   await h.status('wall', 'idle');
@@ -292,8 +300,11 @@ it('Stop saves stopping and ends through the device record, an already-ended ses
   h.lines.reply = () => ({status: 'accepted'});
   assert.deepEqual(await h.stop('stop-again'), {status: 'accepted', requestId: 'stop-again'});
   await h.status('wall', 'stopping');
-  await h.lines.publish('wall', ended(third, 'stopped', 'skipped'));
+  const unknownRestoration = ended(third, 'stopped', 'uncertain');
+  await h.lines.publish('wall', unknownRestoration);
   await h.status('wall', 'idle');
+  assert.ok(unknownRestoration?.status === 'ended');
+  assert.deepEqual((await h.light()).last, unknownRestoration.ended, 'an uncertain restoration is reported as it is');
   assert.equal(h.lines.work.filter(command => command.data.action === 'start').length, 3);
   assert.equal(h.lines.work.filter(command => command.data.action === 'stop').length, 4);
 });
@@ -308,7 +319,7 @@ it('a refused work Start ends refused or expired; a lost reply is uncertain unti
     await waitFor(() => h.lines.work.length === index + 1);
     await h.status('wall', 'idle');
     const last = (await h.light()).last;assert.ok(last !== null);
-    assert.deepEqual({...last, atMs: 0}, {generation: h.lines.work[index]?.data.generation, reason: code === 'expired' ? 'expired' : 'refused', restoration: 'none', atMs: 0});
+    assert.deepEqual({...last, atMs: 0}, {generation: h.lines.work[index]?.data.generation, reason: code === 'expired' ? 'expired' : 'refused', restoration: 'none', atMs: 0, code});
   }
   // No reply within the device reply deadline: the work's fate is unknown.
   const held = deferred<Reply>();
@@ -459,4 +470,84 @@ void test('an expired, unadmitted, invalid or unqualified command saves nothing 
     {key: 'bunny.cmd.music-lighting-work.wall', requestedBy: 'bunny/core', requestId: lightingWorkRequestId('accepted', 'wall'), parent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'});
   assert.deepEqual([published.length, completed], [1, 1]);
   database.close();
+});
+
+it('a Stop is accepted again while stopping, and a failed Stop without a device ending leaves the session uncertain', async t => {
+  const h = await setup(t);
+  await h.enable();
+  const capture = await h.liveCapture();
+  await h.start('start-one', capture);
+  await waitFor(() => h.lines.work.length === 1);
+  const generation = h.lines.work[0]?.data.generation;assert.ok(generation !== undefined);
+  await h.lines.publish('wall', {generation, status: 'playing'});
+  await h.status('wall', 'active');
+  assert.deepEqual(await h.stop('stop-one'), {status: 'accepted', requestId: 'stop-one'});
+  await waitFor(() => h.lines.work.length === 2);
+  await h.status('wall', 'stopping');
+  // The module's stop row expired unseen: no ending arrives. A second Stop is a new explicit command.
+  assert.deepEqual(await h.stop('stop-two'), {status: 'accepted', requestId: 'stop-two'});
+  await waitFor(() => h.lines.work.length === 3);
+  const [first, second] = [h.lines.work[1], h.lines.work[2]];assert.ok(first !== undefined && second !== undefined);
+  assert.deepEqual([second.data.action, second.data.generation], ['stop', generation]);
+  assert.notEqual(second.data.requestId, first.data.requestId);
+  const stopping = (await h.light()).session;assert.ok(stopping.status === 'stopping');assert.equal(stopping.operationId, 'stop-two');
+  // A superseded Stop's failure changes nothing; the latest Stop's failure leaves the outcome unknown.
+  await h.lines.outcome(first, 'failed');
+  await waitFor(() => h.operation(first.data.requestId)?.result === 'failed');
+  await sleep(100);
+  assert.equal((await h.light()).session.status, 'stopping');
+  await h.lines.outcome(second, 'failed');
+  await h.status('wall', 'uncertain', 'the failed Stop');
+  // A device ending still settles it, and nothing was sent again.
+  await h.lines.publish('wall', ended(generation, 'stopped', 'restored'));
+  await h.status('wall', 'idle');
+  assert.equal(h.lines.work.length, 3);
+});
+
+it('a Stop while starting ends stopped through the module and sends nothing again', async t => {
+  const h = await setup(t);
+  await h.enable();
+  const capture = await h.liveCapture();
+  await h.start('start-one', capture);
+  await waitFor(() => h.lines.work.length === 1);
+  const start = h.lines.work[0];assert.ok(start !== undefined);
+  await h.lines.publish('wall', {generation: start.data.generation, status: 'starting'});
+  assert.equal((await h.light()).session.status, 'starting');
+  assert.deepEqual(await h.stop('stop-starting'), {status: 'accepted', requestId: 'stop-starting'});
+  await waitFor(() => h.lines.work.length === 2);
+  await h.status('wall', 'stopping');
+  // The module cancels the Start before its first frame and ends the session without restoring anything.
+  await h.lines.outcome(start, 'failed', 'cancelled');
+  const stop = h.lines.work[1];assert.ok(stop !== undefined);
+  await h.lines.publish('wall', ended(start.data.generation, 'stopped', 'none'));
+  await h.lines.outcome(stop, 'succeeded');
+  await h.status('wall', 'idle');
+  const last = (await h.light()).last;assert.ok(last !== null);
+  assert.deepEqual({...last, atMs: 0}, {generation: start.data.generation, reason: 'stopped', restoration: 'none', atMs: 0});
+  await sleep(200);
+  assert.equal(h.lines.work.length, 2, 'nothing is sent again');
+  assert.equal((await h.light()).session.status, 'idle');
+});
+
+it('the inbox cannot send failed lighting work again', async t => {
+  const h = await setup(t);
+  await h.enable();
+  const capture = await h.liveCapture();
+  h.lines.reply = () => errorBody('invalid-state');
+  await h.start('refused-start', capture);
+  await h.status('wall', 'idle');
+  const workId = lightingWorkRequestId('refused-start', 'wall');
+  const inbox = async (): Promise<InboxItem[]> => {
+    const result = await contextOf(h.observer).sdk.sync<InboxItem>(['inbox-item'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
+    assert.equal(result.status, 'synced');if (result.status !== 'synced') return [];
+    const items = result.copy.states().map(message => message.data);await result.copy.close();return items;
+  };
+  await waitFor(async () => (await inbox()).some(item => item.item.requestId === workId), 5000, 'the failed work in the inbox');
+  const item = (await inbox()).find(candidate => candidate.item.requestId === workId);assert.ok(item !== undefined);
+  const resend = await contextOf(h.observer).sdk.request(`bunny.cmd.inbox-handle.${item.id}`, {type: 'org.bunny.inbox.handle.requested', subject: item.id,
+    dataschema: schema('inbox-handle'), data: {action: 'send-again', expectedRevision: item.revision}}, {timeoutMs: 3000, requestId: 'resend-lighting'});
+  assert.equal(resend.status === 'rejected' && resend.error.error.code, 'forbidden');
+  await sleep(100);
+  assert.equal(h.lines.work.length, 1, 'nothing is sent again');
+  assert.ok((await inbox()).some(candidate => candidate.id === item.id), 'the item stays for a person');
 });

@@ -653,13 +653,25 @@ from the operator request and the light.
 
 The module's synced `music-lighting-device` record settles the session. `playing`
 for the current generation makes it `active`, and `ended` copies the module's
-ending: `stopped`, `alert`, `manual`, `source-lost` or `device`, with its
-restoration. A refused work reply ends the session `refused` or `expired`; a lost
-reply leaves it `uncertain`. Stop saves `stopping` and sends work stop. When the
-module no longer holds the session, the Stop stands as `stopped` with no
-restoration. A core restart leaves every unfinished session `uncertain`. The
-next fresh device snapshot resolves it, and a session the module no longer holds
-ends `restart`.
+ending unchanged: `stopped`, `alert`, `manual`, `source-lost` or `device`, its
+restoration (`restored`, `skipped`, `none` or `uncertain`) and any error `code`.
+A refused work reply ends the session `refused`, or `expired`, with the reply's
+`code`; a lost reply leaves it `uncertain`. A lost Start the module never
+reported ends once its command can no longer be admitted. This needs a fresh
+device copy showing no session of that generation and the Start's tracked
+outcome deadline passed. It then ends `expired`, or `refused` with a known
+refusal code, and restoration `none`.
+
+Stop saves `stopping` and sends work stop. When the module no longer holds the
+session, the Stop stands as `stopped` with no restoration. Another Stop is
+accepted while stopping, because a module's stop can expire unseen. It is a new
+explicit command with its own work, and only the latest Stop's answer counts. A
+Stop whose accepted work fails or reaches its outcome deadline without a device
+ending leaves the session `uncertain`. A core restart leaves every unfinished
+session `uncertain`. The next fresh device snapshot resolves it. A session the
+module once held but no longer holds ends `restart`; a Start it never held is
+settled as above. The core keeps the work IDs and whether the module reported the
+generation as private notes beside the published record.
 
 Only the core dispatches lighting work, and only in direct answer to an operator
 Start or Stop. No ending resumes a session, nothing is resent after restart or

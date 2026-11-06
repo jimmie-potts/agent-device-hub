@@ -202,6 +202,7 @@ export class SimulatedNanoleaf {
       switch (endpoint) {
         case '': return {name: 'Simulated', panelLayout: device.kind === 'lines' ? linesLayout(SIMULATED_LINES) : panelsLayout(SIMULATED_TRIANGLES)};
         case '/effects': return {select: device.select, effectsList: [...device.scenes]};
+        case '/effects/select': return device.select;
         case '/state': return {on: {value: device.on}, brightness: {value: device.brightness, max: 100, min: 0}};
         default: throw new HttpError(404);
       }

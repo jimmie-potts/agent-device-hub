@@ -919,7 +919,9 @@ export class NanoleafRuntime {
       }, () => { this.#accepted(device, command); });
     }
     const start = {requestId, generation: data.generation, capture: data.capture, presetId: data.presetId};
-    const control = controlState(this.#db, device), revision = momentRevision(this.#db, device);
+    // What the read must not overlap: a mode or configuration change, or any journaled command, even one that already
+    // ran (a scene shown during the read would leave the Free base stale, and a finished row is no longer in the journal).
+    const control = controlState(this.#db, device), revision = momentRevision(this.#db, device), journaled = journalHighWater(this.#db);
     try {
       checkMusicStart(this.#db, device, start, savedLayout(this.#directory, device), clock.now(), expiresMs(command, clock.now()));
     } catch (error) {
@@ -932,18 +934,20 @@ export class NanoleafRuntime {
       attributes: {'bunny.device.id': device, 'bunny.operation': 'snapshot', 'bunny.request.id': requestId}});
     try {
       const link = this.#links.get(device);
-      freeBase = link === undefined ? undefined : await readFreeBase(endpoint => link.request({ip: '', token: ''}, 'GET', endpoint));
+      freeBase = link === undefined ? undefined : await readFreeBase(endpoint => link.request({ip: '', token: ''}, 'GET', endpoint), true);
       call.end();
     } catch {
       call.end('error');
       return errorBody('unavailable', {requestId, detail: 'the light did not answer the read of its current scene'});
     }
-    if (freeBase === undefined) return errorBody('invalid-state', {requestId, detail: 'live Music starts only over a listed named scene with a readable brightness'});
+    if (freeBase === undefined) return errorBody('invalid-state', {requestId, detail: 'live Music starts only over a listed named scene on a light that is on'});
     const base = freeBase;
     return this.#admit(command, report => {
       const latest = controlState(this.#db, device);
-      if (latest.revision !== control.revision || momentRevision(this.#db, device) !== revision) {
-        throw new CommandRefused('invalid-state', 'the light\'s mode or configuration changed during the read');
+      // The read is stale, not the light's state wrong: `revision-conflict` says a Start sent again reads it afresh. The
+      // journal's high-water mark is shared by every light, so a command for another light during the read also refuses.
+      if (latest.revision !== control.revision || momentRevision(this.#db, device) !== revision || journalHighWater(this.#db) !== journaled) {
+        throw new CommandRefused('revision-conflict', 'a command or change reached the light during the read of its scene');
       }
       this.#record(command, device, MUSIC_WORK);
       admitMusicStart(this.#db, device, start, savedLayout(this.#directory, device), base, revision, clock.now(), expiresMs(command, clock.now()), report);
@@ -1114,6 +1118,9 @@ function expiresMs(command: {expiresat?: string}, nowMs: number): number {
 }
 
 const ended = (signal: AbortSignal): boolean => signal.aborted;
+
+/** The control journal's highest sequence ever issued, finished rows included (its AUTOINCREMENT counter). */
+const journalHighWater = (db: Db): number => Number(first(db, "SELECT seq FROM sqlite_sequence WHERE name='control_journal'")?.[0] ?? 0);
 
 /** Fixed text for each refusal of a control or an animation the port decides; the port's own messages are not repeated. */
 const PORT_REFUSALS: Partial<Readonly<Record<ErrorCode, string>>> = {

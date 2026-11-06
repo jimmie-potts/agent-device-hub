@@ -1,14 +1,16 @@
 // Browser-safe Music lighting session data (#1272, #722, first-trial policy in #40); server registration is in music-lighting.ts.
+import type {ErrorCode} from './errors.js';
 
 /** The capture session a lighting session renders from: the core's current Music endpoint and generation. */
 export type LightingCapture = {endpointId: string; generation: string};
 /** Why a lighting session ended. None of these resumes automatically; a new session needs an explicit Start. */
 export const LIGHTING_END_REASONS = ['stopped', 'alert', 'manual', 'source-lost', 'device', 'restart', 'expired', 'refused'] as const;
 export type LightingEndReason = typeof LIGHTING_END_REASONS[number];
-/** What happened to the current base presentation as the session ended, evaluated at that moment. */
-export const LIGHTING_RESTORATIONS = ['restored', 'skipped', 'none'] as const;
+/** What happened to the current base presentation as the session ended, evaluated at that moment; `uncertain` when a restoration write's answer was lost. */
+export const LIGHTING_RESTORATIONS = ['restored', 'skipped', 'none', 'uncertain'] as const;
 export type LightingRestoration = typeof LIGHTING_RESTORATIONS[number];
-export type LightingEnded = {generation: string; reason: LightingEndReason; restoration: LightingRestoration; atMs: number};
+/** `code` names the refusal or failure behind a `refused`, `expired` or `device` ending when one was reported. */
+export type LightingEnded = {generation: string; reason: LightingEndReason; restoration: LightingRestoration; atMs: number; code?: ErrorCode};
 
 /** Operator to core, subject the target light. Start never changes the light's mode. */
 export type LightingControl = {requestId: string; expectedRevision: number} &

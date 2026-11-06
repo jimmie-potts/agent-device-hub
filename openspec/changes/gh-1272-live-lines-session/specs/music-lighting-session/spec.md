@@ -24,6 +24,10 @@ The core SHALL follow the light module's session record through sync and record 
 - **WHEN** a work answer is lost, or the core restarts during a session
 - **THEN** the record becomes uncertain without resending, and the next fresh device record decides whether it is active or ended
 
+#### Scenario: Start the module never held
+- **WHEN** a Start's answer is lost and the module never reports or accepts its generation before the work's outcome deadline
+- **THEN** the record becomes idle as expired, or refused with the refusal code, and nothing is resent
+
 #### Scenario: Explicit Stop
-- **WHEN** an operator stops a starting, active or uncertain session
+- **WHEN** an operator stops a starting, active, uncertain or stopping session
 - **THEN** the core saves `stopping`, sends one work stop for that generation, and records the module's reported ending

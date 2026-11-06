@@ -7,7 +7,9 @@ import type {CaptureFeatures} from '@jimmie-potts/event-contracts/v2/music-captu
 import {admitCommand, discovered, sceneList} from '../src/controls.js';
 import {initialize} from '../src/database.js';
 import {elementId, type LayoutEntry} from '../src/devices.js';
-import {initJournal, journalRow, type Outcome, type Transact} from '../src/journal.js';
+import {expireQueued, held, initJournal, journalRow, type Outcome, type Transact} from '../src/journal.js';
+import {restoreFreeBase} from '../src/moments.js';
+import {HttpError} from '../src/transport.js';
 import type {Indication} from '../src/line-projection.js';
 import {MusicInput, type MusicClock} from '../src/music-input.js';
 import {initReactivePresets, saveReactivePreset} from '../src/music-presets.js';
@@ -24,7 +26,7 @@ const LAYOUT: LayoutEntry = {kind: 'lines', elements: [0, 1, 2].map(index => ({i
 type World = {
   db: DatabaseSync; outcomes: Outcome[]; writes: {endpoint: string; payload: unknown; atMs: number}[]; inFlight: number; maxInFlight: number;
   now: number; selected: string; brightness: number; alert: boolean; feeding: boolean; sequence: number; input: MusicInput;
-  onWrite: (endpoint: string, payload: unknown) => void; lose: string | undefined;
+  onWrite: (endpoint: string, payload: unknown) => void; lose: string | undefined; refuse: number | undefined;
 };
 
 function open(): World {
@@ -39,7 +41,7 @@ function open(): World {
   const now = 1_793_836_800_000;
   const clock: MusicClock = {wallMs: now, monotonicMs: now};
   return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, now, selected: 'Ocean', brightness: 50, alert: false, feeding: true, sequence: 0,
-    input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined};
+    input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined};
 }
 
 const feature = (world: World): CaptureFeatures => {
@@ -68,7 +70,15 @@ async function run(world: World, step: (world: World) => void): Promise<void> {
     world.maxInFlight = Math.max(world.maxInFlight, world.inFlight);
     await Promise.resolve();
     world.inFlight -= 1;
-    if (method === 'GET') return endpoint === '/effects' ? {select: world.selected, effectsList: ['Ocean', 'New scene']} : {on: {value: true}, brightness: {value: world.brightness}};
+    if (method === 'GET') {
+      if (endpoint === '/effects/select') return world.selected;
+      return endpoint === '/effects' ? {select: world.selected, effectsList: ['Ocean', 'New scene']} : {on: {value: true}, brightness: {value: world.brightness}};
+    }
+    if (world.refuse !== undefined) {
+      const status = world.refuse;
+      world.refuse = undefined;
+      throw new HttpError(status);
+    }
     world.writes.push({endpoint, payload, atMs: world.now});
     if (world.lose === endpoint) {
       world.lose = undefined;
@@ -87,6 +97,8 @@ async function run(world: World, step: (world: World) => void): Promise<void> {
     transact, request, input: world.input, now: () => world.now, clock: () => ({wallMs: world.now, monotonicMs: world.now}),
     sleep: seconds => {
       world.now += seconds * 1000;
+      // A bound on every run: after 200 features the source goes quiet, so a session that should have ended ends anyway.
+      if (world.sequence > 200) world.feeding = false;
       if (world.feeding && world.now - fed >= 100) { fed = world.now; deliver(world); }
       step(world);
       return Promise.resolve();
@@ -96,7 +108,8 @@ async function run(world: World, step: (world: World) => void): Promise<void> {
 
 const ended = (world: World) => {
   const session = musicDeviceState(world.db, 'wall').session;
-  return session?.status === 'ended' ? {reason: session.ended.reason, restoration: session.ended.restoration} : undefined;
+  return session?.status === 'ended' ? {reason: session.ended.reason, restoration: session.ended.restoration,
+    ...(session.ended.code === undefined ? {} : {code: session.ended.code})} : undefined;
 };
 const frameWrites = (world: World) => world.writes.filter(write => (write.payload as {write?: unknown}).write !== undefined);
 
@@ -147,7 +160,7 @@ test('a lost frame answer ends the session as a device failure with no retry or 
   const world = open();
   try {
     await run(world, current => { if (frameWrites(current).length === 4) current.lose = '/effects'; });
-    assert.deepEqual(ended(world), {reason: 'device', restoration: 'none'});
+    assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'uncertain-result'});
     assert.equal(frameWrites(world).length, 5, 'the lost write is not retried');
     assert.equal(world.writes.filter(write => (write.payload as {select?: unknown}).select !== undefined).length, 0);
     assert.equal(transaction(world.db, () => world.db.prepare("SELECT value FROM meta WHERE key LIKE 'controller_hold_revision%'").all().length), 0,
@@ -171,6 +184,105 @@ test('frames are paced to the newest sample, at least 100 ms apart, with no catc
     assert.ok(frames.length > 3 && frames.length < world.sequence / 4, `${frames.length} frames for ${world.sequence} features`);
     for (let index = 1; index < frames.length; index += 1) assert.ok((frames[index]?.atMs ?? 0) - (frames[index - 1]?.atMs ?? 0) >= 100);
     assert.deepEqual(ended(world), {reason: 'source-lost', restoration: 'restored'});
+  } finally {
+    world.db.close();
+  }
+});
+
+test('a scene chosen between two frames is read before the next frame, which is never written', async () => {
+  const world = open();
+  try {
+    let chosen = false;
+    await run(world, current => {
+      if (!chosen && frameWrites(current).length === 3) { chosen = true; current.selected = 'New scene'; }
+    });
+    assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
+    assert.equal(frameWrites(world).length, 3, 'no frame paints over the app\'s scene');
+    assert.equal(world.selected, 'New scene');
+  } finally {
+    world.db.close();
+  }
+});
+
+test('a newer moment ends the session as manual with no frame after it', async () => {
+  const world = open();
+  try {
+    let frames = 0;
+    await run(world, current => {
+      if (frames === 0 && frameWrites(current).length === 3) {
+        frames = 3;
+        current.db.prepare("INSERT INTO control_journal(id,device,kind,command,mode_revision,phase,accepted,expires) VALUES('moment','wall','moment.play','{}',0,'queued',1,99999999999)").run();
+      }
+    });
+    assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
+    assert.equal(frameWrites(world).length, 3);
+  } finally {
+    world.db.close();
+  }
+});
+
+test('a device that refuses a frame ends the session with the answer\'s code', async () => {
+  const world = open();
+  try {
+    await run(world, current => { if (frameWrites(current).length === 2) current.refuse = 503; });
+    assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'unavailable'});
+    assert.equal(frameWrites(world).length, 2);
+  } finally {
+    world.db.close();
+  }
+});
+
+for (const path of ['alert', 'stop'] as const) {
+  test(`a lost answer on a ${path} restoration write records an uncertain restoration without a retry`, async () => {
+    const world = open();
+    try {
+      let triggered = false;
+      await run(world, current => {
+        if (triggered || frameWrites(current).length !== 3) return;
+        triggered = true;
+        current.lose = '/state';
+        if (path === 'alert') current.alert = true;
+        else transaction(current.db, () => admitMusicStop(current.db, 'wall', {kind: 'music.stop', requestId: 'stop', generation: GENERATION}, current.now, current.now + 5000));
+      });
+      assert.deepEqual(ended(world), {reason: path === 'alert' ? 'alert' : 'stopped', restoration: 'uncertain'});
+      assert.equal(world.writes.filter(write => write.endpoint === '/state').length, 1, 'the lost write is not retried');
+      assert.equal(world.writes.filter(write => (write.payload as {select?: unknown}).select !== undefined).length, 0);
+      if (path === 'stop') {
+        assert.equal(world.outcomes.find(outcome => outcome.requestId === 'stop')?.result, 'uncertain');
+        assert.equal(held(world.db, 0, 'wall'), true, 'the Stop\'s own lost write holds the light');
+      } else {
+        assert.equal(held(world.db, 0, 'wall'), false, 'a commandless restoration holds nothing');
+      }
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
+test('restoration skips a light that was powered off, for moments and Music alike', async () => {
+  const writes: string[] = [];
+  const base = {name: 'Ocean', brightness: 50};
+  const reader = (on: boolean) => (endpoint: string): Promise<unknown> => Promise.resolve(endpoint === '/effects'
+    ? {select: '*Static*', effectsList: ['Ocean']} : {on: {value: on}, brightness: {value: 50}});
+  const write = (endpoint: string): Promise<unknown> => { writes.push(endpoint); return Promise.resolve({}); };
+  assert.equal(await restoreFreeBase(reader(false), base, '*Static*', () => false, write), false);
+  assert.deepEqual(writes, []);
+  assert.equal(await restoreFreeBase(reader(true), base, '*Static*', () => false, write), true);
+  assert.deepEqual(writes, ['/state', '/effects']);
+});
+
+test('the expiry sweep leaves a live session\'s Stop for its loop and a second Stop is accepted', () => {
+  const world = open();
+  try {
+    const {db} = world;
+    transaction(db, () => admitMusicStart(db, 'wall', {requestId: 'start', generation: GENERATION, capture: CAPTURE, presetId: 'preset-green'}, LAYOUT,
+      {name: 'Ocean', brightness: 50}, 0, world.now, world.now + 5000, () => {}));
+    transaction(db, () => admitMusicStop(db, 'wall', {kind: 'music.stop', requestId: 'stop-a', generation: GENERATION}, world.now, world.now + 300));
+    transaction(db, () => admitMusicStop(db, 'wall', {kind: 'music.stop', requestId: 'stop-b', generation: GENERATION}, world.now, world.now + 300));
+    const outcomes: Outcome[] = [];
+    transaction(db, () => { expireQueued(db, 'wall', world.now / 1000 + 1, message => { if (message.type === 'outcome') outcomes.push(message); }); });
+    assert.ok(journalRow(db, 'stop-a') && journalRow(db, 'stop-b'), 'both Stops wait for the loop');
+    assert.deepEqual(outcomes, [], 'nothing expires a Stop the live session\'s loop has yet to take');
   } finally {
     world.db.close();
   }

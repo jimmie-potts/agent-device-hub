@@ -2,7 +2,7 @@
 
 ### Requirement: Live Music sessions on Lines through the existing writer
 
-The Nanoleaf module SHALL accept Music lighting work only from the core. It SHALL admit a Start only on the Lines device in Free with no pending mode, no hold, no other live session or waiting content, an existing frozen preset that the renderer accepts, and a current named Free scene with readable brightness as the base. A refused Start SHALL make no device write and SHALL NOT change mode. An admitted session SHALL render only the newest fresh Music feature for its capture binding inside the device's locked worker, with at most one write in flight, at most one write per 100 ms and no catch-up.
+The Nanoleaf module SHALL accept Music lighting work only from the core. It SHALL admit a Start only on the Lines device in Free with no pending mode, no hold, power not switched off by the hub or at the light, no other live session or waiting content, an existing frozen preset that the renderer accepts, and a current named Free scene with readable brightness as the base. A refused Start SHALL make no device write and SHALL NOT change mode. An admitted session SHALL render only the newest fresh Music feature for its capture binding inside the device's locked worker, with at most one write in flight, at most one write per 100 ms and no catch-up.
 
 #### Scenario: Admission outside the first trial
 - **WHEN** work asks to start on Panels, in Work or Quiet, while held, without a named Free scene, with an unknown preset or from a source other than the core
@@ -14,7 +14,7 @@ The Nanoleaf module SHALL accept Music lighting work only from the core. It SHAL
 
 ### Requirement: Interruption, Stop and current-base return
 
-A live session SHALL end on an explicit Stop, an alert, a newer manual or external change, loss of fresh input or a failed device write, and its record SHALL name that reason. Stop and alert endings SHALL restore the Free base only while the device still shows the music effect, the base is still listed, brightness is unchanged and no newer change exists before and after each write; otherwise restoration is skipped. Manual, external and device endings SHALL make no restoration write. A module restart SHALL end a live session as `restart` without a device write or replay.
+Before each frame write the module SHALL confirm that the device still shows the music frame's selection. A live session SHALL end on an explicit Stop, an alert, a newer manual or external change, loss of fresh input or a failed device write, and its record SHALL name that reason. Stop and alert endings SHALL restore the Free base only while the device still shows the music effect, the base is still listed, brightness is unchanged and no newer change exists before and after each write, and the light is on; otherwise restoration is skipped, or uncertain when a write's answer was lost. Manual, external and device endings SHALL make no restoration write. A module restart SHALL end a live session as `restart` without a device write or replay.
 
 #### Scenario: Newer manual change wins
 - **WHEN** a scene, brightness, power, mode or moment request arrives during a session, or during its restoration

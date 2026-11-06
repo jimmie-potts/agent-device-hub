@@ -21,18 +21,18 @@ export type MomentCommand = MomentPlayRequest & {kind:typeof MOMENT;configuratio
 export const momentRevision=(db:Db,device:string):number=>Number(first(db,'SELECT configuration_revision FROM nanoleaf_devices WHERE device=?',device)?.[0]??0);
 
 /** One device read: the effect list (`/effects`) or the state (`/state`). */
-export type DeviceRead=(endpoint:'/effects'|'/state')=>Promise<unknown>;
+export type DeviceRead=(endpoint:'/effects'|'/effects/select'|'/state')=>Promise<unknown>;
 /**
  * The Free base a moment or a Music session returns to (#925, #1272): the listed named scene the device shows and its
- * integer brightness. Undefined when the device shows no such scene, such as an effect write or an animation. A failed
- * read rejects.
+ * integer brightness. Undefined when the device shows no such scene, such as an effect write or an animation, or, with
+ * `requireOn`, when the light reports itself off. A failed read rejects.
  */
-export async function readFreeBase(read:DeviceRead):Promise<FreeBase|undefined> {
+export async function readFreeBase(read:DeviceRead,requireOn=false):Promise<FreeBase|undefined> {
   const listing=await read('/effects');
   const state=await read('/state');
   if(!isObject(listing) || typeof listing.select!=='string' || listing.select.startsWith('*') || !Array.isArray(listing.effectsList) || !listing.effectsList.includes(listing.select) ||
       !isObject(state) || !isObject(state.brightness) || typeof state.brightness.value!=='number' || !Number.isInteger(state.brightness.value) ||
-      state.brightness.value<0 || state.brightness.value>100) return undefined;
+      state.brightness.value<0 || state.brightness.value>100 || (requireOn && isObject(state.on) && state.on.value===false)) return undefined;
   return {name:listing.select,brightness:state.brightness.value};
 }
 export const sameBrightness=async(read:DeviceRead,base:FreeBase):Promise<boolean>=>
@@ -52,14 +52,17 @@ export function newerChoice(db:Db,device:string,since:Admitted,kinds:readonly st
     journal(db,device,`AND seq>? AND kind IN (${kinds.map(()=>'?').join(',')})`,since.seq,...kinds).length>0;
 }
 /**
- * Returns a Free light to its named base only while it still shows `shown`, the base is listed, its brightness is
- * unchanged and nothing newer took over; then brightness, then the scene, each through `write`, which guards it. False:
- * skipped without a write. A guard that finds a newer choice between the writes throws `Cancelled`.
+ * Returns a Free light to its named base only while it still shows `shown`, the base is listed, the light is not off,
+ * its brightness is unchanged and nothing newer took over; then brightness, then the scene, each through `write`, which
+ * guards it. False: skipped without a write. A guard that finds a newer choice between the writes throws `Cancelled`.
  */
 export async function restoreFreeBase(read:DeviceRead,base:FreeBase,shown:string,stale:()=>boolean,
   write:(endpoint:string,payload:unknown)=>Promise<unknown>):Promise<boolean> {
   const listing=await read('/effects') as {select?:unknown;effectsList?:unknown};
-  if(listing.select!==shown || !Array.isArray(listing.effectsList) || !listing.effectsList.includes(base.name) || !await sameBrightness(read,base)) return false;
+  if(listing.select!==shown || !Array.isArray(listing.effectsList) || !listing.effectsList.includes(base.name)) return false;
+  // A light switched off by hand is a newer choice: restoring brightness and a scene would override it.
+  const state=await read('/state') as {on?:{value?:unknown};brightness?:{value?:unknown}};
+  if(state.on?.value===false || state.brightness?.value!==base.brightness) return false;
   if(stale()) return false;
   await write('/state',{brightness:{value:base.brightness,duration:0}});
   await write('/effects',{select:base.name});
