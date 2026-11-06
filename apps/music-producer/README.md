@@ -14,6 +14,9 @@ their own acceptance in the issue.
 The separate [local position reader](#local-state-and-position-reader) is a source
 increment for [#571](https://github.com/jimmie-potts/agent-device-hub/issues/571).
 The capture CLI does not invoke it or publish its observations.
+The [foreground playback source](#foreground-music-playback-source) adds a
+separate explicit Music observation loop and four listed transport controls
+through the existing playback owner.
 
 ## Foreground producer
 
@@ -193,17 +196,89 @@ must still await the read result to observe teardown.
 The portable suite includes real synthetic children for complete and partial
 reads, fragmented output, cancellation and deadline teardown. These fixtures
 send no AppleEvents. The [native guide](native/README.md#explicit-state-and-position-reads)
-describes permission identity and descriptor checks. Continuous polling, track
-metadata, output observations, SDK integration, controls, packaged permission
-access and physical timing remain within the full #571 work.
+describes permission identity and descriptor checks. The separate foreground
+playback source below owns continuous polling, track/output observations and
+the four transport controls. Packaged permission access and physical timing
+retain their installed qualification within #571.
+
+## Foreground Music playback source
+
+The separate #571 playback entry requires an explicit observation choice:
+
+```sh
+node apps/music-producer/dist/src/playback-cli.js --config /absolute/private/playback.json --observe
+```
+
+Its private configuration uses a separate credential and schema:
+
+```json
+{
+  "schema": "music-playback-producer/1.0",
+  "edgeOrigin": "http://127.0.0.1:8790",
+  "tokenFile": "/absolute/private/playback.token",
+  "helper": "/absolute/build/music-playback",
+  "libraryScopeId": "selected-mac-library"
+}
+```
+
+The same owner-only regular-file checks and byte caps apply. `libraryScopeId`
+is a neutral operator-selected name using lowercase letters, digits and single
+hyphens, at most 128 characters. It declares the selected Mac/library; it does
+not prove which library Music has open. Provision the fixed
+`bunny/parts/music-playback` source separately with the `music-playback-producer`
+role and no ordinary SDK scopes. Its connection-bound endpoint may respond only
+to `music-playback-work`, publish observations/results and request playback
+registration. `modules/playback` must explicitly configure the Music source in
+its existing preference order. The capture credential and CLI cannot enroll it.
+
+`MusicPlaybackProducer` construction and import perform no work. Explicit
+`start()` registers with the playback owner, qualifies the runtime and native
+clocks, then reads at a two-second target without overlapping children or a
+catch-up queue. The distinct helper reads only allowlisted state, position,
+local persistent item ID, display metadata and Music-declared selected output
+properties. Each field retains its original observation interval. Clock mapping
+adds conservative 100 ms bounds; a new receipt cannot make old data fresh.
+Clock drift above 25 ms retires the endpoint. Missing position, failed fields,
+permission/process loss and identity discontinuities remain explicit.
+
+The native process digest stays local. A process epoch identifies a Music
+process lifetime, and the declared library scope plus persistent item ID
+identifies a local item. Neither is a recording fingerprint. Matching item reads
+before and after position only bound that observation interval. Output evidence
+has `music-declared-selection` provenance, with at most eight selected entries;
+labels and per-observation ordinals are not device identities. No route change,
+Core Audio output discovery, audible-time claim or synchronized-show permission
+comes from these observations.
+
+Only the playback owner may request play, pause, next or previous for the current
+endpoint/process epoch. The producer checks current state, freshness and the
+original expiry, reserves one operation, cancels any read and waits for confirmed
+exit before a control child. The three-second work budget includes that wait.
+Known unsent, transmitted acceptance/refusal and uncertain replies remain
+distinct. There is no command retry or fallback to another source. A validated
+definitive reply remains evidence if child exit is late; unknown exit still
+blocks another helper. The result can resolve the owner's earlier timeout on
+the original live endpoint. Connection loss, stop or a signal fences pending
+publication and closes native ownership without automatic re-enrollment.
+
+`MusicPlaybackNative` accepts one closed NDJSON record within 16 KiB, discards at
+most 4 KiB stderr and validates fixed error text, field byte caps, temporal bounds
+and expected action/process identity. Read cancellation sends SIGTERM, then
+SIGKILL after 500 ms; 1.5 seconds without observed exit is uncertain cleanup.
+The existing capture helper and local read-only `MusicPositionReader` remain
+separate. Source tests substitute all Music process discovery, permission and AppleEvent APIs;
+the real child-pipe and SDK loopback fixtures emit synthetic JSON only.
 
 ## Data and qualification
 
-Only bounded derived measurements cross the SDK edge. PCM stays in process
-memory and is absent from files, logs, messages and model requests. Existing
-private core history retains the published derived observations. Latest-value
-queue replacement loses intermediate windows under pressure; sequence gaps
-identify that loss. History continues growing during capture.
+Capture sends bounded derived measurements across the SDK edge. PCM stays in
+process memory and is absent from files, logs, messages and model requests.
+The separate playback producer sends its declared state, position, local item,
+display metadata and selected-output evidence. These observations stay in the
+owner's private event history, subject to its existing publication and capacity
+limits. Neither producer logs personal metadata. Capture's latest-value queue
+replacement loses intermediate windows under pressure; sequence gaps identify
+that loss. History continues growing during capture.
 
 The disposable probe established Music-only audio access on one selected Mac
 output. It did not qualify every protected recording, AirPlay route, microphone,

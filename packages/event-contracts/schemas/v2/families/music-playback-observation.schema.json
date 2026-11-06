@@ -1,0 +1,614 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/music-playback-observation/2.0",
+  "$defs": {
+    "interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "earliestAtMs",
+        "latestAtMs"
+      ],
+      "properties": {
+        "earliestAtMs": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+        },
+        "latestAtMs": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "retryable"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorCode"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "stateField": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "value",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "observed"
+            },
+            "value": {
+              "enum": [
+                "playing",
+                "paused",
+                "stopped",
+                "fast-forwarding",
+                "rewinding"
+              ]
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "error",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "unavailable"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        }
+      ]
+    },
+    "positionField": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "value",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "observed"
+            },
+            "value": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 9007199254740.99
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "error",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "unavailable"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        }
+      ]
+    },
+    "itemField": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "value",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "observed"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[0-9A-Fa-f]+$"
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "error",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "unavailable"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        }
+      ]
+    },
+    "textField": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "value",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "observed"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "error",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "unavailable"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        }
+      ]
+    },
+    "outputNameField": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "value",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "observed"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "error",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "unavailable"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        }
+      ]
+    },
+    "outputKindField": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "value",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "observed"
+            },
+            "value": {
+              "enum": [
+                "computer",
+                "airport-express",
+                "apple-tv",
+                "airplay-device",
+                "bluetooth",
+                "homepod",
+                "tv",
+                "unknown"
+              ]
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "error",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "unavailable"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        }
+      ]
+    },
+    "booleanField": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "value",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "observed"
+            },
+            "value": {
+              "type": "boolean"
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "error",
+            "interval"
+          ],
+          "properties": {
+            "status": {
+              "const": "unavailable"
+            },
+            "error": {
+              "$ref": "#/$defs/error"
+            },
+            "interval": {
+              "$ref": "#/$defs/interval"
+            }
+          }
+        }
+      ]
+    },
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "interval",
+        "clockUncertaintyMs",
+        "discontinuity",
+        "status",
+        "processEpoch",
+        "libraryScopeId",
+        "state",
+        "position",
+        "item",
+        "itemAssociation",
+        "metadata",
+        "outputSelection"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "interval": {
+          "$ref": "#/$defs/interval"
+        },
+        "clockUncertaintyMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "discontinuity": {
+          "type": "boolean"
+        },
+        "status": {
+          "const": "sample"
+        },
+        "processEpoch": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "libraryScopeId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        "state": {
+          "$ref": "#/$defs/stateField"
+        },
+        "position": {
+          "$ref": "#/$defs/positionField"
+        },
+        "item": {
+          "$ref": "#/$defs/itemField"
+        },
+        "itemAssociation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "interval"
+              ],
+              "properties": {
+                "status": {
+                  "const": "bounded-match"
+                },
+                "interval": {
+                  "$ref": "#/$defs/interval"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "const": "unavailable"
+                }
+              }
+            }
+          ]
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "title",
+            "artist",
+            "album",
+            "durationSeconds"
+          ],
+          "properties": {
+            "title": {
+              "$ref": "#/$defs/textField"
+            },
+            "artist": {
+              "$ref": "#/$defs/textField"
+            },
+            "album": {
+              "$ref": "#/$defs/textField"
+            },
+            "durationSeconds": {
+              "$ref": "#/$defs/positionField"
+            }
+          }
+        },
+        "outputSelection": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "provenance",
+                "interval",
+                "selectionInterval",
+                "airPlayEnabled",
+                "devices"
+              ],
+              "properties": {
+                "status": {
+                  "const": "observed"
+                },
+                "provenance": {
+                  "const": "music-declared-selection"
+                },
+                "interval": {
+                  "$ref": "#/$defs/interval"
+                },
+                "selectionInterval": {
+                  "$ref": "#/$defs/interval"
+                },
+                "airPlayEnabled": {
+                  "$ref": "#/$defs/booleanField"
+                },
+                "devices": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "ordinal",
+                      "name",
+                      "kind",
+                      "active",
+                      "available",
+                      "selected"
+                    ],
+                    "properties": {
+                      "ordinal": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 7
+                      },
+                      "name": {
+                        "$ref": "#/$defs/outputNameField"
+                      },
+                      "kind": {
+                        "$ref": "#/$defs/outputKindField"
+                      },
+                      "active": {
+                        "$ref": "#/$defs/booleanField"
+                      },
+                      "available": {
+                        "$ref": "#/$defs/booleanField"
+                      },
+                      "selected": {
+                        "$ref": "#/$defs/booleanField"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "error",
+                "interval"
+              ],
+              "properties": {
+                "status": {
+                  "const": "unavailable"
+                },
+                "error": {
+                  "$ref": "#/$defs/error"
+                },
+                "interval": {
+                  "$ref": "#/$defs/interval"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/sample"
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "interval",
+        "clockUncertaintyMs",
+        "discontinuity",
+        "status",
+        "error"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "interval": {
+          "$ref": "#/$defs/interval"
+        },
+        "clockUncertaintyMs": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "discontinuity": {
+          "type": "boolean"
+        },
+        "status": {
+          "const": "unavailable"
+        },
+        "error": {
+          "$ref": "#/$defs/error"
+        }
+      }
+    }
+  ]
+}

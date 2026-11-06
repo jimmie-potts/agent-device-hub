@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/playback-position/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "playbackRevision",
+    "presentationGeneration",
+    "source",
+    "availability",
+    "recordingAssociation",
+    "evidence"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "playbackRevision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "presentationGeneration": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "source": {
+      "enum": [
+        "sony",
+        "sonos",
+        "music",
+        null
+      ]
+    },
+    "availability": {
+      "enum": [
+        "available",
+        "stale",
+        "unavailable"
+      ]
+    },
+    "recordingAssociation": {
+      "const": "unqualified"
+    },
+    "evidence": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "reason"
+          ],
+          "properties": {
+            "status": {
+              "const": "unavailable"
+            },
+            "reason": {
+              "enum": [
+                "unsupported",
+                "missing",
+                "clock",
+                "disconnected"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "endpointId",
+            "observation"
+          ],
+          "properties": {
+            "status": {
+              "const": "observed"
+            },
+            "endpointId": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+            },
+            "observation": {
+              "$ref": "https://bunny.invalid/events/music-playback-observation/2.0#/$defs/sample"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

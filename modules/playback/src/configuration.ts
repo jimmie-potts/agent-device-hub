@@ -13,7 +13,8 @@ import type {SourceConfiguration} from './sources.js';
  * The module's configuration: the playback record's routing ID, which every client sees and which never changes with
  * the presented speaker, and one or two speakers in preference order, at most one of each kind.
  */
-export type PlaybackConfig = {readonly id: string; readonly sources: readonly SourceConfiguration[]};
+export type PlaybackSourceConfiguration = SourceConfiguration | {readonly kind: 'music'};
+export type PlaybackConfig = {readonly id: string; readonly sources: readonly PlaybackSourceConfiguration[]};
 /** The module's section as the installer writes it, without the `secrets` member it does not need. */
 export type PlaybackSection = {id: string; sources: {kind: SourceConfiguration['kind']; endpoint: string}[]};
 
@@ -40,6 +41,25 @@ function speakers(value: unknown): SourceConfiguration[] | ErrorBody {
   return sources;
 }
 
+function playbackSources(value: unknown): PlaybackSourceConfiguration[] | ErrorBody {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 3) return refuse('sources must list one to three sources');
+  const sources: PlaybackSourceConfiguration[] = [];
+  for (const entry of value as unknown[]) {
+    let config: PlaybackSourceConfiguration;
+    if (object(entry) && entry.kind === 'music' && exact(entry, ['kind'])) config = {kind: 'music'};
+    else {
+      const parsed = speakers([entry]);
+      if (!Array.isArray(parsed)) return parsed;
+      const receiver = parsed[0];
+      if (receiver === undefined) return refuse('a source must name one supported kind');
+      config = receiver;
+    }
+    if (sources.some(source => source.kind === config.kind)) return refuse('sources may list each kind once');
+    sources.push(config);
+  }
+  return sources;
+}
+
 /**
  * The module's `configure`: `{id, sources}`, where `id` is a routing ID (lowercase letters and digits with single
  * hyphens, at most 128 characters) and `sources` lists one or two speakers in preference order. A `secrets` member,
@@ -54,7 +74,7 @@ export function configurePlayback(section: unknown): Configured<PlaybackConfig> 
   if (typeof id !== 'string' || id.length > MAX_ID || !ROUTING_ID.test(id)) {
     return refuse('id must be lowercase letters and digits with single hyphens, at most 128 characters');
   }
-  const sources = speakers(section.sources);
+  const sources = playbackSources(section.sources);
   if (!Array.isArray(sources)) return sources;
   return {config: {id, sources}, devices: [id]};
 }

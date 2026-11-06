@@ -47,6 +47,20 @@ export class Presentation {
     this.#observed[index] = {atMs: this.#clock(), mark: this.#monotonic(), value: structuredClone(observation)};
   }
 
+  /** A remote source's original conservative evidence time, never its receipt time. */
+  reportAt(index: number, observation: PlaybackObservation, observedAtMs: number): void {
+    if (index < 0 || index >= this.#observed.length) throw new RangeError('no such source');
+    const age = this.#clock() - observedAtMs;
+    if (!Number.isSafeInteger(observedAtMs) || observedAtMs < 0 || age < 0) throw new RangeError('invalid observation time');
+    this.#observed[index] = {atMs: observedAtMs, mark: this.#monotonic() - age, value: structuredClone(observation)};
+  }
+
+  /** Explicit process/permission/endpoint loss cannot retain an actionable session. */
+  invalidate(index: number): void {
+    if (index < 0 || index >= this.#observed.length) throw new RangeError('no such source');
+    this.#observed[index] = undefined;
+  }
+
   /** How old the source's last observation is, or undefined before its first. */
   age(index: number): number | undefined {
     const record = this.#observed[index];

@@ -7,3 +7,7 @@ ${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
   -I"$native_dir" "$native_dir/music_signal.c" "$native_dir/tests/signal.c" \
   -lm -pthread -o "$test_dir/signal-test"
 "$test_dir/signal-test"
+${CC:-cc} -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+  -I"$native_dir" "$native_dir/music_playback.c" "$native_dir/tests/playback.c" \
+  -lm -o "$test_dir/playback-test"
+"$test_dir/playback-test"
