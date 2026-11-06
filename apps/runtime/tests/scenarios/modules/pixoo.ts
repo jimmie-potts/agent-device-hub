@@ -14,6 +14,7 @@ import type {CommandDraft} from '@jimmie-potts/sdk';
 import {runPixooMigration} from '../../../src/index.js';
 import {migrationOf, stateDirOf} from '../../../verify/paths.js';
 import {approvalPrompt, approvalResolved, sessionStarted} from '../../fixtures/agents.js';
+import {pixooAnimation} from '../../fixtures/pixoo-animation.js';
 import {
   CORE_FAMILIES, StepFailure, act, answered, answers, bodyOf, deviceState, dispatchOnce, expect, holds, logged, publish, refusedWith, running, show, type Follow, type Harness,
   type ModuleRun, type Outcome, type Scenario, type Seed, type Step,
@@ -418,6 +419,80 @@ const pixooOffline: Scenario = {
   ],
 };
 
+
+const animationName = (count: number): string => `Synthetic ${count}-frame animation`;
+function animationRecord(h: Harness, count: number): RenditionRecord | undefined {
+  return h.reader.states<RenditionRecord>(PIXOO.rendition, PIXOO_OWNER).find(({data}) => data.name === animationName(count))?.data;
+}
+const importAnimation = (count: number): Step[] => [
+  act(`the operator imports all ${count} frames`, async h => {
+    const delays = Array<number>(count).fill(100);
+    if (count === 1001) delays[count - 1] = 900;
+    const gif = await pixooAnimation(delays);
+    await dispatchOnce(h, 'operator', `import-${count}`, pixooCommand(PIXOO.assetChange, 'pixoo-asset.change', {
+      change: {operation: 'import', name: animationName(count), content: {inline: gif.toString('base64')}},
+    }), `import-${count}`);
+  }),
+  expect(`the catalog reports ${count} frames and their compatibility with direct playback`, h => {
+    const record = animationRecord(h, count);
+    return (record?.frameCount === count && record.compatible === (count < 60) &&
+      completedAs(h, `import-${count}`, 'succeeded', 'observed') === true) ||
+      `catalog frame count ${String(record?.frameCount)}, direct compatibility ${String(record?.compatible)}`;
+  }, 30_000),
+];
+function showAnimation(count: number): Step {
+  return act(`the operator requests the ${count}-frame animation on the configured direct route`, h => {
+    const record = animationRecord(h, count);
+    if (record === undefined) throw new StepFailure('the synthetic animation is missing');
+    return dispatchOnce(h, 'operator', `show-${count}`, pixooCommand(PIXOO.show, 'pixoo-media.show', {
+      renditionId: record.id, playback: {mode: 'duration', durationMs: 120_000},
+    }), `show-${count}`);
+  });
+}
+const pixooCommandLimits: Scenario = {
+  id: 'pixoo-command-limits', title: 'direct playback admits 59 frames while the library preserves longer animations',
+  seed: PIXOO_SEED, keepCapturePage: true,
+  capture: async context => {
+    const {capturePixooCommandLimits} = await import('../../../verify/pixoo-command-limits-browser.js');
+    await capturePixooCommandLimits(context);
+  },
+  steps: [
+    expect('the configured Pixoo and its owners are running', h => running(h, PIXOO_MODULES)),
+    ...[21, 59, 60, 1001].flatMap(importAnimation),
+    expect('the final library frame and all source delays are readable with no display output', async h => {
+      const record = animationRecord(h, 1001);
+      if (record === undefined) return 'missing long animation';
+      const path = '/modules/pixoo/content/';
+      const answer = await h.gateway({as: 'reader', method: 'GET', path: `${path}preview.${record.id}`});
+      const preview = bodyOf<{frameCount: number; frames: {index: number; delayMs: number}[]}>(answer);
+      if (answer.status !== 200 || preview?.frameCount !== 1001 || preview.frames.length !== 1001 ||
+        !preview.frames.every((frame, index) => frame.index === index && frame.delayMs === (index === 1000 ? 900 : 100))) return 'preview timing or order changed';
+      const last = await h.gateway({as: 'reader', method: 'GET', path: `${path}frame.${record.id}.1000`});
+      return (last.status === 200 && last.headers['content-type'] === 'image/png' && pixooState(h).sent === 0) || 'missing final PNG or an unexpected display write';
+    }),
+    ...[21, 59].flatMap((count, index) => [
+      showAnimation(count),
+      expect(`the simulated writer received all ${count} frames at one speed`, h => {
+        const state = pixooState(h);
+        return (completedAs(h, `show-${count}`, 'succeeded', 'transmitted') === true && state.uploads === index + 1 &&
+          state.shown?.frames === count && state.shown.delaysMs.every(delay => delay === 100)) || `uploads ${state.uploads}, shown frames ${String(state.shown?.frames)}`;
+      }, 8000),
+    ]),
+    ...[60, 1001].flatMap(count => [
+      showAnimation(count),
+      expect(`the direct route refuses ${count} frames before another writer call`, h => {
+        const outcome = h.reader.heard().filter(message => message.kind === 'outcome')
+          .map(message => message.data as {requestId: string; error?: {code: string; detail?: string}})
+          .find(data => data.requestId === `show-${count}`);
+        const state = pixooState(h);
+        return (completedAs(h, `show-${count}`, 'failed', 'none') === true && outcome?.error?.code === 'unsupported-capability' &&
+          /Draw\/SendHttpGif.*59/.test(outcome.error.detail ?? '') && state.sent === 2 && state.shown?.frames === 59) ||
+          `refusal ${show(outcome?.error)}, writer calls ${state.sent}, shown frames ${String(state.shown?.frames)}`;
+      }),
+    ]),
+  ],
+};
+
 /** Where the `pixoo-migrated` run keeps its synthetic Pixoo library, `<data>/pixoo-library` (Hub #931). */
 export const pixooLibraryOf = (dataDir: string): string => join(dataDir, 'pixoo-library');
 
@@ -437,7 +512,7 @@ async function migratePixoo(dataDir: string): Promise<void> {
   }
 }
 
-export const scenarios: readonly Scenario[] = [pixooMonitor, pixooMedia, pixooNowPlaying, pixooMoment, pixooArt, pixooOffline, pixooPages];
+export const scenarios: readonly Scenario[] = [pixooMonitor, pixooMedia, pixooCommandLimits, pixooNowPlaying, pixooMoment, pixooArt, pixooOffline, pixooPages];
 
 export const runs: Readonly<Record<string, ModuleRun>> = {
   'pixoo-migrated': {

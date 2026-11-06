@@ -7,6 +7,7 @@ import {chromium} from 'playwright';
 import {SIMULATED_SECTION} from '@jimmie-potts/pixoo';
 import {gifFixture} from '../../../../modules/pixoo/dist/tests/helpers/media-fixtures.js';
 import {changes, feed, startWorld} from './harness.ts';
+import {pixooAnimation} from '../../dist/tests/fixtures/pixoo-animation.js';
 
 const world = await startWorld({pixooPages: true});
 const browser = await chromium.launch({headless: true});
@@ -19,11 +20,11 @@ try {
   // Count owned decoded resources as well as reads: hidden faces must actually close their bitmaps.
   await page.addInitScript(() => {
     const native = window.createImageBitmap.bind(window);
-    const stats = {opened: 0, closed: 0};
+    const stats = {opened: 0, closed: 0, peak: 0};
     Object.assign(window, {pixooBitmaps: stats});
     window.createImageBitmap = (async (...args: Parameters<typeof createImageBitmap>) => {
       const bitmap: ImageBitmap = await Reflect.apply(native, window, args);
-      stats.opened++;
+      stats.opened++; stats.peak = Math.max(stats.peak, stats.opened - stats.closed);
       const close = bitmap.close.bind(bitmap); let closed = false;
       bitmap.close = () => { if (!closed) { closed = true; stats.closed++; } close(); };
       return bitmap;
@@ -32,11 +33,11 @@ try {
   const sent = changes(page);
   await page.goto(`${world.url}/#/module/pixoo/library`); await feed(page, 'connected');
   for (let index = 0; index < 8; index++) {
-    const gif = gifFixture(2, 2, [{width: 2, height: 2, pixels: [index % 4, (index >> 2) + 1, 1, 2], delay: 50},
+    const gif = index === 7 ? await pixooAnimation(Array<number>(1001).fill(100)) : gifFixture(2, 2, [{width: 2, height: 2, pixels: [index % 4, (index >> 2) + 1, 1, 2], delay: 50},
       {width: 2, height: 2, pixels: [3, 2, index % 4, (index >> 2) + 1], delay: 50}]);
     await page.getByLabel('Media file', {exact: true}).setInputFiles({name: `Synthetic ${index + 1}.gif`, mimeType: 'image/gif', buffer: gif});
     await page.getByRole('button', {name: 'Add media', exact: true}).click();
-    for (let attempt = 0; (await world.pixooMedia()).items.length !== index + 1 && attempt < 100; attempt++) await delay(20);
+    await page.getByRole('cell', {name: `Synthetic ${index + 1}.gif`, exact: true}).waitFor({timeout: 30_000});
     assert.equal((await world.pixooMedia()).items.length, index + 1);
   }
   const setupRequests = sent.length;
@@ -69,6 +70,10 @@ try {
   await picker.getByText(/^Synthetic 8(?:\.gif)?$/).waitFor();
   await picker.locator('button.pixoo-media-tile').nth(1).scrollIntoViewIfNeeded();
   await picker.locator('[data-preview-state="animating"]').nth(1).waitFor();
+  const long = picker.locator('button.pixoo-media-tile').filter({hasText: 'Synthetic 8'});
+  await long.locator('[data-preview-state="animating"]').waitFor();
+  const bitmapPeak = await page.evaluate(() => (window as unknown as {pixooBitmaps: {peak: number}}).pixooBitmaps.peak);
+  assert.ok(bitmapPeak <= 24, `six visible tiles, including a 1001-frame animation, held ${bitmapPeak} decoded bitmaps`);
   await picker.getByRole('searchbox').fill('Synthetic 1');
   await picker.getByText('1–1 of 1', {exact: true}).waitFor();
   await picker.getByRole('button', {name: 'Pause GIFs', exact: true}).click();
