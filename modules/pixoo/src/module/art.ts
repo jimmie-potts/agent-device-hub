@@ -78,7 +78,9 @@ export class PixooArt {
       if (decision.action === 'reuse' && row !== undefined && row.profile === this.profile.name) {
         const retained = await this.#media(row.rendition_id).getRendition(row.rendition_id);
         if (mismatch(stage, retained)) throw new MediaError('invalid-input');
-        this.db.prepare('UPDATE pixoo_art_copies SET expires_at_ms = ? WHERE composition_id = ?').run(expiresAtMs, stage.compositionId);
+        this.#requireLiveStage(expiresAtMs);
+        this.db.prepare('UPDATE pixoo_art_copies SET expires_at_ms = ? WHERE composition_id = ?')
+          .run(Math.max(row.expires_at_ms, expiresAtMs), stage.compositionId);
         return;
       }
       const id = renditionId(stage.sha256, DEFAULT_TRANSFORM, LIBRARY_PROFILE), media = this.#media(id);
@@ -99,7 +101,7 @@ export class PixooArt {
           const loaded = await media.readFrames(id, this.signal);
           hostedPalette(loaded.frames.map(rgb => ({rgb, delayMs})));
         }
-        if (this.signal.aborted || this.now() >= expiresAtMs) throw new MediaError('cancelled');
+        this.#requireLiveStage(expiresAtMs);
         const active = this.db.prepare('SELECT count(*) AS count FROM pixoo_art_copies WHERE expires_at_ms > ? AND composition_id != ?').get(this.now(), stage.compositionId)?.count;
         if (typeof active === 'number' && active >= MAX_ART_COPIES) throw new MediaError('busy');
         this.db.prepare(`INSERT INTO pixoo_art_copies VALUES (?, ?, ?, ?, ?, ?)
@@ -108,6 +110,10 @@ export class PixooArt {
           .run(stage.compositionId, stage.sha256, id, expiresAtMs, this.profile.name, delayMs);
       } finally { await this.#prune(); }
     }).finally(() => { this.#queued -= 1; });
+  }
+
+  #requireLiveStage(expiresAtMs: number): void {
+    if (this.signal.aborted || this.now() >= expiresAtMs) throw new MediaError('cancelled');
   }
 
   retain(compositionId: string): ArtLease {

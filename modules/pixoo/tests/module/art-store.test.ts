@@ -9,7 +9,7 @@ import type {ArtStageRequest} from '@jimmie-potts/event-contracts/v2/art';
 import {SdkError} from '@jimmie-potts/sdk';
 import {PixooArt, MAX_ART_COPIES} from '../../src/module/art.js';
 import {Library} from '../../src/library/index.js';
-import {PIXOO64_GIF_PROFILE} from '../../src/media/index.js';
+import {MediaStore, PIXOO64_GIF_PROFILE} from '../../src/media/index.js';
 import {bytesOf, hostedGif} from './support.js';
 
 const hash = (bytes: Buffer | string): string => createHash('sha256').update(bytes).digest('hex');
@@ -96,3 +96,29 @@ void it('bounds live copies and frees capacity only after expiry without changin
     assert.throws(() => w.art.retain(data.compositionId), (error: unknown) => error instanceof SdkError && error.body.error.code === 'not-found');
   } finally { await w.close(); }
 });
+
+for (const boundary of ['expiry', 'stop', 'shorter'] as const) {
+  void it(`a matching stage verifies the retained copy before renewing it at the ${boundary} boundary`, async t => {
+    const w = await fixture();
+    try {
+      const data = stage('retained-boundary');
+      await w.art.stage({...data, lifetimeMs: 120_000}, w.now());
+      const expiry = () =>
+        w.db.prepare('SELECT expires_at_ms FROM pixoo_art_copies WHERE composition_id = ?').get(data.compositionId)?.expires_at_ms;
+      const prior = expiry();
+      const verify = MediaStore.prototype.getRendition;
+      t.mock.method(MediaStore.prototype, 'getRendition', async function(this: MediaStore, id: string) {
+        const retained = await verify.call(this, id);
+        if (boundary === 'expiry') w.advance(70_000);
+        if (boundary === 'stop') w.controller.abort();
+        return retained;
+      });
+      w.advance(100);
+      const renewal = w.art.stage(data, w.now());
+      if (boundary === 'shorter') await renewal;
+      else await assert.rejects(renewal, {code: 'cancelled'});
+      assert.equal(expiry(), prior);
+      assert.equal(w.art.referenceRefusal(data.compositionId), undefined);
+    } finally { await w.close(); }
+  });
+}

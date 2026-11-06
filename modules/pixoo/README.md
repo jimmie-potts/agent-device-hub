@@ -212,7 +212,7 @@ and a recovery after a warning is one record.
 ### Families
 
 It serves, through sync and as live states:
-- `device/2.2`, kind `pixoo`, including the exact-art moment capability;
+- `device/2.2`, kind `pixoo`, includes the exact-art moment capability. The hosted route publishes `device/2.4` with extended staging support;
 - `pixoo-display/2.0`: Monitor's mode, filter, cadence and sessions, what the
   presentation shows, Now Playing, and the player's state, item and last error;
 - `pixoo-rendition/2.0` (2.1 above 1,000 frames) and `pixoo-playlist/2.0`: one record per catalog entry,
@@ -330,8 +330,10 @@ the producer resolves its display kind through the named owner's synced devices.
 The shared validator checks bytes, signature and hash;
 the existing isolated media decoder checks actual 64×64 dimensions, frame count
 and timing. The shared stage budgets are 160 KiB and five minutes of animation.
-The direct command permits up to 59 frames. Longer Pixoo stages use
-`art-stage/2.1` only on a hosted route declaring support. That route fetches a
+The direct command permits up to 59 frames. Hosted animations of 60 through
+256 frames still use `art-stage/2.0`.
+Above 256 frames, the core forwards `art-stage/2.1` only to a hosted Pixoo
+declaring that support in `device/2.4`. That route fetches a
 64×64 GIF and preserves every frame and delay. Each physical animation uses
 one delay, and hosted encoding requires exact GIF centiseconds and at most 256
 colors across the animation. Divoom specifies square dimensions for hosted

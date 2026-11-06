@@ -229,7 +229,21 @@ class PixooRuntime {
       schedule: (delayMs, callback) => {
         if (!Number.isFinite(delayMs) || delayMs < 0) throw new RangeError('Delay must be finite and nonnegative');
         if (signal.aborted) return () => {};
-        return scheduler.after(Math.min(MAX_DELAY_MS, Math.ceil(delayMs)), callback);
+        if (delayMs <= MAX_DELAY_MS) return scheduler.after(Math.ceil(delayMs), callback);
+        // A native timer is shorter than some valid playback dwells. Each slice consumes elapsed
+        // time, including a late wake, while the host retains ownership of the currently armed timer.
+        let remaining = Math.ceil(delayMs), cancelled = false, cancel: Cancel = () => {};
+        const arm = (): void => {
+          const slice = Math.min(MAX_DELAY_MS, remaining), started = performance.now();
+          cancel = scheduler.after(slice, () => {
+            if (cancelled || signal.aborted) return;
+            remaining -= Math.max(slice, Math.floor(performance.now() - started));
+            if (remaining > 0) arm();
+            else { cancelled = true; callback(); }
+          });
+        };
+        arm();
+        return () => { cancelled = true; cancel(); };
       },
     };
   }
