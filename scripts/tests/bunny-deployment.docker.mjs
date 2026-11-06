@@ -43,6 +43,7 @@ try {
   const result=await deployBatch(request,{root,run:docker,qualification});assert.equal(result.outcome,'succeeded');
   const after=await selected({project},docker);assert.equal(after.Image,targetImage);assert.notEqual(after.Id,before.Id);
   const record=JSON.parse(await readFile(join(root,project+'.records',request.id+'.json'),'utf8'));assert.ok(record.writerReleasedAt);
+  assert.equal(record.replacementCompose,join(root,request.id+'.compose.json'));
   assert.deepEqual(after.Mounts.filter(m=>m.Type==='volume').map(m=>m.Name).sort(),volumes.slice().sort());
   await operate({command:'stop',project,compose},docker);
   // Reopen the candidate's genuinely written latest store with the previous production reader, on a disposable copy.
@@ -52,7 +53,8 @@ try {
     '--mount',`type=volume,source=${volumes[1]},target=/etc/bunny,readonly`,'--mount',`type=volume,source=${volumes[2]},target=/run/secrets/bunny,readonly`,
     '--entrypoint','node',previousImage,'--input-type=module','-e',readerProgram]));
   assert.equal(reader.status,'ok');
-  const failedRequest={...request,id:'batch-failed-client-'+randomUUID(),containerId:after.Id,previousImage:targetImage,previousRevision:candidate,backup:{volume:archive,name:'before-failed-client'}};
+  // Later requests name the active Compose file, the previous replacement, as the documented practice does.
+  const failedRequest={...request,id:'batch-failed-client-'+randomUUID(),compose:record.replacementCompose,containerId:after.Id,previousImage:targetImage,previousRevision:candidate,backup:{volume:archive,name:'before-failed-client'}};
   await assert.rejects(deployBatch(failedRequest,{root,qualification,run:async args=>{
     if(args[0]==='exec'&&args.includes('-e')){
       await docker(['exec',args[1],'node','-e',"require('node:fs').writeFileSync('/var/lib/bunny/deployment-test.txt','candidate latest data',{mode:384})"]);
@@ -83,9 +85,12 @@ try {
     stateSha256:reconciled.backupIdentity.stateSha256,configSha256:reconciled.backupIdentity.configSha256,evidence:'previous production core reopened copied latest synthetic state'};
   await deployBatch(returnRequest,{root,run:docker,compatibility,qualification:async()=>({candidate:previousRevision,outcome:'qualified',architecture:'linux/arm64',image:{id:previousImage},runId:1,runAttempt:1})});
   const returned=await selected({project},docker);assert.equal(returned.Image,previousImage);
+  const returnRecord=JSON.parse(await readFile(join(root,project+'.records',returnRequest.id+'.json'),'utf8'));
+  assert.equal(returnRecord.compose,record.replacementCompose);assert.equal(returnRecord.replacementCompose,join(root,returnRequest.id+'.compose.json'));
+  assert.equal(returned.Config.Labels['com.docker.compose.project.config_files'],returnRecord.replacementCompose);
   assert.equal(await docker(['exec',returned.Id,'node','-e',"console.log(require('node:fs').readFileSync('/var/lib/bunny/deployment-test.txt','utf8'))"]),'candidate latest data');
   completed=true;process.stdout.write(JSON.stringify({schema:'bunny-batch-disposable/1.0',project,outcome:'passed',previousRevision,candidate,
-    checks:['stopped-backup','exact-image','preserved-volumes','health','trusted-browser-sign-in-check-logout','private-release-record','previous-core-runtime-copy-reopen','failed-client-stops-replacement','latest-data-preserved','real-process-kill-after-create','unfinished-manual-start-refusal','explicit-unfinished-operation-reconciliation','explicit-compatible-image-return-preserves-latest-data'],
+    checks:['stopped-backup','exact-image','preserved-volumes','health','trusted-browser-sign-in-check-logout','private-release-record','previous-core-runtime-copy-reopen','failed-client-stops-replacement','latest-data-preserved','real-process-kill-after-create','unfinished-manual-start-refusal','explicit-unfinished-operation-reconciliation','explicit-compatible-image-return-preserves-latest-data','chained-replacement-compose'],
     recovery:'qualified-disposable-core-only',hostedQualification:'synthetic-injected-only'})+'\n');
 } finally {
   const info=await selected({project},docker);
