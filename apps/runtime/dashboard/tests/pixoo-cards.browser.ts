@@ -71,7 +71,10 @@ try {
   await picker.locator('button.pixoo-media-tile').nth(1).scrollIntoViewIfNeeded();
   await picker.locator('[data-preview-state="animating"]').nth(1).waitFor();
   const long = picker.locator('button.pixoo-media-tile').filter({hasText: 'Synthetic 8'});
-  await long.locator('[data-preview-state="animating"]').waitFor();
+  const thumbnail = long.locator('[data-preview-state="animating"]');
+  await thumbnail.waitFor();
+  // Advance beyond the eight-frame tile cache so the check observes eviction as well as lazy loading.
+  await page.waitForFunction(node => Number(node?.getAttribute('data-preview-frame')) >= 32, await thumbnail.elementHandle(), {timeout: 20_000});
   const bitmapPeak = await page.evaluate(() => (window as unknown as {pixooBitmaps: {peak: number}}).pixooBitmaps.peak);
   assert.ok(bitmapPeak <= 24, `six visible tiles, including a 1001-frame animation, held ${bitmapPeak} decoded bitmaps`);
   await picker.getByRole('searchbox').fill('Synthetic 1');
@@ -221,5 +224,5 @@ try {
   assert.equal(await card.getByRole('button', {name: 'New playlist', exact: true}).count(), 0);
   assert.equal(sent.length, uncertainCount); assert.deepEqual(errors, []);
   await context.close();
-  process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-reusable-cards', surfaces: 3, animation: true, boundedPages: true, bitmapCleanup: bitmaps, frozenSession: true, noReplay: true, readOnly: true, axe: 'desktop and phone passed', requests: sent.length})}\n`);
+  process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-reusable-cards', surfaces: 3, animation: true, boundedPages: true, longPreviewPeak: bitmapPeak, bitmapCleanup: bitmaps, frozenSession: true, noReplay: true, readOnly: true, axe: 'desktop and phone passed', requests: sent.length})}\n`);
 } finally { await browser.close(); await world.close(); }

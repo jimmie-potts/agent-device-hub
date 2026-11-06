@@ -188,7 +188,7 @@ export class GatewayClient {
   async call({as, method, path, body, headers = {}, origin}: GatewayCall): Promise<GatewayAnswer> {
     const own = this.#origin();
     const sent: Record<string, string> = {...headers};
-    if (body !== undefined && sent['content-type'] === undefined) sent['content-type'] = 'application/json';
+    if (body !== undefined && sent['content-type'] === undefined) sent['content-type'] = body instanceof Uint8Array ? 'application/octet-stream' : 'application/json';
     if (as === 'browser') {
       sent.cookie = `${SESSION_COOKIE}=${await this.#session()}`;
       sent['sec-fetch-site'] = 'same-origin';
@@ -207,7 +207,8 @@ export class GatewayClient {
       sent.origin = 'http://pages.invalid';
       sent['sec-fetch-site'] = 'cross-site';
     }
-    const response = await fetch(new URL(path, own), {method, headers: sent, ...(body === undefined ? {} : {body: JSON.stringify(body)})});
+    const payload = body instanceof Uint8Array ? Uint8Array.from(body) : JSON.stringify(body);
+    const response = await fetch(new URL(path, own), {method, headers: sent, ...(payload === undefined ? {} : {body: payload})});
     const answered: Record<string, string> = {};
     response.headers.forEach((value, name) => { answered[name.toLowerCase()] = value; });
     return {status: response.status, headers: answered, text: await response.text()};

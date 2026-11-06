@@ -429,9 +429,9 @@ const importAnimation = (count: number): Step[] => [
     const delays = Array<number>(count).fill(100);
     if (count === 1001) delays[count - 1] = 900;
     const gif = await pixooAnimation(delays);
-    await dispatchOnce(h, 'operator', `import-${count}`, pixooCommand(PIXOO.assetChange, 'pixoo-asset.change', {
-      change: {operation: 'import', name: animationName(count), content: {inline: gif.toString('base64')}},
-    }), `import-${count}`);
+    const query = new URLSearchParams({family: PIXOO.assetChange, target: PIXOO_ID, requestId: `import-${count}`, name: animationName(count)});
+    const answer = await h.gateway({as: 'browser', method: 'POST', path: `/api/v2/modules/pixoo/upload?${query}`, body: gif});
+    if (answer.status !== 200) throw new StepFailure(`upload of ${count} frames returned HTTP ${answer.status}`);
   }),
   expect(`the catalog reports ${count} frames and their compatibility with direct playback`, h => {
     const record = animationRecord(h, count);
