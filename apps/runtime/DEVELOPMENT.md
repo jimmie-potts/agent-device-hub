@@ -15,7 +15,7 @@ compatible version changes, oversized-frame recovery with fresh evidence, refusa
 byte forwarding, SDK freshness, target binding and the core transaction. The Mac
 launcher test uses synthetic app bundles and runs only on macOS; run it on the host
 as well as the Linux receipt suites. It launches no installed application. Existing
-`test:runtime:built` and the core CI job discover these tests automatically.
+`test:runtime:built` and the Runtime unit tests CI job discover these tests automatically.
 Use the owning Linux test environment for runtime storage/edge checks, as for the
 existing receipt suites. Run shared build/type/lint, event/SDK, contract and workflow
 checks before publication. Disposable native protocol checks and the actual
@@ -30,7 +30,7 @@ copies and live following without recurring refusals, and recovers a genuine
 owner refusal with the existing bounded retry. It sends no device commands.
 Keep installed Mac log observation separate from these synthetic checks.
 
-Private Tailscale access (#1117) uses the existing runtime core CI discovery.
+Private Tailscale access (#1117) uses the existing runtime unit test discovery in CI.
 After the root build, run `node --test apps/runtime/dist/tests/private-proxy.test.js apps/runtime/dist/tests/wifi-proxy.test.js`
 and the existing gateway suite. These check origin/proxy proof, browser and machine
 grants, session expiry, credential revocation and preserved local/Wi-Fi access.
@@ -86,7 +86,7 @@ devices, invalid drafts, Run now, passive reconnect, lost mutation replies,
 read-only controls and axe accessibility.
 These checks contact no household device and qualify no installed routine or maximum-on limit.
 
-Home-Wi-Fi admission (#1111) uses the existing runtime test discovery in core CI.
+Home-Wi-Fi admission (#1111) uses the existing runtime unit test discovery in CI.
 After the root build, run `node --test apps/runtime/dist/tests/wifi-proxy.test.js`
 for configured proxy admission, browser sessions, refused origins and preserved
 local clients. Run the existing gateway suite alongside it for expiry, streaming,
@@ -115,7 +115,7 @@ under [UPGRADE.md](UPGRADE.md) and the selected issue.
 Current-runtime upgrade inventory and receipt checks (#1037) are in
 `apps/runtime/tests/runtime-upgrade-check.test.ts`. After the root build, run
 `node --test apps/runtime/dist/tests/runtime-upgrade-check.test.js`; existing
-`test:runtime:built` discovery also runs them in the active core CI job. They use
+`test:runtime:built` discovery also runs them in the Runtime unit tests CI job. They use
 small private disposable directories, never installed state or service control.
 They compare supplied release manifest/inventory/archive hashes and establish
 receipt validation, private atomic persistence and readback. A disposable child
@@ -295,7 +295,7 @@ Automation gateway checks (`apps/runtime/tests/automation-gateway.test.ts`) cove
 read/control admission, the required write header, bounded bodies, credential
 revocation during a pending write and safe error/trace records. The route helper
 tests preserve the existing CRUD/settings shapes. Both are discovered by
-`npm run test:runtime:built` after the normal build and by the existing core CI
+`npm run test:runtime:built` after the normal build and by the Runtime unit tests CI
 job; the Automation page's unit checks join `test:runtime-dashboard:built`.
 
 `apps/runtime` is the current runtime and module host from
@@ -314,8 +314,8 @@ they do not replace the browser interaction or disposable Acceptance checks.
 `frontend-build.test.ts` uses the production build plugin to bundle a synthetic
 module's explicit browser entry and rejects one that imports its Node-side
 implementation. Run it after the root build with
-`node --test apps/runtime/dist/tests/frontend-build.test.js`; core CI's existing
-runtime test discovery includes it. It starts no listener and keeps temporary
+`node --test apps/runtime/dist/tests/frontend-build.test.js`; CI's runtime unit
+test discovery includes it. It starts no listener and keeps temporary
 workspaces under the checkout's ignored `.local/scratch/frontend-build/`.
 
 Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
@@ -380,8 +380,8 @@ production reader to reject missing configured state, including surviving sideca
 These checks establish synthetic restart behavior; actual release compatibility and installation still need the owning UPGRADE
 procedure and independent artifact evidence.
 
-Run these with the normal build and `npm run test:runtime:built`; the existing
-core CI job includes them. A focused run can select the compiled
+Run these with the normal build and `npm run test:runtime:built`; the Runtime
+unit tests CI job includes them. A focused run can select the compiled
 `upgrade-inputs`, `upgrade-admission`, `upgrade-preflight` and
 `companions-upgrade-qualification` test files. Runtime-private state tests require
 a private temporary directory outside Git and Windows mounts, as the production
@@ -425,9 +425,9 @@ runtime unit CI discovers these cases; no product or global timeout changes.
 
 Every runtime story is tested at four layers
 ([epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827)).
-The core admission job runs the first three after its fresh build for ready PRs
-whose [affected checks](../../docs/development.md#affected-pr-checks) select the
-runtime. Broad release qualification runs all four on pinned integrated source.
+The core admission job and the Runtime unit tests and Runtime scenario tests jobs
+run the first three, each after its own fresh build, for ready PRs whose
+[affected checks](../../docs/development.md#affected-pr-checks) select the runtime. Broad release qualification runs all four on pinned integrated source.
 The App verification job judges the fourth layer's capture steps without a user
 manager; focused presentation admission retains affected disposable acceptance.
 

@@ -2373,7 +2373,7 @@ node --test apps/runtime/dist/tests/cutover-plan.test.js
 
 Use the repository's Node and temporary-directory setup. The test creates no
 runtime, listener or service and uses only synthetic facts. It is also included
-in the core CI job's existing `test:runtime:built` file discovery. The complete
+in the Runtime unit tests CI job's `test:runtime:built` file discovery. The complete
 runtime suite includes process tests and requires its own isolated execution.
 
 ## Shared inbox and retained history

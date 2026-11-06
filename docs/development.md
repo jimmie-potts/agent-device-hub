@@ -423,6 +423,10 @@ completed job results and unique unexpired artifacts through GitHub, then verify
 the downloaded archive hash and loaded image identity. A copied JSON file alone
 is insufficient. `scripts/release/qualification.mjs` supplies the closed validator
 and expected job names. No qualification command contacts the installed runtime.
+The expected names are exact, so a receipt from a revision with another job set,
+such as one qualified before the runtime test jobs were added (#1506), validates
+only with the operator scripts of its own qualified revision, as the
+[deployment route](bunny-container.md#deploy-a-qualified-batch) already requires.
 
 Use Node 24 and `npm ci`, then `npm run build`, `npm run lint:js`,
 `node --test scripts/release/tests/*.test.mjs`, `npm run check:workflow` and
@@ -472,10 +476,14 @@ cheap integration checks and queues pinned release qualification. Superseded PR
 revisions are cancelled per workflow and PR; an active qualification finishes
 while new arrivals replace the pending candidate. Each job has a ten-minute timeout, except the
 select and gate jobs' five, the Workflow job's fifteen, the retained documentation
-job's twenty-five, Core and App verification's forty, and Runtime verification's
-forty-five. Branch pushes do not duplicate PR checks.
+job's twenty-five, Runtime verification's forty-five, and forty for Core, the two
+runtime test jobs and App verification. Branch pushes do not duplicate PR checks.
 Core's finite 40-minute aggregate limit leaves headroom after full selections
 exhausted the previous 30-minute cap ([#1388](https://github.com/jimmie-potts/agent-device-hub/issues/1388)).
+The runtime's unit and scenario suites left Core for the Runtime unit tests and
+Runtime scenario tests jobs, each under the same 40 minutes, when Core's slowest
+passes came within a minute of its limit ([#1506](https://github.com/jimmie-potts/agent-device-hub/issues/1506);
+measurements under [CI cost and suite timings](#ci-cost-and-suite-timings)).
 Runtime verification has a separate 45-minute job limit alongside the existing
 per-test deadlines. Two full catalog attempts
 reached the previous 35-minute limit before all cases reported their results
@@ -529,7 +537,7 @@ file under their `dist/tests/`, and the package scripts copy their package's
 whole `dist/`. After switching branches or rebasing, delete the affected `dist/`
 before building; a stale Nanoleaf test file once failed a local run.
 
-Admission has eight GitHub-hosted Linux jobs with selected steps/jobs skipped.
+Admission has ten GitHub-hosted Linux jobs with selected steps/jobs skipped.
 Full release source coverage reuses those same jobs, then adds its pinned ARM64
 artifact checks. Its evidence remains separate from the cheap Integration job:
 
@@ -537,14 +545,16 @@ artifact checks. Its evidence remains separate from the cheap Integration job:
 | --- | --- |
 | Select affected checks | Node 24 with only `scripts/ci-selection` checked out: maps the PR's changed paths to check groups |
 | Workflow checks (Workflow workflow) | Node 24 workflow validation, the affected-check selection fixtures, delivery preflight fixtures and isolated Linux hook qualification. It also runs for Markdown-only changes. |
-| Build, lint and core tests | Node 24, and Python 3.14 when the shared group is selected, in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (the runtime and its scenario catalog, SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
+| Build, lint and core tests | Node 24, and Python 3.14 when the shared group is selected, in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
+| Runtime unit tests | Node 24 build, then `npm run test:runtime:built`, when the runtime group is selected |
+| Runtime scenario tests | Node 24 build, then `npm run test:runtime:scenarios:built`, the scenario catalog over both transports, when the runtime group is selected |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Retained documentation checks (Workflow workflow) | Python 3.12 diagram/atlas/navigation and maintenance-parser checks, plus Node 24 browser checks with review artifacts |
 | App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge adapter's steps, the bridge control page's browser check, the smoke checks of the old dashboard and the runtime's dashboard, and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
 | Runtime verification | Node 24 build and Chromium, then the unchanged full serial runtime adapter/catalog suite, including its browser and accessibility journeys; the same user-manager isolation applies |
 | Selected checks gate | Node 24 with only `scripts/ci-selection` checked out: fails unless every selected Checks job succeeded |
 
-A full Checks run performs three full builds across its jobs. The Python
+A full Checks run performs five full builds across its jobs. The Python
 suites run on Python 3.14 only, the version of the installed Nanoleaf runtime.
 Checks that call the runner's system
 `/usr/bin/python3`, such as the Linux performance qualification and the
@@ -583,7 +593,7 @@ The mapping accepts extra work to stay simple; it is not a dependency graph.
 
 The selector explicitly lists existing dashboard and module frontend CSS assets.
 Only comparisons confined to those style paths and documentation use focused mode. They retain the affected
-core suites while omitting broad App verification and Runtime verification.
+core suites, including the two runtime test jobs, while omitting broad App verification and Runtime verification.
 All executable frontend code, including sign-in, connections, durable attempt
 fences and device controls, retains conservative coverage. New or renamed style
 paths also retain that coverage until their ownership is reviewed in the table. Backend, shared and unknown work cannot opt into
@@ -638,9 +648,9 @@ missing full control is not measured elapsed time; runner minutes are not an
 invoice or model-cost estimate. Record projected benefits as projections until
 both actual executions exist. This observation does not waive either gate.
 
-A group's unselected steps show as skipped in the job log. Firmware, App
-verification and Runtime verification report `skipped` when their groups are
-unselected. Those three jobs name their runner (`on ubuntu-latest`) instead of using a matrix,
+A group's unselected steps show as skipped in the job log. The two runtime test
+jobs, Firmware, App verification and Runtime verification report `skipped` when
+their groups are unselected. Those five jobs name their runner (`on ubuntu-latest`) instead of using a matrix,
 because GitHub reports a job skipped before its matrix expands under the
 unexpanded name. The `Selected checks gate` job runs last, even after a
 failure, and fails unless the selection succeeded, every selected job
@@ -755,6 +765,31 @@ minutes. The App job retains every other check, and the selected-check gate
 requires both jobs. Selection, test concurrency, isolation and failure behavior
 are unchanged. The older timings below are historical measurements.
 
+The runtime's unit and scenario suites run in two jobs of their own
+([#1506](https://github.com/jimmie-potts/agent-device-hub/issues/1506)). Before
+that, Actions step records of 39 successful full-coverage core jobs (32 PR Checks,
+7 Release qualification, 2026-11-05 04:08 to 11-06 22:27 UTC) gave, in minutes:
+
+| Core job or step | Median | 90th percentile | Slowest |
+| --- | ---: | ---: | ---: |
+| Whole core job, limit 40 | 29.2 | 36.4 | 39.4 |
+| `test:runtime:built` | 8.4 | 10.9 | 12.0 |
+| `test:runtime:scenarios:built` | 7.9 | 9.8 | 10.6 |
+| Core without those two steps | 11.8 | 15.8 | 16.9 |
+| Job setup, `npm ci` and build | 1.6 | 1.9 | 2.3 |
+
+Passing runs understate the tail. Eight core jobs on 2026-11-06 were cancelled
+at the 40-minute limit with no failed assertion. In them
+`test:runtime:built` took 12.2 to 15.8 minutes and the scenario suite 10.6 to 14.8;
+on PR #1517 `test:runtime:built` alone took 17.1. Together the two suites reached
+30.5 minutes, which one shared job plus setup could not hold with ten minutes to
+spare, so each has its own runner. Each job adds about two minutes of setup and
+build, so the slowest observed suite (17.1 minutes) uses about 19.5 of its job's
+40. The split costs about 3.2 extra runner-minutes per full Checks run. The
+repeated work inside these suites belongs to
+[#1521](https://github.com/jimmie-potts/agent-device-hub/issues/1521) and
+[#1523](https://github.com/jimmie-potts/agent-device-hub/issues/1523).
+
 Each job takes runner time, so a duplicate suite or an extra full run costs as
 much as a new one. These step times come from main's
 [run 37669983471](https://github.com/jimmie-potts/agent-device-hub/actions/runs/37669983471)
@@ -788,7 +823,7 @@ and keep the waits that test safety behavior.
 See [Static analysis](static-analysis.md#static-analysis) for the authoritative procedure.
 The separate [CodeQL procedure](static-analysis.md#codeql-security-analysis) covers
 source-security results, permissions and the weekly scan. Its two analysis jobs
-run on ready PRs and main independently of the eight existing admission jobs.
+run on ready PRs and main independently of the ten existing admission jobs.
 The native findings result is a separate merge check; scanner success alone does
 not establish that findings passed.
 
@@ -2082,7 +2117,7 @@ last bit.
 `modules/nanoleaf/tests/fixtures/record.py` re-records them from a codex-nanoleaf
 checkout, as PORTING.md describes; CI does not run it.
 
-Sonos artwork (#1162) uses the existing playback, runtime and scenario test discovery in core CI. After the root build, run `npm run test:playback:built`, `npm run test:tidbyt-module:built`, `npm run test:pixoo:built`, `npm run test:runtime:built`, `npm run test:runtime:scenarios:built` and `node apps/runtime/dashboard/tests/playback-artwork.browser.ts`. The `speaker-artwork` disposable scenario covers both source acquisitions, the no-art handoff and both real display renderers. Unit tests cover Sonos XML extraction, source-specific URL admission, late results and passive content; synthetic evidence does not establish installed or physical acceptance. No workflow change is needed: all of these existing suites are already selected for playback/runtime changes.
+Sonos artwork (#1162) uses the existing playback, runtime and scenario test discovery in CI. After the root build, run `npm run test:playback:built`, `npm run test:tidbyt-module:built`, `npm run test:pixoo:built`, `npm run test:runtime:built`, `npm run test:runtime:scenarios:built` and `node apps/runtime/dashboard/tests/playback-artwork.browser.ts`. The `speaker-artwork` disposable scenario covers both source acquisitions, the no-art handoff and both real display renderers. Unit tests cover Sonos XML extraction, source-specific URL admission, late results and passive content; synthetic evidence does not establish installed or physical acceptance. No workflow change is needed: all of these existing suites are already selected for playback/runtime changes.
 
 ## Music producer checks
 
@@ -2593,7 +2628,7 @@ locks writes against stale operations.
 ### Home-Wi-Fi dashboard verification
 
 The optional HTTPS browser entry uses `apps/runtime/tests/wifi-proxy.test.ts`,
-discovered by existing runtime core CI, alongside the gateway suite. The owning
+discovered by the Runtime unit tests CI job, alongside the gateway suite. The owning
 [runtime checks](../apps/runtime/DEVELOPMENT.md#runtime-checks) and
 [setup recipe](../apps/runtime/WIFI.md#source-verification) describe the focused
 Caddy/phone-width browser journey. It uses synthetic controls and keeps actual
