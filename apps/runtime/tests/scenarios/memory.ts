@@ -115,7 +115,8 @@ function holding(module: BunnyModule, databases: Set<DatabaseSync>, working: (ca
   }, workers: {...context.workers, call: <Reply>(file: URL, request: unknown, options: WorkerCallOptions): Promise<Reply> => {
     const call = context.workers.call<Reply>(file, request, options);
     working(call);
-    return call;
+    // A promise of its own, so a rejection the module leaves unhandled stays unhandled, as it would in the runtime.
+    return call.then(reply => reply);
   }}})};
 }
 
