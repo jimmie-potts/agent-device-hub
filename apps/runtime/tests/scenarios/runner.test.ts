@@ -7,10 +7,10 @@ import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {join} from 'node:path';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {SdkError, traceFields} from '@jimmie-potts/sdk';
+import {SdkError, traceFields, type BunnyModule, type ModuleRegistration} from '@jimmie-potts/sdk';
 import {RuntimeError, type LogRecord} from '../../src/index.js';
 import {assertContractRecords, it, stateDir} from '../support.js';
-import {StepFailure, act, expect, hookProblem, holds, runScenario, scenario, TRANSPORTS, type Harness, type Scenario, type TransportName} from './catalog.js';
+import {StepFailure, act, expect, hookProblem, holds, runScenario, scenario, TRANSPORTS, type Harness, type Scenario, type Seed, type TransportName} from './catalog.js';
 import {INSTALLED_PORTS, listenLoopback, startMemoryHarness} from './memory.js';
 
 const EMPTY = {modules: [], follows: []} as const;
@@ -61,6 +61,66 @@ it('a hold preserves virtual duration in the memory harness', async () => {
   assert.equal(observations[0], 0);
   assert.equal(observations.at(-1), 50);
   assert.equal(elapsed(), 50);
+});
+
+/** A module that makes one real worker call at its start, on a 2-second virtual deadline, and how that call ended. */
+function workerCall(request: object): {registrations: readonly ModuleRegistration[]; endings: string[]; seed: Seed} {
+  const endings: string[] = [];
+  const module = (): BunnyModule => ({manifest: {name: 'zz-worker', apiVersion: '1.0'}, stop: () => {}, start: ({workers}) => {
+    void workers.call(new URL('../fixtures/call-worker.js', import.meta.url), request, {timeoutMs: 2000}).then(
+      () => { endings.push('answered'); },
+      (error: unknown) => { endings.push(error instanceof SdkError ? error.body.error.code : 'other'); });
+  }});
+  return {endings, seed: {modules: ['zz-worker'], follows: []},
+    registrations: [{name: 'zz-worker', shipped: false, order: 1, create: module, simulate: module}]};
+}
+
+for (const {name, request, workerWaitMs, ending} of [
+  {name: 'virtual time waits for a slow worker call, which answers before its virtual deadline', request: {act: 'answer', text: 'late', delayMs: 1500}, ending: 'answered'},
+  // Long enough that the harness's start cannot outlast it, so the deadline, not the answer, ends the call.
+  {name: 'a slow worker call that virtual time does not wait for reaches its virtual deadline', request: {act: 'answer', text: 'late', delayMs: 5000}, workerWaitMs: 1, ending: 'uncertain-result'},
+  {name: 'virtual time stops waiting for a worker that never answers, which reaches its deadline', request: {act: 'silent'}, workerWaitMs: 200, ending: 'uncertain-result'},
+]) {
+  it(name, async () => {
+    const {seed, registrations, endings} = workerCall(request);
+    const h = await startMemoryHarness(seed, 'in-process', {registrations, ...(workerWaitMs === undefined ? {} : {workerWaitMs})});
+    try {
+      const startedAt = h.now();
+      await h.wait(2100);
+      assert.deepEqual(endings, [ending]);
+      assert.equal(h.now() - startedAt, 2100);
+      assert.deepEqual(h.problems(), []);
+    } finally {
+      await h.close();
+    }
+  });
+}
+
+// Waiting for a worker must not handle its rejection for the module: one the module ignores would crash the runtime.
+it('a worker call\'s rejection that the module leaves unhandled stays unhandled in the harness', async () => {
+  const saved = process.listeners('unhandledRejection');
+  process.removeAllListeners('unhandledRejection');
+  let heard: (reason: unknown) => void = () => {};
+  const unhandled = new Promise<unknown>(resolve => { heard = resolve; });
+  process.on('unhandledRejection', heard);
+  const module = (): BunnyModule => ({manifest: {name: 'zz-worker', apiVersion: '1.0'}, stop: () => {}, start: ({workers}) => {
+    // The bare promise: a `.then` here would make a new promise, whose rejection would be unhandled either way.
+    void workers.call(new URL('../fixtures/call-worker.js', import.meta.url), {act: 'throw'}, {timeoutMs: 2000});
+  }});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let h: Awaited<ReturnType<typeof startMemoryHarness>> | undefined;
+  try {
+    h = await startMemoryHarness({modules: ['zz-worker'], follows: []}, 'in-process', {
+      registrations: [{name: 'zz-worker', shipped: false, order: 1, create: module, simulate: module}],
+    });
+    const reason = await Promise.race([unhandled, new Promise(resolve => { timer = setTimeout(() => { resolve('handled'); }, 5000); })]);
+    assert.ok(reason instanceof SdkError && reason.body.error.code === 'uncertain-result', `the rejection was ${String(reason)}`);
+  } finally {
+    clearTimeout(timer);
+    process.removeListener('unhandledRejection', heard);
+    for (const listener of saved) process.on('unhandledRejection', listener);
+    await h?.close();
+  }
 });
 
 it('an expectation that never holds fails with what it observed, and stops the scenario', async () => {
