@@ -29,6 +29,7 @@ import {prepareStateDirectory, readRuntimeConfig, type EdgeConfig, type RuntimeC
 import {startTracing, type RuntimeTracing} from '../../src/tracing.js';
 import {SimulatedChime, createChimeModule} from '../fixtures/chime.js';
 import {createCoreModule} from '../fixtures/core.js';
+import {ScheduledFixture} from '../fixtures/scheduled.js';
 import {createPresentationFixture} from '../fixtures/presentation.js';
 import {SimulatedLamps, createLampModule} from '../fixtures/lamp.js';
 import {SimulatedSigns, createSignModule} from '../fixtures/sign.js';
@@ -129,6 +130,7 @@ class Memory implements MemoryHarness {
   readonly reader: Reader;
   url: string | undefined;
   readonly #seed: Seed;
+  readonly #scheduled = new ScheduledFixture();
   readonly #clock = manualClock();
   /** Every registered module, by name: the runtime's, and any a test adds. */
   readonly #registrations: ReadonlyMap<string, ModuleRegistration>;
@@ -499,11 +501,13 @@ class Memory implements MemoryHarness {
 
   /** Each module with its simulated transport: the core and the fixture modules here, every other one through its registration. */
   #build(name: ModuleName): BunnyModule {
+    const override = this.#scheduled.local(name, this.#seed.modules, this.#simulated.get(name)?.device);
+    if (override !== undefined) return override;
     switch (name) {
       case 'wispr':
         return createWisprModule();
       case 'core':
-        return this.#fixtureCore = createCoreModule();
+        return this.#fixtureCore = createCoreModule(this.#scheduled.coreOptions(this.#seed.modules));
       case 'presentation-fixture':
         return createPresentationFixture(() => this.#fixtureCore);
       case 'lamp':

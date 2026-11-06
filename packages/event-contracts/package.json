@@ -79,6 +79,14 @@
     "./v2/music-lighting": {
       "types": "./dist/v2/music-lighting.d.ts",
       "import": "./dist/v2/music-lighting.js"
+    },
+    "./v2/art-notice": {
+      "types": "./dist/v2/art-notice.d.ts",
+      "import": "./dist/v2/art-notice.js"
+    },
+    "./v2/art-schedule": {
+      "types": "./dist/v2/art-schedule.d.ts",
+      "import": "./dist/v2/art-schedule.js"
     }
   },
   "dependencies": {

@@ -116,6 +116,8 @@ export type CoreOptions = {
   beforePublish?: () => void;
   /** How many `operation` records the core keeps (Hub #922). Defaults to `MAX_OPERATION_RECORDS`; tests lower it. */
   operationLimit?: number;
+  /** Bounded schedule choice; deterministic fixture injection, never a runtime configuration field. */
+  artScheduleChoice?: () => number;
 };
 
 /** The consumer a source may acknowledge for: the last segment of its source, such as `pixoo` for `bunny/modules/pixoo`. */
@@ -224,6 +226,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     return controls;
   };
   const limits=()=>{const value=automation().limits;if(value===undefined)throw new AutomationError('unavailable',503);return value;};
+  const artSchedule=()=>{const value=automation().artSchedule;if(value===undefined)throw new AutomationError('unavailable',503);return value;};
   const art=()=>{const value=automation().art;if(value===undefined)throw new AutomationError('unavailable',503);return value;};
   const module = {
     manifest: {name: CORE_MODULE, apiVersion: '1.3',
@@ -245,7 +248,8 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'})},
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
-      art:{targets:()=>art().targets(),present:(plan,permit)=>art().present(plan,permit)},
+      artSchedule:{get:()=>artSchedule().get(),save:(value,parent)=>artSchedule().save(value,parent)},
+      art:{targets:()=>art().targets(),present:(plan,permit,parent)=>art().present(plan,permit,parent)},
       limits:{list:()=>limits().list(),get:id=>limits().get(id),save:(id,value,parent)=>limits().save(id,value,parent),settled:()=>limits().settled()},
       routines:{list:()=>routines().list(),get:id=>routines().get(id),create:(value,owner)=>routines().create(value,owner),
         update:(id,value)=>routines().update(id,value),setEnabled:(id,enabled)=>routines().setEnabled(id,enabled),
@@ -285,7 +289,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
 class Core {
   readonly #automation: AutomationPart;
   readonly #companions = new CompanionPart();
-  readonly #art = new ArtPart();
+  readonly #art: ArtPart;
   setMusicCaptureRetirement(retire: () => void): void {this.#music.setRetirement(retire);}
   get automation(): AutomationControls {return this.#automation.controls;}
   setAutomationDevices(devices:readonly AutomationDevice[]):void {this.#automation.setDevices(devices);}
@@ -324,12 +328,13 @@ class Core {
   /** The start under way, which a stop waits for so that an owner it opens late is shut down too. */
   #starting: Promise<void> | undefined;
 
-  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit}: CoreOptions, ownership?: CoreOwnership) {
+  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice}: CoreOptions, ownership?: CoreOwnership) {
     this.#sdk = context.sdk;
     this.#log = context.log;
     this.#clock = context.clock;
     this.#scheduler = context.scheduler;
-    this.#automation = new AutomationPart(context.scheduler,context.signal);
+    this.#automation = new AutomationPart(context.scheduler,context.signal,artScheduleChoice);
+    this.#art = new ArtPart((authorization,target,compositionId)=>this.#automation.authorizeAmbient(authorization,target,compositionId));
     // The core's own `operation` family (Hub #922) comes first, then the parts later stories add.
     this.#inbox = new InboxRecords((action, handle) => this.#tracker.dispatchFromInbox(action, handle));
     this.#mode = new ModePart({

@@ -5,6 +5,7 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {ArtAuto21} from '@jimmie-potts/event-contracts/v2/art';
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
 import type {BunnyModule, Command, ModuleContext} from '@jimmie-potts/sdk';
+import {childOf} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import type {ArtPlan} from '../src/core/art-plans.js';
 import {deviceRecord, deviceState} from './fixtures/device.js';
@@ -12,14 +13,22 @@ import {edgeConfig, flush, it, manualClock, run, stateDir, waitFor} from './supp
 
 const PIXOO = 'a'.repeat(64), TIDBYT = 'b'.repeat(64), BROWSER = 'c'.repeat(64);
 
-async function world(t: TestContext) {
-  const clock = manualClock(1_700_000_000_000), preparations: Command<ArtAuto21>[] = [], moments: Command<MomentPlayRequest>[] = [];
+function independentClocks() {
+  const elapsed = manualClock(1_700_000_000_000);
+  let offset = 0;
+  return {...elapsed, now: () => elapsed.now() + offset, shiftWall: (ms: number) => {offset += ms;}};
+}
+
+async function world(t: TestContext, clock = manualClock(1_700_000_000_000), beforePrepareReply?: () => void) {
+  const preparations: Command<ArtAuto21>[] = [], moments: Command<MomentPlayRequest>[] = [];
   let artContext: ModuleContext | undefined, handle: CoreHandle | undefined, database: DatabaseSync | undefined;
   const makeCore = () => createCoreModule({parts: [{open: db => {database = db;}, start: given => {handle = given; return Promise.resolve();}}]});
   let core = makeCore();
   const art: BunnyModule = {manifest: {name: 'art', apiVersion: '1.3'}, start: async context => {
     artContext = context;
-    await context.sdk.respond<ArtAuto21>('bunny.cmd.art-auto.art', command => {preparations.push(command); return {status: 'accepted'};});
+    await context.sdk.respond<ArtAuto21>('bunny.cmd.art-auto.art', command => {
+      preparations.push(command); if (command.data.action === 'prepare') beforePrepareReply?.(); return {status: 'accepted'};
+    });
   }, stop() {}};
   const displays = (['pixoo', 'tidbyt'] as const).map(kind => {
     const id = kind === 'pixoo' ? 'desk-display' : 'shelf-display', record = deviceRecord(id, 1, kind, 'available');
@@ -29,12 +38,12 @@ async function world(t: TestContext) {
     const module: BunnyModule = {manifest: {name: kind, apiVersion: '1.3', configure: section => ({config: section, devices: [id]})},
       start: async given => {
         context = given;
-        await given.sdk.serveSync(['device'], () => {syncs++; return {revision: record.revision, states: [{...deviceState(record), dataschema: 'https://bunny.invalid/events/device/2.2'}]};});
+        await given.sdk.serveSync(['device'], () => {syncs++; return {revision: record.revision, states: [{...deviceState(record), dataschema: record.capabilities.moments.supported&&record.capabilities.moments.art?.notices!==undefined?'https://bunny.invalid/events/device/2.3':'https://bunny.invalid/events/device/2.2'}]};});
         await given.sdk.respond<MomentPlayRequest>(`bunny.cmd.moment-play.${id}`, command => {moments.push(command); return {status: 'accepted'};});
       }, stop() {}};
     return {id, record, module, syncs: () => syncs, publish: async () => {
       assert.ok(context); record.revision++;
-      await context.sdk.publish(`bunny.state.device.${id}`, {kind: 'state', ...deviceState(record), dataschema: 'https://bunny.invalid/events/device/2.2'});
+      await context.sdk.publish(`bunny.state.device.${id}`, {kind: 'state', ...deviceState(record), dataschema: record.capabilities.moments.supported&&record.capabilities.moments.art?.notices!==undefined?'https://bunny.invalid/events/device/2.3':'https://bunny.invalid/events/device/2.2'});
     }};
   });
   const files = await edgeConfig(t, [], {modules: {pixoo: {}, tidbyt: {}}});
@@ -63,6 +72,15 @@ function oneDisplay(now: number, id = 'single-plan'): ArtPlan {
     displays: [{target: 'desk-display', compositionId: PIXOO, durationMs: 8000}]};
 }
 
+it('the caller trace follows real preparation, display and browser commands',async t=>{
+  const w=await world(t),parent=childOf(undefined),plan={...oneDisplay(w.clock.now(),'traced-plan'),browser:{compositionId:BROWSER}};assert.ok(w.core.automation.art);
+  const completion=w.core.automation.art.present(plan,()=>undefined,parent);
+  await waitFor(()=>w.preparations.length===1);const prepare=w.preparations[0];assert.ok(prepare);await w.complete(prepare.data.requestId);
+  await waitFor(()=>w.moments.length===1);w.clock.advance(5000);await flush();const result=await completion;assert.ok(!('error' in result));
+  assert.equal(w.preparations.length,2);assert.equal(result.browser?.status,'tracked');
+  for(const command of [...w.preparations,...w.moments])assert.equal(command.traceparent.split('-')[1],parent.traceparent.split('-')[1]);
+});
+
 for (const restarted of [false, true]) it(`an expired art plan cannot borrow late preparation with changed timing${restarted ? ' after restart' : ''}`, async t => {
   const w = await world(t), plan = oneDisplay(w.clock.now());assert.ok(w.core.automation.art);
   const completion = w.core.automation.art.present(plan, () => undefined);
@@ -90,6 +108,74 @@ it('a policy callback cannot make browser selection late', async t => {
     () => {w.clock.advance(1001);return undefined;});
   assert.ok(!('error' in browser));assert.equal(browser.browser?.status, 'not-requested');
   assert.equal(w.preparations.length, 0, 'late browser choice sends no present command');
+});
+
+it('browser selection stays inside the wall window when its elapsed timer wakes early', async t => {
+  const clock = independentClocks(), w = await world(t, clock);
+  const plan = {...oneDisplay(clock.now()), displays: [], browser: {compositionId: BROWSER}};
+  assert.ok(w.core.automation.art);
+  const permits: number[] = [];
+  const completion = w.core.automation.art.present(plan, () => {permits.push(clock.now()); return undefined;});
+  clock.shiftWall(-250);
+  clock.advance(5000); await flush();
+  assert.deepEqual(permits, [], 'an early elapsed wake cannot consume the permit');
+  assert.equal(w.preparations.length, 0);
+  clock.advance(plan.toleranceMs); await flush();
+  const result = await completion;
+  assert.ok(!('error' in result)); assert.equal(result.browser?.status, 'tracked');
+  assert.equal(permits.length, 1); assert.ok(permits[0] !== undefined && permits[0] >= plan.startAtMs && permits[0] <= plan.startAtMs + plan.toleranceMs);
+  clock.advance(60_000); await flush(); assert.equal(w.preparations.length, 1);
+});
+
+it('a browser start still in the future at the elapsed limit expires without later replay', async t => {
+  const clock = independentClocks(), w = await world(t, clock);
+  const plan = {...oneDisplay(clock.now()), displays: [], browser: {compositionId: BROWSER}};
+  assert.ok(w.core.automation.art); let permits = 0;
+  const completion = w.core.automation.art.present(plan, () => {permits++; return undefined;});
+  clock.shiftWall(-10_000); clock.advance(5000); await flush();
+  clock.advance(plan.toleranceMs); await flush();
+  const result = await completion;
+  assert.ok(!('error' in result) && result.browser?.status === 'not-requested'); assert.equal(result.browser.error.error.code, 'invalid-state');
+  await w.restart(); clock.shiftWall(10_000); clock.advance(60_000); await flush();
+  assert.equal(permits, 0); assert.equal(w.preparations.length, 0);
+});
+
+it('a policy callback cannot move browser selection before its start', async t => {
+  const clock = independentClocks(), w = await world(t, clock), at = clock.now();
+  const plan = {...oneDisplay(at), startAtMs: at, prepareUntilMs: at, displays: [], browser: {compositionId: BROWSER}};
+  assert.ok(w.core.automation.art); let permits = 0;
+  const result = await w.core.automation.art.present(plan, () => {permits++; clock.shiftWall(-10_000); return undefined;});
+  assert.ok(!('error' in result) && result.browser?.status === 'not-requested');
+  assert.equal(result.browser.error.error.code, 'invalid-state'); assert.equal(permits, 1);
+  clock.advance(10_000); await flush(); assert.equal(w.preparations.length, 0);
+});
+
+for (const duringAdmission of [false, true]) it(`unanswered preparation settles at the original elapsed cutoff when the wall moves back ${duringAdmission ? 'during' : 'after'} admission`, async t => {
+  const clock = independentClocks();
+  const w = await world(t, clock, () => {if (duringAdmission) {clock.advance(1500); clock.shiftWall(-10_000);}});
+  const plan = oneDisplay(clock.now());
+  assert.ok(w.core.automation.art);
+  let settled = false;
+  const completion = w.core.automation.art.present(plan, () => undefined).then(result => {settled = true; return result;});
+  await waitFor(() => w.handle.operation(w.preparations[0]?.data.requestId ?? '')?.status === 'accepted'); await flush();
+  if (!duringAdmission) clock.shiftWall(-10_000);
+  clock.advance(duringAdmission ? 2500 : 4000); await flush();
+  assert.equal(settled, true, 'the original elapsed cutoff settles the unanswered target without another operation');
+  const result = await completion;
+  assert.ok(!('error' in result) && result.displays[0]?.moment.status === 'not-requested');
+  assert.equal(result.displays[0].moment.error.error.code, 'invalid-state');
+  const prepare = w.preparations[0]; assert.ok(prepare); await w.complete(prepare.data.requestId);
+  await w.restart(); clock.advance(60_000); await flush(); assert.equal(w.moments.length, 0);
+});
+
+it('restart cancels a browser selection waiting after an early elapsed wake', async t => {
+  const clock = independentClocks(), w = await world(t, clock), plan = {...oneDisplay(clock.now()), displays: [], browser: {compositionId: BROWSER}};
+  assert.ok(w.core.automation.art); let permits = 0;
+  const completion = w.core.automation.art.present(plan, () => {permits++; return undefined;});
+  clock.shiftWall(-250); clock.advance(5000); await flush(); await w.restart();
+  const result = await completion;
+  assert.ok(!('error' in result) && result.browser?.status === 'not-requested'); assert.equal(result.browser.error.error.code, 'cancelled');
+  clock.advance(60_000); await flush(); assert.equal(permits, 0); assert.equal(w.preparations.length, 0);
 });
 
 it('duplicate art plans never replay effects and conflicting content cannot borrow an earlier preparation', async t => {
@@ -212,4 +298,27 @@ it('shared art uses configured IDs and hands a ready display off while another p
     {target: 'desk-display', prepare: {status: 'tracked', requestId: pixoo.data.requestId}, moment: {status: 'tracked', requestId: w.moments[0]?.data.requestId}},
     {target: 'shelf-display', prepare: {status: 'tracked', requestId: tidbyt.data.requestId}, moment: {status: 'not-requested', error: errorBody('invalid-state', {detail: 'art presentation passed its preparation cutoff'})}},
   ], browser: {status: 'tracked', requestId: browser.data.requestId}});
+});
+
+it('rain notice uses negotiated 2.2 and every changed fact conflicts under the retained plan identity',async t=>{
+  const w=await world(t);const display=w.displays[0];assert.ok(display);assert.ok(display.record.capabilities.moments.supported&&display.record.capabilities.moments.art!==undefined);
+  display.record.capabilities.moments.art.notices=['rain-forecast'];await display.publish();await flush();
+  const at=w.clock.now();const plan:ArtPlan={...oneDisplay(at,'rain-plan'),notice:{kind:'rain-forecast',likelihood:'chance',forecastStartAtMs:at+3_600_000,
+    forecastEndAtMs:at+7_200_000,forecastUpdatedAtMs:at-120_000,observedAtMs:at-60_000,staleAtMs:at+2_600_000,weatherRevision:7}};
+  assert.ok(w.core.automation.art);const pending=w.core.automation.art.present(plan,()=>undefined);
+  await waitFor(()=>w.preparations.length===1);const prepare=w.preparations[0];assert.ok(prepare);await w.complete(prepare.data.requestId);const result=await pending;
+  assert.equal('error' in result,false);assert.equal(w.moments[0]?.dataschema,'https://bunny.invalid/events/moment-play/2.2');assert.deepEqual(w.moments[0]?.data.notice,plan.notice);
+  await w.restart();assert.ok(plan.notice!==undefined);
+  for(const notice of [{...plan.notice,likelihood:'likely' as const},{...plan.notice,weatherRevision:8},{...plan.notice,observedAtMs:at-60_001},
+    {...plan.notice,staleAtMs:at+2_500_000},{...plan.notice,forecastStartAtMs:at+3_600_001},{...plan.notice,forecastEndAtMs:at+7_199_999}]) {
+    const changed=await w.core.automation.art.present({...plan,notice},()=>undefined);
+    assert.ok('error' in changed);assert.equal(changed.error.code,'duplicate-conflict');
+  }
+  assert.equal(w.moments.length,1);
+});
+it('rain notice skips a plain-art target without preparation or a substitute mood',async t=>{
+  const w=await world(t),at=w.clock.now();assert.ok(w.core.automation.art);
+  const result=await w.core.automation.art.present({...oneDisplay(at,'unsupported-rain'),notice:{kind:'rain-forecast',likelihood:'likely',forecastStartAtMs:at+3_600_000,
+    forecastEndAtMs:at+7_200_000,forecastUpdatedAtMs:at,observedAtMs:at,staleAtMs:at+2_700_000,weatherRevision:7}},()=>undefined);
+  assert.ok(!('error' in result));assert.equal(result.displays[0]?.prepare.status,'not-requested');assert.equal(w.preparations.length,0);assert.equal(w.moments.length,0);
 });

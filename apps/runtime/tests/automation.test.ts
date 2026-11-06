@@ -356,3 +356,13 @@ void test('event rules can reopen beside saved shared power schedules without in
     finally {await reopened.automation.close();}
   }finally {w.db.close();}
 });
+
+void test('a restriction saved while target reads wait denies the final ordinary handoff',async()=>{
+  const db=new DatabaseSync(':memory:');const store=new AutomationStore(db,()=>{},{settings:DEFAULT_SETTINGS,interruptSet:[...DEFAULT_INTERRUPT_SET]});
+  const target={presentation:'content',alert:'none',moments:'supported'} as const;
+  let release:()=>void=()=>{};const waiting=new Promise<typeof target>(resolve=>{release=()=>{resolve(target);};});
+  let writes=0;const automation=createAutomation({store,routed:()=>['lines'],targets:()=>waiting,clock:()=>1700000000000,monotonic:()=>1700000000000,active:()=>true,
+    sender:(_target,moment)=>{writes++;return Promise.resolve({kind:'receipt',momentId:moment.momentId,requestId:'restriction-race',status:'accepted'});}});
+  try {automation.create(rule,true);automation.submit(event);automation.replaceSettings({...DEFAULT_SETTINGS,noFlourishes:true});release();await automation.settled();assert.equal(writes,0);}
+  finally {release();await automation.close();db.close();}
+});

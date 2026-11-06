@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-auto/2.2",
+  "description": "Automatic start with explicit weather-use policy, free preparation/presentation, and exact saved ambient selection with one-use initial authorization.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "action",
+        "purpose",
+        "origin",
+        "targets"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "const": "start"
+        },
+        "purpose": {
+          "$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/purpose"
+        },
+        "origin": {
+          "$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/origin"
+        },
+        "context": {
+          "$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/context"
+        },
+        "targets": {
+          "$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/targets"
+        },
+        "variationOf": {
+          "$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/artworkId"
+        },
+        "weatherUse": {
+          "enum": [
+            "current",
+            "omit"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "action",
+        "artworkId",
+        "compositionId",
+        "target"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "const": "prepare"
+        },
+        "artworkId": {
+          "$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/artworkId"
+        },
+        "compositionId": {
+          "$ref": "https://bunny.invalid/events/art-stage/2.0#/$defs/compositionId"
+        },
+        "target": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "action",
+        "artworkId",
+        "compositionId"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "const": "present"
+        },
+        "artworkId": {
+          "$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/artworkId"
+        },
+        "compositionId": {
+          "$ref": "https://bunny.invalid/events/art-stage/2.0#/$defs/compositionId"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "action",
+        "artworkId",
+        "compositionId",
+        "target",
+        "authorization"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "const": "ambient"
+        },
+        "artworkId": {
+          "$ref": "https://bunny.invalid/events/art-request/2.0#/$defs/artworkId"
+        },
+        "compositionId": {
+          "$ref": "https://bunny.invalid/events/art-stage/2.0#/$defs/compositionId"
+        },
+        "target": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        "authorization": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+        }
+      }
+    }
+  ]
+}

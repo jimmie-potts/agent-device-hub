@@ -16,6 +16,8 @@ import {musicCaptureFamilies} from './music-capture.js';
 import {musicLightingFamilies} from './music-lighting.js';
 import {musicPlaybackFamilies} from './music-playback.js';
 import {artFamilies} from './art.js';
+import {rainNoticeIssue, rainNoticeRefusal, type RainNotice} from './art-notice.js';
+import type {ArtScheduleRecord} from './art-schedule.js';
 import {createHash} from 'node:crypto';
 import type {ErrorDetail, Message, MessageValidator, PayloadCheck} from './index.js';
 import {defineFamily as define, registerFamilies, routedSubject, type PayloadFamily} from './registry.js';
@@ -91,6 +93,8 @@ export type MomentPlayRequest = {
   coversStatus: boolean; startAtMs: number; toleranceMs: number;
   /** `moment-play/2.1` only: the staged composition the device plays; it refuses an unknown or expired one before any effect. */
   art?: {compositionId: string};
+  /** `moment-play/2.2` only, alongside exact art and affirmative notice capability. */
+  notice?: RainNotice;
 };
 /**
  * `org.bunny.inbox-item.updated`: one failed or uncertain operation in the core's shared inbox. A finished turn is never
@@ -318,6 +322,22 @@ const checkRecorded: PayloadCheck = message => {
 const checkMoment: PayloadCheck = message => routedSubject('device')(message) ??
   ((message.data as MomentPlayRequest).startAtMs > Date.parse(message.time) + MOMENT_MAX_LEAD_MS ?
     `payload /startAtMs more than ${MOMENT_MAX_LEAD_MS} ms after time` : undefined);
+
+const checkArtSchedule: PayloadCheck = message => {
+  const record = message.data as ArtScheduleRecord;
+  if (message.source !== 'bunny/core' || message.subject !== 'art') return 'envelope art schedule belongs to the core';
+  if (record.policy.wakingStartMinute === record.policy.wakingEndMinute) return 'payload /policy waking interval is empty';
+  if (record.notice !== null && (record.notice.expiresAtMs <= record.notice.startAtMs
+    || record.notice.expiresAtMs > Math.min(record.notice.startAtMs + 30_000, record.notice.forecast.staleAtMs, record.notice.forecast.forecastEndAtMs)))
+    return 'payload /notice expiry exceeds the factual browser hold';
+  return undefined;
+};
+
+const checkNoticeMoment: PayloadCheck = message => {
+  const data = message.data as MomentPlayRequest, now = Date.parse(message.time);
+  return checkMoment(message) ?? (data.notice === undefined ? undefined
+    : rainNoticeIssue(data.notice, now) ?? rainNoticeRefusal(data.notice, data, now)?.error.detail);
+};
 // The command goes to the session it acknowledges or recovers, whose entity ID is a SHA-256 hash.
 const checkSessionSubject: PayloadCheck = message => /^[0-9a-f]{64}$/.test(message.subject) ? undefined : 'envelope /subject not a session id';
 const checkSessionLabel: PayloadCheck = message => {
@@ -380,6 +400,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('mode-override-set', 'command', 'org.bunny.mode-override.set.requested', routedSubject('routing')),
   define('moment-play', 'command', 'org.bunny.moment.play.requested', checkMoment),
   define('moment-play', 'command', 'org.bunny.moment.play.requested', checkMoment, '2.1'),
+  define('moment-play', 'command', 'org.bunny.moment.play.requested', checkNoticeMoment, '2.2'),
   define('notice-acknowledge', 'command', 'org.bunny.notice.acknowledge.requested', checkSessionSubject),
   define('approval-recover', 'command', 'org.bunny.approval.recover.requested', checkSessionSubject),
   define('notice-clear', 'command', 'org.bunny.notice.clear.requested', checkSessionSubject),
@@ -393,6 +414,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   ...musicLightingFamilies,
   ...musicPlaybackFamilies,
   ...artFamilies,
+  define('art-schedule', 'state', 'org.bunny.art-schedule.updated', checkArtSchedule),
   ...assistantFamilies,
   ...lightingLayoutFamilies,
   ...playbackLayoutFamilies,

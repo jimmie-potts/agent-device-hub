@@ -1,0 +1,390 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-schedule/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "settingsRevision",
+    "policy",
+    "timeZone",
+    "status",
+    "weather",
+    "nextOpportunity",
+    "lastOpportunity",
+    "notice"
+  ],
+  "properties": {
+    "id": {
+      "const": "art"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "settingsRevision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "policy": {
+      "$ref": "#/$defs/policy"
+    },
+    "timeZone": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "status": {
+      "enum": [
+        "disabled",
+        "idle",
+        "waiting",
+        "preparing",
+        "presenting",
+        "unavailable"
+      ]
+    },
+    "weather": {
+      "enum": [
+        "disabled",
+        "unavailable",
+        "fresh",
+        "stale"
+      ]
+    },
+    "nextOpportunity": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "startAtMs",
+            "toleranceMs"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+            },
+            "kind": {
+              "enum": [
+                "appearance",
+                "ambient"
+              ]
+            },
+            "startAtMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "toleranceMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 60000
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lastOpportunity": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "startAtMs",
+            "toleranceMs",
+            "artworkId",
+            "reason",
+            "generationRequestId",
+            "browserRequestId",
+            "displays"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+            },
+            "kind": {
+              "enum": [
+                "appearance",
+                "ambient"
+              ]
+            },
+            "startAtMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "toleranceMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 60000
+            },
+            "artworkId": {
+              "anyOf": [
+                {
+                  "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "disabled",
+                    "quiet-hours",
+                    "attention",
+                    "no-flourishes",
+                    "spacing",
+                    "budget",
+                    "no-art",
+                    "expired",
+                    "policy-changed",
+                    "source-unavailable",
+                    "no-surfaces",
+                    "unavailable"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "generationRequestId": {
+              "anyOf": [
+                {
+                  "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "browserRequestId": {
+              "anyOf": [
+                {
+                  "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "displays": {
+              "type": "array",
+              "maxItems": 2,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "target",
+                  "prepareRequestId",
+                  "momentRequestId",
+                  "error"
+                ],
+                "properties": {
+                  "target": {
+                    "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+                  },
+                  "prepareRequestId": {
+                    "anyOf": [
+                      {
+                        "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "momentRequestId": {
+                    "anyOf": [
+                      {
+                        "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "error": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "invalid-request",
+                          "invalid-message",
+                          "too-large",
+                          "unsupported-version",
+                          "unknown-schema",
+                          "unsupported-capability",
+                          "unauthenticated",
+                          "forbidden",
+                          "not-found",
+                          "invalid-state",
+                          "revision-conflict",
+                          "duplicate-conflict",
+                          "expired",
+                          "cancelled",
+                          "capacity",
+                          "unavailable",
+                          "uncertain-result",
+                          "internal"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "notice": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "opportunityId",
+            "artworkId",
+            "compositionId",
+            "browserRequestId",
+            "startAtMs",
+            "expiresAtMs",
+            "forecast"
+          ],
+          "properties": {
+            "opportunityId": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+            },
+            "artworkId": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+            },
+            "compositionId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "browserRequestId": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+            },
+            "startAtMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "expiresAtMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "forecast": {
+              "$ref": "https://bunny.invalid/events/moment-play/2.2#/properties/notice"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "wakingStartMinute",
+        "wakingEndMinute",
+        "appearances",
+        "targets",
+        "browser",
+        "ambient",
+        "generation",
+        "weather",
+        "coversStatus"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "wakingStartMinute": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1439
+        },
+        "wakingEndMinute": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1439
+        },
+        "appearances": {
+          "enum": [
+            6,
+            7,
+            8
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+          }
+        },
+        "browser": {
+          "type": "boolean"
+        },
+        "ambient": {
+          "type": "boolean"
+        },
+        "generation": {
+          "type": "boolean"
+        },
+        "weather": {
+          "type": "boolean"
+        },
+        "coversStatus": {
+          "type": "boolean"
+        }
+      }
+    },
+    "write": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedSettingsRevision",
+        "policy"
+      ],
+      "properties": {
+        "expectedSettingsRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "policy": {
+          "$ref": "#/$defs/policy"
+        }
+      }
+    }
+  }
+}

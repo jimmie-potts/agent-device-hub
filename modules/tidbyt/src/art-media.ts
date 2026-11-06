@@ -84,7 +84,7 @@ function chunk(kind: string, bytes: Uint8Array): Buffer {
 }
 
 /** Full opaque VP8L frames: no blend/disposal, and no coalescing of identical consecutive frames. */
-function animation(rgb: Buffer, delays: readonly number[]): Uint8Array {
+export function encodeArtAnimation(rgb: Buffer, delays: readonly number[]): Uint8Array {
   const extended = Buffer.alloc(10);
   extended[0] = 2;
   extended.writeUIntLE(63, 4, 3);
@@ -134,7 +134,7 @@ export async function prepareArt(stage: ArtStageContent): Promise<PreparedArt> {
       || (stage.format === 'gif' && JSON.stringify(metadata.delay) !== JSON.stringify(delays))) return fail('invalid-request');
     const {data, info} = await image.flatten({background: {r: 0, g: 0, b: 0}}).toColourspace('srgb').removeAlpha().raw().toBuffer({resolveWithObject: true});
     if (info.width !== 64 || info.height !== stage.frames * 32 || info.channels !== 3 || data.length !== 6144 * stage.frames) return fail('invalid-request');
-    const webp = stage.format === 'png' ? encodeLosslessRgb(64, 32, data) : animation(data, delays);
+    const webp = stage.format === 'png' ? encodeLosslessRgb(64, 32, data) : encodeArtAnimation(data, delays);
     return webp.length <= MAX_ART_BYTES ? {ok: true, webp, delays} : fail('too-large');
   } catch {
     return fail('invalid-request');

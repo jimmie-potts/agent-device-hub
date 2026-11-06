@@ -210,7 +210,7 @@ and a recovery after a warning is one record.
 ### Families
 
 It serves, through sync and as live states:
-- `device/2.2`, kind `pixoo`, including the exact-art moment capability;
+- `device/2.3`, kind `pixoo`, including exact-art moments and `rain-forecast` notices;
 - `pixoo-display/2.0`: Monitor's mode, filter, cadence and sessions, what the
   presentation shows, Now Playing, and the player's state, item and last error;
 - `pixoo-rendition/2.0` and `pixoo-playlist/2.0`: one record per catalog entry,
@@ -345,6 +345,26 @@ on startup and once a minute, and touches only the transient art directory.
 It cannot remove permanent originals, favorites or referenced library renditions.
 Restart preserves committed live copies, reports unfinished commands uncertain
 and never replays a moment. No provider credential or network fetch is involved.
+
+`moment-play/2.2` can accompany exact art with a closed `rain-forecast` notice.
+The worker fits each retained frame into a 48×48 artwork region and draws a
+separate black band with white `RAIN FORECAST` and `CHANCE HH:MM` or
+`LIKELY HH:MM` labels. The hour uses the runtime host's local clock zone. This
+changes neither the staged bytes nor their hash, frame count or delays.
+On the hosted route the black and white labels must still fit the GIF's 256
+colors. An original that already uses them all fails `unsupported-capability`
+with evidence `none` before any file is published or command sent, and Monitor
+stays current.
+
+The owner checks evidence freshness at admission and immediately before the
+first native effect. The internal adapter `current(priorEffects)` guard receives
+`none` until a mutating HTTP request starts, or the fake records its first effect,
+then `possible`. Existing generation and attention guards still run before
+every effect. Full-duration admission applies only before the first effect;
+later frames retain their timing. Evidence expiry ends an already-started hold
+with `interrupted`, preserving partial or uncertain transmission evidence and
+the existing return to the current base. A failed return may leave pixels on the
+panel. These tests establish transport behavior, not optical expiry.
 
 ### Commands
 

@@ -475,6 +475,40 @@ the complete stable plan before any phase. It retains these non-executable
 receipts without eviction, like `core_operations`, so changing old timing cannot
 reuse a late successful preparation. A failed identity commit sends nothing.
 
+Daily art uses that same control and the core's scheduler. Its separate
+revisioned policy defaults to disabled and is edited in the Automation page.
+`/api/v2/automation/art` reads or saves the policy with the existing authenticated
+read/control scopes; writes require the current `expectedSettingsRevision`.
+The `art-schedule/2.0` state family publishes policy, the next opportunity,
+suppression reasons and separate operation IDs through the existing sync/live
+connection. A tracked selection or transmission does not prove visible pixels.
+
+The policy selects six, seven or eight appearances within host-local waking
+hours. Quiet hours, attention and shared moment budgets still apply. Each
+appearance is at least 45 minutes after the preceding claim's latest permitted
+start, including its tolerance. The private `automation_art_schedule` and
+`automation_art_claims` tables retain the waking-day count and attempt identities
+across edits, disable/re-enable and restart. Expired slots stay spent. Pending
+art and ordinary flourishes share `automation_moment_reservations`; a request
+excludes only its own reservation during final admission. No attempt is replayed
+after a crash or uncertain result.
+
+Saved art needs no provider call. Optional generation uses Art's existing
+appearance job, spending ledger and fixed preparation deadline; a late result
+stays in the gallery. Weather is separately enabled and supplies only fresh
+condition words to generation. A rain notice uses typed forecast evidence and
+fixed native text, with independent 10-second Pixoo and 30-second Tidbyt requests.
+The browser label requires the matching succeeded selection and decoded
+composition, and expires within 30 seconds. No calendar source is read.
+
+Optional hourly or live-weather ambient selection uses saved Tidbyt and browser
+compositions. Its one-use grant controls the initial handoff. A pending or refused
+replacement cannot become the renewable intent. Accepted or uncertain issued
+intent retains its exact composition and configured target through disable and
+restart; disabling scheduling sends no clear. Explicit deletion and replacement
+remain with the Art owner. Device modes and final writer precedence remain with
+their display owners.
+
 The core also owns weekly routines for configured devices
 ([#1297](https://github.com/jimmie-potts/agent-device-hub/issues/1297), which
 generalizes the one on/off power window of #483). A routine selects weekdays

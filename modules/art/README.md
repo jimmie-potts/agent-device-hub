@@ -83,6 +83,12 @@ fact: provenance always says `factual: false`. Prompts, responses and keys stay 
 state and logs. Images and prompts stay in the module's private store, outside Git and
 GitHub.
 
+Automatic starts in `art-auto/2.2` can choose `weatherUse: current` or `omit`.
+`current` reads fresh condition words again before each paid call, ignoring supplied
+weather inspiration. `omit` makes no job weather reads and includes no weather
+context. An omitted policy and owner requests keep their existing behavior. The
+same spending ledger, pace, loop guard and no-retry rules apply to both choices.
+
 ## What it offers others
 
 - **State:** `art/2.1` on `bunny.state.art.art`, read with `sdk.sync(['art'], …)`. It holds
@@ -132,7 +138,7 @@ decoded the image. The private `art_browser_selection` table holds this pointer.
 | Family | Sender | What it does |
 | --- | --- | --- |
 | `art-request` | The dashboard, through the tracked route | Starts a job, or cancels any job |
-| `art-auto` | The core's automation only | Starts an automatic job; 2.1 also prepares saved art or selects its browser composition |
+| `art-auto` | The core's automation only | Starts an automatic job; 2.1 prepares saved art or selects its browser composition; 2.2 also selects saved Tidbyt ambient art |
 | `art-catalog-edit` | The dashboard, through the tracked route | Favorite, feedback, delete, or reuse saved art |
 | `art-dispatch` | This module, to the core | Forwards `art-stage` and `art-ambient-set` |
 
@@ -151,6 +157,29 @@ never stages again. The additive `art_preparations` table retains at most eight
 pending rows and 1,000 terminal rows; retained rows keep ownership of their request
 IDs after the ordinary 30-day admission receipt expires.
 
+The `ambient` action in `art-auto/2.2` stages an exact saved Tidbyt composition
+for its exact configured target, without calling a provider, changing modes or
+starting a moment. The core supplies a one-use opportunity reference, retained
+only in memory. After staging succeeds, Art sends the initial selection through
+`art-dispatch/2.1`; the core checks and consumes that reference at forwarding.
+Admission alone is not success. The parent's successful outcome waits for both
+staging and the tracked ambient child to succeed. It establishes the issued
+selection, never physical visibility. Refusal, failure and uncertainty remain
+distinct; child operation IDs stay in the private preparation record.
+
+A pending replacement does not replace the renewable intent. A definitive
+selection refusal restores the preceding intent; an accepted or uncertain issued
+selection retains its exact composition and target across restart. Failed
+predecessors are removed from later rollback records before retention can discard
+their evidence. If the preceding artwork was explicitly deleted while a replacement
+was pending, failure of that replacement clears the deleted selection, guarded
+against a newer issued command. A refused clear is not retried.
+Restart drops unused opportunity references and never replays an
+initial selection. Existing half-life maintenance uses saved bytes and
+`art-dispatch/2.0`, without a grant, provider call or retry of the initial attempt.
+The additive private `art_stage_targets` table binds scheduled copies and their
+maintenance to the configured target; it does not invent targets for older rows.
+
 The same version's `present` action names a saved artwork and exact browser
 composition. Its successful outcome means the selection committed. The state
 contains `selection: {artworkId, compositionId}` or `null`, while authenticated
@@ -168,7 +197,8 @@ it can admit the command. No refused command is retried automatically.
 
 `weather-state` comes from the weather module by sync. Only fresh condition words reach a
 prompt, so a temperature or day part in its words is dropped. A job's validated
-`context` is used first as requested inspiration. Without either supplied inspiration
+`context` is used first as requested inspiration unless an explicit automatic
+weather policy selects otherwise. Without either supplied inspiration
 or a fresh weather observation, the art says nothing about weather.
 
 ## Browser gallery and Home art
