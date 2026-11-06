@@ -12,6 +12,10 @@
     "./frontend": {
       "types": "./dist/src/frontend/index.d.ts",
       "import": "./src/frontend/index.tsx"
+    },
+    "./music-response": {
+      "types": "./dist/src/music-response.d.ts",
+      "import": "./src/music-response.ts"
     }
   },
   "dependencies": {

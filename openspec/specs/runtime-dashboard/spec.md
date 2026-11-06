@@ -431,7 +431,7 @@ guards; presentation changes SHALL neither run nor replay a command.
 - **THEN** confirmed save closes the editor while uncertainty keeps the draft, global warning and existing write lock; creation remains disabled until explicit enable, and no automatic retry or run occurs
 
 ### Requirement: Explicit Music input measurement controls
-The Audio page SHALL accept registered capture state versions 2.0 and 2.1 and expose the current Music or configured microphone state and explicit measurement Start/Stop through the existing core owner and tracked command path. It SHALL bind commands to current authoritative revision and endpoint evidence, distinguish accepted from completed work, preserve failed and uncertain outcomes, and never resend automatically. Stop SHALL remain independently available during pending or uncertain Start when the core permits stopping. Existing playback controls SHALL retain their behavior.
+The Audio page SHALL accept registered capture state versions 2.0, 2.1 and 2.2 and expose the current Music or configured microphone state and explicit measurement Start/Stop through the existing core owner and tracked command path. It SHALL bind commands to current authoritative revision and endpoint evidence, distinguish accepted from completed work, preserve failed and uncertain outcomes, and never resend automatically. Stop SHALL remain independently available during pending or uncertain Start when the core permits stopping. Existing playback controls SHALL retain their behavior.
 
 #### Scenario: Passive page lifecycle
 - **WHEN** Audio opens, reloads, reconnects or appears in another tab
@@ -465,7 +465,7 @@ The Audio input meter SHALL display only actual derived measurements from the se
 - **THEN** measurement display stays unavailable until a new bounded sync qualifies time, and no capture command is sent by that recovery
 
 ### Requirement: Measurement-only accessible presentation
-The Audio card SHALL identify Music.app and any configured microphone by its public alias, and explain that it measures audio without controlling lights. A configured alias SHALL NOT imply device presence or permission. Selection alone SHALL start no capture. The card SHALL explain that microphone capture checks existing authorization and does not request permission. It SHALL offer no unsupported lighting effect, target or calibration control. The card SHALL use the existing shell and accessible semantic controls, with visible keyboard focus and fitting content at desktop and 320/390px widths in light/dark appearance and reduced motion.
+The Audio card SHALL identify Music.app and any configured microphone by its public alias, and explain that it measures audio without controlling lights. A configured alias SHALL NOT imply device presence or permission. Selection alone SHALL start no capture. The card SHALL explain that microphone capture checks existing authorization and does not request permission. It SHALL offer no unsupported lighting effect or target control. The card SHALL use the existing shell and accessible semantic controls, with visible keyboard focus and fitting content at desktop and 320/390px widths in light/dark appearance and reduced motion.
 
 #### Scenario: Synthetic browser acceptance
 - **WHEN** the card is exercised against a disposable runtime with synthetic producer features
@@ -522,3 +522,60 @@ The widget SHALL acquire the selected existing browser composition through authe
 #### Scenario: Selection changes before decoding finishes
 - **WHEN** a newer authoritative selection arrives before the old image finishes decoding
 - **THEN** the old result cannot replace the newer choice or its presented palette
+
+### Requirement: Art rhythm controls live in Automation
+The dashboard SHALL expose the saved art policy, its explicit enable/disable action, waking hours and host zone, selected surfaces, six/seven/eight appearances, ambient behavior, generation and source-use controls within the existing Automation workspace. The page SHALL distinguish a draft from the saved revision, preserve edits on validation errors, reject stale writes and never retry a lost mutation. Read-only or disconnected clients SHALL not change policy. Controls SHALL remain keyboard-operable and readable at 320, 390 and desktop widths without moving active Home controls.
+
+#### Scenario: An owner edits the rhythm on a phone
+- **WHEN** a control user changes waking hours and count at 390px using the keyboard, saves and explicitly enables the policy
+- **THEN** the saved values and next eligible opportunity read back, focus remains usable and no browser-side schedule or device-mode command starts
+
+#### Scenario: Another tab changes the policy
+- **WHEN** a draft's captured revision is no longer current
+- **THEN** saving reports a conflict and preserves the draft for review instead of silently overwriting the newer policy
+
+### Requirement: Forecast labels bind to actual visible art
+The Art frontend SHALL display a deterministic forecast notice only after its opportunity's browser-selection operation succeeded and beside the exact artwork/composition it currently decoded and visibly presents. Reusing the same image ID SHALL NOT substitute for the new selection outcome. The label SHALL say forecast, preserve chance versus likely meaning, identify its time interval and make source freshness available. It SHALL remain separate from the decorative caption and palette. Loading, an identity mismatch, hidden art, replacement, disabled policy, stale source, expired or unavailable notice evidence SHALL show no current factual label. A browser label SHALL expire at most 30 seconds after the admitted start and before source or forecast validity ends, without automatically restoring an older image. Manual Gallery selection and Home layout pin/dismiss behavior SHALL remain authoritative.
+
+#### Scenario: A stale decode finishes after a new selection
+- **WHEN** a forecast opportunity changes while an older rendition is still decoding
+- **THEN** neither the obsolete art nor its forecast label replaces the new selection, and no factual label appears before its matching image is visible
+
+#### Scenario: A forecast expires while its image remains
+- **WHEN** the notice reaches its stale time while the decorative artwork is still visible
+- **THEN** the factual label clears or explicitly reports unavailable evidence while the saved image remains decorative
+
+#### Scenario: The next opportunity reuses the same image
+- **WHEN** an already visible image matches a new opportunity but its browser-selection operation is pending, refused or uncertain
+- **THEN** the new factual notice remains hidden rather than borrowing evidence from the previous selection
+
+### Requirement: The art schedule explains partial and suppressed outcomes
+The Automation page SHALL separately show why an opportunity was suppressed and the current evidence for its generation, preparation, browser selection and each display command. Missing/stale operation state SHALL be labeled as such. No summary SHALL convert accepted requests into successful or physically observed art. Weather controls SHALL describe only their implemented source use; the deferred meeting feature SHALL add no placeholder switch or calendar reader.
+
+#### Scenario: One display is unavailable
+- **WHEN** an opportunity selects browser art and one display is unavailable while another is still awaiting completion
+- **THEN** the page shows each result independently, names the unavailable surface and avoids a group success label
+
+### Requirement: Calibration and response preview controls
+
+The Audio page SHALL provide explicit quiet measurement, Cancel and Apply controls for the active microphone, with saved sensitivity, gate, band emphasis and smoothing settings plus editable drafts. It SHALL distinguish raw input from a numerical response preview and retained settings from current gate qualification. Uncertain commands SHALL not replay or disable otherwise permitted Stop. This contributes #722 AC1 through AC5 without device dispatch.
+
+#### Scenario: Complete synthetic calibration journey
+- **WHEN** the operator measures synthetic quiet input, reviews its candidate and explicitly applies response settings
+- **THEN** the raw meter remains unchanged while the separately labelled preview uses the committed settings and shows the gate's status
+
+#### Scenario: Retired qualification and passive reload
+- **WHEN** capture retires or the page reloads with retained settings
+- **THEN** an enabled unqualified gate is visibly inactive, no measurement/application runs automatically and explicit manual reapplication or a new calibration is available when current input permits it
+
+#### Scenario: Conflict, uncertainty and Stop
+- **WHEN** Apply conflicts or its result is uncertain
+- **THEN** the draft remains reviewable, no automatic retry occurs and the independent Stop control remains usable when core state permits it
+
+#### Scenario: Local interruption precedes the core update
+- **WHEN** the browser observes source discontinuity, a gap, format change or expiry before the core retires the current application
+- **THEN** an enabled response preview stays inactive for that application revision until a new Apply qualifies it, while valid raw input can resume independently
+
+#### Scenario: A candidate does not erase a conflicting draft revision
+- **WHEN** another editor saves settings before the operator chooses a measured candidate for the retained draft
+- **THEN** the saved-settings conflict remains visible and Apply stays disabled until the operator reviews the conflict explicitly

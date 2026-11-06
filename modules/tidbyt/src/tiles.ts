@@ -1,6 +1,7 @@
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {PlaybackArtwork} from '@jimmie-potts/event-contracts/v2/families';
 import type {ArtStageContent} from '@jimmie-potts/event-contracts/v2/art';
+import type {RainNotice} from '@jimmie-potts/event-contracts/v2/art-notice';
 // What the render worker draws (Hub #930): one tile's view as its 64x32 frame, encoded as lossless WebP. The module
 // sends the view to a worker thread (`render-worker.ts`) so drawing and encoding stay off the runtime's event loop; the
 // same function runs in process in the tests.
@@ -11,7 +12,8 @@ import {statusFrame, type StatusView} from './status.js';
 
 /** One render: the status tile's view, a now-playing card, or a moment's mood card. */
 type DrawnTileRequest = {tile: 'status'; view: StatusView} | {tile: 'now-playing'; view: CardView; artwork?: PlaybackArtwork} | {tile: 'moment'; view: MomentView};
-export type TileRequest = DrawnTileRequest | {tile: 'art'; stage: ArtStageContent} | {tile: 'art-copy'; compositionId: string; sha256: string};
+export type TileRequest = DrawnTileRequest | {tile: 'art'; stage: ArtStageContent} | {tile: 'art-copy'; compositionId: string; sha256: string}
+  | {tile: 'art-notice'; webp: Uint8Array; delays: number[]; notice: RainNotice};
 /** The worker's one reply. */
 export type TileReply = {ok: true; webp: Uint8Array; artworkCode?: ErrorCode; delays?: number[]} | {ok: false; code?: ErrorCode};
 
@@ -38,6 +40,11 @@ export function renderTile(request: unknown): TileReply {
 
 /** The worker's asynchronous artwork path; the old synchronous text path is unchanged. */
 export async function renderArtworkTile(request: unknown): Promise<TileReply> {
+  if (isObject(request) && request.tile === 'art-notice') {
+    if (!(request.webp instanceof Uint8Array) || !Array.isArray(request.delays) || !request.delays.every(delay => typeof delay === 'number') || !isObject(request.notice)) return {ok: false};
+    const {artNotice} = await import('./art-notice.js');
+    return artNotice(request.webp, request.delays, request.notice as RainNotice);
+  }
   if (isObject(request) && request.tile === 'art') {
     if (!isObject(request.stage)) return {ok: false};
     const {prepareArt} = await import('./art-media.js');

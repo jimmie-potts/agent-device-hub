@@ -2,7 +2,7 @@ import type {Message, MessageValidator} from './index.js';
 import {defineFamily, registerFamilies, routedSubject} from './registry.js';
 
 export * from './music-capture-data.js';
-import {CAPTURE_WINDOW_MS, CAPTURE_VALIDITY_MS, type CaptureFeatures, type CaptureLost} from './music-capture-data.js';
+import {CAPTURE_WINDOW_MS, CAPTURE_VALIDITY_MS, type CaptureFeatures, type CaptureLost, type CaptureState} from './music-capture-data.js';
 
 const endpointSubject = routedSubject('routing');
 const musicSubject = (message: Message): string | undefined => message.subject === 'music' ? undefined : 'envelope /subject must be music';
@@ -23,6 +23,18 @@ function checkFeatures(message: Message): string | undefined {
   return undefined;
 }
 
+function checkResponse(message: Message): string | undefined {
+  const subject = musicSubject(message); if (subject !== undefined) return subject;
+  const response = (message.data as CaptureState).response;
+  const evidence = response?.evidence;
+  if (evidence !== undefined && evidence !== null && (evidence.percentileRms > evidence.maximumRms || evidence.endedAtMs <= evidence.startedAtMs))
+    return 'payload calibration evidence must have ordered time and levels';
+  const attempt = response?.calibration;
+  if (attempt?.status === 'measuring' && attempt.deadlineAtMs - attempt.startedAtMs !== 10000)
+    return 'payload calibration deadline must be ten seconds';
+  return undefined;
+}
+
 export const musicCaptureFamilies = [
   defineFamily('music-capture-endpoint', 'command', 'org.bunny.music-capture.endpoint.requested', endpointSubject),
   defineFamily('music-capture-work', 'command', 'org.bunny.music-capture.work.requested', endpointSubject),
@@ -37,5 +49,7 @@ export const musicCaptureFamilies = [
   defineFamily('music-capture-features', 'occurrence', 'org.bunny.music-capture.features.observed', checkFeatures, '2.1'),
   defineFamily('music-capture-control', 'command', 'org.bunny.music-capture.control.requested', musicSubject, '2.1'),
   defineFamily('music-capture-state', 'state', 'org.bunny.music-capture.updated', musicSubject, '2.1'),
+  defineFamily('music-capture-state', 'state', 'org.bunny.music-capture.updated', checkResponse, '2.2'),
+  defineFamily('music-capture-control', 'command', 'org.bunny.music-capture.control.requested', musicSubject, '2.2'),
 ] as const;
 export function registerMusicCaptureFamilies(validator: MessageValidator): void {registerFamilies(validator, musicCaptureFamilies);}

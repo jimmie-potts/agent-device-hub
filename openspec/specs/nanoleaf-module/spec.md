@@ -316,7 +316,7 @@ Music feature intake SHALL validate the existing profile-2 capture family, produ
 - **THEN** it initializes fresh effect state without carrying earlier capture history
 
 ### Requirement: Explicit reactive recipe drafts
-The shared Nanoleaf Wall interface SHALL offer five immutable version-one built-in Music recipes, one per existing reactive effect, with an unsaved palette/intensity draft and a choice of example Lines or NL22 geometry. Draft edits SHALL remain local. Audio SHALL expose a contextual link to this existing interface. This increment SHALL preserve the separate requirement for custom reactive-preset persistence.
+The shared Nanoleaf Wall interface SHALL offer five immutable version-one built-in Music recipes, one per existing reactive effect, with an unsaved palette/intensity draft, editable existing V1 effect-specific motion values and a choice of example Lines or NL22 geometry. Draft edits SHALL remain local. Audio SHALL expose a contextual link to this existing interface. This increment SHALL preserve the separate requirement for custom reactive-preset persistence.
 
 #### Scenario: Five effects are available without light admission
 - **WHEN** an operator opens the preview within the Wall page
@@ -325,6 +325,16 @@ The shared Nanoleaf Wall interface SHALL offer five immutable version-one built-
 #### Scenario: Draft edits remain unsaved
 - **WHEN** the operator edits a draft and reloads the page
 - **THEN** the page returns to its built-in default without writing a preset, configuration or operation
+
+#### Scenario: Effect-specific motion edits
+- **WHEN** the operator edits bass-pulse half-life from 100 to 2000 ms, chooses one of the eight supported spectrum/traveling-wave directions, or edits a traveling-wave cycle from 400 to 10000 ms
+- **THEN** only the local complete V1 recipe changes, within the existing canonical bounds
+- **AND** sensitivity and renderer smoothing remain read-only, effect changes use that effect's existing defaults without leaking variant fields, and invalid edits preserve the previous draft
+
+#### Scenario: Explicit preview after a motion edit
+- **WHEN** a motion value changes during an earlier preview request
+- **THEN** that response cannot replace the newer draft and the operator must explicitly request a new preview
+- **AND** the complete edited V1 recipe is used on fixed generated input and example geometry without a capture or device command
 
 ### Requirement: Bounded synthetic Music preparation
 An explicit authenticated content read SHALL prepare twenty finite RGB samples for fixed example geometry with at most twelve zones, using the existing canonical Music renderer. It SHALL accept either the closed version-one built-in/palette/intensity/example-model request or the separate closed version-one recipe/example-model request. Recipe preparation SHALL resolve supported V1 defaults and retain supplied effect-local values in its complete frozen recipe. The request branches SHALL remain mutually exclusive and reject undeclared fields. Decoded request bytes SHALL be bounded to 2 KiB and encoded response bytes to 16 KiB. The result SHALL identify the frozen recipe, synthetic stimulus, model, offsets and RGB values. Preparation SHALL read no configured layout, device, database, file, capture stream or clock and SHALL create no device work, state update, outbox message or ticket. Errors SHALL use registered meanings and fixed safe text.
@@ -388,7 +398,7 @@ For [#722 AC4](https://github.com/jimmie-potts/agent-device-hub/issues/722), Nan
 
 ### Requirement: Reactive preset drafts in the existing preview
 
-The existing Wall Music effect preview SHALL show the owner-synced library through `nanoleaf-reactive-presets/2.0` at target `reactive-presets`. Read-only users SHALL be able to inspect and load a saved recipe into a local draft. Only an explicit control-authorized Save new preset SHALL send `nanoleaf-reactive-preset-save/2.0`, using a current catalog revision and the existing tracked command behavior. Failed or uncertain saves SHALL retain the draft; uncertain work SHALL keep the shared attempt locked. Reload, reconnection and catalog refresh SHALL never automatically save, resend or replace a local draft. The view SHALL retain its draft and any stale catalog while disconnected, then acquire a fresh owner snapshot after reconnect. Save SHALL remain disabled until that snapshot and the operation copy are current. Local load SHALL preserve all effect-local V1 parameters and show noneditable values truthfully.
+The existing Wall Music effect preview SHALL show the owner-synced library through `nanoleaf-reactive-presets/2.0` at target `reactive-presets`. Read-only users SHALL be able to inspect and load a saved recipe into a local draft. Only an explicit control-authorized Save new preset SHALL send `nanoleaf-reactive-preset-save/2.0`, using a current catalog revision and the existing tracked command behavior. Failed or uncertain saves SHALL retain the draft; uncertain work SHALL keep the shared attempt locked. Reload, reconnection and catalog refresh SHALL never automatically save, resend or replace a local draft. The view SHALL retain its draft and any stale catalog while disconnected, then acquire a fresh owner snapshot after reconnect. Save SHALL remain disabled until that snapshot and the operation copy are current. Local load SHALL preserve all effect-local V1 parameters and allow the effect-specific motion edits above and show sensitivity and renderer smoothing as noneditable values truthfully.
 
 #### Scenario: Save, load and preview
 - **WHEN** an operator edits palette/intensity, saves a named preset, reloads and explicitly loads it
@@ -409,3 +419,28 @@ The existing Wall Music effect preview SHALL show the owner-synced library throu
 - **WHEN** a caller supplies either the existing closed built-in preview request or the closed full-recipe request
 - **THEN** the canonical renderer prepares only the bounded synthetic result, preserving existing built-in behavior
 - **AND** every supported maximal full-recipe request fits the gateway's unchanged 512-character query value limit
+
+#### Scenario: Save a motion-tuned preset
+- **WHEN** the operator loads a saved V1 recipe, edits its supported motion values and explicitly saves a new named preset
+- **THEN** the new preset and its generated preview retain the complete edited recipe, including unchanged sensitivity and smoothing
+- **AND** earlier saved presets remain byte-for-byte unchanged across reload while no source input, calibration, admission or lighting operation starts
+
+### Requirement: Shared versioned response interpretation
+
+A single browser-safe response implementation SHALL apply gate, sensitivity and band emphasis before clamping and one source-time exponential smoother. Numerical preview and explicit renderer V2 SHALL share it. Renderer V1 SHALL retain its existing interpretation and defaults exactly. V2 SHALL reject duplicate legacy tuning fields. No response computation SHALL admit device work or claim physical timing.
+
+#### Scenario: Preview and renderer agree
+- **WHEN** preview and V2 receive identical valid samples and response settings on synthetic Lines or NL22 layouts
+- **THEN** the normalized levels agree, only one smoothing step applies and rendered output obeys existing bounds
+
+#### Scenario: Gate closure and expiry
+- **WHEN** valid quiet samples close an enabled gate
+- **THEN** targets become zero with the documented smoothing decay; stale input clears preview immediately instead of continuing a live-looking decay
+
+#### Scenario: Preserved V1 and explicit V2
+- **WHEN** existing V1 recipes replay or a V2 recipe supplies legacy sensitivity/smoothing fields
+- **THEN** V1 output remains identical and the conflicting V2 recipe is refused
+
+#### Scenario: Rejected output preserves V1 state
+- **WHEN** an output exceeds the existing payload capacity
+- **THEN** the rejected window cannot change the response used by the next accepted V1 output

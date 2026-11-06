@@ -6,7 +6,11 @@ import {chromium, expect, type Page} from 'playwright/test';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {changes, feed, startWorld} from './harness.ts';
 import {artSelectionJourney} from './art-selection-journey.ts';
+import {artScheduleJourney} from './art-schedule-journey.ts';
+import {artNoticeJourney} from './art-notice-journey.ts';
 
+await artScheduleJourney();
+await artNoticeJourney();
 await artSelectionJourney();
 
 const world = await startWorld({art: true}), browser = await chromium.launch({headless: true});

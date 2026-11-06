@@ -275,6 +275,8 @@ export function createAutomation(options:AutomationOptions) {
     if (blocked !== null) { store.appendLog(rule.action.targets.map(target => logRow(rule,event,moment,target,'blocked',blocked,null))); return; }
     const routed = options.routed();
     const states = await Promise.all(rule.action.targets.map(target => routed.includes(target) ? readTarget(target) : Promise.resolve(undefined)));
+    const finalBlock=momentBlock(moment,event,options.clock());
+    if(finalBlock!==null){store.appendLog(rule.action.targets.map(target=>logRow(rule,event,moment,target,'blocked',finalBlock,null)));return;}
     const rows: NewLogRow[] = [], handed: string[] = [];
     rule.action.targets.forEach((target,index) => {
       const state = states[index];
@@ -287,6 +289,7 @@ export function createAutomation(options:AutomationOptions) {
     if (handed.length === 0 || !options.sender || stopped()) return;
     // One runtime-clock start instant for every target; devices are independent, and nothing is retried.
     const startAt = options.monotonic() + START_LEAD_MS, sender = options.sender;
+    if(moment.priorityClass==='flourish')store.reserveMoment(moment.momentId,handed,options.clock(),options.clock(),event.agent,event.task);
     const results = await Promise.allSettled(handed.map(target => Promise.resolve().then(() => sender(target,{...structuredClone(moment),startAtHubMs:startAt},parent))));
     store.appendLog(handed.map((target,index) => logged(rule,event,moment,target,results[index] ?? {status:'rejected',reason:undefined})));
   }

@@ -24,7 +24,7 @@ the device's normal rotation:
 It is the one writer for the device. Each tile pushes only when what it
 shows changes, at most once every 15 seconds, and pushes an unchanged frame
 again after 10 minutes. Frames render in a worker thread. The module publishes
-the Tidbyt's `device/2.0` record on the cloud, and `device/2.2` with art capabilities
+the Tidbyt's `device/2.0` record on the cloud, and `device/2.3` with art capabilities
 on Tronbyt. On the cloud every control is unsupported, as the old
 controller declared every controller v1 capability unsupported; a server declares
 [its controls](#the-displays-controls).
@@ -325,6 +325,21 @@ or trailing framing, false metadata and unsupported bounds before any queue writ
 existing RGB encoder supplies each WebP frame; a narrow full-frame animation container
 preserves duplicates that the native animated encoder coalesces. Independent libwebp
 decoding checks pixels, disposal, duplicate frames, delays and RIFF lengths.
+
+`moment-play/2.2` adds a closed `rain-forecast` notice beside exact art. The
+worker fits each native frame into a centered 36×18 artwork region and draws
+two white lines on a separate black band: `RAIN FORECAST` and `CHANCE HH:MM`
+or `LIKELY HH:MM`, using the runtime host's local clock zone. It retains all
+frames and delays, including duplicate frames, and never changes the staged
+composition or its hash. Only the capable Tronbyt backend advertises this notice.
+
+Notice admission requires the native 30-second minimum hold and evidence valid
+through the latest permitted start plus that hold. The owner checks it again
+after its queue and server-pin read, before pushing. If a slow push consumes
+the remaining freshness, the existing release path runs without a new pin or
+full hold. A shortened hold reports cancellation with transmitted evidence;
+an unconfirmed release remains uncertain. A failed return may leave pixels on
+the panel, so transport checks do not establish optical expiry.
 
 [Firmware v1.7.4](https://github.com/tronbyt/firmware-esp32/blob/v1.7.4/main/gfx.c)
 uses `WebPAnimDecoder` and its timestamps. Its

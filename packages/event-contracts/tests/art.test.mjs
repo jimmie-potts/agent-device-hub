@@ -55,6 +55,8 @@ test('each art family keeps one kind and the type the gateway derives from its n
     ['art-ambient-set', 'command', 'org.bunny.art-ambient.set.requested', 'art-ambient-set/2.0'],
     ['art-dispatch', 'command', 'org.bunny.art.dispatch.requested', 'art-dispatch/2.0'],
     ['art-auto', 'command', 'org.bunny.art.auto.requested', 'art-auto/2.1'],
+    ['art-auto', 'command', 'org.bunny.art.auto.requested', 'art-auto/2.2'],
+    ['art-dispatch', 'command', 'org.bunny.art.dispatch.requested', 'art-dispatch/2.1'],
     ['art-stage', 'command', 'org.bunny.art.stage.requested', 'art-stage/2.1'],
     ['art-dispatch', 'command', 'org.bunny.art.dispatch.requested', 'art-dispatch/2.2'],
   ]);
@@ -98,9 +100,9 @@ test('extended staging retains byte, duration and safe-count bounds and closes t
   invalid(make('art-dispatch', '2.2', {...data, frames: 256}));
 });
 
-test('only device/2.4 declares the extended stage version', () => {
+test('only device/2.4 declares the extended stage version, beside device/2.3 notices', () => {
   const message = structuredClone(Object.values(devices.valid).find(each => each.dataschema.endsWith('/device/2.2')));
-  const older = deviceFamilies.find(each => each.dataschema.endsWith('/device/2.2')).schema;
+  const older = deviceFamilies.find(each => each.dataschema.endsWith('/device/2.3')).schema;
   const newer = structuredClone(deviceFamilies.find(each => each.dataschema.endsWith('/device/2.4')).schema);
   delete newer.$defs.capabilities.properties.moments.oneOf[1].properties.art.properties.stageVersion;
   assert.deepEqual({...newer, $id: older.$id, description: older.description}, older);
@@ -108,8 +110,11 @@ test('only device/2.4 declares the extended stage version', () => {
   const art = message.data.capabilities.moments.art;
   art.stageVersion = '2.1';
   invalid(message);
+  message.dataschema = 'https://bunny.invalid/events/device/2.3';
+  invalid(message);
   message.dataschema = 'https://bunny.invalid/events/device/2.4';
   valid(message);
+  art.notices = ['rain-forecast']; valid(message);
   art.stageVersion = '2.2'; invalid(message);
   delete art.stageVersion; valid(message);
 });

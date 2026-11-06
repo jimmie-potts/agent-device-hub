@@ -37,6 +37,9 @@ export type ArtPrepare = {requestId: string; action: 'prepare'; artworkId: strin
 /** A durable browser choice. Its completion is no evidence that a browser rendered it. */
 export type ArtPresent = {requestId: string; action: 'present'; artworkId: string; compositionId: string};
 export type ArtAuto21 = ArtAuto | ArtPrepare | ArtPresent;
+/** A new selection is admitted once after staging. Issued-intent renewal never reuses this authorization. */
+export type ArtAmbientSelect = Omit<ArtPrepare, 'action'> & {action: 'ambient'; authorization: string};
+export type ArtAuto22 = (ArtAutoStart & {weatherUse?: 'current' | 'omit'}) | ArtPrepare | ArtPresent | ArtAmbientSelect;
 /** What a stage says about the one rendition it carries. */
 export type ArtStageContent = {
   compositionId: string; format: ArtFormat; width: number; height: number; frames: number; durationMs: number;
@@ -56,6 +59,7 @@ export type ArtDispatch = {requestId: string; target: string} & (
   | {family: 'art-stage'; data: ArtStageContent}
   | {family: 'art-ambient-set'; data: ArtAmbientContent}
 );
+export type ArtDispatch21 = ArtDispatch | {requestId: string; target: string; family: 'art-ambient-set'; data: {compositionId: string}; authorization: string};
 /** The dispatchable families, each with the type and schema the core forwards it under. */
 export const ART_FORWARDED = Object.freeze({
   'art-stage': Object.freeze({type: 'org.bunny.art.stage.requested', dataschema: 'https://bunny.invalid/events/art-stage/2.0'}),
@@ -137,6 +141,8 @@ export const artFamilies = [
   defineFamily('art-ambient-set', 'command', 'org.bunny.art-ambient.set.requested', routedSubject('device')),
   defineFamily('art-dispatch', 'command', 'org.bunny.art.dispatch.requested', checkDispatch),
   defineFamily('art-auto', 'command', 'org.bunny.art.auto.requested', checkJob, '2.1'),
+  defineFamily('art-auto', 'command', 'org.bunny.art.auto.requested', checkJob, '2.2'),
+  defineFamily('art-dispatch', 'command', 'org.bunny.art.dispatch.requested', checkDispatch, '2.1'),
   defineFamily('art-stage', 'command', 'org.bunny.art.stage.requested', checkStage, '2.1'),
   defineFamily('art-dispatch', 'command', 'org.bunny.art.dispatch.requested', checkDispatch, '2.2'),
 ] as const;

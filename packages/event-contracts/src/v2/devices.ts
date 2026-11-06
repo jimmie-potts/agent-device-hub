@@ -17,8 +17,12 @@ export type Capabilities = {
   brightness: Unsupported | {supported: true; minimum: 0; maximum: 100};
   /** The device's own native modes, such as Nanoleaf `work` or Pixoo `monitor`. Never the Hub's mode. */
   modes: Unsupported | {supported: true; values: string[]};
-  /** `device/2.2` adds the staged formats and byte limit. `device/2.4` adds the supported stage minor. */
-  moments: Unsupported | {supported: true; moods: string[]; maxDurationMs: number; coversStatus: boolean; art?: {formats: ArtFormat[]; maxBytes: number; stageVersion?: '2.1'}};
+  /**
+   * `art`, from `device/2.2`: the device stages these formats and sizes and plays a moment that names its copy.
+   * `device/2.3` adds `notices`; `device/2.4` adds the supported stage minor, `stageVersion`.
+   */
+  moments: Unsupported | {supported: true; moods: string[]; maxDurationMs: number; coversStatus: boolean;
+    art?: {formats: ArtFormat[]; maxBytes: number; notices?: 'rain-forecast'[]; stageVersion?: '2.1'}};
   media: Unsupported | {supported: true; actions: MediaAction[]; playlistIds: string[]; renditionIds: string[]};
   scenes: Unsupported | {supported: true; sceneIds: string[]};
   zones: Unsupported | {supported: true; zoneIds: string[]};
@@ -103,7 +107,8 @@ export function commandSupported(capabilities: Capabilities, command: DeviceComm
     case 'media-control': return media.supported && media.actions.includes(command.data.action);
     case 'device-mode-set': return modes.supported && modes.values.includes(command.data.mode);
     case 'moment-play': return moments.supported && moments.moods.includes(command.data.mood) && command.data.durationMs <= moments.maxDurationMs &&
-      (command.data.art === undefined || moments.art !== undefined);
+      (command.data.art === undefined || moments.art !== undefined) &&
+      (command.data.notice === undefined || command.data.art !== undefined && moments.art?.notices?.includes(command.data.notice.kind) === true);
   }
 }
 
@@ -177,6 +182,7 @@ export const deviceFamilies: readonly PayloadFamily[] = [
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice),
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.1'),
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.2'),
+  defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.3'),
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.4'),
   defineFamily('power-set', 'command', 'org.bunny.power.set.requested', checkCommand),
   defineFamily('brightness-set', 'command', 'org.bunny.brightness.set.requested', checkCommand),

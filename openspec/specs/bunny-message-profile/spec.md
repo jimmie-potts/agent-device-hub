@@ -276,7 +276,7 @@ The family's minor version 2.2 (Hub #679), registered under `https://bunny.inval
 
 #### Scenario: A held device record
 - **WHEN** a degraded Nanoleaf wall whose `held` names the request of a lost brightness write and the time the hold began is validated as `device/2.1`, and the 2.0 fixtures are validated as `device/2.1` without `held`
-- **THEN** each is accepted, the 2.0 fixtures stay valid as `device/2.0`, and a record at a version the profile does not register, such as `device/2.3`, is refused with `unsupported-version`
+- **THEN** each is accepted, the 2.0 fixtures stay valid as `device/2.0`, and a record at a version the profile does not register, such as `device/2.5`, is refused with `unsupported-version`
 
 #### Scenario: Held record rules
 - **WHEN** a `device/2.1` record's `held` lacks its `requestId` or `heldAtMs`, carries another member, a request ID that is not an identifier or a boolean in place of the object, begins after the message time, or belongs to an `available` device, or a `device/2.0` record carries `held`

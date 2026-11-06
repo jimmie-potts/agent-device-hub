@@ -83,7 +83,10 @@ export class HttpDeviceAdapter implements DeviceAdapter {
       // enqueue runs only valid work, which always has a snapshot.
       if(snapshot===undefined)throw new DeviceRequestError('invalid-input');
       if(this.options.hosted&&snapshot.frames.length>1){
-        const bytes=this.options.hosted.encode(snapshot);context.check();
+        // Encoding is local: a palette or profile refusal here precedes every effect, so it is no device answer.
+        let bytes:Uint8Array;
+        try{bytes=this.options.hosted.encode(snapshot);}catch(error){throw error instanceof MediaError&&error.code==='profile-limit'?new DeviceRequestError('profile-limit'):error;}
+        context.check();
         const file=this.options.hosted.files.publish(bytes,context.signal);
         try{
           await context.send({Command:'Device/PlayTFGif',FileType:2,FileName:file.url},true);
@@ -138,7 +141,7 @@ export class HttpDeviceAdapter implements DeviceAdapter {
     let cancelTimer = () => {};
     return new Promise(resolve => {
       const interrupted = (): FailureCode | undefined => reason ??
-        (this.closed?'cancelled':generation !== this.currentGeneration ? 'stale-generation' : signal?.aborted === true || options.current?.() === false ? 'cancelled' : this.clock.now() >= deadline ? 'timeout' : undefined);
+        (this.closed?'cancelled':generation !== this.currentGeneration ? 'stale-generation' : signal?.aborted === true || options.current?.(priorEffects) === false ? 'cancelled' : this.clock.now() >= deadline ? 'timeout' : undefined);
       const finish = (value?: T, error?: DeviceRequestError) => {
         if (done) return;
         done = true; cancelTimer(); signal?.removeEventListener('abort', abort);

@@ -42,6 +42,7 @@ import {PixooStore} from './store.js';
 import {PixooArt, type ArtLease} from './art.js';
 import {storageIsFull} from '../media/contracts.js';
 import {animationRoute} from '../device/animation-policy.js';
+import {rainNoticeRefusal} from '@jimmie-potts/event-contracts/v2/art-notice';
 import {SimulatedPixoo, httpPixooTransport, type OpenedDevice, type PixooTransport} from './transport.js';
 
 export const PIXOO_MODULE = 'pixoo';
@@ -502,7 +503,9 @@ class PixooRuntime {
     try {
       const reply = await workers.call<Uint8Array[] | RenderReply>(this.#options.renderWorker ?? RENDER_WORKER, request, {timeoutMs: RENDER_MS, signal});
       const frames = Array.isArray(reply) ? reply : reply?.frames;
-      if (!Array.isArray(frames) || frames.length < 1 || frames.length > 2 || frames.some(frame => !(frame instanceof Uint8Array) || frame.length !== 12288)) {
+      const maxFrames = request.kind === 'moment' && request.content.kind === 'art-notice' ? request.content.frames.length : 2;
+      if (!Array.isArray(frames) || frames.length < 1 || frames.length > maxFrames || frames.some(frame => !(frame instanceof Uint8Array) || frame.length !== 12288)
+        || (request.kind === 'moment' && request.content.kind === 'art-notice' && frames.length !== maxFrames)) {
         throw new SdkError(errorBody('internal', {detail: 'the render worker answered without complete frames'}));
       }
       if (request.kind === 'card' && cardInputKey === this.#cardInputKey) {
@@ -632,7 +635,7 @@ class PixooRuntime {
     return {
       power: {supported: true}, brightness: {supported: true, minimum: 0, maximum: 100}, modes: {supported: true, values: ['monitor', 'media']},
       moments: {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_MS, coversStatus: this.#monitor?.momentSummary().overMonitor ?? defaultMoments.overMonitor,
-        art: {formats: ['png', 'gif'], maxBytes: MAX_ART_BYTES, ...(this.#hostedArt() ? {stageVersion: '2.1'} : {})}},
+        art: {formats: ['png', 'gif'], maxBytes: MAX_ART_BYTES, notices: ['rain-forecast'], ...(this.#hostedArt() ? {stageVersion: '2.1'} : {})}},
       media: {
         supported: true, actions: [...MEDIA_ACTIONS], playlistIds: admitted?.playlistIds ?? (catalog?.playlists ?? []).slice(0, MAX_LISTED).map(item => item.id),
         renditionIds: (catalog?.renditions ?? []).slice(0, MAX_LISTED).map(item => item.id),
@@ -1019,6 +1022,8 @@ class PixooRuntime {
     if (monitor === undefined) return errorBody('invalid-state', {detail: 'the Pixoo has no presentation'});
     if (this.#store?.momentSeen(moment.momentId) === true) return errorBody('invalid-state', {detail: 'this moment was already accepted'});
     if (this.#context.clock.now() > moment.startAtMs + moment.toleranceMs) return errorBody('invalid-state', {detail: 'the moment missed its start window'});
+    const noticeRefused = rainNoticeRefusal(moment.notice, moment, this.#context.clock.now());
+    if (noticeRefused !== undefined) return noticeRefused;
     if (monitor.momentBusy()) return errorBody('capacity', {detail: 'another moment waits or plays'});
     if ((this.#store?.pending() ?? []).some(command => command.family === 'device-mode-set')) return errorBody('invalid-state', {detail: 'a mode change is pending'});
     const block = monitor.momentBlock(moment.coversStatus, moment.art !== undefined);
@@ -1031,8 +1036,9 @@ class PixooRuntime {
     if (control === undefined) return Promise.resolve(errorCompletion(new Error('no control')));
     const {momentId, coversStatus, durationMs, startAtMs, toleranceMs} = moment;
     if (moment.art !== undefined && art === undefined) return Promise.resolve({result: Outcome.failed, evidence: Outcome.none, error: errorBody('not-found').error});
-    return control.moment({momentId, coversStatus, durationMs, startAtMs, toleranceMs,
-      ...(art === undefined ? {frames: () => this.#render({kind: 'moment', content: momentContent(moment)})} : {frames: art.frames, delayMs: art.delayMs, exactArt: true})});
+    return control.moment({momentId, coversStatus, durationMs, startAtMs, toleranceMs, ...(moment.notice === undefined ? {} : {notice: moment.notice}),
+      ...(art === undefined ? {frames: () => this.#render({kind: 'moment', content: momentContent(moment)})}
+        : {frames: async () => moment.notice === undefined ? art.frames() : this.#render({kind: 'moment', content: {kind: 'art-notice', frames: await art.frames(), notice: moment.notice}}), delayMs: art.delayMs, exactArt: true})});
   }
 
   /**

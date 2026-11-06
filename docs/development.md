@@ -35,6 +35,33 @@ See [the module guide](../modules/reachy-mini/README.md).
 
 ## Art checks
 
+Scheduled art (#684) extends the existing runtime automation owner. After the root
+build, run `npm run typecheck`, `npm run lint:js`, `npm run test:events:built`,
+`npm run test:art:built`, `npm run test:weather:built`,
+`npm run test:tidbyt-module:built`, `npm run test:pixoo:built`,
+`npm run test:runtime:built`, `npm run test:runtime-dashboard:built` and
+`npm run test:art:browser`. The existing event, module and runtime CI
+globs discover the new contract, policy/claim, producer and display cases; the
+App verification runtime group runs the schedule journey through the existing Art browser check. Keep the
+shared controller contract, Python consumer, package and workflow checks.
+
+The focused contract check is
+`node --test packages/event-contracts/tests/art-schedule.test.mjs`. The bounded
+clock/store cases are `apps/runtime/tests/art-schedule.test.ts`; the finite
+`art-schedule` scenario uses real owners and synthetic providers/transports.
+After building, select it with
+`node --test --test-name-pattern='art-schedule' apps/runtime/dist/tests/scenarios/catalog.test.js`.
+The finite scenario checks one saved-art rain appearance, disabled-source zero
+reads, exact submitted frame hashes and independent 10-second Pixoo and
+30-second Tidbyt outcomes. Its portable capture is bounded at 240 seconds.
+Manual-clock cases in the policy suite, `art-plans.test.ts` and
+`modules/art/tests/scheduled.test.ts` separately cover persisted 45-minute
+spacing, held preparation, revocation, renewal, restart and lost outcomes.
+Those cases are not claims about the portable recording. Browser checks cover
+revision conflicts and expiring labels on actually decoded art. Inspect the
+recorded native frames separately. These checks use only synthetic providers
+and transports, with no installed-runtime contact.
+
 Shared saved-art presentation (#297) uses the existing CI discovery. After
 `npm run build`, run `npm run typecheck`, `npm run lint:js`,
 `npm run test:events:built`, `npm run test:art:built`,
@@ -445,13 +472,17 @@ cheap integration checks and queues pinned release qualification. Superseded PR
 revisions are cancelled per workflow and PR; an active qualification finishes
 while new arrivals replace the pending candidate. Each job has a ten-minute timeout, except the
 select and gate jobs' five, the Workflow job's fifteen, the retained documentation
-job's twenty-five, Runtime verification's thirty-five, and Core and App verification's
-forty. Branch pushes do not duplicate PR checks.
+job's twenty-five, Core and App verification's forty, and Runtime verification's
+forty-five. Branch pushes do not duplicate PR checks.
 Core's finite 40-minute aggregate limit leaves headroom after full selections
 exhausted the previous 30-minute cap ([#1388](https://github.com/jimmie-potts/agent-device-hub/issues/1388)).
-All suites and per-test deadlines stay in force. Runtime verification keeps its
-separate 35-minute limit. Its verification step passed as the qualification job
-exhausted the former 30-minute aggregate cap ([#1391](https://github.com/jimmie-potts/agent-device-hub/issues/1391)).
+Runtime verification has a separate 45-minute job limit alongside the existing
+per-test deadlines. Two full catalog attempts
+reached the previous 35-minute limit before all cases reported their results
+([#1497](https://github.com/jimmie-potts/agent-device-hub/issues/1497)).
+The previous increase to 35 minutes followed a passing verification step in a
+qualification job that exhausted its 30-minute aggregate limit
+([#1391](https://github.com/jimmie-potts/agent-device-hub/issues/1391)).
 Hosted runners sometimes stall in apt, in `apt-get update` or in a browser
 install's `--with-deps` downloads, until the job's limit. So every apt command in
 CI runs through `scripts/apt-retry.sh` (#862): the browser installs in App
@@ -717,8 +748,8 @@ Existing provider qualification records and device ownership are unchanged.
 
 ### CI cost and suite timings
 
-Runtime catalog verification now runs unchanged in its own required 35-minute
-job. Two #1183 App attempts exhausted their combined job limit after the full
+Runtime catalog verification runs serially in its own required 45-minute job.
+Two #1183 App attempts exhausted their combined job limit after the full
 serial runtime suite passed in 16m03s and 17m36s; Chromium setup took over five
 minutes. The App job retains every other check, and the selected-check gate
 requires both jobs. Selection, test concurrency, isolation and failure behavior
@@ -2083,6 +2114,22 @@ and Music native source CI discovery runs these checks; no real microphone API
 is invoked by the adapter tests.
 Keep real audio-derived observations and camera recordings private. Installed
 capture, microphone and light trials belong to the selected music pilot.
+
+
+Calibration and response tuning (#721) use the existing event, runtime, Nanoleaf
+and dashboard CI discovery. After `npm run build`, run `npm run typecheck`,
+`npm run lint:js`, `npm run test:events:built`, `npm run test:sdk:built`,
+`npm run test:music-producer:built`, `npm run test:nanoleaf:built`,
+`npm run test:runtime-dashboard:built`, the focused
+`node --test apps/runtime/dist/tests/music-capture*.test.js` suites and
+`node apps/runtime/dashboard/tests/music-capture.browser.ts`.
+Core persistence and command-path changes also require the full runtime/scenario
+checks described above. Complete `npm run check:workflow` and
+`npm run test:workflow` for planning/specification changes. Fake clocks and
+synthetic derived windows establish calibration bounds and response parity.
+Clock checks cover first-window-relative elapsed time, exact uncertainty bounds,
+repeated timestamps, compressed bursts, backwards receipts and delayed delivery;
+these checks never access a microphone or qualify physical acoustics.
 
 The Music playback adapter (#571) uses those same producer/native commands and
 the existing event, SDK, runtime and playback test discovery. Native playback

@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {test, type TestContext} from 'node:test';
 import {errorBody, type ErrorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
-import type {ArtDispatch} from '@jimmie-potts/event-contracts/v2/art';
+import type {ArtDispatch21} from '@jimmie-potts/event-contracts/v2/art';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {InProcessBus, SdkError, type ModuleScheduler, type Participant, type Snapshot, type TraceContext} from '@jimmie-potts/sdk';
-import {realDispatch, realWeather, type ArtStageRequest, type StageResult} from '../src/seams.js';
+import {realDispatch, realWeather, type ArtAmbientRequest, type ArtStageRequest, type StageResult} from '../src/seams.js';
 import {artDevice, deviceDraft} from './device-fixtures.js';
 import {gradientPng} from './fixtures.js';
 import {gate, until} from './support.js';
@@ -15,10 +15,10 @@ const flush = () => new Promise<void>(resolve => {setImmediate(resolve);});
 async function world(t: TestContext) {
   const errors: unknown[] = [];
   const bus = new InProcessBus({maxQueued: 1, onError: error => {errors.push(error);}}), core = bus.connect('bunny/core'), sdk = bus.connect('bunny/modules/art');
-  const schemas: string[] = [], forwarded: ArtDispatch[] = [], scheduled = new Set<() => void | Promise<void>>();
+  const forwarded: ArtDispatch21[] = [], schemas: string[] = [], scheduled = new Set<() => void | Promise<void>>();
   const scheduler: ModuleScheduler = {after: (_delay, callback) => {scheduled.add(callback); return () => {scheduled.delete(callback);};}};
   await core.serveSync(['operation'], () => ({revision: 0, states: []}));
-  await core.respond<ArtDispatch>('bunny.cmd.art-dispatch.art', command => {schemas.push(command.dataschema); forwarded.push(command.data); return {status: 'accepted'};});
+  await core.respond<ArtDispatch21>('bunny.cmd.art-dispatch.art', command => {forwarded.push(command.data); schemas.push(command.dataschema); return {status: 'accepted'};});
   const dispatch = realDispatch({sdk, scheduler, signal: new AbortController().signal});
   let watches: Awaited<ReturnType<typeof dispatch.watch>> = [];
   const results: {requestId: string; result: StageResult; error?: ErrorDetail}[] = [];
@@ -48,9 +48,35 @@ async function world(t: TestContext) {
   const bytes = await gradientPng(64, 64);
   const stage = (target: 'pixoo' | 'tidbyt', extra: Partial<ArtStageRequest> = {}) => dispatch.stage({requestId: `stage-${forwarded.length}`, target,
     compositionId: 'synthetic-composition', format: 'png', width: 64, height: 64, frames: 1, durationMs: 0, sha256: createHash('sha256').update(bytes).digest('hex'), bytes, lifetimeMs: 60_000, ...extra}, parent);
-  const ambient = () => dispatch.ambient({requestId: `ambient-${forwarded.length}`, target: 'tidbyt', compositionId: 'synthetic-composition'}, parent);
+  const ambient = (extra: {authorization?: string; expectedTargetId?: string} = {}) => dispatch.ambient({requestId: `ambient-${forwarded.length}`, target: 'tidbyt', compositionId: 'synthetic-composition', ...extra} satisfies ArtAmbientRequest, parent);
   return {owner, start, stop, stage, ambient, forwarded, schemas, scheduled, core, results, retry: async () => {const waiting = [...scheduled]; scheduled.clear(); for (const callback of waiting) await callback(); await flush();}};
 }
+
+void test('initial ambient forwards its grant only on 2.1 and maintenance retains the exact target without a grant', async t => {
+  const w = await world(t), owner = await w.owner('tidbyt', [artDevice('tidbyt', 'shelf')]); await w.start();
+  assert.deepEqual(await w.ambient({expectedTargetId: 'shelf', authorization: 'one-use'}), {status: 'accepted'});
+  assert.equal(w.schemas[0], 'https://bunny.invalid/events/art-dispatch/2.1');
+  assert.deepEqual(w.forwarded[0], {requestId: 'ambient-0', target: 'shelf', family: 'art-ambient-set', data: {compositionId: 'synthetic-composition'}, authorization: 'one-use'});
+  assert.deepEqual(await w.ambient({expectedTargetId: 'shelf'}), {status: 'accepted'});
+  assert.equal(w.schemas[1], 'https://bunny.invalid/events/art-dispatch/2.0');
+  await owner.remove('shelf'); await flush(); await owner.update(artDevice('tidbyt', 'replacement', 3)); await flush();
+  for (const extra of [{expectedTargetId: 'shelf'}, {expectedTargetId: 'shelf', authorization: 'other-grant'}]) {
+    const answer = await w.ambient(extra);
+    assert.equal('error' in answer && answer.error.code, 'invalid-state');
+  }
+  assert.equal(w.forwarded.length, 2, 'neither initial selection nor maintenance retargets to a replacement');
+});
+
+void test('ambient operation results reach the owning parent boundary', async t => {
+  const w = await world(t); await w.start();
+  const error = errorBody('forbidden').error;
+  await w.core.publish('bunny.state.operation.operation-ambient-test', {kind: 'state', type: 'org.bunny.operation.changed', subject: 'operation-ambient-test',
+    dataschema: 'https://bunny.invalid/events/operation/2.0', data: {id: 'operation-ambient-test', revision: 1, requestId: 'ambient-test', kind: 'device', family: 'art-ambient-set',
+      command: 'org.bunny.art-ambient.set.requested', target: 'shelf', requestedBy: 'bunny/modules/art', status: 'rejected', result: 'failed', evidence: 'none', error,
+      sentAtMs: 1, updatedAtMs: 2, deadlineAtMs: 30_001}});
+  await until(() => w.results.length === 1);
+  assert.deepEqual(w.results, [{requestId: 'ambient-test', result: 'failed', error}]);
+});
 
 void test('only a declared Pixoo receives extended staging; ordinary stages use the original contract', async t => {
   const w = await world(t);

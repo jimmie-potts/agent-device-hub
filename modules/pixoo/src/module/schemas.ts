@@ -61,7 +61,7 @@ export const renditionSchemaOf = (frameCount: number): string => frameCount > 10
 export const HOSTED_DEVICE_SCHEMA = EXTENDED_ART_DEVICE_SCHEMA;
 export const OUTCOME_SCHEMA = `${SCHEMA_BASE}outcome/2.0`;
 export const REMOVAL_SCHEMA = `${SCHEMA_BASE}removal/2.0`;
-export const DEVICE_SCHEMA = `${SCHEMA_BASE}device/2.2`;
+export const DEVICE_SCHEMA = `${SCHEMA_BASE}device/2.3`;
 
 /** At most this many bytes of media an import may carry inline; larger media goes through the module's incoming folder. */
 export const MAX_INLINE_BYTES = 160 * 1024;

@@ -51,7 +51,7 @@ const uncertain = (detail: string): Completion => ({result: Outcome.uncertain, e
 // Device failure codes. A connectivity failure is the device being unavailable; nothing in the result says it acted.
 const DEVICE_CODES: Readonly<Record<string, ErrorCode>> = {
   offline: 'unavailable', timeout: 'unavailable', 'http-error': 'unavailable', 'protocol-error': 'unavailable', 'upload-failed': 'unavailable',
-  'device-error': 'invalid-state', 'too-large': 'too-large', 'invalid-input': 'invalid-request', cancelled: 'cancelled', 'stale-generation': 'cancelled',
+  'device-error': 'invalid-state', 'too-large': 'too-large', 'invalid-input': 'invalid-request', 'profile-limit': 'unsupported-capability', cancelled: 'cancelled', 'stale-generation': 'cancelled',
 };
 /** Failures in which the Pixoo answered, so the request reached it: with an error status or code, or unreadably. */
 const ANSWERED: readonly string[] = ['device-error', 'http-error', 'protocol-error'];
@@ -240,6 +240,7 @@ export class PixooControl {
     switch (result.refused) {
       case 'expired': return failed('expired', 'the moment missed its start window');
       case 'blocked': return failed('invalid-state', 'the current presentation no longer admits the moment');
+      case 'notice': return failed('invalid-state', 'rain forecast evidence cannot cover this presentation');
       case 'cancelled': return failed('cancelled', 'a newer request or attention ended the moment before it was sent');
       case 'unknown': return uncertain('the moment\'s write failed after it began');
       case 'content': return failed('internal', 'the moment could not be drawn');

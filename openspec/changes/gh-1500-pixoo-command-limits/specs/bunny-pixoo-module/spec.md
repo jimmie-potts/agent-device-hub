@@ -45,6 +45,12 @@ The Pixoo SHALL preserve originals, immutable renditions and ordered frames with
 - **THEN** the first two reach its writer with every frame and offset, and the third is refused before a write with the direct route limit
 - **AND** no hosted listener is required or selected
 
+#### Scenario: A rain notice follows the route's limit
+
+- **WHEN** a direct configuration plays a rain-labelled exact-art moment of 21 frames
+- **THEN** every labelled frame reaches its writer and the moment reports its device evidence
+- **AND** the label adds no frame ceiling beyond the selected route's own limit and the frame budget
+
 #### Scenario: Long library and hosted animation
 
 - **WHEN** an admitted animation contains more than a thousand frames

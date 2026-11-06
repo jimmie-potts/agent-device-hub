@@ -322,7 +322,7 @@ export class Tracker {
     const operation = this.#read(responsibility.requestId);
     if (operation?.family !== 'music-capture-control' || operation.target !== 'music' ||
       operation.command !== 'org.bunny.music-capture.control.requested' ||
-      !['https://bunny.invalid/events/music-capture-control/2.0', 'https://bunny.invalid/events/music-capture-control/2.1'].includes(operation.dataschema) ||
+      !['https://bunny.invalid/events/music-capture-control/2.0', 'https://bunny.invalid/events/music-capture-control/2.1', 'https://bunny.invalid/events/music-capture-control/2.2'].includes(operation.dataschema) ||
       (operation.responder !== undefined && operation.responder !== this.#options.sdk.source) ||
       !ID.test(responsibility.admittedCommandId) || createHash('sha256').update(factsOf(operation)).digest('hex') !== responsibility.factsDigest) {
       throw new Error('operator-responsibility');

@@ -25,10 +25,27 @@ export type CaptureFeatures = CaptureSelection & {
 };
 export type CaptureLost = {id: string};
 export type CaptureControl = {requestId: string; expectedRevision: number} &
-  ({action: 'start'; endpointId: string} & CaptureSelection | {action: 'stop'});
+  ({action: 'start'; endpointId: string} & CaptureSelection | {action: 'stop'} |
+  {action: 'calibrate'; binding: CaptureResponseBinding} |
+  {action: 'cancel-calibration'; binding: CaptureResponseBinding; operationId: string} |
+  {action: 'apply-tuning'; expectedSettingsRevision: number; binding: CaptureResponseBinding; settings: CaptureResponseSettings});
 export type CaptureState = {
   id: 'music'; revision: number; endpointId: string | null; availability: 'off' | 'available' | 'unavailable';
-  microphone?: CaptureMicrophone;
+  microphone?: CaptureMicrophone; response?: CaptureResponseState;
   session: {status: 'idle'} | CaptureSelection & {status: 'starting' | 'active' | 'stale' | 'stopping' | 'unavailable' | 'uncertain';
     generation: string; operationId: string};
 };
+
+export type CaptureResponseBinding = {endpointId: string; generation: string; microphoneId: string; sampleRateHz: number; channels: 1 | 2};
+export type CaptureResponseSettings = {
+  sensitivity: number; smoothingMs: number; emphasis: {bass: number; mid: number; treble: number};
+  gate: {mode: 'off'} | {mode: 'manual'; threshold: number} | {mode: 'calibrated'; threshold: number; calibrationId: string};
+};
+export type CaptureCalibrationReason = 'cancelled' | 'stopped' | 'stale' | 'discontinuity' | 'source-lost' | 'clock' | 'format' | 'clipping' | 'deadline' | 'restart';
+export type CaptureCalibration = {status: 'idle'} |
+  {status: 'measuring'; operationId: string; binding: CaptureResponseBinding; startedAtMs: number; deadlineAtMs: number} |
+  {status: 'ready'; operationId: string} | {status: 'ended'; operationId: string; reason: CaptureCalibrationReason};
+export type CaptureCalibrationEvidence = {id: string; binding: CaptureResponseBinding; windowCount: 50;
+  startedAtMs: number; endedAtMs: number; sourceDurationMs: 5000; percentileRms: number; maximumRms: number; suggestedThreshold: number};
+export type CaptureResponseState = {settingsRevision: number; settings: CaptureResponseSettings; appliedTo: CaptureResponseBinding | null;
+  calibration: CaptureCalibration; evidence: CaptureCalibrationEvidence | null};

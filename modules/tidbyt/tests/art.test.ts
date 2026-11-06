@@ -6,6 +6,7 @@ import {SCHEMA_BASE} from '@jimmie-potts/event-contracts/v2';
 import {SimulatedTronbyt, TRONBYT_ORIGIN} from '../src/simulated-tronbyt.js';
 import {SIMULATED_DEVICE} from '../src/simulated.js';
 import {MAX_ART_COPIES} from '../src/art.js';
+import type {CloudFetch} from '../src/cloud.js';
 import {acquireLease, type Lease} from '../src/lease.js';
 import {artStage, gifFrames} from './art-fixtures.js';
 import {asking, flush, host, test, until, withWriteFailure, type Hosted} from './support.js';
@@ -20,13 +21,91 @@ export async function artRequest(h: Hosted, family: 'art-stage' | 'art-ambient-s
 }
 async function exactMoment(h: Hosted, requestId: string, extra: object = {}, source = 'bunny/core') {
   const client = h.bus.connect(source);
-  const result = await client.request('bunny.cmd.moment-play.tidbyt', {type: 'org.bunny.moment.play.requested', subject: 'tidbyt', dataschema: `${SCHEMA_BASE}moment-play/2.1`, data: {
+  const result = await client.request('bunny.cmd.moment-play.tidbyt', {type: 'org.bunny.moment.play.requested', subject: 'tidbyt', dataschema: `${SCHEMA_BASE}moment-play/${'notice' in extra ? '2.2' : '2.1'}`, data: {
     requestId, momentId: requestId, mood: 'celebrate', art: {compositionId: artStage().compositionId}, durationMs: 40_000,
     priorityClass: 'event', coversStatus: true, startAtMs: h.wall(), toleranceMs: 10_000, ...extra,
   }}, {timeoutMs: 5000, requestId});
   await client.close();
   return result.status === 'rejected' ? {status: result.status, code: result.error.error.code} : {status: result.status};
 }
+
+test('plays a labelled rain forecast with every exact art frame and leaves its staged bytes unchanged', async context => {
+  const server = new SimulatedTronbyt();
+  const h = await host(context, {sessions: [], playback: 'absent', section, module: {transport: server.fetch}});
+  await until(() => server.state().calls.some(call => call.method === 'PATCH'), 'initial reconciliation');
+  const stage = artStage();
+  assert.deepEqual(await artRequest(h, 'art-stage', {...stage, requestId: 'rain-stage'}), {status: 'accepted'});
+  const original = await h.content(`art.${stage.compositionId}`);
+  assert.ok(original !== undefined && !('error' in original));
+  const now = h.wall();
+  const notice = {kind: 'rain-forecast', likelihood: 'chance', forecastStartAtMs: now + 60_000, forecastEndAtMs: now + 120_000,
+    forecastUpdatedAtMs: now - 1000, observedAtMs: now, staleAtMs: now + 120_000, weatherRevision: 1};
+  const writes = server.state().calls.filter(call => call.method === 'POST').length;
+  assert.deepEqual(await exactMoment(h, 'rain-outsider', {notice}, 'bunny/parts/operator'), {status: 'rejected', code: 'forbidden'});
+  assert.deepEqual(await exactMoment(h, 'rain-too-short', {notice: {...notice, staleAtMs: now + 500}}), {status: 'rejected', code: 'invalid-message'});
+  assert.equal(server.state().calls.filter(call => call.method === 'POST').length, writes);
+  assert.deepEqual(await exactMoment(h, 'rain-moment', {notice, durationMs: 30_000}), {status: 'accepted'});
+  await until(() => server.state().installations.bunnymoment !== undefined, 'labelled rain art');
+  const shown = server.state().installations.bunnymoment?.animation;
+  assert.deepEqual(shown?.delaysMs, [200, 200]);
+  assert.equal(shown?.frames.length, 2);
+  assert.notEqual(shown?.sha256, createHash('sha256').update(original.bytes).digest('hex'));
+  assert.deepEqual(await h.content(`art.${stage.compositionId}`), original);
+  await h.advance(40_000);
+  await until(() => server.state().installations.bunnymoment === undefined, 'rain art release');
+  assert.deepEqual(h.problems(), []);
+});
+
+test('refuses a rain notice after a queued pin read consumes its validity, with no moment write', async context => {
+  const server = new SimulatedTronbyt();
+  let before: (() => void) | undefined;
+  const transport: CloudFetch = async (url, init) => {
+    if (init.method === 'GET' && url.endsWith(`/v0/devices/${SIMULATED_DEVICE}`)) before?.();
+    return server.fetch(url, init);
+  };
+  const h = await host(context, {sessions: [], playback: 'absent', section, module: {transport}});
+  await until(() => server.state().calls.some(call => call.method === 'PATCH'), 'initial reconciliation');
+  assert.deepEqual(await artRequest(h, 'art-stage', {...artStage(), requestId: 'queued-rain-stage'}), {status: 'accepted'});
+  const now = h.wall(), posts = server.state().calls.filter(call => call.method === 'POST').length;
+  const notice = {kind: 'rain-forecast', likelihood: 'likely', forecastStartAtMs: now + 60_000, forecastEndAtMs: now + 120_000,
+    forecastUpdatedAtMs: now - 1000, observedAtMs: now, staleAtMs: now + 31_000, weatherRevision: 1};
+  before = () => { before = undefined; h.stepWall(1500); };
+  assert.deepEqual(await exactMoment(h, 'queued-rain', {notice, durationMs: 30_000, toleranceMs: 1000}), {status: 'accepted'});
+  await until(() => h.published.some(message => message.type === 'org.bunny.moment.play.completed' && message.data.requestId === 'queued-rain'), 'queued rain outcome');
+  assert.deepEqual(h.published.find(message => message.type === 'org.bunny.moment.play.completed' && message.data.requestId === 'queued-rain')?.data,
+    {requestId: 'queued-rain', result: 'failed', evidence: 'none', error: {code: 'invalid-state', retryable: false, detail: 'rain forecast evidence cannot cover this presentation'}});
+  assert.equal(server.state().calls.filter(call => call.method === 'POST').length, posts);
+  assert.equal(server.state().installations.bunnymoment, undefined);
+  assert.deepEqual(h.problems(), []);
+});
+
+for (const loseRelease of [false, true]) test(`releases rain evidence exhausted by a slow push and preserves ${loseRelease ? 'uncertain' : 'transmitted'} evidence`, async context => {
+  const server = new SimulatedTronbyt();
+  let afterPush: (() => void) | undefined, releaseLost = false;
+  const transport: CloudFetch = async (url, init) => {
+    if (loseRelease && !releaseLost && init.method === 'DELETE' && url.endsWith('/bunnymoment')) { releaseLost = true; server.loseNextAnswer(); }
+    const answer = await server.fetch(url, init);
+    if (init.method === 'POST') afterPush?.();
+    return answer;
+  };
+  const h = await host(context, {sessions: [], playback: 'absent', section, module: {transport}});
+  await until(() => server.state().calls.some(call => call.method === 'PATCH'), 'initial reconciliation');
+  assert.deepEqual(await artRequest(h, 'art-stage', {...artStage(), requestId: 'slow-rain-stage'}), {status: 'accepted'});
+  const now = h.wall(), pins = server.state().pinWrites;
+  const notice = {kind: 'rain-forecast', likelihood: 'chance', forecastStartAtMs: now + 60_000, forecastEndAtMs: now + 120_000,
+    forecastUpdatedAtMs: now - 1000, observedAtMs: now, staleAtMs: now + 31_000, weatherRevision: 1};
+  afterPush = () => { afterPush = undefined; h.stepWall(32_000); };
+  assert.deepEqual(await exactMoment(h, 'slow-rain', {notice, durationMs: 30_000, toleranceMs: 1000}), {status: 'accepted'});
+  await until(() => server.state().calls.some(call => call.method === 'DELETE' && call.path.endsWith('/bunnymoment')), 'expired rain release');
+  if (loseRelease) await h.advance(15_000);
+  await until(() => h.published.some(message => message.type === 'org.bunny.moment.play.completed' && message.data.requestId === 'slow-rain'), 'slow rain outcome');
+  const outcome = h.published.find(message => message.type === 'org.bunny.moment.play.completed' && message.data.requestId === 'slow-rain')?.data;
+  assert.equal(outcome?.result, loseRelease ? 'uncertain' : 'failed');
+  assert.equal(outcome?.evidence, 'transmitted');
+  assert.equal(server.state().pinWrites, pins, 'expired evidence is not pinned after its delayed push');
+  assert.equal(server.state().calls.filter(call => call.method === 'POST').length, 1, 'the moment is never replayed');
+  assert.deepEqual(h.problems(), []);
+});
 async function ambientStatus(h: Hosted): Promise<{selected: {compositionId: string; sha256: string} | null; presence: string; transmitted: {compositionId: string; sha256: string; atMs: number} | null; held: boolean; suppressed: boolean; visible: string}> {
   const result = await h.content('art-status');
   assert.ok(result !== undefined && !('error' in result));

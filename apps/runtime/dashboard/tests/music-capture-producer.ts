@@ -8,6 +8,7 @@ export async function musicCaptureProducer(url: string, token: string, microphon
   const commands: Command<CaptureWork>[] = [];
   let endpoint: RemoteEndpoint, current: Command<CaptureWork> | undefined, sequence = 0, level = 0.25, automatic = true;
   let timer: ReturnType<typeof setInterval> | undefined, closed = false, refuse = false;
+  let sourceMono = 0, sourceWall = 0;
   const progress = (command: Command<CaptureWork>, status: 'started' | 'stopped' | 'failed') => endpoint.publish<CaptureProgress>('music-capture-progress', {
     kind: 'occurrence', type: 'org.bunny.music-capture.progress.observed', dataschema: 'https://bunny.invalid/events/music-capture-progress/2.0',
     data: {operationId: command.data.operationId, generation: command.data.generation,
@@ -16,7 +17,7 @@ export async function musicCaptureProducer(url: string, token: string, microphon
   const emit = async (overrides: Partial<Omit<CaptureFeatures, 'input' | 'microphoneId'>> = {}): Promise<void> => {
     if (current === undefined || current.data.action !== 'start') return;
     const selection = current.data.input === 'music' ? {input: 'music'} as const : {input: 'microphone', microphoneId: current.data.microphoneId} as const;
-    const observedAtMs = Date.now(), mono = performance.now();
+    const observedAtMs = sourceWall + sequence * 100, mono = sourceMono + sequence * 100;
     await endpoint.publish<CaptureFeatures>('music-capture-features', {kind: 'occurrence', type: 'org.bunny.music-capture.features.observed',
       dataschema: `https://bunny.invalid/events/music-capture-features/${selection.input === 'music' ? '2.0' : '2.1'}`, data: {
         generation: current.data.generation, ...selection, sequence: ++sequence, sampleRateHz: 48000, channels: 2, frameCount: 4800,
@@ -27,6 +28,7 @@ export async function musicCaptureProducer(url: string, token: string, microphon
   const pause = (): void => {if (timer !== undefined) clearInterval(timer); timer = undefined;};
   const start = async (): Promise<void> => {
     if (current === undefined) return;
+    sourceMono = performance.now() - sequence * 100;sourceWall = Date.now() - sequence * 100;
     await progress(current, 'started'); await emit(); pause();
     timer = setInterval(() => {void emit().catch(() => {pause();});}, 100);
   };

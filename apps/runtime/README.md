@@ -475,6 +475,40 @@ the complete stable plan before any phase. It retains these non-executable
 receipts without eviction, like `core_operations`, so changing old timing cannot
 reuse a late successful preparation. A failed identity commit sends nothing.
 
+Daily art uses that same control and the core's scheduler. Its separate
+revisioned policy defaults to disabled and is edited in the Automation page.
+`/api/v2/automation/art` reads or saves the policy with the existing authenticated
+read/control scopes; writes require the current `expectedSettingsRevision`.
+The `art-schedule/2.0` state family publishes policy, the next opportunity,
+suppression reasons and separate operation IDs through the existing sync/live
+connection. A tracked selection or transmission does not prove visible pixels.
+
+The policy selects six, seven or eight appearances within host-local waking
+hours. Quiet hours, attention and shared moment budgets still apply. Each
+appearance is at least 45 minutes after the preceding claim's latest permitted
+start, including its tolerance. The private `automation_art_schedule` and
+`automation_art_claims` tables retain the waking-day count and attempt identities
+across edits, disable/re-enable and restart. Expired slots stay spent. Pending
+art and ordinary flourishes share `automation_moment_reservations`; a request
+excludes only its own reservation during final admission. No attempt is replayed
+after a crash or uncertain result.
+
+Saved art needs no provider call. Optional generation uses Art's existing
+appearance job, spending ledger and fixed preparation deadline; a late result
+stays in the gallery. Weather is separately enabled and supplies only fresh
+condition words to generation. A rain notice uses typed forecast evidence and
+fixed native text, with independent 10-second Pixoo and 30-second Tidbyt requests.
+The browser label requires the matching succeeded selection and decoded
+composition, and expires within 30 seconds. No calendar source is read.
+
+Optional hourly or live-weather ambient selection uses saved Tidbyt and browser
+compositions. Its one-use grant controls the initial handoff. A pending or refused
+replacement cannot become the renewable intent. Accepted or uncertain issued
+intent retains its exact composition and configured target through disable and
+restart; disabling scheduling sends no clear. Explicit deletion and replacement
+remain with the Art owner. Device modes and final writer precedence remain with
+their display owners.
+
 The core also owns weekly routines for configured devices
 ([#1297](https://github.com/jimmie-potts/agent-device-hub/issues/1297), which
 generalizes the one on/off power window of #483). A routine selects weekdays
@@ -588,7 +622,7 @@ Start and stop use tracked operator admission with the current revision. A
 received start report proves activation; an accepted request alone does not.
 Stop fences features immediately, and clean teardown has its own outcome.
 The separate [Mac producer](../music-producer/README.md) opens the selected input.
-The core emits one `music-capture-state/2.1` entity for sync and live updates.
+The core emits one `music-capture-state/2.2` entity for sync and live updates.
 It accepts unchanged 2.0 Music producers and commands alongside explicit 2.1
 microphone commands. A configured alias is not evidence of device presence or
 permission. Audio selection alone starts nothing; missing permission must be
@@ -608,7 +642,29 @@ clean stop. Restart retires pending responsibility and never sends the old start
 again. Private history retains published derived measurements, so its storage
 continues growing during capture. No PCM enters that history.
 
-This source path supports Music.app only and controls no lights. The installed
+Microphone response controls use additive control 2.2 commands. Explicit quiet
+measurement collects 50 consecutive, unclipped 100 ms windows after admission,
+within a ten-second local deadline. Elapsed source, observed-wall and receipt
+times must agree within the existing clock/freshness uncertainty bounds. This
+rejects timestamp bursts while permitting bounded delivery delay. Evidence
+records source duration, not an exact receiver duration. It retains the 95th percentile and maximum
+linear RMS plus a suggested gate of twice that percentile, capped at 16. This is
+a digital baseline heuristic; derived features cannot establish acoustic quiet,
+calibrated loudness or the microphone's physical identity.
+
+The core retains settings and the latest successful evidence privately in its
+existing capture record. Apply checks both the capture revision and the draft's
+settings revision, commits once and binds the settings to the current endpoint,
+generation, public alias and format. Measurement completion creates a candidate;
+it does not apply it. Cancel ends only that measurement, while Stop remains an
+independent command. Source gaps, format changes, expiry, stop, clock failure,
+loss and restart retire qualification without deleting preferences or evidence.
+A new generation requires fresh measurement or an explicitly applied manual
+threshold. Alias reuse never establishes the same physical microphone. Gate-off
+settings can show an uncalibrated response without qualification. Neither
+calibration nor Apply sends capture work, changes permissions or writes lights.
+
+This source path supports Music.app and one configured microphone. The installed
 pilot separately qualifies helper identity, permissions, real routes and timing.
 
 ## Agent hooks
@@ -2072,7 +2128,9 @@ The core operation-record scenario lives in `tests/scenarios/operations.ts`.
 
 The in-memory harness hosts the seed's modules in the runtime's module host,
 each built with its simulated transport, a registered module through its
-registration's `simulation`, on a manual clock and scheduler. Each scenario runs twice. Its parts (a hook, an operator, a panel
+registration's `simulation`, on a manual clock and scheduler. That clock stands
+still while a module's worker call runs, for at most 10 real seconds, because
+the worker runs in real time against a deadline on the clock (#1442). Each scenario runs twice. Its parts (a hook, an operator, a panel
 and a reader) first join the host's bus, then reach it through the runtime's
 [gateway](#gateway) on 127.0.0.1, each with a run-generated client credential
 whose grant the catalog's `GRANTS` sets: the hook may only publish lifecycle

@@ -16,15 +16,20 @@ export type Job = {
   requestId: string; artworkId: string; purpose: ArtPurpose; origin: {kind: 'owner' | 'schedule' | 'weather'; reference?: string};
   /** From the command family that admitted the job, never from its payload. */
   admittedBy: ArtAdmission;
+  weatherUse?: 'current' | 'omit';
   text: string | null; context: PromptContext; targets: JobTarget[]; variationOf: string | null;
   status: 'queued' | 'running' | 'finished'; cancelRequested: boolean; outcome: ArtOutcome | null; idea: string | null; traceparent: string; createdAtMs: number; finishedAtMs: number | null;
 };
 export type StoredComposition = ArtComposition & {compositionId: string; promptHash: string | null; originalId: string | null; gif: 'accepted' | 'rejected' | null};
 export type Artwork = {artworkId: string; requestId: string; createdAtMs: number; favorite: boolean; feedback: ArtFeedback | null; variationOf: string | null; palette: string[]; generatedBy: 'openai' | 'local'; deletedAtMs: number | null};
 export type StageStatus = 'pending' | 'succeeded' | 'failed' | 'uncertain';
-export type StageRow = {requestId: string; artworkId: string; compositionId: string; target: ArtDisplayTarget; status: StageStatus; expiresAtMs: number | null; ambient: boolean};
-export type Preparation = {requestId: string; stageRequestId: string; status: StageStatus | 'conflict'; traceparent: string; createdAtMs: number};
-export type IssuedAmbient = {requestId: string} & ({stageRequestId: string; artworkId: string} | {stageRequestId: null; artworkId: null});
+export type StageRow = {requestId: string; artworkId: string; compositionId: string; target: ArtDisplayTarget; targetId?: string; status: StageStatus; expiresAtMs: number | null; ambient: boolean};
+export type AmbientIntent = {issued: IssuedAmbient | null; stageRequestId: string | null};
+export type Preparation = {requestId: string; stageRequestId: string; status: StageStatus | 'conflict'; traceparent: string; createdAtMs: number} & (
+  | {kind?: 'prepare'}
+  | {kind: 'ambient'; ambientRequestId?: string; previous?: AmbientIntent}
+);
+export type IssuedAmbient = {requestId: string; targetId?: string} & ({stageRequestId: string; artworkId: string} | {stageRequestId: null; artworkId: null});
 
 const json = <T>(row: unknown): T => JSON.parse((row as {record: string}).record) as T;
 export class ArtStore {
@@ -42,6 +47,7 @@ export class ArtStore {
       CREATE INDEX IF NOT EXISTS art_compositions_id ON art_compositions(composition_id);
       CREATE TABLE IF NOT EXISTS art_blobs(id TEXT PRIMARY KEY,type TEXT NOT NULL,bytes BLOB NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS art_stages(request_id TEXT PRIMARY KEY,artwork_id TEXT NOT NULL,composition_id TEXT NOT NULL,target TEXT NOT NULL,status TEXT NOT NULL,expires_at_ms INTEGER,ambient INTEGER NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS art_stage_targets(request_id TEXT PRIMARY KEY,target_id TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS art_ambient(id INTEGER PRIMARY KEY CHECK(id=1),request_id TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS art_ambient_issued(id INTEGER PRIMARY KEY CHECK(id=1),record TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS art_preparations(request_id TEXT PRIMARY KEY,stage_request_id TEXT UNIQUE NOT NULL,status TEXT NOT NULL,record TEXT NOT NULL) STRICT;
@@ -106,6 +112,7 @@ export class ArtStore {
     this.db.prepare('DELETE FROM art_compositions WHERE artwork_id=?').run(artworkId);
     this.db.prepare('DELETE FROM art_artworks WHERE artwork_id=?').run(artworkId);
     this.db.prepare('DELETE FROM art_feedback WHERE artwork_id=?').run(artworkId);
+    this.db.prepare('DELETE FROM art_stage_targets WHERE request_id IN (SELECT request_id FROM art_stages WHERE artwork_id=?)').run(artworkId);
     this.db.prepare('DELETE FROM art_stages WHERE artwork_id=?').run(artworkId);
     const others = new Set(this.db.prepare('SELECT record FROM art_compositions').all().map(row => json<StoredComposition>(row)).flatMap(composition => [composition.originalId, ...composition.renditions.map(rendition => rendition.renditionId)]));
     for (const id of blobs) if (id !== null && !others.has(id)) this.db.prepare('DELETE FROM art_blobs WHERE id=?').run(id);
@@ -120,6 +127,18 @@ export class ArtStore {
   preparationForStage(stageRequestId: string): Preparation | undefined {
     const row = this.db.prepare('SELECT record FROM art_preparations WHERE stage_request_id=?').get(stageRequestId);
     return row === undefined ? undefined : json<Preparation>(row);
+  }
+  preparationForAmbient(requestId: string): Extract<Preparation, {kind: 'ambient'}> | undefined {
+    const row = this.db.prepare("SELECT record FROM art_preparations WHERE json_extract(record,'$.ambientRequestId')=?").get(requestId);
+    return row === undefined ? undefined : json<Extract<Preparation, {kind: 'ambient'}>>(row);
+  }
+  /** Remove a refused link before terminal retention can discard its evidence. */
+  replaceAmbientPredecessor(requestId: string, previous: AmbientIntent): void {
+    const rows = this.db.prepare("SELECT record FROM art_preparations WHERE json_extract(record,'$.previous.issued.requestId')=?").all(requestId);
+    for (const row of rows) {
+      const preparation = json<Preparation>(row);
+      if (preparation.kind === 'ambient') this.savePreparation({...preparation, previous});
+    }
   }
   hasPreparation(requestId: string): boolean {return this.db.prepare('SELECT 1 FROM art_preparations WHERE request_id=?').get(requestId) !== undefined;}
   pendingPreparations(): Preparation[] {return this.db.prepare("SELECT record FROM art_preparations WHERE status='pending'").all().map(row => json<Preparation>(row));}
@@ -139,20 +158,21 @@ export class ArtStore {
 
   stage(requestId: string): StageRow | undefined {
     const row = this.db.prepare('SELECT * FROM art_stages WHERE request_id=?').get(requestId) as RawStage | undefined;
-    return row === undefined ? undefined : toStage(row);
+    return row === undefined ? undefined : this.#stage(row);
   }
   saveStage(stage: StageRow): void {
     this.db.prepare('INSERT INTO art_stages VALUES(?,?,?,?,?,?,?) ON CONFLICT(request_id) DO UPDATE SET status=excluded.status,expires_at_ms=excluded.expires_at_ms').run(stage.requestId, stage.artworkId, stage.compositionId, stage.target, stage.status, stage.expiresAtMs, stage.ambient ? 1 : 0);
+    if (stage.targetId !== undefined) this.db.prepare('INSERT OR IGNORE INTO art_stage_targets VALUES(?,?)').run(stage.requestId, stage.targetId);
   }
   /** Copies a device confirmed and that have not expired, soonest-ending last per composition. */
   liveStages(nowMs: number): StageRow[] {
-    return (this.db.prepare("SELECT * FROM art_stages WHERE status='succeeded' AND expires_at_ms>? ORDER BY expires_at_ms DESC").all(nowMs) as RawStage[]).map(toStage);
+    return (this.db.prepare("SELECT * FROM art_stages WHERE status='succeeded' AND expires_at_ms>? ORDER BY expires_at_ms DESC").all(nowMs) as RawStage[]).map(row => this.#stage(row));
   }
   /** Any stage that may still be holding a device's copy: a live one, one still pending, or one whose fate is unknown. */
   referenced(artworkId: string, nowMs: number): boolean {
     return this.db.prepare("SELECT 1 FROM art_stages WHERE artwork_id=? AND status<>'failed' AND expires_at_ms>? LIMIT 1").get(artworkId, nowMs) !== undefined;
   }
-  pendingStages(): StageRow[] {return (this.db.prepare("SELECT * FROM art_stages WHERE status='pending'").all() as RawStage[]).map(toStage);}
+  pendingStages(): StageRow[] {return (this.db.prepare("SELECT * FROM art_stages WHERE status='pending'").all() as RawStage[]).map(row => this.#stage(row));}
   selectAmbient(requestId: string | null): void {
     if (requestId === null) this.db.prepare('DELETE FROM art_ambient').run();
     else this.db.prepare('INSERT INTO art_ambient VALUES(1,?) ON CONFLICT(id) DO UPDATE SET request_id=excluded.request_id').run(requestId);
@@ -169,7 +189,11 @@ export class ArtStore {
   /** The selected stage is durable, independent of receipt order or deletion of older rows. */
   ambient(): StageRow | undefined {
     const row = this.db.prepare('SELECT s.* FROM art_stages s JOIN art_ambient a ON a.request_id=s.request_id').get() as RawStage | undefined;
-    return row === undefined ? undefined : toStage(row);
+    return row === undefined ? undefined : this.#stage(row);
+  }
+  #stage(row: RawStage): StageRow {
+    const target = this.db.prepare('SELECT target_id FROM art_stage_targets WHERE request_id=?').get(row.request_id) as {target_id: string} | undefined;
+    return {...toStage(row), ...(target === undefined ? {} : {targetId: target.target_id})};
   }
 }
 type RawStage = {request_id: string; artwork_id: string; composition_id: string; target: ArtDisplayTarget; status: StageStatus; expires_at_ms: number | null; ambient: number};
