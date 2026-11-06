@@ -106,7 +106,7 @@ for (const boundary of ['expiry', 'stop', 'shorter'] as const) {
       const expiry = () =>
         w.db.prepare('SELECT expires_at_ms FROM pixoo_art_copies WHERE composition_id = ?').get(data.compositionId)?.expires_at_ms;
       const prior = expiry();
-      const verify = MediaStore.prototype.getRendition;
+      const verify = Reflect.get<MediaStore, 'getRendition'>(MediaStore.prototype, 'getRendition');
       t.mock.method(MediaStore.prototype, 'getRendition', async function(this: MediaStore, id: string) {
         const retained = await verify.call(this, id);
         if (boundary === 'expiry') w.advance(70_000);
