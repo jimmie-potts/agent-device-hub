@@ -5,6 +5,7 @@ import {promisify} from 'node:util';
 import {parseArgs} from 'node:util';
 import {fileURLToPath} from 'node:url';
 import {dirname, join, resolve, isAbsolute} from 'node:path';
+import {realpathSync} from 'node:fs';
 import {lstat, realpath} from 'node:fs/promises';
 import {containerOptions} from '../deploy/container/entrypoint.mjs';
 import {operatorRefusal,refusalMessage} from './operator-refusal.mjs';
@@ -235,11 +236,21 @@ export async function maintain(plan,run=docker,checkPrivate=privateHostDirectory
     return operate({...plan,maintenanceHelper:maintenanceHelperFor(receipt)},run,checkPrivate);
   });
 }
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+async function main(argv) {
   try {
-    const plan=parse(process.argv.slice(2));
-    const result=await maintain(plan);
+    const result=await maintain(parse(argv));
     process.stdout.write(JSON.stringify(result)+'\n');
+    process.exitCode=0;
   }
   catch(error) {process.stderr.write(refusalMessage(error)); process.exitCode = 1;}
+}
+function isEntryPoint() {
+  // Node resolves a symlink for import.meta.url but keeps it in argv, and a missed match would exit 0 having done nothing.
+  try {return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);}
+  catch {return false;}
+}
+if (isEntryPoint()) {
+  // Never a top-level await: maintain() loads modules that import this one, and they wait for it to finish evaluating.
+  process.exitCode=1; // A run that somehow doesn't settle must not read as success.
+  void main(process.argv.slice(2));
 }
