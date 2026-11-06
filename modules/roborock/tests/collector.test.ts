@@ -832,6 +832,42 @@ void test('identity timeout admits one outstanding dependency and stop prevents 
     assert.equal(w.store.hasIdentity(), false);
     assert.deepEqual(w.transport.calls, []);
 });
+void test('an identity load that never settles keeps one load while later polls back off, record its failure and recover', async (context) => {
+    const w = await world(context);
+    const held = deferred<string>();
+    w.transport.identity = () => {
+        w.transport.identities += 1;
+        return held.promise;
+    };
+    const failed = () => w.diagnostics.filter(entry => entry.event === 'operation.failed');
+    const attempts = () => failed().reduce((sum, entry) => sum + Number(entry.fields['bunny.attempt_count']), 0);
+    w.collector.startlocal();
+    // Polls at 1 (its read deadline passes at 10001), then 30 s, 60 s, 120 s and 240 s later, then every 300 s.
+    await w.clock.advance(1);
+    await w.clock.advance(10000);
+    assert.deepEqual(failed().map(entry => [entry.level, entry.fields['bunny.code'], entry.fields['bunny.attempt_count']]), [['warn', 'unavailable', 1]]);
+    await w.clock.advance(1000000 - 10001);
+    assert.equal(attempts(), 6);
+    assert.deepEqual(failed().slice(1).map(entry => entry.level), ['debug', 'debug', 'debug', 'debug']);
+    // The backoff is capped: one more attempt in each further 300 s.
+    await w.clock.advance(300000);
+    assert.equal(attempts(), 7);
+    await w.clock.advance(600000);
+    assert.equal(attempts(), 9);
+    assert.equal(w.transport.identities, 1);
+    assert.equal(w.store.hasIdentity(), false);
+    assert.deepEqual(w.transport.calls, []);
+    assert.equal(w.collector.failure(), 'unavailable');
+    held.resolve('synthetic-a97');
+    await w.clock.advance(300000);
+    assert.equal(w.store.hasIdentity(), true);
+    assert.equal(w.collector.state().availability, 'available');
+    const recovered = w.diagnostics.filter(entry => entry.event === 'operation.completed');
+    assert.equal(recovered.length, 1);
+    assert.equal(recovered[0]?.fields['bunny.attempt_count'], 9);
+    for (const entry of w.diagnostics)
+        assert.equal(checkModuleRecord('roborock', entry), undefined);
+});
 async function activeRun(w: Awaited<ReturnType<typeof world>>): Promise<void> {
     w.transport.status = { state: 5, battery: 90, in_cleaning: 1, in_returning: 0 };
     w.collector.startlocal();
