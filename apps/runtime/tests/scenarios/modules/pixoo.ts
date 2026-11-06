@@ -433,7 +433,7 @@ const importAnimation = (count: number): Step[] => [
     // Small fixtures fit the ordinary command body. The long fixture uses the single-owner binary upload slot.
     const answer = count === 1001
       ? await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/modules/pixoo/upload?' + new URLSearchParams({
-        family: PIXOO.assetChange, target: PIXOO_ID, requestId, name}), body: gif})
+        family: PIXOO.assetChange, target: PIXOO_ID, requestId, name}).toString(), body: gif})
       : await h.gateway({as: 'browser', method: 'POST', path: `/api/v2/commands/${PIXOO.assetChange}`, body: {
         target: PIXOO_ID, requestId, data: {change: {operation: 'import', name, content: {inline: gif.toString('base64')}}},
       }});
