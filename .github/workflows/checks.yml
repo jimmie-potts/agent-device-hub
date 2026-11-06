@@ -298,9 +298,8 @@ jobs:
     needs: select
     if: needs.select.outputs.runtime-verify == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-    # The unchanged serial catalog takes 16-18 minutes. Its own finite job budget keeps
-    # apt retries and the remaining App browser checks from exhausting one shared limit (#1183).
+    timeout-minutes: 45
+    # Allow setup and the full serial catalog to finish and report failing cases (#1497).
     env:
       XDG_RUNTIME_DIR: ''
       DBUS_SESSION_BUS_ADDRESS: ''
