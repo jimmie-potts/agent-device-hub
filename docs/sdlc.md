@@ -510,11 +510,14 @@ the resource.
    `git config --remove-section branch.<branch>` and repeat the query, which must then
    exit 1.
    Judge delivery from the merged PR as in step 1, never `git branch --merged`.
-   Never use `git branch -D` or a sweep across branches. Remote branches have a
-   separate lifecycle under
-   [#309](https://github.com/jimmie-potts/agent-device-hub/issues/309): a missing
-   remote branch neither proves local delivery nor authorizes removal, and this
-   step does not delete remote branches.
+   Never use `git branch -D` or a sweep across branches. GitHub deletes a merged
+   PR's head branch on merge: the repository's `delete_branch_on_merge` setting
+   has been on since 2026-11-06
+   ([#309](https://github.com/jimmie-potts/agent-device-hub/issues/309)). Read
+   the result back with `git ls-remote --heads origin <branch>`, and if the branch
+   is still there, report it under step 8 rather than deleting it. A missing
+   remote branch neither proves local delivery nor authorizes removing the local
+   one, and this step deletes no remote branch.
 7. Remove the Docker artifacts this task created: its stopped containers, the
    images it built and tagged, the untagged `<none>` images its rebuilds of
    those tags left (by ID, from `docker images -f dangling=true`), and its
