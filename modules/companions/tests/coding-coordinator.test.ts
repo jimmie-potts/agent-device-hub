@@ -80,6 +80,20 @@ void test('a dispatch reaches the enabled worker once, its start settles the tra
   await w.progress({operationId: start.operationId, status: 'completed', result: result()}); await w.advance(); assert.equal(w.deliveries.length, 1, 'a late duplicate is ignored');
 });
 
+void test('a second endpoint is refused while the first holds the selection, its loss changes nothing, and it can declare once the first is gone', async t => {
+  const w = await world(t);
+  assert.equal((await w.control('enable', 'worker-1')).status, 'accepted');
+  const held = w.owner().inspect();
+  const refused = await w.control('enable', 'worker-2');
+  assert.equal(refused.status === 'rejected' && refused.error.error.code, 'invalid-state');
+  // The refused worker closes its connection on its way out (Hub #1384), and the gateway reports that endpoint lost.
+  await w.lost('worker-2'); await w.advance();
+  assert.deepEqual(w.owner().inspect(), held, 'the selected endpoint and its revision are untouched');
+  await w.lost('worker-1'); await until(() => w.owner().inspect().endpointId === null);
+  assert.equal((await w.control('enable', 'worker-2')).status, 'accepted');
+  assert.equal(w.owner().endpoint().endpointId, 'worker-2'); assert.equal(w.owner().endpoint().available, true);
+});
+
 void test('a refused start, a missing start and a lost endpoint end the operation truthfully, and a restart never resends', async t => {
   const w = await world(t); await w.control('enable');
   w.refuseWork(); assert.equal((await w.dispatch('task-r')).status, 'accepted');
