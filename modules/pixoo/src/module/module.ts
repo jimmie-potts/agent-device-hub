@@ -40,6 +40,7 @@ import {
 } from './schemas.js';
 import {PixooStore} from './store.js';
 import {PixooArt, type ArtLease} from './art.js';
+import {storageIsFull} from '../media/contracts.js';
 import {animationRoute} from '../device/animation-policy.js';
 import {SimulatedPixoo, httpPixooTransport, type OpenedDevice, type PixooTransport} from './transport.js';
 
@@ -845,7 +846,7 @@ class PixooRuntime {
   #failedWrite(error: unknown): void {
     if (this.#stopping) return;
     recordLog(this.#context.log, 'operation.failed', {
-      'bunny.device.id': this.#device, 'bunny.operation': 'storage', 'bunny.code': 'internal', 'error.type': error instanceof Error ? error.name : 'unknown',
+      'bunny.device.id': this.#device, 'bunny.operation': 'storage', 'bunny.code': storageIsFull(error) ? 'capacity' : 'internal', 'error.type': error instanceof Error ? error.name : 'unknown',
     });
   }
 

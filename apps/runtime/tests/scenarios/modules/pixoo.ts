@@ -429,8 +429,14 @@ const importAnimation = (count: number): Step[] => [
     const delays = Array<number>(count).fill(100);
     if (count === 1001) delays[count - 1] = 900;
     const gif = await pixooAnimation(delays);
-    const query = new URLSearchParams({family: PIXOO.assetChange, target: PIXOO_ID, requestId: `import-${count}`, name: animationName(count)});
-    const answer = await h.gateway({as: 'browser', method: 'POST', path: `/api/v2/modules/pixoo/upload?${query}`, body: gif});
+    const name = animationName(count), requestId = `import-${count}`;
+    // Small fixtures fit the ordinary command body. The long fixture uses the single-owner binary upload slot.
+    const answer = count === 1001
+      ? await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/modules/pixoo/upload?' + new URLSearchParams({
+        family: PIXOO.assetChange, target: PIXOO_ID, requestId, name}), body: gif})
+      : await h.gateway({as: 'browser', method: 'POST', path: `/api/v2/commands/${PIXOO.assetChange}`, body: {
+        target: PIXOO_ID, requestId, data: {change: {operation: 'import', name, content: {inline: gif.toString('base64')}}},
+      }});
     if (answer.status !== 200) throw new StepFailure(`upload of ${count} frames returned HTTP ${answer.status}`);
   }),
   expect(`the catalog reports ${count} frames and their compatibility with direct playback`, h => {

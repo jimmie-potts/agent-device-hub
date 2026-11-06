@@ -73,7 +73,11 @@ export function renditionDelayFits(profile: RenditionProfile, delay: number, fir
   return !('maxFrames' in profile) || (delay >= profile.minDelayMs && delay <= profile.maxDelayMs && (!profile.uniformTiming || delay === first));
 }
 
-export function storageFailure(error: unknown, fallback: MediaErrorCode): MediaError {
+export function storageIsFull(error: unknown): boolean {
   const code = error !== null && typeof error === 'object' && 'code' in error ? error.code : undefined;
-  return new MediaError(code === 'ENOSPC' || code === 'EDQUOT' ? 'storage-capacity' : fallback);
+  return code === 'ENOSPC' || code === 'EDQUOT';
+}
+
+export function storageFailure(error: unknown, fallback: MediaErrorCode): MediaError {
+  return new MediaError(storageIsFull(error) ? 'storage-capacity' : fallback);
 }

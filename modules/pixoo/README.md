@@ -347,6 +347,10 @@ The local library keeps mixed-delay GIFs playable in preview. Import checks
 input bytes, total decoded pixels including the 64×64 output of each frame,
 worker and queue budgets, and immutable manifest bytes. Existing originals,
 renditions, playlists and transient copies retain their historical identities.
+New renders use `library-v1`. The earlier renderer reads historical renders,
+but reports `cache-corrupt` for a new `library-v1` manifest. Recovery of a
+library containing these new renders requires a runtime that recognizes their
+profile.
 
 Staging makes no display write and completes `succeeded/observed` only after
 the private mapping commits. The original and immutable rendition stay under
