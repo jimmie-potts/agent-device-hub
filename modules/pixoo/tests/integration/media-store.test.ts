@@ -143,18 +143,18 @@ it('refuses an oversized immutable manifest before publishing any files', async 
   }
 });
 
-it('reports a full disk during a parent frame write and keeps existing media readable', async () => {
+it.each(['ENOSPC', 'EDQUOT'])('reports %s during a parent frame write as capacity and keeps existing media readable', async code => {
   const {root, store} = await setup();
   const existing = await store.render(upload(gif()));
   const originalWrite = fs.writeFile;
   fs.writeFile = async (...args: Parameters<typeof fs.writeFile>) => {
-    if (typeof args[0] === 'string' && args[0].endsWith('0.png')) throw Object.assign(new Error('private filesystem failure'), {code: 'ENOSPC'});
+    if (typeof args[0] === 'string' && args[0].endsWith('0.png')) throw Object.assign(new Error('private filesystem failure'), {code});
     await originalWrite(...args);
   };
   syncBuiltinESMExports();
   try {
     const different = gifFixture(1, 1, [{width: 1, height: 1, pixels: [2]}]);
-    await expect(store.render(upload(different))).rejects.toMatchObject({code: 'storage-limit', message: 'storage-limit'});
+    await expect(store.render(upload(different))).rejects.toMatchObject({code: 'storage-capacity', message: 'storage-capacity'});
     expect(await readdir(join(root, 'originals'))).toEqual([existing.sourceHash]);
     expect(await readdir(join(root, 'renditions'))).toEqual([existing.id]);
     expect(await readdir(join(root, 'staging'))).toEqual([]);

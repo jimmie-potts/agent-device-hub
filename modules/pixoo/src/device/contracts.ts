@@ -19,7 +19,7 @@ export interface Timing {
   queueMs: number;
   serviceMs: number;
 }
-export type FailureCode = 'invalid-input' | 'offline' | 'upload-failed' | 'cancelled' | 'timeout' | 'stale-generation' | 'http-error' | 'device-error' | 'protocol-error';
+export type FailureCode = 'invalid-input' | 'too-large' | 'offline' | 'upload-failed' | 'cancelled' | 'timeout' | 'stale-generation' | 'http-error' | 'device-error' | 'protocol-error';
 export type OperationResult<T> = { generation: number; timing: Timing } & (
   | { ok: true; value: T }
   | { ok: false; code: FailureCode; priorEffects: 'none' | 'possible'; details?: { httpStatus?: number; deviceCode?: number } }

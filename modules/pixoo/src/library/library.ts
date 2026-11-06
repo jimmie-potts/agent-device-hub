@@ -1,4 +1,4 @@
-import {hostedPalette} from '../media/index.js';
+import {encodeHostedGif} from '../media/index.js';
 import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { lstat, realpath } from 'node:fs/promises';
@@ -24,13 +24,16 @@ const json = <T>(value:unknown):T => JSON.parse(String(value)) as T;
 /** The tables of a database the caller owns that are not the catalog's: the SDK's outbox and a module's own. */
 export const CALLER_TABLES=/^(?:bunny|pixoo)_/;
 const HOSTED='pixoo64-hosted-2026-10-01';
-// Results under the former profile name included historical sample-count and speed restrictions.
-const HOSTED_CHECK_POLICY = 'hosted-gif-protocol-v2';
+// Historical checks omitted the byte length of the exact encoded GIF.
+const HOSTED_CHECK_POLICY = 'hosted-gif-encoded-v3';
+export type HostedCheck = boolean | 'storage-limit';
+const incompatible = (error: unknown): boolean =>
+  error instanceof MediaError && (error.code === 'profile-limit' || error.code === 'storage-limit');
 /**
  * Where an attached library keeps each multi-frame rendition's hosted check, by rendition and profile: whether its frames
- * fit the hosted GIF's palette and timing. The check reads every frame, so it runs once per rendition and profile.
+ * fit the hosted GIF's palette, timing and encoded byte budget. The check reads every frame, so it runs once per rendition and profile.
  */
-export interface HostedChecks {get(renditionId:string,profile:string):boolean|undefined;set(renditionId:string,profile:string,fits:boolean):void}
+export interface HostedChecks {get(renditionId:string,profile:string):HostedCheck|undefined;set(renditionId:string,profile:string,fits:HostedCheck):void}
 /** One rendition as a catalog lists it: `compatible` is undefined while a hosted rendition's frames are unchecked. */
 export interface CatalogMedia {assetId:string;renditionId:string;name:string;format:Rendition['source']['format'];frameCount:number;durationMs:number|null;compatible:boolean|undefined}
 
@@ -140,12 +143,18 @@ export class Library {
     if(profile?.name!==HOSTED||rendition.frames.length<2)return;
     const kept=this.checks?.get(id,HOSTED_CHECK_POLICY);
     if(kept===true)return;
+    if(kept==='storage-limit')throw new MediaError('storage-limit');
     if(kept===false)throw new MediaError('profile-limit');
     if(signal?.aborted===true)throw new LibraryError('cancelled');
     const loaded=await this.media.readFrames(id,signal);
     if(JSON.stringify(rendition)!==JSON.stringify(loaded.rendition))throw new LibraryError('catalog-corrupt');
-    try{hostedPalette(loaded.frames.map((rgb,index)=>({rgb,delayMs:rendition.frames[index]?.delayMs??100})));}
-    catch(error){if(error instanceof MediaError&&error.code==='profile-limit')this.checks?.set(id,HOSTED_CHECK_POLICY,false);throw error;}
+    try{encodeHostedGif(loaded.frames.map((rgb,index)=>({rgb,delayMs:rendition.frames[index]?.delayMs??100})));}
+    catch(error){
+      if(error instanceof MediaError && (error.code==='profile-limit' || error.code==='storage-limit')) {
+        this.checks?.set(id,HOSTED_CHECK_POLICY,error.code==='storage-limit' ? 'storage-limit' : false);
+      }
+      throw error;
+    }
     this.checks?.set(id,HOSTED_CHECK_POLICY,true);
   }
   /**
@@ -158,8 +167,11 @@ export class Library {
   private cachedMedia(row:Row,profile:Readonly<MediaProfile>,stillDelayMs:number):CatalogMedia {
     const rendition=json<Rendition>(row.manifest_json);
     let compatible:boolean|undefined=true;
-    try{renditionTiming(rendition,profile,stillDelayMs);}catch(error){if(error instanceof MediaError&&error.code==='profile-limit')compatible=false;else throw error;}
-    if(compatible&&profile.name===HOSTED&&rendition.frames.length>=2)compatible=this.checks?.get(rendition.id,HOSTED_CHECK_POLICY);
+    try{renditionTiming(rendition,profile,stillDelayMs);}catch(error){if(incompatible(error))compatible=false;else throw error;}
+    if(compatible&&profile.name===HOSTED&&rendition.frames.length>=2){
+      const kept=this.checks?.get(rendition.id,HOSTED_CHECK_POLICY);
+      compatible=kept===undefined ? undefined : kept===true;
+    }
     return {assetId:String(row.asset_id),renditionId:String(row.id),name:String(row.name),format:rendition.source.format,frameCount:rendition.frames.length,durationMs:rendition.effectiveDurationMs,compatible};
   }
   /** SQL pages with the same kept compatibility evidence as catalogMedia; never validates frames or writes checks. */
@@ -183,7 +195,7 @@ export class Library {
     validate(hashSchema,id);
     return this.run(async()=>{
       try{renditionTiming(this.manifest(id),profile,stillDelayMs);await this.validateHosted(id,profile);return true;}
-      catch(error){if(error instanceof MediaError&&error.code==='profile-limit')return false;throw error;}
+      catch(error){if(incompatible(error))return false;throw error;}
     });
   }
   async queryMedia(input:CatalogQuery,profile?:Readonly<MediaProfile>,stillDelayMs=100,native=false,signal?:AbortSignal){
@@ -191,7 +203,7 @@ export class Library {
     return this.run(async()=>{
       const total=Number(one(this.db,'SELECT count(*) AS n FROM renditions r JOIN assets a ON a.id=r.asset_id WHERE instr(lower(a.name),lower(?))>0',q).n);
       const rows=this.db.prepare('SELECT a.id AS asset_id,a.name,r.id,r.manifest_json FROM renditions r JOIN assets a ON a.id=r.asset_id WHERE instr(lower(a.name),lower(?))>0 ORDER BY a.created_at,a.id,r.id LIMIT ? OFFSET ?').all(q,limit,offset);
-      const items=[];for(const row of rows){const rendition=json<Rendition>(row.manifest_json);let compatible=true;try{renditionTiming(rendition,profile,stillDelayMs);await this.validateHosted(rendition.id,profile,signal);}catch(error){if(error instanceof MediaError&&error.code==='profile-limit')compatible=false;else throw error;}
+      const items=[];for(const row of rows){const rendition=json<Rendition>(row.manifest_json);let compatible=true;try{renditionTiming(rendition,profile,stillDelayMs);await this.validateHosted(rendition.id,profile,signal);}catch(error){if(incompatible(error))compatible=false;else throw error;}
         items.push({assetId:String(row.asset_id),renditionId:String(row.id),name:String(row.name),format:rendition.source.format,frameCount:rendition.frames.length,durationMs:rendition.effectiveDurationMs,compatible});}
       return {items,total,offset,limit,...(native?{catalogRevision:this.catalogRevision}: {})};
     },signal);

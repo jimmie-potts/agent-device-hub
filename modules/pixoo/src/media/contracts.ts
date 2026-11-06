@@ -1,6 +1,7 @@
 export const canvasSize = { width: 64, height: 64 } as const;
+export const MAX_HOSTED_GIF_BYTES = 10 * 1024 * 1024;
 export const RENDERER_VERSION = 'rgb64-v1-sharp0.35.4-gifuct2.1.2';
-export type MediaErrorCode = 'invalid-input' | 'unsupported' | 'upload-limit' | 'pixel-limit' | 'profile-limit' | 'busy' | 'timeout' | 'cancelled' | 'decode-failed' | 'cache-corrupt' | 'storage-error' | 'storage-limit';
+export type MediaErrorCode = 'invalid-input' | 'unsupported' | 'upload-limit' | 'pixel-limit' | 'profile-limit' | 'busy' | 'timeout' | 'cancelled' | 'decode-failed' | 'cache-corrupt' | 'storage-error' | 'storage-limit' | 'storage-capacity';
 export class MediaError extends Error {
   constructor(readonly code: MediaErrorCode) { super(code); this.name = 'MediaError'; }
 }
@@ -74,5 +75,5 @@ export function renditionDelayFits(profile: RenditionProfile, delay: number, fir
 
 export function storageFailure(error: unknown, fallback: MediaErrorCode): MediaError {
   const code = error !== null && typeof error === 'object' && 'code' in error ? error.code : undefined;
-  return new MediaError(code === 'ENOSPC' || code === 'EDQUOT' ? 'storage-limit' : fallback);
+  return new MediaError(code === 'ENOSPC' || code === 'EDQUOT' ? 'storage-capacity' : fallback);
 }

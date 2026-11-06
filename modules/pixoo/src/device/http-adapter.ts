@@ -3,6 +3,7 @@ import {
   type OperationOptions, type OperationResult, type ProbeResult, type UploadResult,
 } from './contracts.js';
 import {frameCountRefusal, timingRefusal} from './animation-policy.js';
+import {MediaError} from '../media/contracts.js';
 import { snapshotAnimation } from './frames.js';
 import type {HostedFiles} from './hosted-files.js';
 import { createDeviceTransport, DeviceRequestError, validateDeviceIp, type DeviceTransport } from './http-transport.js';
@@ -169,7 +170,8 @@ export class HttpDeviceAdapter implements DeviceAdapter {
         const code = interrupted();
         if (code !== undefined) { finish(undefined, new DeviceRequestError(code)); return; }
         void run(context).then(value => finish(value), error => finish(undefined,
-          error instanceof DeviceRequestError ? error : new DeviceRequestError('protocol-error')));
+          error instanceof DeviceRequestError ? error : new DeviceRequestError(
+            error instanceof MediaError && error.code === 'storage-limit' ? 'too-large' : 'protocol-error')));
       } };
       if (!valid || !integer(generation, 0, Number.MAX_SAFE_INTEGER) || !Number.isFinite(timeoutMs) || timeoutMs <= 0 || !Number.isFinite(deadline)) {
         finish(undefined, new DeviceRequestError('invalid-input')); return;

@@ -1,4 +1,12 @@
 import {afterEach,expect,it,vi} from 'vitest';
+import {mkdtemp, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {Library} from '../../src/library/index.js';
+import {MAX_HOSTED_GIF_BYTES, PIXOO64_HOSTED_PROFILE} from '../../src/media/contracts.js';
+import {PixooStore} from '../../src/module/store.js';
+import {oversizedHostedSourceGif} from '../helpers/media-fixtures.js';
 import {startHostedFiles} from '../../src/device/hosted-files.js';
 import {HttpDeviceAdapter} from '../../src/device/http-adapter.js';
 import {inspectGif} from '../../src/media/gif.js';
@@ -79,4 +87,56 @@ it('transfers every frame of a long animation in one whole-GIF command with its 
   expect(downloaded).toBeDefined();
   const gif = inspectGif(downloaded as Buffer, DEFAULT_LIMITS, LIBRARY_PROFILE);
   expect(gif.patches.map(patch => patch.delay)).toEqual(Array<number>(1001).fill(10));
+});
+
+it('rechecks legacy playback evidence against actual hosted bytes and keeps the refusal after reopening', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pixoo-hosted-size-'));
+  const db = new DatabaseSync(join(root, 'catalog.sqlite'));
+  const open = () => {
+    const store = new PixooStore(db);
+    return Library.attach({database: db, directory: root, hostedChecks: {get: store.hostedCheck.bind(store), set: store.saveHostedCheck.bind(store)}});
+  };
+  let library = await open();
+  try {
+    const source = oversizedHostedSourceGif();
+    expect(source.length).toBe(61409);
+    const imported = await library.importMedia((async function* () {yield await Promise.resolve(source);})(), 'Hosted encoding exceeds the listener budget');
+    const id = imported.rendition.id;
+    expect(imported.rendition.frames.length).toBe(2200);
+    const legacy = new PixooStore(db);
+    legacy.saveHostedCheck(id, 'hosted-gif-protocol-v2', true);
+    expect.soft((await library.catalogMedia(PIXOO64_HOSTED_PROFILE))[0]?.compatible).toBeUndefined();
+    expect.soft(await library.playbackCompatible(id, PIXOO64_HOSTED_PROFILE)).toBe(false);
+    const page = {q: '', offset: 0, limit: 1};
+    expect.soft((await library.queryMedia(page, PIXOO64_HOSTED_PROFILE)).items[0]?.compatible).toBe(false);
+    expect.soft((await library.queryMediaCached(page, PIXOO64_HOSTED_PROFILE)).items[0]?.compatible).toBe(false);
+    expect(legacy.hostedCheck(id, 'hosted-gif-protocol-v2')).toBe(true);
+    await library.close(); library = await open();
+    const captured = await library.createMediaCheckpoint(id, undefined, {profile: PIXOO64_HOSTED_PROFILE}).catch((error: unknown) => error);
+    expect.soft(captured).toMatchObject({code: 'storage-limit'});
+    expect.soft((await library.queryMediaCached(page, PIXOO64_HOSTED_PROFILE)).items[0]?.compatible).toBe(false);
+    expect((await library.preview(id, 2199)).bytes).toBeInstanceOf(Buffer);
+    const loaded = await library.readRendition(id);
+    const animation = {frames: loaded.frames.map(rgb => ({rgb, delayMs: 100}))};
+    const files = await host(), transport = vi.fn();
+    const device = new HttpDeviceAdapter({ip: '192.168.1.2', profile, hosted: {files, encode: value => encodeHostedGif(value.frames)}}, transport);
+    try {
+      const result = await device.uploadAnimation(animation, {generation: 0, timeoutMs: 15000});
+      expect.soft(result).toMatchObject({ok: false, code: 'too-large', priorEffects: 'none'});
+      expect(transport).not.toHaveBeenCalled();
+    } finally { await device.close(); }
+  } finally { await library.close(); db.close(); await rm(root, {recursive: true, force: true}); }
+}, 30_000);
+
+it('publishes exactly 10 MiB and preserves the existing file when a larger replacement is refused', async () => {
+  const files = await host();
+  expect(MAX_HOSTED_GIF_BYTES).toBe(10 * 1024 * 1024);
+  const controller = new AbortController();
+  const file = files.publish(Buffer.alloc(MAX_HOSTED_GIF_BYTES), controller.signal);
+  try {
+    expect(() => files.publish(Buffer.alloc(MAX_HOSTED_GIF_BYTES + 1), controller.signal)).toThrow('too-large');
+    const response = await fetch(file.url, {method: 'HEAD'});
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-length')).toBe(String(MAX_HOSTED_GIF_BYTES));
+  } finally { file.revoke(); }
 });

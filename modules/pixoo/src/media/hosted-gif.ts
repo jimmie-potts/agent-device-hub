@@ -1,6 +1,6 @@
 import {createRequire} from 'node:module';
 const {GIFEncoder}=createRequire(import.meta.url)('gifenc') as typeof import('gifenc');
-import {MediaError} from './contracts.js';
+import {MAX_HOSTED_GIF_BYTES, MediaError} from './contracts.js';
 interface Frame {readonly rgb:Uint8Array;readonly delayMs:number}
 /** Exact effective RGB colors, never a quantizer. Repeated frames stay distinct. */
 export function hostedPalette(frames:readonly Frame[]):number[][] {
@@ -18,10 +18,16 @@ export function hostedPalette(frames:readonly Frame[]):number[][] {
 export function encodeHostedGif(frames:readonly Frame[]):Buffer {
  const palette=hostedPalette(frames),indices=new Map(palette.map(([r=0,g=0,b=0],i)=>[((r<<16)|(g<<8)|b),i]));
  const gif=GIFEncoder();
+ const checkedBytes=():Uint8Array=>{
+  const bytes=gif.bytesView();
+  if(bytes.byteLength>MAX_HOSTED_GIF_BYTES)throw new MediaError('storage-limit');
+  return bytes;
+ };
  for(const [i,frame] of frames.entries()){
   const pixels=new Uint8Array(4096);
   for(let p=0;p<pixels.length;p++){const o=p*3;pixels[p]=indices.get(((frame.rgb[o]??0)<<16)|((frame.rgb[o+1]??0)<<8)|(frame.rgb[o+2]??0))??0;}
   gif.writeFrame(pixels,64,64,{...(i===0?{palette}:{}),delay:frame.delayMs,dispose:1,transparent:false,repeat:0});
+  checkedBytes();
  }
- gif.finish();return Buffer.from(gif.bytes());
+ gif.finish();return Buffer.from(checkedBytes());
 }
