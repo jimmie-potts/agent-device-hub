@@ -2094,7 +2094,9 @@ The core operation-record scenario lives in `tests/scenarios/operations.ts`.
 
 The in-memory harness hosts the seed's modules in the runtime's module host,
 each built with its simulated transport, a registered module through its
-registration's `simulation`, on a manual clock and scheduler. Each scenario runs twice. Its parts (a hook, an operator, a panel
+registration's `simulation`, on a manual clock and scheduler. That clock stands
+still while a module's worker call runs, for at most 10 real seconds, because
+the worker runs in real time against a deadline on the clock (#1442). Each scenario runs twice. Its parts (a hook, an operator, a panel
 and a reader) first join the host's bus, then reach it through the runtime's
 [gateway](#gateway) on 127.0.0.1, each with a run-generated client credential
 whose grant the catalog's `GRANTS` sets: the hook may only publish lifecycle
