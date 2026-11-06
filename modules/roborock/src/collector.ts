@@ -537,6 +537,8 @@ export class Collector {
             // A load that outlived its deadline stays the one outstanding dependency, since a
             // second would join or stack on it. Each poll it holds back is still a failed
             // attempt, so the backoff grows to its cap and the repeats are summarized.
+            if (!this.#alive())
+                return false;
             this.#control.failureStreak += 1;
             this.#report('unavailable', trace);
             return false;

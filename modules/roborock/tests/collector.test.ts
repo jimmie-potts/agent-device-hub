@@ -826,13 +826,19 @@ void test('identity timeout admits one outstanding dependency and stop prevents 
     assert.equal(w.transport.identities, 1);
     assert.equal(w.store.hasIdentity(), false);
     assert.deepEqual(w.transport.calls, []);
+    // A poll the held load holds back that resumes after stop records nothing, even once a summary is due.
+    await w.clock.advance(70000);
+    const records = w.diagnostics.length;
+    const late = w.collector.poll();
     await w.collector.stop();
+    await late;
+    assert.equal(w.diagnostics.length, records);
     held.resolve('synthetic-a97');
     await flush();
     assert.equal(w.store.hasIdentity(), false);
     assert.deepEqual(w.transport.calls, []);
 });
-void test('an identity load that never settles keeps one load while later polls back off, record its failure and recover', async (context) => {
+void test('an identity load that never settles stays the only load while later polls back off and record their failures until recovery',async (context) => {
     const w = await world(context);
     const held = deferred<string>();
     w.transport.identity = () => {
