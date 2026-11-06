@@ -13,5 +13,5 @@
 ## 3. Validation
 
 - [x] 3.1 Exercise direct 21/59/60, hosted and preview above 1000, timing, old identities and resource failures through production entry points.
-- [ ] 3.2 Complete applicable build/type/lint, package and event contracts, Pixoo, runtime, workflow and dashboard checks.
-- [ ] 3.3 Obtain independent review and disposable acceptance, synchronize the capability and archive the change.
+- [x] 3.2 Complete applicable build/type/lint, package and event contracts, Pixoo, runtime, workflow and dashboard checks.
+- [x] 3.3 Obtain independent review and disposable acceptance, synchronize the capability and archive the change.
