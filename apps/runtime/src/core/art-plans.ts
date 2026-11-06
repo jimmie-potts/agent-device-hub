@@ -62,43 +62,68 @@ export function createArtPlans(options: Options) {
     return options.operation(action.requestId) !== undefined || !('error' in answer)
       ? {status: 'tracked', requestId: action.requestId} : notRequested(answer);
   };
-  const prepared = (request: string, untilMs: number): Promise<ErrorBody | undefined> => new Promise(resolve => {
-    let cancelTimer: Cancel | undefined;
-    const finish = (error?: ErrorBody): void => {cancelTimer?.(); waits.delete(wait); resolve(error);};
-    const wait = {requestId: request, cancel: () => {finish(stopped());}, inspect: () => {
-      if (!active()) {finish(stopped()); return;}
-      const operation = options.operation(request);
-      if (operation?.result === Outcome.succeeded) {finish(); return;}
-      if (operation !== undefined && !['sent', 'accepted'].includes(operation.status)) {
-        finish(operation.error === undefined ? errorBody('uncertain-result') : {error: operation.error}); return;
-      }
-      if (options.clock() >= untilMs) finish(cutoff());
-    }};
-    waits.add(wait);
-    cancelTimer = options.scheduler.after(Math.max(0, untilMs - options.clock()), wait.inspect);
-    wait.inspect();
-  });
-  const browser = (plan: ArtPlan, permit: ArtPermit, parent: TraceContext | undefined): Promise<ArtPlanAttempt> => new Promise((resolve, reject) => {
-    let cancelTimer: Cancel | undefined;
-    const wait = {cancel: () => {cancelTimer?.(); waits.delete(wait); resolve(notRequested(stopped()));}, inspect: () => {}};
+  const prepareDisplay = async (action: Action & {requestId: string}, untilMs: number, admittedAtMs: number) => {
+    const budget = Math.min(untilMs - options.clock(), untilMs - admittedAtMs);
+    if (budget <= 0) return {prepare: notRequested(cutoff()), refusal: undefined};
+    let expired = false, inspect: () => void = () => {};
+    // Arm before sending. Neither a slow admission nor a wall correction buys a second preparation budget.
+    const cancel = options.scheduler.after(budget, () => {expired = true; inspect();});
+    try {
+      const prepare = await attempt(action);
+      if (prepare.status === 'not-requested') return {prepare, refusal: undefined};
+      const refusal = await new Promise<ErrorBody | undefined>(resolve => {
+        const finish = (error?: ErrorBody): void => {if (waits.delete(wait)) resolve(error);};
+        const wait = {requestId: action.requestId, cancel: () => {finish(stopped());}, inspect: () => {
+          if (!active()) {finish(stopped()); return;}
+          if (expired || options.clock() >= untilMs) {finish(cutoff()); return;}
+          const operation = options.operation(action.requestId);
+          if (operation?.result === Outcome.succeeded) finish();
+          else if (operation !== undefined && !['sent', 'accepted'].includes(operation.status)) {
+            finish(operation.error === undefined ? errorBody('uncertain-result') : {error: operation.error});
+          }
+        }};
+        waits.add(wait); inspect = wait.inspect; inspect();
+      });
+      return {prepare, refusal};
+    } finally {cancel();}
+  };
+  const browser = (plan: ArtPlan, permit: ArtPermit, parent: TraceContext | undefined, admittedAtMs: number): Promise<ArtPlanAttempt> => new Promise((resolve, reject) => {
+    const timers: Cancel[] = [], latest = plan.startAtMs + plan.toleranceMs;
+    const take = (): boolean => {
+      if (!waits.delete(wait)) return false;
+      for (const cancel of timers) cancel();
+      return true;
+    };
+    const wait = {cancel: () => {if (take()) resolve(notRequested(stopped()));}, inspect: () => {}};
+    const outsideWindow = (): boolean => {
+      const at = options.clock();
+      return admittedAtMs > latest || at < plan.startAtMs || at > latest;
+    };
+    const missed = (): ArtPlanAttempt => notRequested(errorBody('invalid-state', {detail: 'browser art is outside its start window'}));
     const present = async (): Promise<ArtPlanAttempt> => {
       if (!active()) return notRequested(stopped());
-      if (options.clock() > plan.startAtMs + plan.toleranceMs) return notRequested(errorBody('invalid-state', {detail: 'browser art missed its start window'}));
+      if (outsideWindow()) return missed();
       const refusal = permit({kind: 'browser'});
       if (refusal !== undefined) return notRequested(refusal);
       if (!active()) return notRequested(stopped());
-      if (options.clock() > plan.startAtMs + plan.toleranceMs) return notRequested(errorBody('invalid-state', {detail: 'browser art missed its start window'}));
+      if (outsideWindow()) return missed();
       if (plan.browser === undefined) return notRequested(errorBody('invalid-request'));
       return attempt({requestId: requestId(plan, 'browser', 'art'), key: 'bunny.cmd.art-auto.art', requestedBy: 'bunny/core', ...(parent===undefined?{}:{parent}),
         draft: {type: 'org.bunny.art.auto.requested', subject: 'art', dataschema: 'https://bunny.invalid/events/art-auto/2.1',
           data: {action: 'present', artworkId: plan.artworkId, compositionId: plan.browser.compositionId}}});
     };
     waits.add(wait);
-    const run = (): void => {waits.delete(wait); void present().then(resolve, reject);};
-    if (plan.startAtMs <= options.clock()) run();
-    else cancelTimer = options.scheduler.after(plan.startAtMs - options.clock(), run);
+    const run = (): void => {if (take()) void present().then(resolve, reject);};
+    const armedAtMs = options.clock();
+    if (plan.startAtMs <= armedAtMs || admittedAtMs >= latest) {run(); return;}
+    const delay = plan.startAtMs - armedAtMs, budget = Math.min(latest - armedAtMs, latest - admittedAtMs);
+    // The first wake can be early on the wall clock. Only the originally allowed final wake may try again.
+    if (delay < budget) {
+      timers.push(options.scheduler.after(delay, () => {if (!active() || options.clock() >= plan.startAtMs) run();}));
+    }
+    timers.push(options.scheduler.after(budget, run));
   });
-  const display = async (plan: ArtPlan, selected: ArtPlan['displays'][number], permit: ArtPermit, parent: TraceContext | undefined): Promise<ArtPlanResult['displays'][number]> => {
+  const display = async (plan: ArtPlan, selected: ArtPlan['displays'][number], permit: ArtPermit, parent: TraceContext | undefined, admittedAtMs: number): Promise<ArtPlanResult['displays'][number]> => {
     const blocked = (error: ErrorBody) => ({target: selected.target, prepare: notRequested(error), moment: notRequested(error)});
     if (!active()) return blocked(stopped());
     if (options.clock() >= plan.prepareUntilMs) return blocked(cutoff());
@@ -109,12 +134,11 @@ export function createArtPlans(options: Options) {
       startAtMs: plan.startAtMs, toleranceMs: plan.toleranceMs, art: {compositionId: selected.compositionId},...(plan.notice===undefined?{}:{notice:plan.notice})};
     if (!commandSupported(original.record.capabilities, {family: 'moment-play', data: moment}) || original.kind === 'tidbyt' && selected.durationMs < 30_000)
       return blocked(errorBody('unsupported-capability'));
-    const prepare = await attempt({requestId: requestId(plan, 'prepare', selected.target), key: 'bunny.cmd.art-auto.art', requestedBy: 'bunny/core', ...(parent===undefined?{}:{parent}),
+    const {prepare, refusal} = await prepareDisplay({requestId: requestId(plan, 'prepare', selected.target), key: 'bunny.cmd.art-auto.art', requestedBy: 'bunny/core', ...(parent===undefined?{}:{parent}),
       draft: {type: 'org.bunny.art.auto.requested', subject: 'art', dataschema: 'https://bunny.invalid/events/art-auto/2.1',
-        data: {action: 'prepare', artworkId: plan.artworkId, compositionId: selected.compositionId, target: selected.target}}});
+        data: {action: 'prepare', artworkId: plan.artworkId, compositionId: selected.compositionId, target: selected.target}}}, plan.prepareUntilMs, admittedAtMs);
     const result = (next: ArtPlanAttempt) => ({target: selected.target, prepare, moment: next});
     if (prepare.status === 'not-requested') return result(prepare);
-    const refusal = await prepared(prepare.requestId, plan.prepareUntilMs);
     if (refusal !== undefined) return result(notRequested(refusal));
     if (!active()) return result(notRequested(stopped()));
     if (options.clock() >= plan.prepareUntilMs) return result(notRequested(cutoff()));
@@ -149,8 +173,8 @@ export function createArtPlans(options: Options) {
       const refused = options.claim(plan.id, planDigest(plan));
       if (refused !== undefined) return refused;
       const [displays, browserResult] = await Promise.all([
-        Promise.all(plan.displays.map(selected => display(plan, selected, permit, parent))),
-        plan.browser === undefined ? undefined : browser(plan, permit, parent),
+        Promise.all(plan.displays.map(selected => display(plan, selected, permit, parent, now))),
+        plan.browser === undefined ? undefined : browser(plan, permit, parent, now),
       ]);
       return {id: plan.id, displays, ...(browserResult === undefined ? {} : {browser: browserResult})};
     },

@@ -13,14 +13,22 @@ import {edgeConfig, flush, it, manualClock, run, stateDir, waitFor} from './supp
 
 const PIXOO = 'a'.repeat(64), TIDBYT = 'b'.repeat(64), BROWSER = 'c'.repeat(64);
 
-async function world(t: TestContext) {
-  const clock = manualClock(1_700_000_000_000), preparations: Command<ArtAuto21>[] = [], moments: Command<MomentPlayRequest>[] = [];
+function independentClocks() {
+  const elapsed = manualClock(1_700_000_000_000);
+  let offset = 0;
+  return {...elapsed, now: () => elapsed.now() + offset, shiftWall: (ms: number) => {offset += ms;}};
+}
+
+async function world(t: TestContext, clock = manualClock(1_700_000_000_000), beforePrepareReply?: () => void) {
+  const preparations: Command<ArtAuto21>[] = [], moments: Command<MomentPlayRequest>[] = [];
   let artContext: ModuleContext | undefined, handle: CoreHandle | undefined, database: DatabaseSync | undefined;
   const makeCore = () => createCoreModule({parts: [{open: db => {database = db;}, start: given => {handle = given; return Promise.resolve();}}]});
   let core = makeCore();
   const art: BunnyModule = {manifest: {name: 'art', apiVersion: '1.3'}, start: async context => {
     artContext = context;
-    await context.sdk.respond<ArtAuto21>('bunny.cmd.art-auto.art', command => {preparations.push(command); return {status: 'accepted'};});
+    await context.sdk.respond<ArtAuto21>('bunny.cmd.art-auto.art', command => {
+      preparations.push(command); if (command.data.action === 'prepare') beforePrepareReply?.(); return {status: 'accepted'};
+    });
   }, stop() {}};
   const displays = (['pixoo', 'tidbyt'] as const).map(kind => {
     const id = kind === 'pixoo' ? 'desk-display' : 'shelf-display', record = deviceRecord(id, 1, kind, 'available');
@@ -100,6 +108,74 @@ it('a policy callback cannot make browser selection late', async t => {
     () => {w.clock.advance(1001);return undefined;});
   assert.ok(!('error' in browser));assert.equal(browser.browser?.status, 'not-requested');
   assert.equal(w.preparations.length, 0, 'late browser choice sends no present command');
+});
+
+it('browser selection stays inside the wall window when its elapsed timer wakes early', async t => {
+  const clock = independentClocks(), w = await world(t, clock);
+  const plan = {...oneDisplay(clock.now()), displays: [], browser: {compositionId: BROWSER}};
+  assert.ok(w.core.automation.art);
+  const permits: number[] = [];
+  const completion = w.core.automation.art.present(plan, () => {permits.push(clock.now()); return undefined;});
+  clock.shiftWall(-250);
+  clock.advance(5000); await flush();
+  assert.deepEqual(permits, [], 'an early elapsed wake cannot consume the permit');
+  assert.equal(w.preparations.length, 0);
+  clock.advance(plan.toleranceMs); await flush();
+  const result = await completion;
+  assert.ok(!('error' in result)); assert.equal(result.browser?.status, 'tracked');
+  assert.equal(permits.length, 1); assert.ok(permits[0] !== undefined && permits[0] >= plan.startAtMs && permits[0] <= plan.startAtMs + plan.toleranceMs);
+  clock.advance(60_000); await flush(); assert.equal(w.preparations.length, 1);
+});
+
+it('a browser start still in the future at the elapsed limit expires without later replay', async t => {
+  const clock = independentClocks(), w = await world(t, clock);
+  const plan = {...oneDisplay(clock.now()), displays: [], browser: {compositionId: BROWSER}};
+  assert.ok(w.core.automation.art); let permits = 0;
+  const completion = w.core.automation.art.present(plan, () => {permits++; return undefined;});
+  clock.shiftWall(-10_000); clock.advance(5000); await flush();
+  clock.advance(plan.toleranceMs); await flush();
+  const result = await completion;
+  assert.ok(!('error' in result) && result.browser?.status === 'not-requested'); assert.equal(result.browser.error.error.code, 'invalid-state');
+  await w.restart(); clock.shiftWall(10_000); clock.advance(60_000); await flush();
+  assert.equal(permits, 0); assert.equal(w.preparations.length, 0);
+});
+
+it('a policy callback cannot move browser selection before its start', async t => {
+  const clock = independentClocks(), w = await world(t, clock), at = clock.now();
+  const plan = {...oneDisplay(at), startAtMs: at, prepareUntilMs: at, displays: [], browser: {compositionId: BROWSER}};
+  assert.ok(w.core.automation.art); let permits = 0;
+  const result = await w.core.automation.art.present(plan, () => {permits++; clock.shiftWall(-10_000); return undefined;});
+  assert.ok(!('error' in result) && result.browser?.status === 'not-requested');
+  assert.equal(result.browser.error.error.code, 'invalid-state'); assert.equal(permits, 1);
+  clock.advance(10_000); await flush(); assert.equal(w.preparations.length, 0);
+});
+
+for (const duringAdmission of [false, true]) it(`unanswered preparation settles at the original elapsed cutoff when the wall moves back ${duringAdmission ? 'during' : 'after'} admission`, async t => {
+  const clock = independentClocks();
+  const w = await world(t, clock, () => {if (duringAdmission) {clock.advance(1500); clock.shiftWall(-10_000);}});
+  const plan = oneDisplay(clock.now());
+  assert.ok(w.core.automation.art);
+  let settled = false;
+  const completion = w.core.automation.art.present(plan, () => undefined).then(result => {settled = true; return result;});
+  await waitFor(() => w.handle.operation(w.preparations[0]?.data.requestId ?? '')?.status === 'accepted'); await flush();
+  if (!duringAdmission) clock.shiftWall(-10_000);
+  clock.advance(duringAdmission ? 2500 : 4000); await flush();
+  assert.equal(settled, true, 'the original elapsed cutoff settles the unanswered target without another operation');
+  const result = await completion;
+  assert.ok(!('error' in result) && result.displays[0]?.moment.status === 'not-requested');
+  assert.equal(result.displays[0].moment.error.error.code, 'invalid-state');
+  const prepare = w.preparations[0]; assert.ok(prepare); await w.complete(prepare.data.requestId);
+  await w.restart(); clock.advance(60_000); await flush(); assert.equal(w.moments.length, 0);
+});
+
+it('restart cancels a browser selection waiting after an early elapsed wake', async t => {
+  const clock = independentClocks(), w = await world(t, clock), plan = {...oneDisplay(clock.now()), displays: [], browser: {compositionId: BROWSER}};
+  assert.ok(w.core.automation.art); let permits = 0;
+  const completion = w.core.automation.art.present(plan, () => {permits++; return undefined;});
+  clock.shiftWall(-250); clock.advance(5000); await flush(); await w.restart();
+  const result = await completion;
+  assert.ok(!('error' in result) && result.browser?.status === 'not-requested'); assert.equal(result.browser.error.error.code, 'cancelled');
+  clock.advance(60_000); await flush(); assert.equal(permits, 0); assert.equal(w.preparations.length, 0);
 });
 
 it('duplicate art plans never replay effects and conflicting content cannot borrow an earlier preparation', async t => {
