@@ -4,7 +4,7 @@ import {execFile} from 'node:child_process';
 import {chmod,mkdir,mkdtemp,readFile,writeFile,rm,realpath,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {withOperation, reconcileOperation, readPending} from '../bunny-operations.mjs';
 async function fixture(t) {
   const root=await mkdtemp(join(await realpath(tmpdir()),'bunny-operations-'));
@@ -114,9 +114,10 @@ async function host(t,status='exited') {
     calls:async()=>(await readFile(log,'utf8')).split('\n').filter(Boolean).map(line=>JSON.parse(line)),
     status:async()=>JSON.parse(await readFile(state,'utf8')).State.Status};
 }
-function cli(machine,...args) {
+function cli(machine,...args) {return run(machine,[operator,...args,'--project',project]);}
+function run(machine,argv) {
   return new Promise((resolve,reject)=>{
-    execFile(process.execPath,[operator,...args,'--project',project],{env:machine.env,encoding:'utf8',timeout:LIMIT_MS,killSignal:'SIGKILL'},
+    execFile(process.execPath,argv,{env:machine.env,encoding:'utf8',timeout:LIMIT_MS,killSignal:'SIGKILL'},
       (error,stdout,stderr)=>{
         if(error!==null&&typeof error.code!=='number'){reject(error);return;}
         resolve({code:error===null?0:error.code,stdout,stderr});
@@ -218,5 +219,24 @@ test('the qualification route settles too, and its own reader refuses a request 
 test('an unknown command is refused at the command line',{skip:posix},async t=>{
   const machine=await host(t);
   refused(await cli(machine,'delete'));
+  assert.deepEqual(await machine.calls(),[]);
+});
+test('negative control: a top-level await back on the entry path makes the same run fail these checks',{skip:posix},async t=>{
+  // Loads the real module graph, changing only that one statement. A missing anchor fails with exit 1, so this can't go stale unnoticed.
+  const machine=await host(t,'running');
+  const seed=join(machine.home,'seed.mjs');
+  await writeFile(seed,`import {registerHooks} from 'node:module';
+registerHooks({load(url,context,next){
+  const loaded=next(url,context);
+  if(url!==${JSON.stringify(pathToFileURL(operator).href)})return loaded;
+  const source=String(loaded.source),seeded=source.replace('void main(process.argv.slice(2));','await main(process.argv.slice(2));');
+  if(seeded===source)throw Error('entry path changed: update this control');
+  return {...loaded,source:seeded};
+}});
+`);
+  const result=await run(machine,['--import',seed,operator,'stop','--project',project]);
+  assert.deepEqual([result.code,result.stdout,result.stderr],[1,'','']);
+  assert.throws(()=>settled(result));
+  assert.equal(await machine.status(),'running');
   assert.deepEqual(await machine.calls(),[]);
 });
