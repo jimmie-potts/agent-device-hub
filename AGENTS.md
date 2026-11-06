@@ -133,9 +133,10 @@ npm run test:tidbyt:python plus the shared build/type, contract and workflow
 checks from the worktree root. All must exit zero.
 For modules/pixoo changes, read its README and run npm run test:pixoo plus the
 shared build/type/lint/workflow checks from the worktree root. All must exit zero.
-Before changing the Mac operator (scripts/bunny*.mjs, scripts/deployment or
-scripts/mac-signin.mjs), or claiming a host operator or release is the intended
-revision, follow [Verify the Mac operator](docs/operator-verification.md).
+Before changing the Mac operator (scripts/bunny*.mjs, scripts/deployment,
+scripts/operator-refusal.mjs, scripts/mac-signin.mjs or
+scripts/mac-host-install.mjs), or claiming a host operator or release is the
+intended revision, follow [Verify the Mac operator](docs/operator-verification.md).
 For apps/hub or apps/dashboard changes, read that app's README and its
 validation sections in docs/development.md (for the hub: Standalone hub,
 Standalone hub MCP and Shared monitoring setup checks; for the dashboard:

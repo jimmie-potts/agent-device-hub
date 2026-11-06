@@ -1,8 +1,9 @@
 # Verify the Mac operator
 
-Use this after changing `scripts/bunny*.mjs`, `scripts/deployment/` or
-`scripts/mac-signin.mjs`, and before claiming that a source revision, host operator
-and Linux ARM64 image are the intended ones. It reuses existing tests and release
+Use this after changing `scripts/bunny*.mjs`, `scripts/deployment/`,
+`scripts/operator-refusal.mjs`, `scripts/mac-signin.mjs` or
+`scripts/mac-host-install.mjs`, and before claiming that a source revision, host
+operator and Linux ARM64 image are the intended ones. It reuses existing tests and release
 evidence. The [container guide](bunny-container.md) owns the commands themselves,
 and [development](development.md) owns the wider check lists.
 
@@ -35,22 +36,33 @@ Run from the worktree root with Node 24, prefixing commands with
    `node --test scripts/release/tests/*.test.mjs`. With step 2's suite, which includes
    `scripts/tests/bunny-deployment.test.mjs` and `scripts/tests/mac-host.test.mjs`,
    these cover contention, unfinished-operation and start-hold refusal, failed-deployment
-   holds, preserved state, and a wrong image, target or receipt. Add a test only for a
-   gap these don't cover.
-4. When the change affects real engine behaviour, run the disposable Docker exercises
-   that [Qualified Mac batch operator checks](development.md#qualified-mac-batch-operator-checks)
-   and [ONN backup and qualified maintenance helper checks](development.md#onn-backup-and-qualified-maintenance-helper-checks)
-   describe, including the local image IDs each needs:
-   `scripts/tests/bunny-deployment.docker.mjs` and
-   `scripts/tests/bunny-maintenance.docker.mjs`. They use random projects and synthetic
-   volumes and remove only their own resources. Confirm that with `docker ps -a`,
-   `docker volume ls` and `docker network ls` filtered by the project name. If Docker or
-   those images aren't available, report this step as not run.
+   holds, preserved state, and a wrong image, target or receipt. For a change to the
+   backup worker, also run `node --test scripts/tests/bunny-backup.test.mjs`. It runs
+   only on Linux and skips every case on macOS, so run it in a disposable Linux
+   container or report it as skipped. Add a test only for a gap these don't cover.
+4. When the change affects what the operator asks of the engine, run the disposable
+   Docker exercises. That includes Docker arguments, Compose rendering, image loading,
+   volumes or the backup and maintenance worker invocation. The exercises are described
+   in [Qualified Mac batch operator checks](development.md#qualified-mac-batch-operator-checks)
+   and [ONN backup and qualified maintenance helper checks](development.md#onn-backup-and-qualified-maintenance-helper-checks),
+   including the local image IDs each needs: `scripts/tests/bunny-deployment.docker.mjs`
+   and `scripts/tests/bunny-maintenance.docker.mjs`. They use random projects, with
+   the prefixes `batch1365-` and `backup1343-`, and synthetic volumes, and they remove
+   only their own resources. Confirm that with `docker ps -a`, `docker volume ls` and
+   `docker network ls` filtered by those prefixes. If Docker or those images aren't
+   available, report this step as not run.
 5. To name a candidate, read its evidence from GitHub. Reuse an unchanged accepted
-   result rather than starting a new qualification run for this purpose. Replace
-   `<sha>`, `<run>` and `<attempt>` with the observed values:
+   result rather than starting a new qualification run for this purpose. Find the
+   run for the candidate, then replace `<sha>`, `<run>` and `<attempt>` with the
+   observed values:
    ```bash
-   gh api repos/jimmie-potts/agent-device-hub/actions/runs/<run>/attempts/<attempt> --jq '[.path,.head_sha,.conclusion,.run_attempt]'
+   gh run list --repo jimmie-potts/agent-device-hub --workflow release-qualification.yml --commit <sha> --json databaseId,attempt,conclusion
+   ```
+   ```bash
+   gh api repos/jimmie-potts/agent-device-hub/compare/<sha>...main --jq '[.status,.behind_by]'
+   ```
+   ```bash
+   gh api repos/jimmie-potts/agent-device-hub/actions/runs/<run>/attempts/<attempt> --jq '[.path,.head_sha,.event,.status,.conclusion,.run_attempt]'
    ```
    ```bash
    gh api --paginate repos/jimmie-potts/agent-device-hub/actions/runs/<run>/attempts/<attempt>/jobs --jq '.jobs[]|[.name,.conclusion]'
@@ -58,14 +70,32 @@ Run from the worktree root with Node 24, prefixing commands with
    ```bash
    gh api --paginate repos/jimmie-potts/agent-device-hub/actions/runs/<run>/artifacts --jq '.artifacts[]|select(.name|endswith("<sha>-<run>-<attempt>"))|[.name,.expired]'
    ```
-   The workflow must be `release-qualification.yml`, the SHA the candidate, the
-   conclusion `success`, and the attempt's own `release-image-…` and
-   `release-evidence-…` artifacts must exist and not be expired.
+   The candidate is qualified only when every one of these holds, as the deployment
+   consumer (`scripts/deployment/hosted-artifact.mjs` with
+   `scripts/release/qualification.mjs`) requires:
+   - The comparison reads `ahead` or `identical` with `behind_by` 0, so the candidate
+     is on main. A green run on an unmerged branch doesn't count.
+   - The attempt's path is `.github/workflows/release-qualification.yml`, its SHA is the
+     candidate, its event is `push` or `workflow_dispatch`, its status is `completed`,
+     and its conclusion is `success`.
+   - Each name in `EXPECTED_JOB_NAMES` in `scripts/release/qualification.mjs` appears
+     exactly once, with `success`.
+   - Exactly one `release-image-<sha>-<run>-<attempt>` and exactly one
+     `release-evidence-<sha>-<run>-<attempt>` exist, neither expired.
+
+   To record the image identity, download only the evidence artifact into a scratch
+   directory and read the receipt's image fields:
+   ```bash
+   gh run download <run> --repo jimmie-potts/agent-device-hub --name release-evidence-<sha>-<run>-<attempt> --dir <scratch>
+   ```
+   ```bash
+   jq '.image|[.id,.revision,.archiveSha256]' <scratch>/qualification.json
+   ```
 
    This shows that the candidate is qualified, not that a host runs it. The deployment
    owner confirms the rest: `npm run deploy:batch` verifies the downloaded archive hash
-   and loaded image identity, and the owner's private release record names the host
-   operator's revision. This procedure reads no private records.
+   against that receipt and the loaded image identity, and the owner's private release
+   record names the host operator's revision. This procedure reads no private records.
 
 ## Report
 
