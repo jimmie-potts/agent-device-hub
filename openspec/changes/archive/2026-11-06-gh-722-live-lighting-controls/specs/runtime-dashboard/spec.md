@@ -26,7 +26,7 @@ The Audio page SHALL show a Music lighting card with one section per light in th
 
 #### Scenario: Stale reads and lost replies
 - **WHEN** a lighting read fails or the connection drops, or a Start reply is lost
-- **THEN** the card shows the last known state with controls disabled until a fresh read succeeds: a reconnect reads again on its own without sending anything, a failed or restarted read waits for an explicit refresh, the lost Start stays locked and is not resent across reload, and Stop remains available once the record shows the session
+- **THEN** the card shows the last known state with controls disabled until a fresh read succeeds: a reconnect reads again on its own without sending anything, a restarted copy re-syncs on its own, a failed read waits for an explicit refresh, the lost Start stays locked and is not resent across reload, and Stop remains available once the record shows the session
 
 #### Scenario: Accessible presentation
 - **WHEN** the card is exercised with the keyboard against a disposable runtime at desktop, 390px and 320px widths in light and dark appearance
