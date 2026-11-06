@@ -70,8 +70,8 @@ function oracle(device: 'tidbyt' | 'pixoo', title: 'A' | 'B', artwork: boolean, 
 type Upload = {atMs: number; rgb: Uint8Array};
 type Decode = NonNullable<NonNullable<PlaybackModuleOptions['artwork']>['decode']>;
 /**
- * Answers at once, for a test that counts acquisitions. The real decoder's worker runs in real time against a 2 s
- * deadline on the harness's much faster clock, so a slow runner times it out and the module rightly fetches again (#1431).
+ * Answers at once, for a test about which acquisition wins: it needs no real decoder, and so never depends on how long
+ * the harness waits for one (#1431, #1442).
  */
 const instantDecode: Decode = bytes => Promise.resolve({ok: true, value: {mediaType: 'image/png', width: 1, height: 1, base64: Buffer.from(bytes).toString('base64')}});
 function fixtures(fetch: Fetch, pollMs?: number, failingRenderer?: 'tidbyt' | 'pixoo', decode?: Decode) {

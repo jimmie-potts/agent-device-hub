@@ -1,7 +1,7 @@
 # Playback module
 
 Private workspace package `@jimmie-potts/playback`: the runtime module that
-follows and controls what the speakers play
+follows and controls the configured playback sources
 ([Hub #929](https://github.com/jimmie-potts/agent-device-hub/issues/929)). One
 module owns both the Sony HT-A9 and the Sonos Move, because the presented-source
 rule ([#233](https://github.com/jimmie-potts/agent-device-hub/issues/233)) needs
@@ -53,8 +53,10 @@ The module's section of the runtime's
   changes with the presented speaker, so it must not be a track name or a
   speaker's address. The module names it as its one device, so the runtime
   refuses another module that names the same ID.
-- `sources` lists one or two speakers in preference order, at most one of each
-  kind. A Sony endpoint is `http://<private or loopback IPv4>:<port>/sony`. A
+- `sources` lists one to three sources in preference order, at most one of each
+  kind. `{"kind":"music"}` explicitly places the selected Mac Music producer
+  in that order and takes no endpoint. A Sony endpoint is
+  `http://<private or loopback IPv4>:<port>/sony`. A
   Sonos endpoint is the exact AVTransport control URL,
   `http://<private or loopback IPv4>:<port>/MediaRenderer/AVTransport/Control`.
   Neither may have credentials, a query or a fragment.
@@ -66,6 +68,70 @@ repeats no value. Health then shows the module `refused`, and the runtime runs
 the others. Without a section the module is refused with `not-found`. The
 speaker addresses stay in the private configuration file: no message, record,
 error body or health entry carries one.
+
+### Optional Mac Music source
+
+The separate [Music playback producer](../../apps/music-producer/README.md)
+observes one selected Mac and declared local library scope. Configuration and
+explicit producer startup are both required. Nothing enrolls Music automatically,
+opens the app, starts capture or changes an output route. Old receiver-only
+configuration and the legacy conversion retain their existing behavior.
+
+Music joins the same source ranking. Playing and paused sessions have equal
+priority, followed by freshness and configured order. A fresh paused Music-first
+source therefore remains presented when a receiver is playing. Controls always
+target the source fixed by the owner's current admission, and a source/process
+handoff changes the playback revision even when the displayed text is identical.
+
+The producer publishes bounded state, position, local item identity, metadata and
+Music's declared selected-output observations. Native reads are non-atomic;
+each field retains its read interval. Before/after item checks can qualify a
+bounded local-item association, never an exact recording or speaker clock.
+Persistent IDs name items within the operator-declared library scope. Process
+epochs name one Music process lifetime. Titles and artists identify neither.
+Selected outputs have `music-declared-selection` provenance; an entry such as
+Computer does not identify the physical audio route or prove what is audible.
+Unavailable fields stay explicit and no missing position is interpolated.
+
+With Music configured, the owner also serves `playback-position/2.0` under the
+same playback ID. Its `playbackRevision` points to the ordinary `playback/2.1`
+record, and `presentationGeneration` changes with the presented source/process.
+Position-only updates advance a shared sync high-water mark without changing the
+ordinary playback revision. Receiver presentation reports unsupported position
+evidence. All companion records retain `recordingAssociation: "unqualified"`.
+Receiver-only configuration still serves only the `playback` family.
+
+One revision row and the existing outbox commit both families atomically. Sync
+uses the last durable snapshot, including while publication is delayed. A failed
+commit cannot expose a working replacement or redirect an old displayed command.
+A failed publication keeps the committed messages for the outbox to send later;
+it does not roll back state or repeat a Music command. Restart publishes
+unavailable evidence above the saved revision and never revives an old endpoint.
+
+The owner accepts one connection-bound endpoint. Losing it, changing the source
+clock or replacing the Music process invalidates its command authority. Source
+timestamps determine freshness; delayed receipt does not make an old read fresh.
+The producer qualifies native and runtime clocks with bracketed requests. The
+owner rejects future evidence and retires a clock whose wall/monotonic relation
+changes by more than 25 ms. A missing read disables controls while retaining
+correlation for an earlier command from the same still-live endpoint/process.
+
+The owner retains at most 64 command correlations, matching its command journal.
+It also remembers at most 64 retired endpoint IDs per module run, refusing further
+registration until an owner restart. This bounds memory and prevents an old
+connection from recovering authority by registering again. An explicit new
+connection can replace a retired endpoint while that bound permits it.
+
+Music offers pause/next/previous while playing and play/next/previous while
+paused. A command uses the existing durable intent and outcome path. The producer
+has three seconds for read cancellation and the native control; the owner waits
+up to four seconds for its initial result. A Music reply proves transmission,
+not an audible or observed playback change. Timeout remains uncertain, without
+retry. A valid late definitive result for the original live endpoint, process
+and operation can reconcile that outcome through the same journal/outbox.
+Retired-generation evidence cannot complete a newer operation. The next command
+gives the producer's next observation up to 1.5 seconds to settle, just as the
+receiver path waits for its post-command read.
 
 ### Conversion from the old Hub
 
@@ -398,6 +464,10 @@ interface, and the module tests use `SimulatedSpeakers` on a manual clock.
   bounded memory of commands, a
   crash between intent and outcome, and polling over HTTP without overlapping
   reads.
+- `music.test.ts`: explicit selection and receiver compatibility, source-derived
+  freshness, clock/process changes, position sync, failed commits, command
+  fencing, endpoint retirement and late definitive outcomes with substituted
+  producers. These cases invoke no native Music APIs.
 
 The Hub tests of its HTTP routes, credentials, browser launcher, dashboard
 context and staged host have no counterpart here. In the runtime, the SDK

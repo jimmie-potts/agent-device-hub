@@ -13,6 +13,7 @@ export type {LightingLayout, LightingLayoutRecord, LightingLayoutSetRequest, Lig
 import {companionFamilies} from './companions.js';
 import {codingFamilies} from './coding.js';
 import {musicCaptureFamilies} from './music-capture.js';
+import {musicPlaybackFamilies} from './music-playback.js';
 import {artFamilies} from './art.js';
 import {createHash} from 'node:crypto';
 import type {ErrorDetail, Message, MessageValidator, PayloadCheck} from './index.js';
@@ -388,6 +389,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   ...companionFamilies,
   ...codingFamilies,
   ...musicCaptureFamilies,
+  ...musicPlaybackFamilies,
   ...artFamilies,
   ...assistantFamilies,
   ...lightingLayoutFamilies,

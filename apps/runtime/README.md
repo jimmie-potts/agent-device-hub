@@ -559,6 +559,27 @@ rechecks the original request's authority immediately before changing state;
 expected refusal codes leave the core running. A lost reply is never retried
 automatically. Inspect the current rules/settings before another edit.
 
+## Mac Music playback
+
+The [playback owner](../../modules/playback/README.md#optional-mac-music-source)
+can include one explicitly configured `{"kind":"music"}` source alongside Sony
+and Sonos. The [Mac playback producer](../music-producer/README.md) requires its
+own role `music-playback-producer`, fixed source `bunny/parts/music-playback` and
+empty scopes. Its connection-bound endpoint can register, publish observations
+and results, and answer the owner's four playback actions. It cannot read general
+state, issue operator/device commands or start audio capture. Operator requests
+still use tracked `playback-control`; internal producer families are refused on
+the action route.
+
+The ordinary `playback/2.1` record and receiver selection rule stay compatible.
+Music-configured owners also publish `playback-position/2.0`, with bounded read
+intervals, local item identity and Music-declared selected outputs. This evidence
+does not qualify recording identity, actual speaker routing or synchronized show
+replay. Connection/process/clock changes retire authority; uncertain controls are
+never resent. Startup, private source order and permission packaging need their
+separate installed qualification. No source test provisions a credential or
+controls the installed Music app.
+
 ## Music capture
 
 The core owns explicitly started Music.app or configured microphone sessions through
@@ -2051,7 +2072,9 @@ The core operation-record scenario lives in `tests/scenarios/operations.ts`.
 
 The in-memory harness hosts the seed's modules in the runtime's module host,
 each built with its simulated transport, a registered module through its
-registration's `simulation`, on a manual clock and scheduler. Each scenario runs twice. Its parts (a hook, an operator, a panel
+registration's `simulation`, on a manual clock and scheduler. That clock stands
+still while a module's worker call runs, for at most 10 real seconds, because
+the worker runs in real time against a deadline on the clock (#1442). Each scenario runs twice. Its parts (a hook, an operator, a panel
 and a reader) first join the host's bus, then reach it through the runtime's
 [gateway](#gateway) on 127.0.0.1, each with a run-generated client credential
 whose grant the catalog's `GRANTS` sets: the hook may only publish lifecycle

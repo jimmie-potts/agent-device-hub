@@ -42,6 +42,8 @@ export async function reactivePresetJourney(browser: Browser): Promise<void> {
     };
     const before = structuredClone(output()), wallBefore = await world.nanoleafWall();
     await preview.getByRole('combobox', {name: 'Built-in effect', exact: true}).selectOption('traveling-wave');
+    await preview.getByRole('combobox', {name: 'Direction', exact: true}).selectOption('outward');
+    await preview.getByRole('slider', {name: 'Wave cycle', exact: true}).fill('9499.5');
     await preview.getByLabel('Color 1', {exact: true}).fill('#12ab34');
     await preview.getByRole('slider', {name: 'Intensity', exact: true}).fill('35');
     await library.getByLabel('New preset name', {exact: true}).fill('Synthetic wave');
@@ -51,6 +53,8 @@ export async function reactivePresetJourney(browser: Browser): Promise<void> {
     assert.equal(saves.length, 1); await expect(save).toBeDisabled();
     const first = await catalog(); assert.equal(first.presets.length, 1);
     assert.equal(first.presets[0]?.recipe.palette[0], '#12ab34'); assert.equal(first.presets[0]?.recipe.intensity, 0.35);
+    assert.ok(first.presets[0]?.recipe.effect === 'traveling-wave');
+    assert.equal(first.presets[0].recipe.direction, 'outward'); assert.equal(first.presets[0].recipe.periodMs, 9499.5);
     await page.reload(); await feed(page, 'connected'); await preview.locator('summary').click();
     await library.getByRole('button', {name: 'Load into draft', exact: true}).click();
     assert.equal(saves.length, 1); assert.equal(previews.length, 0);
@@ -60,14 +64,25 @@ export async function reactivePresetJourney(browser: Browser): Promise<void> {
       recipe: {rendererVersion: 1, effect: 'traveling-wave', palette: ['#abcdef'], intensity: 0.2,
         sensitivity: 3, smoothingMs: 900, direction: 'inward', periodMs: 9000}};
     assert.equal((await world.credentialAction('nanoleaf-reactive-preset-save', 'reactive-presets', external)).status, 200);
-    const second = await catalog(); assert.equal(second.presets.length, 2); assert.deepEqual(second.presets.find(preset => preset.presetId === first.presets[0]?.presetId), first.presets[0]);
+    let second = await catalog(); assert.equal(second.presets.length, 2); assert.deepEqual(second.presets.find(preset => preset.presetId === first.presets[0]?.presetId), first.presets[0]);
     await library.getByRole('combobox', {name: 'Saved preset', exact: true}).selectOption('preset-external');
     await library.getByRole('button', {name: 'Load into draft', exact: true}).click();
     await preview.getByText(/Sensitivity 3 · Renderer smoothing 900 ms/).waitFor();
-    await preview.getByText(/Direction inward/).waitFor(); await preview.getByText(/Wave period 9000 ms/).waitFor();
+    await expect(preview.getByRole('combobox', {name: 'Direction', exact: true})).toHaveValue('inward');
+    await expect(preview.getByRole('slider', {name: 'Wave cycle', exact: true})).toHaveValue('9000');
     await preview.getByRole('button', {name: 'Preview', exact: true}).click();
     await preview.getByText('Example colors are ready for this draft.', {exact: true}).waitFor();
     assert.deepEqual(previews.at(-1), {version: 1, recipe: external.recipe, model: 'lines-demo-v1'});
+    const earlier = second.presets;
+    await preview.getByRole('combobox', {name: 'Direction', exact: true}).selectOption('left');
+    await preview.getByRole('slider', {name: 'Wave cycle', exact: true}).fill('400');
+    assert.equal(saves.length, 1, 'motion edits send no command');
+    await library.getByLabel('New preset name', {exact: true}).fill('Motion-tuned copy');
+    await expect(save).toBeEnabled(); await save.click();
+    await library.getByText('This named draft was saved. Change its name or recipe to save another preset.', {exact: true}).waitFor();
+    second = await catalog(); assert.equal(second.presets.length, 3);
+    for (const previous of earlier) assert.deepEqual(second.presets.find(value => value.presetId === previous.presetId), previous);
+    assert.deepEqual(second.presets.find(value => value.name === 'Motion-tuned copy')?.recipe, {...external.recipe, direction: 'left', periodMs: 400});
     await library.getByLabel('New preset name', {exact: true}).fill('Retained local draft');
     let reactiveSyncs = 0, refreshed: (() => void) | undefined, releaseRefresh: (() => void) | undefined, releaseReconnect: (() => void) | undefined;
     const refreshStarted = new Promise<void>(resolve => {refreshed = resolve;});
@@ -85,7 +100,7 @@ export async function reactivePresetJourney(browser: Browser): Promise<void> {
       await route.fulfill({response}).catch(() => {});
     });
     await library.getByRole('button', {name: 'Refresh preset library', exact: true}).click(); await refreshStarted;
-    await expect(library.getByLabel('New preset name', {exact: true})).toHaveValue('Retained local draft'); assert.equal(saves.length, 1);
+    await expect(library.getByLabel('New preset name', {exact: true})).toHaveValue('Retained local draft'); assert.equal(saves.length, 2);
     const stale = await world.credentialAction('nanoleaf-reactive-preset-save', 'reactive-presets', {...external, presetId: 'preset-stale'});
     assert.equal(stale.status, 409);
     const invalid = await world.credentialAction('nanoleaf-reactive-preset-save', 'reactive-presets', {...external, presetId: 'preset-bad', expectedRevision: second.revision,
@@ -107,12 +122,12 @@ export async function reactivePresetJourney(browser: Browser): Promise<void> {
       await expect.poll(() => reactiveSyncs).toBe(2);
       await expect(save).toBeDisabled();
       await expect(library.getByLabel('New preset name', {exact: true})).toHaveValue('Retained local draft');
-      releaseReconnect?.(); await expect(save).toBeEnabled(); assert.equal(saves.length, 1);
+      releaseReconnect?.(); await expect(save).toBeEnabled(); assert.equal(saves.length, 2);
     } finally {releaseRefresh?.(); releaseReconnect?.(); await page.unroute('**/api/sdk/v1/sync');}
     await expect(library.getByLabel('New preset name', {exact: true})).toHaveValue('Retained local draft');
     assert.deepEqual(output(), before); assert.deepEqual(await world.nanoleafWall(), wallBefore);
     await world.restart(); await page.reload(); await feed(page, 'connected'); await preview.locator('summary').click();
-    assert.deepEqual((await catalog()).presets, second.presets); assert.equal(saves.length, 1);
+    assert.deepEqual((await catalog()).presets, second.presets); assert.equal(saves.length, 2);
     await library.getByRole('combobox', {name: 'Saved preset', exact: true}).selectOption('preset-external');
     await library.getByRole('button', {name: 'Load into draft', exact: true}).click();
     const receipts = process.env.DASHBOARD_RECEIPTS;
@@ -126,7 +141,7 @@ export async function reactivePresetJourney(browser: Browser): Promise<void> {
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.reload(); await feed(page, 'connected'); await preview.locator('summary').click();
     await library.getByText('Read-only access. You can load saved presets; saving requires control access.', {exact: true}).waitFor();
-    await expect(save).toBeDisabled(); await library.getByRole('button', {name: 'Load into draft', exact: true}).click(); assert.equal(saves.length, 1);
+    await expect(save).toBeDisabled(); await library.getByRole('button', {name: 'Load into draft', exact: true}).click(); assert.equal(saves.length, 2);
     await page.unroute('**/api/v2/authority?scope=control'); await page.reload(); await feed(page, 'connected'); await preview.locator('summary').click();
     // Lost-response fixture sends no real command. It checks draft retention, shared lock and passive reload.
     await page.route('**/api/v2/commands/nanoleaf-reactive-preset-save', route => route.fulfill({status: 503, contentType: 'application/json',
@@ -136,7 +151,7 @@ export async function reactivePresetJourney(browser: Browser): Promise<void> {
     await expect(library.getByLabel('New preset name', {exact: true})).toHaveValue('Uncertain draft'); await expect(save).toBeDisabled();
     await page.reload(); await feed(page, 'connected'); await preview.locator('summary').click();
     await expect(save).toBeDisabled(); await expect(library.getByLabel('New preset name', {exact: true})).toBeDisabled();
-    assert.equal(saves.length, 2); assert.deepEqual((await catalog()).presets, second.presets); assert.deepEqual(errors, []);
+    assert.equal(saves.length, 3); assert.deepEqual((await catalog()).presets, second.presets); assert.deepEqual(errors, []);
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'reactive-presets', browserSaveRequests: saves.length, immutablePresets: true,
       restart: true, fullRecipePreview: true, stale: 409, invalid: 400, readonly: 403, origin: 403, deviceChanges: 0, noResend: true,
       axe: ['light/dark desktop', '390px', '320px'], physical: false})}\n`);
