@@ -14,5 +14,5 @@
 
 ## 4. Validation and delivery
 
-- [ ] 4.1 Run build, typecheck, lint, contract, Nanoleaf, runtime and workflow checks; record actual results and platform limits.
-- [ ] 4.2 Independent Standards and Specification review, a focused device-command safety review and disposable fake-device acceptance; sync and archive this change.
+- [x] 4.1 Run build, typecheck, lint, contract, Nanoleaf, runtime and workflow checks; record actual results and platform limits.
+- [x] 4.2 Independent Standards and Specification review, a focused device-command safety review and disposable fake-device acceptance; sync and archive this change.
