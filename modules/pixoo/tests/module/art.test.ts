@@ -11,6 +11,8 @@ import type {RequestResult} from '@jimmie-potts/sdk';
 import {DEVICE, SECTION, World, bytesOf, hostedGif, manyColorGif, sleep, waitFor} from './support.js';
 import {FAMILIES} from '../../src/module/schemas.js';
 import {frameDigest} from '../../src/module/transport.js';
+import {HttpDeviceAdapter} from '../../src/device/http-adapter.js';
+import {encodeHostedGif} from '../../src/media/hosted-gif.js';
 
 const digest = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 const content = (id: string, bytes: Buffer, frames = 1): ArtStageContent => ({compositionId: digest(Buffer.from(id)), format: frames === 1 ? 'png' : 'gif', width: 64, height: 64,
@@ -73,6 +75,45 @@ void it('plays a labelled rain forecast with every exact art frame and leaves it
     assert.equal(outcome.data.result, 'succeeded');
     assert.equal(outcome.data.evidence, 'transmitted');
     await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'the current Monitor base');
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
+
+void it('refuses a hosted rain notice whose label cannot fit the GIF palette, with no transmission claim and Monitor kept', async () => {
+  // The production adapter and hosted encoder, over an in-memory transport: a full 256-color original is admissible on
+  // its own, and the label's black and white push it to 258 colors before any file is published or command sent.
+  const source = new Uint8Array(12288);
+  for (let pixel = 0; pixel < 4096; pixel += 1) source.set([(Math.floor(pixel / 64) * 19 + (pixel % 64) * 53) % 256, 13, 249], pixel * 3);
+  const gif = encodeHostedGif([source, source].map(rgb => ({rgb, delayMs: 100})));
+  const world = await World.open({section: {device: {...SECTION.device, profile: 'pixoo64-hosted-2026-10-01'}}});
+  const commands: string[] = [], published: number[] = [];
+  world.device.open = ({address, clock, profile}) => {
+    const adapter = new HttpDeviceAdapter({ip: address, clock, profile: {...profile, evidence: 'observed', readyDelayMs: 0}, hosted: {
+      files: {publish: bytes => { published.push(bytes.length); return {url: 'http://example.invalid/art.gif', transferred: Promise.resolve(), revoke() {}}; }},
+      encode: animation => encodeHostedGif(animation.frames),
+    }}, body => { commands.push(String(body.Command)); return Promise.resolve({error_code: 0, SelectIndex: 0, Brightness: 80, LightSwitch: 1, PicId: 27}); });
+    return Promise.resolve({adapter, close: () => adapter.close()});
+  };
+  try {
+    await world.start();
+    await world.outcome(await accepted(world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'monitor'})));
+    await world.publishSession();
+    await waitFor(() => commands.includes('Draw/SendHttpGif') ? true : undefined, 'the Monitor base');
+    const data = {...content('full-palette-rain', gif, 2), compositionId: digest(gif)};
+    assert.equal((await world.outcome(await accepted(stage(world, data)))).data.result, 'succeeded');
+    const now = Date.now();
+    const notice = {kind: 'rain-forecast', likelihood: 'chance', forecastStartAtMs: now + 60_000, forecastEndAtMs: now + 120_000,
+      forecastUpdatedAtMs: now - 1000, observedAtMs: now, staleAtMs: now + 120_000, weatherRevision: 1};
+    const before = commands.length;
+    const outcome = await world.outcome(await accepted(artMoment(world, data.compositionId, {notice})));
+    assert.equal(outcome.data.result, 'failed', JSON.stringify(outcome.data));
+    assert.equal(outcome.data.evidence, 'none');
+    assert.equal(outcome.data.error?.code, 'unsupported-capability');
+    assert.ok(!('transmission' in outcome.data), 'no transmission is recorded');
+    assert.deepEqual(published, [], 'no hosted file is published');
+    assert.ok(!commands.slice(before).includes('Device/PlayTFGif'), 'no hosted play command is sent');
+    // Nothing reached the panel, so Monitor stays the current base and draws itself again instead of stopping.
+    await waitFor(() => commands.slice(before).includes('Draw/SendHttpGif') ? true : undefined, 'the Monitor base after the refusal');
     assert.deepEqual(world.invalid, []);
   } finally { await world.close(); }
 });

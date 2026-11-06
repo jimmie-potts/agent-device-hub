@@ -297,7 +297,9 @@ export class MonitorPresentation {
  /** Records what the moment's write did. A failed write ends the moment and gives its base back; a sent one starts its duration. */
  private momentUploaded(moment:Moment,result:OperationResult<UploadResult>|undefined){
   moment.upload=result;
-  const failed=result!==undefined&&!result.ok&&result.code!=='cancelled'&&result.code!=='stale-generation';
+  // A route refusal found before any effect is the moment's own limit, not the device's failure: its base stays current.
+  const failed=result!==undefined&&!result.ok&&result.code!=='cancelled'&&result.code!=='stale-generation'
+   &&!(result.code==='profile-limit'&&result.priorEffects==='none');
   if(moment.over==='monitor'&&failed)this.lastOutcome={generation:this.generation,renditionGeneration:this.dashboard.status().rendition?.generation??0,status:result.priorEffects==='possible'?'uncertain':'failed',code:result.code};
   if(this.moment!==moment)return;
   if(result?.ok===true){

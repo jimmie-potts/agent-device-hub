@@ -351,6 +351,10 @@ The worker fits each retained frame into a 48×48 artwork region and draws a
 separate black band with white `RAIN FORECAST` and `CHANCE HH:MM` or
 `LIKELY HH:MM` labels. The hour uses the runtime host's local clock zone. This
 changes neither the staged bytes nor their hash, frame count or delays.
+On the hosted route the black and white labels must still fit the GIF's 256
+colors. An original that already uses them all fails `unsupported-capability`
+with evidence `none` before any file is published or command sent, and Monitor
+stays current.
 
 The owner checks evidence freshness at admission and immediately before the
 first native effect. The internal adapter `current(priorEffects)` guard receives

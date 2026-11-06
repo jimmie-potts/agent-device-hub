@@ -3,6 +3,7 @@ import {
   type OperationOptions, type OperationResult, type ProbeResult, type UploadResult,
 } from './contracts.js';
 import { snapshotAnimation } from './frames.js';
+import {MediaError} from '../media/contracts.js';
 import type {HostedFiles} from './hosted-files.js';
 import { createDeviceTransport, DeviceRequestError, validateDeviceIp, type DeviceTransport } from './http-transport.js';
 
@@ -76,7 +77,10 @@ export class HttpDeviceAdapter implements DeviceAdapter {
       // enqueue runs only valid work, which always has a snapshot.
       if(snapshot===undefined)throw new DeviceRequestError('invalid-input');
       if(this.options.hosted&&snapshot.frames.length>1){
-        const bytes=this.options.hosted.encode(snapshot);context.check();
+        // Encoding is local: a palette or profile refusal here precedes every effect, so it is no device answer.
+        let bytes:Uint8Array;
+        try{bytes=this.options.hosted.encode(snapshot);}catch(error){throw error instanceof MediaError&&error.code==='profile-limit'?new DeviceRequestError('profile-limit'):error;}
+        context.check();
         const file=this.options.hosted.files.publish(bytes,context.signal);
         try{
           await context.send({Command:'Device/PlayTFGif',FileType:2,FileName:file.url},true);
