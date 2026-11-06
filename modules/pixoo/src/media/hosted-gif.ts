@@ -4,10 +4,10 @@ import {MediaError} from './contracts.js';
 interface Frame {readonly rgb:Uint8Array;readonly delayMs:number}
 /** Exact effective RGB colors, never a quantizer. Repeated frames stay distinct. */
 export function hostedPalette(frames:readonly Frame[]):number[][] {
- if(frames.length===0||frames.length>500)throw new MediaError('profile-limit');
+ if(frames.length===0)throw new MediaError('profile-limit');
  const colors=new Map<number,number[]>();
  for(const frame of frames){
-  if(frame.rgb.length!==12288||!Number.isInteger(frame.delayMs)||frame.delayMs<50||frame.delayMs>800||frame.delayMs%10!==0||frame.delayMs!==frames[0]?.delayMs)throw new MediaError('profile-limit');
+  if(frame.rgb.length!==12288||!Number.isInteger(frame.delayMs)||frame.delayMs<10||frame.delayMs>655350||frame.delayMs%10!==0||frame.delayMs!==frames[0]?.delayMs)throw new MediaError('profile-limit');
   for(let p=0;p<frame.rgb.length;p+=3){
    const r=frame.rgb[p]??0,g=frame.rgb[p+1]??0,b=frame.rgb[p+2]??0,key=(r<<16)|(g<<8)|b;
    if(!colors.has(key)){if(colors.size===256)throw new MediaError('profile-limit');colors.set(key,[r,g,b]);}
