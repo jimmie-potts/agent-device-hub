@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readdirSync} from 'node:fs';
-import {mkdir, mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises';
+import fs, {mkdir, mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises';
+import {syncBuiltinESMExports} from 'node:module';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {it} from 'node:test';
@@ -10,6 +11,7 @@ import {errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contr
 import {InProcessBus, type ModuleStagedUpload, type ModuleUpload, type ModuleUploadReply, type ModuleUploadRequest} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import sharp from 'sharp';
+import {PixooUploads} from '../../src/module/upload.js';
 import {createPixooModule} from '../../src/module/module.js';
 import {FAMILIES, schemaOf} from '../../src/module/schemas.js';
 import {SimulatedPixoo} from '../../src/module/transport.js';
@@ -224,4 +226,70 @@ void it('keeps a known reply and another input intact when cleanup fails', async
     assert.ok(world.harness.logs.some(entry => entry.event === 'operation.failed' && entry.fields['bunny.operation'] === 'storage'));
     assert.deepEqual(world.harness.failures, []);
   } finally { await world.close(); }
+});
+
+for (const [phase, code] of [['open', 'ENOSPC'], ['write', 'EDQUOT'], ['close', 'ENOSPC']] as const) {
+  void it(`reports capacity and cleans its input after ${code} during binary ${phase}`, async t => {
+    const world = await fixture(), upload = world.module.manifest.upload;
+    assert.ok(upload);
+    const originalOpen = fs.open;
+    const fail = () => Promise.reject(Object.assign(new Error('synthetic private capacity detail'), {code}));
+    fs.open = async (...args) => {
+      if (phase === 'open') return fail();
+      const handle = await originalOpen(...args);
+      if (phase === 'write') t.mock.method(handle, 'writeFile', fail);
+      if (phase === 'close') {
+        const close = handle.close.bind(handle);
+        t.mock.method(handle, 'close', async () => { await close(); return fail(); });
+      }
+      return handle;
+    };
+    syncBuiltinESMExports();
+    try {
+      const result = await upload.stage(request(Buffer.from('synthetic binary fixture'), 'capacity-' + phase));
+      assert.ok('error' in result); assert.equal(result.error.code, 'capacity'); assert.equal(result.error.retryable, true);
+      assert.deepEqual(await readdir(world.incoming), []);
+      assert.ok(world.harness.logs.some(entry => entry.event === 'operation.failed' && entry.fields['bunny.code'] === 'capacity'));
+      assert.ok(!JSON.stringify(result).includes('synthetic private'));
+    } finally {
+      fs.open = originalOpen; syncBuiltinESMExports();
+      await world.close();
+    }
+  });
+}
+
+void it('keeps the accepted outcome and occupied slot when upload cleanup hits quota', async () => {
+  const world = await fixture(), upload = world.module.manifest.upload;
+  assert.ok(upload);
+  const staged = prepared(await upload.stage(request(Buffer.from('synthetic cleanup file'), 'capacity-cleanup')));
+  const remove = fs.rm;
+  fs.rm = () => Promise.reject<never>(Object.assign(new Error('synthetic private quota detail'), {code: 'EDQUOT'}));
+  syncBuiltinESMExports();
+  try {
+    const reply: ModuleUploadReply = {status: 'accepted', requestId: 'capacity-cleanup'};
+    await staged.finish(reply);
+    assert.equal(reply.status, 'accepted');
+    refused(await upload.stage(request(Buffer.from('next'), 'next-cleanup')), 'capacity');
+    assert.equal((await readdir(world.incoming)).length, 1);
+    assert.ok(world.harness.logs.some(entry => entry.event === 'operation.failed' && entry.fields['bunny.code'] === 'capacity'));
+  } finally { fs.rm = remove; syncBuiltinESMExports(); await world.close(); }
+});
+
+void it('reports capacity when the incoming directory cannot be prepared and admits input after explicit recovery', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'pixoo-upload-capacity-'));
+  const owner = new PixooUploads({folder: root, target: DEVICE, pending: () => false,
+    signal: new AbortController().signal, failed: () => {}});
+  const makeDirectory = fs.mkdir;
+  try {
+    fs.mkdir = () => Promise.reject<never>(Object.assign(new Error('synthetic quota'), {code: 'EDQUOT'}));
+    syncBuiltinESMExports();
+    await owner.recover();
+    const bytes = request(Buffer.from('synthetic input'), 'recovered-upload');
+    refused(await owner.stage(bytes), 'capacity');
+    fs.mkdir = makeDirectory; syncBuiltinESMExports();
+    await owner.recover();
+    const admitted = prepared(await owner.stage(bytes));
+    await admitted.finish(errorBody('cancelled'));
+    assert.deepEqual(await readdir(join(root, 'incoming')), []);
+  } finally { fs.mkdir = makeDirectory; syncBuiltinESMExports(); await rm(root, {recursive: true, force: true}); }
 });

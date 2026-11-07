@@ -1,5 +1,6 @@
 import {createServer,type ServerResponse} from 'node:http';
 import {randomBytes} from 'node:crypto';
+import {MAX_HOSTED_GIF_BYTES} from '../media/contracts.js';
 import {DeviceRequestError,validateDeviceIp} from './http-transport.js';
 
 export interface HostedFile {url:string;transferred:Promise<void>;revoke():void}
@@ -40,7 +41,8 @@ export async function startHostedFiles(input:HostedFileConfig):Promise<HostedFil
  const address=server.address();if(address===null||typeof address==='string')throw new Error('Hosted listener unavailable');
  let closed=false;
  return {port:address.port,publish(bytes,signal){
-  if(closed||signal.aborted||bytes.length===0||bytes.length>10*1024*1024)throw new DeviceRequestError('invalid-input');
+  if(closed||signal.aborted||bytes.length===0)throw new DeviceRequestError('invalid-input');
+  if(bytes.byteLength>MAX_HOSTED_GIF_BYTES)throw new DeviceRequestError('too-large');
   current?.revoke();
   let complete!:()=>void,fail!:(error:Error)=>void,revoked=false;
   const transferred=new Promise<void>((resolve,reject)=>{complete=resolve;fail=reject;});

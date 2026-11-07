@@ -1,5 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
 import { HttpDeviceAdapter, SPIKE_PROFILE } from '../../src/device/http-adapter.js';
+import {PIXOO64_SMOKE_PROFILE} from '../../src/media/index.js';
 import { sendJson } from '../../src/device/http-transport.js';
 import { deviceServer } from '../helpers/http-device-server.js';
 import { present } from '../helpers/present.js';
@@ -140,4 +141,22 @@ it('rejects a malformed animation ID and never resets or uploads automatically',
   const device = new HttpDeviceAdapter({ ip: '192.168.1.2', profile: SPIKE_PROFILE }, (body, signal) => sendJson('127.0.0.1', server.port, body, signal));
   expect(await device.uploadAnimation({ frames: [rgbFrame(1, 500)] }, { generation: 0 })).toMatchObject({ ok: false, code: 'protocol-error', priorEffects: 'none' });
   expect(server.requests).toEqual([{ Command: 'Draw/GetHttpGifId' }]);
+});
+
+it.each([21, 59, 60])('enforces the documented direct command boundary at %i frames on the stored smoke route', async count => {
+  const commands: Record<string, unknown>[] = [];
+  const device = new HttpDeviceAdapter({ip: '192.168.1.2', profile: {...PIXOO64_SMOKE_PROFILE, evidence: 'observed', readyDelayMs: 0}}, body => {
+    commands.push(body);
+    return Promise.resolve({error_code: 0, PicId: 19});
+  });
+  const result = await device.uploadAnimation({frames: Array.from({length: count}, (_, index) => rgbFrame(index, 90))}, {generation: 0});
+  if (count === 60) {
+    expect(result).toMatchObject({ok: false, priorEffects: 'none'});
+    expect(commands).toEqual([]);
+    return;
+  }
+  expect(result.ok).toBe(true);
+  expect(commands[0]?.Command).toBe('Draw/GetHttpGifId');
+  expect(commands.slice(1).map(({Command, PicNum, PicOffset, PicSpeed}) => [Command, PicNum, PicOffset, PicSpeed]))
+    .toEqual(Array.from({length: count}, (_, index) => ['Draw/SendHttpGif', count, index, 90]));
 });

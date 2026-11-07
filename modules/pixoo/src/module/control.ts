@@ -1,3 +1,4 @@
+import {PlaybackRouteError} from '../library/playback-policy.js';
 // The Pixoo's command handling (Hub #843). It replaces divoom-app-upgrade's ControlService for Monitor, Media, player,
 // playlist and catalog requests: each request becomes a call on the player, the Monitor presentation or the library, and
 // its result becomes a completed outcome under ADR 0012's "Errors, effects and outcomes". It knows nothing of the bus;
@@ -50,7 +51,7 @@ const uncertain = (detail: string): Completion => ({result: Outcome.uncertain, e
 // Device failure codes. A connectivity failure is the device being unavailable; nothing in the result says it acted.
 const DEVICE_CODES: Readonly<Record<string, ErrorCode>> = {
   offline: 'unavailable', timeout: 'unavailable', 'http-error': 'unavailable', 'protocol-error': 'unavailable', 'upload-failed': 'unavailable',
-  'device-error': 'invalid-state', 'invalid-input': 'invalid-request', 'profile-limit': 'unsupported-capability', cancelled: 'cancelled', 'stale-generation': 'cancelled',
+  'device-error': 'invalid-state', 'too-large': 'too-large', 'invalid-input': 'invalid-request', 'profile-limit': 'unsupported-capability', cancelled: 'cancelled', 'stale-generation': 'cancelled',
 };
 /** Failures in which the Pixoo answered, so the request reached it: with an error status or code, or unreadably. */
 const ANSWERED: readonly string[] = ['device-error', 'http-error', 'protocol-error'];
@@ -97,6 +98,9 @@ function domainCode(error: unknown): string | undefined {
  * `uncertain`, because an effect may have begun. The exception itself stays in memory.
  */
 export function errorCompletion(error: unknown): Completion {
+  if (error instanceof PlaybackRouteError) return failed('unsupported-capability', error.detail);
+  if (error instanceof MediaError && error.code === 'storage-limit') return failed('too-large', 'The media exceeds the byte limit for one file.');
+  if (error instanceof MediaError && error.code === 'storage-capacity') return failed('capacity', 'Pixoo media storage is full.');
   const code = domainCode(error);
   if (code === undefined) return uncertain('the request failed after it began');
   const mapped = REFUSALS[code];
@@ -267,8 +271,7 @@ export class PixooControl {
   /**
    * One media change (`pixoo-asset-change`). An import or a new rendition decodes in the media child process, under its
    * heap cap, so a corrupt or oversized image fails only its own job; the library commits the result before the
-   * completion. Import admission uses the lenient simulator profile, as the old upload route did; playback checks the
-   * active profile.
+   * completion. Imports preserve source timing. Playback checks the selected command.
    */
   async asset(change: AssetChange, signal?: AbortSignal): Promise<Completion> {
     const library = this.#library;

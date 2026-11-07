@@ -9,10 +9,12 @@ import type {MomentEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {ArtStageContent} from '@jimmie-potts/event-contracts/v2/art';
 import type {RequestResult} from '@jimmie-potts/sdk';
 import {DEVICE, SECTION, World, bytesOf, hostedGif, manyColorGif, sleep, waitFor} from './support.js';
+import {gifFixture, oversizedHostedSourceGif} from '../helpers/media-fixtures.js';
 import {FAMILIES} from '../../src/module/schemas.js';
 import {frameDigest} from '../../src/module/transport.js';
 import {HttpDeviceAdapter} from '../../src/device/http-adapter.js';
 import {encodeHostedGif} from '../../src/media/hosted-gif.js';
+import {MediaError} from '../../src/media/contracts.js';
 
 const digest = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 const content = (id: string, bytes: Buffer, frames = 1): ArtStageContent => ({compositionId: digest(Buffer.from(id)), format: frames === 1 ? 'png' : 'gif', width: 64, height: 64,
@@ -79,6 +81,26 @@ void it('plays a labelled rain forecast with every exact art frame and leaves it
   } finally { await world.close(); }
 });
 
+void it('labels rain art past the former 20-frame cap within the direct route limit', async () => {
+  const world = await World.open();
+  try {
+    await world.start();
+    const base = await monitor(world);
+    const data = content('rain-art-21', hostedGif(19, 21), 21);
+    await world.outcome(await accepted(stage(world, data)));
+    const now = Date.now();
+    const notice = {kind: 'rain-forecast', likelihood: 'chance', forecastStartAtMs: now + 60_000, forecastEndAtMs: now + 120_000,
+      forecastUpdatedAtMs: now - 1000, observedAtMs: now, staleAtMs: now + 120_000, weatherRevision: 1};
+    const requestId = await accepted(artMoment(world, data.compositionId, {notice, durationMs: 1000}));
+    await waitFor(() => world.device.state().shown?.frames === 21 ? true : undefined, 'all 21 labelled frames');
+    const outcome = await world.outcome(requestId);
+    assert.equal(outcome.data.result, 'succeeded');
+    assert.equal(outcome.data.evidence, 'transmitted');
+    await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'the current Monitor base');
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
+
 void it('refuses a hosted rain notice whose label cannot fit the GIF palette, with no transmission claim and Monitor kept', async () => {
   // The production adapter and hosted encoder, over an in-memory transport: a full 256-color original is admissible on
   // its own, and the label's black and white push it to 258 colors before any file is published or command sent.
@@ -113,6 +135,40 @@ void it('refuses a hosted rain notice whose label cannot fit the GIF palette, wi
     assert.deepEqual(published, [], 'no hosted file is published');
     assert.ok(!commands.slice(before).includes('Device/PlayTFGif'), 'no hosted play command is sent');
     // Nothing reached the panel, so Monitor stays the current base and draws itself again instead of stopping.
+    await waitFor(() => commands.slice(before).includes('Draw/SendHttpGif') ? true : undefined, 'the Monitor base after the refusal');
+    assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
+
+void it('refuses a hosted art moment whose encoded file is too large, with no transmission claim and Monitor kept', async () => {
+  // The hosted encoder's byte budget, like its palette, is checked locally before any file is published or command sent.
+  // A rain label can push an admissible original past it; the encoder here refuses every animated upload the same way.
+  const world = await World.open({section: {device: {...SECTION.device, profile: 'pixoo64-hosted-2026-10-01'}}});
+  const commands: string[] = [], published: number[] = [];
+  let encoded = 0;
+  world.device.open = ({address, clock, profile}) => {
+    const adapter = new HttpDeviceAdapter({ip: address, clock, profile: {...profile, evidence: 'observed', readyDelayMs: 0}, hosted: {
+      files: {publish: bytes => { published.push(bytes.length); return {url: 'http://example.invalid/art.gif', transferred: Promise.resolve(), revoke() {}}; }},
+      encode: () => { encoded += 1; throw new MediaError('storage-limit'); },
+    }}, body => { commands.push(String(body.Command)); return Promise.resolve({error_code: 0, SelectIndex: 0, Brightness: 80, LightSwitch: 1, PicId: 27}); });
+    return Promise.resolve({adapter, close: () => adapter.close()});
+  };
+  try {
+    await world.start();
+    await world.outcome(await accepted(world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'monitor'})));
+    await world.publishSession();
+    await waitFor(() => commands.includes('Draw/SendHttpGif') ? true : undefined, 'the Monitor base');
+    const data = content('oversized-hosted-art', hostedGif(19, 8), 8);
+    assert.equal((await world.outcome(await accepted(stage(world, data)))).data.result, 'succeeded');
+    const before = commands.length;
+    const outcome = await world.outcome(await accepted(artMoment(world, data.compositionId)));
+    assert.equal(outcome.data.result, 'failed', JSON.stringify(outcome.data));
+    assert.equal(outcome.data.evidence, 'none');
+    assert.equal(outcome.data.error?.code, 'too-large');
+    assert.ok(!('transmission' in outcome.data), 'no transmission is recorded');
+    assert.ok(encoded > 0, 'the hosted encoder was reached');
+    assert.deepEqual(published, [], 'no hosted file is published');
+    assert.ok(!commands.slice(before).includes('Device/PlayTFGif'), 'no hosted play command is sent');
     await waitFor(() => commands.slice(before).includes('Draw/SendHttpGif') ? true : undefined, 'the Monitor base after the refusal');
     assert.deepEqual(world.invalid, []);
   } finally { await world.close(); }
@@ -215,7 +271,7 @@ void it('refuses forged callers, bad bytes, decoded metadata and excessive resou
     const forged = await world.probe.request(`bunny.cmd.art-stage.${DEVICE}`, {type: 'org.bunny.art.stage.requested', subject: DEVICE,
       dataschema: 'https://bunny.invalid/events/art-stage/2.0', data}, {timeoutMs: 5000});
     assert.ok(forged.status === 'rejected'); assert.equal(forged.error.error.code, 'forbidden');
-    for (const bad of [{...data, sha256: '0'.repeat(64)}, {...data, width: 32}, {...data, frames: 21},
+    for (const bad of [{...data, sha256: '0'.repeat(64)}, {...data, width: 32}, {...data, frames: 60},
       content('signature', Buffer.alloc(32), 8), content('bytes-limit', Buffer.concat([hostedGif(21, 8), Buffer.alloc(163_840)]), 8)]) {
       const result = await stage(world, bad);
       assert.ok(result.status === 'rejected');
@@ -256,8 +312,8 @@ void it('keeps profile restrictions and never falls back to a mood for refused a
     const world = await World.open({section: {device: {...SECTION.device, profile}}});
     try {
       await world.start();
-      const bytes = profile.includes('smoke') ? hostedGif(21, 8) : manyColorGif();
-      const data = content(profile, bytes, profile.includes('smoke') ? 8 : 2);
+      const bytes = profile.includes('smoke') ? gifFixture(64, 64, [5, 15].map(delay => ({width: 1, height: 1, pixels: [1], delay}))) : manyColorGif();
+      const data = content(profile, bytes, 2);
       const result = await world.outcome(await accepted(stage(world, data)));
       assert.equal(result.data.result, 'failed'); assert.equal(result.data.error?.code, 'unsupported-capability');
       const refused = await artMoment(world, data.compositionId);
@@ -557,5 +613,82 @@ void it('attention interrupts exact art and restart never replays an admitted ar
     const repeated = await artMoment(world, data.compositionId, {momentId: 'restart-art'});
     assert.ok(repeated.status === 'rejected'); assert.equal(repeated.error.error.code, 'invalid-state');
     assert.deepEqual(world.invalid, []);
+  } finally { await world.close(); }
+});
+
+void it('stages and plays exact art at the direct command boundary on the historic smoke configuration', async () => {
+  const world = await World.open({section: {device: {...SECTION.device, profile: 'pixoo64-smoke-2026-09-06'}}});
+  try {
+    await world.start();
+    const admitted: ArtStageContent[] = [];
+    const before = world.device.state().uploads;
+    for (const count of [21, 59, 60]) {
+      const data = content(`direct-${count}`, hostedGif(37, count), count);
+      const answer = await stage(world, data);
+      if (count === 60) {
+        assert.ok(answer.status === 'rejected');
+        assert.match(answer.error.error.detail ?? '', /direct.*59/i);
+      } else {
+        assert.ok(answer.status === 'accepted', JSON.stringify(answer));
+        assert.equal((await world.outcome(answer.requestId)).data.result, 'succeeded');
+        admitted.push(data);
+      }
+      assert.equal(world.device.state().uploads, before);
+    }
+    const base = await monitor(world);
+    for (const data of admitted) {
+      const moment = await accepted(artMoment(world, data.compositionId, {coversStatus: true}));
+      const shown = await waitFor(() => world.device.state().shown?.frames === data.frames ? world.device.state().shown : undefined, 'exact direct art');
+      assert.deepEqual(shown?.delaysMs, Array<number>(data.frames).fill(100));
+      assert.equal((await world.outcome(moment)).data.result, 'succeeded');
+      await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'monitor restored');
+    }
+  } finally { await world.close(); }
+});
+
+void it('retains and plays a 1,001-frame private whole GIF through the extended Pixoo stage', async () => {
+  const world = await World.open({section: {device: {...SECTION.device, profile: 'pixoo64-hosted-2026-10-01'}}});
+  try {
+    await world.start();
+    const frames = 1001;
+    const bytes = gifFixture(64, 64, Array.from({length: frames}, (_, index) => ({width: 1, height: 1, pixels: [1 + index % 2], delay: 10})));
+    const data = content('whole-gif-1001', bytes, frames);
+    const id = await accepted(world.core.request(`bunny.cmd.art-stage.${DEVICE}`, {
+      type: 'org.bunny.art.stage.requested', subject: DEVICE, dataschema: 'https://bunny.invalid/events/art-stage/2.1', data,
+    }, {timeoutMs: 10_000}));
+    assert.equal((await world.outcome(id, 30_000)).data.result, 'succeeded');
+    assert.equal(world.device.state().uploads, 0);
+    const stored = await preview(world, data.compositionId);
+    assert.equal(stored.frameCount, frames);
+    const last = stored.frames.at(-1);
+    assert.ok(last !== undefined); assert.equal(last.delayMs, 100);
+    const png = await world.module.manifest.content?.(last.ref);
+    assert.ok(png !== undefined && !('error' in png)); assert.equal(digest(png.bytes), last.sha256);
+    await monitor(world);
+    const moment = await accepted(artMoment(world, data.compositionId, {coversStatus: true}));
+    const showing = await waitFor(() => world.device.state().shown?.frames === frames ? world.device.state().shown : undefined, 'whole GIF');
+    assert.deepEqual(showing?.delaysMs, Array<number>(frames).fill(100));
+    assert.equal((await world.outcome(moment)).data.result, 'succeeded');
+  } finally { await world.close(); }
+});
+
+void it('refuses an oversized encoded hosted stage before use and keeps the prior private copy', async () => {
+  const world = await World.open({section: {device: {...SECTION.device, profile: 'pixoo64-hosted-2026-10-01'}}});
+  try {
+    await world.start();
+    const prior = content('existing-hosted-copy', hostedGif(7, 8), 8);
+    assert.equal((await world.outcome(await accepted(stage(world, prior)))).data.result, 'succeeded');
+    const committed = await preview(world, prior.compositionId);
+    const data = content('excess-hosted-bytes', oversizedHostedSourceGif(), 2200);
+    const result = await world.outcome(await accepted(world.core.request(`bunny.cmd.art-stage.${DEVICE}`, {
+      type: 'org.bunny.art.stage.requested', subject: DEVICE, dataschema: 'https://bunny.invalid/events/art-stage/2.1', data,
+    }, {timeoutMs: 10_000})), 30_000);
+    assert.equal(result.data.result, 'failed');
+    assert.equal(result.data.error?.code, 'too-large');
+    assert.equal(result.data.evidence, 'none');
+    const absent = await world.module.manifest.content?.(`art-preview.${data.compositionId}`);
+    assert.ok(absent !== undefined && 'error' in absent); assert.equal(absent.error.code, 'not-found');
+    assert.deepEqual(await preview(world, prior.compositionId), committed);
+    assert.equal(world.device.state().sent, 0);
   } finally { await world.close(); }
 });

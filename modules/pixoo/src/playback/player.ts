@@ -1,3 +1,4 @@
+import {withinFrameBufferBudget} from '../device/frames.js';
 import {serializedAdmission, Outcome} from '@jimmie-potts/sdk';
 import {systemClock,type Animation,type Clock,type DeviceAdapter,type OperationResult,type UploadResult} from '../device/index.js';
 import {checkpointSchema,type PlaybackCheckpoint,type CaptureHooks,type PlaybackPolicy} from '../library/index.js';
@@ -160,9 +161,9 @@ export class Player {
   pause():Promise<void> {return this.dispatch(async()=>{},'paused');}
   /** Upload a monitor picture at 500 ms, or bounded exact art with timing validated by its staging owner. */
   async uploadDashboard(frames:readonly Uint8Array[],expectedGeneration:number,options:{signal?:AbortSignal;current?:(priorEffects:'none'|'possible')=>boolean;whileStopped?:boolean;artDelayMs?:number}={}):Promise<OperationResult<UploadResult>|undefined> {
-    const delayMs=options.artDelayMs??500,maxFrames=options.artDelayMs===undefined?2:20;
-    if(!Array.isArray(frames)||frames.length<1||frames.length>maxFrames||frames.some(rgb=>!(rgb instanceof Uint8Array)||rgb.length!==12288)
-      ||!Number.isSafeInteger(delayMs)||delayMs<100||delayMs>800)throw new PlaybackError('invalid-input');
+    const delayMs=options.artDelayMs??500;
+    if(!Array.isArray(frames)||frames.length<1||!withinFrameBufferBudget(frames.length)||(options.artDelayMs===undefined&&frames.length>2)||frames.some(rgb=>!(rgb instanceof Uint8Array)||rgb.length!==12288)
+      ||!Number.isSafeInteger(delayMs)||delayMs<1)throw new PlaybackError('invalid-input');
     const cancelled=()=>options.signal?.aborted===true||options.current?.('none')===false;
     if(this.closing||expectedGeneration!==this.epoch||(this.intent!=='paused'&&!(options.whileStopped===true&&this.intent==='stopped'))||!this.requestedScreenOn||cancelled())return undefined;
     // Card admission is read again inside the device turn: a write queued ahead (such as brightness) can outlast
@@ -269,7 +270,7 @@ export class Player {
     const cached=this.cache.get(id);if(cached)return Promise.resolve(cached);
     const waiting=this.preparing.get(id);if(waiting)return waiting;
     const pending=this.store.load(id,this.abort.signal).then(animation=>{
-      if(animation.frames.length===0 || animation.frames.length>1000 || animation.frames.some(frame=>frame.rgb.length!==12288 || !Number.isSafeInteger(frame.delayMs)||frame.delayMs<1))throw new PlaybackError('invalid-input');
+      if(animation.frames.length===0 || !withinFrameBufferBudget(animation.frames.length) || animation.frames.some(frame=>frame.rgb.length!==12288 || !Number.isSafeInteger(frame.delayMs)||frame.delayMs<1))throw new PlaybackError('invalid-input');
       if(token===this.epoch){this.cache.set(id,animation);for(const key of this.cache.keys()){if(this.cache.size<=2)break;this.cache.delete(key);}}
       return animation;
     });

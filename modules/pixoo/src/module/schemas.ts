@@ -4,7 +4,7 @@
 // playlists and media, and dismiss a finished turn on the Pixoo only. Each schema is closed, and each record fits the
 // 256 KiB cap: a playlist holds at most 1,000 items.
 import {SCHEMA_BASE} from '@jimmie-potts/event-contracts/v2';
-import {deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
+import {EXTENDED_ART_DEVICE_SCHEMA, deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 
 const block = (name: string): object => ({$ref: `${SCHEMA_BASE}blocks/2.0#/$defs/${name}`});
@@ -56,6 +56,9 @@ export const FAMILIES = {
   dismiss: 'pixoo-notice-dismiss',
 } as const;
 export const schemaOf = (family: string): string => `${SCHEMA_BASE}${family}/2.0`;
+const EXTENDED_RENDITION_SCHEMA = `${SCHEMA_BASE}${FAMILIES.rendition}/2.1`;
+export const renditionSchemaOf = (frameCount: number): string => frameCount > 1000 ? EXTENDED_RENDITION_SCHEMA : schemaOf(FAMILIES.rendition);
+export const HOSTED_DEVICE_SCHEMA = EXTENDED_ART_DEVICE_SCHEMA;
 export const OUTCOME_SCHEMA = `${SCHEMA_BASE}outcome/2.0`;
 export const REMOVAL_SCHEMA = `${SCHEMA_BASE}removal/2.0`;
 export const DEVICE_SCHEMA = `${SCHEMA_BASE}device/2.3`;
@@ -63,6 +66,11 @@ export const DEVICE_SCHEMA = `${SCHEMA_BASE}device/2.3`;
 /** At most this many bytes of media an import may carry inline; larger media goes through the module's incoming folder. */
 export const MAX_INLINE_BYTES = 160 * 1024;
 const BASE64_LIMIT = Math.ceil(MAX_INLINE_BYTES / 3) * 4;
+
+const renditionSchema = (maxFrames: number): object => closed({
+  id: hash, revision: block('revision'), assetId: uuid, name, format: {enum: ['png', 'jpeg', 'gif']},
+  frameCount: integer(1, maxFrames), durationMs: nullable(integer(1, Number.MAX_SAFE_INTEGER)), compatible: {type: 'boolean'},
+});
 
 /** The Pixoo's own payload schemas, by `dataschema`. */
 export const pixooOwnSchemas: Readonly<Record<string, object>> = {
@@ -82,10 +90,8 @@ export const pixooOwnSchemas: Readonly<Record<string, object>> = {
     // Optional, so a record stored before moments still reads: `overMonitor` is the setting, `playing` the moment on the display.
     moments: closed({overMonitor: {type: 'boolean'}, playing: nullable(block('id'))}),
   }, ['moments']),
-  [schemaOf(FAMILIES.rendition)]: closed({
-    id: hash, revision: block('revision'), assetId: uuid, name, format: {enum: ['png', 'jpeg', 'gif']},
-    frameCount: integer(1, 1000), durationMs: nullable(integer(1, Number.MAX_SAFE_INTEGER)), compatible: {type: 'boolean'},
-  }),
+  [schemaOf(FAMILIES.rendition)]: renditionSchema(1000),
+  [EXTENDED_RENDITION_SCHEMA]: renditionSchema(Number.MAX_SAFE_INTEGER),
   [schemaOf(FAMILIES.playlist)]: closed({
     id: uuid, revision: block('revision'), name, playlistRevision: revision, repeat: {type: 'boolean'}, shuffle: {type: 'boolean'},
     items: {type: 'array', maxItems: 1000, items: closed({id: uuid, renditionId: hash, playback: policy})},

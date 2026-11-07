@@ -2271,6 +2271,21 @@ zero moment writes and duplicate refusal. Run it after the build with
 the existing `test:runtime:scenarios:built` CI suite discovers it, and
 `scenario-missed-moment-start` is its disposable acceptance capture.
 
+The Pixoo command-boundary and media tests (#1500) run in the existing
+`test:pixoo:built` CI suite. Exercise 21, 59 and 60 direct frames, an imported
+and hosted animation above 1,000 frames, decoded output and manifest byte
+budgets, historical rendition identities and unchanged writer exclusion.
+The registered `pixoo-command-limits` scenario checks authenticated staged
+upload, admission on a direct configuration, unchanged display after refusal,
+and timing through the final preview PNG. Run
+`node --test --test-name-pattern='pixoo-command-limits' apps/runtime/dist/tests/scenarios/catalog.test.js`
+after the build. Its capture step is `scenario-pixoo-command-limits`. The
+dashboard journey `node apps/runtime/dashboard/tests/pixoo-pages.browser.ts`
+checks route explanations and bounded thumbnail decoding in Chromium.
+For the extended Art stage and dispatch contracts run `test:events:built`,
+`test:events:python`, the controller package consumers, and
+`node --test apps/runtime/dist/tests/art-handoff.test.js`.
+
 The reusable Pixoo controls (#1154) add atomic populated creation coverage to
 `modules/pixoo/tests/integration/library.test.ts` and browser journeys to
 `apps/runtime/dashboard/tests/pixoo-pages.browser.ts`. Run that browser file

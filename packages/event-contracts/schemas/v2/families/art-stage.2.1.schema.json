@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-stage/2.1",
+  "description": "Private stage for a device declaring art-stage/2.1. Extends the 2.0 frame count to a positive safe integer. The byte, duration and header checks apply to both versions; the device checks the decoded frames before storing them.",
+  "type": "object",
+  "$ref": "#/$defs/content",
+  "required": ["requestId"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"}
+  },
+  "unevaluatedProperties": false,
+  "$defs": {
+    "compositionId": {"description": "The lowercase hex SHA-256 of the bytes that define the composition. Not necessarily of this rendition's bytes.", "type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "content": {
+      "type": "object",
+      "required": ["compositionId", "format", "width", "height", "frames", "durationMs", "sha256", "base64", "lifetimeMs"],
+      "properties": {
+        "compositionId": {"$ref": "#/$defs/compositionId"},
+        "format": {"enum": ["png", "gif"]},
+        "width": {"type": "integer", "minimum": 1, "maximum": 512},
+        "height": {"type": "integer", "minimum": 1, "maximum": 512},
+        "frames": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "durationMs": {"type": "integer", "minimum": 0, "maximum": 300000},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "base64": {"type": "string", "minLength": 4, "maxLength": 218456},
+        "lifetimeMs": {"description": "From one minute to thirty days.", "type": "integer", "minimum": 60000, "maximum": 2592000000}
+      },
+      "if": {"properties": {"format": {"const": "png"}}},
+      "then": {"properties": {"frames": {"const": 1}, "durationMs": {"const": 0}}}
+    }
+  }
+}

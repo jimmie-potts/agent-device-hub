@@ -138,6 +138,8 @@ it('maps device results and errors by what they prove about effects',()=>{
   .toEqual({result:'succeeded',evidence:'transmitted',transmission:{transmittedAtMs:7,operationIds:['media']}});
  expect(errorCompletion(new LibraryError('not-found'))).toMatchObject({result:'failed',error:{code:'not-found'}});
  expect(errorCompletion(new LibraryError('revision-conflict'))).toMatchObject({result:'failed',error:{code:'revision-conflict'}});
+ expect(errorCompletion(new MediaError('storage-limit'))).toMatchObject({result:'failed',evidence:'none',error:{code:'too-large',retryable:false}});
+ expect(errorCompletion(new MediaError('storage-capacity'))).toMatchObject({result:'failed',evidence:'none',error:{code:'capacity',retryable:true}});
  expect(errorCompletion(new MediaError('pixel-limit'))).toMatchObject({result:'failed',error:{code:'too-large'}});
  expect(errorCompletion(new MediaError('decode-failed'))).toMatchObject({result:'failed',error:{code:'invalid-request'}});
  expect(errorCompletion(new PlaybackError('storage-error'))).toMatchObject({result:'uncertain',error:{code:'uncertain-result'}});

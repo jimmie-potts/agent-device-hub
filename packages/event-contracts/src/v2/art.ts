@@ -15,6 +15,9 @@ export const ART_MODULE_SOURCE = 'bunny/modules/art';
 export const ART_SUBJECT = 'art';
 /** The largest composition a stage carries, decoded: 160 KiB, which leaves a stage inside the 256 KiB message cap. */
 export const MAX_ART_BYTES = 163_840;
+export const LEGACY_ART_STAGE_MAX_FRAMES = 256;
+export const EXTENDED_ART_STAGE_SCHEMA = 'https://bunny.invalid/events/art-stage/2.1';
+export const EXTENDED_ART_DISPATCH_SCHEMA = 'https://bunny.invalid/events/art-dispatch/2.2';
 
 export type ArtFormat = 'png' | 'gif';
 export type ArtPurpose = 'request' | 'ambient' | 'appearance' | 'variation';
@@ -140,6 +143,8 @@ export const artFamilies = [
   defineFamily('art-auto', 'command', 'org.bunny.art.auto.requested', checkJob, '2.1'),
   defineFamily('art-auto', 'command', 'org.bunny.art.auto.requested', checkJob, '2.2'),
   defineFamily('art-dispatch', 'command', 'org.bunny.art.dispatch.requested', checkDispatch, '2.1'),
+  defineFamily('art-stage', 'command', 'org.bunny.art.stage.requested', checkStage, '2.1'),
+  defineFamily('art-dispatch', 'command', 'org.bunny.art.dispatch.requested', checkDispatch, '2.2'),
 ] as const;
 export const artSchemas: Readonly<Record<string, object>> = Object.fromEntries(artFamilies.map(family => [family.dataschema, family.schema]));
 export function registerArtFamilies(validator: MessageValidator): void { registerFamilies(validator, artFamilies); }

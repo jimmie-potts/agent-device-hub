@@ -60,12 +60,16 @@ export class AutomationPart implements CorePart {
   setDevices(devices:readonly AutomationDevice[]):void {
     this.#configured=checkAutomationDevices(devices);this.#followDevices();
   }
-  #device(id:string):DeviceRecord|undefined {
-    const target=this.#configured.find(item=>item.id===id);
-    if(target===undefined) return undefined;
-    const message=this.#devices.get(target.owner)?.copy?.get({family:'device',id});
-    return message?.source===target.owner && message.data.id===id?message.data:undefined;
+  #deviceMessage(id: string, freshOnly: boolean): Message<DeviceRecord> | undefined {
+    const target = this.#configured.find(item => item.id === id);
+    if (target === undefined) return undefined;
+    const follower = this.#devices.get(target.owner);
+    if (freshOnly && follower?.fresh !== true) return undefined;
+    const message = follower?.copy?.get({family: 'device', id});
+    return message?.source === target.owner && message.data.id === id ? message : undefined;
   }
+  #device(id: string): DeviceRecord | undefined {return this.#deviceMessage(id, false)?.data;}
+  currentDevice(id: string): Message<DeviceRecord> | undefined {return this.#deviceMessage(id, true);}
   /** One SDK copy per qualified owner supplies the initial snapshot and resyncs after gaps. */
   #followDevices(): void {
     const handle=this.#handle;
@@ -116,10 +120,7 @@ export class AutomationPart implements CorePart {
     this.#art=createArtPlans({clock:()=>handle.clock.now(),scheduler:this.#scheduler,active:()=>!this.#closed && !this.#signal.aborted,
       targets:()=>this.#configured.flatMap((device):ArtPlanTarget[]=>device.owner==='bunny/modules/pixoo'?[{target:device.id,kind:'pixoo'}]
         :device.owner==='bunny/modules/tidbyt'?[{target:device.id,kind:'tidbyt'}]:[]),
-      current:id=>{
-        const target=this.#configured.find(device=>device.id===id);
-        return target!==undefined && this.#devices.get(target.owner)?.fresh===true?this.#device(id):undefined;
-      },
+      current:id=>this.currentDevice(id)?.data,
       dispatch:action=>handle.dispatch(action),operation:requestId=>handle.operation(requestId),
       claim:(id,digest)=>{
         try{return store.claimArtPlan(id,digest)?undefined:errorBody('duplicate-conflict',{detail:'another art presentation already used this plan ID'});}

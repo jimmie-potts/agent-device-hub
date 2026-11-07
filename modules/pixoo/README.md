@@ -162,8 +162,10 @@ The module's section of the runtime's [configuration file](../../apps/runtime/RE
 ```
 
 - `device.id` is the device's routing ID, unique across modules; `address` a
-  private IPv4 address; `profile` an observed device profile, or
-  `simulator-v1` for a simulated Pixoo only.
+  private IPv4 address. The existing `pixoo64-smoke-2026-09-06` and
+  `pixoo64-gif-2026-10-01` names select direct uploads. The
+  `pixoo64-hosted-2026-10-01` name selects whole GIFs, and `simulator-v1`
+  selects local simulation. Existing configuration files retain these routes.
 - `hostedGif` is the listener the device fetches hosted GIFs from; a real
   device with the hosted profile needs it.
 - `presentation` and `nowPlaying` are where the settings begin. Once the module
@@ -210,10 +212,11 @@ and a recovery after a warning is one record.
 ### Families
 
 It serves, through sync and as live states:
-- `device/2.3`, kind `pixoo`, including exact-art moments and `rain-forecast` notices;
+- `device/2.3`, kind `pixoo`, including exact-art moments and `rain-forecast` notices. The hosted
+  route publishes `device/2.4`, which adds the extended staging declaration;
 - `pixoo-display/2.0`: Monitor's mode, filter, cadence and sessions, what the
   presentation shows, Now Playing, and the player's state, item and last error;
-- `pixoo-rendition/2.0` and `pixoo-playlist/2.0`: one record per catalog entry,
+- `pixoo-rendition/2.0` (2.1 above 1,000 frames) and `pixoo-playlist/2.0`: one record per catalog entry,
   with a removal when one goes.
 
 A playlist holds at most 1,000 items, so every record fits the 256 KiB cap.
@@ -327,10 +330,28 @@ hash and declared metadata. It is addressed to this module's configured device I
 the producer resolves its display kind through the named owner's synced devices.
 The shared validator checks bytes, signature and hash;
 the existing isolated media decoder checks actual 64×64 dimensions, frame count
-and timing. Art is limited to 160 KiB and 20 frames at uniform 100–800 ms delays.
-The selected device profile can narrow those limits: smoke still permits only
-two frames at 500 ms, and hosted animation requires at most 256 exact colors.
-No frames are silently removed or retimed.
+and timing. The shared stage budgets are 160 KiB and five minutes of animation.
+The direct command permits up to 59 frames. Hosted animations of 60 through
+256 frames still use `art-stage/2.0`.
+Above 256 frames, the core forwards `art-stage/2.1` only to a hosted Pixoo
+declaring that support in `device/2.4`. That route fetches a
+64×64 GIF and preserves every frame and delay. Each physical animation uses
+one delay, and hosted encoding requires exact GIF centiseconds and at most 256
+colors across the animation. Hosted admission measures the encoded whole GIF
+against the listener’s 10 MiB file budget. The library keeps the original and
+its preview when the hosted file is too large. A full filesystem or quota
+reports `capacity`; a single file over its budget reports `too-large`.
+Divoom specifies square dimensions for hosted GIFs and gives no frame maximum. Its earlier 20-frame direct and 500-frame
+hosted trials provide examples of observed playback. [Direct command](https://docin.divoom-gz.com/web/#/5/57) · [Hosted command](https://docin.divoom-gz.com/web/#/5/54)
+
+The local library keeps mixed-delay GIFs playable in preview. Import checks
+input bytes, total decoded pixels including the 64×64 output of each frame,
+worker and queue budgets, and immutable manifest bytes. Existing originals,
+renditions, playlists and transient copies retain their historical identities.
+New renders use `library-v1`. The earlier renderer reads historical renders,
+but reports `cache-corrupt` for a new `library-v1` manifest. Recovery of a
+library containing these new renders requires a runtime that recognizes their
+profile.
 
 Staging makes no display write and completes `succeeded/observed` only after
 the private mapping commits. The original and immutable rendition stay under
@@ -354,7 +375,8 @@ changes neither the staged bytes nor their hash, frame count or delays.
 On the hosted route the black and white labels must still fit the GIF's 256
 colors. An original that already uses them all fails `unsupported-capability`
 with evidence `none` before any file is published or command sent, and Monitor
-stays current.
+stays current. The same holds when the labels push the encoded GIF past the hosted
+file budget: that moment fails `too-large` with evidence `none`.
 
 The owner checks evidence freshness at admission and immediately before the
 first native effect. The internal adapter `current(priorEffects)` guard receives
@@ -597,6 +619,12 @@ the return step.
    are separate evidence.
 
 ## Library migration
+
+The installed v3 reader checks its source format’s historical 1,000-frame
+profile boundary. The retained 1.x controller catalog also keeps its released
+read bounds. Current runtime imports, catalog records and previews use the media
+resource budgets and command rules described above.
+
 
 The optional offline tool `apps/runtime/dist/src/migrate-pixoo.js` can carry
 the Pixoo service's library into this module's store

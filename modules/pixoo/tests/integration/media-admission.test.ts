@@ -60,7 +60,7 @@ it('catalog pages distinguish repeated names and bound rendition summaries',asyn
 
 it('rejects incompatible existing media and overflowing plays before replacement',async()=>{
  const {library,player,playlist}=await setup();await player.start(playlist.id);const before=player.getSession();
- async function* animation(){yield Promise.resolve(gifFixture(1,1,[{width:1,height:1,pixels:[1],delay:10},{width:1,height:1,pixels:[0],delay:10}]));}
+ async function* animation(){yield Promise.resolve(gifFixture(1,1,[{width:1,height:1,pixels:[1],delay:10},{width:1,height:1,pixels:[0],delay:20}]));}
  const imported=await library.importMedia(animation(),'Animation');
  await expect(player.showMedia(imported.rendition.id,{mode:'plays',totalPlays:Number.MAX_SAFE_INTEGER})).rejects.toMatchObject({code:'invalid-input'});expect(player.getSession()).toEqual(before);
  await player.close();const device=new FakeDeviceAdapter();const limited=await Player.open({store:new LibraryPlaybackStore(library,{profile:PIXOO64_SMOKE_PROFILE,stillDelayMs:500}),device});players.push(limited);

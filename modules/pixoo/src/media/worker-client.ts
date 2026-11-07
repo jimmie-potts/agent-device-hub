@@ -3,10 +3,10 @@ import {createHash} from 'node:crypto';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {MediaError, RENDERER_VERSION, type MediaLimits, type MediaProfile, type Rendition, type Transform} from './contracts.js';
+import {MediaError, RENDERER_VERSION, storageFailure, type MediaLimits, type RenditionProfile, type Rendition, type Transform} from './contracts.js';
 import {invalidTransfer, readFrame, readHeader, type RenderHeader} from './worker-transfer.js';
 
-export interface WorkerRequest {input: string; output: string; sourceHash: string; id: string; transform: Transform; profile: MediaProfile; limits: MediaLimits}
+export interface WorkerRequest {input: string; output: string; sourceHash: string; id: string; transform: Transform; profile: RenditionProfile; limits: MediaLimits}
 export function signalError(signal: AbortSignal): MediaError {
   return new MediaError(signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError' ? 'timeout' : 'cancelled');
 }
@@ -65,7 +65,7 @@ export function runWorker(request: WorkerRequest, signal: AbortSignal, entry = n
             frames.push({index: frame.index, delayMs: frame.delayMs, rgbHash: hash(frame.rgb), previewHash: hash(frame.preview)});
             busy = false;
             ack(frame.index);
-          })().catch((error: unknown) => { busy = false; fail(error instanceof MediaError ? error : invalidTransfer()); });
+          })().catch((error: unknown) => { busy = false; fail(error instanceof MediaError ? error : storageFailure(error, 'decode-failed')); });
         } else if (answer.ok === true && Object.keys(answer).length === 1) {
           if (header === undefined || frames.length !== header.source.frameCount) throw invalidTransfer();
           success = true;
@@ -87,9 +87,11 @@ export function runWorker(request: WorkerRequest, signal: AbortSignal, entry = n
           effectiveDurationMs: delays.every((delay): delay is number => delay !== null) ? delays.reduce((total, delay) => total + delay, 0) : null,
           frames,
         };
-        await writeFile(join(request.output, 'manifest.json'), JSON.stringify(manifest), {flag: 'wx'});
+        const serialized = JSON.stringify(manifest);
+        if (Buffer.byteLength(serialized) > request.limits.maxManifestBytes) throw new MediaError('storage-limit');
+        await writeFile(join(request.output, 'manifest.json'), serialized, {flag: 'wx'});
         check();
-      })().then(resolve, (error: unknown) => reject(error instanceof MediaError ? error : invalidTransfer()))
+      })().then(resolve, (error: unknown) => reject(error instanceof MediaError ? error : storageFailure(error, 'decode-failed')))
         .finally(() => { signal.removeEventListener('abort', abort); });
     });
     // The output destination and rendition identity stay in this lease-owning process.

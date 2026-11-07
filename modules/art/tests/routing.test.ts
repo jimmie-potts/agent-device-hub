@@ -78,6 +78,29 @@ void test('ambient operation results reach the owning parent boundary', async t 
   assert.deepEqual(w.results, [{requestId: 'ambient-test', result: 'failed', error}]);
 });
 
+void test('only a declared Pixoo receives extended staging; ordinary stages use the original contract', async t => {
+  const w = await world(t);
+  const extended = (kind: 'pixoo' | 'tidbyt', id: string, revision: number) => {
+    const record = artDevice(kind, id, revision);
+    const moments = record.capabilities.moments;
+    assert.ok(moments.supported && moments.art);
+    moments.art.stageVersion = '2.1';
+    return record;
+  };
+  const pixoo = await w.owner('pixoo', [artDevice('pixoo', 'panel')]);
+  await w.owner('tidbyt', [extended('tidbyt', 'tile', 1)]);
+  await w.start();
+  const extra = {format: 'gif' as const, durationMs: 10_010, frames: 1001};
+  for (const kind of ['pixoo', 'tidbyt'] as const) {
+    const denied = await w.stage(kind, extra);
+    assert.equal('error' in denied && denied.error.code, 'unsupported-capability');
+  }
+  await pixoo.update(extended('pixoo', 'panel', 2));
+  await flush();
+  for (const frames of [8, 256, 257, 1001]) assert.deepEqual(await w.stage('pixoo', {...extra, frames}), {status: 'accepted'});
+  assert.deepEqual(w.schemas.map(uri => uri.split('/').pop()), ['2.0', '2.0', '2.2', '2.2']);
+});
+
 void test('saved preparation refuses a changed or stale target identity and never falls back to the replacement display', async t => {
   const w = await world(t), owner = await w.owner('pixoo', [artDevice('pixoo', 'planned')]); await w.start();
   assert.deepEqual(await w.stage('pixoo', {expectedTargetId: 'planned'}), {status: 'accepted'});
