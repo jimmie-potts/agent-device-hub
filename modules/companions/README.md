@@ -49,6 +49,13 @@ speech. Illustrations remain mounted while tabs change only the controls.
 Long messages stay readable, and changing tabs preserves the card's dimensions
 for unchanged content.
 
+The Reachy card reads its `companion-state` copy through the SDK's shared
+`followCopy` (#1540). A read refused with a code that may clear, such as
+`unavailable`, is read again on its own after 1 s, doubling to 30 s. Until
+then Reachy shows as unavailable, its saved reaction stays history and speech
+is not live. A final refusal waits for a reconnect. Only the read repeats; no
+setting, fixture or speech command is sent again.
+
 Reachy's **Latest**, **Controls** and **Voice** keep fixed-text reactions,
 category mute, social snooze and browser speech separate. Muted categories are
 struck through. **Evidence & tools** on its page retains provenance and labelled

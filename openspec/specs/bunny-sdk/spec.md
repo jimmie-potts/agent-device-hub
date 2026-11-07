@@ -1127,3 +1127,14 @@ The shared frontend Command contribution SHALL accept an optional module-qualifi
 #### Scenario: Reopening with an unanswered priority request
 - **WHEN** the page reloads with an unanswered priority request
 - **THEN** that request identity is retained without automatic resend and the ordinary command's retained identity remains separate
+
+### Requirement: Page copies repeat a refused read
+The browser entry SHALL offer `followCopy`, which follows one page copy through a supplied read. When a read is refused, its copy fails or the call throws with a retryable code, it SHALL close that copy and read again after 1 s, doubling to at most 30 s, until a read returns its copy, which restarts the delay at 1 s. A thrown failure that carries no registry body SHALL count as the retryable `unavailable`. A refusal that cannot clear SHALL be reported once and SHALL NOT be read again. Stopping SHALL cancel a pending read, close the current copy and any copy returned later, and call no handler afterwards. Only the sync read SHALL repeat; the helper SHALL send no command (ADR 0012). A module page that repeats a refused read of its copy SHALL use this helper rather than its own retry loop.
+
+#### Scenario: Refused reads back off to a cap
+- **WHEN** a page's reads are refused as `unavailable` or `capacity` eight times in a row and the ninth returns its copy
+- **THEN** the reads start 1, 2, 4, 8, 16, 30, 30 and 30 s after each refusal, with no user action, the copy becomes current and nothing else is scheduled
+
+#### Scenario: A refusal that cannot clear
+- **WHEN** a read is refused, fails or throws with `forbidden`, `invalid-state`, `invalid-request` or `not-found`
+- **THEN** the page hears the refusal once, no read is scheduled and only its explicit retry or a new follow reads again

@@ -3,6 +3,9 @@
 // edge, the outbox and the module host, which only Node runs. A test bundles this entry for the browser to keep it so.
 export {IDLE_MS, REQUESTER_GRACE_MS, connectRemote, type RemoteAuth, type RemoteOptions, type RemoteParticipant, type RemoteEndpoint, type RemoteEndpointOptions} from './remote-client.js';
 export {REMOTE_PATH, REQUEST_HEADER, SOURCE_HEADER} from './remote-protocol.js';
+export {
+  FIRST_READ_RETRY_MS, MAX_READ_RETRY_MS, followCopy, readRefusal, type CopyHandlers, type CopyRead, type ReadRefusal,
+} from './follow.js';
 export {childOf} from './trace.js';
 export {
   MAX_TIMEOUT_MS, SdkError, type Cancel, type CommandDraft, type Handler, type Overflow, type Participant, type RequestOptions, type RequestResult,

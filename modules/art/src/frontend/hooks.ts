@@ -1,31 +1,40 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 import type {ArtRecord, ArtSelection, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {FrontendApi} from '@jimmie-potts/sdk/frontend';
-import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
+import {followCopy, type CopyRead, type Scheduler} from '@jimmie-potts/sdk/remote';
 import {CATALOG_PAGE_SIZE, catalogOf, latestBrowserArt, selectedBrowserArtwork, type CatalogPage} from './model.js';
+
+/** What one art copy reports to its page. */
+export type ArtFeed = {record: (value: ArtRecord | undefined) => void; live: (value: boolean) => void; error: (value: string | undefined) => void};
+/**
+ * One art copy on the shell participant. A refused read leaves the record unavailable and its controls read-only; a
+ * refusal that may clear is read again with the shared backoff, and any other waits for Refresh art records. Only the
+ * read repeats: an art request is never sent again.
+ */
+export function followArt(read: CopyRead<ArtRecord>, feed: ArtFeed, scheduler?: Scheduler): () => void {
+  return followCopy<ArtRecord>(read, {
+    changed: change => {
+      if (change.type === 'updated') feed.record(change.message.data);
+      else if (change.type === 'removed') feed.record(undefined);
+      else feed.live(true);
+    },
+    restarted: () => {feed.live(false);},
+    current: copy => {
+      feed.record(copy.states().find(message => message.data.id === 'art')?.data);
+      feed.error(undefined);
+      feed.live(true);
+    },
+    refused: () => {feed.live(false);feed.error('Art records are unavailable.');},
+  }, scheduler);
+}
 
 export function useArt(api: FrontendApi, connected: boolean) {
   const [state, setState] = useState<ArtRecord>(), [live, setLive] = useState(false), [error, setError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    let disposed = false, copy: SyncedCopy<ArtRecord> | undefined;
     setLive(false); setError(undefined);
     if (!connected) return;
-    const failed = (): void => {if (!disposed) {setLive(false);setError('Art records are unavailable.');}};
-    void api.sync<ArtRecord>(['art'], change => {
-      if (disposed) return;
-      if (change.type === 'updated') setState(change.message.data);
-      else if (change.type === 'removed') setState(undefined);
-      else if (change.type === 'synced') setLive(true);
-      else failed();
-    }, {onRestarted: () => {if (!disposed) setLive(false);}}).then(result => {
-      if (result.status !== 'synced') {failed();return;}
-      if (disposed) {void result.copy.close();return;}
-      copy = result.copy;
-      setState(copy.states().find(message => message.data.id === 'art')?.data);
-      setLive(true);
-    }).catch(failed);
-    return () => {disposed = true;void copy?.close();};
+    return followArt((changed, options) => api.sync<ArtRecord>(['art'], changed, options), {record: setState, live: setLive, error: setError});
   }, [api, connected, attempt]);
   return {state, live: connected && live, error, refresh: () => {setAttempt(value => value + 1);}};
 }

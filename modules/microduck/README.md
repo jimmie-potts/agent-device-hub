@@ -31,6 +31,13 @@ click nor page reload resends them. Gestures retain their ordinary uncertainty
 lock and require the declared held-neutral recovery. Machine credentials and
 saved-command resend cannot actuate the robot through HTTP, MCP or the SDK inbox.
 
+The controls page shows the robot's state only while its copy is current. A
+read refused with a code that may clear, such as `unavailable`, is read again
+on its own after 1 s, doubling to 30 s, through the SDK's shared `followCopy`
+(#1540). Until then the state stays unavailable and every control disabled. A
+final refusal waits for a reconnect. Only the read repeats; no control,
+gesture or Stop request is sent again.
+
 Automatic expression defaults off. It needs exactly one fresh eligible coding
 session, core-owned first-live opportunities, current non-Quiet mode, the witnessed
 vendor pair and fresh sensor evidence. Automatic/manual cue spacing is 30/two
