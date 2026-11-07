@@ -3,7 +3,7 @@ import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {TestContext} from 'node:test';
 import type {DatabaseSync} from 'node:sqlite';
 import {observation, sessionStarted} from './fixtures/agents.js';
-import {MUSIC_PRODUCER_SOURCE, type CaptureResponseSettings, type CaptureFeatures, type CaptureProgress, type CaptureSelection, type CaptureState, type CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
+import {CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_WINDOW_MS, MUSIC_PRODUCER_SOURCE, type CaptureResponseSettings, type CaptureFeatures, type CaptureProgress, type CaptureSelection, type CaptureState, type CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {connectRemote, type Command} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import {tokenDigest} from '../src/credentials.js';
@@ -347,10 +347,44 @@ async function activeMicrophone(h: Awaited<ReturnType<typeof setup>>, name: stri
   await h.control(name, (await h.read()).revision, 'start', selection);await waitFor(() => h.work.length === 1);
   const start = h.work[0];assert.ok(start);
   await h.progress({operationId: name, generation: start.data.generation, status: 'started'});
-  await h.frame(start.data.generation, 1, selection);await waitFor(async () => (await h.read()).session.status === 'active');
+  const first = {sequence: 1, observedAtMs: Date.now()};
+  await h.frame(start.data.generation, 1, {...selection, observedAtMs: first.observedAtMs, validUntilMs: first.observedAtMs + 400});
+  await waitFor(async () => (await h.read()).session.status === 'active');
   const binding = {endpointId: h.endpoint.id, generation: start.data.generation, microphoneId: 'studio-mic', sampleRateHz: 48000, channels: 2};
-  return {binding, selection};
+  return {binding, selection, first};
 }
+type GridFrame = {sequence: number; observedAtMs: number};
+/**
+ * Keeps a microphone source fresh after `first`, one frame per 100 ms on the source's own timeline, as a capture helper
+ * does (#1545). Each frame's wall time matches its source time, so a slow runner cannot age the source past its 400 ms
+ * validity, or make it look incoherent, while a test waits for an admission. `until` stops the feed after the frame that
+ * satisfies it. `stop` keeps feeding until the next frame's time is at least `notBeforeMs`, then returns that next grid
+ * slot for the test's own frame, waiting until its time has come unless `wait` is false.
+ */
+function feedSource(t: TestContext, h: Awaited<ReturnType<typeof setup>>, generation: string, selection: CaptureSelection, first: GridFrame,
+  {patch = {}, until}: {patch?: Partial<CaptureFeatures>; until?: () => Promise<boolean>} = {}) {
+  const at = (sequence: number): number => first.observedAtMs + (sequence - first.sequence) * 100;
+  let next = first.sequence + 1, stopped = false, failure: Error | undefined, sending: Promise<void> = Promise.resolve();
+  const send = async (): Promise<void> => {
+    while (!stopped && at(next) <= Date.now()) {
+      const sequence = next++;
+      await h.frame(generation, sequence, {...selection, ...patch, observedAtMs: at(sequence), validUntilMs: at(sequence) + 400});
+      if (until !== undefined && await until()) stopped = true;
+    }
+  };
+  const timer = setInterval(() => {sending = sending.then(send).catch((error: unknown) => {failure ??= error instanceof Error ? error : new Error('the feed could not publish a frame', {cause: error});stopped = true;});}, 20);
+  const stop = async ({notBeforeMs = 0, wait = true}: {notBeforeMs?: number; wait?: boolean} = {}): Promise<GridFrame> => {
+    while (!stopped && at(next) < notBeforeMs) await new Promise(resolve => setTimeout(resolve, 10));
+    stopped = true;clearInterval(timer);await sending;
+    if (failure !== undefined) throw failure;
+    if (wait) await new Promise(resolve => setTimeout(resolve, Math.max(0, at(next) - Date.now())));
+    return {sequence: next, observedAtMs: at(next)};
+  };
+  t.after(async () => {stopped = true;clearInterval(timer);await sending;});
+  return {stop, stopped: () => stopped};
+}
+/** A quiet measurement admits only frames observed after its window: one window plus the skew bound after admission. */
+const QUIET_WINDOW_OPENS_MS = CAPTURE_WINDOW_MS + CAPTURE_MAX_CLOCK_SKEW_MS + 1;
 const manualSettings: CaptureResponseSettings = {sensitivity: 2, smoothingMs: 150, emphasis: {bass: 2, mid: 1, treble: 0.5}, gate: {mode: 'manual', threshold: 0.02}};
 
 it('response Apply is atomic and revision-bound; calibration Cancel and Stop remain independent', async t => {
@@ -386,23 +420,22 @@ it('response Apply is atomic and revision-bound; calibration Cancel and Stop rem
   await h.progress({operationId: stop.data.operationId, generation: stop.data.generation, status: 'stopped'});
 });
 
-async function completeQuiet(h: Awaited<ReturnType<typeof setup>>, active: Awaited<ReturnType<typeof activeMicrophone>>, requestId: string) {
-  const {binding, selection} = active;
+async function completeQuiet(t: TestContext, h: Awaited<ReturnType<typeof setup>>, active: Awaited<ReturnType<typeof activeMicrophone>>, requestId: string) {
+  const {binding, selection, first} = active;
+  const settled = async (): Promise<boolean> => ['ready', 'ended'].includes((await h.read()).response?.calibration.status ?? '');
+  const source = feedSource(t, h, binding.generation, selection, first, {patch: {rms: 0.01, peak: 0.02}, until: settled});
   await h.tune(requestId, {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
-  const sourceWall = Date.now();let sequence = 2;
-  for (; sequence <= 60; sequence++) {
-    const observedAtMs = sourceWall + (sequence - 1) * 100;
-    await new Promise(resolve => setTimeout(resolve, Math.max(0, observedAtMs - Date.now())));
-    await h.frame(binding.generation, sequence, {...selection, rms: 0.01, peak: 0.02, observedAtMs, validUntilMs: observedAtMs + 400});
-    if ((await h.read()).response?.calibration.status === 'ready') break;
-  }
+  await waitFor(() => source.stopped(), 15_000, 'a settled quiet measurement');
+  // The caller's next frame follows the ready frame at once, so nothing waits for the next grid slot here.
+  const next = await source.stop({wait: false});
+  assert.deepEqual((await h.read()).response?.calibration, {status: 'ready', operationId: requestId}, 'the quiet measurement ended before it was ready');
   await waitFor(() => h.operation(requestId)?.result === 'succeeded');
-  return {state: await h.read(), sequence};
+  return {state: await h.read(), sequence: next.sequence - 1};
 }
 
 it('a completed quiet interval is a candidate until Apply and restart retains evidence without qualification', async t => {
   const directory = await stateDir(t), h = await setup(t, directory), active = await activeMicrophone(h, 'quiet-start'), {binding} = active;
-  const {state: candidate} = await completeQuiet(h, active, 'quiet-complete');assert.ok(candidate.response?.evidence);
+  const {state: candidate} = await completeQuiet(t, h, active, 'quiet-complete');assert.ok(candidate.response?.evidence);
   assert.equal(candidate.response.evidence.windowCount, 50);assert.equal(candidate.response.evidence.percentileRms, 0.01);
   assert.equal(candidate.response.evidence.suggestedThreshold, 0.02);assert.equal(candidate.response.settings.gate.mode, 'off');
   assert.equal(candidate.response.appliedTo, null);
@@ -418,29 +451,34 @@ it('a completed quiet interval is a candidate until Apply and restart retains ev
 });
 
 it('clipping fails quiet measurement and a later source discontinuity retires a manually applied gate', async t => {
-  const h = await setup(t), {binding, selection} = await activeMicrophone(h, 'quiet-failure-start');
+  const h = await setup(t), {binding, selection, first} = await activeMicrophone(h, 'quiet-failure-start');
+  const source = feedSource(t, h, binding.generation, selection, first);
   await h.tune('clipped-quiet', {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
-  await new Promise(resolve => setTimeout(resolve, 250));
-  await h.frame(binding.generation, 2, {...selection, clippedFraction: 0.001});
+  const clipped = await source.stop({notBeforeMs: Date.now() + QUIET_WINDOW_OPENS_MS});
+  await h.frame(binding.generation, clipped.sequence, {...selection, clippedFraction: 0.001, observedAtMs: clipped.observedAtMs, validUntilMs: clipped.observedAtMs + 400});
   await waitFor(() => h.operation('clipped-quiet')?.result === 'failed');
   assert.deepEqual((await h.read()).response?.calibration, {status: 'ended', operationId: 'clipped-quiet', reason: 'clipping'});
+  const after = feedSource(t, h, binding.generation, selection, clipped);
   const current = await h.read();assert.ok(current.response);
   await h.tune('manual-after-clipping', {action: 'apply-tuning', binding, expectedRevision: current.revision, expectedSettingsRevision: current.response.settingsRevision, settings: manualSettings});
   await waitFor(() => h.operation('manual-after-clipping')?.result === 'succeeded');
-  await h.frame(binding.generation, 3, {...selection, discontinuity: true});
+  const broken = await after.stop();
+  assert.deepEqual((await h.read()).response?.appliedTo, binding, 'the manual gate is bound until the discontinuity');
+  await h.frame(binding.generation, broken.sequence, {...selection, discontinuity: true, observedAtMs: broken.observedAtMs, validUntilMs: broken.observedAtMs + 400});
   await waitFor(async () => (await h.read()).response?.appliedTo === null);
   assert.deepEqual((await h.read()).response?.settings, manualSettings);
 });
 
 it('incoherent source and wall elapsed fail calibration and retire the applied gate without replacing preferences', async t => {
-  const h = await setup(t), {binding, selection} = await activeMicrophone(h, 'clock-evidence-start');
+  const h = await setup(t), {binding, selection, first} = await activeMicrophone(h, 'clock-evidence-start');
+  const source = feedSource(t, h, binding.generation, selection, first);
   const before = await h.read();assert.ok(before.response);
   await h.tune('clock-evidence-apply', {action: 'apply-tuning', binding, expectedRevision: before.revision,
     expectedSettingsRevision: before.response.settingsRevision, settings: manualSettings});
   await h.tune('clock-evidence-measure', {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
-  await new Promise(resolve => setTimeout(resolve, 250));
-  const observedAtMs = Date.now(), patch = {...selection, observedAtMs, validUntilMs: observedAtMs + 400};
-  await h.frame(binding.generation, 2, patch);await h.frame(binding.generation, 3, patch);
+  // Two frames 100 ms apart in source time but observed at the same wall time, both inside the measurement window.
+  const next = await source.stop({notBeforeMs: Date.now() + QUIET_WINDOW_OPENS_MS}), patch = {...selection, observedAtMs: next.observedAtMs, validUntilMs: next.observedAtMs + 400};
+  await h.frame(binding.generation, next.sequence, patch);await h.frame(binding.generation, next.sequence + 1, patch);
   await waitFor(() => h.operation('clock-evidence-measure')?.result === 'failed');
   const state = await h.read();
   assert.deepEqual(state.response?.calibration, {status: 'ended', operationId: 'clock-evidence-measure', reason: 'clock'});
@@ -472,7 +510,7 @@ it('an applied gate without a measurement retires on incoherent clocks and requi
 
 it('a ready candidate keeps its timing guard and loses eligibility on later clock drift', async t => {
   const h = await setup(t), active = await activeMicrophone(h, 'candidate-clock-start');
-  const {state: candidate, sequence} = await completeQuiet(h, active, 'candidate-clock-measure');
+  const {state: candidate, sequence} = await completeQuiet(t, h, active, 'candidate-clock-measure');
   assert.ok(candidate.response?.evidence);
   const observedAtMs = candidate.response.evidence.endedAtMs;
   await h.frame(active.binding.generation, sequence + 1, {...active.selection, observedAtMs, validUntilMs: observedAtMs + 400});
