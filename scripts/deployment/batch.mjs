@@ -3,7 +3,7 @@ import {refusalFields} from '../operator-refusal.mjs';
 import {maintenanceHelperFor,maintenanceHelperDetails} from './maintenance-helper.mjs';
 import {Outcome} from '../../packages/sdk/dist/src/evidence.js';
 import {setTimeout as delay} from 'node:timers/promises';
-import {dirname} from 'node:path';
+import {dirname,join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {operate,selected,access,container,stopped,privateHostDirectory,ordinaryVolume} from '../bunny.mjs';
@@ -13,6 +13,8 @@ const SHA=/^[a-f0-9]{40}$/,IMAGE=/^sha256:[a-f0-9]{64}$/,ID=/^[a-f0-9]{64}$/;
 const refuse=()=>{throw new Error('deployment-refused');};
 const keys=(value,names)=>value!==null&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===names.length&&names.every(name=>Object.hasOwn(value,name));
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+// Recorded with a failed replacement write; any other error is recorded as other, never as its message.
+const FILE_ERRORS=new Set(['EACCES','EDQUOT','EEXIST','EIO','ELOOP','ENAMETOOLONG','ENOENT','ENOSPC','ENOTDIR','EPERM','EROFS']);
 export function validateRequest(request) {
   if(!keys(request,['schema','operation','id','owner','project','compose','containerId','previousImage','previousRevision','candidate','runId','runAttempt','includedIssues','requiredModules','client','forward','recovery','backup'])
     ||!keys(request.forward,['assessment','evidence'])||!keys(request.recovery,['status'])||!keys(request.backup,['volume','name'])
@@ -110,7 +112,9 @@ export async function deployBatch(request,{run,qualification,root,compatibility}
     const rendered=JSON.parse(await run(['compose','-f',request.compose,'-p',request.project,'config','--format','json']));
     const replacement=replacementCompose(rendered,before,target.image.id,request.project);
     await privateHostDirectory(dirname(request.compose));
-    const replacementPath=request.compose+'.'+request.id+'.json';
+    // Named by the request ID alone, beside the source. The next request names this file, so a name built from the
+    // source name grew with every batch until it passed the 255-byte filename limit (#1502).
+    const replacementPath=join(dirname(request.compose),request.id+'.compose.json');
 
     let record={...request,schema:'bunny-batch-record/1.0',targetImage:target.image.id,qualification:{runId:target.runId,runAttempt:target.runAttempt},
       replacementCompose:replacementPath,previous:{image:before.Image,revision:request.previousRevision,container:before.Id},preserved,composeSha256:hash(composeBytes),phase:'prepared',outcome:Outcome.uncertain,startedAt:new Date().toISOString()};
@@ -118,7 +122,10 @@ export async function deployBatch(request,{run,qualification,root,compatibility}
     await phase('preparing-compose');
     let replacementId;
     try {
-      await writeNewPrivateJson(replacementPath,replacement);await phase('prepared');
+      await writeNewPrivateJson(replacementPath,replacement).catch(error=>{
+        record={...record,failedStep:'writing-replacement-compose',failedFileError:FILE_ERRORS.has(error?.code)?error.code:'other'};throw error;
+      });
+      await phase('prepared');
       if(hash(await readFile(request.compose))!==record.composeSha256)refuse();
       const current=await selected(request,run);
       if(current?.Id!==before.Id||!isDeepStrictEqual(identity(current,request.project),preserved))refuse();
