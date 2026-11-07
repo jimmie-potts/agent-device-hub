@@ -22,7 +22,7 @@ ES module exports in place of global wrappers. Prism's global capability tests u
 or Node implementation is imported by this browser entry.
 
 `index.tsx` mounts the controller, follows `device` and `nanoleaf-wall` through the
-shell context, and reads saved connector geometry through the authenticated module
+shell context with `catalog-feed.ts`, and reads saved connector geometry through the authenticated module
 content route. `model.ts` translates records and existing wall actions. The shared
 Command component owns request identity, completion, uncertainty and reload recovery.
 Read-only and stale views keep local inspection available while disabling writes.

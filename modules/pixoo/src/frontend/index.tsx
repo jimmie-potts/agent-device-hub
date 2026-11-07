@@ -2,7 +2,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {FrontendApi, FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
-import type {CopyRead, Scheduler, SyncChange, SyncedCopy} from '@jimmie-potts/sdk/remote';
+import {followCopy, type CopyRead, type Scheduler} from '@jimmie-potts/sdk/remote';
 import type {DisplayRecord, PlaylistRecord} from '../module/schemas.js';
 import {LibraryPage} from './library.js';
 import {PlaylistsPage} from './playlists.js';
@@ -14,19 +14,16 @@ export {MediaPicker} from './media-picker.js';
 export {PlaylistEditor} from './playlist-editor.js';
 
 type Record = DeviceRecord | PlaylistRecord | DisplayRecord;
-const object = (value: unknown): value is {body: unknown} => typeof value === 'object' && value !== null && 'body' in value;
-const codeOf = (error: unknown): string => object(error) && typeof error.body === 'object' && error.body !== null && 'error' in error.body
-  && typeof error.body.error === 'object' && error.body.error !== null && 'code' in error.body.error && typeof error.body.error.code === 'string'
-  ? error.body.error.code : 'unavailable';
 type Catalog = {live: boolean; device: DeviceRecord | undefined; display: DisplayRecord | undefined; playlists: readonly PlaylistRecord[]; error: string | undefined; pending: boolean; retry: () => void};
 
 type CatalogRecords = Omit<Catalog, 'retry'>;
-/** One catalog copy over the kept records, which stay marked stale while a read is refused. */
-export function followPixooCatalog(read: CopyRead<Record>, records: Map<string, Record>, emit: (catalog: CatalogRecords) => void, _scheduler?: Scheduler): () => void {
-  let disposed = false;
-  let copy: SyncedCopy<Record> | undefined;
-  const show = (live: boolean, error?: string): void => {
-    if (disposed) return;
+/**
+ * One catalog copy over the kept records, which stay marked stale with the refusal's code. A refusal that may clear is
+ * read again with the shared backoff; any other waits for Retry Pixoo records or a reconnect. Only reads repeat.
+ */
+export function followPixooCatalog(read: CopyRead<Record>, records: Map<string, Record>, emit: (catalog: CatalogRecords) => void, scheduler?: Scheduler): () => void {
+  let live = false;
+  const show = (error?: string): void => {
     const values = [...records.values()];
     emit({
       live, error, pending: false,
@@ -39,43 +36,34 @@ export function followPixooCatalog(read: CopyRead<Record>, records: Map<string, 
         }),
     });
   };
-  let live = false;
-  const changed = (change: SyncChange<Record>): void => {
-    if (disposed) return;
-    switch (change.type) {
-      case 'updated':
-        records.set(`${change.entity.family}/${change.entity.id}`, change.message.data);
-        show(live);
-        break;
-      case 'removed':
-        records.delete(`${change.entity.family}/${change.entity.id}`);
-        show(live);
-        break;
-      case 'synced':
-        live = true;
-        show(true);
-        break;
-      case 'failed':
-        live = false;
-        show(false, change.error.error.code);
-        break;
-    }
-  };
-  void read(changed, {onRestarted: () => {}}).then(result => {
-    if (result.status === 'rejected') { show(false, result.error.error.code); return; }
-    if (disposed) { void result.copy.close(); return; }
-    copy = result.copy;
-    records.clear();
-    for (const state of copy.states()) {
-      const family = 'playlistRevision' in state.data ? 'pixoo-playlist' : 'monitor' in state.data ? 'pixoo-display' : 'device';
-      records.set(`${family}/${state.data.id}`, state.data);
-    }
-    live = true;
-    show(true);
-  }).catch((error: unknown) => {
-    show(false, codeOf(error));
-  });
-  return () => { disposed = true; void copy?.close(); };
+  return followCopy<Record>(read, {
+    changed: change => {
+      switch (change.type) {
+        case 'updated':
+          records.set(`${change.entity.family}/${change.entity.id}`, change.message.data);
+          show();
+          break;
+        case 'removed':
+          records.delete(`${change.entity.family}/${change.entity.id}`);
+          show();
+          break;
+        case 'synced':
+          live = true;
+          show();
+          break;
+      }
+    },
+    current: copy => {
+      records.clear();
+      for (const state of copy.states()) {
+        const family = 'playlistRevision' in state.data ? 'pixoo-playlist' : 'monitor' in state.data ? 'pixoo-display' : 'device';
+        records.set(`${family}/${state.data.id}`, state.data);
+      }
+      live = true;
+      show();
+    },
+    refused: ({code}) => { live = false; show(code); },
+  }, scheduler);
 }
 
 /** Follow owned device and playlist facts on the shell participant; media reads use bounded content pages. */

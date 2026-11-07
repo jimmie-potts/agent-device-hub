@@ -1,5 +1,5 @@
 import type {CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
-import type {CopyRead, Scheduler, SyncedCopy} from '@jimmie-potts/sdk/remote';
+import {followCopy, type CopyRead, type Scheduler, type SyncedCopy} from '@jimmie-potts/sdk/remote';
 
 /** What Reachy's copy reports to its page and to speech's final check. */
 export type ReachyFeed = {
@@ -13,29 +13,28 @@ export type ReachyFeed = {
   restarted: () => void;
 };
 
-/** Follows Reachy's companion state on the shell participant. */
-export function followReachy(read: CopyRead<CompanionState>, feed: ReachyFeed, _scheduler?: Scheduler): () => void {
-  let active = true;
+/**
+ * Follows Reachy's companion state on the shell participant. A refused or failed read leaves Reachy unavailable and
+ * speech not live; a refusal that may clear is read again with the shared backoff. Only the read repeats: no setting,
+ * fixture or speech command is sent again.
+ */
+export function followReachy(read: CopyRead<CompanionState>, feed: ReachyFeed, scheduler?: Scheduler): () => void {
   let replacing = false;
   let copy: SyncedCopy<CompanionState> | undefined;
-  let close: (() => Promise<void>) | undefined;
   const show = (): void => {
     const current = copy?.states().find(message => message.data.id === 'reachy');
     if (current !== undefined) feed.current(current.data);
     else feed.unavailable();
   };
-  void read(change => {
-    if (!active) return;
-    if (change.type === 'updated') feed.updated(change.message.data);
-    else if (change.type === 'failed') {replacing = true; feed.unavailable();}
-    else if (change.type === 'synced') {replacing = false; if (copy !== undefined) show();}
-    else if (change.entity.id === 'reachy') feed.unavailable();
-  }, {onRestarted: () => {if (active) {replacing = true; feed.restarted();}}}).then(result => {
-    if (result.status !== 'synced') {if (active) feed.unavailable(); return;}
-    if (!active) {void result.copy.close(); return;}
-    close = () => result.copy.close();
-    copy = result.copy;
-    if (!replacing) show();
-  }, () => {if (active) feed.unavailable();});
-  return () => {active = false; void close?.();};
+  return followCopy<CompanionState>(read, {
+    changed: (change, own) => {
+      if (change.type === 'updated') feed.updated(change.message.data);
+      else if (change.type === 'synced') {replacing = false; if (own !== undefined) show();}
+      else if (change.entity.id === 'reachy') feed.unavailable();
+    },
+    restarted: () => {replacing = true; feed.restarted();},
+    current: returned => {copy = returned; if (!replacing) show();},
+    // The next read is a new copy, so it waits for no earlier restart.
+    refused: () => {copy = undefined; replacing = false; feed.unavailable();},
+  }, scheduler);
 }

@@ -360,6 +360,25 @@ so the owner never serves it and its room is free for another. It is still
 An owner ignores a sync request past its expiry. A malformed call, such as an
 empty or repeated family list, rejects with `SdkError` and `invalid-request`.
 
+### Following a page copy
+
+A module page reads its copy with `followCopy(read, handlers, scheduler?)`
+from `@jimmie-potts/sdk/remote` (#1540). Each call of `read` is one sync with
+its own copy. `handlers.changed` hears each change except a failure,
+`handlers.restarted` hears the copy's `onRestarted`, and `handlers.current`
+gets the copy once the read returns it. A read that is refused, whose copy
+fails, or that throws ends in `handlers.refused({code, retryable})`, and its
+copy is closed. A thrown error keeps its registry body's code and flag, and
+one without a body counts as the retryable `unavailable`.
+
+When `retryable` is true, a new read starts after `FIRST_READ_RETRY_MS`
+(1 s), doubling to `MAX_READ_RETRY_MS` (30 s), the dashboard shell's own
+backoff. A returned copy starts the delay again at 1 s. A refusal that cannot
+clear, such as `forbidden`, schedules nothing; the page's own Retry control
+starts a new follow. The returned function cancels a pending read, closes the
+current copy and any copy returned later, and stops every handler. Only the
+read repeats, which ADR 0012 permits for a sync; no command is sent.
+
 ## Closing a participant
 
 `participant.close()` closes everything the participant opened, so a stopped

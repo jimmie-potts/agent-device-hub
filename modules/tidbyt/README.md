@@ -42,7 +42,7 @@ Status shows cloud availability and the last known cloud acceptance time.
 Disconnected or failed copies keep saved evidence marked stale until a complete
 replacement sync succeeds. A read refused with a code that may clear, such as
 `unavailable`, is read again on its own after 1 s, doubling to 30 s, as the
-shell's own copies are (#1483); `forbidden` and other final refusals wait.
+shell's own copies are (#1483), through the SDK's shared `followCopy` (#1540); `forbidden` and other final refusals wait.
 Retry records repeats only the read, at once. Content explains
 automatic agent status and optional now playing; it does not list configured
 installations. No power, brightness, content-selection or push/removal controls

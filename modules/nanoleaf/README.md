@@ -469,6 +469,8 @@ No backend implementation is imported into the browser.
 The page syncs only `device` and `nanoleaf-wall` from this owner. It keeps Lines and Panels
 selection, the task/project inspector, map controls, keyboard selection, local assembly
 and number preferences. A stale sync disables editing and offers an explicit read retry.
+A refused read whose code may clear is also read again on its own after 1 s, doubling to
+30 s, through the SDK's shared `followCopy` (#1540); only the read repeats.
 Read-only users can inspect the wall and change local display preferences; mutations
 still require the runtime's control authority and browser Origin checks.
 

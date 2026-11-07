@@ -448,6 +448,14 @@ active and late copies through the existing shell scope. A refused or failed
 copy whose code may clear is read again with the shell's 1 s to 30 s backoff
 instead of waiting for Retry records; a final refusal still waits (#1483).
 
+Module pages that follow their own copy use the SDK's shared `followCopy` for
+the same backoff (#1540): Tidbyt, the Pixoo catalog, Art records, the Reachy
+card, the Nanoleaf wall catalog and the MicroDuck controls. A refused read
+keeps each page's stale or unavailable state and its Retry control, if it has
+one. A refusal that may clear is read again on its own; a final one waits.
+Only reads repeat; no command is resent. The hibernated ONN and BB-8 pages are
+unchanged.
+
 Passive pages keep their script-free frame. A declared trusted editor uses an
 application frame under the gateway's trusted asset policy. It is reviewed
 same-origin application code, not an untrusted extension sandbox. User media
