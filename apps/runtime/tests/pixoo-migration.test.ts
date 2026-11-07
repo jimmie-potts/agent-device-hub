@@ -314,12 +314,17 @@ it('on a real full disk, a migration either verifies or fails disk-short and lea
   assert.ok(runs.some(run => run.exit === EXIT.failed) && runs.some(run => run.exit === EXIT.ok), 'the sizes span the full disk and enough room');
 });
 
-it('an interrupt before anything is written is a refusal, and SIGINT or SIGTERM while it writes removes what was written', async context => {
+it('an interrupt before anything is written is a refusal', async context => {
   const state = join(await stateDir(context), 'state');
   const aborted = await tool(args('migrate', state), {signal: AbortSignal.abort()});
   assert.deepEqual([aborted.exit, aborted.line.result, aborted.line.code], [EXIT.refused, 'refused', 'interrupted']);
   assert.ok(await absent(state));
-  for (const signal of ['SIGINT', 'SIGTERM', 'SIGINT', 'SIGTERM'] as const) {
+});
+
+// One test per signal, each within its own 15 s wait for the pause (Hub #1546): four in one test would add up to more
+// than the 20 s default.
+for (const [signal, round] of [['SIGINT', 'first'], ['SIGTERM', 'first'], ['SIGINT', 'second'], ['SIGTERM', 'second']] as const) {
+  it(`${signal} while it writes removes what was written (${round} run)`, async context => {
     const target = join(await stateDir(context), 'state');
     // The shipped entry point, paused at its ninth file read until the signal comes (Hub #1546): a signal sent after a
     // real-time wait could arrive once a fast write had already finished.
@@ -329,9 +334,10 @@ it('an interrupt before anything is written is a refusal, and SIGINT or SIGTERM 
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
     child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
     const exited = once(child, 'exit') as Promise<[number | null, NodeJS.Signals | null]>;
-    await waitFor(() => stderr.includes('paused copy'), 15_000, 'the child paused mid-copy');
-    // What the signal interrupts: the copy, with the module's database, its folder and some files already written.
-    assert.ok(!await absent(join(target, 'modules', 'pixoo.sqlite')), `${signal}: the database exists`);
+    await waitFor(() => stderr.includes('paused copy') || child.exitCode !== null, 15_000, 'the child paused mid-copy');
+    // What the signal interrupts: the copy, with the module's database, its folder and some files already written. A
+    // child that exited before its pause fails here, with its stderr.
+    assert.ok(!await absent(join(target, 'modules', 'pixoo.sqlite')), `${signal}: the database exists; stderr: ${stderr}`);
     assert.ok((await readdir(join(target, 'modules', 'pixoo', 'media'), {recursive: true, withFileTypes: true})).some(entry => entry.isFile()), `${signal}: files were copied`);
     child.kill(signal);
     const [code, killed] = await exited;
@@ -341,8 +347,8 @@ it('an interrupt before anything is written is a refusal, and SIGINT or SIGTERM 
     assert.deepEqual([code, killed, line.result, line.code, line.destination], [EXIT.failed, null, 'failed', 'interrupted', 'removed'], `${signal}: ${stderr}`);
     await sleep(200);
     assert.deepEqual(await readdir(join(target, 'modules')), ['core.sqlite-owner'], `${signal}: only the runtime's lease file is left`);
-  }
-});
+  });
+}
 
 it('verify exits 1 and counts the mismatch when a copied file changed', async context => {
   const state = join(await stateDir(context), 'state');
