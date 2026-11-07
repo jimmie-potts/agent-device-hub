@@ -94,9 +94,18 @@ export const artScheduleScenarios: readonly Scenario[] = [{
       && schedule(h)?.lastOpportunity?.displays.every(value => value.prepareRequestId !== null && value.momentRequestId !== null) === true || 'tracked preparations or admissions missing', 12_000),
     act('time advances to the same fixed start chosen by the real schedule', h => h.wait(Math.max(0, startOf(h) - h.now()))),
     expect('the browser and both simulated native displays present the shared idea with the fresh notice', async h => {
-      const value = art(h), current = schedule(h), animation = tidbyt(h).installations.bunnymoment?.animation;
-      if (value === undefined || !('selection' in value) || value.selection === null || value.selection.artworkId !== saved(h)?.artworkId || current?.notice == null
-          || animation?.frames.length !== 8 || animation.delaysMs.some(delay => delay !== 200) || pixoo(h).shown?.frames !== 8) return 'exact selected art or native notice animations missing';
+      const value = art(h), current = schedule(h), animation = tidbyt(h).installations.bunnymoment?.animation, shown = pixoo(h).shown;
+      // Name each missing part so a hosted failure says which surface or record fell behind.
+      const missing = [
+        value === undefined || !('selection' in value) || value.selection === null ? 'browser selection'
+          : value.selection.artworkId !== saved(h)?.artworkId ? 'browser selection of another artwork' : undefined,
+        current?.notice == null ? 'schedule notice' : undefined,
+        animation === undefined ? 'Tidbyt moment' : animation.frames.length !== 8 || animation.delaysMs.some(delay => delay !== 200)
+          ? `Tidbyt animation (${String(animation.frames.length)} frames, delays ${[...new Set(animation.delaysMs)].join('/')})` : undefined,
+        shown?.frames !== 8 ? `Pixoo frames (${String(shown?.frames ?? 'none')})` : undefined,
+      ].filter(item => item !== undefined);
+      if (value === undefined || !('selection' in value) || value.selection === null || current?.notice == null || animation === undefined || missing.length > 0)
+        return `exact selected art or native notice animations missing: ${missing.join(', ')}`;
       const answer = await h.gateway({as: 'reader', method: 'GET', path: `/modules/${SCHEDULE_FIXTURE}/content/pixoo`});
       const submitted = bodyOf<SubmittedPixooFrames>(answer);
       if (answer.status !== 200 || submitted?.frames.length !== 8 || submitted.frames.some((frame, index) => frame.digest !== pixoo(h).shown?.digests[index] || frame.delayMs !== 200))
