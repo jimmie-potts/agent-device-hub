@@ -79,3 +79,16 @@ for (const [name, mutate] of [
   const {receipt, hosted} = fixture(); mutate(hosted);
   assert.throws(() => validateHostedQualification(receipt, hosted, expected), /qualification-refused/);
 });
+
+// #1512 runs the packaged build and its lanes as jobs outside the receipt. The operator's consumer still accepts the
+// receipt from such a run: its checks keep the same names, and the extra hosted jobs only gate the image job.
+test('the packaged build and lane jobs leave the receipt and its hosted validation unchanged', () => {
+  const {receipt, hosted} = fixture();
+  hosted.jobs.push(...['Packaged ARM64 build', 'Packaged ARM64 verification (scenarios)', 'Packaged ARM64 verification (captures)',
+    'Packaged ARM64 verification (verification)', 'Release qualification result'].map((name, index) => ({id: index + 50, name,
+    status: 'completed', conclusion: 'success', head_sha: sha, run_id: 10, run_attempt: 1})));
+  assert.equal(EXPECTED_JOB_NAMES.at(-1), 'Packaged ARM64 image');
+  assert.equal(validateHostedQualification(receipt, hosted, expected), receipt);
+  // A failed lane fails the run, so the consumer refuses it even though the receipt's own checks would match.
+  assert.throws(() => validateHostedQualification(receipt, {...hosted, run: {...hosted.run, conclusion: 'failure'}}, expected), /qualification-refused/);
+});

@@ -44,11 +44,11 @@ jobs:
     uses: ./.github/workflows/workflow.yml
     with:
       qualification: true
-  image:
-    name: Packaged ARM64 image
+  build:
+    name: Packaged ARM64 build
     needs: pin
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 60
+    timeout-minutes: 20
     outputs:
       image: ${{ steps.build.outputs.image }}
     steps:
@@ -56,7 +56,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24'
-      - name: Build and exercise the immutable packaged candidate
+      - name: Build and save the immutable packaged candidate
         id: build
         run: node scripts/release/build.mjs "$GITHUB_SHA" "$RUNNER_TEMP/release"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -66,9 +66,47 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 14
+  # Three lanes test the same saved archive in parallel and together run the whole packaged inventory (#1512).
+  # Each lane downloads only this attempt's archive, so a rerun of failed jobs cannot test an earlier attempt's image.
+  verify:
+    name: Packaged ARM64 verification (${{ matrix.lane }})
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [scenarios, captures, verification]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-image-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release
+      - name: Exercise this attempt's packaged candidate
+        env:
+          LANE: ${{ matrix.lane }}
+          RELEASE_IMAGE: ${{ needs.build.outputs.image }}
+        run: node scripts/release/verify.mjs "$GITHUB_SHA" "$RUNNER_TEMP/release/production-image.tar.gz" "$LANE"
+  # The image is released for qualification only after every lane passed on it.
+  image:
+    name: Packaged ARM64 image
+    needs: [build, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      image: ${{ needs.build.outputs.image }}
+    steps:
+      - name: Require the built image every lane verified
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+        run: test -n "$IMAGE"
   result:
     name: Release qualification result
-    needs: [pin, checks, workflow, image]
+    needs: [pin, checks, workflow, build, verify, image]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

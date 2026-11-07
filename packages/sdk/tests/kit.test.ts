@@ -468,12 +468,23 @@ it('the kit catches a configuration the module refuses or lacks: the module neve
   assert.deepEqual(await failing({...beaconSpec(), config: undefined}), every, 'a module with configure needs a section');
 });
 
-it('the kit catches a module that puts a secret it read in a log record, a message, a span, a reply, a command it sends or a synced state, and never quotes it', async () => {
-  const starting = [CHECKS.lifecycle, CHECKS.offline, CHECKS.serves, CHECKS.refuses];
-  const reasons: string[] = [];
-  const leaks: readonly NonNullable<BeaconFault['leak']>[] = ['log', 'message', 'command', 'span', 'reply', 'sync'];
-  for (const leak of leaks) {
+// One test per place a secret can leak (Hub #1490). Each check hosts the module in a fresh world that compiles the whole
+// core schema catalog, so all six leaks in one test outgrew its ten-second deadline on hosted runners as the catalog grew.
+// Each failing check gives one reason: 18 in all.
+const starting = [CHECKS.lifecycle, CHECKS.offline, CHECKS.serves, CHECKS.refuses];
+const leaks: readonly (readonly [NonNullable<BeaconFault['leak']>, string, readonly string[]])[] = [
+  ['log', 'a log record', starting],
+  ['message', 'a message it publishes', starting],
+  ['command', 'a command it sends, which no responder answers', starting],
+  ['span', 'an attribute of a span it records', starting],
+  ['reply', 'a reply', [CHECKS.refuses]],
+  ['sync', 'a state only the sync it serves carries', [CHECKS.serves]],
+];
+assert.equal(leaks.reduce((sum, [, , expected]) => sum + expected.length, 0), 18);
+for (const [leak, where, expected] of leaks) {
+  it(`the kit catches a module that puts a secret it read in ${where}, and never quotes it`, async () => {
     const failed: string[] = [];
+    const reasons: string[] = [];
     for (const check of conformanceChecks(beaconSpec({leak}))) {
       try {
         await check.run();
@@ -482,12 +493,11 @@ it('the kit catches a module that puts a secret it read in a log record, a messa
         reasons.push(String(error instanceof Error ? error.message : error));
       }
     }
-    const expected = leak === 'reply' ? [CHECKS.refuses] : leak === 'sync' ? [CHECKS.serves] : starting;
     assert.deepEqual(failed, expected, `${leak} leak`);
-  }
-  assert.equal(reasons.length, 18);
-  assert.ok(reasons.every(reason => reason.includes('carries a secret') && !reason.includes(SECRET)), 'each names where the secret appeared, never the secret');
-});
+    assert.equal(reasons.length, expected.length);
+    assert.ok(reasons.every(reason => reason.includes('carries a secret') && !reason.includes(SECRET)), 'each names where the secret appeared, never the secret');
+  });
+}
 
 it('the harness gives a module only the secrets its section names, from memory, and a private folder', async context => {
   const dir = await mkdtemp(join(tmpdir(), 'bunny-harness-'));

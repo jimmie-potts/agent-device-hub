@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {mkdtemp, writeFile, rm} from 'node:fs/promises';
+import {readFileSync, writeFileSync} from 'node:fs';
+import {chmod, mkdir, mkdtemp, writeFile, rm} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
@@ -160,4 +162,92 @@ for (const failure of ['CRC', 'truncated', 'already-aborted']) test(`archive ${f
   assert.equal(child.signal, null, child.stderr);
   assert.equal(child.status, 0, child.stderr);
   assert.match(child.stdout, /archive refusal settled/);
+});
+// A packaged lane tests only the archive its own attempt's build reported (#1512).
+test('a verification lane accepts only the exact archive the build reported, loaded as that image', async t => {
+  const {expectedImage, loadedIdentity} = await import('../verify.mjs');
+  const f = fixture(), a = await archive(t, f.entries);
+  const reported = await savedImageMetadata(a.path, candidate, f.production);
+  const expected = expectedImage(JSON.stringify(reported), candidate);
+  assert.equal(await loadedIdentity(a.path, f.production, candidate, expected), f.configId);
+  await assert.rejects(loadedIdentity(a.path, f.production, candidate, {...expected, archiveSha256: 'c'.repeat(64)}), /release-image-refused/);
+  await assert.rejects(loadedIdentity(a.path, f.production, candidate, {...expected, id: 'sha256:' + 'c'.repeat(64)}), /release-image-refused/);
+  const other = fixture({mutateConfig: value => {value.config.Labels.extra = 'another build';}}), b = await archive(t, other.entries);
+  await assert.rejects(loadedIdentity(b.path, other.production, candidate, expected), /release-(image|archive)-refused/, 'another build of the same source');
+  const reordered = structuredClone(f.production); reordered.RootFS.Layers.reverse();
+  await assert.rejects(loadedIdentity(a.path, reordered, candidate, expected), /release-archive-refused/, 'a loaded image with other layers');
+  await assert.rejects(loadedIdentity(a.path, {...f.production, Architecture: 'amd64'}, candidate, expected), /release-image-refused/);
+  for (const text of ['', 'null', '{}', JSON.stringify({...reported, revision: 'b'.repeat(40)}), JSON.stringify({...reported, extra: 1}),
+    JSON.stringify({...reported, archive: 'other.tar.gz'}), JSON.stringify({...reported, id: 'mutable:tag'})]) {
+    assert.throws(() => expectedImage(text, candidate), /release-verify-refused/, text);
+  }
+});
+
+// The lane CLI as the workflow runs it, with RELEASE_IMAGE from the build and a fake git and docker on PATH. Every refusal
+// stops before `docker run`, so a mismatched archive, image or derivative is never tested or reported as passing.
+const fakeDocker = `import {appendFileSync, readFileSync} from 'node:fs';
+const args = process.argv.slice(2);
+appendFileSync(process.env.FAKE_DOCKER_LOG, JSON.stringify(args) + '\\n');
+const read = name => readFileSync(process.env[name], 'utf8');
+if (args[0] === 'load') process.stdout.write('Loaded image ID: ' + process.env.FAKE_LOADED_ID + '\\n');
+else if (args[0] === 'image' && args[1] === 'inspect') process.stdout.write(args[2].endsWith(':test') ? read('FAKE_DERIVATIVE') : read('FAKE_CORE'));
+else if (!['image', 'build', 'run'].includes(args[0])) process.exitCode = 64;
+`;
+async function lane(t, f, {image, core = f.production, derivative} = {}) {
+  const home = await mkdtemp(join(tmpdir(), 'release-lane-'));
+  t.after(() => rm(home, {recursive: true, force: true}));
+  const a = await archive(t, f.entries), bin = join(home, 'bin'); await mkdir(bin);
+  const reported = image ?? await savedImageMetadata(a.path, candidate, f.production);
+  const portable = derivative ?? {...structuredClone(f.production), Id: 'sha256:' + 'd'.repeat(64),
+    Config: {...structuredClone(f.production.Config), Labels: {...f.production.Config.Labels, 'org.bunny.verify.portable': '1'}},
+    RootFS: {Layers: [...f.production.RootFS.Layers, 'sha256:' + 'e'.repeat(64)]}};
+  const files = {engine: join(home, 'docker.mjs'), log: join(home, 'docker.log'), core: join(home, 'core.json'), derivative: join(home, 'test.json')};
+  await writeFile(files.engine, fakeDocker); await writeFile(files.log, '');
+  await writeFile(files.core, JSON.stringify([core])); await writeFile(files.derivative, JSON.stringify([portable]));
+  await writeFile(join(bin, 'docker'), `#!/bin/sh\nexec "${process.execPath}" "${files.engine}" "$@"\n`);
+  await writeFile(join(bin, 'git'), `#!/bin/sh\ncase "$*" in *rev-parse*) echo ${candidate};; esac\n`);
+  await Promise.all(['docker', 'git'].map(name => chmod(join(bin, name), 0o755)));
+  const run = selected => {
+    writeFileSync(files.log, '');
+    const child = spawnSync(process.execPath, [fileURLToPath(new URL('../verify.mjs', import.meta.url)), candidate, a.path, selected], {encoding: 'utf8',
+      env: {PATH: bin, RELEASE_IMAGE: JSON.stringify(reported), FAKE_DOCKER_LOG: files.log, FAKE_LOADED_ID: core.Id, FAKE_CORE: files.core, FAKE_DERIVATIVE: files.derivative}});
+    return {code: child.status, stderr: child.stderr, calls: readFileSync(files.log, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line))};
+  };
+  return {run, reported};
+}
+const verbs = calls => calls.map(call => call[0] === 'image' ? `image ${call[1]}` : call[0]);
+
+test('the lane CLI tests the reported archive only after its archive, image and derivative checks pass', async t => {
+  const f = fixture(), {run} = await lane(t, f);
+  for (const name of ['scenarios', 'captures', 'verification']) {
+    const result = run(name);
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(verbs(result.calls), ['load', 'image inspect', 'image tag', 'build', 'image inspect', 'run', 'image inspect']);
+    const started = result.calls.find(call => call[0] === 'run');
+    assert.deepEqual(started.slice(-3), ['/usr/local/bin/node', 'scripts/release/packaged.mjs', name]);
+    assert.ok(started.includes('sha256:' + 'd'.repeat(64)), 'the derivative is what runs');
+  }
+});
+
+test('the lane CLI refuses a mismatched archive, image or derivative before docker run', async t => {
+  const f = fixture(), reported = await savedImageMetadata((await archive(t, f.entries)).path, candidate, f.production);
+  const otherLayers = structuredClone(f.production); otherLayers.RootFS.Layers.reverse();
+  const unrelated = {...structuredClone(f.production), Id: 'sha256:' + 'd'.repeat(64), Config: {...structuredClone(f.production.Config),
+    Labels: {...f.production.Config.Labels, 'org.bunny.verify.portable': '1'}}, RootFS: {Layers: ['sha256:' + 'e'.repeat(64)]}};
+  const unlabelled = {...structuredClone(f.production), Id: 'sha256:' + 'd'.repeat(64)};
+  for (const [name, options, code, loads] of [
+    ['another archive than the build reported', {image: {...reported, archiveSha256: 'c'.repeat(64)}}, 'release-archive-refused', false],
+    ['another manifest than the build reported', {image: {...reported, id: 'sha256:' + 'c'.repeat(64)}}, 'release-image-refused', true],
+    ['a loaded image with other layers', {core: otherLayers}, 'release-archive-refused', true],
+    ['a derivative on another parent', {derivative: unrelated}, 'release-parent-refused', true],
+    ['a derivative without the portable label', {derivative: unlabelled}, 'release-image-refused', true],
+  ]) {
+    const result = (await lane(t, f, options)).run('captures');
+    assert.equal(result.code, 1, name);
+    assert.equal(result.stderr, `release-verify-failed: ${code}\n`, name);
+    assert.equal(verbs(result.calls).includes('run'), false, `${name}: nothing is tested`);
+    assert.equal(verbs(result.calls).includes('load'), loads, `${name}: ${loads ? 'loaded' : 'refused before docker load'}`);
+  }
+  const unknown = (await lane(t, f)).run('everything');
+  assert.deepEqual([unknown.code, unknown.stderr, unknown.calls], [1, 'release-verify-failed: release-verify-refused\n', []]);
 });

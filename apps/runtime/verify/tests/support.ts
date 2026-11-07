@@ -18,6 +18,23 @@ export type Started = {
   stderr: () => string; stop: () => Promise<{code: number | null; signal: NodeJS.Signals | null}>;
 };
 
+/**
+ * Which capture cases this process judges. Packaged qualification sets `BUNNY_CAPTURE_SHARD=<index>/<count>` to divide
+ * the cases between parallel jobs on the same image (#1512): shard `index` takes every `count`-th case, starting at case
+ * `index`. Unset, a process takes every case. Any other value is refused, so a typo never runs a silent subset.
+ */
+export function captureShard(value = process.env.BUNNY_CAPTURE_SHARD): {index: number; count: number} {
+  if (value === undefined || value === '') return {index: 1, count: 1};
+  const match = /^([1-9])\/([1-9])$/.exec(value);
+  if (match === null || Number(match[1]) > Number(match[2])) throw new Error('BUNNY_CAPTURE_SHARD must be <index>/<count>, such as 1/2');
+  return {index: Number(match[1]), count: Number(match[2])};
+}
+
+/** The items of `all` that shard `index` of `count` takes. Every item belongs to exactly one shard. */
+export function inShard<T>(all: readonly T[], {index, count}: {index: number; count: number}): T[] {
+  return all.filter((_, at) => at % count === index - 1);
+}
+
 /** A private base directory removed after the test. */
 export async function base(context: TestContext): Promise<string> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'rv-')));

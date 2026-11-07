@@ -9,19 +9,24 @@ import {fileURLToPath} from 'node:url';
 import {parseRecord, type DiagnosticRecord} from '@jimmie-potts/bunny-observability';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError} from '@jimmie-potts/sdk';
+import {SAVE_COST} from '../src/core/store.js';
 import {shippedModules, startRuntime, type LogRecord} from '../src/index.js';
 import {LogWriter, errorFields} from '../src/log.js';
 import {RUNTIME_PACKAGE_VERSION, UUID, contextOf, fixture, health, it, modeFor, stateDir, waitFor} from './support.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.js', import.meta.url));
 const FIXTURE = fileURLToPath(new URL('./fixtures/process.js', import.meta.url));
+const SLOW_SAVE = new URL('./fixtures/slow-save.js', import.meta.url).href;
 const clock = {now: () => Date.parse('2026-10-06T12:00:00.000Z')};
 
 type Child = {child: ChildProcess; lines: () => string[]; stdout: () => string; exited: Promise<{code: number | null; signal: NodeJS.Signals | null}>};
 
-/** Starts a runtime process; `closeStderr` closes the reading end of its stderr at once. Killed after the test. */
-function start(context: TestContext, script: string, args: readonly string[], closeStderr = false): Child {
-  const child = spawn(process.execPath, [script, ...args], {stdio: ['ignore', 'pipe', 'pipe']});
+/**
+ * Starts a runtime process; `closeStderr` closes the reading end of its stderr at once, and `preload` is a module that
+ * `node --import` loads first. Killed after the test.
+ */
+function start(context: TestContext, script: string, args: readonly string[], closeStderr = false, preload?: string): Child {
+  const child = spawn(process.execPath, [...(preload === undefined ? [] : ['--import', preload]), script, ...args], {stdio: ['ignore', 'pipe', 'pipe']});
   const exited = once(child, 'exit').then(([code, signal]) => ({code: code as number | null, signal: signal as NodeJS.Signals | null}));
   context.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
   let stderr = '';
@@ -44,35 +49,76 @@ function parsed(lines: readonly string[]): DiagnosticRecord[] {
 const ready = (runtime: Child): Promise<void> => waitFor(() => runtime.stdout().includes('\n'), 15_000, 'the ready line');
 const url = (runtime: Child): string => (JSON.parse(runtime.stdout().split('\n')[0] ?? '') as {url: string}).url;
 
+/**
+ * The core store's records of a costly save (Hub #976), in the order a run of them takes: a WARN as it starts and an
+ * INFO as it ends. They are the core's module records, not lifecycle records. One save on a loaded host can take longer
+ * than `SAVE_COST.saveMs`, so the store may write them between the runtime's lifecycle records (Hub #1494).
+ */
+const COSTS = ['storage.cost.high', 'storage.cost.normal'];
+const costly = (record: DiagnosticRecord): boolean => COSTS.includes(record.event_name);
+
+/**
+ * Stops a ready runtime process started in `environment` and checks its stderr: every line is a contract record with the
+ * runtime's resource and the process's one instance ID, and the lifecycle records come in order with nothing else among
+ * them but the core's costly-save records. Returns the records.
+ */
+async function stopped(runtime: Child, environment: 'development' | 'production'): Promise<DiagnosticRecord[]> {
+  assert.deepEqual(Object.keys(JSON.parse(runtime.stdout().split('\n')[0] ?? '') as object), ['event', 'url'], 'the ready line is unchanged');
+  runtime.child.kill('SIGTERM');
+  assert.deepEqual(await runtime.exited, {code: 0, signal: null});
+  const records = parsed(runtime.lines());
+  const names = records.map(record => record.event_name);
+  // The shipped list holds the core (Hub #831), whose start and stop the runtime records, then the configured modules,
+  // which the runtime refuses without a configuration (Hub #919, #928); companions takes a section too (Hub #46).
+  const refused = shippedModules.slice(1).map(() => 'runtime.module.refused');
+  assert.deepEqual(records.filter(record => !costly(record)).map(record => record.event_name),
+    ['runtime.started', ...refused, 'runtime.module.started', 'runtime.ready', 'runtime.module.stopped', 'runtime.stopped']);
+  // A save is the core's work: after the configured modules' refusals, before the core has stopped.
+  const core = {after: names.lastIndexOf('runtime.module.refused'), before: names.indexOf('runtime.module.stopped')};
+  records.forEach((record, index) => {
+    if (!costly(record)) return;
+    assert.ok(index > core.after && index < core.before, `${record.event_name} while the core runs`);
+    const {'bunny.save.duration_ms': ms, ...rest} = record.attributes;
+    assert.deepEqual(rest, {'bunny.module': 'core', 'bunny.operation': 'storage', 'bunny.provenance': 'source'}, 'a save\'s time and nothing of its state');
+    const high = record.event_name === 'storage.cost.high';
+    assert.equal(record.severity_text, high ? 'WARN' : 'INFO');
+    assert.ok(typeof ms === 'number' && (high ? ms > SAVE_COST.saveMs : ms <= SAVE_COST.saveMs), `${record.event_name} with its save's time: ${String(ms)}`);
+  });
+  assert.ok(records.filter(costly).every((record, index) => record.event_name === COSTS[index % 2]), 'one WARN and one INFO per run of slow saves');
+  for (const record of records) {
+    assert.equal(record.schema_version, '1.8');
+    assert.deepEqual(record.scope, {name: costly(record) ? 'bunny.module' : 'bunny.runtime', version: '1.0.0'});
+    assert.equal(record.resource['service.name'], 'runtime');
+    assert.equal(record.resource['service.version'], RUNTIME_PACKAGE_VERSION);
+    assert.equal(record.resource['deployment.environment.name'], environment, 'development unless --environment says otherwise');
+    assert.match(record.resource['service.instance.id'] ?? '', UUID);
+  }
+  assert.equal(records[0]?.attributes['server.port'], Number(new URL(url(runtime)).port));
+  assert.deepEqual(records.find(record => record.event_name === 'runtime.stopped')?.attributes, {'bunny.telemetry.dropped_count': 0, 'bunny.telemetry.failure_count': 0, 'bunny.provenance': 'source'},
+    'runtime.stopped counts the records the writer dropped or lost');
+  assert.equal(new Set(records.map(record => record.resource['service.instance.id'])).size, 1, 'one instance ID per process');
+  return records;
+}
+
+const runtimeArgs = async (context: TestContext, environment: 'development' | 'production'): Promise<string[]> =>
+  ['--port', '0', '--state-dir', await stateDir(context), ...(environment === 'development' ? [] : ['--environment', environment])];
+
 it('every stderr line of a runtime process is a contract record carrying the runtime\'s resource, and each process has its own instance ID', async context => {
   const instances: string[] = [];
   for (const environment of ['development', 'production'] as const) {
-    const args = ['--port', '0', '--state-dir', await stateDir(context), ...(environment === 'development' ? [] : ['--environment', environment])];
-    const runtime = start(context, MAIN, args);
+    const runtime = start(context, MAIN, await runtimeArgs(context, environment));
     await ready(runtime);
-    assert.deepEqual(Object.keys(JSON.parse(runtime.stdout().split('\n')[0] ?? '') as object), ['event', 'url'], 'the ready line is unchanged');
-    runtime.child.kill('SIGTERM');
-    assert.deepEqual(await runtime.exited, {code: 0, signal: null});
-    const records = parsed(runtime.lines());
-    // The shipped list holds the core (Hub #831), whose start and stop the runtime records, then the configured modules,
-    // which the runtime refuses without a configuration (Hub #919, #928); companions takes a section too (Hub #46).
-    const refused = shippedModules.slice(1).map(() => 'runtime.module.refused');
-    assert.deepEqual(records.map(record => record.event_name), ['runtime.started', ...refused, 'runtime.module.started', 'runtime.ready', 'runtime.module.stopped', 'runtime.stopped']);
-    for (const record of records) {
-      assert.equal(record.schema_version, '1.8');
-      assert.deepEqual(record.scope, {name: 'bunny.runtime', version: '1.0.0'});
-      assert.equal(record.resource['service.name'], 'runtime');
-      assert.equal(record.resource['service.version'], RUNTIME_PACKAGE_VERSION);
-      assert.equal(record.resource['deployment.environment.name'], environment, 'development unless --environment says otherwise');
-      assert.match(record.resource['service.instance.id'] ?? '', UUID);
-    }
-    assert.equal(records[0]?.attributes['server.port'], Number(new URL(url(runtime)).port));
-    assert.deepEqual(records.find(record => record.event_name === 'runtime.stopped')?.attributes, {'bunny.telemetry.dropped_count': 0, 'bunny.telemetry.failure_count': 0, 'bunny.provenance': 'source'},
-      'runtime.stopped counts the records the writer dropped or lost');
-    assert.equal(new Set(records.map(record => record.resource['service.instance.id'])).size, 1, 'one instance ID per process');
+    const records = await stopped(runtime, environment);
     instances.push(records[0]?.resource['service.instance.id'] ?? '');
   }
   assert.notEqual(instances[0], instances[1], 'another process has another instance ID');
+});
+
+it('a startup save slower than its limit adds only its own contract record to the lifecycle on stderr', async context => {
+  const runtime = start(context, MAIN, await runtimeArgs(context, 'development'), false, SLOW_SAVE);
+  await ready(runtime);
+  const records = await stopped(runtime, 'development');
+  assert.deepEqual(records.filter(costly).map(record => record.event_name), ['storage.cost.high'], 'the slow save is recorded once');
 });
 
 it('the entry point refuses an environment the contract does not know', async context => {

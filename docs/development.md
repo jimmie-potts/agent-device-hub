@@ -386,9 +386,35 @@ source exporter, then runs every scenario and every packaged verification test f
 exact checkout-only `build.test.js`. The in-image launcher prints its complete
 inventory and exclusion. The full source verification job still runs that file;
 its Git inventory assertion needs the checkout metadata the sealed image excludes.
-The packaged suites have a 45-minute process deadline and a 30-second kill grace.
-The complete image job has a separate 60-minute limit for build, tests and artifact
-transport. A timeout fails qualification. It never admits a partially tested image.
+
+The `Packaged ARM64 build` job builds and saves the image and uploads its archive.
+Three `Packaged ARM64 verification` jobs then test that archive in parallel
+([#1512](https://github.com/jimmie-potts/agent-device-hub/issues/1512)). Each one
+downloads only its own attempt's archive. It refuses the archive before loading
+it unless its SHA-256 matches what the build reported. After loading, it refuses
+the image unless it matches the archive's manifest and the reported identity.
+Only then does it build the test derivative on the image. The lanes split the
+inventory between them:
+
+- `scenarios`: the scenario catalog files and the backup helper suite.
+- `captures`: the odd-numbered capture cases of `steps.test.js`, and its other tests.
+- `verification`: every other packaged verification file, then, in a separate
+  process, the even-numbered capture cases.
+
+`BUNNY_CAPTURE_SHARD=<index>/<count>` selects a share of the capture cases, so
+the two shards run each case once. The launcher sets it only for the capture
+file's own process and drops an inherited value, so the variable can never
+shrink another run. Unset, as in source CI, `steps.test.js` runs every case. The
+verification files stay serial within their lane.
+`Packaged ARM64 image` runs only after the build and all three lanes pass, and it
+passes the image identity to the receipt, so the receipt's job names are unchanged. A rerun
+of failed jobs cannot reuse an earlier attempt's archive: after a lane fails,
+rerun all jobs.
+
+Each lane's packaged suites have a 45-minute process deadline and a 30-second
+kill grace. Each lane job has a 60-minute limit for download, load, the
+derivative build and its tests, and the build job has 20 minutes. A timeout
+fails qualification. It never admits a partially tested image.
 All packaged browser, accessibility, negative-control, adapter, boundary, drain,
 follow, guard, health, HOME, journal, migration, run and supervisor tests remain.
 Docker's init reaps orphaned test processes. Containers have synthetic state and
@@ -484,6 +510,15 @@ The runtime's unit and scenario suites left Core for the Runtime unit tests and
 Runtime scenario tests jobs, each under the same 40 minutes, when Core's slowest
 passes came within a minute of its limit ([#1506](https://github.com/jimmie-potts/agent-device-hub/issues/1506);
 measurements under [CI cost and suite timings](#ci-cost-and-suite-timings)).
+Packaged ARM64 qualification runs in three parallel lanes under the unchanged
+45-minute process deadline ([#1512](https://github.com/jimmie-potts/agent-device-hub/issues/1512)).
+In one serial job, its packaged suites grew from 1,914 s on main `50acae82` to 2,582 s
+on `0098927f`, then passed the 2,700 s deadline on `4c42b933`. In that run the
+scenario catalog took 841 s and `steps.test.js` 1,686 s before the interruption;
+`scenario-art-schedule` alone took 165 s. From that run's case times, the lanes
+take about 844 s (`scenarios`), 862 s (`captures`) and 1,241 s (`verification`),
+so the longest lane leaves about 24 minutes of headroom. Each extra lane adds its
+own runner setup, archive download and derivative build, about three minutes.
 Runtime verification has a separate 45-minute job limit alongside the existing
 per-test deadlines. Two full catalog attempts
 reached the previous 35-minute limit before all cases reported their results
@@ -568,7 +603,8 @@ ran on `ubuntu-26.04` in dispatched runs on 2026-11-06
 ([#871](https://github.com/jimmie-potts/agent-device-hub/issues/871)). The one
 image difference they found was the hook qualification's AppArmor profile path,
 described under [Linux hook performance qualification](#linux-hook-performance-qualification).
-CodeQL pins `ubuntu-24.04` and the packaged image job `ubuntu-24.04-arm`.
+CodeQL pins `ubuntu-24.04`, and release qualification's packaged build and
+verification lanes pin `ubuntu-24.04-arm`.
 Local validation runs the same commands. Later runtime and browser
 changes must add their own issue-appropriate checks.
 
@@ -590,9 +626,9 @@ rename) and maps it to check groups with the small explicit table in
 | chompi | The CHOMPI bridge, `packages/chompi-protocol/**` and `firmware/**` | The bridge's suites, verification steps and browser check, and the Firmware job |
 | shared | Only full coverage | The shared packages' and contracts' suites, the Python consumers, the old dashboard's tests, the app-verify core and the observability browser check |
 
-Build, typecheck, lint and the workspace-audit tests always run for ready
-candidates. Ordinary Markdown, `openspec/**` and documentation tooling select
-no product group. Delivery and validation policy paths, `AGENTS.md`,
+Build, typecheck, lint and the workspace-audit and tracker-audit tests always
+run for ready candidates. Ordinary Markdown, `openspec/**` and documentation
+tooling select no product group. Delivery and validation policy paths, `AGENTS.md`,
 `docs/sdlc.md`, `docs/development.md` and the admission capability spec, retain
 full coverage. Every other path selects
 full coverage: shared packages and contracts, root manifests, the lockfile and
@@ -1411,6 +1447,39 @@ PR states and Docker Desktop for the Docker sections; a missing tool, a PR older
 than the newest 300, or no record naming an image is reported as a note, not a
 failure. Its classification and collection tests are
 `npm run test:workspace-audit`, run in core CI.
+
+### Tracker audit
+
+`npm run audit:tracker` prints the read-only report that
+[Tracker audit](sdlc.md#tracker-audit) acts on, and exits 0 when clean, 1 with
+findings, 2 when a read failed or an item could not be checked, and 3 on a
+usage error or an internal error, such as malformed GitHub data. Every GitHub request goes through the delivery preflight's
+read-only client (`scripts/delivery-preflight/github.mjs`), which refuses any
+request other than a GET to the GitHub API or one of the preflight's own
+GraphQL queries, so the audit cannot write. It needs a token from `GH_TOKEN`,
+`GITHUB_TOKEN` or `gh auth token`. Pass `-- --hours <n>` for the 72-hour
+window, `-- --stale-review-days <n>` for the five-day review threshold and
+`-- --json` for the raw report. The status check accepts only the four values
+[the label rule](sdlc.md#authority-and-preparation) names, so any other
+`status:*` label is a finding. The five-day review threshold is the audit's
+default, proposed in #1508; no document sets a time limit on `status:review`.
+Two parts of it are heuristics:
+
+- A PR references an issue when its body names it in a `Refs` or closing
+  clause, such as `Refs #12, #13` or `Closes #14`; a bare mention or
+  `Part of #N` does not count. A merged PR that refs an epic or other parent
+  therefore reports that parent when nobody has commented since, even where
+  [Tracker reconciliation](sdlc.md#tracker-reconciliation) needed no update.
+- A cleanup outcome is recorded when a comment on the PR, or on an issue its
+  body references, was updated at or after the merge, names cleanup or a
+  worktree, and uses one of step 8's outcome words: removed, retained or not
+  applicable. It does not check that each resource has an outcome or that a
+  removal cites its readback, and a comment that only quotes the rule passes.
+  One such comment on a shared referenced issue, such as an epic, clears every
+  PR merged before it that refs that issue.
+
+Its fixture tests, `npm run test:tracker-audit`, run in core CI without
+network access.
 
 ## Runtime dashboard checks
 
@@ -2760,8 +2829,9 @@ skipped. It covers raw configuration, version 1/2 readers, zero filesystem acces
 for declared ONN dependencies, refusal of dependency/secret-reference overlap
 before reference I/O, secret and descriptor tampering, WAL/keys/assets,
 real lease contention and interruption. Packaged ARM64 qualification runs that
-same worker suite, and a negative control proves helper failure blocks the
-qualification driver. Host tests cover the qualified helper's
+same worker suite in its `scenarios` lane. Negative controls run the launcher
+both without a lane and as each lane's command. A failing helper, or any other
+packaged file, fails the run. Host tests cover the qualified helper's
 old target and actual image identity, raw/serialized helper refusal, authenticated
 pinned-main ancestry before download/load (including an authentic-looking green
 unmerged run and unavailable or contradictory comparisons), safe stderr

@@ -22,9 +22,9 @@ import {viewRevision} from '../read-receipts/qualification.js';
 // - Each save of the state block is measured, and a costly one is recorded (Hub #976; see `SAVE_COST`).
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {validateExport, type Commit, type DurableState, type Session, type Storage, type StorageLease} from '@jimmie-potts/agent-state';
-import {MessageValidator, compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  registerCoreFamilies, type AgentOccurrence, type Attention, type AttentionCleared, type AttentionRaised, type KnownId, type LifecycleObservation,
+  coreValidator, type AgentOccurrence, type Attention, type AttentionCleared, type AttentionRaised, type KnownId, type LifecycleObservation,
   type SessionRecord, type TurnEnded,
 } from '@jimmie-potts/event-contracts/v2/families';
 import {
@@ -178,7 +178,7 @@ function apply(prior: DurableState | undefined, change: Commit, ownerId: string)
 export class CoreStore implements Storage {
   readonly #db: DatabaseSync;
   readonly #options: StoreOptions;
-  readonly #validator = new MessageValidator();
+  readonly #validator = coreValidator();
   #opened: {outbox: Outbox; statements: Statements; history: History} | undefined;
   #leased = false;
   /** The store's lock, held from the first lease until `close`. */
@@ -213,7 +213,6 @@ export class CoreStore implements Storage {
     this.#db = options.database;
     this.#options = options;
     this.#timer = options.timer ?? (() => performance.now());
-    registerCoreFamilies(this.#validator);
   }
 
   /** The core's current revision: every record it serves carries this one or an earlier one. */
