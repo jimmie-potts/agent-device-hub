@@ -65,9 +65,10 @@ export function agents({home, node, project = 'bunny-mac-personal'}) {
       program: ['/bin/sh', join(route, 'start-forwarder.sh')], log: join(route, 'forwarder.log')},
     // The app binary starts as the GUI, logs a CLIError and exits 0 without a terminal unless TAILSCALE_BE_CLI is set, and
     // even then whenever its parent is launchd. So a shell stays its parent: no exec, the binary as $0 rather than shell
-    // text, a stop forwarded and waited for, and the job ending with the serve so KeepAlive restarts it.
+    // text, a stop forwarded and waited for, and the job ending with the serve so KeepAlive restarts it. The trap exits
+    // with the serve's status: a bare exit there keeps the interrupted wait's 143 in dash, as POSIX specifies.
     {label: 'org.bunny.private-serve', keepAlive: true, path, environment: {TAILSCALE_BE_CLI: '1'}, workingDirectory: route,
-      program: ['/bin/sh', '-c', `trap 'kill -TERM "$c" 2>/dev/null; wait "$c"; exit' TERM INT; "$0" serve --https=443 http://127.0.0.1:18789 & c=$!; wait "$c"`, tailscale],
+      program: ['/bin/sh', '-c', `trap 'kill -TERM "$c" 2>/dev/null; wait "$c"; exit "$?"' TERM INT; "$0" serve --https=443 http://127.0.0.1:18789 & c=$!; wait "$c"`, tailscale],
       log: join(route, 'serve.log')},
   ];
 }
