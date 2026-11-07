@@ -1,6 +1,7 @@
 // Real disposable core/gateway with numeric-only source data. No native helper or physical device.
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
+import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
 import {expect} from 'playwright/test';
 import {AxeBuilder} from '@axe-core/playwright';
@@ -26,6 +27,10 @@ try {
   await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveCount(0); await start.focus(); await page.keyboard.press('Enter');
   await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.25');
   await card.getByText(/Start: Completed: succeeded/).waitFor(); assert.equal(producer.commands.length, 1);
+  // A loaded runner delays the producer's timer (#1511). Like a capture helper, the fixture then delivers the windows
+  // that ended meanwhile, so measurements stay fresh instead of falling permanently behind the core's clock.
+  const stalled = Date.now(); while (Date.now() - stalled < 1000) {/* hold this process's event loop */}
+  await delay(1000); await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.25');
   await page.screenshot({path: join(artifacts, 'music-capture-active-desktop.png'), fullPage: true});
   await page.route('**/api/sdk/v1/sync', async route => {
     const request = route.request().postDataJSON() as {request?: {data?: {families?: string[]}}};
