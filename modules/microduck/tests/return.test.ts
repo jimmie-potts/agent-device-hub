@@ -10,7 +10,9 @@ const program=(record:string):string=>{const {observation:_observation,revision:
  * part of that 100 ms window (#1491), so the module saves the pending return before the hold and makes no commit
  * before the return is sent. Here every commit the gesture itself makes while only its first move is out costs 150 ms
  * of the clock the test moves, as a slow disk or a stalled host would. Observation commits keep their cost, so the
- * test times the program's own commits only.
+ * test times the program's own commits only. The test clock's timers count from its loop time, as Node's do, so the
+ * hold's timer, set right after the slow transmission commit, ends 150 ms early by the transport clock; the return
+ * must still wait for 800 ms by that clock rather than be refused as early.
  */
 void test('slow program commits are absorbed by the 800 ms hold, which stays outbound, not by the 100 ms return window',{timeout:10000},async t=>{
  const clock=new TestClock(),robot=new SimulatedMicroDuck(clock),f=await fixture(t,robot,clock);await f.control('takeover');

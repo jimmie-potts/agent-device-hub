@@ -18,13 +18,17 @@ import type {CompletedOutcome} from '@jimmie-potts/event-contracts/v2/devices';
  * evidence older than 500 ms, and its path to the first write runs eight synchronous commits with no observation between
  * them, so on the real clock a slow disk or a stalled host could refuse the reaction a test waits for. The return
  * window is 100 ms wide, so the same holds for a test that times a gesture's return.
+ *
+ * Like Node's event loop, a timer counts its delay from the loop time, read once per turn: a test that moves `ms`
+ * during synchronous work, as a slow commit would take time, leaves the loop time behind until the next turn.
  */
 export class TestClock {
  ms=Date.now();
+ #loopMs=this.ms;
  readonly #timers=new Set<{at:number;callback:()=>void}>();
  readonly now=():number=>this.ms;
- readonly scheduler:Scheduler={after:(delayMs,callback)=>{const timer={at:this.ms+delayMs,callback};this.#timers.add(timer);return ()=>{this.#timers.delete(timer);};}};
- async advance(ms:number):Promise<void>{for(let moved=0;moved<ms;moved+=5){this.ms+=5;for(const timer of [...this.#timers].sort((a,b)=>a.at-b.at)){if(timer.at>this.ms)break;if(this.#timers.delete(timer))timer.callback();}await turn();}}
+ readonly scheduler:Scheduler={after:(delayMs,callback)=>{const timer={at:this.#loopMs+delayMs,callback};this.#timers.add(timer);return ()=>{this.#timers.delete(timer);};}};
+ async advance(ms:number):Promise<void>{for(let moved=0;moved<ms;moved+=5){this.ms+=5;this.#loopMs=this.ms;for(const timer of [...this.#timers].sort((a,b)=>a.at-b.at)){if(timer.at>this.ms)break;if(this.#timers.delete(timer))timer.callback();}await turn();}}
 }
 export async function until(check:()=>boolean,ms=4000):Promise<void>{const end=Date.now()+ms;while(!check()){if(Date.now()>end)assert.fail('MicroDuck condition did not arrive');await pause(5);}}
 /** Moves a test clock 5 ms a turn until `check` holds, so the module's timers run. `until` moves no test clock. */
