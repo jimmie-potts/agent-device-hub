@@ -427,7 +427,8 @@ Every runtime story is tested at four layers
 ([epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827)).
 The core admission job and the Runtime unit tests and Runtime scenario tests jobs
 run the first three, each after its own fresh build, for ready PRs whose
-[affected checks](../../docs/development.md#affected-pr-checks) select the runtime. Broad release qualification runs all four on pinned integrated source.
+[affected checks](../../docs/development.md#affected-pr-checks) select the runtime.
+Broad release qualification runs all four on pinned integrated source.
 The App verification job judges the fourth layer's capture steps without a user
 manager; focused presentation admission retains affected disposable acceptance.
 

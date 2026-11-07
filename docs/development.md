@@ -556,9 +556,20 @@ artifact checks. Its evidence remains separate from the cheap Integration job:
 
 A full Checks run performs five full builds across its jobs. The Python
 suites run on Python 3.14 only, the version of the installed Nanoleaf runtime.
-Checks that call the runner's system
-`/usr/bin/python3`, such as the Linux performance qualification and the
-maintenance closeout fixtures, use Ubuntu 24.04's Python 3.12. Local validation runs the same commands. Later runtime and browser
+Jobs that name `ubuntu-latest` run on whichever image GitHub maps it to. GitHub
+moves that label from Ubuntu 24.04 to Ubuntu 26.04 between 2026-10-19 and
+2026-11-19 ([actions/runner-images#14748](https://github.com/actions/runner-images/issues/14748)),
+so until then a job may get either image and every job must pass on both. Checks
+that call the runner's system `/usr/bin/python3`, such as the Linux performance
+qualification and the maintenance closeout fixtures, use that image's Python:
+3.12.3 on Ubuntu 24.04 (image 20261101.360) and 3.14.4 on Ubuntu 26.04 (image
+20261101.186), as the images' software lists state. Every Checks and Workflow job
+ran on `ubuntu-26.04` in dispatched runs on 2026-11-06
+([#871](https://github.com/jimmie-potts/agent-device-hub/issues/871)). The one
+image difference they found was the hook qualification's AppArmor profile path,
+described under [Linux hook performance qualification](#linux-hook-performance-qualification).
+CodeQL pins `ubuntu-24.04` and the packaged image job `ubuntu-24.04-arm`.
+Local validation runs the same commands. Later runtime and browser
 changes must add their own issue-appropriate checks.
 
 ### Affected PR checks
