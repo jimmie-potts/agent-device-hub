@@ -2546,8 +2546,9 @@ available, while returning-only observations cannot attach an old run or fetch
 its map. Returning originals remain private even when outside the run window.
 They also cover a failed first poll that recovers without a restart, including
 with a clock that moves between reads, repeated failure at the capped backoff,
-shutdown during a failed observation, and steady polling with timer lag that
-records no `missed-poll` gap, over the real reader and a synthetic wire.
+a target load that never settles, shutdown during a failed observation, and
+steady polling with timer lag that records no `missed-poll` gap, over the real
+reader and a synthetic wire.
 
 Run the affected event, SDK, runtime, MCP and runtime-dashboard suites, plus
 `npm run check:workflow` and `npm run test:workflow`. The Roborock catalog

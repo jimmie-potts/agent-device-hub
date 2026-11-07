@@ -79,7 +79,10 @@ WARN, summaries at DEBUG at most once a minute, and one `device.available` at
 INFO with its failed attempts and duration. A fault of the collection itself, a
 target that cannot load or a store batch or publication that is refused, follows
 the same pattern with `operation.failed` and then `operation.completed`. A
-different failure replaces the current one without a recovery record. The
+different failure replaces the current one without a recovery record. A target
+load that outlives its ten-second deadline stays the one outstanding load; each
+later poll it holds back is another failed attempt under the same backoff and
+summaries until it settles. The
 latest `operation.failed` with no later `operation.completed` is the condition
 that still holds.
 DEBUG summaries are written only when the module's configured level admits them.
