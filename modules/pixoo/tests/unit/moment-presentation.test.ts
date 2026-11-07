@@ -835,10 +835,21 @@ it('a failed write over Monitor stops Monitor as a dashboard failure does',async
  try{
   await monitorMode(s);
   const results=s.play();
-  s.device.failNextUpload();
+  s.device.setOnline(false);
   await s.run(1200);
   expect(results).toEqual([expect.objectContaining({ending:null,refused:'upload'})]);
-  expect(s.monitor.status()).toMatchObject({participating:false,lastOutcome:{status:'failed',code:'upload-failed'}});
+  expect(s.monitor.status()).toMatchObject({participating:false,lastOutcome:{status:'failed',code:'offline'}});
+ }finally{await s.close();}
+});
+it('a write that failed locally before any effect leaves Monitor current (#1504)',async()=>{
+ const s=await setup();
+ try{
+  await monitorMode(s);
+  const results=s.play();
+  s.device.failNextUpload();
+  await s.run(1200);
+  expect(results).toEqual([expect.objectContaining({ending:null,refused:'upload',upload:expect.objectContaining({code:'upload-failed',priorEffects:'none'})})]);
+  expect(s.monitor.status()).toMatchObject({participating:true,configuration:{mode:'monitor'}});
  }finally{await s.close();}
 });
 it('closing ends a moment without resuming, so a restart replays nothing',async()=>{

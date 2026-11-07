@@ -88,7 +88,7 @@ Otherwise it SHALL store its record of the work in the transaction that publishe
 - A start, show, resume, next, previous or restart SHALL complete with its own first upload, found by the async context of the command's action.
 - A failure the Pixoo answered SHALL have `transmitted` evidence, never `none`: an error status or code SHALL be `failed`, and an unreadable answer `uncertain` with `uncertain-result`. Like a confirmed send, it SHALL set the device record's `lastTransmission` with its request ID.
 - Of the failures it did not answer, a write or upload that may have reached the device SHALL be `uncertain` with `uncertain-result` and no evidence.
-- One that did not reach it SHALL be `failed`: `unavailable` for a device that did not answer, `cancelled` for one a newer command superseded.
+- One that did not reach it SHALL be `failed`: `unavailable` for a device that did not answer or for a local failure before the first mutating send, which is no unreadable answer; `cancelled` for one a newer command superseded. A moment over Monitor whose write failed locally before that send SHALL leave Monitor current.
 - A change to state the module owns (pause, stop, clear, the presentation and Now Playing settings, playlists, media and a dismissal) SHALL complete `succeeded` with `observed`, its committed state being the evidence.
 - While a song plays and Media wants a `whole` takeover, a start, show, resume or restart SHALL pause for the card at once. One whose upload that pause cancelled SHALL complete `succeeded` with `observed`, the selection it committed being the evidence, and SHALL play once the takeover ends.
 - A domain refusal after acceptance SHALL be `failed` with its registry code; any other failure after the work began SHALL be `uncertain`.

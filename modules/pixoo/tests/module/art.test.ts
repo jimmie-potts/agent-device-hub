@@ -174,6 +174,47 @@ void it('refuses a hosted art moment whose encoded file is too large, with no tr
   } finally { await world.close(); }
 });
 
+for (const [name, local] of [
+  ['an encoder RangeError', {encode: (): Uint8Array => { throw new RangeError('synthetic encoder fault'); }, publish: true}],
+  ['a publisher TypeError', {encode: (): Uint8Array => new Uint8Array(8), publish: false}],
+] as const) {
+  void it(`fails a hosted art moment on ${name} before any send, with no transmission claim and Monitor kept (#1504)`, async () => {
+    // A local throw before the first mutating send reached nothing: it is no unreadable device answer.
+    const world = await World.open({section: {device: {...SECTION.device, profile: 'pixoo64-hosted-2026-10-01'}}});
+    const commands: string[] = [];
+    let reached = 0;
+    world.device.open = ({address, clock, profile}) => {
+      const adapter = new HttpDeviceAdapter({ip: address, clock, profile: {...profile, evidence: 'observed', readyDelayMs: 0}, hosted: {
+        files: {publish: () => {
+          if (local.publish) return {url: 'http://example.invalid/art.gif', transferred: Promise.resolve(), revoke() {}};
+          reached += 1; throw new TypeError('synthetic publisher fault');
+        }},
+        encode: () => { if (local.publish) reached += 1; return local.encode(); },
+      }}, body => { commands.push(String(body.Command)); return Promise.resolve({error_code: 0, SelectIndex: 0, Brightness: 80, LightSwitch: 1, PicId: 27}); });
+      return Promise.resolve({adapter, close: () => adapter.close()});
+    };
+    try {
+      await world.start();
+      await world.outcome(await accepted(world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'monitor'})));
+      await world.publishSession();
+      await waitFor(() => commands.includes('Draw/SendHttpGif') ? true : undefined, 'the Monitor base');
+      const data = content(`local-fault-${local.publish ? 'encoder' : 'publisher'}`, hostedGif(19, 8), 8);
+      assert.equal((await world.outcome(await accepted(stage(world, data)))).data.result, 'succeeded');
+      const before = commands.length;
+      const outcome = await world.outcome(await accepted(artMoment(world, data.compositionId)));
+      assert.equal(outcome.data.result, 'failed', JSON.stringify(outcome.data));
+      assert.equal(outcome.data.evidence, 'none');
+      assert.equal(outcome.data.error?.code, 'unavailable');
+      assert.ok(!('transmission' in outcome.data), 'no transmission is recorded');
+      assert.ok(reached > 0, 'the synthetic fault was reached');
+      assert.ok(!commands.slice(before).includes('Device/PlayTFGif'), 'no hosted play command is sent');
+      // Nothing reached the panel, so Monitor stays the current base and draws itself again instead of stopping.
+      await waitFor(() => commands.slice(before).includes('Draw/SendHttpGif') ? true : undefined, 'the Monitor base after the failure');
+      assert.deepEqual(world.invalid, []);
+    } finally { await world.close(); }
+  });
+}
+
 void it('stages bounded still and animation without a display write or permanent import', async () => {
   const world = await World.open();
   try {
