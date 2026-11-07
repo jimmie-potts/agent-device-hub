@@ -9,7 +9,7 @@ for(const fixture of fixtures)test(`real PR #${fixture.pr} selects its complete 
  assert.equal(selection.mode,'standalone');
  assert.deepEqual(selection.owners,[fixture.pr===1386?'wemo':'microduck-browser']);
  assert.deepEqual(selection.groups,[]);
- assert.deepEqual(selection.jobs,{firmware:false,'app-verify':false,'runtime-verify':false});
+ assert.deepEqual(selection.jobs,{'runtime-unit':false,'runtime-scenarios':false,firmware:false,'app-verify':false,'runtime-verify':false});
 });
 test('standalone route requires complete consistent modified regular-file metadata',()=>{
  const files=fixtures[1].files;

@@ -5,6 +5,8 @@ export const EXPECTED_JOB_NAMES = Object.freeze([
   'Pin candidate',
   'Source coverage / Select affected checks',
   'Source coverage / Build, lint and core tests on ubuntu-latest',
+  'Source coverage / Runtime unit tests on ubuntu-latest',
+  'Source coverage / Runtime scenario tests on ubuntu-latest',
   'Source coverage / Firmware host tests and ARM build on ubuntu-latest',
   'Source coverage / App verification on ubuntu-latest',
   'Source coverage / Runtime verification on ubuntu-latest',
