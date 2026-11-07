@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {execFile} from 'node:child_process';
+import {execFile, spawn} from 'node:child_process';
 import {mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -151,6 +151,70 @@ test('only the serve agent runs the app binary as the CLI, which it needs withou
   assert.match(plist(serve), /<key>PATH<\/key>\n {4}<string>\/Users\/owner\/\.docker\/bin:/);
   assert.doesNotMatch(plist(runtime), /TAILSCALE_BE_CLI/);
   assert.doesNotMatch(plist(forwarder), /TAILSCALE_BE_CLI/);
+});
+
+// Even as the CLI, the app binary starts as the GUI when its parent is launchd, so a waiting shell stays its parent.
+const tailscale = '/Applications/Tailscale.app/Contents/MacOS/Tailscale';
+test('the serve agent keeps a shell as the app binary\'s parent and forwards a stop to it', () => {
+  const [runtime, forwarder, serve] = agents({home: '/Users/owner', node: '/node'});
+  const [shell, flag, script, binary, ...rest] = serve.program;
+  assert.deepEqual([shell, flag, binary, rest], ['/bin/sh', '-c', tailscale, []]);
+  assert.doesNotMatch(script, /\bexec\b/);
+  assert.ok(!script.includes(tailscale), 'the binary is an argument, not shell text');
+  assert.match(script, /"\$0" serve --https=443 http:\/\/127\.0\.0\.1:18789 &/);
+  assert.match(script, /trap '[^']*kill -TERM "\$c"[^']*wait "\$c"[^']*' TERM INT/);
+  assert.match(script, /wait "\$c"$/);
+  assert.equal(runtime.program[0], '/node');
+  assert.deepEqual(forwarder.program, ['/bin/sh', '/Users/owner/.config/bunny/private-access/start-forwarder.sh']);
+});
+
+const waitFor = async (check, limit = 10_000) => {
+  for (const deadline = Date.now() + limit; Date.now() < deadline; await new Promise(done => setTimeout(done, 50))) {
+    const value = await check().catch(() => undefined);
+    if (value) return value;
+  }
+  return assert.fail('timed out');
+};
+const alive = pid => {try {process.kill(pid, 0); return true;} catch {return false;}};
+
+test('the serve agent\'s shell is the binary\'s parent, ends it on a stop and exits with it', {timeout: 30_000, skip: process.platform === 'win32'}, async t => {
+  const home = await fixture(t);
+  const fake = join(home, 'Tailscale');
+  // Records its parent and arguments, then runs until a TERM, as the serve does.
+  await writeFile(fake, `#!/bin/sh
+echo "$$ $PPID $*" > "${home}/started"
+trap 'echo terminated > "${home}/stopped"; exit 0' TERM
+[ -f "${home}/exit-now" ] && exit 3
+while :; do sleep 0.05; done
+`, {mode: 0o755});
+  const [, , serve] = agents({home: '/Users/owner', node: '/node'});
+  // Swapped wherever it appears, so no shape of the agent can ever run the real app binary here.
+  const program = serve.program.map(arg => (arg === tailscale ? fake : arg));
+  assert.ok(!program.some(arg => arg.includes('Tailscale.app')));
+  // A failing run must not leave the fake looping, which would also hold the test runner open.
+  const spawned = [];
+  t.after(() => spawned.forEach(pid => {try {process.kill(pid, 'SIGKILL');} catch {/* already gone */}}));
+  const run = () => {
+    const shell = spawn(program[0], program.slice(1), {stdio: 'ignore'});
+    spawned.push(shell.pid);
+    const exited = new Promise(done => shell.on('exit', (code, signal) => done({code, signal})));
+    return {shell, exited};
+  };
+
+  const {shell, exited} = run();
+  const [child, parent, ...args] = (await waitFor(() => readFile(join(home, 'started'), 'utf8'))).trim().split(' ');
+  spawned.push(Number(child));
+  assert.equal(Number(parent), shell.pid);
+  assert.deepEqual(args, ['serve', '--https=443', 'http://127.0.0.1:18789']);
+  shell.kill('SIGTERM');
+  assert.deepEqual(await exited, {code: 0, signal: null});
+  assert.equal(await readFile(join(home, 'stopped'), 'utf8'), 'terminated\n');
+  assert.equal(alive(Number(child)), false);
+
+  // When the serve exits by itself, so does the job, which lets KeepAlive restart it.
+  await rm(join(home, 'started'));
+  await writeFile(join(home, 'exit-now'), '');
+  assert.deepEqual(await run().exited, {code: 3, signal: null});
 });
 
 async function fixture(t) {

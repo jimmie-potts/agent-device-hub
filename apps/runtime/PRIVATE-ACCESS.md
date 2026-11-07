@@ -104,9 +104,12 @@ With [start at sign-in](../../docs/bunny-container.md#start-at-sign-in) installe
 (#1426), the `org.bunny.private-forwarder` and `org.bunny.private-serve` launchd
 agents run the forwarder's `start-forwarder.sh` and the Serve command below, and
 restart them if they exit. Their output goes to `forwarder.log` and `serve.log` in
-the private directory. The serve agent sets `TAILSCALE_BE_CLI=1`, because without
-a terminal the Tailscale app binary starts as the GUI, logs a `CLIError` and exits
-0 instead of serving. To stop the route, boot out both agents; it returns at the
+the private directory. Without a terminal the Tailscale app binary starts as the
+GUI, logs a `CLIError` and exits 0 instead of serving. `TAILSCALE_BE_CLI=1` isn't
+enough under launchd, because the binary still starts as the GUI whenever its
+parent is launchd. So the serve agent sets the variable and runs the binary from a
+`/bin/sh` that stays its parent. The shell passes a stop on to it and exits
+when it does, so launchd restarts it. To stop the route, boot out both agents; it returns at the
 next sign-in unless you also delete their plists. Never run a manual copy beside them. The route holds no state and sends no device command, and its
 authentication is unchanged.
 
