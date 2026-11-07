@@ -3,6 +3,7 @@ import {lstat, mkdir, open, readdir, rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {MAX_UPLOAD_BYTES, type ModuleStagedUpload, type ModuleUploadRequest} from '@jimmie-potts/sdk';
+import {storageIsFull} from '../media/contracts.js';
 import {nameSchema} from '../library/contracts.js';
 
 const HASH = /^[a-f0-9]{64}$/;
@@ -16,7 +17,7 @@ export class PixooUploads {
   readonly #options: UploadOptions;
   readonly #incoming: string;
   #active: ActiveInput | undefined;
-  #ready = false;
+  #unavailable: 'capacity' | 'unavailable' | undefined = 'unavailable';
 
   constructor(options: UploadOptions) {
     this.#options = options;
@@ -31,14 +32,15 @@ export class PixooUploads {
       for (const entry of await readdir(this.#incoming, {withFileTypes: true})) {
         if (entry.isFile() && HASH.test(entry.name)) await rm(join(this.#incoming, entry.name));
       }
-      this.#ready = true;
+      this.#unavailable = undefined;
     } catch (error) {
+      this.#unavailable = storageIsFull(error) ? 'capacity' : 'unavailable';
       this.#options.failed(error);
     }
   }
 
   async stage(request: ModuleUploadRequest): Promise<ModuleStagedUpload | ErrorBody> {
-    if (!this.#ready) return refuse('unavailable');
+    if (this.#unavailable !== undefined) return refuse(this.#unavailable);
     if (request.target !== this.#options.target) return refuse('not-found');
     const name = nameSchema.safeParse(request.name);
     if (!name.success || !REQUEST_ID.test(request.requestId)) return refuse('invalid-request');
@@ -65,7 +67,7 @@ export class PixooUploads {
       if (signal.aborted) return refuse('cancelled');
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') return refuse('capacity');
       this.#options.failed(error);
-      return refuse('internal');
+      return refuse(storageIsFull(error) ? 'capacity' : 'internal');
     }
     return {
       data: {change: {operation: 'import', name: name.data, content: {staged: {file, bytes: bytes.length}}}},

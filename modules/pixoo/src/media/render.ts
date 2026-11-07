@@ -1,5 +1,5 @@
 import sharp, { type Sharp } from 'sharp';
-import { canonicalProfile, canonicalTransform, MediaError, type MediaLimits, type MediaProfile, type RenderedMedia, type Transform } from './contracts.js';
+import { canonicalProfile, canonicalTransform, decodedPixels, renditionDelayFits, MediaError, type MediaLimits, type RenditionProfile, type RenderedMedia, type Transform } from './contracts.js';
 import { compositeGif, inspectGif } from './gif.js';
 sharp.cache(false);
 sharp.concurrency(1);
@@ -21,7 +21,7 @@ function checkPng(bytes: Buffer) {
   }
   throw new MediaError('invalid-input');
 }
-export async function renderMedia(bytes: Buffer, requestedTransform: Transform, requestedProfile: MediaProfile, limits: MediaLimits): Promise<RenderedMedia> {
+export async function renderMedia(bytes: Buffer, requestedTransform: Transform, requestedProfile: RenditionProfile, limits: MediaLimits): Promise<RenderedMedia> {
   const transform = canonicalTransform(requestedTransform), profile = canonicalProfile(requestedProfile);
   if (bytes.length === 0) throw new MediaError('invalid-input');
   if (bytes.length > limits.maxUploadBytes) throw new MediaError('upload-limit');
@@ -32,7 +32,7 @@ export async function renderMedia(bytes: Buffer, requestedTransform: Transform, 
     // sharp names an image over its pixel limit only in its message, so read the header's declared size first: an image
     // over the limit fails as pixel-limit before any decoding.
     const header = gif ? undefined : await sharp(bytes, { limitInputPixels: false, failOn: 'warning' }).metadata();
-    if (header !== undefined && header.width * header.height > limits.maxSourcePixels) throw new MediaError('pixel-limit');
+    if (header !== undefined && decodedPixels(header.width, header.height, 1) > limits.maxSourcePixels) throw new MediaError('pixel-limit');
     const image = gif ? undefined : sharp(bytes, { limitInputPixels: limits.maxSourcePixels, failOn: 'warning' });
     const metadata = await image?.metadata();
     // sharp reports pages only for a positive count.
@@ -47,7 +47,7 @@ export async function renderMedia(bytes: Buffer, requestedTransform: Transform, 
       if (gif && (d === null || d === 0)) { result.warnings.push({ frame, code: d === null ? 'missing-delay' : 'zero-delay', effectiveDelayMs: 100 }); return 100; }
       return d;
     });
-    if (effective.length > profile.maxFrames || effective.some(d => d !== null && (d < profile.minDelayMs || d > profile.maxDelayMs || (profile.uniformTiming && d !== effective[0])))) throw new MediaError('profile-limit');
+    if (effective.some(delay => delay !== null && !renditionDelayFits(profile, delay, effective[0]))) throw new MediaError('profile-limit');
     const [r,g,b] = transform.background;
     const finish = async (input: Sharp, delayMs: number | null) => {
       const rgb = await input.autoOrient().resize(64,64,{ fit: transform.fit === 'fit' ? 'contain' : 'cover', position: 'centre', kernel: transform.scaling === 'nearest' ? 'nearest' : 'lanczos3', background: {r,g,b,alpha:1} })

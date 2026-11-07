@@ -21,6 +21,7 @@ import {renderDashboard} from '../../src/presentation/dashboard-pixels.js';
 import {momentContent, renderMomentContent} from '../../src/presentation/moment-content.js';
 import {nowPlayingView, renderNowPlaying} from '../../src/presentation/now-playing.js';
 import {monitorView} from '../../src/presentation/sources.js';
+import {PixooStore} from '../../src/module/store.js';
 import {HOSTED_PROFILE} from '../../src/module/configuration.js';
 import {FAMILIES, type PlaylistRecord, type RenditionRecord} from '../../src/module/schemas.js';
 import {frameDigest} from '../../src/module/transport.js';
@@ -905,6 +906,11 @@ void describe('commands and the catalog', () => {
         await world.populate(async library => {
           for (let index = 0; index < count; index += 1) await library.importMedia(bytesOf(hostedGif(index + 1, 50)), `Clip ${String(index)}`);
           await library.importMedia(bytesOf(manyColorGif()), 'Too many colors');
+        });
+        // A saved result from the historical 500-frame policy must not veto the current hosted command.
+        world.withDatabase(db => {
+          const store = new PixooStore(db);
+          for (const row of db.prepare('SELECT id FROM renditions').all()) store.saveHostedCheck(String(row.id), HOSTED_PROFILE, false);
         });
         const before = reads.count(), started = performance.now();
         await world.start();

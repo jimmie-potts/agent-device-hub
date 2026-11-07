@@ -77,15 +77,16 @@ export async function writeSyntheticLibrary(directory: string): Promise<Syntheti
   const {default: sharp} = await import('sharp');
   // The release rendered a GIF whose logical screen was up to 50 megapixels; the module refuses one over 4096 x 4096.
   const media = new MediaStore({directory: join(directory, 'media'), limits: {maxGifCanvasPixels: 50_000_000}});
-  const render = (bytes: Buffer, profile: MediaProfile = SIMULATOR_PROFILE, transform: Transform = DEFAULT_TRANSFORM): Promise<Rendition> =>
+  // The installed v3 service rendered ordinary imports with simulator-v1.
+  const render = (bytes: Buffer, profile: MediaProfile, transform: Transform = DEFAULT_TRANSFORM): Promise<Rendition> =>
     media.render((async function* () { yield await Promise.resolve(bytes); })(), {profile, transform});
   const red = await sharp({create: {width: 8, height: 8, channels: 3, background: {r: 200, g: 30, b: 30}}}).png().toBuffer();
   const photo = await sharp({create: {width: 32, height: 24, channels: 3, background: {r: 30, g: 120, b: 60}}}).jpeg().toBuffer();
   const assets = [
-    {id: uuid(1), name: 'Synthetic red tile', renditions: [await render(red), await render(red, PIXOO64_SMOKE_PROFILE, {fit: 'crop', scaling: 'smooth', background: [0, 0, 0]})]},
-    {id: uuid(2), name: 'Synthetic blink', renditions: [await render(blinkGif())]},
+    {id: uuid(1), name: 'Synthetic red tile', renditions: [await render(red, SIMULATOR_PROFILE), await render(red, PIXOO64_SMOKE_PROFILE, {fit: 'crop', scaling: 'smooth', background: [0, 0, 0]})]},
+    {id: uuid(2), name: 'Synthetic blink', renditions: [await render(blinkGif(), SIMULATOR_PROFILE)]},
     {id: uuid(3), name: 'Synthetic photo ❄ private-931', renditions: [await render(photo, SIMULATOR_PROFILE, {fit: 'crop', scaling: 'smooth', background: [10, 10, 10]})]},
-    {id: uuid(4), name: 'Synthetic wide canvas', renditions: [await render(canvasGif(4100, 4100))]},
+    {id: uuid(4), name: 'Synthetic wide canvas', renditions: [await render(canvasGif(4100, 4100), SIMULATOR_PROFILE)]},
   ];
   const rendition = (asset: number, index = 0): string => {
     const id = assets[asset]?.renditions[index]?.id;

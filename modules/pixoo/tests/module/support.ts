@@ -14,7 +14,7 @@ import {InProcessBus, type BunnyModule, type CommandDraft, type Participant, typ
 import {ModuleHarness, RecordedSpans} from '@jimmie-potts/sdk/testing';
 import {Library} from '../../src/library/index.js';
 import {encodeHostedGif} from '../../src/media/index.js';
-import {DEVICE_SCHEMA, FAMILIES, pixooOwnSchemas, schemaOf, type DisplayRecord} from '../../src/module/schemas.js';
+import {FAMILIES, pixooOwnSchemas, schemaOf, type DisplayRecord} from '../../src/module/schemas.js';
 import {createPixooModule, type PixooOptions} from '../../src/module/module.js';
 import {SimulatedPixoo, type SimulatedMode} from '../../src/module/transport.js';
 
@@ -243,8 +243,8 @@ export class World {
 
   /** The latest state of one of the module's records. */
   latest<T>(family: string, id = DEVICE): T | undefined {
-    const schema = family === 'device' ? DEVICE_SCHEMA : schemaOf(family);
-    return this.seen.filter(message => message.kind === 'state' && message.dataschema === schema && message.subject === id).at(-1)?.data as T | undefined;
+    return this.seen.filter(message => message.kind === 'state' && message.source === 'bunny/modules/pixoo'
+      && message.type === `org.bunny.${family}.updated` && message.subject === id).at(-1)?.data as T | undefined;
   }
 
   /** The module's records of `family` as a new copy syncs them, as a reader does. */

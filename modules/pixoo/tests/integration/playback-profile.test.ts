@@ -20,11 +20,16 @@ it('checks existing renditions against the active device bounds without rewritin
  const accepted=await imported(library,animation([50,50]),'accepted.gif');
  const loaded=await device.load(accepted.rendition.id,new AbortController().signal);
  expect(loaded.frames.map(frame=>frame.delayMs)).toEqual([500,500]);
- for(const delays of [[10],[50,10],[50,50,50]]){
-  const rejected=await imported(library,animation(delays),'simulator.gif');
-  await expect(device.load(rejected.rendition.id,new AbortController().signal)).rejects.toMatchObject({code:'profile-limit'});
-  const simulator=await new LibraryPlaybackStore(library).load(rejected.rendition.id,new AbortController().signal);
-  expect(simulator.frames.map(frame=>frame.delayMs)).toEqual(delays.map(delay=>delay*10));
+ for(const delays of [[1],[10,10,10], Array<number>(59).fill(90)]) {
+  const saved=await imported(library,animation(delays),'uniform.gif');
+  const loaded=await device.load(saved.rendition.id,new AbortController().signal);
+  expect(loaded.frames.map(frame=>frame.delayMs)).toEqual(delays.map(delay=>delay*10));
+ }
+ for(const delays of [[50,10], Array<number>(60).fill(10)]) {
+  const saved=await imported(library,animation(delays),'library.gif');
+  await expect(device.load(saved.rendition.id,new AbortController().signal)).rejects.toMatchObject({code:'profile-limit'});
+  const local=await new LibraryPlaybackStore(library).load(saved.rendition.id,new AbortController().signal);
+  expect(local.frames.map(frame=>frame.delayMs)).toEqual(delays.map(delay=>delay*10));
  }
 });
 it('uses a device still-frame transmission delay without changing stored rendition or playback dwell',async()=>{

@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { renderMedia } from '../../src/media/render.js';
-import { DEFAULT_TRANSFORM, SIMULATOR_PROFILE, DEFAULT_LIMITS, type RenderedMedia } from '../../src/media/contracts.js';
+import { DEFAULT_TRANSFORM, LIBRARY_PROFILE, SIMULATOR_PROFILE, DEFAULT_LIMITS, type RenderedMedia } from '../../src/media/contracts.js';
 import { gifFixture } from '../helpers/media-fixtures.js';
 import sharp from 'sharp';
+import {readHeader} from '../../src/media/worker-transfer.js';
 import { PIXOO64_SMOKE_PROFILE } from '../../src/media/contracts.js';
 
-const render = (b: Buffer) => renderMedia(b, DEFAULT_TRANSFORM, SIMULATOR_PROFILE, DEFAULT_LIMITS);
+const render = (b: Buffer) => renderMedia(b, DEFAULT_TRANSFORM, LIBRARY_PROFILE, DEFAULT_LIMITS);
 const pixel = (b: Uint8Array, x: number, y: number) => [...b.slice((y * 64 + x) * 3, (y * 64 + x) * 3 + 3)];
 /** The rendered frame at an index; a missing frame fails the test. */
 const frame = (r: RenderedMedia, index: number) => r.frames[index] ?? expect.unreachable(`no frame ${index}`);
@@ -120,11 +121,12 @@ describe('rendering limits and effective previews', () => {
   });
 });
 
-it('admits all 500 frames and rejects 501 without truncation or duration caps',async()=>{
+it('reproduces the original 500-frame simulator descriptor when explicitly requested',async()=>{
+ const renderLegacy = (bytes: Buffer) => renderMedia(bytes, DEFAULT_TRANSFORM, SIMULATOR_PROFILE, DEFAULT_LIMITS);
  const frames=Array.from({length:500},(_,i)=>({width:1,height:1,pixels:[i%4],delay:i===499?65535:10+i}));
- const admitted=await render(gifFixture(1,1,frames));
+ const admitted=await renderLegacy(gifFixture(1,1,frames));
  expect(admitted.frames).toHaveLength(500);expect(admitted.frames.map(f=>f.delayMs)).toEqual(frames.map(f=>f.delay*10));
- await expect(render(gifFixture(1,1,[...frames,...frames.slice(0,1)]))).rejects.toMatchObject({code:'profile-limit'});
+ await expect(renderLegacy(gifFixture(1,1,[...frames,...frames.slice(0,1)]))).rejects.toMatchObject({code:'profile-limit'});
 });
 describe('a GIF that declares a huge canvas', () => {
   /** A 43-byte GIF: a `side` x `side` logical screen with one 1x1 image, which a decoder would composite on a full canvas. */
@@ -148,4 +150,20 @@ describe('a GIF that declares a huge canvas', () => {
     await expect(renderMedia(declared(64), DEFAULT_TRANSFORM, SIMULATOR_PROFILE, {...DEFAULT_LIMITS, maxGifCanvasPixels: 4095})).rejects.toMatchObject({code: 'pixel-limit'});
     expect((await render(declared(64))).frames).toHaveLength(1);
   });
+});
+
+it('verifies scaled output pixels on the parent side of the worker exchange', () => {
+  const source = {format: 'gif', width: 1, height: 1, frameCount: 2, delaysMs: [100, 100], durationMs: 200};
+  const header = {source, warnings: []};
+  const exactly = {...DEFAULT_LIMITS, maxSourcePixels: 2 * 64 * 64};
+  expect(readHeader(header, SIMULATOR_PROFILE, exactly)).toEqual(header);
+  expect(() => readHeader(header, SIMULATOR_PROFILE, {...exactly, maxSourcePixels: exactly.maxSourcePixels - 1})).toThrow('decode-failed');
+});
+
+it('refuses scaled output at the second image descriptor before decoding its pixels', async () => {
+  const gif = gifFixture(1, 1, [0, 1].map(i => ({width: 1, height: 1, pixels: [i]})));
+  // The second image has its descriptor but no compressed data.
+  const truncated = gif.subarray(0, gif.lastIndexOf(0x2c) + 10);
+  await expect(renderMedia(truncated, DEFAULT_TRANSFORM, LIBRARY_PROFILE,
+    {...DEFAULT_LIMITS, maxSourcePixels: 8191})).rejects.toMatchObject({code: 'pixel-limit'});
 });

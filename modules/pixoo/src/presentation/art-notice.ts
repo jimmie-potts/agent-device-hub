@@ -1,9 +1,11 @@
 import {rainNoticeLines, type RainNotice} from '@jimmie-potts/event-contracts/v2/art-notice';
+import {withinFrameBufferBudget} from '../device/frames.js';
 import {drawText} from './pixel-font.js';
 
 /** A separate forecast band accompanies a fitted copy; the staged composition stays untouched. */
 export function artNoticeFrames(frames: readonly Uint8Array[], notice: RainNotice): Uint8Array[] {
-  if (frames.length < 1 || frames.length > 20 || frames.some(frame => frame.length !== 64 * 64 * 3)) throw new Error('invalid notice art');
+  // The label takes the same frame budget as the art it marks; the selected route still applies its own limit afterwards.
+  if (frames.length < 1 || !withinFrameBufferBudget(frames.length) || frames.some(frame => frame.length !== 64 * 64 * 3)) throw new Error('invalid notice art');
   const lines = rainNoticeLines(notice);
   return frames.map(source => {
     const rgb = new Uint8Array(64 * 64 * 3);

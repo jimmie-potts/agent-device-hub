@@ -26,3 +26,21 @@ it('rejects mixed timing and more than 256 combined colors without quantizing',(
  expect(()=>media.encodeHostedGif([{rgb,delayMs:50}])).toThrow('profile-limit');
  expect(()=>media.encodeHostedGif([{rgb:Buffer.alloc(12288),delayMs:50},{rgb:Buffer.alloc(12288),delayMs:60}])).toThrow('profile-limit');
 });
+
+it('encodes 1001 whole-GIF frames with a uniform delay beyond the speed samples', () => {
+  const frames = Array.from({length: 1001}, (_, index) => ({rgb: Buffer.alloc(12288, index % 2), delayMs: 900}));
+  const bytes = media.encodeHostedGif(frames);
+  const parsed = parseGIF(Uint8Array.from(bytes).buffer);
+  const images = parsed.frames.filter(frame => 'image' in frame);
+  expect(images).toHaveLength(frames.length);
+  expect(images.every(frame => frame.gce.delay === 90)).toBe(true);
+});
+it('accepts only positive delays representable exactly in GIF centiseconds', () => {
+  const frame = {rgb: Buffer.alloc(12288), delayMs: 10};
+  for (const delayMs of [10, 655350]) {
+    const parsed = parseGIF(Uint8Array.from(media.encodeHostedGif([{...frame, delayMs}])).buffer);
+    const image = parsed.frames.find(frame => 'image' in frame);
+    expect(image?.gce.delay).toBe(delayMs / 10);
+  }
+  for (const delayMs of [0, 15, 655360]) expect(() => media.encodeHostedGif([{...frame, delayMs}])).toThrow('profile-limit');
+});

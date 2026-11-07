@@ -2,8 +2,8 @@
 // families below, only from that module, each as one tracked operation the module requested. This part never forwards a
 // moment. The in-process bus checks no sender, so a module could address a display's key directly: the rule binds here,
 // at the tracker and gateway, and at each responder, which refuses any source but `bunny/core` (`artCommandRefusal`).
-import {errorBody,type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {ART_FORWARDED, ART_MODULE_SOURCE, ART_SUBJECT, type ArtDispatch21} from '@jimmie-potts/event-contracts/v2/art';
+import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import {ART_FORWARDED, ART_MODULE_SOURCE, ART_SUBJECT, EXTENDED_ART_DISPATCH_SCHEMA, EXTENDED_ART_STAGE_SCHEMA, type ArtDispatch21} from '@jimmie-potts/event-contracts/v2/art';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
 
@@ -24,7 +24,8 @@ export class ArtPart implements CorePart {
         const denied=this.authorize===undefined?errorBody('forbidden'):this.authorize(command.data.authorization,target,command.data.data.compositionId);
         if(denied!==undefined)return denied;
       }
-      const {type, dataschema} = ART_FORWARDED[family];
+      const {type} = ART_FORWARDED[family];
+      const dataschema = command.dataschema === EXTENDED_ART_DISPATCH_SCHEMA ? EXTENDED_ART_STAGE_SCHEMA : ART_FORWARDED[family].dataschema;
       const answer = await core.dispatch({key: `bunny.cmd.${family}.${target}`, requestedBy: command.source, requestId, parent: command,
         draft: {type, subject: target, dataschema, data}});
       return 'error' in answer ? answer : {status: 'accepted'};

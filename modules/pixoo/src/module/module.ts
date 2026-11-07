@@ -11,7 +11,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
-import {artCommandRefusal, MAX_ART_BYTES, type ArtStageRequest} from '@jimmie-potts/event-contracts/v2/art';
+import {artCommandRefusal, EXTENDED_ART_STAGE_SCHEMA, MAX_ART_BYTES, type ArtStageRequest} from '@jimmie-potts/event-contracts/v2/art';
 import {
   commandSupported, registerDeviceFamilies, type Capabilities, type CompletedOutcome, type DeviceCommand, type DeviceRecord,
 } from '@jimmie-potts/event-contracts/v2/devices';
@@ -34,12 +34,14 @@ import {PixooUploads} from './upload.js';
 import type {RenderRequest, RenderReply} from './render-worker.js';
 import {artworkKey, type CardContext} from '../presentation/card-context.js';
 import {
-  DEVICE_SCHEMA, FAMILIES, MAX_INLINE_BYTES, OUTCOME_SCHEMA, PIXOO_KIND, REMOVAL_SCHEMA, pixooOwnSchemas, schemaOf,
+  DEVICE_SCHEMA, HOSTED_DEVICE_SCHEMA, FAMILIES, MAX_INLINE_BYTES, OUTCOME_SCHEMA, PIXOO_KIND, REMOVAL_SCHEMA, pixooOwnSchemas, renditionSchemaOf, schemaOf,
   type AssetChangeRequest, type DisplayRecord, type MomentsSetRequest, type MonitorSetRequest, type NoticeDismissRequest, type NowPlayingSetRequest, type PlaylistChangeRequest,
   type PlaylistRecord, type RenditionRecord, type ShowRequest,
 } from './schemas.js';
 import {PixooStore} from './store.js';
 import {PixooArt, type ArtLease} from './art.js';
+import {storageIsFull} from '../media/contracts.js';
+import {animationRoute} from '../device/animation-policy.js';
 import {rainNoticeRefusal} from '@jimmie-potts/event-contracts/v2/art-notice';
 import {SimulatedPixoo, httpPixooTransport, type OpenedDevice, type PixooTransport} from './transport.js';
 
@@ -229,7 +231,21 @@ class PixooRuntime {
       schedule: (delayMs, callback) => {
         if (!Number.isFinite(delayMs) || delayMs < 0) throw new RangeError('Delay must be finite and nonnegative');
         if (signal.aborted) return () => {};
-        return scheduler.after(Math.min(MAX_DELAY_MS, Math.ceil(delayMs)), callback);
+        if (delayMs <= MAX_DELAY_MS) return scheduler.after(Math.ceil(delayMs), callback);
+        // A native timer is shorter than some valid playback dwells. Each slice consumes elapsed
+        // time, including a late wake, while the host retains ownership of the currently armed timer.
+        let remaining = Math.ceil(delayMs), cancelled = false, cancel: Cancel = () => {};
+        const arm = (): void => {
+          const slice = Math.min(MAX_DELAY_MS, remaining), started = performance.now();
+          cancel = scheduler.after(slice, () => {
+            if (cancelled || signal.aborted) return;
+            remaining -= Math.max(slice, Math.floor(performance.now() - started));
+            if (remaining > 0) arm();
+            else { cancelled = true; callback(); }
+          });
+        };
+        arm();
+        return () => { cancelled = true; cancel(); };
       },
     };
   }
@@ -619,7 +635,7 @@ class PixooRuntime {
     return {
       power: {supported: true}, brightness: {supported: true, minimum: 0, maximum: 100}, modes: {supported: true, values: ['monitor', 'media']},
       moments: {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_MS, coversStatus: this.#monitor?.momentSummary().overMonitor ?? defaultMoments.overMonitor,
-        art: {formats: ['png', 'gif'], maxBytes: MAX_ART_BYTES, notices: ['rain-forecast']}},
+        art: {formats: ['png', 'gif'], maxBytes: MAX_ART_BYTES, notices: ['rain-forecast'], ...(this.#hostedArt() ? {stageVersion: '2.1'} : {})}},
       media: {
         supported: true, actions: [...MEDIA_ACTIONS], playlistIds: admitted?.playlistIds ?? (catalog?.playlists ?? []).slice(0, MAX_LISTED).map(item => item.id),
         renditionIds: (catalog?.renditions ?? []).slice(0, MAX_LISTED).map(item => item.id),
@@ -702,12 +718,19 @@ class PixooRuntime {
     return records;
   }
 
+  #hostedArt(): boolean {
+    return animationRoute(this.#config.device.profile.name) === 'hosted';
+  }
+
   /** A state draft for one record, from its family, its JSON and its revision. */
   #state(key: string, json: string, revision: number): {key: string; draft: StateDraft} {
     const slash = key.indexOf('/'), family = key.slice(0, slash), id = key.slice(slash + 1);
     const type = family === 'device' ? 'org.bunny.device.updated' : `org.bunny.${family}.updated`;
-    const dataschema = family === 'device' ? DEVICE_SCHEMA : schemaOf(family);
-    return {key: `bunny.state.${family}.${id}`, draft: {type, subject: id, dataschema, data: {...JSON.parse(json) as object, id, revision}}};
+    const data = JSON.parse(json) as DeviceRecord | DisplayRecord | RenditionRecord | PlaylistRecord;
+    let dataschema = schemaOf(family);
+    if (family === 'device') dataschema = this.#hostedArt() ? HOSTED_DEVICE_SCHEMA : DEVICE_SCHEMA;
+    if (family === FAMILIES.rendition && 'frameCount' in data) dataschema = renditionSchemaOf(data.frameCount);
+    return {key: `bunny.state.${family}.${id}`, draft: {type, subject: id, dataschema, data: {...data, id, revision}}};
   }
 
   /** Serves a sync of the families asked for: the current records at the module's revision. */
@@ -826,7 +849,7 @@ class PixooRuntime {
   #failedWrite(error: unknown): void {
     if (this.#stopping) return;
     recordLog(this.#context.log, 'operation.failed', {
-      'bunny.device.id': this.#device, 'bunny.operation': 'storage', 'bunny.code': 'internal', 'error.type': error instanceof Error ? error.name : 'unknown',
+      'bunny.device.id': this.#device, 'bunny.operation': 'storage', 'bunny.code': storageIsFull(error) ? 'capacity' : 'internal', 'error.type': error instanceof Error ? error.name : 'unknown',
     });
   }
 
@@ -949,7 +972,9 @@ class PixooRuntime {
         } catch (error) {
           return error instanceof SdkError ? {result: Outcome.failed, evidence: Outcome.none, error: error.body.error} : errorCompletion(error);
         }
-      }, () => artCommandRefusal(command.source) ?? art.stageRefusal(command.data), false,
+      }, () => artCommandRefusal(command.source)
+        ?? (command.dataschema === EXTENDED_ART_STAGE_SCHEMA && !this.#hostedArt()
+          ? errorBody('unsupported-capability', {detail: 'Only the hosted Pixoo route accepts extended art stages.'}) : art.stageRefusal(command.data)), false,
       () => { admittedAtMs = this.#context.clock.now(); });
     });
     await sdk.respond<PlaylistChangeRequest>(key(FAMILIES.playlistChange), command =>

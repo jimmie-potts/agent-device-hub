@@ -4,15 +4,15 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 
 type Settings = {device: {id: string; address: string; profile: string; model?: string; firmware?: string};
-  limits: {maxFrames: number; minDelayMs: number; maxDelayMs: number; uniformTiming: boolean}; simulated: boolean; hostedConfigured: boolean};
+  limits: {route: 'direct' | 'hosted' | 'simulator'; maxFrames: number | null}; simulated: boolean; hostedConfigured: boolean};
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 function settingsOf(value: unknown): Settings {
   if (!object(value) || value.schema !== 'module-settings/2.0' || value.module !== 'pixoo' || !object(value.settings)) throw new Error('invalid settings');
   const settings = value.settings;
   const {device, limits} = settings;
   if (!object(device) || !['id', 'address', 'profile'].every(key => typeof device[key] === 'string')
-    || !object(limits) || !['maxFrames', 'minDelayMs', 'maxDelayMs'].every(key => Number.isSafeInteger(limits[key]))
-    || typeof limits.uniformTiming !== 'boolean' || typeof settings.simulated !== 'boolean' || typeof settings.hostedConfigured !== 'boolean'
+    || !object(limits) || !(limits.route === 'direct' || limits.route === 'hosted' || limits.route === 'simulator')
+    || !(limits.route === 'direct' ? Number.isSafeInteger(limits.maxFrames) : limits.maxFrames === null) || typeof settings.simulated !== 'boolean' || typeof settings.hostedConfigured !== 'boolean'
     || !(device.model === undefined || typeof device.model === 'string')
     || !(device.firmware === undefined || typeof device.firmware === 'string')) throw new Error('invalid settings');
   return settings as Settings;
@@ -82,13 +82,15 @@ export function SettingsPage({context, device, live}: {context: FrontendContext;
     {settings !== undefined && <>
       <p>{settings.simulated ? 'Simulator is active. The configured address does not connect it to hardware.' : 'Device transport is active. Visible output is unverified.'}</p>
       <Facts items={[
-        ['Configured address', settings.device.address], ['Active profile', settings.device.profile],
+        ['Playback route', settings.limits.route === 'hosted' ? 'Whole GIF' : settings.limits.route === 'direct' ? 'Direct raw frames' : 'Simulator'],
+        ['Frame count', settings.limits.route === 'direct' ? `Up to ${settings.limits.maxFrames} on Draw/SendHttpGif`
+          : settings.limits.route === 'hosted' ? 'Divoom specifies no maximum for whole GIFs' : 'Limited by available media resources'],
+        ['Frame timing', settings.limits.route === 'simulator' ? 'Source timing' : 'One delay for the whole animation'],
+        ['Configured profile', settings.device.profile], ['Configured address', settings.device.address],
         ['Model', settings.device.model ?? 'Unknown'], ['Firmware', settings.device.firmware ?? 'Unknown'],
-        ['Maximum frames', settings.limits.maxFrames], ['Frame delay', `${settings.limits.minDelayMs}–${settings.limits.maxDelayMs} ms`],
-        ['Uniform timing', settings.limits.uniformTiming ? 'Required' : 'Not required'],
       ]}/>
       <p className="hint">Edit the Pixoo section of the runtime configuration to change its address, profile or device notes. Changes take effect when the runtime restarts.</p>
-      {settings.device.profile === 'pixoo64-hosted-2026-10-01' && <p className="hint">Hosted playback needs a device-reachable file listener. Readiness and play counts are estimated; a downloaded animation may keep looping after Stop. {settings.hostedConfigured ? 'The listener is configured.' : 'The listener is not configured.'}</p>}
+      {settings.limits.route === 'hosted' && <p className="hint">Hosted playback needs a device-reachable file listener. Readiness and play counts are estimated; a downloaded animation may keep looping after Stop. {settings.hostedConfigured ? 'The listener is configured.' : 'The listener is not configured.'}</p>}
     </>}
     <h3>Display controls</h3>
     <p className="hint">Availability follows the module's automatic probes. Refreshing this page sends no device command.</p>

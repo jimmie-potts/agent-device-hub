@@ -16,6 +16,10 @@ try {
     await page.goto(`${world.url}/#/module/pixoo/settings`); await feed(page, 'connected');
     await page.getByRole('heading', {name: 'Settings', exact: true, level: 2}).waitFor();
     await page.getByText('pixoo64-gif-2026-10-01', {exact: true}).waitFor();
+    const settings = page.getByRole('region', {name: 'Pixoo settings'});
+    await settings.getByText('Direct raw frames', {exact: true}).waitFor();
+    await settings.getByText('Up to 59 on Draw/SendHttpGif', {exact: true}).waitFor();
+    await settings.getByText('One delay for the whole animation', {exact: true}).waitFor();
     assert.equal(sent.length, 0); assert.equal(world.pixooState().sent, 0);
     assert.equal(await page.getByRole('button', {name: 'Save configuration', exact: true}).count(), 0);
     const brightness = page.getByRole('spinbutton', {name: 'Requested brightness', exact: true});

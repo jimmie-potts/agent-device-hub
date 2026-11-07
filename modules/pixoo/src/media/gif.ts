@@ -1,5 +1,5 @@
 import { parseGIF, decompressFrame } from 'gifuct-js';
-import { MediaError, type MediaLimits, type MediaProfile } from './contracts.js';
+import { decodedPixels, MediaError, type MediaLimits, type RenditionProfile } from './contracts.js';
 
 interface Patch { x: number; y: number; width: number; height: number; delay: number | null; disposal: number; transparent: number | undefined }
 export interface GifInfo { width: number; height: number; patches: Patch[] }
@@ -29,7 +29,7 @@ function validateLzw(data: Buffer, minimum: number, expected: number): void {
   invalid();
 }
 
-export function inspectGif(bytes: Buffer, limits: MediaLimits, profile: MediaProfile): GifInfo {
+export function inspectGif(bytes: Buffer, limits: MediaLimits, profile: RenditionProfile): GifInfo {
   let pos = 6;
   const take = (count: number) => { if (pos + count > bytes.length) invalid(); const b = bytes.subarray(pos, pos + count); pos += count; return b; };
   const byte = () => take(1).readUInt8();
@@ -63,8 +63,8 @@ export function inspectGif(bytes: Buffer, limits: MediaLimits, profile: MediaPro
     if (w === 0 || h === 0 || x + w > width || y + h > height || (flags & 0x18) !== 0) invalid();
     if ((flags & 128) !== 0) take(3 * (1 << ((flags & 7) + 1)));
     patches.push({ x, y, width: w, height: h, delay: gce?.delay ?? null, disposal: gce?.disposal ?? 0, transparent: gce?.transparent });
-    if (patches.length > profile.maxFrames) throw new MediaError('profile-limit');
-    if (width * height * patches.length > limits.maxSourcePixels) throw new MediaError('pixel-limit');
+    if ('maxFrames' in profile && patches.length > profile.maxFrames) throw new MediaError('profile-limit');
+    if (decodedPixels(width, height, patches.length) > limits.maxSourcePixels) throw new MediaError('pixel-limit');
     const minimum = byte(); validateLzw(blocks(), minimum, w * h); gce = undefined;
   }
   return invalid();

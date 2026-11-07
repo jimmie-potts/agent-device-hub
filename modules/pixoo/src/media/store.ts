@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto';
 import { link, lstat, mkdir, mkdtemp, open, readFile, realpath, rename, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
-import { canonicalLimits, canonicalProfile, canonicalTransform, DEFAULT_TRANSFORM, MediaError, RENDERER_VERSION, SIMULATOR_PROFILE,
-  type MediaLimits, type MediaProfile, type Rendition, type Transform } from './contracts.js';
+import { canonicalLimits, canonicalProfile, canonicalTransform, decodedPixels, DEFAULT_LIMITS, DEFAULT_TRANSFORM, LIBRARY_PROFILE, MediaError, renditionDelayFits, RENDERER_VERSION, storageFailure,
+  type MediaLimits, type RenditionProfile, type Rendition, type Transform } from './contracts.js';
 import { runWorker, signalError } from './worker-client.js';
 const hash = (b: Buffer | string) => createHash('sha256').update(b).digest('hex');
 const validHash = (s: string) => /^[a-f0-9]{64}$/.test(s);
 const code = (e: unknown) => (e as NodeJS.ErrnoException)?.code;
-export function renditionId(sourceHash: string, transform: Transform, profile: MediaProfile): string {
+export function renditionId(sourceHash: string, transform: Transform, profile: RenditionProfile): string {
   return hash(JSON.stringify({sourceHash,transform:canonicalTransform(transform),renderer:RENDERER_VERSION,profile:canonicalProfile(profile)}));
 }
 function abortable<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -83,8 +83,8 @@ export class MediaStore {
     });
   }
   private release() { this.active--; this.queue.shift()?.start(); }
-  async render(input: AsyncIterable<Uint8Array>, options: {transform?:Transform;profile?:MediaProfile;signal?:AbortSignal} = {}): Promise<Rendition> {
-    const transform=canonicalTransform(options.transform ?? DEFAULT_TRANSFORM), profile=canonicalProfile(options.profile ?? SIMULATOR_PROFILE);
+  async render(input: AsyncIterable<Uint8Array>, options: {transform?:Transform;profile?:RenditionProfile;signal?:AbortSignal} = {}): Promise<Rendition> {
+    const transform=canonicalTransform(options.transform ?? DEFAULT_TRANSFORM), profile=canonicalProfile(options.profile ?? LIBRARY_PROFILE);
     const signal=AbortSignal.any([AbortSignal.timeout(this.limits.timeoutMs), ...(options.signal ? [options.signal] : [])]);
     await this.acquire(signal);
     let staging: string | undefined;
@@ -111,7 +111,10 @@ export class MediaStore {
       const sourceHash=digest.digest('hex'), id=renditionId(sourceHash,transform,profile);
       const existing=await this.load(root,id,true);
       if(existing) {
-        if(existing.source.width * existing.source.height * existing.source.frameCount > this.limits.maxSourcePixels) throw new MediaError('pixel-limit');
+        const {width, height, frameCount, format} = existing.source;
+        if (decodedPixels(width, height, frameCount) > this.limits.maxSourcePixels ||
+          (format === 'gif' && width * height > this.limits.maxGifCanvasPixels)) throw new MediaError('pixel-limit');
+        if (Buffer.byteLength(JSON.stringify(existing)) > this.limits.maxManifestBytes) throw new MediaError('storage-limit');
         await this.verifyOriginal(root,sourceHash);
         if(signal.aborted) throw signalError(signal);
         return existing;
@@ -125,7 +128,7 @@ export class MediaStore {
       const published=await this.load(root,id,false);
       if(signal.aborted) throw signalError(signal);
       return published;
-    } catch(error) { if(error instanceof MediaError) throw error; throw new MediaError('storage-error'); }
+    } catch(error) { if(error instanceof MediaError) throw error; throw storageFailure(error, 'storage-error'); }
     finally { try { if(staging!==undefined) await rm(staging,{recursive:true,force:true}); } finally { this.release(); } }
   }
   private async verifyOriginal(root:string,sourceHash:string) {
@@ -140,9 +143,9 @@ export class MediaStore {
     const path=join(root,'renditions',id);
     try {
       if(!(await lstat(path)).isDirectory()) throw new Error();
-      const manifestPath=join(path,'manifest.json'); if(!(await lstat(manifestPath)).isFile() || (await stat(manifestPath)).size>1024*1024) throw new Error();
+      const manifestPath=join(path,'manifest.json'); if(!(await lstat(manifestPath)).isFile() || (await stat(manifestPath)).size>DEFAULT_LIMITS.maxManifestBytes) throw new Error();
       const m=JSON.parse(await readFile(manifestPath,'utf8')) as Rendition;
-      if(m.id!==id || !validHash(m.sourceHash) || m.renderer!==RENDERER_VERSION || renditionId(m.sourceHash,m.transform,m.profile)!==id || !Array.isArray(m.frames) || m.frames.length===0 || m.frames.length>m.profile.maxFrames || m.source.frameCount!==m.frames.length) throw new Error();
+      if(m.id!==id || !validHash(m.sourceHash) || m.renderer!==RENDERER_VERSION || renditionId(m.sourceHash,m.transform,m.profile)!==id || !Array.isArray(m.frames) || m.frames.length===0 || ('maxFrames' in m.profile && m.frames.length>m.profile.maxFrames) || m.source.frameCount!==m.frames.length) throw new Error();
       if(!['png','jpeg','gif'].includes(m.source.format) || !Number.isSafeInteger(m.source.width) || m.source.width<1 || !Number.isSafeInteger(m.source.height) || m.source.height<1 ||
         !Array.isArray(m.source.delaysMs) || m.source.delaysMs.length!==m.frames.length || !Array.isArray(m.warnings)) throw new Error();
       const expectedWarnings=[];
@@ -153,7 +156,7 @@ export class MediaStore {
         if(sourceDelay===undefined || !(sourceDelay===null || Number.isSafeInteger(sourceDelay) && sourceDelay>=0)) throw new Error();
         if(m.source.format==='gif') {
           const effective=sourceDelay===null || sourceDelay===0 ? 100 : sourceDelay;
-          if(f.delayMs!==effective || effective<m.profile.minDelayMs || effective>m.profile.maxDelayMs || (m.profile.uniformTiming && effective!==m.frames[0]?.delayMs)) throw new Error();
+          if(f.delayMs!==effective || effective>655350 || !renditionDelayFits(m.profile, effective, m.frames[0]?.delayMs)) throw new Error();
           if(sourceDelay===null || sourceDelay===0) expectedWarnings.push({frame:i,code:sourceDelay===null?'missing-delay':'zero-delay',effectiveDelayMs:100});
         } else if(m.frames.length!==1 || sourceDelay!==null || f.delayMs!==null) throw new Error();
         sourceTotal=sourceTotal===null || sourceDelay===null ? null : sourceTotal+sourceDelay;

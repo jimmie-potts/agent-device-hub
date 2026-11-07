@@ -5,6 +5,7 @@
 // owners' state, the core's sessions and the playback record, are rebuilt by sync and never stored. Each statement is
 // prepared once.
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
+import type {HostedCheck} from '../library/library.js';
 import {momentSetting, nowPlayingSetting, presentationConfiguration, type MomentSetting, type NowPlayingSetting, type PresentationConfiguration} from '../core/index.js';
 
 /** How long a completed command's `(source, requestId)` is kept, so a repeated request is accepted again and changes nothing. */
@@ -209,13 +210,14 @@ export class PixooStore {
   }
 
   /** Whether a multi-frame rendition's frames fit a profile's hosted GIF, as the library found, or undefined before it checked. */
-  hostedCheck(renditionId: string, profile: string): boolean | undefined {
+  hostedCheck(renditionId: string, profile: string): HostedCheck | undefined {
     const value = integer(this.#hostedCheck.get(renditionId, profile), 'fits');
+    if (value === 2) return 'storage-limit';
     return value === undefined ? undefined : value === 1;
   }
 
-  saveHostedCheck(renditionId: string, profile: string, fits: boolean): void {
-    this.#saveHostedCheck.run(renditionId, profile, fits ? 1 : 0);
+  saveHostedCheck(renditionId: string, profile: string, fits: HostedCheck): void {
+    this.#saveHostedCheck.run(renditionId, profile, fits === 'storage-limit' ? 2 : Number(fits));
   }
 
   /** Forgets a rendition's hosted checks once the rendition is gone from the library. */

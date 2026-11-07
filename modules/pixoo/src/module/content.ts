@@ -11,6 +11,7 @@ const MAX_PNG_BYTES = 64 * 1024;
 const decimal = z.string().regex(/^(0|[1-9][0-9]*)$/).transform(Number).pipe(z.number().int().max(Number.MAX_SAFE_INTEGER));
 const pageQuery = z.object({q: z.string().max(120).default(''), offset: decimal.default(0), limit: decimal.pipe(z.number().min(1).max(100)).default(25)}).strict();
 const emptyQuery = z.object({}).strict();
+export const isFrameIndex = (value: string): boolean => /^(0|[1-9][0-9]*)$/.test(value) && Number.isSafeInteger(Number(value));
 const refuse = (code: ErrorCode): ErrorBody => errorBody(code, {detail: 'the Pixoo content read was refused'});
 const json = (value: unknown): ModuleContent | ErrorBody => {
   const bytes = Buffer.from(JSON.stringify(value));
@@ -45,7 +46,7 @@ export async function readPixooContent(library: Library, profile: Readonly<Media
     }
     if (kind === 'rendition' || kind === 'preview' || kind === 'frame' || kind === 'thumbnail') {
       if (!hashSchema.safeParse(id).success || extra.length > 0) return refuse('invalid-request');
-      if (kind === 'frame' ? index === undefined || !/^(0|[1-9][0-9]{0,3})$/.test(index) : index !== undefined) return refuse('invalid-request');
+      if (kind === 'frame' ? index === undefined || !isFrameIndex(index) : index !== undefined) return refuse('invalid-request');
       const loaded = await library.preview(id as string, kind === 'frame' ? Number(index) : kind === 'thumbnail' ? 0 : null, signal);
       const rendition = loaded.rendition;
       if (kind === 'rendition') return json(rendition);

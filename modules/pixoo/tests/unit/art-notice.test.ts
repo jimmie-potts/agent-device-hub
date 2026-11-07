@@ -1,6 +1,7 @@
 import {expect,it} from 'vitest';
 import {rainNoticeLines,type RainNotice} from '@jimmie-potts/event-contracts/v2/art-notice';
 import {artNoticeFrames} from '../../src/presentation/art-notice.js';
+import {withinFrameBufferBudget} from '../../src/device/frames.js';
 
 const notice:RainNotice={kind:'rain-forecast',likelihood:'chance',forecastStartAtMs:new Date(2030,0,1,14,0).getTime(),forecastEndAtMs:new Date(2030,0,1,15,0).getTime(),forecastUpdatedAtMs:1,observedAtMs:1,staleAtMs:1000,weatherRevision:1};
 it('fits every frame without changing originals and keeps likelihood separate from fictional pixels',()=>{
@@ -18,8 +19,12 @@ it('fits every frame without changing originals and keeps likelihood separate fr
   expect(frame.subarray(57*64*3)).not.toEqual(likely[index]?.subarray(57*64*3));
  }
 });
-it('rejects unbounded frames before drawing',()=>{
+it('labels any frame count the frame budget admits and rejects unbounded frames before drawing',()=>{
+ const frame=new Uint8Array(12288).fill(7);
+ // Past the former 20-frame cap, at the direct route's limit and above the legacy 256-frame stage.
+ for(const count of [21,59,257])expect(artNoticeFrames(Array.from({length:count},()=>frame),notice)).toHaveLength(count);
+ let budget=1;while(withinFrameBufferBudget(budget+1))budget++;
+ expect(()=>artNoticeFrames(new Array<Uint8Array>(budget+1).fill(frame),notice)).toThrow();
  expect(()=>artNoticeFrames([],notice)).toThrow();
  expect(()=>artNoticeFrames([new Uint8Array(3)],notice)).toThrow();
- expect(()=>artNoticeFrames(Array.from({length:21},()=>new Uint8Array(12288)),notice)).toThrow();
 });

@@ -10,4 +10,8 @@ export const artDevice = (kind: 'pixoo' | 'tidbyt', id: string, revision = 1): D
   desired: {power: {status: 'unknown'}, brightness: {status: 'unknown'}, mode: {status: 'unknown'}},
   observed: {status: 'unknown'}, pending: 0, pendingKinds: [], lastOutcome: {status: 'unknown'}, lastTransmission: {status: 'unknown'}, externalControl: {status: 'unknown'},
 });
-export const deviceDraft = (data: DeviceRecord): StateDraft<DeviceRecord> => ({type: 'org.bunny.device.updated', subject: data.id, dataschema: 'https://bunny.invalid/events/device/2.2', data});
+export const deviceDraft = (data: DeviceRecord): StateDraft<DeviceRecord> => {
+  const {moments} = data.capabilities;
+  const version = moments.supported && moments.art?.stageVersion === '2.1' ? '2.4' : '2.2';
+  return {type: 'org.bunny.device.updated', subject: data.id, dataschema: `https://bunny.invalid/events/device/${version}`, data};
+};

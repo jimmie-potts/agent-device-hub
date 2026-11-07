@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-dispatch/2.2",
+  "description": "The Art module requests a tracked art-stage/2.1 for more than 256 frames at a Pixoo declaring that version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "family", "target", "data"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "family": {"const": "art-stage"},
+    "target": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+    "data": {"type": "object", "properties": {"frames": {"type": "integer", "minimum": 257}}, "$ref": "https://bunny.invalid/events/art-stage/2.1#/$defs/content", "unevaluatedProperties": false}
+  }
+}

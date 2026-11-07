@@ -1,3 +1,6 @@
+import {createRequire} from 'node:module';
+const {GIFEncoder} = createRequire(import.meta.url)('gifenc') as typeof import('gifenc');
+
 /** Original GIF89a fixtures. Literal LZW codes separated by clears keep a fixed code width. */
 export interface GifPatch {
   x?: number; y?: number; width: number; height: number; pixels: number[];
@@ -27,4 +30,21 @@ export function gifFixture(width: number, height: number, frames: GifPatch[]): B
     bytes.push(0);
   }
   return Buffer.from([...bytes, 0x3b]);
+}
+
+/** The 2,200-frame patch GIF imports in 61,409 bytes. Full-frame hosted encoding needs 12,393,287 bytes. */
+export function oversizedHostedSourceGif(): Buffer {
+  const palette = Array.from({length: 256}, (_, i) => [i, i * 17 % 256, i * 113 % 256]);
+  let seed = 498236;
+  const noisy = Uint8Array.from({length: 4096}, () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed >>> 24;
+  });
+  const encoder = GIFEncoder();
+  encoder.writeFrame(noisy, 64, 64, {palette, delay: 100, dispose: 1, transparent: false, repeat: 0});
+  for (let i = 1; i < 2200; i++) {
+    encoder.writeFrame(Uint8Array.of(i % 256), 1, 1, {delay: 100, dispose: 1, transparent: false, repeat: 0});
+  }
+  encoder.finish();
+  return Buffer.from(encoder.bytes());
 }
