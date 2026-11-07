@@ -78,8 +78,12 @@ Run from the worktree root with Node 24, prefixing commands with
    - The attempt's path is `.github/workflows/release-qualification.yml`, its SHA is the
      candidate, its event is `push` or `workflow_dispatch`, its status is `completed`,
      and its conclusion is `success`.
-   - Each name in `EXPECTED_JOB_NAMES` in `scripts/release/qualification.mjs` appears
-     exactly once, with `success`.
+   - Each name in `EXPECTED_JOB_NAMES` in the candidate revision's own
+     `scripts/release/qualification.mjs` appears exactly once, with `success`. Read
+     that list with `git show <sha>:scripts/release/qualification.mjs`. A checkout of
+     another revision may expect other jobs: since #1506 the list includes the two
+     runtime test jobs, so it would report a candidate qualified before then, such as
+     a previous-image return target, as unqualified.
    - Exactly one `release-image-<sha>-<run>-<attempt>` and exactly one
      `release-evidence-<sha>-<run>-<attempt>` exist, neither expired.
 

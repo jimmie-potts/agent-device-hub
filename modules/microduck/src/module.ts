@@ -290,7 +290,10 @@ class Owner {
       for(const [index,target] of targets.entries()) {
         signal.throwIfAborted();
         const guard=this.#guard(command,action);if(guard!==undefined){code=guard;throw new Error('MicroDuck command fenced');}
-        await this.#change(()=>{row.started=true;this.#store.save(row);if(this.#state.active?.requestId===row.requestId)this.#state.active.phase=index===0?(action.gesture==='neutral'?'neutral':'outbound'):'return';},command);
+        // The return is saved as pending before the 800 ms hold: the first move's transmission commit names this
+        // request while the phase stays outbound. The return makes no commit before it is sent, since one here would
+        // spend the 100 ms return window (#1491); its own transmission commit records the return phase.
+        if(index===0)await this.#change(()=>{row.started=true;this.#store.save(row);},command);
         let sentAt:bigint|undefined;
         const baseline=this.#latest?.sensorNs;
         try {
@@ -303,7 +306,7 @@ class Owner {
           }));
         }catch(error){if(error instanceof VendorRefusal&&!transmitted){possible=false;code='invalid-state';}throw error;}
         if(sentAt===undefined)throw new Error('MicroDuck send evidence missing');
-        transmitted=true;await this.#transmitted(row);
+        transmitted=true;await this.#transmitted(row,index>0);
         if(target===0) {
           let count=0,last=baseline;
           while(this.#transport.nowNs()-sentAt<=800000000n) {
@@ -314,8 +317,10 @@ class Owner {
           }
           if(count<2)throw new Error('MicroDuck zero-input confirmation deadline');
         }
-        const remaining=Math.ceil(Number(sentAt+800000000n-this.#transport.nowNs())/1000000);
-        if(remaining>0)await this.#sleep(remaining,signal);
+        // A timer counts its delay from the event loop's cached time, which lags the transport clock by however long
+        // the synchronous work before it took, such as a slow commit. It can then end the hold early, and the return
+        // would be refused as before its window (#1491), so the hold ends by the transport clock instead.
+        for(let remaining=Math.ceil(Number(sentAt+800000000n-this.#transport.nowNs())/1000000);remaining>0;remaining=Math.ceil(Number(sentAt+800000000n-this.#transport.nowNs())/1000000))await this.#sleep(remaining,signal);
         signal.throwIfAborted();const end=this.#guard(command,action);if(end!==undefined){code=end;throw new Error('MicroDuck phase fenced');}
       }
       await this.#finish(row,{requestId:row.requestId,result:Outcome.succeeded,evidence:Outcome.transmitted});
@@ -323,7 +328,10 @@ class Owner {
       await this.#finish(row,{requestId:row.requestId,result:possible?Outcome.uncertain:Outcome.failed,evidence:transmitted?Outcome.transmitted:Outcome.none,error:errorBody(possible?'uncertain-result':signal.aborted?'cancelled':code).error});
     }
   }
-  async #transmitted(row: Row): Promise<void> {await this.#change(() => {this.#state.lastTransmission = {status:'known',requestId:row.requestId,transmittedAtMs:this.#context.clock.now(),operationIds:[]};},row);}
+  async #transmitted(row: Row, returned: boolean): Promise<void> {await this.#change(() => {
+    this.#state.lastTransmission = {status:'known',requestId:row.requestId,transmittedAtMs:this.#context.clock.now(),operationIds:[]};
+    if (returned && this.#state.active?.requestId === row.requestId) this.#state.active.phase = 'return';
+  },row);}
   async #finish(row: Row, outcome: CompletedOutcome): Promise<void> {
     try {await this.#change(add => {
       row.outcome = outcome; this.#store.save(row);

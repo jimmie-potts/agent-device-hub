@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
+import type {TestContext} from 'node:test';
+import {BroadcastChannel} from 'node:worker_threads';
 import {SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CloudFetch} from '../src/cloud.js';
@@ -15,7 +17,7 @@ import {SIMULATED_API_KEY, SIMULATED_DEVICE, SimulatedCloud} from '../src/simula
 import {SimulatedTronbyt, TRONBYT_ORIGIN} from '../src/simulated-tronbyt.js';
 import {BRIGHTNESS_CEILING, TronbytConnection, privateServerUrl} from '../src/tronbyt.js';
 import {encodeLosslessRgb} from '../src/webp.js';
-import {MINUTE, SECOND, asking, finished, host, notice, playback, shown, test, until, withWriteFailure, working, type HostOptions, type Hosted} from './support.js';
+import {MINUTE, SECOND, asking, finished, host, notice, playback, records, shown, test, until, withWriteFailure, working, type HostOptions, type Hosted} from './support.js';
 
 const STATUS = 'agentdevicehub';
 const NOW_PLAYING = 'nowplaying';
@@ -243,14 +245,75 @@ test('the section selects one backend, and refuses the other\'s settings', () =>
 
 // The module on a simulated server
 
+/**
+ * Whether the module acknowledged both tiles' pushes and published it: its own completion of each, and a device record
+ * whose last transmission is a push. The server counts a push before its answer reaches the module (Hub #1484).
+ */
+const acknowledgedPushes = (h: Hosted): boolean => {
+  const completed = records(h, 'operation.completed');
+  const last = h.device().lastTransmission;
+  return completed.includes('info status push') && completed.includes('info playback push') && last.status === 'known' && last.operationIds[0] === 'push';
+};
+
+test('a server\'s receipt of both tiles is not the module\'s acknowledgment of them', async context => {
+  const server = new SimulatedTronbyt();
+  let posts = 0;
+  let answer: () => void = () => undefined;
+  const answered = new Promise<void>(resolve => { answer = resolve; });
+  // The second push reaches the server, and its answer waits until the test lets it go.
+  const holding: CloudFetch = async (url, init) => {
+    const response = await server.fetch(url, init);
+    if (init.method === 'POST' && ++posts === 2) {
+      init.signal.addEventListener('abort', answer, {once: true});
+      await answered;
+    }
+    return response;
+  };
+  const h = await host(context, {sessions: [asking(), working(), finished()], playback: playback('playing'), ...onServer(server), module: {transport: holding}});
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().installations[NOW_PLAYING]?.pushes === 1, 'the server\'s tiles');
+  assert.equal(records(h, 'operation.completed').filter(entry => entry.endsWith(' push')).length, 1, 'the module heard one answer');
+  assert.equal(acknowledgedPushes(h), false, 'the server\'s receipt alone');
+  answer();
+  await until(() => acknowledgedPushes(h), 'the module\'s acknowledgment of both pushes');
+  assert.deepEqual(h.problems(), []);
+});
+
+/** Whether the module acknowledged a write of the display's pin and published it. */
+const acknowledgedPin = (h: Hosted): boolean => h.devices().some(device => device.lastTransmission.status === 'known' && device.lastTransmission.operationIds[0] === 'mode');
+
+/** The render worker that holds the now-playing card until the test's gate lets it go (Hub #1527). */
+const GATED_WORKER = new URL('./fixtures/gated-worker.js', import.meta.url);
+
+/**
+ * The gated worker's channel. `release` lets every card go: those drawn and waiting, and any drawn later. The channel
+ * closes with the test.
+ */
+function renderGate(context: TestContext): {release: () => void} {
+  const channel = new BroadcastChannel('tidbyt-render-gate');
+  let released = false;
+  channel.onmessage = message => { if (released && message.data === 'drawn') channel.postMessage('go'); };
+  context.after(() => { channel.close(); });
+  return {release: () => {
+    released = true;
+    channel.postMessage('go');
+  }};
+}
+
 test('identical frames reach the display through the cloud and through a server, and only the server takes them by name in the background', async context => {
   const sessions = [asking(), working(), finished()];
   const now = playback('playing');
   const server = new SimulatedTronbyt();
+  const gate = renderGate(context);
   const onCloud = await host(context, {sessions, playback: now});
-  const onTronbyt = await host(context, {sessions, playback: now, ...onServer(server)});
+  const onTronbyt = await host(context, {sessions, playback: now, ...onServer(server), module: {transport: server.fetch, renderWorker: GATED_WORKER}});
   await until(() => shown(onCloud, STATUS).pushes === 1 && shown(onCloud, NOW_PLAYING).pushes === 1, 'the cloud\'s tiles');
+  // On a fresh server the module writes the pin after the first tile's push. A slow first answer could let the card's
+  // push queue before the pin, and the last write would then be the pin (Hub #1527). The card's frame waits for the
+  // module's acknowledgment of the pin, so the queue sends push, pin, push however the answers are timed.
+  await until(() => acknowledgedPin(onTronbyt), 'the module\'s acknowledgment of the pin');
+  gate.release();
   await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().installations[NOW_PLAYING]?.pushes === 1, 'the server\'s tiles');
+  await until(() => acknowledgedPushes(onTronbyt), 'the module\'s acknowledgment of both pushes');
   const state = server.state();
   assert.deepEqual(state.installations[STATUS]?.picture, shown(onCloud, STATUS).picture, 'the status tile');
   assert.deepEqual(state.installations[NOW_PLAYING]?.picture, shown(onCloud, NOW_PLAYING).picture, 'the now-playing card');

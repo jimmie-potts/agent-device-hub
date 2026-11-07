@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
-import {DEFAULT_ART_POLICY,artPolicyWrite,initialArtRecord,nextArtStart,planArtDay,savedArtwork,wakingDay,rainForecast} from '../src/core/art-schedule-model.js';
+import {DEFAULT_ART_POLICY,START_TOLERANCE_MS,artPolicyWrite,initialArtRecord,nextArtStart,planArtDay,savedArtwork,wakingDay,rainForecast} from '../src/core/art-schedule-model.js';
 import {ArtScheduleStore} from '../src/core/art-schedule-store.js';
 import {AutomationStore} from '../src/core/automation-store.js';
 import {DEFAULT_SETTINGS,DEFAULT_INTERRUPT_SET,createAutomation} from '../src/core/automation.js';
@@ -20,11 +20,22 @@ void test('six/seven/eight bounded slots cover early middle late with spacing fr
   const day=wakingDay(local(8),policy);assert.ok(day);
   for(const count of [6,7,8] as const){const starts=planArtDay(day,count,local(8),null,DEFAULT_SETTINGS.quietHours,()=>0.5);assert.equal(starts.length,count);
     assert.ok((starts[0]??Infinity)<local(12));assert.ok((starts.at(-1)??0)>local(18));
-    for(let index=1;index<starts.length;index++)assert.ok((starts[index]??0)>=(starts[index-1]??0)+45*60_000+1000);}
+    for(let index=1;index<starts.length;index++)assert.ok((starts[index]??0)>=(starts[index-1]??0)+45*60_000+START_TOLERANCE_MS);}
   assert.equal(nextArtStart(local(9)+60_000),local(9,46));
   const narrowed=planArtDay({...day,startAtMs:local(9),endAtMs:local(10)},8,local(8),local(9)+60_000,DEFAULT_SETTINGS.quietHours,()=>0);
   assert.ok(narrowed.every(at=>at>=local(9,46)));assert.ok(narrowed.length<6);
   assert.deepEqual(planArtDay(day,7,local(8),null,{enabled:true,start:'00:00',end:'00:00',timeZone:null},()=>0.5),[]);
+});
+void test('planning drops a start whose latest permitted hold would reach quiet hours, as admission does',()=>{
+  // Admission refuses a start whose start plus tolerance plus the 30 s hold is quiet; planning must not spend a slot on it.
+  const day=wakingDay(local(8),policy);assert.ok(day);
+  const quiet={enabled:true,start:'09:00',end:'10:00',timeZone:null};
+  const lower=local(8)+60_000,upper=local(10)-31_000-START_TOLERANCE_MS;
+  for(const [offsetMs,kept] of [[START_TOLERANCE_MS+30_000,false],[START_TOLERANCE_MS+30_001,true]] as const){
+    const target=local(9)-offsetMs;let first=true;
+    const starts=planArtDay(day,7,local(8),null,quiet,()=>{if(first){first=false;return (target-lower)/(upper-lower);}return 0.5;});
+    assert.equal(starts[0]===target,kept,`a start ${String(offsetMs)} ms before quiet hours`);
+  }
 });
 void test('crossing midnight belongs to its starting date, and planning remains future-only',()=>{
   const night={...policy,wakingStartMinute:20*60,wakingEndMinute:4*60};
@@ -141,6 +152,22 @@ void test('saved browser appearance consumes its own last unit once, and disable
     assert.equal(w.reads().weatherReads,0);await w.restart();await w.move(start+1000);assert.equal(w.commands.length,1,'restart cannot replay selection');assert.deepEqual(w.failures,[]);
   }finally{await w.close();}
 });
+void test('a start timer that wakes late presents the browser within the tolerance and never after it', async () => {
+  // A busy event loop can wake the start timer after the start: #1515 saw 1,017 ms on a loaded runner.
+  for (const [lateMs, presented] of [[1_500, true], [START_TOLERANCE_MS, true], [START_TOLERANCE_MS + 1, false]] as const) {
+    const w = scheduledWorld();
+    try {
+      const saved = await w.owner.save({expectedSettingsRevision: 0, policy: {...policy, ambient: false}});
+      const start = saved.nextOpportunity?.startAtMs;assert.ok(start !== undefined);
+      await w.move(start - 45_000);assert.equal(w.commands.length, 0);
+      await w.move(start + lateMs);
+      assert.equal(w.commands.length, presented ? 1 : 0, `a wake ${String(lateMs)} ms after the start`);
+      if (presented) assert.equal((w.commands[0]?.draft.data as ArtAuto22).action, 'present');
+      assert.deepEqual(w.failures, []);
+    } finally {await w.close();}
+  }
+});
+
 void test('preparation comes due between the tick and its next timer', async () => {
   const source = manualClock(local(8));
   let boundary: number | undefined, crossed = false, shortTimers = 0;

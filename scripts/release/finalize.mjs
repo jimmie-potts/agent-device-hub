@@ -32,7 +32,8 @@ export function imageArtifactPresent(artifacts, {candidate, runId, runAttempt}) 
     && matches[0].workflow_run?.head_sha === candidate;
 }
 export function resultOutcome(needs, checks, image, artifactPresent = false) {
-  const outcomes = ['pin', 'checks', 'workflow', 'image'].map(name => needs?.[name]?.result);
+  // The image job runs only after the build and every packaged lane passed, so their failures are named here (#1512).
+  const outcomes = ['pin', 'checks', 'workflow', 'build', 'verify', 'image'].map(name => needs?.[name]?.result);
   if (outcomes.includes('failure') || checks.some(check => ['failure', 'timed_out', 'action_required'].includes(check.result))) return 'failed';
   if (outcomes.some(result => result !== 'success') || !image || !artifactPresent || checks.length !== EXPECTED_JOB_NAMES.length
     || checks.some(check => check.result !== 'success')) return 'incomplete';

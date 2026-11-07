@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {setTimeout as pause} from 'node:timers/promises';
 import {SimulatedMicroDuck} from '../src/simulated.js';
 import type {MicroDuckTransport} from '../src/transport.js';
-import {fixture,until} from './support.js';
+import {TestClock,advanceUntil,fixture,until} from './support.js';
 function adapter(robot:SimulatedMicroDuck,head:MicroDuckTransport['head']):MicroDuckTransport{return {connect:(...a)=>robot.connect(...a),guard:()=>robot.guard(),nowNs:()=>robot.nowNs(),head};}
 for(const gesture of ['notice','attention','neutral'] as const)void test(`passive startup and finite manual ${gesture}`,{timeout:10000},async t=>{
   const robot=new SimulatedMicroDuck(),f=await fixture(t,robot);assert.equal(robot.state().moves,0);assert.equal(f.state().enabled,false);
@@ -33,11 +33,17 @@ void test('coasted timestamps and changed sessions revoke admission without repl
   robot.coasting=false;await until(()=>f.state().connection==='available');await f.control('takeover');await f.command('microduck-gesture',{gesture:'attention'},'session-change');await until(()=>robot.effects.length===1);robot.session=crypto.randomUUID();
   await until(()=>f.outcome('session-change')!==undefined);assert.equal(f.outcome('session-change')?.result,'uncertain');await pause(700);assert.equal(robot.effects.length,1);
 });
+/**
+ * Each fence must land after a first move is sent and before its 800 ms return (#1471): Quiet, and the 100 ms deadline
+ * of the 'expired' command. On the real clock, a host stall between that command and its send passed the deadline
+ * first, so the module rightly refused the send and the outcome was `failed`. Here the module, the bus and the
+ * simulator share a clock that stands still until the test sees each send, and only then moves past the fence.
+ */
 void test('Quiet, expiry and stale generation fence the return rather than clean up',{timeout:15000},async t=>{
-  const robot=new SimulatedMicroDuck(),f=await fixture(t,robot);await f.control('takeover');await f.command('microduck-gesture',{gesture:'notice'},'quiet');await until(()=>robot.effects.length===1);await f.mode('quiet');await until(()=>f.outcome('quiet')!==undefined);assert.equal(f.outcome('quiet')?.result,'uncertain');assert.equal(robot.effects.length,1);
+  const clock=new TestClock(),robot=new SimulatedMicroDuck(clock),f=await fixture(t,robot,clock);await f.control('takeover');await f.command('microduck-gesture',{gesture:'notice'},'quiet');await until(()=>robot.effects.length===1);await f.mode('quiet');await until(()=>f.outcome('quiet')!==undefined);assert.equal(f.outcome('quiet')?.result,'uncertain');assert.equal(robot.effects.length,1);
   await f.mode('work');assert.equal('error'in await f.command('microduck-gesture',{gesture:'neutral',expectedGeneration:{epoch:'old',sequence:0}}),true);
-  await f.command('microduck-gesture',{gesture:'neutral',recovered:true,heldRequestId:'quiet'},'recovery');await until(()=>f.outcome('recovery')!==undefined);
-  await pause(2100);assert.equal((await f.command('microduck-gesture',{gesture:'attention'},'expired',100)).status,'accepted');await until(()=>f.outcome('expired')!==undefined);assert.equal(f.outcome('expired')?.result,'uncertain');assert.equal(robot.effects.at(-1)?.yaw,-.1);
+  await f.command('microduck-gesture',{gesture:'neutral',recovered:true,heldRequestId:'quiet'},'recovery');await advanceUntil(clock,()=>f.outcome('recovery')!==undefined);
+  await clock.advance(2100);assert.equal((await f.command('microduck-gesture',{gesture:'attention'},'expired',100)).status,'accepted');await until(()=>robot.effects.length===3||f.outcome('expired')!==undefined);await advanceUntil(clock,()=>f.outcome('expired')!==undefined);assert.equal(f.outcome('expired')?.result,'uncertain');assert.equal(robot.effects.at(-1)?.yaw,-.1);
 });
 void test('concurrent admission, cooldown and forbidden operations do not add writes',{timeout:10000},async t=>{
   const robot=new SimulatedMicroDuck(),f=await fixture(t,robot);await f.control('takeover');

@@ -147,7 +147,12 @@ reads the runtime's health for up to three minutes. It leaves a running core alo
 Sign-in starts the core even after a deliberate stop. It leaves the core stopped if
 a deployment is unfinished, another operation holds the lease, an owner's start hold
 exists, or the core is the replacement from a failed deployment that was reconciled;
-a later deployment replaces that container and ends this last refusal. It writes one line per step to
+a later deployment replaces that container and ends this last refusal. It also stays
+stopped, with `records-unreadable`, when a file in the project's records directory is
+corrupt or in a format the installed starter doesn't know, because it can't rule out a
+failed deployment. A record an owner's maintenance script writes through the operation
+lease, such as a backup or a configuration write, names no replacement and doesn't
+hold the core back. It writes one line per step to
 `~/.local/share/bunny/signin/signin.log`. Any refusal shows a macOS notification,
 is not retried and never falls back to `docker start`. A failed health check does
 not stop the core, because a degraded module would otherwise become a full outage. The starter imports the operator, so
