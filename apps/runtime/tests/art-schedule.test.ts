@@ -20,11 +20,22 @@ void test('six/seven/eight bounded slots cover early middle late with spacing fr
   const day=wakingDay(local(8),policy);assert.ok(day);
   for(const count of [6,7,8] as const){const starts=planArtDay(day,count,local(8),null,DEFAULT_SETTINGS.quietHours,()=>0.5);assert.equal(starts.length,count);
     assert.ok((starts[0]??Infinity)<local(12));assert.ok((starts.at(-1)??0)>local(18));
-    for(let index=1;index<starts.length;index++)assert.ok((starts[index]??0)>=(starts[index-1]??0)+45*60_000+1000);}
+    for(let index=1;index<starts.length;index++)assert.ok((starts[index]??0)>=(starts[index-1]??0)+45*60_000+START_TOLERANCE_MS);}
   assert.equal(nextArtStart(local(9)+60_000),local(9,46));
   const narrowed=planArtDay({...day,startAtMs:local(9),endAtMs:local(10)},8,local(8),local(9)+60_000,DEFAULT_SETTINGS.quietHours,()=>0);
   assert.ok(narrowed.every(at=>at>=local(9,46)));assert.ok(narrowed.length<6);
   assert.deepEqual(planArtDay(day,7,local(8),null,{enabled:true,start:'00:00',end:'00:00',timeZone:null},()=>0.5),[]);
+});
+void test('planning drops a start whose latest permitted hold would reach quiet hours, as admission does',()=>{
+  // Admission refuses a start whose start plus tolerance plus the 30 s hold is quiet; planning must not spend a slot on it.
+  const day=wakingDay(local(8),policy);assert.ok(day);
+  const quiet={enabled:true,start:'09:00',end:'10:00',timeZone:null};
+  const lower=local(8)+60_000,upper=local(10)-31_000-START_TOLERANCE_MS;
+  for(const [offsetMs,kept] of [[START_TOLERANCE_MS+30_000,false],[START_TOLERANCE_MS+30_001,true]] as const){
+    const target=local(9)-offsetMs;let first=true;
+    const starts=planArtDay(day,7,local(8),null,quiet,()=>{if(first){first=false;return (target-lower)/(upper-lower);}return 0.5;});
+    assert.equal(starts[0]===target,kept,`a start ${String(offsetMs)} ms before quiet hours`);
+  }
 });
 void test('crossing midnight belongs to its starting date, and planning remains future-only',()=>{
   const night={...policy,wakingStartMinute:20*60,wakingEndMinute:4*60};

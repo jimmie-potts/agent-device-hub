@@ -60,7 +60,7 @@ export function planArtDay(day: WakingDay, count: 6|7|8, nowMs: number, latest: 
     const upper=Math.floor(day.startAtMs+(index+1)*width-31_000-START_TOLERANCE_MS);
     const random=choice();if(!Number.isFinite(random)||random<0||random>=1)throw new Error('invalid-state');
     const selected=Math.max(lower+Math.floor(Math.max(0,upper-lower)*random),earliest);
-    if(selected>upper || selected<=nowMs+PREPARATION_MS || inQuietHours(quiet,selected) || inQuietHours(quiet,selected+31_000))continue;
+    if(selected>upper || selected<=nowMs+PREPARATION_MS || inQuietHours(quiet,selected) || inQuietHours(quiet,selected+START_TOLERANCE_MS+30_000))continue;
     result.push(selected);earliest=nextArtStart(selected+START_TOLERANCE_MS);
   }
   return result;
