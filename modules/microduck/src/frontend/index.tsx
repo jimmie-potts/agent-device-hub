@@ -1,7 +1,7 @@
 import './microduck.css';
 import React, {useEffect, useState} from 'react';
 import type {FrontendContext, FrontendContribution, FrontendCommand} from '@jimmie-potts/sdk/frontend';
-import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
+import {followMicroDuck,type MicroDuckView} from './state-feed.js';
 import type {MicroDuckState} from '../contracts.js';
 function LocalCommands({context,target,kind,children}:{context:FrontendContext;target:string;kind:'controls'|'stop';children:(command:FrontendCommand)=>React.ReactNode}):React.JSX.Element {
   const [attempts,setAttempts]=useState(()=>[crypto.randomUUID()]);
@@ -21,19 +21,10 @@ function Page({context}:{context:FrontendContext}):React.JSX.Element {
   const [view,setView]=useState<{api:FrontendContext['api'];state?:MicroDuckState;live:boolean}>();
   const [recoveryFor,setRecoveryFor]=useState<string>();
   useEffect(()=>{
-    let closed=false,current:MicroDuckState|undefined,copy:SyncedCopy<MicroDuckState>|undefined,live=false;
-    const show=():void=>{if(!closed)setView({api:context.api,...(current===undefined?{}:{state:current}),live});};show();
-    if(context.connected)void context.api.sync<MicroDuckState>(['microduck-state'],change=>{
-      if(closed)return;
-      if(change.type==='updated'){if(current===undefined||change.message.data.revision>current.revision)current=change.message.data;}
-      else if(change.type==='synced')live=true;
-      else if(change.type==='failed'||change.type==='removed'){live=false;current=undefined;}
-      show();
-    },{onRestarted:()=>{live=false;current=undefined;show();}}).then(result=>{
-      if(result.status!=='synced')return;if(closed){void result.copy.close();return;}
-      copy=result.copy;current=copy.states()[0]?.data;live=true;show();
-    }).catch(()=>{live=false;show();});
-    return ()=>{closed=true;void copy?.close();};
+    const api=context.api;
+    const emit=(next:MicroDuckView):void=>{setView({api,...next});};
+    if(!context.connected){emit({live:false});return;}
+    return followMicroDuck((changed,options)=>api.sync<MicroDuckState>(['microduck-state'],changed,options),emit);
   },[context.api,context.connected]);
   const state=view?.api===context.api&&context.connected&&view.live?view.state:undefined;
   const recoveryKey=state?.held===null?undefined:JSON.stringify([state?.id,state?.held?.requestId,state?.configurationRevision,state?.generation]);

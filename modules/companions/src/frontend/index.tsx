@@ -9,7 +9,7 @@ import {AssistantPage} from './assistant.js';
 import React, {useEffect, useRef, useState} from 'react';
 import type {CompanionCategory, CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import type {FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
-import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
+import {followReachy} from './reachy-feed.js';
 
 const labels: Readonly<Record<CompanionCategory, string>> = {'coding-attention': 'Coding attention', 'coding-notice': 'Turn endings', 'simulated-social': 'Simulated social'};
 const reasons: Readonly<Record<string, string>> = {
@@ -34,29 +34,13 @@ function ReachyView({context, advanced = false}: {context: FrontendContext; adva
     const invalidate = (): void => {speech.current = {state: speech.current.state, live: false}; setSynced(false);};
     invalidate();
     if (!connected) return;
-    let active = true;
-    let replacing = false;
-    let copy: SyncedCopy<CompanionState> | undefined;
-    let close: (() => Promise<void>) | undefined;
-    const show = (): void => {
-      const current = copy?.states().find(message => message.data.id === 'reachy');
-      if (current !== undefined) {speech.current = {state: current.data, live: true}; setState(current.data); setUnavailable(false); setSynced(true);}
-      else {setUnavailable(true); invalidate();}
-    };
-    void api.sync<CompanionState>(['companion-state'], change => {
-      if (!active) return;
-      if (change.type === 'updated') {speech.current = {...speech.current, state: change.message.data}; setState(change.message.data); setUnavailable(false);}
-      else if (change.type === 'failed') {replacing = true; setUnavailable(true); invalidate();}
-      else if (change.type === 'synced') {replacing = false; if (copy !== undefined) show();}
-      else if (change.type === 'removed' && change.entity.id === 'reachy') {setUnavailable(true); invalidate();}
-    }, {onRestarted: () => {if (active) {replacing = true; invalidate();}}}).then(result => {
-      if (result.status !== 'synced') {if (active) setUnavailable(true); return;}
-      if (!active) {void result.copy.close(); return;}
-      close = () => result.copy.close();
-      copy = result.copy;
-      if (!replacing) show();
-    }, () => {if (active) setUnavailable(true);});
-    return () => {active = false; speech.current = {state: speech.current.state, live: false}; void close?.();};
+    const stop = followReachy((changed, options) => api.sync<CompanionState>(['companion-state'], changed, options), {
+      updated: data => {speech.current = {...speech.current, state: data}; setState(data); setUnavailable(false);},
+      current: data => {speech.current = {state: data, live: true}; setState(data); setUnavailable(false); setSynced(true);},
+      unavailable: () => {setUnavailable(true); invalidate();},
+      restarted: invalidate,
+    });
+    return () => {stop(); speech.current = {state: speech.current.state, live: false};};
   }, [api, connected]);
   const live = connected && synced && !unavailable && state !== undefined;
   const {Command, Facts, Badge} = context.ui;

@@ -1,53 +1,21 @@
 // The shared shell owns authentication, connection and tracked commands (Hub #934).
 import React, {useEffect, useRef, useState} from 'react';
-import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {FrontendApi, FrontendCommand, FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
-import type {SyncChange, SyncedCopy} from '@jimmie-potts/sdk/remote';
 import {editorGeometry, legacyWall, wallAction, type ConnectorGraph, type LegacyWall, type WallDevice, type WallRecord} from './model.js';
+import {followCatalog, type Catalog, type CatalogRecord} from './catalog-feed.js';
 import {mountWall, type MountedWall} from './wall.js';
 import './wall.css';
 import {Shows} from './shows.js';
 import {MusicPreview} from './music-preview.js';
 
-type Record = DeviceRecord | WallRecord;
-type Catalog = {live: boolean; pending: boolean; error: boolean; walls: WallRecord[]; devices: DeviceRecord[]};
-
 /** Use the shell's participant and keep an explicitly stale copy after failure. No polling or second connection. */
 function useCatalog(api: FrontendApi): Catalog & {retry: () => void} {
   const [catalog, setCatalog] = useState<Catalog>({live: false, pending: true, error: false, walls: [], devices: []});
   const [attempt, setAttempt] = useState(0);
-  const kept = useRef(new Map<string, Record>());
+  const kept = useRef(new Map<string, CatalogRecord>());
   useEffect(() => {
-    let disposed = false, live = false;
-    let copy: SyncedCopy<Record> | undefined;
-    const records = kept.current;
     setCatalog(previous => ({...previous, live: false, pending: true, error: false}));
-    const show = (error = false): void => {
-      if (disposed) return;
-      const values = [...records.values()];
-      setCatalog({live, error, pending: false,
-        walls: values.filter((value): value is WallRecord => 'elements' in value).sort((a, b) => a.id.localeCompare(b.id)),
-        devices: values.filter((value): value is DeviceRecord => 'capabilities' in value && value.kind === 'nanoleaf'),
-      });
-    };
-    const changed = (change: SyncChange<Record>): void => {
-      if (disposed) return;
-      switch (change.type) {
-        case 'updated': records.set(`${change.entity.family}/${change.entity.id}`, change.message.data); show(); break;
-        case 'removed': records.delete(`${change.entity.family}/${change.entity.id}`); show(); break;
-        case 'synced': live = true; show(); break;
-        case 'failed': live = false; show(true); break;
-      }
-    };
-    void api.sync<Record>(['device', 'nanoleaf-wall'], changed).then(result => {
-      if (result.status === 'rejected') { show(true); return; }
-      if (disposed) { void result.copy.close(); return; }
-      copy = result.copy;
-      records.clear();
-      for (const state of copy.states()) records.set(`${'elements' in state.data ? 'nanoleaf-wall' : 'device'}/${state.data.id}`, state.data);
-      live = true; show();
-    }).catch(() => { live = false; show(true); });
-    return () => { disposed = true; void copy?.close(); };
+    return followCatalog((changed, options) => api.sync<CatalogRecord>(['device', 'nanoleaf-wall'], changed, options), kept.current, setCatalog);
   }, [api, attempt]);
   return {...catalog, retry: () => { setAttempt(value => value + 1); }};
 }
