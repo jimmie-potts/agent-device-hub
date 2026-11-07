@@ -69,8 +69,9 @@ export class RuntimeFeeds {
     const participant = this.#participant;
     if (participant === undefined || this.#closed) return false;
     const epoch = ++follow.epoch;
-    follow.cancel(); await follow.copy?.close(); follow.copy = undefined;
-    follow.state = {...follow.state, synced: false}; this.#show();
+    // Stale at once: closing the replaced copy waits for the edge, and its records must not stay current meanwhile.
+    follow.cancel(); follow.state = {...follow.state, synced: false}; this.#show();
+    const replaced = follow.copy; follow.copy = undefined; await replaced?.close();
     const current = (): boolean => !this.#closed && follow.epoch === epoch;
     const show = (): void => {
       if (!current() || follow.copy === undefined) return;

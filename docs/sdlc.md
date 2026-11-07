@@ -510,11 +510,16 @@ the resource.
    `git config --remove-section branch.<branch>` and repeat the query, which must then
    exit 1.
    Judge delivery from the merged PR as in step 1, never `git branch --merged`.
-   Never use `git branch -D` or a sweep across branches. Remote branches have a
-   separate lifecycle under
-   [#309](https://github.com/jimmie-potts/agent-device-hub/issues/309): a missing
-   remote branch neither proves local delivery nor authorizes removal, and this
-   step does not delete remote branches.
+   Never use `git branch -D` or a sweep across branches. GitHub deletes a merged
+   PR's head branch on merge: the repository's `delete_branch_on_merge` setting
+   has been on since 2026-11-06
+   ([#309](https://github.com/jimmie-potts/agent-device-hub/issues/309)). Read
+   the result back with
+   `git ls-remote --exit-code --heads origin refs/heads/<branch>`. Exit 2 means
+   the branch is gone. Exit 0 means it is still there, so report it under step 8
+   rather than deleting it. Any other exit code leaves the result unknown. A missing
+   remote branch neither proves local delivery nor authorizes removing the local
+   one, and this step deletes no remote branch.
 7. Remove the Docker artifacts this task created: its stopped containers, the
    images it built and tagged, the untagged `<none>` images its rebuilds of
    those tags left (by ID, from `docker images -f dangling=true`), and its
@@ -583,6 +588,25 @@ or the build cache as part of a task: the installed stacks, the qualified
 release images and other sessions' builds share that daemon, and whether a
 build is running cannot be seen from one session. Pruning is the owner's
 decision, taken when no session is building.
+
+### Tracker audit
+
+Run `npm run audit:tracker` from any checkout after a batch of deliveries,
+before a handoff or session closeout, and about weekly; nothing schedules it.
+It is read-only and makes no tracker write. Within the window (72 hours by
+default, `-- --hours <n>`) it lists closed issues that keep a workflow label
+and merged PRs with no cleanup outcome under
+[Cleanup after delivery](#cleanup-after-delivery) step 8. Across all open
+issues it lists those without exactly one of the four status labels above,
+leaving out `idea` issues; `status:in-progress` or `status:review` issues with
+no comment since a PR that references them merged; and `status:review` issues
+with no update for more than five days (`-- --stale-review-days <n>`). No
+document sets a time limit on review: five days is the audit's default,
+proposed in #1508. Each finding names its rule. Treat a finding as a prompt to check that record, not as proof: the PR
+link and the cleanup signal are heuristics
+([Tracker audit](development.md#tracker-audit)). Correct a confirmed gap under
+[Tracker reconciliation](#tracker-reconciliation), within the owning writer's
+authority; the audit itself never writes.
 
 <a id="depot-ci-evidence"></a>
 

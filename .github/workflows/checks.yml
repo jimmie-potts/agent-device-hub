@@ -79,6 +79,7 @@ jobs:
         run: node --test scripts/release/tests/*.test.mjs
       - run: npm run lint:js
       - run: npm run test:workspace-audit
+      - run: npm run test:tracker-audit
       - name: Install Chromium with its system dependencies
         if: contains(fromJSON(needs.select.outputs.owners), 'microduck-browser')
         timeout-minutes: 20

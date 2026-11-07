@@ -1,7 +1,7 @@
 // Private presentation metadata; this part has no device dispatch path (Hub #1135).
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
-import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies, type LightingLayout, type LightingLayoutRecord, type LightingLayoutSetRequest} from '@jimmie-potts/event-contracts/v2/families';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {coreValidator, type LightingLayout, type LightingLayoutRecord, type LightingLayoutSetRequest} from '@jimmie-potts/event-contracts/v2/families';
 import {fullDisk, type Command, type Reply, type StateDraft, Outcome} from '@jimmie-potts/sdk';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreTransaction} from './store.js';
@@ -20,12 +20,12 @@ export type LightingLayoutAdmission = {
 export class LightingLayoutPart implements CorePart {
   readonly families = ['lighting-layout'] as const;
   readonly #admission: LightingLayoutAdmission;
-  readonly #validator = new MessageValidator();
+  readonly #validator = coreValidator();
   #core: CoreHandle | undefined;
   #read: StatementSync | undefined;
   #save: StatementSync | undefined;
 
-  constructor(admission: LightingLayoutAdmission) {this.#admission = admission;registerCoreFamilies(this.#validator);}
+  constructor(admission: LightingLayoutAdmission) {this.#admission = admission;}
 
   readonly open = (database: DatabaseSync): void => {
     database.exec("CREATE TABLE IF NOT EXISTS lighting_layout (id TEXT PRIMARY KEY CHECK (id = 'lighting'), record TEXT NOT NULL) STRICT");
