@@ -317,8 +317,10 @@ class Owner {
           }
           if(count<2)throw new Error('MicroDuck zero-input confirmation deadline');
         }
-        const remaining=Math.ceil(Number(sentAt+800000000n-this.#transport.nowNs())/1000000);
-        if(remaining>0)await this.#sleep(remaining,signal);
+        // A timer counts its delay from the event loop's cached time, which lags the transport clock by however long
+        // the synchronous work before it took, such as a slow commit. It can then end the hold early, and the return
+        // would be refused as before its window (#1491), so the hold ends by the transport clock instead.
+        for(let remaining=Math.ceil(Number(sentAt+800000000n-this.#transport.nowNs())/1000000);remaining>0;remaining=Math.ceil(Number(sentAt+800000000n-this.#transport.nowNs())/1000000))await this.#sleep(remaining,signal);
         signal.throwIfAborted();const end=this.#guard(command,action);if(end!==undefined){code=end;throw new Error('MicroDuck phase fenced');}
       }
       await this.#finish(row,{requestId:row.requestId,result:Outcome.succeeded,evidence:Outcome.transmitted});
