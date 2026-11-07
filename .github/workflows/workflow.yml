@@ -41,13 +41,16 @@ jobs:
       - run: npm run test:preflight
       # Hosted runners sometimes stall in apt-get update until the job's limit (#862). The step takes 15 to 133 s, its
       # slowest apt install about 2 minutes; each attempt of the two apt commands gets 180 s, and a stalled or failed
-      # attempt reruns both, up to three attempts.
+      # attempt reruns both, up to three attempts. Ubuntu 24.04 ships the bwrap-userns-restrict profile among
+      # apparmor-profiles' extras; Ubuntu 26.04, which ubuntu-latest moves to, ships it in apparmor itself (#871).
       - name: Check isolated Linux hook qualification
         if: runner.os == 'Linux'
         timeout-minutes: 14
         run: |
           bash scripts/apt-retry.sh 180 bash -c 'sudo apt-get update && sudo apt-get install -y bubblewrap apparmor-profiles'
-          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          test -f "$profile" || profile=/etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r "$profile"
           bwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true
           npm run test:performance:linux
           npm run test:performance:standalone

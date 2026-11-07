@@ -15,7 +15,7 @@ import {SIMULATED_API_KEY, SIMULATED_DEVICE, SimulatedCloud} from '../src/simula
 import {SimulatedTronbyt, TRONBYT_ORIGIN} from '../src/simulated-tronbyt.js';
 import {BRIGHTNESS_CEILING, TronbytConnection, privateServerUrl} from '../src/tronbyt.js';
 import {encodeLosslessRgb} from '../src/webp.js';
-import {MINUTE, SECOND, asking, finished, host, notice, playback, shown, test, until, withWriteFailure, working, type HostOptions, type Hosted} from './support.js';
+import {MINUTE, SECOND, asking, finished, host, notice, playback, records, shown, test, until, withWriteFailure, working, type HostOptions, type Hosted} from './support.js';
 
 const STATUS = 'agentdevicehub';
 const NOW_PLAYING = 'nowplaying';
@@ -243,6 +243,39 @@ test('the section selects one backend, and refuses the other\'s settings', () =>
 
 // The module on a simulated server
 
+/**
+ * Whether the module acknowledged both tiles' pushes and published it: its own completion of each, and a device record
+ * whose last transmission is a push. The server counts a push before its answer reaches the module (Hub #1484).
+ */
+const acknowledgedPushes = (h: Hosted): boolean => {
+  const completed = records(h, 'operation.completed');
+  const last = h.device().lastTransmission;
+  return completed.includes('info status push') && completed.includes('info playback push') && last.status === 'known' && last.operationIds[0] === 'push';
+};
+
+test('a server\'s receipt of both tiles is not the module\'s acknowledgment of them', async context => {
+  const server = new SimulatedTronbyt();
+  let posts = 0;
+  let answer: () => void = () => undefined;
+  const answered = new Promise<void>(resolve => { answer = resolve; });
+  // The second push reaches the server, and its answer waits until the test lets it go.
+  const holding: CloudFetch = async (url, init) => {
+    const response = await server.fetch(url, init);
+    if (init.method === 'POST' && ++posts === 2) {
+      init.signal.addEventListener('abort', answer, {once: true});
+      await answered;
+    }
+    return response;
+  };
+  const h = await host(context, {sessions: [asking(), working(), finished()], playback: playback('playing'), ...onServer(server), module: {transport: holding}});
+  await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().installations[NOW_PLAYING]?.pushes === 1, 'the server\'s tiles');
+  assert.equal(records(h, 'operation.completed').filter(entry => entry.endsWith(' push')).length, 1, 'the module heard one answer');
+  assert.equal(acknowledgedPushes(h), false, 'the server\'s receipt alone');
+  answer();
+  await until(() => acknowledgedPushes(h), 'the module\'s acknowledgment of both pushes');
+  assert.deepEqual(h.problems(), []);
+});
+
 test('identical frames reach the display through the cloud and through a server, and only the server takes them by name in the background', async context => {
   const sessions = [asking(), working(), finished()];
   const now = playback('playing');
@@ -251,6 +284,7 @@ test('identical frames reach the display through the cloud and through a server,
   const onTronbyt = await host(context, {sessions, playback: now, ...onServer(server)});
   await until(() => shown(onCloud, STATUS).pushes === 1 && shown(onCloud, NOW_PLAYING).pushes === 1, 'the cloud\'s tiles');
   await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().installations[NOW_PLAYING]?.pushes === 1, 'the server\'s tiles');
+  await until(() => acknowledgedPushes(onTronbyt), 'the module\'s acknowledgment of both pushes');
   const state = server.state();
   assert.deepEqual(state.installations[STATUS]?.picture, shown(onCloud, STATUS).picture, 'the status tile');
   assert.deepEqual(state.installations[NOW_PLAYING]?.picture, shown(onCloud, NOW_PLAYING).picture, 'the now-playing card');

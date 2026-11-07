@@ -7,6 +7,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {SyncCompleted, SyncHandler, SyncResult} from '@jimmie-potts/sdk/remote';
+import {SdkError} from '@jimmie-potts/sdk';
 import {NO_CONTROLS} from '../src/module.js';
 import {followTidbyt, type TidbytView} from '../src/frontend/records.js';
 import {TidbytCard} from '../src/frontend/card.js';
@@ -33,7 +34,7 @@ function fixture(initial: DeviceRecord[] = []) {
     },
     replace: (next: DeviceRecord[]) => { states = next.map(message); },
     answer: () => { resolve({status: 'synced', message: completed(states.map(item => item.data)), copy: {states: () => states, get: entity => states.find(item => item.data.id === entity.id), close: () => { closed++; return Promise.resolve(); }}}); },
-    refuse: () => { resolve({status: 'rejected', requestId: 'synthetic-sync', error: errorBody('forbidden')}); },
+    refuse: (code: Parameters<typeof errorBody>[0] = 'forbidden') => { resolve({status: 'rejected', requestId: 'synthetic-sync', error: errorBody(code)}); },
     counts: () => ({closed, calls}),
   };
 }
@@ -72,6 +73,84 @@ void test('failed sync stays stale, preserves the registry code and retry is a n
   stop(); const retry = fixture(); const end = followTidbyt(retry.sync, views.at(-1)?.device, view => { views.push(view); });
   retry.refuse(); await flush(); assert.equal(views.at(-1)?.device?.id, 'tidbyt'); assert.equal(views.at(-1)?.error, 'forbidden'); end();
   assert.deepEqual(owner.counts(), {closed: 1, calls: 1}); assert.equal(retry.counts().calls, 1);
+});
+
+/** A manual scheduler: each pending delay waits until the test fires it. */
+function clock() {
+  const timers: {delayMs: number; run: () => void; cancelled: boolean}[] = [];
+  return {
+    scheduler: {after: (delayMs: number, run: () => void) => {
+      const timer = {delayMs, run, cancelled: false}; timers.push(timer);
+      return () => { timer.cancelled = true; };
+    }},
+    pending: () => timers.filter(timer => !timer.cancelled).map(timer => timer.delayMs),
+    fire: async () => {
+      const timer = timers.find(item => !item.cancelled); assert.ok(timer, 'a retry is scheduled');
+      timer.cancelled = true; timer.run(); await flush();
+    },
+  };
+}
+
+/** Each read is a new fixture, as each call opens a new copy through the shell. */
+function reads() {
+  const all: ReturnType<typeof fixture>[] = [];
+  return {sync: (handler: SyncHandler<DeviceRecord>) => { const next = fixture([record()]); all.push(next); return next.sync(handler); }, all};
+}
+
+void test('a refused read is repeated without Retry after 1 s, doubling to 30 s, until a complete snapshot is current', async () => {
+  const owner = reads(), time = clock(), views: TidbytView[] = [];
+  const stop = followTidbyt(owner.sync, record(), view => { views.push(view); }, time.scheduler);
+  const delays: number[] = [];
+  for (let attempt = 0; attempt < 7; attempt++) {
+    owner.all.at(-1)?.refuse('unavailable'); await flush();
+    assert.equal(views.at(-1)?.live, false); assert.equal(views.at(-1)?.error, 'unavailable');
+    assert.equal(views.at(-1)?.device?.id, 'tidbyt', 'saved evidence stays, marked stale');
+    delays.push(...time.pending()); await time.fire();
+  }
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16_000, 30_000, 30_000]);
+  owner.all.at(-1)?.answer(); await flush();
+  assert.equal(views.at(-1)?.live, true); assert.equal(views.at(-1)?.error, undefined);
+  assert.deepEqual(time.pending(), [], 'a following copy schedules nothing');
+  assert.equal(owner.all.length, 8);
+  stop(); assert.deepEqual(owner.all.at(-1)?.counts(), {closed: 1, calls: 1});
+});
+
+void test('a copy that fails while connected is read again, its backoff restarts after success and unmount cancels it', async () => {
+  const owner = reads(), time = clock(), views: TidbytView[] = [];
+  const stop = followTidbyt(owner.sync, undefined, view => { views.push(view); }, time.scheduler);
+  owner.all[0]?.answer(); await flush(); assert.equal(views.at(-1)?.live, true);
+  await owner.all[0]?.change({type: 'failed', error: errorBody('unavailable')});
+  assert.equal(views.at(-1)?.live, false); assert.equal(views.at(-1)?.error, 'unavailable');
+  assert.deepEqual(owner.all[0]?.counts(), {closed: 1, calls: 1}, 'the failed copy is released');
+  await owner.all[0]?.change({type: 'synced', message: completed([record()])}); assert.equal(views.at(-1)?.live, false, 'a failed copy cannot become current');
+  assert.deepEqual(time.pending(), [1000]); await time.fire();
+  owner.all[1]?.refuse('capacity'); await flush(); assert.deepEqual(time.pending(), [2000]); await time.fire();
+  owner.all[2]?.answer(); await flush(); assert.equal(views.at(-1)?.live, true); assert.equal(views.at(-1)?.device?.id, 'tidbyt');
+  await owner.all[2]?.change({type: 'failed', error: errorBody('unavailable')});
+  assert.deepEqual(time.pending(), [1000], 'success restarts the backoff');
+  stop(); assert.deepEqual(time.pending(), [], 'unmount cancels the pending read');
+  assert.equal(owner.all.length, 3);
+});
+
+void test('a thrown read is repeated, while a refusal that cannot clear waits for Retry records', async () => {
+  const time = clock(), views: TidbytView[] = [];
+  let calls = 0;
+  const stop = followTidbyt(() => { calls++; return Promise.reject(new TypeError('the request could not be built')); }, record(), view => { views.push(view); }, time.scheduler);
+  await flush(); assert.equal(views.at(-1)?.error, 'unavailable'); assert.deepEqual(time.pending(), [1000]);
+  await time.fire(); assert.equal(calls, 2); stop();
+  const refused = reads(), held = clock();
+  const end = followTidbyt(refused.sync, record(), view => { views.push(view); }, held.scheduler);
+  refused.all[0]?.refuse('forbidden'); await flush();
+  assert.equal(views.at(-1)?.error, 'forbidden'); assert.deepEqual(held.pending(), []); end();
+  assert.equal(refused.all.length, 1);
+  // A thrown registry body keeps its own retryable flag, as a closed participant's invalid-state does.
+  for (const code of ['forbidden', 'invalid-state'] as const) {
+    const final = clock(); let thrownCalls = 0;
+    const done = followTidbyt(() => { thrownCalls++; return Promise.reject(new SdkError(errorBody(code))); }, record(), view => { views.push(view); }, final.scheduler);
+    await flush(); assert.equal(views.at(-1)?.error, code); assert.equal(views.at(-1)?.live, false);
+    assert.deepEqual(final.pending(), [], `a thrown ${code} schedules no read`); done();
+    assert.equal(thrownCalls, 1);
+  }
 });
 
 void test('the read-only card distinguishes unknown transmission, cloud acceptance and stale evidence', () => {

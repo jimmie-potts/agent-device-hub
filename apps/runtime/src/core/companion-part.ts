@@ -1,12 +1,12 @@
 // The core alone mints coding opportunities from the first publication of a committed live reduction (Hub #1096).
 // It also forwards the companions module's approved assistant commands to its tracked dispatcher (Hub #46): only the
 // allowlisted family and target below, only from that module, as one operation the module requested.
-import {MessageValidator, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {recordLog, SdkError, Outcome} from '@jimmie-potts/sdk';
 import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from '@jimmie-potts/event-contracts/v2/companions';
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CodingDispatch} from '@jimmie-potts/event-contracts/v2/coding';
-import {registerCoreFamilies, type AgentOccurrence, type AttentionRaised, type SessionRecord, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator, type AgentOccurrence, type AttentionRaised, type SessionRecord, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreChange} from './store.js';
 import {LivePublication} from './live-publication.js';
@@ -26,7 +26,7 @@ export class CompanionPart implements CorePart {
   publishing(message: Message<unknown>): () => void {return this.#eligibility.publishing(message);}
   publicationEnded(change: CoreChange): void {this.#eligibility.ended(change.messages);}
   async start(core: CoreHandle): Promise<void> {
-    const validator = new MessageValidator(); registerCoreFamilies(validator);
+    const validator = coreValidator();
     await core.sdk.respond<{requestId:string;target:string;gesture:'notice'|'attention';opportunityId:string;validUntilMs:number;expectedConfigurationRevision:number;expectedGeneration:{epoch:string;sequence:number}}>('bunny.cmd.reachy-dispatch.reachy', async command => {
       if (this.#closed) return errorBody('unavailable');
       if (command.source !== 'bunny/modules/reachy-mini') return errorBody('forbidden');

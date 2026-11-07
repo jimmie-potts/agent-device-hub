@@ -76,3 +76,61 @@ void test('explicit placement refresh reports its own required sync results, nev
   feeds.close();
   assert.equal(await feeds.refresh(required), false);
 });
+
+void test('a replacement marks its copy stale before the replaced copy finishes closing, and that copy cannot restore it', async context => {
+  context.mock.method(globalThis, 'fetch', (path: string) => Promise.resolve(Response.json(path.includes('/modules') ? {
+    schema: 'module-list/2.0', modules: [{name: 'core', state: 'running', serves: ['lighting-layout', 'playback-layout'], pages: []}],
+  } : {schema: 'authority/2.0', scope: 'control'})));
+  // The first copies' close() is held, as the SDK's close waits for the edge to forget the subscription (#1535).
+  let releaseClose = (): void => {};
+  const closing = new Promise<void>(resolve => { releaseClose = resolve; });
+  const handlers: ((change: SyncChange<RuntimeRecord>) => void)[] = [];
+  let syncs = 0;
+  const participant = {sync: (_families: readonly string[], handler: (change: SyncChange<RuntimeRecord>) => void) => {
+    handlers.push(handler);
+    const first = syncs++ < 2;
+    return Promise.resolve({status: 'synced', copy: {states: () => [], close: () => first ? closing : Promise.resolve()}});
+  }} as unknown as RemoteParticipant;
+  let state: RuntimeData | undefined;
+  const feeds = new RuntimeFeeds({after: () => () => {}}, value => { state = value; }, () => { assert.fail('the session must stay alive'); });
+  await feeds.start(participant);
+  assert.deepEqual(state?.copies.map(copy => copy.synced), [true, true]);
+  const refreshed = feeds.refresh([{owner: 'bunny/core', family: 'lighting-layout'}, {owner: 'bunny/core', family: 'playback-layout'}]);
+  assert.deepEqual(state?.copies.map(copy => copy.synced), [false, false], 'an explicit refresh leaves no replaced copy current while it closes');
+  for (const handler of handlers.slice(0, 2)) handler({type: 'synced', message: {} as Message<{requestId: string; revision: number; members: []}>});
+  assert.deepEqual(state?.copies.map(copy => copy.synced), [false, false], 'the replaced copy cannot restore freshness');
+  releaseClose();
+  assert.equal(await refreshed, true);
+  assert.deepEqual(state?.copies.map(copy => copy.synced), [true, true]);
+  assert.equal(syncs, 4, 'one replacement read per copy, and no command');
+  feeds.close();
+});
+
+void test('an overtaken replacement whose close returns last cannot detach the current copy', async context => {
+  context.mock.method(globalThis, 'fetch', (path: string) => Promise.resolve(Response.json(path.includes('/modules') ? {
+    schema: 'module-list/2.0', modules: [{name: 'core', state: 'running', serves: ['lighting-layout'], pages: []}],
+  } : {schema: 'authority/2.0', scope: 'control'})));
+  // The SDK's first close() waits for the edge to forget the subscription; a second close of that copy returns at once.
+  let release = (): void => {};
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const copies: {handler: (change: SyncChange<RuntimeRecord>) => void; closed: number}[] = [];
+  const participant = {sync: (_families: readonly string[], handler: (change: SyncChange<RuntimeRecord>) => void) => {
+    const entry = {handler, closed: 0}, first = copies.length === 0; copies.push(entry);
+    return Promise.resolve({status: 'synced', copy: {states: () => [{data: {id: `copy-${String(copies.length)}`}}], close: () => {
+      entry.closed++; return first && entry.closed === 1 ? held : Promise.resolve();
+    }}});
+  }} as unknown as RemoteParticipant;
+  let state: RuntimeData | undefined;
+  const feeds = new RuntimeFeeds({after: () => () => {}}, value => { state = value; }, () => { assert.fail('the session must stay alive'); });
+  await feeds.start(participant);
+  const overtaken = feeds.refresh(), latest = feeds.refresh();
+  assert.equal(await latest, true);
+  release();
+  assert.equal(await overtaken, false, 'the overtaken attempt reports its own result');
+  await new Promise(resolve => { setImmediate(resolve); });
+  copies.find(entry => entry.closed === 0)?.handler({type: 'synced', message: {} as Message<{requestId: string; revision: number; members: []}>});
+  assert.equal(state?.copies[0]?.synced, true, 'the current copy still reaches the page');
+  assert.equal(copies.filter(entry => entry.closed === 0).length, 1, 'exactly one copy stays open');
+  feeds.close();
+  assert.equal(copies.filter(entry => entry.closed === 0).length, 0, 'closing the feeds reaches the current copy');
+});

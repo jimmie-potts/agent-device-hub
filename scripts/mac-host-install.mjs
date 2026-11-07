@@ -17,8 +17,10 @@ const run = (file, args, cwd) => new Promise((done, fail) => {
 const refuse = reason => {throw new Error(reason);};
 
 const xml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-export function plist({label, program, keepAlive, background, log, path, workingDirectory}) {
+export function plist({label, program, keepAlive, background, log, path, environment = {}, workingDirectory}) {
   const strings = values => values.map(value => `    <string>${xml(value)}</string>`).join('\n');
+  const variables = Object.entries({PATH: path, ...environment})
+    .map(([name, value]) => `    <key>${xml(name)}</key>\n    <string>${xml(value)}</string>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -31,8 +33,7 @@ ${strings(program)}
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key>
-    <string>${xml(path)}</string>
+${variables}
   </dict>
   <key>WorkingDirectory</key>
   <string>${xml(workingDirectory)}</string>
@@ -62,7 +63,8 @@ export function agents({home, node, project = 'bunny-mac-personal'}) {
     // The route holds no state and sends no device command, so launchd keeps it up while Tailscale or the core is away.
     {label: 'org.bunny.private-forwarder', keepAlive: true, path, workingDirectory: route,
       program: ['/bin/sh', join(route, 'start-forwarder.sh')], log: join(route, 'forwarder.log')},
-    {label: 'org.bunny.private-serve', keepAlive: true, path, workingDirectory: route,
+    // Without a terminal the app binary starts as the GUI, logs a CLIError and exits 0, so it needs this to act as the CLI.
+    {label: 'org.bunny.private-serve', keepAlive: true, path, environment: {TAILSCALE_BE_CLI: '1'}, workingDirectory: route,
       program: [tailscale, 'serve', '--https=443', 'http://127.0.0.1:18789'], log: join(route, 'serve.log')},
   ];
 }
