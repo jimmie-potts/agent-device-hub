@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {execFile} from 'node:child_process';
+import {execFile, spawn} from 'node:child_process';
+import {existsSync} from 'node:fs';
 import {mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -151,6 +152,83 @@ test('only the serve agent runs the app binary as the CLI, which it needs withou
   assert.match(plist(serve), /<key>PATH<\/key>\n {4}<string>\/Users\/owner\/\.docker\/bin:/);
   assert.doesNotMatch(plist(runtime), /TAILSCALE_BE_CLI/);
   assert.doesNotMatch(plist(forwarder), /TAILSCALE_BE_CLI/);
+});
+
+// Even as the CLI, the app binary starts as the GUI when its parent is launchd, so a waiting shell stays its parent.
+const tailscale = '/Applications/Tailscale.app/Contents/MacOS/Tailscale';
+test('the serve agent keeps a shell as the app binary\'s parent and forwards a stop to it', () => {
+  const [runtime, forwarder, serve] = agents({home: '/Users/owner', node: '/node'});
+  const [shell, flag, script, binary, ...rest] = serve.program;
+  assert.deepEqual([shell, flag, binary, rest], ['/bin/sh', '-c', tailscale, []]);
+  assert.doesNotMatch(script, /\bexec\b/);
+  assert.ok(!script.includes(tailscale), 'the binary is an argument, not shell text');
+  assert.match(script, /"\$0" serve --https=443 http:\/\/127\.0\.0\.1:18789 &/);
+  assert.match(script, /trap 'kill -TERM "\$c" 2>\/dev\/null; wait "\$c"; exit "\$\?"' TERM INT/);
+  assert.match(script, /wait "\$c"$/);
+  assert.equal(runtime.program[0], '/node');
+  assert.deepEqual(forwarder.program, ['/bin/sh', '/Users/owner/.config/bunny/private-access/start-forwarder.sh']);
+});
+
+const waitFor = async (check, limit = 10_000) => {
+  for (const deadline = Date.now() + limit; Date.now() < deadline; await new Promise(done => setTimeout(done, 50))) {
+    const value = await check().catch(() => undefined);
+    if (value) return value;
+  }
+  return assert.fail('timed out');
+};
+const alive = pid => {try {process.kill(pid, 0); return true;} catch {return false;}};
+
+// launchd runs /bin/sh, which is bash on macOS; dash (Ubuntu's /bin/sh) and zsh run the same script where installed.
+const shells = ['/bin/sh', '/bin/bash', '/bin/dash', '/bin/zsh'].filter(path => existsSync(path));
+test('the serve agent\'s shell is the binary\'s parent, ends it on a stop and exits with it', {timeout: 60_000, skip: process.platform === 'win32'}, async t => {
+  const [, , serve] = agents({home: '/Users/owner', node: '/node'});
+  for (const interpreter of shells) await t.test(interpreter, async t => {
+    const home = await fixture(t);
+    const fake = join(home, 'Tailscale');
+    // Records its parent and arguments, then runs until a TERM, as the serve does, and exits with a chosen status.
+    await writeFile(fake, `#!/bin/sh
+echo "$$ $PPID $*" > "${home}/started"
+trap 'echo terminated > "${home}/stopped"; exit "$(cat "${home}/on-term")"' TERM
+[ -f "${home}/exit-now" ] && exit 3
+while :; do sleep 0.05; done
+`, {mode: 0o755});
+    // Swapped wherever it appears, so no shape of the agent can ever run the real app binary here.
+    const program = serve.program.map(arg => (arg === tailscale ? fake : arg));
+    assert.equal(program[0], '/bin/sh');
+    program[0] = interpreter;
+    assert.ok(!program.some(arg => /tailscale\.app/i.test(arg)));
+    // A failing run must not leave the fake looping, which would also hold the test runner open.
+    const spawned = [];
+    t.after(() => spawned.forEach(pid => {try {process.kill(pid, 'SIGKILL');} catch {/* already gone */}}));
+    const run = () => {
+      const shell = spawn(program[0], program.slice(1), {stdio: 'ignore'});
+      spawned.push(shell.pid);
+      const exited = new Promise(done => shell.on('exit', (code, signal) => done({code, signal})));
+      return {shell, exited};
+    };
+    const stop = async status => {
+      await rm(join(home, 'started'), {force: true});
+      await rm(join(home, 'stopped'), {force: true});
+      await writeFile(join(home, 'on-term'), String(status));
+      const {shell, exited} = run();
+      const [child, parent, ...args] = (await waitFor(() => readFile(join(home, 'started'), 'utf8'))).trim().split(' ');
+      spawned.push(Number(child));
+      assert.notEqual(Number(parent), 1);
+      assert.equal(Number(parent), shell.pid);
+      assert.deepEqual(args, ['serve', '--https=443', 'http://127.0.0.1:18789']);
+      shell.kill('SIGTERM');
+      // The serve's own status, never the interrupted wait's 143 or a lost child's 127.
+      assert.deepEqual(await exited, {code: status, signal: null});
+      assert.equal(await readFile(join(home, 'stopped'), 'utf8'), 'terminated\n');
+      assert.equal(alive(Number(child)), false);
+    };
+    await stop(0);
+    await stop(7);
+
+    // When the serve exits by itself, so does the job, which lets KeepAlive restart it.
+    await writeFile(join(home, 'exit-now'), '');
+    assert.deepEqual(await run().exited, {code: 3, signal: null});
+  });
 });
 
 async function fixture(t) {
@@ -396,6 +474,69 @@ test('the starter reaches its entry point through a symlinked path', posixOnly, 
     const {code, reports} = await run(path);
     assert.equal(code, 1, path);
     assert.equal(reports.at(-1)?.reason, 'held', path);
+  }
+  assert.doesNotMatch(await log(), /^(start|restart|volume) /m);
+});
+
+// An owner's maintenance script (a backup, a configuration write) records through the same lease, with its own fields
+// and no schema. Before #1426's fix one such record kept the core stopped at every sign-in.
+const maintenanceRecord = (id, container) => ({id, owner: 'synthetic configuration write', project: 'synthetic',
+  phase: 'writing-configuration', outcome: 'uncertain', container, backup: {name: 'synthetic.tar'}, startedAt: new Date().toISOString()});
+const maintain = (root, record) => withOperation({root, project: 'synthetic'}, async lease => {
+  await lease.record(record);
+  await lease.complete({...record, phase: 'succeeded', outcome: 'succeeded', result: {changed: true}, completedAt: new Date().toISOString()});
+});
+
+test('the start gate passes the operator\'s own maintenance records and still refuses an unknown one', async t => {
+  const operations = await fixture(t);
+  const gate = {project: 'synthetic', operations};
+  const info = {Id: 'c'.repeat(64), Image: 'sha256:target', Created: '2026-01-01T00:00:00.000000000Z'};
+  await maintain(operations, maintenanceRecord('maintenance-complete', info.Id));
+  // A failed one that its owner reconciled names no replacement, so it holds nothing back either.
+  await assert.rejects(withOperation({root: operations, project: 'synthetic'}, async lease => {
+    await lease.record(maintenanceRecord('maintenance-failed', info.Id));
+    throw new Error('stop here');
+  }), /stop here/);
+  await reconcileOperation({root: operations, project: 'synthetic'}, async () => ({status: 'exited'}));
+  await startGate(gate, info);
+
+  const records = join(operations, 'synthetic.records');
+  const written = JSON.parse(await readFile(join(records, 'maintenance-complete.json'), 'utf8'));
+  const unknown = async (name, value) => {
+    await writeFile(join(records, name), typeof value === 'string' ? value : JSON.stringify(value), {mode: 0o600});
+    await assert.rejects(startGate(gate, info), refusedWith('records-unreadable'), name);
+    await rm(join(records, name));
+  };
+  await unknown('newer.json', {...written, id: 'newer', schema: 'bunny-maintenance-record/1.0'});
+  await unknown('batch.json', {...written, id: 'batch', schema: 'bunny-batch-record/2.0'});
+  await unknown('no-schema-replacement.json', {...written, id: 'no-schema-replacement', replacementContainer: info.Id, reconciledFrom: {}});
+  await unknown('no-schema-image.json', {...written, id: 'no-schema-image', targetImage: info.Image});
+  await unknown('renamed.json', written);
+  await unknown('no-owner.json', {...written, id: 'no-owner', ownerProcess: undefined});
+  await unknown('no-release.json', {...written, id: 'no-release', writerReleasedAt: undefined});
+  await unknown('null.json', 'null');
+  await unknown('corrupt.json', '{');
+  await startGate(gate, info);
+});
+
+test('a completed maintenance record no longer stops the real starter', posixOnly, async t => {
+  const {run, operations, log} = await starterHost(t);
+  await maintain(operations, maintenanceRecord('maintenance-complete', coreId));
+  const {code, reports} = await run();
+  assert.equal(code, undefined, JSON.stringify(reports));
+  assert.deepEqual(reports.map(r => r.outcome), ['ready', 'started', 'ok']);
+  assert.match(await log(), new RegExp(`^start ${coreId}$`, 'm'));
+});
+
+test('an unknown or corrupt record beside a maintenance record still stops the real starter', posixOnly, async t => {
+  const {run, operations, log} = await starterHost(t);
+  await maintain(operations, maintenanceRecord('maintenance-complete', coreId));
+  for (const [name, text] of [['newer.json', JSON.stringify({id: 'newer', schema: 'bunny-batch-record/2.0'})], ['corrupt.json', '{']]) {
+    await writeFile(join(operations, 'synthetic.records', name), text, {mode: 0o600});
+    const {code, reports} = await run();
+    assert.equal(code, 1, name);
+    assert.equal(reports.at(-1).reason, 'records-unreadable', name);
+    await rm(join(operations, 'synthetic.records', name));
   }
   assert.doesNotMatch(await log(), /^(start|restart|volume) /m);
 });
