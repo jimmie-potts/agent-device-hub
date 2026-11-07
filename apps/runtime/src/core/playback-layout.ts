@@ -1,7 +1,7 @@
 // Private presentation metadata; this part has no device dispatch path (Hub #1164).
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
-import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies, type PlaybackLayoutRecord, type PlaybackLayoutSetRequest} from '@jimmie-potts/event-contracts/v2/families';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {coreValidator, type PlaybackLayoutRecord, type PlaybackLayoutSetRequest} from '@jimmie-potts/event-contracts/v2/families';
 import {Outcome, fullDisk, type Command, type Reply, type StateDraft} from '@jimmie-potts/sdk';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreTransaction} from './store.js';
@@ -19,12 +19,12 @@ export type PlaybackLayoutAdmission = {
 export class PlaybackLayoutPart implements CorePart {
   readonly families = ['playback-layout'] as const;
   readonly #admission: PlaybackLayoutAdmission;
-  readonly #validator = new MessageValidator();
+  readonly #validator = coreValidator();
   #core: CoreHandle | undefined;
   #read: StatementSync | undefined;
   #save: StatementSync | undefined;
 
-  constructor(admission: PlaybackLayoutAdmission) {this.#admission = admission;registerCoreFamilies(this.#validator);}
+  constructor(admission: PlaybackLayoutAdmission) {this.#admission = admission;}
 
   readonly open = (database: DatabaseSync): void => {
     database.exec("CREATE TABLE IF NOT EXISTS playback_layout (id TEXT PRIMARY KEY CHECK (id = 'playback'), record TEXT NOT NULL) STRICT");

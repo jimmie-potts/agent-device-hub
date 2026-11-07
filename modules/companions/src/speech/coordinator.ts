@@ -1,6 +1,6 @@
 import {createHash, randomUUID} from 'node:crypto';
-import {MessageValidator, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {CompanionCard, SpeechDispatch, SpeechEndpointControl, SpeechEndpointLost, SpeechPlayback, SpeechState, SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {speechDeadline as deadline, type SpeechSource} from '../presentation-policy.js';
 import {Outcome, fullDisk, recordLog, type Cancel, type Command, type ModuleContext, type Outbox, type Reply, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
@@ -19,7 +19,7 @@ export const speechStateDraft = (data: SpeechState) => ({kind: 'state' as const,
 /** One selected endpoint, one active operation and at most one current pending card. */
 export class SpeechCoordinator {
   readonly #store: SpeechStore;
-  readonly #validator = new MessageValidator();
+  readonly #validator = coreValidator();
   readonly #subscriptions: Subscription[] = [];
   #state: SpeechState = {id: 'reachy', revision: 0, endpointId: null, availability: 'off', playback: null, pending: false};
   #active: Active | undefined;
@@ -29,7 +29,7 @@ export class SpeechCoordinator {
   #blocked = false;
   #queued: Cancel | undefined;
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly eligible: (source: SpeechSource) => boolean, readonly qualified: () => boolean) {
-    this.#store = new SpeechStore(context.database()); registerCoreFamilies(this.#validator);
+    this.#store = new SpeechStore(context.database());
   }
   inspect(): SpeechState {return structuredClone(this.#state);}
   mark(): number | undefined {return this.#state.availability === 'available' && !this.#closed && !this.context.signal.aborted ? this.#epoch : undefined;}

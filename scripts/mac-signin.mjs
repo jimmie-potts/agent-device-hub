@@ -4,9 +4,10 @@
 // `docker start` itself and never retries a refusal. A stopped core stays stopped under an owner's start hold or when
 // it is a failed deployment's replacement. Installed alone by mac-host-install.mjs: imports only node:*.
 import {execFile} from 'node:child_process';
+import {realpathSync} from 'node:fs';
 import {access, readdir, readFile} from 'node:fs/promises';
 import {homedir} from 'node:os';
-import {join, resolve} from 'node:path';
+import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {parseArgs} from 'node:util';
@@ -123,7 +124,12 @@ const notify = reason => new Promise(done => {
   execFile('osascript', ['-e', script], {timeout: 10 * seconds}, () => done());
 });
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+function isEntryPoint() {
+  // Node resolves a symlink for import.meta.url but keeps it in argv, and a missed match would exit 0 having done nothing.
+  try {return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));}
+  catch {return false;}
+}
+if (isEntryPoint()) {
   const {values} = parseArgs({options: {project: {type: 'string'}, releases: {type: 'string'}}});
   const report = fields => process.stdout.write(`${JSON.stringify({at: new Date().toISOString(), ...fields})}\n`);
   try {
