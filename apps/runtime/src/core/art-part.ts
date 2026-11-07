@@ -2,16 +2,16 @@
 // families below, only from that module, each as one tracked operation the module requested. This part never forwards a
 // moment. The in-process bus checks no sender, so a module could address a display's key directly: the rule binds here,
 // at the tracker and gateway, and at each responder, which refuses any source but `bunny/core` (`artCommandRefusal`).
-import {MessageValidator, errorBody,type ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import {errorBody,type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {ART_FORWARDED, ART_MODULE_SOURCE, ART_SUBJECT, type ArtDispatch21} from '@jimmie-potts/event-contracts/v2/art';
-import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
 
 export class ArtPart implements CorePart {
   #closed = false;
   constructor(readonly authorize?:(authorization:string,target:string,compositionId:string)=>ErrorBody|undefined){}
   async start(core: CoreHandle): Promise<void> {
-    const validator = new MessageValidator(); registerCoreFamilies(validator);
+    const validator = coreValidator();
     await core.sdk.respond<ArtDispatch21>(`bunny.cmd.art-dispatch.${ART_SUBJECT}`, async command => {
       if (this.#closed) return errorBody('unavailable');
       if (command.source !== ART_MODULE_SOURCE) return errorBody('forbidden');

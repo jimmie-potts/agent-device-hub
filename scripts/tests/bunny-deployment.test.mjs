@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {mkdtemp,writeFile,readFile,realpath,rm} from 'node:fs/promises';
-import {join} from 'node:path';
+import {mkdtemp,writeFile,readFile,realpath,rm,stat,symlink} from 'node:fs/promises';
+import {basename,dirname,join} from 'node:path';
+import {createHash} from 'node:crypto';
+import {execFile} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+import {refusalMessage} from '../operator-refusal.mjs';
 import {tmpdir} from 'node:os';
 import {deployBatch,validateReturn} from '../deployment/batch.mjs';
 import {readPending,reconcileOperation,withOperation} from '../bunny-operations.mjs';
@@ -22,16 +26,20 @@ async function fixture(t) {
   const rendered={name:'synthetic',services:{core:{image:oldImage,user:'1000:1000',read_only:true,network_mode:'none',environment:{BUNNY_CONTROL:'disabled'},
     volumes:mounts.map(m=>({type:'volume',source:m.Name,target:m.Destination,read_only:!m.RW}))}},volumes:Object.fromEntries(mounts.map(m=>[m.Name,{name:m.Name}]))};
   const target={candidate:revision,outcome:'qualified',architecture:'linux/arm64',image:{id:newImage},runId:11,runAttempt:1};
-  const calls=[];const f={root,request,state,target,calls,get info(){return info;},failAt:undefined};
+  const calls=[];const f={root,request,state,target,calls,get info(){return info;},failAt:undefined,revisions:new Map([[oldImage,oldRevision],[newImage,revision]])};
   f.run=async args=>{
     calls.push(args);
     if(f.failAt===args[0]||f.failAt==='client'&&args[0]==='exec'&&args.includes('-e'))throw Error('synthetic-failure');
     if(args[0]==='ps')return info?.Id??'';
     if(args[0]==='inspect')return JSON.stringify([info]);
-    if(args[0]==='image')return JSON.stringify([{Id:args[2],Architecture:'arm64',Os:'linux',Config:{Labels:{'org.opencontainers.image.revision':args[2]===oldImage?oldRevision:revision}}}]);
+    if(args[0]==='image')return JSON.stringify([{Id:args[2],Architecture:'arm64',Os:'linux',Config:{Labels:{'org.opencontainers.image.revision':f.revisions.get(args[2])}}}]);
     if(args[0]==='volume')return JSON.stringify([{Name:args[2],Driver:'local',Scope:'local',Options:null}]);
     if(args[0]==='compose'&&args.includes('config'))return JSON.stringify(rendered);
-    if(args[0]==='compose'&&args.includes('create')){info={...info,Id:newId,Image:newImage,State:{Status:'created',Running:false,Restarting:false,Pid:0}};return '';}
+    if(args[0]==='compose'&&args.includes('create')) {
+      // Creates from the file it is given, as Compose would, so a missing or wrong replacement file fails here.
+      const image=JSON.parse(await readFile(args[args.indexOf('-f')+1],'utf8')).services.core.image;
+      info={...info,Id:image===newImage?newId:createHash('sha256').update(image).digest('hex'),Image:image,State:{Status:'created',Running:false,Restarting:false,Pid:0}};return '';
+    }
     if(args[0]==='stop'){Object.assign(info.State,{Status:'exited',Running:false,Pid:0});return '';}
     if(args[0]==='start'){Object.assign(info.State,{Status:'running',Running:true,Pid:124});await writeFile(state,'latest-before\nnew-candidate-state\n');return '';}
     if(args[0]==='rm')return '';
@@ -93,7 +101,7 @@ test('explicit previous-image return requires exact latest backup and configurat
 });
 test('duplicate completed ID cannot replace the previous batch Compose or affect the runtime',async t=>{
   const f=await fixture(t);await f.deploy();
-  const path=f.request.compose+'.'+f.request.id+'.json',before=await readFile(path,'utf8');
+  const path=join(f.root,f.request.id+'.compose.json'),before=await readFile(path,'utf8');
   f.request.containerId=f.info.Id;f.request.previousImage=newImage;f.request.previousRevision=revision;
   const nextImage='sha256:'+'a'.repeat(64),nextRevision='b'.repeat(40);
   f.request.candidate=nextRevision;f.target.candidate=nextRevision;f.target.image.id=nextImage;
@@ -102,4 +110,53 @@ test('duplicate completed ID cannot replace the previous batch Compose or affect
   assert.equal(await readFile(path,'utf8'),before);
   assert.ok(!f.calls.slice(count).some(a=>['stop','rm','start'].includes(a[0])));
   assert.equal(await readPending({root:f.root,project:'synthetic'}),undefined);
+});
+// The next request names the previous record's replacementCompose, so a name built from the source name grew per batch (#1502).
+test('a request whose Compose is a previous replacement gets a replacement name bounded by its own ID',async t=>{
+  const f=await fixture(t),records=[];
+  for(let n=1;n<=4;n++) {
+    if(n>1) {
+      const image='sha256:'+createHash('sha256').update('image-'+n).digest('hex'),next=createHash('sha1').update('revision-'+n).digest('hex');
+      f.revisions.set(image,next);
+      Object.assign(f.request,{compose:records.at(-1).replacementCompose,containerId:f.info.Id,previousImage:f.info.Image,previousRevision:f.request.candidate,candidate:next});
+      Object.assign(f.target,{candidate:next,image:{id:image}});
+    }
+    f.request.id='batch-'+String(n).padEnd(100,'x');
+    assert.equal((await f.deploy()).outcome,'succeeded');
+    records.push(JSON.parse(await readFile(join(f.root,'synthetic.records',f.request.id+'.json'),'utf8')));
+  }
+  for(const [n,record] of records.entries()) {
+    assert.equal(dirname(record.replacementCompose),f.root);
+    assert.equal(basename(record.replacementCompose),record.id+'.compose.json');
+    assert.ok(Buffer.byteLength(basename(record.replacementCompose))<=128);
+    assert.equal(record.compose,n===0?join(f.root,'compose.json'):records[n-1].replacementCompose);
+    assert.equal((await stat(record.replacementCompose)).mode&0o777,0o600);
+    assert.equal(JSON.parse(await readFile(record.replacementCompose,'utf8')).services.core.image,record.targetImage);
+    assert.ok(f.calls.some(a=>a[0]==='compose'&&a.includes('create')&&a[a.indexOf('-f')+1]===record.replacementCompose));
+  }
+  assert.equal(f.info.Image,records.at(-1).targetImage);
+});
+test('a failed replacement Compose write names its step in the record and stops nothing',async t=>{
+  const f=await fixture(t),occupied=join(f.root,f.request.id+'.compose.json');
+  await writeFile(occupied,'{"synthetic":"existing"}\n',{mode:0o600});
+  await assert.rejects(f.deploy());
+  const pending=await readPending({root:f.root,project:'synthetic'});
+  assert.equal(pending.failedPhase,'preparing-compose');
+  assert.equal(pending.failedStep,'writing-replacement-compose');
+  assert.equal(pending.failedFileError,'EEXIST');
+  assert.equal(pending.replacementCompose,occupied);
+  assert.equal(await readFile(occupied,'utf8'),'{"synthetic":"existing"}\n');
+  assert.ok(!f.calls.some(a=>['stop','rm','start'].includes(a[0])||a[0]==='compose'&&a.includes('create')));
+});
+// Node resolves a symlink for import.meta.url but keeps it in argv, so a path comparison missed and exited 0 (#1470).
+test('the deploy command reaches its entry point through a symlinked path',{skip:process.platform==='win32',timeout:60_000},async t=>{
+  const root=await mkdtemp(join(await realpath(tmpdir()),'bunny-deploy-entry-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const script=fileURLToPath(new URL('../bunny-deploy.mjs',import.meta.url)),linked=join(root,'bunny-deploy.mjs');
+  await symlink(script,linked);
+  for(const path of [script,linked]) {
+    // No arguments: the command refuses before reading a request or calling the engine.
+    const result=await new Promise(done=>execFile(process.execPath,[path],{env:{PATH:'/usr/bin:/bin',HOME:root},timeout:30_000},
+      (error,stdout,stderr)=>done({code:error?.code??0,stdout,stderr})));
+    assert.deepEqual(result,{code:1,stdout:'',stderr:refusalMessage(Error('deployment-refused'))},path);
+  }
 });

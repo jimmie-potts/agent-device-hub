@@ -1,6 +1,6 @@
 import {createHash, randomUUID} from 'node:crypto';
-import {MessageValidator, errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {AssistantInput} from '@jimmie-potts/event-contracts/v2/assistant';
 import {assistantStateDraft, type AssistantEngine} from '../assistant/engine.js';
 import {Outcome, fullDisk, type Command, type ModuleContent, type ModuleContentRequest, type ModuleContext, type ModuleStagedUpload,
@@ -20,11 +20,11 @@ const UPLOAD_BYTES = 10 * 1024 * 1024;
 export class Knowledge {
   readonly store: PreferenceStore<KnowledgeInput>;
   readonly library: KnowledgeLibrary;
-  readonly #validator = new MessageValidator();
+  readonly #validator = coreValidator();
   #subscription: Subscription | undefined;
   #closed = false;
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly assistant: AssistantEngine, preferences: PreferenceStore) {
-    this.library = new KnowledgeLibrary(context.database(), assistant, preferences); this.store = this.library.entries; registerCoreFamilies(this.#validator);
+    this.library = new KnowledgeLibrary(context.database(), assistant, preferences); this.store = this.library.entries;
   }
   async start(): Promise<void> {this.#subscription = await this.context.sdk.respond<AssistantInput>('bunny.cmd.assistant-input.knowledge', command => this.#input(command));}
   async stop(): Promise<void> {this.#closed = true; await this.#subscription?.close();}
