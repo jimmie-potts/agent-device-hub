@@ -58,6 +58,15 @@ export async function operatorFor(info, releases, exists) {
   return refuse('operator-missing');
 }
 
+// An owner's maintenance script (a backup, a configuration write) records under the same lease, which names the file by
+// the record's ID and stamps its owner process, with the script's own fields and no schema. Only a deployment leaves a
+// replacement behind, and the pending marker and lease already stop the operator while any operation is unfinished.
+// One that carries a deployment's fields without its schema is a format this copy does not know.
+const own = (record, field) => Object.hasOwn(record, field);
+const maintenance = (name, record) => !own(record, 'schema') && typeof record.id === 'string' && name === `${record.id}.json`
+  && typeof record.ownerProcess === 'object' && record.ownerProcess !== null && own(record, 'writerReleasedAt')
+  && !own(record, 'replacementContainer') && !own(record, 'targetImage');
+
 // Reads no operator state beyond what its records hold: a later deployment replaces the container, which ends the refusal.
 export async function startGate({project, operations}, info) {
   const present = await access(join(operations, `${project}.start-hold`)).then(() => true, () => false);
@@ -66,6 +75,8 @@ export async function startGate({project, operations}, info) {
   const names = await readdir(records).catch(error => (error.code === 'ENOENT' ? [] : refuse('records-unreadable')));
   for (const name of names.filter(file => file.endsWith('.json'))) {
     const record = await readFile(join(records, name), 'utf8').then(JSON.parse).catch(() => refuse('records-unreadable'));
+    if (typeof record !== 'object' || record === null || Array.isArray(record)) refuse('records-unreadable');
+    if (maintenance(name, record)) continue;
     // An installed copy can lag a release: a record format it does not know must not read as "no failed deployment".
     if (record.schema !== 'bunny-batch-record/1.0') refuse('records-unreadable');
     if (record.reconciledFrom === undefined || record.completedAt !== undefined) continue;

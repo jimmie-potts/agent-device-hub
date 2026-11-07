@@ -399,3 +399,65 @@ test('the starter reaches its entry point through a symlinked path', posixOnly, 
   }
   assert.doesNotMatch(await log(), /^(start|restart|volume) /m);
 });
+
+// An owner's maintenance script (a backup, a configuration write) records through the same lease, with its own fields
+// and no schema. Before #1426's fix one such record kept the core stopped at every sign-in.
+const maintenanceRecord = (id, container) => ({id, owner: 'synthetic configuration write', project: 'synthetic',
+  phase: 'writing-configuration', outcome: 'uncertain', container, backup: {name: 'synthetic.tar'}, startedAt: new Date().toISOString()});
+const maintain = (root, record) => withOperation({root, project: 'synthetic'}, async lease => {
+  await lease.record(record);
+  await lease.complete({...record, phase: 'succeeded', outcome: 'succeeded', result: {changed: true}, completedAt: new Date().toISOString()});
+});
+
+test('the start gate passes the operator\'s own maintenance records and still refuses an unknown one', async t => {
+  const operations = await fixture(t);
+  const gate = {project: 'synthetic', operations};
+  const info = {Id: 'c'.repeat(64), Image: 'sha256:target', Created: '2026-01-01T00:00:00.000000000Z'};
+  await maintain(operations, maintenanceRecord('maintenance-complete', info.Id));
+  // A failed one that its owner reconciled names no replacement, so it holds nothing back either.
+  await assert.rejects(withOperation({root: operations, project: 'synthetic'}, async lease => {
+    await lease.record(maintenanceRecord('maintenance-failed', info.Id));
+    throw new Error('stop here');
+  }), /stop here/);
+  await reconcileOperation({root: operations, project: 'synthetic'}, async () => ({status: 'exited'}));
+  await startGate(gate, info);
+
+  const records = join(operations, 'synthetic.records');
+  const written = JSON.parse(await readFile(join(records, 'maintenance-complete.json'), 'utf8'));
+  const unknown = async (name, value) => {
+    await writeFile(join(records, name), typeof value === 'string' ? value : JSON.stringify(value), {mode: 0o600});
+    await assert.rejects(startGate(gate, info), refusedWith('records-unreadable'), name);
+    await rm(join(records, name));
+  };
+  await unknown('newer.json', {...written, id: 'newer', schema: 'bunny-maintenance-record/1.0'});
+  await unknown('batch.json', {...written, id: 'batch', schema: 'bunny-batch-record/2.0'});
+  await unknown('no-schema-replacement.json', {...written, id: 'no-schema-replacement', replacementContainer: info.Id, reconciledFrom: {}});
+  await unknown('no-schema-image.json', {...written, id: 'no-schema-image', targetImage: info.Image});
+  await unknown('renamed.json', written);
+  await unknown('no-owner.json', {...written, id: 'no-owner', ownerProcess: undefined});
+  await unknown('null.json', 'null');
+  await unknown('corrupt.json', '{');
+  await startGate(gate, info);
+});
+
+test('a completed maintenance record no longer stops the real starter', posixOnly, async t => {
+  const {run, operations, log} = await starterHost(t);
+  await maintain(operations, maintenanceRecord('maintenance-complete', coreId));
+  const {code, reports} = await run();
+  assert.equal(code, undefined, JSON.stringify(reports));
+  assert.deepEqual(reports.map(r => r.outcome), ['ready', 'started', 'ok']);
+  assert.match(await log(), new RegExp(`^start ${coreId}$`, 'm'));
+});
+
+test('an unknown or corrupt record beside a maintenance record still stops the real starter', posixOnly, async t => {
+  const {run, operations, log} = await starterHost(t);
+  await maintain(operations, maintenanceRecord('maintenance-complete', coreId));
+  for (const [name, text] of [['newer.json', JSON.stringify({id: 'newer', schema: 'bunny-batch-record/2.0'})], ['corrupt.json', '{']]) {
+    await writeFile(join(operations, 'synthetic.records', name), text, {mode: 0o600});
+    const {code, reports} = await run();
+    assert.equal(code, 1, name);
+    assert.equal(reports.at(-1).reason, 'records-unreadable', name);
+    await rm(join(operations, 'synthetic.records', name));
+  }
+  assert.doesNotMatch(await log(), /^(start|restart|volume) /m);
+});
