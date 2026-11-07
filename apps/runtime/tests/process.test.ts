@@ -75,6 +75,18 @@ const STOP_BOUND_MS = 5000;
  * phase that hangs still fails at its own bound, by name.
  */
 const KILL_AND_RESTART_BUDGET_MS = 70_000;
+/**
+ * The budget of the lease test, above the sum of its phases' bounds: the first start, the second runtime's refusal, which
+ * starts it too, and the first one's stop. Under load the first start took up to 10.9 s and the refusal up to 8.6 s, and
+ * the test ran out of the 20 s default in two of ten runs (Hub #1521).
+ */
+const LEASE_BUDGET_MS = 40_000;
+/**
+ * The budget of the --record-spans test, above the sum of its phases' bounds: two starts, each with the wait for the
+ * driver's command and the stop. Under load a start took up to 11.2 s, the command 0.2 s and the stop 0.3 s, and the test
+ * ran out of the 20 s default in two of ten runs (Hub #1521).
+ */
+const RECORD_SPANS_BUDGET_MS = 65_000;
 
 /** Waits for `condition`, failing with the phase's name and the process's last records when it does not hold in time. */
 async function phase(runtime: Spawned, condition: () => boolean, timeoutMs: number, name: string): Promise<void> {
@@ -137,16 +149,18 @@ it('the shipped runtime runs every shipped module with --simulate and each facto
   assert.deepEqual(runtime.records().filter(record => record.severity_number >= 17).map(record => record.event_name), [], 'no error record');
 });
 
-it('the entry point refuses missing or malformed arguments', async context => {
-  for (const args of [[], ['--port', 'eighty'], ['--port', '70000'], ['--port', '0', '--lag-limit-ms', '0'], ['--port', '0', '--unknown']]) {
+// One test per refusal: each process loads the whole runtime before it reads its arguments. Under load that took 4.9 s
+// at the median and up to 8.5 s, so five in one test ran out of the 20 s default in each of ten runs (Hub #1521).
+for (const args of [[], ['--port', 'eighty'], ['--port', '70000'], ['--port', '0', '--lag-limit-ms', '0'], ['--port', '0', '--unknown']]) {
+  it(`the entry point refuses missing or malformed arguments (${args.length === 0 ? 'none' : args.join(' ')})`, async context => {
     const child = spawn(process.execPath, [MAIN, ...args, '--state-dir', await stateDir(context)], {stdio: ['ignore', 'ignore', 'pipe']});
     let stderr = '';
     child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
     const [code] = await once(child, 'exit') as [number | null];
     assert.equal(code, 2, args.join(' '));
     assert.match(stderr, /usage: /, args.join(' '));
-  }
-});
+  });
+}
 
 it('errors that escape two modules stop only those modules, and the process keeps serving', async context => {
   const runtime = await launch(context, FIXTURE, ['escaping', '--port', '0', '--state-dir', await stateDir(context)]);
@@ -252,8 +266,10 @@ it('the entry point imports only the launcher, so its signal handlers come befor
   assert.deepEqual(imports, ['./launch.js']);
 });
 
-it('a signal while the runtime still loads stops it with exit 0, before it creates any state', async context => {
-  for (const [mode, signal] of [['wait', 'SIGTERM'], ['wait', 'SIGINT'], ['block', 'SIGTERM']] as const) {
+// One test per process: from the signal to the exit, a process that waits took up to 10.5 s under load, so three in one
+// test ran out of the 20 s default in six of ten runs (Hub #1521).
+for (const [mode, signal] of [['wait', 'SIGTERM'], ['wait', 'SIGINT'], ['block', 'SIGTERM']] as const) {
+  it(`a signal while the runtime still loads stops it with exit 0, before it creates any state (${mode} ${signal})`, async context => {
     const dir = join(await stateDir(context), 'state');
     const runtime = spawnRuntime(context, SLOW_LOAD, [mode, '--port', '0', '--state-dir', dir]);
     await waitFor(() => recorded(runtime, 'fixture.loading'), 5000, 'the load to begin');
@@ -261,8 +277,8 @@ it('a signal while the runtime still loads stops it with exit 0, before it creat
     assert.deepEqual(await runtime.exited, {code: 0, signal: null}, `${mode} ${signal}`);
     await assert.rejects(access(dir), `${mode} ${signal}: no state was created`);
     assert.equal(runtime.stdout(), '', `${mode} ${signal}: no ready line`);
-  }
-});
+  });
+}
 
 for (const [name, code] of [
   ['relative', 'state-dir-relative'],
@@ -415,13 +431,13 @@ it('a second runtime on the same state directory cannot take the core\'s lease: 
   const dir = await stateDir(context);
   const first = await launch(context, MAIN, ['--port', '0', '--state-dir', dir]);
   const second = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', dir]);
-  assert.deepEqual(await second.exited, {code: 1, signal: null}, 'refused: the first keeps the core\'s database to itself (Hub #972)');
+  assert.deepEqual(await exitOf(second, START_BOUND_MS, 'the second runtime\'s refusal'), {code: 1, signal: null}, 'refused: the first keeps the core\'s database to itself (Hub #972)');
   assert.equal(second.records().find(record => record.event_name === 'runtime.failed')?.attributes['error.code'], 'core-failed');
   const report = await health(first.url);
   assert.equal(entry(report.body, 'core').state, 'running');
   first.child.kill('SIGTERM');
-  assert.deepEqual(await first.exited, {code: 0, signal: null});
-});
+  assert.deepEqual(await exitOf(first, STOP_BOUND_MS, 'the first runtime to stop'), {code: 0, signal: null});
+}, LEASE_BUDGET_MS);
 
 it('the shipped entry point runs with --simulate and --edge, and a remote part with a run grant reaches the edge', async context => {
   const reader = {source: 'bunny/parts/reader', token: `tok_SYNTHETIC835_${randomBytes(16).toString('hex')}`, scopes: ['read'] as const};
@@ -539,7 +555,7 @@ it('--record-spans keeps the runtime\'s spans in a private file of the state dir
     const runtime = await launch(context, FIXTURE, ['lamp-driven', '--port', '0', '--state-dir', dir, ...(record ? ['--record-spans'] : [])]);
     await waitFor(() => runtime.records().some(entry => entry.event_name === 'command.completed' && entry.attributes['bunny.request.id'] === 'req-crash'), 10_000, 'the driver\'s command');
     runtime.child.kill('SIGTERM');
-    assert.deepEqual(await runtime.exited, {code: 0, signal: null});
+    assert.deepEqual(await exitOf(runtime, STOP_BOUND_MS, 'the runtime to stop'), {code: 0, signal: null});
     if (record) {
       assert.equal((await stat(join(dir, SPANS_FILE))).mode & 0o777, 0o600);
       const names = readSpanFile(dir).lines.map(line => (JSON.parse(line) as {resourceSpans: {scopeSpans: {spans: {name: string}[]}[]}[]}).resourceSpans[0]?.scopeSpans[0]?.spans[0]?.name);
@@ -548,7 +564,7 @@ it('--record-spans keeps the runtime\'s spans in a private file of the state dir
       await assert.rejects(stat(join(dir, SPANS_FILE)), 'the installed default writes no span file');
     }
   }
-});
+}, RECORD_SPANS_BUDGET_MS);
 
 it('--record-spans is a flag with no value, and the usage line names it', () => {
   assert.equal(parseArguments(['--port', '0']).recordSpans, false);

@@ -15,7 +15,7 @@ import {EXIT, runNanoleafMigration, type NanoleafMigrationOptions} from '../src/
 import {abortOnSignals} from '../src/signals.js';
 import {CONFIG_SCHEMA} from '../src/state.js';
 import {it, stateDir, waitFor} from './support.js';
-import {migrationRuntime} from './fixtures/migration-runtime.js';
+import {TWO_STARTS_BUDGET_MS, migrationRuntime} from './fixtures/migration-runtime.js';
 
 const ENTRY = fileURLToPath(new URL('../src/migrate-nanoleaf.js', import.meta.url));
 const INTERRUPT = fileURLToPath(new URL('./fixtures/nanoleaf-interrupt.js', import.meta.url));
@@ -182,7 +182,7 @@ it('migration and verify refuse a running runtime, and migration succeeds after 
   } finally {
     await again.stop();
   }
-});
+}, TWO_STARTS_BUDGET_MS);
 
 // Keep this separate from the two successful startups, preserving the normal per-test deadline.
 it('a runtime that starts while the migration tool holds the lease fails without taking it', async context => {

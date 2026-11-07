@@ -15,10 +15,11 @@ import {InstalledLibrary, writeSyntheticLibrary, type SyntheticLibrary} from '@j
 import {holdRuntimeLease} from '../src/lease.js';
 import {DEFAULT_MIN_FREE_BYTES, EXIT, runPixooMigration, spaceNeeded, type PixooMigrationOptions} from '../src/pixoo-migration.js';
 import {it, stateDir, waitFor} from './support.js';
-import {migrationRuntime} from './fixtures/migration-runtime.js';
+import {TWO_STARTS_BUDGET_MS, migrationRuntime} from './fixtures/migration-runtime.js';
 
 const ENTRY = fileURLToPath(new URL('../src/migrate-pixoo.js', import.meta.url));
 const FULL_DISK = fileURLToPath(new URL('./fixtures/pixoo-full-disk.js', import.meta.url));
+const INTERRUPT = fileURLToPath(new URL('./fixtures/pixoo-interrupt.js', import.meta.url));
 
 let root: string;
 let library: string;
@@ -134,7 +135,7 @@ it('migration and verify refuse a running runtime, and migration succeeds after 
     await runtimeAgain.stop();
   }
 
-});
+}, TWO_STARTS_BUDGET_MS);
 
 // Give the reverse exclusion its own unchanged 20-second budget, independent of the two successful startups above.
 it('a runtime that starts while the migration tool holds the lease fails without taking it', async context => {
@@ -320,18 +321,24 @@ it('an interrupt before anything is written is a refusal, and SIGINT or SIGTERM 
   assert.ok(await absent(state));
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGINT', 'SIGTERM'] as const) {
     const target = join(await stateDir(context), 'state');
-    const child = spawn(process.execPath, [ENTRY, ...args('migrate', target)], {stdio: ['ignore', 'pipe', 'pipe']});
+    // The shipped entry point, paused at its ninth file read until the signal comes (Hub #1546): a signal sent after a
+    // real-time wait could arrive once a fast write had already finished.
+    const child = spawn(process.execPath, [INTERRUPT, ...args('migrate', target)], {stdio: ['ignore', 'pipe', 'pipe']});
     let stdout = '';
+    let stderr = '';
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
     const exited = once(child, 'exit') as Promise<[number | null, NodeJS.Signals | null]>;
-    // Once the database exists, the tool is writing: the copy and the library's own check take a few hundred milliseconds.
-    await waitFor(async () => !await absent(join(target, 'modules', 'pixoo.sqlite')) || child.exitCode !== null, 15_000, 'the database');
+    await waitFor(() => stderr.includes('paused copy'), 15_000, 'the child paused mid-copy');
+    // What the signal interrupts: the copy, with the module's database, its folder and some files already written.
+    assert.ok(!await absent(join(target, 'modules', 'pixoo.sqlite')), `${signal}: the database exists`);
+    assert.ok((await readdir(join(target, 'modules', 'pixoo', 'media'), {recursive: true, withFileTypes: true})).some(entry => entry.isFile()), `${signal}: files were copied`);
     child.kill(signal);
     const [code, killed] = await exited;
     const lines = stdout.split('\n').filter(text => text !== '');
     assert.equal(lines.length, 1, `${signal}: one line`);
     const line = JSON.parse(lines[0] ?? '') as Line;
-    assert.deepEqual([code, killed, line.result, line.code, line.destination], [EXIT.failed, null, 'failed', 'interrupted', 'removed'], signal);
+    assert.deepEqual([code, killed, line.result, line.code, line.destination], [EXIT.failed, null, 'failed', 'interrupted', 'removed'], `${signal}: ${stderr}`);
     await sleep(200);
     assert.deepEqual(await readdir(join(target, 'modules')), ['core.sqlite-owner'], `${signal}: only the runtime's lease file is left`);
   }
