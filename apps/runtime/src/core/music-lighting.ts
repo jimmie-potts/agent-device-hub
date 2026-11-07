@@ -4,8 +4,8 @@
 // resumes, resends or picks another light or input: work goes out only in direct answer to an operator command.
 import {createHash, randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
-import {MessageValidator, errorBody, isErrorCode, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import {errorBody, isErrorCode, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {LightingControl, LightingDeviceState, LightingEnded, LightingState, LightingWork} from '@jimmie-potts/event-contracts/v2/music-lighting';
 import {Outcome, fullDisk, recordLog, type Cancel, type Command, type ModuleScheduler, type Reply, type StateDraft, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
 import {Backoff} from './backoff.js';
@@ -49,7 +49,7 @@ export class MusicLightingPart implements CorePart {
   readonly #admission: LightingAdmission;
   readonly #scheduler: ModuleScheduler;
   readonly #capture: () => ActiveCapture | undefined;
-  readonly #validator = new MessageValidator();
+  readonly #validator = coreValidator();
   #core: CoreHandle | undefined;
   #database: DatabaseSync | undefined;
   #targets: readonly string[] = [];
@@ -64,7 +64,6 @@ export class MusicLightingPart implements CorePart {
     this.#admission = admission;
     this.#scheduler = scheduler;
     this.#capture = capture;
-    registerCoreFamilies(this.#validator);
   }
 
   /** The qualified Nanoleaf lights, after host startup. Assignment sends nothing; it starts following their records. */

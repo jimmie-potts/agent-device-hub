@@ -1,7 +1,7 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {Annotation, Command as Resume, END, StateGraph, interrupt} from '@langchain/langgraph';
-import {MessageValidator, errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {AssistantControl, AssistantDispatch, AssistantInput, AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
@@ -67,7 +67,7 @@ const parseReply = (text: string): Replied => {
 /** The graph and all external waits belong to one companions activation. Startup only reads saved state. */
 export class AssistantEngine {
   readonly store: AssistantStore;
-  readonly #validator = new MessageValidator();
+  readonly #validator = coreValidator();
   readonly #subscriptions: Subscription[] = [];
   readonly #graph;
   #active: Active | undefined;
@@ -76,7 +76,7 @@ export class AssistantEngine {
   readonly #synthetic = new SyntheticProvider();
   readonly #allowed: readonly string[];
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly options: AssistantOptions = {}) {
-    this.store = new AssistantStore(context.database()); registerCoreFamilies(this.#validator);
+    this.store = new AssistantStore(context.database());
     this.#allowed = [...(options.tools ?? [])];
     this.#graph = new StateGraph(shape)
       .addNode('turn', state => this.#turn(state))
