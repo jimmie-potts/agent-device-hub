@@ -19,13 +19,20 @@ test('packaged artifact refuses wrong source, architecture, user and derivative 
   assert.equal(imageIdentity(good, sha, {derivative: true}), digest);
 });
 test('coverage failure and unavailable evidence cannot report qualification', () => {
-  const needs = Object.fromEntries(['pin', 'checks', 'workflow', 'image'].map(name => [name, {result: 'success'}]));
+  const needs = Object.fromEntries(['pin', 'checks', 'workflow', 'build', 'verify', 'image'].map(name => [name, {result: 'success'}]));
   const checks = EXPECTED_JOB_NAMES.map(name => ({name, result: 'success'}));
   assert.equal(resultOutcome(needs, checks, {}, true), 'qualified');
   assert.equal(resultOutcome(needs, checks.slice(1), {}, true), 'incomplete');
   assert.equal(resultOutcome(needs, checks, null, true), 'incomplete');
   needs.image.result = 'failure'; assert.equal(resultOutcome(needs, checks, null, true), 'failed');
   needs.image.result = 'cancelled'; assert.equal(resultOutcome(needs, checks, null, true), 'incomplete');
+  // A failed packaged lane skips the image job, and the result still says failed rather than incomplete (#1512).
+  for (const [name, result, outcome] of [['verify', 'failure', 'failed'], ['build', 'failure', 'failed'], ['verify', 'cancelled', 'incomplete']]) {
+    const lane = {...needs, image: {result: 'skipped'}, [name]: {result}};
+    assert.equal(resultOutcome(lane, checks, null, true), outcome, `${name} ${result}`);
+  }
+  const older = {...needs}; delete older.verify;
+  assert.equal(resultOutcome(older, checks, {}, true), 'incomplete', 'a result without the lanes never qualifies');
 });
 test('job readback fully paginates the exact attempt and refuses a truncated read', async () => {
   const calls = [];
@@ -59,7 +66,20 @@ test('qualification reuses all current coverage and native concurrency without w
   }
   names.push(release.jobs.image.name);
   assert.deepEqual(names, EXPECTED_JOB_NAMES);
-  assert.equal(release.jobs.image['runs-on'], 'ubuntu-24.04-arm');
+  // The receipt's image job gates on the native build and on every packaged lane that tested its archive (#1512).
+  assert.deepEqual(release.jobs.image.needs, ['build', 'verify']);
+  assert.equal(release.jobs.image.outputs.image, '${{ needs.build.outputs.image }}');
+  for (const key of ['build', 'verify']) assert.equal(release.jobs[key]['runs-on'], 'ubuntu-24.04-arm');
+  assert.equal(release.jobs.verify.needs, 'build');
+  const {LANES} = await import('../packaged.mjs');
+  assert.deepEqual(release.jobs.verify.strategy.matrix.lane, LANES);
+  assert.equal(release.jobs.verify.strategy['fail-fast'], false);
+  const artifact = 'release-image-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}';
+  assert.equal(release.jobs.build.steps.find(step => step.uses?.startsWith('actions/upload-artifact@')).with.name, artifact);
+  assert.equal(release.jobs.verify.steps.find(step => step.uses?.startsWith('actions/download-artifact@')).with.name, artifact,
+    'a lane tests only this attempt\'s own archive');
+  assert.equal(release.jobs.verify.steps.at(-1).env.RELEASE_IMAGE, '${{ needs.build.outputs.image }}');
+  assert.deepEqual(release.jobs.result.needs, ['pin', 'checks', 'workflow', 'build', 'verify', 'image']);
   assert.match(release.jobs.pin.steps.at(-1).run, /git merge-base --is-ancestor/);
   assert.equal(release.jobs.result.if, 'always()');
 });
@@ -85,7 +105,7 @@ test('copied successful jobs cannot qualify a rerun with no matching current-att
   context.after(() => rm(at, {recursive: true, force: true}));
   const runId = 10, runAttempt = 2;
   const jobs = EXPECTED_JOB_NAMES.map((name, i) => ({id: i + 1, name, status: 'completed', conclusion: 'success', head_sha: sha, run_id: runId, run_attempt: runAttempt}));
-  const needs = Object.fromEntries(['pin', 'checks', 'workflow', 'image'].map(name => [name, {result: 'success'}]));
+  const needs = Object.fromEntries(['pin', 'checks', 'workflow', 'build', 'verify', 'image'].map(name => [name, {result: 'success'}]));
   const env = {GITHUB_SHA: sha, GITHUB_RUN_ID: String(runId), GITHUB_RUN_ATTEMPT: String(runAttempt), GITHUB_REPOSITORY: REPOSITORY,
     RELEASE_NEEDS: JSON.stringify(needs), RELEASE_IMAGE: JSON.stringify({id: digest, revision: sha, archive: 'production-image.tar.gz', archiveSha256: 'c'.repeat(64)})};
   const old = {id: 20, name: qualificationArtifactNames(sha, runId, 1).image, expired: false, workflow_run: {id: runId, head_sha: sha}};

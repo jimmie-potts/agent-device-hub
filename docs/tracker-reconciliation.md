@@ -105,4 +105,6 @@ Existing acceptance, independent reviews, current-head CI, guarded merge and
 merged-main readback remain required. The work guide stays a dated publication;
 Project fields remain projections under their own authority. This manual,
 event-triggered procedure adds no scheduler, scanner, model study, guide rebuild
-requirement or cross-repository instruction rollout.
+requirement or cross-repository instruction rollout. The separate, on-demand
+[tracker audit](sdlc.md#tracker-audit) only reports gaps for this procedure to
+correct; nothing schedules it and it writes nothing.

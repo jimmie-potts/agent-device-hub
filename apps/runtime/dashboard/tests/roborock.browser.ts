@@ -5,6 +5,7 @@ import { AxeBuilder } from '@axe-core/playwright';
 import { chromium, type Page, type Route } from 'playwright';
 import { changes, feed, startWorld } from './harness.ts';
 import { checkRoborockFrontend } from './roborock.frontend.ts';
+import { pageEvidence, statusEvidence } from './roborock-evidence.ts';
 function latch(): {
     wait: Promise<void>;
     release: () => void;
@@ -94,6 +95,33 @@ try {
         const observations = page.getByRole('region', { name: 'Roborock observations' });
         const history = page.getByRole('region', { name: 'Run history' });
         const detail = page.getByRole('region', { name: 'Run detail' });
+        // #1236: a timed-out wait after a host action prints which side held the transition, so a
+        // hosted failure can be classified from its own log: no status read after the action, a
+        // read the collector did not commit (its records, a refused status read), a committed state
+        // the page did not show (feed, refusal, stale stream), or a later state that replaced it.
+        // The wait and its bound are unchanged; each evidence read has its own bound and asserts nothing.
+        type Mark = { calls: number; logs: number; collector: unknown };
+        const mark = async (): Promise<Mark> => ({ calls: world.roborockCalls().length, logs: world.logs.length, collector: await statusEvidence(world.url, world.readerToken) });
+        const settled = async (text: string, since: Mark): Promise<void> => {
+            try {
+                await observations.getByText(text, { exact: true }).waitFor();
+            }
+            catch (error) {
+                const records = world.logs.slice(since.logs)
+                    .filter(record => record.attributes['bunny.module'] === 'roborock' || /^(runtime\.(edge|sync|delivery)|outbox)\./u.test(record.event_name))
+                    .slice(-40)
+                    .map(record => [record.event_name, record.attributes['bunny.operation'], record.attributes['bunny.code']].filter(item => item !== undefined).join(' '));
+                process.stderr.write(`${JSON.stringify({
+                    roborockWait: text,
+                    collectorAtAction: since.collector,
+                    deviceReadsSinceAction: world.roborockCalls().slice(since.calls),
+                    collector: await statusEvidence(world.url, world.readerToken),
+                    recordsSinceAction: records,
+                    ...await pageEvidence(page, observations),
+                })}\n`);
+                throw error;
+            }
+        };
         await observations.getByText('Availability: available. Activity: other.', { exact: true }).waitFor();
         await history.getByRole('button', { name: 'Next runs', exact: true }).waitFor();
         assert.equal(await history.getByRole('button', { name: 'Next runs', exact: true }).isEnabled(), true);
@@ -169,17 +197,21 @@ try {
         // Synthetic collection actions are host-only. A second cleaning action
         // would create a different simulated start identifier, so recovery uses
         // the poll seam without resetting the active run.
+        const cleaning = await mark();
         await world.roborockAction('cleaning');
-        await observations.getByText('Availability: available. Activity: cleaning.', { exact: true }).waitFor();
+        await settled('Availability: available. Activity: cleaning.', cleaning);
+        const late = await mark();
         await world.roborockAction('late');
-        await observations.getByText('Availability: unavailable. Activity: cleaning.', { exact: true }).waitFor();
+        await settled('Availability: unavailable. Activity: cleaning.', late);
+        const recovery = await mark();
         await world.roborockRefresh();
-        await observations.getByText('Availability: available. Activity: cleaning.', { exact: true }).waitFor();
+        await settled('Availability: available. Activity: cleaning.', recovery);
         await new Promise<void>(resolve => { setTimeout(resolve, 20); });
         await world.roborockRefresh();
         await new Promise<void>(resolve => { setTimeout(resolve, 1100); });
+        const complete = await mark();
         await world.roborockAction('complete');
-        await observations.getByText('Availability: available. Activity: other.', { exact: true }).waitFor();
+        await settled('Availability: available. Activity: other.', complete);
         await history.getByRole('button', { name: 'Reload run history', exact: true }).click();
         const observedRun = history.locator('button[data-record-id]').first();
         const observedId = await observedRun.getAttribute('data-record-id');
@@ -268,8 +300,9 @@ try {
         });
         await observations.locator('[data-observation-age]').getByText(/Observation age: 1[2-9]\d seconds/).waitFor();
         assert.equal(await evidence.getAttribute('data-evidence-at'), originalEvidence);
+        const offline = await mark();
         await world.roborockAction('offline');
-        await observations.getByText('Availability: unavailable. Activity: other.', { exact: true }).waitFor();
+        await settled('Availability: unavailable. Activity: other.', offline);
         assert.equal(await evidence.getAttribute('data-evidence-at'), originalEvidence);
         await world.roborockAction('online');
         await page.reload();
