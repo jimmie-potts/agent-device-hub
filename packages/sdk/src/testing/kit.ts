@@ -27,7 +27,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {MessageValidator, compareDelivery, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator, registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {Diagnostic} from '../diagnostics.js';
 import {InProcessBus} from '../in-process.js';
 import {CORE_SOURCE, acknowledgmentOf} from '../acknowledgment.js';
@@ -128,6 +128,31 @@ async function waitFor<T>(find: () => T | undefined, timeoutMs: number, what: st
   }
 }
 
+/** The sealed validators of earlier worlds, by the module schemas they hold besides the core families. */
+const validators = new Map<string, Pick<MessageValidator, 'validate'>>();
+
+/**
+ * The validator a world checks messages with: profile 2.0, the core families and `schemas`, sealed. Compiling the core
+ * families takes Ajv tens of milliseconds, and every check opens a world, so the kit compiles them once per process for
+ * each set of module schemas and shares that sealed validator between the worlds that register the same schemas (Hub
+ * #1529). A spec without schemas of its own gets the process's shared core validator. A sealed validator takes no
+ * registration, so no world changes what another accepts, and worlds whose specs register different schemas never
+ * share one. A set that fails to register is not kept, so each world that registers it throws as before.
+ */
+function validatorFor(schemas: Readonly<Record<string, object>>): Pick<MessageValidator, 'validate'> {
+  const entries = Object.entries(schemas);
+  if (entries.length === 0) return coreValidator();
+  // Schemas are JSON data, so their text names exactly what a validator registers.
+  const key = JSON.stringify(entries);
+  const known = validators.get(key);
+  if (known !== undefined) return known;
+  const validator = new MessageValidator();
+  registerCoreFamilies(validator);
+  for (const [dataschema, schema] of entries) validator.register(dataschema, schema);
+  validators.set(key, validator.seal());
+  return validator;
+}
+
 /** One check's world: a bus, a state directory, the kit's own participants and the module in a harness. */
 class World {
   readonly bus: InProcessBus;
@@ -145,7 +170,7 @@ class World {
   readonly answers: unknown[] = [];
   readonly #invalid: string[] = [];
   readonly #errors: unknown[] = [];
-  readonly #validator = new MessageValidator();
+  readonly #validator: Pick<MessageValidator, 'validate'>;
   readonly #spec: ConformanceSpec;
   readonly #dir: string;
   readonly #kit: Participant[] = [];
@@ -161,8 +186,7 @@ class World {
     this.#spec = spec;
     this.#dir = dir;
     this.timeoutMs = spec.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    registerCoreFamilies(this.#validator);
-    for (const [dataschema, schema] of Object.entries(spec.schemas ?? {})) this.#validator.register(dataschema, schema);
+    this.#validator = validatorFor(spec.schemas ?? {});
     this.bus = new InProcessBus({
       onError: (error, {source}) => { if (source === this.harness.source) this.#errors.push(error); },
       onDiagnostic: diagnostic => { this.diagnostics.push(diagnostic); }, spans: this.spans,

@@ -915,7 +915,10 @@ because start opens only local resources and the module reaches its device
 later, or when the module never publishes a state that `offline.unavailable`
 recognizes as the device's `unavailable` report. Every message the check sees
 must follow profile 2.0, with the core families, the core's acknowledgment among
-them, and `spec.schemas` registered. Every record the module logs must be one the runtime
+them, and `spec.schemas` registered. The kit compiles that validator once per
+process for each set of `spec.schemas` and shares it, sealed, between checks
+whose specs register the same schemas, so one spec's schemas never reach
+another spec's checks (#1529). Every record the module logs must be one the runtime
 writes whole as a [diagnostic-contract](../../docs/observability-contract.md)
 record (#903): an event the catalog registers for the `bunny.module` scope, and
 only registered attributes with values of their registered types. No message,

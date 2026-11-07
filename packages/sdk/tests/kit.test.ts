@@ -178,6 +178,37 @@ it('the kit catches a message that breaks its payload schema', async () => {
   assert.deepEqual(await failing(spec({dimState: true})), [CHECKS.serves, CHECKS.accepts, CHECKS.outbox, CHECKS.acknowledged]);
 });
 
+it('each spec\'s checks accept only what its own schemas register, however many worlds share compiled validators (Hub #1529)', async () => {
+  /** The failing checks, each with the problems its world recorded against profile 2.0. */
+  const invalid = async (given: ConformanceSpec): Promise<[string, string][]> => {
+    const failed: [string, string][] = [];
+    for (const check of conformanceChecks(given)) {
+      try {
+        await check.run();
+      } catch (error: unknown) {
+        assert.ok(error instanceof assert.AssertionError && error.message.startsWith('every message follows profile 2.0'), `${check.name} fails only on an invalid message: ${String(error)}`);
+        failed.push([check.name, (error.actual as string[]).join('; ')]);
+      }
+    }
+    return failed;
+  };
+  // A stricter bulb schema under the same dataschema: a bulb may only be off, so a switched-on state breaks it.
+  const offOnly = {
+    ...schemas,
+    [BULB_SCHEMA]: {type: 'object', additionalProperties: false, required: ['id', 'revision', 'power'], properties: {id: block('id'), revision: block('revision'), power: {enum: ['off']}}},
+  };
+  // In this order, a world that kept an earlier spec's registrations would accept the bulb's messages without its
+  // schemas, or switched on under the stricter one, and one that took a later spec's would refuse them under its own.
+  assert.deepEqual(await invalid(spec()), [], 'the bulb\'s own schemas');
+  const unregistered = await invalid({...spec(), schemas: {}});
+  assert.deepEqual(unregistered.map(([name]) => name), [CHECKS.serves, CHECKS.accepts, CHECKS.outbox, CHECKS.acknowledged], 'no schemas of its own');
+  for (const [name, problems] of unregistered) assert.match(problems, /unknown-schema https:\/\/bunny\.invalid\/events\/kit-bulb/, name);
+  const strict = await invalid({...spec(), schemas: offOnly});
+  assert.deepEqual(strict.map(([name]) => name), [CHECKS.accepts, CHECKS.outbox, CHECKS.acknowledged], 'the stricter bulb schema');
+  for (const [name, problems] of strict) assert.match(problems, /invalid-message payload \/power enum/, name);
+  assert.deepEqual(await invalid(spec()), [], 'the bulb\'s own schemas again');
+});
+
 it('the kit catches a module that logs an event the diagnostic catalog does not register for modules', async () => {
   // Every check that sees the record fails: the accepted command's, the outbox's and the acknowledgment's.
   assert.deepEqual(await failing(spec({switchRecord: {event: 'bulb.switched', fields: {}}})), [CHECKS.accepts, CHECKS.outbox, CHECKS.acknowledged]);
@@ -468,9 +499,9 @@ it('the kit catches a configuration the module refuses or lacks: the module neve
   assert.deepEqual(await failing({...beaconSpec(), config: undefined}), every, 'a module with configure needs a section');
 });
 
-// One test per place a secret can leak (Hub #1490). Each check hosts the module in a fresh world that compiles the whole
-// core schema catalog, so all six leaks in one test outgrew its ten-second deadline on hosted runners as the catalog grew.
-// Each failing check gives one reason: 18 in all.
+// One test per place a secret can leak (Hub #1490). Each check hosts the module in a fresh world, which then compiled the
+// whole core schema catalog (until Hub #1529), so all six leaks in one test outgrew its ten-second deadline on hosted
+// runners as the catalog grew. Each failing check gives one reason: 18 in all.
 const starting = [CHECKS.lifecycle, CHECKS.offline, CHECKS.serves, CHECKS.refuses];
 const leaks: readonly (readonly [NonNullable<BeaconFault['leak']>, string, readonly string[]])[] = [
   ['log', 'a log record', starting],
