@@ -3,9 +3,10 @@ import {createWeatherModule} from '@jimmie-potts/weather';
 import {createPixooModule, SimulatedPixoo, frameDigest, type PixooTransport, type SimulatedPixooState} from '@jimmie-potts/pixoo';
 import sharp from 'sharp';
 import type {FixtureCoreOptions} from './core.js';
+import {START_TOLERANCE_MS} from '../../src/core/art-schedule-model.js';
 
-/** A two-hour slot excludes 60 s at its start and 32 s at its end; this choice adds 60,001 ms to the lower bound. */
-export const artScheduleChoice = (): number => 60_001 / (2 * 60 * 60_000 - 92_000);
+/** A two-hour slot excludes 60 s at its start, and 31 s plus the start tolerance at its end; this choice adds 60,001 ms to the lower bound. */
+export const artScheduleChoice = (): number => 60_001 / (2 * 60 * 60_000 - 60_000 - 31_000 - START_TOLERANCE_MS);
 export const SCHEDULE_FIXTURE = 'art-schedule-fixture';
 export const RAIN_SECTION = {latitude: 12.3456, longitude: -65.4321, contact: 'operator@example.invalid'};
 
