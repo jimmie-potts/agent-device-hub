@@ -75,7 +75,7 @@ export function PixooCard({context, device, display, live, playlists, command}: 
           </div>}
           {device.capabilities.brightness.supported && <form onSubmit={event => { event.preventDefault(); if (brightness !== undefined) send('brightness-set', {percent: brightness}); }}>
             <label className="light-slider"><span>Brightness<output>{brightness ?? desiredBrightness ?? 'Unknown'}% · {brightness !== undefined && brightness !== desiredBrightness ? 'draft' : 'requested'}</output></span>
-              <input type="range" min="0" max="100" step="1" value={brightness ?? desiredBrightness ?? 50} disabled={deviceBlocked} onChange={event => { setBrightness(Number(event.target.value)); }}/>
+              <input aria-label="Brightness" type="range" min="0" max="100" step="1" value={brightness ?? desiredBrightness ?? 50} disabled={deviceBlocked} onChange={event => { setBrightness(Number(event.target.value)); }}/>
             </label><button type="submit" className="secondary" disabled={deviceBlocked || brightness === undefined || brightness === desiredBrightness}>Apply brightness</button>
           </form>}
           {device.capabilities.modes.supported && <div className="actions">{device.capabilities.modes.values.filter(mode => mode === 'monitor' || mode === 'media').map(mode =>

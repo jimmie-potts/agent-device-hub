@@ -208,12 +208,21 @@ try {
   assert.ok(bitmaps.opened - bitmaps.closed <= 1, 'hidden picker frames are released; only artwork may remain');
   // A lost reply retains its request without retry, including across a reload.
   await page.route('**/api/v2/commands/brightness-set', route => route.fulfill({status: 503, contentType: 'application/json', body: '{"error":{"code":"uncertain-result","retryable":false}}'}));
-  await card.getByRole('slider').fill('42');
+  // The range is named by its visible label, not by the changing readout beside it.
+  const brightness = card.getByRole('slider', {name: 'Brightness', exact: true});
+  const readout = card.locator('.light-slider output');
+  assert.match(await readout.innerText(), /% · requested$/);
+  const beforeDraft = sent.length;
+  await brightness.fill('42');
+  assert.equal(await readout.innerText(), '42% · draft');
+  assert.equal(await card.getByRole('slider', {name: 'Brightness', exact: true}).count(), 1, 'the name stays independent of its value');
+  assert.equal(sent.length, beforeDraft, 'a draft brightness sends nothing until applied');
   await card.getByRole('button', {name: 'Apply brightness', exact: true}).click();
   await card.getByRole('status').filter({hasText: 'Uncertain result.'}).waitFor();
   const uncertainCount = sent.length;
   await page.reload(); await feed(page, 'connected');
   await card.getByRole('status').filter({hasText: 'Previous request has no confirmed result yet.'}).waitFor();
+  assert.equal(await brightness.isDisabled(), true, 'a locked brightness range keeps its name');
   assert.equal(await card.getByRole('button', {name: 'Screen on', exact: true}).isDisabled(), true);
   assert.equal(sent.length, uncertainCount);
   for (const name of ['Work', 'Free', 'Quiet']) assert.equal(await card.locator('[data-mode-target]').getByRole('button', {name, exact: true}).isDisabled(), true, 'uncertain native writes also lock saved mode controls');
