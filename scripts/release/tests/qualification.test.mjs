@@ -25,6 +25,21 @@ test('matching evidence and authentic hosted provenance qualifies the exact arti
   assert.equal(validateQualification(receipt, expected), receipt);
   assert.equal(validateHostedQualification(receipt, hosted, expected), receipt);
 });
+test('qualification requires the runtime unit and scenario jobs that left the core job (#1506)', () => {
+  const runtime = ['Source coverage / Runtime unit tests on ubuntu-latest', 'Source coverage / Runtime scenario tests on ubuntu-latest'];
+  for (const name of runtime) assert.ok(EXPECTED_JOB_NAMES.includes(name), name);
+  // A receipt whose run never had these jobs, such as one from before they existed, did not run those suites.
+  const {receipt, hosted} = fixture();
+  receipt.checks = receipt.checks.filter(check => !runtime.includes(check.name));
+  hosted.jobs = hosted.jobs.filter(job => !runtime.includes(job.name));
+  assert.throws(() => validateQualification(receipt, expected), /qualification-refused/);
+  assert.throws(() => validateHostedQualification(receipt, hosted, expected), /qualification-refused/);
+  for (const name of runtime) {
+    const failed = fixture();
+    failed.receipt.checks.find(check => check.name === name).result = 'failure';
+    assert.throws(() => validateQualification(failed.receipt, expected), /qualification-refused/, name);
+  }
+});
 for (const [name, mutate] of [
   ['failed check', r => {r.checks[0].result = 'failure';}],
   ['missing check', r => {r.checks.pop();}],
@@ -63,4 +78,17 @@ for (const [name, mutate] of [
 ]) test(`hosted readback refuses ${name}`, () => {
   const {receipt, hosted} = fixture(); mutate(hosted);
   assert.throws(() => validateHostedQualification(receipt, hosted, expected), /qualification-refused/);
+});
+
+// #1512 runs the packaged build and its lanes as jobs outside the receipt. The operator's consumer still accepts the
+// receipt from such a run: its checks keep the same names, and the extra hosted jobs only gate the image job.
+test('the packaged build and lane jobs leave the receipt and its hosted validation unchanged', () => {
+  const {receipt, hosted} = fixture();
+  hosted.jobs.push(...['Packaged ARM64 build', 'Packaged ARM64 verification (scenarios)', 'Packaged ARM64 verification (captures)',
+    'Packaged ARM64 verification (verification)', 'Release qualification result'].map((name, index) => ({id: index + 50, name,
+    status: 'completed', conclusion: 'success', head_sha: sha, run_id: 10, run_attempt: 1})));
+  assert.equal(EXPECTED_JOB_NAMES.at(-1), 'Packaged ARM64 image');
+  assert.equal(validateHostedQualification(receipt, hosted, expected), receipt);
+  // A failed lane fails the run, so the consumer refuses it even though the receipt's own checks would match.
+  assert.throws(() => validateHostedQualification(receipt, {...hosted, run: {...hosted.run, conclusion: 'failure'}}, expected), /qualification-refused/);
 });

@@ -40,7 +40,10 @@ existing detailed evidence in a collapsed Device evidence section.
 
 Status shows cloud availability and the last known cloud acceptance time.
 Disconnected or failed copies keep saved evidence marked stale until a complete
-replacement sync succeeds. Retry records repeats only the read. Content explains
+replacement sync succeeds. A read refused with a code that may clear, such as
+`unavailable`, is read again on its own after 1 s, doubling to 30 s, as the
+shell's own copies are (#1483); `forbidden` and other final refusals wait.
+Retry records repeats only the read, at once. Content explains
 automatic agent status and optional now playing; it does not list configured
 installations. No power, brightness, content-selection or push/removal controls
 are offered on either backend. With a Tronbyt server selected, the labels name the server
@@ -50,9 +53,9 @@ physical observation. Existing cloud behavior and private state are unchanged.
 
 After the root build, run
 `node --test modules/tidbyt/dist/tests/frontend.test.js` for copy replacement,
-failed sync, removal, late-copy cleanup and evidence labels, and
+failed sync, automatic read backoff, removal, late-copy cleanup and evidence labels, and
 `node apps/runtime/dashboard/tests/tidbyt-card.browser.ts` for all three actual
-shell surfaces, held reconnect, read-only access, keyboard/reduced motion,
+shell surfaces, held reconnect, refused-read recovery without Retry, read-only access, keyboard/reduced motion,
 phone layout and accessibility. The unit cases run in `test:tidbyt-module:built`;
 the browser journey runs in the existing hosted dashboard smoke and full local
 browser suite. All use synthetic state and a simulated cloud.

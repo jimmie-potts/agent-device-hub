@@ -10,10 +10,15 @@ export const GROUPS = Object.freeze(['runtime', 'maintenance', 'modules', 'chomp
 
 /** Jobs that run only when one of their groups is selected; core always runs build, typecheck and lint. */
 export const JOBS = Object.freeze({
+  // The runtime's unit and scenario suites, moved out of core with their group (#1506).
+  'runtime-unit': Object.freeze(['runtime']),
+  'runtime-scenarios': Object.freeze(['runtime']),
   firmware: Object.freeze(['chompi']),
   'app-verify': Object.freeze(['runtime', 'chompi', 'shared']),
   'runtime-verify': Object.freeze(['runtime']),
 });
+/** The broad browser and catalog jobs that focused presentation admission omits; it keeps every other selected job. */
+const BROAD = new Set(['app-verify', 'runtime-verify']);
 
 const FULL = null;
 // First match wins. `prefix/**` matches everything below prefix, `**/*.ext` every path with that extension, and any
@@ -76,7 +81,7 @@ function checkPath(file) {
 const ordered = groups => GROUPS.filter(group => groups.has(group));
 const validOwners=owners=>Array.isArray(owners)&&owners.length>0&&new Set(owners).size===owners.length&&owners.every(id=>Object.hasOwn(OWNERS,id));
 const jobsFor = (groups, mode) => Object.fromEntries(Object.entries(JOBS).map(([id, needs]) => [id,
-  mode === 'standalone' || mode === 'focused' && id !== 'firmware' ? false : needs.some(group => groups.has(group)),
+  mode === 'standalone' || mode === 'focused' && BROAD.has(id) ? false : needs.some(group => groups.has(group)),
 ]));
 
 // Only these existing style assets have reviewed presentation-only ownership. New paths and all executable

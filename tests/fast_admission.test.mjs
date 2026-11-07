@@ -9,7 +9,8 @@ test('ordinary presentation keeps core consumers and admits without broad catalo
   const result = select(presentation);
   assert.equal(result.mode, 'focused');
   assert.deepEqual(result.groups, ['runtime', 'maintenance']);
-  assert.deepEqual(result.jobs, { firmware: false, 'app-verify': false, 'runtime-verify': false });
+  // The runtime's unit and scenario suites keep running for presentation changes, in their own jobs since #1506.
+  assert.deepEqual(result.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: false, 'app-verify': false, 'runtime-verify': false });
 });
 
 test('safety, backend, shared and unknown changes retain broad coverage', () => {
@@ -40,10 +41,13 @@ test('focused gate rejects missing and failed core checks and mismatched job out
   const outputs = { mode: selection.mode, groups: JSON.stringify(selection.groups),
     ...Object.fromEntries(Object.entries(selection.jobs).map(([key, value]) => [key, String(value)])) };
   const needs = { select: { result: 'success', outputs }, core: { result: 'success' },
+    'runtime-unit': { result: 'success' }, 'runtime-scenarios': { result: 'success' },
     firmware: { result: 'skipped' }, 'app-verify': { result: 'skipped' }, 'runtime-verify': { result: 'skipped' } };
   assert.equal(gateVerdict(needs).ok, true);
-  for (const result of ['failure', 'cancelled', 'skipped']) {
-    assert.equal(gateVerdict({ ...needs, core: { result } }).ok, false, result);
+  for (const job of ['core', 'runtime-unit', 'runtime-scenarios']) {
+    for (const result of ['failure', 'cancelled', 'skipped']) {
+      assert.equal(gateVerdict({ ...needs, [job]: { result } }).ok, false, `${job}: ${result}`);
+    }
   }
   const missing = { ...needs }; delete missing.core;
   assert.equal(gateVerdict(missing).ok, false);
@@ -58,5 +62,7 @@ test('existing module presentation assets use their actual src/frontend paths', 
     assert.deepEqual(result.groups, ['runtime', 'maintenance', 'modules'], path);
     assert.equal(result.jobs['app-verify'], false, path);
     assert.equal(result.jobs['runtime-verify'], false, path);
+    assert.equal(result.jobs['runtime-unit'], true, path);
+    assert.equal(result.jobs['runtime-scenarios'], true, path);
   }
 });
