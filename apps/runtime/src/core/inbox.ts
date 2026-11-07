@@ -1,8 +1,8 @@
 // Shared operation inbox (Hub #923), owned by the core store. Handling never changes device state or releases a hold.
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
-import {MessageValidator, errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {operationEntityId, registerCoreFamilies, type InboxItem} from '@jimmie-potts/event-contracts/v2/families';
+import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import {operationEntityId, coreValidator, type InboxItem} from '@jimmie-potts/event-contracts/v2/families';
 import {fullDisk, type Command, type Reply, type StateDraft, Outcome} from '@jimmie-potts/sdk';
 import type {CoreHandle} from './core.js';
 import {REMOVAL_SCHEMA} from './mapping.js';
@@ -22,8 +22,8 @@ export class InboxRecords {
   #statements: Statements | undefined;
   readonly #resend: Resend;
   readonly #publications = new WeakMap<CoreTransaction, Map<string, InboxItem>>();
-  readonly #validator = new MessageValidator();
-  constructor(resend: Resend) { this.#resend = resend; registerCoreFamilies(this.#validator); }
+  readonly #validator = coreValidator();
+  constructor(resend: Resend) { this.#resend = resend; }
   readonly open = (database: DatabaseSync): void => {
     database.exec(`CREATE TABLE IF NOT EXISTS inbox_records (id TEXT PRIMARY KEY, record TEXT NOT NULL,
       handled_by TEXT, handled_at_ms INTEGER, removal_revision INTEGER) STRICT`);
