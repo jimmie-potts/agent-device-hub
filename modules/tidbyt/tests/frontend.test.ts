@@ -7,6 +7,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {SyncCompleted, SyncHandler, SyncResult} from '@jimmie-potts/sdk/remote';
+import {SdkError} from '@jimmie-potts/sdk';
 import {NO_CONTROLS} from '../src/module.js';
 import {followTidbyt, type TidbytView} from '../src/frontend/records.js';
 import {TidbytCard} from '../src/frontend/card.js';
@@ -142,6 +143,14 @@ void test('a thrown read is repeated, while a refusal that cannot clear waits fo
   refused.all[0]?.refuse('forbidden'); await flush();
   assert.equal(views.at(-1)?.error, 'forbidden'); assert.deepEqual(held.pending(), []); end();
   assert.equal(refused.all.length, 1);
+  // A thrown registry body keeps its own retryable flag, as a closed participant's invalid-state does.
+  for (const code of ['forbidden', 'invalid-state'] as const) {
+    const final = clock(); let thrownCalls = 0;
+    const done = followTidbyt(() => { thrownCalls++; return Promise.reject(new SdkError(errorBody(code))); }, record(), view => { views.push(view); }, final.scheduler);
+    await flush(); assert.equal(views.at(-1)?.error, code); assert.equal(views.at(-1)?.live, false);
+    assert.deepEqual(final.pending(), [], `a thrown ${code} schedules no read`); done();
+    assert.equal(thrownCalls, 1);
+  }
 });
 
 void test('the read-only card distinguishes unknown transmission, cloud acceptance and stale evidence', () => {

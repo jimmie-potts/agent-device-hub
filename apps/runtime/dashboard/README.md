@@ -444,9 +444,9 @@ Tidbyt exports the same read-only glass card on Home, its device page and
 known transmission, with stale evidence marked; Content explains automatic status
 and optional now playing. Its labelled 64×32 illustration stays mounted across
 tabs. No display control or exact/physical preview is implied. The adapter closes
-active and late copies through the existing shell scope, and reads a refused or
-failed copy again with the shell's 1 s to 30 s backoff instead of waiting for
-Retry records (#1483).
+active and late copies through the existing shell scope. A refused or failed
+copy whose code may clear is read again with the shell's 1 s to 30 s backoff
+instead of waiting for Retry records; a final refusal still waits (#1483).
 
 Passive pages keep their script-free frame. A declared trusted editor uses an
 application frame under the gateway's trusted asset policy. It is reviewed
