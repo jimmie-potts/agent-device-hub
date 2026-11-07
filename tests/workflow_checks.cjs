@@ -284,7 +284,7 @@ test('ready PRs run admission while main uses separate integration and qualifica
   }
 });
 
-test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () => {
+test('CI runs ten GitHub-hosted Linux jobs and retains every suite once', () => {
   const read = file => YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
   const checks = read('checks.yml'), workflowChecks = read('workflow.yml');
   // Hub #870: GitHub-hosted runners replaced Depot. The workflows use new paths, because GitHub keeps the
@@ -300,7 +300,8 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
   // Hub #1080: a pull request runs only its affected work. The select job maps the changed paths to check groups,
   // firmware and App verification run only when selected, and the gate fails unless every selected job succeeded.
   // tests/ci_selection.test.mjs checks the selection conditions themselves.
-  assert.equal(coreJobs + 1, 8, 'normal CI must run exactly eight jobs');
+  // Hub #1506: the runtime's unit and scenario suites left core for two jobs of their own.
+  assert.equal(coreJobs + 1, 10, 'normal CI must run exactly ten jobs');
   assert.deepEqual(checks.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: 'checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
@@ -312,10 +313,12 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
     workflow: ['npm ci', 'npm run typecheck:python', 'npm run test:python-types', 'npm run check:workflow', 'npm run test:workflow',
       'npm run build', 'node --test apps/runtime/dist/tests/upgrade-procedure.workflow.js',
       'npm run test:preflight'],
-    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'node --test scripts/release/tests/*.test.mjs', 'npm run lint:js', 'npm run test:workspace-audit', 'npm run test:tracker-audit', playwrightInstall, 'node scripts/ci-selection/run-standalone.mjs', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:music-producer:built', 'npm run test:music-producer:native', 'npm run test:events:python', 'npm run test:sdk:built', 'npm run test:runtime:built', 'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs scripts/tests/mac-host.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs', 'npm run test:runtime:scenarios:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
+    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'node --test scripts/release/tests/*.test.mjs', 'npm run lint:js', 'npm run test:workspace-audit', 'npm run test:tracker-audit', playwrightInstall, 'node scripts/ci-selection/run-standalone.mjs', 'npm run test:maintenance:built', 'npm run test:maintenance:package:built', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:music-producer:built', 'npm run test:music-producer:native', 'npm run test:events:python', 'npm run test:sdk:built', 'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs scripts/tests/mac-host.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built',
       'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:companions:built', 'npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:roborock:built', 'npm run test:wemo:built', 'npm run test:art:built', 'npm run test:volcano:built', 'npm run test:weather:built', 'npm run test:reachy:built', 'npm run test:microduck:built', 'npm run test:roborock:consumer:built', 'npm run test:volcano:consumer:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
+    'runtime-unit': ['npm ci', 'npm run build', 'npm run test:runtime:built'],
+    'runtime-scenarios': ['npm ci', 'npm run build', 'npm run test:runtime:scenarios:built'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
     'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser',
       'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'node apps/runtime/dashboard/tests/timeline-card.browser.ts', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts',
@@ -328,13 +331,15 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
     workflow: 'Workflow checks on ${{ matrix.os }}',
     core: 'Build, lint and core tests on ${{ matrix.os }}',
     // A job skipped before its matrix expands reports the unexpanded name, so the jobs the selection skips name their runner.
+    'runtime-unit': 'Runtime unit tests on ubuntu-latest',
+    'runtime-scenarios': 'Runtime scenario tests on ubuntu-latest',
     firmware: 'Firmware host tests and ARM build on ubuntu-latest',
     'app-verify': 'App verification on ubuntu-latest',
     'runtime-verify': 'Runtime verification on ubuntu-latest',
   };
   const matrixJobs = ['workflow', 'core'];
   const ready = "github.event_name != 'pull_request' || !github.event.pull_request.draft";
-  const conditions = {select: ready, workflow: ready, firmware: "needs.select.outputs.firmware == 'true'", 'app-verify': "needs.select.outputs.app-verify == 'true'", 'runtime-verify': "needs.select.outputs.runtime-verify == 'true'", gate: 'always() && ('+ready+')' };
+  const conditions = {select: ready, workflow: ready, 'runtime-unit': "needs.select.outputs.runtime-unit == 'true'", 'runtime-scenarios': "needs.select.outputs.runtime-scenarios == 'true'", firmware: "needs.select.outputs.firmware == 'true'", 'app-verify': "needs.select.outputs.app-verify == 'true'", 'runtime-verify': "needs.select.outputs.runtime-verify == 'true'", gate: 'always() && ('+ready+')' };
   assert.deepEqual(checks.permissions, { contents: 'read' });
   assert.deepEqual(Object.keys(ci.jobs).sort(), Object.keys(suites).sort());
   // Each suite runs in exactly one job.
@@ -364,11 +369,13 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
     assert.equal(job.name, names[id]);
     assert.equal(job['runs-on'], matrixJobs.includes(id) ? '${{ matrix.os }}' : 'ubuntu-latest');
     // Core keeps a finite 40-minute aggregate budget after full runs exhausted 30 minutes (#1388).
+    // The runtime unit and scenario jobs keep the 40 minutes their suites ran under in core (#1506).
     // Preserve App verification's 40-minute budget from #366 for browser journeys and setup/retry headroom.
     // The full serial runtime catalog has its own 45-minute job (#1497).
     // The Workflow job takes about 1 minute; its 15 leave room for two stalled attempts of the hook step's apt commands.
     // The select and gate jobs read one comparison or the needs context and take seconds.
     if (id === 'core') assert.equal(job['timeout-minutes'], 40, 'Core retains a finite 40-minute aggregate budget');
+    else if (['runtime-unit', 'runtime-scenarios'].includes(id)) assert.equal(job['timeout-minutes'], 40, `${id} keeps the core budget its suite ran under`);
     else if (id === 'runtime-verify') assert.equal(job['timeout-minutes'], 45, 'Runtime verification has a 45-minute budget');
     else assert.equal(job['timeout-minutes'], id === 'app-verify' ? 40 : id === 'workflow' ? 15 : ['select', 'gate'].includes(id) ? 5 : 10);
     for (const line of job.steps.flatMap(step => (step.run ?? '').split('\n')).filter(line => /apt-get|--with-deps/.test(line))) {
@@ -390,7 +397,7 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
       name: 'Check isolated Linux hook qualification',
       if: "runner.os == 'Linux'",
       'timeout-minutes': hookAptMinutes,
-      run: `${aptRetry(180, `bash -c '${hookAptScript}'`)}\nsudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict\nbwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true\nnpm run test:performance:linux\nnpm run test:performance:standalone\n`,
+      run: `${aptRetry(180, `bash -c '${hookAptScript}'`)}\nprofile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict\ntest -f "$profile" || profile=/etc/apparmor.d/bwrap-userns-restrict\nsudo apparmor_parser -r "$profile"\nbwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true\nnpm run test:performance:linux\nnpm run test:performance:standalone\n`,
     }] : []);
     // Hub #494: no job may provide or require a systemd user manager. App verification hides the runner's manager
     // until app-verify works under its systemd 255 (#873), so lifecycle tests skip as they did on Depot.
@@ -403,7 +410,7 @@ test('CI runs eight GitHub-hosted Linux jobs and retains every suite once', () =
     assert(originalSteps.every(step => step.if === undefined || (['core', 'app-verify'].includes(id)
       && (/^contains\(fromJSON\(needs\.select\.outputs\.groups\), '[a-z-]+'\)$/.test(step.if) || (id==='core' && step.if==="contains(fromJSON(needs.select.outputs.owners), 'microduck-browser')")))), id);
   }
-  assert.equal(builds, 4);
+  assert.equal(builds, 6);
   // Hub #827: the old system's checks and the full dashboard browser suite leave CI but keep their scripts, which run
   // locally until #839 deletes that code. CI runs the dashboard's smoke check instead. The runtime's dashboard (#922)
   // keeps its full browser suite local too.

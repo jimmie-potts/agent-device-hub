@@ -28,6 +28,8 @@ jobs:
       groups: ${{ steps.select.outputs.groups }}
       owners: ${{ steps.select.outputs.owners }}
       head: ${{ steps.select.outputs.head }}
+      runtime-unit: ${{ steps.select.outputs.runtime-unit }}
+      runtime-scenarios: ${{ steps.select.outputs.runtime-scenarios }}
       firmware: ${{ steps.select.outputs.firmware }}
       app-verify: ${{ steps.select.outputs.app-verify }}
       runtime-verify: ${{ steps.select.outputs.runtime-verify }}
@@ -116,12 +118,9 @@ jobs:
         run: npm run test:events:python
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:sdk:built
-      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
-        run: npm run test:runtime:built
+      # The runtime's own unit and scenario suites run in the two runtime jobs below (#1506).
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs scripts/tests/mac-host.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs
-      - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
-        run: npm run test:runtime:scenarios:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:lifecycle:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
@@ -197,8 +196,41 @@ jobs:
       # The runtime's dashboard (#922): its unit tests here, its browser smoke check in App verification.
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:runtime-dashboard:built
-  # A job skipped before its matrix expands reports its name with the matrix expression unexpanded, so the two jobs
-  # the selection can skip name their single runner instead of using a matrix.
+  # A job skipped before its matrix expands reports its name with the matrix expression unexpanded, so the jobs the
+  # selection can skip name their single runner instead of using a matrix.
+  # The runtime's unit and scenario suites took 16 of the core job's median 29 minutes and grow with each module; on a
+  # slow runner the two together took over 30. Each has its own runner and keeps the 40-minute limit it ran under in
+  # core, so the core job finishes in about 12 minutes (#1506).
+  runtime-unit:
+    name: Runtime unit tests on ubuntu-latest
+    needs: select
+    if: needs.select.outputs.runtime-unit == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:runtime:built
+  runtime-scenarios:
+    name: Runtime scenario tests on ubuntu-latest
+    needs: select
+    if: needs.select.outputs.runtime-scenarios == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:runtime:scenarios:built
   firmware:
     name: Firmware host tests and ARM build on ubuntu-latest
     needs: select
@@ -319,7 +351,7 @@ jobs:
       - run: npm run test:runtime:verify:built
   gate:
     name: Selected checks gate
-    needs: [select, core, firmware, app-verify, runtime-verify]
+    needs: [select, core, runtime-unit, runtime-scenarios, firmware, app-verify, runtime-verify]
     # Runs even when the selection or a job failed, so a failure, cancellation or unexpected skip fails this check.
     if: always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-latest

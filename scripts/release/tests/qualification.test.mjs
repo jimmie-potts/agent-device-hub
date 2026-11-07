@@ -25,6 +25,21 @@ test('matching evidence and authentic hosted provenance qualifies the exact arti
   assert.equal(validateQualification(receipt, expected), receipt);
   assert.equal(validateHostedQualification(receipt, hosted, expected), receipt);
 });
+test('qualification requires the runtime unit and scenario jobs that left the core job (#1506)', () => {
+  const runtime = ['Source coverage / Runtime unit tests on ubuntu-latest', 'Source coverage / Runtime scenario tests on ubuntu-latest'];
+  for (const name of runtime) assert.ok(EXPECTED_JOB_NAMES.includes(name), name);
+  // A receipt whose run never had these jobs, such as one from before they existed, did not run those suites.
+  const {receipt, hosted} = fixture();
+  receipt.checks = receipt.checks.filter(check => !runtime.includes(check.name));
+  hosted.jobs = hosted.jobs.filter(job => !runtime.includes(job.name));
+  assert.throws(() => validateQualification(receipt, expected), /qualification-refused/);
+  assert.throws(() => validateHostedQualification(receipt, hosted, expected), /qualification-refused/);
+  for (const name of runtime) {
+    const failed = fixture();
+    failed.receipt.checks.find(check => check.name === name).result = 'failure';
+    assert.throws(() => validateQualification(failed.receipt, expected), /qualification-refused/, name);
+  }
+});
 for (const [name, mutate] of [
   ['failed check', r => {r.checks[0].result = 'failure';}],
   ['missing check', r => {r.checks.pop();}],
