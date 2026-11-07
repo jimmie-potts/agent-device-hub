@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
-import {DEFAULT_ART_POLICY,artPolicyWrite,initialArtRecord,nextArtStart,planArtDay,savedArtwork,wakingDay,rainForecast} from '../src/core/art-schedule-model.js';
+import {DEFAULT_ART_POLICY,START_TOLERANCE_MS,artPolicyWrite,initialArtRecord,nextArtStart,planArtDay,savedArtwork,wakingDay,rainForecast} from '../src/core/art-schedule-model.js';
 import {ArtScheduleStore} from '../src/core/art-schedule-store.js';
 import {AutomationStore} from '../src/core/automation-store.js';
 import {DEFAULT_SETTINGS,DEFAULT_INTERRUPT_SET,createAutomation} from '../src/core/automation.js';
@@ -141,6 +141,22 @@ void test('saved browser appearance consumes its own last unit once, and disable
     assert.equal(w.reads().weatherReads,0);await w.restart();await w.move(start+1000);assert.equal(w.commands.length,1,'restart cannot replay selection');assert.deepEqual(w.failures,[]);
   }finally{await w.close();}
 });
+void test('a start timer that wakes late presents the browser within the tolerance and never after it', async () => {
+  // A busy event loop can wake the start timer after the start: #1515 saw 1,017 ms on a loaded runner.
+  for (const [lateMs, presented] of [[1_500, true], [START_TOLERANCE_MS, true], [START_TOLERANCE_MS + 1, false]] as const) {
+    const w = scheduledWorld();
+    try {
+      const saved = await w.owner.save({expectedSettingsRevision: 0, policy: {...policy, ambient: false}});
+      const start = saved.nextOpportunity?.startAtMs;assert.ok(start !== undefined);
+      await w.move(start - 45_000);assert.equal(w.commands.length, 0);
+      await w.move(start + lateMs);
+      assert.equal(w.commands.length, presented ? 1 : 0, `a wake ${String(lateMs)} ms after the start`);
+      if (presented) assert.equal((w.commands[0]?.draft.data as ArtAuto22).action, 'present');
+      assert.deepEqual(w.failures, []);
+    } finally {await w.close();}
+  }
+});
+
 void test('preparation comes due between the tick and its next timer', async () => {
   const source = manualClock(local(8));
   let boundary: number | undefined, crossed = false, shortTimers = 0;

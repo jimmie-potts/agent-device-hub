@@ -18,7 +18,11 @@ export const DEFAULT_ART_POLICY: Readonly<ArtSchedulePolicy> = Object.freeze({en
 export const APPEARANCE_GAP_MS = 45 * 60_000;
 export const PREPARATION_MS = 45_000;
 export const GENERATION_MS = 300_000;
-export const START_TOLERANCE_MS = 1000;
+/**
+ * How late a scheduled appearance may still start. The browser selection fires from a timer at the start, so a busy
+ * event loop that wakes it a second late must not silently drop the browser while the prepared displays still play.
+ */
+export const START_TOLERANCE_MS = 5000;
 
 export function artPolicyWrite(value: unknown, targets: readonly string[]): ArtScheduleWrite {
   if (!writeValid(value) || value.policy.wakingStartMinute === value.policy.wakingEndMinute
