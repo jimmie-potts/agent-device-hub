@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import {parseArgs} from 'node:util';
+import {realpathSync} from 'node:fs';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {docker,selected,privateHostDirectory} from './bunny.mjs';
@@ -26,7 +27,12 @@ export async function main(argv) {
   const compatibility=values.compatibility===undefined?undefined:await privateJson(resolve(values.compatibility));
   return deployBatch(request,{root,run:docker,compatibility,qualification:r=>hostedArtifact(r,root)});
 }
-if(process.argv[1]!==undefined&&resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
+function isEntryPoint() {
+  // Node resolves a symlink for import.meta.url but keeps it in argv, and a missed match would exit 0 having done nothing.
+  try {return realpathSync(process.argv[1])===realpathSync(fileURLToPath(import.meta.url));}
+  catch {return false;}
+}
+if(isEntryPoint()) {
   try{process.stdout.write(JSON.stringify(await main(process.argv.slice(2)))+'\n');}
   catch(error){process.stderr.write(refusalMessage(error));process.exitCode=1;}
 }

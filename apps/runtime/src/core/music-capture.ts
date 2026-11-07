@@ -1,8 +1,8 @@
 // The core owns capture authority and durable start/stop responsibility. This part never addresses a light.
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
-import {MessageValidator, errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import {errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import {CAPTURE_CLOCK_DRIFT_MS, CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_VALIDITY_MS, MUSIC_PRODUCER_SOURCE,
   type CaptureCalibrationReason, type CaptureResponseBinding, type CaptureResponseState, type CaptureControl, type CaptureEndpointControl, type CaptureFeatures, type CaptureLost, type CaptureProgress, type CaptureSelection, type CaptureState, type CaptureWork,
 } from '@jimmie-potts/event-contracts/v2/music-capture';
@@ -31,7 +31,7 @@ export type CaptureAdmission = {
 
 export class MusicCapturePart implements CorePart {
   readonly families = ['music-capture-state'];
-  readonly #validator = new MessageValidator();
+  readonly #validator = coreValidator();
   #core: CoreHandle | undefined;
   #database: DatabaseSync | undefined;
   #closed = false;
@@ -46,9 +46,7 @@ export class MusicCapturePart implements CorePart {
   #endpointClock: ClockAnchor | undefined;
   #timer: Cancel | undefined;
   readonly #deadlines = new Map<string, Cancel>();
-  constructor(readonly admission: CaptureAdmission, readonly scheduler: ModuleScheduler, readonly monotonic: () => number = () => performance.now()) {
-    registerCoreFamilies(this.#validator);
-  }
+  constructor(readonly admission: CaptureAdmission, readonly scheduler: ModuleScheduler, readonly monotonic: () => number = () => performance.now()) {}
   open(database: DatabaseSync): void {
     this.#database = undefined;
     database.exec("CREATE TABLE IF NOT EXISTS music_capture (id TEXT PRIMARY KEY CHECK (id = 'music'), record TEXT NOT NULL) STRICT; " +

@@ -333,12 +333,12 @@ esac
 `, {mode: 0o755});
   await writeFile(join(bin, 'osascript'), `#!/bin/sh\necho "osascript $*" >> "${calls}"\n`, {mode: 0o755});
   const starter = fileURLToPath(new URL('../mac-signin.mjs', import.meta.url));
-  const run = () => new Promise(done => {
-    execFile(process.execPath, [starter, '--project', 'synthetic', '--releases', join(home, 'releases')], {
+  const run = (path = starter) => new Promise(done => {
+    execFile(process.execPath, [path, '--project', 'synthetic', '--releases', join(home, 'releases')], {
       env: {PATH: `${bin}:/usr/bin:/bin`, HOME: home}, timeout: 50_000,
-    }, (error, stdout) => done({code: error?.code, reports: stdout.trim().split('\n').map(line => JSON.parse(line))}));
+    }, (error, stdout) => done({code: error?.code, reports: stdout.split('\n').filter(Boolean).map(line => JSON.parse(line))}));
   });
-  return {run, operations, log: () => readFile(calls, 'utf8')};
+  return {run, home, starter, operations, log: () => readFile(calls, 'utf8')};
 }
 const posixOnly = {timeout: 60_000, skip: process.platform === 'win32'};
 
@@ -383,4 +383,19 @@ test('a start hold keeps the core stopped before the operator is reached', posix
   const calls = await log();
   assert.match(calls, /start hold/);
   assert.doesNotMatch(calls, /^(start|restart|volume) /m);
+});
+
+// Node resolves a symlink for import.meta.url but keeps it in argv, so a path comparison missed and exited 0 (#1470).
+test('the starter reaches its entry point through a symlinked path', posixOnly, async t => {
+  const {run, home, starter, operations, log} = await starterHost(t);
+  await writeFile(join(operations, 'synthetic.start-hold'), '');
+  const linked = join(home, 'signin', 'mac-signin.mjs');
+  await mkdir(join(home, 'signin'));
+  await symlink(starter, linked);
+  for (const path of [starter, linked]) {
+    const {code, reports} = await run(path);
+    assert.equal(code, 1, path);
+    assert.equal(reports.at(-1)?.reason, 'held', path);
+  }
+  assert.doesNotMatch(await log(), /^(start|restart|volume) /m);
 });
