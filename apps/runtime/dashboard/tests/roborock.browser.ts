@@ -5,6 +5,7 @@ import { AxeBuilder } from '@axe-core/playwright';
 import { chromium, type Page, type Route } from 'playwright';
 import { changes, feed, startWorld } from './harness.ts';
 import { checkRoborockFrontend } from './roborock.frontend.ts';
+import { pageEvidence, statusEvidence } from './roborock-evidence.ts';
 function latch(): {
     wait: Promise<void>;
     release: () => void;
@@ -98,17 +99,9 @@ try {
         // hosted failure can be classified from its own log: no status read after the action, a
         // read the collector did not commit (its records, a refused status read), a committed state
         // the page did not show (feed, refusal, stale stream), or a later state that replaced it.
-        // The wait and its bound are unchanged.
-        type Mark = { calls: number; logs: number; revision: number };
-        const mark = async (): Promise<Mark> => ({ calls: world.roborockCalls().length, logs: world.logs.length, revision: (await world.roborockStatus()).revision });
-        const collected = async (): Promise<object> => {
-            const response = await fetch(`${world.url}/modules/roborock/content/status`, { headers: { authorization: `Bearer ${world.readerToken}` } }).catch(() => undefined);
-            const body: unknown = await response?.json().catch(() => undefined);
-            if (response?.status !== 200 || typeof body !== 'object' || body === null)
-                return { refused: response?.status ?? 'no response', code: typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'object' && body.error !== null && 'code' in body.error ? body.error.code : null };
-            const status = body as Awaited<ReturnType<typeof world.roborockStatus>>;
-            return { shown: `Availability: ${status.availability}. Activity: ${status.activity}.`, revision: status.revision, lastFailure: status.collection.lastFailure };
-        };
+        // The wait and its bound are unchanged; each evidence read has its own bound and asserts nothing.
+        type Mark = { calls: number; logs: number; collector: unknown };
+        const mark = async (): Promise<Mark> => ({ calls: world.roborockCalls().length, logs: world.logs.length, collector: await statusEvidence(world.url, world.readerToken) });
         const settled = async (text: string, since: Mark): Promise<void> => {
             try {
                 await observations.getByText(text, { exact: true }).waitFor();
@@ -118,15 +111,13 @@ try {
                     .filter(record => record.attributes['bunny.module'] === 'roborock' || /^(runtime\.(edge|sync|delivery)|outbox)\./u.test(record.event_name))
                     .slice(-40)
                     .map(record => [record.event_name, record.attributes['bunny.operation'], record.attributes['bunny.code']].filter(item => item !== undefined).join(' '));
-                const shown = await observations.locator('p').allInnerTexts().catch(() => []);
                 process.stderr.write(`${JSON.stringify({
                     roborockWait: text,
-                    revisionAtAction: since.revision,
+                    collectorAtAction: since.collector,
                     deviceReadsSinceAction: world.roborockCalls().slice(since.calls),
-                    collector: await collected(),
+                    collector: await statusEvidence(world.url, world.readerToken),
                     recordsSinceAction: records,
-                    feed: await page.locator('main#main').getAttribute('data-feed').catch(() => null),
-                    page: shown.filter(line => /^(Availability:|Observation age:|Read refused:|Roborock observations are unknown)/u.test(line)),
+                    ...await pageEvidence(page, observations),
                 })}\n`);
                 throw error;
             }
