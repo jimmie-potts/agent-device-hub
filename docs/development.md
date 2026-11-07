@@ -15,8 +15,8 @@ The headings below preserve existing links and route component detail to its own
 
 Use Node 24, build, and run the focused receipt commands in
 [runtime development](../apps/runtime/DEVELOPMENT.md#codex-read-receipt-checks),
-then the shared type/lint, contract, SDK and workflow checks. Existing core CI
-discovers these runtime tests. Native Desktop and installed acceptance remain
+then the shared type/lint, contract, SDK and workflow checks. The Runtime unit
+tests CI job discovers these runtime tests. Native Desktop and installed acceptance remain
 separate from source and disposable protocol checks.
 
 [Documentation checks](documentation-checks.md) report source-pin drift and validate
@@ -1300,8 +1300,8 @@ kit (`@jimmie-potts/sdk/testing`). Its
 The internal cutover preparation model has a pure focused check after the root
 build: `node --test apps/runtime/dist/tests/cutover-plan.test.js`. It checks
 declared inventory coverage, migration ordering, per-volume capacity and digest
-binding with synthetic facts; it starts no runtime or service. The existing core
-CI `test:runtime:built` discovery includes this file. The focused check does not
+binding with synthetic facts; it starts no runtime or service. The Runtime unit
+tests CI job's `test:runtime:built` discovery includes this file. The focused check does not
 qualify installed discovery, backup execution, receipts or the cutover.
 
 Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
@@ -1429,8 +1429,9 @@ and dashboard suites. After the root build, run
 `node --test apps/runtime/dist/tests/mode*.test.js`,
 `npm run test:events:built`, `npm run test:runtime-dashboard:built` and
 `node apps/runtime/dashboard/tests/hub-mode.browser.ts`. The mode browser journey
-already runs in the hosted smoke entry; these unit files already join core CI
-discovery. Verify saved exceptions on the existing device cards, compact Hub
+already runs in the hosted smoke entry; these unit files already join CI
+discovery, the runtime files in the Runtime unit tests job and the dashboard files
+in core. Verify saved exceptions on the existing device cards, compact Hub
 inspection, HTTP/MCP admission, shared ordering and restart without effects.
 Run affected Pixoo/SDK consumers, runtime scenarios and the full dashboard
 browser suite for the shared presentation change. Evidence is synthetic/source
@@ -1890,8 +1891,8 @@ for independent animated-WebP decoding, media bounds, private staging/reopen,
 exact moments, and ambient queue/attention/pin interleavings. The runtime
 scenario catalog exercises the same module through the registered synthetic
 Tronbyt transport; `test:runtime:scenarios:built` and disposable scenario runs
-cover that gateway path. These files are discovered by the existing core CI
-module and scenario commands. The playback thumbnail limit and its current
+cover that gateway path. Core CI's module suite discovers these files, and the
+Runtime scenario tests CI job runs the scenarios. The playback thumbnail limit and its current
 tests remain separate from the art profile.
 The `scenario-tidbyt-art` capture follows a labelled synthetic link to the
 authenticated exact preview and retains that animation in the recording. After
@@ -1929,8 +1930,8 @@ cases. The integrated `speaker-artwork` scenario runs both display modules and
 their real workers over in-process and remote transports:
 `node --test --test-name-pattern=speaker-artwork apps/runtime/dist/tests/scenarios/catalog.test.js`.
 It counts producer fixture acquisitions and compares current display frames
-with independent fixture expectations. The existing core CI discovery runs
-these tests. Physical artwork acceptance remains under #1054's separate trial.
+with independent fixture expectations. Existing CI discovery runs these tests:
+the module suites in core and the scenario in the Runtime scenario tests job. Physical artwork acceptance remains under #1054's separate trial.
 
 ## Codex Desktop module checks
 
@@ -2000,7 +2001,7 @@ credential and another feed, is the last case of
 is in `deploy/container/tests/entrypoint.test.mjs`. Runtime tests that read an
 edge configuration file are kept to Linux (the procfs check, which CI runs; the
 reader's no-procfs check is exercised there too, Hub #1355); run them in the
-core CI job or a disposable Linux container. The disposable run `codex-desktop-remote`
+Runtime unit tests CI job or a disposable Linux container. The disposable run `codex-desktop-remote`
 ([runtime verification runs](#runtime-verification-runs)) hosts the real collector
 for the acceptance exercise.
 

@@ -99,8 +99,8 @@ ONN dedicated qualification is dormant under #1464. Shared upgrade inventory/adm
 
 Roborock configured-owner qualification also runs
 `node --test apps/runtime/dist/tests/roborock-upgrade-profile.test.js apps/runtime/dist/tests/roborock-upgrade-qualification.test.js apps/runtime/dist/tests/upgrade-inputs.test.js apps/runtime/dist/tests/upgrade-admission.test.js apps/runtime/dist/tests/upgrade-preflight.test.js`
-after the root build. Existing `test:runtime:built` discovery runs these in core
-CI. The metadata tests require the private primary archive and preserve complete
+after the root build. Existing `test:runtime:built` discovery runs these in the
+Runtime unit tests CI job. The metadata tests require the private primary archive and preserve complete
 fixed optional-owner coverage. Preflight and post-start tests require coverage,
 delivered artifact reader entries and ordinary configured healthy state.
 Four synthetic processes use production RoborockStore and SDK Outbox to preserve
@@ -309,7 +309,7 @@ checks and runtime `gateway.test.ts` cover API 1.3 declarations, trusted asset
 authentication and response policy, passive-page compatibility, read-only
 command refusal and reads without device effects. After the root build, run
 `node --test apps/runtime/dist/tests/gateway.test.js` for the gateway boundary.
-These tests are already discovered by the core CI SDK/runtime commands below;
+The SDK suite in core CI and the Runtime unit tests CI job already discover these tests;
 they do not replace the browser interaction or disposable Acceptance checks.
 `frontend-build.test.ts` uses the production build plugin to bundle a synthetic
 module's explicit browser entry and rejects one that imports its Node-side
@@ -320,8 +320,8 @@ workspaces under the checkout's ignored `.local/scratch/frontend-build/`.
 
 Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:runtime` from the worktree root. `test:runtime` builds, then runs
-`test:runtime:built`: the compiled tests in `apps/runtime/dist/tests/`. The core
-CI job runs `npm run test:runtime:built` after its fresh build. The tests use
+`test:runtime:built`: the compiled tests in `apps/runtime/dist/tests/`. The
+Runtime unit tests CI job runs `npm run test:runtime:built` after its fresh build. The tests use
 in-test fixture modules, port 0 on loopback and private state directories under
 the system temporary directory, which must be outside every Git checkout. Some
 start the runtime in child processes, as the service manager would; one kills it
