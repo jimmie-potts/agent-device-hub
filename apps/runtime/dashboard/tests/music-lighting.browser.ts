@@ -153,10 +153,12 @@ try {
   await page.unroute('**/api/v2/authority?scope=control');
 
   // A microphone measurement is never offered to lights.
+  const capture = page.getByRole('article', {name: 'Music input measurement', exact: true});
   await producer.close();
+  // The core refuses a new producer's endpoint until it has retired the closed one, as the capture journey also waits.
+  await capture.getByText('Music input is unavailable.', {exact: true}).waitFor();
   producer = await musicCaptureProducer(world.url, world.musicCaptureToken, 'studio-mic');
   await page.reload(); await feed(page, 'connected');
-  const capture = page.getByRole('article', {name: 'Music input measurement', exact: true});
   await capture.getByRole('combobox', {name: 'Audio input'}).selectOption('microphone');
   await capture.getByRole('button', {name: 'Start measuring studio-mic', exact: true}).click();
   await capture.getByText('Receiving studio-mic measurements.', {exact: true}).waitFor();
