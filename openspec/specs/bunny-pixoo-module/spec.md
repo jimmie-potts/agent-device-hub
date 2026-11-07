@@ -276,7 +276,7 @@ A moment SHALL end when its duration has passed since its first acknowledged wri
 
 A moment without art SHALL choose its mood picture from the request and draw it in a render worker before the player or the device is touched. A moment naming art SHALL use its retained validated rendition instead, preserving the staged frame timing. A failed render or content read SHALL complete `failed` and change nothing.
 
-A moment that reached the device SHALL complete `succeeded` with `transmitted` and SHALL publish `moment-ended` in the same transaction as its outcome. One that never reached it SHALL have no ending: a failed or uncertain write SHALL complete as that write, the base SHALL come back over Media unless the player paused itself on the uncertainty, and Monitor SHALL stop as it does for a failed dashboard. A moment SHALL NOT be replayed after a restart: its command SHALL be reported `uncertain` at the next start.
+A moment that reached the device SHALL complete `succeeded` with `transmitted` and SHALL publish `moment-ended` in the same transaction as its outcome. One that never reached it SHALL have no ending: a failed or uncertain write SHALL complete as that write, the base SHALL come back over Media unless the player paused itself on the uncertainty, and Monitor SHALL stop as it does for a failed dashboard, unless the write failed before any effect on a route refusal or a local failure, which leaves Monitor current. A moment SHALL NOT be replayed after a restart: its command SHALL be reported `uncertain` at the next start.
 
 #### Scenario: A moment over Monitor returns to the current dashboard
 - **WHEN** Monitor shows a session and a moment with `coversStatus` arrives, and the session changes while it plays

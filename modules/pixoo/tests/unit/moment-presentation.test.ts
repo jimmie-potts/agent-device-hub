@@ -834,11 +834,13 @@ it('a failed write over Monitor stops Monitor as a dashboard failure does',async
  const s=await setup();
  try{
   await monitorMode(s);
-  const results=s.play();
-  s.device.setOnline(false);
+  // Only the moment's second frame fails, after its first reached the device: the base redraw that follows succeeds, so
+  // only the moment's own write can stop Monitor. The same code with no effect leaves Monitor current (below).
+  const results=s.play({frames:()=>Promise.resolve([RGB(7),RGB(8)])});
+  s.device.failNextUpload(1);
   await s.run(1200);
   expect(results).toEqual([expect.objectContaining({ending:null,refused:'upload'})]);
-  expect(s.monitor.status()).toMatchObject({participating:false,lastOutcome:{status:'failed',code:'offline'}});
+  expect(s.monitor.status()).toMatchObject({participating:false,lastOutcome:{status:'uncertain',code:'upload-failed'}});
  }finally{await s.close();}
 });
 it('a write that failed locally before any effect leaves Monitor current (#1504)',async()=>{
