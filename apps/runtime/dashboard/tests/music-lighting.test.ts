@@ -102,8 +102,9 @@ void test('the browser derives the same work ID as the core', async () => {
 type Sync = (families: readonly string[], handler: SyncHandler<LightingState>, options: SyncOptions) => Promise<SyncResult<LightingState>>;
 function world(states: () => Message<unknown>[]) {
   const syncs: {families: readonly string[]; owner: string | undefined; handler: SyncHandler<LightingState>; options: SyncOptions}[] = [];
-  let closed = 0, follows = 0, disposed = 0;
-  const copy = {states, get: () => undefined, close: () => {closed += 1; return Promise.resolve();}} as unknown as SyncedCopy<LightingState>;
+  let closed = 0, follows = 0, disposed = 0, closeHangs = false;
+  // A close waits for the edge's reply; a hanging one never settles.
+  const copy = {states, get: () => undefined, close: () => {closed += 1; return closeHangs ? new Promise<void>(() => {}) : Promise.resolve();}} as unknown as SyncedCopy<LightingState>;
   const sync: Sync = (families, handler, options) => {
     syncs.push({families, owner: options.owner, handler, options});
     return Promise.resolve({status: 'synced', copy, message: {...message(undefined), kind: 'sync-completed', type: 'org.bunny.sync.completed', data: {requestId: 'sync', revision: 1, members: []}}} as unknown as SyncResult<LightingState>);
@@ -115,7 +116,7 @@ function world(states: () => Message<unknown>[]) {
     return () => {disposed += 1;};
   };
   const feed = new MusicLightingFeed({participant: {sync} as unknown as ConstructorParameters<typeof MusicLightingFeed>[0]['participant'], follow});
-  return {feed, syncs, counts: () => ({closed, follows, disposed})};
+  return {feed, syncs, counts: () => ({closed, follows, disposed}), hangCloses: () => {closeHangs = true;}};
 }
 
 void test('the lighting scope only reads both owners, and closes every copy it opened', async () => {
@@ -134,6 +135,17 @@ void test('the lighting scope only reads both owners, and closes every copy it o
   assert.equal(await feed.refresh(), true); assert.deepEqual(counts(), {closed: 1, follows: 2, disposed: 1});
   await feed.close(); assert.deepEqual(counts(), {closed: 2, follows: 2, disposed: 2});
   assert.equal(await feed.refresh(), false); assert.equal(syncs.length, 4);
+});
+
+void test('a refresh does not wait for the replaced copy to finish closing', async () => {
+  const {feed, counts, hangCloses} = world(() => [message(running('active'))]);
+  assert.equal(await feed.refresh(), true);
+  hangCloses();
+  // The card keeps Refresh disabled while a refresh runs, so a refresh that waited here would lock it.
+  const refreshed = await Promise.race([feed.refresh(), new Promise<'stuck'>(resolve => {setTimeout(() => {resolve('stuck');}, 1000);})]);
+  assert.equal(refreshed, true);
+  assert.equal(feed.getSnapshot().synced, true);
+  assert.equal(counts().closed, 1, 'the replaced copy is still asked to close');
 });
 
 void test('a foreign or malformed record makes the lighting copy unavailable', async () => {

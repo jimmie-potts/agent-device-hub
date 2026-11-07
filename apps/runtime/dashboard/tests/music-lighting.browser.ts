@@ -103,15 +103,19 @@ try {
   await mode('free'); await expect(light.getByText(/saved mode is not Free/)).toHaveCount(0);
 
   // A stale lighting read disables controls until an explicit refresh succeeds.
+  let refusedReads = 0;
   await page.route('**/api/sdk/v1/sync', async route => {
     const request = route.request().postDataJSON() as {request?: {data?: {families?: string[]}}};
-    if (request.request?.data?.families?.includes('music-lighting-state') === true) {await route.abort(); return;}
+    if (request.request?.data?.families?.includes('music-lighting-state') === true) {refusedReads += 1; await route.abort(); return;}
     await route.continue();
   });
-  await card.getByRole('button', {name: 'Refresh lighting status', exact: true}).click();
+  const refresh = card.getByRole('button', {name: 'Refresh lighting status', exact: true});
+  await refresh.click();
   await card.getByText('Lighting status is stale or unavailable. Controls are disabled until a fresh read.', {exact: true}).waitFor();
   await expect(start).toBeDisabled(); await light.getByText(/Last known: Idle/).waitFor();
-  await page.unroute('**/api/sdk/v1/sync'); await card.getByRole('button', {name: 'Refresh lighting status', exact: true}).click();
+  // The stale view shows as soon as a refresh starts; the failed read must also have settled before the route goes.
+  await expect.poll(() => refusedReads).toBeGreaterThan(0); await expect(refresh).toBeEnabled();
+  await page.unroute('**/api/sdk/v1/sync'); await refresh.click();
   await expect(start).toBeEnabled();
 
   // A lost Start reply stays locked and uncertain across reload; Stop remains available and nothing is resent.

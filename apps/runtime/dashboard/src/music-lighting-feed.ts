@@ -34,8 +34,9 @@ export class MusicLightingFeed {
     const current = (): boolean => !this.#closed && this.#epoch === epoch;
     this.#update({synced: false});
     this.#presets();
-    const previous = this.#copy; this.#copy = undefined; await previous?.close();
-    if (!current()) return false;
+    // The replaced copy closes in the background: its close waits for the edge, and the card keeps Refresh disabled until
+    // this read settles. Its handler checks the epoch, so nothing it delivers meanwhile reaches the view.
+    const previous = this.#copy; this.#copy = undefined; void previous?.close().catch(() => {});
     this.#presets = this.#follow((changed, options) => this.#participant.sync(['nanoleaf-reactive-presets'], changed, {...options, owner: NANOLEAF_OWNER, timeoutMs: 5000}),
       presets => {if (current()) this.#update({presets});}, this.#view.presets.value);
     let completed = false, restarted = false;
@@ -47,7 +48,7 @@ export class MusicLightingFeed {
         this.#snapshot(this.#view.synced);
       }, {owner: 'bunny/core', timeoutMs: 5000, onRestarted: () => {if (current()) {completed = false; restarted = true; this.#update({synced: false});}}});
       if (result.status === 'rejected') {if (current()) this.#update({synced: false}); return false;}
-      if (!current()) {await result.copy.close(); return false;}
+      if (!current()) {void result.copy.close().catch(() => {}); return false;}
       this.#copy = result.copy;
       this.#snapshot(completed || !restarted);
       return this.#view.synced;
