@@ -117,10 +117,10 @@ export function createArtPlans(options: Options) {
     const armedAtMs = options.clock();
     if (plan.startAtMs <= armedAtMs || admittedAtMs >= latest) {run(); return;}
     const delay = plan.startAtMs - armedAtMs, budget = Math.min(latest - armedAtMs, latest - admittedAtMs);
-    // A wake can be early on the wall clock: Node times it from the event loop's cached time, so a long turn while arming
-    // brings it forward. An early wake waits again for the rest, not until the window's edge, where any delay would miss
-    // the start (#1515). The final wake at the original elapsed limit still ends the wait, so no early wake or wall
-    // correction buys more time.
+    // An elapsed wake can read the wall clock a little before the start: timer and wall-clock milliseconds round
+    // differently, and time sync can also hold the wall clock back. An early wake waits again for the rest, not until the
+    // window's edge, where any delay would miss the start (#1515). The final wake at the original elapsed limit still
+    // ends the wait, so no early wake or wall correction buys more time.
     const wake = (): void => {
       if (!waits.has(wait)) return;
       if (!active() || options.clock() >= plan.startAtMs) {run(); return;}

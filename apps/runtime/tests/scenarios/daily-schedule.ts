@@ -30,8 +30,9 @@ const expectedStart = new WeakMap<Harness, number>();
 const originalComposition = new WeakMap<Harness, string>();
 const startOf = (h: Harness): number => expectedStart.get(h) ?? (() => {throw new StepFailure('the bounded opportunity is missing');})();
 /**
- * Why the browser selection is missing (#1515): when the core sent `present` relative to the start, the attempt's
+ * Clues to a missing browser selection (#1515): when the core sent `present` relative to the start, the attempt's
  * reason and browser request, that request's operation, and the largest gap between bus messages around the start.
+ * A permit refused at the start and a missed start window both leave `present` unsent with no reason, so they look alike.
  */
 const browserTimeline = (h: Harness): string => {
   const start = startOf(h), at = (time: string): number => Date.parse(time) - start, last = schedule(h)?.lastOpportunity;
@@ -41,7 +42,7 @@ const browserTimeline = (h: Harness): string => {
     : h.reader.states<OperationRecord>('operation', CORE).map(item => item.data).find(item => item.requestId === last.browserRequestId);
   const times = messages.map(message => at(message.time)).filter(offset => offset >= -2000 && offset <= 10_000).sort((a, b) => a - b);
   const gap = times.slice(1).reduce((largest, offset, index) => Math.max(largest, offset - (times[index] as number)), 0);
-  return `present ${present === undefined ? 'not sent' : `sent at ${String(at(present.time))} ms`}; attempt reason ${String(last?.reason ?? 'none')}, `
+  return `present ${present === undefined ? 'not sent (a refused permit or a missed window)' : `sent at ${String(at(present.time))} ms`}; attempt reason ${String(last?.reason ?? 'none')}, `
     + `browser request ${last?.browserRequestId ?? 'none'}${operation === undefined ? '' : ` (${operation.status}/${String(operation.result ?? 'pending')})`}; `
     + `checked at ${String(h.now() - start)} ms; ${String(times.length)} bus messages from -2 s to +10 s, largest gap ${String(gap)} ms`;
 };
