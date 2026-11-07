@@ -1087,8 +1087,19 @@ snapshot name each time. The authenticated qualification intake also admits the 
 maintenance helper for the observed old target. The operator renders that exact Compose selection,
 preserves its environment, private volumes, network and bindings, and writes an
 owner-only replacement Compose JSON beside it with only the qualified image
-changed. It pins its source hash and checks the actual selected container again
-before stopping. No arbitrary command or callback is accepted from the request.
+changed. The replacement is named after the request ID alone,
+`<request id>.compose.json` in the same directory, and is created exclusively, so
+an existing file at that path refuses the batch. It pins its source hash and checks
+the actual selected container again before stopping. No arbitrary command or
+callback is accepted from the request.
+
+The next request's `compose` is the active Compose file: the last successful
+record's `replacementCompose`. The running core's
+`com.docker.compose.project.config_files` label names the same path, and sign-in
+starts from that label. Read both and use the path only when they agree. Because
+the name comes from the request ID, it stays the same length however many batches
+chain from one directory. A `compose` with an older operator's longer
+replacement name works the same way, and its replacement gets the short name.
 
 On the selected Mac host, every cooperating write uses one private POSIX directory,
 `~/.local/state/bunny-operations`, outside Git. Each project has one empty SQLite coordination file ending in
@@ -1126,9 +1137,12 @@ task checkout only after reading back the stable-source handoff; otherwise recor
 that checkout as an installed dependency and keep it.
 
 A failed start or check stops only the owned failed replacement where possible,
-preserves latest data and leaves the last intended phase pending. A stop that
-cannot be verified is uncertain. There is no retry, oscillation or automatic
-rollback. Sign-in leaves a failed replacement stopped until a later deployment
+preserves latest data and leaves the last intended phase pending. When writing the
+replacement Compose file fails, the record's `failedPhase` is `preparing-compose`,
+its `failedStep` is `writing-replacement-compose` and its `failedFileError` names
+the file-system code, such as `EEXIST` or `ENAMETOOLONG`, or `other`. Nothing has
+been stopped at that point. A stop that cannot be verified is uncertain. There is
+no retry, oscillation or automatic rollback. Sign-in leaves a failed replacement stopped until a later deployment
 replaces it, even after a reconcile. If you remove or recreate a container by hand,
 [set the start hold](#hold-the-core-stopped) first. Inspect the record, Docker identity/state and private latest stores
 before explicitly running:

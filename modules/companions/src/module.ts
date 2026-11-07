@@ -13,10 +13,10 @@ import {allowlistable} from './assistant/tools.js';
 import {LIMITS} from './assistant/store.js';
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import {createHash} from 'node:crypto';
-import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {OPPORTUNITY_TTL_MS, type CompanionCategory, type CompanionFixtureRun, type CompanionOpportunity,
   type CompanionSettingsSet, type CompanionState, type SpeechState} from '@jimmie-potts/event-contracts/v2/companions';
-import {registerCoreFamilies, type ModeState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator, type ModeState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog, Outbox, fullDisk, Outcome, type BunnyModule, type Cancel, type Command, type Configured, type ModuleContext, type ModuleContent, type ModuleContentRequest, type Reply,
   type StateDraft, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
 import {revision} from './revision.js';
@@ -92,11 +92,11 @@ class Companions {
   #scenarioUntilMs = 0;
   readonly #pending = new Map<CompanionCategory, Candidate>();
   readonly #subscriptions: Subscription[] = [];
-  readonly #validator = new MessageValidator();
+  readonly #validator = coreValidator();
   readonly #seen = new Set<string>();
   #work: Promise<void> = Promise.resolve();
   #draining: Promise<void> = Promise.resolve();
-  constructor(readonly options: CompanionsOptions) {registerCoreFamilies(this.#validator);}
+  constructor(readonly options: CompanionsOptions) {}
   inspect(): CompanionState | undefined {return this.#store?.read().state;}
   pending(): number {return this.#pending.size + (this.#active === undefined ? 0 : 1);}
   qualifiedSpeech(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {

@@ -1,6 +1,6 @@
 import {createHash, randomUUID} from 'node:crypto';
-import {MessageValidator, errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {AssistantInput} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {PreferenceState} from '@jimmie-potts/event-contracts/v2/companions';
 import {Outcome, fullDisk, type Command, type ModuleContent, type ModuleContentRequest, type ModuleContext, type ModuleStagedUpload,
@@ -18,11 +18,11 @@ export const preferenceStateDraft = (data: PreferenceState) => ({kind: 'state' a
 /** Explicit owner input only. No provider, background learning or device authority. */
 export class Preferences {
   readonly store: PreferenceStore;
-  readonly #validator = new MessageValidator();
+  readonly #validator = coreValidator();
   #subscription: Subscription | undefined;
   #closed = false;
   constructor(readonly context: ModuleContext, readonly outbox: Outbox) {
-    this.store = new PreferenceStore(context.database()); registerCoreFamilies(this.#validator);
+    this.store = new PreferenceStore(context.database());
   }
   inspect(): PreferenceState {return {id: 'preferences', revision: this.store.revision()};}
   async start(): Promise<void> {this.#subscription = await this.context.sdk.respond<AssistantInput>('bunny.cmd.assistant-input.preferences', command => this.#input(command));}
