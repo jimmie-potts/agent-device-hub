@@ -848,7 +848,8 @@ it('a write that failed locally before any effect leaves Monitor current (#1504)
   const results=s.play();
   s.device.failNextUpload();
   await s.run(1200);
-  expect(results).toEqual([expect.objectContaining({ending:null,refused:'upload',upload:expect.objectContaining({code:'upload-failed',priorEffects:'none'})})]);
+  expect(results).toEqual([expect.objectContaining({ending:null,refused:'upload'})]);
+  expect(results[0]).toMatchObject({upload:{ok:false,code:'upload-failed',priorEffects:'none'}});
   expect(s.monitor.status()).toMatchObject({participating:true,configuration:{mode:'monitor'}});
  }finally{await s.close();}
 });
