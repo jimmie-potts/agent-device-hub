@@ -8,7 +8,10 @@ retains personas, memory and speech. Installation and physical admission remain
 
 Only notice, attention and explicit neutral head inputs are available. Notice
 uses yaw +0.10 rad and attention -0.10 rad, followed by zero input. Each phase
-lasts 800 ms; a return later than 900 ms is refused. These are policy inputs,
+lasts 800 ms; a return later than 900 ms is refused. The first input's
+transmission commit, made before the hold, saves the pending return while status
+stays in the outbound phase. The return makes no commit before it is sent; status
+shows the return phase from the commit recording its transmission. These are policy inputs,
 not guaranteed joint angles or a vendor effect TTL. Beak, body pose, skills,
 enable, torque, walking, capture and audio remain unavailable.
 
@@ -43,7 +46,10 @@ eight synchronous commits with no observation between them, so a stalled host co
 otherwise age the sensor evidence past 500 ms and refuse the reaction. It delays the
 test caller past the finite pulse, records the first matching transmitted fake input and
 applies Quiet from that state delivery, preserving the one-write and
-held-uncertainty assertions. Actual pinned vendor acceptance is separate and must
+held-uncertainty assertions. The return-window test runs on the same kind of
+clock and makes each commit by the gesture itself, while only its first input is
+out, cost 150 ms. The return must still leave 800 to 900 ms after the first
+input, and the hold must be published as outbound. Actual pinned vendor acceptance is separate and must
 run in a disposable Linux ARM64 container with the runtime and vendor pair in
 the same time namespace. No physical target is selected or contacted.
 
