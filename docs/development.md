@@ -386,9 +386,35 @@ source exporter, then runs every scenario and every packaged verification test f
 exact checkout-only `build.test.js`. The in-image launcher prints its complete
 inventory and exclusion. The full source verification job still runs that file;
 its Git inventory assertion needs the checkout metadata the sealed image excludes.
-The packaged suites have a 45-minute process deadline and a 30-second kill grace.
-The complete image job has a separate 60-minute limit for build, tests and artifact
-transport. A timeout fails qualification. It never admits a partially tested image.
+
+The `Packaged ARM64 build` job builds and saves the image and uploads its archive.
+Three `Packaged ARM64 verification` jobs then test that archive in parallel
+([#1512](https://github.com/jimmie-potts/agent-device-hub/issues/1512)). Each one
+downloads only its own attempt's archive. It refuses the archive before loading
+it unless its SHA-256 matches what the build reported. After loading, it refuses
+the image unless it matches the archive's manifest and the reported identity.
+Only then does it build the test derivative on the image. The lanes split the
+inventory between them:
+
+- `scenarios`: the scenario catalog files and the backup helper suite.
+- `captures`: the odd-numbered capture cases of `steps.test.js`, and its other tests.
+- `verification`: every other packaged verification file, then, in a separate
+  process, the even-numbered capture cases.
+
+`BUNNY_CAPTURE_SHARD=<index>/<count>` selects a share of the capture cases, so
+the two shards run each case once. The launcher sets it only for the capture
+file's own process and drops an inherited value, so the variable can never
+shrink another run. Unset, as in source CI, `steps.test.js` runs every case. The
+verification files stay serial within their lane.
+`Packaged ARM64 image` runs only after the build and all three lanes pass, and it
+passes the image identity to the receipt, so the receipt's job names are unchanged. A rerun
+of failed jobs cannot reuse an earlier attempt's archive: after a lane fails,
+rerun all jobs.
+
+Each lane's packaged suites have a 45-minute process deadline and a 30-second
+kill grace. Each lane job has a 60-minute limit for download, load, the
+derivative build and its tests, and the build job has 20 minutes. A timeout
+fails qualification. It never admits a partially tested image.
 All packaged browser, accessibility, negative-control, adapter, boundary, drain,
 follow, guard, health, HOME, journal, migration, run and supervisor tests remain.
 Docker's init reaps orphaned test processes. Containers have synthetic state and
@@ -476,6 +502,15 @@ job's twenty-five, Core and App verification's forty, and Runtime verification's
 forty-five. Branch pushes do not duplicate PR checks.
 Core's finite 40-minute aggregate limit leaves headroom after full selections
 exhausted the previous 30-minute cap ([#1388](https://github.com/jimmie-potts/agent-device-hub/issues/1388)).
+Packaged ARM64 qualification runs in three parallel lanes under the unchanged
+45-minute process deadline ([#1512](https://github.com/jimmie-potts/agent-device-hub/issues/1512)).
+In one serial job, its packaged suites grew from 1,914 s on main `50acae82` to 2,582 s
+on `0098927f`, then passed the 2,700 s deadline on `4c42b933`. In that run the
+scenario catalog took 841 s and `steps.test.js` 1,686 s before the interruption;
+`scenario-art-schedule` alone took 165 s. From that run's case times, the lanes
+take about 844 s (`scenarios`), 862 s (`captures`) and 1,241 s (`verification`),
+so the longest lane leaves about 24 minutes of headroom. Each extra lane adds its
+own runner setup, archive download and derivative build, about three minutes.
 Runtime verification has a separate 45-minute job limit alongside the existing
 per-test deadlines. Two full catalog attempts
 reached the previous 35-minute limit before all cases reported their results
@@ -2742,8 +2777,9 @@ skipped. It covers raw configuration, version 1/2 readers, zero filesystem acces
 for declared ONN dependencies, refusal of dependency/secret-reference overlap
 before reference I/O, secret and descriptor tampering, WAL/keys/assets,
 real lease contention and interruption. Packaged ARM64 qualification runs that
-same worker suite, and a negative control proves helper failure blocks the
-qualification driver. Host tests cover the qualified helper's
+same worker suite in its `scenarios` lane. Negative controls run the launcher
+both without a lane and as each lane's command. A failing helper, or any other
+packaged file, fails the run. Host tests cover the qualified helper's
 old target and actual image identity, raw/serialized helper refusal, authenticated
 pinned-main ancestry before download/load (including an authentic-looking green
 unmerged run and unavailable or contradictory comparisons), safe stderr

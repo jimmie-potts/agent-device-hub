@@ -13,7 +13,7 @@ import {SYNTHETIC_TOKEN} from '../../tests/fixtures/sign.js';
 import {SCENARIOS, TOKEN_PREFIX, runScenario, scenario} from '../../tests/scenarios/catalog.js';
 import {connectRun, readGrants} from '../adapter.js';
 import plugin from '../plugin.js';
-import {base, startRun} from './support.js';
+import {base, captureShard, inShard, startRun} from './support.js';
 
 let outputs = 0;
 async function judge(context: TestContext, at: string, step: string): Promise<CaptureStepResult> {
@@ -51,7 +51,11 @@ async function judge(context: TestContext, at: string, step: string): Promise<Ca
 }
 
 const reference = Object.keys(plugin.captureSteps).filter(step => !step.startsWith('control-'));
-void test('assistant recovery waits for a delayed reader resync before submitting its answer once', async context => {
+// Packaged qualification splits this file's capture cases between two parallel jobs (#1512). The first shard also keeps
+// every test outside the capture loop, so the shards together run each test once. Unset, this process runs them all.
+const shard = captureShard();
+const first: typeof test = shard.index === 1 ? test : (() => undefined) as never;
+void first('assistant recovery waits for a delayed reader resync before submitting its answer once', async context => {
   const selected = scenario('assistant-task'); assert.ok(selected);
   const at = await base(context), run = await startRun(context, at, selected.id);
   const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed: selected.seed});
@@ -75,7 +79,7 @@ void test('assistant recovery waits for a delayed reader resync before submittin
 });
 
 for (const stalled of [false, true]) {
-  void test(stalled ? 'agent hooks reject a reader that never resyncs' : 'agent hooks wait for a delayed reader resync before judging the restarted session', {timeout: 300_000}, async context => {
+  void first(stalled ? 'agent hooks reject a reader that never resyncs' : 'agent hooks wait for a delayed reader resync before judging the restarted session', {timeout: 300_000}, async context => {
     const selected = scenario('agent-hooks'); assert.ok(selected);
     const at = await base(context), run = await startRun(context, at, selected.id);
     const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed: selected.seed});
@@ -112,13 +116,24 @@ for (const stalled of [false, true]) {
   });
 }
 
-void test('the capture steps include edge grants, every catalog scenario and request following', () => {
+void first('the capture steps include edge grants, every catalog scenario and request following', () => {
   assert.deepEqual(reference, ['mac-codex-local', 'edge-grants', ...SCENARIOS.map(scenario => `scenario-${scenario.id}`), 'browser-speech', 'follow-one-request']);
+});
+
+void first('the capture shards take every case exactly once, and a malformed shard is refused', () => {
+  for (const count of [1, 2, 3]) {
+    const taken = Array.from({length: count}, (_, at) => inShard(reference, {index: at + 1, count})).flat();
+    assert.deepEqual([...taken].sort(), [...reference].sort(), `${count} shards take every case`);
+    assert.equal(new Set(taken).size, reference.length, `${count} shards take no case twice`);
+  }
+  assert.deepEqual(captureShard(''), {index: 1, count: 1});
+  assert.deepEqual(captureShard('2/2'), {index: 2, count: 2});
+  for (const value of ['0/2', '3/2', '1', '1/2/3', ' 1/2', '1/0', 'a/b']) assert.throws(() => captureShard(value), /BUNNY_CAPTURE_SHARD/, value);
 });
 
 // Each capture keeps its own timeout and fresh run. Catalog growth must not consume another case's test budget;
 // the serial test runner and the CI job's outer bound still limit the complete suite.
-for (const step of reference) {
+for (const step of inShard(reference, shard)) {
   void test(`${step} passes in a fresh run`, {timeout: 300_000}, async context => {
     const at = await base(context);
     const result = await judge(context, at, step);
@@ -134,14 +149,14 @@ for (const step of reference) {
   });
 }
 
-void test('the scenario negative control fails in a fresh run', {timeout: 300_000}, async context => {
+void first('the scenario negative control fails in a fresh run', {timeout: 300_000}, async context => {
   const at = await base(context);
   const control = await judge(context, at, 'control-scenario-fails');
   assert.equal(control.outcome, 'failed');
   assert.ok((control.reason ?? '').startsWith('assertion failed: the scenario passed'), control.reason);
 });
 
-void test('the follow negative control fails in a fresh run', {timeout: 300_000}, async context => {
+void first('the follow negative control fails in a fresh run', {timeout: 300_000}, async context => {
   const at = await base(context);
   const absent = await judge(context, at, 'control-follow-fails');
   assert.equal(absent.outcome, 'failed');
