@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
+import type {TestContext} from 'node:test';
+import {BroadcastChannel} from 'node:worker_threads';
 import {SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CloudFetch} from '../src/cloud.js';
@@ -276,13 +278,40 @@ test('a server\'s receipt of both tiles is not the module\'s acknowledgment of t
   assert.deepEqual(h.problems(), []);
 });
 
+/** Whether the module acknowledged a write of the display's pin and published it. */
+const acknowledgedPin = (h: Hosted): boolean => h.devices().some(device => device.lastTransmission.status === 'known' && device.lastTransmission.operationIds[0] === 'mode');
+
+/** The render worker that holds the now-playing card until the test's gate lets it go (Hub #1527). */
+const GATED_WORKER = new URL('./fixtures/gated-worker.js', import.meta.url);
+
+/**
+ * The gated worker's channel. `release` lets every card go: those drawn and waiting, and any drawn later. The channel
+ * closes with the test.
+ */
+function renderGate(context: TestContext): {release: () => void} {
+  const channel = new BroadcastChannel('tidbyt-render-gate');
+  let released = false;
+  channel.onmessage = message => { if (released && message.data === 'drawn') channel.postMessage('go'); };
+  context.after(() => { channel.close(); });
+  return {release: () => {
+    released = true;
+    channel.postMessage('go');
+  }};
+}
+
 test('identical frames reach the display through the cloud and through a server, and only the server takes them by name in the background', async context => {
   const sessions = [asking(), working(), finished()];
   const now = playback('playing');
   const server = new SimulatedTronbyt();
+  const gate = renderGate(context);
   const onCloud = await host(context, {sessions, playback: now});
-  const onTronbyt = await host(context, {sessions, playback: now, ...onServer(server)});
+  const onTronbyt = await host(context, {sessions, playback: now, ...onServer(server), module: {transport: server.fetch, renderWorker: GATED_WORKER}});
   await until(() => shown(onCloud, STATUS).pushes === 1 && shown(onCloud, NOW_PLAYING).pushes === 1, 'the cloud\'s tiles');
+  // On a fresh server the module writes the pin after the first tile's push. A slow first answer could let the card's
+  // push queue before the pin, and the last write would then be the pin (Hub #1527). The card's frame waits for the
+  // module's acknowledgment of the pin, so the queue sends push, pin, push however the answers are timed.
+  await until(() => acknowledgedPin(onTronbyt), 'the module\'s acknowledgment of the pin');
+  gate.release();
   await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().installations[NOW_PLAYING]?.pushes === 1, 'the server\'s tiles');
   await until(() => acknowledgedPushes(onTronbyt), 'the module\'s acknowledgment of both pushes');
   const state = server.state();
