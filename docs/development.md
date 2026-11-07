@@ -390,20 +390,24 @@ its Git inventory assertion needs the checkout metadata the sealed image exclude
 The `Packaged ARM64 build` job builds and saves the image and uploads its archive.
 Three `Packaged ARM64 verification` jobs then test that archive in parallel
 ([#1512](https://github.com/jimmie-potts/agent-device-hub/issues/1512)). Each one
-downloads only its own attempt's archive and refuses it unless its SHA-256 and
-manifest match what the build reported. It then loads the archive, checks the
-loaded image against it and builds the test derivative on it. The lanes split
-the inventory between them:
+downloads only its own attempt's archive. It refuses the archive before loading
+it unless its SHA-256 matches what the build reported. After loading, it refuses
+the image unless it matches the archive's manifest and the reported identity.
+Only then does it build the test derivative on the image. The lanes split the
+inventory between them:
 
 - `scenarios`: the scenario catalog files and the backup helper suite.
 - `captures`: the odd-numbered capture cases of `steps.test.js`, and its other tests.
-- `verification`: every other packaged verification file, and the even-numbered capture cases.
+- `verification`: every other packaged verification file, then, in a separate
+  process, the even-numbered capture cases.
 
 `BUNNY_CAPTURE_SHARD=<index>/<count>` selects a share of the capture cases, so
-the two shards run each case once. Unset, as in source CI, `steps.test.js` runs
-them all. The verification files stay serial within their lane. `Packaged ARM64
-image` runs only after the build and all three lanes pass, and it passes the
-image identity to the receipt, so the receipt's job names are unchanged. A rerun
+the two shards run each case once. The launcher sets it only for the capture
+file's own process and drops an inherited value, so the variable can never
+shrink another run. Unset, as in source CI, `steps.test.js` runs every case. The
+verification files stay serial within their lane.
+`Packaged ARM64 image` runs only after the build and all three lanes pass, and it
+passes the image identity to the receipt, so the receipt's job names are unchanged. A rerun
 of failed jobs cannot reuse an earlier attempt's archive: after a lane fails,
 rerun all jobs.
 
@@ -2740,8 +2744,9 @@ skipped. It covers raw configuration, version 1/2 readers, zero filesystem acces
 for declared ONN dependencies, refusal of dependency/secret-reference overlap
 before reference I/O, secret and descriptor tampering, WAL/keys/assets,
 real lease contention and interruption. Packaged ARM64 qualification runs that
-same worker suite, and a negative control proves helper failure blocks the
-qualification driver. Host tests cover the qualified helper's
+same worker suite in its `scenarios` lane. Negative controls run the launcher
+both without a lane and as each lane's command. A failing helper, or any other
+packaged file, fails the run. Host tests cover the qualified helper's
 old target and actual image identity, raw/serialized helper refusal, authenticated
 pinned-main ancestry before download/load (including an authentic-looking green
 unmerged run and unavailable or contradictory comparisons), safe stderr

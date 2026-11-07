@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join} from 'node:path';
 import {test} from 'node:test';
 import {spawnSync} from 'node:child_process';
 import {LANES, lanePlan, packagedTests} from '../packaged.mjs';
@@ -54,9 +54,73 @@ test('the packaged lanes together run every packaged file once, and split only t
   assert.deepEqual(all.filter(file => file !== steps).sort(), files(serial).filter(file => file !== steps).sort(), 'every other file runs exactly once');
   const shards = lanes.flat().filter(({args}) => args.includes(steps));
   assert.deepEqual(shards.map(({env}) => env?.BUNNY_CAPTURE_SHARD).sort(), ['1/2', '2/2'], 'the capture file runs as two complementary shards');
-  for (const {args} of lanes.flat()) {
+  for (const {args, env} of lanes.flat()) {
     if (args.some(file => tests.verification.includes(file))) assert.equal(args[1], '--test-concurrency=1', 'verification files stay serial');
+    if (env !== undefined) assert.deepEqual(files([{args}]), [steps], 'only the capture file\'s own process gets a shard');
   }
   assert.throws(() => lanePlan(tests, 'other'), /packaged-lane-refused/);
   assert.throws(() => lanePlan({...tests, verification: tests.verification.filter(file => file !== steps)}, 'captures'), /packaged-test-inventory-refused/);
+});
+
+// Qualification runs `packaged.mjs <lane>` inside the image. These run that CLI, from a copy in a synthetic image tree, for
+// every lane: each lane runs exactly its files, hands the shard only to the capture file, and fails when any file fails.
+const synthetic = {
+  'apps/runtime/dist/tests/scenarios/catalog.test.js': 'catalog', 'apps/runtime/dist/verify/tests/build.test.js': 'build',
+  'apps/runtime/dist/verify/tests/health.test.js': 'health', 'apps/runtime/dist/verify/tests/steps.test.js': 'steps',
+  'scripts/tests/bunny-backup.test.mjs': 'backup',
+};
+async function syntheticImage(context, failing) {
+  const root = await mkdtemp(join(tmpdir(), 'packaged-lane-'));
+  context.after(() => rm(root, {recursive: true, force: true}));
+  await mkdir(join(root, 'scripts/release'), {recursive: true});
+  await writeFile(join(root, 'scripts/release/packaged.mjs'), await readFile(new URL('../packaged.mjs', import.meta.url)));
+  for (const [path, name] of Object.entries(synthetic)) {
+    await mkdir(join(root, dirname(path)), {recursive: true});
+    // Each file records that it ran and the shard it saw, then fails if it is the selected negative control.
+    await writeFile(join(root, path), `const fs = process.getBuiltinModule('node:fs');
+fs.mkdirSync('ran', {recursive: true});
+fs.writeFileSync('ran/${name}.' + (process.env.BUNNY_CAPTURE_SHARD ?? 'all').replace('/', 'of'), '');
+${failing === name ? `throw new Error('synthetic ${name} negative control');` : ''}\n`);
+  }
+  return root;
+}
+function packagedCli(root, lane, extra = {}) {
+  const env = {...process.env, ...extra}; delete env.NODE_TEST_CONTEXT;
+  const child = spawnSync(process.execPath, [join(root, 'scripts/release/packaged.mjs'), ...lane === undefined ? [] : [lane]], {env, encoding: 'utf8'});
+  return {code: child.status, output: child.stdout + child.stderr};
+}
+const ran = async root => (await readdir(join(root, 'ran'))).sort();
+
+test('each lane run by the CLI runs its own files, and only the capture file sees its shard', async context => {
+  const expected = {scenarios: ['backup.all', 'catalog.all'], captures: ['steps.1of2'], verification: ['health.all', 'steps.2of2']};
+  for (const lane of LANES) {
+    const root = await syntheticImage(context);
+    // An inherited shard reaches no file: only the lane's own capture process gets one.
+    const result = packagedCli(root, lane, {BUNNY_CAPTURE_SHARD: '2/3'});
+    assert.equal(result.code, 0, result.output);
+    assert.deepEqual(await ran(root), expected[lane], lane);
+  }
+  assert.deepEqual(Object.values(expected).flat().map(marker => marker.split('.')[0]).sort(), ['backup', 'catalog', 'health', 'steps', 'steps']);
+  const whole = await syntheticImage(context);
+  const result = packagedCli(whole, undefined, {BUNNY_CAPTURE_SHARD: '1/2'});
+  assert.equal(result.code, 0, result.output);
+  assert.deepEqual(await ran(whole), ['backup.all', 'catalog.all', 'health.all', 'steps.all'], 'the serial run takes every capture case');
+  // Started through a symlinked path, the launcher still runs its lane rather than exiting 0 having tested nothing.
+  const linked = await syntheticImage(context, 'steps'), link = join(linked, 'linked-packaged.mjs');
+  await symlink(join(linked, 'scripts/release/packaged.mjs'), link);
+  const env = {...process.env}; delete env.NODE_TEST_CONTEXT;
+  const child = spawnSync(process.execPath, [link, 'captures'], {env, encoding: 'utf8'});
+  assert.equal(child.status, 1, 'the linked launcher ran the failing capture file');
+  assert.deepEqual(await ran(linked), ['steps.1of2']);
+});
+
+test('a failing file fails every lane that runs it, the backup helper included', async context => {
+  const lanes = {scenarios: ['catalog', 'backup'], captures: ['steps'], verification: ['health', 'steps']};
+  for (const [lane, names] of Object.entries(lanes)) {
+    for (const name of names) {
+      const result = packagedCli(await syntheticImage(context, name), lane);
+      assert.equal(result.code, 1, `${lane} with ${name} failing`);
+      assert.match(result.output, new RegExp(`synthetic ${name} negative control`));
+    }
+  }
 });
