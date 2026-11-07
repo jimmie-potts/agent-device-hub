@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium} from 'playwright';
+import type {Locator,Page} from 'playwright';
 import {expect} from 'playwright/test';
 import {setTimeout as pause} from 'node:timers/promises';
 import {join} from 'node:path';
@@ -11,6 +12,17 @@ function heldItem(value:unknown):{id:string;revision:number}|undefined {
   if(typeof value!=='object'||value===null)return undefined;
   if('id'in value&&typeof value.id==='string'&&'revision'in value&&typeof value.revision==='number'&&'item'in value&&typeof value.item==='object'&&value.item!==null&&'command'in value.item&&typeof value.item.command==='string'&&value.item.command.startsWith('org.bunny.microduck.'))return {id:value.id,revision:value.revision};
   for(const child of Object.values(value)){const found=heldItem(child);if(found!==undefined)return found;}return undefined;
+}
+/** Names what the browser showed when the held checkbox did not appear, so a hosted log can tell a stale-record refusal, a feed resync and a module failure apart (#1492). */
+async function heldWaitEvidence(page:Page,panel:Locator,effects:readonly {yaw:number}[]):Promise<string> {
+  // Each read is bounded so a wedged page cannot hide the original timeout behind a job timeout.
+  const read=async(value:Promise<unknown>):Promise<string>=>{try{return JSON.stringify(await Promise.race([value,pause(2000,undefined,{ref:false}).then(()=>{throw new Error('no answer within 2 s');})]));}catch(error){return 'unreadable: '+(error instanceof Error?error.message:String(error));}};
+  return ['MicroDuck held-checkbox wait failed after the lost-reply neutral command. Evidence:',
+    '  dashboard feed: '+await read(page.locator('main#main').getAttribute('data-feed',{timeout:1000})),
+    '  command feedback: '+await read(panel.locator('.microduck-feedback').allInnerTexts()),
+    '  panel buttons: '+await read(panel.getByRole('button').evaluateAll(nodes=>nodes.map(node=>`${node.textContent??''}${node instanceof HTMLButtonElement&&node.disabled?' (disabled)':''}`))),
+    '  panel text: '+await read(panel.innerText({timeout:1000}).then(text=>text.split('\n').filter(line=>line.trim()!==''))),
+    '  simulator effects (yaw): '+JSON.stringify(effects.map(x=>x.yaw))].join('\n');
 }
 const screenshot = join(await browserArtifactDirectory(), 'microduck-browser.png');
 const world=await startWorld({microduck:true,companions:true}),browser=await chromium.launch({headless:true});
@@ -72,7 +84,7 @@ try {
   assert.equal(await page.evaluate(async saved=>{const response=await fetch('/api/v2/commands/inbox-handle',{method:'POST',headers:{'content-type':'application/json','bunny-request':'1'},body:JSON.stringify({target:saved.id,requestId:crypto.randomUUID(),data:{action:'send-again',expectedRevision:saved.revision}})});await response.arrayBuffer();return response.status;},saved),403,'browser saved-command resend is refused too');
   const neutral=panel.getByRole('button',{name:'Neutral head input',exact:true});assert.equal(await neutral.isDisabled(),true);await acknowledgment.check();await neutral.click();await acknowledgment.waitFor({state:'hidden'});
   await panel.getByText('Last operation: succeeded',{exact:true}).waitFor();assert.equal(world.microduck.effects.at(-1)?.yaw,0);
-  world.microduck.loseReply=true;await neutral.click();await acknowledgment.waitFor();assert.equal(await stop.isEnabled(),true);
+  world.microduck.loseReply=true;await neutral.click();await acknowledgment.waitFor().catch(async(error:unknown)=>{console.error(await heldWaitEvidence(page,panel,world.microduck.effects));throw error;});assert.equal(await stop.isEnabled(),true);
   await acknowledgment.check();await neutral.click();await page.waitForFunction(()=>document.querySelector<HTMLInputElement>('.microduck-panel input[type="checkbox"]')?.checked===false);
   assert.equal(await neutral.isDisabled(),true);world.microduck.loseReply=false;await acknowledgment.check();await neutral.click();await acknowledgment.waitFor({state:'hidden'});
   const before=world.microduck.effects.length;await page.reload();await feed(page,'connected');await panel.getByRole('status').filter({hasText:'Simulator available'}).waitFor();assert.equal(world.microduck.effects.length,before);
