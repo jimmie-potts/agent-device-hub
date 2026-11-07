@@ -220,6 +220,7 @@ try {
   await card.getByRole('button', {name: 'Apply brightness', exact: true}).click();
   await card.getByRole('status').filter({hasText: 'Uncertain result.'}).waitFor();
   const uncertainCount = sent.length;
+  assert.equal(uncertainCount, beforeDraft + 1, 'only Apply sends, exactly one brightness request');
   await page.reload(); await feed(page, 'connected');
   await card.getByRole('status').filter({hasText: 'Previous request has no confirmed result yet.'}).waitFor();
   assert.equal(await brightness.isDisabled(), true, 'a locked brightness range keeps its name');
