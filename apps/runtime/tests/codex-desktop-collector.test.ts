@@ -228,6 +228,15 @@ it('records are contract records: one failure per run, its recovery, and read st
   assert.equal(published[0]?.attributes['bunny.message.id'], sent[2]?.id);
 });
 
+/**
+ * The entry-point test's budget, above the 24 s sum of its own named waits (6 + 7 + 4 + 7 s), so a wait that runs out
+ * reports by name before the test's timeout. Two of those waits are real `HEARTBEAT_MS` cycles, and under load a
+ * heartbeat slips by one 1 s collection interval. In a Linux container capped at 1.5 CPUs with up to five busy loops
+ * beside it (44 runs), the waits took 11.1 to 13.5 s and everything else, mostly the runtime's start, at most 2.5 s;
+ * a hosted one-start test took up to 7.9 s (Hub #1455). The 11 s above the waits covers those (Hub #1522).
+ */
+const ENTRY_POINT_BUDGET_MS = 35_000;
+
 it('the entry point publishes snapshots, heartbeats and changes to a real runtime and stops on SIGTERM', async context => {
   if (process.platform !== 'linux') {
     // This exercise is kept to Linux, where CI runs it; the private-file reader works off Linux too (Hub #1355).
@@ -309,7 +318,7 @@ it('the entry point publishes snapshots, heartbeats and changes to a real runtim
   assert.equal(stdout, '');
   for (const secret of [directory, home, THREAD, 'synthetic567-archived-one', SECRET_TITLE, token, 'pc-sim']) assert.equal(stderr.includes(secret), false, 'stderr carries no path, ID, title or token');
   assertQuietRecords(stderr.split('\n').filter(line => line !== '').map(line => JSON.parse(line) as unknown), [directory, THREAD, SECRET_TITLE, token]);
-});
+}, ENTRY_POINT_BUDGET_MS);
 
 it('the entry point refuses an unusable collector or producer file with exit 2 and a fixed line', async context => {
   const directory = await scratch(context);
