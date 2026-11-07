@@ -19,7 +19,7 @@ import {artFamilies} from './art.js';
 import {rainNoticeIssue, rainNoticeRefusal, type RainNotice} from './art-notice.js';
 import type {ArtScheduleRecord} from './art-schedule.js';
 import {createHash} from 'node:crypto';
-import type {ErrorDetail, Message, MessageValidator, PayloadCheck} from './index.js';
+import {MessageValidator, type ErrorDetail, type Message, type PayloadCheck} from './index.js';
 import {defineFamily as define, registerFamilies, routedSubject, type PayloadFamily} from './registry.js';
 
 export {FAMILY_VERSION, type PayloadFamily} from './registry.js';
@@ -427,4 +427,19 @@ export const coreFamilies: readonly CoreFamily[] = [
  */
 export function registerCoreFamilies(validator: MessageValidator): void {
   registerFamilies(validator, coreFamilies);
+}
+
+let shared: MessageValidator | undefined;
+/**
+ * The process's one sealed validator with exactly the core families, compiled on first use. Compiling them takes Ajv
+ * about 50 ms on a fast machine, and a runtime that gave each of its parts its own copy blocked its event loop for
+ * seconds while starting (Hub #1503). An owner that needs more families builds its own validator.
+ */
+export function coreValidator(): MessageValidator {
+  if (shared === undefined) {
+    const validator = new MessageValidator();
+    registerCoreFamilies(validator);
+    shared = validator.seal();
+  }
+  return shared;
 }

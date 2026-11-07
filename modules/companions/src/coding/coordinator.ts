@@ -3,8 +3,8 @@
 // endpoint and reports the tracked outcome when the worker reports it started. The worker's later progress settles the
 // responsibility and reaches the task through the engine as the delegation's answer; nothing is resent, and a lost
 // worker or a restart leaves the operation uncertain rather than restarting it.
-import {MessageValidator, errorBody, isErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import {errorBody, isErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import {CODING_WORKER_SOURCE, type CodingEndpointControl, type CodingLost, type CodingProgress, type CodingResult, type CodingRun, type CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {Outcome, fullDisk, recordLog, type AddMessage, type Cancel, type Command, type ModuleContext, type Outbox, type Reply, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
 import {advanceRevision} from '../revision.js';
@@ -43,13 +43,13 @@ export function describeResult(status: 'completed' | 'failed' | 'cancelled' | 'u
 
 export class CodingCoordinator {
   readonly #store: CodingStore;
-  readonly #validator = new MessageValidator();
+  readonly #validator = coreValidator();
   readonly #subscriptions: Subscription[] = [];
   #state: CodingState = {id: 'coding', revision: 0, endpointId: null, availability: 'off', active: null};
   #active: Active | undefined;
   #closed = false;
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly deliver: Delivery) {
-    this.#store = new CodingStore(context.database()); registerCoreFamilies(this.#validator);
+    this.#store = new CodingStore(context.database());
   }
   inspect(): CodingState {return structuredClone(this.#state);}
   /** What a proposal binds to: whether a worker is available now and the revision that changes when that changes. */
