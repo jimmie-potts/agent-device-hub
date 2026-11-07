@@ -433,9 +433,11 @@ let shared: MessageValidator | undefined;
 /**
  * The process's one sealed validator with exactly the core families, compiled on first use. Compiling them takes Ajv
  * about 50 ms on a fast machine, and a runtime that gave each of its parts its own copy blocked its event loop for
- * seconds while starting (Hub #1503). An owner that needs more families builds its own validator.
+ * seconds while starting (Hub #1503). An owner that needs more families builds its own validator. The result offers
+ * only `validate`, so code that would register on the sealed instance, and throw while an owner starts, does not
+ * compile (Hub #1537).
  */
-export function coreValidator(): MessageValidator {
+export function coreValidator(): Pick<MessageValidator, 'validate'> {
   if (shared === undefined) {
     const validator = new MessageValidator();
     registerCoreFamilies(validator);
