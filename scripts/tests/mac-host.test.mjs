@@ -144,6 +144,15 @@ test('the runtime agent runs once per sign-in and the route agents stay up', () 
   assert.match(plist({...runtime, log: '/a&b'}), /\/a&amp;b/);
 });
 
+test('only the serve agent runs the app binary as the CLI, which it needs without a terminal', () => {
+  const [runtime, forwarder, serve] = agents({home: '/Users/owner', node: '/node'});
+  const variable = /<key>TAILSCALE_BE_CLI<\/key>\n {4}<string>1<\/string>/;
+  assert.match(plist(serve), variable);
+  assert.match(plist(serve), /<key>PATH<\/key>\n {4}<string>\/Users\/owner\/\.docker\/bin:/);
+  assert.doesNotMatch(plist(runtime), /TAILSCALE_BE_CLI/);
+  assert.doesNotMatch(plist(forwarder), /TAILSCALE_BE_CLI/);
+});
+
 async function fixture(t) {
   const home = await mkdtemp(join(await realpath(tmpdir()), 'bunny-mac-host-'));
   t.after(() => rm(home, {recursive: true, force: true}));
