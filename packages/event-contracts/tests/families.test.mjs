@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {MessageValidator, errorCodes} from '../dist/v2/index.js';
-import {coreFamilies, desktopFeedId, registerCoreFamilies, sessionEntityId, sessionTitle, volcanoFeedId, volcanoObservationKey} from '../dist/v2/families.js';
+import {coreFamilies, coreValidator, desktopFeedId, registerCoreFamilies, sessionEntityId, sessionTitle, volcanoFeedId, volcanoObservationKey} from '../dist/v2/families.js';
 import {consumerCopy, familyOf} from './consumer.mjs';
 
 const fixtures = JSON.parse(readFileSync(new URL('../fixtures/v2/families.json', import.meta.url), 'utf8'));
@@ -82,6 +82,22 @@ test('each family has one kind and one type, and its schema is built from the sh
     types.set(type, family);
   }
   assert.throws(() => registerCoreFamilies(v), /already registered/);
+});
+
+test('the shared core validator is one sealed validator that decides every fixture as a validator of its own does (Hub #1503)', () => {
+  const shared = coreValidator();
+  assert.equal(coreValidator(), shared, 'compiled once per process');
+  const own = validator();
+  for (const [name, message] of Object.entries(fixtures.valid)) {
+    assert.deepEqual(shared.validate(message, {nowMs: Date.parse(message.time)}), own.validate(message, {nowMs: Date.parse(message.time)}), name);
+  }
+  for (const {name, base, set} of fixtures.invalid) {
+    const message = patched(base, set);
+    assert.deepEqual(shared.validate(message, {nowMs: Date.parse(message.time)}), own.validate(message, {nowMs: Date.parse(message.time)}), name);
+  }
+  assert.throws(() => shared.register('https://bunny.invalid/events/example-extra/2.0', {type: 'object'}), /sealed validator/);
+  assert.throws(() => registerCoreFamilies(shared), /sealed validator/);
+  assert.equal(shared.validate(fixtures.valid[Object.keys(fixtures.valid)[0]]).ok, true, 'a refused registration changes nothing');
 });
 
 test('session labels admit 80 Unicode scalars and clear, and refuse invalid scalars, controls and recognizable credentials', () => {

@@ -23,10 +23,10 @@
 // - Every step is logged once, in the action's trace, and `message.received` carries the incoming message's trace.
 import {createHash, randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
-import {MessageValidator, compareDelivery, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
+import {compareDelivery, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {ART_MODULE_SOURCE, EXTENDED_ART_STAGE_SCHEMA} from '@jimmie-potts/event-contracts/v2/art';
 import {extendedArtStageSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {CORE_SOURCE, registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
+import {CORE_SOURCE, coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import {PrivateRequestDigest, SdkError,
   acknowledgmentOf, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
   type Sdk, type TraceContext, type Tracing, Outcome} from '@jimmie-potts/sdk';
@@ -208,7 +208,7 @@ export class Tracker {
   /** The dispatches and the intake's drain under way, which a stop lets finish. */
   readonly #working = new Set<Promise<unknown>>();
   readonly #admitted = new Map<string, Admission>();
-  readonly #validator = new MessageValidator();
+  readonly #validator = coreValidator();
   /** Messages the bus delivered that wait for the intake's next group, in delivery order. */
   #waiting: Message<unknown>[] = [];
   /** The intake's drain, while it runs. */
@@ -218,7 +218,6 @@ export class Tracker {
 
   constructor(options: TrackerOptions) {
     this.#options = options;
-    registerCoreFamilies(this.#validator);
   }
 
   /** Creates the tracker's table in the core store, once the core holds it. */
