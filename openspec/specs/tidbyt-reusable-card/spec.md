@@ -36,11 +36,15 @@ Read-only and control-authorized callers SHALL be able to inspect the card. Tabs
 
 ### Requirement: Owner sync has a bounded page lifetime
 
-The card SHALL consume only the Tidbyt owner's device copy through the existing shell participant. Replacement sync SHALL replace membership before presenting it as current. Failed or disconnected copies SHALL not become current merely because the shell reconnects. Unmount SHALL close active and late-arriving copies and suppress their later updates. An explicit retry SHALL perform only a read. This satisfies AC4.
+The card SHALL consume only the Tidbyt owner's device copy through the existing shell participant. Replacement sync SHALL replace membership before presenting it as current. Failed or disconnected copies SHALL not become current merely because the shell reconnects. A read refused or failed with a retryable code SHALL be read again on its own after 1 s, doubling to 30 s, until one succeeds, while the page stays mounted and connected; a non-retryable refusal SHALL wait for an explicit retry or a change of connection. Unmount SHALL close active and late-arriving copies, cancel a pending read and suppress their later updates. An explicit retry SHALL perform only a read. This satisfies AC4.
 
 #### Scenario: Reconnect before owner sync
 - **WHEN** the shell reconnects while the owner's replacement sync is held
 - **THEN** saved information stays stale until that sync completes, then its replacement membership becomes current
+
+#### Scenario: Refused read after a reconnect
+- **WHEN** the shell reconnects and the card's replacement read is refused as unavailable while the feed stays connected
+- **THEN** saved information stays stale with the refusal and Retry records shown, the read is repeated with capped backoff without user action, and the card becomes current once a replacement sync completes, with no command sent
 
 #### Scenario: Removal, retry and late copy
 - **WHEN** a device is removed from a replacement snapshot, a sync fails, or its result arrives after unmount

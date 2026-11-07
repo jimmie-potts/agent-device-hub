@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {AxeBuilder} from '@axe-core/playwright';
-import {chromium} from 'playwright';
+import {chromium, type Request} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 
 const world = await startWorld({tidbyt: true});
@@ -64,19 +64,34 @@ try {
     let release = (): void => {};
     const held = new Promise<void>(resolve => { release = resolve; });
     await page.route('**/api/sdk/v1/sync', async route => { await held; await route.continue(); });
+    const ownerSync = (request: Request): boolean => new URL(request.url()).pathname === '/api/sdk/v1/sync'
+      && (request.postDataJSON() as {owner?: string}).owner === 'bunny/modules/tidbyt';
     try {
-      const replacement = page.waitForRequest(request => new URL(request.url()).pathname === '/api/sdk/v1/sync');
+      const replacement = page.waitForRequest(ownerSync);
       world.dropDashboardStreams(); await replacement; await feed(page, 'connected');
       await card.getByText('Saved cloud evidence · stale', {exact: true}).waitFor();
       assert.equal(await card.getByText('Current cloud evidence', {exact: true}).count(), 0);
     } finally { release(); await page.unrouteAll({behavior: 'wait'}); }
     await card.getByText('Current cloud evidence', {exact: true}).waitFor();
+    // A refused owner read recovers by itself while the feed stays connected, as the shell's copies do (#1483).
+    let refusals = 0;
+    await page.route('**/api/sdk/v1/sync', async route => {
+      if (ownerSync(route.request())) { refusals++; await route.abort(); } else await route.continue();
+    });
+    try {
+      world.dropDashboardStreams(); await feed(page, 'connected');
+      await card.getByRole('alert').filter({hasText: 'Cloud records unavailable (unavailable).'}).waitFor();
+      await card.getByText('Saved cloud evidence · stale', {exact: true}).waitFor();
+    } finally { await page.unrouteAll({behavior: 'wait'}); }
+    assert.ok(refusals > 0);
+    await card.getByText('Current cloud evidence', {exact: true}).waitFor();
+    assert.equal(await card.getByRole('alert').count(), 0, 'the card recovered without Retry records');
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.reload(); await feed(page, 'connected'); await card.getByText('Current cloud evidence', {exact: true}).waitFor();
     await card.getByRole('tab', {name: 'Content', exact: true}).click();
     assert.equal(await card.getByRole('button', {name: /power|brightness|push|remove|play|screen/i}).count(), 0);
     assert.deepEqual(sent, [], 'inspection, reconnect and read-only navigation issue no command');
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({passed: true, journey: 'tidbyt-reusable-card', surfaces: surfaces.length, stationaryArtwork: true, heldOwnerSync: true, readOnly: true, phone: true, axe: true, commandRequests: sent.length}));
+    console.log(JSON.stringify({passed: true, journey: 'tidbyt-reusable-card', surfaces: surfaces.length, stationaryArtwork: true, heldOwnerSync: true, refusedOwnerRecovered: true, readOnly: true, phone: true, axe: true, commandRequests: sent.length}));
   } finally { await context.close(); }
 } finally { try { await browser.close(); } finally { await world.close(); } }
