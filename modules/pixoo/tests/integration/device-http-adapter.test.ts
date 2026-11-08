@@ -143,6 +143,37 @@ it('rejects a malformed animation ID and never resets or uploads automatically',
   expect(server.requests).toEqual([{ Command: 'Draw/GetHttpGifId' }]);
 });
 
+const hostedProfile = {name: 'hosted-test', evidence: 'observed' as const, maxFrames: 500, minDelayMs: 50, maxDelayMs: 800, uniformTiming: true, readyDelayMs: 0};
+const hostedFile = (transferred: Promise<void> = Promise.resolve()) => ({url: 'http://example.invalid/art.gif', transferred, revoke() {}});
+const fault = (error: Error) => (): never => { throw error; };
+
+it.each([
+  ['an encoder RangeError', {encode: fault(new RangeError('synthetic encoder fault')), publish: () => hostedFile()}],
+  ['a publisher TypeError', {encode: () => new Uint8Array(8), publish: fault(new TypeError('synthetic publisher fault'))}],
+])('reports %s before any mutating send as a no-effect failure, not a device answer (#1504)', async (_, local) => {
+  const commands: string[] = [];
+  const device = new HttpDeviceAdapter({ip: '192.168.1.2', profile: hostedProfile, hosted: {files: {publish: local.publish}, encode: local.encode}}, body => {
+    commands.push(String(body.Command)); return Promise.resolve({error_code: 0});
+  });
+  cleanup.push(async () => { await device.close(); });
+  expect(await device.uploadAnimation({frames: [rgbFrame(1, 100), rgbFrame(2, 100)]}, {generation: 0}))
+    .toMatchObject({ok: false, code: 'upload-failed', priorEffects: 'none'});
+  expect(commands).toEqual([]);
+});
+
+it('keeps a failure after the first mutating send, or from the transport itself, as an unreadable answer', async () => {
+  const transferred = Promise.reject(new TypeError('synthetic transfer fault'));
+  transferred.catch(() => {});
+  const hosted = new HttpDeviceAdapter({ip: '192.168.1.2', profile: hostedProfile, hosted: {files: {publish: () => hostedFile(transferred)}, encode: () => new Uint8Array(8)}},
+    () => Promise.resolve({error_code: 0}));
+  const reader = new HttpDeviceAdapter({ip: '192.168.1.2', profile: SPIKE_PROFILE}, () => Promise.reject(new TypeError('synthetic transport fault')));
+  cleanup.push(async () => { await Promise.all([hosted.close(), reader.close()]); });
+  expect(await hosted.uploadAnimation({frames: [rgbFrame(1, 100), rgbFrame(2, 100)]}, {generation: 0}))
+    .toMatchObject({ok: false, code: 'protocol-error', priorEffects: 'possible'});
+  expect(await reader.uploadAnimation({frames: [rgbFrame(1, 500)]}, {generation: 0}))
+    .toMatchObject({ok: false, code: 'protocol-error', priorEffects: 'none'});
+});
+
 it.each([21, 59, 60])('enforces the documented direct command boundary at %i frames on the stored smoke route', async count => {
   const commands: Record<string, unknown>[] = [];
   const device = new HttpDeviceAdapter({ip: '192.168.1.2', profile: {...PIXOO64_SMOKE_PROFILE, evidence: 'observed', readyDelayMs: 0}}, body => {

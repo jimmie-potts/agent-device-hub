@@ -164,7 +164,11 @@ export class HttpDeviceAdapter implements DeviceAdapter {
       const context: Context = {signal:controller.signal,check:()=>{const code=interrupted();if(code!==undefined)throw new DeviceRequestError(code);},send: async (body, mutating = false) => {
         const code = interrupted(); if (code !== undefined) throw new DeviceRequestError(code);
         if (mutating) priorEffects = 'possible';
-        const response = await this.transport(body, controller.signal);
+        let response: Record<string, unknown>;
+        // The transport classifies every answer it reads. Anything else it throws still concerns a request that may have
+        // reached the Pixoo, so it stays an unreadable answer rather than a local failure.
+        try { response = await this.transport(body, controller.signal); }
+        catch (error) { throw error instanceof DeviceRequestError ? error : new DeviceRequestError('protocol-error'); }
         const after = interrupted(); if (after !== undefined) throw new DeviceRequestError(after);
         return response;
       } };
@@ -172,9 +176,11 @@ export class HttpDeviceAdapter implements DeviceAdapter {
         startedAtMs = this.clock.now();
         const code = interrupted();
         if (code !== undefined) { finish(undefined, new DeviceRequestError(code)); return; }
+        // Any other throw is local. Before the first mutating send, such as from the encoder or the file publisher, it
+        // reached nothing and fails with no effect, as the player's own pre-send failures do; after it, the result is unknown.
         void run(context).then(value => finish(value), error => finish(undefined,
           error instanceof DeviceRequestError ? error : new DeviceRequestError(
-            error instanceof MediaError && error.code === 'storage-limit' ? 'too-large' : 'protocol-error')));
+            error instanceof MediaError && error.code === 'storage-limit' ? 'too-large' : priorEffects === 'none' ? 'upload-failed' : 'protocol-error')));
       } };
       if (!valid || !integer(generation, 0, Number.MAX_SAFE_INTEGER) || !Number.isFinite(timeoutMs) || timeoutMs <= 0 || !Number.isFinite(deadline)) {
         finish(undefined, new DeviceRequestError('invalid-input')); return;
