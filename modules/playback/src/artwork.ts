@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import type {PlaybackArtwork} from '@jimmie-potts/event-contracts/v2/families';
 import {SdkError, type Scheduler} from '@jimmie-potts/sdk';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import {ARTWORK_DECODE_MS, ARTWORK_FETCH_MS, artworkFailure, artworkUrl, createArtworkFetch, type ArtworkFetch, type ArtworkResult, type ArtworkSource} from './artwork-fetch.js';
+import {ARTWORK_DECODE_MS, ARTWORK_FETCH_MS, artworkFailure, artworkIdentity, artworkUrl, createArtworkFetch, type ArtworkFetch, type ArtworkResult, type ArtworkSource} from './artwork-fetch.js';
 import type {ArtworkDecode, ArtworkThumbnail} from './artwork-decode.js';
 
 export type ArtworkObservation = {status: string; title?: string; artist?: string; album?: string; thumbnailUrl?: string};
@@ -24,7 +24,7 @@ export class ArtworkController {
   readonly #fetch: ArtworkFetch;
   #association: string | undefined;
   #artwork: PlaybackArtwork | undefined;
-  #rawCandidate: string | undefined;
+  #candidateIdentity: string | undefined;
   #candidate: Candidate | undefined;
   #sequence = 0;
   #running = false;
@@ -73,9 +73,10 @@ export class ArtworkController {
     }
     if (this.#artwork === undefined) return;
     const raw = observation.thumbnailUrl;
-    if (raw !== this.#rawCandidate) {
+    const identity = artworkIdentity(raw, view.kind);
+    if (identity !== this.#candidateIdentity) {
       this.#clear();
-      this.#rawCandidate = raw;
+      this.#candidateIdentity = identity;
       this.#artwork = {status: 'missing', generation: this.#artwork.generation};
       const url = artworkUrl(raw, view.endpoint, view.kind);
       if (url !== undefined) this.#candidate = {source: view.kind, url, endpoint: view.endpoint, generation: this.#artwork.generation, sequence: this.#sequence, attempts: 0};
@@ -87,7 +88,7 @@ export class ArtworkController {
   #clear(): void {
     this.#sequence += 1;
     this.#candidate = undefined;
-    this.#rawCandidate = undefined;
+    this.#candidateIdentity = undefined;
     this.#retry?.();
     this.#retry = undefined;
   }
