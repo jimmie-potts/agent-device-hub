@@ -22,7 +22,7 @@ The Pixoo is the only Hub-mode participant with its own mode vocabulary. Work an
 - `bunny-power-schedules`: the content-mode precondition becomes an optional Hub-mode precondition checked by the core; `requireMode` is no longer sent.
 - `runtime-hub-mode`: the fan-out mapping is one to one for both participants.
 - `bunny-runtime`: the art policy's "Empty Media remains eligible" scenario becomes "the status base remains eligible".
-- `runtime-dashboard`: content controls refuse in Work from the command outcome instead of a Media gate.
+- `runtime-dashboard`: the dashboard reads the Pixoo's mode and base from the advertised Hub mode and `pixoo-display/2.1` and gates content controls by Work instead of Media; this reader adaptation ships with #1574 so main never pairs a module and a dashboard that disagree, while the visible redesign is #1575.
 
 ## Impact
 

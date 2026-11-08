@@ -10,7 +10,8 @@
 - [ ] 2.3 Replace the Monitor/Media presentation with the status and playback bases, Now Playing pop-up in every mode and whole takeover in Free and Quiet only; failing then passing `monitor-presentation.test.ts`, `now-playing-presentation.test.ts` and `monitor-content.test.ts`.
 - [ ] 2.4 Refuse playback starts in Work and any `requireMode` at admission, cancel a capturing start when Work arrives; failing then passing `module.test.ts` and `control.test.ts`.
 - [ ] 2.5 Admit moments and exact art per base with cover-status required in Work only, remove the empty-pause branches; failing then passing `moment-presentation.test.ts`, `art.test.ts` and `artwork-admission.test.ts`.
-- [ ] 2.6 Publish `pixoo-display/2.1` and `moments.overStatus`, rename the switch, update the module README and the frontend pages' wording for the record change (the dashboard work is #1575).
+- [ ] 2.6 Publish `pixoo-display/2.1` and `moments.overStatus`, rename the switch and update the module README; failing then passing `conformance.test.ts` and `module.test.ts` on the record shape, and a README readback by the reviewer.
+- [ ] 2.7 Adapt the runtime dashboard reader to `pixoo-display/2.1` and the advertised Hub mode (`devices.ts` `contentBlocked`, the `mode-exceptions.ts` reverse map, the Pixoo frontend pages' record reads) without the visible redesign, which is #1575; failing then passing `apps/runtime/dashboard/tests/devices.test.ts`, `mode-exceptions.test.ts` and the Pixoo browser tests on the fixture runtime.
 
 ## 3. Core
 

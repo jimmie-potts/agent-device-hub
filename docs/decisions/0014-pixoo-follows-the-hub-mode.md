@@ -6,8 +6,11 @@ Status: Accepted for
 owner decision of 2026-11-08. Amends [ADR 0005](0005-general-device-controls.md)
 (its vocabulary and its rule that no common device-mode enum exists) and
 [ADR 0013](0013-pixoo-moment-interludes.md) (moments over Monitor and over
-Media). Withdraws the owner's 2026-11-05 empty-Media amendment recorded in
-[#1288](https://github.com/jimmie-potts/agent-device-hub/issues/1288#issuecomment-6650127516).
+Media). Withdraws both of ADR 0013's 2026-11-05 amendments: the empty-Media
+amendment recorded in
+[#1288](https://github.com/jimmie-potts/agent-device-hub/issues/1288#issuecomment-6650127516)
+and Amendment 2's stopped-item rules, whose "a Monitor visit pauses the item"
+no longer has a Monitor visit to refer to.
 Implementation, installation and physical acceptance remain in the linked
 issues: #1574 (contracts and module),
 [#1575](https://github.com/jimmie-potts/agent-device-hub/issues/1575) (runtime
@@ -56,9 +59,11 @@ Hub-mode fan-out, and a mode is policy only.
   nothing resumes automatically when Free returns (ADR 0005, "nothing restores
   automatically"). Free admits everything. Quiet admits what Free admits.
 - **Quiet brightness.** Quiet applies the owner's Quiet brightness from the
-  `pixoo` section and, on leaving, restores the brightness last requested before
-  Quiet. A brightness command during Quiet is honoured and persists until the
-  next mode command, as ADR 0005 already says of the Nanoleaf. Work and Free set
+  `pixoo` section (`quietBrightness`, 1 to 100, default 20) and, on leaving,
+  restores the brightness last requested before Quiet. A brightness command
+  during Quiet is honoured and persists until the next mode command, which
+  reapplies the mode's policy, as ADR 0005 already says of the Nanoleaf: a
+  Quiet command received in Quiet rewrites the Quiet level. Work and Free set
   no brightness of their own. What Quiet means elsewhere is unchanged: the core
   still blocks event-rule moments to a Quiet target, companions still refuse
   speech, the Nanoleaf still goes steady, and scheduled art still follows the
@@ -70,8 +75,11 @@ Hub-mode fan-out, and a mode is policy only.
   the one setting. Over the playback base, a playing item pauses and resumes in
   place, and a paused item refuses, since nothing can repaint it. The time box,
   the single blank frame, the no-replay rule and the Now Playing precedence of
-  ADR 0013 stay. The empty-pause rule and the 2026-11-05 amendment are
-  withdrawn, because the state they governed no longer exists.
+  ADR 0013 stay. The empty-pause rule and both 2026-11-05 amendments are
+  withdrawn, because the states they governed no longer exist: a stopped or
+  finished item is no longer a base of its own but a retained item behind the
+  status base, resumable in Free, and no view change pauses it. Screen off
+  still pauses, as ADR 0005 says.
 - **Contracts.** The Pixoo's `device` record advertises `work`, `free` and
   `quiet` and reports the Hub mode as `desired.mode`; `device-mode-set/2.0`
   carries them unchanged in shape; the shared table maps the Pixoo one to one.

@@ -237,7 +237,9 @@ infrastructure and the cross-device dashboard, including the shared device art
 that dashboard draws ([ADR 0007](decisions/0007-bunny-shell.md)).
 
 Pixoo owns its media library, renditions, player, 64x64 status renderer,
-Monitor/Media policy and serialized device writer. Nanoleaf owns its Python
+Work/Free/Quiet policy over its status and playback bases
+([ADR 0014](decisions/0014-pixoo-follows-the-hub-mode.md)) and serialized
+device writer. Nanoleaf owns its Python
 light-writing worker, geometry, Line allocation, spatial effects,
 Work/Quiet/Free policy, scene restoration and advanced wall editor. The retained legacy Nanoleaf implementation uses separate Python services in WSL;
 the earlier Windows installation and Linux transition are historical boundaries.
@@ -628,7 +630,9 @@ active state owner.
 The first dashboard shows sessions, attention, freshness, capabilities, device
 modes, pending changes and last update outcomes, with explicit supported controls.
 It links to existing advanced editors. A global mode must not silently replace
-Nanoleaf Work/Quiet/Free or Pixoo Monitor/Media intent.
+Nanoleaf Work/Quiet/Free intent or, before
+[ADR 0014](decisions/0014-pixoo-follows-the-hub-mode.md) retired the pair,
+Pixoo Monitor/Media intent.
 
 The current shared frontend in apps/runtime/dashboard is B.U.N.N.Y.'s central interface.
 The retained apps/dashboard implementation supplies the historical #6 pattern below. It uses

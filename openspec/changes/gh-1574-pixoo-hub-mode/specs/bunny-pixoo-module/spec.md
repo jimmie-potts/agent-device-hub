@@ -2,7 +2,7 @@
 
 ### Requirement: Work set and Quiet brightness
 
-The Pixoo SHALL take Work, Free and Quiet as its native modes, each set only by `device-mode-set`, and SHALL remember the last mode it was given across restarts, Free before any. A mode SHALL be policy only: it SHALL NOT select the content and SHALL NOT pause the player. In Work the module SHALL admit the status base, the Now Playing pop-up and moments or exact art whose request may cover status, and SHALL refuse a `media-start`, a `pixoo-media-show`, a resume and a restart-with-changes with `invalid-state` and a detail naming Work; a `device-mode-set` to Work while the player holds an active or paused item SHALL stop the player and return the status base, and nothing SHALL resume when Free returns. In Free the module SHALL admit everything it offers. In Quiet it SHALL admit what Free admits and SHALL write the configured Quiet brightness once on entry, remembering the brightness last requested before Quiet and writing that once on leaving Quiet; a `brightness-set` during Quiet SHALL be honoured and SHALL persist until the next `device-mode-set`. Work and Free SHALL write no brightness. Startup, restart and sync SHALL apply no mode and write nothing. A mode command that changes no pixels SHALL complete `succeeded` with `observed`; one that stops playback or writes brightness SHALL complete as that write under the module's existing outcome rules, with no retry, and an uncertain one SHALL leave the saved mode in place so the next mode command writes fresh.
+The Pixoo SHALL take Work, Free and Quiet as its native modes, each set only by `device-mode-set`, and SHALL remember the last mode it was given across restarts, Free before any. A mode SHALL be policy only: it SHALL NOT select the content and SHALL NOT pause the player. In Work the module SHALL admit the status base, the Now Playing pop-up and moments or exact art whose request may cover status, and SHALL refuse a `media-start`, a `pixoo-media-show`, a resume and a restart-with-changes with `invalid-state` and a detail naming Work; a `device-mode-set` to Work while the player holds an active or paused item SHALL stop the player and return the status base, and nothing SHALL resume when Free returns. In Free the module SHALL admit everything it offers. In Quiet it SHALL admit what Free admits and SHALL write the configured Quiet brightness once on entry, remembering the brightness last requested before Quiet and writing that once on leaving Quiet; a `brightness-set` during Quiet SHALL be honoured and SHALL persist until the next `device-mode-set`, so a Quiet command received while already in Quiet reapplies the Quiet brightness, while a Work or Free command received in that same mode writes nothing. Work and Free SHALL write no brightness. Startup, restart and sync SHALL apply no mode and write nothing. A mode command that changes no pixels SHALL complete `succeeded` with `observed`; one that stops playback or writes brightness SHALL complete as that write under the module's existing outcome rules, with no retry, and an uncertain one SHALL leave the saved mode in place so the next mode command writes fresh.
 
 #### Scenario: A mode is policy only
 - **WHEN** the Hub fans out Free, then Quiet, then Work to a Pixoo showing the status base with nothing loaded
@@ -330,6 +330,70 @@ Pixoo SHALL declare `moments.art` when its configured profile admits the impleme
 #### Scenario: Existing admission wins
 - **WHEN** attention, a Now Playing takeover, a paused item, Work without permission to cover status, or another existing moment gate refuses exact art
 - **THEN** the current display intent is preserved with no queued replay
+
+### Requirement: Exact Pixoo art can carry a deterministic forecast notice
+The Pixoo SHALL advertise rain-notice support only with a renderer that shows a fixed readable forecast annotation beside exact saved art on 64×64. Notice-bearing moments SHALL require that capability, closed bounded data and evidence valid through the latest permitted start and intended hold, rechecked before a delayed first write. The annotation SHALL distinguish a forecast from an observation and chance from likely rain, preserve the exact staged composition identity and bytes, and use no free caller/provider text. The two bases and their admission rules, a paused item, attention, owner pins, Now Playing precedence, start-window checks and current-base restoration SHALL remain unchanged. A notice SHALL grant no mode change and no admission the base rules refuse.
+
+#### Scenario: Forecast art in an eligible presentation
+- **WHEN** an eligible Pixoo receives the default 10-second exact art moment and a rain notice valid through that hold
+- **THEN** its native-size frames show the readable fixed annotation outside the fitted decorative image and its normal end returns to the base current at that time
+
+#### Scenario: A factual appearance is unsupported or superseded
+- **WHEN** notice support is absent, evidence becomes invalid before admission, or a paused item or manual takeover wins
+- **THEN** the target reports refusal or its typed terminal outcome without silently stripping the label, changing mode or restoring an obsolete base
+
+#### Scenario: The selected route cannot carry the labelled art
+- **WHEN** the hosted route's 256-color GIF palette cannot hold the annotation beside an otherwise admissible exact original
+- **THEN** the moment fails `unsupported-capability` with no transmission evidence, before any file is published or command sent
+- **AND** the current base stays current, so the status base is not suspended by that refusal
+
+#### Scenario: Transport consumes the forecast hold
+- **WHEN** a slow upload or push consumes the remaining notice validity after effects begin
+- **THEN** the existing owner caps its hold at source stale time or forecast end and reports an interrupted/cancelled attempt rather than completion of the full requested duration
+- **AND** current-base restoration retains its own failed or uncertain evidence without resend or a claim that physical pixels cleared
+
+### Requirement: Pixoo animation admission follows the selected command
+
+The Pixoo SHALL preserve originals, immutable renditions and ordered frames with their delays for local preview. It SHALL bound input bytes, source and scaled decoded pixels, storage, worker time and queue capacity. Physical playback SHALL use the configured command route with uniform timing. Direct raw uploads SHALL admit at most 59 frames and refuse a larger count before a device write with a route-specific explanation. Whole-GIF playback SHALL admit 64×64 GIF renditions within the existing lossless encoding and resource budgets without imposing a frame-count ceiling. Existing named configurations SHALL retain their selected route, and existing renditions and playlist references SHALL remain readable under their original identities.
+
+#### Scenario: Direct commands at the documented boundary
+
+- **WHEN** a direct configuration receives uniform animations of 21, 59 and 60 frames
+- **THEN** the first two reach its writer with every frame and offset, and the third is refused before a write with the direct route limit
+- **AND** no hosted listener is required or selected
+
+#### Scenario: A rain notice follows the route's limit
+
+- **WHEN** a direct configuration plays a rain-labelled exact-art moment of 21 frames
+- **THEN** every labelled frame reaches its writer and the moment reports its device evidence
+- **AND** the label adds no frame ceiling beyond the selected route's own limit and the frame budget
+
+#### Scenario: Long library and hosted animation
+
+- **WHEN** an admitted animation contains more than a thousand frames
+- **THEN** the catalog and preview include the final frame and its source timing, and a uniformly timed losslessly representable version reaches the explicitly configured hosted writer
+- **AND** physical admission leaves the original and mixed-delay preview available
+
+#### Scenario: Resource refusal and compatibility
+
+- **WHEN** a small source canvas would expand past the decoded-pixel budget or an immutable manifest exceeds storage bounds
+- **THEN** rendering reports the exhausted resource and preserves previously committed media
+- **WHEN** an existing installation reopens old rendition and playlist references
+- **THEN** their original identities and selected route remain readable
+
+#### Scenario: A playback dwell exceeds one native timer interval
+
+- **WHEN** physical playback holds one item for longer than the largest native timer interval
+- **THEN** the player preserves its generation and dwell until the requested elapsed duration
+- **AND** a pause or replacement cancels the remaining wait without advancing the superseded item
+
+#### Scenario: Hosted bytes and filesystem capacity
+
+- **WHEN** the losslessly encoded whole GIF exceeds the listener’s single-file budget
+- **THEN** the library keeps its original and preview, reports incompatibility, and playing or staging it reports `too-large` before a write
+- **AND** an art moment refused this way over the status base records no device evidence and leaves the status base current
+- **WHEN** an admissible file cannot be stored because the filesystem or quota is full
+- **THEN** the operation reports `capacity` and preserves previous media
 
 ## REMOVED Requirements
 
