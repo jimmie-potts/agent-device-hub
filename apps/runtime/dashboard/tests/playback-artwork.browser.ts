@@ -264,6 +264,54 @@ try {
     });
     await frame(await current({title: 'Identical candidate text', artwork: 'ready'}), [200, 20, 20, 255]);
     checks.push('same-generation replacement');
+    // #1569: a new revision of the same owner's generation keeps the loaded picture until its own reference loads.
+    const keptImage = async (change: () => void, wanted: Wanted, pixel: number[]): Promise<void> => {
+      const before = await current({artwork: 'ready', availability: 'available'}); await frame(before, pixel);
+      const old = await image.elementHandle(); assert.ok(old);
+      const entered = latch<string>(), release = latch<void>(), ended = latch<void>(); let first = true;
+      const handler = async (route: Route): Promise<void> => {
+        if (!first) {await route.continue(); return;} first = false;
+        try {
+          const response = await route.fetch(); entered.resolve(route.request().url()); await release.wait;
+          await route.fulfill({response}); ended.resolve();
+        } catch (error) {entered.reject(error); ended.reject(error);}
+      };
+      void ended.wait.catch(() => {});
+      // Record every DOM change and frame in which the card shows no decoded, visible image.
+      await page.evaluate(() => {
+        const box = (): Element | null => document.querySelector('article[aria-label="Music living-room"] .playback-artwork');
+        const shown = (): boolean => {
+          const art = box(), placeholder = art?.querySelector('.music-placeholder');
+          return art instanceof HTMLElement && art.dataset.loaded === 'true' && placeholder instanceof Element && getComputedStyle(placeholder).visibility === 'hidden'
+            && [...art.querySelectorAll('img')].some(img => img.complete && img.naturalWidth > 0 && getComputedStyle(img).visibility === 'visible');
+        };
+        const probe = window as unknown as {artworkGaps: number; artworkProbe?: () => void};
+        probe.artworkGaps = 0;
+        const sample = (): void => {if (!shown()) probe.artworkGaps++;};
+        const observer = new MutationObserver(sample);
+        observer.observe(document.body, {subtree: true, childList: true, attributes: true});
+        let frameId = requestAnimationFrame(function tick() {sample(); frameId = requestAnimationFrame(tick);});
+        probe.artworkProbe = () => {observer.disconnect(); cancelAnimationFrame(frameId);};
+      });
+      await page.route(imagePattern, handler);
+      try {
+        change(); const url = await bounded(entered.wait, 'same-generation revision image');
+        const after = await current({...wanted, artwork: 'ready', after: before.revision});
+        assert.equal(after.artwork?.generation, before.artwork?.generation); assert.equal(new URL(url).pathname, pathOf(after));
+        assert.equal(await old.evaluate(node => node.isConnected), true, 'the loaded picture stays mounted while the next revision loads');
+        assert.equal(await old.isVisible(), true, 'the loaded picture stays visible while the next revision loads');
+        assert.equal(await card.locator('.music-placeholder').isVisible(), false, 'no placeholder while the same picture reloads');
+        release.resolve(); await bounded(ended.wait, 'same-generation release');
+        await frame(after, pixel);
+        assert.equal(await old.evaluate(node => node.isConnected), false, 'the replacement retires the earlier revision once it loads');
+        assert.equal(await page.evaluate(() => {const probe = window as unknown as {artworkGaps: number; artworkProbe: () => void}; probe.artworkProbe(); return probe.artworkGaps;}), 0,
+          'the card never showed the placeholder across the revision');
+      } finally {release.resolve(); await bounded(ended.wait, 'same-generation cleanup').catch(() => {}); await page.unroute(imagePattern, handler); await old.dispose();}
+    };
+    await keptImage(() => {speakers.pause('sony');}, {player: 'paused'}, [200, 20, 20, 255]);
+    await keptImage(() => {speakers.play('sony');}, {player: 'playing'}, [200, 20, 20, 255]);
+    assert.deepEqual(sent, [], 'receiver-side pause and resume send no command');
+    checks.push('same-generation revisions keep the picture');
     // Source identity changes although every displayed metadata field remains identical.
     await heldImage(() => {select('Identical speaker text');}, async (a, old) => {
       speakers.stop('sony'); speakers.play('sonos', {title: titleOf(a), artist: ARTIST});
