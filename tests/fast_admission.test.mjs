@@ -8,7 +8,7 @@ const select = paths => selectChecks({ event: 'pull_request', paths, complete: t
 test('ordinary presentation keeps core consumers and admits without broad catalog jobs', () => {
   const result = select(presentation);
   assert.equal(result.mode, 'focused');
-  assert.deepEqual(result.groups, ['runtime', 'maintenance']);
+  assert.deepEqual(result.groups, ['runtime']);
   // The runtime's unit and scenario suites keep running for presentation changes, in their own jobs since #1506.
   assert.deepEqual(result.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: false, 'app-verify': false, 'runtime-verify': false });
 });
@@ -59,7 +59,7 @@ test('existing module presentation assets use their actual src/frontend paths', 
     'modules/reachy-mini/src/frontend/reachy.css', 'modules/nanoleaf/src/frontend/wall.css']) {
     const result = select([path]);
     assert.equal(result.mode, 'focused', path);
-    assert.deepEqual(result.groups, ['runtime', 'maintenance', 'modules'], path);
+    assert.deepEqual(result.groups, ['runtime', 'modules'], path);
     assert.equal(result.jobs['app-verify'], false, path);
     assert.equal(result.jobs['runtime-verify'], false, path);
     assert.equal(result.jobs['runtime-unit'], true, path);

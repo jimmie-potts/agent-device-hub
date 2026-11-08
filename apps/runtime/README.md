@@ -1883,8 +1883,7 @@ record of profile 1.7, built by the contract's `createRecord`: `schema_version`,
 in namespace `bunny`, `service.version` (the package's version), a
 `service.instance.id` that each process draws once and shares with its
 watchdog thread, and `deployment.environment.name` from `--environment`.
-Maintenance intake reads these lines with the contract's validator. Beside the
-stdout ready line, which keeps its own contract, the process writes a
+Beside the stdout ready line, which keeps its own contract, the process writes a
 `runtime.ready` record. `runtime.started` and `runtime.edge.serving` carry the
 listener's port (`server.port`), never its URL, and `runtime.stopped` counts the
 records the writer dropped (`bunny.telemetry.dropped_count`) and the sink lost

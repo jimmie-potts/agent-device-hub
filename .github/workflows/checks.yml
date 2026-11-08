@@ -92,10 +92,6 @@ jobs:
           STANDALONE_OWNERS: ${{ needs.select.outputs.owners }}
           STANDALONE_HEAD: ${{ needs.select.outputs.head }}
         run: node scripts/ci-selection/run-standalone.mjs
-      - if: contains(fromJSON(needs.select.outputs.groups), 'maintenance')
-        run: npm run test:maintenance:built
-      - if: contains(fromJSON(needs.select.outputs.groups), 'maintenance')
-        run: npm run test:maintenance:package:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')

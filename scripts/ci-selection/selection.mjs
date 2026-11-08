@@ -6,7 +6,7 @@ import {standaloneOwners,OWNERS} from './standalone.mjs';
 // This module has no dependencies, because the select and gate jobs run it without `npm ci`.
 
 /** Check groups, in the order reports list them. Each conditional step in checks.yml names exactly one. */
-export const GROUPS = Object.freeze(['runtime', 'maintenance', 'modules', 'chompi', 'shared']);
+export const GROUPS = Object.freeze(['runtime', 'modules', 'chompi', 'shared']);
 
 /** Jobs that run only when one of their groups is selected; core always runs build, typecheck and lint. */
 export const JOBS = Object.freeze({
@@ -34,15 +34,14 @@ const RULES = Object.freeze([
   ['modules/onn/**', [], 'hibernated ONN source'],
   ['apps/bb8-windows/**', [], 'hibernated BB-8 helper source'],
   ['scripts/package-bb8.mjs.hibernated', [], 'hibernated BB-8 packaging source'],
-  // The runtime composes active modules, and maintenance imports the runtime.
+  // The runtime composes active modules.
   // The collector's allowlist and entry, which the adapter's tests in the Volcano suite depend on.
-  ['apps/runtime/src/collector/volcano.ts', ['modules', 'runtime', 'maintenance'], 'the Volcano collector, which the modules group tests with its adapter'],
-  ['apps/runtime/bin/volcano-collector.mjs', ['modules', 'runtime', 'maintenance'], 'the Volcano collector, which the modules group tests with its adapter'],
-  ['apps/runtime/**', ['runtime', 'maintenance'], 'the runtime and its maintenance consumer'],
-  ['modules/**', ['modules', 'runtime', 'maintenance'], 'a module, the runtime that composes it and maintenance'],
+  ['apps/runtime/src/collector/volcano.ts', ['modules', 'runtime'], 'the Volcano collector, which the modules group tests with its adapter'],
+  ['apps/runtime/bin/volcano-collector.mjs', ['modules', 'runtime'], 'the Volcano collector, which the modules group tests with its adapter'],
+  ['apps/runtime/**', ['runtime'], 'the runtime'],
+  ['modules/**', ['modules', 'runtime'], 'a module and the runtime that composes it'],
   // The collector's Bluetooth binding: the Volcano suite holds its tests, and its interface is the runtime's.
   ['apps/volcano-collector/**', ['modules', 'runtime'], 'the Volcano collector binding'],
-  ['apps/maintenance/**', ['maintenance'], 'maintenance, which nothing imports'],
   // The bridge, its protocol fixtures and the controller firmware use only one another.
   ['apps/chompi-bridge/**', ['chompi'], 'the CHOMPI bridge'],
   ['packages/chompi-protocol/**', ['chompi'], 'the CHOMPI protocol, used only by the bridge and firmware'],

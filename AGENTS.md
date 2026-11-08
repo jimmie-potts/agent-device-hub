@@ -71,10 +71,6 @@ perform the equivalent design, regression-test or editorial checks directly.
 Do not copy or install skills without a separate setup request. The shared
 deliver-work method remains explicit-invocation only.
 
-This repository does not participate in the nightly queue (#734). No shared
-nightly claim or client wrapping is required. Preserve one writer per checkout,
-installation and physical device.
-
 Use one coordinating writer and an isolated branch/worktree per deliverable.
 Independent deliverables proceed in parallel under
 [Parallel delivery](docs/sdlc.md#parallel-delivery). Coordinate concrete interface
