@@ -18,9 +18,9 @@ async function flush(clock: ManualClock): Promise<void> {for (let n = 0; n < 100
 async function run(clock: ManualClock, monitor: MonitorPresentation, ms: number): Promise<void> {
   for (let n = 0; n < ms; n += 100) {clock.advance(100); monitor.tick(); await flush(clock);}
 }
+/** The status base, which rests on the display while the player holds no item (ADR 0014). */
 async function monitorMode(clock: ManualClock, monitor: MonitorPresentation): Promise<void> {
   monitor.submit(present(syntheticDashboardViews()[3]).view);
-  await monitor.configure({operation: 'mode', mode: 'monitor'});
   await run(clock, monitor, 1100);
 }
 async function artworkContext(observation: string): Promise<CardContext> {
@@ -199,7 +199,7 @@ it('retains possible partial effects from an internally cancelled card', async (
   } finally {await player.close();}
 });
 
-it('invalidates the queued presentation card on a same-text handoff without suspending Monitor', async () => {
+it('invalidates the queued presentation card on a same-text handoff without suspending the status base', async () => {
   const clock = new ManualClock(), device = new FakeDeviceAdapter({clock, latencyMs: 1000});
   const player = await Player.open({device, clock, store: new MemoryPlaybackStore()});
   const monitor = new MonitorPresentation(player, {save: async () => {}, clock: () => clock.now(),
@@ -220,7 +220,8 @@ it('invalidates the queued presentation card on a same-text handoff without susp
     const frames = device.effects.slice(cut).filter(e => e.kind === 'frame');
     expect(frames.some(e => e.kind === 'frame' && e.frame.rgb[0] === 11)).toBe(false);
     expect(frames.at(-1)).toMatchObject({frame: {rgb: frame(22)}});
-    expect(player.getState()).toMatchObject({generation: before.generation, intent: 'paused', lastError: null});
+    // The status base pauses nothing: the player stays stopped (ADR 0014).
+    expect(player.getState()).toMatchObject({generation: before.generation, intent: 'stopped', lastError: null});
     expect(monitor.status().participating).toBe(true);
   } finally {await monitor.close(); await player.close();}
 });

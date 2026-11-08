@@ -28,7 +28,12 @@ export type PixooConfig = {
   nowPlaying?: NowPlayingSetting;
   /** The `playback/2.0` record Now Playing follows; by default the playback owner's first. */
   playback?: string;
+  /** The brightness Quiet applies (ADR 0014), 1 to 100, so a mode change never blanks the panel. */
+  quietBrightness: number;
 };
+
+/** The Quiet brightness when the section names none. */
+export const DEFAULT_QUIET_BRIGHTNESS = 20;
 
 const ROUTING_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -48,13 +53,14 @@ export const profilesFor = (simulated: boolean): readonly Readonly<MediaProfile>
 /**
  * Checks the module's section. `device` names the Pixoo's routing ID, its private IPv4 address and an observed profile
  * (or, for a simulated transport, the simulator's); the hosted profile also needs `hostedGif`. `presentation` and
- * `nowPlaying` are the settings to begin with, and `playback` the playback record Now Playing follows. The Pixoo's local
+ * `nowPlaying` are the settings to begin with, `playback` the playback record Now Playing follows, and `quietBrightness` the
+ * brightness Quiet applies. The Pixoo's local
  * API takes no token, so the module reads no secret its section may name. A refusal names the field, never its value.
  */
 export function configurePixoo(section: unknown, {simulated}: {simulated: boolean}): Configured<PixooConfig> | ErrorBody {
   // The runtime checks the `secrets` member itself; the Pixoo's local API takes no token, so the module reads none.
-  const {device, hostedGif, presentation, nowPlaying, playback, secrets: _secrets, ...rest} = isObject(section) ? section : {};
-  if (!isObject(section) || Object.keys(rest).length > 0) return refuse('the section has device, hostedGif, presentation, nowPlaying, playback and secrets only');
+  const {device, hostedGif, presentation, nowPlaying, playback, quietBrightness, secrets: _secrets, ...rest} = isObject(section) ? section : {};
+  if (!isObject(section) || Object.keys(rest).length > 0) return refuse('the section has device, hostedGif, presentation, nowPlaying, playback, quietBrightness and secrets only');
   if (!isObject(device)) return refuse('the section needs a device');
   const {id, label, address, profile, model, firmware, ...extra} = device;
   if (Object.keys(extra).length > 0) return refuse('device has id, label, address, profile, model and firmware only');
@@ -78,8 +84,12 @@ export function configurePixoo(section: unknown, {simulated}: {simulated: boolea
     }
   }
   if (chosen.name === HOSTED_PROFILE && hosted === undefined && !simulated) return refuse('the hosted profile needs hostedGif');
+  // A version 1 presentation may carry the retired Monitor/Media mode, which the parse drops (ADR 0014).
   const shown = presentation === undefined ? undefined : presentationConfiguration.safeParse(presentation);
   if (shown?.success === false) return refuse('presentation must be a version 1 presentation configuration');
+  if (quietBrightness !== undefined && (typeof quietBrightness !== 'number' || !Number.isInteger(quietBrightness) || quietBrightness < 1 || quietBrightness > 100)) {
+    return refuse('quietBrightness must be an integer from 1 to 100');
+  }
   const media = nowPlaying === undefined ? undefined : nowPlayingSetting.safeParse(nowPlaying);
   if (media?.success === false) return refuse('nowPlaying must be a version 1 Now Playing setting');
   if (playback !== undefined && (typeof playback !== 'string' || playback.length > 128 || !ROUTING_ID.test(playback))) {
@@ -94,6 +104,7 @@ export function configurePixoo(section: unknown, {simulated}: {simulated: boolea
     ...(shown?.success === true ? {presentation: shown.data} : {}),
     ...(media?.success === true ? {nowPlaying: media.data} : {}),
     ...(typeof playback === 'string' ? {playback} : {}),
+    quietBrightness: typeof quietBrightness === 'number' ? quietBrightness : DEFAULT_QUIET_BRIGHTNESS,
   };
   return {config, devices: [id]};
 }

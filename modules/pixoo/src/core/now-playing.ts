@@ -10,6 +10,10 @@ export interface NowPlayingState {
  configured:boolean;setting:NowPlayingSetting;source:'current'|'stale'|'unavailable';view:NowPlayingView;
  showing:'dashboard'|'card'|'moment'|'none';takeover:'popup'|'whole'|null;lastTakeover:'resumed'|'dropped'|null;card:number[]|null;
 }
-// Whether a moment the hub marks as allowed to cover status may play over Monitor (Hub #1287).
-export const momentSetting=z.object({version:z.literal(1),overMonitor:z.boolean()}).strict();
-export type MomentSetting=z.infer<typeof momentSetting>;
+// Whether moments may play over the status base (Hub #1287, ADR 0014). A value saved before ADR 0014 names the same
+// setting `overMonitor`; it reads as `overStatus`, so the owner's choice carries over.
+export const momentSetting=z.union([
+ z.object({version:z.literal(1),overStatus:z.boolean()}).strict(),
+ z.object({version:z.literal(1),overMonitor:z.boolean()}).strict().transform(({version,overMonitor})=>({version,overStatus:overMonitor})),
+]);
+export type MomentSetting=z.output<typeof momentSetting>;

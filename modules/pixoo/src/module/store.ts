@@ -1,12 +1,12 @@
 // The Pixoo module's own rows in its SQLite file (Hub #843), beside the library's catalog and the SDK's outbox. It keeps
-// only state the module owns: its revision counter, its presentation settings, its last outcome, the commands it has
+// only state the module owns: its revision counter, its presentation settings, its last Hub mode and remembered brightness, its last outcome, the commands it has
 // accepted and not yet completed, the commands it has completed, so a repeated request changes nothing and a reused
 // request ID is refused, and each multi-frame rendition's hosted check, so its frames are read once. Copies of other
 // owners' state, the core's sessions and the playback record, are rebuilt by sync and never stored. Each statement is
 // prepared once.
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import type {HostedCheck} from '../library/library.js';
-import {momentSetting, nowPlayingSetting, presentationConfiguration, type MomentSetting, type NowPlayingSetting, type PresentationConfiguration} from '../core/index.js';
+import {hubMode, momentSetting, nowPlayingSetting, presentationConfiguration, type HubMode, type MomentSetting, type NowPlayingSetting, type PresentationConfiguration} from '../core/index.js';
 
 /** How long a completed command's `(source, requestId)` is kept, so a repeated request is accepted again and changes nothing. */
 export const HANDLED_MS = 86_400_000;
@@ -31,6 +31,7 @@ export class PixooStore {
   readonly #db: DatabaseSync;
   readonly #read: StatementSync;
   readonly #write: StatementSync;
+  readonly #delete: StatementSync;
   readonly #request: StatementSync;
   readonly #accept: StatementSync;
   readonly #handled: StatementSync;
@@ -56,6 +57,7 @@ export class PixooStore {
       CREATE TABLE IF NOT EXISTS pixoo_moments (id TEXT PRIMARY KEY, accepted_at_ms INTEGER NOT NULL) STRICT`);
     this.#read = db.prepare('SELECT value FROM pixoo_state WHERE key = ?');
     this.#write = db.prepare('INSERT INTO pixoo_state (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value');
+    this.#delete = db.prepare('DELETE FROM pixoo_state WHERE key = ?');
     this.#request = db.prepare('SELECT digest FROM pixoo_commands WHERE source = ? AND request_id = ? UNION ALL SELECT digest FROM pixoo_handled WHERE source = ? AND request_id = ?');
     this.#accept = db.prepare('INSERT INTO pixoo_commands (source, request_id, digest, family, type, traceparent, accepted_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?)');
     this.#handled = db.prepare(`INSERT OR REPLACE INTO pixoo_handled (source, request_id, digest, completed_at_ms)
@@ -85,16 +87,39 @@ export class PixooStore {
     return Number.isSafeInteger(value) && value >= 0 ? value : 0;
   }
 
-  /** A pause without a selected checkpoint must still survive a restart. Missing means fresh empty Media. */
-  emptyIntent(): 'paused' | 'stopped' {
-    const value = this.#get('emptyIntent');
-    if (value === undefined || value === 'stopped') return 'stopped';
-    if (value === 'paused') return 'paused';
-    throw new Error('invalid empty-player intent');
+  /**
+   * The last Hub mode the module was given (ADR 0014), Free before any, as the Hub's own first value. It is read at the
+   * start for the device record only; nothing is applied from it then. An unknown stored value reads as Free. The
+   * retired `emptyIntent` key, the empty-Media pause, is left in place and never read.
+   */
+  hubMode(): HubMode {
+    const parsed = hubMode.safeParse(this.#get('hubMode'));
+    return parsed.success ? parsed.data : 'free';
   }
 
-  saveEmptyIntent(intent: 'paused' | 'stopped'): void {
-    this.#set('emptyIntent', intent);
+  /** Saves the mode and raises the configuration revision, in one transaction, as the other settings do. */
+  saveHubMode(mode: HubMode): void {
+    this.#db.exec('BEGIN IMMEDIATE');
+    try {
+      this.#set('hubMode', mode);
+      this.#set('configurationRevision', String(this.configurationRevision + 1));
+      this.#db.exec('COMMIT');
+    } catch (error) {
+      if (this.#db.isTransaction) this.#db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  /** The brightness last requested before Quiet, kept while Quiet lasts so leaving it can restore it; undefined otherwise. */
+  rememberedBrightness(): number | undefined {
+    const stored = this.#get('rememberedBrightness');
+    const value = stored === undefined ? Number.NaN : Number(stored);
+    return Number.isInteger(value) && value >= 0 && value <= 100 ? value : undefined;
+  }
+
+  saveRememberedBrightness(percent: number | undefined): void {
+    if (percent === undefined) this.#delete.run('rememberedBrightness');
+    else this.#set('rememberedBrightness', String(percent));
   }
 
   /** The module's revision: every record it serves carries the revision of its last change, and only this raises it. */

@@ -1,4 +1,5 @@
-// Hub #1287: a moment plays over the current base and gives it back, under the takeover's resume guard over Media.
+// Hub #1287, ADR 0014: a moment plays over the current base and gives it back: over the status base under its own
+// generation, and over a playing item under the takeover's resume guard.
 import {expect,it,vi} from 'vitest';
 import {present} from '../helpers/present.js';
 import {Player} from '../../src/playback/index.js';
@@ -17,12 +18,12 @@ const RGB=(value:number)=>new Uint8Array(12288).fill(value);
 const song:PlaybackSourceStatus={source:'current',view:{card:true,status:'playing',title:'HARVEST MOON',artist:'NEIL YOUNG',stale:false}};
 async function flush(clock:ManualClock){for(let i=0;i<100;i++){await Promise.resolve();clock.advance(0);}}
 
-async function setup(options:{media?:'off'|'popup'|'whole';overMonitor?:boolean;pauseOnUncertain?:boolean;saving?:Promise<void>;latencyMs?:number}={}){
+async function setup(options:{media?:'off'|'popup'|'whole';overStatus?:boolean;pauseOnUncertain?:boolean;saving?:Promise<void>;latencyMs?:number}={}){
  const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock,...(options.latencyMs===undefined?{}:{latencyMs:options.latencyMs})}),player=await Player.open({store,device,clock,pauseOnUncertain:options.pauseOnUncertain??false});
  store.playlist.repeat=true;
  const saved:unknown[]=[];
  const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now(),nowPlaying:{version:1,media:options.media??'off'},
-  moments:{version:1,overMonitor:options.overMonitor??true},saveMoments:value=>{saved.push(value);return options.saving??Promise.resolve();}});
+  moments:{version:1,overStatus:options.overStatus??true},saveMoments:value=>{saved.push(value);return options.saving??Promise.resolve();}});
  const frames=()=>device.effects.filter(e=>e.kind==='frame').map(e=>Array.from(e.frame.rgb));
  const dashboard=()=>present(present(monitor.rendition().rendition).frames.at(-1));
  const run=async(ms:number)=>{for(let t=0;t<ms;t+=100){clock.advance(100);monitor.tick();await flush(clock);}};
@@ -38,8 +39,9 @@ async function setup(options:{media?:'off'|'popup'|'whole';overMonitor?:boolean;
 }
 type Setup=Awaited<ReturnType<typeof setup>>;
 const art=Array.from(RGB(7)),blank=Array.from(RGB(0));
+/** The status base, which rests on the display while the player holds no item (ADR 0014), showing `view`. */
 async function monitorMode(s:Setup,view=quietView){
- s.monitor.submit(view);await flush(s.clock);await s.monitor.configure({operation:'mode',mode:'monitor'});await s.run(1100);
+ s.monitor.submit(view);await flush(s.clock);await s.run(1100);
  expect(s.frames().at(-1)).toEqual(s.dashboard());
 }
 async function mediaPlaying(s:Setup){
@@ -56,7 +58,7 @@ it('refuses a rain notice that loses its full hold while waiting for the native 
   const notice={kind:'rain-forecast',likelihood:'chance',forecastStartAtMs:now+60000,forecastEndAtMs:now+120000,
    forecastUpdatedAtMs:now,observedAtMs:now,staleAtMs:now+1400,weatherRevision:1} as const;
   const blocking=s.device.setBrightness(35,{generation:s.device.generation});
-  const results=s.play({exactArt:true,notice,durationMs:1000,toleranceMs:300});
+  const results=s.play({notice,durationMs:1000,toleranceMs:300});
   await s.run(2500);await blocking;
   expect(s.frames().filter(frame=>frame[0]===7&&frame[1]===7)).toEqual([]);
   expect(results).toHaveLength(1);expect(results[0]).toMatchObject({ending:null,refused:'notice',upload:{ok:false,priorEffects:'none'}});
@@ -71,7 +73,7 @@ it('retains valid later rain frames, then interrupts the hold at evidence expiry
   const now=s.clock.now();
   const notice={kind:'rain-forecast',likelihood:'likely',forecastStartAtMs:now+60000,forecastEndAtMs:now+120000,
    forecastUpdatedAtMs:now,observedAtMs:now,staleAtMs:now+1500,weatherRevision:1} as const;
-  const results=s.play({exactArt:true,notice,durationMs:1000,toleranceMs:300,delayMs:200,frames:()=>Promise.resolve([RGB(7),RGB(8),RGB(9),RGB(10)])});
+  const results=s.play({notice,durationMs:1000,toleranceMs:300,delayMs:200,frames:()=>Promise.resolve([RGB(7),RGB(8),RGB(9),RGB(10)])});
   await s.run(1000);
   expect(s.frames().filter(frame=>{const first=frame[0];return first!==undefined&&first>=7&&first<=10&&frame.every(value=>value===first);}).map(frame=>frame[0])).toEqual([7,8,9,10]);
   expect(results).toEqual([]);
@@ -90,7 +92,7 @@ it('keeps partial rain upload evidence when native writes cross the hard expiry 
   const now=s.clock.now();
   const notice={kind:'rain-forecast',likelihood:'chance',forecastStartAtMs:now+60000,forecastEndAtMs:now+120000,
    forecastUpdatedAtMs:now,observedAtMs:now,staleAtMs:now+500,weatherRevision:1} as const;
-  const results=s.play({exactArt:true,notice,durationMs:100,toleranceMs:300,delayMs:200,frames:()=>Promise.resolve([RGB(7),RGB(8),RGB(9),RGB(10)])});
+  const results=s.play({notice,durationMs:100,toleranceMs:300,delayMs:200,frames:()=>Promise.resolve([RGB(7),RGB(8),RGB(9),RGB(10)])});
   await s.run(1500);
   expect(results).toHaveLength(1);expect(results[0]).toMatchObject({ending:null,refused:'upload',upload:{ok:false,code:'cancelled',priorEffects:'possible'}});
   const artFrames=()=>s.frames().filter(frame=>{const first=frame[0];return first!==undefined&&first>=7&&first<=10&&frame.every(value=>value===first);});
@@ -100,16 +102,16 @@ it('keeps partial rain upload evidence when native writes cross the hard expiry 
  }finally{await s.close();}
 });
 
-it('plays over Monitor for its duration, keeps the mode, and returns to the current dashboard',async()=>{
+it('plays over the status base for its duration, keeps the mode, and returns to the current dashboard',async()=>{
  const s=await setup();
  try{
   await monitorMode(s);
   const before=s.player.getState().generation,results=s.play();
   await s.run(200);
   expect(s.frames().at(-1)).toEqual(art);
-  expect(s.monitor.status()).toMatchObject({participating:true,configuration:{mode:'monitor'}});
+  expect(s.monitor.status()).toMatchObject({participating:true,base:'status',mode:'free'});
   expect(s.monitor.nowPlayingSummary().showing).toBe('moment');
-  expect(s.monitor.momentSummary()).toEqual({overMonitor:true,playing:'m1'});
+  expect(s.monitor.momentSummary()).toEqual({overStatus:true,playing:'m1'});
   await s.run(2500);expect(s.frames().at(-1)).toEqual(art);expect(results).toEqual([]);
   await s.run(1300);
   ended(results,'completed');
@@ -119,7 +121,7 @@ it('plays over Monitor for its duration, keeps the mode, and returns to the curr
   expect(s.monitor.momentBusy()).toBe(false);
  }finally{await s.close();}
 });
-it('returns to what Monitor shows now, not to the picture from before the moment',async()=>{
+it('returns to what the status base shows now, not to the picture from before the moment',async()=>{
  const s=await setup();
  try{
   await monitorMode(s);const before=s.dashboard();
@@ -128,7 +130,7 @@ it('returns to what Monitor shows now, not to the picture from before the moment
   expect(s.frames().at(-1)).toEqual(s.dashboard());expect(s.dashboard()).not.toEqual(before);
  }finally{await s.close();}
 });
-it('does not let a long Monitor cadence hold the moment, or its end, past its time box',async()=>{
+it('does not let a long status cadence hold the moment, or its end, past its time box',async()=>{
  const s=await setup();
  try{
   await monitorMode(s);
@@ -137,7 +139,7 @@ it('does not let a long Monitor cadence hold the moment, or its end, past its ti
   await s.run(3200);ended(results,'completed');expect(s.frames().at(-1)).toEqual(s.dashboard());
  }finally{await s.close();}
 });
-it('attention over Monitor ends the moment at once and it never comes back',async()=>{
+it('attention over the status base ends the moment at once and it never comes back',async()=>{
  const s=await setup();
  try{
   await monitorMode(s);
@@ -151,13 +153,13 @@ it('attention over Monitor ends the moment at once and it never comes back',asyn
   expect(s.frames().filter(frame=>frame[0]===7&&frame[1]===7).length).toBe(count);
  }finally{await s.close();}
 });
-it('attention during the moment\'s write lets it finish, keeps Monitor on the display and then shows the dashboard',async()=>{
+it('attention during the moment\'s write lets it finish, keeps the status base on the display and then shows the dashboard',async()=>{
  const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock,latencyMs:300}),player=await Player.open({store,device,clock,pauseOnUncertain:true});
  const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now()});
  const run=async(ms:number)=>{for(let t=0;t<ms;t+=100){clock.advance(100);monitor.tick();await flush(clock);}};
  const shown=()=>device.effects.filter(e=>e.kind==='frame').map(e=>Array.from(e.frame.rgb));
  try{
-  monitor.submit(quietView);await flush(clock);await monitor.configure({operation:'mode',mode:'monitor'});await run(2000);
+  monitor.submit(quietView);await flush(clock);await run(2000);
   const results:MomentResult[]=[];
   void monitor.playMoment({momentId:'m1',coversStatus:true,durationMs:3000,startAtMs:clock.now(),toleranceMs:10000,frames:()=>Promise.resolve([RGB(7)])}).then(result=>results.push(result));
   await flush(clock);
@@ -171,22 +173,26 @@ it('attention during the moment\'s write lets it finish, keeps Monitor on the di
   expect(shown().at(-1)).toEqual(present(present(monitor.rendition().rendition).frames.at(-1)));
  }finally{await monitor.close();await player.close();}
 });
-it('over Monitor refuses attention, lost evidence, a moment the hub did not allow, and the setting off',async()=>{
+it('over the status base refuses attention, lost evidence, in Work a moment the hub did not allow, and the setting off',async()=>{
  const s=await setup();
  try{
   await monitorMode(s,attentionView);
   expect(s.monitor.momentBlock(true)).toBe('a session needs attention');
   s.monitor.submit(quietView);await s.run(100);
   expect(s.monitor.momentBlock(true)).toBeNull();
-  expect(s.monitor.momentBlock(false)).toBe('this moment may not cover status');
-  await s.monitor.setMoments(false);expect(s.saved).toEqual([{version:1,overMonitor:false}]);
-  expect(s.monitor.momentBlock(true)).toBe('moments over Monitor are off');
+  // Permission to cover status is needed in Work only: in Free and Quiet status is incidental.
+  for(const mode of ['free','quiet'] as const){await s.monitor.setMode(mode);await s.run(100);expect(s.monitor.momentBlock(false),mode).toBeNull();}
+  await s.monitor.setMode('work');await s.run(100);
+  expect(s.monitor.momentBlock(false)).toBe('this moment may not cover status in Work');
+  expect(s.monitor.momentBlock(true)).toBeNull();
+  await s.monitor.setMoments(false);expect(s.saved).toEqual([{version:1,overStatus:false}]);
+  expect(s.monitor.momentBlock(true)).toBe('moments over status are off');
   await s.monitor.setMoments(true);
   s.monitor.submit({...quietView,connection:'stale'});
   expect(s.monitor.momentBlock(true)).toBe('the session source is not current');
  }finally{await s.close();}
 });
-it('ends the moment when the session source stops being current over Monitor',async()=>{
+it('ends the moment when the session source stops being current over the status base',async()=>{
  const s=await setup();
  try{
   await monitorMode(s);
@@ -195,7 +201,7 @@ it('ends the moment when the session source stops being current over Monitor',as
   ended(results,'preempted');
  }finally{await s.close();}
 });
-it('turning the setting off ends the moment over Monitor',async()=>{
+it('turning the setting off ends the moment over the status base',async()=>{
  const s=await setup();
  try{
   await monitorMode(s);
@@ -204,7 +210,7 @@ it('turning the setting off ends the moment over Monitor',async()=>{
   ended(results,'interrupted');
  }finally{await s.close();}
 });
-it('over Media pauses the playlist, shows the moment and resumes the same item',async()=>{
+it('over a playing item pauses the playlist, shows the moment and resumes the same item',async()=>{
  const s=await setup();
  try{
   await mediaPlaying(s);
@@ -214,7 +220,7 @@ it('over Media pauses the playlist, shows the moment and resumes the same item',
   await s.run(1000);
   expect(s.frames().at(-1)).toEqual(art);
   expect(s.monitor.nowPlayingSummary()).toMatchObject({showing:'moment',takeover:null});
-  expect(s.monitor.status().configuration.mode).toBe('media');
+  expect(s.monitor.status()).toMatchObject({mode:'free',base:'playback'});
   await s.run(3200);
   ended(results,'completed');
   expect(s.player.getState()).toMatchObject({intent:'active',itemId:item});
@@ -222,7 +228,7 @@ it('over Media pauses the playlist, shows the moment and resumes the same item',
   expect(s.monitor.nowPlayingStatus().lastTakeover).toBeNull();
  }finally{await s.close();}
 });
-it('over Media a paused item refuses a moment, since nothing could repaint it',async()=>{
+it('a paused item refuses a moment, since nothing could repaint it',async()=>{
  const s=await setup();
  try{
   await mediaPlaying(s);
@@ -232,36 +238,38 @@ it('over Media a paused item refuses a moment, since nothing could repaint it',a
   expect(s.monitor.momentBlock(false)).toBe('a held item could not be repainted');
  }finally{await s.close();}
 });
-it('over a stopped item the moment plays without touching the player, one blank follows, and the item can still resume',async()=>{
+it('over a stopped item the moment plays over the status base without touching the player, and the item can still resume',async()=>{
  const s=await setup();
  try{
-  await mediaPlaying(s);await s.settle(s.player.stop());
+  await mediaPlaying(s);await s.settle(s.monitor.media(()=>s.player.stop(),false));await monitorMode(s);
   const before=s.player.getState();
   expect(before.intent).toBe('stopped');
   expect(before.itemId).not.toBeNull();
+  expect(s.monitor.status().base).toBe('status');
   expect(s.monitor.momentBlock(false)).toBeNull();
   const results=s.play({coversStatus:false});await s.run(1300);
   expect(s.frames().at(-1)).toEqual(art);
   await s.run(3200);ended(results,'completed');await s.run(1100);
-  expect(s.frames().at(-1)).toEqual(blank);
+  expect(s.frames().at(-1)).toEqual(s.dashboard());
   expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before.generation,itemId:before.itemId});
-  await s.settle(s.player.resume());await s.run(200);
+  await s.settle(s.monitor.media(()=>s.player.resume(),true));await s.run(200);
   expect(s.player.getState()).toMatchObject({intent:'active',state:'playing',itemId:before.itemId});
  }finally{await s.close();}
 });
-it('over a finished playlist the moment plays and the playlist stays finished',async()=>{
+it('over a finished playlist the moment plays over the status base and the playlist stays finished',async()=>{
  const s=await setup();
  try{
   s.store.playlist.repeat=false;
   await mediaPlaying(s);
   for(let i=0;i<s.store.playlist.items.length+1&&s.player.getState().intent==='active';i++){await s.settle(s.player.next());await s.run(200);}
+  await monitorMode(s);
   const before=s.player.getState();
   expect(before.intent).toBe('stopped');
   expect(before.itemId).not.toBeNull();
   const results=s.play();await s.run(1300);
   expect(s.frames().at(-1)).toEqual(art);
   await s.run(3200);ended(results,'completed');await s.run(1100);
-  expect(s.frames().at(-1)).toEqual(blank);
+  expect(s.frames().at(-1)).toEqual(s.dashboard());
   expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before.generation,itemId:before.itemId});
  }finally{await s.close();}
 });
@@ -276,51 +284,34 @@ it('turning the screen off pauses a stopped item, which then refuses like any pa
   expect(s.monitor.momentBlock(false)).toBe('a held item could not be repainted');
  }finally{await s.close();}
 });
-it('resuming during a moment over a stopped item ends it, and no blank lands on the resumed item',async()=>{
+it('resuming during a moment over the status base ends it, and no blank lands on the resumed item',async()=>{
  const s=await setup();
  try{
-  await mediaPlaying(s);await s.settle(s.player.stop());
+  await mediaPlaying(s);await s.settle(s.player.stop());await monitorMode(s);
   const results=s.play();await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
-  await s.settle(s.player.resume());await s.run(1500);
+  await s.settle(s.monitor.media(()=>s.player.resume(),true));await s.run(1500);
   ended(results,'interrupted');
   expect(s.player.getState()).toMatchObject({intent:'active',state:'playing'});
   // The art, then the fake playlist's items, the first of them all zeros: a blank would repeat that zero.
   const firsts=s.frames().map(frame=>frame[0]);
-  expect(firsts.slice(firsts.indexOf(7))).toEqual([7,0,1]);
+  expect(firsts.slice(firsts.lastIndexOf(7))).toEqual([7,0,1]);
  }finally{await s.close();}
 });
-it('a stopped item whose display is unknown still refuses a moment',async()=>{
- const s=await setup();
- try{
-  await mediaPlaying(s);await s.settle(s.player.takeover());await s.settle(s.player.stop());
-  expect(s.player.getState()).toMatchObject({intent:'stopped',lastError:{code:'external-control'}});
-  expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
- }finally{await s.close();}
-});
-it('a failed background check does not erase external control on a stopped item',async()=>{
- const s=await setup();
- try{
-  await mediaPlaying(s);await s.settle(s.player.takeover());await s.settle(s.player.stop());
-  s.device.setOnline(false);await s.settle(s.player.probe());
-  s.device.setOnline(true);await s.settle(s.player.probe());
-  expect(s.player.getState()).toMatchObject({intent:'stopped',availability:'available',lastError:{code:'external-control'}});
-  expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
- }finally{await s.close();}
-});
-it('a failed background check does not erase an uncertain write on a stopped item, and resume clears it',async()=>{
- const s=await setup({pauseOnUncertain:true});
- try{
-  await mediaPlaying(s);
-  s.device.failNextUpload(1);await s.settle(s.player.next());await s.run(200);
-  expect(s.player.getState().lastError?.priorEffects).toBe('possible');
-  await s.settle(s.player.stop());
-  s.device.setOnline(false);await s.settle(s.player.probe());
-  s.device.setOnline(true);await s.settle(s.player.probe());
-  expect(s.player.getState()).toMatchObject({intent:'stopped',lastError:{priorEffects:'possible'}});
-  expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
-  await s.settle(s.player.resume());await s.run(200);
-  expect(s.player.getState().lastError).toBeNull();
- }finally{await s.close();}
+it('a failed background check does not erase external control or an uncertain write on a stopped item, and resume clears it',async()=>{
+ for(const kind of ['external','uncertain'] as const){
+  const s=await setup({pauseOnUncertain:kind==='uncertain'});
+  try{
+   await mediaPlaying(s);
+   if(kind==='external')await s.settle(s.player.takeover());
+   else{s.device.failNextUpload(1);await s.settle(s.player.next());await s.run(200);expect(s.player.getState().lastError?.priorEffects).toBe('possible');}
+   await s.settle(s.player.stop());
+   s.device.setOnline(false);await s.settle(s.player.probe());
+   s.device.setOnline(true);await s.settle(s.player.probe());
+   expect(s.player.getState(),kind).toMatchObject({intent:'stopped',lastError:kind==='external'?{code:'external-control'}:{priorEffects:'possible'}});
+   await s.settle(s.player.resume());await s.run(200);
+   expect(s.player.getState().lastError,kind).toBeNull();
+  }finally{await s.close();}
+ }
 });
 it('a failed background check on an ordinary stopped item is still recorded',async()=>{
  const s=await setup();
@@ -330,23 +321,23 @@ it('a failed background check on an ordinary stopped item is still recorded',asy
   expect(s.player.getState().lastError).toMatchObject({code:'offline'});
  }finally{await s.close();}
 });
-it('a moment still waiting for its start plays over a stop that came first, and nothing resumes',async()=>{
+it('a moment still waiting for its start plays over the status base after a stop that came first, and nothing resumes',async()=>{
  const s=await setup();
  try{
-  await mediaPlaying(s);
-  const results=s.play({startAtMs:s.clock.now()+1000});await s.run(200);
-  await s.settle(s.player.stop());
+  await mediaPlaying(s);s.monitor.submit(quietView);
+  const results=s.play({startAtMs:s.clock.now()+2000});await s.run(200);
+  await s.settle(s.monitor.media(()=>s.player.stop(),false));
   const generation=s.player.getState().generation;
   await s.run(2100);expect(s.frames().at(-1)).toEqual(art);
   await s.run(3200);ended(results,'completed');await s.run(1100);
-  expect(s.frames().at(-1)).toEqual(blank);
+  expect(s.frames().at(-1)).toEqual(s.dashboard());
   expect(s.player.getState()).toMatchObject({intent:'stopped',generation});
  }finally{await s.close();}
 });
-it('external control during a moment over a stopped item ends it with no blank over what may be the owner\'s',async()=>{
+it('external control during a moment over the status base ends it with no blank over what may be the owner\'s',async()=>{
  const s=await setup();
  try{
-  await mediaPlaying(s);await s.settle(s.player.stop());
+  await mediaPlaying(s);await s.settle(s.player.stop());await monitorMode(s);
   const results=s.play();await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
   await s.settle(s.player.takeover());await s.run(2000);
   ended(results,'interrupted');
@@ -381,40 +372,37 @@ it('a moment waiting behind other work never pauses a player that has since been
   expect(s.frames()).not.toContainEqual(art);
  }finally{await s.close();}
 });
-for(const [name,lastError] of [['an uncertain write',{code:'timeout',priorEffects:'possible'}],['external control',{code:'external-control'}]] as const){
- it(`after ${name} an empty player refuses a moment, since what the display shows may be the owner's`,async()=>{
-  const s=await setup();
-  try{
-   const state=s.player.getState();
-   vi.spyOn(s.player,'getState').mockReturnValue({...state,lastError});
-   expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
-   expect(s.monitor.momentBlock(false,true)).toBe('the display may show something else');
-  }finally{vi.restoreAllMocks();await s.close();}
- });
-}
-it('a player in error is not idle, though nothing is loaded',async()=>{
+it('no saved pause refuses a moment over the status base: an empty pause, a clear and a Hub mode change leave it admitted',async()=>{
  const s=await setup();
  try{
-  const state=s.player.getState();
-  vi.spyOn(s.player,'getState').mockReturnValue({...state,intent:'paused',state:'error',lastError:{code:'operation-failed'}});
-  expect(s.monitor.momentBlock(false)).toBe('the display may show something else');
-   expect(s.monitor.momentBlock(false,true)).toBe('the display may show something else');
- }finally{vi.restoreAllMocks();await s.close();}
-});
-it('a view change during a moment over an idle player ends it',async()=>{
- const s=await setup();
- try{
-  s.monitor.submit(quietView);await flush(s.clock);
-  const results=s.play();await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
-  await s.settle(s.monitor.configure({operation:'view',filter:{},cadenceMs:3000}));await s.run(100);
-  ended(results,'interrupted');
-  expect(s.player.getState().intent).toBe('stopped');
+  await monitorMode(s);
+  // A pause on an empty player, as a Hub switch to Media once left it (#687), holds no item: the status base stays.
+  await s.settle(s.monitor.media(()=>s.player.pause(),false));await s.run(1100);
+  expect(s.player.getState()).toMatchObject({intent:'paused',itemId:null});
+  expect(s.monitor.status()).toMatchObject({base:'status',participating:true});
+  expect(s.monitor.momentBlock(false)).toBeNull();
+  await s.monitor.setMode('free');await mediaPlaying(s);await s.settle(s.monitor.media(()=>s.player.clear(),false));await s.run(1100);
+  expect(s.player.getState()).toMatchObject({intent:'stopped',itemId:null});
+  expect(s.monitor.momentBlock(false)).toBeNull();
+  const results=s.play({coversStatus:false});await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
+  await s.run(3200);ended(results,'completed');await s.run(1100);expect(s.frames().at(-1)).toEqual(s.dashboard());
  }finally{await s.close();}
 });
-const blankLast=(s:Setup)=>expect(s.frames().at(-1)).toEqual(blank);
-it('over an idle player the moment shows without touching the player, and one blank frame follows it',async()=>{
+it('a view change during a moment over the status base ends it and the new view takes the display',async()=>{
  const s=await setup();
  try{
+  await monitorMode(s);
+  const results=s.play();await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
+  await s.settle(s.monitor.configure({operation:'view',filter:{},cadenceMs:3000}));await s.run(1200);
+  ended(results,'interrupted');
+  expect(s.player.getState().intent).toBe('stopped');
+  expect(s.frames().at(-1)).toEqual(s.dashboard());
+ }finally{await s.close();}
+});
+it('over the status base with nothing loaded the moment never touches the player, and the dashboard follows it',async()=>{
+ const s=await setup();
+ try{
+  await monitorMode(s);
   const before=s.player.getState();
   expect(before).toMatchObject({intent:'stopped',itemId:null});
   expect(s.monitor.momentBlock(false)).toBeNull();
@@ -424,60 +412,40 @@ it('over an idle player the moment shows without touching the player, and one bl
   await s.run(3200);
   ended(results,'completed');
   await s.run(1100);
-  blankLast(s);
-  expect(s.frames().filter(frame=>frame.every(value=>value===0))).toHaveLength(1);
+  expect(s.frames().at(-1)).toEqual(s.dashboard());
+  expect(s.frames()).not.toContainEqual(blank);
   expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before.generation,itemId:null});
-  expect(s.monitor.status().configuration.mode).toBe('media');
+  expect(s.monitor.status()).toMatchObject({mode:'free',base:'status'});
   expect(s.monitor.momentBusy()).toBe(false);
  }finally{await s.close();}
 });
-it('an empty player that Monitor left paused is idle, and so is one cleared after playing',async()=>{
+it('a start during a moment over the status base ends it, and no blank lands on the playlist',async()=>{
  const s=await setup();
  try{
-  s.monitor.submit(quietView);await flush(s.clock);
-  await s.settle(s.monitor.configure({operation:'mode',mode:'monitor'}));await s.settle(s.monitor.configure({operation:'mode',mode:'media'}));
-  expect(s.player.getState()).toMatchObject({intent:'paused',itemId:null});
-  expect(s.monitor.momentBlock(false)).toBeNull();
-  await mediaPlaying(s);await s.settle(s.player.clear());
-  expect(s.player.getState()).toMatchObject({intent:'stopped',itemId:null});
-  expect(s.monitor.momentBlock(false)).toBeNull();
-  const results=s.play();await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
-  await s.run(3200);ended(results,'completed');await s.run(1100);blankLast(s);
- }finally{await s.close();}
-});
-it('attention ends a moment over an idle player at once, and refuses the next',async()=>{
- const s=await setup();
- try{
-  const results=s.play();await s.run(1300);
-  s.monitor.submit(attentionView);await flush(s.clock);await s.run(100);
-  ended(results,'preempted');
-  await s.run(1100);blankLast(s);
-  expect(s.monitor.momentBlock(false)).toBe('a session needs attention');
- }finally{await s.close();}
-});
-it('a start during a moment over an idle player ends it, and no blank lands on the playlist',async()=>{
- const s=await setup();
- try{
+  await monitorMode(s);
   const results=s.play();await s.run(1300);
   await s.settle(s.monitor.media(()=>s.player.start(s.store.playlist.id),true));await s.run(1300);
   ended(results,'interrupted');
   expect(s.player.getState()).toMatchObject({intent:'active',state:'playing'});
   // The art, then the fake playlist's two items, the first of them all zeros: nothing is written between them.
-  expect(s.frames().map(frame=>frame[0])).toEqual([7,0,1]);
+  const firsts=s.frames().map(frame=>frame[0]);
+  expect(firsts.slice(firsts.lastIndexOf(7))).toEqual([7,0,1]);
  }finally{await s.close();}
 });
-it('a start that reaches the player directly still ends a moment over an idle player',async()=>{
+it('a start that reaches the player directly still ends a moment over the status base',async()=>{
  const s=await setup();
  try{
+  await monitorMode(s);
   const results=s.play();await s.run(1300);
   await s.settle(s.player.start(s.store.playlist.id));await s.run(200);
   ended(results,'interrupted');
   expect(s.monitor.momentBusy()).toBe(false);
  }finally{await s.close();}
 });
-it('turning the screen off ends a moment over an idle player, with nothing written after it',async()=>{
+it('turning the screen off ends a moment over the status base, with nothing written after it',async()=>{
  const s=await setup();
  try{
+  await monitorMode(s);
   const results=s.play();await s.run(1300);
   await s.settle(s.player.setScreen(false));await s.run(200);
   ended(results,'interrupted');
@@ -485,17 +453,21 @@ it('turning the screen off ends a moment over an idle player, with nothing writt
   await s.run(2000);expect(s.frames()).toHaveLength(count);
  }finally{await s.close();}
 });
-it('choosing Monitor during a moment over an idle player ends it, and Monitor takes the display',async()=>{
+it('Work during a moment over the status base ends it, and the dashboard takes the display; Quiet or Free do not',async()=>{
  const s=await setup();
  try{
-  s.monitor.submit(quietView);await flush(s.clock);
-  const results=s.play();await s.run(1300);
-  await s.settle(s.monitor.configure({operation:'mode',mode:'monitor'}));await s.run(1200);
+  await monitorMode(s);
+  const kept=s.play();await s.run(1300);
+  await s.settle(s.monitor.setMode('quiet'));await s.settle(s.monitor.setMode('free'));await s.run(200);
+  expect(kept).toEqual([]);expect(s.monitor.momentSummary().playing).toBe('m1');
+  await s.run(3000);ended(kept,'completed');await s.run(1100);
+  const results=s.play({momentId:'m2'});await s.run(1300);
+  await s.settle(s.monitor.setMode('work'));await s.run(1200);
   ended(results,'interrupted');
   expect(s.frames().at(-1)).toEqual(s.dashboard());
  }finally{await s.close();}
 });
-it('attention over Media ends the moment at once and gives the playlist back',async()=>{
+it('attention over a playing item ends the moment at once and gives the playlist back',async()=>{
  const s=await setup();
  try{
   await mediaPlaying(s);
@@ -506,7 +478,7 @@ it('attention over Media ends the moment at once and gives the playlist back',as
  }finally{await s.close();}
 });
 for(const [name,act] of [['pause',(s:Setup)=>{s.monitor.interrupt();return s.player.pause();}],['stop',(s:Setup)=>{s.monitor.interrupt();return s.player.stop();}]] as const){
- it(`a manual ${name} during a moment over Media is never resumed over`,async()=>{
+ it(`a manual ${name} during a moment over a playing item is never resumed over`,async()=>{
   const s=await setup();
   try{
    await mediaPlaying(s);
@@ -516,13 +488,13 @@ for(const [name,act] of [['pause',(s:Setup)=>{s.monitor.interrupt();return s.pla
    await s.settle(act(s));await s.run(4000);
    ended(results,'interrupted');
    expect(s.player.getState().intent).toBe(name==='pause'?'paused':'stopped');
-   // The art does not stay on as if it were the owner's choice: one blank write replaces it.
-   expect(s.frames().at(-1)).toEqual(blank);
-   expect(blanks()).toBe(before+1);
+   // The art does not stay on as if it were the owner's choice: one blank write replaces it, unless a dashboard does.
+   if(name==='pause'){expect(s.frames().at(-1)).toEqual(blank);expect(blanks()).toBe(before+1);}
+   else expect(s.frames().at(-1)).not.toEqual(art);
   }finally{await s.close();}
  });
 }
-it('a new start during a moment over Media takes the display and nothing resumes over it',async()=>{
+it('a new start during a moment over a playing item takes the display and nothing resumes over it',async()=>{
  const s=await setup();
  try{
   await mediaPlaying(s);
@@ -536,19 +508,20 @@ it('a new start during a moment over Media takes the display and nothing resumes
   expect(s.monitor.momentBusy()).toBe(false);
  }finally{await s.close();}
 });
-it('a mode change ends the moment, and Monitor stays the choice',async()=>{
+it('Work during a moment over a playing item ends it, stops the player without resuming, and the status base follows',async()=>{
  const s=await setup();
  try{
   await mediaPlaying(s);
   const results=s.play();await s.run(1300);
   s.monitor.submit(quietView);
-  await s.settle(s.monitor.configure({operation:'mode',mode:'monitor'}));await s.run(1200);
+  await s.settle(s.monitor.setMode('work'));await s.run(1200);
   ended(results,'interrupted');
-  expect(s.player.getState().intent).toBe('paused');
+  expect(s.player.getState().intent).toBe('stopped');
   expect(s.frames().at(-1)).toEqual(s.dashboard());
+  await s.settle(s.monitor.setMode('free'));await s.run(2000);expect(s.player.getState().intent).toBe('stopped');
  }finally{await s.close();}
 });
-it('a Monitor view change in Media gives the playlist back rather than leaving it paused under the art',async()=>{
+it('a status view change over a playing item gives the playlist back rather than leaving it paused under the art',async()=>{
  const s=await setup();
  try{
   await mediaPlaying(s);
@@ -643,17 +616,18 @@ it('a moment does not pause over a manual start that is still capturing, so it c
   expect(s.player.getState().sessionId).not.toBe(before);
  }finally{await s.close();}
 });
-it('a mode change queued ahead of the moment\'s hold keeps Monitor on the display',async()=>{
+it('Work queued ahead of the moment\'s hold cancels it and leaves the status base on the display',async()=>{
  const s=await setup();
  try{
   await mediaPlaying(s);s.monitor.submit(quietView);await flush(s.clock);
   const results=s.play();await flush(s.clock);
-  // The change is queued but has not begun, so the tick still sees Media and queues its hold behind it.
-  const mode=s.monitor.configure({operation:'mode',mode:'monitor'});
+  // The change is queued but has not begun, so the tick still sees the playing item and queues its hold behind it.
+  const mode=s.monitor.setMode('work');
   s.clock.advance(100);s.monitor.tick();
   await s.settle(mode);await s.run(1200);
-  expect(results).toEqual([{ending:null,refused:'blocked'}]);
-  expect(s.monitor.status()).toMatchObject({participating:true,configuration:{mode:'monitor'}});
+  expect(results).toEqual([{ending:null,refused:'cancelled'}]);
+  expect(s.monitor.status()).toMatchObject({participating:true,mode:'work',base:'status'});
+  expect(s.frames()).not.toContainEqual(art);
  }finally{await s.close();}
 });
 it('a view change right after the moment\'s pause ends it and gives the playlist back',async()=>{
@@ -758,16 +732,15 @@ it('a rejected write is unknown, never reported as unsent',async()=>{
   expect(results).toEqual([expect.objectContaining({ending:null,refused:'unknown'})]);
  }finally{await s.close();}
 });
-it('a manual pause over Monitor during a moment clears the art, and choosing Monitor again paints the dashboard',async()=>{
+it('a manual pause over the status base during a moment ends it, and the dashboard returns since no item is held',async()=>{
  const s=await setup();
  try{
   await monitorMode(s);
   const results=s.play();await s.run(1300);
-  s.monitor.interrupt();await s.settle(s.player.pause());await s.run(1200);
+  await s.settle(s.monitor.media(()=>s.player.pause(),false));await s.run(1200);
   ended(results,'interrupted');
-  expect(s.frames().at(-1)).toEqual(blank);
-  await s.monitor.configure({operation:'mode',mode:'monitor'});await s.run(1200);
   expect(s.frames().at(-1)).toEqual(s.dashboard());
+  expect(s.frames()).not.toContainEqual(blank);
  }finally{await s.close();}
 });
 it('an uncertain write is not rolled back: no blank follows it',async()=>{
@@ -805,7 +778,7 @@ it('a failed render touches neither the player nor the device',async()=>{
   expect(s.player.getState().intent).toBe('active');expect(s.frames().length).toBeLessThanOrEqual(uploads+1);
  }finally{await s.close();}
 });
-it('a failed write over Media leaves no art behind: the playlist comes back and the moment has no ending',async()=>{
+it('a failed write over a playing item leaves no art behind: the playlist comes back and the moment has no ending',async()=>{
  const s=await setup();
  try{
   await mediaPlaying(s);
@@ -818,7 +791,7 @@ it('a failed write over Media leaves no art behind: the playlist comes back and 
   expect(s.frames()).not.toContainEqual(art);
  }finally{await s.close();}
 });
-it('an uncertain write over Media pauses as the player does and is never resumed over',async()=>{
+it('an uncertain write over a playing item pauses as the player does and is never resumed over',async()=>{
  const s=await setup({pauseOnUncertain:true});
  try{
   await mediaPlaying(s);
@@ -830,12 +803,12 @@ it('an uncertain write over Media pauses as the player does and is never resumed
   expect(s.player.getState().lastError).toMatchObject({priorEffects:'possible'});
  }finally{await s.close();}
 });
-it('a failed write over Monitor stops Monitor as a dashboard failure does',async()=>{
+it('a failed write over the status base stops it as a dashboard failure does',async()=>{
  const s=await setup();
  try{
   await monitorMode(s);
   // Only the moment's second frame fails, after its first reached the device: the base redraw that follows succeeds, so
-  // only the moment's own write can stop Monitor. The same code with no effect leaves Monitor current (below).
+  // only the moment's own write can stop the status base. The same code with no effect leaves it current (below).
   const results=s.play({frames:()=>Promise.resolve([RGB(7),RGB(8)])});
   s.device.failNextUpload(1);
   await s.run(1200);
@@ -843,7 +816,7 @@ it('a failed write over Monitor stops Monitor as a dashboard failure does',async
   expect(s.monitor.status()).toMatchObject({participating:false,lastOutcome:{status:'uncertain',code:'upload-failed'}});
  }finally{await s.close();}
 });
-it('a write that failed locally before any effect leaves Monitor current (#1504)',async()=>{
+it('a write that failed locally before any effect leaves the status base current (#1504)',async()=>{
  const s=await setup();
  try{
   await monitorMode(s);
@@ -852,7 +825,7 @@ it('a write that failed locally before any effect leaves Monitor current (#1504)
   await s.run(1200);
   expect(results).toEqual([expect.objectContaining({ending:null,refused:'upload'})]);
   expect(results[0]).toMatchObject({upload:{ok:false,code:'upload-failed',priorEffects:'none'}});
-  expect(s.monitor.status()).toMatchObject({participating:true,configuration:{mode:'monitor'}});
+  expect(s.monitor.status()).toMatchObject({participating:true,base:'status'});
  }finally{await s.close();}
 });
 it('closing ends a moment without resuming, so a restart replays nothing',async()=>{
@@ -875,35 +848,17 @@ it('chooses mood content through one seam and draws two complete, distinct frame
  expect(Array.from(tinted??[]).filter(value=>![0,0x10,0x20,0x30].includes(value))).toEqual([]);
 });
 
-it('queued exact art never adopts an idle display after the owner clears playing Media',async()=>{
+it('exact art waiting while a playlist plays plays over the status base after the owner clears it, with no saved pause in the way',async()=>{
  const s=await setup();
  try{
-  await mediaPlaying(s);
-  const results=s.play({exactArt:true,startAtMs:s.clock.now()+2000});
+  await mediaPlaying(s);s.monitor.submit(quietView);
+  await s.settle(s.monitor.setMode('quiet'));
+  const results=s.play({startAtMs:s.clock.now()+2000,coversStatus:false});
   await s.run(200);
-  await s.settle(s.player.clear());
-  await s.run(5000);
-  expect(results).toEqual([expect.objectContaining({ending:null,refused:'blocked'})]);
-  expect(s.frames()).not.toContainEqual(art);
+  await s.settle(s.monitor.media(()=>s.player.clear(),false));
+  await s.run(2500);expect(s.frames().at(-1)).toEqual(art);
+  await s.run(3000);ended(results,'completed');await s.run(1100);
+  expect(s.frames().at(-1)).toEqual(s.dashboard());
   expect(s.player.getState()).toMatchObject({intent:'stopped',itemId:null});
- }finally{await s.close();}
-});
-
-for(const completed of [false,true])it(`exact art preserves a ${completed?'finished':'stopped'} saved item and respects a later resume`,async()=>{
- const s=await setup();
- try{
-  s.store.playlist.repeat=!completed;await mediaPlaying(s);
-  if(completed){for(let i=0;i<s.store.playlist.items.length+1&&s.player.getState().intent==='active';i++){await s.settle(s.player.next());await s.run(200);}}
-  else await s.settle(s.player.stop());
-  const before=s.player.getState();expect(before.intent).toBe('stopped');expect(before.itemId).not.toBeNull();
-  expect(s.monitor.momentBlock(false,true)).toBeNull();
-  const results=s.play({exactArt:true,coversStatus:false});await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
-  await s.run(3200);ended(results,'completed');await s.run(1100);expect(s.frames().at(-1)).toEqual(blank);
-  expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before.generation,itemId:before.itemId});
-  const again=s.play({exactArt:true,coversStatus:false});await s.run(1300);expect(s.frames().at(-1)).toEqual(art);
-  await s.settle(s.player.resume());await s.run(completed?200:1500);ended(again,'interrupted');
-  expect(s.player.getState()).toMatchObject({intent:'active',state:'playing'});
-  const firsts=s.frames().map(frame=>frame[0]);
-  expect(firsts.slice(firsts.lastIndexOf(7))).toEqual([7,0,1]);
  }finally{await s.close();}
 });

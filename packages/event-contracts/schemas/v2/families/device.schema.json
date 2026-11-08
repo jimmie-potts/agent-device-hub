@@ -60,7 +60,7 @@
   "$defs": {
     "unsupported": {"type": "object", "additionalProperties": false, "required": ["supported"], "properties": {"supported": {"const": false}}},
     "ids": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}},
-    "nativeMode": {"description": "A mode the device itself offers, such as Nanoleaf's `work` or Pixoo's `monitor`. Never the Hub's mode.",
+    "nativeMode": {"description": "A mode the device itself offers, such as Nanoleaf's `work`; Nanoleaf and Pixoo offer the Hub's `work`, `free` and `quiet` one to one (ADR 0014). Never stored as the Hub's mode.",
       "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"},
     "mediaAction": {"enum": ["pause", "resume", "stop", "next", "previous", "restart-with-changes", "clear"]},
     "percent": {"type": "integer", "minimum": 0, "maximum": 100},

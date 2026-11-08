@@ -1,17 +1,17 @@
 import {PlaybackRouteError} from '../library/playback-policy.js';
-// The Pixoo's command handling (Hub #843). It replaces divoom-app-upgrade's ControlService for Monitor, Media, player,
-// playlist and catalog requests: each request becomes a call on the player, the Monitor presentation or the library, and
+// The Pixoo's command handling (Hub #843). It replaces divoom-app-upgrade's ControlService for the Hub mode, the status
+// view, player, playlist and catalog requests: each request becomes a call on the player, the presentation or the library, and
 // its result becomes a completed outcome under ADR 0012's "Errors, effects and outcomes". It knows nothing of the bus;
 // the module (`module.ts`) admits a command, replies, and reports the completion this file returns through its outbox.
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {errorBody, type ErrorCode, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import type {MomentEnded} from '@jimmie-potts/event-contracts/v2/families';
-import type {IntegrationAction, NowPlayingMedia} from '../core/index.js';
+import type {HubMode, NowPlayingMedia} from '../core/index.js';
 import type {OperationResult} from '../device/index.js';
 import {LibraryError, type ItemInput, type Library, type PlaybackPolicy} from '../library/index.js';
 import {MediaError, type MediaProfile, type Transform} from '../media/index.js';
 import {PlaybackError, type MediaOperationEvent, type Player} from '../playback/index.js';
-import {ApiError, type MomentPlay, type MonitorPresentation} from '../presentation/index.js';
+import {ApiError, type MomentPlay, type MonitorPresentation, type ViewChange} from '../presentation/index.js';
 import {Outcome} from '@jimmie-potts/sdk';
 
 /** A command's completed result, as the outcome payload reports it, and what reached the device for it. */
@@ -107,9 +107,14 @@ export function errorCompletion(error: unknown): Completion {
   return mapped === undefined ? uncertain(`the request failed after it began: ${code}`) : failed(mapped, `the request was refused: ${code}`);
 }
 
+/** Quiet's brightness (ADR 0014): the configured level, and the brightness remembered before Quiet, which the module stores. */
+export type QuietBrightness = {level: number; remembered: () => number | undefined; remember: (percent: number | undefined) => void};
+
 export type ControlOptions = {
   player: Player;
   monitor: MonitorPresentation;
+  /** Quiet's brightness. Without it a mode command writes no brightness. */
+  quiet?: QuietBrightness;
   /** The library, for playlist and media changes. Without it they fail as `unavailable`. */
   library?: Library;
   /** The active media profile, which renditions and playback use. */
@@ -124,6 +129,7 @@ export class PixooControl {
   readonly #monitor: MonitorPresentation;
   readonly #library: Library | undefined;
   readonly #profile: Readonly<MediaProfile> | undefined;
+  readonly #quiet: QuietBrightness | undefined;
   /**
    * Each playback command runs its player action under its own token, as ControlService ran it under its request, so the
    * media operation its action launches is known by the async context that launched it, whatever other commands do
@@ -136,8 +142,9 @@ export class PixooControl {
   readonly #tracked = new Map<number, {generation: number; result?: OperationResult<unknown>; resolve?: (result: OperationResult<unknown>) => void}>();
   readonly #unsubscribe: () => void;
 
-  constructor({player, monitor, library, profile}: ControlOptions) {
+  constructor({player, monitor, library, profile, quiet}: ControlOptions) {
     this.#player = player;
+    this.#quiet = quiet;
     this.#monitor = monitor;
     this.#library = library;
     this.#profile = profile;
@@ -156,8 +163,8 @@ export class PixooControl {
 
   /**
    * One player action (`media-control`). Pause, stop and clear change only the module's own playback, so they complete
-   * as observed; resume, next, previous and restart-with-changes complete with the upload they start. As in
-   * ControlService, resume and restart-with-changes take the display back from Monitor, and the others interrupt it.
+   * as observed; resume, next, previous and restart-with-changes complete with the upload they start. Resume and
+   * restart-with-changes take the display from the status base, and the others interrupt it.
    */
   control(action: MediaAction): Promise<Completion> {
     // A moment paused this playlist, not the owner, so a next or previous during it keeps playing.
@@ -185,7 +192,7 @@ export class PixooControl {
     }
   }
 
-  /** Switches the screen (`power-set`). Off first suspends the Monitor, as ControlService did. */
+  /** Switches the screen (`power-set`). Off first suspends the status base, as ControlService did. */
   async power(on: boolean): Promise<Completion> {
     try {
       if (!on) this.#monitor.interrupt();
@@ -195,21 +202,49 @@ export class PixooControl {
     }
   }
 
-  /**
-   * Selects Monitor or Media (`device-mode-set`), or Monitor's filter and cadence (`pixoo-monitor-set`): presentation
-   * state the module owns, saved before the completion. `admit` runs inside the presentation's queue just before it
-   * changes anything, and may refuse by throwing.
-   */
-  async present(action: IntegrationAction, admit?: () => void): Promise<Completion> {
+  /** Sets the status view's filter and cadence (`pixoo-monitor-set`): presentation state saved before the completion. */
+  async view(action: ViewChange): Promise<Completion> {
     try {
-      await this.#monitor.configure(action, admit);
+      await this.#monitor.configure(action);
       return OBSERVED;
     } catch (error) {
       return errorCompletion(error);
     }
   }
 
-  /** Sets what Now Playing does in Media (`pixoo-now-playing-set`), saved before the completion. */
+  /**
+   * Takes a Hub mode (`device-mode-set`, ADR 0014). The mode is saved first, as policy only; then Work stops a held item,
+   * entering Quiet remembers the brightness last requested and writes the Quiet level, and leaving Quiet writes the
+   * remembered brightness once. A Quiet command in Quiet writes the Quiet level again, so a brightness set meanwhile lasts
+   * until the next mode command; Work and Free write no brightness of their own. A command that writes nothing completes
+   * `observed`; one that writes brightness completes as that write, never retried. An uncertain write keeps the saved
+   * mode, so the next mode command writes fresh.
+   */
+  async mode(mode: HubMode): Promise<Completion> {
+    const previous = this.#monitor.currentMode();
+    try {
+      await this.#monitor.setMode(mode);
+    } catch (error) {
+      return errorCompletion(error);
+    }
+    const quiet = this.#quiet;
+    if (quiet === undefined) return OBSERVED;
+    let percent: number | undefined;
+    if (mode === 'quiet') {
+      if (previous !== 'quiet') {
+        const evidence = this.#player.getDisplayEvidence();
+        quiet.remember(evidence.requestedBrightness ?? evidence.brightness.observed?.value);
+      }
+      percent = quiet.level;
+    } else if (previous === 'quiet') {
+      // The remembered value is forgotten once Quiet is left, whatever its write does: the next mode command writes fresh.
+      percent = quiet.remembered();
+      quiet.remember(undefined);
+    }
+    return percent === undefined ? OBSERVED : this.brightness(percent);
+  }
+
+  /** Sets what Now Playing does over the playback base (`pixoo-now-playing-set`), saved before the completion. */
   async nowPlaying(media: NowPlayingMedia): Promise<Completion> {
     try {
       await this.#monitor.setNowPlaying(media);
@@ -219,10 +254,10 @@ export class PixooControl {
     }
   }
 
-  /** Sets whether moments may cover Monitor (`pixoo-moments-set`), saved before the completion. */
-  async moments(overMonitor: boolean): Promise<Completion> {
+  /** Sets whether moments may cover the status base (`pixoo-moments-set`), saved before the completion. */
+  async moments(overStatus: boolean): Promise<Completion> {
     try {
-      await this.#monitor.setMoments(overMonitor);
+      await this.#monitor.setMoments(overStatus);
       return OBSERVED;
     } catch (error) {
       return errorCompletion(error);
@@ -328,12 +363,12 @@ export class PixooControl {
   }
 
   /**
-   * Runs a player action through the Monitor presentation, as ControlService did: one that starts playback takes the
-   * display back from Monitor first, and any other interrupts it at once, which cancels a pending start. When the action
+   * Runs a player action through the presentation, as ControlService did: one that starts playback takes the display
+   * from the status base, and any other interrupts it at once, which cancels a pending start. When the action
    * launched an upload for its own player generation, the completion is that upload's; otherwise the action changed only
    * the module's playback state, which it saved, and the completion is observed.
    *
-   * A Now Playing takeover is the exception. While a song plays and Media wants a whole takeover, a start pauses for the
+   * A Now Playing takeover is the exception. While a song plays and Now Playing wants a whole takeover, a start pauses for the
    * card at once, rather than at the next tick, so its first picture never flashes. When the takeover's pause cancels the
    * upload, the selection the command committed stands and plays once the song ends, so the command completes
    * `observed`: its committed state is the evidence. An upload that a newer command cancelled stays `cancelled`.

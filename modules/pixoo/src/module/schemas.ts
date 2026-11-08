@@ -1,6 +1,6 @@
 // The Pixoo module's own 2.0 families (Hub #843), beside the general device families of `@jimmie-potts/event-contracts`
 // (#918). Its states are the presentation (`pixoo-display`) and the library's catalog (`pixoo-rendition`,
-// `pixoo-playlist`), served through sync. Its commands show one rendition, set Monitor's view and Now Playing, change
+// `pixoo-playlist`), served through sync. Its commands show one rendition, set the status view and Now Playing, change
 // playlists and media, and dismiss a finished turn on the Pixoo only. Each schema is closed, and each record fits the
 // 256 KiB cap: a playlist holds at most 1,000 items.
 import {SCHEMA_BASE} from '@jimmie-potts/event-contracts/v2';
@@ -59,6 +59,11 @@ export const schemaOf = (family: string): string => `${SCHEMA_BASE}${family}/2.0
 const EXTENDED_RENDITION_SCHEMA = `${SCHEMA_BASE}${FAMILIES.rendition}/2.1`;
 export const renditionSchemaOf = (frameCount: number): string => frameCount > 1000 ? EXTENDED_RENDITION_SCHEMA : schemaOf(FAMILIES.rendition);
 export const HOSTED_DEVICE_SCHEMA = EXTENDED_ART_DEVICE_SCHEMA;
+/**
+ * The display record the module publishes (ADR 0014): `pixoo-display/2.1`, with the Hub's mode and the base on the display.
+ * A closed enum change is not additive, so 2.1 is a new minor the module publishes alone; 2.0 stays registered for readers.
+ */
+export const DISPLAY_SCHEMA = `${SCHEMA_BASE}${FAMILIES.display}/2.1`;
 export const OUTCOME_SCHEMA = `${SCHEMA_BASE}outcome/2.0`;
 export const REMOVAL_SCHEMA = `${SCHEMA_BASE}removal/2.0`;
 export const DEVICE_SCHEMA = `${SCHEMA_BASE}device/2.3`;
@@ -74,6 +79,7 @@ const renditionSchema = (maxFrames: number): object => closed({
 
 /** The Pixoo's own payload schemas, by `dataschema`. */
 export const pixooOwnSchemas: Readonly<Record<string, object>> = {
+  // The retired 2.0 record, Monitor/Media vocabulary, which the module no longer publishes.
   [schemaOf(FAMILIES.display)]: closed({
     id: block('routingId'), revision: block('revision'),
     mode: {enum: ['monitor', 'media']}, participating: {type: 'boolean'}, pendingMode: nullable({enum: ['monitor', 'media']}),
@@ -90,17 +96,35 @@ export const pixooOwnSchemas: Readonly<Record<string, object>> = {
     // Optional, so a record stored before moments still reads: `overMonitor` is the setting, `playing` the moment on the display.
     moments: closed({overMonitor: {type: 'boolean'}, playing: nullable(block('id'))}),
   }, ['moments']),
+  // ADR 0014: `mode` and `pendingMode` in the Hub's vocabulary, `base` the status or playback base on the display,
+  // `participating` whether the status base is drawn and current, and `moments.overStatus` the owner's setting.
+  [DISPLAY_SCHEMA]: closed({
+    id: block('routingId'), revision: block('revision'),
+    mode: {enum: ['work', 'free', 'quiet']}, pendingMode: nullable({enum: ['work', 'free', 'quiet']}), base: {enum: ['status', 'playback']},
+    participating: {type: 'boolean'},
+    showing: {enum: ['dashboard', 'card', 'moment', 'none']},
+    monitor: closed({
+      filter, cadenceMs: integer(1000, 10000), connection: {enum: ['current', 'stale', 'unavailable']},
+      sessions: integer(0, 10000), matched: integer(0, 10000), attention: integer(0, 10000), page: integer(0, 10000), pages: integer(1, 10000),
+    }),
+    nowPlaying: closed({media: {enum: ['off', 'popup', 'whole']}, card: {type: 'boolean'}, stale: {type: 'boolean'}, takeover: nullable({enum: ['popup', 'whole']})}),
+    player: closed({
+      state: {enum: ['idle', 'loading', 'playing', 'paused', 'reconnecting', 'error']}, intent: {enum: ['active', 'paused', 'stopped']},
+      playlistId: nullable(uuid), itemId: nullable(uuid), renditionId: nullable(hash), lastError: nullable({type: 'string', pattern: '^[a-z][a-z0-9-]{0,63}$'}),
+    }),
+    moments: closed({overStatus: {type: 'boolean'}, playing: nullable(block('id'))}),
+  }),
   [schemaOf(FAMILIES.rendition)]: renditionSchema(1000),
   [EXTENDED_RENDITION_SCHEMA]: renditionSchema(Number.MAX_SAFE_INTEGER),
   [schemaOf(FAMILIES.playlist)]: closed({
     id: uuid, revision: block('revision'), name, playlistRevision: revision, repeat: {type: 'boolean'}, shuffle: {type: 'boolean'},
     items: {type: 'array', maxItems: 1000, items: closed({id: uuid, renditionId: hash, playback: policy})},
   }),
-  // `requireMode` (#1276): the mode the Pixoo must be in, or the show is refused at admission, as for the general media commands.
-  [schemaOf(FAMILIES.show)]: guarded({renditionId: hash, playback: policy, requireMode: {enum: ['monitor', 'media']}}, ['playback', 'requireMode']),
+  // No `requireMode` (ADR 0014): only the core set it, and the Pixoo takes no mode precondition from a caller.
+  [schemaOf(FAMILIES.show)]: guarded({renditionId: hash, playback: policy}, ['playback']),
   [schemaOf(FAMILIES.monitor)]: guarded({filter, cadenceMs: integer(1000, 10000)}),
   [schemaOf(FAMILIES.nowPlaying)]: guarded({media: {enum: ['off', 'popup', 'whole']}}),
-  [schemaOf(FAMILIES.moments)]: guarded({overMonitor: {type: 'boolean'}}),
+  [schemaOf(FAMILIES.moments)]: guarded({overStatus: {type: 'boolean'}}),
   [schemaOf(FAMILIES.playlistChange)]: guarded({change: {oneOf: [
     closed({operation: {const: 'create'}, name, repeat: {type: 'boolean'}, shuffle: {type: 'boolean'}, playlistId: uuid, items: {type: 'array', maxItems: 1000, items: closed({renditionId: hash, playback: policy}, ['playback'])}}, ['repeat', 'shuffle', 'playlistId', 'items']),
     closed({operation: {const: 'rename'}, playlistId: uuid, revision, name}),
@@ -135,7 +159,7 @@ type Guards = {expectedConfigurationRevision?: number; expectedGeneration?: {epo
 export type Policy = {mode: 'duration'; durationMs: number} | {mode: 'plays'; totalPlays: number};
 export type Filter = {q?: string | undefined; provider?: 'codex' | 'claude' | undefined; projectId?: string | undefined; session?: SessionRecord['identity'] | undefined};
 export type DisplayRecord = {
-  id: string; revision: number; mode: 'monitor' | 'media'; participating: boolean; pendingMode: 'monitor' | 'media' | null;
+  id: string; revision: number; mode: HubMode; pendingMode: HubMode | null; base: 'status' | 'playback'; participating: boolean;
   showing: 'dashboard' | 'card' | 'moment' | 'none';
   monitor: {filter: Filter; cadenceMs: number; connection: 'current' | 'stale' | 'unavailable'; sessions: number; matched: number; attention: number; page: number; pages: number};
   nowPlaying: {media: 'off' | 'popup' | 'whole'; card: boolean; stale: boolean; takeover: 'popup' | 'whole' | null};
@@ -143,8 +167,10 @@ export type DisplayRecord = {
     state: 'idle' | 'loading' | 'playing' | 'paused' | 'reconnecting' | 'error'; intent: 'active' | 'paused' | 'stopped';
     playlistId: string | null; itemId: string | null; renditionId: string | null; lastError: string | null;
   };
-  moments?: {overMonitor: boolean; playing: string | null};
+  moments: {overStatus: boolean; playing: string | null};
 };
+/** The Hub's modes, which the Pixoo takes as its own (ADR 0014). */
+export type HubMode = 'work' | 'free' | 'quiet';
 export type RenditionRecord = {
   id: string; revision: number; assetId: string; name: string; format: 'png' | 'jpeg' | 'gif'; frameCount: number; durationMs: number | null; compatible: boolean;
 };
@@ -152,10 +178,10 @@ export type PlaylistRecord = {
   id: string; revision: number; name: string; playlistRevision: number; repeat: boolean; shuffle: boolean;
   items: {id: string; renditionId: string; playback: Policy}[];
 };
-export type ShowRequest = Guards & {requestId: string; renditionId: string; playback?: Policy; requireMode?: 'monitor' | 'media'};
+export type ShowRequest = Guards & {requestId: string; renditionId: string; playback?: Policy};
 export type MonitorSetRequest = Guards & {requestId: string; filter: Filter; cadenceMs: number};
 export type NowPlayingSetRequest = Guards & {requestId: string; media: 'off' | 'popup' | 'whole'};
-export type MomentsSetRequest = Guards & {requestId: string; overMonitor: boolean};
+export type MomentsSetRequest = Guards & {requestId: string; overStatus: boolean};
 export type PlaylistChangeRequest = Guards & {requestId: string; change:
   | {operation: 'create'; name: string; repeat?: boolean; shuffle?: boolean; playlistId?: string; items?: {renditionId: string; playback?: Policy}[]}
   | {operation: 'rename'; playlistId: string; revision: number; name: string}

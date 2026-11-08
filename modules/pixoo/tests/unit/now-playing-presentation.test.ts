@@ -30,15 +30,16 @@ async function setup(media:Media='off'){
  const close=async()=>{await monitor.close();await player.close();};
  return {clock,store,device,player,monitor,saved,frames,card,dashboard,run,settle,close};
 }
-async function monitorMode(s:Awaited<ReturnType<typeof setup>>,view=quietView){
- s.monitor.submit(view);await flush(s.clock);await s.monitor.configure({operation:'mode',mode:'monitor'});await s.run(1100);
+/** The status base, which rests on the display while the player holds no item (ADR 0014), showing `view`. */
+async function statusBase(s:Awaited<ReturnType<typeof setup>>,view=quietView){
+ s.monitor.submit(view);await flush(s.clock);await s.run(1100);
  expect(s.frames().at(-1)).toEqual(s.dashboard());
 }
 
-it('pops the card up for 10 seconds on a new track in Monitor, then returns to the dashboard',async()=>{
+it('pops the card up for 10 seconds on a new track over the status base, then returns to the dashboard',async()=>{
  const s=await setup();
  try{
-  await monitorMode(s);
+  await statusBase(s);
   s.monitor.submitPlayback(playing());await s.run(1000);
   expect(s.frames().at(-1)).toEqual(s.card(playing()));expect(s.monitor.nowPlayingStatus()).toMatchObject({showing:'card',takeover:null});
   await s.run(8000);expect(s.frames().at(-1)).toEqual(s.card(playing()));
@@ -50,7 +51,7 @@ it('pops the card up for 10 seconds on a new track in Monitor, then returns to t
 it('redraws a pop-up that pauses or goes stale, and ends it when the card disappears',async()=>{
  const s=await setup();
  try{
-  await monitorMode(s);s.monitor.submitPlayback(playing());await s.run(1000);
+  await statusBase(s);s.monitor.submitPlayback(playing());await s.run(1000);
   const paused=playing('HARVEST MOON',{status:'paused'});s.monitor.submitPlayback(paused);await s.run(1000);expect(s.frames().at(-1)).toEqual(s.card(paused));
   const stale=playing('HARVEST MOON',{status:'paused',stale:true});s.monitor.submitPlayback(stale);await s.run(1000);expect(s.frames().at(-1)).toEqual(s.card(stale));
   s.monitor.submitPlayback(nothing);await s.run(1000);expect(s.frames().at(-1)).toEqual(s.dashboard());
@@ -59,7 +60,7 @@ it('redraws a pop-up that pauses or goes stale, and ends it when the card disapp
 it('drops the pop-up for attention, present or arriving, without replaying it',async()=>{
  const s=await setup();
  try{
-  await monitorMode(s,attentionView);const before=s.frames().length;
+  await statusBase(s,attentionView);const before=s.frames().length;
   s.monitor.submitPlayback(playing());await s.run(3000);
   expect(s.frames().slice(before).some(frame=>JSON.stringify(frame)===JSON.stringify(s.card(playing())))).toBe(false);
   s.monitor.submit(quietView);await s.run(1100);expect(s.frames().at(-1)).toEqual(s.dashboard());
@@ -73,14 +74,14 @@ it('drops the pop-up for attention, present or arriving, without replaying it',a
 it('never starts a pop-up from a stale read or from the same track after a hub hiccup',async()=>{
  const s=await setup();
  try{
-  s.monitor.submitPlayback(playing());await monitorMode(s);const count=s.frames().length;
+  s.monitor.submitPlayback(playing());await statusBase(s);const count=s.frames().length;
   s.monitor.submitPlayback(playing('HARVEST MOON',{stale:true}));await s.run(1000);
   s.monitor.submitPlayback(playing());await s.run(1000);
   s.monitor.submitPlayback(playing('OLD KING',{stale:true}));await s.run(1000);
   expect(s.frames().length).toBe(count);
  }finally{await s.close();}
 });
-it('leaves Media alone when the setting is Off',async()=>{
+it('leaves a playing playlist alone when the setting is Off',async()=>{
  const s=await setup('off');
  try{
   await s.settle(s.player.start(s.store.playlist.id));const count=s.frames().length;
@@ -88,7 +89,7 @@ it('leaves Media alone when the setting is Off',async()=>{
   expect(s.player.getState().intent).toBe('active');expect(s.monitor.nowPlayingStatus()).toMatchObject({showing:'none',takeover:null,lastTakeover:null});expect(s.frames().slice(count).some(f=>JSON.stringify(f)===JSON.stringify(s.card(playing())))).toBe(false);
  }finally{await s.close();}
 });
-it('pauses the playlist for a 10 second pop-up in Media, then resumes it',async()=>{
+it('pauses the playlist for a 10 second pop-up over the playback base, then resumes it',async()=>{
  const s=await setup('popup');
  try{
   await s.settle(s.player.start(s.store.playlist.id));
@@ -99,21 +100,23 @@ it('pauses the playlist for a 10 second pop-up in Media, then resumes it',async(
   s.monitor.submitPlayback(playing());await s.run(2000);expect(s.player.getState().intent).toBe('active');
  }finally{await s.close();}
 });
-it('drops a Media takeover without resuming after a manual action, screen-off or a mode change',async()=>{
- for(const act of ['pause','stop','screen','mode'] as const){
-  const s=await setup('popup');
+it('drops a takeover without resuming after a manual action, screen-off or Work',async()=>{
+ for(const act of ['pause','stop','screen','work','whole-work'] as const){
+  const s=await setup(act==='whole-work'?'whole':'popup');
   try{
    await s.settle(s.player.start(s.store.playlist.id));s.monitor.submitPlayback(playing());await s.run(1000);
-   expect(s.monitor.nowPlayingStatus().takeover).toBe('popup');
+   expect(s.monitor.nowPlayingStatus().takeover).toBe(act==='whole-work'?'whole':'popup');
    if(act==='pause')await s.settle(s.monitor.media(()=>s.player.pause(),false));
    else if(act==='stop')await s.settle(s.monitor.media(()=>s.player.stop(),false));
    else if(act==='screen'){s.monitor.interrupt();await s.settle(s.player.setScreen(false));}
-   else await s.settle(s.monitor.configure({operation:'mode',mode:'monitor'}));
+   else await s.settle(s.monitor.setMode('work'));
    await flush(s.clock);const generation=s.player.getState().generation;
    await s.run(12000);
    expect(s.monitor.nowPlayingStatus().takeover,act).toBeNull();
    expect(s.player.getState().intent,act).not.toBe('active');
-   if(act!=='mode')expect(s.player.getState().generation,act).toBe(generation);
+   if(act!=='work'&&act!=='whole-work')expect(s.player.getState().generation,act).toBe(generation);
+   // Work stops the playlist: the status base returns, and nothing resumes when Free comes back.
+   else{expect(s.monitor.status(),act).toMatchObject({base:'status',mode:'work'});await s.monitor.setMode('free');await s.run(2000);expect(s.player.getState().intent,act).toBe('stopped');}
   }finally{await s.close();}
  }
 });
@@ -128,17 +131,28 @@ it('shows the card for the whole song and resumes when playback stops',async()=>
   s.monitor.submitPlayback(nothing);await s.run(500);expect(s.player.getState().intent).toBe('active');
  }finally{await s.close();}
 });
-it('does nothing in Media when no playlist is playing or the screen is off',async()=>{
- for(const state of ['idle','paused','screen-off'] as const){
+it('takes no Now Playing takeover over a paused item or with the screen off',async()=>{
+ for(const state of ['paused','screen-off'] as const){
   const s=await setup('popup');
   try{
-   if(state!=='idle'){await s.settle(s.player.start(s.store.playlist.id));}
+   await s.settle(s.player.start(s.store.playlist.id));
    if(state==='paused')await s.settle(s.player.pause());
    if(state==='screen-off')await s.settle(s.player.setScreen(false));
    const before={...s.player.getState()},uploads=()=>s.device.operations.filter(o=>o.kind==='uploadAnimation'&&JSON.stringify(Array.from((o as {animation?:{frames:{rgb:Uint8Array}[]}}).animation?.frames[0]?.rgb??[]))===JSON.stringify(s.card(playing()))).length;
    s.monitor.submitPlayback(playing());await s.run(12000);
    expect(s.player.getState().generation,state).toBe(before.generation);expect(s.player.getState().intent,state).toBe(before.intent);
    expect(s.frames().some(frame=>JSON.stringify(frame)===JSON.stringify(s.card(playing()))),state).toBe(false);expect(uploads(),state).toBe(0);
+  }finally{await s.close();}
+ }
+});
+it('pops the card up over the status base in every mode, whatever the setting, but takes no whole takeover in Work',async()=>{
+ for(const mode of ['work','free','quiet'] as const){
+  const s=await setup('whole');
+  try{
+   await s.monitor.setMode(mode);await statusBase(s);
+   s.monitor.submitPlayback(playing());await s.run(1000);
+   expect(s.frames().at(-1),mode).toEqual(s.card(playing()));expect(s.monitor.nowPlayingStatus(),mode).toMatchObject({showing:'card',takeover:null});
+   await s.run(10000);expect(s.frames().at(-1),mode).toEqual(s.dashboard());
   }finally{await s.close();}
  }
 });
@@ -185,7 +199,7 @@ it('drops an active takeover without resuming when the presentation closes',asyn
 it('uploads a repeated identical card once, and a changed card once more',async()=>{
  const s=await setup();
  try{
-  await monitorMode(s);const card=JSON.stringify(s.card(playing()));const cards=()=>s.frames().filter(frame=>JSON.stringify(frame)===card).length;
+  await statusBase(s);const card=JSON.stringify(s.card(playing()));const cards=()=>s.frames().filter(frame=>JSON.stringify(frame)===card).length;
   s.monitor.submitPlayback(playing());await s.run(1000);
   for(let i=0;i<4;i++){s.monitor.submitPlayback(playing());await s.run(1000);}
   expect(cards()).toBe(1);
@@ -201,7 +215,7 @@ it('keeps the previous card on the display while a changed card renders, never f
  const run=async(ms:number)=>{for(let t=0;t<ms;t+=100){clock.advance(100);monitor.tick();await flush(clock);}};
  const answer=()=>{for(const job of pending.splice(0))job.resolve(renderNowPlaying(job.view));};
  try{
-  monitor.submit(quietView);await flush(clock);await monitor.configure({operation:'mode',mode:'monitor'});await run(1100);
+  monitor.submit(quietView);await flush(clock);await run(1100);
   const dashboard=frames().at(-1);
   monitor.submitPlayback(playing());await run(200);answer();await run(1000);
   const first=Array.from(renderNowPlaying(playing().view));expect(frames().at(-1)).toEqual(first);

@@ -17,7 +17,23 @@ void describe('the Pixoo\'s section', () => {
     assert.ok(!('error' in answer));
     assert.deepEqual(answer.devices, ['pixoo-1']);
     assert.equal(answer.config.device.profile.name, 'pixoo64-gif-2026-10-01');
-    assert.equal(answer.config.presentation?.mode, 'monitor');
+    // A version 1 presentation may still carry the retired Monitor/Media mode, which the module accepts and ignores (ADR 0014).
+    assert.deepEqual(answer.config.presentation, {version: 1, filter: {}, cadenceMs: 1000});
+    assert.equal(answer.config.quietBrightness, 20, 'Quiet brightness defaults to 20');
+  });
+
+  void it('takes a Quiet brightness from 1 to 100 and a presentation without a mode', () => {
+    for (const quietBrightness of [1, 35, 100]) {
+      const answer = configurePixoo({device, quietBrightness, presentation: {version: 1, filter: {provider: 'codex'}, cadenceMs: 2000}}, {simulated: false});
+      assert.ok(!('error' in answer));
+      assert.equal(answer.config.quietBrightness, quietBrightness);
+      assert.deepEqual(answer.config.presentation, {version: 1, filter: {provider: 'codex'}, cadenceMs: 2000});
+    }
+    for (const mode of ['media', 'monitor']) {
+      const answer = configurePixoo({device, presentation: {version: 1, mode, filter: {}, cadenceMs: 1000}}, {simulated: false});
+      assert.ok(!('error' in answer), mode);
+      assert.equal(Object.hasOwn(answer.config.presentation ?? {}, 'mode'), false, `${mode} is ignored`);
+    }
   });
 
   void it('needs the hosted listener for the hosted profile on a real device, and accepts the simulator\'s profile only when simulated', () => {
@@ -33,6 +49,8 @@ void describe('the Pixoo\'s section', () => {
       undefined, {}, {device: {...device, id: 'Pixoo 1'}}, {device: {...device, address: '8.8.8.8'}}, {device: {...device, address: '192.168.1.500'}},
       {device: {...device, profile: 'unknown'}}, {device: {...device, extra: 1}}, {device, hostedGif: {...hostedGif, origin: 'https://192.168.1.10'}},
       {device, presentation: {version: 2}}, {device, nowPlaying: {version: 1, media: 'always'}}, {device, playback: 'Not An Id'}, {device, other: true},
+      {device, quietBrightness: 0}, {device, quietBrightness: 101}, {device, quietBrightness: 20.5}, {device, quietBrightness: '20'},
+      {device, presentation: {version: 1, mode: 'work', filter: {}, cadenceMs: 1000}},
     ];
     for (const section of cases) {
       const answer = configurePixoo(section, {simulated: false});
