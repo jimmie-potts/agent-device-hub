@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {ARTWORK_INPUT_BYTES, artworkUrl, createArtworkFetch} from '../src/artwork-fetch.js';
+import {ARTWORK_INPUT_BYTES, artworkIdentity, artworkUrl, createArtworkFetch} from '../src/artwork-fetch.js';
 const endpoint = 'http://127.0.0.1:10000/sony';
 const signal = new AbortController().signal;
 const fake = (reply: Response, observe?: (input: string | URL | Request, init?: RequestInit) => void): typeof fetch => (input, init) => {
@@ -75,4 +75,13 @@ void test('Sonos resolves local absolute and relative artwork without borrowing 
   assert.equal(calls, 1);
   const redirected = createArtworkFetch(fake(new Response(null, {status: 302, headers: {location: '/getaa'}})));
   assert.deepEqual(await redirected(image, sonos, signal, 'sonos'), {ok: false, code: 'unsupported', transient: false});
+});
+
+void test('only an all-digit Sony query is outside candidate identity (#1570)', () => {
+  const jacket = 'http://127.0.0.1:58080/jacket.jpg';
+  assert.equal(artworkIdentity(`${jacket}?10000000000002031`, 'sony'), jacket);
+  assert.equal(artworkIdentity(`${jacket}?10000000000002031`, 'sony'), artworkIdentity(`${jacket}?10000000000004062`, 'sony'));
+  for (const kept of [jacket, `${jacket}?id=7`, `${jacket}?7&size=large`, `${jacket}?`, `${jacket}?7#x`]) assert.equal(artworkIdentity(kept, 'sony'), kept);
+  assert.equal(artworkIdentity('/getaa?7', 'sonos'), '/getaa?7');
+  assert.equal(artworkIdentity(undefined, 'sony'), undefined);
 });

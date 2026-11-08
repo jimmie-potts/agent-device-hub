@@ -46,6 +46,32 @@ void test('duplicate polls and pause/freshness retain acquired artwork and gener
   await flush(); assert.deepEqual(run.controller.snapshot(), ready); assert.equal(run.fetches(), 1); assert.equal(run.changes(), 1);
 });
 
+void test('a Sony clock query on an unchanged jacket path keeps the ready image without refetching (#1570)', async () => {
+  // The HT-A9 reports one fixed jacket path and appends a millisecond clock as the whole query, so it differs on every read.
+  const jacket = (clock: string): ArtworkPresentation => ({index: 0, kind: 'sony', endpoint: ENDPOINT, availability: 'available',
+    observation: {status: 'playing', title: 'A', thumbnailUrl: `http://127.0.0.1:58080/jacket.jpg?${clock}`}});
+  const run = setup(); run.controller.update(jacket('10000000000000000')); await flush();
+  const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
+  for (const clock of ['10000000000002031', '10000000000004062', '10000000000006093']) {
+    run.controller.update(jacket(clock));
+    assert.deepEqual(run.controller.snapshot(), ready);
+    await flush();
+  }
+  assert.equal(run.fetches(), 1); assert.equal(run.changes(), 1);
+  // A different jacket path is a new candidate in the same generation, and replaces the image.
+  run.controller.update(run.view());
+  assert.equal(run.controller.snapshot()?.status, 'missing'); assert.equal(run.controller.snapshot()?.generation, ready?.generation);
+  await flush(); assert.equal(run.controller.snapshot()?.status, 'ready'); assert.equal(run.fetches(), 2);
+});
+
+void test('a Sonos reference with a changed query remains a new candidate', async () => {
+  const sonos = (query: string): ArtworkPresentation => ({index: 0, kind: 'sonos', endpoint: 'http://127.0.0.1:1400/MediaRenderer/AVTransport/Control',
+    availability: 'available', observation: {status: 'playing', title: 'A', thumbnailUrl: `/getaa?${query}`}});
+  const run = setup(); run.controller.update(sonos('1')); await flush(); assert.equal(run.controller.snapshot()?.status, 'ready');
+  run.controller.update(sonos('2')); assert.equal(run.controller.snapshot()?.status, 'missing');
+  await flush(); assert.equal(run.fetches(), 2);
+});
+
 void test('absent candidate then later candidate retains generation', async () => {
   const run = setup(); run.controller.update(run.view({observation: {status: 'playing', title: 'A'}}));
   const generation = run.controller.snapshot()?.generation;

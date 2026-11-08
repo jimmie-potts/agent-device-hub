@@ -22,6 +22,15 @@ export function artworkUrl(candidate: unknown, endpoint: string, source: Artwork
   return url.href;
 }
 
+/**
+ * What makes a reported candidate a new one. The HT-A9 reports one fixed jacket path for its AirPlay artwork and appends a
+ * millisecond clock as the whole query, which advances on every read (#1570). That query names no image, so Sony candidates
+ * that differ only by an all-digit query are the same candidate. Every other difference, and every Sonos reference, is new.
+ */
+export function artworkIdentity(candidate: string | undefined, source: ArtworkSource): string | undefined {
+  return source === 'sony' && candidate !== undefined ? candidate.replace(/\?\d+$/u, '') : candidate;
+}
+
 /** The caller bounds the whole operation with its scheduler and supplies the deadline's signal. */
 export function createArtworkFetch(fetcher: typeof fetch = fetch): ArtworkFetch {
   return async (candidate, endpoint, signal, source = 'sony') => {
