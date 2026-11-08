@@ -173,6 +173,11 @@ The palette has 1–8 hex colors; intensity is 0–1, sensitivity 0.1–8, smoot
 0–2000 ms, pulse half-life 100–2000 ms and wave period 400–10000 ms. These bounds
 are source constraints and do not qualify a device cadence or flash-safety limit.
 
+The browser-safe `@jimmie-potts/nanoleaf/reactive-presets` export supplies
+`followReactivePresets`, the Wall page's read-only follower for the private preset
+library. The dashboard's Audio Music lighting card reuses it to list saved presets.
+Following the library sends no command.
+
 `freezeMusicRecipeV2(unknown)` requires an explicit `rendererVersion: 2` and a
 closed `response` setting in place of V1's top-level sensitivity/smoothing.
 The browser-safe `@jimmie-potts/nanoleaf/music-response` export supplies the same

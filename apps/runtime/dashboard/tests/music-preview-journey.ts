@@ -21,7 +21,8 @@ export async function musicPreviewJourney(browser: Browser): Promise<void> {
     const sent = changes(page), reads: string[] = [];
     page.on('request', request => {if (new URL(request.url()).pathname === '/modules/nanoleaf/content/music-preview') reads.push(request.url());});
     await page.goto(`${world.url}/#/audio`); await feed(page, 'connected');
-    await page.getByRole('link', {name: 'Music effect preview', exact: true}).click();
+    // The Music lighting card links the same page while no reactive preset is saved, so take the workspace's own link.
+    await page.locator('p', {hasText: 'Compare generated examples in the Wall page.'}).getByRole('link', {name: 'Music effect preview', exact: true}).click();
     const preview = page.getByRole('region', {name: 'Music effect preview', exact: true});
     await preview.locator('summary').focus(); await preview.locator('summary').press('Enter');
     await preview.getByText('Generated input · example geometry · unsaved draft', {exact: true}).waitFor();

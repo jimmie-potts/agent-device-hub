@@ -83,3 +83,6 @@ await import('./read-receipts.browser.ts');
 
 // Explicit Music input measurements use only a numeric producer fixture.
 await import('./music-capture.browser.ts');
+
+// Explicit Music lighting uses the real core and Nanoleaf module on a simulated Lines controller.
+await import('./music-lighting.browser.ts');

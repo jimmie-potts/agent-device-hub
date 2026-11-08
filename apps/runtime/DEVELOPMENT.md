@@ -732,6 +732,7 @@ node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # f
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
 node apps/runtime/dashboard/tests/automation.browser.ts # routine/rule tabs, drafts, lost replies and accessibility
 node apps/runtime/dashboard/tests/music-capture.browser.ts # Music/microphone measurement, tracked start/stop and freshness; also in hosted smoke and Music-card browser entry
+node apps/runtime/dashboard/tests/music-lighting.browser.ts # Music lighting Start/Stop on simulated Lines, endings, stale reads and lost replies; also in hosted smoke and Music-card browser entry
 node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # shared Pixoo cards, playlist drafts and trusted editor bundle
 node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal
 node apps/runtime/dashboard/tests/pixoo-playlists.browser.ts # create, rename, options, items, order and deletion
