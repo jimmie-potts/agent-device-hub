@@ -117,6 +117,21 @@ void test('a late subscription or copy cannot outlive its Audio scope', async ()
     assert.equal(syncs, phase === 'subscribe' ? 0 : 1); assert.equal(closed, phase === 'subscribe' ? 1 : 2);
   }
 });
+void test('a refresh does not wait for the replaced copy to finish closing', async () => {
+  let mono = 1000, closes = 0, closeHangs = false;
+  const participant = {
+    subscribe: () => Promise.resolve({close: () => Promise.resolve()}),
+    sync: () => {mono += 10; return Promise.resolve(answer(() => {closes += 1; return closeHangs ? new Promise<void>(() => {}) : Promise.resolve();}));},
+  };
+  const feed = new MusicCaptureFeed({participant: participant as unknown as ConstructorParameters<typeof MusicCaptureFeed>[0]['participant'], now: () => now(mono)});
+  assert.equal(await feed.refresh(), true);
+  closeHangs = true;
+  // A card that disables Refresh while a refresh runs would stay locked if the refresh waited on the edge here.
+  const refreshed = await Promise.race([feed.refresh(), new Promise<'stuck'>(resolve => {setTimeout(() => {resolve('stuck');}, 1000);})]);
+  assert.equal(refreshed, true); assert.equal(feed.getSnapshot().synced, true);
+  assert.equal(closes, 1, 'the replaced copy is still asked to close');
+  closeHangs = false; await feed.close();
+});
 void test('an initial sync result retained across a restart cannot revive old freshness', async () => {
   let mono = 1000, handler: SyncHandler<CaptureState> = () => {}, options: SyncOptions = {timeoutMs: 1};
   let finish: (value: SyncResult<CaptureState>) => void = () => {throw new Error('no sync');};

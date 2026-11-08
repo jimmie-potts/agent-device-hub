@@ -126,7 +126,9 @@ export class MusicCaptureFeed implements Subscription {
     if (this.#closed) return false;
     const epoch = ++this.#epoch;
     this.invalidate();
-    const previous = this.#copy; this.#copy = undefined; await previous?.close();
+    // The replaced copy closes in the background: its close waits for the edge, so awaiting it here could hold this refresh
+    // (and a card that disables Refresh meanwhile) indefinitely. Its handler checks the epoch, so nothing it delivers reaches the view.
+    const previous = this.#copy; this.#copy = undefined; void previous?.close().catch(() => {});
     try {
       if (this.#subscription === undefined) {
         this.#opening ??= this.#participant.subscribe<CaptureFeatures>('bunny.event.music-capture-features.*', message => {
@@ -153,7 +155,7 @@ export class MusicCaptureFeed implements Subscription {
         if (current()) {sent = this.#now(); restarted = true; completed = undefined; this.invalidate();}
       }});
       if (result.status === 'rejected') {if (current()) this.invalidate(); return false;}
-      if (!current()) {await result.copy.close(); return false;}
+      if (!current()) {void result.copy.close().catch(() => {}); return false;}
       this.#copy = result.copy;
       if (completed !== undefined) this.#synchronized(completed.message, completed.sent, completed.received);
       else if (!restarted) this.#synchronized(result.message, sent, this.#now());
