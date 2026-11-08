@@ -819,8 +819,9 @@ Super Buttons are excluded from preset bindings.
 This shared path follows the Codex-first milestone and general-control definition.
 It invokes existing authenticated app/controller services and their queues,
 preserving one writer per physical device and private controller databases.
-Nanoleaf Work/Quiet/Free and Pixoo Monitor/Media keep their native semantics;
-desk presets introduce no common device-mode enum or silent takeover.
+Nanoleaf and Pixoo take Work/Quiet/Free as their native modes
+([ADR 0014](decisions/0014-pixoo-follows-the-hub-mode.md) replaced the Pixoo's
+Monitor/Media pair); desk presets introduce no silent takeover.
 
 Manual device-app changes persist until the next explicit preset request and its
 supported ownership handoff. Startup, view/profile selection and reconnect do not

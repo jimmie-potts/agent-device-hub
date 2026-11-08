@@ -4,6 +4,8 @@ Status: Accepted definition under [hub #31](https://github.com/jimmie-potts/agen
 2026-09-22. Implementation, installation and physical acceptance remain in the
 linked issues. [ADR 0006](0006-hub-moments-and-interludes.md) revises the
 "nothing restores automatically" rule for time-boxed interludes only.
+[ADR 0014](0014-pixoo-follows-the-hub-mode.md) amends the vocabulary below for
+the Pixoo and supersedes the rule that no common device-mode enum exists.
 
 ## Context
 
@@ -72,12 +74,14 @@ the owning services and never becomes a physical writer.
 | Term | Meaning |
 | --- | --- |
 | General control | An explicit user-issued supported device operation (power, brightness, scene, media) through the owning controller, independent of any agent session. Avoid "manual control" and "agent-independent control". |
-| Status presentation | A device rendering agent status: Pixoo Monitor, Nanoleaf Work or Quiet. |
-| Takeover | The user selecting the device's content mode (Pixoo Media, Nanoleaf Free) so content controls apply. Distinct from the contract's external control, which is a change made outside the controller. |
-| Restoration | An explicit return to status presentation through the existing mode command. |
+| Status presentation | A device rendering agent status: the Pixoo's status base (ADR 0014; formerly Pixoo Monitor), Nanoleaf Work or Quiet. |
+| Takeover | The user putting content on the device so content controls apply: starting playback on the Pixoo (ADR 0014; formerly selecting Media), selecting Free on the Nanoleaf. Distinct from the contract's external control, which is a change made outside the controller. |
+| Restoration | An explicit return to status presentation: Stop or Clear on the Pixoo (ADR 0014; formerly the mode command), the mode command on the Nanoleaf. |
 
-Nanoleaf Work/Quiet/Free and Pixoo Monitor/Media keep their native meanings.
-There is no common mode enum and no silent all-device takeover.
+Nanoleaf Work/Quiet/Free keep their native meanings, and so did Pixoo
+Monitor/Media until [ADR 0014](0014-pixoo-follows-the-hub-mode.md) made Work,
+Free and Quiet the Pixoo's native modes as well. There is no silent all-device
+takeover.
 
 ## Consequences
 
