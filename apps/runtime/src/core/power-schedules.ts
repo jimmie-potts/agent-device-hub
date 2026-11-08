@@ -1,4 +1,4 @@
-// Hub #483, #1297: the core's private weekly routines. A routine runs an ordered list of typed device commands at one
+// Hub #483, #1297, ADR 0014: the core's private weekly routines. A routine runs an ordered list of typed device commands at one
 // local-clock time on chosen weekdays, or on an explicit Run now. It generalizes the one on/off power window of #483,
 // whose `power-window/1.0` rows are migrated forward once into two routines. No device transport, no replayable jobs.
 import {randomUUID} from 'node:crypto';
@@ -12,19 +12,27 @@ import type {AutomationStore, NewLogRow, RuleRow} from './automation-store.js';
 /** The tracked command families a routine action may use: the general device families, and the module families a target's module declares. */
 export const ROUTINE_FAMILIES = ['power-set','brightness-set','scene-activate','media-start','media-control','device-mode-set','pixoo-media-show','lifx-color-set'] as const;
 export type RoutineFamily = (typeof ROUTINE_FAMILIES)[number];
-/** Content actions run only while the device is in its content mode: they always carry `requireMode`, and only that mode. */
+/** Content families, which only the device kinds that show content declare. */
 export const CONTENT_FAMILIES: readonly RoutineFamily[] = ['scene-activate','media-start','media-control','pixoo-media-show'];
-/** The content mode of each participating device kind (owner direction, 2026-09-25): Media for Pixoo, Free for Nanoleaf. */
-export const DEFAULT_CONTENT_MODE: Readonly<Record<string,string>> = Object.freeze({pixoo:'media',nanoleaf:'free'});
-/** The families whose 2.0 schemas take `requireMode`, so the owning module checks it again at admission (#1276). */
-export const MODE_FAMILIES: readonly RoutineFamily[] = ['media-start','media-control','pixoo-media-show'];
+/** The device kinds whose modules declare content families: a content action on any other kind is refused before storage. */
+const CONTENT_KINDS: readonly string[] = ['pixoo','nanoleaf'];
+/** The Hub's modes: an action may run only while its device reports one of them as its desired mode (ADR 0014). */
+export const HUB_MODES = ['work','free','quiet'] as const;
+export type HubMode = (typeof HUB_MODES)[number];
+const isHubMode=(v:unknown):v is HubMode=>typeof v==='string' && (HUB_MODES as readonly string[]).includes(v);
+/**
+ * A stored action's retired `requireMode` (#1276, #1297), a device's native mode, read as the Hub mode it stood for: the
+ * Pixoo's Media was Free and its Monitor first Work, and the Hub's own values keep their meaning. Nothing writes it again.
+ */
+const LEGACY_MODE: Readonly<Record<string,HubMode>> = Object.freeze({work:'work',free:'free',quiet:'quiet',media:'free',monitor:'work'});
 /** The module kind that declares each module family. */
 const MODULE_FAMILIES: Readonly<Record<string,string>> = Object.freeze({'pixoo-media-show':'pixoo','lifx-color-set':'lifx'});
 const MEDIA_ACTIONS = ['pause','resume','stop','next','previous','restart-with-changes','clear'];
 /** How many actions one routine may run. */
 export const ACTION_LIMIT = 16;
 
-export type RoutineAction = {target:string;family:RoutineFamily;data:Record<string,unknown>;requireMode?:string};
+/** One action. `runsOnlyIn` is the Hub mode the target must report as its desired mode for the action to run, checked by the core. */
+export type RoutineAction = {target:string;family:RoutineFamily;data:Record<string,unknown>;runsOnlyIn?:HubMode};
 export type RoutineInput = {name:string;days:number[];time:string;actions:RoutineAction[];enabled?:boolean};
 export type RoutineOccurrence = {atMs:number};
 export type Routine = Omit<RoutineInput,'enabled'> & {id:string;enabled:boolean;definitionId:string;createdAtMs:number;updatedAtMs:number;next?:RoutineOccurrence};
@@ -80,27 +88,24 @@ function parseActionData(family:RoutineFamily,value:unknown):Record<string,unkno
   }
 }
 /**
- * One action: a configured target, a family the target's module declares, the family's payload and the mode precondition.
- * A content action requires its target kind's content mode, and only that mode, so no routine action other than an explicit
- * `device-mode-set` can take a device out of its status presentation; it takes that mode when `requireMode` is omitted, and
- * a kind without a content mode is refused. Any other action may name a mode to require, or none.
+ * One action: a configured target, a family the target's module declares, the family's payload and, optionally for any
+ * action, the Hub mode (`runsOnlyIn`) the target must report for it to run (ADR 0014). No action is forced into a mode:
+ * what a mode admits is the owning module's decision, such as the Pixoo's refusal of playback starts in Work. A stored row
+ * (`targets` null) may still carry the retired `requireMode`, read as the Hub mode it stood for, so it keeps opening.
  */
 function parseAction(value:unknown,targets:readonly string[]|null,kindOf:(target:string)=>string|undefined):RoutineAction {
+  const legacy=targets===null && object(value) && Object.hasOwn(value,'requireMode') && !Object.hasOwn(value,'runsOnlyIn');
   if(!object(value) || !['target','family','data'].every(key=>Object.hasOwn(value,key)) ||
-      Object.keys(value).some(key=>!['target','family','data','requireMode'].includes(key)) ||
-      !routingId(value.target) || !isRoutineFamily(value.family) || (Object.hasOwn(value,'requireMode') && !enumValue(value.requireMode))) return invalid();
+      Object.keys(value).some(key=>!['target','family','data','runsOnlyIn',...(legacy?['requireMode']:[])].includes(key)) ||
+      !routingId(value.target) || !isRoutineFamily(value.family) || (Object.hasOwn(value,'runsOnlyIn') && !isHubMode(value.runsOnlyIn)) ||
+      (legacy && (!enumValue(value.requireMode) || !Object.hasOwn(LEGACY_MODE,value.requireMode)))) return invalid();
   if(targets!==null && !targets.includes(value.target)) return invalid('unknown-target');
   const kind=kindOf(value.target),moduleKind=MODULE_FAMILIES[value.family];
   if(moduleKind!==undefined && kind!==undefined && kind!==moduleKind) return invalid('unknown-target');
+  if(targets!==null && CONTENT_FAMILIES.includes(value.family) && (kind===undefined || !CONTENT_KINDS.includes(kind))) return invalid();
   const data=parseActionData(value.family,value.data);
-  let requireMode=Object.hasOwn(value,'requireMode')?value.requireMode as string:undefined;
-  if(CONTENT_FAMILIES.includes(value.family)) {
-    const content=kind===undefined?undefined:DEFAULT_CONTENT_MODE[kind];
-    if(content!==undefined && requireMode!==undefined && requireMode!==content) return invalid();
-    if(content===undefined && targets!==null) return invalid();
-    requireMode=requireMode??content;
-  }
-  return {target:value.target,family:value.family,data,...(requireMode===undefined?{}:{requireMode})};
+  const runsOnlyIn=legacy?LEGACY_MODE[value.requireMode as string]:value.runsOnlyIn as HubMode|undefined;
+  return {target:value.target,family:value.family,data,...(runsOnlyIn===undefined?{}:{runsOnlyIn})};
 }
 /**
  * A create (`enabled` allowed) or update body. `targets` lists the configured identities a new definition may name;
@@ -222,7 +227,7 @@ export function createRoutines(options:RoutineOptions) {
     if(stopped()) return;
     const requestId='requestId' in result?result.requestId:undefined;
     store.appendLog([logRow(saved,occurrence,fire,action.target,`${saved.id}-${occurrence.atMs}-${index}`,result.outcome,result.reason??null,
-      {family:action.family,index,...(action.requireMode===undefined?{}:{requireMode:action.requireMode}),...(requestId===undefined?{}:{requestId}),
+      {family:action.family,index,...(action.runsOnlyIn===undefined?{}:{runsOnlyIn:action.runsOnlyIn}),...(requestId===undefined?{}:{requestId}),
         ...(result.outcome==='receipt'?{receipt:{status:'accepted',requestId}}:{})})]);
   };
   /**
@@ -248,8 +253,9 @@ export function createRoutines(options:RoutineOptions) {
         try {options.refused?.(requestId,trace);} catch {/* Diagnostics cannot alter device admission. */}
         record(saved,occurrence,fire,action,index,{outcome:'blocked',reason:'unavailable',requestId});return;
       }
-      // The content-mode precondition, on the record immediately before the send; the Pixoo checks it again at admission (#1276).
-      if(action.requireMode!==undefined && (latest.desired.mode.status!=='known' || latest.desired.mode.value!==action.requireMode || latest.pendingKinds.includes('device-mode-set'))) {
+      // The Hub-mode precondition, on the record immediately before the send (ADR 0014): the device's desired mode, as its
+      // record reports it, with no mode change pending. Nothing carries it to the module, whose own admission stays decisive.
+      if(action.runsOnlyIn!==undefined && (latest.desired.mode.status!=='known' || latest.desired.mode.value!==action.runsOnlyIn || latest.pendingKinds.includes('device-mode-set'))) {
         record(saved,occurrence,fire,action,index,{outcome:'blocked',reason:'mode',requestId});return;
       }
       let result:RoutineSendResult;

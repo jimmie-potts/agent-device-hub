@@ -38,10 +38,10 @@ const rule = {name: 'Finished turn', kind: 'event' as const, enabled: true,
   trigger: {source: 'core', kind: 'turn-ended', alias: 'selected'},
   action: {mood: 'celebrate', priorityClass: 'event' as const, durationMs: 1000, palette: ['#123456'], targets: ['wall']}};
 const routine = {name: 'Morning', days: [1, 2, 3], time: '07:30', actions: [
-  {target: 'desk-pixoo', family: 'media-start', data: {playlistId: 'morning'}, requireMode: 'media'},
+  {target: 'desk-pixoo', family: 'media-start', data: {playlistId: 'morning'}, runsOnlyIn: 'free'},
   {target: 'pendant-1', family: 'lifx-color-set', data: {hue: 120, saturation: 50}},
   {target: 'wall', family: 'power-set', data: {on: false}},
-] as {target: string; family: string; data: Record<string, unknown>; requireMode?: string}[]};
+] as {target: string; family: string; data: Record<string, unknown>; runsOnlyIn?: string}[]};
 
 void test('creation is disabled until explicit enable; editing retains the definition without changing enabled', () => {
   const created = page.automationRuleInput(rule, true), edited = page.automationRuleInput(rule, false);
@@ -61,7 +61,7 @@ void test('a routine is created disabled, edited without enabled, and keeps its 
   assert.deepEqual(created, {...routine, enabled: false});
   assert.deepEqual(edited.actions.map(action => action.target), ['wall', 'pendant-1', 'desk-pixoo']);
   for (const action of created.actions) {
-    assert.deepEqual(Object.keys(action), Object.hasOwn(action, 'requireMode') ? ['target', 'family', 'data', 'requireMode'] : ['target', 'family', 'data']);
+    assert.deepEqual(Object.keys(action), Object.hasOwn(action, 'runsOnlyIn') ? ['target', 'family', 'data', 'runsOnlyIn'] : ['target', 'family', 'data']);
   }
   // A payload left over from another family keeps only the current family's keys.
   const stale = page.routineInput({...routine, actions: [{target: 'wall', family: 'power-set', data: {on: true, percent: 40}}]}, false);

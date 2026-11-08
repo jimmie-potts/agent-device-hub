@@ -91,7 +91,10 @@ it('waits, at a passive start, for a command before it first draws the status ba
  try{
   monitor.submit(present(syntheticDashboardViews()[0]).view);for(let i=0;i<5;i++){clock.advance(1000);monitor.tick();await flush(clock);}
   expect(monitor.status()).toMatchObject({mode:'quiet',base:'status',participating:false});expect(device.effects).toHaveLength(0);
+  // A view change does not end the wait; a mode command does.
   await monitor.configure({operation:'view',filter:{},cadenceMs:1000});monitor.tick();await flush(clock);
+  expect(monitor.status().participating).toBe(false);expect(device.effects).toHaveLength(0);
+  await monitor.setMode('quiet');monitor.tick();await flush(clock);
   expect(monitor.status().participating).toBe(true);expect(uploads(device)).toBe(1);
  }finally{await monitor.close();await player.close();}
 });

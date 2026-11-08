@@ -75,5 +75,5 @@ void test('pixoo-display/2.1 reports the Hub mode, the base and moments over sta
   // The setting a moment over the status base follows is now named after that base.
   const moments = {...show({requestId: 'req-moments', overStatus: false}), type: 'org.bunny.pixoo-moments.set.requested', dataschema: schemaOf(FAMILIES.moments)} as Message;
   assert.equal(validator.validate(moments, {nowMs: Date.parse('2026-11-08T12:00:00.000Z')}).ok, true);
-  assert.equal(validator.validate({...moments, data: {requestId: 'req-moments', overMonitor: false}} as Message, {nowMs: Date.parse('2026-11-08T12:00:00.000Z')}).ok, false);
+  assert.equal(validator.validate({...moments, data: {requestId: 'req-moments', overMonitor: false}}, {nowMs: Date.parse('2026-11-08T12:00:00.000Z')}).ok, false);
 });

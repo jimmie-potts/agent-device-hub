@@ -7,7 +7,8 @@ import {Badge,Facts} from './ui.tsx';
 // The core's route shapes (`apps/runtime/src/core/power-schedules.ts`), kept browser-safe.
 export const ROUTINE_FAMILIES=['power-set','brightness-set','scene-activate','media-start','media-control','device-mode-set','pixoo-media-show','lifx-color-set'] as const;
 export type RoutineFamily=(typeof ROUTINE_FAMILIES)[number];
-export type RoutineAction={target:string;family:RoutineFamily;data:Record<string,unknown>;requireMode?:string};
+/** `runsOnlyIn`: the Hub mode the device must report for the action to run, which the core checks (ADR 0014). */
+export type RoutineAction={target:string;family:RoutineFamily;data:Record<string,unknown>;runsOnlyIn?:string};
 export type RoutineInput={name:string;days:number[];time:string;actions:RoutineAction[];enabled?:boolean};
 export type Routine=Omit<RoutineInput,'enabled'> & {id:string;enabled:boolean;definitionId:string;createdAtMs:number;updatedAtMs:number;next?:{atMs:number}};
 export type RoutineDevice={record:DeviceRecord;current:boolean};
@@ -16,9 +17,12 @@ type RoutineDraft={name:string;days:number[];time:string;actions:ActionDraft[]};
 
 const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const ACTION_LIMIT=16;
-/** Content actions always require their device kind's content mode, and only that mode; the core fills it when omitted. */
+/**
+ * This editor still gives a content action its kind's content mode, Free for both kinds since the Pixoo follows the Hub
+ * mode (ADR 0014); the core no longer requires one. Its visible redesign is #1575's.
+ */
 const CONTENT_FAMILIES:readonly RoutineFamily[]=['scene-activate','media-start','media-control','pixoo-media-show'];
-const DEFAULT_CONTENT_MODE:Readonly<Record<string,string>>={pixoo:'media',nanoleaf:'free'};
+const DEFAULT_CONTENT_MODE:Readonly<Record<string,string>>={pixoo:'free',nanoleaf:'free'};
 /** The exact payload keys each family's schema takes. */
 const FIELDS:Readonly<Record<RoutineFamily,readonly string[]>>={'power-set':['on'],'brightness-set':['percent'],'scene-activate':['sceneId'],'media-start':['playlistId'],
   'media-control':['action'],'device-mode-set':['mode'],'pixoo-media-show':['renditionId'],'lifx-color-set':['hue','saturation']};
@@ -42,7 +46,7 @@ const fresh=():RoutineDraft=>({name:'',days:[1,2,3,4,5],time:'07:00',actions:[bl
 export function routineInput(draft:Omit<RoutineInput,'enabled'>,creating:boolean):RoutineInput {
   return {name:draft.name,days:[...draft.days],time:draft.time,
     actions:draft.actions.map(action=>({target:action.target,family:action.family,data:Object.fromEntries(FIELDS[action.family].map(key=>[key,action.data[key]])),
-      ...(action.requireMode===undefined?{}:{requireMode:action.requireMode})})),
+      ...(action.runsOnlyIn===undefined?{}:{runsOnlyIn:action.runsOnlyIn})})),
     ...(creating?{enabled:false}:{})};
 }
 
@@ -65,9 +69,9 @@ const modesOf=(record:DeviceRecord|undefined):readonly string[]=>record?.capabil
 type Media={actions:readonly string[];playlistIds:readonly string[];renditionIds:readonly string[]};
 const mediaOf=(record:DeviceRecord|undefined):Media=>record?.capabilities.media.supported===true?record.capabilities.media:{actions:[],playlistIds:[],renditionIds:[]};
 const scenesOf=(record:DeviceRecord|undefined):readonly string[]=>record?.capabilities.scenes.supported===true?record.capabilities.scenes.sceneIds:[];
-function defaults(record:DeviceRecord,family:RoutineFamily):Pick<ActionDraft,'data'|'requireMode'> {
+function defaults(record:DeviceRecord,family:RoutineFamily):Pick<ActionDraft,'data'|'runsOnlyIn'> {
   const media=mediaOf(record),modes=modesOf(record);
-  const mode=contentMode(record),requireMode=content(family)?mode:undefined;
+  const mode=contentMode(record),runsOnlyIn=content(family)?mode:undefined;
   const data=((): Record<string,unknown>=>{
     switch(family) {
       case 'power-set': return {on:true};
@@ -80,7 +84,7 @@ function defaults(record:DeviceRecord,family:RoutineFamily):Pick<ActionDraft,'da
       case 'lifx-color-set': return {hue:0,saturation:100};
     }
   })();
-  return {data,...(requireMode===undefined?{}:{requireMode})};
+  return {data,...(runsOnlyIn===undefined?{}:{runsOnlyIn})};
 }
 /** An action is complete when its device is current and offers the family, and its payload and precondition are among the device's values. */
 function complete(action:ActionDraft,devices:readonly RoutineDevice[]):RoutineAction|undefined {
@@ -101,7 +105,7 @@ function complete(action:ActionDraft,devices:readonly RoutineDevice[]):RoutineAc
   })();
   if(!valid) return undefined;
   // A content action requires exactly its kind's content mode; any other action may require any mode the device offers, or none.
-  if(content(family) ? action.requireMode!==contentMode(device.record) : action.requireMode!==undefined && !modes.includes(action.requireMode)) return undefined;
+  if(content(family) ? action.runsOnlyIn!==contentMode(device.record) : action.runsOnlyIn!==undefined && !modes.includes(action.runsOnlyIn)) return undefined;
   return {...action,family};
 }
 /** One saved action in words, such as "start playlist 3f2a… (requires media)". */
@@ -119,7 +123,7 @@ export function actionSummary(action:RoutineAction):string {
       case 'lifx-color-set': return `color hue ${text(data.hue)} / saturation ${text(data.saturation)}`;
     }
   })();
-  return action.requireMode===undefined?words:`${words} (requires ${action.requireMode})`;
+  return action.runsOnlyIn===undefined?words:`${words} (requires ${action.runsOnlyIn})`;
 }
 // Each select repeats its visible label as `aria-label`: a wrapping label's text would otherwise include every option.
 /** A select's options, keeping a saved value the device no longer offers so editing never silently changes it. */
@@ -239,12 +243,12 @@ export function RoutinesEditor({routines,timeZone,devices,available,mutate}: {
             }}>{action.family==='' && <option value="">Choose an action</option>}
               {familyChoices.map(family=><option key={family} value={family}>{FAMILY_LABELS[family]}</option>)}</select></label>
             <ActionFields action={action} record={record} change={data=>{setAction(index,current=>({...current,data}));}}/>
-            {content(action.family) && <p>Runs only in {action.requireMode??contentMode(record)??'its content mode'}; the device's status presentation is never displaced.</p>}
-            {action.family!=='' && !content(action.family) && <label>Required mode<select aria-label="Required mode" value={action.requireMode??''} onChange={event=>{
+            {content(action.family) && <p>Runs only in {action.runsOnlyIn??contentMode(record)??'its content mode'}; the device's status presentation is never displaced.</p>}
+            {action.family!=='' && !content(action.family) && <label>Required mode<select aria-label="Required mode" value={action.runsOnlyIn??''} onChange={event=>{
               const mode=event.target.value;
-              setAction(index,current=>{const {requireMode:_previous,...rest}=current;return mode===''?rest:{...rest,requireMode:mode};});
+              setAction(index,current=>{const {runsOnlyIn:_previous,...rest}=current;return mode===''?rest:{...rest,runsOnlyIn:mode};});
             }}><option value="">No precondition</option>
-              {choices(modes,action.requireMode??'')}</select></label>}
+              {choices(modes,action.runsOnlyIn??'')}</select></label>}
             {completed[index]===undefined && <p>Choose a current device and complete this action.</p>}
             <div className="actions">
               <button type="button" className="secondary" aria-label={`Move action ${position} up`} disabled={index===0} onClick={()=>{move(index,-1);}}>↑</button>

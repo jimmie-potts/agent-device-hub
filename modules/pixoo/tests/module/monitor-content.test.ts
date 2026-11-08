@@ -46,7 +46,7 @@ void it('reads pending Monitor without rendering, pages projected entity IDs and
     assert.deepEqual((await readMonitorContent(input, 'monitor-frame.1.0', request()) as ErrorBody).error.code, 'not-found');
     const aborted = new AbortController(); aborted.abort();
     assert.equal((await readMonitorContent(input, 'monitor', {query: {}, signal: aborted.signal}) as ErrorBody).error.code, 'cancelled');
-    await monitor.configure({operation: 'view', filter: {}, cadenceMs: 1000});
+    await monitor.setMode('free');
     for (let index = 0; index < 20; index++) await Promise.resolve();
     const rendered = json<{rendition: {frames: string[]}}>(await readMonitorContent(input, 'monitor', request()));
     const ref = rendered.rendition.frames[0]; assert.ok(ref !== undefined);

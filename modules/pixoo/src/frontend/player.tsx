@@ -49,10 +49,11 @@ export function readingOf(value: unknown): Reading {
   return value as Reading;
 }
 
-function Controls({context, device, sample, current, playlists, command}: Props & {
+function Controls({context, device, display, sample, current, playlists, command}: Props & {
   device: DeviceRecord; sample: Sample | undefined; current: boolean; command: FrontendCommand;
 }): React.JSX.Element {
   const [selectedId, setSelectedId] = useState('');
+  const [mode, setMode] = useState('');
   const [failure, setFailure] = useState<string>();
   const submitting = useRef(false);
   const selected = playlists.find(playlist => playlist.id === selectedId);
@@ -62,7 +63,7 @@ function Controls({context, device, sample, current, playlists, command}: Props 
   const blocked = !context.control ? 'Read-only access.' : !current ? 'Player records are stale.'
     : !context.operationsLive ? 'Command records are stale.' : command.locked ? 'Wait for the current command result.' : undefined;
   const media = device.capabilities.media;
-  const run = (family: 'media-start' | 'media-control', data: object): void => {
+  const run = (family: 'media-start' | 'media-control' | 'device-mode-set', data: object): void => {
     if (blocked !== undefined || submitting.current) return;
     submitting.current = true; setFailure(undefined);
     void command.run({family, target: device.id, requestId: crypto.randomUUID(), data: {
@@ -95,8 +96,12 @@ function Controls({context, device, sample, current, playlists, command}: Props 
             {{pause: 'Pause playlist', resume: 'Resume', stop: 'Stop', previous: 'Previous', next: 'Next', 'restart-with-changes': 'Restart with changes', clear: 'Clear session'}[action]}
           </button>)}
       </div>
-      {/* The Pixoo follows the Hub mode (ADR 0014): its mode is chosen through the Hub, never sent to the device directly. */}
-      {device.capabilities.modes.supported && context.ui.ModeChoice !== undefined && <context.ui.ModeChoice target={device.id}/>}
+      {device.capabilities.modes.supported && <>
+        <Select label="Display mode" value={mode} onChange={setMode}
+          options={[{value: '', label: 'Choose…'}, ...device.capabilities.modes.values.map(value => ({value, label: value.charAt(0).toUpperCase() + value.slice(1)}))]}/>
+        <div className="actions"><button type="button" className="secondary"
+          disabled={blocked !== undefined || mode === '' || mode === display?.mode} onClick={() => { run('device-mode-set', {mode}); }}>Set display mode</button></div>
+      </>}
       {blocked !== undefined && <p className="hint">{blocked}</p>}
     </> : <p className="hint">Read-only access.</p>}
     <p role="status">{failure ?? command.text}</p>

@@ -16,7 +16,7 @@ type RuleInput = {name: string; kind: 'event'; enabled?: boolean; trigger: {sour
 type Rule = RuleInput & {id: string; enabled: boolean; createdAtMs: number; updatedAtMs: number};
 type AutomationSettings = {noFlourishes: boolean; quietHours: {enabled: boolean; start: string; end: string; timeZone: string | null};
   budgets: {perAgentTask: number; perAgentHour: number; globalHour: number; deviceSpacingMs: number}};
-type LogEntry = {family?: string; index?: number; requireMode?: string; seq: number; atMs: number; ruleId: string; target: string; outcome: string; reason?: string; requestId?: string;
+type LogEntry = {family?: string; index?: number; runsOnlyIn?: string; seq: number; atMs: number; ruleId: string; target: string; outcome: string; reason?: string; requestId?: string;
   receipt?: {status: 'accepted'; requestId: string}};
 const KINDS = ['attention-raised', 'attention-cleared', 'turn-ended', 'session-ended'];
 const BUDGETS = [{key: 'perAgentTask', label: 'Per agent task', maximum: 100}, {key: 'perAgentHour', label: 'Per agent hour', maximum: 1000},
@@ -270,7 +270,7 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
       <ol>{snapshot?.entries.map(entry => <li key={entry.seq}><Facts items={[
         ['Time', new Date(entry.atMs).toLocaleString()], ['Rule', snapshot.rules.find(rule => rule.id === entry.ruleId)?.name ?? snapshot.routines.find(saved => saved.id === entry.ruleId)?.name ?? entry.ruleId],
         ...(entry.family === undefined ? [] : [['Action', entry.index === undefined ? entry.family : `Action ${String(entry.index + 1)} · ${entry.family}`] as const]),
-        ['Target', entry.target], ...(entry.requireMode === undefined ? [] : [['Required mode', entry.requireMode] as const]), ['Admission', entry.receipt?.status ?? entry.outcome], ['Policy', entry.reason ?? '—'],
+        ['Target', entry.target], ...(entry.runsOnlyIn === undefined ? [] : [['Required mode', entry.runsOnlyIn] as const]), ['Admission', entry.receipt?.status ?? entry.outcome], ['Policy', entry.reason ?? '—'],
         ['Operation', automationOutcome(entry, operations, operationLive)],
       ]}/></li>)}</ol>
     </details></article>

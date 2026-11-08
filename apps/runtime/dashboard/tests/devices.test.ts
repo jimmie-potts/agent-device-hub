@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {deviceAction, operationView, deviceBlocked} from '../src/devices.ts';
+import {contentBlocked, deviceAction, operationView, deviceBlocked} from '../src/devices.ts';
 
 const no = {supported: false} as const;
 const unknown = {status: 'unknown'} as const;
@@ -31,6 +31,22 @@ void test('unsupported values, invalid brightness and status-owned content refus
     {family: 'scene-activate', data: {sceneId: 'rain'}}, 'attempt-1'), 'object');
   assert.equal(deviceBlocked(device, false, true), 'Device records are stale');
   assert.equal(deviceBlocked(device, true, false), 'Your session is read-only');
+});
+void test('the Pixoo gates content by the advertised Hub mode: off in Work, on in Free and Quiet, with no Monitor/Media mapping (ADR 0014)', () => {
+  const pixoo = (value: string | undefined, pendingKinds: string[] = []): DeviceRecord => ({...device, id: 'pixoo-1', kind: 'pixoo', pendingKinds,
+    capabilities: {...device.capabilities, scenes: no, modes: {supported: true, values: ['work', 'free', 'quiet']},
+      media: {supported: true, actions: ['pause', 'resume'], playlistIds: ['list-1'], renditionIds: []}},
+    desired: {...device.desired, mode: value === undefined ? unknown : {status: 'known', value}}});
+  assert.match(contentBlocked(pixoo('work')) ?? '', /off in Work/);
+  for (const value of ['free', 'quiet']) {
+    assert.equal(contentBlocked(pixoo(value)), undefined, value);
+    assert.equal(typeof deviceAction(pixoo(value), {family: 'media-start', data: {playlistId: 'list-1'}}, 'attempt-1'), 'object', value);
+  }
+  assert.equal(typeof deviceAction(pixoo('work'), {family: 'media-start', data: {playlistId: 'list-1'}}, 'attempt-1'), 'string');
+  for (const blocked of [pixoo(undefined), pixoo('free', ['device-mode-set']), pixoo('media'), pixoo('monitor')]) assert.notEqual(contentBlocked(blocked), undefined);
+  // The Nanoleaf still shows content only in Free.
+  assert.match(contentBlocked(device) ?? '', /need Free/);
+  assert.equal(contentBlocked({...device, desired: {...device.desired, mode: {status: 'known', value: 'free'}}}), undefined);
 });
 void test('accepted is not completed; uncertainty and conflict keep controls locked until definitive evidence', () => {
   assert.deepEqual(operationView(operation('accepted')), {text: 'Accepted. Waiting for completion.', locked: true});

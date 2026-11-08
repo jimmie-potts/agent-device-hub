@@ -92,7 +92,7 @@ export class MonitorPresentation {
  private pendingMode:HubMode|null=null;
  /**
   * The status base waits for a command before it draws again: after a failed or uncertain status write, as a failed
-  * dashboard stopped Monitor, or at a passive start. A mode or view command, or an explicit player command, releases it.
+  * dashboard stopped Monitor, or at a passive start. A mode command or an explicit player command releases it.
   */
  private statusHeld:boolean;
  private inFlight=false;
@@ -468,7 +468,7 @@ export class MonitorPresentation {
  /**
   * Changes the status view (`pixoo-monitor-set`): its filter and cadence, saved before it applies. A moment waiting or
   * on the display ends, as an explicit command does: over the status base its picture gives way to the new view, and
-  * over a playing item the playlist resumes. The status base, if it rests, is drawn again at once in the new view.
+  * over a playing item the playlist resumes. The status base, if drawn, is drawn again at once in the new view.
   */
  async configure(action:ViewChange,admit:()=>void=()=>{}):Promise<void>{
   const interrupts=this.interrupts;
@@ -481,7 +481,7 @@ export class MonitorPresentation {
    }
    const next=presentationConfiguration.parse({...this.configuration,filter:action.filter,cadenceMs:action.cadenceMs});
    await this.options.save(next);this.configuration=next;
-   this.statusHeld=false;
+   // A view change redraws a status base already drawn; it does not end a hold, as a view change never activated Monitor.
    if(this.active)this.suspend();
    if(this.view)this.dashboard.submit(this.view,next.filter,false);
    this.settleBase();this.onChange();

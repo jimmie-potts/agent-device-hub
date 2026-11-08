@@ -4,15 +4,17 @@ import {modeName} from './hub-mode.ts';
 
 export type ModeDeviceView = {record: DeviceRecord; owner: string; live: boolean};
 export type ModeException = {target: string; name: string; choice: string; evidence: string; override: boolean; linked: boolean};
-const native = (kind: string, mode: string): string => kind === 'pixoo' ? mode === 'free' ? 'media' : 'monitor' : mode;
 
-/** Desired native mode is never a physical observation or evidence of the owner's Hub-facing intent. */
+/**
+ * Desired native mode is never a physical observation or evidence of the owner's Hub-facing intent. Nanoleaf and Pixoo
+ * both take the Hub's modes one to one (ADR 0014), so a device's desired mode is compared with the Hub's mode directly.
+ */
 export function modeExceptions(record: ModeState | undefined, devices: readonly ModeDeviceView[], operations: readonly OperationRecord[], live: boolean): ModeException[] {
   if (record === undefined) return [];
   const targets = new Set((record.overrides ?? []).map(choice => choice.target));
   for (const {record: device, live: deviceLive, owner} of devices) {
     if (live && deviceLive && ['nanoleaf', 'pixoo'].includes(device.kind) && owner === `bunny/modules/${device.kind}` && device.desired.mode.status === 'known' &&
-      device.desired.mode.value !== native(device.kind, record.mode)) targets.add(device.id);
+      device.desired.mode.value !== record.mode) targets.add(device.id);
   }
   return [...targets].map(target => {
     const override = record.overrides?.find(choice => choice.target === target);

@@ -134,11 +134,11 @@ async function within(h: Harness, name: string, check: (h: Harness) => Outcome |
 async function monitor(h: Harness): Promise<void> {
   await dispatchOnce(h, 'operator', 'fault-monitor', {
     key: `bunny.cmd.device-mode-set.${PIXOO.config.device.id}`,
-    draft: {type: 'org.bunny.device-mode.set.requested', subject: PIXOO.config.device.id, dataschema: schemaOf('device-mode-set'), data: {mode: 'monitor'}},
+    draft: {type: 'org.bunny.device-mode.set.requested', subject: PIXOO.config.device.id, dataschema: schemaOf('device-mode-set'), data: {mode: 'work'}},
   }, 'req-fault-monitor');
   await within(h, 'Monitor participates before playback starts', () => {
     const display = h.reader.states<DisplayRecord>('pixoo-display', 'bunny/modules/pixoo')[0]?.data;
-    return display?.mode === 'monitor' && display.participating && display.showing === 'dashboard' || 'Monitor has not started';
+    return display?.mode === 'work' && display.participating && display.showing === 'dashboard' || 'the status base has not started';
   });
 }
 function text(h: Harness, title: string, status: 'playing' | 'paused'): Outcome {
