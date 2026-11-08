@@ -127,6 +127,24 @@ it('browser selection stays inside the wall window when its elapsed timer wakes 
   clock.advance(60_000); await flush(); assert.equal(w.preparations.length, 1);
 });
 
+it('an early elapsed wake waits for the wall start instead of the window edge (#1515)', async t => {
+  const clock = independentClocks(), w = await world(t, clock);
+  const plan = {...oneDisplay(clock.now()), displays: [], browser: {compositionId: BROWSER}};
+  assert.ok(w.core.automation.art);
+  const permits: number[] = [];
+  const completion = w.core.automation.art.present(plan, () => {permits.push(clock.now()); return undefined;});
+  clock.shiftWall(-250);
+  clock.advance(5000); await flush();
+  assert.deepEqual(permits, [], 'the early wake still cannot consume the permit');
+  clock.advance(250); await flush();
+  assert.deepEqual(permits, [plan.startAtMs], 'the selection runs once the wall reaches its start');
+  // A final wake that lands even 1 ms past the window would have missed the start.
+  clock.shiftWall(251); clock.advance(plan.toleranceMs - 250); await flush();
+  const result = await completion;
+  assert.ok(!('error' in result)); assert.equal(result.browser?.status, 'tracked');
+  clock.advance(60_000); await flush(); assert.equal(permits.length, 1); assert.equal(w.preparations.length, 1);
+});
+
 it('a browser start still in the future at the elapsed limit expires without later replay', async t => {
   const clock = independentClocks(), w = await world(t, clock);
   const plan = {...oneDisplay(clock.now()), displays: [], browser: {compositionId: BROWSER}};

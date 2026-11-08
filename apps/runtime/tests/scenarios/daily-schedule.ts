@@ -29,6 +29,23 @@ const proofs = new WeakMap<Harness, ScheduleProof>();
 const expectedStart = new WeakMap<Harness, number>();
 const originalComposition = new WeakMap<Harness, string>();
 const startOf = (h: Harness): number => expectedStart.get(h) ?? (() => {throw new StepFailure('the bounded opportunity is missing');})();
+/**
+ * Clues to a missing browser selection (#1515): when the core sent `present` relative to the start, the attempt's
+ * reason and browser request, that request's operation, and the largest gap between bus messages around the start.
+ * A permit refused at the start and a missed start window both leave `present` unsent with no reason, so they look alike.
+ */
+const browserTimeline = (h: Harness): string => {
+  const start = startOf(h), at = (time: string): number => Date.parse(time) - start, last = schedule(h)?.lastOpportunity;
+  const messages = h.published().map(({message}) => message);
+  const present = messages.find(message => message.type === 'org.bunny.art.auto.requested' && (message.data as {action?: string}).action === 'present');
+  const operation = last?.browserRequestId == null ? undefined
+    : h.reader.states<OperationRecord>('operation', CORE).map(item => item.data).find(item => item.requestId === last.browserRequestId);
+  const times = messages.map(message => at(message.time)).filter(offset => offset >= -2000 && offset <= 10_000).sort((a, b) => a - b);
+  const gap = times.slice(1).reduce((largest, offset, index) => Math.max(largest, offset - (times[index] as number)), 0);
+  return `present ${present === undefined ? 'not sent (a refused permit or a missed window)' : `sent at ${String(at(present.time))} ms`}; attempt reason ${String(last?.reason ?? 'none')}, `
+    + `browser request ${last?.browserRequestId ?? 'none'}${operation === undefined ? '' : ` (${operation.status}/${String(operation.result ?? 'pending')})`}; `
+    + `checked at ${String(h.now() - start)} ms; ${String(times.length)} bus messages from -2 s to +10 s, largest gap ${String(gap)} ms`;
+};
 
 async function read(h: Harness): Promise<ArtScheduleRecord> {
   const answer = await h.gateway({as: 'reader', method: 'GET', path: '/api/v2/automation/art'}), value = bodyOf<ArtScheduleRecord>(answer);
@@ -105,7 +122,7 @@ export const artScheduleScenarios: readonly Scenario[] = [{
         shown?.frames !== 8 ? `Pixoo frames (${String(shown?.frames ?? 'none')})` : undefined,
       ].filter(item => item !== undefined);
       if (value === undefined || !('selection' in value) || value.selection === null || current?.notice == null || animation === undefined || missing.length > 0)
-        return `exact selected art or native notice animations missing: ${missing.join(', ')}`;
+        return `exact selected art or native notice animations missing: ${missing.join(', ')}${missing.some(item => item.startsWith('browser') || item === 'schedule notice') ? ` (${browserTimeline(h)})` : ''}`;
       const answer = await h.gateway({as: 'reader', method: 'GET', path: `/modules/${SCHEDULE_FIXTURE}/content/pixoo`});
       const submitted = bodyOf<SubmittedPixooFrames>(answer);
       if (answer.status !== 200 || submitted?.frames.length !== 8 || submitted.frames.some((frame, index) => frame.digest !== pixoo(h).shown?.digests[index] || frame.delayMs !== 200))
