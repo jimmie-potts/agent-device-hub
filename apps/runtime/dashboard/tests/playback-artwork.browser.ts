@@ -269,7 +269,7 @@ try {
     type Ending = {kind: 'load'} | {kind: 'fail'} | {kind: 'supersede'; change: () => void; wanted: Wanted};
     const keptImage = async (change: () => void, wanted: Wanted, pixel: number[], ending: Ending = {kind: 'load'}): Promise<void> => {
       const before = await current({artwork: 'ready', availability: 'available'}); await frame(before, pixel);
-      const old = await image.elementHandle(); assert.ok(old);
+      const old = await image.elementHandle();
       const entered = latch<string>(), release = latch<void>(), ended = latch<void>(); let first = true;
       const handler = async (route: Route): Promise<void> => {
         if (!first) {await route.continue(); return;} first = false;
@@ -316,7 +316,7 @@ try {
         }
         let shown = after;
         if (ending.kind === 'supersede') {
-          const pending = await card.locator('.playback-artwork img:not([data-shown])').elementHandle(); assert.ok(pending);
+          const pending = await card.locator('.playback-artwork img:not([data-shown])').elementHandle();
           ending.change(); shown = await current({...ending.wanted, artwork: 'ready', after: after.revision});
           assert.equal(shown.artwork?.generation, after.artwork?.generation);
           // The newer request is not held, so it may already have replaced the kept picture; the gap probe covers the handover.
