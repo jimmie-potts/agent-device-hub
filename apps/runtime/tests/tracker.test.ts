@@ -192,6 +192,14 @@ it('a restart while an action is pending: it ends uncertain at its deadline, and
   assert.equal(gadget.commands.length, 1);
 });
 
+/**
+ * The budget of the clean-stop test, above the sum of its phases' bounds: two starts, each within the runtime's 10 s
+ * module start timeout, the 5 s wait for the gadget's handler, and the stop, within the runtime's 5 s close and 5 s stop
+ * timeouts, which it waits out for the handler that holds the command. Under load the first start took up to 3.6 s, the
+ * stop 5.2 s and the second start 1.4 s; on the hosted runners the test took up to 12.6 s of the 20 s default (Hub #1521).
+ */
+const CLEAN_STOP_BUDGET_MS = 40_000;
+
 it('a clean stop ends an action the owner\'s handler holds uncertain at once, not at its deadline, cancels one still queued, and the restart sends neither', async context => {
   const dir = await stateDir(context);
   const gadget = new Gadget();
@@ -212,7 +220,7 @@ it('a clean stop ends an action the owner\'s handler holds uncertain at once, no
   await advance(second, DEADLINES.device.outcomeMs);
   assert.deepEqual(steps(second, 'req-held-stop'), ['sent sent', 'reply uncertain'], 'its deadline adds nothing');
   assert.equal(gadget.commands.length, 1, 'the queued command never reached the gadget, and the restart sends neither');
-});
+}, CLEAN_STOP_BUDGET_MS);
 
 it('a module that crashed between saving its outcome and reporting it reports it at its next start; history takes it once, and nothing is sent again', async context => {
   const dir = await stateDir(context);

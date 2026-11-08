@@ -9,6 +9,15 @@ import {waitFor} from '../support.js';
 const MAIN = fileURLToPath(new URL('../../src/main.js', import.meta.url));
 type Exit = [number | null, NodeJS.Signals | null];
 
+/** The longest a runtime gets to write its ready line. */
+const READY_BOUND_MS = 15_000;
+/**
+ * The budget of a migration test that starts the runtime twice, above the sum of its phases' bounds: two ready lines,
+ * and the tool runs and the two stops, which took at most 1.7 s together. Under load a start took up to 12.0 s, and the
+ * Pixoo and Nanoleaf tests ran out of the 20 s default in three and two of ten runs (Hub #1521).
+ */
+export const TWO_STARTS_BUDGET_MS = 40_000;
+
 /** Starts the shipped entry point, captures both streams and reaps it even when readiness or an assertion fails. */
 export function migrationRuntime(context: TestContext, dir: string): {
   ready: () => Promise<void>; stop: () => Promise<void>; exited: Promise<Exit>; stderr: () => string;
@@ -37,7 +46,7 @@ export function migrationRuntime(context: TestContext, dir: string): {
         assert.equal(child.exitCode, null, stderr);
         assert.equal(child.signalCode, null, stderr);
         return stdout.includes('\n');
-      }, 15_000, 'the runtime ready line');
+      }, READY_BOUND_MS, 'the runtime ready line');
       assert.equal((JSON.parse(stdout.split('\n')[0] ?? '') as {event: string}).event, 'runtime.ready');
     },
     stop: async () => { child.kill('SIGTERM'); await exited; },

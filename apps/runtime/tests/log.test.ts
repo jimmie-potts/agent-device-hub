@@ -46,7 +46,16 @@ function parsed(lines: readonly string[]): DiagnosticRecord[] {
   });
 }
 
-const ready = (runtime: Child): Promise<void> => waitFor(() => runtime.stdout().includes('\n'), 15_000, 'the ready line');
+/** The longest a runtime process gets to write its ready line. */
+const READY_BOUND_MS = 15_000;
+/**
+ * The budget of a test that starts two runtime processes one after the other, above the sum of its phases' bounds: two
+ * ready lines, and two stops, which took at most 0.2 s each. Under load a start took up to 11.0 s, and the test ran out
+ * of the 20 s default in three of ten runs (Hub #1521).
+ */
+const TWO_PROCESSES_BUDGET_MS = 40_000;
+
+const ready = (runtime: Child): Promise<void> => waitFor(() => runtime.stdout().includes('\n'), READY_BOUND_MS, 'the ready line');
 const url = (runtime: Child): string => (JSON.parse(runtime.stdout().split('\n')[0] ?? '') as {url: string}).url;
 
 /**
@@ -112,7 +121,7 @@ it('every stderr line of a runtime process is a contract record carrying the run
     instances.push(records[0]?.resource['service.instance.id'] ?? '');
   }
   assert.notEqual(instances[0], instances[1], 'another process has another instance ID');
-});
+}, TWO_PROCESSES_BUDGET_MS);
 
 it('a startup save slower than its limit adds only its own contract record to the lifecycle on stderr', async context => {
   const runtime = start(context, MAIN, await runtimeArgs(context, 'development'), false, SLOW_SAVE);
