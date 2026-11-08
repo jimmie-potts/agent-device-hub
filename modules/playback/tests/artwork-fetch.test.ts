@@ -81,7 +81,7 @@ void test('only an all-digit Sony query is outside candidate identity (#1570)', 
   const jacket = 'http://127.0.0.1:58080/jacket.jpg';
   assert.equal(artworkIdentity(`${jacket}?10000000000002031`, 'sony'), jacket);
   assert.equal(artworkIdentity(`${jacket}?10000000000002031`, 'sony'), artworkIdentity(`${jacket}?10000000000004062`, 'sony'));
-  for (const kept of [jacket, `${jacket}?id=7`, `${jacket}?7&size=large`, `${jacket}?`, `${jacket}?7#x`]) assert.equal(artworkIdentity(kept, 'sony'), kept);
+  for (const kept of [jacket, `${jacket}?id=7`, `${jacket}?7&size=large`, `${jacket}?`, `${jacket}?7#x`, `${jacket}?a=1?7`]) assert.equal(artworkIdentity(kept, 'sony'), kept);
   assert.equal(artworkIdentity('/getaa?7', 'sonos'), '/getaa?7');
   assert.equal(artworkIdentity(undefined, 'sony'), undefined);
 });

@@ -28,7 +28,7 @@ export function artworkUrl(candidate: unknown, endpoint: string, source: Artwork
  * that differ only by an all-digit query are the same candidate. Every other difference, and every Sonos reference, is new.
  */
 export function artworkIdentity(candidate: string | undefined, source: ArtworkSource): string | undefined {
-  return source === 'sony' && candidate !== undefined ? candidate.replace(/\?\d+$/u, '') : candidate;
+  return source === 'sony' && candidate !== undefined ? candidate.replace(/^([^?]*)\?\d+$/u, '$1') : candidate;
 }
 
 /** The caller bounds the whole operation with its scheduler and supplies the deadline's signal. */
