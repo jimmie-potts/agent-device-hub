@@ -12,6 +12,12 @@ allows brief scheduled exact art over empty Media while retaining explicit pause
 attention, pins and Now Playing takeovers. Ordinary mood moments keep their policy.
 Physical acceptance belongs to
 [#687](https://github.com/jimmie-potts/agent-device-hub/issues/687).
+[ADR 0014](0014-pixoo-follows-the-hub-mode.md) (owner decision 2026-11-08)
+replaces the Monitor and Media bases below with the status and playback bases
+under the Hub's Work, Free and Quiet, and withdraws both 2026-11-05 amendments
+(the empty-Media exception and Amendment 2's stopped-item rules, including the
+Monitor-visit pause). The rules on attention, Now Playing, the time box and no
+replay stand.
 
 This amends the Pixoo's ADR 0018, *Monitor and Media share the existing writer*.
 Its repository, divoom-app-upgrade, is archived, and the copy under
