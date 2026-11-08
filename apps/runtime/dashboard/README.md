@@ -731,10 +731,14 @@ artist and album. Music deep links use the same card.
 The current synced SDK owner must map to one running catalog module that serves
 playback. A native same-origin image uses the existing browser session and an
 opaque generation/revision reference; it reads no receiver URL or inline image
-payload. Owner, record and reference changes retire the image subtree and its
-callbacks. Loading or refusal leaves text, supported controls and operation
-evidence usable; image events send no command or retry. Decorative artwork has
-empty alternative text and adds no keyboard stop.
+payload. A new owner, a new generation or a record that stops admitting
+artwork retires the image subtree and its callbacks. The owner's content route
+serves only the record's current revision, so each revision requests the image
+again. Within one owner generation the loaded picture stays visible while that
+request loads hidden (#1569). Only the current request's load replaces the
+picture, and an error shows the placeholder. Loading or refusal leaves text,
+supported controls and operation evidence usable; image events send no command
+or retry. Decorative artwork has empty alternative text and adds no keyboard stop.
 
 Home keeps the existing mode/power quick controls; the device route exposes
 brightness, scenes, zones, media and manual moments only where declared. Each

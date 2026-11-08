@@ -28,7 +28,7 @@ p{line-height:1.5;margin-bottom:var(--space-s)}
 .playback-track>div:last-child{min-width:0;overflow-wrap:anywhere}
 .playback-artwork{width:80px;height:80px;flex:0 0 80px;overflow:hidden;border:1px solid var(--edge-dense);border-radius:var(--radius);background:var(--inset)}
 .playback-artwork img{width:100%;height:100%;object-fit:contain;visibility:hidden}
-.playback-artwork[data-loaded=true] img{visibility:visible}
+.playback-artwork img[data-shown]{visibility:visible}
 .shell{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:100vh}
 .shell>aside{background:var(--panel);border-right:1px solid var(--edge-dense);padding:var(--space-l) var(--space-m);display:flex;flex-direction:column;gap:var(--space-l)}
 .brand{display:flex;align-items:center;gap:var(--space-m);font-weight:750;letter-spacing:.16em;font-size:var(--type-brand);color:var(--accent)}

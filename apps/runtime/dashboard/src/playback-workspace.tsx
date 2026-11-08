@@ -2,7 +2,7 @@ import React, {useEffect, useState} from 'react';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {LightingLayoutRecord, OperationRecord, PlaybackLayoutRecord, PlaybackPlacement, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {PlaybackCard} from './device-controls.tsx';
-import {playbackArtworkUrl} from './playback-artwork.ts';
+import {playbackArtwork} from './playback-artwork.ts';
 import {useAttempt} from './command-control.tsx';
 import type {DashboardConnection} from './connection.ts';
 import type {RuntimeData} from './runtime-feeds.ts';
@@ -54,7 +54,7 @@ export function PlaybackWorkspace({runtime, connected, operations, operationsLiv
   };
   const card = (player: (typeof players)[number]): React.ReactNode => <PlaybackCard key={`${player.copy.owner}:${player.record.id}`} record={player.record}
     live={playerLive(player)} control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={() => {void connection.refreshDevices();}}
-    artworkUrl={playbackArtworkUrl(player.record, player.copy.owner, playerLive(player), runtime.modules)}/>;
+    artwork={playbackArtwork(player.record, player.copy.owner, playerLive(player), runtime.modules)}/>;
   if (route.kind === 'rooms') return <section className="music-workspace" aria-label="Room audio">
     <h2>Room audio</h2><p className="hint">Shared playback cards. Room placement does not select AirPlay output.</p>
     {!layoutLive || !roomsLive ? <p role="status">Room placement is unavailable or stale.</p> : rooms.map(room => {

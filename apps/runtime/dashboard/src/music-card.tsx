@@ -1,19 +1,29 @@
 import React, {useState} from 'react';
 import './music.css';
+import type {ArtworkRequest} from './playback-artwork.ts';
 
 export type MusicAction = 'previous' | 'play' | 'pause' | 'next';
 export type MusicCardProps = {
   id: string; availability: 'available' | 'stale' | 'unavailable';
   title: string; artist?: string | undefined; album?: string | undefined; player: string;
-  artworkUrl?: string | undefined; controls: readonly MusicAction[]; disabled: boolean;
+  artwork?: ArtworkRequest | undefined; controls: readonly MusicAction[]; disabled: boolean;
   onAction: (action: MusicAction) => void; status: string; locked: boolean; refresh?: (() => void) | undefined;
 };
-/** Keyed by its complete observation URL; a retired image cannot update the replacement. */
+/**
+ * Keyed by one owner's artwork generation. A later revision's request loads hidden while the
+ * loaded picture stays; only the current request's own load or error settles it, and the
+ * earlier image element is retired then. A failed request shows the placeholder.
+ */
 function Artwork({src}: {src: string}): React.JSX.Element {
-  const [state, setState] = useState<'loading' | 'loaded' | 'failed'>('loading');
-  return <div className="playback-artwork" aria-hidden="true" data-loaded={state === 'loaded'}>
+  const [settled, setSettled] = useState<{loaded?: string; failed?: string}>({});
+  const shown = settled.failed === src ? undefined : settled.loaded;
+  const images = shown === undefined || shown === src ? [src] : [shown, src];
+  return <div className="playback-artwork" aria-hidden="true" data-loaded={shown !== undefined}>
     <span className="music-placeholder">♫</span>
-    <img src={src} alt="" onLoad={() => {setState(current => current === 'failed' ? current : 'loaded');}} onError={() => {setState('failed');}}/>
+    {images.map(image => image === shown
+      ? <img key={image} src={image} alt="" data-shown=""/>
+      : <img key={image} src={image} alt="" onLoad={() => {setSettled(current => current.failed === image ? current : {loaded: image});}}
+        onError={() => {setSettled({failed: image});}}/>)}
   </div>;
 }
 /** Presentation only: the shell adapter supplies observations, capabilities and guarded actions. */
@@ -26,7 +36,7 @@ export function MusicCard(props: MusicCardProps): React.JSX.Element {
       {exceptional && <span className="music-warning" aria-hidden="true">!</span>}
       <span>{exceptional ? availability === 'stale' ? 'Stale' : 'Unavailable' : 'Now playing'}</span>
     </span>{!exceptional && <span>{player.charAt(0).toUpperCase() + player.slice(1)}</span>}</header>
-    {props.artworkUrl !== undefined ? <Artwork key={`${id}:${props.artworkUrl}`} src={props.artworkUrl}/> : <div className="playback-artwork" aria-hidden="true"><span className="music-placeholder">♫</span></div>}
+    {props.artwork !== undefined ? <Artwork key={`${id}:${props.artwork.image}`} src={props.artwork.src}/> : <div className="playback-artwork" aria-hidden="true"><span className="music-placeholder">♫</span></div>}
     <div className="music-metadata"><h2>{title}</h2>{artist !== undefined && <p className="music-artist">{artist}</p>}{album !== undefined && <p className="music-album">{album}</p>}</div>
     <fieldset className="music-transport" aria-label="Playback controls" disabled={disabled}>
       {(['previous', primary, 'next'] as const).map(value => <button type="button" key={value} disabled={!controls.includes(value)} onClick={() => {onAction(value);}}>
