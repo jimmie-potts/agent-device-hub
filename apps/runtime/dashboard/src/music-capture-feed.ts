@@ -101,6 +101,8 @@ export class CaptureProjection {
 
 const reading = (): CaptureReading => ({wallMs: Date.now(), monotonicMs: performance.now()});
 const timers: Scheduler = {after: (ms, callback) => {const timer = setTimeout(callback, ms); return () => clearTimeout(timer);}};
+/** A copy's close waits for the edge with no deadline, so a refresh waits for a replaced copy's close at most this long (#1562). */
+const REPLACED_CLOSE_WAIT_MS = 250;
 type CaptureParticipant = Pick<RemoteParticipant, 'sync' | 'subscribe'>;
 /** Read-only Audio-page scope. The dashboard supplies its existing authenticated participant. */
 export class MusicCaptureFeed implements Subscription {
@@ -126,13 +128,7 @@ export class MusicCaptureFeed implements Subscription {
     if (this.#closed) return false;
     const epoch = ++this.#epoch;
     this.invalidate();
-    // The replaced copy closes in the background: its close waits for the edge, so awaiting it here could hold this refresh
-    // (and a card that disables Refresh meanwhile) indefinitely. Its handler checks the epoch, so nothing it delivers reaches the view.
-    const previous = this.#copy; this.#copy = undefined; void previous?.close().catch(() => {});
-    // Start the new read after the caller's synchronous work, as the awaited close used to. A read started synchronously
-    // inside the Audio card's mount effect intermittently never showed its first measurement (#1562: 11 of 24 browser
-    // journeys failed without this yield, none of 16 with it); the exact ordering dependency is not yet identified.
-    await Promise.resolve();
+    const previous = this.#copy; this.#copy = undefined; await this.#closeReplaced(previous);
     try {
       if (this.#subscription === undefined) {
         this.#opening ??= this.#participant.subscribe<CaptureFeatures>('bunny.event.music-capture-features.*', message => {
@@ -159,13 +155,23 @@ export class MusicCaptureFeed implements Subscription {
         if (current()) {sent = this.#now(); restarted = true; completed = undefined; this.invalidate();}
       }});
       if (result.status === 'rejected') {if (current()) this.invalidate(); return false;}
-      if (!current()) {void result.copy.close().catch(() => {}); return false;}
+      if (!current()) {await this.#closeReplaced(result.copy); return false;}
       this.#copy = result.copy;
       if (completed !== undefined) this.#synchronized(completed.message, completed.sent, completed.received);
       else if (!restarted) this.#synchronized(result.message, sent, this.#now());
       return this.#projection.view.synced;
     } catch {if (!this.#closed && epoch === this.#epoch) this.invalidate(); return false;}
     finally {this.#opening = undefined;}
+  }
+  /**
+   * Closes a copy this scope no longer reads. A healthy close keeps its place before the next read; a slow or stuck one
+   * finishes in the background after REPLACED_CLOSE_WAIT_MS, so it cannot hold a refresh, or a card's Refresh, indefinitely.
+   */
+  #closeReplaced(copy: SyncedCopy<CaptureState> | undefined): Promise<void> {
+    if (copy === undefined) return Promise.resolve();
+    let cancel = (): void => {};
+    const waited = new Promise<void>(resolve => {cancel = this.#scheduler.after(REPLACED_CLOSE_WAIT_MS, resolve);});
+    return Promise.race([copy.close().catch(() => {}), waited]).finally(cancel);
   }
   invalidate(): void {this.#cancel(); this.#projection.invalidate(); this.#show();}
   async close(): Promise<void> {

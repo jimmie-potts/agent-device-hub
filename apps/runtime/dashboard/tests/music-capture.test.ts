@@ -117,7 +117,7 @@ void test('a late subscription or copy cannot outlive its Audio scope', async ()
     assert.equal(syncs, phase === 'subscribe' ? 0 : 1); assert.equal(closed, phase === 'subscribe' ? 1 : 2);
   }
 });
-void test('a refresh does not wait for the replaced copy to finish closing', async () => {
+void test('a stuck close of the replaced copy cannot hold a refresh', async () => {
   let mono = 1000, closes = 0, closeHangs = false;
   const participant = {
     subscribe: () => Promise.resolve({close: () => Promise.resolve()}),
