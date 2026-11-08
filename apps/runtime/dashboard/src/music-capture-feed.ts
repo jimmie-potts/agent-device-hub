@@ -129,6 +129,10 @@ export class MusicCaptureFeed implements Subscription {
     // The replaced copy closes in the background: its close waits for the edge, so awaiting it here could hold this refresh
     // (and a card that disables Refresh meanwhile) indefinitely. Its handler checks the epoch, so nothing it delivers reaches the view.
     const previous = this.#copy; this.#copy = undefined; void previous?.close().catch(() => {});
+    // Start the new read after the caller's synchronous work, as the awaited close used to. A read started synchronously
+    // inside the Audio card's mount effect intermittently never showed its first measurement (#1562: 11 of 24 browser
+    // journeys failed without this yield, none of 16 with it); the exact ordering dependency is not yet identified.
+    await Promise.resolve();
     try {
       if (this.#subscription === undefined) {
         this.#opening ??= this.#participant.subscribe<CaptureFeatures>('bunny.event.music-capture-features.*', message => {
