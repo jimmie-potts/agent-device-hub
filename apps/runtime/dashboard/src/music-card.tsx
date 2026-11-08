@@ -1,12 +1,12 @@
 import React, {useState} from 'react';
 import './music.css';
-import type {PlaybackArtwork} from './playback-artwork.ts';
+import type {ArtworkRequest} from './playback-artwork.ts';
 
 export type MusicAction = 'previous' | 'play' | 'pause' | 'next';
 export type MusicCardProps = {
   id: string; availability: 'available' | 'stale' | 'unavailable';
   title: string; artist?: string | undefined; album?: string | undefined; player: string;
-  artwork?: PlaybackArtwork | undefined; controls: readonly MusicAction[]; disabled: boolean;
+  artwork?: ArtworkRequest | undefined; controls: readonly MusicAction[]; disabled: boolean;
   onAction: (action: MusicAction) => void; status: string; locked: boolean; refresh?: (() => void) | undefined;
 };
 /**

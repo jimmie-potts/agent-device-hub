@@ -1,5 +1,5 @@
 import {MusicCard} from './music-card.tsx';
-import type {PlaybackArtwork} from './playback-artwork.ts';
+import type {ArtworkRequest} from './playback-artwork.ts';
 // The existing dashboard's general cards on runtime records and tracked one-shot actions (Hub #922).
 import React, {useRef, useState} from 'react';
 import type {DeviceRecord, MediaAction, Tagged} from '@jimmie-potts/event-contracts/v2/devices';
@@ -112,7 +112,7 @@ export function DeviceCard({record, owner, live, control, operations, operations
 
 /** The common adapter retains command identity and operation recovery across every placement. */
 export function PlaybackCard({record, live, control, operations, operationsLive, artwork, refresh}: {
-  record: PlaybackState; live: boolean; control: boolean; operations: readonly OperationRecord[]; operationsLive: boolean; artwork?: PlaybackArtwork | undefined; refresh?: (() => void) | undefined;
+  record: PlaybackState; live: boolean; control: boolean; operations: readonly OperationRecord[]; operationsLive: boolean; artwork?: ArtworkRequest | undefined; refresh?: (() => void) | undefined;
 }): React.JSX.Element {
   const action = useAttempt(record.id, operations.filter(operation => operation.family === 'playback-control'), operationsLive);
   const status = action.requestId === undefined && action.text === 'No command sent from this page.' ? '' : action.text;

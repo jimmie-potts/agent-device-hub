@@ -265,7 +265,9 @@ try {
     await frame(await current({title: 'Identical candidate text', artwork: 'ready'}), [200, 20, 20, 255]);
     checks.push('same-generation replacement');
     // #1569: a new revision of the same owner's generation keeps the loaded picture until its own reference loads.
-    const keptImage = async (change: () => void, wanted: Wanted, pixel: number[]): Promise<void> => {
+    // `supersede` brings a newer revision while the held one loads; `fail` refuses the held reference.
+    type Ending = {kind: 'load'} | {kind: 'fail'} | {kind: 'supersede'; change: () => void; wanted: Wanted};
+    const keptImage = async (change: () => void, wanted: Wanted, pixel: number[], ending: Ending = {kind: 'load'}): Promise<void> => {
       const before = await current({artwork: 'ready', availability: 'available'}); await frame(before, pixel);
       const old = await image.elementHandle(); assert.ok(old);
       const entered = latch<string>(), release = latch<void>(), ended = latch<void>(); let first = true;
@@ -273,7 +275,10 @@ try {
         if (!first) {await route.continue(); return;} first = false;
         try {
           const response = await route.fetch(); entered.resolve(route.request().url()); await release.wait;
-          await route.fulfill({response}); ended.resolve();
+          try {
+            await route.fulfill(ending.kind === 'fail' ? {status: 404, contentType: 'application/json', body: '{"error":{"code":"not-found","retryable":false}}'} : {response});
+          } catch (error) {if (route.request().failure() === null) throw error;}
+          ended.resolve();
         } catch (error) {entered.reject(error); ended.reject(error);}
       };
       void ended.wait.catch(() => {});
@@ -301,15 +306,33 @@ try {
         assert.equal(await old.evaluate(node => node.isConnected), true, 'the loaded picture stays mounted while the next revision loads');
         assert.equal(await old.isVisible(), true, 'the loaded picture stays visible while the next revision loads');
         assert.equal(await card.locator('.music-placeholder').isVisible(), false, 'no placeholder while the same picture reloads');
+        const gaps = async (): Promise<number> => page.evaluate(() => {const probe = window as unknown as {artworkGaps: number; artworkProbe: () => void}; probe.artworkProbe(); return probe.artworkGaps;});
+        if (ending.kind === 'fail') {
+          release.resolve(); await bounded(ended.wait, 'same-generation refusal');
+          await card.locator('.music-placeholder').waitFor({state: 'visible'});
+          assert.equal(await old.evaluate(node => node.isConnected), false, 'a refused current reference retires the kept picture');
+          assert.equal(await card.locator('.playback-artwork img[data-shown]').count(), 0);
+          await gaps(); return;
+        }
+        let shown = after;
+        if (ending.kind === 'supersede') {
+          const pending = await card.locator('.playback-artwork img:not([data-shown])').elementHandle(); assert.ok(pending);
+          ending.change(); shown = await current({...ending.wanted, artwork: 'ready', after: after.revision});
+          assert.equal(shown.artwork?.generation, after.artwork?.generation);
+          // The newer request is not held, so it may already have replaced the kept picture; the gap probe covers the handover.
+          await expect.poll(() => pending.evaluate(node => node.isConnected)).toBe(false);
+          await pending.dispose();
+        }
         release.resolve(); await bounded(ended.wait, 'same-generation release');
-        await frame(after, pixel);
+        await frame(shown, pixel);
         assert.equal(await old.evaluate(node => node.isConnected), false, 'the replacement retires the earlier revision once it loads');
-        assert.equal(await page.evaluate(() => {const probe = window as unknown as {artworkGaps: number; artworkProbe: () => void}; probe.artworkProbe(); return probe.artworkGaps;}), 0,
-          'the card never showed the placeholder across the revision');
+        assert.equal(await gaps(), 0, 'the card never showed the placeholder across the revision');
       } finally {release.resolve(); await bounded(ended.wait, 'same-generation cleanup').catch(() => {}); await page.unroute(imagePattern, handler); await old.dispose();}
     };
     await keptImage(() => {speakers.pause('sony');}, {player: 'paused'}, [200, 20, 20, 255]);
     await keptImage(() => {speakers.play('sony');}, {player: 'playing'}, [200, 20, 20, 255]);
+    await keptImage(() => {speakers.pause('sony');}, {player: 'paused'}, [200, 20, 20, 255], {kind: 'supersede', change: () => {speakers.play('sony');}, wanted: {player: 'playing'}});
+    await keptImage(() => {speakers.pause('sony');}, {player: 'paused'}, [200, 20, 20, 255], {kind: 'fail'});
     assert.deepEqual(sent, [], 'receiver-side pause and resume send no command');
     checks.push('same-generation revisions keep the picture');
     // Source identity changes although every displayed metadata field remains identical.

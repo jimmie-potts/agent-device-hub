@@ -736,9 +736,9 @@ artwork retires the image subtree and its callbacks. The owner's content route
 serves only the record's current revision, so each revision requests the image
 again. Within one owner generation the loaded picture stays visible while that
 request loads hidden (#1569). Only the current request's load replaces the
-picture, and an error shows the placeholder. Loading or refusal leaves text, supported controls and operation
-evidence usable; image events send no command or retry. Decorative artwork has
-empty alternative text and adds no keyboard stop.
+picture, and an error shows the placeholder. Loading or refusal leaves text,
+supported controls and operation evidence usable; image events send no command
+or retry. Decorative artwork has empty alternative text and adds no keyboard stop.
 
 Home keeps the existing mode/power quick controls; the device route exposes
 brightness, scenes, zones, media and manual moments only where declared. Each

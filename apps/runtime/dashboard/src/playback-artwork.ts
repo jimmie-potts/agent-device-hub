@@ -5,10 +5,10 @@ import {moduleOwner, type ModuleEntry} from './modules.ts';
  * `image` names one owner's artwork generation; `src` is the request for the record's current revision,
  * which the owner's content route requires.
  */
-export type PlaybackArtwork = {image: string; src: string};
+export type ArtworkRequest = {image: string; src: string};
 
 /** Only the current synced owner and its running catalog declaration admit an image request. */
-export function playbackArtwork(record: PlaybackState, owner: string, live: boolean, modules: readonly ModuleEntry[] | undefined): PlaybackArtwork | undefined {
+export function playbackArtwork(record: PlaybackState, owner: string, live: boolean, modules: readonly ModuleEntry[] | undefined): ArtworkRequest | undefined {
   const image = record.artwork;
   if (!live || record.availability !== 'available' || record.playback.status !== 'known'
     || (record.playback.player !== 'playing' && record.playback.player !== 'paused') || image?.status !== 'ready'

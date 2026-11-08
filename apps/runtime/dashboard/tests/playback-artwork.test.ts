@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
-import {playbackArtwork, type PlaybackArtwork} from '../src/playback-artwork.ts';
+import {playbackArtwork, type ArtworkRequest} from '../src/playback-artwork.ts';
 import type {ModuleEntry} from '../src/modules.ts';
 
 const module: ModuleEntry = {name: 'speaker-owner', state: 'running', serves: ['playback'], pages: []};
@@ -9,7 +9,7 @@ const generation = 'abcdef00-0000-4000-8000-000000000001';
 const record: PlaybackState = {id: 'living-room', revision: 2, availability: 'available',
   playback: {status: 'known', player: 'playing', title: 'Synthetic song', controls: ['pause']},
   artwork: {status: 'ready', generation, mediaType: 'image/png', width: 1, height: 1, base64: 'synthetic'}};
-const artwork = (value = record, live = true, modules: readonly ModuleEntry[] | undefined = [module]): PlaybackArtwork | undefined =>
+const artwork = (value = record, live = true, modules: readonly ModuleEntry[] | undefined = [module]): ArtworkRequest | undefined =>
   playbackArtwork(value, 'bunny/modules/speaker-owner', live, modules);
 const url = (value = record, live = true, modules: readonly ModuleEntry[] | undefined = [module]): string | undefined => artwork(value, live, modules)?.src;
 

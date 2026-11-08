@@ -222,11 +222,15 @@ The runtime dashboard SHALL use its existing shared Home, Audio and assigned Roo
 
 ### Requirement: Browser artwork follows current observation membership
 
-The browser SHALL associate each image and its load/error callbacks with the playback owner, record ID, artwork generation and record revision. New metadata or revision SHALL retire the previous image immediately and use a distinct content reference. An old response or callback SHALL NOT reveal earlier artwork beside current metadata. Source handoff, sync loss, stale or unavailable state and unmount SHALL remove the old image; reconnect SHALL load only current eligible membership without replaying a command. Image completion or failure SHALL NOT enable controls or report playback success, and SHALL NOT retry a command or start an image retry loop.
+The browser SHALL associate each image and its load/error callbacks with the playback owner, record ID, artwork generation and record revision. A new owner, record ID or artwork generation, or a record that stops admitting artwork, SHALL retire the previous image immediately. Every new revision SHALL use a distinct content reference. Within one owner's generation, the loaded picture MAY stay visible while the current revision's reference loads hidden; only that reference's own load SHALL replace it, and its error SHALL show the placeholder. An old response or callback SHALL NOT reveal artwork from another owner or generation beside current metadata, or replace the current reference's result. Source handoff, sync loss, stale or unavailable state and unmount SHALL remove the old image; reconnect SHALL load only current eligible membership without replaying a command. Image completion or failure SHALL NOT enable controls or report playback success, and SHALL NOT retry a command or start an image retry loop.
 
 #### Scenario: Delayed A arrives after B
 - **WHEN** image A is delayed while observation B becomes current, including identical-title source changes or a candidate replacement in the same generation
 - **THEN** A's element is removed before its delayed completion, its callback cannot reveal A, and only B's current reference can become visible
+
+#### Scenario: A same-generation revision keeps the picture
+- **WHEN** a loaded image's record gets a new revision with the same owner and artwork generation, such as a pause or resume
+- **THEN** the card requests the new revision's reference, keeps the loaded picture visible with no placeholder until that reference loads, and then retires the earlier image element
 
 #### Scenario: Lost sync and re-entry
 - **WHEN** the playback sync fails, a route unmounts or the session ends while an image is pending, then the page reconnects or re-enters
