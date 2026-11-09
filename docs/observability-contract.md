@@ -358,8 +358,7 @@ only a diagnostic record changes, and only on the private path.
   and the OTLP export to the Mac-local collector (#813). Projecting a 1.7 record
   to an earlier profile removes the four fields and keeps the rest, so an older
   consumer sees the fault with its type, code and correlation and none of the
-  text. Publication uses synthetic fixtures; the maintenance intake's findings
-  carry catalog enums only.
+  text. Publication uses synthetic fixtures.
 - **Telemetry loss:** profile 1.7 admits `telemetry.dropped` under
   `bunny.runtime`, with `bunny.telemetry.dropped_count` and
   `bunny.telemetry.failure_count`, for the runtime's bounded summary of the

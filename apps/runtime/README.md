@@ -47,8 +47,8 @@ only when a private section selects the Anthropic provider. One helper,
 `tests/fixtures/simulated.ts`, builds each section as `{...config, secrets: {<name>:
 <file>}}`, with one private file holding the synthetic token for each declared
 name, and writes the configuration file. The `shipped` disposable run, the
-runtime's process tests, the maintenance journal test and the memory script's
-`simulated` variant configure the shipped modules with it.
+runtime's process tests and the memory script's `simulated` variant configure
+the shipped modules with it.
 
 Wispr is the read-only file-handoff module. Its selected aggregate and diagnostics
 files are entered manually in the private configuration; no collector or database

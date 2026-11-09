@@ -580,7 +580,7 @@ artifact checks. Its evidence remains separate from the cheap Integration job:
 | --- | --- |
 | Select affected checks | Node 24 with only `scripts/ci-selection` checked out: maps the PR's changed paths to check groups |
 | Workflow checks (Workflow workflow) | Node 24 workflow validation, the affected-check selection fixtures, delivery preflight fixtures and isolated Linux hook qualification. It also runs for Markdown-only changes. |
-| Build, lint and core tests | Node 24, and Python 3.14 when the shared group is selected, in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
+| Build, lint and core tests | Node 24, and Python 3.14 when the shared group is selected, in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
 | Runtime unit tests | Node 24 build, then `npm run test:runtime:built`, when the runtime group is selected |
 | Runtime scenario tests | Node 24 build, then `npm run test:runtime:scenarios:built`, the scenario catalog over both transports, when the runtime group is selected |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
@@ -790,8 +790,8 @@ stay until #839, so run them locally when a change touches that code:
 
 CI still covers the old code that kept checks rely on. `npm run build` and
 `npm run typecheck` compile it, because kept suites import it.
-`test:contracts:built` runs because MCP, maintenance, the event mapping tests
-and the observability pilot import `@jimmie-potts/device-contracts` from source.
+`test:contracts:built` runs because MCP, the event mapping tests and the
+observability pilot import `@jimmie-potts/device-contracts` from source.
 `test:dashboard` and `test:dashboard:smoke` run because #922 copies the
 dashboard into the runtime; the copy has its own
 [checks](#runtime-dashboard-checks). The Python setup still installs

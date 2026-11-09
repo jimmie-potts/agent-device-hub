@@ -335,9 +335,8 @@ credential reloads, MCP through `packages/mcp`, module pages and settings, the
 route map against the old Hub's sources and the cutover's credential
 conversion, and scan every record, answer, health document and span for the
 synthetic token prefix `tok_SYNTHETIC835`. The
-runtime's records must pass the diagnostic contract's validator (#903), as
-maintenance intake reads them, and `runtime.stopped` must count no lost record or
-span. The decision-record and tracing tests read the runtime's records and the
+runtime's records must pass the diagnostic contract's validator (#903), and
+`runtime.stopped` must count no lost record or span. The decision-record and tracing tests read the runtime's records and the
 spans its host adapter hands a test sink (#949). The Pixoo library migration's
 tool (#931) runs in process and as its entry point, against a synthetic library
 it writes with the Pixoo module's code, starts the runtime in a child process to

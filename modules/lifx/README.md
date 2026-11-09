@@ -18,8 +18,7 @@ The runtime ships it after the core (`apps/runtime/src/modules.ts`), through
 [configuration file](../../apps/runtime/README.md#configuration) refuses the module
 with `not-found` and runs on. The factory's `simulatedSection`,
 `LIFX_SIMULATED_SECTION`, configures the simulated build with `pendant-1` and the
-Beam at documentation addresses; the maintenance intake test and the `shipped`
-disposable run use it.
+Beam at documentation addresses; the `shipped` disposable run uses it.
 
 ## Provenance
 
