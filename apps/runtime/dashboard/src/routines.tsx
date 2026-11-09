@@ -1,6 +1,6 @@
 // Hub #483, #1297: the weekly routines editor. A routine is an ordered list of typed device actions at one Hub-clock
 // time on chosen weekdays. The page only reads and writes definitions through the Automation page's explicit mutations.
-import React,{useEffect,useRef,useState} from 'react';
+import React,{useEffect,useId,useRef,useState} from 'react';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {Badge,Facts} from './ui.tsx';
 
@@ -37,6 +37,65 @@ const numeric=(value:string):number|string=>value===''?'':Number(value);
 const text=(value:unknown):string=>typeof value==='string' || typeof value==='number'?String(value):'';
 const blank=():ActionDraft=>({target:'',family:'',data:{}});
 const fresh=():RoutineDraft=>({name:'',days:[1,2,3,4,5],time:'07:00',actions:[blank()]});
+
+// Hub #1585: the viewer's reading of a Hub-clock time. The stored value stays the Hub host's local HH:MM; this is derived text.
+const DAY_MS=86_400_000;
+type Wall={year:number;month:number;day:number;hour:number;minute:number;second:number;weekday:string};
+const pad=(value:number):string=>String(value).padStart(2,'0');
+/** The browser's own zone. */
+export const browserZone=():string=>Intl.DateTimeFormat().resolvedOptions().timeZone;
+/** The zone's canonical name; throws for an unknown zone. */
+const canonical=(zone:string):string=>new Intl.DateTimeFormat('en-US',{timeZone:zone}).resolvedOptions().timeZone;
+function wall(atMs:number,zone:string):Wall {
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:zone,hourCycle:'h23',weekday:'short',year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric'}).formatToParts(atMs);
+  const part=(type:Intl.DateTimeFormatPartTypes):string=>parts.find(item=>item.type===type)?.value??'';
+  return {year:Number(part('year')),month:Number(part('month')),day:Number(part('day')),hour:Number(part('hour')),minute:Number(part('minute')),second:Number(part('second')),weekday:part('weekday')};
+}
+/** The zone's offset from UTC at an instant, in milliseconds. */
+function offset(atMs:number,zone:string):number {
+  const at=wall(atMs,zone);
+  return Date.UTC(at.year,at.month-1,at.day,at.hour,at.minute,at.second)-(atMs-(((atMs%1000)+1000)%1000));
+}
+/**
+ * The instant a Hub-local date and time names. A repeated hour takes its earlier reading and a skipped hour moves forward,
+ * as the host clock's `setHours` resolves them in the core's `nextOccurrence`.
+ */
+function instant(year:number,month:number,day:number,hour:number,minute:number,zone:string):number {
+  const guess=Date.UTC(year,month-1,day,hour,minute),before=guess-offset(guess-DAY_MS,zone);
+  const matches=[...new Set([before,guess-offset(guess+DAY_MS,zone)])].filter(atMs=>{
+    const at=wall(atMs,zone);return at.day===day && at.hour===hour && at.minute===minute;
+  }).sort((a,b)=>a-b);
+  return matches[0]??before;
+}
+/** The first occurrence of a Hub-local weekly time strictly after `afterMs`, by the core's selection rule on the Hub's clock. */
+export function nextHubOccurrence(days:readonly number[],time:string,zone:string,afterMs:number):number|undefined {
+  if(!/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(time)) return undefined;
+  try {
+    const today=wall(afterMs,zone),hour=Number(time.slice(0,2)),minute=Number(time.slice(3));
+    for(let ahead=0;ahead<=7;ahead++) {
+      const date=new Date(Date.UTC(today.year,today.month-1,today.day+ahead));
+      if(!days.includes(date.getUTCDay())) continue;
+      const atMs=instant(date.getUTCFullYear(),date.getUTCMonth()+1,date.getUTCDate(),hour,minute,zone);
+      if(atMs>afterMs) return atMs;
+    }
+  } catch {/* An unknown zone has no reading. */}
+  return undefined;
+}
+/** The browser's zone when it differs from the Hub's, else undefined (also for an unknown zone). */
+export function distinctZone(hubZone:string,localZone:string):string|undefined {
+  try {
+    const local=canonical(localZone);
+    return canonical(hubZone)===local?undefined:local;
+  } catch {return undefined;}
+}
+/** One Hub instant in the browser's zone, such as "11:00 your time (America/Chicago)", naming the weekday when the dates differ. */
+export function localEquivalent(atMs:number,hubZone:string,localZone:string):string|undefined {
+  const local=distinctZone(hubZone,localZone);
+  if(local===undefined) return undefined;
+  const hub=wall(atMs,hubZone),here=wall(atMs,local);
+  const shifted=hub.year!==here.year || hub.month!==here.month || hub.day!==here.day;
+  return `${shifted?`${here.weekday} `:''}${pad(here.hour)}:${pad(here.minute)} your time (${local})`;
+}
 
 /** A definition never enables on create or changes `enabled` as a side effect of editing; each action keeps exactly its family's keys. */
 export function routineInput(draft:Omit<RoutineInput,'enabled'>,creating:boolean):RoutineInput {
@@ -151,14 +210,24 @@ function ActionFields({action,record,change}:{action:ActionDraft;record:DeviceRe
   }
 }
 
-export function RoutinesEditor({routines,timeZone,devices,available,mutate}: {
+export function RoutinesEditor({routines,timeZone,devices,available,mutate,localZone=browserZone()}: {
   routines:readonly Routine[];timeZone:string;devices:readonly RoutineDevice[];available:boolean;
   mutate:(path:string,method:string,value?:object,after?:()=>void)=>Promise<void>;
+  /** The viewer's zone; the browser's own unless a test fixes it. */
+  localZone?:string;
 }):React.JSX.Element {
   const [draft,setDraft]=useState(fresh),[editing,setEditing]=useState<string>();
   const [open,setOpen]=useState(false);
   const nameInput=useRef<HTMLInputElement>(null),newButton=useRef<HTMLButtonElement>(null),opener=useRef<HTMLButtonElement|null>(null);
-  const returnFocus=useRef(false);
+  const returnFocus=useRef(false),timeHint=useId();
+  const local=distinctZone(timeZone,localZone);
+  /** The viewer's reading of a routine's next occurrence: the core's planned instant when enabled, else the next one on the Hub clock. */
+  const equivalent=(days:readonly number[],time:string,plannedMs?:number):string|undefined=>{
+    if(local===undefined) return undefined;
+    const atMs=plannedMs??nextHubOccurrence(days,time,timeZone,Date.now());
+    return atMs===undefined?undefined:localEquivalent(atMs,timeZone,local);
+  };
+  const draftEquivalent=equivalent(draft.days,draft.time);
   const reset=():void=>{
     setEditing(undefined);setDraft(fresh());setOpen(false);
     returnFocus.current=true;
@@ -188,14 +257,14 @@ export function RoutinesEditor({routines,timeZone,devices,available,mutate}: {
       <button type="button" ref={newButton} disabled={!available} onClick={event=>{
         opener.current=event.currentTarget;setEditing(undefined);setDraft(fresh());setOpen(true);nameInput.current?.focus();
       }}>New routine</button></header>
-      <p className="hint">Hub time · {timeZone}</p>
+      <p className="hint">Hub time · {timeZone}{local!==undefined && ` · your time (${local}) is shown for each routine's next occurrence; the difference can change across the year`}</p>
       {routines.length===0 && <p>No routines yet.</p>}
-      {routines.map(saved=><article className="session" key={saved.id}><h4>{saved.name} <Badge>{saved.enabled?'Enabled':'Disabled'}</Badge></h4>
-        <p>{saved.days.map(day=>DAYS[day]).join(', ')} · {saved.time}</p>
+      {routines.map(saved=>{const reading=equivalent(saved.days,saved.time,saved.enabled?saved.next?.atMs:undefined);return <article className="session" key={saved.id}><h4>{saved.name} <Badge>{saved.enabled?'Enabled':'Disabled'}</Badge></h4>
+        <p>{saved.days.map(day=>DAYS[day]).join(', ')} · {saved.time}{reading!==undefined && ` · ${reading}`}</p>
         <ol className="routine-summary">{saved.actions.map((action,index)=><li key={index}>{labelOf(action.target)}: {actionSummary(action)}</li>)}</ol>
         <details className="automation-evidence"><summary>Timing and device status</summary><Facts items={[
           ['Next run at last refresh',!saved.enabled?'None while disabled':saved.next===undefined?'None'
-            :`${new Date(saved.next.atMs).toLocaleString(undefined,{timeZone})} (${timeZone})`],
+            :`${new Date(saved.next.atMs).toLocaleString(undefined,{timeZone})} (${timeZone})${local===undefined?'':` · ${new Date(saved.next.atMs).toLocaleString(undefined,{timeZone:local})} (${local})`}`],
           ...saved.actions.map((action,index)=>{
             const device=recordOf(action.target);
             return [`Action ${String(index+1)} device path`,device?.current===true?device.record.availability:'Unknown or stale'] as const;
@@ -207,7 +276,7 @@ export function RoutinesEditor({routines,timeZone,devices,available,mutate}: {
           <button type="button" disabled={!available} aria-label={`${saved.enabled?'Disable':'Enable'} routine ${saved.name}`} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}/${saved.enabled?'disable':'enable'}`,'POST',{});}}>{saved.enabled?'Disable':'Enable'}</button>
           <button type="button" className="secondary" disabled={!available} aria-label={`Run now: ${saved.name}`} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}/run`,'POST',{});}}>Run now</button>
           <button type="button" className="secondary" disabled={!available} aria-label={`Delete routine ${saved.name}`} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}`,'DELETE',undefined,()=>{if(editing===saved.id){opener.current=newButton.current;reset();}});}}>Delete</button></div>
-      </article>)}
+      </article>;})}
       <details className="automation-help"><summary>How routines work</summary><p>The Hub must be running and each device reachable. Missed runs are skipped. Actions run in order; a device outside its required mode is skipped and logged. Saving or enabling runs nothing; Run now runs one occurrence.</p></details>
     </article><article className="card automation-editor" hidden={!open}><h3>{editing===undefined?'Create routine':'Edit routine'}</h3>
       <form className="edit wide routine-form" onSubmit={event=>{
@@ -218,7 +287,8 @@ export function RoutinesEditor({routines,timeZone,devices,available,mutate}: {
         <label>Routine name<input ref={nameInput} required maxLength={80} value={draft.name} onChange={event=>{setDraft({...draft,name:event.target.value});}}/></label>
         <fieldset className="routine-days"><legend>Days</legend>{DAYS.map((day,index)=><label className="check" key={day}><input type="checkbox" checked={draft.days.includes(index)}
           onChange={event=>{setDraft({...draft,days:event.target.checked?[...draft.days,index].sort((a,b)=>a-b):draft.days.filter(value=>value!==index)});}}/>{day}</label>)}</fieldset>
-        <label>Time<input type="time" required value={draft.time} onChange={event=>{setDraft({...draft,time:event.target.value});}}/></label>
+        <label>Time<input type="time" required value={draft.time} aria-describedby={draftEquivalent===undefined?undefined:timeHint} onChange={event=>{setDraft({...draft,time:event.target.value});}}/></label>
+        {draftEquivalent!==undefined && <p className="hint" id={timeHint}>{draft.time} Hub time is {draftEquivalent} at the next occurrence.</p>}
         <ol className="routine-actions">{draft.actions.map((action,index)=>{
           const device=recordOf(action.target),record=device?.record,position=String(index+1);
           const families=record===undefined?[]:routineFamilies(record),modes=modesOf(record);

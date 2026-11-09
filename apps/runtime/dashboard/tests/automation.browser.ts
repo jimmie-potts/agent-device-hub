@@ -18,7 +18,12 @@ const waitFor = async (check: () => boolean, label: string, ms = 12_000): Promis
 };
 try {
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+  // #1585: the browser reads routine times in its own zone, which differs from the disposable Hub's host zone.
+  const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone === 'America/Chicago' ? 'Asia/Tokyo' : 'America/Chicago';
+  const yourTime = (minute: string): string => `(?:[A-Z][a-z]{2} )?\\d\\d:${minute} your time \\(${viewerZone}\\)`;
+  const timeHint = (time: string): RegExp => new RegExp(`^${time} Hub time is ${yourTime(time.slice(3))} at the next occurrence\\.$`);
+  const weekdays = 'Monday, Tuesday, Wednesday, Thursday, Friday';
+  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', timezoneId: viewerZone});
   try {
     const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().name); });
     const writes: {method: string; path: string; header: string | undefined}[] = [];
@@ -163,12 +168,15 @@ try {
     assert.equal(await submit('Create disabled routine').isDisabled(), true);
     const routine = async (name: string, target: string): Promise<void> => {
       await routines().getByLabel('Routine name', {exact: true}).fill(name); await routines().getByLabel('Time', {exact: true}).fill('00:00');
+      await expect(routines().getByLabel('Time', {exact: true})).toHaveAccessibleDescription(timeHint('00:00'));
       await step(1).getByLabel('Device', {exact: true}).selectOption(target);
       assert.equal(await step(1).getByLabel('Action', {exact: true}).inputValue(), 'power-set');
       assert.equal(await step(1).getByLabel('Required mode', {exact: true}).inputValue(), '', 'power has no precondition by default');
       await step(1).getByLabel('Power', {exact: true}).selectOption('on');
       await save('Create disabled routine');
       await routines().getByRole('heading', {name: `${name} Disabled`, exact: true}).waitFor();
+      // A saved disabled routine shows its next occurrence in the viewer zone.
+      await routines().getByText(new RegExp(`^${weekdays} · 00:00 · ${yourTime('00')}$`)).first().waitFor();
     };
     await routine('Weekday desk', firstTarget);
     await expect(automation().getByRole('button', {name: 'New routine', exact: true})).toBeFocused();
@@ -181,6 +189,7 @@ try {
     await routines().getByRole('button', {name: 'Edit routine Weekday desk', exact: true}).click();
     await routines().getByRole('heading', {name: 'Edit routine', exact: true}).waitFor();
     await routines().getByLabel('Time', {exact: true}).fill('00:02');
+    await expect(routines().getByLabel('Time', {exact: true})).toHaveAccessibleDescription(timeHint('00:02'));
     await routines().getByRole('button', {name: 'Add action', exact: true}).click();
     assert.equal(await submit('Save routine').isDisabled(), true, 'an incomplete second action blocks saving');
     await step(2).getByLabel('Device', {exact: true}).selectOption(firstTarget);
@@ -193,6 +202,7 @@ try {
     await save('Save routine');
     await routines().getByRole('heading', {name: 'Weekday desk Enabled', exact: true}).waitFor();
     await routines().getByText(/color hue 120 \/ saturation 50$/).waitFor();
+    await routines().getByText(new RegExp(`^${weekdays} · 00:02 · ${yourTime('02')}$`)).waitFor();
     await save('Run now: Weekday desk');
     const ran = attempts().getByRole('listitem').filter({hasText: 'Weekday desk'}).filter({hasText: 'Action 1'}).first();
     await ran.waitFor();
