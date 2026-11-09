@@ -43,7 +43,9 @@ analytics page remains available; adding the card does not activate collection.
 Automation opens on **Routines**, with **Rules** and **Settings** beside it.
 New/Edit opens a form; switching tabs keeps its draft, and Cancel discards it.
 Confirmed saves close the editor. Weekly routines select weekdays, a Hub-clock
-time and ordered device actions. New routines and event rules remain disabled
+time and ordered device actions. When the browser's zone differs from the Hub's,
+each routine card, its next run and the editor's Time field also show the next
+occurrence in the browser's zone (#1585); the saved time stays Hub-local. New routines and event rules remain disabled
 until explicitly enabled; **Run now** is a separate action. The Hub runs enabled
 routines while the page is closed and skips missed times. It must be running
 and able to reach the target. **Recent attempts** expands admission, completion
