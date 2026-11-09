@@ -11,6 +11,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {DashboardState} from '../src/connection.ts';
 import {parseRuleInput} from '../../dist/src/core/automation.js';
+import {ROUTINE_BLOCK_DETAILS} from '../../dist/src/core/power-schedules.js';
 
 // Node's native TS runner cannot import TSX. Bundle the page as browser code, keeping the built core validator outside it.
 const directory = await mkdtemp(join(tmpdir(), '925ui-'));
@@ -21,7 +22,7 @@ const require = createRequire(import.meta.url);
 const react = require.resolve('react'), jsxRuntime = require.resolve('react/jsx-runtime');
 await build({stdin: {contents: `
   export * from './src/automation.tsx';
-  export {routineInput} from './src/routines.tsx';
+  export {routineInput, PREVIEW_DETAILS} from './src/routines.tsx';
 `, resolveDir: fileURLToPath(new URL('..', import.meta.url)), sourcefile: 'automation-test.ts'},
   bundle: true, platform: 'browser', format: 'cjs', outfile: output, logLevel: 'silent',
   alias: {react, 'react/jsx-runtime': jsxRuntime}, external: [react, jsxRuntime]});
@@ -30,6 +31,7 @@ type Page = {
   routineInput(draft: typeof routine, creating: boolean): typeof routine & {enabled?: boolean};
   automationOutcome(entry: {family?: string; requestId?: string; target: string; ruleId?: string}, operations: readonly OperationRecord[], live: boolean): string;
   automationRequest(path: string, method?: string, body?: object): Promise<Record<string, unknown>>;
+  PREVIEW_DETAILS: readonly string[];
   previewRoutine(id: string): Promise<{id: string; actions: Record<string, unknown>[]} & Record<string, unknown>>;
   readAutomation(signal: AbortSignal): Promise<{settings: Record<string, unknown>}>;
   AutomationPage: ComponentType<{connection: {subscribe(listener: () => void): () => void; getState(): DashboardState}; live: boolean; control: boolean}>;
@@ -109,6 +111,7 @@ void test('a routine preview is a plain read that passes only with its declared 
     replies.push({...head, actions});
     await assert.rejects(page.previewRoutine('evening'), /Automation is unavailable/, label);
   }
+  assert.deepEqual(page.PREVIEW_DETAILS, ROUTINE_BLOCK_DETAILS, 'the page accepts exactly the core\'s guard details');
   replies.push({...head, next: 99, actions: []});
   await assert.rejects(page.previewRoutine('evening'), /Automation is unavailable/, 'a next occurrence is an object');
 });

@@ -584,8 +584,10 @@ then answers `would-send`, or `blocked` with the reason a run would log
 failed: `not-configured`,
 `no-evidence`, `stale`, `not-available`, `held`, `unsupported`, `external`,
 `pending-mode`, `mode-unknown`, `wrong-mode` or `in-flight`. A failed read is
-that action's `no-evidence`. The preview is a reply from current records, not a
-command. It sends, logs, claims and schedules nothing, and it leaves the
+that action's `no-evidence`. Every action is read against the current records,
+so an earlier action's effect is not simulated: a `device-mode-set` that a run
+would leave pending is not seen by the content action after it. The preview is
+a reply from current records, not a command. It sends, logs, claims and schedules nothing, and it leaves the
 in-flight mark alone. The owning module's admission remains the authority at
 send time, and evidence can change before a real run. Previewing an unsaved
 draft is deferred; save it disabled and preview the saved routine.

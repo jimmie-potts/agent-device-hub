@@ -19,6 +19,8 @@ import {LogWriter, type LogRecord} from '../src/log.js';
 const controlToken = 'synthetic-automation-control', readToken = 'synthetic-automation-reader';
 const control = {id: 'control', source: 'bunny/parts/control', digest: tokenDigest(controlToken), scopes: ['read', 'control'] as const};
 const reader = {id: 'reader', source: 'bunny/parts/reader', digest: tokenDigest(readToken), scopes: ['read'] as const};
+const ingestToken = 'synthetic-automation-ingest';
+const ingest = {id: 'ingest', source: 'bunny/parts/ingest', digest: tokenDigest(ingestToken), scopes: ['ingest'] as const};
 const parent = {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'};
 const rule = {name: 'Turn complete', kind: 'event', trigger: {source: 'core', kind: 'turn-ended'},
   action: {mood: 'celebrate', priorityClass: 'event', durationMs: 1000, targets: ['lines']}};
@@ -43,7 +45,7 @@ async function boundary(context: TestContext) {
     try {return await work();} catch (error) {ownerFailures++; throw error;}
   }} as unknown as ModuleHost;
   const options = {bus: new InProcessBus({scheduler}), host, validator: edgeValidator(), families: new Set<string>(),
-    credentials: [control, reader], clock, scheduler, log: writer.logger('bunny.runtime'), redactions: writer.redactions,
+    credentials: [control, reader, ingest], clock, scheduler, log: writer.logger('bunny.runtime'), redactions: writer.redactions,
     stateDir: '/unused-automation-boundary', trace: spans, automation:controls,
     edge: {credentials: 'unused', launcher: false, mcp: false, editorLinks: {}, placeLinks: {}}};
   const gateway = new Gateway(options);
@@ -158,6 +160,7 @@ void test('a routine preview is a read-scope reply from current records: no disp
   assert.equal(w.automation.log(50).length,rows,'the preview wrote no automation-log row');
   assert.equal(w.spans.spans.some(span=>span.name==='bunny.feed.read' && span.attributes['http.route']==='/api/v2/automation/routines/{id}'),true,'the request span names the routine route');
   assert.equal((await w.call('GET',`routines/${id}/preview`,undefined,'unknown',undefined)).status,401);
+  assert.equal((await w.call('GET',`routines/${id}/preview`,undefined,ingestToken,undefined)).status,403,'a credential without read scope is refused');
   const missing=await w.call('GET','routines/missing/preview',undefined,readToken,undefined);
   assert.equal(missing.status,404);assert.equal((missing.body.error as {code:string}).code,'not-found');
   for(const method of ['POST','PUT','DELETE']) assert.equal((await w.call(method,`routines/${id}/preview`,{})).status,404,`${method} is not a preview`);

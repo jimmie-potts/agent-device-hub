@@ -260,8 +260,14 @@ export function RoutinesEditor({routines,timeZone,devices,available,mutate,reada
   // A preview belongs to the snapshot it was read beside: the next refresh or an edit clears it.
   const [previews,setPreviews]=useState<{of:readonly Routine[];entries:Readonly<Record<string,PreviewState>>}>({of:routines,entries:{}});
   const shown=previews.of===routines?previews.entries:{};
+  // A reply that lands after the next snapshot belongs to the replaced one and is dropped, so it cannot clear a newer reading.
+  const latestRoutines=useRef(routines);
+  useEffect(()=>{latestRoutines.current=routines;},[routines]);
   const runPreview=(id:string):void=>{
-    const of=routines,put=(state:PreviewState):void=>{setPreviews(current=>({of,entries:{...(current.of===of?current.entries:{}),[id]:state}}));};
+    const of=routines,put=(state:PreviewState):void=>{
+      if(of!==latestRoutines.current) return;
+      setPreviews(current=>({of,entries:{...(current.of===of?current.entries:{}),[id]:state}}));
+    };
     put({status:'reading'});
     void preview(id).then(result=>{put('reply' in result?{status:'read',reply:result.reply}:{status:'failed',message:result.failure});});
   };
