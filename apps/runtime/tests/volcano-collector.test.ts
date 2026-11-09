@@ -10,13 +10,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {Worker} from 'node:worker_threads';
 import {parseRecord} from '@jimmie-potts/bunny-observability';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, type VolcanoObservation} from '@jimmie-potts/event-contracts/v2/families';
 import type {Logger, PublishOnceResult} from '@jimmie-potts/sdk';
 import {admit, emptyContinuity, reduce, type Fact} from '@jimmie-potts/volcano';
 import {
-  BACKOFF_FIRST_MS, BACKOFF_MAX_MS, CounterGate, READABLE, SUBSCRIBABLE, VOLCANO_REGISTERS, VOLCANO_SERIAL, loadCollector, readCollectorConfig, runCollector, serialDigest, volcanoFeedOf,
+  BACKOFF_FIRST_MS, BACKOFF_MAX_MS, CounterGate, MAX_SERIAL_BYTES, READABLE, SUBSCRIBABLE, VOLCANO_REGISTERS, VOLCANO_SERIAL, loadCollector, readCollectorConfig, runCollector, serialDigest, volcanoFeedOf,
   type Collector, type ReadUuid, type SubscribeUuid, type VolcanoTransport,
 } from '../src/collector/volcano.js';
 import {producerSource} from '../src/hook/index.js';
@@ -39,6 +40,8 @@ class FakeDevice implements VolcanoTransport {
   readonly notifications = new Map<string, (bytes: Uint8Array) => void>();
   registers: Record<string, number> = {status1: 0x0603, status2: 0x0200, current: 400, target: 1850, hours: 12, minutes: 5};
   serial = SERIAL;
+  /** Replaces the serial characteristic's whole value when set. */
+  serialBytes: Uint8Array | undefined;
   advertising = true;
   connectFails = false;
   lost: (() => void) | undefined;
@@ -61,7 +64,7 @@ class FakeDevice implements VolcanoTransport {
     assert.ok(READABLE.includes(uuid), 'read of a characteristic outside the allowlist');
     this.operations.push(`read ${uuid.slice(0, 8)}`);
     if (this.readFails) return Promise.reject(new Error('synthetic'));
-    if (uuid === VOLCANO_SERIAL) return Promise.resolve(Buffer.from(`${this.serial}\0\0`));
+    if (uuid === VOLCANO_SERIAL) return Promise.resolve(this.serialBytes ?? Buffer.from(`${this.serial}\0\0`));
     const name = Object.entries(VOLCANO_REGISTERS).find(([, value]) => value === uuid)?.[0] ?? '';
     const value = this.registers[name] ?? 0;
     if (this.dataOnRead) this.notifications.get(uuid)?.(le(value));
@@ -238,6 +241,29 @@ void test('a publication that fails is never retried: the next snapshot is a new
   const sequences = snapshots(run).map(item => item.sequence);
   assert.equal(new Set(sequences).size, sequences.length, 'each attempt is a new snapshot');
   assert.equal(logs.filter(entry => entry.event === 'operation.failed' && entry.level !== 'debug').length >= 1, true);
+});
+
+void test('a serial longer than any characteristic value is refused before it is compared, as a failed read', async t => {
+  const device = new FakeDevice();
+  // The enrolled serial, then padding that would match once trimmed: only the length refuses it.
+  device.serialBytes = Buffer.concat([Buffer.from(SERIAL), Buffer.alloc(MAX_SERIAL_BYTES + 1 - SERIAL.length)]);
+  const before = logs.length;
+  const run = start(t, device);
+  await until(() => run.waits.length >= 2, 'two attempts');
+  assert.ok(snapshots(run).length > 0);
+  assert.equal(snapshots(run).every(item => item.reading === null), true, 'nothing is read from the device');
+  assert.equal(snapshots(run).some(item => item.link === 'identity-mismatch' || item.link === 'connected'), false, 'neither another device nor this one');
+  assert.equal(snapshots(run).some(item => item.link === 'disconnected'), true);
+  assert.deepEqual(run.waits.slice(0, 2), [BACKOFF_FIRST_MS, BACKOFF_FIRST_MS * 2], 'it backs off as for any failed read');
+  assert.equal(device.operations.some(operation => operation.startsWith('subscribe')), false);
+  assert.equal(device.operations.filter(operation => operation.startsWith('read')).every(operation => operation === `read ${VOLCANO_SERIAL.slice(0, 8)}`), true);
+  assert.equal(device.operations.filter(operation => operation === 'disconnect').length >= 2, true, 'each connection is closed');
+  const unavailable = logs.slice(before).filter(entry => entry.event === 'device.unavailable').map(entry => (entry.fields as Record<string, unknown>)['bunny.code']);
+  assert.ok(unavailable.length > 0, 'the device is reported unavailable');
+  assert.deepEqual([...new Set(unavailable)], ['unavailable'], 'unknown, never forbidden as another device would be');
+  assert.equal(JSON.stringify(logs).includes(SERIAL), false);
+  await run.stop();
+  assert.equal(device.operations.at(-1), 'disconnect', 'stopping ends the run with its connection closed');
 });
 
 void test('a serial that differs reports identity-mismatch and disconnects, with no reading', async t => {
@@ -488,6 +514,56 @@ void test('the gate takes a normal tick and passes unread registers through', ()
 void test('serials are compared without trailing padding', () => {
   assert.equal(serialDigest(Buffer.from(`${SERIAL}\0\0 `)), SERIAL_HASH);
   assert.notEqual(serialDigest(Buffer.from(`${SERIAL}X`)), SERIAL_HASH);
+});
+
+/** The digest before #1463, for inputs short enough to run it: the new one must agree with it wherever it accepts. */
+const previousDigest = (bytes: Uint8Array): string => createHash('sha256').update(new TextDecoder('utf-8').decode(bytes).replace(/[\0\s]+$/u, ''), 'utf8').digest('hex');
+
+void test('serial digests keep their earlier values, including Unicode whitespace and invalid UTF-8', () => {
+  const inputs = [
+    '', '\0', ' \0\t\n', SERIAL, `${SERIAL}\0\0 `, `${SERIAL} \0 \0`, ` ${SERIAL}`, `${SERIAL}\0X`, `A\0B\0`,
+    `${SERIAL}\u00a0\u2028\u3000\ufeff`, `${SERIAL}\u200b`, `${SERIAL}\r\v\f\u1680\u2009\u202f\u205f`, 'Grüße\u2003',
+  ].map(text => Buffer.from(text, 'utf8') as Uint8Array);
+  inputs.push(Uint8Array.of(0x41, 0xff, 0x00, 0x20), Uint8Array.of(0xe2, 0x80), Uint8Array.of(0x41, 0xc2, 0xa0, 0x00));
+  for (const bytes of inputs) assert.equal(serialDigest(bytes), previousDigest(bytes), `bytes ${Buffer.from(bytes).toString('hex')}`);
+});
+
+void test('a serial is accepted up to the longest characteristic value and refused beyond it', () => {
+  assert.equal(MAX_SERIAL_BYTES, 512);
+  const longest = Buffer.concat([Buffer.from(SERIAL), Buffer.alloc(MAX_SERIAL_BYTES - SERIAL.length)]);
+  assert.equal(longest.length, MAX_SERIAL_BYTES);
+  assert.equal(serialDigest(longest), SERIAL_HASH);
+  assert.equal(serialDigest(Buffer.concat([longest, Uint8Array.of(0)])), undefined);
+  assert.equal(serialDigest(new Uint8Array(64 * 1024 * 1024)), undefined, 'refused by its length, before any decoding');
+  // The limit counts bytes, not decoded characters: two-byte characters reach it in half as many.
+  assert.equal(typeof serialDigest(Buffer.from('é'.repeat(MAX_SERIAL_BYTES / 2))), 'string');
+  assert.equal(serialDigest(Buffer.from(`${'é'.repeat(MAX_SERIAL_BYTES / 2)}\0`)), undefined, '513 bytes in 257 characters');
+  // Trimmed padding still counts: the bound is on the read, not on what is left after decoding and trimming it.
+  assert.equal(serialDigest(Buffer.concat([Buffer.from('é'.repeat(200)), Buffer.alloc(MAX_SERIAL_BYTES + 1 - 400)])), undefined);
+});
+
+void test('trailing padding is trimmed in linear time, so a long run of NULs before another character stays cheap', async () => {
+  // The earlier unanchored pattern restarted at every NUL, so these inputs cost about n²/2 steps, which is hours at this
+  // length. They are longer than any serial the collector accepts, so they reach the trimming only through the exported
+  // helper. A worker runs them, because a synchronous loop cannot be interrupted, and a generous bound ends it.
+  const helper = new URL('../src/collector/volcano.js', import.meta.url).href;
+  const source = `import {parentPort} from 'node:worker_threads';
+import {trimSerialPadding} from ${JSON.stringify(helper)};
+const text = '\\0'.repeat(2_000_000) + 'X';
+parentPort.postMessage(trimSerialPadding(text) === text && trimSerialPadding('S' + '\\0 '.repeat(1_000_000)) === 'S');`;
+  const worker = new Worker(new URL(`data:text/javascript,${encodeURIComponent(source)}`));
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const result = await Promise.race([
+      once(worker, 'message').then(([value]) => value as unknown),
+      once(worker, 'error').then(([error]) => { throw error; }),
+      new Promise(resolve => { timer = setTimeout(() => { resolve('timed out'); }, 10_000); }),
+    ]);
+    assert.equal(result, true);
+  } finally {
+    clearTimeout(timer);
+    await worker.terminate();
+  }
 });
 
 void test('a producer names exactly the Volcano feed', () => {

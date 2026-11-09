@@ -40,6 +40,9 @@ Both are read once at start, and must be owner-only regular files with one link.
   "advertisedName": "<exact advertised name>", "serialSha256": "<64 hex digits>"}`.
   The hash is the SHA-256 of the serial as text, without trailing padding. The serial
   itself is not stored there, and the collector does not publish, log or keep it.
+  A serial read longer than 512 bytes, the longest value a Bluetooth characteristic
+  can have, is refused before it is decoded. The collector reports `disconnected`, as
+  for any failed read, and tries again after its backoff.
 - `producer.json`, with its `receipt.json` beside it: the
   [hook's producer file](../runtime/README.md#agent-hooks), whose `source` is exactly
   `{"provider": "storz-bickel", "client": "volcano", "hostId": "<id>", "sourceId":
