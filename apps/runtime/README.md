@@ -516,26 +516,28 @@ and one time on the Hub host's local clock and holds an ordered list of typed
 actions, each naming a configured target and one of the tracked command
 families its module declares: `power-set`, `brightness-set`,
 `scene-activate`, `media-start`, `media-control`, `device-mode-set`,
-`pixoo-media-show` or `lifx-color-set`, with that family's own payload. A
-content action (`scene-activate`, `media-start`, `media-control`,
-`pixoo-media-show`) always carries `requireMode`, and only its device kind's
-content mode: `media` for a Pixoo, `free` for a Nanoleaf. It takes that mode
-when the field is omitted, and a kind without a content mode cannot hold a
-content action. So no routine action except an explicit `device-mode-set` can
-take a device out of its status presentation. Any other action may name a mode
-to require, or none. New routines default to disabled; edits preserve the
-enabled state. This registry is separate from Nanoleaf/Pixoo mode
+`pixoo-media-show` or `lifx-color-set`, with that family's own payload. Any
+action may name `runsOnlyIn`, the Hub mode (`work`, `free` or `quiet`) its
+device must report as its desired mode for the action to run
+([ADR 0014](../../docs/decisions/0014-pixoo-follows-the-hub-mode.md)). No action
+is forced into a mode: what a mode admits is the owning module's decision, such
+as the Pixoo's refusal of playback starts in Work. A content action
+(`scene-activate`, `media-start`, `media-control`, `pixoo-media-show`) is
+accepted only for a Pixoo or a Nanoleaf. A routine stored before ADR 0014 may
+carry the retired `requireMode`; it reads as `runsOnlyIn` for the Hub mode it
+stood for (`media` as `free`, `monitor` as `work`), so the core still opens. New
+routines default to disabled; edits preserve the enabled state. This registry is separate from Nanoleaf/Pixoo mode
 participation.
 
 At its minute, or on an explicit Run now, the core runs the actions in order:
 each reads the current device record, checks the same configuration and
 generation after the read, the capability, availability, hold and external
-control, then the mode precondition against the record's desired mode and
-pending mode changes, and submits one tracked, guarded command through the
-dispatcher with fresh request identity; the mode-checked families carry
-`requireMode` so the Pixoo checks it again at admission (#1276). A refused,
-failed, uncertain or skipped action does not stop the next; a skipped content
-action is logged `blocked` with reason `mode`, and a scheduled action whose
+control, then the `runsOnlyIn` precondition against the record's desired mode
+and pending mode changes, and submits one tracked, guarded command through the
+dispatcher with fresh request identity. No command carries `requireMode`; the
+owning module's own admission stays decisive. A refused, failed, uncertain or
+skipped action does not stop the next; an action skipped for its mode is logged
+`blocked` with reason `mode`, and a scheduled action whose
 turn comes more than 60 seconds after the minute is logged `blocked` with
 reason `expired`. Nothing waits for an earlier action's outcome: a
 `device-mode-set` followed by a content action usually skips that content
