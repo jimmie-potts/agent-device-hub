@@ -450,11 +450,37 @@ configuration change in stage 2 of
 control disabled, and on the host-local and private-proxy profiles, `mcp` stays
 `false`. Private-profile credential
 scope rules and the optional local producer's ingest-only grant remain enforced.
-The private-proxy and production profiles also admit one credential with the
-coding worker's own `coding-worker` role ([Hub #502](coding-worker.md)), which
-the runtime binds to its fixed source with no scopes; the BB-8 role and the
-host-local profile still refuse it.
+The private-proxy and production profiles also admit credentials with the
+coding worker's own `coding-worker` role ([Hub #502](coding-worker.md)) and the
+Mac Music producers' `music-producer` and `music-playback-producer` roles
+([producer guide](../apps/music-producer/README.md)). The runtime binds each role
+to its fixed source with no scopes. The BB-8 role, any robot ID and the
+host-local profile still refuse them. Images from before Hub #1594 admit only the
+coding worker's role and refuse the whole file at start.
 Host-local and private-proxy profiles still refuse device control and named devices.
+
+### Grant a credential to the running core
+
+The running core reads `edge.json` again on SIGHUP, but the entrypoint checks it
+only at container start. A grant the profile refuses therefore works until the
+next start, then stops the core from starting (Hub #1594). Check every grant
+before reloading it:
+
+1. Keep an owner-only copy of `edge.json` beside it in the secrets volume.
+2. Write the grant with the runtime's `grantCredential`, in a one-shot container
+   of the core's own image with the secrets volume writable and no network.
+3. Run the start-time credential check in the running core. It reads the core's
+   own configuration and the file just written, and prints the admitted count:
+
+   ```text
+   docker exec CORE_CONTAINER node /opt/bunny/deploy/container/entrypoint.mjs check-credentials
+   ```
+
+4. On a refusal, restore the copy and neither reload nor restart the core. An
+   image from before Hub #1594 refuses the command itself; do not grant a role
+   credential on such an image.
+5. Otherwise send SIGHUP and confirm one `runtime.edge.reloaded` record with
+   `bunny.outcome` `succeeded`.
 
 Add only wanted shipped module sections to the private runtime configuration.
 They start in shipped order, with a section for every declared prerequisite.

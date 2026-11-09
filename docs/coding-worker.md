@@ -49,7 +49,9 @@ part of this slice.
    robot ID on that role refuses the file. The Mac container admits this role
    on its private-proxy and production profiles; its host-local profile, and
    images from before Hub #1350, refuse the whole file, so grant it only on an
-   image that admits it.
+   image that admits it. On the running Mac core, follow
+   [Grant a credential to the running core](bunny-container.md#grant-a-credential-to-the-running-core),
+   which checks the file before it is reloaded.
 2. List `delegate_coding` in the companions section's `assistant.tools` of the
    private `runtime.json` (see the [module guide](../modules/companions/README.md)):
    the model is offered only the listed tools, so without it nothing is ever
