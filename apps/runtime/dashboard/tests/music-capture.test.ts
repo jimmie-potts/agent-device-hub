@@ -117,6 +117,42 @@ void test('a late subscription or copy cannot outlive its Audio scope', async ()
     assert.equal(syncs, phase === 'subscribe' ? 0 : 1); assert.equal(closed, phase === 'subscribe' ? 1 : 2);
   }
 });
+void test('a stuck close of the replaced copy cannot hold a refresh', async () => {
+  let mono = 1000, closes = 0, closeHangs = false;
+  const participant = {
+    subscribe: () => Promise.resolve({close: () => Promise.resolve()}),
+    sync: () => {mono += 10; return Promise.resolve(answer(() => {closes += 1; return closeHangs ? new Promise<void>(() => {}) : Promise.resolve();}));},
+  };
+  const feed = new MusicCaptureFeed({participant: participant as unknown as ConstructorParameters<typeof MusicCaptureFeed>[0]['participant'], now: () => now(mono)});
+  assert.equal(await feed.refresh(), true);
+  closeHangs = true;
+  // A card that disables Refresh while a refresh runs would stay locked if the refresh waited on the edge here.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const refreshed = await Promise.race([feed.refresh(), new Promise<'stuck'>(resolve => {timer = setTimeout(() => {resolve('stuck');}, 1000);})]);
+  clearTimeout(timer);
+  assert.equal(refreshed, true); assert.equal(feed.getSnapshot().synced, true);
+  assert.equal(closes, 1, 'the replaced copy is still asked to close');
+  closeHangs = false; await feed.close();
+});
+void test('a healthy close of the replaced copy finishes before the next read and cancels its wait', async () => {
+  let mono = 1000, syncs = 0, holdNext = true, finishClose: () => void = () => {throw new Error('no close');};
+  const scheduled = new Set<() => void>();
+  const scheduler: Scheduler = {after: (_delay, callback) => {scheduled.add(callback); return () => {scheduled.delete(callback);};}};
+  const participant = {
+    subscribe: () => Promise.resolve({close: () => Promise.resolve()}),
+    sync: () => {
+      syncs += 1; mono += 10; const hold = holdNext; holdNext = false;
+      return Promise.resolve(answer(() => hold ? new Promise<void>(resolve => {finishClose = resolve;}) : Promise.resolve()));
+    },
+  };
+  const feed = new MusicCaptureFeed({participant: participant as unknown as ConstructorParameters<typeof MusicCaptureFeed>[0]['participant'], now: () => now(mono), scheduler});
+  assert.equal(await feed.refresh(), true); assert.equal(syncs, 1); assert.equal(scheduled.size, 0);
+  const second = feed.refresh(); await flush();
+  assert.equal(syncs, 1, 'the next read waits for the replaced copy to close'); assert.equal(scheduled.size, 1);
+  finishClose(); assert.equal(await second, true);
+  assert.equal(syncs, 2); assert.equal(scheduled.size, 0, 'the bounded wait is cancelled once the close finishes');
+  await feed.close();
+});
 void test('an initial sync result retained across a restart cannot revive old freshness', async () => {
   let mono = 1000, handler: SyncHandler<CaptureState> = () => {}, options: SyncOptions = {timeoutMs: 1};
   let finish: (value: SyncResult<CaptureState>) => void = () => {throw new Error('no sync');};
