@@ -976,8 +976,11 @@ root lockfile and the container image. It keeps no history.
   least 4 s later still says the same: then it is a real reset, which the module
   records as a discontinuity. A gap that ends while a pair is held has no credit.
 - **Identity.** The serial's SHA-256 is compared with `serialSha256`. A different
-  device publishes `identity-mismatch` and disconnects. The serial is not
-  published, logged or kept.
+  device publishes `identity-mismatch` and disconnects. A serial read longer than
+  512 bytes, the longest characteristic value Bluetooth allows, is refused before
+  it is decoded and ends the connection as a failed read does: `disconnected`,
+  device `unavailable`, then the usual backoff. The serial is not published,
+  logged or kept.
 - **Reconnection.** Backoff starts at 2 s and doubles to 60 s, starting over after
   a connection that reached the device. A device that does not advertise is
   `unavailable`, which is unknown: its Bluetooth may simply be off.

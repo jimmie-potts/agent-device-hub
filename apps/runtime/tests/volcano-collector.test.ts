@@ -247,6 +247,7 @@ void test('a serial longer than any characteristic value is refused before it is
   const device = new FakeDevice();
   // The enrolled serial, then padding that would match once trimmed: only the length refuses it.
   device.serialBytes = Buffer.concat([Buffer.from(SERIAL), Buffer.alloc(MAX_SERIAL_BYTES + 1 - SERIAL.length)]);
+  const before = logs.length;
   const run = start(t, device);
   await until(() => run.waits.length >= 2, 'two attempts');
   assert.ok(snapshots(run).length > 0);
@@ -257,7 +258,12 @@ void test('a serial longer than any characteristic value is refused before it is
   assert.equal(device.operations.some(operation => operation.startsWith('subscribe')), false);
   assert.equal(device.operations.filter(operation => operation.startsWith('read')).every(operation => operation === `read ${VOLCANO_SERIAL.slice(0, 8)}`), true);
   assert.equal(device.operations.filter(operation => operation === 'disconnect').length >= 2, true, 'each connection is closed');
+  const unavailable = logs.slice(before).filter(entry => entry.event === 'device.unavailable').map(entry => (entry.fields as Record<string, unknown>)['bunny.code']);
+  assert.ok(unavailable.length > 0, 'the device is reported unavailable');
+  assert.deepEqual([...new Set(unavailable)], ['unavailable'], 'unknown, never forbidden as another device would be');
   assert.equal(JSON.stringify(logs).includes(SERIAL), false);
+  await run.stop();
+  assert.equal(device.operations.at(-1), 'disconnect', 'stopping ends the run with its connection closed');
 });
 
 void test('a serial that differs reports identity-mismatch and disconnects, with no reading', async t => {
@@ -529,6 +535,11 @@ void test('a serial is accepted up to the longest characteristic value and refus
   assert.equal(serialDigest(longest), SERIAL_HASH);
   assert.equal(serialDigest(Buffer.concat([longest, Uint8Array.of(0)])), undefined);
   assert.equal(serialDigest(new Uint8Array(64 * 1024 * 1024)), undefined, 'refused by its length, before any decoding');
+  // The limit counts bytes, not decoded characters: two-byte characters reach it in half as many.
+  assert.equal(typeof serialDigest(Buffer.from('é'.repeat(MAX_SERIAL_BYTES / 2))), 'string');
+  assert.equal(serialDigest(Buffer.from(`${'é'.repeat(MAX_SERIAL_BYTES / 2)}\0`)), undefined, '513 bytes in 257 characters');
+  // Trimmed padding still counts: the bound is on the read, not on what is left after decoding and trimming it.
+  assert.equal(serialDigest(Buffer.concat([Buffer.from('é'.repeat(200)), Buffer.alloc(MAX_SERIAL_BYTES + 1 - 400)])), undefined);
 });
 
 void test('trailing padding is trimmed in linear time, so a long run of NULs before another character stays cheap', async () => {
