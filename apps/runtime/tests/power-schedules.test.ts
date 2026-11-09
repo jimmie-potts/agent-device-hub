@@ -490,7 +490,8 @@ void test('each guard gives the preview the reason the run then logs for the sam
     {detail:'wrong-mode',action:media,arrange:w=>{const record=w.records.get('pixoo-1');if(record!==undefined) record.desired.mode={status:'known',value:'work'};}},
   ];
   for(const {detail,action,arrange} of cases) {
-    const w=world();
+    const w=world();let refusals=0;
+    w.options.refused=()=>{refusals++;};
     try {
       const lamp={target:'lamp-b',family:'power-set',data:{on:true}} as const;
       const saved=w.routines.create({...input,actions:[action,lamp]});
@@ -504,6 +505,7 @@ void test('each guard gives the preview the reason the run then logs for the sam
       const logged=w.store.readLog(50).reverse();
       assert.equal(logged[0]?.reason,first.reason,`${detail}: the run logs the preview's reason`);
       assert.equal(logged[1]?.outcome,'receipt',detail);
+      assert.equal(refusals,first.reason==='mode'?0:1,`${detail}: the run reports a refusal for every block but a mode block, and the preview reports none`);
     }finally {await w.routines.close();w.db.close();}
   }
 });
@@ -538,4 +540,9 @@ void test('the shared guard returns the current record only when every guard pas
   assert.deepEqual(checkAction({...evidence,ownerNow:'bunny/modules/other-power'}),{ok:false,reason:'unavailable',detail:'stale'});
   assert.deepEqual(checkAction({...evidence,owner:undefined}),{ok:false,reason:'unavailable',detail:'not-configured'});
   assert.deepEqual(checkAction({...evidence,current:undefined}),{ok:false,reason:'unavailable',detail:'no-evidence'});
+  // External control outranks a missing capability, as the run's capability code applies only to an otherwise usable device.
+  const external=structuredClone(record);external.externalControl={status:'known',owner:'external',observedAtMs:1};external.capabilities.power={supported:false};
+  assert.deepEqual(checkAction({...evidence,read:structuredClone(external),current:external}),{ok:false,reason:'unavailable',detail:'external'});
+  const unsupported=structuredClone(record);unsupported.capabilities.power={supported:false};
+  assert.deepEqual(checkAction({...evidence,read:structuredClone(unsupported),current:unsupported}),{ok:false,reason:'unsupported-capability',detail:'unsupported'});
 });
