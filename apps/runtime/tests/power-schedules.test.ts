@@ -465,7 +465,7 @@ void test('a throwing storage-failure diagnostic cannot change admission or trig
 
 // #1586: a preview reads each action with the run's own guards and sends, logs, claims and schedules nothing.
 type World=ReturnType<typeof world>;
-const media:RoutineAction={target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'},requireMode:'media'};
+const media:RoutineAction={target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'},runsOnlyIn:'free'};
 /** A preview that leaves no trace: no send, no log row, no claimed occurrence. */
 async function quietPreview(w:World,id:string) {
   const rows=w.store.readLog(500).length,sent=w.sent.length,boundary=w.store.powerBoundary(id);
@@ -487,7 +487,7 @@ void test('each guard gives the preview the reason the run then logs for the sam
     {detail:'external',action:on,arrange:w=>{const record=w.records.get('lamp-a');if(record!==undefined) record.externalControl={status:'known',owner:'external',observedAtMs:w.clock.now()};}},
     {detail:'pending-mode',action:media,arrange:w=>{const record=w.records.get('pixoo-1');if(record!==undefined) {record.pendingKinds=['device-mode-set'];record.pending=1;}}},
     {detail:'mode-unknown',action:media,arrange:w=>{const record=w.records.get('pixoo-1');if(record!==undefined) record.desired.mode={status:'unknown'};}},
-    {detail:'wrong-mode',action:media,arrange:w=>{const record=w.records.get('pixoo-1');if(record!==undefined) record.desired.mode={status:'known',value:'monitor'};}},
+    {detail:'wrong-mode',action:media,arrange:w=>{const record=w.records.get('pixoo-1');if(record!==undefined) record.desired.mode={status:'known',value:'work'};}},
   ];
   for(const {detail,action,arrange} of cases) {
     const w=world();
@@ -516,7 +516,7 @@ void test('a preview answers would-send from current records, names the next occ
     const saved=routines.create({...input,enabled:true,actions:[media,on]});
     const ready=await routines.preview(saved.id);
     assert.deepEqual(ready,{id:saved.id,atMs:monday(16),enabled:true,next:{atMs:monday(17)},actions:[
-      {index:0,target:'pixoo-1',family:'media-start',requireMode:'media',verdict:'would-send'},{index:1,target:'lamp-a',family:'power-set',verdict:'would-send'}]});
+      {index:0,target:'pixoo-1',family:'media-start',runsOnlyIn:'free',verdict:'would-send'},{index:1,target:'lamp-a',family:'power-set',verdict:'would-send'}]});
     const running=routines.run(saved.id);
     await new Promise(resolve=>{setTimeout(resolve,0);});
     const busy=await routines.preview(saved.id);

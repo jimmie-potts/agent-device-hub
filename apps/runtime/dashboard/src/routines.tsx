@@ -13,9 +13,9 @@ export type RoutineInput={name:string;days:number[];time:string;actions:RoutineA
 export type Routine=Omit<RoutineInput,'enabled'> & {id:string;enabled:boolean;definitionId:string;createdAtMs:number;updatedAtMs:number;next?:{atMs:number}};
 export type RoutineDevice={record:DeviceRecord;current:boolean};
 /** #1586: the core's preview reply (`RoutinePreview` in power-schedules.ts): a reading of current records, not a command. */
-export const PREVIEW_REASONS=['unavailable','mode','busy'] as const;
+export const PREVIEW_REASONS=['unavailable','unsupported-capability','mode','busy'] as const;
 export const PREVIEW_DETAILS=['not-configured','no-evidence','stale','not-available','held','unsupported','external','pending-mode','mode-unknown','wrong-mode','in-flight'] as const;
-export type ActionPreview={index:number;target:string;family:string;requireMode?:string}&({verdict:'would-send'}|{verdict:'blocked';reason:(typeof PREVIEW_REASONS)[number];detail:(typeof PREVIEW_DETAILS)[number]});
+export type ActionPreview={index:number;target:string;family:string;runsOnlyIn?:string}&({verdict:'would-send'}|{verdict:'blocked';reason:(typeof PREVIEW_REASONS)[number];detail:(typeof PREVIEW_DETAILS)[number]});
 export type RoutinePreview={id:string;atMs:number;enabled:boolean;next?:{atMs:number};actions:ActionPreview[]};
 type PreviewState={status:'reading'}|{status:'read';reply:RoutinePreview}|{status:'failed';message:string};
 type ActionDraft=Omit<RoutineAction,'family'> & {family:RoutineFamily|''};

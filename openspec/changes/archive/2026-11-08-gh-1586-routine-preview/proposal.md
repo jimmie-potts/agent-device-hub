@@ -4,8 +4,8 @@
 
 ## What Changes
 
-- Move the guard sequence in the routine run's `step` into one pure function, `checkAction`. A run keeps using it unchanged, so a preview and a run cannot drift.
-- Add `preview(id)` to the core's routines. It reads each action's evidence as a run does and applies `checkAction`. Each action answers `would-send`, or `blocked` with the reason a run would log (`unavailable`, `mode`, `busy`) and the guard that failed, from a closed list. It sends, logs, claims and schedules nothing, and it leaves the in-flight mark alone.
+- Move the guard sequence in the routine run's `step` into one pure function, `checkAction`. A run keeps using it unchanged, so a preview and a run cannot drift. It carries the Hub-mode precondition (`runsOnlyIn`, ADR 0014) and the `unsupported-capability` reason as the run had them.
+- Add `preview(id)` to the core's routines. It reads each action's evidence as a run does and applies `checkAction`. Each action answers `would-send`, or `blocked` with the reason a run would log (`unavailable`, `unsupported-capability`, `mode`, `busy`) and the guard that failed, from a closed list. It sends, logs, claims and schedules nothing, and it leaves the in-flight mark alone.
 - Add `GET /api/v2/automation/routines/<id>/preview` under read scope, answering `automation/2.0` `{id, atMs, enabled, next?, actions}`. An unknown routine is refused with `not-found` (404) and missing routines with `unavailable` (503), through the shared error body. Add the path to the gateway's route normalizer and the runtime README's route list.
 - Add a Preview button beside Run now on the Automation page, a declared reply-shape check, and an inline result that is never stored and clears on the next refresh or edit.
 

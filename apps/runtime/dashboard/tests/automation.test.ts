@@ -90,7 +90,7 @@ void test('a routine preview is a plain read that passes only with its declared 
     return Promise.resolve(new Response(JSON.stringify({schema: 'automation/2.0', ...(replies.shift() as object)}), {status: 200}));
   });
   const head = {id: 'evening', atMs: 9, enabled: true, next: {atMs: 99}};
-  const blocked = {index: 0, target: 'desk-pixoo', family: 'media-start', requireMode: 'media', verdict: 'blocked', reason: 'mode', detail: 'wrong-mode'};
+  const blocked = {index: 0, target: 'desk-pixoo', family: 'media-start', runsOnlyIn: 'free', verdict: 'blocked', reason: 'mode', detail: 'wrong-mode'};
   const sendable = {index: 1, target: 'pendant-1', family: 'lifx-color-set', verdict: 'would-send'};
   replies.push({...head, actions: [blocked, sendable]});
   const reply = await page.previewRoutine('evening');

@@ -67,7 +67,7 @@ export function previewReply(answer: Record<string, unknown>): boolean {
   if (typeof answer.id !== 'string' || typeof answer.atMs !== 'number' || typeof answer.enabled !== 'boolean' || !Array.isArray(answer.actions) ||
       (answer.next !== undefined && !(object(answer.next) && typeof answer.next.atMs === 'number'))) return false;
   return answer.actions.every((item: unknown) => object(item) && Number.isInteger(item.index) && typeof item.target === 'string' && typeof item.family === 'string' &&
-    (item.requireMode === undefined || typeof item.requireMode === 'string') &&
+    (item.runsOnlyIn === undefined || typeof item.runsOnlyIn === 'string') &&
     (item.verdict === 'would-send' ? item.reason === undefined && item.detail === undefined
       : item.verdict === 'blocked' && oneOf(PREVIEW_REASONS, item.reason) && oneOf(PREVIEW_DETAILS, item.detail)));
 }

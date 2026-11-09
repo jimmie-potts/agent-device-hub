@@ -1,6 +1,6 @@
 ## Context
 
-A routine run (`fire` → `step` in `apps/runtime/src/core/power-schedules.ts`) reads each target's record, then checks after the read that the target is configured, the evidence is fresh and from the same owner, configuration and generation, the device is available, not held, supports the family and is not externally controlled, and, for an action with `requireMode`, that the desired mode matches with no pending `device-mode-set`. A failure logs `blocked` with `unavailable` or `mode`; an overlapping occurrence logs `busy`.
+A routine run (`fire` → `step` in `apps/runtime/src/core/power-schedules.ts`) reads each target's record, then checks after the read that the target is configured, the evidence is fresh and from the same owner, configuration and generation, the device is available, not held, supports the family and is not externally controlled, and, for an action with `runsOnlyIn` (ADR 0014), that the desired mode matches with no pending `device-mode-set`. A failure logs `blocked` with `unavailable`, `unsupported-capability` (an otherwise usable device that lacks the action) or `mode`; an overlapping occurrence logs `busy`.
 
 ## Goals / Non-Goals
 
@@ -17,7 +17,7 @@ A routine run (`fire` → `step` in `apps/runtime/src/core/power-schedules.ts`) 
 
 ## Risks / Trade-offs
 
-- A preview is a reading, not a promise: evidence can change before a real run, and the Pixoo's admission check (#1276) remains the authority at send time. The page says so beside every result.
+- A preview is a reading, not a promise: evidence can change before a real run, and the owning module's admission remains the authority at send time. The page says so beside every result.
 - `would-send` covers the core's guards only; module admission can still refuse a sent command.
 
 ## Migration Plan

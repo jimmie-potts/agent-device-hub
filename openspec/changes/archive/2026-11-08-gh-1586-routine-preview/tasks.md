@@ -13,5 +13,5 @@
 
 ## 4. Scenario and records
 
-- [x] 4.1 Preview the Pixoo/LIFX routine in Monitor in the `routine-actions` scenario before Run now records the same reasons; run it, `weekly-routines` and `automation-lines-moment` over both transports in Linux, and record the run in the PR.
+- [x] 4.1 Preview the Pixoo/LIFX routine in Work in the `routine-actions` scenario before Run now records the same reasons; run it, `weekly-routines` and `automation-lines-moment` over both transports in Linux, and record the run in the PR.
 - [x] 4.2 Update the runtime README's routines section and route list, the dashboard README and DEVELOPMENT.md, validate this change strictly, synchronize `bunny-power-schedules` and archive the change on the delivery branch before final review.

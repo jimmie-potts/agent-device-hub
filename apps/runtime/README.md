@@ -580,13 +580,14 @@ A preview ([#1586](https://github.com/jimmie-potts/agent-device-hub/issues/1586)
 reads what a run of a saved routine would do now. It reads each action's
 evidence the way a run does and applies the same guard function. Each action
 then answers `would-send`, or `blocked` with the reason a run would log
-(`unavailable`, `mode` or `busy`) and the guard that failed: `not-configured`,
+(`unavailable`, `unsupported-capability`, `mode` or `busy`) and the guard that
+failed: `not-configured`,
 `no-evidence`, `stale`, `not-available`, `held`, `unsupported`, `external`,
 `pending-mode`, `mode-unknown`, `wrong-mode` or `in-flight`. A failed read is
 that action's `no-evidence`. The preview is a reply from current records, not a
 command. It sends, logs, claims and schedules nothing, and it leaves the
-in-flight mark alone. The Pixoo's admission check (#1276) remains the authority
-at send time, and evidence can change before a real run. Previewing an unsaved
+in-flight mark alone. The owning module's admission remains the authority at
+send time, and evidence can change before a real run. Previewing an unsaved
 draft is deferred; save it disabled and preview the saved routine.
 
 The core stores definitions as `rules.kind = routine` rows with

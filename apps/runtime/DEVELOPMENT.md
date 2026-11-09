@@ -80,9 +80,9 @@ inventory test includes the routine/store inputs; restart tests establish
 persistence, not compatibility between historical releases.
 The `weekly-routines` catalog scenario exercises authenticated management,
 read-only refusal and future-only restart; `routine-actions` runs one routine
-with a Pixoo playlist start and a LIFX color, previews it in Monitor (the start
-blocked for the mode, the color would send, nothing admitted or logged), then on Run now in Monitor and in
-Media, then once at its minute, in memory and in disposable runtime runs. Run
+with a Pixoo playlist start and a LIFX color, previews it in Work (the start
+blocked for the mode, the color would send, nothing admitted or logged), then on Run now in Work and in
+Free, then once at its minute, in memory and in disposable runtime runs. Run
 both and `automation-lines-moment` after changes to this shared path. The
 in-memory catalog is run on Linux or in a disposable Linux container (where its
 private-file check reads `/proc/self/fd`; off Linux the reader checks the path
