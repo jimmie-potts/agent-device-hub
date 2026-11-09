@@ -104,7 +104,10 @@ try {
     await page.getByText(`Session revision ${saved.playlistRevision + 1} · Saved revision ${saved.playlistRevision + 1}`, {exact: true}).waitFor();
     await page.getByRole('button', {name: 'Stop', exact: true}).click();
     const stopped = await waitState('idle'); assert.equal(stopped.state.intent, 'stopped'); assert.ok(stopped.session);
-    const afterStop = world.pixooState().sent;
+    // The status base rests on the display after a stop (ADR 0014) and paints its dashboard; let that settle, since only
+    // the reload below must add nothing.
+    let afterStop = world.pixooState().sent;
+    for (let attempt = 0, quiet = 0; quiet < 5 && attempt < 100; attempt++) { await delay(100); const now = world.pixooState().sent; quiet = now === afterStop ? quiet + 1 : 0; afterStop = now; }
     await page.reload(); await feed(page, 'connected');
     await page.getByText('Advanced player', {exact: true}).click();
     await page.getByRole('heading', {name: 'Player', exact: true, level: 2}).waitFor();
