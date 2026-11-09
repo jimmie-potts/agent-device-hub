@@ -6,7 +6,7 @@ import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {REQUEST_HEADER, childOf} from '@jimmie-potts/sdk/remote';
 import type {DashboardConnection} from './connection.ts';
 import {Badge, Facts} from './ui.tsx';
-import {RoutinesEditor,type Routine} from './routines.tsx';
+import {PREVIEW_DETAILS,PREVIEW_REASONS,RoutinesEditor,type Routine,type RoutinePreview} from './routines.tsx';
 import './automation.css';
 
 export type AutomationPageProps = {connection: DashboardConnection; live: boolean; control: boolean};
@@ -61,6 +61,17 @@ function mutationReply(path: string, method: string, answer: Record<string, unkn
   return typeof answer.id === 'string' && typeof answer.name === 'string' && typeof answer.enabled === 'boolean' && object(answer.trigger) && object(answer.action);
 }
 
+const oneOf = <T extends string>(values: readonly T[], value: unknown): value is T => typeof value === 'string' && (values as readonly string[]).includes(value);
+/** #1586: the declared preview reply; one action is would-send with no reason, or blocked with a closed reason and detail. */
+export function previewReply(answer: Record<string, unknown>): boolean {
+  if (typeof answer.id !== 'string' || typeof answer.atMs !== 'number' || typeof answer.enabled !== 'boolean' || !Array.isArray(answer.actions) ||
+      (answer.next !== undefined && !(object(answer.next) && typeof answer.next.atMs === 'number'))) return false;
+  return answer.actions.every((item: unknown) => object(item) && Number.isInteger(item.index) && typeof item.target === 'string' && typeof item.family === 'string' &&
+    (item.runsOnlyIn === undefined || typeof item.runsOnlyIn === 'string') &&
+    (item.verdict === 'would-send' ? item.reason === undefined && item.detail === undefined
+      : item.verdict === 'blocked' && oneOf(PREVIEW_REASONS, item.reason) && oneOf(PREVIEW_DETAILS, item.detail)));
+}
+
 /** One authenticated call. Only an explicit control action calls a mutation; nothing retries a lost reply. */
 export async function automationRequest(path: string, method = 'GET', body?: object, signal?: AbortSignal): Promise<Record<string, unknown>> {
   const mutation = method !== 'GET';
@@ -80,12 +91,19 @@ export async function automationRequest(path: string, method = 'GET', body?: obj
       if (mutation && (code === 'uncertain-result' || code === 'internal')) throw unreliable();
       throw new AutomationFailure(`Request refused: ${code}.`);
     }
-    if (answer.schema !== 'automation/2.0' || (mutation && !mutationReply(path, method, answer))) throw unreliable();
+    if (answer.schema !== 'automation/2.0' || (mutation && !mutationReply(path, method, answer)) ||
+        (!mutation && /^routines\/[^/]+\/preview$/.test(path) && !previewReply(answer))) throw unreliable();
     return answer;
   } catch (error) {
     if (error instanceof AutomationFailure) throw error;
     throw unreliable();
   }
+}
+
+/** What a run of one saved routine would do now; a read under read scope that sends nothing. */
+export async function previewRoutine(id: string): Promise<RoutinePreview> {
+  const {schema: _schema, ...reply} = await automationRequest(`routines/${encodeURIComponent(id)}/preview`);
+  return reply as RoutinePreview;
 }
 
 export async function readAutomation(signal: AbortSignal): Promise<Snapshot> {
@@ -116,6 +134,7 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
   const inFlight = useRef(false), locked = useRef(false), initialized = useRef(false), liveNow = useRef(live);
   liveNow.current = live;
   const available = live && state.feed === 'connected' && control && state.runtime.control && current && !reading && !busy && !uncertain;
+  const readable = live && state.feed === 'connected' && current && !reading;
   const writable = useRef(available); writable.current = available;
   const refresh = useCallback(async (resetDrafts = false, resolveUncertainty = false): Promise<void> => {
     if (!liveNow.current || connection.getState().feed !== 'connected') return;
@@ -192,6 +211,8 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
         }}>{name}</button>)}</div>
     <div role="tabpanel" id="automation-panel-0" aria-labelledby="automation-tab-0" hidden={tab !== 0}>
     <RoutinesEditor routines={snapshot?.routines ?? []} timeZone={snapshot?.timeZone ?? 'loading'} available={available} mutate={mutate}
+      readable={readable} preview={id => previewRoutine(id).then(reply => ({reply}),
+        (error: unknown) => ({failure: error instanceof AutomationFailure ? error.message : 'Automation is unavailable. Refresh to read again.'}))}
       devices={deviceCopies.flatMap(copy => (copy.records as DeviceRecord[]).filter(record => copy.owner === `bunny/modules/${record.kind}`)
         .map(record => ({record, current: live && copy.synced})))}/>
     </div>

@@ -208,6 +208,24 @@ try {
     await ran.waitFor();
     assert.match(await ran.innerText(), /Action 1 · power-set/);
     assert.match(await ran.innerText(), /Admission\s*accepted/, 'the simulated LIFX admits the routine power action');
+    // #1586: Preview reads what a run would do now. It is a GET that writes no attempt, and the next refresh clears it.
+    const logged = async (): Promise<number> => page.evaluate(async () => ((await (await fetch('/api/v2/automation/log?limit=500', {credentials: 'same-origin'})).json()) as {entries: unknown[]}).entries.length);
+    const attemptsBefore = await logged(), writesBefore = writes.length;
+    const previewRead = page.waitForResponse(response => response.url().endsWith('/preview'));
+    await routines().getByRole('button', {name: 'Preview: Weekday desk', exact: true}).click();
+    const previewResponse = await previewRead;
+    assert.equal(previewResponse.request().method(), 'GET'); assert.equal(previewResponse.status(), 200);
+    const preview = routines().getByRole('region', {name: 'Preview of Weekday desk', exact: true});
+    await preview.getByRole('status').filter({hasText: 'Nothing was sent; a real run checks again'}).waitFor();
+    const verdicts = await preview.getByRole('listitem').allInnerTexts();
+    assert.equal(verdicts.length, 2, verdicts.join('\n'));
+    assert.match(verdicts[0] ?? '', /: power on · (?:would send|blocked · (?:unavailable|mode|busy) · [a-z-]+)$/);
+    assert.match(verdicts[1] ?? '', /: color hue 120 \/ saturation 50 · (?:would send|blocked · (?:unavailable|mode|busy) · [a-z-]+)$/);
+    await pause(200);
+    assert.equal(writes.length, writesBefore, 'a preview sends no mutation');
+    assert.equal(await logged(), attemptsBefore, 'a preview writes no automation-log row');
+    await automation().getByRole('button', {name: 'Refresh rules and logs', exact: true}).click(); await loaded();
+    await expect(preview).toHaveCount(0);
     const routineWrites = writes.length;
     world.dropDashboardStreams(); await feed(page, 'connected'); await pause(300);
     assert.equal(writes.length, routineWrites, 'routines are not resent or run after reconnect');

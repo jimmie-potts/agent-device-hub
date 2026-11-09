@@ -254,7 +254,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
       limits:{list:()=>limits().list(),get:id=>limits().get(id),save:(id,value,parent)=>limits().save(id,value,parent),settled:()=>limits().settled()},
       routines:{list:()=>routines().list(),get:id=>routines().get(id),create:(value,owner)=>routines().create(value,owner),
         update:(id,value)=>routines().update(id,value),setEnabled:(id,enabled)=>routines().setEnabled(id,enabled),
-        remove:id=>routines().remove(id),run:(id,parent)=>routines().run(id,parent),settled:()=>routines().settled()},
+        remove:id=>routines().remove(id),run:(id,parent)=>routines().run(id,parent),preview:id=>routines().preview(id),settled:()=>routines().settled()},
       rules: () => automation().rules(), rule: id => automation().rule(id),
       create: (value, owner, authorize) => automation().create(value, owner, authorize),
       update: (id, value, authorize) => automation().update(id, value, authorize),

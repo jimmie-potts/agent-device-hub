@@ -46,7 +46,10 @@ Confirmed saves close the editor. Weekly routines select weekdays, a Hub-clock
 time and ordered device actions. When the browser's zone differs from the Hub's,
 each routine card, its next run and the editor's Time field also show the next
 occurrence in the browser's zone (#1585); the saved time stays Hub-local. New routines and event rules remain disabled
-until explicitly enabled; **Run now** is a separate action. The Hub runs enabled
+until explicitly enabled; **Run now** is a separate action. **Preview** beside
+it reads, from current records, which actions a run would send and which it would
+block, with the reason and failing guard. It needs read scope, sends nothing,
+writes no attempt, and clears on the next refresh or edit (#1586). The Hub runs enabled
 routines while the page is closed and skips missed times. It must be running
 and able to reach the target. **Recent attempts** expands admission, completion
 and effect evidence; accepted commands never establish observed device state.

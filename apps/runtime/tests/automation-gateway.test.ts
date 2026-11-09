@@ -19,6 +19,8 @@ import {LogWriter, type LogRecord} from '../src/log.js';
 const controlToken = 'synthetic-automation-control', readToken = 'synthetic-automation-reader';
 const control = {id: 'control', source: 'bunny/parts/control', digest: tokenDigest(controlToken), scopes: ['read', 'control'] as const};
 const reader = {id: 'reader', source: 'bunny/parts/reader', digest: tokenDigest(readToken), scopes: ['read'] as const};
+const ingestToken = 'synthetic-automation-ingest';
+const ingest = {id: 'ingest', source: 'bunny/parts/ingest', digest: tokenDigest(ingestToken), scopes: ['ingest'] as const};
 const parent = {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'};
 const rule = {name: 'Turn complete', kind: 'event', trigger: {source: 'core', kind: 'turn-ended'},
   action: {mood: 'celebrate', priorityClass: 'event', durationMs: 1000, targets: ['lines']}};
@@ -43,7 +45,7 @@ async function boundary(context: TestContext) {
     try {return await work();} catch (error) {ownerFailures++; throw error;}
   }} as unknown as ModuleHost;
   const options = {bus: new InProcessBus({scheduler}), host, validator: edgeValidator(), families: new Set<string>(),
-    credentials: [control, reader], clock, scheduler, log: writer.logger('bunny.runtime'), redactions: writer.redactions,
+    credentials: [control, reader, ingest], clock, scheduler, log: writer.logger('bunny.runtime'), redactions: writer.redactions,
     stateDir: '/unused-automation-boundary', trace: spans, automation:controls,
     edge: {credentials: 'unused', launcher: false, mcp: false, editorLinks: {}, placeLinks: {}}};
   const gateway = new Gateway(options);
@@ -144,6 +146,32 @@ void test('weekly routine routes preserve shared scope/header guards, bounded bo
   assert.equal((await w.call('DELETE',`routines/${id}`,undefined,controlToken,'0')).status,403);
   assert.equal(w.automation.routines.list().length,1);
   assert.equal((await w.call('DELETE',`routines/${id}`)).body.deleted,true);
+  assert.equal(w.ownerFailures(),0);
+});
+void test('a routine preview is a read-scope reply from current records: no dispatch, no log row, registry refusals',async context=>{
+  const w=await boundary(context),input={name:'Evening lights',days:[1,2,3,4,5],time:'17:00',actions:[{target:'lines',family:'power-set',data:{on:true}}]};
+  const id=String((await w.call('POST','routines',input)).body.id);
+  const rows=w.automation.log(50).length;
+  // A reader needs no control scope and no request header for the preview.
+  const answer=await w.call('GET',`routines/${id}/preview`,undefined,readToken,undefined);
+  assert.equal(answer.status,200);
+  assert.deepEqual(answer.body,{schema:'automation/2.0',id,atMs:1_700_000_000_000,enabled:false,
+    actions:[{index:0,target:'lines',family:'power-set',verdict:'blocked',reason:'unavailable',detail:'no-evidence'}]});
+  assert.equal(w.automation.log(50).length,rows,'the preview wrote no automation-log row');
+  assert.equal(w.spans.spans.some(span=>span.name==='bunny.feed.read' && span.attributes['http.route']==='/api/v2/automation/routines/{id}'),true,'the request span names the routine route');
+  assert.equal((await w.call('GET',`routines/${id}/preview`,undefined,'unknown',undefined)).status,401);
+  assert.equal((await w.call('GET',`routines/${id}/preview`,undefined,ingestToken,undefined)).status,403,'a credential without read scope is refused');
+  const missing=await w.call('GET','routines/missing/preview',undefined,readToken,undefined);
+  assert.equal(missing.status,404);assert.equal((missing.body.error as {code:string}).code,'not-found');
+  for(const method of ['POST','PUT','DELETE']) assert.equal((await w.call(method,`routines/${id}/preview`,{})).status,404,`${method} is not a preview`);
+  assert.equal((await w.call('GET',`routines/${id}/preview?at=1`,undefined,readToken,undefined)).status,400,'the preview reads now; it takes no query');
+  const {routines}=w.automation;
+  delete (w.automation as {routines?:unknown}).routines;
+  try {
+    const unavailable=await w.call('GET',`routines/${id}/preview`,undefined,readToken,undefined);
+    assert.equal(unavailable.status,503);assert.equal((unavailable.body.error as {code:string}).code,'unavailable');
+  } finally {Object.assign(w.automation,{routines});}
+  assert.equal(w.automation.log(50).length,rows);
   assert.equal(w.ownerFailures(),0);
 });
 void test('weekly routine mutation loses authority during its body read without changing saved state',async context=>{

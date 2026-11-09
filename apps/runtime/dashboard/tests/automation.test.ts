@@ -11,6 +11,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {DashboardState} from '../src/connection.ts';
 import {parseRuleInput} from '../../dist/src/core/automation.js';
+import {ROUTINE_BLOCK_DETAILS} from '../../dist/src/core/power-schedules.js';
 
 // Node's native TS runner cannot import TSX. Bundle the page as browser code, keeping the built core validator outside it.
 const directory = await mkdtemp(join(tmpdir(), '925ui-'));
@@ -21,7 +22,7 @@ const require = createRequire(import.meta.url);
 const react = require.resolve('react'), jsxRuntime = require.resolve('react/jsx-runtime');
 await build({stdin: {contents: `
   export * from './src/automation.tsx';
-  export {routineInput} from './src/routines.tsx';
+  export {routineInput, PREVIEW_DETAILS} from './src/routines.tsx';
 `, resolveDir: fileURLToPath(new URL('..', import.meta.url)), sourcefile: 'automation-test.ts'},
   bundle: true, platform: 'browser', format: 'cjs', outfile: output, logLevel: 'silent',
   alias: {react, 'react/jsx-runtime': jsxRuntime}, external: [react, jsxRuntime]});
@@ -30,6 +31,8 @@ type Page = {
   routineInput(draft: typeof routine, creating: boolean): typeof routine & {enabled?: boolean};
   automationOutcome(entry: {family?: string; requestId?: string; target: string; ruleId?: string}, operations: readonly OperationRecord[], live: boolean): string;
   automationRequest(path: string, method?: string, body?: object): Promise<Record<string, unknown>>;
+  PREVIEW_DETAILS: readonly string[];
+  previewRoutine(id: string): Promise<{id: string; actions: Record<string, unknown>[]} & Record<string, unknown>>;
   readAutomation(signal: AbortSignal): Promise<{settings: Record<string, unknown>}>;
   AutomationPage: ComponentType<{connection: {subscribe(listener: () => void): () => void; getState(): DashboardState}; live: boolean; control: boolean}>;
 };
@@ -80,6 +83,37 @@ void test('routine replies, including Run now, pass only with their declared sha
   assert.equal((await page.automationRequest('routines/morning/run', 'POST', {})).outcome, 'busy', 'a dropped Run now is a declared answer, not a lost reply');
   await assert.rejects(page.automationRequest('routines/morning/run', 'POST', {}), /Refresh.*before another attempt/);
   await assert.rejects(page.automationRequest('routines/morning/run', 'POST', {}), /Refresh.*before another attempt/, 'a run reply without its outcome is not trusted');
+});
+
+void test('a routine preview is a plain read that passes only with its declared shape', async context => {
+  const sent: {path: string; init: RequestInit | undefined}[] = [], replies: unknown[] = [];
+  context.mock.method(globalThis, 'fetch', (path: string, init?: RequestInit) => {
+    sent.push({path, init});
+    return Promise.resolve(new Response(JSON.stringify({schema: 'automation/2.0', ...(replies.shift() as object)}), {status: 200}));
+  });
+  const head = {id: 'evening', atMs: 9, enabled: true, next: {atMs: 99}};
+  const blocked = {index: 0, target: 'desk-pixoo', family: 'media-start', runsOnlyIn: 'free', verdict: 'blocked', reason: 'mode', detail: 'wrong-mode'};
+  const sendable = {index: 1, target: 'pendant-1', family: 'lifx-color-set', verdict: 'would-send'};
+  replies.push({...head, actions: [blocked, sendable]});
+  const reply = await page.previewRoutine('evening');
+  assert.deepEqual(reply, {...head, actions: [blocked, sendable]}, 'the reply loses only its envelope');
+  assert.equal(sent[0]?.path, '/api/v2/automation/routines/evening/preview');
+  assert.equal(sent[0]?.init?.method, 'GET'); assert.equal(sent[0]?.init?.body, undefined);
+  assert.equal(new Headers(sent[0]?.init?.headers).has('bunny-request'), false, 'a preview is not a mutation');
+  for (const [actions, label] of [
+    [[{...blocked, detail: undefined}], 'a blocked action names its guard'],
+    [[{...blocked, detail: 'sent'}], 'details are a closed list'],
+    [[{...blocked, reason: 'expired'}], 'the preview reads now and has no expired reason'],
+    [[{...sendable, reason: 'mode'}], 'a sendable action carries no reason'],
+    [[{...sendable, verdict: 'succeeded'}], 'verdicts are would-send or blocked'],
+    [[{...sendable, index: '1'}], 'the index is a number'],
+  ] as const) {
+    replies.push({...head, actions});
+    await assert.rejects(page.previewRoutine('evening'), /Automation is unavailable/, label);
+  }
+  assert.deepEqual(page.PREVIEW_DETAILS, ROUTINE_BLOCK_DETAILS, 'the page accepts exactly the core\'s guard details');
+  replies.push({...head, next: 99, actions: []});
+  await assert.rejects(page.previewRoutine('evening'), /Automation is unavailable/, 'a next occurrence is an object');
 });
 
 void test('every explicit mutation sends once with same-origin credentials and the write header, DELETE included', async context => {

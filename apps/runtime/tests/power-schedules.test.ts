@@ -5,7 +5,7 @@ import {test} from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
 import {AutomationStore} from '../src/core/automation-store.js';
 import {AutomationError,createAutomation,DEFAULT_SETTINGS,DEFAULT_INTERRUPT_SET} from '../src/core/automation.js';
-import {createRoutines,migratePowerWindows,nextOccurrence,parseRoutine,routineCommand,type RoutineAction,type RoutineOptions} from '../src/core/power-schedules.js';
+import {checkAction,createRoutines,migratePowerWindows,nextOccurrence,parseRoutine,routineCommand,type RoutineAction,type RoutineOptions} from '../src/core/power-schedules.js';
 import {deviceRecord} from './fixtures/device.js';
 import {manualClock} from './support.js';
 
@@ -461,4 +461,88 @@ void test('a throwing storage-failure diagnostic cannot change admission or trig
     w.clock.advance(60*60*1000);await routines.settled();
     w.clock.advance(1000);await routines.settled();assert.equal(reports,1);assert.equal(w.sent.length,0);
   }finally {await routines.close();w.db.close();}
+});
+
+// #1586: a preview reads each action with the run's own guards and sends, logs, claims and schedules nothing.
+type World=ReturnType<typeof world>;
+const media:RoutineAction={target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'},runsOnlyIn:'free'};
+/** A preview that leaves no trace: no send, no log row, no claimed occurrence. */
+async function quietPreview(w:World,id:string) {
+  const rows=w.store.readLog(500).length,sent=w.sent.length,boundary=w.store.powerBoundary(id);
+  const answer=await w.routines.preview(id);
+  assert.equal(w.store.readLog(500).length,rows,'a preview writes no automation-log row');
+  assert.equal(w.sent.length,sent,'a preview sends nothing');
+  assert.equal(w.store.powerBoundary(id),boundary,'a preview claims no occurrence');
+  return answer;
+}
+void test('each guard gives the preview the reason the run then logs for the same records, with the failing guard named',async()=>{
+  const cases:{detail:string;action:RoutineAction;arrange:(w:World)=>void}[]=[
+    {detail:'not-configured',action:on,arrange:w=>{w.options.targets=()=>['lamp-b','pixoo-1','wall-1'];}},
+    {detail:'no-evidence',action:on,arrange:w=>{const read=w.options.read;w.options.read=id=>id==='lamp-a'?Promise.reject(new Error('synthetic read failure')):read(id);}},
+    {detail:'no-evidence',action:on,arrange:w=>{const read=w.options.read;w.options.read=id=>id==='lamp-a'?Promise.resolve(undefined):read(id);}},
+    {detail:'stale',action:on,arrange:w=>{w.options.read=id=>{const record=structuredClone(w.records.get(id));if(record!==undefined && id==='lamp-a') record.configurationRevision++;return Promise.resolve(record);};}},
+    {detail:'not-available',action:on,arrange:w=>{const record=w.records.get('lamp-a');if(record!==undefined) record.availability='unavailable';}},
+    {detail:'held',action:on,arrange:w=>{const record=w.records.get('lamp-a');if(record!==undefined) record.held={requestId:'held-request',heldAtMs:w.clock.now()};}},
+    {detail:'unsupported',action:on,arrange:w=>{const record=w.records.get('lamp-a');if(record!==undefined) record.capabilities.power={supported:false};}},
+    {detail:'external',action:on,arrange:w=>{const record=w.records.get('lamp-a');if(record!==undefined) record.externalControl={status:'known',owner:'external',observedAtMs:w.clock.now()};}},
+    {detail:'pending-mode',action:media,arrange:w=>{const record=w.records.get('pixoo-1');if(record!==undefined) {record.pendingKinds=['device-mode-set'];record.pending=1;}}},
+    {detail:'mode-unknown',action:media,arrange:w=>{const record=w.records.get('pixoo-1');if(record!==undefined) record.desired.mode={status:'unknown'};}},
+    {detail:'wrong-mode',action:media,arrange:w=>{const record=w.records.get('pixoo-1');if(record!==undefined) record.desired.mode={status:'known',value:'work'};}},
+  ];
+  for(const {detail,action,arrange} of cases) {
+    const w=world();let refusals=0;
+    w.options.refused=()=>{refusals++;};
+    try {
+      const lamp={target:'lamp-b',family:'power-set',data:{on:true}} as const;
+      const saved=w.routines.create({...input,actions:[action,lamp]});
+      arrange(w);
+      const answer=await quietPreview(w,saved.id);
+      const [first,second]=answer.actions;
+      assert.ok(first?.verdict==='blocked',detail);
+      assert.equal(first.detail,detail);
+      assert.deepEqual(second,{index:1,target:'lamp-b',family:'power-set',verdict:'would-send'},'one blocked action does not block the next');
+      await w.routines.run(saved.id);
+      const logged=w.store.readLog(50).reverse();
+      assert.equal(logged[0]?.reason,first.reason,`${detail}: the run logs the preview's reason`);
+      assert.equal(logged[1]?.outcome,'receipt',detail);
+      assert.equal(refusals,first.reason==='mode'?0:1,`${detail}: the run reports a refusal for every block but a mode block, and the preview reports none`);
+    }finally {await w.routines.close();w.db.close();}
+  }
+});
+void test('a preview answers would-send from current records, names the next occurrence, and reads busy while an occurrence is in flight',async()=>{
+  const w=world();await w.routines.close();
+  let release:()=>void=()=>{};
+  w.options.send=(action,_record,requestId)=>new Promise(resolve=>{w.sent.push({action,requestId});release=()=>{resolve({outcome:'receipt',requestId});};});
+  const routines=createRoutines(w.options);
+  try {
+    const saved=routines.create({...input,enabled:true,actions:[media,on]});
+    const ready=await routines.preview(saved.id);
+    assert.deepEqual(ready,{id:saved.id,atMs:monday(16),enabled:true,next:{atMs:monday(17)},actions:[
+      {index:0,target:'pixoo-1',family:'media-start',runsOnlyIn:'free',verdict:'would-send'},{index:1,target:'lamp-a',family:'power-set',verdict:'would-send'}]});
+    const running=routines.run(saved.id);
+    await new Promise(resolve=>{setTimeout(resolve,0);});
+    const busy=await routines.preview(saved.id);
+    assert.deepEqual(busy.actions.map(item=>item.verdict==='blocked'?`${item.reason} ${item.detail}`:item.verdict),['busy in-flight','busy in-flight']);
+    assert.equal(w.sent.length,1,'the preview did not add a send to the running occurrence');
+    release();await new Promise(resolve=>{setTimeout(resolve,0);});release();await running;
+    assert.deepEqual(log(w),['pixoo-1 receipt','lamp-a receipt'],'only the run wrote rows');
+    assert.equal((await routines.preview(saved.id)).actions.every(item=>item.verdict==='would-send'),true,'the in-flight mark cleared after the run, not by the preview');
+    const disabled=routines.setEnabled(saved.id,false);
+    assert.equal(Object.hasOwn(await routines.preview(disabled.id),'next'),false,'a disabled routine has no next occurrence');
+    await assert.rejects(routines.preview('missing'),(error:unknown)=>error instanceof AutomationError && error.code==='unknown-rule' && error.status===404);
+  }finally {release();await routines.close();w.db.close();}
+});
+void test('the shared guard returns the current record only when every guard passes',()=>{
+  const record=deviceRecord('lamp-a',1,'test-power','available');record.capabilities.power={supported:true};
+  const evidence={action:on,configured:true,owner:'bunny/modules/test-power',ownerNow:'bunny/modules/test-power',read:structuredClone(record),current:record};
+  const check=checkAction(evidence);
+  assert.ok(check.ok);assert.equal(check.record,record);
+  assert.deepEqual(checkAction({...evidence,ownerNow:'bunny/modules/other-power'}),{ok:false,reason:'unavailable',detail:'stale'});
+  assert.deepEqual(checkAction({...evidence,owner:undefined}),{ok:false,reason:'unavailable',detail:'not-configured'});
+  assert.deepEqual(checkAction({...evidence,current:undefined}),{ok:false,reason:'unavailable',detail:'no-evidence'});
+  // External control outranks a missing capability, as the run's capability code applies only to an otherwise usable device.
+  const external=structuredClone(record);external.externalControl={status:'known',owner:'external',observedAtMs:1};external.capabilities.power={supported:false};
+  assert.deepEqual(checkAction({...evidence,read:structuredClone(external),current:external}),{ok:false,reason:'unavailable',detail:'external'});
+  const unsupported=structuredClone(record);unsupported.capabilities.power={supported:false};
+  assert.deepEqual(checkAction({...evidence,read:structuredClone(unsupported),current:unsupported}),{ok:false,reason:'unsupported-capability',detail:'unsupported'});
 });

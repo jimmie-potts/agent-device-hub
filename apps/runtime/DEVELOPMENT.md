@@ -70,19 +70,24 @@ the `busy` guard and Run now outcomes, independent targets, obsolete callbacks
 during reads, configuration/owner drift, duplicates, late callbacks, restart
 without catch-up, the one forward migration of `power-window/1.0` rows (one
 transaction, names read back as display text) and storage refusal before or
-after dispatch with per-action diagnostics. A generic synthetic
+after dispatch with per-action diagnostics. The preview (#1586) is checked
+guard by guard against the reason the run then logs for the same records, with
+no send, log row or claim after it, and `busy` while an occurrence is in flight;
+`automation-gateway.test.ts` covers its read-scope route, refusals and reply.
+A generic synthetic
 owner exercises actual SDK sync and tracked guarded commands. The upgrade
 inventory test includes the routine/store inputs; restart tests establish
 persistence, not compatibility between historical releases.
 The `weekly-routines` catalog scenario exercises authenticated management,
 read-only refusal and future-only restart; `routine-actions` runs one routine
-with a Pixoo playlist start and a LIFX color on Run now in Monitor and in
-Media, then once at its minute, in memory and in disposable runtime runs. Run
+with a Pixoo playlist start and a LIFX color, previews it in Work (the start
+blocked for the mode, the color would send, nothing admitted or logged), then on Run now in Work and in
+Free, then once at its minute, in memory and in disposable runtime runs. Run
 both and `automation-lines-moment` after changes to this shared path. The
 in-memory catalog is run on Linux or in a disposable Linux container (where its
 private-file check reads `/proc/self/fd`; off Linux the reader checks the path
 again after the open, Hub #1355). The Automation browser journey covers independent
-devices, invalid drafts, Run now, passive reconnect, lost mutation replies,
+devices, invalid drafts, Run now, Preview, passive reconnect, lost mutation replies,
 read-only controls and axe accessibility.
 These checks contact no household device and qualify no installed routine or maximum-on limit.
 
