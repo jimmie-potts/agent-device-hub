@@ -66,7 +66,7 @@ for(const [label,mutate] of [
  ['missing completion step',s=>{s.job.steps=[];}],
  ['skipped completion step',s=>{s.job.steps[0].conclusion='skipped';}],
  ['failed job',s=>{s.core.conclusion='failure';}],
- ['unexpected App skip',s=>{s.annotations[s.selector.id][0].message=noticeMessage({mode:'full',groups:['runtime','maintenance','modules','chompi','shared']});s.core.conclusion='cancelled';}],
+ ['unexpected App skip',s=>{s.annotations[s.selector.id][0].message=noticeMessage({mode:'full',groups:['runtime','modules','chompi','shared']});s.core.conclusion='cancelled';}],
 ])test('preflight refuses '+label,async()=>{
  const state=world();mutate(state);
  if(!['missing notice','duplicate notice'].includes(label))state.annotations[state.core.id][0].message=JSON.stringify(state.command);

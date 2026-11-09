@@ -140,13 +140,12 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
   assert.equal(incomplete.jobs.length, 13, 'an incomplete file list keeps every job expected');
   assert.ok(incomplete.jobs.every(item => item.selected), 'an incomplete file list selects every job');
   // Hub #1080: a narrow change still expects every job, but the jobs it leaves out are expected to be skipped.
-  const narrow = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['apps/maintenance/src/planner.ts'], filesComplete: true }, ACTIONS);
+  const narrow = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['apps/runtime/src/main.ts'], filesComplete: true }, ACTIONS);
   assert.equal(narrow.jobs.length, 12);
   assert.deepEqual(narrow.jobs.filter(item => !item.selected).map(item => item.name).sort(), [
-    'App verification on ubuntu-latest', 'Firmware host tests and ARM build on ubuntu-latest', 'Runtime scenario tests on ubuntu-latest',
-    'Runtime unit tests on ubuntu-latest', 'Runtime verification on ubuntu-latest',
+    'Firmware host tests and ARM build on ubuntu-latest',
   ]);
-  const mainPush = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['apps/maintenance/src/planner.ts'], filesComplete: true }, ACTIONS);
+  const mainPush = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['apps/runtime/src/main.ts'], filesComplete: true }, ACTIONS);
   assert.ok(mainPush.jobs.every(item => item.selected), 'main runs every check');
   const branchPush = expectedJobs(workflows, { event: 'push', branch: 'feature', files: ['README.md'], filesComplete: true }, ACTIONS);
   assert.deepEqual(branchPush.jobs, []);
@@ -365,7 +364,7 @@ const selectableJobs = {
   firmware: 'Firmware host tests and ARM build on ubuntu-latest', 'app-verify': 'App verification on ubuntu-latest',
   'runtime-verify': 'Runtime verification on ubuntu-latest',
 };
-function narrowWorld(files = ['apps/maintenance/src/planner.ts']) {
+function narrowWorld(files = ['apps/runtime/src/main.ts']) {
   const world = cleanWorld();
   world.files = files.map(filename => ({ filename, status: 'modified' }));
   world.compares[`${BASE}...${HEAD}`].files = world.files;
@@ -385,7 +384,7 @@ for (const [stage, worldFor, sha, gateId] of [
     const { world, original, retained, run } = copiedSelection(worldFor(), sha);
     const ci = gate(await preflight(world), gateId);
     assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
-    assert.deepEqual(ci.evidence.hostedSelection.groups, stage === 'narrowed PR' ? ['maintenance'] : selectChecks({ event: 'push', paths: [], complete: true }).groups);
+    assert.deepEqual(ci.evidence.hostedSelection.groups, stage === 'narrowed PR' ? ['runtime'] : selectChecks({ event: 'push', paths: [], complete: true }).groups);
     const selector = ci.evidence.jobs.find(item => item.name === retained.name);
     assert.equal(selector.checkRunId, retained.id);
     assert.equal(selector.selectionSource.checkRunId, original.id);
@@ -491,7 +490,7 @@ for (const [reason, change] of retainedSelectionCases) {
 test('CI: retained selector refuses conflicting notices from the same recorded execution', async () => {
   const first = copiedSelection(narrowWorld());
   first.world.annotations[first.retained.id] = [{ ...first.world.annotations[first.original.id][0],
-    message: '{"mode":"selected","groups":["runtime","maintenance"]}' }];
+    message: '{"mode":"selected","groups":["runtime","modules"]}' }];
   const { world } = nextSelectorCopy(first);
   world.pageSize = 1;
   assertUnresolved(await preflight(world), 'ci-pr', /original notices conflict/);
@@ -502,7 +501,7 @@ test('CI: retained selector does not hide a different required job failure', asy
   runNamed(world, /^Build, lint/).conclusion = 'failure';
   const report = await preflight(world);
   assertUnresolved(report, 'ci-pr', /Build, lint.*failure/);
-  assert.deepEqual(gate(report, 'ci-pr').evidence.hostedSelection.groups, ['maintenance']);
+  assert.deepEqual(gate(report, 'ci-pr').evidence.hostedSelection.groups, ['runtime']);
 });
 
 test('CI: retained selector inaccessible provenance is a read failure', async () => {
@@ -517,21 +516,19 @@ test('CI: a narrow change accepts deliberately unselected jobs as skipped and ne
   const ci = gate(await preflight(narrowWorld()), 'ci-pr');
   assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
   assert.deepEqual(ci.evidence.selection.mode, 'selected');
-  assert.deepEqual(ci.evidence.selection.groups, ['maintenance']);
-  assert.deepEqual(ci.evidence.selection.omitted, ['runtime', 'modules', 'chompi', 'shared']);
+  assert.deepEqual(ci.evidence.selection.groups, ['runtime']);
+  assert.deepEqual(ci.evidence.selection.omitted, ['modules', 'chompi', 'shared']);
   assert.deepEqual(ci.evidence.jobs.filter(item => item.selected === false).map(item => [item.name, item.result]).sort(), [
-    ['App verification on ubuntu-latest', 'skipped'], ['Firmware host tests and ARM build on ubuntu-latest', 'skipped'],
-    ['Runtime scenario tests on ubuntu-latest', 'skipped'], ['Runtime unit tests on ubuntu-latest', 'skipped'],
-    ['Runtime verification on ubuntu-latest', 'skipped'],
+    ['Firmware host tests and ARM build on ubuntu-latest', 'skipped'],
   ]);
   assert.ok(ci.evidence.jobs.filter(item => item.selected !== false).every(item => item.result === 'success'));
-  assert.match(ci.reasons.join('\n'), /App verification on ubuntu-latest: not selected for this change \(omitted: runtime, modules, chompi, shared\); skipped, not run/);
+  assert.match(ci.reasons.join('\n'), /Firmware host tests and ARM build on ubuntu-latest: not selected for this change \(omitted: modules, chompi, shared\); skipped, not run/);
   // An unselected job that ran anyway was executed, and is reported as a success.
   // A hosted selection wider than the report's ran more work, which is noted, not a gap.
   const wider = gate(await preflight(publishSelection(narrowWorld(), HEAD)), 'ci-pr');
   assert.equal(wider.status, 'satisfied', wider.reasons.join('; '));
   assert.match(wider.reasons.join(), /hosted selection ran more groups/);
-  assert.deepEqual(ci.evidence.hostedSelection, { mode: 'selected', groups: ['maintenance'] });
+  assert.deepEqual(ci.evidence.hostedSelection, { mode: 'selected', groups: ['runtime'] });
   const ran = narrowWorld();
   runNamed(ran, /^Firmware/).conclusion = 'success';
   const executed = gate(await preflight(ran), 'ci-pr');
@@ -562,14 +559,14 @@ const selectionCases = [
     return world;
   }, /Runtime unit tests on ubuntu-latest: skipped/],
   ['an unselected job that failed', world => { runNamed(world, /^Firmware/).conclusion = 'failure'; }, /Firmware host tests and ARM build on ubuntu-latest: failure \(not selected\)/],
-  ['an unselected job that was cancelled', world => { runNamed(world, /^App verification/).conclusion = 'cancelled'; }, /App verification on ubuntu-latest: cancelled \(not selected\)/],
+  ['an unselected job that was cancelled', world => { runNamed(world, /^Firmware/).conclusion = 'cancelled'; }, /Firmware host tests and ARM build on ubuntu-latest: cancelled \(not selected\)/],
   ['an unselected job that is still pending', world => { Object.assign(runNamed(world, /^Firmware/), { status: 'queued', conclusion: null }); }, /Firmware host tests and ARM build on ubuntu-latest: pending/],
   ['a missing unselected job', world => { world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => !/^Firmware/.test(run.name)); }, /Firmware host tests and ARM build on ubuntu-latest: missing/],
   ['a skip recorded for another revision', world => { runNamed(world, /^Firmware/).head_sha = OLD_HEAD; }, /Firmware host tests and ARM build on ubuntu-latest: missing/],
   ['a failed gate', world => { runNamed(world, /^Selected checks gate$/).conclusion = 'failure'; }, /Selected checks gate: failure/],
   // The hosted select job's published selection must cover the groups this report selects (Hub #1080, C10).
   ['a hosted selection narrower than the report\'s', world => publishSelection(world, HEAD, { mode: 'selected', groups: [] }),
-    /Select affected checks: the hosted selection \(no group\) omits maintenance, which this change selects/],
+    /Select affected checks: the hosted selection \(no group\) omits runtime, which this change selects/],
   ['a select job that published no selection', world => {
     const run = runNamed(world, /^Select affected checks$/);
     run.output.annotations_count = 0;
@@ -650,7 +647,7 @@ test('identity: a missing or ambiguous work issue is unresolved, never not-appli
 test('identity: a bot candidate still requires a work issue', async () => {
   const world = cleanWorld();
   world.pr.user = {login: 'github-actions[bot]', type: 'Bot'};
-  world.pr.head.ref = 'guide/nightly-refresh';
+  world.pr.head.ref = 'automation/refresh';
   world.pr.body = 'Retired automation must not bypass issue identity.';
   assertUnresolved(await preflight(world), 'identity', /no work issue/);
 });

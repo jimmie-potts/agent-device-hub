@@ -1,4 +1,4 @@
-"""Parse, fingerprint and upsert execution recommendations for maintenance closeout."""
+"""Parse, fingerprint and upsert issue execution recommendations."""
 from datetime import date
 from pathlib import Path
 import argparse

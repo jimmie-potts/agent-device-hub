@@ -276,12 +276,6 @@ are needed for changed selected-item status or explicit portfolio work; preserve
 owner Phase/Commitment choices. Unavailable projection access is a reported gap,
 not a source-delivery blocker. See [Project maintenance](project-maintenance.md).
 
-## Shared manual delivery claim
-
-Hub withdrew from the nightly queue under #734. No nightly claim, helper or client
-wrapper is required. Rejoining would need a separate owner decision. Use ordinary
-checkout and runtime ownership; do not revive the old claim as a delivery gate.
-
 ## Review and merge
 
 1. Finish the scoped change and run the checks selected by its owning guide and

@@ -597,7 +597,7 @@ artifact checks. Its evidence remains separate from the cheap Integration job:
 | --- | --- |
 | Select affected checks | Node 24 with only `scripts/ci-selection` checked out: maps the PR's changed paths to check groups |
 | Workflow checks (Workflow workflow) | Node 24 workflow validation, the affected-check selection fixtures, delivery preflight fixtures and isolated Linux hook qualification. It also runs for Markdown-only changes. |
-| Build, lint and core tests | Node 24, and Python 3.14 when the shared group is selected, in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, maintenance, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
+| Build, lint and core tests | Node 24, and Python 3.14 when the shared group is selected, in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
 | Runtime unit tests | Node 24 build, then `npm run test:runtime:built`, when the runtime group is selected |
 | Runtime scenario tests | Node 24 build, then `npm run test:runtime:scenarios:built`, the scenario catalog over both transports, when the runtime group is selected |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
@@ -613,7 +613,7 @@ moves that label from Ubuntu 24.04 to Ubuntu 26.04 between 2026-10-19 and
 2026-11-19 ([actions/runner-images#14748](https://github.com/actions/runner-images/issues/14748)),
 so until then a job may get either image and every job must pass on both. Checks
 that call the runner's system `/usr/bin/python3`, such as the Linux performance
-qualification and the maintenance closeout fixtures, use that image's Python:
+qualification, use that image's Python:
 3.12.3 on Ubuntu 24.04 (image 20261101.360) and 3.14.4 on Ubuntu 26.04 (image
 20261101.186), as the images' software lists state. Every Checks and Workflow job
 ran on `ubuntu-26.04` in dispatched runs on 2026-11-06
@@ -638,7 +638,6 @@ rename) and maps it to check groups with the small explicit table in
 | Group | Changed paths that select it | What it runs |
 | --- | --- | --- |
 | runtime | `apps/runtime/**`, active modules and the two Roborock consumer tests | The runtime's unit, scenario, dashboard and verification suites, its dashboard's browser checks and the Roborock consumer tests |
-| maintenance | `apps/maintenance/**`, and the runtime, which maintenance imports | Maintenance's suite and archive check |
 | modules | active `modules/**` | Active modules' suites |
 | chompi | The CHOMPI bridge, `packages/chompi-protocol/**` and `firmware/**` | The bridge's suites, verification steps and browser check, and the Firmware job |
 | shared | Only full coverage | The shared packages' and contracts' suites, the Python consumers, the old dashboard's tests, the app-verify core and the observability browser check |
@@ -808,8 +807,8 @@ stay until #839, so run them locally when a change touches that code:
 
 CI still covers the old code that kept checks rely on. `npm run build` and
 `npm run typecheck` compile it, because kept suites import it.
-`test:contracts:built` runs because MCP, maintenance, the event mapping tests
-and the observability pilot import `@jimmie-potts/device-contracts` from source.
+`test:contracts:built` runs because MCP, the event mapping tests and the
+observability pilot import `@jimmie-potts/device-contracts` from source.
 `test:dashboard` and `test:dashboard:smoke` run because #922 copies the
 dashboard into the runtime; the copy has its own
 [checks](#runtime-dashboard-checks). The Python setup still installs
@@ -1041,7 +1040,7 @@ prints tokens, local paths or reviewer return text.
 | Gate | What it reads | Rule |
 | --- | --- | --- |
 | Changed-file lint | The PR's added, modified and renamed `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`, `.jsx` and `.tsx` files, linted in the local checkout at the live head | Any ESLint error or warning, a checkout not at the head, or local edits to those files is unresolved; not applicable after merge |
-| Source identity | PR state, live head against `--head`, base branch tip against `--base`, merge-base, draft, conflicts, fork head, non-main base and closing keywords. The work issue is `--issue` or the single `Refs #<n>` in the PR body; a missing or ambiguous one is unresolved, except for the bot-opened nightly guide refresh | [Review and merge](sdlc.md#review-and-merge) |
+| Source identity | PR state, live head against `--head`, base branch tip against `--base`, merge-base, draft, conflicts, fork head, non-main base and closing keywords. The work issue is `--issue` or the single `Refs #<n>` in the PR body; a missing or ambiguous one is unresolved | [Review and merge](sdlc.md#review-and-merge) |
 | CI | Expected jobs from the revision's workflow directory at the PR head and, once merged, at the main merge commit: `.depot/workflows/` with Depot's `<workflow> / <job>` check names when it exists, otherwise `.github/workflows/` with GitHub Actions' job names. It applies matrix expansion, GitHub path-filter semantics (`*` and `**`; a filter with negation, `?`, `+` or `[]` keeps every job expected), the [affected-check selection](#affected-pr-checks) recomputed from the PR's changed files (a job it deliberately leaves out must report `skipped`, or `success`, and is reported as not run; any other result, a skip of a selected job, or a select job whose `Affected checks` notice remains missing after verified retained-execution lookup, is malformed or omits a required group, is unresolved) and branch-rule checks; every page of `filter=all` check runs. A workflow edit, including a move between providers, cannot drop a job expected at the merge-base without an unresolved entry; jobs compare by `<workflow> / <job>` | [CI evidence](sdlc.md#ci-evidence) |
 | Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `3c418136f641caed4f785b0552fab05ae29b37de`. Each axis needs a complete retained return whose digest and provenance match the current comparison and whose own text states a satisfied verdict (see below). An axis carried over under docs/sdlc.md step 3 still reads as unresolved here; the PR body records the carry-over. The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |
 | Published feedback | Outstanding change requests and unresolved review threads; the Codex security summary and other accounts' comments are listed, not gated | [Review and merge](sdlc.md#review-and-merge) |
@@ -1940,8 +1939,7 @@ lease, the on-demand read, the cutover's conversion, and the
 [module test kit](../packages/sdk/README.md#module-test-kit) with policy A's
 check. It uses `SimulatedLifx`, fake sockets, a manual clock and SQLite files
 under the system temporary directory, and opens no socket. One test starts a Node
-child process that holds a bulb's lease. The maintenance intake test's clean run
-configures every shipped module from its factory's `simulatedSection`. The runtime's catalog
+child process that holds a bulb's lease. The runtime's catalog
 scenario `lifx-bulbs` runs the module in `test:runtime:scenarios:built` and in
 [disposable runs](#runtime-verification-runs). Installation and the physical check
 belong to the cutover (#840).
@@ -2396,7 +2394,7 @@ from the packages and presentation imported for #25. Its
 source commit, the edits and every file left in divoom-app-upgrade. Use Node 24
 and run `npm ci`, `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:pixoo` from the worktree root, plus `test:runtime:built`,
-`test:runtime:scenarios:built`, `test:maintenance:built`, `check:workflow` and
+`test:runtime:scenarios:built`, `check:workflow` and
 `test:workflow`. Select local disposable scenarios or the full verification
 suite under [Runtime verification runs](#runtime-verification-runs).
 The build compiles the module and its tests
@@ -2552,31 +2550,6 @@ See [Functional disposition and deferred work](../packages/observability/TESTING
 ## Shared host diagnostics checks
 
 See [Shared host diagnostics checks](../packages/observability/TESTING.md#shared-host-diagnostics-checks) for the authoritative procedure.
-
-## Maintenance intake checks
-
-For `apps/maintenance`, use Node 24 from the repository root. Run `npm ci`,
-`npm run build`, `npm run typecheck`, `npm run test:maintenance:built`,
-`npm run test:maintenance:package:built`,
-`npm run test:observability:built`, `npm run test:contracts:built`,
-`npm run test:contracts:python`, `npm run check:workflow` and
-`npm run test:workflow`. All must exit zero. CI runs the intake tests in its
-core job. This suite covers the owning tracker-closeout adapter, full
-installation receipts, canonical Python recommendation tooling and all five
-fixed repository closeout policies in the extracted package. It also checks
-the shared error body on blocked intake responses against
-`@jimmie-potts/event-contracts`' `errorBody` (Hub #921). Policy cases cover
-wrong runtime/repository/revision/owner, tool plan digests and file/link readback,
-protected paths, owning instruction fingerprints, unchanged client/physical
-acceptance and tool repositories without portfolio writes. It also runs the
-built runtime and reads its stderr lines as a synthetic journal (#903). The same
-suite covers
-the Hub supervisor installer wrapper;
-its native deadline guard also requires the Standalone hub, Standalone hub MCP
-and Shared monitoring setup checks above. Fixtures use synthetic journal data
-and disposable private state; these checks do not establish installed scheduling, credentials, permissions or
-physical behavior. See [the intake guide](../apps/maintenance/README.md) for its
-trusted supervisor boundary and installed qualification.
 
 ## BB-8 hibernation
 

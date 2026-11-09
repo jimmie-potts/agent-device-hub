@@ -1,6 +1,6 @@
 // The configuration of a run of shipped modules on their simulated devices (Hub #919, #929): each factory's
-// `simulatedSection`, with one private synthetic file for each secret it names. The shipped disposable run, the runtime's
-// tests and the maintenance journal test all write it here, so a module's simulated configuration lives in one place.
+// `simulatedSection`, with one private synthetic file for each secret it names. The shipped disposable run and the
+// runtime's tests write it here, so a module's simulated configuration lives in one place.
 import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {CONFIG_SCHEMA, type ModuleFactory} from '../../src/index.js';

@@ -47,8 +47,8 @@ only when a private section selects the Anthropic provider. One helper,
 `tests/fixtures/simulated.ts`, builds each section as `{...config, secrets: {<name>:
 <file>}}`, with one private file holding the synthetic token for each declared
 name, and writes the configuration file. The `shipped` disposable run, the
-runtime's process tests, the maintenance journal test and the memory script's
-`simulated` variant configure the shipped modules with it.
+runtime's process tests and the memory script's `simulated` variant configure
+the shipped modules with it.
 
 Wispr is the read-only file-handoff module. Its selected aggregate and diagnostics
 files are entered manually in the private configuration; no collector or database
@@ -1914,8 +1914,7 @@ record of profile 1.7, built by the contract's `createRecord`: `schema_version`,
 in namespace `bunny`, `service.version` (the package's version), a
 `service.instance.id` that each process draws once and shares with its
 watchdog thread, and `deployment.environment.name` from `--environment`.
-Maintenance intake reads these lines with the contract's validator. Beside the
-stdout ready line, which keeps its own contract, the process writes a
+Beside the stdout ready line, which keeps its own contract, the process writes a
 `runtime.ready` record. `runtime.started` and `runtime.edge.serving` carry the
 listener's port (`server.port`), never its URL, and `runtime.stopped` counts the
 records the writer dropped (`bunny.telemetry.dropped_count`) and the sink lost

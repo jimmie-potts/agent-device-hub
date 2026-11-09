@@ -244,8 +244,8 @@ export default defineConfig(
   },
   {
     // Outcome and evidence words in claim positions come from sdk/evidence (Hub #1141, narrowed in #1187). The hits
-    // left outside the strict profile (the legacy hub, controllers, app-verify, contracts, maintenance, scripts and
-    // the frozen CHOMPI bridge; docs/static-analysis.md lists them) are held in eslint-suppressions.json as the
+    // left outside the strict profile (the legacy hub, controllers, app-verify, contracts, scripts and the frozen
+    // CHOMPI bridge; docs/static-analysis.md lists them) are held in eslint-suppressions.json as the
     // ratchet: a file may lose hits, never gain them. Tests spell out the outcomes they expect, so they are not
     // checked; page code and page drivers keep the exclusion they had when the rule landed (#1141).
     name: 'bunny/outcome-vocabulary',

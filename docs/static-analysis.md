@@ -265,12 +265,12 @@ and the runtime's tests cover the rest.
   `uncertain-result` are other words. Tests are not checked, and page code
   and page drivers keep the exclusion they had when the rule landed (#1141);
   lifting it is a separate change.
-  The 72 remaining hits are held in `eslint-suppressions.json`, none under the
+  The 69 remaining hits are held in `eslint-suppressions.json`, none under the
   strict profile: the retained legacy hub (16) and controllers (15), which do
   not depend on the SDK; `apps/chompi-bridge` (10), frozen by the owner's
   CHOMPI work; `packages/app-verify` (19) and `packages/contracts` (4), whose
-  own result vocabularies predate the SDK; `apps/maintenance` (3) and
-  repository scripts (5), which do not import the SDK.
+  own result vocabularies predate the SDK; and repository scripts (5), which do
+  not import the SDK.
   The native suppressions are the ratchet: ESLint fails when a file gains a
   hit, and an unused entry fails `lint:js` until it is pruned, so the baseline
   only shrinks; a new entry shows as an edit to the committed JSON, which the
@@ -479,7 +479,7 @@ smaller coverage separately.
 
 | Included group | Purpose |
 | --- | --- |
-| `apps/maintenance/**/*.py` | Recommendation parsing, closeout helpers and their fixtures |
+| `apps/maintenance/**/*.py` | Recommendation parsing and its fixtures |
 | `docs/*.py`, `docs/diagrams/*.py`, `docs/skins/*.py`, `docs/system-design/**/*.py` | Drift checks and maintained generators/checks for retained documentation |
 | `scripts/performance/*.py`, `scripts/check-performance.py` | Measurement and isolated-supervision tooling |
 | `tests/performance/**/*.py`, `tests/performance_linux/**/*.py`, `tests/performance_standalone/**/*.py` | The measurement and supervision tests |
