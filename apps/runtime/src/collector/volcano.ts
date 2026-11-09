@@ -123,9 +123,31 @@ export async function loadCollector(path: string): Promise<Collector | Refusal> 
 
 const uint16 = (bytes: Uint8Array | undefined): number | null => (bytes === undefined || bytes.length < 2 ? null : (bytes[0] ?? 0) + ((bytes[1] ?? 0) << 8));
 
-/** The hex SHA-256 of a serial as the device reports it, without trailing NUL padding or spaces. */
-export function serialDigest(bytes: Uint8Array): string {
-  const serial = new TextDecoder('utf-8').decode(bytes).replace(/[\0\s]+$/u, '');
+/**
+ * The longest serial accepted, in bytes: the longest value a Bluetooth LE characteristic can have (the Attribute Protocol's
+ * 512-octet limit, Core Specification Vol 3 Part F 3.2.9), so no conforming read is refused (Hub #1463).
+ */
+export const MAX_SERIAL_BYTES = 512;
+const PADDING = /^[\0\s]$/u;
+
+/**
+ * `text` without its trailing NULs and whitespace, the same characters as `/[\0\s]+$/u` removes. It walks back once from
+ * the end, so its cost is linear in the padding: the pattern restarted at every NUL, which made a long run quadratic. Every
+ * padding character is one UTF-16 unit, so a lone unit is enough to test.
+ */
+export function trimSerialPadding(text: string): string {
+  let end = text.length;
+  while (end > 0 && PADDING.test(text.charAt(end - 1))) end -= 1;
+  return text.slice(0, end);
+}
+
+/**
+ * The hex SHA-256 of a serial as the device reports it, without trailing NUL padding or spaces, or undefined for a value
+ * longer than `MAX_SERIAL_BYTES`, which no device can report. It is refused by its length, before anything decodes it.
+ */
+export function serialDigest(bytes: Uint8Array): string | undefined {
+  if (bytes.length > MAX_SERIAL_BYTES) return undefined;
+  const serial = trimSerialPadding(new TextDecoder('utf-8').decode(bytes));
   return createHash('sha256').update(serial, 'utf8').digest('hex');
 }
 
@@ -370,12 +392,14 @@ export async function runCollector(collector: Collector, options: RunOptions): P
     let open = true;
     try {
       const serial = await bounded(deadline => transport.read(VOLCANO_SERIAL, deadline), readMs, live);
-      if (serial === FAILED) {
+      // A value too long to be a characteristic's is a fault of the read, not another device's identity, so it fails as one.
+      const digest = serial === FAILED ? undefined : serialDigest(serial);
+      if (digest === undefined) {
         publisher.update('disconnected', null);
         availability.unreachable(LINK_DEVICE, 'unavailable');
         return false;
       }
-      if (serialDigest(serial) !== collector.serialSha256) {
+      if (digest !== collector.serialSha256) {
         publisher.update('identity-mismatch', null);
         availability.unreachable(LINK_DEVICE, 'forbidden');
         return false;
