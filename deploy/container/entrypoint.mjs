@@ -76,11 +76,14 @@ export function checkLocalBrowserConfig(config, shipped, access = 'host-local') 
   return hosted;
 }
 
+// Only production with device control may serve MCP (#1595). The gateway serves it to loopback client credentials
+// and refuses the private-proxy origin; every other profile keeps it off.
 function browserEdge(edge, access) {
   return edge?.credentials === '/run/secrets/bunny/edge.json'
-    && edge.browserAccess === 'trusted-loopback' && edge.launcher === false && edge.mcp === false
+    && edge.browserAccess === 'trusted-loopback' && edge.launcher === false
+    && (edge.mcp === false || (access === 'production' && edge.mcp === true))
     && edge.wifiProxy === undefined
-    && (access === 'private-proxy' ? edge.privateProxy !== undefined : edge.privateProxy === undefined);
+    && (access === 'private-proxy' || access === 'production' ? edge.privateProxy !== undefined : edge.privateProxy === undefined);
 }
 
 export function productionModules(config, runtime, checkConfiguration, options) {
@@ -89,7 +92,7 @@ export function productionModules(config, runtime, checkConfiguration, options) 
   const names = new Set(shipped.map(({name}) => name));
   const hosted = shipped.filter(({name}) => Object.hasOwn(config.modules, name));
   const refuse = () => {throw new Error('container-browser-config-refused');};
-  if (!browserEdge(config.edge, 'private-proxy')
+  if (!browserEdge(config.edge, 'production')
     || Object.keys(config.modules).some(name => !names.has(name))
     || hosted.some(({after = []}) => after.some(name => !Object.hasOwn(config.modules, name)))) refuse();
   for (const section of Object.values(config.modules)) {

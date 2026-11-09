@@ -40,13 +40,37 @@ test('production admits only configured shipped modules in dependency order and 
     c => {c.modules.playback.secrets.token = '/etc/passwd';},
     c => {c.modules.playback.secrets.token = '/run/secrets/bunny/../outside';},
     c => {c.modules.playback.secrets.token = '/run/secrets/bunny//token';},
-    c => {delete c.edge.privateProxy;}, c => {c.edge.mcp = true;},
+    c => {delete c.edge.privateProxy;},
   ]) {
     const changed = structuredClone(config); mutate(changed);
     assert.throws(() => entrypoint.productionModules(changed, runtime, checkConfiguration, options), {message: 'container-browser-config-refused'});
   }
   assert.throws(() => entrypoint.productionModules(config, runtime, checkConfiguration,
     containerOptions({BUNNY_ACCESS: 'production'})), {message: 'container-browser-config-refused'});
+});
+
+test('production with control enabled admits MCP; the edge keeps every other limit (#1595)', () => {
+  const core = {name: 'core', create: () => ({manifest: {name: 'core'}})};
+  const quiet = {name: 'quiet', create: () => ({manifest: {name: 'quiet'}})};
+  const runtime = {coreFactory: core, shippedModules: [core, quiet], buildModules: factories => factories.map(each => each.create())};
+  const enabled = containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled'});
+  const withMcp = {modules: {quiet: {}}, edge: {...productionEdge(), mcp: true}};
+  assert.deepEqual(entrypoint.productionModules(withMcp, runtime, checkConfiguration, enabled).factories.map(({name}) => name), ['core', 'quiet']);
+  assert.deepEqual(entrypoint.productionModules({modules: {quiet: {}}, edge: productionEdge()}, runtime, checkConfiguration, enabled)
+    .factories.map(({name}) => name), ['core', 'quiet']);
+  for (const mutate of [
+    c => {c.edge.mcp = 'true';}, c => {c.edge.mcp = 1;}, c => {delete c.edge.mcp;},
+    c => {c.edge.credentials = '/elsewhere/private';}, c => {c.edge.browserAccess = undefined;},
+    c => {c.edge.launcher = true;}, c => {c.edge.wifiProxy = {};}, c => {delete c.edge.privateProxy;}, c => {delete c.edge;},
+  ]) {
+    const changed = structuredClone(withMcp); mutate(changed);
+    assert.throws(() => entrypoint.productionModules(changed, runtime, checkConfiguration, enabled), {message: 'container-browser-config-refused'});
+  }
+  // With control disabled, production takes the private-proxy admission path, which still refuses MCP.
+  const disabled = containerOptions({BUNNY_ACCESS: 'production'});
+  assert.deepEqual(entrypoint.productionModules({modules: {quiet: {}}, edge: productionEdge()}, runtime, checkConfiguration, disabled)
+    .factories.map(({name}) => name), ['core', 'quiet']);
+  assert.throws(() => entrypoint.productionModules(withMcp, runtime, checkConfiguration, disabled), {message: 'container-browser-config-refused'});
 });
 
 test('production hosted-GIF selection must match the configured Pixoo listener without widening the gateway', () => {
