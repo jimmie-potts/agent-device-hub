@@ -576,6 +576,19 @@ routine runs at a time; an overlapping occurrence or Run now is logged
 `blocked` with reason `busy` and dropped. Nothing is retried, rolled back or
 caught up, and the core never calls a transport.
 
+A preview ([#1586](https://github.com/jimmie-potts/agent-device-hub/issues/1586))
+reads what a run of a saved routine would do now. It reads each action's
+evidence the way a run does and applies the same guard function. Each action
+then answers `would-send`, or `blocked` with the reason a run would log
+(`unavailable`, `mode` or `busy`) and the guard that failed: `not-configured`,
+`no-evidence`, `stale`, `not-available`, `held`, `unsupported`, `external`,
+`pending-mode`, `mode-unknown`, `wrong-mode` or `in-flight`. A failed read is
+that action's `no-evidence`. The preview is a reply from current records, not a
+command. It sends, logs, claims and schedules nothing, and it leaves the
+in-flight mark alone. The Pixoo's admission check (#1276) remains the authority
+at send time, and evidence can change before a real run. Previewing an unsaved
+draft is deferred; save it disabled and preview the saved routine.
+
 The core stores definitions as `rules.kind = routine` rows with
 `trigger.schema = routine/1.0` and a bounded per-rule occurrence watermark under
 its existing lease. At its first open after the upgrade it migrates each
@@ -614,6 +627,9 @@ The gateway serves `/api/v2/automation/rules` (GET/POST), `rules/<id>`
 `routines` (GET/POST), `routines/<id>` (GET/PUT/DELETE),
 `routines/<id>/enable`, `disable` and `run` (POST with `{}`; `run` submits one
 occurrence now, enabled or not, and answers once each action's dispatch has),
+`routines/<id>/preview` (GET; answers `{id, atMs, enabled, next?, actions}` with
+one verdict per action, sending nothing, and refuses an unknown routine with
+`not-found`),
 `power-limits` (GET), `power-limits/<target>` (GET/PUT with enabled, durationMs
 and optional expectedSettingsRevision), `interrupt-set` and `settings` (GET/PUT), and `log` (GET with optional `limit`
 1–500 and `before` sequence). Success responses use schema `automation/2.0`.
