@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, realpath, rm} from 'node:fs/promises';
+import {mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
@@ -285,4 +285,45 @@ test('private access admits the coding worker\'s own role and nothing else with 
   for (const change of [{role: 'bb8-link'}, {robotId: 'r1'}, {scopes: ['read']}]) {
     assert.throws(() => checkLocalBrowserCredentials([{...worker, ...change}], undefined, 'private-proxy'));
   }
+});
+
+const musicProducer = {id: 'music-producer-mac', source: 'bunny/parts/music-producer', digest: '5'.repeat(64), scopes: [], role: 'music-producer'};
+const playbackProducer = {
+  id: 'music-playback-mac', source: 'bunny/parts/music-playback', digest: '6'.repeat(64), scopes: [], role: 'music-playback-producer',
+};
+
+test('private access admits the Music producers\' own roles with no scopes, beside the worker and clients (Hub #1594)', () => {
+  const worker = {id: 'coding-worker-mac', source: 'bunny/parts/coding-worker', digest: '4'.repeat(64), scopes: [], role: 'coding-worker'};
+  const client = {id: 'reader', source: 'bunny/parts/reader', digest: '2'.repeat(64), scopes: ['read']};
+  const source = 'bunny/parts/hub-' + '1'.repeat(32);
+  const producer = {id: source.slice('bunny/parts/'.length), source, digest: '3'.repeat(64), scopes: ['ingest']};
+  checkLocalBrowserCredentials([musicProducer], undefined, 'private-proxy');
+  checkLocalBrowserCredentials([playbackProducer], undefined, 'private-proxy');
+  checkLocalBrowserCredentials([client, worker, musicProducer, playbackProducer, producer], source, 'private-proxy');
+  // The host-local profile still admits only its selected producer.
+  assert.throws(() => checkLocalBrowserCredentials([musicProducer]), {message: 'container-browser-config-refused'});
+  assert.throws(() => checkLocalBrowserCredentials([playbackProducer, producer], source), {message: 'container-browser-config-refused'});
+  for (const credential of [musicProducer, playbackProducer]) {
+    for (const change of [{role: 'bb8-link'}, {role: 'stray-role'}, {robotId: 'r1'}, {scopes: ['read']}, {scopes: ['ingest']}]) {
+      assert.throws(() => checkLocalBrowserCredentials([worker, {...credential, ...change}], undefined, 'private-proxy'),
+        {message: 'container-browser-config-refused'});
+    }
+  }
+});
+
+test('check-credentials runs the start-time credential check on the installed file, before a grant is reloaded (Hub #1594)', async t => {
+  const {CREDENTIALS_SCHEMA} = await import('../../../apps/runtime/dist/src/credentials.js');
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-credentials-check-')));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const file = join(root, 'edge.json');
+  const config = {edge: {credentials: file}};
+  await writeFile(file, JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: [musicProducer, playbackProducer]}), {mode: 0o600});
+  for (const access of ['private-proxy', 'production']) {
+    assert.deepEqual(await entrypoint.checkConfiguredCredentials(config, {access}), {status: 'admitted', credentials: 2});
+  }
+  await assert.rejects(entrypoint.checkConfiguredCredentials(config, {access: 'host-local'}), {message: 'container-browser-config-refused'});
+  // The isolated profile has no credential check at start, so there is nothing for this command to repeat.
+  await assert.rejects(entrypoint.checkConfiguredCredentials(config, {access: 'isolated'}), {message: 'container-command-refused'});
+  await assert.rejects(entrypoint.main(['check-credentials'], {}), {message: 'container-command-refused'});
+  await assert.rejects(entrypoint.main(['check-credentials', 'extra'], {}), {message: 'container-command-refused'});
 });

@@ -82,6 +82,9 @@ mismatch or permission refusal produces no fallback to another input.
 The origin must be HTTP or HTTPS without a path, query, fragment or credentials.
 The helper and token paths must be absolute. Provision the credential separately
 for the fixed source `bunny/parts/music-producer`, with no ordinary SDK scopes.
+On the Mac core, follow
+[Grant a credential to the running core](../../docs/bunny-container.md#grant-a-credential-to-the-running-core):
+images from before Hub #1594 cannot restart with this role's credential.
 Its endpoint grant responds only to `music-capture-work`, publishes only
 `music-capture-progress` and `music-capture-features`, and requests only
 `music-capture-endpoint`. The wrapper accepts work only from `bunny/core` for its
@@ -229,7 +232,7 @@ is a neutral operator-selected name using lowercase letters, digits and single
 hyphens, at most 128 characters. It declares the selected Mac/library; it does
 not prove which library Music has open. Provision the fixed
 `bunny/parts/music-playback` source separately with the `music-playback-producer`
-role and no ordinary SDK scopes. Its connection-bound endpoint may respond only
+role and no ordinary SDK scopes, through the same Mac core grant procedure. Its connection-bound endpoint may respond only
 to `music-playback-work`, publish observations/results and request playback
 registration. `modules/playback` must explicitly configure the Music source in
 its existing preference order. The capture credential and CLI cannot enroll it.

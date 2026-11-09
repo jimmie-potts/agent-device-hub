@@ -33,12 +33,14 @@ export function containerOptions(env) {
     ...(pixooBind === undefined ? {} : {pixooBind})};
 }
 
+// The roles a private profile admits, each with no scopes: the shared parser already binds each to its fixed source.
+// The coding worker's (Hub #502) and the Mac Music producers' (Hub #1594). BB-8's role, and any robot ID, stay refused.
+const privateRoles = ['coding-worker', 'music-producer', 'music-playback-producer'];
+
 // Input has already passed the shared credential parser. This profile narrows its grants further.
 export function checkLocalBrowserCredentials(credentials, ingestSource, access = 'host-local') {
   if (access === 'private-proxy') {
-    // The coding worker's own role is admitted (Hub #502) with no scopes, as the shared parser already binds it to its
-    // fixed source. Every other role, and any robot ID, stays refused here.
-    if (credentials.some(credential => (credential.role !== undefined && (credential.role !== 'coding-worker' || credential.scopes.length !== 0)) || credential.robotId !== undefined
+    if (credentials.some(credential => (credential.role !== undefined && (!privateRoles.includes(credential.role) || credential.scopes.length !== 0)) || credential.robotId !== undefined
       || credential.scopes.some(scope => !['read', 'control', 'ingest'].includes(scope)))) throw new Error('container-browser-config-refused');
     if (ingestSource !== undefined) checkLocalBrowserCredentials(credentials.filter(credential => credential.source === ingestSource), ingestSource);
     return;
@@ -142,15 +144,12 @@ async function start(options) {
   let factories = options.control === 'disabled' ? [coreFactory] : shippedModules;
   let hosted;
   if (['host-local', 'private-proxy', 'production'].includes(options.access)) {
-    const [{readEdgeCredentials}, {checkConfiguration}] = await Promise.all([
-      import('../../apps/runtime/dist/src/credentials.js'), import('../../packages/sdk/dist/src/index.js'),
-    ]);
+    const {checkConfiguration} = await import('../../packages/sdk/dist/src/index.js');
     // Device control stays disabled; only configured modules that reach no device join the core.
     ({factories, modules: hosted} = options.access === 'production'
       ? productionModules(config, runtimeModules, checkConfiguration, options)
       : hostLocalModules(config, runtimeModules, checkConfiguration, options.access));
-    checkLocalBrowserCredentials(await readEdgeCredentials(config.edge.credentials), options.ingestSource,
-      options.access === 'production' ? 'private-proxy' : options.access);
+    await checkConfiguredCredentials(config, options);
   }
   await checkStateDirectory(options.stateDir);
   await refusePendingRestore(options.stateDir);
@@ -175,6 +174,25 @@ async function start(options) {
   });
 }
 
+/**
+ * The start-time credential check on its own. `start` runs it before state effects; `check-credentials` runs it in the
+ * running core against the file a grant just wrote, so that a grant the container would refuse at its next start is
+ * found before it is reloaded (Hub #1594). The isolated profile reads no credentials at start, so it has none to check.
+ */
+export async function checkConfiguredCredentials(config, options) {
+  if (!['host-local', 'private-proxy', 'production'].includes(options.access)) throw new Error('container-command-refused');
+  const {readEdgeCredentials} = await import('../../apps/runtime/dist/src/credentials.js');
+  const credentials = await readEdgeCredentials(config.edge?.credentials);
+  checkLocalBrowserCredentials(credentials, options.ingestSource, options.access === 'production' ? 'private-proxy' : options.access);
+  return {status: 'admitted', credentials: credentials.length};
+}
+
+async function checkCredentials(options) {
+  if (!['host-local', 'private-proxy', 'production'].includes(options.access)) throw new Error('container-command-refused');
+  const {readRuntimeConfig} = await import('../../apps/runtime/dist/src/state.js');
+  process.stdout.write(JSON.stringify(await checkConfiguredCredentials(await readRuntimeConfig(options.config), options)) + '\n');
+}
+
 async function refusePendingRestore(stateDir) {
   const pending = await lstat(join(stateDir, '.restore-pending')).then(() => true, error => {
     if (error.code === 'ENOENT') return false;
@@ -193,9 +211,10 @@ async function status(options) {
 }
 
 export async function main(args, env = process.env) {
-  if (args.length > 1 || !['start', 'status'].includes(args[0] ?? 'start')) throw new Error('container-command-refused');
+  if (args.length > 1 || !['start', 'status', 'check-credentials'].includes(args[0] ?? 'start')) throw new Error('container-command-refused');
   const options = containerOptions(env);
   if (args[0] === 'status') await status(options);
+  else if (args[0] === 'check-credentials') await checkCredentials(options);
   else await start(options);
 }
 
