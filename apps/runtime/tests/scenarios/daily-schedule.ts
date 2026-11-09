@@ -8,7 +8,7 @@ import {TRONBYT_SIMULATED_SECTION, type TronbytState} from '@jimmie-potts/tidbyt
 import type {WeatherState} from '@jimmie-potts/weather';
 import sharp from 'sharp';
 import {SCHEDULE_FIXTURE, RAIN_SECTION, type SubmittedPixooFrames} from '../fixtures/scheduled.js';
-import {PIXOO_SECTION} from './modules/pixoo.js';
+import {PIXOO_SECTION, pixooStatusBase} from './modules/pixoo.js';
 import {PLAYBACK_SECTION} from './modules/playback.js';
 import {StepFailure, act, bodyOf, deviceState, expect, holds, running, type Harness, type Scenario} from './framework.js';
 
@@ -74,6 +74,7 @@ export const artScheduleScenarios: readonly Scenario[] = [{
   },
   steps: [
     expect('all real owners and the explicit synthetic fixture are running', h => running(h, ['core', 'art', 'weather', 'pixoo', 'tidbyt', SCHEDULE_FIXTURE])),
+    ...pixooStatusBase('desk-display'),
     expect('both declared display routes support factual rain notices', h => ['desk-display', 'shelf-display'].every(id => h.reader.states<DeviceRecord>('device').some(({data}) =>
       data.id === id && data.availability === 'available' && data.capabilities.moments.supported && data.capabilities.moments.art?.notices?.includes('rain-forecast') === true)) || 'notice capabilities missing', 5000),
     expect('the real weather owner has a fresh invented rain forecast', h => {

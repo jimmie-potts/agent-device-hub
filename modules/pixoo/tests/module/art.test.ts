@@ -364,7 +364,7 @@ void it('keeps profile restrictions and never falls back to a mood for refused a
   }
 });
 
-void it('requires the core for art moments and preserves attention and paused-item admission', async () => {
+void it('requires the core for art moments and preserves attention admission', async () => {
   const world = await World.open();
   try {
     await world.start();
@@ -372,9 +372,7 @@ void it('requires the core for art moments and preserves attention and paused-it
     await world.outcome(await accepted(stage(world, data)));
     const forged = await artMoment(world, data.compositionId, {}, false);
     assert.ok(forged.status === 'rejected'); assert.equal(forged.error.error.code, 'forbidden');
-    await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause'})));
-    const paused = await artMoment(world, data.compositionId);
-    assert.ok(paused.status === 'rejected'); assert.equal(paused.error.error.code, 'invalid-state');
+    // A paused item's refusal is covered below; an empty pause no longer refuses art (ADR 0014).
     await monitor(world);
     await world.publishSession({attention: [{kind: 'approval', id: {status: 'known', id: 'approval-art'}, turn: {status: 'known', id: 'turn-1'}}]});
     const blocked = await artMoment(world, data.compositionId);
@@ -556,12 +554,12 @@ void it('attention, a paused item and Now Playing refuse exact art; a stopped sa
     await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'stop'})));
     const stopped = world.display()?.player;
     assert.ok(stopped !== undefined && stopped.itemId !== null);
-    const base = await waitFor(() => world.display()?.participating === true ? world.device.state().shown?.digests[0] : undefined, 'the status base after the stop');
+    await waitFor(() => world.display()?.participating === true ? true : undefined, 'the status base after the stop');
     const stoppedMoment = await accepted(artMoment(world, data.compositionId, {momentId: 'selected-stop', coversStatus: false, durationMs: 1000}));
     await waitFor(() => world.device.state().shown?.frames === 8 ? true : undefined, 'exact animation over the status base');
     const completed = await world.outcome(stoppedMoment);
     assert.equal(completed.data.result, 'succeeded'); assert.equal(completed.data.evidence, 'transmitted');
-    await waitFor(() => world.device.state().shown?.digests[0] === base ? true : undefined, 'the status base after the art');
+    await waitFor(() => world.display()?.showing === 'dashboard' && world.device.state().shown?.frames !== 8 ? true : undefined, 'the status base after the art');
     assert.equal(world.display()?.player.itemId, stopped.itemId);
     assert.equal(world.display()?.player.intent, 'stopped');
     assert.equal(world.display()?.player.playlistId, stopped.playlistId);

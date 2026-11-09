@@ -139,8 +139,10 @@ export class MonitorPresentation {
   this.statusHeld=options.passive===true;
   this.unsubscribe=player.subscribe(()=>{
    const state=player.getState();
-   // A player change retires the status base's generation; the next tick draws it again under the new one if it still rests.
-   if(this.active&&(state.generation!==this.playerGeneration||!state.requestedScreenOn)){this.suspend();}
+   // A player change retires the status base's generation; it is drawn again at once under the new one if it still rests,
+   // so a stop leaves no gap in which the status base admits nothing.
+   if(this.active&&(state.generation!==this.playerGeneration||!state.requestedScreenOn))this.suspend();
+   this.settleBase();
    // Any player change the takeover did not make, or screen-off, is the user's: never resume over it.
    if(this.takeover&&(state.generation!==this.takeover.generation||!state.requestedScreenOn))this.dropTakeover();
   });

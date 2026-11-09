@@ -38,6 +38,16 @@ export const pixooCommand = (family: string, verb: string, data: object): {key: 
 });
 /** A Hub mode for the Pixoo, which takes Work, Free and Quiet as its own (ADR 0014). */
 export const pixooMode = (mode: 'work' | 'free' | 'quiet'): {key: string; draft: CommandDraft<object>} => pixooCommand('device-mode-set', 'device-mode.set', {mode});
+/**
+ * The steps that let a simulated Pixoo's status base draw: its start is passive until a mode command (ADR 0014), so a
+ * scenario that shows art over the status base first selects a Hub mode, then waits for the dashboard on the panel.
+ */
+export const pixooStatusBase = (deviceId: string, mode: 'work' | 'free' | 'quiet' = 'free'): Step[] => [
+  act(`the operator selects ${mode} on the Pixoo, which lets its status base draw`, h => dispatchOnce(h, 'operator', `status-base-${deviceId}`, {
+    key: `bunny.cmd.device-mode-set.${deviceId}`, draft: {type: 'org.bunny.device-mode.set.requested', subject: deviceId, dataschema: schemaOf('device-mode-set'), data: {mode}},
+  }, `status-base-${deviceId}`)),
+  expect('the Pixoo shows its status base', h => deviceState<SimulatedPixooState>(h, 'pixoo').shown !== null || 'the status base has not drawn', 5000),
+];
 export const pixooDevice = (h: Harness): DeviceRecord | undefined => h.reader.states<DeviceRecord>('device', PIXOO_OWNER).find(state => state.data.id === PIXOO_ID)?.data;
 export const pixooDisplay = (h: Harness): DisplayRecord | undefined => h.reader.states<DisplayRecord>(PIXOO.display, PIXOO_OWNER).find(state => state.data.id === PIXOO_ID)?.data;
 /** The reader heard the request's outcome as `result` with `evidence`. */

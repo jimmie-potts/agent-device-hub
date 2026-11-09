@@ -3,7 +3,7 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {TRONBYT_SIMULATED_SECTION, type TronbytState} from '@jimmie-potts/tidbyt';
 import type {SharedArtFixture} from '../../fixtures/presentation.js';
-import {PIXOO_SECTION} from './pixoo.js';
+import {PIXOO_SECTION, pixooStatusBase} from './pixoo.js';
 import {PLAYBACK_SECTION} from './playback.js';
 import {StepFailure, act, answers, bodyOf, deviceState, expect, holds, recorded, refusedWith, running, type Harness, type Scenario} from '../framework.js';
 
@@ -45,6 +45,7 @@ export const scenarios: readonly Scenario[] = [{
   },
   steps: [
     expect('the producer and both configured display owners are ready', h => running(h, ['core', 'art', 'pixoo', 'tidbyt', 'presentation-fixture'])),
+    ...pixooStatusBase('desk-display'),
     expect('the synthetic caller holds its initial Art copy without starting a plan', async h => {const value = await fixture(h);return value?.ready === true && value.plan === undefined || (value?.failure ?? 'fixture copy not ready');}),
     expect('current noncanonical display records declare exact art', h => ['desk-display', 'shelf-display'].every(id => h.reader.states<DeviceRecord>('device').some(message =>
       message.data.id === id && message.data.availability === 'available' && message.data.capabilities.moments.supported && message.data.capabilities.moments.art !== undefined)) || 'current art-capable display records missing', 5000),
