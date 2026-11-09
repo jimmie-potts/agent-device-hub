@@ -20,12 +20,31 @@ const message = (data: unknown = feature()) => ({
   traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', data,
 });
 
-test('the first native discontinuity initializes an empty binding; a later discontinuity retires it', () => {
+test('the first native discontinuity initializes a binding; a later one after a missed window keeps the input fresh', () => {
   const input = new MusicInput(binding, clock());
   assert.equal(input.accept(message({...feature(), discontinuity: true}), clock()), 'accepted');
   assert.equal(input.current(clock())?.elapsedMs, 0);
   assert.equal(input.accept(message(feature(2)), clock(100)), 'accepted');
-  assert.equal(input.accept(message({...feature(3), discontinuity: true}), clock(200)), 'discontinuity');
+  // Window 3 never arrives: the producer marks window 4 as a discontinuity, and the input carries on (#1588).
+  assert.equal(input.accept(message({...feature(4), discontinuity: true}), clock(300)), 'accepted');
+  assert.equal(input.current(clock(300))?.feature.sequence, 4);
+  assert.equal(input.current(clock(300))?.elapsedMs, 300);
+  assert.equal(input.accept(message(feature(5)), clock(400)), 'accepted');
+  // Repeated gaps: windows 6 and 8 never arrive, and each following window carries the marker.
+  assert.equal(input.accept(message({...feature(7), discontinuity: true}), clock(600)), 'accepted');
+  assert.equal(input.accept(message({...feature(9), discontinuity: true}), clock(800)), 'accepted');
+  assert.equal(input.current(clock(800))?.elapsedMs, 800);
+  assert.equal(input.accept(message(feature(10)), clock(900)), 'accepted');
+  // Only freshness ends it: with nothing newer, the latest window expires and the input is retired for good.
+  assert.equal(input.current(clock(1300)), null);
+  assert.equal(input.accept(message(feature(11)), clock(1300)), 'retired');
+});
+
+test('a discontinuity marker on a window that runs backwards still retires the input', () => {
+  const input = new MusicInput(binding, clock());
+  assert.equal(input.accept(message(feature()), clock()), 'accepted');
+  assert.equal(input.accept(message(feature(2)), clock(100)), 'accepted');
+  assert.equal(input.accept(message({...feature(3, 50), discontinuity: true}), clock(200)), 'discontinuity');
   assert.equal(input.current(clock(200)), null);
   assert.equal(input.accept(message(feature(4)), clock(300)), 'retired');
 });

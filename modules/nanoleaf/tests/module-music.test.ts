@@ -390,6 +390,32 @@ test('an alert ends the session and restores the base', async context => {
   world.verify();
 });
 
+test('repeated missed capture windows keep the session playing, and only expired input ends it as source lost', async context => {
+  const session = await playing(context);
+  const {world} = session;
+  await play(session, 500);
+  // The installed trial's failure (#1588): one window never arrives and the next carries the native discontinuity marker.
+  session.sequence += 1;
+  await publish(session, frame(session, {discontinuity: true}));
+  await world.advance(100);
+  const after = world.clock.now();
+  await play(session, 500);
+  // It keeps happening, as on real capture: two more missed windows, each followed by a marked window.
+  for (let gap = 0; gap < 2; gap += 1) {
+    session.sequence += 1;
+    await publish(session, frame(session, {discontinuity: true}));
+    await world.advance(100);
+    await play(session, 300);
+  }
+  assert.equal(deviceState(world)?.session?.status, 'playing', 'missed windows are not source loss');
+  assert.ok(frames(world, after).length >= 5, 'frames keep painting after the missed window');
+  // With no fresh feature at all, the input expires and the session ends with the guarded restoration.
+  await world.advance(1500);
+  assert.equal(ended(world)?.reason, 'source-lost');
+  assert.equal(ended(world)?.restoration, 'restored');
+  assert.equal(lines(world)?.select, 'Beach Waves');
+  world.verify();
+});
 test('a feature overflow retires the input as source lost', async context => {
   const session = await playing(context, {maxQueued: 2});
   const {world} = session;

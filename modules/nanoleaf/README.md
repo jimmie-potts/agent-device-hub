@@ -199,11 +199,15 @@ validates the family, binding, increasing sequence and source timing.
 `wallMs` and receiver-local `monotonicMs`; the helper reads no clock itself.
 Expiry uses the original payload deadline and a receipt-monotonic deadline.
 Duplicate messages cannot renew it. The first native discontinuity initializes
-the binding; later discontinuities, clock invalidity and expiry retire it.
+the binding. A later discontinuity after a missed window is accepted as the latest
+feature, and timing continues across the gap (#1588). Source time that runs
+backwards, clock invalidity and expiry retire it.
 `retire()` also permanently clears it. A later binding needs a new instance.
 
 `MusicRenderer(recipe, layout, binding).render(sample)` returns the existing
-`Display` payload or null for repeated or invalidated input. It copies saved
+`Display` payload or null for repeated or invalidated input. A discontinuity after
+a missed window renders as an ordinary gap would; source time that runs backwards
+retires the renderer. It copies saved
 geometry, uses source-time differences for smoothing and decorative wave motion,
 and encodes one static RGB keyframe per zone. Lines use paired logical zones;
 NL22 uses one physical zone. Spatial effects require saved positions. Output
@@ -243,7 +247,9 @@ existing locked worker, as for a bounded moment.
   as `starting` and opens an in-memory `MusicInput` for the capture binding.
 - **Features** arrive only through the module's subscription to
   `bunny.event.music-capture-features.*`, and each input takes only its own endpoint and
-  generation. A subscription overflow retires every input. Features are never stored.
+  generation. A subscription overflow retires every input. A single missed capture window
+  is not source loss: the session keeps playing until no fresh feature remains (#1588).
+  Features are never stored.
 - **The first frame** is written only if the light still shows the base scene; a scene
   chosen since the read ends the session `manual`. The frame is the Start's journaled write. It completes the work command
   `succeeded`/`transmitted`, and the session becomes `playing`. Without a fresh feature

@@ -75,7 +75,9 @@ export class MusicRenderer {
         || !Number.isFinite(sample.elapsedMs) || sample.elapsedMs < 0) return null;
     const before = this.#previous;
     if (before !== null && frame.sequence <= before.sequence) return null;
-    if (before !== null && (frame.discontinuity || frame.endMonotonicMs <= before.endMs || sample.elapsedMs <= before.elapsedMs)) {
+    // A missed window renders as an ordinary gap: decay and smoothing use the elapsed source time (#1588). Only source time
+    // that runs backwards retires the renderer.
+    if (before !== null && (frame.endMonotonicMs <= before.endMs || sample.elapsedMs <= before.elapsedMs)) {
       this.#retired = true;
       return null;
     }
