@@ -18,3 +18,5 @@ The owner decided on 2026-11-09 that, for live Lines sessions, source loss means
 ## Impact
 
 Only `modules/nanoleaf` changes (`music-input.ts`, `music-effects.ts`), with its tests and README. The capture contract, core session owner, dashboard and other modules are unchanged. There is no installation, capture or device command; #725 repeats the installed trial after a qualified install.
+
+**No design.md.** The change removes one condition from each of two retirement checks. It adds no concurrency, storage, migration, timing or privacy behavior, and no new interface: the session loop, write pacing, interruption order and restoration are unchanged. The owner's policy decision and its reason are recorded above.

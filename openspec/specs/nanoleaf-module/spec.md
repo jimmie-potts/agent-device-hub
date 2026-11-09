@@ -308,7 +308,7 @@ Music feature intake SHALL validate the existing profile-2 capture family, produ
 - **THEN** no subsequent frame from that instance is available, even if later messages appear fresh
 
 #### Scenario: Missed window
-- **WHEN** a valid bound feature after initialization reports the producer's discontinuity marker and starts after the previous accepted window ends
+- **WHEN** a valid bound feature after initialization reports the producer's discontinuity marker and starts at or after the end of the previous accepted window
 - **THEN** it becomes the latest fresh feature, the input stays available, and rendering continues with the elapsed source time across the gap, as for an ordinary sequence gap
 
 #### Scenario: Input bursts
