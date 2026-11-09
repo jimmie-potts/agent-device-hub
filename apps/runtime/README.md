@@ -537,7 +537,8 @@ and pending mode changes, and submits one tracked, guarded command through the
 dispatcher with fresh request identity. No command carries `requireMode`; the
 owning module's own admission stays decisive. A refused, failed, uncertain or
 skipped action does not stop the next; an action skipped for its mode is logged
-`blocked` with reason `mode`, and a scheduled action whose
+`blocked` with reason `mode`, one the available device does not offer (such as a
+stored Pixoo `device-mode-set monitor`) with reason `unsupported-capability`, and a scheduled action whose
 turn comes more than 60 seconds after the minute is logged `blocked` with
 reason `expired`. Nothing waits for an earlier action's outcome: a
 `device-mode-set` followed by a content action usually skips that content

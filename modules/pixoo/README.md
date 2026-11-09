@@ -311,11 +311,19 @@ and never pauses the player. Startup, restart and sync apply no mode.
   before Quiet. A brightness set during Quiet lasts until the next mode command:
   a Quiet command in Quiet writes the Quiet level again, while Work or Free in
   the same mode writes nothing. Work and Free write no brightness of their own.
+  With no brightness requested since the start, entering Quiet reads the device
+  first and remembers what it reports; a device that reports none leaves nothing
+  to restore, and leaving Quiet then writes nothing.
 
-A failed or uncertain status write holds the status base until a mode or player
-command, as a failed dashboard once stopped Monitor. A simulated Pixoo's start is
-passive in the same way; a real device's start draws the status base at once when
-the player holds no item.
+A stopped or finished item stays stopped across a restart, a screen-off and the
+player's own pause after an uncertain write or external control, so the status
+base returns in front of it. A failed or uncertain status write holds the status
+base, as a failed dashboard once stopped Monitor, until a mode or player command
+or until the device answers again after it was unavailable. External control
+holds it until a mode or player command, so it never paints over what may be the
+owner's own picture. A simulated Pixoo's start is passive until a mode or player
+command; a real device's start draws the status base at once when the player
+holds no item.
 
 ### Moments
 
@@ -744,7 +752,7 @@ acknowledgment.
 | --- | --- | --- |
 | Monitor | `device-mode-set` `monitor`, with one agent session waiting for approval | One session filling the screen: a 20x20 tile at the top left in the activity's color with its icon, the provider mark and the activity word to its right, an amber APPROVAL chip, the session's label in two lines of large letters, and a summary strip at the bottom with the session count, `!1` in amber and the source and collector marks at the bottom right. The tile and chip pulse dimmer every 500 ms. Once approved, the chip goes and the picture holds still. |
 | A Media item | Import an image, put it in a playlist and send `media-start` | The image scaled into 64x64, letterboxed in black; a GIF plays at its frame delays within the device profile. It stays for its dwell (30 s for a still, three plays for an animation) before the next item. |
-| A Now Playing card | Monitor showing a session, then the playback record starts a track | For ten seconds: a green play marker and PLAYING at the top, a dark divider line, the title in light grey rows below the divider, then the artist in blue, all at full brightness for the whole ten seconds while the song plays on. A paused track shows an amber marker and PAUSED. After ten seconds Monitor's dashboard returns. With Now Playing set to `whole` in Media, the same bright card replaces the playlist for as long as the song plays, past 30 s, and the playlist comes back once the song stops. The card dims, with a `?` marker, only once the playback module marks the speaker stale. |
+| A Now Playing card | The status base showing a session, then the playback record starts a track | For ten seconds: a green play marker and PLAYING at the top, a dark divider line, the title in light grey rows below the divider, then the artist in blue, all at full brightness for the whole ten seconds while the song plays on. A paused track shows an amber marker and PAUSED. After ten seconds the status dashboard returns. With Now Playing set to `whole` and a playlist playing in Free or Quiet, the same bright card replaces the playlist for as long as the song plays, past 30 s, and the playlist comes back once the song stops. The card dims, with a `?` marker, only once the playback module marks the speaker stale. |
 
 ## Provenance
 

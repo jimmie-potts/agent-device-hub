@@ -85,6 +85,31 @@ it('holds the status base after a failed write and draws it again only after a c
   expect(uploads(device)).toBe(2);
  }finally{await monitor.close();await player.close();}
 });
+it('a failed status write while the device is offline is released once the device answers again',async()=>{
+ const clock=new ManualClock(),device=new FakeDeviceAdapter({clock}),player=await Player.open({store:new MemoryPlaybackStore(),device,clock});
+ const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now()});
+ try{
+  monitor.submit(present(syntheticDashboardViews()[0]).view);await flush(clock);device.setOnline(false);
+  monitor.tick();await flush(clock);
+  expect(monitor.status()).toMatchObject({participating:false,lastOutcome:{status:'failed'}});expect(player.getState().availability).toBe('offline');
+  device.setOnline(true);clock.advance(30000);monitor.tick();await flush(clock);expect(uploads(device)).toBe(1);
+  // The device answers a probe again: no command is needed for the status base to return.
+  const probe=player.probe();await flush(clock);await probe;monitor.tick();await flush(clock);monitor.tick();await flush(clock);
+  expect(monitor.status().participating).toBe(true);expect(uploads(device)).toBe(2);
+ }finally{await monitor.close();await player.close();}
+});
+it('external control holds the status base until a command, so it never paints over what may be the owner\'s',async()=>{
+ const clock=new ManualClock(),device=new FakeDeviceAdapter({clock}),player=await Player.open({store:new MemoryPlaybackStore(),device,clock});
+ const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now()});
+ try{
+  monitor.submit(present(syntheticDashboardViews()[0]).view);await flush(clock);monitor.tick();await flush(clock);
+  const sent=uploads(device);
+  await player.takeover();await flush(clock);for(let i=0;i<5;i++){clock.advance(1000);monitor.tick();await flush(clock);}
+  expect(monitor.status().participating).toBe(false);expect(uploads(device)).toBe(sent);
+  await monitor.setMode('free');monitor.tick();await flush(clock);monitor.tick();await flush(clock);
+  expect(monitor.status().participating).toBe(true);expect(uploads(device)).toBe(sent+1);
+ }finally{await monitor.close();await player.close();}
+});
 it('waits, at a passive start, for a command before it first draws the status base',async()=>{
  const clock=new ManualClock(),device=new FakeDeviceAdapter({clock}),player=await Player.open({store:new MemoryPlaybackStore(),device,clock});
  const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now(),passive:true,mode:'quiet'});

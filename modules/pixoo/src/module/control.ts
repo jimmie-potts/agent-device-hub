@@ -214,8 +214,8 @@ export class PixooControl {
 
   /**
    * Takes a Hub mode (`device-mode-set`, ADR 0014). The mode is saved first, as policy only; then Work stops a held item,
-   * entering Quiet remembers the brightness last requested and writes the Quiet level, and leaving Quiet writes the
-   * remembered brightness once. A Quiet command in Quiet writes the Quiet level again, so a brightness set meanwhile lasts
+   * entering Quiet remembers the brightness last requested (or the device's own report) and writes the Quiet level, and
+   * leaving Quiet writes the remembered brightness once; with none known, leaving Quiet writes nothing. A Quiet command in Quiet writes the Quiet level again, so a brightness set meanwhile lasts
    * until the next mode command; Work and Free write no brightness of their own. A command that writes nothing completes
    * `observed`; one that writes brightness completes as that write, never retried. An uncertain write keeps the saved
    * mode, so the next mode command writes fresh.
@@ -232,8 +232,14 @@ export class PixooControl {
     let percent: number | undefined;
     if (mode === 'quiet') {
       if (previous !== 'quiet') {
-        const evidence = this.#player.getDisplayEvidence();
-        quiet.remember(evidence.requestedBrightness ?? evidence.brightness.observed?.value);
+        // The brightness last requested, else the device's own report. With neither known, as after a start that has not
+        // reached the device yet, the device is read once first; a device that reports none leaves nothing to restore.
+        let known = this.#known();
+        if (known === undefined) {
+          try { await this.#player.probe(); } catch { /* A failed read leaves nothing known; the Quiet write still runs. */ }
+          known = this.#known();
+        }
+        quiet.remember(known);
       }
       percent = quiet.level;
     } else if (previous === 'quiet') {
@@ -242,6 +248,12 @@ export class PixooControl {
       quiet.remember(undefined);
     }
     return percent === undefined ? OBSERVED : this.brightness(percent);
+  }
+
+  /** The brightness requested since the start, else the one the device last reported, or undefined. */
+  #known(): number | undefined {
+    const evidence = this.#player.getDisplayEvidence();
+    return evidence.requestedBrightness ?? evidence.brightness.observed?.value;
   }
 
   /** Sets what Now Playing does over the playback base (`pixoo-now-playing-set`), saved before the completion. */

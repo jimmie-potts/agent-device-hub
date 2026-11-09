@@ -296,3 +296,21 @@ it.each([false,true])('rejects resume after queued clear with subsequent previou
   expect(device.operations.filter(operation=>operation.kind==='uploadAnimation')).toHaveLength(uploads);
  }finally{await player.close();}
 });
+// ADR 0014: a stopped or finished item is a retained item behind the status base, never a paused one: a restart, the
+// player's own pause after an uncertain write or external control, and a screen-off keep it stopped. A playing item still pauses.
+it('keeps a retained stopped item stopped across a restart, its own uncertain or external-control pauses and a screen-off',async()=>{
+ const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock});
+ let player=await Player.open({store,device,clock,pauseOnUncertain:true});
+ await player.start(store.playlist.id);await flush(clock);await player.stop();await flush(clock);
+ const item=player.getState().itemId;expect(player.getState()).toMatchObject({intent:'stopped',state:'idle'});expect(item).not.toBeNull();
+ await player.close();player=await Player.open({store,device:new FakeDeviceAdapter({clock}),clock,pauseOnUncertain:true});
+ expect(player.getState()).toMatchObject({intent:'stopped',state:'idle',itemId:item});
+ await player.takeover();await flush(clock);expect(player.getState()).toMatchObject({intent:'stopped',lastError:{code:'external-control'}});
+ const off=player.setScreen(false);await flush(clock);await off;expect(player.getState()).toMatchObject({intent:'stopped',requestedScreenOn:false});
+ const on=player.setScreen(true);await flush(clock);await on;
+ await player.resume();await flush(clock);expect(player.getState().intent).toBe('active');
+ // A playing item is still paused by a restart and by screen-off.
+ await player.close();player=await Player.open({store,device:new FakeDeviceAdapter({clock}),clock});
+ expect(player.getState()).toMatchObject({intent:'paused',itemId:item});
+ await player.close();
+});

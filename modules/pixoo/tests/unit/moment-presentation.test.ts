@@ -273,15 +273,16 @@ it('over a finished playlist the moment plays over the status base and the playl
   expect(s.player.getState()).toMatchObject({intent:'stopped',generation:before.generation,itemId:before.itemId});
  }finally{await s.close();}
 });
-it('turning the screen off pauses a stopped item, which then refuses like any paused item',async()=>{
+it('turning the screen off keeps a stopped item stopped, and once the screen is on the status base admits a moment again',async()=>{
  const s=await setup();
  try{
-  await mediaPlaying(s);await s.settle(s.player.stop());
+  await mediaPlaying(s);await s.settle(s.monitor.media(()=>s.player.stop(),false));await monitorMode(s);
   await s.settle(s.player.setScreen(false));
   expect(s.monitor.momentBlock(false)).toBe('the screen is off');
-  await s.settle(s.player.setScreen(true));
-  expect(s.player.getState().intent).toBe('paused');
-  expect(s.monitor.momentBlock(false)).toBe('a held item could not be repainted');
+  await s.settle(s.player.setScreen(true));await s.run(1100);
+  expect(s.player.getState().intent).toBe('stopped');
+  expect(s.monitor.status()).toMatchObject({base:'status',participating:true});
+  expect(s.monitor.momentBlock(false)).toBeNull();
  }finally{await s.close();}
 });
 it('resuming during a moment over the status base ends it, and no blank lands on the resumed item',async()=>{

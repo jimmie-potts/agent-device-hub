@@ -1068,6 +1068,28 @@ void describe('Hub mode', () => {
     });
   });
 
+  void it('keeps a stopped item stopped across a restart, so the status base returns and admits art in Free', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      const {list} = await readyPlaylist(world);
+      await world.outcome(await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id})));
+      await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'stop'})));
+      await world.restart();
+      const restored = await waitFor(() => world.display(), 'the display after the restart');
+      assert.deepEqual([restored.base, restored.player.intent, restored.player.playlistId], ['status', 'stopped', list.id]);
+      await world.outcome(await mode(world, 'free'));
+      await world.publishSession();
+      await waitFor(() => world.display()?.participating === true ? true : undefined, 'the status base drawn');
+      const moment = await accepted(world.request('moment-play', 'org.bunny.moment.play.requested', {momentId: 'after-restart', mood: 'celebrate', durationMs: 1000,
+        priorityClass: 'flourish', coversStatus: false, startAtMs: Date.now(), toleranceMs: 10_000}));
+      assert.deepEqual((await world.outcome(moment)).data, {requestId: moment, result: 'succeeded', evidence: 'transmitted'});
+      // The retained item still resumes in Free.
+      await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'resume'})));
+      await waitFor(() => world.display()?.player.intent === 'active' ? true : undefined, 'the resumed item');
+    });
+  });
+
   void it('refuses a command that carries requireMode with invalid-request, and a start while a mode change is pending with invalid-state', async () => {
     const world = await World.open();
     await within(world, async () => {

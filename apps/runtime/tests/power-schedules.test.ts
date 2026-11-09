@@ -125,7 +125,7 @@ void test('a stored routine from before ADR 0014 still opens: its content action
       assert.deepEqual(w.routines.get(saved.id).actions.map(item=>item.runsOnlyIn),['free',undefined]);
       await w.routines.run(saved.id);
       assert.deepEqual(w.sent.map(item=>item.action.family),['media-start'],'the Monitor mode change is never sent');
-      assert.deepEqual(log(w),['pixoo-1 receipt','pixoo-1 blocked unavailable']);
+      assert.deepEqual(log(w),['pixoo-1 receipt','pixoo-1 blocked unsupported-capability'],'logged with the code the Pixoo would refuse it with');
     } finally {await w.routines.close();}
   } finally {db.close();}
 });
@@ -207,7 +207,7 @@ void test('unavailable, unsupported, externally controlled and held targets bloc
       w.routines.create({...input,enabled:true,actions:[on,{target:'lamp-b',family:'power-set',data:{on:true}}]});
       w.clock.advance(60*60*1000);await w.routines.settled();
       assert.deepEqual(w.sent.map(item=>item.action.target),['lamp-b'],state);
-      assert.deepEqual(log(w),['lamp-a blocked unavailable','lamp-b receipt'],state);
+      assert.deepEqual(log(w),[`lamp-a blocked ${state==='unsupported'?'unsupported-capability':'unavailable'}`,'lamp-b receipt'],state);
     }finally {await w.routines.close();w.db.close();}
   }
 });
@@ -334,7 +334,7 @@ void test('a scene action on a Nanoleaf runs in Free, and a scene the device no 
     assert.deepEqual(log(w).slice(2),['wall-1 blocked mode','wall-1 receipt'],'in Work the Free-only scene is skipped and the Work-only action runs');
     wall.desired.mode={status:'known',value:'free'};wall.capabilities.scenes={supported:true,sceneIds:['focus']};
     await w.routines.run(saved.id);
-    assert.deepEqual(log(w).slice(4),['wall-1 blocked unavailable','wall-1 blocked mode']);
+    assert.deepEqual(log(w).slice(4),['wall-1 blocked unsupported-capability','wall-1 blocked mode']);
     assert.equal(w.sent.length,2);
   }finally {await w.routines.close();w.db.close();}
 });

@@ -251,7 +251,11 @@ export function createRoutines(options:RoutineOptions) {
       if(!options.targets().includes(action.target) || !valid || latest.availability!=='available' || latest.held!==undefined ||
           !actionSupported(latest,action,kindOf(action.target)) || (latest.externalControl.status==='known' && latest.externalControl.owner==='external')) {
         try {options.refused?.(requestId,trace);} catch {/* Diagnostics cannot alter device admission. */}
-        record(saved,occurrence,fire,action,index,{outcome:'blocked',reason:'unavailable',requestId});return;
+        // An available device that does not offer the action, such as a stored `device-mode-set monitor` on a Pixoo that
+        // takes the Hub's modes (ADR 0014), is logged with the capability code the module would refuse it with.
+        const unsupported=options.targets().includes(action.target) && valid && latest.availability==='available' && latest.held===undefined &&
+          !(latest.externalControl.status==='known' && latest.externalControl.owner==='external') && !actionSupported(latest,action,kindOf(action.target));
+        record(saved,occurrence,fire,action,index,{outcome:'blocked',reason:unsupported?'unsupported-capability':'unavailable',requestId});return;
       }
       // The Hub-mode precondition, on the record immediately before the send (ADR 0014): the device's desired mode, as its
       // record reports it, with no mode change pending. Nothing carries it to the module, whose own admission stays decisive.

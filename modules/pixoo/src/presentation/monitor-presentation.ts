@@ -91,10 +91,14 @@ export class MonitorPresentation {
  private mode:HubMode;
  private pendingMode:HubMode|null=null;
  /**
-  * The status base waits for a command before it draws again: after a failed or uncertain status write, as a failed
-  * dashboard stopped Monitor, or at a passive start. A mode command or an explicit player command releases it.
+  * Why the status base waits before it draws again, or false. `passive`: a passive start; `external`: the device came
+  * under external control, so the panel may be the owner's; `write`: a status write failed or was uncertain, as a failed
+  * dashboard stopped Monitor. A mode command or an explicit player command releases any of them; a `write` hold also
+  * ends once the device answers again after it was unavailable, so an outage does not keep the status base off.
   */
- private statusHeld:boolean;
+ private statusHeld:false|'passive'|'external'|'write';
+ /** The player's availability and external control as last heard, to see each change. */
+ private heard_:{availability:PlayerState['availability'];external:boolean}={availability:'unknown',external:false};
  private inFlight=false;
  private lastStart=-Infinity;
  /** The last submitted frame's source: a dashboard rendition or a card. */
@@ -136,18 +140,23 @@ export class MonitorPresentation {
   this.nowPlaying=structuredClone(options.nowPlaying??defaultNowPlaying);
   this.moments=structuredClone(options.moments??defaultMoments);
   this.mode=options.mode??defaultMode;
-  this.statusHeld=options.passive===true;
+  this.statusHeld=options.passive===true?'passive':false;
+  const initial=player.getState();this.heard_={availability:initial.availability,external:initial.lastError?.code==='external-control'};
   this.unsubscribe=player.subscribe(()=>{
    const state=player.getState();
    // A player change retires the status base's generation; it is drawn again at once under the new one if it still rests,
    // so a stop leaves no gap in which the status base admits nothing.
    if(this.active&&(state.generation!==this.playerGeneration||!state.requestedScreenOn))this.suspend();
+   const external=state.lastError?.code==='external-control';
+   if(external&&!this.heard_.external){this.statusHeld='external';if(this.active)this.suspend();}
+   else if(this.statusHeld==='write'&&this.heard_.availability!=='available'&&state.availability==='available')this.statusHeld=false;
+   this.heard_={availability:state.availability,external};
    this.settleBase();
    // Any player change the takeover did not make, or screen-off, is the user's: never resume over it.
    if(this.takeover&&(state.generation!==this.takeover.generation||!state.requestedScreenOn))this.dropTakeover();
   });
  }
- status():DisplayStatus{return {configuration:structuredClone(this.configuration),mode:this.mode,base:this.base(),sourceRevision:this.view?.snapshot?.revision??null,sourceConnection:this.view?.connection??'unavailable',renditionGeneration:this.dashboard.current()?.generation??null,generation:this.generation,pendingMode:this.pendingMode,participating:this.active,inFlight:this.inFlight?1:0,lastOutcome:structuredClone(this.lastOutcome)};}
+ status():DisplayStatus{return {configuration:structuredClone(this.configuration),mode:this.mode,base:this.base(),sourceRevision:this.view?.snapshot?.revision??null,sourceConnection:this.view?.connection??'unavailable',renditionGeneration:this.dashboard.current()?.generation??null,generation:this.generation,pendingMode:this.pendingMode,participating:this.active&&this.dashboard.current()!==null,inFlight:this.inFlight?1:0,lastOutcome:structuredClone(this.lastOutcome)};}
  /** The base on the display: the player's item while it holds one, active or paused, and the status base otherwise. */
  base():Base{return holdsItem(this.player.getState())?'playback':'status';}
  /** The last Hub mode the module was given. */
@@ -167,14 +176,14 @@ export class MonitorPresentation {
  interrupt(){this.interrupts++;this.dropTakeover();this.suspend();}
  suspend(){this.cancelCardWrite();this.active=false;this.generation++;this.lastFrame='';this.popupUntil=0;if(this.moment?.phase==='showing'&&this.moment.over==='status')this.endMoment('interrupted');this.onChange();}
  /** A failed or uncertain status write: the status base stops until a command asks for it again, as a failed dashboard did. */
- private holdStatus(){this.statusHeld=true;this.suspend();}
+ private holdStatus(){this.statusHeld='write';this.suspend();}
  /**
   * Whether the status base may be drawn now: the player holds no item and no start is capturing one, the screen is
   * requested on, and no failure or passive start holds it.
   */
  private statusEligible():boolean{
   const state=this.player.getState();
-  return !this.closed&&!this.statusHeld&&!holdsItem(state)&&!this.player.startPending()&&state.requestedScreenOn;
+  return !this.closed&&this.statusHeld===false&&!holdsItem(state)&&!this.player.startPending()&&state.requestedScreenOn;
  }
  /**
   * Draws the status base when it rests on the display and is not drawn yet, under the player's current generation.
@@ -342,7 +351,7 @@ export class MonitorPresentation {
   if(moment.over==='status'&&failed){
    this.lastOutcome={generation:this.generation,renditionGeneration:this.dashboard.status().rendition?.generation??0,status:result.priorEffects==='possible'?'uncertain':'failed',code:result.code};
    // The player's own pause on an uncertain write may already have ended the moment; the status base is held all the same.
-   if(this.moment!==moment){this.statusHeld=true;if(this.active)this.suspend();return;}
+   if(this.moment!==moment){this.statusHeld='write';if(this.active)this.suspend();return;}
   }
   if(this.moment!==moment)return;
   if(result?.ok===true){

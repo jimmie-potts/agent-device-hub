@@ -80,8 +80,12 @@ export class Player {
     const player=new Player(store,device,clock,options.random??Math.random,retryBase,maxRetries,timeout,()=>{release();owners.delete(device);},options.pauseOnUncertain??false);
     try{
       const saved=await store.read();
-      // A pause with nothing selected is not kept (ADR 0014): with no item the status base rests, so a restart starts stopped.
-      if(saved){player.record=checkpointSchema.parse(saved);player.intent='paused';player.state='paused';player.requestedScreenOn=saved.requestedScreenOn;player.lastError=saved.lastError;await player.persist();}
+      // A pause with nothing selected is not kept, and a stopped or finished item stays stopped: it waits behind the status
+      // base rather than holding the display (ADR 0014). An item that was playing or paused comes back paused.
+      if(saved){
+        player.record=checkpointSchema.parse(saved);player.intent=saved.intent==='stopped'?'stopped':'paused';player.state=player.intent==='stopped'?'idle':'paused';
+        player.requestedScreenOn=saved.requestedScreenOn;player.lastError=saved.lastError;await player.persist();
+      }
       return player;
     }catch{player.release();throw new PlaybackError('storage-error');}
   }
@@ -199,10 +203,12 @@ export class Player {
   next():Promise<void> {return this.advance(true);}
   previous():Promise<void> {return this.dispatch(()=>attempt(()=>{this.retries=0;if(this.record)previous(this.record);}));}
   clear():Promise<void> {return this.dispatch(async()=>{await this.store.clear();this.record=undefined;this.cache.clear();this.lastError=null;},'stopped');}
-  takeover():Promise<void> {return this.dispatch(()=>attempt(()=>{this.lastError={code:'external-control'};}),'paused');}
+  /** Records external control. A stopped item stays stopped, since nothing of it plays (ADR 0014); anything else pauses. */
+  takeover():Promise<void> {return this.dispatch(()=>attempt(()=>{this.lastError={code:'external-control'};}),this.intent==='stopped'?'stopped':'paused');}
 
   private pauseUncertain(code:string):void {
-    this.retire();this.intent='paused';this.state='paused';
+    // A stopped item stays stopped: the uncertain write was not its own (ADR 0014).
+    this.retire();this.intent=this.intent==='stopped'?'stopped':'paused';this.state=this.intent==='stopped'?'idle':'paused';
     this.lastError={code,priorEffects:'possible',...(this.record?{itemId:this.record.currentItemId}:{})};
     if(connectivityErrors.has(code))this.availability='offline';
     this.notify();
@@ -239,7 +245,8 @@ export class Player {
     if(typeof on!=='boolean')throw new PlaybackError('invalid-input');
     if(this.closing)throw new PlaybackError('closed');
     const sequence=++this.screenSequence;this.requestedScreenOn=on;
-    const pause=on?Promise.resolve():this.pause();
+    // Screen-off retires the current generation and pauses what plays; a stopped item stays stopped (ADR 0014).
+    const pause=on?Promise.resolve():this.dispatch(async()=>{},this.intent==='stopped'?'stopped':'paused');
     const token=this.epoch,generation=this.adapterGeneration;
     await pause;
     if(token!==this.epoch || sequence!==this.screenSequence || this.closing)return undefined;
@@ -260,7 +267,7 @@ export class Player {
   }
   close():Promise<void> {
     if(this.closePromise)return this.closePromise;
-    this.closing=true;this.admission++;this.retire();if(this.record)this.intent='paused';this.state=this.intent==='paused'?'paused':'idle';
+    this.closing=true;this.admission++;this.retire();if(this.record&&this.intent==='active')this.intent='paused';this.state=this.intent==='paused'?'paused':'idle';
     this.closePromise=this.queue(()=>this.persist()).finally(()=>this.release());return this.closePromise;
   }
 
