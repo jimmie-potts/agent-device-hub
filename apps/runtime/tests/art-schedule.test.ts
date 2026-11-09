@@ -418,7 +418,7 @@ void test('an owner show inside quiet hours after a scheduled appearance leaves 
     w.setSettings(quiet);await w.owner.settled();
     const before=structuredClone(w.store.get()),flourishes=w.shared.handedFlourishes(0),usage=w.shared.reservedUsage(0,'none');
     assert.ok(before.day!==null&&before.day.claimed===1&&before.latestStartMs!==null,'the day holds one claim and a spacing watermark');
-    const show=createArtShow({clock:w.clock.now,active:()=>true,plans:w.plans,art:()=>Promise.resolve(w.catalog),attention:()=>false,
+    const show=createArtShow({clock:w.clock.now,active:()=>true,plans:w.plans,art:()=>Promise.resolve(w.catalog),attention:()=>false,operation:()=>undefined,
       log:rows=>{w.shared.appendLog(rows);},failed:()=>{w.failures.push('show-log');}});
     const prepared=await show.prepare({requestId:'owner-quiet-show',artworkId:'saved-art',targets:['browser']});assert.ok(!('error' in prepared));
     const running=show.run(prepared);await w.move(w.clock.now()+20_000);

@@ -502,6 +502,8 @@ it('MCP lists and calls only what a credential may use, maps results and refusal
   const shown = await tool('core_art_show', {artworkId: 'synthetic-art', targets: ['browser'], requestId: 'req-mcp-art-show'});
   assert.equal(shown.isError, true);
   assert.equal((shown.structuredContent.data as {error: {code: string; requestId?: string}}).error.code, 'unavailable', 'the core refused it, in the shared error body');
+  const elsewhere = await tool('core_send_command', {family: 'art-show', target: 'sign-1', data: {artworkId: 'synthetic-art', targets: ['browser']}});
+  assert.equal((elsewhere.structuredContent.data as {error: {code: string}}).error.code, 'not-found', 'only the Hub takes an art show');
   const malformed = await tool('core_art_show', {artworkId: 'synthetic-art', targets: []});
   assert.equal(malformed.isError, true, 'the tool refuses a show with no surface before dispatch');
   const readShow = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers: await session(reader), body: {jsonrpc: '2.0', id: 11, method: 'tools/call',

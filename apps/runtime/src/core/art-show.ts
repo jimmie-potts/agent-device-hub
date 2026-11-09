@@ -13,6 +13,7 @@ import {START_TOLERANCE_MS} from './art-schedule-model.js';
 import type {NewLogRow} from './automation-store.js';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreTransaction} from './store.js';
+import type {Operation} from './operations.js';
 import type {CompletedOutcome} from './tracker.js';
 
 /** The automation log's rule identity for owner shows: `priorityClass` `event`, so no flourish budget or spacing counts them. */
@@ -26,6 +27,8 @@ export type ArtShowOptions = {
   attention: () => boolean;
   /** Appends owner evidence beside scheduled and rule attempts. */
   log: (rows: readonly NewLogRow[]) => void;
+  /** The tracker's record for a sent request: a display's own refusal is a tracked operation, not an admission. */
+  operation: (requestId: string) => Pick<Operation, 'status' | 'error'> | undefined;
   failed: () => void;
 };
 type Refusal = {target: string; error: ErrorBody};
@@ -43,12 +46,15 @@ export function createArtShow(options: ArtShowOptions) {
     : options.attention() ? errorBody('invalid-state', {detail: 'attention holds the displays; the owner art show was not sent'}) : undefined;
   const evidence = (shown: PreparedShow, result: ArtPlanResult | ErrorBody): void => {
     const atMs = options.clock(), {plan} = shown;
-    const row = (target: string, outcome: NewLogRow['outcome'], family: string, attempt?: ArtPlanAttempt, reason?: string): NewLogRow => ({
-      atMs, ruleId: ART_SHOW_RULE, eventSource: 'owner', eventId: shown.requestId, eventKind: 'art-show', eventAlias: null, agent: null, task: null,
-      momentId: plan.id, priorityClass: plan.priorityClass, coversStatus: plan.coversStatus, target, outcome,
-      reason: reason ?? (attempt?.status === 'not-requested' ? attempt.error.error.code : null),
-      detail: JSON.stringify({family, ...(attempt?.status === 'tracked' ? {requestId: attempt.requestId} : {})}),
-    });
+    const row = (target: string, outcome: NewLogRow['outcome'], family: string, attempt?: ArtPlanAttempt, reason?: string): NewLogRow => {
+      // A tracked request that its owner refused was sent but not admitted: its row says so, beside the operation it names.
+      const refused = attempt?.status === 'tracked' ? options.operation(attempt.requestId) : undefined;
+      const admitted = refused?.status === 'rejected' ? 'not-sent' : outcome;
+      return {atMs, ruleId: ART_SHOW_RULE, eventSource: 'owner', eventId: shown.requestId, eventKind: 'art-show', eventAlias: null, agent: null, task: null,
+        momentId: plan.id, priorityClass: plan.priorityClass, coversStatus: plan.coversStatus, target, outcome: admitted,
+        reason: reason ?? (attempt?.status === 'not-requested' ? attempt.error.error.code : refused?.status === 'rejected' ? refused.error?.code ?? 'unavailable' : null),
+        detail: JSON.stringify({family, ...(attempt?.status === 'tracked' ? {requestId: attempt.requestId} : {})})};
+    };
     const rows = shown.refused.map(({target, error}) => row(target, 'blocked', target === ART_SHOW_BROWSER ? 'art-auto' : 'moment-play', undefined, error.error.code));
     if ('error' in result) {
       rows.push(...plan.displays.map(display => row(display.target, 'not-sent', 'moment-play', undefined, result.error.code)));
@@ -134,12 +140,14 @@ export class ArtShowPart implements CorePart {
   readonly #admission: ArtShowAdmission;
   readonly #show: () => ArtShow | undefined;
   readonly #validator = coreValidator();
+  readonly #failed: () => void;
   #core: CoreHandle | undefined;
   #closed = false;
 
-  constructor(admission: ArtShowAdmission, show: () => ArtShow | undefined) {
+  constructor(admission: ArtShowAdmission, show: () => ArtShow | undefined, failed: () => void = () => {}) {
     this.#admission = admission;
     this.#show = show;
+    this.#failed = failed;
   }
 
   /** Register before the core's first await, as every core responder does. */
@@ -178,7 +186,8 @@ export class ArtShowPart implements CorePart {
       await core.transaction(tx => {tx.take(command);committed = this.#admission.complete(tx, command, artShowOutcome(result));});
       committed?.();
     } catch {
-      // The tracker's deadline bounds an outcome that could not be saved.
+      // The tracker's deadline ends the operation uncertain; the fault itself is recorded here (ADR 0012).
+      this.#failed();
     } finally {
       this.#admission.end(command);
     }

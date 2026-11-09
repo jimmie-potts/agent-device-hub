@@ -24,6 +24,6 @@ The schedule (`apps/runtime/src/core/art-schedule.ts`) is the only caller of `cr
 
 ## Risks / Trade-offs
 
-- Only the 24 artworks in the published record can be shown; the gallery says so for older pages. A later read of the private catalog could lift it.
+- Only the 24 artworks in the published record can be shown; the gallery says so for older pages. A later read of the private catalog could lift it ([#1584](https://github.com/jimmie-potts/agent-device-hub/issues/1584)).
 - The show slot is in memory; a second show while one prepares is `capacity`, and a restart frees it while the first's operations end `uncertain`.
 - An attention raise between preparation and the start still refuses the unsent surfaces, which is the schedule's behavior too.

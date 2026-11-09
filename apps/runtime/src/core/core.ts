@@ -360,7 +360,8 @@ class Core {
       admit: command => this.#tracker.admitOperator(command),
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
-    }, () => this.#automation.artShow);
+    }, () => this.#automation.artShow,
+    () => recordLog(context.log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': OutcomeWord.failed, 'bunny.code': 'internal'}));
     const lightingLayout = new LightingLayoutPart({
       admit: command => this.#tracker.admitOperator(command),
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),

@@ -25,6 +25,9 @@ export async function artShowJourney(): Promise<void> {
     await expect(panel.getByRole('checkbox', {name: 'Show on Browser', exact: true})).toBeChecked();
     const tidbyt = panel.getByRole('checkbox', {name: /^Show on Tidbyt · /});await expect(tidbyt).toBeChecked();
     const target = ((await tidbyt.getAttribute('aria-label')) ?? '').replace('Show on Tidbyt · ', '');assert.notEqual(target, '');
+    for (const box of [await tidbyt.boundingBox(), await panel.getByRole('checkbox', {name: 'Show on Browser', exact: true}).boundingBox()])
+      assert.ok(box !== null && box.width <= 24, 'a surface checkbox keeps its own width beside a long label; the shell keeps its 44 px touch height');
+    const label = await panel.locator('label').filter({hasText: 'Tidbyt · '}).boundingBox();assert.ok(label !== null && label.height <= 48, 'the display label stays on one line');
     const calls = world.art.state().imageCalls;
     await tile.getByRole('button', {name: 'Show now', exact: true}).click();
     await expect.poll(() => shows.length).toBe(1);

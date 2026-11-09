@@ -155,6 +155,8 @@ it('a display refusal fails that surface alone', async t => {
   assert.equal(pixoo?.status, 'rejected');assert.equal(pixoo.error?.code, 'invalid-state');
   assert.equal(tidbyt?.status, 'accepted', 'the Tidbyt keeps its own outcome');
   assert.equal(w.handle.operation('show-held')?.result, 'succeeded', 'the show handed both off; their outcomes stay separate');
+  assert.deepEqual(ownerRows(w, 'show-held').map(entry => [entry.target, entry.outcome, entry.reason ?? null, typeof entry.requestId]).sort(),
+    [['desk-display', 'not-sent', 'invalid-state', 'string'], ['shelf-display', 'receipt', null, 'string']], 'a display refusal is never logged as an admission');
 });
 
 it('a restart before the start leaves the show uncertain and replays nothing', async t => {
@@ -178,7 +180,7 @@ it('the owner permit holds every surface for attention and nothing else', async 
     return Promise.resolve({id: plan.id, displays: [{target: 'desk-display', prepare: {status: 'tracked', requestId: 'prepare-1'},
       moment: refusal === undefined ? {status: 'tracked', requestId: 'moment-1'} : {status: 'not-requested', error: refusal}}]});
   }};
-  const show = createArtShow({clock: () => 0, active: () => true, plans, art: () => Promise.resolve(catalog()), attention: () => attention, log: value => {rows.push(...value);}, failed: () => {}});
+  const show = createArtShow({clock: () => 0, active: () => true, plans, art: () => Promise.resolve(catalog()), attention: () => attention, log: value => {rows.push(...value);}, operation: () => undefined, failed: () => {}});
   const first = await show.prepare({requestId: 'permit-1', artworkId: 'saved-art', targets: ['desk-display']});assert.ok(!('error' in first));
   assert.equal(show.showing, true);
   const second = await show.prepare({requestId: 'permit-2', artworkId: 'saved-art', targets: ['desk-display']});
