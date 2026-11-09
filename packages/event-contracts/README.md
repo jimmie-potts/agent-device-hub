@@ -634,7 +634,14 @@ owns the handoff and its policy.
 | `art-dispatch` | `org.bunny.art.dispatch.requested` | `bunny/modules/art`, to the core: forward one `art-stage` or `art-ambient-set` to `target`. Never a moment. Subject `art`. |
 | `art-stage` | `org.bunny.art.stage.requested` | The core, for the art module. The device keeps a private copy, with no display effect. Subject: the device. |
 | `art-ambient-set` | `org.bunny.art-ambient.set.requested` | The core, for the art module. The device's ambient tile shows `compositionId`, or none when it is null. Subject: the device. |
+| `art-show` | `org.bunny.art.show.requested` | Any caller with control, through the core's dispatcher, to the core: show one saved `artworkId` now on one to three `targets` (configured display IDs and `browser`), with optional `coversStatus`, default true. Subject `hub`. |
 
+- **Showing saved art now.** `art-show/2.0` (Hub #1581) carries no text, duration or
+  composition: the core picks each target's saved composition. The browser-safe
+  `./v2/art-show` entry derives a show's plan ID and each surface's preparation,
+  moment or present request ID with WebCrypto (`artShowSurfaces(requestId, targets)`),
+  exactly as the core tracks them, so a consumer reads those operation records.
+  The show's own outcome is the core's observed handoff, never display evidence.
 - **Who decides ownership.** The command family decides whether a job is the
   owner's. `origin` and `purpose` are descriptive, so `art-auto` with an owner label
   validates and stays automatic.

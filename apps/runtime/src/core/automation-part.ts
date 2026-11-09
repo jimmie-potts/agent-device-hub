@@ -23,6 +23,7 @@ import type {ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import type {ArtScheduleRecord} from '@jimmie-potts/event-contracts/v2/art-schedule';
 import type {TraceContext} from '@jimmie-potts/sdk';
 import {createArtPlans, type ArtPlans, type ArtPlanTarget} from './art-plans.js';
+import {createArtShow, type ArtShow} from './art-show.js';
 
 const KINDS = new Map([
   ['org.bunny.attention.raised','attention-raised'], ['org.bunny.attention.cleared','attention-cleared'],
@@ -47,6 +48,9 @@ export class AutomationPart implements CorePart {
   #automation: Automation | undefined;
   #routines:Routines|undefined;
   #art:ArtPlans|undefined;
+  #show:ArtShow|undefined;
+  /** The owner's on-demand show (Hub #1581), once the store is open. */
+  get artShow():ArtShow|undefined {return this.#closed?undefined:this.#show;}
   #configured:readonly AutomationDevice[]=[];
   #closed = false;
   #participants: readonly ModeParticipant[] = [];
@@ -185,6 +189,10 @@ export class AutomationPart implements CorePart {
       scheduler:this.#scheduler,active:()=>!this.#closed&&!this.#signal.aborted,plans:this.#art,
       current:id=>{const device=this.#configured.find(value=>value.id===id);return device!==undefined&&this.#devices.get(device.owner)?.fresh===true?this.#device(id):undefined;},settings:()=>this.#automation?.settings()??structuredClone(DEFAULT_SETTINGS),
       attention:()=>[...this.#sessions.values()].some(session=>session.attention.length>0),inputs:this.#inputs,choice:this.choice,
+      failed:()=>recordLog(handle.log,'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal'})});
+    const inputs=this.#inputs;
+    this.#show=createArtShow({clock:()=>handle.clock.now(),active:()=>!this.#closed&&!this.#signal.aborted,plans:this.#art,art:()=>inputs.ownerArt(),
+      attention:()=>[...this.#sessions.values()].some(session=>session.attention.length>0),log:rows=>{store.appendLog(rows);},operation:requestId=>handle.operation(requestId),
       failed:()=>recordLog(handle.log,'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal'})});
   }
   authorizeAmbient(authorization:string,target:string,compositionId:string):ErrorBody|undefined {

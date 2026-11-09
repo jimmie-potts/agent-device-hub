@@ -41,7 +41,9 @@ export function automationRuleInput(draft: RuleInput, creating: boolean): RuleIn
 export function automationOutcome(entry: LogEntry, operations: readonly OperationRecord[], live: boolean): string {
   if (entry.requestId === undefined) return 'No tracked command.';
   if (!live) return 'Operation evidence is stale.';
-  const operation = operations.find(item => item.requestId === entry.requestId && item.target === entry.target &&
+  // An owner art show's browser row names the surface; its operation is the art owner's present on `art` (Hub #1581).
+  const target = entry.ruleId === 'art-show' && entry.target === 'browser' ? 'art' : entry.target;
+  const operation = operations.find(item => item.requestId === entry.requestId && item.target === target &&
     item.family === (entry.family??'moment-play') && item.requestedBy === 'bunny/core');
   if (operation === undefined) return 'No current operation record.';
   if (operation.status === 'accepted') return 'Accepted; awaiting completion.';
@@ -268,7 +270,7 @@ export function AutomationPage({connection, live, control}: AutomationPageProps)
     <article className="card automation-history" aria-label="Recent automation attempts"><details><summary>Recent attempts</summary><p>The latest 100 entries. Admission and completion are separate; transmitted effects are not physical observation.</p>
       {snapshot?.entries.length === 0 && <p>No automation evaluations yet.</p>}
       <ol>{snapshot?.entries.map(entry => <li key={entry.seq}><Facts items={[
-        ['Time', new Date(entry.atMs).toLocaleString()], ['Rule', snapshot.rules.find(rule => rule.id === entry.ruleId)?.name ?? snapshot.routines.find(saved => saved.id === entry.ruleId)?.name ?? entry.ruleId],
+        ['Time', new Date(entry.atMs).toLocaleString()], ['Rule', entry.ruleId === 'art-show' ? 'Owner art show' : snapshot.rules.find(rule => rule.id === entry.ruleId)?.name ?? snapshot.routines.find(saved => saved.id === entry.ruleId)?.name ?? entry.ruleId],
         ...(entry.family === undefined ? [] : [['Action', entry.index === undefined ? entry.family : `Action ${String(entry.index + 1)} · ${entry.family}`] as const]),
         ['Target', entry.target], ...(entry.runsOnlyIn === undefined ? [] : [['Required mode', entry.runsOnlyIn] as const]), ['Admission', entry.receipt?.status ?? entry.outcome], ['Policy', entry.reason ?? '—'],
         ['Operation', automationOutcome(entry, operations, operationLive)],

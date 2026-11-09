@@ -24,6 +24,18 @@ void test('art policy reads use their own version and writes re-authorize after 
   assert.equal((await call('PUT'))?.status, 200);assert.deepEqual(steps, ['body', 'authorize', 'save']);
   steps.length = 0;assert.equal((await call('PUT', false))?.status, 403);assert.deepEqual(steps, ['body', 'authorize']);
 });
+void test('the art targets read lists configured art displays and takes no write (#1581)', async context => {
+  const w = world(); context.after(() => w.close());
+  const targets = [{target: 'desk-display', kind: 'pixoo' as const}, {target: 'shelf-display', kind: 'tidbyt' as const}];
+  const controls = {...w.controls, art: {targets: () => targets, present: () => Promise.reject(new Error('a read never presents'))}};
+  const call = (method: string, path = 'art/targets') => automationRoute(controls, {method, url: new URL(`http://runtime.invalid/api/v2/automation/${path}`),
+    body: () => Promise.reject(new Error('a read takes no body')), authorize: () => {throw new Error('a read is not a write');}});
+  assert.deepEqual(await call('GET'), {status: 200, body: {schema: 'automation/2.0', targets}});
+  assert.equal(await call('PUT'), undefined, 'no write route');
+  assert.equal((await call('GET', 'art/targets?x=1'))?.status, 400, 'no query');
+  assert.equal((await automationRoute(w.controls, {method: 'GET', url: new URL('http://runtime.invalid/api/v2/automation/art/targets'), body: () => Promise.resolve({}), authorize: () => {}}))?.status, 503,
+    'unavailable without art plans');
+});
 function world() {
   const database = new DatabaseSync(':memory:');
   const store = new AutomationStore(database, () => {}, {settings: DEFAULT_SETTINGS, interruptSet: [...DEFAULT_INTERRUPT_SET]});

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-show/2.0",
+  "description": "Command to the core on `bunny.cmd.art-show.hub` (Hub #1581): show one saved artwork now on the named surfaces, each a configured display's routing ID or `browser`. The core runs the scheduled appearance's plan path with a near-term start and independently tracked operations per surface; it starts no generation and changes no mode. `coversStatus` defaults to true. The reply and the outcome use the profile's reply and outcome payloads; the outcome is never an aggregate display success.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "artworkId", "targets"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "artworkId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "targets": {
+      "type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true,
+      "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"}
+    },
+    "coversStatus": {"type": "boolean"}
+  }
+}

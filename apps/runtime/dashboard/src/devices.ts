@@ -54,6 +54,7 @@ export function operationView(operation: OperationRecord): {text: string; locked
     case 'completed': {
       if (operation.result === 'uncertain' || operation.result === 'conflict') return {text: 'Uncertain result. The command may have taken effect; it was not sent again.', locked: true};
       if (operation.result === 'succeeded' && (operation.family === 'mode-set' || operation.family === 'mode-override-set')) return {text: 'Choice saved. Device results are separate.', locked: false};
+      if (operation.result === 'succeeded' && operation.family === 'art-show') return {text: 'Show handed off. Each surface has its own result below.', locked: false};
       const effect = operation.evidence === 'observed' ? 'The module observed the result.'
         : operation.evidence === 'transmitted' ? 'Transmitted; physical effect was not observed.' : 'No evidence of a device effect.';
       return {text: `Completed: ${operation.result ?? 'unknown'}${code === undefined ? '' : ` (${code})`}. ${effect}`, locked: false};

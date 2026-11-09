@@ -137,7 +137,7 @@ function scheduledWorld(withDisplay=false,choice:()=>number=()=>0.5,displayId='s
   const options={store,shared,core:{clock:{now:clock.now},dispatch,operation:()=>undefined},scheduler:clock.scheduler,active:()=>true,plans,current:()=>withDisplay?display:undefined,
     settings:()=>currentSettings,attention:()=>attention,inputs,choice,failed:()=>{failures.push('storage');}};
   let owner=createArtSchedule(options);
-  return {db,clock,commands,catalog,store,shared,failures,setWeather:(value:WeatherState|undefined)=>{weatherState=value;},setAttention:(value:boolean)=>{attention=value;},setSettings:(settings:typeof currentSettings)=>{currentSettings=settings;},get owner(){return owner;},reads:()=>({artReads,weatherReads}),
+  return {db,clock,commands,catalog,store,shared,failures,plans,setWeather:(value:WeatherState|undefined)=>{weatherState=value;},setAttention:(value:boolean)=>{attention=value;},setSettings:(settings:typeof currentSettings)=>{currentSettings=settings;},get owner(){return owner;},reads:()=>({artReads,weatherReads}),
     move:async(at:number)=>{clock.advance(at-clock.now());await flush();await owner.settled();await flush();},
     restart:async()=>{await owner.close();owner=createArtSchedule(options);await flush();await owner.settled();},
     close:async()=>{plans.close();await owner.close();db.close();}};
@@ -405,5 +405,34 @@ void test('a complete saved-art waking day stays spent through backward clock mo
     await w.move(new Date(2026,10,6,8).getTime());assert.equal(w.store.get().day?.claimed,0);assert.equal(w.store.get().day?.starts.length,7);
     const nextDay=w.store.get().day?.key;await w.move(local(8));await w.restart();assert.equal(w.store.get().day?.key,nextDay);assert.equal(w.commands.length,7);
     assert.deepEqual(w.failures,[]);
+  }finally{await w.close();}
+});
+
+import {createArtShow} from '../src/core/art-show.js';
+void test('an owner show inside quiet hours after a scheduled appearance leaves the schedule untouched (#1581)',async()=>{
+  const w=scheduledWorld();try{
+    const saved=await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false}});const start=saved.nextOpportunity?.startAtMs;assert.ok(start!==undefined);
+    await w.move(start-45_000);await w.move(start);
+    const scheduled=w.commands.length;assert.equal(scheduled,1,'the scheduled appearance selected the browser');assert.equal(w.owner.get().lastOpportunity?.startAtMs,start);
+    const quiet={...DEFAULT_SETTINGS,quietHours:{enabled:true,start:'00:00',end:'00:00',timeZone:null},budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}};
+    w.setSettings(quiet);await w.owner.settled();
+    const before=structuredClone(w.store.get()),flourishes=w.shared.handedFlourishes(0),usage=w.shared.reservedUsage(0,'none');
+    assert.ok(before.day!==null&&before.day.claimed===1&&before.latestStartMs!==null,'the day holds one claim and a spacing watermark');
+    const show=createArtShow({clock:w.clock.now,active:()=>true,plans:w.plans,art:()=>Promise.resolve(w.catalog),attention:()=>false,operation:()=>undefined,
+      log:rows=>{w.shared.appendLog(rows);},failed:()=>{w.failures.push('show-log');}});
+    const prepared=await show.prepare({requestId:'owner-quiet-show',artworkId:'saved-art',targets:['browser']});assert.ok(!('error' in prepared));
+    const running=show.run(prepared);await w.move(w.clock.now()+20_000);
+    const result=await running;assert.ok(!('error' in result));assert.equal(result.browser?.status,'tracked','quiet hours and the used hourly budget do not hold an owner show');
+    assert.equal(w.commands.length,scheduled+1);const present=w.commands.at(-1)?.draft.data as ArtAuto22;assert.equal(present.action,'present');
+    const rows=w.shared.readLog(10).filter(row=>row.ruleId==='art-show');
+    assert.deepEqual(rows.map(row=>[row.eventSource,row.eventId,row.priorityClass,row.target,row.outcome]),[['owner','owner-quiet-show','event','browser','receipt']]);
+    assert.deepEqual(w.store.get(),before,'claims, daily count, spacing watermark, latest attempt and next appearance are unchanged');
+    assert.equal(w.shared.handedFlourishes(0),flourishes,'no flourish budget counts the show');
+    assert.equal(w.shared.reservedUsage(0,'none'),usage,'the show reserves no moment, so no budget or device spacing counts it');
+    w.setSettings({...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,globalHour:1}});
+    const next=before.record.nextOpportunity?.startAtMs;assert.ok(next!==undefined);
+    await w.move(next-45_000);await w.move(next);
+    assert.equal(w.owner.get().lastOpportunity?.startAtMs,next,'the next scheduled appearance still runs as planned');
+    assert.equal((w.commands.at(-1)?.draft.data as ArtAuto22).action,'present');assert.deepEqual(w.failures,[]);
   }finally{await w.close();}
 });

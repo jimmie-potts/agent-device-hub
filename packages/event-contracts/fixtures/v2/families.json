@@ -2454,6 +2454,65 @@
     }
    }
   },
+  "art-show": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-art-show",
+   "source": "bunny/core",
+   "type": "org.bunny.art.show.requested",
+   "subject": "hub",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "command",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/art-show/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-art-show-1",
+    "artworkId": "art-1",
+    "targets": [
+     "desk-display",
+     "shelf-display",
+     "browser"
+    ],
+    "coversStatus": true
+   },
+   "expiresat": "2026-10-06T12:00:05.000Z"
+  },
+  "art-show-replied": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-art-show-replied",
+   "source": "bunny/core",
+   "type": "org.bunny.art.show.replied",
+   "subject": "hub",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "reply",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/reply/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-art-show-1",
+    "status": "accepted"
+   }
+  },
+  "art-show-completed": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-art-show-completed",
+   "source": "bunny/core",
+   "type": "org.bunny.art.show.completed",
+   "subject": "hub",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "outcome",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/outcome/2.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "requestId": "req-art-show-1",
+    "result": "succeeded",
+    "evidence": "observed"
+   }
+  },
   "moment-play": {
    "specversion": "1.0",
    "bunnyprofile": "2.0",
@@ -3688,6 +3747,45 @@
    },
    "expect": "invalid-message",
    "detail": "payload / additionalProperties deviceId"
+  },
+  {
+   "name": "an art show with no surfaces",
+   "base": "art-show",
+   "set": {
+    "/data/targets": []
+   },
+   "expect": "invalid-message",
+   "detail": "payload /targets minItems"
+  },
+  {
+   "name": "an art show naming one surface twice",
+   "base": "art-show",
+   "set": {
+    "/data/targets": [
+     "browser",
+     "browser"
+    ]
+   },
+   "expect": "invalid-message",
+   "detail": "payload /targets uniqueItems"
+  },
+  {
+   "name": "an art show carrying a generation prompt",
+   "base": "art-show",
+   "set": {
+    "/data/text": "a moon garden"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties text"
+  },
+  {
+   "name": "an art show with a per-show duration",
+   "base": "art-show",
+   "set": {
+    "/data/durationMs": 5000
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties durationMs"
   },
   {
    "name": "a moment request naming a controller",

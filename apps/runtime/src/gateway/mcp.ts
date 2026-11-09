@@ -1,7 +1,7 @@
 // MCP on the runtime (Hub #835), through `packages/mcp` unchanged: each module's read tools from its manifest, named
 // `<module>_<tool>`, the core's operator action, `core_recover_approval`, which sends the 2.0 `approval-recover`
 // command, and `core_send_command`, which sends a device's command, a moment or a mode change through the core's
-// dispatcher, so it is tracked (#782). A tool's result is `{result}`, and a refusal is the shared error body, `{error}`; MCP's own protocol errors
+// dispatcher, so it is tracked (#782), and `core_art_show`, the owner's on-demand art show (#1581). A tool's result is `{result}`, and a refusal is the shared error body, `{error}`; MCP's own protocol errors
 // keep the MCP specification. The refusals `packages/mcp` makes itself, before a tool runs, keep its released 1.x
 // `gateway-error` result with no detail, since the package is reused unchanged. Only a client credential reaches MCP:
 // `read` lists and calls every module's read tools, and `control` the actions.
@@ -16,6 +16,7 @@ import type {ActionAnswer} from '../core/tracker.js';
 import {ContributionFailed, ModuleUnavailable, type HostedModule} from '../host.js';
 import type {Access} from './access.js';
 import {modeTool} from './mode-tool.js';
+import {artShowTool} from './art-show-tool.js';
 
 /** How long a module's read tool may take before the call is answered `unavailable`. */
 export const TOOL_TIMEOUT_MS = 5000;
@@ -201,6 +202,7 @@ export function createGatewayMcp(host: McpHost, hosts: readonly string[]): McpHa
       extensions.send_command = commandTool(host);
       extensions.set_mode = modeTool(host, resultSchema);
       extensions.set_device_mode = modeTool(host, resultSchema, true);
+      extensions.art_show = artShowTool(host, resultSchema);
       extensions.handle_inbox = commandTool(host, true);
     }
     if (Object.keys(extensions).length === 0) continue;
