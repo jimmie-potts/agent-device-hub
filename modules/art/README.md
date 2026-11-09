@@ -212,6 +212,21 @@ replays a display. The request form identifies Browser, Tidbyt and Pixoo targets
 selected by default. Creating prepares those compositions; it does not start a
 display moment. The job result is separate from command admission.
 
+Show now (Hub #1581) shows one saved artwork on chosen surfaces about 20 seconds
+later through the core's `art-show` command: the Selected artwork panel's
+button and each card's. The Show on choices list Browser and every configured
+art display from `/api/v2/automation/art/targets`, all chosen by default; a show
+sends only the chosen surfaces the artwork has a usable composition for. Only
+artwork in the current art record, the 24 most recent, can be shown, and the
+control explains this for older pages. The shell's tracked attempt locks the
+control until the show settles. Each surface's line reads the core's operation
+records through the identities `artShowSurfaces` derives: a display's
+preparation and appearance, where a successful appearance is transmitted, not
+observed on the panel, and the browser's selection, saved but not confirmed
+rendered. A surface with no record after the show settled was not sent, and
+the Automation page's Recent attempts gives the reason. Show now creates no art
+and calls no provider.
+
 The Home widget follows the owner's exact browser selection, including selected
 art outside the recent state window. With no selection, it keeps the latest-art
 fallback. Authenticated artwork metadata and image bytes must both match the
@@ -247,7 +262,8 @@ feedback. Gallery favorites are distinct from Home pinning.
 Use Node 24. Run `npm run test:art`, or build once and run `npm run test:art:built`. See
 [Art checks](../../docs/development.md#art-checks). After building,
 `npm run test:art:browser` exercises the real owner and synthetic provider through
-the browser. The `scenario-art-gallery` disposable capture shows the actual
+the browser, including Show now on the simulated Tidbyt and its Recent attempts rows.
+The runtime's `art-show` scenario shows saved art on the simulated Pixoo and Tidbyt. The `scenario-art-gallery` disposable capture shows the actual
 gallery with visible, labelled synthetic interactions. It contacts no provider
 or device.
 The `warm-colors` and `cool-colors` simulation actions select fixed synthetic

@@ -8,10 +8,12 @@ import {changes, feed, startWorld} from './harness.ts';
 import {artSelectionJourney} from './art-selection-journey.ts';
 import {artScheduleJourney} from './art-schedule-journey.ts';
 import {artNoticeJourney} from './art-notice-journey.ts';
+import {artShowJourney} from './art-show-journey.ts';
 
 await artScheduleJourney();
 await artNoticeJourney();
 await artSelectionJourney();
+await artShowJourney();
 
 const world = await startWorld({art: true}), browser = await chromium.launch({headless: true});
 const artifacts = await browserArtifactDirectory();

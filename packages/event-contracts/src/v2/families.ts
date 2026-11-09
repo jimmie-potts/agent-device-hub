@@ -415,6 +415,8 @@ export const coreFamilies: readonly CoreFamily[] = [
   ...musicPlaybackFamilies,
   ...artFamilies,
   define('art-schedule', 'state', 'org.bunny.art-schedule.updated', checkArtSchedule),
+  // The owner's on-demand show (Hub #1581). The core answers only its own `hub` subject and refuses any other with `not-found`.
+  define('art-show', 'command', 'org.bunny.art.show.requested', routedSubject('routing')),
   ...assistantFamilies,
   ...lightingLayoutFamilies,
   ...playbackLayoutFamilies,

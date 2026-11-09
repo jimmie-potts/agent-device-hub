@@ -30,6 +30,7 @@ import {AutomationError} from './automation.js';
 import {MusicCapturePart} from './music-capture.js';
 import {MusicLightingPart} from './music-lighting.js';
 import {ArtPart} from './art-part.js';
+import {ArtShowPart} from './art-show.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
 import type {AutomationDevice} from './automation-devices.js';
@@ -296,6 +297,7 @@ class Core {
   readonly #mode: ModePart;
   readonly #music: MusicCapturePart;
   readonly #lighting: MusicLightingPart;
+  readonly #show: ArtShowPart;
   readonly #sdk: Sdk;
   readonly #log: Logger;
   readonly #clock: Clock;
@@ -353,6 +355,13 @@ class Core {
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
     }, context.scheduler, () => this.#music.activeCapture());
+    // The owner's on-demand art show (Hub #1581), admitted as the Hub mode is and run by automation's art plans.
+    this.#show = new ArtShowPart({
+      admit: command => this.#tracker.admitOperator(command),
+      complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
+      end: command => this.#tracker.endOperator(command),
+    }, () => this.#automation.artShow,
+    () => recordLog(context.log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': OutcomeWord.failed, 'bunny.code': 'internal'}));
     const lightingLayout = new LightingLayoutPart({
       admit: command => this.#tracker.admitOperator(command),
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
@@ -369,7 +378,7 @@ class Core {
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),
       end: command => this.#tracker.endOperator(command),
     });
-    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, this.#art, this.#music, this.#lighting, ...added];
+    const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, this.#art, this.#show, this.#music, this.#lighting, ...added];
     this.#parts = parts;
     this.#consumers = consumers;
     registerCoreFamilies(this.#validator);
@@ -477,6 +486,7 @@ class Core {
     await this.#starting?.catch(() => {});
     this.#timer?.();
     await this.#queue;
+    this.#show.close();
     await this.#automation.close();
     this.#companions.close();
     this.#art.close();

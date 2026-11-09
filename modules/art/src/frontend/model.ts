@@ -1,4 +1,6 @@
 import type {ArtComposition, ArtOutcome, ArtRendition, ArtSelection, ArtTarget, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import type {ArtShowSurface} from '@jimmie-potts/event-contracts/v2/art-show';
+import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 
 export const CATALOG_PAGE_SIZE = 6;
 export const ART_TARGETS: readonly ArtTarget[] = ['ui', 'tidbyt', 'pixoo'];
@@ -71,3 +73,50 @@ export const reasonText: Readonly<Record<string, string>> = {
   'preview-refused': 'The image route refused this request', 'lost-response': 'Response lost; reserved spend remains uncertain',
   restart: 'Runtime restarted; no request was repeated', cancelled: 'Cancelled; already sent work may remain spent', storage: 'Artwork could not be saved',
 };
+
+/** A configured display an owner show can name, from the core's `/api/v2/automation/art/targets` read. */
+export type ShowTarget = {target: string; kind: 'pixoo' | 'tidbyt'};
+export function showTargetsOf(value: unknown): ShowTarget[] {
+  if (!object(value) || value.schema !== 'automation/2.0' || !Array.isArray(value.targets) || value.targets.length > 16) throw new Error('invalid-targets');
+  const targets = value.targets.map((item: unknown): ShowTarget | undefined => object(item) && typeof item.target === 'string'
+    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.target) && item.target.length <= 128 && item.target !== 'browser'
+    && member(item.kind, ['pixoo', 'tidbyt'] as const) ? {target: item.target, kind: item.kind} : undefined);
+  if (!targets.every((item): item is ShowTarget => item !== undefined) || new Set(targets.map(item => item.target)).size !== targets.length) throw new Error('invalid-targets');
+  return targets;
+}
+export const surfaceLabel = (target: string, targets: readonly ShowTarget[]): string => {
+  if (target === 'browser') return 'Browser';
+  const kind = targets.find(item => item.target === target)?.kind;
+  return kind === undefined ? target : `${TARGET_LABELS[kind]} · ${target}`;
+};
+/** The surfaces of `chosen` for which this artwork holds a usable composition, in the order chosen. */
+export function showableSurfaces(artwork: ArtworkSummary, chosen: readonly string[], targets: readonly ShowTarget[]): string[] {
+  const usable = (kind: ArtTarget): boolean => artwork.compositions.some(item => item.target === kind && item.outcome === 'succeeded' && item.compositionId !== null && item.renditions.length > 0);
+  return chosen.filter(target => target === 'browser' ? usable('ui') : targets.some(item => item.target === target && usable(item.kind)));
+}
+type ShowOperation = Pick<OperationRecord, 'requestId' | 'family' | 'status' | 'result' | 'evidence' | 'error' | 'requestedBy'>;
+const coreRecord = (operations: readonly ShowOperation[], requestId: string, family: string): ShowOperation | undefined =>
+  operations.find(item => item.requestId === requestId && item.family === family && item.requestedBy === 'bunny/core');
+const stepText = (operation: ShowOperation, done: string): string => {
+  if (operation.status === 'sent' || operation.status === 'accepted') return 'in progress';
+  if (operation.status === 'completed' && operation.result === 'succeeded') return done;
+  if (operation.status === 'completed' && operation.result === 'failed' || operation.status === 'rejected' || operation.status === 'expired')
+    return `failed${operation.error === undefined ? '' : ` (${operation.error.code})`}`;
+  return 'uncertain; it was not sent again';
+};
+/**
+ * What the core's records say about one surface of a show. Transmission is never presented as display: a Pixoo or
+ * Tidbyt moment that succeeded was sent, and a browser selection that succeeded was saved, not seen rendered.
+ */
+export function surfaceText(surface: ArtShowSurface, operations: readonly ShowOperation[], settled: boolean): string {
+  if (surface.kind === 'browser') {
+    const present = coreRecord(operations, surface.presentRequestId, 'art-auto');
+    return present === undefined ? settled ? 'Not sent. Recent automation attempts on the Automation page give the reason.' : 'Waiting for the common start.'
+      : `Browser selection ${stepText(present, 'saved; rendering is not confirmed')}.`;
+  }
+  const prepare = coreRecord(operations, surface.prepareRequestId, 'art-auto'), moment = coreRecord(operations, surface.momentRequestId, 'moment-play');
+  if (moment !== undefined) return `Appearance ${stepText(moment, moment.evidence === 'observed' ? 'shown, as the display reported' : 'transmitted; the panel was not observed')}.`;
+  if (prepare !== undefined && !settled) return `Preparation ${stepText(prepare, 'ready; waiting for the appearance')}.`;
+  if (prepare !== undefined) return `Preparation ${stepText(prepare, 'succeeded')}; no appearance was sent. Recent automation attempts give the reason.`;
+  return settled ? 'Not sent. Recent automation attempts on the Automation page give the reason.' : 'Waiting for preparation.';
+}
