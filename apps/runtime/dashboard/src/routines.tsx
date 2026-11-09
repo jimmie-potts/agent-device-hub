@@ -12,6 +12,12 @@ export type RoutineAction={target:string;family:RoutineFamily;data:Record<string
 export type RoutineInput={name:string;days:number[];time:string;actions:RoutineAction[];enabled?:boolean};
 export type Routine=Omit<RoutineInput,'enabled'> & {id:string;enabled:boolean;definitionId:string;createdAtMs:number;updatedAtMs:number;next?:{atMs:number}};
 export type RoutineDevice={record:DeviceRecord;current:boolean};
+/** #1586: the core's preview reply (`RoutinePreview` in power-schedules.ts): a reading of current records, not a command. */
+export const PREVIEW_REASONS=['unavailable','mode','busy'] as const;
+export const PREVIEW_DETAILS=['not-configured','no-evidence','stale','not-available','held','unsupported','external','pending-mode','mode-unknown','wrong-mode','in-flight'] as const;
+export type ActionPreview={index:number;target:string;family:string;requireMode?:string}&({verdict:'would-send'}|{verdict:'blocked';reason:(typeof PREVIEW_REASONS)[number];detail:(typeof PREVIEW_DETAILS)[number]});
+export type RoutinePreview={id:string;atMs:number;enabled:boolean;next?:{atMs:number};actions:ActionPreview[]};
+type PreviewState={status:'reading'}|{status:'read';reply:RoutinePreview}|{status:'failed';message:string};
 type ActionDraft=Omit<RoutineAction,'family'> & {family:RoutineFamily|''};
 type RoutineDraft={name:string;days:number[];time:string;actions:ActionDraft[]};
 
@@ -214,9 +220,28 @@ function ActionFields({action,record,change}:{action:ActionDraft;record:DeviceRe
   }
 }
 
-export function RoutinesEditor({routines,timeZone,devices,available,mutate,localZone=browserZone()}: {
+/** One preview reading beside its routine: each action would send or is blocked, with the guard that failed. */
+function PreviewResult({state,saved,timeZone,labelOf}:{state:PreviewState|undefined;saved:Routine;timeZone:string;labelOf:(target:string)=>string}):React.JSX.Element|null {
+  if(state===undefined) return null;
+  const reply=state.status==='read'?state.reply:undefined;
+  const when=reply===undefined?'':(():string=>{try {return new Date(reply.atMs).toLocaleTimeString(undefined,{timeZone});} catch {return new Date(reply.atMs).toLocaleTimeString();}})();
+  return <section className="routine-preview" aria-label={`Preview of ${saved.name}`}>
+    <p role="status">{state.status==='reading'?'Reading current records…':state.status==='failed'?state.message
+      :`Read at ${when} (${timeZone}). Nothing was sent; a real run checks again, and evidence may change before it.`}</p>
+    {reply!==undefined && <ol>{reply.actions.map(item=>{
+      const action=saved.actions[item.index],words=action===undefined?item.family:actionSummary(action);
+      return <li key={item.index}>{labelOf(item.target)}: {words} · {item.verdict==='would-send'?'would send':`blocked · ${item.reason} · ${item.detail}`}</li>;
+    })}</ol>}
+  </section>;
+}
+
+export function RoutinesEditor({routines,timeZone,devices,available,mutate,readable,preview,localZone=browserZone()}: {
   routines:readonly Routine[];timeZone:string;devices:readonly RoutineDevice[];available:boolean;
   mutate:(path:string,method:string,value?:object,after?:()=>void)=>Promise<void>;
+  /** The current snapshot can be read; a preview needs read scope only. */
+  readable:boolean;
+  /** One preview read, answered with its reply or fixed failure text; the result is shown inline and never stored. */
+  preview:(id:string)=>Promise<{reply:RoutinePreview}|{failure:string}>;
   /** The viewer's zone; the browser's own unless a test fixes it. */
   localZone?:string;
 }):React.JSX.Element {
@@ -232,6 +257,14 @@ export function RoutinesEditor({routines,timeZone,devices,available,mutate,local
     return atMs===undefined?undefined:localEquivalent(atMs,timeZone,local);
   };
   const draftEquivalent=equivalent(draft.days,draft.time);
+  // A preview belongs to the snapshot it was read beside: the next refresh or an edit clears it.
+  const [previews,setPreviews]=useState<{of:readonly Routine[];entries:Readonly<Record<string,PreviewState>>}>({of:routines,entries:{}});
+  const shown=previews.of===routines?previews.entries:{};
+  const runPreview=(id:string):void=>{
+    const of=routines,put=(state:PreviewState):void=>{setPreviews(current=>({of,entries:{...(current.of===of?current.entries:{}),[id]:state}}));};
+    put({status:'reading'});
+    void preview(id).then(result=>{put('reply' in result?{status:'read',reply:result.reply}:{status:'failed',message:result.failure});});
+  };
   const reset=():void=>{
     setEditing(undefined);setDraft(fresh());setOpen(false);
     returnFocus.current=true;
@@ -275,13 +308,15 @@ export function RoutinesEditor({routines,timeZone,devices,available,mutate,local
           }),
         ]}/></details>
         <div className="actions"><button type="button" className="secondary" disabled={!available} aria-label={`Edit routine ${saved.name}`} onClick={event=>{
-          opener.current=event.currentTarget;setEditing(saved.id);setDraft({name:saved.name,days:[...saved.days],time:saved.time,actions:routineInput(saved,false).actions});setOpen(true);nameInput.current?.focus();
+          opener.current=event.currentTarget;setPreviews({of:routines,entries:{}});setEditing(saved.id);setDraft({name:saved.name,days:[...saved.days],time:saved.time,actions:routineInput(saved,false).actions});setOpen(true);nameInput.current?.focus();
         }}>Edit</button>
           <button type="button" disabled={!available} aria-label={`${saved.enabled?'Disable':'Enable'} routine ${saved.name}`} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}/${saved.enabled?'disable':'enable'}`,'POST',{});}}>{saved.enabled?'Disable':'Enable'}</button>
+          <button type="button" className="secondary" disabled={!readable || shown[saved.id]?.status==='reading'} aria-label={`Preview: ${saved.name}`} onClick={()=>{runPreview(saved.id);}}>Preview</button>
           <button type="button" className="secondary" disabled={!available} aria-label={`Run now: ${saved.name}`} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}/run`,'POST',{});}}>Run now</button>
           <button type="button" className="secondary" disabled={!available} aria-label={`Delete routine ${saved.name}`} onClick={()=>{void mutate(`routines/${encodeURIComponent(saved.id)}`,'DELETE',undefined,()=>{if(editing===saved.id){opener.current=newButton.current;reset();}});}}>Delete</button></div>
+        <PreviewResult state={shown[saved.id]} saved={saved} timeZone={timeZone} labelOf={labelOf}/>
       </article>;})}
-      <details className="automation-help"><summary>How routines work</summary><p>The Hub must be running and each device reachable. Missed runs are skipped. Actions run in order; a device outside its required mode is skipped and logged. Saving or enabling runs nothing; Run now runs one occurrence.</p></details>
+      <details className="automation-help"><summary>How routines work</summary><p>The Hub must be running and each device reachable. Missed runs are skipped. Actions run in order; a device outside its required mode is skipped and logged. Saving or enabling runs nothing; Run now runs one occurrence. Preview reads what a run would do now and sends nothing.</p></details>
     </article><article className="card automation-editor" hidden={!open}><h3>{editing===undefined?'Create routine':'Edit routine'}</h3>
       <form className="edit wide routine-form" onSubmit={event=>{
         event.preventDefault();if(!valid) return;

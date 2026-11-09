@@ -114,6 +114,15 @@ const routineActions:Scenario={
       if(value.enabled || value.actions[0]?.runsOnlyIn!=='free' || value.actions[1]?.runsOnlyIn!==undefined) throw new StepFailure('the routine did not keep its Hub-mode precondition');
       saved.set(h,value);
     }),
+    // #1586: the preview answers from the same records with the run's own guards, and sends, logs and claims nothing.
+    act('the reader previews the routine while the Pixoo is in Work: the start is blocked for the mode and the color would send',async h=>{
+      const answer=await h.gateway({as:'reader',method:'GET',path:`/api/v2/automation/routines/${savedOf(h).id}/preview`});
+      const value=bodyOf<{schema:string;enabled:boolean;actions:{index:number;target:string;verdict:string;reason?:string;detail?:string}[]}>(answer);
+      const rows=value?.actions.map(item=>`${item.index} ${item.target} ${item.verdict}${item.reason===undefined?'':` ${item.reason} ${String(item.detail)}`}`);
+      if(answer.status!==200 || value?.schema!=='automation/2.0' || value.enabled || JSON.stringify(rows)!==JSON.stringify(['0 pixoo-1 blocked mode wrong-mode','1 pendant-1 would-send']))
+        throw new StepFailure(`preview ${String(answer.status)} ${JSON.stringify(rows)}`);
+    }),
+    holds('the preview admits no command and writes no automation-log row',async h=>(commands(h)===0 && (await entries(h)).length===0) || 'the preview had an effect',300),
     act('the owner runs the routine now while the Pixoo is in Work',async h=>{
       const answer=await h.gateway({as:'operator',method:'POST',path:`/api/v2/automation/routines/${savedOf(h).id}/run`,headers:{'bunny-request':'1'},body:{}});
       if(answer.status!==200) throw new StepFailure('run now was refused');

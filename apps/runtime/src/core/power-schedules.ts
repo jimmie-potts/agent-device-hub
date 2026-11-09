@@ -138,6 +138,48 @@ export function actionSupported(record:DeviceRecord,action:RoutineAction,kind:st
   return commandSupported(record.capabilities,{family:action.family,data:{requestId:'routine',...action.data}} as DeviceCommand);
 }
 
+/** Why one action may not be sent now: a closed list of reply fields, not error codes (#1586). */
+export const ROUTINE_BLOCK_DETAILS=['not-configured','no-evidence','stale','not-available','held','unsupported','external','pending-mode','mode-unknown','wrong-mode','in-flight'] as const;
+export type RoutineBlockDetail=(typeof ROUTINE_BLOCK_DETAILS)[number];
+/** One action's guard result: sendable with the current record, or blocked with the reason the log records and the guard that failed. */
+export type ActionCheck={ok:true;record:DeviceRecord}|{ok:false;reason:'unavailable'|'unsupported-capability'|'mode';detail:Exclude<RoutineBlockDetail,'in-flight'>};
+export type ActionEvidence={
+  action:RoutineAction;
+  /** The target is an admitted configured identity whose record the core holds. */
+  configured:boolean;
+  /** The owner before the asynchronous read, and again after it. */
+  owner:string|undefined;ownerNow:string|undefined;
+  /** The record the read returned (undefined when it failed), and the current record after it. */
+  read:DeviceRecord|undefined;current:DeviceRecord|undefined;
+};
+/**
+ * The guards one action passes immediately before its send, in one place so a run and a preview cannot drift: fresh evidence
+ * from the same configuration and generation after the read, availability, hold, external control and capability, then the
+ * Hub-mode precondition against the desired mode and pending mode changes (ADR 0014). An available device that does not offer
+ * the action, such as a stored `device-mode-set monitor` on a Pixoo that takes the Hub's modes, answers the capability code
+ * the module would refuse it with. The owning module's own admission stays decisive.
+ */
+export function checkAction({action,configured,owner,ownerNow,read,current}:ActionEvidence):ActionCheck {
+  const unavailable=(detail:Exclude<RoutineBlockDetail,'in-flight'>):ActionCheck=>({ok:false,reason:'unavailable',detail});
+  if(!configured || owner===undefined) return unavailable('not-configured');
+  if(read===undefined || current===undefined) return unavailable('no-evidence');
+  if(owner!==ownerNow || read.id!==action.target || current.id!==action.target || read.configurationRevision!==current.configurationRevision ||
+      read.generation.epoch!==current.generation.epoch || read.generation.sequence!==current.generation.sequence) return unavailable('stale');
+  if(current.availability!=='available') return unavailable('not-available');
+  if(current.held!==undefined) return unavailable('held');
+  if(current.externalControl.status==='known' && current.externalControl.owner==='external') return unavailable('external');
+  if(!actionSupported(current,action,kindOfOwner(ownerNow))) return {ok:false,reason:'unsupported-capability',detail:'unsupported'};
+  if(action.runsOnlyIn!==undefined) {
+    if(current.pendingKinds.includes('device-mode-set')) return {ok:false,reason:'mode',detail:'pending-mode'};
+    if(current.desired.mode.status!=='known') return {ok:false,reason:'mode',detail:'mode-unknown'};
+    if(current.desired.mode.value!==action.runsOnlyIn) return {ok:false,reason:'mode',detail:'wrong-mode'};
+  }
+  return {ok:true,record:current};
+}
+/** One action as a preview reads it now: would send, or blocked with the reason a run would log (#1586). */
+export type ActionPreview={index:number;target:string;family:RoutineFamily;runsOnlyIn?:HubMode}&({verdict:'would-send'}|{verdict:'blocked';reason:'unavailable'|'unsupported-capability'|'mode'|'busy';detail:RoutineBlockDetail});
+export type RoutinePreview={id:string;atMs:number;enabled:boolean;next?:RoutineOccurrence;actions:ActionPreview[]};
+
 const ROUTINE_SCHEMA='routine/1.0',LEGACY_SCHEMA='power-window/1.0';
 function fromRow(row:RuleRow):Routine {
   try {
@@ -230,6 +272,9 @@ export function createRoutines(options:RoutineOptions) {
       {family:action.family,index,...(action.runsOnlyIn===undefined?{}:{runsOnlyIn:action.runsOnlyIn}),...(requestId===undefined?{}:{requestId}),
         ...(result.outcome==='receipt'?{receipt:{status:'accepted',requestId}}:{})})]);
   };
+  /** The guard result for one action's evidence, read now from the same sources a run uses. */
+  const evidence=(action:RoutineAction,owner:string|undefined,read:DeviceRecord|undefined):ActionCheck=>checkAction({action,
+    configured:options.targets().includes(action.target),owner,ownerNow:options.owner(action.target),read,current:options.current(action.target)});
   /**
    * One action: fresh evidence, the same configuration and generation after the read, the capability and the mode, then one
    * tracked dispatch. A storage failure around it is reported once under the action's own request identity, never retried.
@@ -243,27 +288,14 @@ export function createRoutines(options:RoutineOptions) {
       if(!current(saved,fire)) return;
       // Evidence arriving after the occurrence's tolerance authorizes nothing, and the skip is on record; an explicit run has no window.
       if(fire==='scheduled' && !inWindow(occurrence)) {record(saved,occurrence,fire,action,index,{outcome:'blocked',reason:'expired',requestId});return;}
-      const latest=options.current(action.target);
       // Evidence must still belong to the same configuration/generation after the asynchronous read.
-      const valid=owner!==undefined && owner===options.owner(action.target) && device!==undefined && latest!==undefined && device.id===action.target && latest.id===action.target &&
-        device.configurationRevision===latest.configurationRevision && device.generation.epoch===latest.generation.epoch &&
-        device.generation.sequence===latest.generation.sequence;
-      if(!options.targets().includes(action.target) || !valid || latest.availability!=='available' || latest.held!==undefined ||
-          !actionSupported(latest,action,kindOf(action.target)) || (latest.externalControl.status==='known' && latest.externalControl.owner==='external')) {
-        try {options.refused?.(requestId,trace);} catch {/* Diagnostics cannot alter device admission. */}
-        // An available device that does not offer the action, such as a stored `device-mode-set monitor` on a Pixoo that
-        // takes the Hub's modes (ADR 0014), is logged with the capability code the module would refuse it with.
-        const unsupported=options.targets().includes(action.target) && valid && latest.availability==='available' && latest.held===undefined &&
-          !(latest.externalControl.status==='known' && latest.externalControl.owner==='external') && !actionSupported(latest,action,kindOf(action.target));
-        record(saved,occurrence,fire,action,index,{outcome:'blocked',reason:unsupported?'unsupported-capability':'unavailable',requestId});return;
-      }
-      // The Hub-mode precondition, on the record immediately before the send (ADR 0014): the device's desired mode, as its
-      // record reports it, with no mode change pending. Nothing carries it to the module, whose own admission stays decisive.
-      if(action.runsOnlyIn!==undefined && (latest.desired.mode.status!=='known' || latest.desired.mode.value!==action.runsOnlyIn || latest.pendingKinds.includes('device-mode-set'))) {
-        record(saved,occurrence,fire,action,index,{outcome:'blocked',reason:'mode',requestId});return;
+      const check=evidence(action,owner,device);
+      if(!check.ok) {
+        if(check.reason!=='mode') try {options.refused?.(requestId,trace);} catch {/* Diagnostics cannot alter device admission. */}
+        record(saved,occurrence,fire,action,index,{outcome:'blocked',reason:check.reason,requestId});return;
       }
       let result:RoutineSendResult;
-      try {result=await options.send(action,structuredClone(latest),requestId,trace);}
+      try {result=await options.send(action,structuredClone(check.record),requestId,trace);}
       catch {record(saved,occurrence,fire,action,index,{outcome:Outcome.uncertain,reason:'uncertain-result',requestId});return;}
       record(saved,occurrence,fire,action,index,result);
     } catch {
@@ -349,6 +381,24 @@ export function createRoutines(options:RoutineOptions) {
       pending.add(task);
       try {await task;} finally {pending.delete(task);}
       return {id,atMs,outcome};
+    },
+    /**
+     * What a run would do now, from the current records, with nothing sent, logged, claimed or scheduled (#1586). Each action
+     * is read as `step` reads it and checked by the same guards; a routine already in flight answers busy for every action.
+     */
+    async preview(id:string):Promise<RoutinePreview> {
+      const saved=find(id),atMs=options.clock(),busy=inFlight.has(saved.id),{next}=view(saved);
+      const actions:ActionPreview[]=[];
+      for(const [index,action] of saved.actions.entries()) {
+        const head={index,target:action.target,family:action.family,...(action.runsOnlyIn===undefined?{}:{runsOnlyIn:action.runsOnlyIn})};
+        if(busy) {actions.push({...head,verdict:'blocked',reason:'busy',detail:'in-flight'});continue;}
+        const owner=options.owner(action.target);
+        let device:DeviceRecord|undefined;
+        try {device=await options.read(action.target);} catch {/* A read failure is unavailable evidence. */}
+        const check=evidence(action,owner,device);
+        actions.push(check.ok?{...head,verdict:'would-send'}:{...head,verdict:'blocked',reason:check.reason,detail:check.detail});
+      }
+      return structuredClone({id:saved.id,atMs,enabled:saved.enabled,...(next===undefined?{}:{next}),actions});
     },
     async settled(){await Promise.all(pending);},
     async close(){

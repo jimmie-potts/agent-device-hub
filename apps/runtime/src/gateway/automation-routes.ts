@@ -64,9 +64,11 @@ export async function automationRoute(controls: AutomationControls, request: Aut
         if(method==='POST') {const input=await request.body(8192);return write(()=>answer(201,routines.create(input,true)));}
         return undefined;
       }
-      const match=/^routines\/([A-Za-z0-9_.-]{1,128})(?:\/(enable|disable|run))?$/.exec(path),id=match?.[1];
+      const match=/^routines\/([A-Za-z0-9_.-]{1,128})(?:\/(enable|disable|run|preview))?$/.exec(path),id=match?.[1];
       if(id===undefined) return undefined;
       const action=match?.[2];
+      // #1586: a reply read from the current records under read scope; nothing is sent, logged, claimed or scheduled.
+      if(action==='preview') return method==='GET'?answer(200,await routines.preview(id)):undefined;
       if(action!==undefined) {
         if(method!=='POST') return undefined;
         const input=await request.body(16);
