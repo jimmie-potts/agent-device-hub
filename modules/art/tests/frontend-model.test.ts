@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
-import {artworkOf, browserArt, catalogOf, latestBrowserArt, money, selectedBrowserArtwork} from '../src/frontend/model.js';
+import {artShowSurfaces} from '@jimmie-potts/event-contracts/v2/art-show';
+import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {artworkOf, browserArt, catalogOf, latestBrowserArt, money, selectedBrowserArtwork, showTargetsOf, showableSurfaces, surfaceLabel, surfaceText} from '../src/frontend/model.js';
 
 const hash = 'a'.repeat(64);
 const artwork = (): ArtworkSummary => ({artworkId: 'synthetic-one', createdAtMs: 1, favorite: false, feedback: null, variationOf: null,
@@ -40,4 +42,35 @@ void test('authoritative selection admits only the exact validated usable browse
     {...row, compositions: row.compositions.map(item => ({...item, compositionId: 'b'.repeat(64)}))},
     {...row, compositions: row.compositions.map(item => ({...item, target: 'pixoo'}))},
     {...row, compositions: row.compositions.map(item => ({...item, renditions: []}))}]) assert.equal(selectedBrowserArtwork(value, selection), undefined);
+});
+
+void test('Show now offers configured displays, sends only surfaces with compositions and labels them (#1581)', () => {
+  const targets = showTargetsOf({schema: 'automation/2.0', targets: [{target: 'desk-display', kind: 'pixoo'}, {target: 'shelf-display', kind: 'tidbyt'}]});
+  for (const value of [{targets: []}, {schema: 'automation/2.0', targets: [{target: 'browser', kind: 'pixoo'}]}, {schema: 'automation/2.0', targets: [{target: 'Desk', kind: 'pixoo'}]},
+    {schema: 'automation/2.0', targets: [{target: 'desk-display', kind: 'lamp'}]}, {schema: 'automation/2.0', targets: [{target: 'a', kind: 'pixoo'}, {target: 'a', kind: 'tidbyt'}]}]) assert.throws(() => showTargetsOf(value));
+  const row = artwork(), pixoo = {...row, compositions: [...row.compositions, {target: 'pixoo' as const, compositionId: 'b'.repeat(64), outcome: 'succeeded' as const, motion: 'gif' as const,
+    renditions: [{renditionId: 'b'.repeat(64), ref: `rendition.${'b'.repeat(64)}`, width: 64, height: 64, bytes: 40, frames: 8, durationMs: 800, format: 'gif' as const}]}]};
+  assert.deepEqual(showableSurfaces(row, ['browser', 'desk-display', 'shelf-display'], targets), ['browser']);
+  assert.deepEqual(showableSurfaces(pixoo, ['desk-display', 'browser', 'shelf-display'], targets), ['desk-display', 'browser']);
+  assert.deepEqual(showableSurfaces(pixoo, ['hall-display'], targets), [], 'an unconfigured target is never sent');
+  assert.equal(surfaceLabel('desk-display', targets), 'Pixoo · desk-display');assert.equal(surfaceLabel('browser', targets), 'Browser');
+});
+
+void test('per-surface results follow the core operations and never claim the panel showed art (#1581)', async () => {
+  const [desk, browser] = await artShowSurfaces('show-1', ['desk-display', 'browser']);
+  assert.ok(desk?.kind === 'display' && browser?.kind === 'browser');
+  const record = (requestId: string, family: string, change: Partial<OperationRecord> = {}): OperationRecord => ({id: requestId, revision: 1, requestId, kind: 'device', family,
+    command: 'org.bunny.synthetic.requested', target: 'desk-display', requestedBy: 'bunny/core', status: 'accepted', sentAtMs: 1, updatedAtMs: 1, deadlineAtMs: 2, ...change});
+  assert.equal(surfaceText(desk, [], false), 'Waiting for preparation.');
+  assert.match(surfaceText(desk, [record(desk.prepareRequestId, 'art-auto')], false), /Preparation in progress/);
+  assert.match(surfaceText(desk, [record(desk.prepareRequestId, 'art-auto', {status: 'completed', result: 'succeeded'})], false), /ready; waiting for the appearance/);
+  const sent = surfaceText(desk, [record(desk.momentRequestId, 'moment-play', {status: 'completed', result: 'succeeded', evidence: 'transmitted'})], true);
+  assert.match(sent, /transmitted; the panel was not observed/);assert.doesNotMatch(sent, /shown/);
+  assert.match(surfaceText(desk, [record(desk.momentRequestId, 'moment-play', {status: 'rejected', error: {code: 'invalid-state', retryable: false}})], true), /failed \(invalid-state\)/);
+  assert.match(surfaceText(desk, [record(desk.prepareRequestId, 'art-auto', {status: 'completed', result: 'succeeded'})], true), /no appearance was sent/);
+  assert.match(surfaceText(desk, [], true), /^Not sent/);
+  assert.equal(surfaceText(desk, [record(desk.momentRequestId, 'moment-play', {requestedBy: 'bunny/parts/operator', status: 'completed', result: 'succeeded'})], true).startsWith('Not sent'), true,
+    'only the core\'s own operation counts');
+  assert.match(surfaceText(browser, [record(browser.presentRequestId, 'art-auto', {status: 'completed', result: 'succeeded', evidence: 'observed'})], true), /saved; rendering is not confirmed/);
+  assert.match(surfaceText(browser, [], false), /Waiting for the common start/);
 });

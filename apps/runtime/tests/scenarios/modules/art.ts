@@ -97,6 +97,55 @@ export const scenarios: readonly Scenario[] = [{
     }, 250),
   ],
 }, {
+  id: 'art-show', title: 'the owner shows one saved artwork now on the simulated Pixoo, Tidbyt and browser with independent outcomes',
+  memoryTimeoutMs: 90_000,
+  seed: {modules: ['core', 'playback', 'pixoo', 'tidbyt', 'art'], sections: {art: {recentLimit: 4}},
+    config: {playback: PLAYBACK_SECTION, pixoo: {device: {...PIXOO_SECTION.device, id: 'desk-display'}}, tidbyt: {...sharedTidbyt, id: 'shelf-display'}},
+    follows: [{owner: OWNER, families: ['art']}, {owner: 'bunny/core', families: ['operation']},
+      {owner: 'bunny/modules/pixoo', families: ['device']}, {owner: 'bunny/modules/tidbyt', families: ['device']}]},
+  steps: [
+    expect('the producer and both configured display owners are ready', h => running(h, ['core', 'art', 'pixoo', 'tidbyt'])),
+    expect('current display records declare exact art', h => ['desk-display', 'shelf-display'].every(id => h.reader.states<DeviceRecord>('device').some(message =>
+      message.data.id === id && message.data.availability === 'available' && message.data.capabilities.moments.supported && message.data.capabilities.moments.art !== undefined)) || 'current art-capable display records missing', 5000),
+    expect('the producer has synchronized both display routes', h => h.logs().filter(({record}) => record.event_name === 'runtime.sync.served'
+      && record.attributes['bunny.participant'] === OWNER && record.attributes['bunny.pattern'] === 'sync device').length >= 2 || 'producer display routes are not current', 5000),
+    act('the owner creates one synthetic idea for the browser and both displays', h => request(h, 'art-show-seed', ['ui', 'pixoo', 'tidbyt'])),
+    ended('art-show-seed', 'succeeded'),
+    expect('the gateway lists both configured art displays', answers({as: 'reader', method: 'GET', path: '/api/v2/automation/art/targets'}, response => {
+      const targets = bodyOf<{targets?: {target: string; kind: string}[]}>(response)?.targets?.map(item => `${item.kind}:${item.target}`).sort();
+      return response.status === 200 && JSON.stringify(targets) === JSON.stringify(['pixoo:desk-display', 'tidbyt:shelf-display']) || `${String(response.status)} ${response.text.slice(0, 200)}`;
+    })),
+    expect('a reader cannot show art', answers({as: 'reader', method: 'POST', path: '/api/v2/commands/art-show', body: {target: 'hub', requestId: 'art-show-reader', data: {artworkId: 'any', targets: ['browser']}}},
+      response => refusedWith(response, 403, 'forbidden'))),
+    expect('an unknown artwork is refused and sends nothing', async h => {
+      const response = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/art-show', body: {target: 'hub', requestId: 'art-show-unknown', data: {artworkId: 'never-saved', targets: ['browser']}}});
+      return refusedWith(response, 404, 'not-found') === true && moments(h).length === 0 || `${String(response.status)} ${response.text.slice(0, 120)}`;
+    }),
+    act('the owner shows the saved artwork now on every surface', async h => {
+      const response = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/art-show',
+        body: {target: 'hub', requestId: 'art-show-now', data: {artworkId: created(h, 'art-show-seed'), targets: ['desk-display', 'shelf-display', 'browser']}}});
+      if (response.status !== 200) throw new StepFailure(`art-show returned ${String(response.status)} ${response.text.slice(0, 160)}`);
+    }),
+    expect('each display gets its own preparation and moment operation', h => {
+      const tracked = h.reader.states<OperationRecord>('operation', 'bunny/core').map(message => message.data);
+      return tracked.filter(record => record.family === 'art-auto' && record.target === 'art' && record.result === 'succeeded').length >= 2
+        && moments(h).length === 2 && new Set(moments(h).map(record => record.target)).size === 2 || 'independent preparation or moment operations missing';
+    }, 20_000),
+    expect('the browser selects the exact saved composition at the common start', h => {
+      const current = sharedState(h);
+      return current !== undefined && 'selection' in current && current.selection?.artworkId === created(h, 'art-show-seed') || 'browser selection missing';
+    }, 30_000),
+    expect('the show completes as the core\'s observed handoff, never as display evidence', h => {
+      const show = h.reader.states<OperationRecord>('operation', 'bunny/core').map(message => message.data).find(record => record.requestId === 'art-show-now');
+      return show?.family === 'art-show' && show.status === 'completed' && show.result === 'succeeded' && show.evidence === 'observed' || `${String(show?.status)} ${String(show?.result)} ${String(show?.evidence)}`;
+    }, 30_000),
+    expect('the Tidbyt shows the exact animation in simulation and each moment keeps its own outcome', h => {
+      const server = deviceState<TronbytState>(h, 'tidbyt');
+      return server.installations.bunnymoment?.animation?.frames.length === 8 && moments(h).every(record => record.status === 'accepted' || record.status === 'completed') || 'Tidbyt animation or independent moment outcomes missing';
+    }, 15_000),
+    holds('showing saved art makes no provider call', h => calls(h).imageCalls === 3 && calls(h).ideaCalls === 1 || 'Show now generated art', 250),
+  ],
+}, {
   id: 'art-theme', title: 'decoded contrasting art changes decoration while local lock and default remain under owner control',
   seed: {...seed, sections: {art: {recentLimit: 8}}}, keepCapturePage: true,
   capture: async (context, harness) => {const {captureArtTheme} = await import('../../../verify/art-theme.js');await captureArtTheme(context, harness);},

@@ -914,7 +914,7 @@ export class Gateway {
     const actions = OPERATOR_ACTIONS.includes(family) ? this.#options.operatorActions : this.#options.actions;
     if (actions === undefined) return errorBody('unavailable', {detail: 'this runtime hosts no core to send actions'});
     // Mode requests and the admitted upload boundary continue their trace in the tracker's existing request span.
-    const incoming = (family === 'mode-set' || family === 'mode-override-set') || family === 'lighting-layout-set' || family === 'playback-layout-set' || family === 'home-layout-set' ? request?.headers.traceparent : undefined;
+    const incoming = (family === 'mode-set' || family === 'mode-override-set' || family === 'art-show') || family === 'lighting-layout-set' || family === 'playback-layout-set' || family === 'home-layout-set' ? request?.headers.traceparent : undefined;
     const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
     const parent = (request === undefined ? undefined : this.#dashboardTraces.get(request))
       ?? (candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined);
@@ -1075,7 +1075,7 @@ function templateOf(path: string): string | undefined {
   if (Object.hasOwn(DASHBOARD_FILES, path)) return path;
   if (path === '/api/v2/history' || path === '/api/v2/build' || path === '/api/v2/authority' || path === '/api/v2/modules' || path === '/api/v2/links' || path === '/api/v2/snapshot') return path;
   if (path === '/api/v2/commands/approval-recover') return path;
-  if (/^\/api\/v2\/automation\/(rules|routines|power-limits|interrupt-set|settings|log|art)$/.test(path)) return path;
+  if (/^\/api\/v2\/automation\/(rules|routines|power-limits|interrupt-set|settings|log|art|art\/targets)$/.test(path)) return path;
   if (/^\/api\/v2\/automation\/power-limits\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(path)) return '/api/v2/automation/power-limits/{id}';
   if (/^\/api\/v2\/automation\/routines\/[A-Za-z0-9_.-]{1,128}(?:\/(enable|disable|run))?$/.test(path)) return '/api/v2/automation/routines/{id}';
   if (/^\/api\/v2\/automation\/rules\/[A-Za-z0-9_.-]{1,128}$/.test(path)) return '/api/v2/automation/rules/{id}';

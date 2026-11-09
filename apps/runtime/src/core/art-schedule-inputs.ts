@@ -12,12 +12,14 @@ export class ArtScheduleInputs {
   #epoch=0;
   #weatherBaseline=0;
   #closed=false;
+  /** Set by the first owner show: saved art is then followed whatever the schedule policy says, for this core's life. */
+  #artPinned=false;
   constructor(readonly core:Pick<CoreHandle,'clock'|'sdk'>,readonly scheduler:ModuleScheduler,readonly active:()=>boolean,
     readonly changed:()=>void,readonly weatherChanged:(revision:number,parent:TraceContext)=>void,readonly weatherSynced:(revision:number)=>void=()=>{}){}
   set(policy:ArtSchedulePolicy):void {
     if(this.#closed)return;
-    if(policy.enabled && this.#art===undefined)this.#art=new Following(this.core,this.scheduler,this.active,'art','bunny/modules/art',this.changed);
-    if(!policy.enabled && this.#art!==undefined){void this.#art.close();this.#art=undefined;}
+    if((policy.enabled||this.#artPinned) && this.#art===undefined)this.#follow();
+    if(!policy.enabled && !this.#artPinned && this.#art!==undefined){void this.#art.close();this.#art=undefined;}
     const weather=policy.enabled&&policy.weather;
     if(weather && this.#weather===undefined) {
       const epoch=++this.#epoch;
@@ -37,6 +39,18 @@ export class ArtScheduleInputs {
       const events=this.#events;this.#events=undefined;void events?.then(value=>value.close(),()=>{});}
   }
   art():ArtRecord|undefined{return this.#art?.get('art');}
+  /** An owner show reads the current saved art even while scheduling is disabled, waiting briefly for a first copy. */
+  async ownerArt(waitMs=3000):Promise<ArtRecord|undefined>{
+    if(this.#closed)return undefined;
+    this.#artPinned=true;
+    const art=this.#art??this.#follow();
+    await art.whenFresh(waitMs);
+    return this.art();
+  }
+  #follow():Following<ArtRecord>{
+    const art=new Following<ArtRecord>(this.core,this.scheduler,this.active,'art','bunny/modules/art',this.changed);
+    this.#art=art;return art;
+  }
   weather():WeatherState|undefined{return this.#weather?.get('local');}
   async close():Promise<void>{this.#closed=true;++this.#epoch;await Promise.all([this.#art?.close(),this.#weather?.close(),this.#events?.then(value=>value.close(),()=>{})]);}
 }
@@ -47,11 +61,22 @@ class Following<T extends object> {
   #cancel:Cancel|undefined;
   #pending:Promise<void>=Promise.resolve();
   #delay=1000;
+  readonly #waiters=new Set<()=>void>();
   constructor(readonly core:Pick<CoreHandle,'sdk'>,readonly scheduler:ModuleScheduler,readonly active:()=>boolean,
     readonly family:string,readonly owner:string,readonly changed:()=>void,readonly synced:()=>void=()=>{}){this.#start();}
+  /** Resolves once the copy is fresh, refused, failed or closed, or `timeoutMs` has passed; never rejects. */
+  whenFresh(timeoutMs:number):Promise<void> {
+    if(this.#fresh&&this.#copy!==undefined||this.#closed)return Promise.resolve();
+    return new Promise(resolve=>{
+      const done=():void=>{if(this.#waiters.delete(done)){cancel();resolve();}};
+      this.#waiters.add(done);const cancel=this.scheduler.after(timeoutMs,done);
+    });
+  }
+  #ready():void {for(const done of [...this.#waiters])done();}
   get(id:string):T|undefined {if(!this.#fresh||this.#closed||!this.active())return undefined;const message=this.#copy?.get({family:this.family,id});return message?.source===this.owner?message.data:undefined;}
   #retry():void {
-    this.#fresh=false;this.changed();if(this.#closed||!this.active()||this.#cancel!==undefined)return;
+    // A refused or failed copy answers an owner show's wait at once: there is no current record to read.
+    this.#fresh=false;this.#ready();this.changed();if(this.#closed||!this.active()||this.#cancel!==undefined)return;
     this.#cancel=this.scheduler.after(this.#delay,()=>{this.#cancel=undefined;this.#start();});this.#delay=Math.min(30_000,this.#delay*2);
   }
   #start():void {
@@ -60,12 +85,12 @@ class Following<T extends object> {
       if(this.#closed||!this.active())return;
       if(change.type==='failed')this.#retry();
       else if(change.type==='updated'&&this.#fresh)this.changed();
-      else if(change.type==='synced'){this.#fresh=true;if(this.#copy!==undefined)this.synced();this.changed();}
+      else if(change.type==='synced'){this.#fresh=true;if(this.#copy!==undefined){this.synced();this.#ready();}this.changed();}
     },{owner:this.owner,timeoutMs:5000,onRestarted:()=>{this.#fresh=false;this.changed();}}).then(async result=>{
       if(result.status!=='synced'){this.#retry();return;}
       if(this.#closed||!this.active()){await result.copy.close();return;}
-      this.#copy=result.copy;this.#fresh=true;this.#delay=1000;this.synced();this.changed();
+      this.#copy=result.copy;this.#fresh=true;this.#delay=1000;this.synced();this.changed();this.#ready();
     },()=>{this.#retry();});
   }
-  async close():Promise<void>{this.#closed=true;this.#fresh=false;this.#cancel?.();await this.#pending;await this.#copy?.close();}
+  async close():Promise<void>{this.#closed=true;this.#fresh=false;this.#cancel?.();this.#ready();await this.#pending;await this.#copy?.close();}
 }

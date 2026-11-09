@@ -31,7 +31,8 @@ export type ActionKind = 'device' | 'moment' | 'mode';
  * - device: a command to one device, such as a power or brightness change or a playback control: a reply within 5 s,
  *   and an outcome within 30 s, the longest a module's own device budget allows.
  * - moment: `moment-play` starts up to 60 s after it is sent and may wait up to 60 s more for its start (its
- *   tolerance), so its outcome may take 150 s.
+ *   tolerance), so its outcome may take 150 s. An owner `art-show` shares this class: it completes after its own
+ *   near-term start, once each surface's handoff is tracked.
  * - mode: a Hub mode change, which its owner fans out to every taking-part device: 60 s.
  */
 export const DEADLINES: Readonly<Record<ActionKind, {readonly replyMs: number; readonly outcomeMs: number}>> = Object.freeze({
@@ -42,7 +43,8 @@ export const DEADLINES: Readonly<Record<ActionKind, {readonly replyMs: number; r
 
 /** The tracker deadline class: moment, mode, or the default device budget, also used by core-local actions. */
 export function kindOf(family: string): ActionKind {
-  if (family === 'moment-play') return 'moment';
+  // An owner art show completes once its common start has passed and every surface is tracked (Hub #1581).
+  if (family === 'moment-play' || family === 'art-show') return 'moment';
   if (family === 'mode-set' || family === 'mode-override-set') return 'mode';
   return 'device';
 }

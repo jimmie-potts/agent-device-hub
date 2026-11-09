@@ -475,7 +475,7 @@ it('MCP lists and calls only what a credential may use, maps results and refusal
     const listed = await ask(url, '/mcp', {method: 'POST', token: part.token, headers: await session(part), body: {jsonrpc: '2.0', id: 2, method: 'tools/list'}});
     return ((listed.body as {result: {tools: {name: string}[]}}).result.tools).map(tool => tool.name).sort();
   };
-  assert.deepEqual(await tools(operator), ['core_handle_inbox', 'core_history', 'core_inbox', 'core_recover_approval', 'core_send_command', 'core_sessions', 'core_set_device_mode', 'core_set_mode', 'sign_status']);
+  assert.deepEqual(await tools(operator), ['core_art_show', 'core_handle_inbox', 'core_history', 'core_inbox', 'core_recover_approval', 'core_send_command', 'core_sessions', 'core_set_device_mode', 'core_set_mode', 'sign_status']);
   assert.deepEqual(await tools(reader), ['core_history', 'core_inbox', 'core_sessions', 'sign_status'], 'a reader sees every module\'s read tools, and no action');
   assert.deepEqual(await tools(hook), [], 'a hook sees no tool');
   // A reader's call of the action is refused by the MCP package before the core has it, so no recovery runs.
@@ -498,6 +498,15 @@ it('MCP lists and calls only what a credential may use, maps results and refusal
   const selected = await tool('core_set_mode', {mode: 'quiet', expectedRevision: 0, requestId: 'req-mcp-mode'});
   assert.equal(selected.isError, false);
   assert.deepEqual(selected.structuredContent, {kind: 'extension', data: {result: {status: 'accepted', requestId: 'req-mcp-mode'}}});
+  // The owner's art show reaches the core through ordinary dispatch; with no art owner running there is no saved art to show.
+  const shown = await tool('core_art_show', {artworkId: 'synthetic-art', targets: ['browser'], requestId: 'req-mcp-art-show'});
+  assert.equal(shown.isError, true);
+  assert.equal((shown.structuredContent.data as {error: {code: string; requestId?: string}}).error.code, 'unavailable', 'the core refused it, in the shared error body');
+  const malformed = await tool('core_art_show', {artworkId: 'synthetic-art', targets: []});
+  assert.equal(malformed.isError, true, 'the tool refuses a show with no surface before dispatch');
+  const readShow = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers: await session(reader), body: {jsonrpc: '2.0', id: 11, method: 'tools/call',
+    params: {name: 'core_art_show', arguments: {artworkId: 'synthetic-art', targets: ['browser']}}}});
+  assert.notEqual((readShow.body as {result?: {structuredContent?: {kind?: string}}}).result?.structuredContent?.kind, 'extension', 'a reader cannot reach the art show');
   const saved = await ask(url, '/api/v2/families/mode', {token: reader.token});
   assert.equal((saved.body as {records: {mode: string}[]}).records[0]?.mode, 'quiet', 'MCP saved the choice through ordinary dispatch');
   const readMode = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers: await session(reader), body: {jsonrpc: '2.0', id: 10, method: 'tools/call',

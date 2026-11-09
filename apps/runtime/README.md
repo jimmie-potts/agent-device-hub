@@ -363,7 +363,7 @@ and exits 1, and the service manager restarts it whole.
   Startup, restart, reads, duplicate submission and native changes never apply
   or replay choices. Dormant overrides for absent devices remain saved and send
   nothing. The dashboard and MCP's `core_set_mode` / `core_set_device_mode` use
-  ordinary control scope. `effectiveMode(record, target, live)` in the shared
+  ordinary control scope, as `core_art_show` does for an owner art show. `effectiveMode(record, target, live)` in the shared
   contract package gives future consumers an explicit exception or global
   fallback, and no answer for missing or stale state.
 - **Outcome intake and acknowledgment.** The core takes every state, removal,
@@ -474,6 +474,34 @@ The additive private `automation_art_plans` table binds each ID to a digest of
 the complete stable plan before any phase. It retains these non-executable
 receipts without eviction, like `core_operations`, so changing old timing cannot
 reuse a late successful preparation. A failed identity commit sends nothing.
+
+The owner can also show saved art now
+([#1581](https://github.com/jimmie-potts/agent-device-hub/issues/1581)).
+`art-show/2.0` on `bunny.cmd.art-show.hub` comes from the gallery's Show now or
+the MCP tool `core_art_show` through the tracked dispatcher, which admits it as
+it admits the Hub mode; a direct bus command is `forbidden`. The core checks the
+artwork against the art owner's current published record, its 24 most recent
+artworks (`not-found` otherwise), and each target against the configured art
+displays (`not-found`) and the artwork's usable compositions
+(`unsupported-capability`). A refused target is skipped while the others
+proceed; with none left the command is refused and nothing is sent. One show
+prepares at a time (`capacity`). The accepted show runs `present` with a start
+20 seconds ahead, the schedule's 5-second tolerance and 1-second preparation
+cutoff, `priorityClass` `event`, the request's `coversStatus` (default true),
+10 seconds on Pixoo and 30 on Tidbyt. Its permit refuses only while attention
+is raised: quiet hours, budgets, spacing, `noFlourishes` and the schedule's
+policy do not apply, while holds, pins and each display's admission still do.
+It starts no generation and changes no mode. Each surface becomes an `art-show`
+row in the private automation log with event source `owner` and
+`priorityClass` `event`, so Recent attempts lists it and no flourish budget or
+spacing counts it; the schedule's claims, count, spacing watermark and
+next appearance are untouched. The show's operation uses the `moment`
+deadline class and completes `succeeded`/`observed` once every surface was
+handed off or skipped and one was sent, or `failed` when none was. A restart
+before completion leaves its operations to their deadlines; nothing replays.
+`GET /api/v2/automation/art/targets` lists the configured art display IDs and
+kinds for read scope. The core's art input reads the art record for a show even
+while scheduling is disabled.
 
 Daily art uses that same control and the core's scheduler. Its separate
 revisioned policy defaults to disabled and is edited in the Automation page.

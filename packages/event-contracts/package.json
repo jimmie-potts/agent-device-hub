@@ -87,6 +87,10 @@
     "./v2/art-schedule": {
       "types": "./dist/v2/art-schedule.d.ts",
       "import": "./dist/v2/art-schedule.js"
+    },
+    "./v2/art-show": {
+      "types": "./dist/v2/art-show.d.ts",
+      "import": "./dist/v2/art-show.js"
     }
   },
   "dependencies": {

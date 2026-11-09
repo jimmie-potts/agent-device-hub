@@ -2,7 +2,8 @@ import {useEffect, useMemo, useRef, useState} from 'react';
 import type {ArtRecord, ArtSelection, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {FrontendApi} from '@jimmie-potts/sdk/frontend';
 import {followCopy, type CopyRead, type Scheduler} from '@jimmie-potts/sdk/remote';
-import {CATALOG_PAGE_SIZE, catalogOf, latestBrowserArt, selectedBrowserArtwork, type CatalogPage} from './model.js';
+import {artShowSurfaces, type ArtShowSurface} from '@jimmie-potts/event-contracts/v2/art-show';
+import {CATALOG_PAGE_SIZE, catalogOf, latestBrowserArt, selectedBrowserArtwork, showTargetsOf, type CatalogPage, type ShowTarget} from './model.js';
 
 /** What one art copy reports to its page. */
 export type ArtFeed = {record: (value: ArtRecord | undefined) => void; live: (value: boolean) => void; error: (value: string | undefined) => void};
@@ -80,4 +81,34 @@ export function useGalleryPage(api: FrontendApi, live: boolean, after: number, c
     return () => {disposed = true;};
   }, [api, live, after, catalogRevision, attempt]);
   return {page, loading, error, refresh: () => {setAttempt(value => value + 1);}};
+}
+
+/** The configured art displays from the core. A refused read leaves Show now offering the browser alone. */
+export function useShowTargets(api: FrontendApi, live: boolean) {
+  const [targets, setTargets] = useState<ShowTarget[]>(), [error, setError] = useState(false);
+  useEffect(() => {
+    let disposed = false;
+    setError(false);
+    if (!live) return;
+    void api.read('/api/v2/automation/art/targets').then(value => {
+      const next = showTargetsOf(value);
+      if (!disposed) setTargets(next);
+    }).catch(() => {if (!disposed) {setTargets(undefined);setError(true);}});
+    return () => {disposed = true;};
+  }, [api, live]);
+  return {targets, error};
+}
+
+/** One show this page sent: its request and the surfaces it named. Held in state, so its identity is stable. */
+export type SentShow = {requestId: string; artworkId: string; targets: readonly string[]};
+/** The operation identities one sent show names, derived as the core derives them. */
+export function useShowSurfaces(sent: SentShow | undefined): ArtShowSurface[] | undefined {
+  const [loaded, setLoaded] = useState<{sent: SentShow; surfaces: ArtShowSurface[]}>();
+  useEffect(() => {
+    if (sent === undefined) return;
+    let disposed = false;
+    void artShowSurfaces(sent.requestId, sent.targets).then(surfaces => {if (!disposed) setLoaded({sent, surfaces});}, () => {});
+    return () => {disposed = true;};
+  }, [sent]);
+  return loaded !== undefined && loaded.sent === sent ? loaded.surfaces : undefined;
 }

@@ -90,6 +90,23 @@ Its tier-1 case allows 60 seconds because it observes the Tidbyt's complete
 qualified 30-second hold as well as generation, preparation and restart. Other
 catalog cases keep their existing 20-second default.
 
+Showing saved art now (#1581) uses the same discovery. After `npm run build`,
+run `npm run typecheck`, `npm run lint:js`, `npm run test:events:built`,
+`npm run test:art:built`, `npm run test:runtime:built`,
+`npm run test:runtime-dashboard:built`, `npm run test:art:browser` and
+`npm run test:mcp`. The event suite checks the closed `art-show/2.0` fixtures;
+`apps/runtime/tests/art-show.test.ts` runs the real core with synthetic art,
+Pixoo and Tidbyt owners for per-surface operations, refusals, restart and the
+owner permit; `art-schedule.test.ts` proves on the manual clock that a show in
+quiet hours leaves the schedule's claims, count, spacing and next appearance
+unchanged; `gateway.test.ts` and `automation-routes.test.ts` cover
+`core_art_show` and the targets read. The Art browser check's Show now journey
+uses the simulated Tidbyt and reads Recent attempts. The `art-show` runtime
+scenario shows saved art on the simulated Pixoo, Tidbyt and browser; focus it
+with `node --test --test-name-pattern='art-show' apps/runtime/dist/tests/scenarios/catalog.test.js`
+(Linux, as the catalog's private-file check requires). None of these checks
+contacts a provider, an installed runtime or a physical display.
+
 Art-derived decoration (#683) uses `npm run test:art-theme:browser` after the
 root build, in the existing App verification runtime group and full local
 dashboard browser suite. Bounded palette and preference cases are discovered

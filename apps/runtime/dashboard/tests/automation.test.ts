@@ -28,7 +28,7 @@ await build({stdin: {contents: `
 type Page = {
   automationRuleInput(draft: typeof rule, creating: boolean): typeof rule;
   routineInput(draft: typeof routine, creating: boolean): typeof routine & {enabled?: boolean};
-  automationOutcome(entry: {family?: string; requestId?: string; target: string}, operations: readonly OperationRecord[], live: boolean): string;
+  automationOutcome(entry: {family?: string; requestId?: string; target: string; ruleId?: string}, operations: readonly OperationRecord[], live: boolean): string;
   automationRequest(path: string, method?: string, body?: object): Promise<Record<string, unknown>>;
   readAutomation(signal: AbortSignal): Promise<{settings: Record<string, unknown>}>;
   AutomationPage: ComponentType<{connection: {subscribe(listener: () => void): () => void; getState(): DashboardState}; live: boolean; control: boolean}>;
@@ -130,6 +130,16 @@ void test('admission is distinct from current operation outcomes; stale or unrel
   assert.match(page.automationOutcome(entry, [operation], false), /stale/);
   assert.match(page.automationOutcome({...entry,family:'power-set'},[operation],true),/No current operation/);
   assert.match(page.automationOutcome({...entry,family:'power-set'},[{...operation,family:'power-set'}],true),/awaiting completion/);
+});
+
+void test('an owner art show row reads its browser selection from the art owner and its moments by display (#1581)', () => {
+  const present = {requestId: 'present-one', target: 'art', family: 'art-auto', requestedBy: 'bunny/core', status: 'completed', result: 'succeeded', evidence: 'observed'} as OperationRecord;
+  assert.match(page.automationOutcome({ruleId: 'art-show', family: 'art-auto', requestId: 'present-one', target: 'browser'}, [present], true), /succeeded/);
+  assert.match(page.automationOutcome({ruleId: 'other-rule', family: 'art-auto', requestId: 'present-one', target: 'browser'}, [present], true), /No current operation/,
+    'only an owner show maps the browser surface to the art owner');
+  const moment = {requestId: 'moment-one', target: 'desk-display', family: 'moment-play', requestedBy: 'bunny/core', status: 'completed', result: 'succeeded', evidence: 'transmitted'} as OperationRecord;
+  assert.match(page.automationOutcome({ruleId: 'art-show', requestId: 'moment-one', target: 'desk-display'}, [moment], true), /succeeded.*transmitted/);
+  assert.equal(page.automationOutcome({ruleId: 'art-show', target: 'desk-display'}, [moment], true), 'No tracked command.', 'a refused surface names no operation');
 });
 
 void test('settings readback removes the response envelope before an explicit settings replacement', async context => {
