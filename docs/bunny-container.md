@@ -441,7 +441,14 @@ for every operator command.
 The gateway stays on host `127.0.0.1:18788` through the existing private HTTPS
 forwarder. Keep the existing `edge.privateProxy`, credential path
 `/run/secrets/bunny/edge.json`, `browserAccess: "trusted-loopback"`,
-`launcher: false`, `mcp: false` and no Wi-Fi proxy. Private-profile credential
+`launcher: false` and no Wi-Fi proxy. With `BUNNY_CONTROL=enabled`, `mcp` may
+be `true` or `false`. MCP serves loopback client credentials only, and the
+gateway refuses `/mcp` from the private-proxy origin. Its Host allowlist is the
+gateway listener's, `127.0.0.1` and `localhost` on its port. Turning it on in an installation is the owner's
+configuration change in stage 2 of
+[#1595](https://github.com/jimmie-potts/agent-device-hub/issues/1595). With
+control disabled, and on the host-local and private-proxy profiles, `mcp` stays
+`false`. Private-profile credential
 scope rules and the optional local producer's ingest-only grant remain enforced.
 The private-proxy and production profiles also admit one credential with the
 coding worker's own `coding-worker` role ([Hub #502](coding-worker.md)), which
