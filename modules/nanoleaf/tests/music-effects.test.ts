@@ -143,8 +143,21 @@ test('renderer fences binding and repeated windows without changing future outpu
   assert.equal(render.render({...sample(100), endpointId: 'other'}), null);
   assert.equal(render.render(sample(100, {generation: '9df02246-518e-44f2-9412-a942735e63ce'})), null);
   assert.deepEqual(colors(render.render(sample(200, {bands: {bass: 0, mid: 0, treble: 0}}))), Array(3).fill([50, 100, 40]));
-  assert.equal(render.render(sample(300, {discontinuity: true})), null);
-  assert.equal(render.render(sample(400)), null, 'a later window cannot resume a retired renderer');
+  assert.ok(render.render(sample(400, {discontinuity: true})), 'a missed window does not retire the renderer (#1588)');
+  assert.equal(render.render(sample(500, {endMonotonicMs: 900450})), null, 'source time that runs backwards retires it');
+  assert.equal(render.render(sample(600)), null, 'a later window cannot resume a retired renderer');
+});
+
+test('a discontinuity after a missed window continues the effect as an ordinary gap would', () => {
+  for (const effect of ['level-glow', 'bass-pulse', 'spectrum', 'traveling-wave', 'ambient'] as const) {
+    const patch = {halfLifeMs: 200, smoothingMs: 150};
+    const flagged = new MusicRenderer(recipe(effect, effect === 'bass-pulse' ? patch : {smoothingMs: 150}), layout('lines'), binding);
+    const plain = new MusicRenderer(recipe(effect, effect === 'bass-pulse' ? patch : {smoothingMs: 150}), layout('lines'), binding);
+    for (const renderer of [flagged, plain]) renderer.render(sample(0, {bands: {bass: 0.8, mid: 0.4, treble: 0.2}}));
+    const quiet = {rms: 0.1, bands: {bass: 0.1, mid: 0.05, treble: 0}};
+    assert.deepEqual(flagged.render(sample(200, {...quiet, discontinuity: true})), plain.render(sample(200, quiet)), effect);
+    assert.deepEqual(flagged.render(sample(300)), plain.render(sample(300)), `${effect} after the gap`);
+  }
 });
 
 test('source intake and renderer accept the first native window together, then expire without rendering', () => {

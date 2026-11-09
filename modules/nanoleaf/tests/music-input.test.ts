@@ -20,14 +20,19 @@ const message = (data: unknown = feature()) => ({
   traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', data,
 });
 
-test('the first native discontinuity initializes an empty binding; a later discontinuity retires it', () => {
+test('the first native discontinuity initializes a binding; a later one after a missed window keeps the input fresh', () => {
   const input = new MusicInput(binding, clock());
   assert.equal(input.accept(message({...feature(), discontinuity: true}), clock()), 'accepted');
   assert.equal(input.current(clock())?.elapsedMs, 0);
   assert.equal(input.accept(message(feature(2)), clock(100)), 'accepted');
-  assert.equal(input.accept(message({...feature(3), discontinuity: true}), clock(200)), 'discontinuity');
-  assert.equal(input.current(clock(200)), null);
-  assert.equal(input.accept(message(feature(4)), clock(300)), 'retired');
+  // Window 3 never arrives: the producer marks window 4 as a discontinuity, and the input carries on (#1588).
+  assert.equal(input.accept(message({...feature(4), discontinuity: true}), clock(300)), 'accepted');
+  assert.equal(input.current(clock(300))?.feature.sequence, 4);
+  assert.equal(input.current(clock(300))?.elapsedMs, 300);
+  assert.equal(input.accept(message(feature(5)), clock(400)), 'accepted');
+  // Only freshness ends it: with nothing newer, the latest window expires and the input is retired for good.
+  assert.equal(input.current(clock(800)), null);
+  assert.equal(input.accept(message(feature(6)), clock(800)), 'retired');
 });
 
 test('input bursts retain one immutable latest feature with source-relative elapsed time', () => {

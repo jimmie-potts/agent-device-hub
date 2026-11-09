@@ -74,8 +74,10 @@ export class MusicInput {
         || frame.generation !== this.#binding.generation) return 'wrong-binding';
     const previous = this.#latest?.feature;
     if (previous !== undefined && frame.sequence <= previous.sequence) return 'duplicate';
-    if (previous !== undefined && (frame.discontinuity
-        || frame.startMonotonicMs < previous.endMonotonicMs - 0.01 || frame.emittedMonotonicMs < previous.emittedMonotonicMs)) {
+    // A discontinuity marker after a missed window still moves forward in source time, so it is the latest feature (#1588).
+    // Source time that runs backwards cannot be ordered, and retires the input.
+    if (previous !== undefined && (frame.startMonotonicMs < previous.endMonotonicMs - 0.01
+        || frame.emittedMonotonicMs < previous.emittedMonotonicMs)) {
       this.retire();
       return 'discontinuity';
     }
