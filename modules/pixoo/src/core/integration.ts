@@ -3,7 +3,13 @@ import {requestIdentity} from './api.js';
 const neutralId=z.string().regex(/^[A-Za-z0-9_.-]{1,128}$/);
 export const sessionIdentity=z.object({provider:z.enum(['codex','claude']),client:z.enum(['cli','desktop','code','local']),hostId:neutralId,sourceId:neutralId,sessionId:neutralId}).strict();
 export const monitorFilter=z.object({q:z.string().max(120).optional(),provider:z.enum(['codex','claude']).optional(),projectId:neutralId.optional(),session:sessionIdentity.optional()}).strict();
-export const presentationConfiguration=z.object({version:z.literal(1),mode:z.enum(['monitor','media']),filter:monitorFilter,cadenceMs:z.number().int().min(1000).max(10000)}).strict();
+// Version 1 may still carry the retired Monitor/Media `mode` (ADR 0014): it is accepted and dropped, since the Pixoo's mode
+// now comes from the Hub, so an installed configuration or saved value needs no edit.
+export const presentationConfiguration=z.object({version:z.literal(1),mode:z.enum(['monitor','media']).optional(),filter:monitorFilter,cadenceMs:z.number().int().min(1000).max(10000)}).strict()
+ .transform(({version,filter,cadenceMs})=>({version,filter,cadenceMs}));
+/** The Hub's modes, which the Pixoo takes as its own native modes (ADR 0014). */
+export const hubMode=z.enum(['work','free','quiet']);
+export type HubMode=z.infer<typeof hubMode>;
 export const integrationAction=z.discriminatedUnion('operation',[
  z.object({operation:z.literal('mode'),mode:z.enum(['monitor','media'])}).strict(),
  z.object({operation:z.literal('view'),filter:monitorFilter,cadenceMs:z.number().int().min(1000).max(10000)}).strict(),
@@ -17,7 +23,7 @@ export const sharedMonitorAction=z.discriminatedUnion('operation',[
 ]);
 export type MonitorFilter=z.infer<typeof monitorFilter>;
 export type SessionIdentity=z.infer<typeof sessionIdentity>;
-export type PresentationConfiguration=z.infer<typeof presentationConfiguration>;
+export type PresentationConfiguration=z.output<typeof presentationConfiguration>;
 export type IntegrationAction=z.infer<typeof integrationAction>;
 export type IntegrationRequest=z.infer<typeof integrationRequest>;
 export interface PresentationStatus {

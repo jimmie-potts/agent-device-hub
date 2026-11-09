@@ -13,7 +13,7 @@ import {AutomationError, createAutomation, DEFAULT_INTERRUPT_SET, DEFAULT_SETTIN
 import type {ModeParticipant} from './mode-participants.js';
 import type {CoreChange} from './store.js';
 import type {Operation} from './operations.js';
-import {MODE_FAMILIES, createRoutines, routineCommand, type Routines, type PowerDispatchOptions} from './power-schedules.js';
+import {createRoutines, routineCommand, type Routines, type PowerDispatchOptions} from './power-schedules.js';
 import {createPowerLimits,PowerLimitStore,type PowerLimits} from './power-limits.js';
 import {checkAutomationDevices, type AutomationDevice} from './automation-devices.js';
 import {createArtSchedule,type ArtSchedule} from './art-schedule.js';
@@ -149,13 +149,13 @@ export class AutomationPart implements CorePart {
           : {outcome:'receipt',requestId};
       }} satisfies Omit<PowerDispatchOptions,'store'>;
     // Routines (#1297) take every configured device the core holds a record of; each action is one tracked dispatch of
-    // its family's 2.0 command with the fresh guards, and a mode-checked family carries `requireMode` for its owner (#1276).
+    // its family's 2.0 command with the fresh guards. The core checks an action's Hub-mode precondition itself and sends
+    // no `requireMode` (ADR 0014).
     this.#routines=createRoutines({...powerOptions,store,
       targets:()=>this.#configured.filter(device=>this.#device(device.id)!==undefined).map(device=>device.id),
       send:async(action,record,requestId,parent)=>{
         const {key,type,dataschema}=routineCommand(action);
-        const data={...action.data,...(action.requireMode!==undefined && MODE_FAMILIES.includes(action.family)?{requireMode:action.requireMode}:{}),
-          expectedConfigurationRevision:record.configurationRevision,expectedGeneration:record.generation};
+        const data={...action.data,expectedConfigurationRevision:record.configurationRevision,expectedGeneration:record.generation};
         const answer=await handle.dispatch({requestId,key,requestedBy:'bunny/core',parent,draft:{type,subject:action.target,dataschema,data}});
         return 'error' in answer ? {outcome:answer.error.code==='uncertain-result' || answer.error.code==='internal'?Outcome.uncertain:'not-sent',requestId,reason:answer.error.code}
           : {outcome:'receipt',requestId};

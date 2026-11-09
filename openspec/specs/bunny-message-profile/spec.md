@@ -292,7 +292,7 @@ The family's minor version 2.2 (Hub #679), registered under `https://bunny.inval
 
 ### Requirement: General device commands
 
-The profile SHALL define one command family for each kind of controller contract v1's closed command union: `power-set` (`on`), `brightness-set` (`percent`, 0 to 100), `scene-activate` (`sceneId`), `zone-power-set` (`zoneId`, `on`), `media-start` (`playlistId`), `media-control` (`action`) and `device-mode-set` (a native `mode`). `media-start` and `media-control` SHALL also take an optional `requireMode`, a native mode (#1276): the answering module SHALL refuse one the device does not advertise with `unsupported-capability`, and SHALL refuse with `invalid-state` at admission when the device's current mode differs or a `device-mode-set` is accepted and not completed, before any device write. Each SHALL be sent as `org.bunny.<entity>.<verb>.requested`, whose verb is the family's last word, and SHALL carry a `requestId` and optional `expectedConfigurationRevision` and `expectedGeneration` guards. The dashboard and MCP SHALL send both guards on a person's command, copied from the device record they showed; a module SHALL refuse a stale guard with `revision-conflict` before changing anything; and the Hub-mode fan-out SHALL send none. The envelope subject of every general command and of `moment-play` SHALL name the target device by its device ID, a routing ID unique across modules, and no payload SHALL name a device, controller, address, credential or raw protocol. Their replies and outcomes SHALL use the profile's reply and outcome payloads. `registerDeviceFamilies` SHALL register the device families after the core families. `commandSupported(capabilities, command)` SHALL report a command, `moment-play` included, as supported only when its capability is supported and the named scene, zone, playlist, action, native mode or mood is advertised, and a moment fits the device's maximum duration.
+The profile SHALL define one command family for each kind of controller contract v1's closed command union: `power-set` (`on`), `brightness-set` (`percent`, 0 to 100), `scene-activate` (`sceneId`), `zone-power-set` (`zoneId`, `on`), `media-start` (`playlistId`), `media-control` (`action`) and `device-mode-set` (a native `mode`). `media-start` and `media-control` SHALL keep their optional `requireMode` member, a native mode added by #1276, because removing a member from a closed 2.0 minor is not additive; no module SHALL admit by it: the Pixoo, the only module that ever read it, SHALL refuse a command that carries it with `invalid-request` before any device write (ADR 0014), and the core SHALL send none. Each SHALL be sent as `org.bunny.<entity>.<verb>.requested`, whose verb is the family's last word, and SHALL carry a `requestId` and optional `expectedConfigurationRevision` and `expectedGeneration` guards. The dashboard and MCP SHALL send both guards on a person's command, copied from the device record they showed; a module SHALL refuse a stale guard with `revision-conflict` before changing anything; and the Hub-mode fan-out SHALL send none. The envelope subject of every general command and of `moment-play` SHALL name the target device by its device ID, a routing ID unique across modules, and no payload SHALL name a device, controller, address, credential or raw protocol. Their replies and outcomes SHALL use the profile's reply and outcome payloads. `registerDeviceFamilies` SHALL register the device families after the core families. `commandSupported(capabilities, command)` SHALL report a command, `moment-play` included, as supported only when its capability is supported and the named scene, zone, playlist, action, native mode or mood is advertised, and a moment fits the device's maximum duration.
 
 #### Scenario: Each command reaches a device that supports it
 - **WHEN** each general command fixture is checked against its target device's capabilities
@@ -340,19 +340,19 @@ The profile SHALL define `playback-control`, a core command sent as `org.bunny.p
 
 ### Requirement: Hub-mode table
 
-The package SHALL publish one fixed table from the Hub's mode to each participating device kind's native mode, in its README and as `HUB_MODE_TABLE` with `nativeMode(kind, mode)`. Nanoleaf SHALL map Work, Quiet and Free one to one; Pixoo SHALL map Work and Quiet to Monitor and Free to Media. LIFX, Tidbyt and playback SHALL NOT take part. The table SHALL map only from the Hub's mode to a native mode, and a device's native mode SHALL NOT be stored as the Hub's mode.
+The package SHALL publish one fixed table from the Hub's mode to each participating device kind's native mode, in its README and as `HUB_MODE_TABLE` with `nativeMode(kind, mode)`. Nanoleaf and Pixoo SHALL each map Work, Quiet and Free one to one. LIFX, Tidbyt and playback SHALL NOT take part. The table SHALL map only from the Hub's mode to a native mode, and a device's native mode SHALL NOT be stored as the Hub's mode.
 
 #### Scenario: Each participating device kind
 - **WHEN** each Hub mode is mapped for Nanoleaf and for Pixoo
-- **THEN** each result is a native mode the device advertises, and the README table equals the code's
+- **THEN** each result equals the Hub mode, is a native mode the device advertises, and the README table equals the code's
 
 #### Scenario: Devices outside the Hub mode
 - **WHEN** a Hub mode is mapped for LIFX, Tidbyt or playback
 - **THEN** there is no native mode
 
 #### Scenario: A native mode is never the Hub's mode
-- **WHEN** a Pixoo mode is stored in the Hub's `mode` record, or the Hub's Work is requested from a Pixoo as a native mode
-- **THEN** the record is refused with `invalid-message` and the command is unsupported, and Monitor stands for both Work and Quiet
+- **WHEN** a value other than `work`, `free` or `quiet` is stored in the Hub's `mode` record, or `monitor` is requested from a Pixoo as a native mode
+- **THEN** the record is refused with `invalid-message` and the command is unsupported
 
 ### Requirement: Shared agent status
 

@@ -147,11 +147,11 @@ const speakerArtwork: Scenario = {
     act('the operator selects Monitor before the phone starts playing', h => dispatchOnce(h, 'operator', 'art-monitor', {
       key: `bunny.cmd.device-mode-set.${PIXOO_SECTION.config.device.id}`,
       draft: {type: 'org.bunny.device-mode.set.requested', subject: PIXOO_SECTION.config.device.id,
-        dataschema: schemaOf('device-mode-set'), data: {mode: 'monitor'}},
+        dataschema: schemaOf('device-mode-set'), data: {mode: 'work'}},
     }, 'req-art-monitor')),
     expect('Monitor is active and shows its dashboard before playback starts', h => {
       const display = h.reader.states<DisplayRecord>('pixoo-display', 'bunny/modules/pixoo')[0]?.data;
-      return display?.mode === 'monitor' && display.participating && display.showing === 'dashboard' || 'Monitor has not become active';
+      return display?.mode === 'work' && display.participating && display.showing === 'dashboard' || 'the status base has not become active';
     }, 5000),
     act('the phone plays the synthetic same-title track to Sony without artwork', h => {
       h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'A'});

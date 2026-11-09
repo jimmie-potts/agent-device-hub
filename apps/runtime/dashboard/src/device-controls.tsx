@@ -84,7 +84,7 @@ export function DeviceCard({record, owner, live, control, operations, operations
           <Select label="Playlist" value={playlist} options={choices(cap.media.playlistIds)} onChange={setPlaylist}/>
           <button type="button" disabled={playlist === ''} onClick={() => { run({family: 'media-start', data: {playlistId: playlist}}); }}>Play playlist</button>
           {cap.media.actions.map((value: MediaAction) => <button type="button" key={value} onClick={() => { run({family: 'media-control', data: {action: value}}); }}>{title(value)}</button>)}
-        </fieldset><p className="hint">{contentReason ?? 'Media controls are available.'} Pixoo playback needs Media mode. Nothing changes or restores its mode automatically.</p></div>}
+        </fieldset><p className="hint">{contentReason ?? 'Media controls are available.'} Pixoo playback is off in Work. Nothing changes or restores its mode automatically.</p></div>}
         {cap.moments.supported && <div className="edit"><h3>Moments</h3><fieldset disabled={disabled}>
           <Select label="Mood" value={mood} options={choices(cap.moments.moods)} onChange={setMood}/>
           <button type="button" disabled={mood === ''} onClick={() => { const requestId = crypto.randomUUID(); void action.run(blocked ?? {

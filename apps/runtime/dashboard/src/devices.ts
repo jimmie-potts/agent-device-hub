@@ -62,9 +62,13 @@ export function operationView(operation: OperationRecord): {text: string; locked
   }
 }
 
+/**
+ * Why content controls are off, or undefined. The Nanoleaf shows content only in Free; the Pixoo refuses playback starts
+ * in Work and admits them in Free and Quiet (ADR 0014). An unknown or pending mode blocks both.
+ */
 export function contentBlocked(record: DeviceRecord): string | undefined {
   if (record.kind !== 'pixoo' && record.kind !== 'nanoleaf') return undefined;
-  const needed = record.kind === 'pixoo' ? 'media' : 'free';
-  return record.desired.mode.status !== 'known' || record.desired.mode.value !== needed || record.pendingKinds.includes('device-mode-set')
-    ? `Content controls need ${needed === 'media' ? 'Media' : 'Free'} mode; select that mode explicitly first` : undefined;
+  const mode = record.desired.mode.status === 'known' && !record.pendingKinds.includes('device-mode-set') ? record.desired.mode.value : undefined;
+  if (record.kind === 'pixoo') return mode === 'free' || mode === 'quiet' ? undefined : 'Content controls are off in Work; select Free or Quiet explicitly first';
+  return mode === 'free' ? undefined : 'Content controls need Free mode; select that mode explicitly first';
 }

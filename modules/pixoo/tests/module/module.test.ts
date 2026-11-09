@@ -1,5 +1,5 @@
 import {expectedCard} from '../helpers/artwork-oracle.js';
-// The Pixoo module's behavior on the bus (Hub #843): Monitor follows the core's sessions, Media commands complete with
+// The Pixoo module's behavior on the bus (Hub #843, ADR 0014): the status base follows the core's sessions, playback commands complete with
 // their uploads, Now Playing follows the playback record, an offline device is unavailable without failing the module, a
 // bad image fails only its own job, nothing is sent twice, and a finished turn is dismissed for the Pixoo only.
 import assert from 'node:assert/strict';
@@ -50,7 +50,7 @@ const accepted = async (pending: Promise<{status: string; requestId: string}>): 
   assert.equal(result.status, 'accepted', JSON.stringify(result));
   return result.requestId;
 };
-const mode = (world: World, value: 'monitor' | 'media'): Promise<string> =>
+const mode = (world: World, value: 'work' | 'free' | 'quiet'): Promise<string> =>
   accepted(world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: value}));
 const solid = (rgb: [number, number, number]): Promise<Buffer> =>
   sharp({create: {width: 64, height: 64, channels: 3, background: {r: rgb[0], g: rgb[1], b: rgb[2]}}}).png().toBuffer();
@@ -80,7 +80,8 @@ void describe('Monitor', () => {
     await within(world, async () => {
       await world.start();
       const session = await world.publishSession({attention: [{id: {status: 'known', id: 'approve-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}]});
-      const requestId = await mode(world, 'monitor');
+      // The simulator's start is passive: the first mode command lets the status base draw. Work writes nothing of its own.
+      const requestId = await mode(world, 'work');
       assert.deepEqual((await world.outcome(requestId)).data, {requestId, result: 'succeeded', evidence: 'observed'});
       // The device shows the dashboard the presentation renders from the synced session: two frames, pulsing for approval.
       const layout = new DashboardPager().layout(monitorView({state: 'current', revision: session.revision, sessions: [session]}), Date.now());
@@ -88,7 +89,7 @@ void describe('Monitor', () => {
       assert.equal(expected.length, 2);
       await waitFor(() => JSON.stringify(world.device.state().shown?.digests) === JSON.stringify(expected) ? true : undefined, 'the approval dashboard on the device');
       const display = await waitFor(() => world.display()?.showing === 'dashboard' ? world.display() : undefined, 'the display record');
-      assert.deepEqual([display.mode, display.participating, display.monitor.matched, display.monitor.attention], ['monitor', true, 1, 1]);
+      assert.deepEqual([display.mode, display.base, display.participating, display.monitor.matched, display.monitor.attention], ['work', 'status', true, 1, 1]);
       // The approval resolves: the dashboard stops pulsing, and the device shows it.
       const resolved = await world.publishSession({attention: []});
       const calm = renderDashboard(new DashboardPager().layout(monitorView({state: 'current', revision: resolved.revision, sessions: [resolved]}), Date.now())).map(frameDigest);
@@ -104,7 +105,7 @@ void describe('Monitor', () => {
     await within(world, async () => {
       await world.start();
       await world.publishSession();
-      await mode(world, 'monitor');
+      await mode(world, 'free');
       await waitFor(() => world.logs().find(entry => entry.event === 'operation.failed' && entry.fields['bunny.operation'] === 'feed'), 'the failed render\'s record');
       await sleep(1500);
       assert.equal(world.logs().filter(entry => entry.event === 'operation.failed' && entry.fields['bunny.operation'] === 'feed').length, 1, 'one record for the run of failures');
@@ -255,9 +256,10 @@ void describe('Media', () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
-      const stale = await world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'monitor', expectedConfigurationRevision: 99});
+      const stale = await world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'work', expectedConfigurationRevision: 99});
       assert.equal(stale.status === 'rejected' && stale.error.error.code, 'revision-conflict');
-      const unsupported = await world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'work'});
+      // Monitor and Media are no longer Pixoo modes (ADR 0014): a stored routine that names one is unsupported.
+      const unsupported = await world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'monitor'});
       assert.equal(unsupported.status === 'rejected' && unsupported.error.error.code, 'unsupported-capability');
       const generation = await world.request('power-set', 'org.bunny.power.set.requested', {on: false, expectedGeneration: {epoch: 'other', sequence: 0}});
       assert.equal(generation.status === 'rejected' && generation.error.error.code, 'revision-conflict');
@@ -280,7 +282,7 @@ void describe('Now Playing', () => {
   void it('invalid artwork keeps the text card and safe refusal diagnostics recover on a valid image', async () => {
     const world = await World.open();
     await within(world, async () => {
-      await world.start(); await world.publishSession(); await mode(world, 'monitor');
+      await world.start(); await world.publishSession(); await mode(world, 'free');
       await waitFor(() => world.display()?.showing === 'dashboard' && world.device.state().shown !== null ? true : undefined, 'Monitor before playback');
       const baseline = {...playbackRecord(Date.now(), ++world.revision), playback: {status: 'known' as const, player: 'playing' as const, title: 'A', artist: 'H', controls: ['pause', 'next'] as ('pause' | 'next')[]}};
       const png = await sharp({create: {width: 1, height: 1, channels: 3, background: {r: 192, g: 24, b: 48}}}).png().toBuffer();
@@ -327,7 +329,7 @@ void describe('Now Playing', () => {
       await world.start();
       await waitFor(() => world.display()?.nowPlaying.card === true ? true : undefined, 'the ready2.1 paused record accepted through initial sync');
       await world.publishSession();
-      await mode(world, 'monitor');
+      await mode(world, 'free');
       await waitFor(() => world.display()?.showing === 'dashboard' && world.device.state().shown !== null ? true : undefined, 'Monitor active with its dashboard before playback resumes');
       // Startup sync occurs while Monitor is inactive. Resume after selecting Monitor supplies its actual popup trigger.
       const playing = {...baseline, revision: ++world.revision, artwork: ready.artwork};
@@ -369,12 +371,12 @@ void describe('Now Playing', () => {
     });
   });
 
-  void it('shows the playback record\'s card as a pop-up over Monitor', async () => {
+  void it('shows the playback record\'s card as a pop-up over the status base', async () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
       await world.publishSession();
-      await mode(world, 'monitor');
+      await mode(world, 'free');
       await waitFor(() => world.device.state().shown === null ? undefined : true, 'the dashboard');
       const record = await world.publishPlayback();
       const card = frameDigest(renderNowPlaying(nowPlayingView(record, {current: true})));
@@ -439,20 +441,20 @@ void describe('moments', () => {
     return result.status === 'rejected' ? result.error.error.code : result.status;
   };
 
-  void it('declares the moods and bound, and plays over Monitor without changing its mode, then returns and reports its ending', async () => {
+  void it('declares the moods and bound, and plays over the status base without changing its mode, then returns and reports its ending', async () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
       const capabilities = await waitFor(() => world.deviceRecord()?.capabilities.moments, 'the capability');
       assert.deepEqual(capabilities, {supported: true, moods: ['celebrate', 'setback', 'reminder'], maxDurationMs: 10_000, coversStatus: true, art: {formats: ['png', 'gif'], maxBytes: 163_840, notices: ['rain-forecast']}});
-      await world.outcome(await mode(world, 'monitor'));
+      await world.outcome(await mode(world, 'work'));
       await world.publishSession();
       const dashboard = await waitFor(() => world.device.state().shown?.digests[0], 'the dashboard on the device');
       const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-monitor')));
       await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device');
       const showing = await waitFor(() => world.display()?.showing === 'moment' ? world.display() : undefined, 'the moment in the display record');
-      assert.equal(showing.mode, 'monitor');
-      assert.deepEqual(showing.moments, {overMonitor: true, playing: 'm-monitor'});
+      assert.deepEqual([showing.mode, showing.base], ['work', 'status']);
+      assert.deepEqual(showing.moments, {overStatus: true, playing: 'm-monitor'});
       const outcome = await world.outcome(requestId);
       assert.equal(outcome.data.result, 'succeeded');
       assert.equal(outcome.data.evidence, 'transmitted');
@@ -462,26 +464,26 @@ void describe('moments', () => {
     });
   });
 
-  void it('refuses what the device does not offer, what Monitor does not admit, and a moment it has seen, across a restart', async () => {
+  void it('refuses what the device does not offer, what the status base in Work does not admit, and a moment it has seen, across a restart', async () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
       const send = (id: string, patch: object = {}): Promise<RequestResult> => world.request('moment-play', MOMENT, moment(id, patch));
       assert.equal(await refusal(send('m-mood', {mood: 'unknown-mood'})), 'unsupported-capability');
       assert.equal(await refusal(send('m-long', {durationMs: 10_001})), 'unsupported-capability');
-      await world.outcome(await mode(world, 'monitor'));
+      await world.outcome(await mode(world, 'work'));
       await world.publishSession();
       await waitFor(() => world.device.state().shown, 'the dashboard on the device');
       assert.equal(await refusal(send('m-flourish', {priorityClass: 'flourish', coversStatus: false})), 'invalid-state');
       assert.equal(await refusal(send('m-late', {startAtMs: Date.now() - 5000, toleranceMs: 1000})), 'invalid-state');
-      const off = await accepted(world.request(FAMILIES.moments, 'org.bunny.pixoo-moments.set.requested', {overMonitor: false}));
+      const off = await accepted(world.request(FAMILIES.moments, 'org.bunny.pixoo-moments.set.requested', {overStatus: false}));
       assert.deepEqual((await world.outcome(off)).data, {requestId: off, result: 'succeeded', evidence: 'observed'});
       await waitFor(() => {
         const moments = world.deviceRecord()?.capabilities.moments;
         return moments?.supported === true && !moments.coversStatus ? true : undefined;
       }, 'the capability follows the setting');
       assert.equal(await refusal(send('m-off')), 'invalid-state');
-      const on = await accepted(world.request(FAMILIES.moments, 'org.bunny.pixoo-moments.set.requested', {overMonitor: true}));
+      const on = await accepted(world.request(FAMILIES.moments, 'org.bunny.pixoo-moments.set.requested', {overStatus: true}));
       await world.outcome(on);
       await world.publishSession({attention: [{id: {status: 'known', id: 'approve-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}]});
       await waitFor(() => world.display()?.monitor.attention === 1 ? true : undefined, 'the attention');
@@ -498,11 +500,11 @@ void describe('moments', () => {
     });
   });
 
-  void it('ends over Monitor when attention arrives, with no replay', async () => {
+  void it('ends over the status base when attention arrives, with no replay', async () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
-      await world.outcome(await mode(world, 'monitor'));
+      await world.outcome(await mode(world, 'work'));
       await world.publishSession();
       await waitFor(() => world.device.state().shown, 'the dashboard on the device');
       const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-attention', {durationMs: 10_000})));
@@ -518,7 +520,7 @@ void describe('moments', () => {
     });
   });
 
-  void it('plays over Media and gives the playlist back at the same item', async () => {
+  void it('plays over a playing item and gives the playlist back at the same item', async () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
@@ -530,18 +532,18 @@ void describe('moments', () => {
       const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-media', {priorityClass: 'flourish', coversStatus: false})));
       await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device');
       const showing = await waitFor(() => world.display()?.showing === 'moment' ? world.display() : undefined, 'the moment in the display record');
-      assert.equal(showing.mode, 'media');
+      assert.deepEqual([showing.mode, showing.base], ['free', 'playback']);
       assert.equal(showing.player.intent, 'paused');
       assert.equal((await world.outcome(requestId)).data.result, 'succeeded');
       assert.equal(ended(world, requestId)?.ending, 'completed');
       await waitFor(() => world.device.state().shown?.digests[0] === picture ? true : undefined, 'the playlist\'s picture back');
       const back = await waitFor(() => world.display()?.player.intent === 'active' ? world.display() : undefined, 'the playlist back');
       assert.equal(back.player.itemId, playing.player.itemId);
-      assert.equal(back.mode, 'media');
+      assert.equal(back.mode, 'free');
     });
   });
 
-  void it('keeps playing when next is pressed during a moment over Media, and blanks the art when pause is', async () => {
+  void it('keeps playing when next is pressed during a moment over a playing item, and blanks the art when pause is', async () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
@@ -568,21 +570,24 @@ void describe('moments', () => {
     });
   });
 
-  void it('plays over Media with nothing playing, leaves the player alone and blanks the art afterwards', async () => {
+  void it('plays over the status base with nothing loaded in Free without cover permission, leaves the player alone and returns the dashboard', async () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
-      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-idle', {durationMs: 1000})));
+      await world.outcome(await mode(world, 'free'));
+      await world.publishSession();
+      const dashboard = await waitFor(() => world.device.state().shown?.digests[0], 'the dashboard on the device');
+      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-idle', {durationMs: 1000, priorityClass: 'flourish', coversStatus: false})));
       await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device');
       assert.equal((await world.outcome(requestId)).data.result, 'succeeded');
       assert.equal(ended(world, requestId)?.ending, 'completed');
-      await waitFor(() => world.device.state().shown?.digests[0] === frameDigest(new Uint8Array(12288)) ? true : undefined, 'the blank frame');
-      assert.equal(world.display()?.mode, 'media');
+      await waitFor(() => world.device.state().shown?.digests[0] === dashboard ? true : undefined, 'the dashboard back on the device');
+      assert.deepEqual([world.display()?.mode, world.display()?.base], ['free', 'status']);
       assert.equal(world.display()?.player.intent, 'stopped');
     });
   });
 
-  void it('refuses over Media while an item is paused, since nothing could repaint it', async () => {
+  void it('refuses while an item is paused, since nothing could repaint it', async () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
@@ -600,7 +605,7 @@ void describe('moments', () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
-      await world.outcome(await mode(world, 'monitor'));
+      await world.outcome(await mode(world, 'work'));
       await world.publishSession();
       await waitFor(() => world.device.state().shown, 'the dashboard on the device');
       const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-restart', {startAtMs: Date.now() + 200, durationMs: 10_000})));
@@ -949,83 +954,170 @@ void describe('commands and the catalog', () => {
   });
 });
 
-// Hub #1276: a media command's optional `requireMode`, checked in the admission queue, so a routine never displaces Monitor.
-void describe('Media-mode precondition', () => {
-  const requireMedia = {requireMode: 'media'} as const;
-  /** One imported picture in one playlist that the device lists, with the device record showing the playlist. */
-  const refusals = (world: World): number => world.logs().filter(entry => entry.event === 'command.rejected' && entry.fields['bunny.code'] === 'invalid-state').length;
+// ADR 0014: the Pixoo takes the Hub's Work, Free and Quiet as policy only. Work refuses playback starts and stops what
+// plays; Quiet writes its brightness and leaving it restores the remembered one; startup applies nothing; and a command
+// that carries `requireMode` is refused.
+void describe('Hub mode', () => {
+  const refusals = (world: World, code: string): number => world.logs().filter(entry => entry.event === 'command.rejected' && entry.fields['bunny.code'] === code).length;
+  const brightness = async (world: World, percent: number): Promise<void> => {
+    const requestId = await accepted(world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent}));
+    assert.equal((await world.outcome(requestId)).data.result, 'succeeded');
+  };
 
-  void it('applies a start that requires Media while Media shows, with the unchanged reply, and refuses it while Monitor shows before any device write', async () => {
+  void it('advertises the Hub\'s modes, saves each without touching the player, and reports it as the desired mode (AC1)', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      const record = await waitFor(() => world.deviceRecord(), 'the device record');
+      assert.deepEqual(record.capabilities.modes, {supported: true, values: ['work', 'free', 'quiet']});
+      assert.deepEqual(record.desired.mode, {status: 'known', value: 'free'}, 'Free before any mode');
+      for (const value of ['free', 'work'] as const) {
+        const requestId = await mode(world, value);
+        assert.deepEqual((await world.outcome(requestId)).data, {requestId, result: 'succeeded', evidence: 'observed'}, value);
+        await waitFor(() => world.deviceRecord()?.desired.mode.status === 'known' && world.display()?.mode === value ? true : undefined, `${value} in the records`);
+        assert.deepEqual(world.deviceRecord()?.desired.mode, {status: 'known', value});
+        assert.deepEqual([world.display()?.base, world.display()?.player.intent, world.display()?.pendingMode], ['status', 'stopped', null]);
+      }
+      assert.equal(world.device.state().writes, 0, 'no brightness write without Quiet');
+    });
+  });
+
+  void it('refuses playback starts in Work, plays them in Free, and Work stops playback with no resume on Free (AC2)', async () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
       const {list, rendition} = await readyPlaylist(world);
-      // Media is the module's initial mode: the precondition holds, and the reply is the plain acceptance.
-      const started = await world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id, ...requireMedia});
-      assert.equal(started.status, 'accepted', JSON.stringify(started));
-      assert.deepEqual((await world.outcome(started.requestId)).data, {requestId: started.requestId, result: 'succeeded', evidence: 'transmitted'});
-      const paused = await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause', ...requireMedia}));
-      assert.deepEqual((await world.outcome(paused)).data, {requestId: paused, result: 'succeeded', evidence: 'observed'});
-      await world.outcome(await mode(world, 'monitor'));
-      assert.equal(world.display()?.mode, 'monitor');
-      const before = world.device.state(), refused = refusals(world);
+      await world.outcome(await mode(world, 'work'));
+      await world.publishSession();
+      await waitFor(() => world.display()?.participating === true ? true : undefined, 'the status base');
+      const before = world.device.state(), refused = refusals(world, 'invalid-state');
       const results = [
-        await world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id, ...requireMedia}),
-        await world.request('media-control', 'org.bunny.media.control.requested', {action: 'resume', ...requireMedia}),
-        await world.request(FAMILIES.show, 'org.bunny.pixoo-media.show.requested', {renditionId: rendition.id, ...requireMedia}),
+        await world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id}),
+        await world.request(FAMILIES.show, 'org.bunny.pixoo-media.show.requested', {renditionId: rendition.id}),
       ];
-      for (const result of results) assert.equal(result.status === 'rejected' && result.error.error.code, 'invalid-state', JSON.stringify(result));
-      assert.equal(results[0]?.status === 'rejected' && results[0].error.error.detail, 'the Pixoo is in monitor, not media');
+      for (const result of results) {
+        assert.deepEqual(result.status === 'rejected' && [result.error.error.code, result.error.error.detail], ['invalid-state', 'playback is not admitted in Work'], JSON.stringify(result));
+      }
+      assert.equal(refusals(world, 'invalid-state'), refused + 2, 'each refusal is a command.rejected record');
       assert.deepEqual([world.device.state().uploads, world.device.state().writes], [before.uploads, before.writes], 'nothing reached the device');
-      assert.equal(world.display()?.mode, 'monitor', 'the mode did not change');
-      assert.equal(world.display()?.player.state, 'paused', 'the paused selection is untouched');
-      assert.equal(refusals(world), refused + 3, 'each refusal is recorded like other admission refusals');
-      // Without the precondition the start behaves as before: it takes the display from Monitor.
-      const plainStart = await world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id});
-      const plain = await accepted(Promise.resolve(plainStart));
-      assert.deepEqual(Object.keys(started).sort(), Object.keys(plainStart).sort(), 'the reply with the precondition has the shape of one without it');
-      assert.deepEqual((await world.outcome(plain)).data, {requestId: plain, result: 'succeeded', evidence: 'transmitted'});
-      await waitFor(() => world.display()?.mode === 'media' ? true : undefined, 'Media after the plain start');
-      // A required mode outside the Pixoo's own refuses before admission: the show's closed schema refuses it as a message,
-      // and the general families, whose schema takes any native mode name, refuse it as a capability the Pixoo lacks.
-      const other = await world.request(FAMILIES.show, 'org.bunny.pixoo-media.show.requested', {renditionId: rendition.id, requireMode: 'work'});
-      assert.equal(other.status === 'rejected' && other.error.error.code, 'invalid-message');
-      const unadvertised = await world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause', requireMode: 'free'});
-      assert.deepEqual(unadvertised.status === 'rejected' && [unadvertised.error.error.code, unadvertised.error.error.detail], ['unsupported-capability', 'the Pixoo does not offer that mode']);
-      // A view change keeps the mode, so even while it applies it does not stand in the way of a command that requires
-      // the current mode: in Monitor the change awaits the player's pause, and the pause command is sent before it settles.
-      await world.outcome(await mode(world, 'monitor'));
-      const [viewed, during] = await Promise.all([
-        world.request(FAMILIES.monitor, 'org.bunny.pixoo-monitor.set.requested', {filter: {}, cadenceMs: 1000}),
-        world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause', requireMode: 'monitor'}),
-      ]);
-      assert.equal(viewed.status, 'accepted', JSON.stringify(viewed));
-      assert.equal(during.status, 'accepted', JSON.stringify(during));
-      await world.outcome(viewed.requestId); await world.outcome(during.requestId);
-      assert.equal(world.display()?.mode, 'monitor');
+      await world.outcome(await mode(world, 'free'));
+      const started = await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id}));
+      assert.deepEqual((await world.outcome(started)).data, {requestId: started, result: 'succeeded', evidence: 'transmitted'});
+      await waitFor(() => world.display()?.base === 'playback' && world.display()?.player.intent === 'active' ? true : undefined, 'the playback base');
+      // Work stops it: the mode command completes as that stop, the status base returns, and the item is kept.
+      const working = await mode(world, 'work');
+      assert.deepEqual((await world.outcome(working)).data, {requestId: working, result: 'succeeded', evidence: 'observed'});
+      const stopped = await waitFor(() => world.display()?.base === 'status' && world.display()?.participating === true ? world.display() : undefined, 'the status base after Work');
+      assert.deepEqual([stopped.player.intent, stopped.player.playlistId], ['stopped', list.id]);
+      // A resume and a restart-with-changes are starts too, refused in Work while something is selected.
+      for (const action of ['resume', 'restart-with-changes'] as const) {
+        const result = await world.request('media-control', 'org.bunny.media.control.requested', {action});
+        assert.equal(result.status === 'rejected' && result.error.error.code, 'invalid-state', action);
+      }
+      const uploads = world.device.state().uploads;
+      await world.outcome(await mode(world, 'free'));
+      await sleep(600);
+      assert.equal(world.display()?.player.intent, 'stopped', 'nothing resumes when Free returns');
+      assert.ok(world.device.state().uploads - uploads <= 1, 'at most the dashboard repainted');
     });
   });
 
-  void it('refuses a start that requires Media while a mode change admitted just before is still pending, then admits it', async () => {
+  void it('writes the Quiet brightness once, restores the remembered brightness on leaving, and a brightness set in Quiet lasts until the next mode (AC3)', async () => {
+    const world = await World.open({section: {...SECTION, quietBrightness: 20}});
+    await within(world, async () => {
+      await world.start();
+      await brightness(world, 100);
+      let writes = world.device.state().writes;
+      const quiet = await mode(world, 'quiet');
+      assert.deepEqual((await world.outcome(quiet)).data, {requestId: quiet, result: 'succeeded', evidence: 'transmitted'});
+      assert.deepEqual([world.device.state().brightness, world.device.state().writes], [20, writes + 1], 'the Quiet level, written once');
+      await brightness(world, 40);
+      assert.equal(world.device.state().brightness, 40, 'honoured during Quiet');
+      writes = world.device.state().writes;
+      const work = await mode(world, 'work');
+      assert.deepEqual((await world.outcome(work)).data, {requestId: work, result: 'succeeded', evidence: 'transmitted'});
+      assert.deepEqual([world.device.state().brightness, world.device.state().writes], [100, writes + 1], 'the brightness requested before Quiet');
+      // Work in Work and Free from Work write nothing; Quiet received in Quiet rewrites the Quiet level.
+      writes = world.device.state().writes;
+      for (const value of ['work', 'free'] as const) assert.equal((await world.outcome(await mode(world, value))).data.evidence, 'observed', value);
+      assert.equal(world.device.state().writes, writes);
+      await world.outcome(await mode(world, 'quiet'));
+      await brightness(world, 60);
+      const again = await mode(world, 'quiet');
+      assert.equal((await world.outcome(again)).data.evidence, 'transmitted');
+      assert.equal(world.device.state().brightness, 20, 'a Quiet reapply rewrites the Quiet level');
+    });
+  });
+
+  void it('applies nothing at startup: a restart in Quiet reports Quiet and writes nothing until the next mode command', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      await brightness(world, 80);
+      await world.outcome(await mode(world, 'quiet'));
+      assert.equal(world.device.state().brightness, 20, 'the default Quiet brightness');
+      await world.restart();
+      const record = await waitFor(() => world.deviceRecord()?.desired.mode.status === 'known' ? world.deviceRecord() : undefined, 'the record after the restart');
+      assert.deepEqual(record.desired.mode, {status: 'known', value: 'quiet'});
+      const writes = world.device.state().writes;
+      await sleep(600);
+      assert.equal(world.device.state().writes, writes, 'no brightness or player write at startup');
+      const free = await mode(world, 'free');
+      assert.equal((await world.outcome(free)).data.evidence, 'transmitted');
+      assert.equal(world.device.state().brightness, 80, 'the remembered brightness, kept across the restart');
+    });
+  });
+
+  void it('keeps a stopped item stopped across a restart, so the status base returns and admits art in Free', async () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
       const {list} = await readyPlaylist(world);
-      await world.outcome(await mode(world, 'monitor'));
-      // Both commands are sent back to back. Admissions run one at a time, and the mode change stays pending until its
-      // outcome commits, after the presentation has applied it, so the start is always checked while it is pending.
+      await world.outcome(await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id})));
+      await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'stop'})));
+      await world.restart();
+      const restored = await waitFor(() => world.display(), 'the display after the restart');
+      assert.deepEqual([restored.base, restored.player.intent, restored.player.playlistId], ['status', 'stopped', list.id]);
+      await world.outcome(await mode(world, 'free'));
+      await world.publishSession();
+      await waitFor(() => world.display()?.participating === true ? true : undefined, 'the status base drawn');
+      const moment = await accepted(world.request('moment-play', 'org.bunny.moment.play.requested', {momentId: 'after-restart', mood: 'celebrate', durationMs: 1000,
+        priorityClass: 'flourish', coversStatus: false, startAtMs: Date.now(), toleranceMs: 10_000}));
+      assert.deepEqual((await world.outcome(moment)).data, {requestId: moment, result: 'succeeded', evidence: 'transmitted'});
+      // The retained item still resumes in Free.
+      await world.outcome(await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'resume'})));
+      await waitFor(() => world.display()?.player.intent === 'active' ? true : undefined, 'the resumed item');
+    });
+  });
+
+  void it('refuses a command that carries requireMode with invalid-request, and a start while a mode change is pending with invalid-state', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      const {list, rendition} = await readyPlaylist(world);
+      const before = world.device.state(), refused = refusals(world, 'invalid-request');
+      for (const requireMode of ['media', 'monitor', 'free']) {
+        const start = await world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id, requireMode});
+        assert.deepEqual(start.status === 'rejected' && [start.error.error.code, start.error.error.detail], ['invalid-request', 'the Pixoo takes no mode precondition from a caller'], requireMode);
+        const control = await world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause', requireMode});
+        assert.equal(control.status === 'rejected' && control.error.error.code, 'invalid-request', requireMode);
+      }
+      assert.equal(refusals(world, 'invalid-request'), refused + 6);
+      // The show's closed schema no longer has the member, so it breaks the schema.
+      const show = await world.request(FAMILIES.show, 'org.bunny.pixoo-media.show.requested', {renditionId: rendition.id, requireMode: 'media'});
+      assert.equal(show.status === 'rejected' && show.error.error.code, 'invalid-message');
+      assert.deepEqual([world.device.state().uploads, world.device.state().writes], [before.uploads, before.writes], 'nothing reached the device');
+      // Admissions run one at a time, and a mode change stays pending until its outcome commits, so a start sent right
+      // behind it is checked while it is pending.
       const [changing, started] = await Promise.all([
-        world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'media'}),
-        world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id, ...requireMedia}),
+        world.request('device-mode-set', 'org.bunny.device-mode.set.requested', {mode: 'free'}),
+        world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id}),
       ]);
       assert.equal(changing.status, 'accepted');
       assert.deepEqual(started.status === 'rejected' && [started.error.error.code, started.error.error.detail], ['invalid-state', 'a mode change is pending']);
-      assert.deepEqual((await world.outcome(changing.requestId)).data, {requestId: changing.requestId, result: 'succeeded', evidence: 'observed'});
-      assert.equal(world.device.state().uploads, 0, 'the refused start uploaded nothing');
-      assert.equal(world.display()?.mode, 'media');
-      // Once the change has completed, the same start is admitted and plays.
-      const again = await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id, ...requireMedia}));
-      assert.equal((await world.outcome(again)).data.result, 'succeeded');
+      await world.outcome(changing.requestId);
+      const plain = await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id}));
+      assert.equal((await world.outcome(plain)).data.result, 'succeeded');
       await waitFor(() => world.display()?.player.playlistId === list.id ? true : undefined, 'the playing playlist');
     });
   });

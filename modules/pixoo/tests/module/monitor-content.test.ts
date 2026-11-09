@@ -22,7 +22,8 @@ void it('reads pending Monitor without rendering, pages projected entity IDs and
   const clock = new ManualClock(), device = new FakeDeviceAdapter({clock});
   const player = await Player.open({store: new MemoryPlaybackStore(), device, clock});
   let renders = 0;
-  const monitor = new MonitorPresentation(player, {save: async () => {}, clock: () => clock.now(),
+  // Passive, as the simulator's start is: the status base waits for a command, so the first reads see it pending.
+  const monitor = new MonitorPresentation(player, {save: async () => {}, clock: () => clock.now(), passive: true,
     renderDashboard: () => { renders++; return [new Uint8Array(12288).fill(23)]; },
     renderCard: () => { renders++; return new Uint8Array(12288).fill(42); }});
   const synthetic = syntheticDashboardViews()[0]?.view.snapshot?.sessions[0]; assert.ok(synthetic);
@@ -45,7 +46,7 @@ void it('reads pending Monitor without rendering, pages projected entity IDs and
     assert.deepEqual((await readMonitorContent(input, 'monitor-frame.1.0', request()) as ErrorBody).error.code, 'not-found');
     const aborted = new AbortController(); aborted.abort();
     assert.equal((await readMonitorContent(input, 'monitor', {query: {}, signal: aborted.signal}) as ErrorBody).error.code, 'cancelled');
-    await monitor.configure({operation: 'mode', mode: 'monitor'});
+    await monitor.setMode('free');
     for (let index = 0; index < 20; index++) await Promise.resolve();
     const rendered = json<{rendition: {frames: string[]}}>(await readMonitorContent(input, 'monitor', request()));
     const ref = rendered.rendition.frames[0]; assert.ok(ref !== undefined);

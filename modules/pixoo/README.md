@@ -57,8 +57,11 @@ artwork mounted; drafts survive tab switches. Advanced Library, Playlists,
 Player, Monitor and Settings remain available. The Display face also renders
 optional shell-owned Work/Free/Quiet controls for a saved individual Hub-mode
 exception. This uses the existing `context.ui.ModeChoice` slot without another
-connection. Quiet and Work both request native Monitor; Monitor alone cannot
-identify that saved choice. The native Monitor/Media buttons remain independent.
+connection. The Pixoo takes the Hub's modes as its own
+([ADR 0014](../../docs/decisions/0014-pixoo-follows-the-hub-mode.md)), so its
+reported mode names the saved choice directly; the card has no separate native
+mode buttons. The Player page's Display mode select still sends Work, Free or
+Quiet to the device directly.
 
 The picker shows six referenced media previews per page. Visible GIFs animate
 from decoded frames; pause, reduced motion, hidden pages and unmount release
@@ -121,8 +124,9 @@ time is a local estimate, with no polling or physical-telemetry claim.
 
 Monitor reads copied session facts and cached preview frames through bounded
 content references. Search, filters, cadence and Now Playing choices stay local
-until explicitly applied. Show monitor and Select Media use the existing mode
-commands; reading the page never activates presentation. Dismissal acknowledges
+until explicitly applied. The page offers the shell's saved-mode choice in place
+of the retired Show monitor and Select Media buttons; reading the page never
+activates presentation. Dismissal acknowledges
 only the Pixoo consumer. Session labels link to the shared Sessions page. A
 title-only or cached-preview change advances the display record revision even
 when its small summary is unchanged, refreshing the page without polling.
@@ -155,9 +159,10 @@ The module's section of the runtime's [configuration file](../../apps/runtime/RE
 {"pixoo": {
   "device": {"id": "pixoo-local", "label": "Desk Pixoo", "address": "192.168.1.50", "profile": "pixoo64-hosted-2026-10-01"},
   "hostedGif": {"bind": "0.0.0.0", "port": 41240, "origin": "http://192.168.1.10:41240"},
-  "presentation": {"version": 1, "mode": "monitor", "filter": {}, "cadenceMs": 1000},
+  "presentation": {"version": 1, "filter": {}, "cadenceMs": 1000},
   "nowPlaying": {"version": 1, "media": "popup"},
-  "playback": "presented"
+  "playback": "presented",
+  "quietBrightness": 20
 }}
 ```
 
@@ -169,7 +174,11 @@ The module's section of the runtime's [configuration file](../../apps/runtime/RE
 - `hostedGif` is the listener the device fetches hosted GIFs from; a real
   device with the hosted profile needs it.
 - `presentation` and `nowPlaying` are where the settings begin. Once the module
-  saves its own, those win.
+  saves its own, those win. A version 1 `presentation` may still carry the
+  retired `mode` (`monitor` or `media`); it is accepted and ignored, as is the
+  same member in a saved value, so an installed configuration needs no edit.
+- `quietBrightness`, an integer from 1 to 100 (20 when omitted), is the
+  brightness Quiet applies.
 - `playback` names the `playback/2.0` or `playback/2.1` record Now Playing follows; without it,
   the playback owner's first record.
 - The Pixoo's local API takes no token, so the module reads no secret.
@@ -214,8 +223,12 @@ and a recovery after a warning is one record.
 It serves, through sync and as live states:
 - `device/2.3`, kind `pixoo`, including exact-art moments and `rain-forecast` notices. The hosted
   route publishes `device/2.4`, which adds the extended staging declaration;
-- `pixoo-display/2.0`: Monitor's mode, filter, cadence and sessions, what the
-  presentation shows, Now Playing, and the player's state, item and last error;
+- `pixoo-display/2.1`: the Hub mode and any pending mode, the base on the display
+  (`status` or `playback`), whether the status dashboard is drawn and current
+  (`participating`), its filter, cadence and sessions, what the presentation
+  shows, Now Playing, the player's state, item and last error, and the moments
+  setting as `overStatus`. The module no longer publishes `pixoo-display/2.0`,
+  whose closed enums named Monitor and Media; its schema stays registered;
 - `pixoo-rendition/2.0` (2.1 above 1,000 frames) and `pixoo-playlist/2.0`: one record per catalog entry,
   with a removal when one goes.
 
@@ -274,43 +287,79 @@ remains unknown, and a read never validates frames or writes hosted checks.
 Original media stays private. Invalid queries, missing references and cancelled
 reads return shared refusal codes without changing owner state.
 
+### Hub mode and the two bases
+
+The Pixoo takes the Hub's Work, Free and Quiet as its native modes, straight from
+the Hub-mode fan-out ([ADR 0014](../../docs/decisions/0014-pixoo-follows-the-hub-mode.md)).
+It saves the last mode it was given, Free before any, and reports it as the
+device record's desired mode. A mode is policy only: it never chooses the content
+and never pauses the player. Startup, restart and sync apply no mode.
+
+- **Status base.** The status dashboard rests on the display whenever the player
+  holds no item: nothing selected, a stop, a clear or a finished playlist. A
+  stopped item waits behind it and can still be resumed in Free or Quiet.
+- **Playback base.** A started playlist or rendition holds the display until it
+  is stopped or cleared; a paused item stays on the display.
+- **Work** admits the status base, the Now Playing pop-up, and moments or art
+  whose request may cover status. It refuses `media-start`, `pixoo-media-show`,
+  resume and restart-with-changes with `invalid-state` ("playback is not
+  admitted in Work") and the whole Now Playing takeover. Selecting Work stops a
+  playing or paused item, or a start still capturing one; nothing resumes when
+  Free returns.
+- **Free** admits everything. **Quiet** admits what Free admits, writes the
+  Quiet brightness once on entry and, on leaving, the brightness last requested
+  before Quiet. A brightness set during Quiet lasts until the next mode command:
+  a Quiet command in Quiet writes the Quiet level again, while Work or Free in
+  the same mode writes nothing. Work and Free write no brightness of their own.
+  With no brightness requested since the start, entering Quiet reads the device
+  first and remembers what it reports; a device that reports none leaves nothing
+  to restore, and leaving Quiet then writes nothing.
+
+A stopped or finished item stays stopped across a restart, a screen-off and the
+player's own pause after an uncertain write or external control, so the status
+base returns in front of it. A failed or uncertain status write holds the status
+base, as a failed dashboard once stopped Monitor, until a mode or player command
+or until the device answers again after it was unavailable. External control
+holds it until a mode or player command, so it never paints over what may be the
+owner's own picture. A simulated Pixoo's start is passive until a mode or player
+command; a real device's start draws the status base at once when the player
+holds no item.
+
 ### Moments
 
 [ADR 0013](../../docs/decisions/0013-pixoo-moment-interludes.md) records the
 decision ([#1287](https://github.com/jimmie-potts/agent-device-hub/issues/1287)).
 `capabilities.moments` lists `celebrate`, `setback` and `reminder` and a 10 s
-limit. Its `coversStatus` follows the owner's setting, which is on by default and
-sits on the Monitor page.
+limit. Its `coversStatus` follows the owner's "moments over status" setting
+(`overStatus`), which is on by default and sits on the Monitor page; a value saved
+before ADR 0014 as `overMonitor` reads as the same setting.
 
-Exact art over resting Media requires a stopped player, with or without a saved
-item, as accepted in #1450. An explicit pause, including an empty pause, refuses
-art; an empty pause survives restart.
-
-A moment never changes the mode. Over Media it pauses a playing playlist under the
-same guard Now Playing uses, then resumes it at the same item. A player with nothing
-loaded, including an empty one Monitor left paused, takes the moment without being
-touched, and so does a stopped or finished playlist. One black frame follows it,
-because the module can't return the device to what it showed before, so a stopped
-item's frozen picture is lost, though the item can still resume. A paused item refuses
-it, because nothing could repaint that item, and a restart, a Monitor visit or
-turning the screen off leaves a saved item paused. A Now Playing takeover, a player
-in error and a display left unknown by an uncertain write or external control refuse
-it too. That last refusal lasts until the next start, resume or clear; a restart
-forgets it only on an empty player. Over Monitor it plays only with `coversStatus` set, the setting
-on and a current session source that shows nothing needing attention, and the
-current dashboard follows it. A flourish cannot set `coversStatus`, so a moment
-meant to appear over Monitor must be an `event`.
+A moment never changes the mode or the base. Over the status base it needs the
+dashboard on the display, the owner's setting on, a current session source and no
+session needing attention; in Work only, the request must also allow covering
+status (`coversStatus`), and in Free and Quiet it need not. The current dashboard
+follows it. Over the playback base it pauses a playing item under the same guard
+Now Playing uses, then resumes it at the same item; a paused item refuses it,
+because nothing could repaint that item. A pending mode change, a start still
+capturing its selection, a Now Playing takeover, the screen off or an offline
+device refuse it on either base. No saved pause refuses a moment over the status
+base: the empty-player pause is no longer kept, and its stored `emptyIntent` key
+is left in place and never read. Exact art follows the same rules as any other
+moment. A flourish cannot set `coversStatus`, so in Work a moment meant to cover
+status must be an `event`.
 
 Attention ends a moment at once, with the ending `preempted` and no replay. An
 explicit command that changes what plays ends it as `interrupted`. A manual pause,
-stop or start is never resumed over, and a next or previous keeps playing. When
-nothing follows a moment that showed, one blank frame replaces its picture. The
+stop or start is never resumed over, and a next or previous keeps playing. Work
+ends a moment as `interrupted`; a change to or from Quiet or Free does not. When
+nothing follows a moment that showed, such as after a manual pause of a playing
+item, one blank frame replaces its picture. The
 picture stays after an uncertain write, which is not rolled back, and once the
 device was offline or under external control, since what it shows by then may be
 the owner's. A moment that never reached the device has no
 `moment-ended`; its outcome says why. After a restart its command reports
 `uncertain`, it does not play, and its ID stays refused for 24 hours. A restart
-during a moment over Media leaves its picture on until someone resumes.
+during a moment over a playing item leaves its picture on until someone resumes.
 
 `momentContent` in `src/presentation/moment-content.ts` chooses a mood picture,
 and `renderMomentContent` draws it in the render worker. A core-forwarded
@@ -319,9 +368,7 @@ plays its exact frames and timing through that same presentation and writer.
 An unknown, expired or incompatible reference is refused before any effect;
 it never plays a mood in its place. A moment without art keeps its behavior.
 The core owns scheduled-art pin arbitration; the module does not invent pin state.
-An explicit pause survives restart even without a selected checkpoint. Stop or
-Clear deliberately releases that empty-player pause; Resume still requires a
-selection. A Monitor view change cancels waiting art or interrupts playing art.
+A status view change cancels waiting art or interrupts playing art.
 
 ### Private generated art
 
@@ -398,34 +445,31 @@ Each command goes to `bunny.cmd.<family>.<device id>`:
 
 | Family | What it does | Its outcome |
 | --- | --- | --- |
-| `device-mode-set` | Monitor or Media | `observed` |
-| `media-start` | Starts a playlist the library holds, listed among the device's capabilities or beyond the 256 listed; optional `requireMode` | Its first upload's |
-| `media-control` | `pause`, `stop`, `clear`; `resume`, `next`, `previous`, `restart-with-changes`; optional `requireMode` | `observed`; its upload's |
+| `device-mode-set` | `work`, `free` or `quiet`, saved as policy | `observed`; the Quiet brightness write's when it writes brightness |
+| `media-start` | Starts a playlist the library holds, listed among the device's capabilities or beyond the 256 listed | Its first upload's |
+| `media-control` | `pause`, `stop`, `clear`; `resume`, `next`, `previous`, `restart-with-changes` | `observed`; its upload's |
 | `brightness-set`, `power-set` | Brightness, screen on or off | The device write's |
-| `pixoo-media-show` | Shows one rendition, with an optional playback policy and `requireMode` | Its upload's |
-| `pixoo-monitor-set` | Monitor's filter and cadence | `observed` |
-| `pixoo-now-playing-set` | Now Playing in Media: `off`, `popup` or `whole` | `observed` |
-| `pixoo-moments-set` | Whether a moment may cover Monitor: `overMonitor` | `observed` |
+| `pixoo-media-show` | Shows one rendition, with an optional playback policy | Its upload's |
+| `pixoo-monitor-set` | The status view's filter and cadence | `observed` |
+| `pixoo-now-playing-set` | Now Playing over the playback base: `off`, `popup` or `whole` | `observed` |
+| `pixoo-moments-set` | Whether a moment may cover the status base: `overStatus` | `observed` |
 | `moment-play` | One time-boxed moment over the current base (see [Moments](#moments)) | Its write's, once it ended and its base was given back; `moment-ended` commits with it |
 | `pixoo-playlist-change` | Creates, renames, sets options, items or order, duplicates or deletes a playlist | `observed` |
 | `pixoo-asset-change` | Imports media (inline up to 160 KiB, or a file staged in `incoming/` under its SHA-256), renders an asset again or deletes it | `observed` |
 | `pixoo-notice-dismiss` | Dismisses a finished turn on the Pixoo only | `observed` |
 
-`media-start`, `media-control` and `pixoo-media-show` take an optional
-`requireMode`, `monitor` or `media`
-([#1276](https://github.com/jimmie-potts/agent-device-hub/issues/1276)). The
-module checks it in its admission queue, so the check and the admission cannot
-race: when the Pixoo is in the other mode, or a `device-mode-set` is accepted
-and not yet completed, the command is refused with `invalid-state` and a
-`command.rejected` record before any device write. A mode the Pixoo does not
-advertise is refused with `unsupported-capability`, as a `device-mode-set` for
-it would be; a view change (`pixoo-monitor-set`) keeps the mode and does not
-count as a pending change. Nothing is queued, deferred or retried. A command
-without `requireMode` is admitted as before, so a start, resume or restart
-still takes the display from Monitor; one that requires `monitor` is admitted
-in Monitor and then takes the display to Media as any start does. A routine
-(#1297) sends `requireMode: "media"` so a scheduled playlist never displaces
-agent status.
+The mode rules are checked in the admission queue, so the check and a mode change
+cannot race, and each refusal is a `command.rejected` record before any device
+write. A `media-start` or `media-control` that carries `requireMode` is refused
+with `invalid-request`: the Pixoo takes no mode precondition from a caller
+([ADR 0014](../../docs/decisions/0014-pixoo-follows-the-hub-mode.md)); a
+`pixoo-media-show` no longer has the member, so one carrying it breaks its
+schema. A start, show, resume or restart-with-changes is refused with
+`invalid-state` in Work, or while a `device-mode-set` is accepted and not yet
+completed. A `device-mode-set` naming a mode other than `work`, `free` or `quiet`,
+such as a stored routine's `monitor`, is refused with `unsupported-capability`.
+Nothing is queued, deferred or retried. A routine's own Hub-mode precondition
+(`runsOnlyIn`) is the core's, checked against the device record before it sends.
 
 A staged import reads `incoming/<sha256>` in the module's private folder and
 checks its size and hash. API 1.3's upload contribution prepares one input at a
@@ -490,7 +534,7 @@ outcome's only log record. The rules for an outcome:
   `observed` on the core's commit instead: the core commits the acknowledgment
   before it accepts, and the session's state at its new revision is the
   evidence.
-- **Held back by Now Playing.** While a song plays and Media wants a `whole`
+- **Held back by Now Playing.** While a song plays in Free or Quiet and Now Playing wants a `whole`
   takeover, a start, show, resume or restart pauses for the card at once,
   rather than at the next tick. When that pause cancels the command's upload,
   the command is `succeeded` with `observed`: the selection it committed is
@@ -506,9 +550,9 @@ accepted again and changes nothing; with other content it is refused with
 command accepted before a restart and never completed is reported `uncertain`
 at the next start and never runs again.
 
-As ControlService did, a command that starts playback takes the display back
-from Monitor, and any other player command interrupts Monitor. A stop, pause or
-clear therefore cancels a pending Media selection at once.
+As ControlService did, a command that starts playback takes the display from
+the status base, and any other player command interrupts it. A stop, pause,
+clear or a `device-mode-set` to Work therefore cancels a pending selection at once.
 
 `pixoo-notice-dismiss` sends `notice-acknowledge` to the core for the consumer
 ID `pixoo`, so the finished turn clears on the Pixoo only.
@@ -529,8 +573,9 @@ answered, with success or with an error, for a command or for one of the
 module's own paints, never a probe.
 Only a probe of the device sets `observed`.
 
-A real device's start restores a saved Monitor selection; a simulated Pixoo's
-start stays passive, as the Pixoo service's simulator did.
+A real device's start draws the status base when the player holds no item and
+applies no mode; a simulated Pixoo's start stays passive until a mode or player
+command, as the Pixoo service's simulator did.
 
 ### Isolation
 
@@ -551,7 +596,7 @@ recovery behavior. Artwork-only changes for the same observation and unchanged
 playback source/view let an admitted upload finish; the latest eligible card
 then follows through the same writer and cadence. A replaced observation or
 view still cancels obsolete work, including a same-text source handoff.
-An artwork update follows Monitor attention and Media
+An artwork update follows the status base's attention rule and the Now Playing
 `off`, `popup` or `whole` policy; it does not extend or reopen a pop-up. Safe
 refusal/recovery records use `bunny.operation` `playback` and fixed registry
 codes, without image bytes or association tokens.
@@ -579,7 +624,7 @@ codes, without image bytes or association tokens.
 - **Rendering.** Monitor dashboards and Now Playing cards render in worker
   calls. A failed render keeps the last picture, is tried again at the next
   cadence, and logs one warning per run of failures. The dashboard renders only
-  while Monitor participates; in Media its layout stays current for the display
+  while the status base is drawn; while an item plays its layout stays current for the display
   record, but nothing renders, where a session that changed every second cost
   57 renders a minute before. A changed card keeps the card already shown until
   it is ready, so a pop-up never flashes the dashboard. A tick reports a change
@@ -605,7 +650,7 @@ with the playback module (#929) and its simulated speakers.
 After the established runtime upgrade, [#1054](https://github.com/jimmie-potts/agent-device-hub/issues/1054)
 owns a separately authorized visible-device trial. Confirm the installed and
 running revision, health and explicit private Pixoo target before replacing its
-content. Preserve the operator's selected mode, Media setting and playlist for
+content. Preserve the operator's selected mode, Now Playing setting and playlist for
 the return step.
 
 1. In Monitor without blocking attention, start an owner-selected Sony track
@@ -707,7 +752,7 @@ acknowledgment.
 | --- | --- | --- |
 | Monitor | `device-mode-set` `monitor`, with one agent session waiting for approval | One session filling the screen: a 20x20 tile at the top left in the activity's color with its icon, the provider mark and the activity word to its right, an amber APPROVAL chip, the session's label in two lines of large letters, and a summary strip at the bottom with the session count, `!1` in amber and the source and collector marks at the bottom right. The tile and chip pulse dimmer every 500 ms. Once approved, the chip goes and the picture holds still. |
 | A Media item | Import an image, put it in a playlist and send `media-start` | The image scaled into 64x64, letterboxed in black; a GIF plays at its frame delays within the device profile. It stays for its dwell (30 s for a still, three plays for an animation) before the next item. |
-| A Now Playing card | Monitor showing a session, then the playback record starts a track | For ten seconds: a green play marker and PLAYING at the top, a dark divider line, the title in light grey rows below the divider, then the artist in blue, all at full brightness for the whole ten seconds while the song plays on. A paused track shows an amber marker and PAUSED. After ten seconds Monitor's dashboard returns. With Now Playing set to `whole` in Media, the same bright card replaces the playlist for as long as the song plays, past 30 s, and the playlist comes back once the song stops. The card dims, with a `?` marker, only once the playback module marks the speaker stale. |
+| A Now Playing card | The status base showing a session, then the playback record starts a track | For ten seconds: a green play marker and PLAYING at the top, a dark divider line, the title in light grey rows below the divider, then the artist in blue, all at full brightness for the whole ten seconds while the song plays on. A paused track shows an amber marker and PAUSED. After ten seconds the status dashboard returns. With Now Playing set to `whole` and a playlist playing in Free or Quiet, the same bright card replaces the playlist for as long as the song plays, past 30 s, and the playlist comes back once the song stops. The card dims, with a `?` marker, only once the playback module marks the speaker stale. |
 
 ## Provenance
 

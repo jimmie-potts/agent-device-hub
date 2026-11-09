@@ -40,6 +40,12 @@ it('the real producer stages exact frames through the core and its moment transm
     digests.push(frameDigest(await sharp(image.bytes).removeAlpha().raw().toBuffer()));
   }
   assert.equal(device.state().uploads, 0, 'real staging alone never plays');
+  // The simulator's start is passive; Free lets the status base draw, and in Free art may cover it without permission (ADR 0014).
+  const free = await coreHandle.dispatch({key: 'bunny.cmd.device-mode-set.desk-pixoo-art', requestId: 'art-free', requestedBy: 'bunny/parts/operator',
+    draft: {type: 'org.bunny.device-mode.set.requested', subject: 'desk-pixoo-art', dataschema: 'https://bunny.invalid/events/device-mode-set/2.0', data: {mode: 'free'}}});
+  assert.deepEqual(free, {status: 'accepted', requestId: 'art-free'});
+  await waitFor(() => coreHandle.operation('art-free')?.result === 'succeeded');
+  await waitFor(() => device.state().shown !== null, 5000, 'the status base');
   const empty = await coreHandle.dispatch({key: 'bunny.cmd.moment-play.desk-pixoo-art', requestId: 'exact-art-empty', requestedBy: 'bunny/core',
     draft: {type: 'org.bunny.moment.play.requested', subject: 'desk-pixoo-art', dataschema: 'https://bunny.invalid/events/moment-play/2.1',
       data: {momentId: 'exact-art-empty', mood: 'celebrate', durationMs: 1000, priorityClass: 'flourish', coversStatus: false,
@@ -48,9 +54,10 @@ it('the real producer stages exact frames through the core and its moment transm
   await waitFor(() => device.state().shown?.frames === 8);
   assert.deepEqual(device.state().shown?.digests, digests);
   await waitFor(() => coreHandle.operation('exact-art-empty')?.result === 'succeeded');
-  await waitFor(() => device.state().shown?.digests[0] === frameDigest(new Uint8Array(12288)));
+  // The status base comes back, not a blank frame.
+  await waitFor(() => device.state().shown !== null && device.state().shown?.frames !== 8 && device.state().shown?.digests[0] !== frameDigest(new Uint8Array(12288)));
   const mode = await coreHandle.dispatch({key: 'bunny.cmd.device-mode-set.desk-pixoo-art', requestId: 'art-monitor', requestedBy: 'bunny/parts/operator',
-    draft: {type: 'org.bunny.device-mode.set.requested', subject: 'desk-pixoo-art', dataschema: 'https://bunny.invalid/events/device-mode-set/2.0', data: {mode: 'monitor'}}});
+    draft: {type: 'org.bunny.device-mode.set.requested', subject: 'desk-pixoo-art', dataschema: 'https://bunny.invalid/events/device-mode-set/2.0', data: {mode: 'work'}}});
   assert.deepEqual(mode, {status: 'accepted', requestId: 'art-monitor'});
   await waitFor(() => coreHandle.operation('art-monitor')?.result === 'succeeded');
   const moment = await coreHandle.dispatch({key: 'bunny.cmd.moment-play.desk-pixoo-art', requestId: 'exact-art-play', requestedBy: 'bunny/core',

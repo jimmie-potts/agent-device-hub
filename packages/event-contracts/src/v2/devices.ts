@@ -15,7 +15,7 @@ export type MediaAction = 'pause' | 'resume' | 'stop' | 'next' | 'previous' | 'r
 export type Capabilities = {
   power: Unsupported | {supported: true};
   brightness: Unsupported | {supported: true; minimum: 0; maximum: 100};
-  /** The device's own native modes, such as Nanoleaf `work` or Pixoo `monitor`. Never the Hub's mode. */
+  /** The device's own native modes, such as Nanoleaf `work`. Nanoleaf and Pixoo advertise the Hub's three values; the record still never stores the Hub's mode. */
   modes: Unsupported | {supported: true; values: string[]};
   /**
    * `art`, from `device/2.2`: the device stages these formats and sizes and plays a moment that names its copy.
@@ -70,8 +70,8 @@ export type BrightnessSetRequest = CommandGuards & {percent: number};
 export type SceneActivateRequest = CommandGuards & {sceneId: string};
 export type ZonePowerSetRequest = CommandGuards & {zoneId: string; on: boolean};
 /**
- * The native mode a media command requires the device to be in (Hub #1276), optional. The module refuses the command
- * with `invalid-state` at admission, before any device write, when its current mode differs or a mode change is pending.
+ * Retained only because removing a member from a closed 2.0 minor is not additive (Hub #1276, withdrawn by ADR 0014).
+ * No module admits by it: the Pixoo refuses a command that carries it with `invalid-request`, and the core sends none.
  */
 export type RequiredMode = {requireMode?: string};
 export type MediaStartRequest = CommandGuards & RequiredMode & {playlistId: string};
@@ -131,13 +131,13 @@ export function extendedArtStageSupported(device: Pick<Message<DeviceRecord>, 'd
 /** The device kinds that take part in the Hub mode. LIFX joins under #415; Tidbyt and playback do not take part. */
 export type HubModeKind = 'nanoleaf' | 'pixoo';
 /**
- * The fixed Hub-mode table (#695's settled decisions): the native mode each participating device kind is asked for
- * when the Hub selects a mode. It maps one way only. Pixoo's Monitor serves both Work and Quiet, so a device's mode
- * can never establish the Hub's, and the Hub's selection lives only in `mode/2.0`.
+ * The fixed Hub-mode table (#695's settled decisions, ADR 0014): the native mode each participating device kind is asked
+ * for when the Hub selects a mode. Nanoleaf and Pixoo both take the Hub's values one to one. It maps one way only: a
+ * device's mode never establishes the Hub's, whose selection lives only in `mode/2.x`.
  */
 export const HUB_MODE_TABLE: Readonly<Record<HubModeKind, Readonly<Record<Mode, string>>>> = Object.freeze({
   nanoleaf: Object.freeze({work: 'work', free: 'free', quiet: 'quiet'}),
-  pixoo: Object.freeze({work: 'monitor', free: 'media', quiet: 'monitor'}),
+  pixoo: Object.freeze({work: 'work', free: 'free', quiet: 'quiet'}),
 });
 const participating = (kind: string): kind is HubModeKind => Object.hasOwn(HUB_MODE_TABLE, kind);
 /** The native mode a device of `kind` is asked for in the Hub's `mode`, or undefined when the kind does not take part. */

@@ -40,13 +40,14 @@ export function PixooCard({context, device, display, live, playlists, command}: 
   const pendingChanges = session?.source?.kind !== 'media' && savedSession !== undefined && savedSession.playlistRevision !== session?.playlist.revision;
   const media = [...selection.values()][0];
   const deviceBlocked = blocked !== undefined || !current || device.availability !== 'available';
-  const contentBlocked = deviceBlocked || device.desired.mode.status !== 'known' || device.desired.mode.value !== 'media';
+  // Work admits no playback start (ADR 0014); Free and Quiet admit everything.
+  const contentBlocked = deviceBlocked || device.desired.mode.status !== 'known' || device.desired.mode.value === 'work';
   const actionDisabled = (action: MediaAction): boolean => contentBlocked || !device.capabilities.media.supported || !device.capabilities.media.actions.includes(action)
     || session === null || session === undefined || (action === 'restart-with-changes' && (session.source?.kind === 'media' || savedSession?.repeat !== true));
   const desiredBrightness = device.desired.brightness.status === 'known' ? device.desired.brightness.value : undefined;
   const screenOn = device.desired.power.status === 'known' ? device.desired.power.value : undefined;
   return <article className="light-card pixoo-card" aria-label="Pixoo display">
-    <header className="light-card-heading"><div><h3>{device.label ?? 'Pixoo'}</h3><p>{!current ? 'Stale' : display?.mode === 'monitor' ? 'Monitor' : state?.state ?? 'Media'}</p></div>
+    <header className="light-card-heading"><div><h3>{device.label ?? 'Pixoo'}</h3><p>{!current ? 'Stale' : display?.base === 'status' ? 'Monitor' : state?.state ?? 'Media'}</p></div>
       <details className="light-options"><summary aria-label="Pixoo options">⋯</summary><div className="light-options-body">
         <a href="#/module/pixoo/library">Library</a><a href="#/module/pixoo/playlists">Advanced playlists</a>
         <a href="#/module/pixoo/monitor">Monitor</a><a href="#/module/pixoo/settings">Settings</a>
@@ -78,8 +79,6 @@ export function PixooCard({context, device, display, live, playlists, command}: 
               <input aria-label="Brightness" type="range" min="0" max="100" step="1" value={brightness ?? desiredBrightness ?? 50} disabled={deviceBlocked} onChange={event => { setBrightness(Number(event.target.value)); }}/>
             </label><button type="submit" className="secondary" disabled={deviceBlocked || brightness === undefined || brightness === desiredBrightness}>Apply brightness</button>
           </form>}
-          {device.capabilities.modes.supported && <div className="actions">{device.capabilities.modes.values.filter(mode => mode === 'monitor' || mode === 'media').map(mode =>
-            <button type="button" className="secondary" key={mode} disabled={deviceBlocked || mode === display?.mode} onClick={() => { send('device-mode-set', {mode}); }}>{mode === 'monitor' ? 'Show monitor' : 'Select Media'}</button>)}</div>}
         </>}
         <p className="light-note">Preview is illustrative. Screen on does not resume playback.</p>
       </>

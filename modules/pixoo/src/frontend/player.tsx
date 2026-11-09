@@ -98,7 +98,7 @@ function Controls({context, device, display, sample, current, playlists, command
       </div>
       {device.capabilities.modes.supported && <>
         <Select label="Display mode" value={mode} onChange={setMode}
-          options={[{value: '', label: 'Choose…'}, ...device.capabilities.modes.values.map(value => ({value, label: value === 'media' ? 'Media' : value === 'monitor' ? 'Monitor' : value}))]}/>
+          options={[{value: '', label: 'Choose…'}, ...device.capabilities.modes.values.map(value => ({value, label: value.charAt(0).toUpperCase() + value.slice(1)}))]}/>
         <div className="actions"><button type="button" className="secondary"
           disabled={blocked !== undefined || mode === '' || mode === display?.mode} onClick={() => { run('device-mode-set', {mode}); }}>Set display mode</button></div>
       </>}

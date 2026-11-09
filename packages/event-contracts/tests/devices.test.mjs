@@ -105,7 +105,7 @@ test('each command is supported by its target device, and the capability rule re
     [pixoo.capabilities, 'media-start', {playlistId: 'playlist-2'}, 'a playlist the device does not list'],
     [{...pixoo.capabilities, media: {...pixoo.capabilities.media, actions: ['pause']}}, 'media-control', {action: 'clear'}, 'an action the device does not list'],
     [beam.capabilities, 'device-mode-set', {mode: 'work'}, 'no native modes'],
-    [pixoo.capabilities, 'device-mode-set', {mode: 'work'}, 'the Hub mode name, which Pixoo does not advertise'],
+    [pixoo.capabilities, 'device-mode-set', {mode: 'monitor'}, 'a retired Pixoo mode, which it no longer advertises (ADR 0014)'],
     [{...wall.capabilities, power: {supported: false}}, 'power-set', {on: true}, 'no power control'],
     [{...wall.capabilities, brightness: {supported: false}}, 'brightness-set', {percent: 10}, 'no brightness control'],
   ];
@@ -143,14 +143,17 @@ test('Nanoleaf maps the Hub modes one to one, and the wall advertises each of th
   }
 });
 
-test('Pixoo maps Work and Quiet to Monitor and Free to Media, and advertises only its own modes', () => {
+test('Pixoo maps the Hub modes one to one, advertises each of them, and no longer offers Monitor or Media (ADR 0014)', () => {
   const pixoo = device('pixoo-desk');
   assert.equal(pixoo.kind, 'pixoo');
-  assert.deepEqual(['work', 'free', 'quiet'].map(mode => nativeMode('pixoo', mode)), ['monitor', 'media', 'monitor']);
+  assert.deepEqual(['work', 'free', 'quiet'].map(mode => nativeMode('pixoo', mode)), ['work', 'free', 'quiet']);
   for (const mode of ['work', 'free', 'quiet']) {
+    assert.equal(nativeMode('pixoo', mode), mode);
     assert.equal(commandSupported(pixoo.capabilities, {family: 'device-mode-set', data: {requestId: 'req-1', mode: nativeMode('pixoo', mode)}}), true, mode);
-    assert.equal(commandSupported(pixoo.capabilities, {family: 'device-mode-set', data: {requestId: 'req-1', mode}}), false,
-      `the Hub's ${mode} is not a Pixoo mode`);
+  }
+  for (const retired of ['monitor', 'media']) {
+    assert.equal(commandSupported(pixoo.capabilities, {family: 'device-mode-set', data: {requestId: 'req-1', mode: retired}}), false,
+      `${retired} is no longer a Pixoo mode`);
   }
 });
 
@@ -161,8 +164,7 @@ test('LIFX, Tidbyt and playback do not take part in the Hub mode', () => {
 });
 
 test('a device mode is never stored as the Hub mode', () => {
-  // Pixoo's Monitor serves both Work and Quiet, so a Monitor observation cannot say which Hub mode was chosen.
-  assert.equal(nativeMode('pixoo', 'work'), nativeMode('pixoo', 'quiet'));
+  // The table maps one way only; the Hub's selection lives in mode/2.x, never in a device record.
   const v = validator();
   for (const native of ['monitor', 'media']) {
     const record = structuredClone(core.valid.mode);
@@ -271,7 +273,7 @@ test('a held record names the operation whose uncertain write holds it, and is n
   }
 });
 
-test('a media command may require a native mode, which the device must be in at admission (Hub #1276)', () => {
+test('a media command keeps its optional requireMode member in the closed 2.0 schema, which no module admits by (ADR 0014)', () => {
   const v = validator();
   for (const base of ['media-start', 'media-control']) {
     assert.equal(v.validate(patched(base, {'/data/requireMode': 'media'})).ok, true, `${base} with a required mode`);
@@ -279,7 +281,8 @@ test('a media command may require a native mode, which the device must be in at 
     assert.equal(v.validate(patched(base, {'/data/requireMode': null})).ok, true, `${base} without one, as before`);
     assert.equal(v.validate(patched(base, {'/data/requireMode': 'Media Mode'})).error.code, 'invalid-message', `${base} with a mode that is not a native mode name`);
   }
-  // The required mode is admission's concern, not the capability rule's: a supported command stays supported with it.
+  // The member stays only because removing it from a closed minor is not additive. The Pixoo refuses a command that carries it
+  // with invalid-request at admission, and the core sends none, so the capability rule ignores it.
   const pixoo = device('pixoo-desk');
-  assert.equal(commandSupported(pixoo.capabilities, {family: 'media-start', data: {requestId: 'req-1', playlistId: 'playlist-1', requireMode: 'media'}}), true);
+  assert.equal(commandSupported(pixoo.capabilities, {family: 'media-start', data: {requestId: 'req-1', playlistId: 'playlist-1', requireMode: 'free'}}), true);
 });

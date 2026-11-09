@@ -149,3 +149,25 @@ it('maps device results and errors by what they prove about effects',()=>{
  // A detail never repeats an exception's text.
  expect(JSON.stringify(errorCompletion(new Error('secret text')))).not.toContain('secret text');
 });
+// ADR 0014: Quiet remembers the brightness last requested before it. With none requested since the start, it reads the
+// device first, so leaving Quiet can restore the panel; with none readable either, leaving Quiet writes nothing.
+it('entering Quiet with no brightness known reads the device, so leaving Quiet restores what it reported',async()=>{
+ const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock});
+ const player=await Player.open({store,device,clock}),monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now()});
+ let remembered:number|undefined;
+ const control=new PixooControl({player,monitor,quiet:{level:20,remembered:()=>remembered,remember:percent=>{remembered=percent;}}});
+ const settle=async<T>(pending:Promise<T>):Promise<T>=>{let done=false;void pending.finally(()=>{done=true;});for(let i=0;i<50&&!done;i++)await flush(clock);return pending;};
+ try{
+  const evidence=player.getDisplayEvidence.bind(player);let probed=false;
+  const probe=player.probe.bind(player);
+  player.probe=async(options)=>{probed=true;return probe(options);};
+  // The fake's probe reports no brightness; stand in for a device that reports 70.
+  player.getDisplayEvidence=()=>{const value=evidence();return probed&&value.brightness.observed===null?{...value,brightness:{...value.brightness,observed:{value:70,atMs:0}}}:value;};
+  expect(await settle(control.mode('quiet'))).toMatchObject({result:'succeeded',evidence:'transmitted'});
+  expect(probed).toBe(true);expect(remembered).toBe(70);
+  const writes=()=>device.operations.filter(o=>o.kind==='setBrightness');
+  expect(await settle(control.mode('free'))).toMatchObject({result:'succeeded',evidence:'transmitted'});
+  expect(remembered).toBeUndefined();expect(writes()).toHaveLength(2);
+  expect(player.getDisplayEvidence().requestedBrightness).toBe(70);
+ }finally{control.close();await monitor.close();await player.close();}
+});

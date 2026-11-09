@@ -71,13 +71,17 @@ try {
     await apply.focus(); await apply.press('Enter');
     await page.getByRole('status').filter({hasText: 'Completed: succeeded.'}).waitFor();
     assert.equal(requests(), 1); assert.equal(world.pixooState().sent, 0);
-    await page.getByRole('button', {name: 'Show monitor', exact: true}).click();
+    // The Pixoo follows the Hub mode (ADR 0014): the page offers the saved mode choice, and the status base rests on the
+    // display in every mode while nothing plays. The simulator starts passive; the first mode command lets it draw.
+    const choice = page.locator('section[aria-label="Pixoo monitor"] [data-mode-target]');
+    await choice.getByRole('button', {name: 'Work', exact: true}).click();
     await page.getByText('Monitor presentation active', {exact: true}).waitFor();
     await page.getByRole('img', {name: 'Exact monitor preview', exact: true}).waitFor();
     for (let attempt = 0; world.pixooState().sent === 0 && attempt < 100; attempt++) await delay(20);
     assert.equal(requests(), 2); assert.ok(world.pixooState().sent > 0);
-    await page.getByRole('button', {name: 'Select Media', exact: true}).click();
-    await page.getByText('Monitor presentation inactive', {exact: true}).waitFor();
+    await choice.getByRole('button', {name: 'Free', exact: true}).click();
+    await choice.getByText(/Free/).first().waitFor();
+    await page.getByText('Monitor presentation active', {exact: true}).waitFor();
     await page.getByRole('combobox', {name: 'Now playing in Media', exact: true}).selectOption('popup');
     assert.equal(requests(), 3, 'choosing an option is a draft');
     await page.getByRole('button', {name: 'Set now playing', exact: true}).click();

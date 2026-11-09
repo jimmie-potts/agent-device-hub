@@ -19,12 +19,12 @@ try {
       if (direction === 'card-to-advanced') {
         // Give the sibling an older completed attempt before testing a newer HTTP-only unknown.
         if (surface === 'player') {
-          await advanced.getByRole('combobox', {name: 'Display mode', exact: true}).selectOption('monitor');
+          await advanced.getByRole('combobox', {name: 'Display mode', exact: true}).selectOption('work');
           await advanced.getByRole('button', {name: 'Set display mode', exact: true}).click();
           await advanced.getByRole('status').filter({hasText: 'Completed: succeeded.'}).waitFor();
-          await advanced.getByRole('combobox', {name: 'Display mode', exact: true}).selectOption('media');
+          await advanced.getByRole('combobox', {name: 'Display mode', exact: true}).selectOption('free');
         } else {
-          await advanced.getByRole('combobox', {name: 'Device mode', exact: true}).selectOption('monitor');
+          await advanced.getByRole('combobox', {name: 'Device mode', exact: true}).selectOption('work');
           await advanced.getByRole('status').filter({hasText: 'Completed: succeeded.'}).waitFor();
         }
         await page.route('**/api/v2/commands/brightness-set', route => route.fulfill({status: 503, contentType: 'application/json', body: '{"error":{"code":"uncertain-result","retryable":false}}'}));
@@ -36,9 +36,9 @@ try {
         await card.getByRole('status').filter({hasText: 'Completed: succeeded.'}).waitFor();
         await page.route('**/api/v2/commands/device-mode-set', route => route.fulfill({status: 503, contentType: 'application/json', body: '{"error":{"code":"uncertain-result","retryable":false}}'}));
         if (surface === 'player') {
-          await advanced.getByRole('combobox', {name: 'Display mode', exact: true}).selectOption('monitor');
+          await advanced.getByRole('combobox', {name: 'Display mode', exact: true}).selectOption('work');
           await advanced.getByRole('button', {name: 'Set display mode', exact: true}).click();
-        } else await advanced.getByRole('combobox', {name: 'Device mode', exact: true}).selectOption('monitor');
+        } else await advanced.getByRole('combobox', {name: 'Device mode', exact: true}).selectOption('work');
         await advanced.getByRole('status').filter({hasText: 'Uncertain result.'}).waitFor();
       }
       const retained = await page.evaluate(() => sessionStorage.getItem('bunny-device-attempts'));

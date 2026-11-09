@@ -103,7 +103,7 @@ void test('selection saves and completes together before independent native comm
     assert.equal(w.sent.length, 0);
     assert.deepEqual(await w.select(command('work', 'req-work', 0)), {status: 'accepted'});
     assert.equal(w.state().mode, 'work'); assert.equal(w.state().revision, 1);
-    assert.deepEqual(w.sent.map(action => [action.draft.subject, action.draft.data]), [['wall', {mode: 'work'}], ['pixoo-1', {mode: 'monitor'}]]);
+    assert.deepEqual(w.sent.map(action => [action.draft.subject, action.draft.data]), [['wall', {mode: 'work'}], ['pixoo-1', {mode: 'work'}]]);
     assert.equal(w.flags.postcommit, 1); assert.equal(w.flags.ended, 1);
     assert.deepEqual(await w.select(command('work', 'req-work-again', 1)), {status: 'accepted'});
     assert.equal(w.sent.length, 4); assert.notEqual(w.sent[0]?.requestId, w.sent[2]?.requestId);

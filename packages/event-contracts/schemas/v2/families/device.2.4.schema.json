@@ -247,7 +247,7 @@
       }
     },
     "nativeMode": {
-      "description": "A mode the device itself offers, such as Nanoleaf's `work` or Pixoo's `monitor`. Never the Hub's mode.",
+      "description": "A mode the device itself offers, such as Nanoleaf's `work`; Nanoleaf and Pixoo offer the Hub's `work`, `free` and `quiet` one to one (ADR 0014). Never stored as the Hub's mode.",
       "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"
     },
     "mediaAction": {

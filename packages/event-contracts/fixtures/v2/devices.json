@@ -149,8 +149,9 @@
      "modes": {
       "supported": true,
       "values": [
-       "monitor",
-       "media"
+       "work",
+       "free",
+       "quiet"
       ]
      },
      "moments": {
@@ -208,7 +209,7 @@
      },
      "mode": {
       "status": "known",
-      "value": "monitor"
+      "value": "free"
      }
     },
     "observed": {
@@ -487,8 +488,9 @@
      "modes": {
       "supported": true,
       "values": [
-       "monitor",
-       "media"
+       "work",
+       "free",
+       "quiet"
       ]
      },
      "moments": {
@@ -553,7 +555,7 @@
      },
      "mode": {
       "status": "known",
-      "value": "monitor"
+      "value": "free"
      }
     },
     "observed": {
@@ -1038,7 +1040,7 @@
    "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
    "data": {
     "requestId": "req-device-mode-1",
-    "mode": "media"
+    "mode": "free"
    },
    "expiresat": "2026-10-06T12:00:05.000Z"
   },
@@ -1143,7 +1145,7 @@
    "set": {
     "/data/desired/mode": {
      "status": "known",
-     "value": "work"
+     "value": "monitor"
     }
    },
    "expect": "invalid-message",

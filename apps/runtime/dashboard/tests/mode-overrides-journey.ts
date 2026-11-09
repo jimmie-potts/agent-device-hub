@@ -52,12 +52,11 @@ export async function checkModeOverrides(browser: Browser, evidence?: string): P
     await page.locator('[data-mode-target="wall"]').getByText('Free · individual exception', {exact: true}).waitFor();
     assert.equal(commands(), beforeInspect, 'device navigation sends nothing');
     await page.getByRole('link', {name: /^Home/}).click();
-    // Work and Quiet both map to Monitor on Pixoo; only this explicit choice records Quiet.
+    // The Pixoo follows the Hub mode one to one (ADR 0014); only this explicit choice records Quiet.
     await pixooChoice.getByRole('button', {name: 'Quiet', exact: true}).click(); await settled(4);
     assert.deepEqual((await mode()).overrides?.map(item => [item.target, item.mode]), [['wall', 'free'], ['pixoo-1', 'quiet']]);
-    // The existing native control remains independent and cannot manufacture or clear saved intent.
-    await pixoo.getByRole('button', {name: 'Select Media', exact: true}).click();
-    await pixoo.getByRole('button', {name: 'Show monitor', exact: true}).waitFor();
+    // The retired native Monitor/Media buttons are gone from the card; the saved choice is the only mode control there.
+    for (const label of ['Select Media', 'Show monitor']) assert.equal(await pixoo.getByRole('button', {name: label, exact: true}).count(), 0, label);
     assert.equal((await mode()).overrides?.find(item => item.target === 'pixoo-1')?.mode, 'quiet');
     await wallChoice.getByRole('button', {name: 'Work', exact: true}).click(); await settled(5);
     assert.deepEqual((await mode()).overrides?.map(item => item.target), ['pixoo-1']);

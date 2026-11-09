@@ -7,9 +7,9 @@ import {CORE_FAMILIES, StepFailure, act, bodyOf, deviceState, dispatchOnce, expe
 import {PIXOO_FAMILIES, PIXOO_ID, PIXOO_SECTION, completedAs, pixooDisplay, pixooMode, pixooPlaylist, shownFrames} from './modules/pixoo.js';
 import {PLAYBACK_SECTION} from './modules/playback.js';
 
-type Action={target:string;family:string;data:Record<string,unknown>;requireMode?:string};
+type Action={target:string;family:string;data:Record<string,unknown>;runsOnlyIn?:string};
 type Saved={id:string;name:string;enabled:boolean;days:number[];time:string;actions:Action[];next?:{atMs:number}};
-type LogEntry={seq:number;ruleId:string;target:string;outcome:string;reason?:string;requestId?:string;family?:string;index?:number;requireMode?:string;event:{kind:string}};
+type LogEntry={seq:number;ruleId:string;target:string;outcome:string;reason?:string;requestId?:string;family?:string;index?:number;runsOnlyIn?:string;event:{kind:string}};
 const saved=new WeakMap<Harness,Saved & {plannedAtMs?:number}>();
 const savedOf=(h:Harness)=>{const value=saved.get(h);if(value===undefined) throw new StepFailure('routine missing');return value;};
 async function control(h:Harness,method:GatewayCall['method'],path:string,body?:object,status=200):Promise<Saved> {
@@ -86,12 +86,12 @@ const nextMinute=(h:Harness):{days:number[];time:string;atMs:number}=>{
 const rowsOf=(found:LogEntry[],kind:string)=>found.filter(entry=>entry.event.kind===kind).map(entry=>`${entry.index ?? '-'} ${entry.target} ${entry.outcome}${entry.reason===undefined?'':` ${entry.reason}`}`);
 
 /**
- * One routine with an ordered action list: a Pixoo playlist start, which the Pixoo module and the core refuse while
- * Monitor shows, and a LIFX color, which runs regardless; then the same routine at its minute, once, and nothing after a
- * restart.
+ * One routine with an ordered action list: a Pixoo playlist start that runs only in Free, which the core skips while the
+ * Pixoo reports Work (ADR 0014), and a LIFX color, which runs regardless; then the same routine at its minute, once, and
+ * nothing after a restart.
  */
 const routineActions:Scenario={
-  id:'routine-actions',title:'a routine starts a Pixoo playlist only in Media and paints a LIFX bulb, on Run now and once at its minute',
+  id:'routine-actions',title:'a routine starts a Pixoo playlist only in Free and paints a LIFX bulb, on Run now and once at its minute',
   seed:{modules:['core','playback','pixoo','lifx'],follows:[CORE_FAMILIES,PIXOO_FAMILIES,{owner:'bunny/modules/lifx',families:['device']},{owner:'bunny/core',families:['operation']}],
     config:{playback:PLAYBACK_SECTION,pixoo:PIXOO_SECTION,lifx:LIFX_SIMULATED_SECTION}},
   steps:[
@@ -105,31 +105,31 @@ const routineActions:Scenario={
       !h.logs().some(({record})=>record.event_name==='runtime.sync.refused' && record.attributes['bunny.participant']==='bunny/core' &&
         record.attributes['bunny.pattern']==='sync device') || 'the core tried a device sync that was refused'),
     ...pixooPlaylist(),
-    act('the operator selects Monitor on the Pixoo',h=>dispatchOnce(h,'operator','routine-monitor',pixooMode('monitor'),'routine-monitor-1')),
-    expect('Monitor shows',h=>completedAs(h,'routine-monitor-1','succeeded','observed')===true && pixooDisplay(h)?.mode==='monitor' || `display ${JSON.stringify(pixooDisplay(h)?.mode)}`),
+    act('the operator selects Work on the Pixoo',h=>dispatchOnce(h,'operator','routine-monitor',pixooMode('work'),'routine-monitor-1')),
+    expect('the Pixoo reports Work',h=>completedAs(h,'routine-monitor-1','succeeded','observed')===true && pixooDisplay(h)?.mode==='work' || `display ${JSON.stringify(pixooDisplay(h)?.mode)}`),
     act('the owner saves a disabled routine: start the playlist on the Pixoo, then paint the pendant green',async h=>{
       const [list]=h.reader.states<PlaylistRecord>(PIXOO.playlist);if(list===undefined) throw new StepFailure('no playlist');
       const value=await control(h,'POST','',{name:'Evening',days:[(new Date(h.now()).getDay()+1)%7],time:'17:00',actions:[
-        {target:PIXOO_ID,family:'media-start',data:{playlistId:list.data.id}},{target:'pendant-1',family:'lifx-color-set',data:{hue:120,saturation:100}}]},201);
-      if(value.enabled || value.actions[0]?.requireMode!=='media' || value.actions[1]?.requireMode!==undefined) throw new StepFailure('the content action did not default to Media');
+        {target:PIXOO_ID,family:'media-start',data:{playlistId:list.data.id},runsOnlyIn:'free'},{target:'pendant-1',family:'lifx-color-set',data:{hue:120,saturation:100}}]},201);
+      if(value.enabled || value.actions[0]?.runsOnlyIn!=='free' || value.actions[1]?.runsOnlyIn!==undefined) throw new StepFailure('the routine did not keep its Hub-mode precondition');
       saved.set(h,value);
     }),
-    act('the owner runs the routine now while Monitor shows',async h=>{
+    act('the owner runs the routine now while the Pixoo is in Work',async h=>{
       const answer=await h.gateway({as:'operator',method:'POST',path:`/api/v2/automation/routines/${savedOf(h).id}/run`,headers:{'bunny-request':'1'},body:{}});
       if(answer.status!==200) throw new StepFailure('run now was refused');
     }),
     expect('the log shows the playlist action skipped for the mode and the color action accepted, in order',async h=>{
       const rows=rowsOf(await entries(h),'routine-run');
       const first=rows[0]??'';
-      // The core's own precondition skips the start; the Pixoo's admission check (#1276) is the second line and is not reached.
+      // The core's own precondition skips the start; the Pixoo's Work refusal is the second line and is not reached.
       return (rows.length===2 && first==='0 pixoo-1 blocked mode' && rows[1]==='1 pendant-1 receipt') || `rows ${JSON.stringify(rows)}`;
     }),
-    // Monitor paints its own dashboard, so the Pixoo's send counts cannot tell a start apart; the module's own player state can.
-    expect('the Pixoo selected no playlist and stays in Monitor; the pendant shows green',h=>
-      (pixooDisplay(h)?.player.playlistId===null && pixooDisplay(h)?.mode==='monitor' && pendantColor(h)===true) || `player ${JSON.stringify(pixooDisplay(h)?.player)}, mode ${String(pixooDisplay(h)?.mode)}, ${String(pendantColor(h))}`,5000),
-    act('the operator selects Media on the Pixoo',h=>dispatchOnce(h,'operator','routine-media',pixooMode('media'),'routine-media-1')),
-    expect('Media shows',h=>completedAs(h,'routine-media-1','succeeded','observed')===true && pixooDisplay(h)?.mode==='media' || `display ${JSON.stringify(pixooDisplay(h)?.mode)}`),
-    act('the owner runs the routine now while Media shows',async h=>{
+    // The status base paints its own dashboard, so the Pixoo's send counts cannot tell a start apart; the module's own player state can.
+    expect('the Pixoo selected no playlist and stays in Work; the pendant shows green',h=>
+      (pixooDisplay(h)?.player.playlistId===null && pixooDisplay(h)?.mode==='work' && pendantColor(h)===true) || `player ${JSON.stringify(pixooDisplay(h)?.player)}, mode ${String(pixooDisplay(h)?.mode)}, ${String(pendantColor(h))}`,5000),
+    act('the operator selects Free on the Pixoo',h=>dispatchOnce(h,'operator','routine-media',pixooMode('free'),'routine-media-1')),
+    expect('the Pixoo reports Free',h=>completedAs(h,'routine-media-1','succeeded','observed')===true && pixooDisplay(h)?.mode==='free' || `display ${JSON.stringify(pixooDisplay(h)?.mode)}`),
+    act('the owner runs the routine now while the Pixoo is in Free',async h=>{
       const answer=await h.gateway({as:'operator',method:'POST',path:`/api/v2/automation/routines/${savedOf(h).id}/run`,headers:{'bunny-request':'1'},body:{}});
       if(answer.status!==200) throw new StepFailure('run now was refused');
     }),

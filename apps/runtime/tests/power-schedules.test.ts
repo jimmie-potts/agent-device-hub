@@ -1,5 +1,5 @@
 // Weekly routines (#483, #1297): an ordered action list on the fake clock, the one forward migration of the power window,
-// the mode precondition, the busy guard, future-only scheduling and storage refusals before dispatch.
+// the Hub-mode precondition (ADR 0014), the busy guard, future-only scheduling and storage refusals before dispatch.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
@@ -19,8 +19,8 @@ function world(db=new DatabaseSync(':memory:'),clock=manualClock(monday(16))) {
   const kinds:Record<string,string>={'pixoo-1':'pixoo','wall-1':'nanoleaf'};
   const records=new Map(['lamp-a','lamp-b','pixoo-1','wall-1'].map(id=>{
     const record=deviceRecord(id,1,kinds[id]??'test-power','available');record.capabilities.power={supported:true};
-    if(id==='pixoo-1') {record.capabilities.media={supported:true,actions:['pause','resume','stop','next','previous','restart-with-changes','clear'],playlistIds:['list-1'],renditionIds:[]};record.capabilities.modes={supported:true,values:['monitor','media']};record.desired.mode={status:'known',value:'media'};}
-    if(id==='wall-1') {record.capabilities.scenes={supported:true,sceneIds:['relax']};record.capabilities.modes={supported:true,values:['status','free']};record.desired.mode={status:'known',value:'free'};}
+    if(id==='pixoo-1') {record.capabilities.media={supported:true,actions:['pause','resume','stop','next','previous','restart-with-changes','clear'],playlistIds:['list-1'],renditionIds:[]};record.capabilities.modes={supported:true,values:['work','free','quiet']};record.desired.mode={status:'known',value:'free'};}
+    if(id==='wall-1') {record.capabilities.scenes={supported:true,sceneIds:['relax']};record.capabilities.modes={supported:true,values:['work','free','quiet']};record.desired.mode={status:'known',value:'free'};}
     return [id,record] as const;
   }));
   const sent:Sent[]=[];
@@ -36,11 +36,11 @@ const log=(w:ReturnType<typeof world>)=>w.store.readLog(50).reverse().map(row=>`
 void test('definitions stay independent, disabled by default, keep their action order and read back beside the event rules',async()=>{
   const w=world();
   try {
-    const first=w.routines.create(input),second=w.routines.create({...input,name:'Pixoo evening',actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'}},{target:'lamp-b',family:'brightness-set',data:{percent:40}}]});
+    const first=w.routines.create(input),second=w.routines.create({...input,name:'Pixoo evening',actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'}},{target:'lamp-b',family:'brightness-set',data:{percent:40},runsOnlyIn:'quiet'}]});
     assert.equal(first.enabled,false);assert.equal(first.next,undefined);
     assert.deepEqual(second.actions.map(action=>action.family),['media-start','brightness-set']);
-    assert.equal(second.actions[0]?.requireMode,'media','a content action on a Pixoo defaults to Media');
-    assert.equal(second.actions[1]?.requireMode,undefined);
+    assert.equal(second.actions[0]?.runsOnlyIn,undefined,'no action is forced into a mode (ADR 0014)');
+    assert.equal(second.actions[1]?.runsOnlyIn,'quiet','any action may run only in a Hub mode');
     w.routines.setEnabled(first.id,true);
     w.routines.update(first.id,{...input,time:'18:00',actions:[on,off]});
     assert.equal(w.routines.get(first.id).enabled,true);assert.equal(w.routines.get(first.id).actions.length,2);
@@ -61,8 +61,9 @@ void test('unknown fields, unconfigured targets, foreign module families, bad pa
       {actions:[{target:'lamp-a',family:'power-set',data:{on:'yes'}}]},{actions:[{target:'lamp-a',family:'power-set',data:{on:true,extra:1}}]},
       {actions:[{target:'lamp-a',family:'brightness-set',data:{percent:101}}]},{actions:[{target:'lamp-a',family:'pixoo-media-show',data:{renditionId:'f'.repeat(64)}}]},
       {actions:[{target:'pixoo-1',family:'lifx-color-set',data:{hue:1,saturation:1}}]},{actions:[{target:'lamp-a',family:'media-start',data:{playlistId:'list-1'}}]},
-      {actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'},requireMode:'Media'}]},{actions:[{target:'pixoo-1',family:'media-control',data:{action:'pause'},requireMode:'monitor'}]},
-      {actions:[{target:'wall-1',family:'scene-activate',data:{sceneId:'relax'},requireMode:'status'}]},{actions:[{target:'pixoo-1',family:'device-mode-set',data:{mode:'1media'}}]},
+      {actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'},runsOnlyIn:'Free'}]},{actions:[{target:'pixoo-1',family:'media-control',data:{action:'pause'},runsOnlyIn:'monitor'}]},
+      {actions:[{target:'wall-1',family:'scene-activate',data:{sceneId:'relax'},runsOnlyIn:'media'}]},{actions:[{target:'pixoo-1',family:'device-mode-set',data:{mode:'1media'}}]},
+      {actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'},requireMode:'free'}]},
       {actions:[{target:'wall-1',family:'scene-activate',data:{sceneId:'relax/x'}}]},{actions:Array.from({length:17},()=>on)}]) {
       assert.throws(()=>w.routines.create({...input,...patch}),AutomationError,JSON.stringify(patch));
     }
@@ -75,30 +76,31 @@ void test('unknown fields, unconfigured targets, foreign module families, bad pa
 void test('one enabled routine fires once at its minute, runs its actions in order with fresh identities, and a refused action does not stop the next',async()=>{
   const w=world();
   try {
-    const pixoo=w.records.get('pixoo-1');assert.ok(pixoo);pixoo.desired.mode={status:'known',value:'monitor'};
-    const saved=w.routines.create({...input,enabled:true,actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'}},on,{target:'lamp-b',family:'lifx-color-set',data:{hue:120,saturation:50}}]});
+    const pixoo=w.records.get('pixoo-1');assert.ok(pixoo);pixoo.desired.mode={status:'known',value:'work'};
+    const saved=w.routines.create({...input,enabled:true,actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'},runsOnlyIn:'free'},on,{target:'lamp-b',family:'lifx-color-set',data:{hue:120,saturation:50}}]});
     assert.deepEqual(saved.next,{atMs:monday(17)});
     w.clock.advance(60*60*1000);await w.routines.settled();
-    // The Pixoo is in Monitor: its content action is skipped on the core's own check; the lamp actions still run, in order.
+    // The Pixoo is in Work: its Free-only action is skipped on the core's own check; the lamp actions still run, in order.
     assert.deepEqual(w.sent.map(item=>item.action.family),['power-set','lifx-color-set']);
     assert.equal(new Set(w.sent.map(item=>item.requestId)).size,2);
     assert.deepEqual(log(w),['pixoo-1 blocked mode','lamp-a receipt','lamp-b receipt']);
     const rows=w.store.readLog(10).reverse();
     assert.deepEqual(rows.map(row=>(JSON.parse(row.detail??'{}') as {index:number}).index),[0,1,2]);
     assert.deepEqual(rows.map(row=>row.eventKind),['routine-scheduled','routine-scheduled','routine-scheduled']);
-    assert.equal((JSON.parse(rows[0]?.detail??'{}') as {requireMode?:string}).requireMode,'media');
+    assert.equal((JSON.parse(rows[0]?.detail??'{}') as {runsOnlyIn?:string}).runsOnlyIn,'free');
     w.clock.advance(60*60*1000);await w.routines.settled();assert.equal(w.sent.length,2,'no second occurrence the same day');
     assert.deepEqual(w.routines.get(saved.id).next,{atMs:monday(17)+24*60*60*1000});
   }finally {await w.routines.close();w.db.close();}
 });
-void test('the mode precondition passes through to a mode-checked family, a pending mode change skips, and a lamp action needs no mode',async()=>{
+void test('the Hub-mode precondition is checked by the core and never sent, a pending mode change skips, and a lamp action needs no mode',async()=>{
   const w=world();
   try {
     const pixoo=w.records.get('pixoo-1');assert.ok(pixoo);
-    const saved=w.routines.create({...input,enabled:true,actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'}},{target:'pixoo-1',family:'device-mode-set',data:{mode:'media'},requireMode:'monitor'},on]});
+    const saved=w.routines.create({...input,enabled:true,actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'},runsOnlyIn:'free'},{target:'pixoo-1',family:'device-mode-set',data:{mode:'quiet'},runsOnlyIn:'work'},on]});
     const first=await w.routines.run(saved.id);
     assert.equal(first.outcome,'ran');
-    assert.deepEqual(w.sent.map(item=>`${item.action.family} ${item.action.requireMode??'-'}`),['media-start media','power-set -']);
+    assert.deepEqual(w.sent.map(item=>`${item.action.family} ${item.action.runsOnlyIn??'-'}`),['media-start free','power-set -']);
+    assert.ok(w.sent.every(item=>!Object.hasOwn(item.action.data,'requireMode')),'no action carries requireMode to its module');
     assert.deepEqual(log(w),['pixoo-1 receipt','pixoo-1 blocked mode','lamp-a receipt']);
     pixoo.pendingKinds=['device-mode-set'];pixoo.pending=1;
     await w.routines.run(saved.id);
@@ -106,6 +108,26 @@ void test('the mode precondition passes through to a mode-checked family, a pend
     assert.deepEqual(routineCommand({target:'pixoo-1',family:'pixoo-media-show',data:{renditionId:'a'.repeat(64)}}),
       {key:'bunny.cmd.pixoo-media-show.pixoo-1',type:'org.bunny.pixoo-media.show.requested',dataschema:'https://bunny.invalid/events/pixoo-media-show/2.0'});
   }finally {await w.routines.close();w.db.close();}
+});
+void test('a stored routine from before ADR 0014 still opens: its content action runs only in Free, and its Monitor mode change is blocked before dispatch (AC5)',async()=>{
+  const db=new DatabaseSync(':memory:');
+  try {
+    const first=world(db);
+    const saved=first.routines.create({...input,actions:[{target:'pixoo-1',family:'media-start',data:{playlistId:'list-1'}},{target:'pixoo-1',family:'device-mode-set',data:{mode:'work'}}]});
+    await first.routines.close();
+    // Rewrite the stored row as a routine saved before ADR 0014: the content action carried Media, and the mode change named Monitor.
+    const row=db.prepare('SELECT action FROM rules WHERE id = ?').get(saved.id) as {action:string};
+    const action=JSON.parse(row.action) as {actions:Record<string,unknown>[]};
+    action.actions=[{...action.actions[0],requireMode:'media'},{...action.actions[1],data:{mode:'monitor'}}];
+    db.prepare('UPDATE rules SET action = ? WHERE id = ?').run(JSON.stringify(action),saved.id);
+    const w=world(db);
+    try {
+      assert.deepEqual(w.routines.get(saved.id).actions.map(item=>item.runsOnlyIn),['free',undefined]);
+      await w.routines.run(saved.id);
+      assert.deepEqual(w.sent.map(item=>item.action.family),['media-start'],'the Monitor mode change is never sent');
+      assert.deepEqual(log(w),['pixoo-1 receipt','pixoo-1 blocked unsupported-capability'],'logged with the code the Pixoo would refuse it with');
+    } finally {await w.routines.close();}
+  } finally {db.close();}
 });
 void test('run now submits one occurrence, enabled or not, and an overlapping occurrence is logged busy and dropped',async()=>{
   const w=world();await w.routines.close();
@@ -185,7 +207,7 @@ void test('unavailable, unsupported, externally controlled and held targets bloc
       w.routines.create({...input,enabled:true,actions:[on,{target:'lamp-b',family:'power-set',data:{on:true}}]});
       w.clock.advance(60*60*1000);await w.routines.settled();
       assert.deepEqual(w.sent.map(item=>item.action.target),['lamp-b'],state);
-      assert.deepEqual(log(w),['lamp-a blocked unavailable','lamp-b receipt'],state);
+      assert.deepEqual(log(w),[`lamp-a blocked ${state==='unsupported'?'unsupported-capability':'unavailable'}`,'lamp-b receipt'],state);
     }finally {await w.routines.close();w.db.close();}
   }
 });
@@ -302,17 +324,17 @@ void test('a scene action on a Nanoleaf runs in Free, and a scene the device no 
   const w=world();
   try {
     const wall=w.records.get('wall-1');assert.ok(wall);
-    const saved=w.routines.create({...input,actions:[{target:'wall-1',family:'scene-activate',data:{sceneId:'relax'}},{target:'wall-1',family:'power-set',data:{on:true},requireMode:'status'}]});
-    assert.equal(saved.actions[0]?.requireMode,'free');
+    const saved=w.routines.create({...input,actions:[{target:'wall-1',family:'scene-activate',data:{sceneId:'relax'},runsOnlyIn:'free'},{target:'wall-1',family:'power-set',data:{on:true},runsOnlyIn:'work'}]});
+    assert.equal(saved.actions[0]?.runsOnlyIn,'free');
     await w.routines.run(saved.id);
-    assert.deepEqual(w.sent.map(item=>`${item.action.family} ${item.action.requireMode??'-'}`),['scene-activate free']);
+    assert.deepEqual(w.sent.map(item=>`${item.action.family} ${item.action.runsOnlyIn??'-'}`),['scene-activate free']);
     assert.deepEqual(log(w),['wall-1 receipt','wall-1 blocked mode']);
-    wall.desired.mode={status:'known',value:'status'};
+    wall.desired.mode={status:'known',value:'work'};
     await w.routines.run(saved.id);
-    assert.deepEqual(log(w).slice(2),['wall-1 blocked mode','wall-1 receipt'],'while the wall shows status the scene is skipped and the status-only action runs');
+    assert.deepEqual(log(w).slice(2),['wall-1 blocked mode','wall-1 receipt'],'in Work the Free-only scene is skipped and the Work-only action runs');
     wall.desired.mode={status:'known',value:'free'};wall.capabilities.scenes={supported:true,sceneIds:['focus']};
     await w.routines.run(saved.id);
-    assert.deepEqual(log(w).slice(4),['wall-1 blocked unavailable','wall-1 blocked mode']);
+    assert.deepEqual(log(w).slice(4),['wall-1 blocked unsupported-capability','wall-1 blocked mode']);
     assert.equal(w.sent.length,2);
   }finally {await w.routines.close();w.db.close();}
 });
@@ -333,9 +355,15 @@ void test('next occurrence and parsing follow the host clock and the shared shap
   assert.deepEqual(nextOccurrence({days:[1],time:'17:00'},monday(17)),{atMs:monday(17)+7*24*60*60*1000},'the minute itself is not a future occurrence');
   assert.deepEqual(nextOccurrence({days:[0,6],time:'09:30'},monday(17)),{atMs:new Date(2026,9,17,9,30).getTime()});
   const parsed=parseRoutine({name:'Evening',days:[5,1],time:'17:00',actions:[{target:'wall',family:'scene-activate',data:{sceneId:'relax'}}]},['wall'],true,()=>'nanoleaf');
-  assert.deepEqual(parsed.days,[1,5]);assert.equal(parsed.actions[0]?.requireMode,'free','a Nanoleaf scene defaults to Free');
-  assert.equal(parseRoutine({name:'Evening',days:[1],time:'17:00',actions:[{target:'wall',family:'scene-activate',data:{sceneId:'relax'},requireMode:'free'}]},['wall'],true,()=>'nanoleaf').actions[0]?.requireMode,'free');
-  assert.throws(()=>parseRoutine({name:'Evening',days:[1],time:'17:00',actions:[{target:'plug',family:'media-start',data:{playlistId:'p-1'}}]},['plug'],true,()=>'wemo'),AutomationError,'a content action on a kind without a content mode');
+  assert.deepEqual(parsed.days,[1,5]);assert.equal(parsed.actions[0]?.runsOnlyIn,undefined,'a scene takes no mode of its own');
+  assert.equal(parseRoutine({name:'Evening',days:[1],time:'17:00',actions:[{target:'wall',family:'scene-activate',data:{sceneId:'relax'},runsOnlyIn:'free'}]},['wall'],true,()=>'nanoleaf').actions[0]?.runsOnlyIn,'free');
+  assert.throws(()=>parseRoutine({name:'Evening',days:[1],time:'17:00',actions:[{target:'plug',family:'media-start',data:{playlistId:'p-1'}}]},['plug'],true,()=>'wemo'),AutomationError,'a content action on a kind that shows no content');
+  // A stored row may carry the retired requireMode, a native mode: it reads as the Hub mode it stood for, so the core still opens.
+  const stored=(requireMode:string)=>parseRoutine({name:'Old',days:[1],time:'17:00',actions:[{target:'pixoo',family:'media-start',data:{playlistId:'p-1'},requireMode}]},null,false).actions[0]?.runsOnlyIn;
+  assert.deepEqual(['media','monitor','free','work','quiet'].map(stored),['free','work','free','work','quiet']);
+  assert.throws(()=>stored('status'),AutomationError,'a native mode that never stood for a Hub mode');
+  assert.throws(()=>parseRoutine({name:'Old',days:[1],time:'17:00',actions:[{target:'pixoo',family:'media-start',data:{playlistId:'p-1'},requireMode:'media'}]},['pixoo'],true),AutomationError,
+    'a new definition cannot use the retired member');
 });
 
 import {InProcessBus} from '@jimmie-potts/sdk';

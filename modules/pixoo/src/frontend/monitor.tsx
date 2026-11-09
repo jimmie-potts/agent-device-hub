@@ -95,10 +95,7 @@ function Controls({context, device, display, live, reading, sessions, current, c
   const {Select} = context.ui;
   return <>
     {context.control ? <>
-      <div className="actions">
-        <button type="button" disabled={blocked !== undefined || display?.mode === 'monitor'} onClick={() => { run('device-mode-set', {mode: 'monitor'}); }}>Show monitor</button>
-        <button type="button" className="secondary" disabled={blocked !== undefined || display?.mode === 'media'} onClick={() => { run('device-mode-set', {mode: 'media'}); }}>Select Media</button>
-      </div>
+      {context.ui.ModeChoice !== undefined && display !== undefined && <context.ui.ModeChoice target={display.id}/>}
       <fieldset disabled={blocked !== undefined}><legend>Monitor view</legend>
         <label>Session search<input aria-label="Session search" maxLength={120} value={filter.q ?? ''} onChange={event => { update('q', event.target.value); }}/></label>
         <Select label="Provider filter" value={filter.provider ?? ''} onChange={value => { update('provider', value); }} options={[{value: '', label: 'All providers'}, {value: 'codex', label: 'Codex'}, {value: 'claude', label: 'Claude'}]}/>
@@ -110,7 +107,7 @@ function Controls({context, device, display, live, reading, sessions, current, c
         <button type="button" disabled={!dirty || !validCadence} onClick={() => { if (dirty && validCadence) run('pixoo-monitor-set', {filter, cadenceMs: cadence}); }}>Apply monitor view</button>
       </fieldset>
     </> : <p className="hint">Read-only access.</p>}
-    <p className="hint">Monitor pauses media. Selecting Media leaves it paused until you start or resume. Opening this page does not activate monitoring.</p>
+    <p className="hint">The status dashboard shows whenever nothing plays. Work stops playback; nothing resumes on its own. Opening this page changes nothing.</p>
     <h3>Now playing</h3>
     {reading?.playback.view.card === true ? <p>{reading.playback.view.status === 'playing' ? 'Playing' : 'Paused'}{reading.playback.view.stale ? ' (stale)' : ''}: {reading.playback.view.title === '' ? 'Unknown title' : reading.playback.view.title} · {reading.playback.view.artist === '' ? 'Unknown artist' : reading.playback.view.artist}</p> : <p>Nothing playing.</p>}
     <p>Hub playback: {reading?.playback.source ?? 'unavailable'}. Media option: {display?.nowPlaying.media ?? 'unknown'}. Takeover: {display?.nowPlaying.takeover ?? 'none'}.</p>
@@ -120,12 +117,12 @@ function Controls({context, device, display, live, reading, sessions, current, c
       <Select label="Now playing in Media" value={choice} onChange={setChoice} options={[{value: 'off', label: 'Off'}, {value: 'popup', label: 'Pop-up for 10 seconds'}, {value: 'whole', label: 'Whole song'}]}/>
       <button type="button" disabled={blocked !== undefined || choice === display?.nowPlaying.media} onClick={() => { run('pixoo-now-playing-set', {media: choice}); }}>Set now playing</button>
     </>}
-    <p className="hint">In Monitor, a new track shows its card briefly unless a session needs attention. In Media, Pop-up and Whole song pause an active playlist for the card. Manual controls cancel automatic resume.</p>
+    <p className="hint">Over the status dashboard, a new track shows its card briefly unless a session needs attention. Over a playlist, Pop-up and Whole song pause it for the card; Whole song is not used in Work. Manual controls cancel automatic resume.</p>
     <h3>Moments</h3>
-    <p>Moments over Monitor: {display?.moments === undefined ? 'unknown' : display.moments.overMonitor ? 'on' : 'off'}.{display?.showing === 'moment' ? ' A moment is on the display.' : ''}</p>
-    {context.control && display?.moments !== undefined && <button type="button" className="secondary" disabled={blocked !== undefined}
-      onClick={() => { run('pixoo-moments-set', {overMonitor: display.moments?.overMonitor !== true}); }}>{display.moments.overMonitor ? 'Turn off moments over Monitor' : 'Turn on moments over Monitor'}</button>}
-    <p className="hint">A moment plays briefly over Media and the playlist resumes where it was. Over Monitor it plays only when no session needs attention, and attention ends it at once.</p>
+    <p>Moments over Monitor: {display === undefined ? 'unknown' : display.moments.overStatus ? 'on' : 'off'}.{display?.showing === 'moment' ? ' A moment is on the display.' : ''}</p>
+    {context.control && display !== undefined && <button type="button" className="secondary" disabled={blocked !== undefined}
+      onClick={() => { run('pixoo-moments-set', {overStatus: !display.moments.overStatus}); }}>{display.moments.overStatus ? 'Turn off moments over Monitor' : 'Turn on moments over Monitor'}</button>}
+    <p className="hint">A moment plays briefly over a playlist and the playlist resumes where it was. Over the status dashboard it plays only when no session needs attention, and attention ends it at once.</p>
     <p role="status">{failure ?? command.text}</p>
     {context.control && blocked !== undefined && <p className="hint">{blocked}</p>}
     <div className="monitor-sessions">{sessions.filter(row => matches(row, display?.monitor.filter ?? {})).map(row => {

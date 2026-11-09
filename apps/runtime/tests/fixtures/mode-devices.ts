@@ -42,8 +42,8 @@ export class ModeDevice {
   /** A native change is independently observed; it never selects the Hub mode or triggers correction. */
   async observe(): Promise<void> {
     const record = deviceRecord(this.id, 1, this.name, 'available');
-    record.capabilities.modes = {supported: true, values: this.name === 'nanoleaf' ? ['work', 'free', 'quiet'] : ['monitor', 'media']};
-    record.desired.mode = {status: 'known', value: this.name === 'nanoleaf' ? 'quiet' : 'media'};
+    record.capabilities.modes = {supported: true, values: ['work', 'free', 'quiet']};
+    record.desired.mode = {status: 'known', value: 'quiet'};
     await this.#context?.sdk.publish(`bunny.state.device.${this.id}`, {kind: 'state', ...deviceState(record)});
   }
 }

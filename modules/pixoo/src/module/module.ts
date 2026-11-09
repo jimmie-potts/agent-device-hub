@@ -1,7 +1,8 @@
 // The Pixoo runtime module (Hub #843, ADR 0012). It wraps the Pixoo library, player and presentation as the module
 // `pixoo`: its own SQLite file holds the library's catalog, the player's checkpoint, its settings and its outbox, and its
-// private folder holds the media. It follows the core's `session/2.0` records for Monitor and the playback owner's
-// `playback/2.0` record for Now Playing, by sync, and stores neither. It answers device, Media, player, playlist and catalog
+// private folder holds the media. It follows the core's `session/2.0` records for the status base and the playback owner's
+// `playback/2.0` record for Now Playing, by sync, and stores neither. It takes the Hub's Work, Free and Quiet as its own
+// modes, as policy only (ADR 0014). It answers device, mode, player, playlist and catalog
 // commands on `bunny.cmd.<family>.<device id>`: it refuses before acting with a typed refusal, or accepts, stores its
 // own record of the work, replies, and reports the outcome through its outbox. It never sends a command again.
 //
@@ -34,8 +35,8 @@ import {PixooUploads} from './upload.js';
 import type {RenderRequest, RenderReply} from './render-worker.js';
 import {artworkKey, type CardContext} from '../presentation/card-context.js';
 import {
-  DEVICE_SCHEMA, HOSTED_DEVICE_SCHEMA, FAMILIES, MAX_INLINE_BYTES, OUTCOME_SCHEMA, PIXOO_KIND, REMOVAL_SCHEMA, pixooOwnSchemas, renditionSchemaOf, schemaOf,
-  type AssetChangeRequest, type DisplayRecord, type MomentsSetRequest, type MonitorSetRequest, type NoticeDismissRequest, type NowPlayingSetRequest, type PlaylistChangeRequest,
+  DEVICE_SCHEMA, DISPLAY_SCHEMA, HOSTED_DEVICE_SCHEMA, FAMILIES, MAX_INLINE_BYTES, OUTCOME_SCHEMA, PIXOO_KIND, REMOVAL_SCHEMA, pixooOwnSchemas, renditionSchemaOf, schemaOf,
+  type AssetChangeRequest, type DisplayRecord, type HubMode, type MomentsSetRequest, type MonitorSetRequest, type NoticeDismissRequest, type NowPlayingSetRequest, type PlaylistChangeRequest,
   type PlaylistRecord, type RenditionRecord, type ShowRequest,
 } from './schemas.js';
 import {PixooStore} from './store.js';
@@ -46,7 +47,7 @@ import {rainNoticeRefusal} from '@jimmie-potts/event-contracts/v2/art-notice';
 import {SimulatedPixoo, httpPixooTransport, type OpenedDevice, type PixooTransport} from './transport.js';
 
 export const PIXOO_MODULE = 'pixoo';
-/** How often the presentation ticks: it pages Monitor, ends pop-ups and paints, as the Pixoo service's render timer did. */
+/** How often the presentation ticks: it pages the status base, ends pop-ups and paints, as the Pixoo service's render timer did. */
 export const TICK_MS = 100;
 /** How long a reachability probe may take before the device counts as unavailable. */
 export const REACH_MS = 2000;
@@ -67,6 +68,10 @@ export const COALESCE_MS = 1000;
 const MAX_LISTED = 256;
 const MAX_DELAY_MS = 2_147_483_647;
 const MEDIA_ACTIONS: readonly MediaAction[] = ['pause', 'resume', 'stop', 'next', 'previous', 'restart-with-changes', 'clear'];
+/** The Hub's modes, which the Pixoo advertises as its own native modes (ADR 0014). */
+const HUB_MODES: readonly HubMode[] = ['work', 'free', 'quiet'];
+/** The player actions that start playback, which Work refuses with `pixoo-media-show` and `media-start`. */
+const STARTING_ACTIONS: readonly MediaAction[] = ['resume', 'restart-with-changes'];
 const RENDER_WORKER = new URL('./render-worker.js', import.meta.url);
 const NOTICE_ACKNOWLEDGE_SCHEMA = schemaOf('notice-acknowledge');
 const MOMENT_ENDED_SCHEMA = schemaOf('moment-ended');
@@ -276,13 +281,21 @@ class PixooRuntime {
       address: device.address, profile: device.profile, clock: this.#deviceClock, ...(hostedGif === undefined ? {} : {hostedGif}),
     });
     const player = this.#player = await Player.open({
-      emptyIntent: {read: () => store.emptyIntent(), save: intent => { store.saveEmptyIntent(intent); }},
       store: new LibraryPlaybackStore(library, {profile: device.profile, stillDelayMs}), device: this.#opened.adapter, clock: this.#deviceClock,
       pauseOnUncertain: !simulated, operationTimeoutMs: device.profile.name === HOSTED_PROFILE ? 15_000 : 5000,
     });
     const monitor = this.#monitor = new MonitorPresentation(player, {
       configuration: store.presentation() ?? this.#config.presentation ?? defaultPresentation,
       nowPlaying: store.nowPlaying() ?? this.#config.nowPlaying ?? defaultNowPlaying,
+      // The last Hub mode, read for the device record only: the start applies no mode (ADR 0014).
+      mode: store.hubMode(),
+      saveMode: mode => {
+        store.saveHubMode(mode);
+        return Promise.resolve();
+      },
+      // Owner decision on divoom-app-upgrade#77: a device's start draws the status base when the player holds no item;
+      // the simulator's stays passive until a command.
+      passive: simulated,
       save: value => {
         store.savePresentation(value);
         return Promise.resolve();
@@ -306,7 +319,9 @@ class PixooRuntime {
         });
       },
     });
-    this.#control = new PixooControl({player, monitor, library, profile: device.profile});
+    this.#control = new PixooControl({player, monitor, library, profile: device.profile, quiet: {
+      level: this.#config.quietBrightness, remembered: () => store.rememberedBrightness(), remember: percent => { store.saveRememberedBrightness(percent); },
+    }});
     // Everything the module serves at its start carries the revision it starts at; each later change raises it. The
     // catalog is not read here: it follows once the module has started, so a large library never delays the start.
     for (const [key, json] of this.#records()) this.#shown.set(key, {json, revision: store.revision});
@@ -325,9 +340,6 @@ class PixooRuntime {
     // The copies of the core's sessions and of the playback record, rebuilt by sync and never stored.
     await this.#follow(['session'], this.#sessions, 'feed', () => { this.#sessionsChanged(); });
     await this.#follow(['playback'], this.#playback, 'playback', () => { this.#playbackChanged(); });
-    // Owner decision on divoom-app-upgrade#77: a device's start restores a saved Monitor selection; the simulator's stays
-    // passive. Restoring pauses the player and reaches no device.
-    if (!simulated) await monitor.restore();
     this.#after(0, () => this.#tick());
     this.#after(0, () => this.#probe(0));
     this.#after(60_000, () => this.#pruneArt());
@@ -633,8 +645,8 @@ class PixooRuntime {
   #capabilities(admitted?: {playlistIds: string[]}): Capabilities {
     const catalog = this.#catalog;
     return {
-      power: {supported: true}, brightness: {supported: true, minimum: 0, maximum: 100}, modes: {supported: true, values: ['monitor', 'media']},
-      moments: {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_MS, coversStatus: this.#monitor?.momentSummary().overMonitor ?? defaultMoments.overMonitor,
+      power: {supported: true}, brightness: {supported: true, minimum: 0, maximum: 100}, modes: {supported: true, values: [...HUB_MODES]},
+      moments: {supported: true, moods: [...MOMENT_MOODS], maxDurationMs: MOMENT_MAX_MS, coversStatus: this.#monitor?.momentSummary().overStatus ?? defaultMoments.overStatus,
         art: {formats: ['png', 'gif'], maxBytes: MAX_ART_BYTES, notices: ['rain-forecast'], ...(this.#hostedArt() ? {stageVersion: '2.1'} : {})}},
       media: {
         supported: true, actions: [...MEDIA_ACTIONS], playlistIds: admitted?.playlistIds ?? (catalog?.playlists ?? []).slice(0, MAX_LISTED).map(item => item.id),
@@ -663,7 +675,8 @@ class PixooRuntime {
   #deviceRecord(transmission: DeviceRecord['lastTransmission']): Omit<DeviceRecord, 'revision'> {
     const player = this.#player, store = this.#store;
     const state = player?.getState(), evidence = player?.getDisplayEvidence();
-    const mode = this.#monitor?.status().configuration.mode;
+    // The last Hub mode the module was given, the device's desired mode (ADR 0014).
+    const mode = this.#monitor?.currentMode();
     const brightness = evidence?.brightness.observed ?? null, screen = evidence?.screen.observed ?? null;
     const times = [brightness?.atMs, screen?.atMs].filter((value): value is number => value !== undefined);
     const pending = store?.pending() ?? [];
@@ -692,9 +705,9 @@ class PixooRuntime {
     const status = monitor.status(), playing = monitor.nowPlayingSummary(), state = player.getState();
     const layout = monitor.layout() ?? undefined;
     const item = player.getSession()?.playlist.items.find(entry => entry.id === state.itemId);
-    const {filter, cadenceMs, mode} = status.configuration;
+    const {filter, cadenceMs} = status.configuration;
     return {
-      id: this.#device, mode, participating: status.participating, pendingMode: status.pendingMode, showing: playing.showing,
+      id: this.#device, mode: status.mode, pendingMode: status.pendingMode, base: status.base, participating: status.participating, showing: playing.showing,
       monitor: {
         filter, cadenceMs, connection: status.sourceConnection, sessions: layout?.total ?? 0, matched: layout?.matched ?? 0,
         attention: layout?.attentionTotal ?? 0, page: layout?.page ?? 0, pages: layout?.pages ?? 1,
@@ -727,7 +740,7 @@ class PixooRuntime {
     const slash = key.indexOf('/'), family = key.slice(0, slash), id = key.slice(slash + 1);
     const type = family === 'device' ? 'org.bunny.device.updated' : `org.bunny.${family}.updated`;
     const data = JSON.parse(json) as DeviceRecord | DisplayRecord | RenditionRecord | PlaylistRecord;
-    let dataschema = schemaOf(family);
+    let dataschema = family === FAMILIES.display ? DISPLAY_SCHEMA : schemaOf(family);
     if (family === 'device') dataschema = this.#hostedArt() ? HOSTED_DEVICE_SCHEMA : DEVICE_SCHEMA;
     if (family === FAMILIES.rendition && 'frameCount' in data) dataschema = renditionSchemaOf(data.frameCount);
     return {key: `bunny.state.${family}.${id}`, draft: {type, subject: id, dataschema, data: {...data, id, revision}}};
@@ -937,29 +950,29 @@ class PixooRuntime {
     };
     await sdk.respond<{playlistId: string; requireMode?: string}>(key('media-start'), command =>
       this.#admit(command, 'media-start', {family: 'media-start', data: command.data}, () => control().start(command.data.playlistId),
-        () => this.#modeRequired(command.data.requireMode)));
+        () => this.#modeRefused(command.data.requireMode, true)));
     await sdk.respond<{action: MediaAction; requireMode?: string}>(key('media-control'), command =>
       this.#admit(command, 'media-control', {family: 'media-control', data: command.data}, () => control().control(command.data.action), () => {
-        const {action} = command.data;
-        if ((action === 'resume' || action === 'restart-with-changes') && this.#player?.getSession() === null) return errorBody('invalid-state', {detail: 'nothing is selected to resume'});
-        return this.#modeRequired(command.data.requireMode);
+        const {action, requireMode} = command.data;
+        const starts = STARTING_ACTIONS.includes(action);
+        if (requireMode === undefined && starts && this.#player?.getSession() === null) return errorBody('invalid-state', {detail: 'nothing is selected to resume'});
+        return this.#modeRefused(requireMode, starts);
       }));
-    await sdk.respond<{mode: string}>(key('device-mode-set'), command =>
-      this.#admit(command, 'device-mode-set', {family: 'device-mode-set', data: command.data},
-        () => control().present({operation: 'mode', mode: command.data.mode === 'monitor' ? 'monitor' : 'media'})));
+    await sdk.respond<{mode: HubMode}>(key('device-mode-set'), command =>
+      this.#admit(command, 'device-mode-set', {family: 'device-mode-set', data: command.data}, () => control().mode(command.data.mode)));
     await sdk.respond<{percent: number}>(key('brightness-set'), command =>
       this.#admit(command, 'brightness-set', {family: 'brightness-set', data: command.data}, () => control().brightness(command.data.percent)));
     await sdk.respond<{on: boolean}>(key('power-set'), command =>
       this.#admit(command, 'power-set', {family: 'power-set', data: command.data}, () => control().power(command.data.on)));
     await sdk.respond<ShowRequest>(key(FAMILIES.show), command =>
       this.#admit(command, FAMILIES.show, undefined, () => control().show(command.data.renditionId, command.data.playback), () =>
-        this.#library?.renditionExists(command.data.renditionId) === true ? this.#modeRequired(command.data.requireMode) : errorBody('not-found', {detail: 'no such rendition'})));
+        this.#library?.renditionExists(command.data.renditionId) === true ? this.#modeRefused(undefined, true) : errorBody('not-found', {detail: 'no such rendition'})));
     await sdk.respond<MonitorSetRequest>(key(FAMILIES.monitor), command =>
-      this.#admit(command, FAMILIES.monitor, undefined, () => control().present({operation: 'view', filter: command.data.filter, cadenceMs: command.data.cadenceMs})));
+      this.#admit(command, FAMILIES.monitor, undefined, () => control().view({operation: 'view', filter: command.data.filter, cadenceMs: command.data.cadenceMs})));
     await sdk.respond<NowPlayingSetRequest>(key(FAMILIES.nowPlaying), command =>
       this.#admit(command, FAMILIES.nowPlaying, undefined, () => control().nowPlaying(command.data.media)));
     await sdk.respond<MomentsSetRequest>(key(FAMILIES.moments), command =>
-      this.#admit(command, FAMILIES.moments, undefined, () => control().moments(command.data.overMonitor)));
+      this.#admit(command, FAMILIES.moments, undefined, () => control().moments(command.data.overStatus)));
     await sdk.respond<MomentPlayRequest>(key('moment-play'), command => this.#momentCommand(command));
     await sdk.respond<ArtStageRequest>(key('art-stage'), command => {
       const art = this.#art;
@@ -1026,7 +1039,7 @@ class PixooRuntime {
     if (noticeRefused !== undefined) return noticeRefused;
     if (monitor.momentBusy()) return errorBody('capacity', {detail: 'another moment waits or plays'});
     if ((this.#store?.pending() ?? []).some(command => command.family === 'device-mode-set')) return errorBody('invalid-state', {detail: 'a mode change is pending'});
-    const block = monitor.momentBlock(moment.coversStatus, moment.art !== undefined);
+    const block = monitor.momentBlock(moment.coversStatus);
     return block === null ? undefined : errorBody('invalid-state', {detail: block});
   }
 
@@ -1038,27 +1051,24 @@ class PixooRuntime {
     if (moment.art !== undefined && art === undefined) return Promise.resolve({result: Outcome.failed, evidence: Outcome.none, error: errorBody('not-found').error});
     return control.moment({momentId, coversStatus, durationMs, startAtMs, toleranceMs, ...(moment.notice === undefined ? {} : {notice: moment.notice}),
       ...(art === undefined ? {frames: () => this.#render({kind: 'moment', content: momentContent(moment)})}
-        : {frames: async () => moment.notice === undefined ? art.frames() : this.#render({kind: 'moment', content: {kind: 'art-notice', frames: await art.frames(), notice: moment.notice}}), delayMs: art.delayMs, exactArt: true})});
+        : {frames: async () => moment.notice === undefined ? art.frames() : this.#render({kind: 'moment', content: {kind: 'art-notice', frames: await art.frames(), notice: moment.notice}}), delayMs: art.delayMs})});
   }
 
   /**
-   * A media command's `requireMode` precondition (Hub #1276), checked in the admission queue so the check and the
-   * admission cannot race. A mode the Pixoo does not advertise is refused with `unsupported-capability`, as a
-   * `device-mode-set` for it would be. Otherwise the Pixoo must already be in that mode, with no `device-mode-set`
-   * accepted and not yet completed: an accepted change stays pending until its outcome commits, after the presentation
-   * has applied it, so that record covers the whole window. A view change (`pixoo-monitor-set`) keeps the mode and does
-   * not count. Otherwise the command is refused with `invalid-state` before any device write; nothing is queued or
-   * deferred. A command without the precondition is admitted as before. A refused resume while nothing is selected keeps
-   * its own detail, so this check runs after it.
+   * The mode rules a playback command meets at admission, in the admission queue so the check and a mode change cannot
+   * race (ADR 0014). A command that carries `requireMode` is refused with `invalid-request`: the Pixoo takes no mode
+   * precondition from a caller, and routines check their own against the device record. A start (`media-start`,
+   * `pixoo-media-show`, resume or restart-with-changes) is refused with `invalid-state` in Work, or while a
+   * `device-mode-set` is accepted and not completed: an accepted change stays pending until its outcome commits, after
+   * the presentation applied it, so that record covers the whole window. Nothing is queued or deferred.
    */
-  #modeRequired(requireMode: string | undefined): ErrorBody | undefined {
-    if (requireMode === undefined) return undefined;
-    if (requireMode !== 'monitor' && requireMode !== 'media') return errorBody('unsupported-capability', {detail: 'the Pixoo does not offer that mode'});
-    const status = this.#monitor?.status();
-    if (status === undefined) return errorBody('invalid-state', {detail: 'the Pixoo has no presentation to require a mode of'});
+  #modeRefused(requireMode: string | undefined, starts: boolean): ErrorBody | undefined {
+    if (requireMode !== undefined) return errorBody('invalid-request', {detail: 'the Pixoo takes no mode precondition from a caller'});
+    if (!starts) return undefined;
+    const monitor = this.#monitor;
+    if (monitor === undefined) return errorBody('invalid-state', {detail: 'the Pixoo has no presentation'});
     if ((this.#store?.pending() ?? []).some(command => command.family === 'device-mode-set')) return errorBody('invalid-state', {detail: 'a mode change is pending'});
-    const {mode} = status.configuration;
-    return mode === requireMode ? undefined : errorBody('invalid-state', {detail: mode === 'monitor' ? 'the Pixoo is in monitor, not media' : 'the Pixoo is in media, not monitor'});
+    return monitor.currentMode() === 'work' ? errorBody('invalid-state', {detail: 'playback is not admitted in Work'}) : undefined;
   }
 
   /**

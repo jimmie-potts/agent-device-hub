@@ -200,7 +200,7 @@ const pixooShowsNoticeRecord = (h: Harness): Outcome => {
   const expected = renderDashboard(layout).map(frame => frameDigest(frame));
   const shown = deviceState<SimulatedPixooState>(h, 'pixoo').shown?.digests;
   const display = h.reader.states<DisplayRecord>(PIXOO.display, 'bunny/modules/pixoo')[0]?.data;
-  return display?.mode === 'monitor' && display.monitor.connection === 'current' && display.monitor.matched === 1 && show(shown) === show(expected)
+  return display?.mode === 'work' && display.monitor.connection === 'current' && display.monitor.matched === 1 && show(shown) === show(expected)
     || `Pixoo record ${show(display)}, frame digests ${show(shown)}, expected ${show(expected)}`;
 };
 const dashboardNoticeClear: Scenario = {
@@ -210,7 +210,7 @@ const dashboardNoticeClear: Scenario = {
      config: {playback: PLAYBACK_SECTION, nanoleaf: NANOLEAF_SECTION, pixoo: PIXOO_SECTION.config}},
   steps: [
     act('the operator selects Pixoo Monitor', h => dispatchOnce(h, 'operator', 'notice-monitor', {key: 'bunny.cmd.device-mode-set.pixoo-1',
-      draft: {type: 'org.bunny.device-mode.set.requested', subject: 'pixoo-1', dataschema: 'https://bunny.invalid/events/device-mode-set/2.0', data: {mode: 'monitor'}}}, 'req-notice-monitor')),
+      draft: {type: 'org.bunny.device-mode.set.requested', subject: 'pixoo-1', dataschema: 'https://bunny.invalid/events/device-mode-set/2.0', data: {mode: 'work'}}}, 'req-notice-monitor')),
     act('the hook observes a finished turn', async h => {await publish(h, sessionStarted); await publish(h, turnStarted); await publish(h, turnEnded);}),
     expect('the dashboard row is unread', dashboardShows('finished')),
     expect('Nanoleaf holds the unread notice', h => h.reader.states<{tasks: {status: string}[]}>(NANOLEAF_FAMILIES.wall.family, 'bunny/modules/nanoleaf')

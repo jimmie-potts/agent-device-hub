@@ -25,7 +25,7 @@ function fillDisk(db: DatabaseSync): number {
   return pages;
 }
 
-const presentation = (q: string): PresentationConfiguration => ({version: 1, mode: 'monitor', filter: {q}, cadenceMs: 1000});
+const presentation = (q: string): PresentationConfiguration => ({version: 1, filter: {q}, cadenceMs: 1000});
 
 void test('a settings save on a full database reports the full disk, rolls back whole and leaves the store usable', async context => {
   const dir = await mkdtemp(join(tmpdir(), 'pixoo-store-'));
@@ -52,4 +52,34 @@ void test('a settings save on a full database reports the full disk, rolls back 
   store.savePresentation(presentation('after'));
   assert.equal(store.configurationRevision, revision + 1);
   assert.deepEqual(store.presentation(), presentation('after'));
+});
+
+void test('the last Hub mode and the remembered brightness are kept, Free and none before any, and a saved presentation\'s mode is ignored', async context => {
+  const dir = await mkdtemp(join(tmpdir(), 'pixoo-store-'));
+  context.after(() => rm(dir, {recursive: true, force: true}));
+  const file = join(dir, 'pixoo.sqlite');
+  const db = openModuleDatabaseFile(file);
+  const store = new PixooStore(db);
+  assert.equal(store.hubMode(), 'free', 'Free, the Hub\'s own first value, before any mode');
+  assert.equal(store.rememberedBrightness(), undefined);
+  // A presentation saved by an earlier module still carries Monitor or Media; it reads back without it.
+  db.prepare('INSERT INTO pixoo_state (key, value) VALUES (?, ?)').run('presentation', JSON.stringify({...presentation('saved'), mode: 'monitor'}));
+  db.prepare('INSERT INTO pixoo_state (key, value) VALUES (?, ?)').run('emptyIntent', 'paused');
+  assert.deepEqual(store.presentation(), {version: 1, filter: {q: 'saved'}, cadenceMs: 1000});
+  const revision = store.configurationRevision;
+  store.saveHubMode('quiet');
+  assert.equal(store.configurationRevision, revision + 1, 'the mode is a saved setting');
+  store.saveRememberedBrightness(70);
+  db.close();
+
+  const reopened = openModuleDatabaseFile(file);
+  context.after(() => { reopened.close(); });
+  const again = new PixooStore(reopened);
+  assert.equal(again.hubMode(), 'quiet');
+  assert.equal(again.rememberedBrightness(), 70);
+  again.saveRememberedBrightness(undefined);
+  assert.equal(again.rememberedBrightness(), undefined);
+  // A stored value the module does not know reads as the default rather than failing the start.
+  reopened.prepare('UPDATE pixoo_state SET value = ? WHERE key = ?').run('monitor', 'hubMode');
+  assert.equal(again.hubMode(), 'free');
 });

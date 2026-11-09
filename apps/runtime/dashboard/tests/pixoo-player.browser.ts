@@ -104,7 +104,10 @@ try {
     await page.getByText(`Session revision ${saved.playlistRevision + 1} · Saved revision ${saved.playlistRevision + 1}`, {exact: true}).waitFor();
     await page.getByRole('button', {name: 'Stop', exact: true}).click();
     const stopped = await waitState('idle'); assert.equal(stopped.state.intent, 'stopped'); assert.ok(stopped.session);
-    const afterStop = world.pixooState().sent;
+    // The status base rests on the display after a stop (ADR 0014) and paints its dashboard; let that settle, since only
+    // the reload below must add nothing.
+    let afterStop = world.pixooState().sent;
+    for (let attempt = 0, quiet = 0; quiet < 5 && attempt < 100; attempt++) { await delay(100); const now = world.pixooState().sent; quiet = now === afterStop ? quiet + 1 : 0; afterStop = now; }
     await page.reload(); await feed(page, 'connected');
     await page.getByText('Advanced player', {exact: true}).click();
     await page.getByRole('heading', {name: 'Player', exact: true, level: 2}).waitFor();
@@ -116,14 +119,15 @@ try {
     await page.getByRole('button', {name: 'Clear session', exact: true}).click();
     const cleared = await waitState('idle'); assert.equal(cleared.session, null);
     await page.getByText('No active session.', {exact: true}).waitFor();
-    await page.getByRole('combobox', {name: 'Display mode', exact: true}).selectOption('monitor');
+    // The Pixoo takes the Hub's modes as its own (ADR 0014); the native setting is still sent directly.
+    await page.getByRole('combobox', {name: 'Display mode', exact: true}).selectOption('work');
     const beforeMode = requestCount();
     await page.getByRole('button', {name: 'Set display mode', exact: true}).click();
-    await page.getByText('monitor', {exact: true}).waitFor();
+    await page.getByText('work', {exact: true}).waitFor();
     assert.equal(sent.length, beforeMode + 1);
-    await page.getByRole('combobox', {name: 'Display mode', exact: true}).selectOption('media');
+    await page.getByRole('combobox', {name: 'Display mode', exact: true}).selectOption('free');
     await page.getByRole('button', {name: 'Set display mode', exact: true}).click();
-    await page.getByText('media', {exact: true}).waitFor();
+    await page.getByText('free', {exact: true}).waitFor();
     assert.equal(sent.length, beforeMode + 2);
     await advanced.getByRole('status').filter({hasText: 'Completed: succeeded.'}).waitFor();
     assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);

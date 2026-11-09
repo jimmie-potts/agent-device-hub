@@ -88,7 +88,7 @@ it('real mode admission saves once, maps independent outcomes and never replays 
     assert.deepEqual(inbox.copy.states().map(message => [message.data.item.requestId, message.data.item.result]), [[nanoId, 'failed']], 'only the failed participant enters the real inbox');
     await inbox.copy.close();
   }
-  assert.deepEqual([nano.commands[0]?.data.mode, pixoo.commands[0]?.data.mode], ['work', 'monitor']);
+  assert.deepEqual([nano.commands[0]?.data.mode, pixoo.commands[0]?.data.mode], ['work', 'work'], 'both participants take the Hub mode one to one (ADR 0014)');
   assert.equal((await states())[0]?.mode, 'work');
   await core.actions.dispatch(action('work', 'req-work', initial?.revision)); await states();
   assert.equal(nano.commands.length + pixoo.commands.length, 2, 'duplicate and refresh send nothing');

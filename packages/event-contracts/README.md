@@ -427,21 +427,16 @@ such as LIFX color, Pixoo media or Nanoleaf edits, belong to each module.
 | state | `device` (2.0, 2.1 with `held`, and 2.2 with `moments.art`) | `org.bunny.device.updated` |
 | command | `power-set`, `brightness-set`, `scene-activate`, `zone-power-set`, `media-start`, `media-control`, `device-mode-set` | `org.bunny.power.set.requested`, `.brightness.set.requested`, `.scene.activate.requested`, `.zone-power.set.requested`, `.media.start.requested`, `.media.control.requested`, `.device-mode.set.requested` |
 
-`media-start` and `media-control` take an optional `requireMode`
-([#1276](https://github.com/jimmie-potts/agent-device-hub/issues/1276)): a
-native mode the device must be in. The module refuses the command with
-`invalid-state` at admission, before any device write, when the device's
-current mode differs or a mode change is pending, so a scheduled playlist never
-displaces a status display. The field is added in place to the two 2.0
-schemas, as #1185 widened `session/2.0`, rather than as a new minor version
-beside them: an optional command field changes no consumer's reading of an
-existing message, so every valid 2.0 command stays valid and one without
-`requireMode` behaves as before. A module that answers these families owes the
-field its check: it refuses a mode the device does not advertise with
-`unsupported-capability`, and a current mode that differs, or a pending
-`device-mode-set`, with `invalid-state`, before any device write. Today only the
-Pixoo answers them for a device that supports media; Nanoleaf and Tidbyt refuse
-both families as unsupported before the field matters.
+`media-start` and `media-control` keep an optional `requireMode` member
+([#1276](https://github.com/jimmie-potts/agent-device-hub/issues/1276)), a
+native mode name, because removing a member from a closed 2.0 minor is not
+additive. No module admits by it any more
+([ADR 0014](../../docs/decisions/0014-pixoo-follows-the-hub-mode.md)): the
+Pixoo, the only module that ever read it, refuses a command that carries it with
+`invalid-request` before any device write, and the core sends none. Routines
+carry their own Hub-mode precondition, which the core checks against the
+device's reported mode before sending. Nanoleaf and Tidbyt refuse both families
+as unsupported before the member matters.
 
 A `device` record is the full record of one device, published by the module
 that controls it, with the device `id` as its `subject`. The `id` is a routing
@@ -539,15 +534,19 @@ settled decisions). `nativeMode(kind, mode)` and `HUB_MODE_TABLE` apply it, and
 
 | Hub mode | Nanoleaf | Pixoo |
 | --- | --- | --- |
-| `work` | `work` | `monitor` |
-| `free` | `free` | `media` |
-| `quiet` | `quiet` | `monitor` |
+| `work` | `work` | `work` |
+| `free` | `free` | `free` |
+| `quiet` | `quiet` | `quiet` |
 
 LIFX, Tidbyt and playback do not take part; LIFX joins under
 [#415](https://github.com/jimmie-potts/agent-device-hub/issues/415), and
-per-device overrides use the same mapping. The table maps one way only. A device's
-native mode is never stored as the Hub's mode: Pixoo's `monitor` serves both
-`work` and `quiet`, and the `mode` family refuses `monitor` and `media`.
+per-device overrides use the same mapping. Since
+[ADR 0014](../../docs/decisions/0014-pixoo-follows-the-hub-mode.md) the Pixoo
+takes the Hub's values as its native modes, as the Nanoleaf does; its former
+`monitor` and `media` are no longer advertised, so a `device-mode-set` naming
+either is unsupported. The table maps one way only. A device's native mode is
+never stored as the Hub's mode, and the `mode` family refuses any value other
+than `work`, `free` and `quiet`.
 
 `mode/2.1` extends the existing global fields with `overrides`, at most 128
 unique `{target, mode, selectedAtMs}` choices differing from the global mode.
