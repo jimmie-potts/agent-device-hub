@@ -24,8 +24,8 @@ current commands and paths in CI, including Markdown-only changes.
 
 ## Reachy simulator checks
 
-Use Node 24. The runtime/browser harness needs Linux because private-file
-verification uses `/proc/self/fd`. Build first, then run `npm run test:reachy:built`,
+Use Node 24. The runtime and browser harness runs on Linux or
+[natively on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos). Build first, then run `npm run test:reachy:built`,
 `npm run test:reachy:browser`, event/SDK/runtime consumers and the shared
 build/type/lint/workflow checks. The modules and browser CI jobs run those
 checks. Module conformance, transport, storage/restart and policy tests use
@@ -104,7 +104,8 @@ unchanged; `gateway.test.ts` and `automation-routes.test.ts` cover
 uses the simulated Tidbyt and reads Recent attempts. The `art-show` runtime
 scenario shows saved art on the simulated Pixoo, Tidbyt and browser; focus it
 with `node --test --test-name-pattern='art-show' apps/runtime/dist/tests/scenarios/catalog.test.js`
-(Linux, as the catalog's private-file check requires). None of these checks
+on Linux, or natively on macOS with
+`node scripts/native-test.mjs test:runtime:scenarios:built -- --test-name-pattern=art-show`. None of these checks
 contacts a provider, an installed runtime or a physical display.
 
 Art-derived decoration (#683) uses `npm run test:art-theme:browser` after the
@@ -182,8 +183,8 @@ the read schemas under a strict standalone compiler and that the root lockfile h
 no Bluetooth binding; the runtime CI group runs it. The edge admission, gateway
 reads, tracked threshold and the absence of usage from core history are `apps/runtime/dist/tests/volcano-gateway.test.js`
 and the `volcano-physical-use` catalog scenario, under
-`npm run test:runtime:built`, which read an edge configuration file and so run in
-Linux. All of these use synthetic values and no radio. They do not qualify the
+`npm run test:runtime:built`, which read an edge configuration file and run on
+Linux or natively on macOS. All of these use synthetic values and no radio. They do not qualify the
 binding, the macOS launch path, or the owner's firmware; that is #617.
 
 The card (#616) adds `modules/volcano/tests/card.test.ts` to the built suite and
@@ -1295,9 +1296,9 @@ build, run these focused files, `test:runtime:built`,
 `test:sdk:built`, `test:runtime-dashboard:built` and the affected disposable core
 scenario. The tests cover authenticated source binding, exact owner revision,
 replay, later turns, restart and failed commit. Helper tests run its executable
-against the authenticated gateway and are kept to Linux, where CI runs them
-(the private-file reader works off Linux too, Hub #1355). Use a disposable
-container on macOS.
+against the authenticated gateway. They run on Linux, where CI runs them, and
+natively on macOS (see
+[Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos)).
 `node apps/runtime/dashboard/tests/read-receipts.browser.ts` verifies that the
 real helper's session/2.1 output clears the dashboard's unread row, survives a
 page reload and returns to unread on a new turn without a page command. The
@@ -1441,6 +1442,13 @@ and only the owner removes a cache no live lockfile produces.
 The wrapper's fixed-suite, source-isolation and failure-propagation checks are
 `node --test scripts/tests/runtime-container.test.mjs`, included in core CI.
 Hosted runtime suites remain unchanged.
+
+The runtime unit suite, the scenario catalog and the runtime dashboard browser
+journeys also run natively on macOS, without Linux or a container, from the
+session's own worktree and build. `node scripts/native-test.mjs <script>` runs a
+`node --test` package script with a bounded number of test workers, 2 by default.
+[Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos)
+gives the commands and lists the tests that still need Linux.
 
 See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs) for the authoritative procedure.
 
@@ -2083,9 +2091,9 @@ credential and another feed, is the last case of
 `apps/runtime/dist/tests/codex-desktop.test.js`; the edge binding itself is in
 `remote-hooks.test.js`. The container profile's admission of a remote-only section
 is in `deploy/container/tests/entrypoint.test.mjs`. Runtime tests that read an
-edge configuration file are kept to Linux (the procfs check, which CI runs; the
-reader's no-procfs check is exercised there too, Hub #1355); run them in the
-Runtime unit tests CI job or a disposable Linux container. The disposable run `codex-desktop-remote`
+edge configuration file run in the Runtime unit tests CI job, a disposable Linux
+container or [natively on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos),
+except the collector's entry-point test above. The disposable run `codex-desktop-remote`
 ([runtime verification runs](#runtime-verification-runs)) hosts the real collector
 for the acceptance exercise.
 
