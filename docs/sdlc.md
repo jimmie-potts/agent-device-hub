@@ -58,10 +58,12 @@ continue independent authorized work. A read-only assessment makes no changes.
 `gh-<number>-`. A PR that only mentions the issue as related does not count.
 Read the issue's workflow label. If someone else holds it as `status:in-progress`
 or `status:review`, or has an open PR for it, do not start: review or join that
-work, or report the conflict. A claim this session set, or was handed by the
-named owner or coordinator in the issue, PR or brief, is its own; continue it.
-Otherwise replace the workflow label with `status:in-progress` and read it back
-before creating a branch.
+work, or report the conflict. A claim is this session's own, and it continues,
+only when it set the claim or the issue, PR or brief explicitly transfers that
+claim to it, for example by naming the prior holder or saying to take over or
+continue it. A request or ownership line that only names the issue is not a
+transfer. Otherwise replace the workflow label with `status:in-progress` and
+read it back before creating a branch.
 
 A small issue needs the requested outcome, acceptance checks and delivery target.
 Add implementation, risks, dependencies and deferrals only when they matter.
