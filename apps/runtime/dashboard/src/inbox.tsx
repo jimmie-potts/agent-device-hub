@@ -3,8 +3,10 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {InboxItem} from '@jimmie-potts/event-contracts/v2/families';
 import {sendAction} from './actions.ts';
 import {InboxCard, InboxItemCard} from './inbox-card.tsx';
+import {PagedList} from './paged-list.tsx';
+import {listPageSize} from './paging.ts';
 
-function InboxRow({item, label, live, control}: {item: InboxItem; label: string; live: boolean; control: boolean}): React.JSX.Element {
+function InboxRow({item, label, live, control, hidden}: {item: InboxItem; label: string; live: boolean; control: boolean; hidden: boolean}): React.JSX.Element {
   const [attempt, setAttempt] = useState<{revision: number; locked: boolean}>();
   const [answer, setAnswer] = useState('');
   const inFlight = useRef(false), alive = useRef(true);
@@ -21,12 +23,12 @@ function InboxRow({item, label, live, control}: {item: InboxItem; label: string;
     setAttempt({revision, locked: !('error' in result) || result.error.code === 'uncertain-result'});
     setAnswer('error' in result ? `${result.error.code}. Nothing was automatically sent again.` : 'Accepted. Waiting for the shared item removal.');
   };
-  return <InboxItemCard item={item} label={label} control={control} disabled={!live || inFlight.current || locked === true} answer={answer} onHandle={action => {void handle(action);}}/>;
+  return <InboxItemCard item={item} label={label} control={control} disabled={!live || inFlight.current || locked === true} answer={answer} hidden={hidden} onHandle={action => {void handle(action);}}/>;
 }
 
 export type InboxFocus = {id: string; serial: number};
 
-/** Command adapter over existing Inbox records. Disclosure and focus never handle an item. */
+/** Command adapter over existing Inbox records. Disclosure, paging and focus never handle an item. */
 export function InboxPanel({items, live, control, devices = [], focus, headingId}: {
   items: readonly InboxItem[]; live: boolean; control: boolean; devices?: readonly DeviceRecord[]; focus?: InboxFocus | undefined; headingId?: string;
 }): React.JSX.Element {
@@ -40,6 +42,9 @@ export function InboxPanel({items, live, control, devices = [], focus, headingId
     disclosure.querySelector('summary')?.focus();
     disclosure.scrollIntoView({block: 'nearest'});
   }, [focus]);
+  // The heading keeps the total count on every page; the item to check is first given its page.
   return <div ref={host}><InboxCard count={items.length} live={live} control={control} headingId={headingId}>
-    {items.map(item => <InboxRow key={item.id} item={item} label={devices.find(device => device.id === item.item.target)?.label ?? item.item.target} live={live} control={control}/>)}</InboxCard></div>;
+    <PagedList keys={items.map(item => item.id)} pageSize={listPageSize.inbox} label="Inbox" reveal={focus === undefined ? undefined : {key: focus.id, serial: focus.serial}}>
+      {shown => items.map(item => <InboxRow key={item.id} item={item} label={devices.find(device => device.id === item.item.target)?.label ?? item.item.target} live={live} control={control} hidden={!shown(item.id)}/>)}
+    </PagedList></InboxCard></div>;
 }

@@ -6,11 +6,12 @@ import {cardsFor, emptyLightingLayout, lightingDevices, selectionKey} from './li
 import {homeLayout, widgetCatalog, widgetDefinition, type WidgetSize} from './widgets.ts';
 
 type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; instance: string} | {kind: 'light'; selection: LightingSelection} | {kind: 'unavailable'};
-export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean};
+/** `tall` marks a card the catalog lets exceed the standard Home height (#1658); it comes only from the widget catalog. */
+export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean; tall?: true};
 const ordinarySizes: readonly WidgetSize[] = ['medium', 'large'];
 export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardDefinition[] {
   // Roborock and Volcano metadata describe each existing device placement, not a second default card.
-  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock' && widget.id !== 'volcano').map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: !['art', 'wispr', 'duck-latest', 'reachy', 'timeline', 'music-visualizer'].includes(widget.id)}));
+  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock' && widget.id !== 'volcano').map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: !['art', 'wispr', 'duck-latest', 'reachy', 'timeline', 'music-visualizer'].includes(widget.id), ...(widget.tall === true ? {tall: true as const} : {})}));
   // The visualizer stays addable while measurement is off; the placed card rests and says why.
   const visualizer = result.find(card => card.id === 'music-visualizer');
   if (visualizer !== undefined) visualizer.category = 'Audio';

@@ -1,0 +1,6 @@
+/* The shared pager for list cards (#1658). */
+.paged-list{min-width:0}
+.paged-list:focus:not(:focus-visible){outline:none}
+.paged-list-pager{display:flex;align-items:center;justify-content:space-between;gap:var(--space-s);margin-top:var(--space-m)}
+.paged-list-pager button{min-height:44px;min-width:88px}
+.paged-list-position{font-size:var(--type-label);color:var(--muted-dense);font-variant-numeric:tabular-nums;text-align:center}

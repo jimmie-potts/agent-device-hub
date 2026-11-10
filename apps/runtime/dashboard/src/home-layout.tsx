@@ -125,7 +125,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
       const size = definition.sizes.includes(entry.size) ? entry.size : definition.sizes[0] ?? 'medium';
       const placed = entries.some(value => value.widget === entry.widget);
       const required = protectedCard(entry.widget), reason = required ? 'This card stays visible while it needs attention.' : undefined;
-      return <div key={entry.widget} className={`home-layout-card home-size-${size}${entry.widget === 'art' ? ' home-art-row' : ''}`} data-home-card={entry.widget} onDragOver={event => {if (editing && drag.current !== undefined) event.preventDefault();}} onDrop={event => {
+      return <div key={entry.widget} className={`home-layout-card home-size-${size}${entry.widget === 'art' ? ' home-art-row' : ''}${definition.tall === true ? ' home-tall' : ''}`} data-home-card={entry.widget} onDragOver={event => {if (editing && drag.current !== undefined) event.preventDefault();}} onDrop={event => {
         if (!editing || drag.current === undefined) return;event.preventDefault();event.stopPropagation();const source = drag.current;drag.current = undefined;move(source, entry.widget);
       }}>
         {editing && <div className="home-card-editor" role="group" aria-label={`Edit ${definition.name}`}>

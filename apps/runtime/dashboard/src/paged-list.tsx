@@ -1,0 +1,79 @@
+import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
+import {clampPage, pageCount, pageKeys, pageOf} from './paging.ts';
+import './paged-list.css';
+
+/** Asks the list to show one row, as the Hub mode card's "check Inbox" does; a new serial asks again. */
+export type PageReveal = {key: string; serial: number};
+
+const CONTROLS = 'summary, button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled)';
+const shownOnScreen = (element: Element): boolean => element.isConnected && element.getClientRects().length > 0;
+
+/**
+ * The shared pager for list cards (#1658): Inbox, Agent status and Timeline. It pages rows the dashboard already holds,
+ * in the browser, and sends no request. Every row stays mounted so open evidence and unsent drafts survive a page change;
+ * the caller hides a row when `shown(key)` is false and marks it with `data-paged-key`. With `expandAlone`, opening a
+ * row's first disclosure gives that row the whole page, so its controls stay inside the card's standard height; closing
+ * it brings the page back. Without it, an opened row stays beside the others on its page.
+ * When a page change or a removed row would leave focus on the document body, focus moves to a control in the list.
+ */
+export function PagedList({keys, pageSize, label, reveal, expandAlone = true, children}: {
+  keys: readonly string[]; pageSize: number; label: string; reveal?: PageReveal | undefined; expandAlone?: boolean;
+  children: (shown: (key: string) => boolean) => React.ReactNode;
+}): React.JSX.Element {
+  const host = useRef<HTMLDivElement>(null), last = useRef<Element | null>(null);
+  const previous = useRef<HTMLButtonElement>(null), next = useRef<HTMLButtonElement>(null);
+  const [page, setPage] = useState(0), [expanded, setExpanded] = useState<string>();
+  const [revealed, setRevealed] = useState<number>(), pagerFocus = useRef<HTMLButtonElement | null>(null);
+  if (reveal !== undefined && reveal.serial !== revealed) {
+    setRevealed(reveal.serial);
+    const index = keys.indexOf(reveal.key);
+    if (index >= 0) {setPage(pageOf(index, pageSize));setExpanded(reveal.key);}
+  }
+  const pages = pageCount(keys.length, pageSize), current = clampPage(page, keys.length, pageSize);
+  // Removing the last row of the last page moves back to the page before it.
+  if (current !== page) setPage(current);
+  const open = expandAlone && expanded !== undefined && keys.includes(expanded) ? expanded : undefined;
+  const visible = new Set(open === undefined ? pageKeys(keys, current, pageSize) : [open]);
+  useEffect(() => {
+    const node = host.current;if (node === null) return;
+    const focused = (event: FocusEvent): void => {last.current = event.target instanceof Element ? event.target : null;};
+    // A row's disclosure toggles without bubbling; the capture phase still passes through this list.
+    const toggled = (event: Event): void => {
+      const details = event.target;if (!(details instanceof HTMLDetailsElement)) return;
+      const row = details.closest<HTMLElement>('[data-paged-key]'), key = row?.dataset.pagedKey;
+      if (!expandAlone || row === null || key === undefined || !node.contains(row) || row.querySelector('details') !== details) return;
+      if (details.open) {setExpanded(key);return;}
+      setExpanded(value => value === key ? undefined : value);
+      for (const other of node.querySelectorAll<HTMLElement>('[data-paged-key]')) {
+        const disclosure = other.querySelector('details');if (other !== row && disclosure?.open === true) disclosure.open = false;
+      }
+    };
+    node.addEventListener('focusin', focused);node.addEventListener('toggle', toggled, true);
+    return () => {node.removeEventListener('focusin', focused);node.removeEventListener('toggle', toggled, true);};
+  }, [expandAlone]);
+  useLayoutEffect(() => {
+    const node = host.current;if (node === null) return;
+    if (pagerFocus.current !== null) {pagerFocus.current.focus();pagerFocus.current = null;return;}
+    const before = last.current, active = document.activeElement;
+    if (before === null || shownOnScreen(before)) return;
+    last.current = null;
+    if (active !== null && active !== document.body && active !== before) return;
+    // The focused row went away or off the page; Chromium would otherwise leave focus on the body.
+    const target = [...node.querySelectorAll<HTMLElement>(CONTROLS)].find(shownOnScreen) ?? node;
+    target.focus();
+  });
+  const go = (target: number): void => {
+    const value = clampPage(target, keys.length, pageSize);
+    setPage(value);
+    // A pager button that becomes disabled would drop focus, so focus passes to the other one.
+    if (value === 0) pagerFocus.current = next.current;else if (value === pages - 1) pagerFocus.current = previous.current;
+  };
+  return <div className="paged-list" ref={host} tabIndex={-1} data-paged-list={label} data-page={current + 1} data-pages={pages}>
+    {children(key => visible.has(key))}
+    {pages > 1 && open === undefined && <div className="paged-list-pager" role="group" aria-label={`${label} pages`}>
+      <button type="button" className="secondary" ref={previous} disabled={current === 0} onClick={() => {go(current - 1);}}>Previous</button>
+      <span className="paged-list-position" aria-live="polite">Page {current + 1} of {pages}</span>
+      <button type="button" className="secondary" ref={next} disabled={current === pages - 1} onClick={() => {go(current + 1);}}>Next</button>
+    </div>}
+  </div>;
+}

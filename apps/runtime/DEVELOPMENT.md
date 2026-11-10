@@ -627,6 +627,17 @@ It uses synthetic saved-layout metadata only; no device command or installed
 state is selected. Use an outside-checkout `TMPDIR` and optional private
 `DASHBOARD_RECEIPTS` screenshots. Keep the shared and full browser checks below.
 
+Standard Home card heights and list paging (#1658) extend the same Home editor
+chain, so hosted smoke and the full browser suite run them. After the root build,
+`node apps/runtime/dashboard/tests/home-card-heights.browser.ts` checks that every
+row lines up at Small, Standard and Wide with an Inbox of 0, 1 and 13 items. It
+also checks Inbox paging with the total count, expanded-item reach,
+dismissal of a page's last item, focus after paging and dismissal, Agent status
+and Timeline paging through the shared component, saved layouts and narrow
+content height. `node --test apps/runtime/dashboard/tests/paging.test.ts` covers
+the page arithmetic and the catalog's tall-card opt-out. Synthetic records only;
+with `DASHBOARD_RECEIPTS` set it saves private 2x screenshots.
+
 The television journey (#1112) runs the existing shell at a 1,920 × 1,080
 viewport from the keyboard only, as a TV browser presents the D-pad. After the
 root build, run `node apps/runtime/dashboard/tests/tv.browser.ts`. It checks

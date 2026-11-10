@@ -1,10 +1,25 @@
 // Collection adapter over the shell's existing session copy; no additional connection or state subscription.
-import React, {useMemo, useState} from 'react';
+import React, {useLayoutEffect, useMemo, useRef, useState} from 'react';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {AgentStatusCard, AgentStatusSummary} from './agent-status-card.tsx';
 import {LabelEditor} from './label-editor.tsx';
+import {PagedList} from './paged-list.tsx';
+import {listPageSize} from './paging.ts';
 import {matches, sessionRows} from './sessions.ts';
 import {Select} from './ui.tsx';
+
+/** How many tile columns the grid lays out now, so a page holds whole rows at any card size. */
+function useColumns(): [React.RefObject<HTMLDivElement | null>, number] {
+  const grid = useRef<HTMLDivElement>(null), [columns, setColumns] = useState(1);
+  useLayoutEffect(() => {
+    const node = grid.current;if (node === null) return;
+    const measure = (): void => {setColumns(Math.max(1, getComputedStyle(node).gridTemplateColumns.split(' ').filter(value => value !== '' && value !== 'none').length));};
+    measure();
+    const observer = new ResizeObserver(measure);observer.observe(node);
+    return () => {observer.disconnect();};
+  }, []);
+  return [grid, columns];
+}
 
 export function AgentSessions({records, synced, live, control, now}: {
   records: readonly SessionRecord[]; synced: boolean; live: boolean; control: boolean; now: number;
@@ -15,6 +30,8 @@ export function AgentSessions({records, synced, live, control, now}: {
   const shown = new Set(records.filter(record => matches(record, query, provider)).map(record => record.id));
   const filtering = query !== '' || provider !== '';
   const providers = [...new Set(['codex', 'claude', ...records.map(record => record.identity.provider)])];
+  const [grid, columns] = useColumns();
+  const keys = rows.filter(row => shown.has(row.id)).map(row => `${row.id}:${String(row.generation)}`);
   return <div className="agent-sessions">
     <AgentStatusSummary rows={rows} live={live}/>
     <div className="filters">
@@ -23,8 +40,12 @@ export function AgentSessions({records, synced, live, control, now}: {
     </div>
     {shown.size === 0 && <div className="empty"><h3>{filtering ? 'No matching sessions' : synced ? 'No sessions observed' : 'Sessions not synced yet'}</h3>
       <p>{filtering ? 'Change the filters to see other sessions.' : 'Sessions appear when the core reports them.'}</p></div>}
-    <div className="sessions agent-grid">{rows.map(row => <div key={`${row.id}:${row.generation}`} hidden={!shown.has(row.id)}>
-      <AgentStatusCard row={row} live={live} now={now} actions={control ? <LabelEditor row={row} live={live}/> : undefined}/>
-    </div>)}</div>
+    <PagedList keys={keys} pageSize={listPageSize.sessionRows * columns} label="Agent sessions" expandAlone={false}>{visible =>
+      <div className="sessions agent-grid" ref={grid}>{rows.map(row => {
+        const key = `${row.id}:${String(row.generation)}`;
+        return <div key={key} data-paged-key={key} hidden={!visible(key)}>
+          <AgentStatusCard row={row} live={live} now={now} actions={control ? <LabelEditor row={row} live={live}/> : undefined}/>
+        </div>;
+      })}</div>}</PagedList>
   </div>;
 }

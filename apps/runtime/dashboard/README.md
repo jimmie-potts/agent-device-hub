@@ -131,6 +131,26 @@ keeps a compact preferred width, Standard has more room, and Wide occupies its
 own row. Incomplete rows fill the available space without empty grid slots;
 phone layouts and the Phone editor preview stack cards in one column.
 
+At the wide layout every size shares one standard height (#1658), set once as
+`--home-card-height` beside the width rule in `src/home-layout.css`. It fits the
+tallest card without a list, so cards in a row line up. A row still stretches to
+its tallest card, so a card that outgrows the height never clips its controls.
+Only cards the widget catalog marks `tall` may exceed it: Art and the music
+visualizer. Stacked in one column, each card is as tall as its content.
+
+Inbox, Agent status and Timeline page their lists through one shared pager
+(`src/paged-list.tsx`) instead of growing. **Previous**, **Next** and
+"Page x of y" appear once a list needs a second page. Rows per page are fixed in
+`src/paging.ts` so a full page fits the standard height; the `#/timeline` page
+shows 20 entries a page. Agent status pages whole
+rows of tiles at the card's current column count. Paging covers only the records
+the page already holds and sends no request. The Inbox heading shows the total on
+every page. Opening an Inbox item or a Timeline entry gives it the whole page, so
+its controls stay inside the card; closing it returns the page. An agent tile
+opens in place beside the others, so attention on another session stays in view. Dismissing the only item on the last page
+moves back a page. When paging or a removed row would leave focus on the page
+body, focus moves to a control in the list. Narrow screens page the same way.
+
 Art is an optional module card. **Add Art** reserves its own row; choose Auto,
 Banner, Square or Tall and pin it separately from a gallery favorite. **Unpin art**
 allows bounded placement in unused space after the functional cards. Automatic
@@ -885,7 +905,7 @@ through **Edit Home → Add card**; existing saved arrangements are unchanged.
 Short newest-first rows reveal evidence and an optional technical record when
 selected. Today, Yesterday and Recent select retained history; category buttons
 filter that snapshot locally. Every read requests the latest 200 matching
-entries. “Latest N” identifies the loaded window, and **Show more** reveals only
+entries. “Latest N” identifies the loaded window, and the pager pages only
 loaded entries. An empty category describes that window, not the whole archive. **Filters** preserves inclusive From/To, Kind,
 Source and qualified Session filters. Entry, **Refresh history** and applied
 filters read the existing authenticated gateway, without polling or commands.

@@ -44,8 +44,11 @@ try {
     await failed.getByText(/evidence: none/i).waitFor();
     assert.equal(requests(), 1); assert.equal(nativeCalls(), 2);
     await world.failCommand();
+    // An open Inbox item takes the card's page (#1658); close it to reach the other item, then open it again.
+    await failed.locator('summary').first().click();
     const unrelated = inbox.locator('[data-inbox]').filter({hasText: 'g1'}); await unrelated.locator('summary').first().click();
     await unrelated.getByRole('button', {name: 'Dismiss'}).click(); await unrelated.waitFor({state: 'detached'}); assert.equal(await warning.count(), 1);
+    await failed.locator('summary').first().click();
     await failed.getByRole('button', {name: 'Dismiss'}).click(); await failed.waitFor({state: 'detached'}); await warning.waitFor({state: 'detached'});
     await work.click(); await warning.waitFor(); assert.equal(requests(), 2, 'selected Work explicitly reapplies');
     world.modeResult('none'); await work.click();

@@ -6,7 +6,10 @@
  * Wispr (#927) reads private numeric content on demand; it never joins the broadcast families.
  */
 export type SourceKind = 'core' | 'module' | 'external';
-/** Small prefers a compact width, medium a wider card and large a whole row; narrow screens stack every size. */
+/**
+ * Small prefers a compact width, medium a wider card and large a whole row; narrow screens stack every size.
+ * At the wide layout every size shares one standard Home height (#1658), set once in home-layout.css.
+ */
 export type WidgetSize = 'small' | 'medium' | 'large';
 export type WidgetDefinition = {
   /** Stable identifier in lowercase letters, digits and hyphens. */
@@ -24,12 +27,17 @@ export type WidgetDefinition = {
    * It shows its heading and says it is not shown here yet; it reads nothing.
    */
   slot?: {story: string};
+  /**
+   * true when the card may be taller than the standard Home card height (owner decision D2, #1658). Only media
+   * cards opt out; every other card fits the standard height, and a card with a list pages it instead of growing.
+   */
+  tall?: true;
 };
 
 export const widgetCatalog: readonly WidgetDefinition[] = [
   {
     id: 'art', name: 'Art', description: 'A rich generated composition, private gallery and explicit owner requests.',
-    sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['art'], content: ['art/catalog', 'art/rendition']}, commands: true,
+    sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['art'], content: ['art/catalog', 'art/rendition']}, commands: true, tall: true,
   },
   {
     id: 'reachy', name: 'Reachy', description: 'Latest fixed-text reaction, guarded text controls and separately enabled browser speech.',
@@ -54,7 +62,7 @@ export const widgetCatalog: readonly WidgetDefinition[] = [
   {
     // Reads the capture state and the existing derived feature stream in the browser (#1619); it starts no capture.
     id: 'music-visualizer', name: 'Music visualizer', description: 'A live visualizer of the measured Music audio, in the effect chosen in this browser.',
-    sizes: ['medium', 'large'], source: {kind: 'core', families: ['music-capture-state']}, commands: false,
+    sizes: ['medium', 'large'], source: {kind: 'core', families: ['music-capture-state']}, commands: false, tall: true,
   },
   {
     id: 'wispr', name: 'Wispr', description: 'Numeric dictation totals from the manually selected collector files.',

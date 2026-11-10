@@ -1,6 +1,8 @@
 import React, {useId, useState} from 'react';
 import {historyFace, selectedHistory, type HistoryCategory, type HistoryPeriod, type HistoryRow} from './timeline-model.ts';
 import type {HistorySnapshot} from './timeline-read.ts';
+import {PagedList} from './paged-list.tsx';
+import {listPageSize} from './paging.ts';
 import './timeline-card.css';
 
 function HistoryIcon({category, warning = false}: {category: ReturnType<typeof historyFace>['category']; warning?: boolean}): React.JSX.Element {
@@ -13,13 +15,13 @@ function HistoryIcon({category, warning = false}: {category: ReturnType<typeof h
   </svg>;
 }
 
-function HistoryEntry({row}: {row: HistoryRow}): React.JSX.Element {
+function HistoryEntry({row, hidden}: {row: HistoryRow; hidden: boolean}): React.JSX.Element {
   const face = historyFace(row), at = new Date(row.atMs);
   const close = (host: HTMLElement): void => {
     const entry = host.closest('details');if (entry === null) return;
     entry.open = false;entry.querySelector('summary')?.focus();
   };
-  return <li data-history-row={row.seq} data-history-kind={row.kind}>
+  return <li data-history-row={row.seq} data-history-kind={row.kind} data-paged-key={String(row.seq)} hidden={hidden}>
     <details className="timeline-entry" onKeyDown={event => {if (event.key === 'Escape') {event.stopPropagation();close(event.currentTarget);}}}>
       <summary><span className="timeline-mark" data-warning={face.warning}><HistoryIcon category={face.category} warning={face.warning}/></span>
         <span className="timeline-face"><span className="timeline-title">{face.title}</span><span className="timeline-context">{face.context}</span></span>
@@ -37,11 +39,13 @@ function HistoryEntry({row}: {row: HistoryRow}): React.JSX.Element {
 export type TimelineCardProps = {
   snapshot: HistorySnapshot; period: HistoryPeriod; onPeriod: (period: HistoryPeriod) => void; onRefresh: () => void;
   advanced?: React.ReactNode; headingId?: string; connected?: boolean;
+  /** Entries per page: the Home card's size by default; the dedicated page shows more. */
+  pageSize?: number;
 };
 
 /** Read-only presentation, identical in a Home placement or the dedicated page. */
-export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, headingId, connected = true}: TimelineCardProps): React.JSX.Element {
-  const uid = useId(), [category, setCategory] = useState<HistoryCategory>('All'), [visible, setVisible] = useState(20);
+export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, headingId, connected = true, pageSize = listPageSize.timeline}: TimelineCardProps): React.JSX.Element {
+  const uid = useId(), [category, setCategory] = useState<HistoryCategory>('All');
   const rows = selectedHistory(snapshot.rows, category);
   const failure = snapshot.errorCode === 'invalid-request' ? 'Check filters (invalid-request)'
     : snapshot.errorCode === 'unauthenticated' ? 'Sign in again (unauthenticated)'
@@ -53,17 +57,17 @@ export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, h
       : !connected ? 'Offline · saved history' : '';
   return <div className="timeline-card" data-timeline-card data-history-error={snapshot.errorCode} aria-labelledby={headingId ?? uid}>
     <header className="timeline-heading"><h2 id={headingId ?? uid}>Timeline</h2><div className="timeline-tools">
-      <select aria-label="Activity period" value={period} onChange={event => {setVisible(20);onPeriod(event.target.value as HistoryPeriod);}}>
+      <select aria-label="Activity period" value={period} onChange={event => {onPeriod(event.target.value as HistoryPeriod);}}>
         <option value="today">Today</option><option value="yesterday">Yesterday</option><option value="recent">Recent</option>{period === 'custom' && <option value="custom">Custom</option>}
       </select><button type="button" className="secondary timeline-refresh" aria-label="Refresh history" onClick={onRefresh}>↻</button>
     </div></header>
-    <div className="timeline-filters" role="group" aria-label="Activity filters" aria-describedby={`${uid}-window`}>{(['All', 'Agents', 'Devices', 'Automation'] as const).map(value => <button type="button" className="secondary" key={value} aria-pressed={category === value} onClick={() => {setCategory(value);setVisible(20);}}>{value}</button>)}</div>
+    <div className="timeline-filters" role="group" aria-label="Activity filters" aria-describedby={`${uid}-window`}>{(['All', 'Agents', 'Devices', 'Automation'] as const).map(value => <button type="button" className="secondary" key={value} aria-pressed={category === value} onClick={() => {setCategory(value);}}>{value}</button>)}</div>
     <p className="vh" id={`${uid}-window`}>Categories filter only the latest {snapshot.rows.length} loaded entries, up to 200 matching records.</p>
     <p className={status === '' ? 'vh' : 'timeline-status'} role="status">{status !== '' ? status : `${rows.length} history entries.`}</p>
     {snapshot.readAt !== undefined && status === '' && <p className="timeline-read-at">Latest {snapshot.rows.length} · Read {new Date(snapshot.readAt).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}</p>}
-    <ol className="timeline-entries" aria-label="Activity entries">{rows.slice(0, visible).map(row => <HistoryEntry key={row.seq} row={row}/>)}</ol>
+    <PagedList keys={rows.map(row => String(row.seq))} pageSize={pageSize} label="Timeline">{shown =>
+      <ol className="timeline-entries" aria-label="Activity entries">{rows.map(row => <HistoryEntry key={row.seq} row={row} hidden={!shown(String(row.seq))}/>)}</ol>}</PagedList>
     {rows.length === 0 && snapshot.phase === 'ready' && <p className="timeline-empty">No matches in these entries</p>}
-    {rows.length > visible && <button type="button" className="secondary" onClick={() => {setVisible(count => count + 20);}}>Show more</button>}
     {advanced}
   </div>;
 }

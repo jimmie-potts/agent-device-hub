@@ -1,12 +1,19 @@
 .home-layout-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
-/* Wrap in saved order and share each row's spare width instead of reserving empty grid slots. */
-.home-layout-grid{display:flex;flex-wrap:wrap;gap:var(--space-m,16px);align-items:flex-start}
-.home-layout-card{min-width:0;flex:2 1 340px}
+/* Wrap in saved order and share each row's spare width instead of reserving empty grid slots.
+   Every size shares one standard height at the wide layout (#1658), so cards in a row line up. The height fits the
+   tallest card without a list as rendered on 2026-11-10 (Pixoo, 811px); list cards page to fit it. A card the widget
+   catalog marks tall (art, music visualizer) may exceed it, and a row stretches every card to its tallest one. */
+.home-layout-grid{--home-card-height:820px;display:flex;flex-wrap:wrap;gap:var(--space-m,16px);align-items:stretch}
+.home-layout-card{min-width:0;flex:2 1 340px;display:flex;flex-direction:column}
 .home-layout-card.home-size-small{flex:1 1 260px}
 .home-layout-card.home-size-large{flex:1 0 100%}
-.home-card-content{min-width:0}
-.home-card-content>.widget,.home-card-content>article{margin:0}
-.home-card-content .lighting-grid,.home-card-content .music-grid{display:block}
+.home-card-content{min-width:0;flex:1 0 auto;display:flex;flex-direction:column;min-height:var(--home-card-height)}
+/* The edit bar sits above the content, so editing keeps every card's content at the standard height. */
+.home-tall>.home-card-content{min-height:0}
+/* The visible card fills the height; wrappers between it and the Home slot pass the height down. */
+.home-card-content>*,.home-card-content>:is(.lighting-workspace,.music-workspace,.companion-page,.wemo-module)>:first-child,.home-card-content :is(.lighting-grid,.music-grid)>:first-child{flex:1 0 auto}
+.home-card-content>:is(.lighting-workspace,.music-workspace,.companion-page,.wemo-module),.home-card-content :is(.lighting-grid,.music-grid){display:flex;flex-direction:column}
+.home-card-content>.widget,.home-card-content>article,.home-card-content>.companion-page>.widget{margin:0}
 .home-card-content .lighting-workspace,.home-card-content .music-workspace{margin:0;padding:0}
 .home-card-content .music-card,.home-card-content .light-card{width:100%;min-width:0;max-width:none}
 /* Agent tiles must respond to their Home card's width, not only the viewport. */
@@ -36,10 +43,15 @@
 .home-layout-feedback:empty{display:none}
 .home-layout-feedback{margin-top:12px}
 .home-phone .home-layout-grid{max-width:390px;margin-inline:auto}
+/* Stacked in one column, each card is as tall as its content; lists still page (owner decision D3, #1658). */
 .home-phone .home-layout-card{flex-basis:100%}
-@media(max-width:600px){.home-catalog{grid-template-columns:minmax(0,1fr)}.home-layout-card,.home-layout-card.home-size-small,.home-layout-card.home-size-large{flex-basis:100%}.home-card-editor button{min-height:44px}.home-card-editor select{font-size:16px}}
+.home-phone .home-card-content{min-height:0}
+.home-phone .home-layout-grid{align-items:flex-start}
+@media(max-width:600px){.home-catalog{grid-template-columns:minmax(0,1fr)}.home-layout-grid{align-items:flex-start}.home-layout-card,.home-layout-card.home-size-small,.home-layout-card.home-size-large{flex-basis:100%}.home-card-content{min-height:0}.home-card-editor button{min-height:44px}.home-card-editor select{font-size:16px}}
 /* Explicit reservations occupy their own row. Automatic art is always after the functional grid. */
-.home-layout-card.home-art-row{flex:1 0 100%;width:100%}
+.home-layout-card.home-art-row{flex:1 0 100%;width:100%;display:block}
+/* Art sizes its own reservation, so its row keeps block layout rather than the standard card height. */
+.home-art-row>.home-card-content{display:block}
 .home-art-slot{width:100%;min-width:0}
 .home-art-slot[data-art-placement=automatic]{margin-top:16px}
 .home-art-box{max-width:100%;margin-inline:auto;display:flex;flex-direction:column;gap:8px}

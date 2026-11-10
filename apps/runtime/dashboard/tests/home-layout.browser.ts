@@ -185,3 +185,4 @@ try {
 } finally {await browser.close();await world.close();}
 
 await import('./home-balance.browser.ts');
+await import('./home-card-heights.browser.ts');
