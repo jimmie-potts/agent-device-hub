@@ -34,6 +34,8 @@ type World = {
   now: number; selected: string; brightness: number; alert: boolean; feeding: boolean; sequence: number; input: MusicInput;
   /** The plain colour `/state` reports, if one was chosen: a colour write selects `*Solid*` (#1614). */
   color: MusicColor | undefined;
+  /** Answers the next `/state` read with this instead of the light's state, once. */
+  stateAnswer: {value: unknown} | undefined;
   onWrite: (endpoint: string, payload: unknown) => void; lose: string | undefined; refuse: number | undefined;
   /** Runs while a read is in flight, before it is answered: what changes during the read. */
   onRead: (endpoint: string) => void;
@@ -53,7 +55,7 @@ function open(): World {
   const now = 1_793_836_800_000;
   const clock: MusicClock = {wallMs: now, monotonicMs: now};
   return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, datagrams: [], reads: [], failSend: false, now, selected: 'Ocean', brightness: 50, alert: false, feeding: true, sequence: 0,
-    input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined, onRead: () => {}, onArrive: () => {}, color: undefined};
+    input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined, onRead: () => {}, onArrive: () => {}, color: undefined, stateAnswer: undefined};
 }
 
 const feature = (world: World): CaptureFeatures => {
@@ -91,6 +93,9 @@ async function run(world: World, step: (world: World) => void, base: MusicBase =
       world.reads.push({endpoint, atMs: world.now});
       world.onRead(endpoint);
       if (endpoint === '/effects/select') return world.selected;
+      const scripted = endpoint === '/state' ? world.stateAnswer : undefined;
+      world.stateAnswer = undefined;
+      if (scripted !== undefined) return scripted.value;
       const color = world.color === undefined ? {colorMode: 'effect'} : 'ct' in world.color ? {colorMode: 'ct', ct: {value: world.color.ct}}
         : {colorMode: 'hs', hue: {value: world.color.hue}, sat: {value: world.color.sat}};
       return endpoint === '/effects' ? {select: world.selected, effectsList: ['Ocean', 'New scene']} : {on: {value: true}, brightness: {value: world.brightness}, ...color};
@@ -769,3 +774,38 @@ test('a plain colour the light does not report completely is an unnamed base', a
     assert.deepEqual(await readMusicBase(reads(state)), unnamed, why);
   }
 });
+
+// #1614 fix round 2: the colour base's entry read of `/state` failing or answering something that is not the captured colour.
+test('a colour base whose entry state read fails ends the session as a device failure with no entry write', async () => {
+  const world = open();
+  try {
+    world.selected = '*Solid*';
+    world.color = {hue: 120, sat: 80};
+    world.onRead = endpoint => { if (endpoint === '/state' && entries(world).length === 0) throw new Error('the read was not answered'); };
+    await run(world, () => {}, COLOR);
+    assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'unavailable'});
+    assert.deepEqual(world.reads.map(read => read.endpoint), ['/effects/select', '/state']);
+    assert.equal(entries(world).length, 0, 'no streaming entry');
+    assert.equal(world.writes.length, 0, 'nothing is written');
+  } finally {
+    world.db.close();
+  }
+});
+
+for (const [why, answer] of [['an effect colour mode', {colorMode: 'effect'}], ['a partial colour', {colorMode: 'hs', hue: {value: 120}}],
+  ['a malformed answer', 'not a state'], ['no answer body', null]] as const) {
+  test(`a colour base whose entry state read gives ${why} ends the session as manual with no write`, async () => {
+    const world = open();
+    try {
+      world.selected = '*Solid*';
+      world.color = {hue: 120, sat: 80};
+      world.stateAnswer = {value: answer};
+      await run(world, () => {}, COLOR);
+      assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
+      assert.equal(entries(world).length, 0, 'no streaming entry');
+      assert.equal(world.writes.length, 0, 'no colour or other write');
+    } finally {
+      world.db.close();
+    }
+  });
+}

@@ -602,7 +602,7 @@ The Audio page SHALL show a Music lighting card with one section per light in th
 
 #### Scenario: What an ending puts back
 - **WHEN** the light's last read selection is a saved scene, a plain colour or a selection that cannot be selected again, a session plays over one of them, or it ends
-- **THEN** the card says before Start, during the session and after the ending whether Stop, an alert or lost Music input puts the scene or colour back or leaves the last Music frame, that a manual change wins except in the instant the session takes the light, and, for an ending with restoration `none` over an unnamed base, that nothing was put back and why
+- **THEN** the card says before Start, during the session and after the ending whether Stop, an alert or lost Music input puts the scene or colour back or leaves the last Music frame, that a scene or colour picked on the light wins except in the instant the session takes the light, that a brightness or power change there ends the session within about a second, after a Music frame may already have replaced the base, and, for an ending with restoration `none` over an unnamed base, that nothing was put back and why
 
 #### Scenario: Light outside Free
 - **WHEN** the light's saved mode is not Free and the operator starts it

@@ -345,7 +345,7 @@ Known limits:
 
 - A scene chosen in the Nanoleaf app in the short gap between the entry's read and the streaming entry is replaced by the entry, once per session. So is a different colour picked in the gap between a colour base's `/state` read and the entry write; one picked before that read ends the session `manual`.
 - Colour restoration follows the Nanoleaf API documentation; #1614's installed check qualifies it on the Lines.
-- An app takeover, and brightness and power changes made outside the hub, are seen within about a second.
+- An app takeover, and brightness and power changes made outside the hub, are seen within about a second. The entry checks only the selection (and a colour base's colour), so a brightness or power change made before it is seen by the first playing check, after a frame may have replaced the base.
 - After a `device` or `restart` ending, or a module stop mid-session, nothing is written: the light stays in streaming mode, showing the last frame, until it times out or a scene is chosen. The scene restorer treats `*ExtControl*` in Free as someone else's choice.
 - The streaming behavior (zone addressing, app takeover, brightness) comes from third-party protocol notes; #725 qualifies it on the installed Lines.
 - The input reads the runtime's one clock for both its wall and monotonic readings.

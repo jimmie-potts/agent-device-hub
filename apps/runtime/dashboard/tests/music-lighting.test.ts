@@ -159,7 +159,8 @@ void test('#1614: the card explains what an ending puts back, before Start and a
     ({saved: false, sceneId: null, placeholder: null, restores: 'nothing' as const, readAtMs: 1000, ...patch});
   const scene = read({saved: true, sceneId: `scene-${'a'.repeat(64)}`, restores: 'scene'});
   assert.equal(baseText(scene, '10:00'), 'Last read at 10:00: a scene saved on the light. Stop, an alert or lost Music input puts that scene back at its brightness.'
-    + ' A manual change on the light wins, and then nothing is put back; only a change in the instant the session takes the light is replaced by its frames.');
+    + ' A scene or colour picked on the light wins and nothing is put back, unless it lands in the instant the session takes the light.'
+    + ' A brightness or power change on the light ends the session within about a second, so a Music frame may already have replaced the scene or colour.');
   assert.match(baseText(read({placeholder: '*Solid*', restores: 'color'}), '10:00'), /a plain colour\. .*puts that colour back/);
   assert.match(baseText(read({placeholder: '*Solid*'}), '10:00'), /a plain colour whose value could not be read\. .*puts nothing back.*last Music frame/);
   assert.match(baseText(read({placeholder: '*ExtControl*'}), '10:00'), /streamed frames.*earlier Music session.*puts nothing back/);
@@ -167,7 +168,7 @@ void test('#1614: the card explains what an ending puts back, before Start and a
   assert.match(baseText(read({}), '10:00'), /a selection that is not a scene saved on the light.*puts nothing back/);
   assert.match(baseText(null, ''), /^Start reads what the light shows\..*scene saved on the light or a plain colour.*last Music frame/);
   assert.match(sessionBaseText('color'), /started over a plain colour\. .*puts it back/);
-  assert.match(sessionBaseText('nothing'), /cannot select again\. .*puts nothing back.*last Music frame.*manual change/);
+  assert.match(sessionBaseText('nothing'), /cannot select again\. .*puts nothing back.*last Music frame.*picked on the light wins/);
   // After the ending: a colour restored, and an unnamed base truthfully left as it was.
   assert.match(endingText({generation: 'g', reason: 'stopped', restoration: 'restored', atMs: 1}, 'color'), /The base colour and brightness were restored\./);
   assert.equal(endingText({generation: 'g', reason: 'alert', restoration: 'none', atMs: 1}, 'nothing'),
