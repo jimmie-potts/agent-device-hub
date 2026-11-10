@@ -434,6 +434,8 @@ export type WallState = {
   held: boolean; failing: boolean;
   settings: {style: string; coverage: string}; tasks: {id: string; status: string; element: string | null; evictionToken?: string}[];
   elements: {id: string; task: string | null; project: string | null}[]; projects: {id: string}[];
+  selection?: {saved: boolean; sceneId: string | null; placeholder: string | null; restores: string; readAtMs: number} | null;
+  musicBase?: {generation: string; restores: string} | null;
 };
 
 /** A general device command's routing key and draft. */

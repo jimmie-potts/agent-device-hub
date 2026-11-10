@@ -7,7 +7,7 @@ import type {TestContext} from 'node:test';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {initialize} from '../src/database.js';
 import {DEFAULT, metaKey} from '../src/devices.js';
-import {hold, held, holdOf, outcomeOf, recoverAttempts, release, type End, type MusicChanged, type Outcome, type ScenesChanged} from '../src/journal.js';
+import {hold, held, holdOf, outcomeOf, recoverAttempts, release, type End, type MusicChanged, type Outcome, type ScenesChanged, type SelectionChanged} from '../src/journal.js';
 import {execute, rows, transaction, type Db, type Row} from '../src/sqlite.js';
 import {controlState} from '../src/store.js';
 import {suite, test} from './support.js';
@@ -73,7 +73,7 @@ suite('holds and the operation they wait on', () => {
         id, DEFAULT, kind, JSON.stringify(command), revision);
     };
     transaction(db, () => { insert('play', 'animation.play', {kind: 'animation.play', preset: 'ocean'}); });
-    const reported: (Outcome | ScenesChanged | MusicChanged)[] = [];
+    const reported: (Outcome | ScenesChanged | MusicChanged | SelectionChanged)[] = [];
     transaction(db, () => { recoverAttempts(db, DEFAULT, message => { reported.push(message); }, 7_000); });
     assert.deepEqual(reported.map(message => message.type === 'outcome' ? message.result : message.type), ['uncertain']);
     assert.equal(holdOf(db, revision), undefined, 'an animation\'s attempt holds nothing');

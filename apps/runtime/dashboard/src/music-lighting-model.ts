@@ -4,6 +4,7 @@ import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture-data';
 import {LIGHTING_END_REASONS, LIGHTING_RESTORATIONS, LIGHTING_STATUSES, type LightingCapture, type LightingEnded,
   type LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
+import type {Restores, WallSelection} from '@jimmie-potts/nanoleaf/frontend';
 import type {ReactiveCatalogView} from '@jimmie-potts/nanoleaf/reactive-presets';
 
 export const LIGHTING_STATE_SCHEMA = 'https://bunny.invalid/events/music-lighting-state/2.0';
@@ -94,20 +95,74 @@ const RESTORATIONS: Record<LightingEnded['restoration'], string> = {
   none: 'No restoration was attempted.',
   uncertain: 'Restoration is uncertain: a restoration write\'s answer was lost, so it may have landed.',
 };
+/** The endings that put the base back when it can be (#1614); every other ending leaves the light as it is. */
+const RESTORING: ReadonlySet<LightingEnded['reason']> = new Set(['stopped', 'alert', 'source-lost']);
 const CODE_HINTS: Partial<Record<string, string>> = {
-  'invalid-state': 'The light must be on, already in Free mode on a named scene, and free of another session.',
+  'invalid-state': 'The light must be on, already in Free mode, and free of another session.',
   'unsupported-capability': 'Only the Lines render live Music, with a preset their renderer accepts.',
   unavailable: 'The light was held or could not be read.',
   'not-found': 'The saved preset no longer exists.',
   capacity: 'Other light content was waiting.',
   'revision-conflict': 'The light changed while the start was checked.',
 };
-/** The last ending as recorded, with its restoration and code; it never implies a restart. */
-export function endingText(last: LightingEnded): string {
+/**
+ * The last ending as recorded, with its restoration and code; it never implies a restart. `restores` is what the light
+ * module says that session's ending puts back, when its record names the same generation.
+ */
+export function endingText(last: LightingEnded, restores?: Restores): string {
   const hint = last.code === undefined ? undefined : CODE_HINTS[last.code];
-  return `Last session ended: ${REASONS[last.reason]}${last.code === undefined ? '' : ` (${last.code})`}. ${RESTORATIONS[last.restoration]}` +
+  const restoration = last.restoration === 'restored' && restores === 'color' ? 'The base colour and brightness were restored.'
+    : last.restoration === 'none' && restores === 'nothing' && RESTORING.has(last.reason)
+      ? 'Nothing was put back: the session started over a selection the light cannot select again, so the light keeps what it last showed.'
+      : RESTORATIONS[last.restoration];
+  return `Last session ended: ${REASONS[last.reason]}${last.code === undefined ? '' : ` (${last.code})`}. ${restoration}` +
     `${hint === undefined ? '' : ` ${hint}`} Nothing restarts automatically.`;
 }
+
+/** The light module's record of the light's last read selection and its latest session's base (#1614), checked at the browser boundary. */
+export type LightBase = {selection: WallSelection | null; musicBase: {generation: string; restores: Restores} | null};
+const restores = (value: unknown): value is Restores => value === 'scene' || value === 'color' || value === 'nothing';
+const selectionShape = (value: unknown): value is WallSelection => object(value) && typeof value.saved === 'boolean' && restores(value.restores) &&
+  count(value.readAtMs) && (value.sceneId === null || text(value.sceneId)) && (value.placeholder === null || text(value.placeholder));
+/** The base fields of one `nanoleaf-wall` record, or none when it has neither field or either is malformed. */
+export function lightBase(wall: unknown): LightBase | undefined {
+  if (!object(wall)) return undefined;
+  const {selection, musicBase} = wall;
+  if ((selection !== null && !selectionShape(selection)) || (musicBase !== null && !(object(musicBase) && text(musicBase.generation) && restores(musicBase.restores)))) return undefined;
+  return {selection, musicBase: musicBase as LightBase['musicBase']};
+}
+
+const PUTS_BACK: Record<Restores, string> = {
+  scene: 'Stop, an alert or lost Music input puts that scene back at its brightness.',
+  color: 'Stop, an alert or lost Music input puts that colour back at its brightness.',
+  nothing: 'The light cannot select it again, so Stop, an alert or lost Music input puts nothing back and the light keeps the last Music frame.',
+};
+const MANUAL = 'A scene or colour picked on the light wins and nothing is put back, unless it lands in the instant the session takes the light. A brightness or power change on the light ends the session within about a second, so a Music frame may already have replaced the scene or colour.';
+/** What a read selection is, in plain words: never a scene's name, which the light module does not publish. */
+function selectionWords(selection: WallSelection): string {
+  if (selection.saved) return 'a scene saved on the light';
+  if (selection.restores === 'color') return 'a plain colour';
+  switch (selection.placeholder) {
+    case '*ExtControl*': return 'streamed frames, such as those an earlier Music session left';
+    case '*Solid*': return 'a plain colour whose value could not be read';
+    case '*Dynamic*': case '*Static*': return 'an effect that is not a scene saved on the light';
+    case null: default: return 'a selection that is not a scene saved on the light';
+  }
+}
+/** Before Start: what an ending would put back, from the light's last read selection; `readAt` is when it was read. */
+export function baseText(selection: WallSelection | null, readAt: string): string {
+  if (selection === null) {
+    return `Start reads what the light shows. Stop, an alert or lost Music input then puts back a scene saved on the light or a plain colour, and leaves anything else on the last Music frame. ${MANUAL}`;
+  }
+  return `Last read at ${readAt}: ${selectionWords(selection)}. ${PUTS_BACK[selection.restores]} ${MANUAL}`;
+}
+const STARTED_OVER: Record<Restores, string> = {
+  scene: 'This session started over a scene saved on the light. Stop, an alert or lost Music input puts it back at its brightness.',
+  color: 'This session started over a plain colour. Stop, an alert or lost Music input puts it back at its brightness.',
+  nothing: 'This session started over a selection the light cannot select again. Stop, an alert or lost Music input puts nothing back, and the light keeps the last Music frame.',
+};
+/** During a session: what its ending puts back, from the light module's record for that session. */
+export const sessionBaseText = (base: Restores): string => `${STARTED_OVER[base]} ${MANUAL}`;
 
 const CONTROL_HINTS: Partial<Record<string, string>> = {
   unavailable: 'Music capture is not active, or this is not a qualified light.',

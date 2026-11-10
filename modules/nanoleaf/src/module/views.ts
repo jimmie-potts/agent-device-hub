@@ -1,7 +1,8 @@
 // What the Nanoleaf module publishes, built from saved state and what its links observed, never from a device read
 // (Hub #844): each controller's `device/2.1` record (Hub #975), its wall map view and each device's animation options. Building them
 // only reads: no row is written, so serving a sync never changes the store. No view holds an address or a credential;
-// the device record and the wall view hold no favorite or preset name, which only the animation options list. The saved
+// the device record and the wall view hold no favorite or preset name, which only the animation options list, and no
+// scene name: a saved scene shows as its opaque ID, and the light's last read selection (#1614) likewise. The saved
 // layout, its geometry and the remembered scene are read again only when their file changed, since the views are built
 // on the event loop whenever a device request settles.
 import {MOMENT_MOODS, MOMENT_DURATION_MS} from '../moments.js';
@@ -18,6 +19,8 @@ import {geometry, triangleGeometry, type Point} from '../geometry.js';
 import {ANIMATION, journal, type HeldOperation} from '../journal.js';
 import {fallbackTitle, owners, palette, pending, settings, taskProjects} from '../project-map.js';
 import {evictionToken, presented, selected, state as sharedState, visibleTasks, type SharedCopy} from '../shared-input.js';
+import {PLACEHOLDERS, type Restores, type SelectionRead} from '../music-base.js';
+import {lastSelection, sessionBase} from '../music-store.js';
 import {first, rows, type Db, type SqlValue} from '../sqlite.js';
 import {controlState, overrides} from '../store.js';
 import {MODES} from '../modes.js';
@@ -260,7 +263,25 @@ export function wallView(db: Db, copy: SharedCopy, directory: string, device: st
     elements: items.map((element, index) => ({id: element.id, number: element.number, project: prefs[index]?.[0] ?? null,
       signature: prefs[index]?.[1] === 1 ? 1 : 0, task: tasks.find(task => task.element === element.id)?.id ?? null, points: shapes[index] ?? null})),
     tasks,
+    selection: selectionView(db, device), musicBase: sessionBase(db, device) ?? null,
   };
+}
+
+/** A read selection as a record shows it: a saved scene by its opaque ID, a placeholder as the light names it, and nothing else by name. */
+function shown(db: Db, device: string, read: SelectionRead): {sceneId: string | null; placeholder: string | null} {
+  return {sceneId: read.saved ? sceneList(db, device).find(scene => scene.name === read.selection)?.id ?? null : null,
+    placeholder: (PLACEHOLDERS as readonly string[]).includes(read.selection) ? read.selection : null};
+}
+export type SelectionView = {saved: boolean; sceneId: string | null; placeholder: string | null; restores: Restores; readAtMs: number};
+/** The light's last read selection, whether it is saved on the light, what an ending would put back and when it was read. */
+export function selectionView(db: Db, device: string): SelectionView | null {
+  const read = lastSelection(db, device);
+  return read === undefined ? null : {saved: read.saved, ...shown(db, device, read), restores: read.restores, readAtMs: read.readAtMs};
+}
+/** A read selection in a refusal's words, with no owner's name: `saved scene scene-…`, a placeholder, or an unsaved selection. */
+export function selectionText(db: Db, device: string, read: SelectionRead): string {
+  const {sceneId, placeholder} = shown(db, device, read);
+  return read.saved ? (sceneId === null ? 'a saved scene' : `saved scene ${sceneId}`) : placeholder ?? 'a selection not saved on the light';
 }
 
 /** Each saved layout's outlines, computed once per parsed layout, which the file cache keeps while the file is unchanged. */

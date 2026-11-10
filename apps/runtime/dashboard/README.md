@@ -317,8 +317,14 @@ effect preview and Start stays disabled. **Start Music lighting** sends one
 tracked `music-lighting-control` start. It carries the record's revision, the
 chosen preset and the current Music.app capture endpoint and generation. Start
 needs active Music.app measurement, so a microphone session is never offered.
-The light must be on, already in Free and showing a named scene. A light
-outside Free is refused, never switched. The card notes a saved mode other than
+The light must be on and already in Free; whatever it shows can be the base
+(#1614). A light outside Free is refused, never switched. From the Nanoleaf
+module's `nanoleaf-wall` record, which the shell already syncs, each section
+explains what an ending will and won't put back. Before Start it uses the last
+read selection, unless the base was put back after that read. During a session
+and after its ending it uses that session's base. Stop, an alert or lost Music
+input puts back a scene saved on the light or a plain colour, and leaves
+anything else on the last Music frame. The card names no scene. The card notes a saved mode other than
 Free, and the light's refusal appears as the recorded ending. **Stop Music
 lighting** stays available for starting, active, stopping and uncertain
 sessions, independent of an unresolved Start. Start and Stop keep separate
@@ -333,9 +339,9 @@ participant, and closes both when Audio unmounts or the connection ends.
 
 `tests/music-lighting.browser.ts` runs the real disposable core, gateway and
 Nanoleaf module on a simulated Lines controller with the numeric producer
-fixture. It covers the passive lifecycle, the stopped, source-lost and
-refused-outside-Free endings, stale reads, a lost reply, read-only access and
-microphone exclusion.
+fixture. It covers the passive lifecycle, the stopped, source-lost,
+refused-outside-Free and light-off endings, the ending explanations, stale reads,
+a lost reply, read-only access and microphone exclusion.
 It runs in the Music-card browser entry and hosted smoke. This is source
 evidence only; installed and physical acceptance belong to #725.
 

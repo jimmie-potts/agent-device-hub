@@ -73,8 +73,14 @@ export interface MusicChanged {
   device: string;
 }
 
+/** The light's last read selection changed (#1614); the runtime publishes the device's state again. */
+export interface SelectionChanged {
+  type: 'selection';
+  device: string;
+}
+
 /** Called inside the transaction whose change it reports, so the message commits with that change. */
-export type Report = (message: Outcome | ScenesChanged | MusicChanged) => void;
+export type Report = (message: Outcome | ScenesChanged | MusicChanged | SelectionChanged) => void;
 
 /**
  * Runs `work` in one synchronous transaction on the module's database, with a `report` that stores each message in that
