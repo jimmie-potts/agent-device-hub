@@ -316,7 +316,8 @@ not a source-delivery blocker. See [Project maintenance](project-maintenance.md)
    The review report gives it the state `pre-existing`, which the preflight
    reads and never counts as open. A finding the change makes reachable or
    worse, one the requirements put in scope, or a missing required change is
-   never `pre-existing`; it is `unresolved` and blocks.
+   never `pre-existing`; it is an ordinary finding, and at P0–P2 it is
+   `unresolved` and blocks.
    The same reviewer may perform the disposable acceptance exercise below.
    Re-review changed behavior and affected assumptions, not unchanged evidence.
    A pure rebase or prose correction needs one confirmation of the delta and new
