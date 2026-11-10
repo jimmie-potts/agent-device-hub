@@ -1,12 +1,14 @@
 // The live Music session's loop on its own store and a scripted device (#1272, design D4; #1598): the Start enters
 // streaming, frames go as datagrams the light applies only while streaming, restoration rechecks for a newer choice
 // around each write, a failed send ends the session without a retry, and the loop never overlaps two device requests.
+// The same loop runs on the Lines (version 2) and on the NL22 Light Panels (version 1), each on its own device.
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import type {CaptureFeatures} from '@jimmie-potts/event-contracts/v2/music-capture';
-import {admitCommand, discovered, sceneList} from '../src/controls.js';
+import {admitCommand, discovered, Refused, sceneList} from '../src/controls.js';
 import {initialize} from '../src/database.js';
-import {elementId, type LayoutEntry} from '../src/devices.js';
+import {elementId, metaKey, type LayoutEntry} from '../src/devices.js';
+import type {MusicRecipeV1} from '../src/music-effects.js';
 import {expireQueued, held, initJournal, journalRow, type Outcome, type Transact} from '../src/journal.js';
 import {restoreFreeBase} from '../src/moments.js';
 import {readMusicBase, restoreMusicBase, type MusicBase, type MusicColor} from '../src/music-base.js';
@@ -15,7 +17,7 @@ import {HttpError} from '../src/transport.js';
 import type {Indication} from '../src/line-projection.js';
 import {MusicInput, type MusicClock} from '../src/music-input.js';
 import {initReactivePresets, saveReactivePreset} from '../src/music-presets.js';
-import {admitMusicStart, admitMusicStop, musicDeviceState, playMusic} from '../src/music-session.js';
+import {admitMusicStart, admitMusicStop, checkMusicStart, musicDeviceState, playMusic} from '../src/music-session.js';
 import {transaction} from '../src/sqlite.js';
 import type {LightRequest} from '../src/transport.js';
 import {test} from './support.js';
@@ -24,14 +26,32 @@ const CAPTURE = {endpointId: 'music-mac', generation: '9df02246-518e-44f2-9412-a
 const GENERATION = '00000000-0000-4000-8000-000000000001';
 const LAYOUT: LayoutEntry = {kind: 'lines', elements: [0, 1, 2].map(index => ({id: elementId([2 * index + 1, 2 * index + 2]), number: index + 1,
   zones: [2 * index + 1, 2 * index + 2], position: [index, 0]}))};
+/** A synthetic NL22 layout: four one-zone triangles in a strip, their panel IDs below 256 as the version 1 stream needs. */
+const PANEL_IDS = [11, 37, 124, 211] as const;
+const PANELS_LAYOUT: LayoutEntry = {kind: 'panels', elements: PANEL_IDS.map((id, index) => ({id: elementId([id]), number: index + 1, zones: [id],
+  position: [Math.round(index * 86.6), 0]}))};
+/** The light a session runs on: its device ID and its saved layout. */
+type Target = {device: string; layout: LayoutEntry};
+const LINES_TARGET: Target = {device: 'wall', layout: LAYOUT};
+const PANELS_TARGET: Target = {device: 'nl22', layout: PANELS_LAYOUT};
+/** The documented version 1 entry answer: where to stream. Its address is never used. */
+const V1_ANSWER = {streamControlIpAddr: '192.0.2.99', streamControlPort: 60221, streamControlProtocol: 'udp'};
 
 type World = {
   db: DatabaseSync; outcomes: Outcome[]; writes: {endpoint: string; payload: unknown; atMs: number}[]; inFlight: number; maxInFlight: number;
-  /** Every frame datagram sent, whether the light applied it (streaming) or ignored it, and every read. */
-  datagrams: {atMs: number; applied: boolean; packet: Buffer}[]; reads: {endpoint: string; atMs: number}[];
+  /** The light the session runs on. */
+  target: Target;
+  /** What the light answers a version 1 streaming entry with. */
+  entryAnswer: unknown;
+  /** Every frame datagram sent, with its port, whether the light applied it (streaming) or ignored it, and every read. */
+  datagrams: {atMs: number; applied: boolean; packet: Buffer; port: number}[]; reads: {endpoint: string; atMs: number}[];
   /** The next datagram send fails, as a socket error. */
   failSend: boolean;
+  /** Changes every later feature's measurements, as silence or a quiet passage would. */
+  patch: Partial<CaptureFeatures>;
   now: number; selected: string; brightness: number; alert: boolean; feeding: boolean; sequence: number; input: MusicInput;
+  /** Whether `/state` reports the light on: the app or the light's own switch can turn it off. */
+  on: boolean;
   /** The plain colour `/state` reports, if one was chosen: a colour write selects `*Solid*` (#1614). */
   color: MusicColor | undefined;
   /** Answers the next `/state` read with this instead of the light's state, once. */
@@ -43,18 +63,22 @@ type World = {
   onArrive: () => void;
 };
 
-function open(): World {
+function open(target: Target = LINES_TARGET): World {
   const db = new DatabaseSync(':memory:');
   initialize(db, () => 10);
   db.exec(`INSERT OR REPLACE INTO meta VALUES('mode','free');
     CREATE TABLE nanoleaf_devices(device TEXT PRIMARY KEY,configuration_revision INTEGER); INSERT INTO nanoleaf_devices VALUES('wall',0)`);
+  if (target.device !== 'wall') {
+    db.prepare('INSERT OR REPLACE INTO meta VALUES(?,?)').run(metaKey('mode', target.device), 'free');
+    db.prepare('INSERT INTO nanoleaf_devices VALUES(?,0)').run(target.device);
+  }
   initJournal(db); initReactivePresets(db);
-  discovered(db, ['Ocean', 'New scene'], 'wall', () => {});
+  discovered(db, ['Ocean', 'New scene'], target.device, () => {});
   transaction(db, () => saveReactivePreset(db, {presetId: 'preset-green', expectedRevision: 0, name: 'Green',
     recipe: {rendererVersion: 1, effect: 'level-glow', palette: ['#12ab34'], intensity: 0.5, sensitivity: 1, smoothingMs: 0}}, 1));
   const now = 1_793_836_800_000;
   const clock: MusicClock = {wallMs: now, monotonicMs: now};
-  return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, datagrams: [], reads: [], failSend: false, now, selected: 'Ocean', brightness: 50, alert: false, feeding: true, sequence: 0,
+  return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, target, entryAnswer: V1_ANSWER, datagrams: [], reads: [], failSend: false, patch: {}, now, selected: 'Ocean', brightness: 50, on: true, alert: false, feeding: true, sequence: 0,
     input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined, onRead: () => {}, onArrive: () => {}, color: undefined, stateAnswer: undefined};
 }
 
@@ -64,7 +88,7 @@ const feature = (world: World): CaptureFeatures => {
   return {generation: CAPTURE.generation, input: 'music', sequence: n, sampleRateHz: 48000, channels: 2, frameCount: 4800,
     startMonotonicMs: 900000 + n * 100, endMonotonicMs: 900100 + n * 100, emittedMonotonicMs: 900102 + n * 100,
     observedAtMs: world.now, validUntilMs: world.now + 400, rms: 0.5, peak: 1, clippedFraction: 0,
-    bands: {bass: 0.4, mid: 0.2, treble: 0.1}, onset: {strength: 0, confidence: 0}, discontinuity: false};
+    bands: {bass: 0.4, mid: 0.2, treble: 0.1}, onset: {strength: 0, confidence: 0}, discontinuity: false, ...world.patch} as CaptureFeatures;
 };
 const deliver = (world: World): void => {
   world.input.accept({specversion: '1.0', bunnyprofile: '2.0', id: `frame-${world.sequence + 1}`, source: 'bunny/parts/music-producer',
@@ -78,10 +102,10 @@ const OCEAN: MusicBase = {kind: 'scene', name: 'Ocean', brightness: 50};
  * Admits a Start over `base`, the `Ocean` scene at 50 % unless named, and runs it until it ends, feeding a feature every
  * 100 ms while `feeding`.
  */
-async function run(world: World, step: (world: World) => void, base: MusicBase = OCEAN): Promise<void> {
-  const {db} = world;
+async function run(world: World, step: (world: World) => void, base: MusicBase = OCEAN, presetId = 'preset-green'): Promise<void> {
+  const {db, target} = world;
   const transact: Transact = action => Promise.resolve(transaction(db, () => action(message => { if (message.type === 'outcome') world.outcomes.push(message); })));
-  transaction(db, () => admitMusicStart(db, 'wall', {requestId: 'start', generation: GENERATION, capture: CAPTURE, presetId: 'preset-green'}, LAYOUT,
+  transaction(db, () => admitMusicStart(db, target.device, {requestId: 'start', generation: GENERATION, capture: CAPTURE, presetId}, target.layout,
     base, 0, world.now, world.now + 5000, () => {}));
   const request: LightRequest = async (_target, method, endpoint = '', payload = null) => {
     world.inFlight += 1;
@@ -98,7 +122,7 @@ async function run(world: World, step: (world: World) => void, base: MusicBase =
       if (scripted !== undefined) return scripted.value;
       const color = world.color === undefined ? {colorMode: 'effect'} : 'ct' in world.color ? {colorMode: 'ct', ct: {value: world.color.ct}}
         : {colorMode: 'hs', hue: {value: world.color.hue}, sat: {value: world.color.sat}};
-      return endpoint === '/effects' ? {select: world.selected, effectsList: ['Ocean', 'New scene']} : {on: {value: true}, brightness: {value: world.brightness}, ...color};
+      return endpoint === '/effects' ? {select: world.selected, effectsList: ['Ocean', 'New scene']} : {on: {value: world.on}, brightness: {value: world.brightness}, ...color};
     }
     if (world.refuse !== undefined) {
       const status = world.refuse;
@@ -110,7 +134,7 @@ async function run(world: World, step: (world: World) => void, base: MusicBase =
       world.lose = undefined;
       throw new Error('the answer was lost');
     }
-    const body = payload as {select?: string; write?: {animType: string}; brightness?: {value: number}};
+    const body = payload as {select?: string; write?: {animType: string; extControlVersion?: string}; brightness?: {value: number}};
     if (endpoint === '/effects') {
       world.selected = body.select ?? (body.write?.animType === 'extControl' ? '*ExtControl*' : body.write?.animType === 'static' ? '*Static*' : '*Dynamic*');
     }
@@ -120,10 +144,11 @@ async function run(world: World, step: (world: World) => void, base: MusicBase =
     else if (colored.hue !== undefined && colored.sat !== undefined) world.color = {hue: colored.hue.value, sat: colored.sat.value};
     if (colored.ct !== undefined || colored.hue !== undefined) world.selected = '*Solid*';
     world.onWrite(endpoint, payload);
-    return {};
+    // A version 1 light answers its streaming entry with where to stream (Nanoleaf OpenAPI 5.7).
+    return body.write?.extControlVersion === 'v1' ? world.entryAnswer : {};
   };
   // A datagram reaches the light behind any request already there, and only a streaming light applies it.
-  const stream = async (packet: Uint8Array): Promise<void> => {
+  const stream = async (packet: Uint8Array, port: number): Promise<void> => {
     world.inFlight += 1;
     world.maxInFlight = Math.max(world.maxInFlight, world.inFlight);
     world.onArrive();
@@ -133,12 +158,12 @@ async function run(world: World, step: (world: World) => void, base: MusicBase =
       world.failSend = false;
       throw Object.assign(new Error('the datagram was not sent'), {code: 'EHOSTUNREACH'});
     }
-    world.datagrams.push({atMs: world.now, applied: world.selected === '*ExtControl*', packet: Buffer.from(packet)});
+    world.datagrams.push({atMs: world.now, applied: world.selected === '*ExtControl*', packet: Buffer.from(packet), port});
   };
   const row = journalRow(db, 'start');
   assert.ok(row);
   let fed = world.now - 100;
-  await playMusic({db, device: 'wall', row, config: {ip: 'synthetic', token: 'synthetic', line_groups: LAYOUT.elements.map(element => element.zones)},
+  await playMusic({db, device: target.device, row, config: {ip: 'synthetic', token: 'synthetic', line_groups: target.layout.elements.map(element => element.zones)},
     transact, request, stream, input: world.input, now: () => world.now, clock: () => ({wallMs: world.now, monotonicMs: world.now}),
     sleep: seconds => {
       world.now += seconds * 1000;
@@ -152,7 +177,7 @@ async function run(world: World, step: (world: World) => void, base: MusicBase =
 }
 
 const ended = (world: World) => {
-  const session = musicDeviceState(world.db, 'wall').session;
+  const session = musicDeviceState(world.db, world.target.device).session;
   return session?.status === 'ended' ? {reason: session.ended.reason, restoration: session.ended.restoration,
     ...(session.ended.code === undefined ? {} : {code: session.ended.code})} : undefined;
 };
@@ -338,6 +363,7 @@ test('a playing session streams every frame and reads the light only for the onc
     assert.equal(packet.readUInt16BE(0), 6);
     assert.deepEqual([0, 1, 2, 3, 4, 5].map(index => packet.readUInt16BE(2 + 8 * index)), [1, 2, 3, 4, 5, 6]);
     assert.deepEqual([0, 1, 2, 3, 4, 5].map(index => [packet.readUInt8(7 + 8 * index), packet.readUInt16BE(8 + 8 * index)]), Array(6).fill([0, 1]));
+    assert.ok(frameWrites(world).every(frame => frame.port === 60222), 'the Lines stream on their fixed port');
     assert.equal(world.maxInFlight, 1, 'one device request or datagram at a time');
   } finally {
     world.db.close();
@@ -808,4 +834,273 @@ for (const [why, answer] of [['an effect colour mode', {colorMode: 'effect'}], [
       world.db.close();
     }
   });
+}
+
+// #1272: live sessions on the original NL22 Light Panels through their own external-control protocol, version 1. The
+// session machinery, its endings and its guards are the Lines'; only the entry, the port and the datagram differ.
+/** A version 1 datagram's panels, after checking its one-byte count and each panel's frame count of 1, white 0 and 100 ms transition. */
+function panelsOf(packet: Buffer): [number, [number, number, number]][] {
+  const count = packet.readUInt8(0);
+  assert.equal(packet.length, 1 + 7 * count, 'one count byte and seven bytes per panel');
+  return Array.from({length: count}, (_, index): [number, [number, number, number]] => {
+    const at = 1 + 7 * index;
+    assert.deepEqual([packet.readUInt8(at + 1), packet.readUInt8(at + 5), packet.readUInt8(at + 6)], [1, 0, 1], 'one frame, white 0, 100 ms');
+    return [packet.readUInt8(at), [packet.readUInt8(at + 2), packet.readUInt8(at + 3), packet.readUInt8(at + 4)]];
+  });
+}
+/** A version 2 datagram's zones, after checking its two-byte count, white 0 and 100 ms transition. */
+function zonesOf(packet: Buffer): [number, [number, number, number]][] {
+  const count = packet.readUInt16BE(0);
+  assert.equal(packet.length, 2 + 8 * count);
+  return Array.from({length: count}, (_, index): [number, [number, number, number]] => {
+    const at = 2 + 8 * index;
+    assert.deepEqual([packet.readUInt8(at + 5), packet.readUInt16BE(at + 6)], [0, 1]);
+    return [packet.readUInt16BE(at), [packet.readUInt8(at + 2), packet.readUInt8(at + 3), packet.readUInt8(at + 4)]];
+  });
+}
+const ENTER_V1 = {write: {command: 'display', animType: 'extControl', extControlVersion: 'v1'}};
+const stopNl22After = (frames: number) => (current: World): void => {
+  if (frameWrites(current).length === frames && journalRow(current.db, 'stop') === undefined && current.outcomes.every(outcome => outcome.requestId !== 'stop')) {
+    transaction(current.db, () => admitMusicStop(current.db, 'nl22', {kind: 'music.stop', requestId: 'stop', generation: GENERATION}, current.now, current.now + 5000));
+  }
+};
+
+test('an NL22 Start enters version 1, streams one-byte panel datagrams to the port its answer names, and Stop restores its scene', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    await run(world, stopNl22After(5));
+    assert.deepEqual(entries(world).map(write => write.payload), [ENTER_V1], 'one version 1 entry, without logical panels');
+    assert.deepEqual(world.outcomes.find(outcome => outcome.requestId === 'start'), {type: 'outcome', device: 'nl22', requestId: 'start', result: 'succeeded', evidence: 'transmitted'});
+    const frames = frameWrites(world);
+    assert.equal(frames.length, 5, 'no frame after the Stop');
+    assert.ok(frames.every(frame => frame.applied && frame.port === 60221), 'every frame goes to the port the answer named');
+    for (const frame of frames) assert.deepEqual(panelsOf(frame.packet).map(([id]) => id), [...PANEL_IDS], 'the saved layout\'s panel IDs, in order');
+    for (let index = 1; index < frames.length; index += 1) assert.ok((frames[index]?.atMs ?? 0) - (frames[index - 1]?.atMs ?? 0) >= 100, 'no faster than 10 Hz');
+    assert.deepEqual(ended(world), {reason: 'stopped', restoration: 'restored'});
+    assert.deepEqual(world.writes.slice(-2).map(write => write.payload), [{brightness: {value: 50, duration: 0}}, {select: 'Ocean'}]);
+    assert.deepEqual(world.outcomes.find(outcome => outcome.requestId === 'stop'), {type: 'outcome', device: 'nl22', requestId: 'stop', result: 'succeeded', evidence: 'transmitted'});
+    assert.equal(musicDeviceState(world.db, 'wall').session, null, 'the Lines\' record is untouched');
+    assert.equal(world.maxInFlight, 1, 'one device request or datagram at a time');
+  } finally {
+    world.db.close();
+  }
+});
+
+for (const [why, answer] of [['no body', null], ['no port', {streamControlIpAddr: '192.0.2.99', streamControlProtocol: 'udp'}],
+  ['a port out of range', {...V1_ANSWER, streamControlPort: 70000}], ['a well-known port', {...V1_ANSWER, streamControlPort: 53}],
+  ['another protocol', {...V1_ANSWER, streamControlProtocol: 'tcp'}]] as const) {
+  test(`an NL22 entry answer with ${why} fails the Start as transmitted, sends no frame and holds nothing`, async () => {
+    const world = open(PANELS_TARGET);
+    try {
+      world.entryAnswer = answer;
+      await run(world, () => {});
+      assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'unsupported-capability'});
+      const start = world.outcomes.find(outcome => outcome.requestId === 'start');
+      assert.deepEqual({result: start?.result, evidence: start?.evidence, code: start?.error?.code}, {result: 'failed', evidence: 'transmitted', code: 'unsupported-capability'});
+      assert.equal(frameWrites(world).length, 0, 'nowhere to stream, so no frame');
+      assert.deepEqual(sequence(world), ['stream'], 'no write after the entry');
+      assert.equal(held(world.db, 0, 'nl22'), false, 'an answered entry holds nothing');
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
+test('a lost answer to the NL22 entry ends the Start uncertain, holds the Panels only and sends no frame', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    world.lose = '/effects';
+    await run(world, () => {});
+    assert.equal(ended(world)?.reason, 'device');
+    assert.equal(entries(world).length, 1, 'the entry is not retried');
+    assert.equal(frameWrites(world).length, 0);
+    assert.equal(world.outcomes.find(outcome => outcome.requestId === 'start')?.result, 'uncertain');
+    assert.equal(held(world.db, 0, 'nl22'), true);
+    assert.equal(held(world.db, 0, 'wall'), false, 'the Lines are not held');
+  } finally {
+    world.db.close();
+  }
+});
+
+test('a scene chosen in the app on the NL22 ends the session as manual: nothing paints over it and nothing is restored', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    let pickedAt: number | undefined;
+    await run(world, current => {
+      if (pickedAt === undefined && frameWrites(current).length === 3) { pickedAt = current.now; current.selected = 'New scene'; }
+    });
+    assert.ok(pickedAt !== undefined);
+    assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
+    assert.equal(world.selected, 'New scene');
+    assert.equal(frameWrites(world).filter(frame => frame.atMs >= (pickedAt ?? 0) && frame.applied).length, 0);
+    assert.deepEqual(sequence(world), ['stream'], 'no restoration write over the newer choice');
+  } finally {
+    world.db.close();
+  }
+});
+
+for (const choice of ['none', 'brightness'] as const) {
+  for (const ending of ['alert', 'source-lost'] as const) {
+    test(`${ending === 'alert' ? 'an alert' : 'source loss'} on the NL22 restores its scene ${choice === 'none' ? 'after its brightness' : 'unless a newer brightness choice lands between the writes'}`, async () => {
+      const world = open(PANELS_TARGET);
+      try {
+        world.onWrite = endpoint => {
+          if (endpoint !== '/state' || choice === 'none') return;
+          // A brightness command for the Panels, journaled as their admission would (the registry is not part of this store).
+          world.db.prepare("INSERT INTO control_journal(id,device,kind,command,mode_revision,phase,accepted,expires) VALUES('owner','nl22','brightness.set',?,0,'queued',1,99999999999)")
+            .run(JSON.stringify({kind: 'brightness.set', percent: 10}));
+        };
+        await run(world, current => {
+          if (frameWrites(current).length < 3) return;
+          if (ending === 'alert') current.alert = true;
+          else current.feeding = false;
+        });
+        assert.deepEqual(ended(world), {reason: ending, restoration: choice === 'none' ? 'restored' : 'skipped'});
+        assert.deepEqual(sequence(world), choice === 'none' ? ['stream', 'brightness 50', 'select Ocean'] : ['stream', 'brightness 50']);
+      } finally {
+        world.db.close();
+      }
+    });
+  }
+}
+
+test('an NL22 session over a selection nothing can select again leaves the last frame with restoration none', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    world.selected = '*Dynamic*';
+    await run(world, stopNl22After(3), {kind: 'unnamed', selection: '*Dynamic*', brightness: 50});
+    assert.deepEqual(ended(world), {reason: 'stopped', restoration: 'none'});
+    assert.deepEqual(sequence(world), ['stream']);
+    assert.equal(world.selected, '*ExtControl*');
+  } finally {
+    world.db.close();
+  }
+});
+
+test('a failed NL22 datagram send ends the session as a device failure with no retry or restoration', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    await run(world, current => { if (frameWrites(current).length === 2) current.failSend = true; });
+    assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'unavailable'});
+    assert.equal(frameWrites(world).length, 2);
+    assert.deepEqual(sequence(world), ['stream']);
+  } finally {
+    world.db.close();
+  }
+});
+
+test('an NL22 that refuses the version 1 entry ends the session with the answer\'s code: no frame, no retry and no hold', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    world.refuse = 400;
+    await run(world, () => {});
+    assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'invalid-request'});
+    const start = world.outcomes.find(outcome => outcome.requestId === 'start');
+    assert.deepEqual({result: start?.result, evidence: start?.evidence, code: start?.error?.code}, {result: 'failed', evidence: 'transmitted', code: 'invalid-request'});
+    assert.equal(world.writes.length, 0, 'the refused entry is not retried and nothing else is written');
+    assert.equal(frameWrites(world).length, 0);
+    assert.equal(held(world.db, 0, 'nl22'), false);
+  } finally {
+    world.db.close();
+  }
+});
+
+for (const change of ['brightness', 'power off', 'not streaming'] as const) {
+  test(`${change === 'not streaming' ? 'an NL22 that no longer reports external control' : `a ${change} made in the app`} during an NL22 session ends it as manual at the next check, with no datagram after and no restoration`, async () => {
+    const world = open(PANELS_TARGET);
+    try {
+      let changedAt: number | undefined;
+      await run(world, current => {
+        if (changedAt !== undefined || frameWrites(current).length !== 3) return;
+        changedAt = current.now;
+        if (change === 'brightness') current.brightness = 20;
+        else if (change === 'power off') current.on = false;
+        else current.selected = '*Dynamic*';
+      });
+      assert.ok(changedAt !== undefined);
+      const session = musicDeviceState(world.db, 'nl22').session;
+      assert.ok(session?.status === 'ended');
+      assert.deepEqual({reason: session.ended.reason, restoration: session.ended.restoration}, {reason: 'manual', restoration: 'none'});
+      assert.ok(session.ended.atMs - changedAt <= 1100, 'the once-per-second check ends it');
+      assert.equal(frameWrites(world).filter(frame => frame.atMs > session.ended.atMs).length, 0, 'no datagram after the ending');
+      if (change === 'not streaming') assert.equal(frameWrites(world).filter(frame => frame.atMs > (changedAt ?? 0) && frame.applied).length, 0);
+      assert.deepEqual(sequence(world), ['stream'], 'no restoration write over the newer choice');
+      assert.deepEqual({brightness: world.brightness, on: world.on}, {brightness: change === 'brightness' ? 20 : 50, on: change !== 'power off'});
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
+test('silence keeps an NL22 session playing with dark frames, and stale input ends it as source loss', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    world.patch = {rms: 0, peak: 0, bands: {bass: 0, mid: 0, treble: 0}};
+    await run(world, current => { if (frameWrites(current).length >= 6) current.feeding = false; });
+    const frames = frameWrites(world);
+    assert.ok(frames.length >= 6 && frames.every(frame => frame.applied));
+    assert.ok(frames.every(frame => panelsOf(frame.packet).every(([, color]) => color.every(value => value === 0))), 'silence renders dark, not stopped');
+    assert.deepEqual(ended(world), {reason: 'source-lost', restoration: 'restored'});
+  } finally {
+    world.db.close();
+  }
+});
+
+test('a layout the NL22\'s version 1 stream cannot address is refused before any device request; the Lines\' version 2 addresses it', () => {
+  const world = open(PANELS_TARGET);
+  try {
+    const start = {requestId: 'start', generation: GENERATION, capture: CAPTURE, presetId: 'preset-green'};
+    const wide: LayoutEntry = {kind: 'panels', elements: [11, 300].map((id, index) => ({id: elementId([id]), number: index + 1, zones: [id], position: [index * 86.6, 0]}))};
+    const many: LayoutEntry = {kind: 'panels', elements: Array.from({length: 256}, (_, index) => ({id: elementId([index]), number: index + 1, zones: [index], position: [index, 0]}))};
+    for (const layout of [wide, many]) {
+      assert.throws(() => checkMusicStart(world.db, 'nl22', start, layout, world.now, world.now + 5000),
+        (error: unknown) => error instanceof Refused && error.code === 'unsupported-capability');
+    }
+    assert.equal(checkMusicStart(world.db, 'nl22', start, PANELS_LAYOUT, world.now, world.now + 5000).layout.kind, 'panels');
+    const lines: LayoutEntry = {kind: 'lines', elements: [{id: elementId([299, 300]), number: 1, zones: [299, 300], position: [0, 0]}]};
+    assert.deepEqual(checkMusicStart(world.db, 'wall', start, lines, world.now, world.now + 5000).layout.elements.map(element => element.zones), [[299, 300]],
+      'the Lines address two-byte zone IDs');
+    assert.equal(world.writes.length + world.reads.length + world.datagrams.length, 0, 'no device request');
+  } finally {
+    world.db.close();
+  }
+});
+
+// The five effect families from saved reactive presets, admitted and streamed on both lights (AC1). Each family's frames
+// carry the saved layout's zones; uniform families light every element alike and spatial families vary across them.
+const FAMILIES: readonly {recipe: MusicRecipeV1; uniform: boolean}[] = [
+  {recipe: {rendererVersion: 1, effect: 'level-glow', palette: ['#12ab34'], intensity: 0.5, sensitivity: 1, smoothingMs: 0}, uniform: true},
+  {recipe: {rendererVersion: 1, effect: 'bass-pulse', palette: ['#ff2200'], intensity: 1, sensitivity: 1, smoothingMs: 0, halfLifeMs: 200}, uniform: true},
+  {recipe: {rendererVersion: 1, effect: 'spectrum', palette: ['#ff0000', '#00ff00', '#0000ff'], intensity: 1, sensitivity: 1, smoothingMs: 0, direction: 'right'}, uniform: false},
+  {recipe: {rendererVersion: 1, effect: 'traveling-wave', palette: ['#3355ff'], intensity: 1, sensitivity: 1, smoothingMs: 0, direction: 'right', periodMs: 2000}, uniform: false},
+  {recipe: {rendererVersion: 1, effect: 'ambient', palette: ['#ff8800', '#0088ff'], intensity: 1, sensitivity: 1, smoothingMs: 1500}, uniform: true},
+];
+for (const target of [LINES_TARGET, PANELS_TARGET]) {
+  for (const {recipe, uniform} of FAMILIES) {
+    test(`a saved ${recipe.effect} preset plays live on the ${target.layout.kind === 'lines' ? 'Lines' : 'NL22'} over every zone of its layout`, async () => {
+      const world = open(target);
+      try {
+        const presetId = `preset-${recipe.effect}`;
+        transaction(world.db, () => saveReactivePreset(world.db, {presetId, expectedRevision: 1, name: recipe.effect, recipe}, 2));
+        await run(world, current => { if (frameWrites(current).length >= 6) current.feeding = false; }, OCEAN, presetId);
+        const frames = frameWrites(world);
+        assert.equal(entries(world).length, 1);
+        assert.ok(frames.length >= 6 && frames.every(frame => frame.applied), `${frames.length} frames`);
+        const decoded = frames.map(frame => target.layout.kind === 'panels' ? panelsOf(frame.packet) : zonesOf(frame.packet));
+        const ids = target.layout.elements.flatMap(element => element.zones);
+        for (const zones of decoded) assert.deepEqual(zones.map(([id]) => id), ids);
+        // Each element's zones share its colour: a Line's two zones, a triangle's one.
+        const colours = decoded.map(zones => target.layout.elements.map(element => {
+          const shades = new Set(element.zones.map(id => JSON.stringify(zones.find(([zone]) => zone === id)?.[1])));
+          assert.equal(shades.size, 1);
+          return [...shades][0];
+        }));
+        assert.ok(colours.some(frame => frame.some(colour => colour !== JSON.stringify([0, 0, 0]))), 'the music lights the zones');
+        assert.equal(colours.every(frame => new Set(frame).size === 1), uniform, uniform ? 'every element alike' : 'elements differ across the layout');
+        assert.deepEqual(ended(world), {reason: 'source-lost', restoration: 'restored'});
+      } finally {
+        world.db.close();
+      }
+    });
+  }
 }
