@@ -3,7 +3,7 @@ import test from 'node:test';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {CaptureFeatures, CaptureSelection, CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture-data';
 import type {Scheduler, Subscription, SyncedCopy, SyncHandler, SyncOptions, SyncResult} from '@jimmie-potts/sdk/remote';
-import {CaptureProjection, MusicCaptureFeed} from '../src/music-capture-feed.ts';
+import {CaptureProjection, MusicCaptureFeed, type MusicCaptureView} from '../src/music-capture-feed.ts';
 
 const now = (mono: number, offset = 0) => ({wallMs: 100_000 + mono + offset, monotonicMs: mono});
 const state = (status: Exclude<CaptureState['session']['status'], 'idle'> = 'active', generation = 'one'): CaptureState => ({
@@ -178,7 +178,7 @@ void test('an initial sync result retained across a restart cannot revive old fr
  */
 function slowSyncs(rounds: readonly (number | 'held' | 'refused')[]) {
   let mono = 1000, syncs = 0, release = (): void => {throw new Error('no held sync');}, restart = (): void => {};
-  const closed: number[] = [], seen: boolean[] = [];
+  const closed: number[] = [], seen: MusicCaptureView[] = [];
   const pending = new Set<{at: number; delay: number; callback: () => void}>();
   const scheduler: Scheduler = {after: (delay, callback) => {const entry = {at: mono + delay, delay, callback}; pending.add(entry); return () => {pending.delete(entry);};}};
   const participant = {
@@ -197,9 +197,9 @@ function slowSyncs(rounds: readonly (number | 'held' | 'refused')[]) {
     },
   };
   const feed = new MusicCaptureFeed({participant: participant as unknown as ConstructorParameters<typeof MusicCaptureFeed>[0]['participant'], now: () => now(mono), scheduler});
-  feed.subscribe(() => {seen.push(feed.getSnapshot().synced);});
+  feed.subscribe(() => {seen.push(feed.getSnapshot());});
   return {feed, syncs: () => syncs, delays: () => [...pending].map(entry => entry.delay), closed, release: () => {release();}, restart: () => {restart();},
-    /** Each synced value the card was shown since the last call. */
+    /** Each view the card was told of since the last call. */
     seen: () => seen.splice(0),
     /** Runs the earliest scheduled callback and lets the sync it starts settle. */
     async fire(): Promise<number> {
@@ -229,7 +229,7 @@ void test('a recheck keeps the shown copy, state and controls until its replacem
   slow.release(); await flush();
   assert.equal(slow.feed.getSnapshot().clockQualified, true); assert.equal(slow.feed.getSnapshot().rechecking, false);
   assert.deepEqual(slow.closed, [1], 'the replaced copy closes once the recheck has synced');
-  assert.ok(slow.seen().every(synced => synced), 'the card never goes offline during a recheck, so its controls stay usable');
+  assert.ok(slow.seen().every(view => view.synced), 'the card never goes offline during a recheck, so its controls stay usable');
   await slow.feed.close(); assert.deepEqual(slow.closed, [1, 2]);
 });
 void test('a recheck the edge refuses keeps the shown copy and spends the rest of its budget (#1580)', async () => {
@@ -239,7 +239,16 @@ void test('a recheck the edge refuses keeps the shown copy and spends the rest o
   assert.equal(slow.feed.getSnapshot().synced, true); assert.equal(slow.feed.getSnapshot().state, shown.state);
   assert.deepEqual(slow.closed, []); assert.deepEqual(slow.delays(), [500], 'the next recheck backs off as after a slow read');
   assert.equal(await slow.fire(), 500); assert.equal(slow.feed.getSnapshot().clockQualified, true);
-  assert.deepEqual(slow.closed, [1]); assert.ok(slow.seen().every(synced => synced));
+  assert.deepEqual(slow.closed, [1]); assert.ok(slow.seen().every(view => view.synced));
+  await slow.feed.close();
+});
+void test('a refused last recheck tells the card that timing needs Refresh (#1580)', async () => {
+  const slow = slowSyncs([200, 200, 200, 200, 'refused']);
+  await slow.feed.refresh();
+  for (let fired = 0; fired < 4; fired += 1) await slow.fire();
+  assert.equal(slow.syncs(), 5); assert.deepEqual(slow.delays(), []);
+  const told = slow.seen().at(-1);
+  assert.equal(told?.rechecking, false, 'the card is told the rechecks are spent'); assert.equal(told.synced, true);
   await slow.feed.close();
 });
 void test('a restart during a recheck shows nothing until the restarted sync completes (#1580)', async () => {

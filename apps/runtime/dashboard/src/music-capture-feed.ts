@@ -191,7 +191,7 @@ export class MusicCaptureFeed implements Subscription {
     finally {this.#opening = undefined;}
   }
   #unread(recheck: boolean): void {
-    if (recheck && this.#copy !== undefined && this.#projection.view.synced) this.#recheckClock(); else this.invalidate();
+    if (recheck && this.#copy !== undefined && this.#projection.view.synced) {this.#recheckClock(); this.#show();} else this.invalidate();
   }
   /**
    * Closes a copy this scope no longer reads. A healthy close keeps its place before the next read; a slow or stuck one
