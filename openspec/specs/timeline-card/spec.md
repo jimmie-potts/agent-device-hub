@@ -64,10 +64,9 @@ reads SHALL be distinguishable, including when retaining earlier rows.
 - **WHEN** the user selects a category or Show more
 - **THEN** only loaded entries change presentation without another history read
 
-### Requirement: Accessible quiet presentation
+### Requirement: Quiet presentation
 
-Rows, filters and evidence SHALL work by keyboard with visible focus, reduced
-motion and readable light/dark themes, without horizontal overflow at supported
+Rows, filters and evidence SHALL work by keyboard with visible focus and readable light/dark themes, without horizontal overflow at supported
 phone and desktop widths.
 
 #### Scenario: Browse on a narrow screen

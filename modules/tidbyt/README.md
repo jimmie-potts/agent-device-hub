@@ -55,8 +55,8 @@ After the root build, run
 `node --test modules/tidbyt/dist/tests/frontend.test.js` for copy replacement,
 failed sync, automatic read backoff, removal, late-copy cleanup and evidence labels, and
 `node apps/runtime/dashboard/tests/tidbyt-card.browser.ts` for all three actual
-shell surfaces, held reconnect, refused-read recovery without Retry, read-only access, keyboard/reduced motion,
-phone layout and accessibility. The unit cases run in `test:tidbyt-module:built`;
+shell surfaces, held reconnect, refused-read recovery without Retry, read-only access, keyboard use and
+phone layout. The unit cases run in `test:tidbyt-module:built`;
 the browser journey runs in the existing hosted dashboard smoke and full local
 browser suite. All use synthetic state and a simulated cloud.
 

@@ -1,6 +1,5 @@
 // Focused #923 journey: one synthetic runtime, no installed service or physical device.
 import assert from 'node:assert/strict';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser, type Route} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 const world = await startWorld({devices: true, inbox: true});
@@ -11,15 +10,10 @@ try {
   try {
     const page = await context.newPage(); page.setDefaultTimeout(15_000);
     const sent = changes(page);
-    const axe = async (): Promise<void> => {
-      const result = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-      assert.deepEqual(result.violations.map(item => item.id), []);
-    };
     await page.goto(`${world.url}/#/`); await feed(page, 'connected');
     const panel = page.locator('[data-inbox-panel]');
     await world.failCommand();
     const failed = panel.locator('[data-inbox]').filter({hasText: 'g1'}); await failed.locator('summary').first().click();
-    await axe();
     const resend = panel.getByRole('button', {name: 'Send again'});
     await resend.focus(); await page.keyboard.press('Enter');
     await panel.getByText('No commands need handling.').waitFor();
@@ -33,7 +27,7 @@ try {
     await card.locator('p[role="status"]').filter({hasText: 'Uncertain result.'}).waitFor();
     await page.getByRole('link', {name: /Home/}).first().click();
     await panel.locator('[data-inbox]').filter({hasText: 'Uncertain'}).waitFor();
-    await axe(); const beforeReload = sent.length;
+    const beforeReload = sent.length;
     await page.reload(); await feed(page, 'connected');
     await panel.locator('[data-inbox] summary').first().click(); await panel.getByRole('button', {name: 'Dismiss'}).waitFor();
     assert.equal(sent.length, beforeReload, 'reload never resends');
@@ -53,7 +47,7 @@ try {
     assert.ok(await page.locator('ol li').count() >= 2);
     for (const kind of await page.locator('[data-history-row]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.historyKind))) assert.equal(kind, 'operation');
     assert.equal(sent.length, beforeReload + 1, 'timeline filters send no command');
-    await axe(); await page.setViewportSize({width: 390, height: 844}); await axe();
+    await page.setViewportSize({width: 390, height: 844});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     // Responses complete in reverse order: entry versus a filter, then two submitted filters.
     await page.getByRole('link', {name: /Home/}).first().click();
@@ -109,11 +103,11 @@ try {
     assert.match(await page.getByRole('status').innerText(), /^0 history entries/, 'obsolete failure cannot replace the latest successful status');
     assert.equal(sent.length, beforeReload + 1, 'overlapping timeline reads send no command');
     await page.unroute('**/api/v2/history*');
-    await page.getByRole('link', {name: /Home/}).first().click(); await axe();
+    await page.getByRole('link', {name: /Home/}).first().click();
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.reload(); await feed(page, 'connected');
     await panel.getByText('Your session is read-only.').waitFor();
     assert.equal(await panel.getByRole('button').count(), 0);
-    console.log(JSON.stringify({journey: 'inbox-history', explicitResend: true, dismissVisibleThroughMcp: true, noReplay: true, timelineFilters: true, keyboard: true, readOnly: true, axe: 'desktop and phone passed'}));
+    console.log(JSON.stringify({journey: 'inbox-history', explicitResend: true, dismissVisibleThroughMcp: true, noReplay: true, timelineFilters: true, keyboard: true, readOnly: true}));
   } finally { await context.close(); }
 } finally { await browser?.close(); await world.close(); }

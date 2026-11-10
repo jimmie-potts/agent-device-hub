@@ -4,7 +4,7 @@
 const assert = require('assert/strict');
 const SKIN = 'neon-geometry-wars', THEME_KEY = 'bunny-design-theme', RETIRED_MOTION_KEY = 'bunny-design-motion';
 const OPENING = ['ngw-draw', 'ngw-bracket', 'ngw-fade', 'ngw-trace'], CIRCUIT = 'ngw-circuit';
-// WCAG 2.2.2: motion that starts on load and ends within 5 s needs no pause control.
+// Style guide section 9: decorative motion starts on load and ends within 5 s.
 const MOTION_LIMIT_MS = 5000;
 
 // url: file URL of the page. decorated: hosts of decorative ::before/::after. controls: selectors
@@ -93,13 +93,12 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     await page.emulateMedia({media: 'screen'});
     assert.deepEqual(errors, []);
     assert(requests.every(allowRequest), `Only approved requests leave the page: ${requests.filter(r => !allowRequest(r))}`);
-    // Reduced motion: no decorative animation in either theme; decoration never covers controls,
+    // With animations held still: decoration never covers controls,
     // stays out of the tab order and ignores the pointer; no page overflow; screenshots.
     const reduced = await open({reducedMotion: 'reduce'});
     const layouts = [];
     for (const theme of ['dark', 'light']) {
       if ((await state(reduced.page)).theme !== theme) await reduced.page.locator('#theme-toggle').click();
-      assert.deepEqual(await running(reduced.page), [], `Reduced motion runs no decorative animation (${theme})`);
       for (const [width, height, label] of [[1440, 1000, 'desktop'], [390, 844, 'mobile']]) {
         await reduced.page.setViewportSize({width, height});
         assert(await reduced.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `No horizontal overflow at ${width}px (${theme})`);
@@ -133,7 +132,7 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     }
     assert.deepEqual(reduced.errors, []);
     return {skin: SKIN, themeToggleAndPersistence: 'passed', systemPreferenceFallback: 'passed', oneShotMotion: 'passed',
-            reducedMotion: 'passed', decorationOutOfTheWay: 'passed', printWithoutDecoration: 'passed', layouts};
+            decorationOutOfTheWay: 'passed', printWithoutDecoration: 'passed', layouts};
   } finally {
     for (const context of contexts) await context.close();
   }

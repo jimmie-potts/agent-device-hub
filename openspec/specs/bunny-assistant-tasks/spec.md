@@ -122,13 +122,13 @@ The core SHALL answer an `assistant-dispatch` command only from `bunny/modules/c
 - **WHEN** another source sends `assistant-dispatch`, or the module names a family or target outside the core's allowlist
 - **THEN** the core refuses with `forbidden` for another source, or `invalid-message` for a family, target or value its closed schema rejects, records no operation and sends nothing
 
-### Requirement: Accessible conversation panel
+### Requirement: Conversation panel
 
 The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assistant` page: the provider and model, allowed and unavailable tools, the coding worker's availability, usage in tokens or unknown, the saved conversation with owner, assistant and tool messages, and explicit send, answer, approve, decline, resume and cancel controls. It SHALL carry the speech endpoint controls as spoken replies (enable in this tab, mute, stop speaking, playback and tracked operation) and a Speak control beside each saved assistant message within the spoken bound, stating that enabling makes the tab the one speaker and that stopping speech does not cancel the task. A delegation proposal SHALL show its repository, brief and bound revision; a waiting delegation SHALL say it waits for the worker and offer cancel, not an answer box. It SHALL label the synthetic provider as making no paid calls, preserve written context and saved questions on reload, and distinguish control receipts from task state. Disconnection SHALL be visible and prevent mutation against stale state. Assistant activation SHALL default off without affecting fixed-text Reachy or coding-session lifecycle ownership.
 
 #### Scenario: Approval by keyboard
 - **WHEN** a task waits for approval and the owner reloads the page and operates it by keyboard
-- **THEN** the proposal, its target and value are readable, approve and decline have accessible names, and a successful answer receipt does not assert that the command completed
+- **THEN** the proposal, its target and value are readable, approve and decline are labelled, and a successful answer receipt does not assert that the command completed
 
 #### Scenario: Read-only and disconnected states
 - **WHEN** the browser lacks control authority or loses its connection
@@ -136,7 +136,7 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 
 #### Scenario: Spoken replies by keyboard
 - **WHEN** the owner enables spoken replies in the Conversation tab by keyboard, sends a request and activates Speak on the saved answer
-- **THEN** the question, result and replay are spoken through that tab, the Speak receipt is shown apart from the playback report, and the page passes the accessibility checks
+- **THEN** the question, result and replay are spoken through that tab and the Speak receipt is shown apart from the playback report
 
 #### Scenario: Delegation on the page
 - **WHEN** the model proposes a delegation and the owner approves it by keyboard

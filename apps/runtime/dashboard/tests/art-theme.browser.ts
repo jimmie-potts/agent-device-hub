@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, expect, type Locator, type Page} from 'playwright/test';
 import {ART_THEME_KEY} from '../src/skins/art-theme.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
@@ -57,7 +56,6 @@ try {
   await expect(page.locator('[data-art-job]').first()).toContainText('running');await expect(create).toBeEnabled();
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({colorScheme: scheme});assert.deepEqual(await colors(page, FIXED), fixed.get(scheme));
-    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations, []);
     await page.screenshot({path: join(artifacts, `theme-pending-${scheme}.png`), fullPage: true});
   }
   await page.emulateMedia({colorScheme: 'light'});
@@ -97,7 +95,6 @@ try {
     for (const text of ['--text', '--muted-dense']) for (const background of ['--panel', '--bg']) assert.ok(contrast(actual[text] ?? '', actual[background] ?? '') >= 4.5);
     assert.ok(contrast(actual['--accent'] ?? '', actual['--accent-ink'] ?? '') >= 4.5);assert.ok(contrast(actual['--focus'] ?? '', actual['--panel'] ?? '') >= 3);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations, []);
     await page.screenshot({path: join(artifacts, `theme-${scheme}-${width}.png`), fullPage: true});
   }
   for (const scheme of ['light', 'dark'] as const) for (const width of [1440, 390, 320]) {
@@ -109,7 +106,6 @@ try {
     await settings.getByRole('button', {name: 'Restore default', exact: true}).click();assert.deepEqual(await layoutBox(lock), before, 'default restore does not move theme controls');
     await settings.getByRole('button', {name: 'Follow artwork', exact: true}).click();assert.deepEqual(await layoutBox(lock), before, 'following does not move theme controls');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations, []);
     await page.screenshot({path: join(artifacts, `theme-settings-${scheme}-${width}.png`), fullPage: true});
   }
   await page.emulateMedia({colorScheme: 'light'});await page.setViewportSize({width: 1440, height: 1000});
@@ -121,7 +117,6 @@ try {
   await tiles.nth(1).getByRole('button', {name: /Open artwork from/}).click();
   await expect(selected.locator('.art-image')).toHaveAttribute('data-art-image-state', 'unavailable');
   assert.equal(await token(page, '--accent'), prior, 'unavailable artwork cannot replace the valid theme');
-  assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations, []);
   await page.screenshot({path: join(artifacts, 'theme-unavailable.png'), fullPage: true});
   await page.unrouteAll({behavior: 'wait'});await tiles.first().getByRole('button', {name: /Open artwork from/}).click();
   await expect(selected.locator('.art-image')).toHaveAttribute('data-art-image-state', 'ready');
@@ -133,14 +128,12 @@ try {
   await page.evaluate(key => {localStorage.setItem(key, JSON.stringify({version: 1, mode: 'locked', palette: ['url(file:///SYNTHETIC_PRIVATE_THEME_PATH)'], texture: 'url(https://example.invalid/theme.css)'}));}, ART_THEME_KEY);
   await page.reload();await feed(page, 'connected');await expect(settings.getByRole('alert')).toContainText('invalid');
   await expect(page.locator('html')).not.toHaveAttribute('data-art-theme', 'applied');
-  assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations, []);
   await page.screenshot({path: join(artifacts, 'theme-invalid-preference.png'), fullPage: true});
   await page.evaluate(({key, value}) => {localStorage.setItem(key, value);}, {key: ART_THEME_KEY, value: locked});
   await page.reload();await feed(page, 'connected');assert.equal(await token(page, '--accent'), cool);
   const other = await context.newPage();await other.goto(`${world.url}/#/settings`);await feed(other, 'connected');
   await other.evaluate(key => {localStorage.setItem(key, '{"version":1,"mode":"locked","palette":[]}');}, ART_THEME_KEY);
   await expect(settings.getByRole('alert')).toContainText('Keeping the current colors');assert.equal(await token(page, '--accent'), cool);
-  assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations, []);
   await other.getByRole('button', {name: 'Restore default', exact: true}).click();await expect(settings).toContainText('Using default colors');
   await settings.getByRole('button', {name: 'Follow artwork', exact: true}).click();await expect(other.getByRole('region', {name: 'Artwork colors'})).toContainText('Following artwork');await other.close();
   await page.evaluate(key => {

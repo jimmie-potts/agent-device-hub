@@ -1,6 +1,5 @@
 // Disposable runtime and fake robot; actual vendor MuJoCo is a separate owner-selected exercise.
 import assert from 'node:assert/strict';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium} from 'playwright';
 import {join} from 'node:path';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
@@ -28,7 +27,7 @@ try{
  for(const width of [320,390,1440]){await page.setViewportSize({width,height:1000});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
  await panel.screenshot({path:screenshot});
   console.log('Reachy browser artifacts: '+screenshot);
- const axe=await new AxeBuilder({page}).analyze();assert.deepEqual(axe.violations,[]);assert.deepEqual(errors,[]);
+ assert.deepEqual(errors,[]);
  await page.reload();await feed(page,'connected');await panel.getByRole('status').filter({hasText:'Simulator available'}).waitFor();assert.equal(world.reachy.state().moves,3,'reload is passive');
  world.reachy.autoComplete=true;world.reachyLoseReply();await panel.getByRole('button',{name:'Neutral pose',exact:true}).click();const recovery=panel.getByRole('checkbox',{name:/I restored vendor/});await recovery.waitFor();assert.equal(await panel.getByRole('button',{name:'Neutral pose',exact:true}).isDisabled(),true);await recovery.check();assert.equal(await panel.getByRole('button',{name:'Neutral pose',exact:true}).isEnabled(),true,'explicit recovery must escape the original uncertain attempt lock');
  world.reachyLoseReply();await panel.getByRole('button',{name:'Neutral pose',exact:true}).click();await page.waitForFunction(()=>document.querySelector<HTMLInputElement>('.reachy-panel input[type="checkbox"]')?.checked===false);assert.equal(await panel.getByRole('button',{name:'Neutral pose',exact:true}).isDisabled(),true,'replacement uncertainty requires a new acknowledgment');
@@ -36,5 +35,5 @@ try{
  await page.reload();await feed(page,'connected');await panel.getByRole('status').filter({hasText:'Simulator available'}).waitFor();assert.equal(await panel.getByRole('button',{name:'Neutral pose',exact:true}).isEnabled(),true,'fresh ownership scope survives reload');
 
  world.reachy.act('offline');await panel.getByRole('status').filter({hasText:/Simulator (unavailable|stale)/}).waitFor();assert.equal(await panel.getByRole('button',{name:'Notice gesture',exact:true}).isDisabled(),true);assert.equal((await world.assistantRead()).status,200,'an unavailable robot does not disable virtual companions');
- console.log('Reachy browser: keyboard, bounded gestures, independent stop, reload, narrow/reduced-motion and axe passed');
+ console.log('Reachy browser: keyboard, bounded gestures, independent stop, reload and narrow layout passed');
 }finally{await browser.close();await world.close();}

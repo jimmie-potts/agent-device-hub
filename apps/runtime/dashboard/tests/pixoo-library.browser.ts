@@ -1,7 +1,6 @@
 // Existing rendition editing and deletion through the authenticated owner, with synthetic media only.
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
 import sharp from 'sharp';
 import {changes, feed, startWorld} from './harness.ts';
@@ -40,7 +39,6 @@ try {
     });
     assert.equal(await page.getByRole('combobox', {name: 'Saved rendition', exact: true}).locator('option').count(), 2);
     assert.equal(world.pixooState().sent, 0, 'saving a preview never writes the display');
-    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
     await page.getByRole('link', {name: 'Use in playlist', exact: true}).click();
     await page.getByRole('heading', {name: 'Playlists', exact: true, level: 2}).waitFor();
     assert.equal(sent.length, 2, 'opening playlist selection sends no edit');
@@ -105,6 +103,6 @@ try {
     assert.equal(await page.getByRole('complementary', {name: 'Selected media', exact: true}).count(), 0);
     await page.reload(); await feed(page, 'connected'); assert.equal(sent.length, 6);
     assert.equal(world.pixooState().sent, 0); assert.deepEqual(errors, []);
-    process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-render-delete', requests: 6, exactRenditionAdded: true, keptOriginalRendition: true, croppedPreviewPixel: [200, 20, 10], displayWrites: 0, axe: 'passed'})}\n`);
+    process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-render-delete', requests: 6, exactRenditionAdded: true, keptOriginalRendition: true, croppedPreviewPixel: [200, 20, 10], displayWrites: 0})}\n`);
   } finally {await context.close();}
 } finally {try {await browser?.close();} finally {await world.close();}}

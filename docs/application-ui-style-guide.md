@@ -21,7 +21,7 @@ The current runtime's owner-selected Quiet glass shell (#1173) replaces its
 Neon presentation with rounded surfaces and browser-selected light/dark values.
 Its owning token layer is `apps/runtime/dashboard/src/skins/quiet-glass.css`,
 which imports the existing fixed task/art tokens. The shared semantic roles,
-state meanings and accessibility rules below still apply. The Neon measurements
+state meanings and rules below still apply. The Neon measurements
 and legacy source snapshots below describe the retained reference presentation;
 they do not require current runtime pages to restore cyan chrome or the grid.
 The [runtime dashboard guide](../apps/runtime/dashboard/README.md) owns its
@@ -134,7 +134,7 @@ The template has three layers. Skins change only the third.
 
 | Layer | Owns | Changes with a skin? |
 | --- | --- | --- |
-| Shared component and interaction rules (sections 6 to 9) | Shell structure, navigation, buttons, forms, panels, status cues, focus, pending, unavailable, stale, error and empty states, capability gating, reduced-motion behavior | No |
+| Shared component and interaction rules (sections 6 to 9) | Shell structure, navigation, buttons, forms, panels, status cues, focus, pending, unavailable, stale, error and empty states, capability gating | No |
 | Semantic roles (this section) | The names below and what each one means | No |
 | Skin values, assets and decorative effects | Colors, typography, surfaces, artwork, glow, grid, opening and circuit-trace effects | Yes |
 
@@ -210,11 +210,10 @@ semantics, keyboard order, text cues, or which control is primary.
 2. Scope decorative rules under the new `data-skin` value. Decoration is CSS
    only, sits on borders, artwork or a background layer behind all content,
    is never drawn over text or meaning-carrying edges,
-   plays once and ends within 5 seconds of load (there is no pause control,
-   per WCAG 2.2.2; the shared habitat exception is in section 9), respects `prefers-reduced-motion`, and prints as
+   plays once and ends within 5 seconds of load (the shared habitat exception is in section 9), and prints as
    nothing.
 3. Run the owning checks: the token check rejects color literals outside the
-   token files, and the browser checks verify motion off and readability.
+   token files, and the browser checks verify one-shot motion and layout.
 4. The current runtime supports bounded art decoration and its browser-local
    follow/lock/default preference under #683, while following browser light/dark
    appearance. Additional skin selection remains deferred. Retained legacy v1
@@ -282,7 +281,8 @@ secondary button text `#c7d8fc`, border `#526482`, hover `#1a2a3d` /
 
 ### 5.3 Contrast
 
-Ratios are computed from the hex values with the WCAG 2.x relative-luminance
+Reference only: contrast is not a requirement and blocks no change (owner
+decision 2026-11-10). Ratios are computed from the hex values with the WCAG 2.x relative-luminance
 formula; the owner can recompute them with any contrast tool. They validate the
 opaque pairs listed and nothing else: translucent panels, hover states, image
 overlays and user-chosen project colors must be checked in the rendered page.
@@ -407,25 +407,26 @@ result. They are kept outside Git under `.local/evidence/gh-181-ui-foundation/`
 in the owner's checkout; the delivery PR lists the frames, and the owner
 reviewed them for the AC2 decision.
 
-## 9. Accessibility, motion and responsiveness
+## 9. Motion and responsiveness
 
-**Observed.** Both UIs honor `prefers-reduced-motion`: the dashboard removes
-every animation and transition; the wall map stops its wall animations while
-keeping Work, Quiet and Free distinguishable. Focus is a white outline in both.
+No accessibility requirement applies to this private-use app (owner decision
+2026-11-10). Nothing in this guide holds a change for contrast, reduced motion,
+screen-reader support or an automated accessibility scan.
+
+**Observed.** Both UIs still carry `prefers-reduced-motion` handling in their
+source; it is retained as it is and is not a requirement for new work. Focus is
+a white outline in both.
 
 **Shared rules and inspection checklist.**
 
 - Every status has a text or icon cue in addition to color.
 - Keyboard focus is visible on every interactive element; tab order follows
   reading order; a modal returns focus to its opener.
-- Body text meets 4.5:1 on its actual rendered surface. Check translucent
-  panels, hover states and overlays in the browser, not from the token table.
 - Selection (cyan), pending (magenta) and device or task status (physical
   hues) stay visually and textually distinct in every skin.
-- Decorative motion plays once and ends within 5 seconds of load, so no pause
-  control is needed (WCAG 2.2.2). Under reduced motion it does not run, and no
-  meaning is lost; skins may not encode a state in motion alone.
-- The owner-selected shared habitat (#1145) may animate continuously inside its artwork. It provides Pause motion, settles travel without animation under reduced motion, stops ambient updates while hidden, and tears down on navigation. Session meaning remains available as text. This exception does not enable continuous skin decoration elsewhere.
+- Decorative motion plays once and ends within 5 seconds of load; skins may
+  not encode a state in motion alone.
+- The owner-selected shared habitat (#1145) may animate continuously inside its artwork. It provides Pause motion, stops ambient updates while hidden, and tears down on navigation. Session meaning remains available as text. This exception does not enable continuous skin decoration elsewhere.
 - Check wide desktop, the widths near each layout change and a 390 px phone:
   no horizontal overflow, no clipped controls, long labels wrap.
 - Small, short transitions only where they clarify state; the dashboard stays
@@ -517,7 +518,7 @@ Acceptance checklist for each new or restyled page:
 - [ ] Every page has a hash address and the back button walks the history.
 - [ ] Shows keyboard focus and states selected, pending, unavailable, stale,
       uncertain, error and empty in text as well as color.
-- [ ] Ends decorative motion within 5 seconds, or follows the shared habitat exception with Pause motion; preserves meaning under reduced motion.
+- [ ] Ends decorative motion within 5 seconds, or follows the shared habitat exception with Pause motion.
 - [ ] Keeps inspection separate from commands and preserves capability and
       permission gating.
 - [ ] Includes current-candidate screenshots or browser evidence and completes

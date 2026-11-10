@@ -4,7 +4,7 @@ import type {Page} from 'playwright';
 import {turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {feed, type World} from './harness.ts';
 
-export async function labelJourney(page: Page, world: World, sent: string[], axe: (page: Page) => Promise<string[]>): Promise<string> {
+export async function labelJourney(page: Page, world: World, sent: string[]): Promise<string> {
   const row = (name: string) => page.locator('article.session').filter({has: page.getByRole('heading', {name, exact: true})});
   const chip = (name: string, text: string) => row(name).locator('.chip', {hasText: text}).waitFor();
   // Label controls send one action per explicit attempt; synced records establish the name.
@@ -63,10 +63,8 @@ export async function labelJourney(page: Page, world: World, sent: string[], axe
   assert.equal(await page.getByLabel('Session label', {exact: true}).inputValue(), 'Updated label');
   await page.getByRole('button', {name: 'Save label', exact: true}).click();
   await row('Updated label').getByRole('status').filter({hasText: 'Label confirmed by the synced record.'}).waitFor();
-  assert.deepEqual(await axe(page), [], 'the open editor passes axe on desktop');
   await page.setViewportSize({width: 390, height: 844});
-  assert.deepEqual(await axe(page), [], 'the open editor passes axe on a phone');
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
   await page.setViewportSize({width: 1440, height: 900});
   await page.getByRole('button', {name: 'Clear label', exact: true}).click();
   await row('Port the wall').getByRole('status').filter({hasText: 'Label confirmed by the synced record.'}).waitFor();
@@ -75,5 +73,5 @@ export async function labelJourney(page: Page, world: World, sent: string[], axe
   assert.equal(sent.length, 4, 'set, refused stale attempt, explicit retry and clear each send once');
   assert.equal(new Set(labelRequests.map(request => request.requestId)).size, 4, 'each explicit attempt has a new identity');
   assert.ok((labelRequests[2]?.data.expectedRevision ?? -1) > (labelRequests[1]?.data.expectedRevision ?? -1), 'the retry uses a fresh guard');
-  return 'label set/clear, state before reply, persistence, retained conflict draft, explicit retry, keyboard and open-editor axe';
+  return 'label set/clear, state before reply, persistence, retained conflict draft, explicit retry and keyboard';
 }

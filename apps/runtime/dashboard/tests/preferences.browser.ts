@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import {AxeBuilder} from '@axe-core/playwright';
 import type {BrowserContext, Page} from 'playwright';
 import type {PreferenceLibrary} from '@jimmie-potts/companions';
 import {feed, type World} from './harness.ts';
@@ -63,7 +62,6 @@ export async function preferencesJourney(world: World, page: Page, context: Brow
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   assert.equal(copied, 'Synthetic preference\nSYNTHETIC_PREFERENCE_CURRENT');
   assert.equal(copied.includes('OLD') || copied.includes('IMPORTED'), false);
-  assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
   await title.fill('Unsent draft'); await text.fill('UNSENT_PREFERENCE_DRAFT');

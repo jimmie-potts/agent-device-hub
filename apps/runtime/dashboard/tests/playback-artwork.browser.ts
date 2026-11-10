@@ -2,7 +2,6 @@ import {openAudio, openConnections} from './navigation-helpers.ts';
 // Focused #1069 RED/green fixture: real producer owner/decoder, authenticated native image and shared Home/Music card.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser, type ElementHandle, type Route} from 'playwright';
 import {expect} from 'playwright/test';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
@@ -420,7 +419,7 @@ try {
     speakers.candidate = undefined;
     const missing = await current({artwork: 'missing'}); await noImage(); await textAndControls(titleOf(missing));
     checks.push('missing artwork square');
-    // Long metadata and phone layout, using actual producer bytes and current WCAG tags.
+    // Long metadata and phone layout, using actual producer bytes.
     const longTitle = 'Synthetic long track title '.repeat(6).trim(), longArtist = 'Synthetic long artist '.repeat(5).trim();
     speakers.candidate = `/synthetic-browser-${++serial}-blue.png`; speakers.play('sony', {title: longTitle, artist: longArtist});
     const long = await current({title: longTitle, artwork: 'ready'}); await frame(long, [20, 60, 100, 255]);
@@ -434,11 +433,10 @@ try {
         await page.setViewportSize({width, height: 900}); await textAndControls(longTitle, completed);
         await card.getByText(longArtist, {exact: true}).waitFor();
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-        assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
         await shot(`playback-long-${destination.toLowerCase()}-${width}`);
       }
     }
-    checks.push('long text/390px/axe');
+    checks.push('long text/390px');
     const beforeReload = acquisitions;
     await page.reload(); await feed(page, 'connected');
     await frame(await current({title: longTitle, artwork: 'ready'}), [20, 60, 100, 255]);

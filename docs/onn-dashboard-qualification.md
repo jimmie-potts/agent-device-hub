@@ -91,8 +91,8 @@ name, client, state and attention on their face and last-evidence age, attention
 text and the host/provider source when opened, that a dropped stream marks
 evidence stale and reconnects without a command, that a mode changed by another
 browser appears without being repeated, that a runtime restart offers Sign in
-again from the keyboard, and that the page has no overlapping text, no
-horizontal scroll and no axe violation in light or dark. It runs in
+again from the keyboard, and that the page has no overlapping text and no
+horizontal scroll in light or dark. It runs in
 CI's App verification job and in the full local dashboard browser suite. Its
 screenshots, saved under `DASHBOARD_RECEIPTS`, are synthetic.
 

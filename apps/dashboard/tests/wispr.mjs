@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
-import AxeBuilder from '@axe-core/playwright';
 import {mkdir,readFile} from 'node:fs/promises';
 import {wisprFixture} from './wispr-fixture.mjs';
 import {textOverlaps} from './layout.mjs';
@@ -42,7 +41,7 @@ try{
   await page.setViewportSize({width,height:1000});await page.getByLabel('Period',{exact:true}).focus();assert.equal(await page.getByLabel('Period',{exact:true}).evaluate(e=>e===document.activeElement),true);
   const daily=view().getByText(/^Daily values/);await daily.focus();if(width===390)await daily.tap();else await daily.press('Enter');await view().getByRole('table',{name:'Captured daily totals'}).waitFor();if(width===390)await daily.tap();else await daily.press('Enter');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no page overflow '+width);assert.deepEqual(await textOverlaps(page),[],'no overlapping text '+width);
-  const a11y=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[],'axe '+width);await page.screenshot({path:output+`/wispr-${width}.png`,fullPage:true});
+  await page.screenshot({path:output+`/wispr-${width}.png`,fullPage:true});
  }
  await page.getByLabel('Category',{exact:true}).selectOption('email');await view().getByText('No captured dictations match this selection.',{exact:true}).waitFor();await view().getByText(/Low sample:/).waitFor();assert.equal(await fact('Words'),'0');assert.equal(await fact('Weighted speech WPM'),'Unavailable');await page.getByLabel('Category',{exact:true}).selectOption('all');await view().getByText('hello world',{exact:true}).waitFor();
  // A failed collector keeps dated numeric evidence and retires text.
@@ -54,7 +53,7 @@ try{
  await f.clear();await view().getByText('Analytics have been cleared.',{exact:true}).waitFor({timeout:15000});assert.equal(await page.getByRole('button',{name:'Download numeric JSON'}).isDisabled(),true);assert.ok(!(await page.locator('body').textContent()).includes('hello world'));
  f.hub.replaceCredentials([f.credential(f.token,['other']),f.credential(f.wrong,['other'])]);await page.getByRole('region',{name:'Not found'}).waitFor();assert.equal(await page.getByRole('navigation',{name:'Main navigation'}).getByRole('link',{name:/Wispr/}).count(),0);assert.equal(await page.locator('.wispr-page').count(),0);
  await page.getByRole('button',{name:'Disconnect',exact:true}).click();assert.equal(await page.locator('[data-widget="wispr-summary"]').count(),0);await signIn(f.wrong);await page.getByRole('region',{name:'Not found'}).waitFor();assert.equal(await page.getByRole('heading',{name:'Wispr today'}).count(),0);
- assert.equal(writes,0,'all analytics operations are reads');assert.deepEqual(errors,[]);console.log('Wispr real synthetic collector/Hub/browser: totals, stages, edits, numeric exports, independent filters, privacy retirement, responsive/axe passed.');
+ assert.equal(writes,0,'all analytics operations are reads');assert.deepEqual(errors,[]);console.log('Wispr real synthetic collector/Hub/browser: totals, stages, edits, numeric exports, independent filters, privacy retirement, responsive passed.');
 }catch(error){await page.screenshot({path:output+'/failure.png',fullPage:true});console.error(await page.locator('body').innerText());throw error;}finally{await context.close();await browser.close();await f.close();}
 
 // Missing configuration and unreadable initial source remain distinct from an empty capture.

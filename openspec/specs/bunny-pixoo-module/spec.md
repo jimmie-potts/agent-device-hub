@@ -153,7 +153,7 @@ The Pixoo module SHALL contribute its existing library, playlist, player, previe
 
 #### Scenario: Existing views remain usable
 - **WHEN** the library, playlists, player, preview, Monitor and settings views are exercised with fresh synthetic media and a simulated Pixoo
-- **THEN** their existing supported flows work through the runtime, keyboard and accessibility checks pass, and device effects occur only after explicit authorized commands
+- **THEN** their existing supported flows work through the runtime, keyboard checks pass, and device effects occur only after explicit authorized commands
 
 #### Scenario: Saved renditions and frozen player session
 - **WHEN** the user renders a different preview, selects a saved playlist and explicitly starts it

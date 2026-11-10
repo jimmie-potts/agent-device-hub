@@ -39,11 +39,18 @@ export type ReadReceiptDecision =
   | {status: 'eligible'; noticeId: string};
 
 let receiptValidator: MessageValidator | undefined;
-function validator(): MessageValidator {
+/**
+ * The process's one sealed validator with the core families and the read-receipt family, compiled on first use. The
+ * core used to compile a copy of its own at every start, which took Ajv about 70 ms on a fast machine (Hub #1534). An
+ * owner that needs other families builds its own validator. The result offers
+ * only `validate`, as `coreValidator`'s does.
+ */
+export function readReceiptValidator(): Pick<MessageValidator, 'validate'> {
   if (receiptValidator === undefined) {
-    receiptValidator = new MessageValidator();
-    registerCoreFamilies(receiptValidator);
-    registerReadReceiptFamily(receiptValidator);
+    const validator = new MessageValidator();
+    registerCoreFamilies(validator);
+    registerReadReceiptFamily(validator);
+    receiptValidator = validator.seal();
   }
   return receiptValidator;
 }
@@ -54,7 +61,7 @@ function validator(): MessageValidator {
  */
 export function decideReadReceipt(input: unknown, session: ReceiptSession | undefined,
   qualification: ReadReceiptQualification | undefined): ReadReceiptDecision {
-  const result = validator().validate<Lifecycle21Observation>(input);
+  const result = readReceiptValidator().validate<Lifecycle21Observation>(input);
   if (!result.ok) return {status: 'invalid', error: result.error};
   const {data, source, dataschema} = result.value;
   if (dataschema !== READ_RECEIPT_SCHEMA || data.event.kind !== 'read-receipt-observed') {

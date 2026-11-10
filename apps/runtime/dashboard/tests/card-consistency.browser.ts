@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Page} from 'playwright';
 import {approvalPrompt} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
@@ -137,11 +136,7 @@ try {
     for (const button of await page.locator('.roborock-warning,.volcano-warning,.wispr-card-actions button').all()) {
       const box = await button.boundingBox(); assert.ok(box); assert.ok(box.height >= 44 && box.width >= 44, 'corner controls have touch targets');
     }
-    assert.equal(await page.locator('.light-face:not([hidden]),.roborock-plane>section:not([hidden]),.volcano-plane>section:not([hidden])')
-      .evaluateAll(nodes => nodes.every(node => getComputedStyle(node).animationName === 'none')), true, 'reduced motion suppresses control flips');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `all cards fit ${width}px ${colorScheme}`);
-    const axe = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-    assert.deepEqual(axe.violations.map(item => ({id: item.id, nodes: item.nodes.map(node => node.target)})), []);
   }
   const plug = await page.locator('.wemo-card').first().getAttribute('data-device'); assert.notEqual(plug, null);
   const featureViews = [

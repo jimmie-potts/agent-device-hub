@@ -17,8 +17,8 @@ The current runtime SHALL retain one versioned private desktop arrangement and o
 - **WHEN** a save is unauthorized, invalid, expired, conflicting, fails durable commit or loses its reply
 - **THEN** the page preserves the appropriate refused or uncertain result, sends no device command, never automatically repeats the save and requires current evidence before another save
 
-### Requirement: Accessible layout editing
-Home SHALL offer Edit Home, a source-aware card picker, supported functional-card sizes and art shapes, pointer and keyboard reorder, hide/remove, Cancel, Reset and Done. Editing SHALL disable device controls. It SHALL preserve keyboard focus, reduced motion, desktop and phone accessibility and the approved concise header.
+### Requirement: Layout editing
+Home SHALL offer Edit Home, a source-aware card picker, supported functional-card sizes and art shapes, pointer and keyboard reorder, hide/remove, Cancel, Reset and Done. Editing SHALL disable device controls. It SHALL preserve keyboard focus, desktop and phone layouts and the approved concise header.
 
 #### Scenario: Draft changes and cancellation
 - **WHEN** the owner rearranges cards, opens the picker, switches breakpoints and cancels

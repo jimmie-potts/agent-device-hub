@@ -116,7 +116,7 @@ The module SHALL publish complete revisioned `roborock-vacuum/2.0` status and th
 
 ### Requirement: One page and current-status tool
 
-The module SHALL contribute its React page at `#/module/roborock/status` using the shell's one authenticated connection and existing navigation. The page SHALL show current status, stale/unavailable evidence, paged runs and a selected run's battery samples with gaps. Its read-scoped `roborock_status` MCP tool SHALL return the same current record. Neither interface SHALL collect on demand, acknowledge notices or control the vacuum. The page SHALL support keyboard use, narrow viewports, reduced motion, reconnect and leaving/re-entering without leaked subscriptions or fabricated freshness.
+The module SHALL contribute its React page at `#/module/roborock/status` using the shell's one authenticated connection and existing navigation. The page SHALL show current status, stale/unavailable evidence, paged runs and a selected run's battery samples with gaps. Its read-scoped `roborock_status` MCP tool SHALL return the same current record. Neither interface SHALL collect on demand, acknowledge notices or control the vacuum. The page SHALL support keyboard use, narrow viewports, reconnect and leaving/re-entering without leaked subscriptions or fabricated freshness.
 
 #### Scenario: Status, history and battery journey
 - **WHEN** the owner opens the simulated module page, pages through retained runs and selects a run
@@ -130,13 +130,13 @@ The module SHALL contribute its React page at `#/module/roborock/status` using t
 - **WHEN** an authenticated read-scoped client invokes `roborock_status`
 - **THEN** it receives the page's current status record without a collection effect, history tool or vacuum control
 
-#### Scenario: Accessible inspection
-- **WHEN** the owner navigates by keyboard on a narrow viewport with reduced motion
-- **THEN** status and history controls remain usable, chart evidence has a readable text alternative and applicable accessibility checks pass
+#### Scenario: Keyboard and narrow inspection
+- **WHEN** the owner navigates by keyboard on a narrow viewport
+- **THEN** status and history controls remain usable and chart evidence has a readable text alternative
 
 ### Requirement: Reusable quiet Roborock card
 
-Home and the Roborock status page SHALL reuse the same read-only card with a persistent vacuum illustration, Status, Last run and Care tabs, a corner warning disclosure and History navigation. Tab changes SHALL preserve card dimensions and the illustration. Existing saved Home placements SHALL remain valid. Small and wider placements SHALL retain the card format and expose observed state and battery; the run and care tabs SHALL expose the additional summaries. Detailed observations and paged run/sample evidence SHALL remain reachable without filling the default card with technical text. The interface SHALL support keyboard access, narrow screens, both themes and reduced motion.
+Home and the Roborock status page SHALL reuse the same read-only card with a persistent vacuum illustration, Status, Last run and Care tabs, a corner warning disclosure and History navigation. Tab changes SHALL preserve card dimensions and the illustration. Existing saved Home placements SHALL remain valid. Small and wider placements SHALL retain the card format and expose observed state and battery; the run and care tabs SHALL expose the additional summaries. Detailed observations and paged run/sample evidence SHALL remain reachable without filling the default card with technical text. The interface SHALL support keyboard access, narrow screens and both themes.
 
 #### Scenario: Home and module-page reuse
 - **WHEN** the owner opens the configured vacuum on Home or the Roborock page and changes tabs

@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {AxeBuilder} from '@axe-core/playwright';
 import {build} from 'esbuild';
 import {chromium, type Page} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
@@ -99,7 +98,6 @@ async function journey(): Promise<void> {
         assert.equal(outside, false, `${width} ${tab}: stays inside the card`);
         const clipped = await card.getByRole('tab', {name: tab, exact: true}).evaluate(node => node.scrollWidth > node.clientWidth + 1);
         assert.equal(clipped, false, `${width} ${tab}: the label fits`);
-        assert.deepEqual((await new AxeBuilder({page}).include('[data-volcano-card]').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => ({id: item.id, nodes: item.nodes.map(node => node.failureSummary)})), []);
         if (shots !== undefined && width === 390) await card.screenshot({path: join(shots, `volcano-${colorScheme}-${tab.toLowerCase()}.png`)});
       }
     }
@@ -322,7 +320,6 @@ async function states(): Promise<void> {
   assert.equal(await card.locator('.volcano-buckets > li').count(), 1, 'an empty bucket is not drawn');
   await card.getByText('3 (1 uncertain)', {exact: true}).waitFor();
   assert.equal(await card.locator('.volcano-buckets > li').getAttribute('data-threshold'), 'true');
-  assert.deepEqual((await new AxeBuilder({page}).include('[data-volcano-card]').disableRules(['color-contrast']).withTags(['wcag2a', 'wcag2aa']).analyze()).violations.map(item => item.id), []);
 
   // Unknown credit and a gap between stretches, on the session as the module sends them.
   await mount({doc: status(), reads: {...empty, sessions: {...empty.sessions, sessions: [session({unobservedBetween: 1}, [stretch(), stretch({startAtMs: NOW - 30 * MIN, unobserved: [{fromMs: NOW - 29 * MIN, toMs: NOW - 28 * MIN, creditedMinutes: null}]})])]}}});

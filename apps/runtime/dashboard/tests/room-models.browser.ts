@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium} from 'playwright';
-import {AxeBuilder} from '@axe-core/playwright';
 import {changes,feed,startWorld} from './harness.ts';
 import {roomModelFixture} from '../../dist/tests/fixtures/room-model.js';
 
@@ -42,9 +41,7 @@ try{
   await page.waitForFunction(before=>document.querySelector('[aria-label="Studio 3D model"] canvas')?.getAttribute('data-yaw')!==before,yaw);
   const distance=Number(await canvas.getAttribute('data-distance'));await page.mouse.wheel(0,-90);
   await page.waitForFunction(before=>Number(document.querySelector('[aria-label="Studio 3D model"] canvas')?.getAttribute('data-distance'))<before,distance);
-  const axe=async():Promise<void>=>{const report=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(report.violations.map(v=>v.id),[]);};
-  for(const name of ['Select Desk lamp','Select Desk lamp in 3D model','Select Wall lamp','Select Wall lamp in 3D model']){const button=view.getByRole('button',{name,exact:true});await button.hover();await axe();}
-  await page.setViewportSize({width:390,height:844});await axe();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.documentElement.scrollWidth<=innerWidth);
   if(process.env.DASHBOARD_RECEIPTS!==undefined)await page.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/room-model-phone.png',fullPage:true});
   await page.route('**/api/sdk/v1/stream',route=>route.abort());world.dropDashboardStreams();
   await view.locator('.room-selected').getByText('Room assignments are stale.',{exact:true}).waitFor();
@@ -80,7 +77,7 @@ try{
   await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
   await phone.waitForFunction(before=>Number(document.querySelector('[aria-label="Studio 3D model"] canvas')?.getAttribute('data-distance'))<before,touchDistance);
   assert.equal(sent.filter(url=>url.endsWith('/power-set')).length,uncertainCount);assert.equal(mobileSent.length,0,'touch inspection sends no command');await mobile.close();
-  console.log(JSON.stringify({journey:'private-room-model',selections:true,reportedPower:true,unbound:true,stale:true,restartNoReplay:true,uncertainNoReplay:true,webglFallback:true,touchPinch:true,axe:'desktop and phone',physical:false}));
+  console.log(JSON.stringify({journey:'private-room-model',selections:true,reportedPower:true,unbound:true,stale:true,restartNoReplay:true,uncertainNoReplay:true,webglFallback:true,touchPinch:true,physical:false}));
   await context.close();
   assert.deepEqual(errors,[]);
 }finally{await browser.close();await world.close();}

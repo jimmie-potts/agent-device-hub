@@ -166,7 +166,7 @@ Use Node 24. Run `npm run test:wemo` for configured local SOAP transport and mod
 checks, or build once and run `npm run test:wemo:built`. The modules CI group runs
 the built suite. These use loopback HTTP and simulated plugs, never household
 addresses. Runtime maximum-on, management and scheduling integration use
-`npm run test:runtime:built` and `npm run test:wemo:browser` (desktop/phone accessibility), plus the dashboard checks under
+`npm run test:runtime:built` and `npm run test:wemo:browser` (desktop/phone layout), plus the dashboard checks under
 `apps/runtime/DEVELOPMENT.md`. Build/type/lint, shared contract/workflow checks,
 independent review, installed qualification and named physical trials remain separate.
 
@@ -190,7 +190,7 @@ The card (#616) adds `modules/volcano/tests/card.test.ts` to the built suite and
 `npm run test:volcano:browser` to App verification. After the root build, the browser
 journey drives the real module and store over a synthetic feed: Home and Devices placement,
 passive tabs, fixed geometry at each Home size and at light and dark desktop and phone
-widths, accessibility, keyboard access, one tracked threshold save that rewrites no fact, and
+widths, keyboard access, one tracked threshold save that rewrites no fact, and
 unknown rather than off. It then mounts the card over fixed documents for the stale,
 unavailable, refused, no-history, partial-session, discontinuity and recovered-gap states. It
 runs in Linux. `DASHBOARD_RECEIPTS` names a folder for its screenshots.
@@ -432,7 +432,7 @@ Each lane's packaged suites have a 45-minute process deadline and a 30-second
 kill grace. Each lane job has a 60-minute limit for download, load, the
 derivative build and its tests, and the build job has 20 minutes. A timeout
 fails qualification. It never admits a partially tested image.
-All packaged browser, accessibility, negative-control, adapter, boundary, drain,
+All packaged browser, negative-control, adapter, boundary, drain,
 follow, guard, health, HOME, journal, migration, run and supervisor tests remain.
 Docker's init reaps orphaned test processes. Containers have synthetic state and
 no host mounts, ports, network or devices. This qualifies source and packaged bytes, not an installed client.
@@ -603,7 +603,7 @@ artifact checks. Its evidence remains separate from the cheap Integration job:
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Retained documentation checks (Workflow workflow) | Python 3.12 diagram/atlas/navigation and maintenance-parser checks, plus Node 24 browser checks with review artifacts |
 | App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge adapter's steps, the bridge control page's browser check, the smoke checks of the old dashboard and the runtime's dashboard, and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
-| Runtime verification | Node 24 build and Chromium, then the unchanged full serial runtime adapter/catalog suite, including its browser and accessibility journeys; the same user-manager isolation applies |
+| Runtime verification | Node 24 build and Chromium, then the unchanged full serial runtime adapter/catalog suite, including its browser journeys; the same user-manager isolation applies |
 | Selected checks gate | Node 24 with only `scripts/ci-selection` checked out: fails unless every selected Checks job succeeded |
 
 A full Checks run performs five full builds across its jobs. The Python
@@ -683,7 +683,7 @@ a nonempty successful full suite and `modules/wemo/dist/tests/module.test.js`,
 with no failed, cancelled, skipped or todo tests. MicroDuck installs Chromium
 with the existing bounded apt retry, then runs the complete
 `npm run test:runtime-dashboard:smoke` and `npm run test:microduck:browser`.
-Its completion marker occurs after all existing browser and accessibility
+Its completion marker occurs after all existing browser
 assertions. No file, test-name or journey filtering is applied.
 
 The `Standalone command` native notice records only closed completion metadata:
@@ -1527,7 +1527,7 @@ For the reusable Timeline card (#1194), after the root build run
 and `node apps/runtime/dashboard/tests/timeline-card.browser.ts`. The browser
 journey uses synthetic history and the existing Home layout owner; it checks
 passive browsing, filters/evidence, failures, keyboard focus and phone/desktop
-accessibility. The existing core CI job discovers the unit tests and the App
+layout. The existing core CI job discovers the unit tests and the App
 verification job runs the focused browser journey. Run the full dashboard
 browser suite and `inbox-history.browser.ts` for this shared presentation change.
 The browser journey asserts limit=200 on entry, date/exact, refresh and Home reads,
@@ -1564,7 +1564,7 @@ See [Runtime dashboard checks](../apps/runtime/DEVELOPMENT.md#runtime-dashboard-
 Playback artwork (#1069) adds passive owner/gateway checks to the existing
 `npm run test:playback:built` and `npm run test:runtime:built` discovery. After
 the root build, run `node apps/runtime/dashboard/tests/playback-artwork.browser.ts`
-for the focused Home/Music image, association, text/control and accessibility
+for the focused Home/Music image, association and text/control
 journey; App verification runs that same entry. It uses the real playback
 owner and decoder with synthetic acquisition on the disposable browser harness.
 Keep the full dashboard browser suite required by the owning procedure. These
@@ -1755,7 +1755,7 @@ After the root build, run `npm run test:wispr-module:built`,
 tests; the hosted runtime smoke entry also runs this focused browser journey. The projection tests distinguish observed zero,
 missing speech, absent dates and expired producer windows; the browser journey
 checks selectable gaps, refresh/refusal retirement, keyboard and responsive
-light/dark accessibility. These use synthetic published files only and do not
+light/dark layout. These use synthetic published files only and do not
 activate collection or establish installed analytics availability.
 
 
@@ -1774,7 +1774,7 @@ separately; package tests alone do not establish those paths or installation.
 The runtime dashboard browser command includes `wispr.browser.ts` for the module
 port. It uses the actual reader on private synthetic collector files: numeric
 widget and page, retained filters, numeric downloads, explicit browser exposure
-and text-sharing opt-out, keyboard and accessibility. Inspection sends no
+and text-sharing opt-out, and keyboard use. Inspection sends no
 commands. The two read-scoped caller cases and missing/stale inputs also run in
 the module's shared catalog scenarios; no installed collector or service is used.
 
@@ -2101,7 +2101,7 @@ Nanoleaf scenario, dashboard unit checks, SDK/events, shared type/lint,
 controller-contract and workflow checks. The existing
 `node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts` entry will include
 save/reload, read-only/Origin refusals, stale/uncertain saves, passive reconnect,
-full-recipe preview and light/dark phone/desktop accessibility. It remains
+full-recipe preview and light/dark phone/desktop layout. It remains
 required alongside smoke and full dashboard browser checks. Existing modules,
 runtime and App verification CI select these paths; no new job or root script
 is required. All fixtures are synthetic, with no capture, installation or
@@ -2113,7 +2113,7 @@ discovery. After the root build, run
 then `npm run test:nanoleaf:built`. The existing Wall browser journey at
 `node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts` covers explicit
 preview reads, local drafts and scrubbing, result fencing, read-only access and
-phone/keyboard/accessibility behavior. CI runs that journey in App verification
+phone/keyboard behavior. CI runs that journey in App verification
 for the runtime group and discovers the focused tests through the core
 Nanoleaf suite. Keep build/type/lint, runtime/dashboard, shared contract and
 workflow checks. Generated input and example geometry establish no live capture,
@@ -2243,8 +2243,8 @@ permission behavior, protected-content access, speaker routing or physical sync.
 Tests use synthetic PCM, fake sources/clocks and disposable loopback SDK peers.
 For microphone contract or selection changes, also run the existing event, SDK,
 runtime/core, dashboard unit and full dashboard browser checks. The Music capture
-journey covers explicit alias selection, refusal/retry, both contract versions,
-reload without replay and desktop/phone axe. Existing shared, core, App verification
+journey covers explicit alias selection, refusal/retry, both contract versions
+and reload without replay. Existing shared, core, App verification
 and Music native source CI discovery runs these checks; no real microphone API
 is invoked by the adapter tests.
 Keep real audio-derived observations and camera recordings private. Installed
@@ -2500,8 +2500,8 @@ PNG generator live in `apps/hub/tests/pixoo-catalog-fixture.mjs`.
 
 `apps/dashboard/tests/pixoo-client.test.mjs` covers authenticated PNG scheduling;
 `apps/dashboard/tests/pixoo-media.mjs` runs in `test:dashboard:browser`. It checks a 20-frame variable-delay animation,
-full-color pixels, reduced motion, ordered/unnamed playlists, pagination, catalog
-revision refresh, hidden-widget cancellation, accessibility and mobile overflow.
+full-color pixels, ordered/unnamed playlists, pagination, catalog
+revision refresh, hidden-widget cancellation and mobile overflow.
 It also pages away from a slow preview read still in flight (Hub #946): the next
 page of media must wait for the controller's answer, because the hub holds its one
 slot until then, instead of being refused with `capacity`. `client.test.mjs` covers
@@ -2596,7 +2596,7 @@ run `npm run test:roborock:built`, `npm run test:roborock:consumer:built`,
 `npm run test:runtime-dashboard:built` and `npm run test:roborock:browser`.
 The focused browser journey checks Home/page reuse, passive tabs and history,
 fixed geometry, source freshness/refusals, scoped cleanup, keyboard access and
-light/dark desktop/phone accessibility. Use synthetic inputs only; this does
+light/dark desktop/phone layout. Use synthetic inputs only; this does
 not establish installed or physical acceptance. Keep the shared build/type,
 contract/workflow checks and full dashboard browser suite below.
 
@@ -2643,7 +2643,7 @@ companions browser entry calls `speech.browser.ts` against a disposable real
 runtime with synthetic browser identity and audio. It exercises explicit selection,
 completion, Stop, mute, category/Quiet suppression, delayed voice rechecks,
 reload/disconnect/restart silence, uncertainty, reader controls and desktop/phone
-keyboard and axe checks. `speech-readiness.ts` mounts the real Reachy page and delivers companion or
+keyboard checks. `speech-readiness.ts` mounts the real Reachy page and delivers companion or
 speech-state restart, failure and removal, category mute, text disable and
 restrictive speech availability before React renders, then resolves pending
 voice discovery. Each must submit zero audio; an unchanged eligible control
@@ -2665,7 +2665,7 @@ Coding suggestions (#1098) use the existing companion unit discovery and
 `node --test modules/companions/dist/tests/suggestions.test.js` for the fixed
 attribution/relevance corpus and policy, freshness, revision and isolation
 refusals. The browser journey checks the deliberate form, explicit clipboard,
-supersession/disconnect, keyboard, narrow viewport and axe. Existing core and
+supersession/disconnect, keyboard and narrow viewport. Existing core and
 App verification CI include both commands; no new suite/job is needed. Run
 root build/type/lint, companion and runtime/dashboard tests, shared contract and
 workflow checks, and the full runtime dashboard browser suite. Use synthetic
@@ -2674,12 +2674,12 @@ evidence only; this provides no installed-client or physical acceptance.
 The Duck Home widget (#662) uses the existing companion unit suite, runtime
 scenario discovery and companions browser journey. Check explicit selection,
 latest/history isolation, correction/removal, restart, stale/denied reads,
-keyboard, narrow layout and axe. Existing CI already selects these suites for
+keyboard and narrow layout. Existing CI already selects these suites for
 companions/dashboard changes; no new job is needed. Use only synthetic data.
 
 Reusable companion cards (#1230) extend the same companion browser journey with
 Home/page reuse, explicit conversation selection, stationary artwork, stable tab
-geometry, qualified speech lifetime, replacement-sync privacy and reduced motion.
+geometry, qualified speech lifetime and replacement-sync privacy.
 Run the focused `node apps/runtime/dashboard/tests/companion-cards.browser.ts`
 after the root build, then `npm run test:companions:browser` and the full runtime
 dashboard browser suite. Existing companion/runtime/dashboard test discovery and
@@ -2699,8 +2699,8 @@ for the dispatch family and the state's provider, model and tool fields, the
 `assistant-task` and `assistant-mode-approval` catalog scenarios over both
 transports and in a disposable runtime, and `npm run test:companions:browser`
 for the conversation page's approved and declined proposals across reload,
-clarification with the read tool, cancellation, keyboard, narrow viewport and
-axe. The companions module now takes a section (an empty one keeps the synthetic
+clarification with the read tool, cancellation, keyboard and narrow viewport.
+The companions module now takes a section (an empty one keeps the synthetic
 default), so harnesses that start it pass one. Existing core, runtime and App
 verification CI discover these checks; no new job is needed. They use the
 synthetic provider and fake transports only: no live provider, key, installed
@@ -2712,7 +2712,7 @@ Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 group runs that suite. Event-family validation runs in `test:events:built`;
 core intake, gateway and duplicate/recovery checks join `test:runtime:built`.
 Run the `reachy-text`, `assistant-task`, `assistant-mode-approval`, `preferences` and `companion-knowledge` catalog scenarios over both transports and in a disposable
-runtime, and the companions browser/axe journey in the runtime dashboard suite.
+runtime, and the companions browser journey in the runtime dashboard suite.
 These are synthetic source checks; installation remains a separately selected batch.
 
 The companions suite includes real process exits after a checkpoint, after answer
@@ -2799,7 +2799,7 @@ exports, invalid input, transaction rollback and SQLite full-disk refusal. Exist
 discovery includes it. The runtime `preferences` scenario covers authenticated reads,
 reader refusals, metadata privacy and restart over both scenario transports.
 `npm run test:companions:browser` includes the real preference page, clipboard,
-private import/export, keyboard and axe checks. Preserve build/type/lint, affected
+private import/export and keyboard checks. Preserve build/type/lint, affected
 event/runtime/SDK consumers and workflow validation. All data is synthetic; these
 checks neither install the feature nor qualify a live model or physical device.
 

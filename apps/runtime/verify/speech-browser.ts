@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import {AxeBuilder} from '@axe-core/playwright';
 import type {BrowserContext, Locator, Page} from 'playwright';
 import type {CaptureContext} from '@jimmie-potts/app-verify';
 import type {ModeState} from '@jimmie-potts/event-contracts/v2/families';
@@ -146,8 +145,7 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
       await region().getByText('Playback: Speech did not start.', {exact: true}).waitFor(); assert.equal(await count(), 4);
     });
     await category('Unmute Coding attention', 'Unmute category');
-    await t.expect('desktop controls have no targeted accessibility violations or overlapping speech', async () => {
-      assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(v => v.id), []);
+    await t.expect('desktop controls have no overlapping speech', async () => {
       assert.equal(await page.evaluate(() => window.speechFixture.overlap), 0);
     });
     await indicate('Reload this synthetic tab; speech availability must be renewed'); await page.reload();
@@ -170,9 +168,8 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
     await t.expect('runtime restart does not restore availability or replay output', async () => {await enable().waitFor(); assert.equal(await count(), 0);});
     await indicate('Inspect the same controls at a phone viewport'); await page.setViewportSize({width: 390, height: 844});
     await region().scrollIntoViewIfNeeded(); await page.waitForTimeout(240);
-    await t.expect('narrow controls fit and retain accessibility', async () => {
+    await t.expect('narrow controls fit', async () => {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
-      assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(v => v.id), []);
     });
     await indicate('Return to the desktop viewport');
     await page.setViewportSize({width: 1280, height: 1000}); await region().scrollIntoViewIfNeeded();

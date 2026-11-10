@@ -35,10 +35,6 @@ The control page SHALL show the simulated controller (15 slot keys, 10 black key
 - **WHEN** a reviewer holds Space on the Record key
 - **THEN** the simulator reports the key down, the desktop holds the dictation chord, and both release when Space is released
 
-#### Scenario: Accessibility
-- **WHEN** the page is checked with axe for WCAG 2.1 A and AA at 1440 px and at phone width
-- **THEN** it reports no violations
-
 #### Scenario: Paging from the page
 - **WHEN** a reviewer turns knob 4 right by its default counts from the page
 - **THEN** the bridge shows page 2, knob 4's light reads `page 2`, and no window comes to the front

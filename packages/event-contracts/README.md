@@ -343,6 +343,10 @@ and `decideReadReceipt`. Call the registration function after
 lifecycle version and rejects it with `unsupported-version`. The runtime
 explicitly registers it for the qualified producer described in its
 [read-receipt guide](../../apps/runtime/READ-RECEIPTS.md).
+`readReceiptValidator()` returns the process's one sealed validator with the
+core families and this family, compiled on first use. The runtime's core
+validates with it instead of compiling a copy at each start (Hub #1534). Like
+`coreValidator()`, its type offers only `validate`.
 
 The version accepts existing lifecycle/2.0 observations with their existing
 rules and adds `read-receipt-observed`. A receipt carries the full native session

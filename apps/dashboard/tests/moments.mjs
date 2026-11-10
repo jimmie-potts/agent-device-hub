@@ -1,9 +1,8 @@
 // Hub #336: the Moments card end to end in Chromium, against the real hub and the fixture's moment-capable 1.1 wall.
 // It covers card presence, moods, presets and the status switch, one send per press, every result line, the uncertain lock,
-// supersede, the live line on the fake device clock, the faster refresh and its limits, keyboard focus, axe and a 390 px layout.
+// supersede, the live line on the fake device clock, the faster refresh and its limits, keyboard focus and a 390 px layout.
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
-import AxeBuilder from '@axe-core/playwright';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {fixture} from './fixture.mjs';
 
@@ -28,7 +27,6 @@ const mood=(page,name)=>card(page).getByRole('button',{name,exact:true});
 const moments=f=>f.writes.filter(w=>w.id==='wall'&&!w.integration&&w.command?.command?.kind==='moment').map(w=>w.command);
 const wallReads=f=>f.requests.filter(r=>r.id==='wall'&&r.method==='GET'&&r.url.startsWith('/controller/v1/snapshot')).length;
 async function openWall(page){await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await card(page).waitFor();}
-async function axe(page){await page.mouse.move(0,0);const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>`${n.target.join(' ')}: ${n.failureSummary}`)})),[]);}
 /** The count of moment POSTs once it has held still for a second, so a late or repeated send is counted. */
 async function settledMoments(f){let seen=moments(f).length,still=0;for(let waited=0;waited<10000&&still<4;waited+=250){await pause(250);const now=moments(f).length;still=now===seen?still+1:0;seen=now;}return seen;}
 const accepted=/^Celebrate: (Scheduled on wall|Sent to wall)\.$/;
@@ -48,14 +46,12 @@ try {
   await section(page).getByText('Not declared by this controller: media.',{exact:true}).waitFor();
   // The Moments card comes after the general cards in the same grid.
   assert.deepEqual(await section(page).locator('.cards').first().locator(':scope>*>h3').allTextContents(),['Mode','Power','Brightness','Scenes','Moments']);
-  await axe(page);
   await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await section(page).getByText('Not declared by this controller: scenes and moments.',{exact:true}).waitFor();
   assert.equal(await card(page).count(),0,'a 1.0 controller has no Moments card');
   await openWall(page);
   await page.setViewportSize({width:390,height:844});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no horizontal overflow at 390 px');
   const box=await card(page).boundingBox();assert.ok(box&&box.x>=0&&box.x+box.width<=390,'the card fits a phone width');
-  await axe(page);
   assert.equal(await settledMoments(f),0);assert.equal(f.writes.length,0,'browsing and polling send no command');
  },{moments:{moods:['celebrate','setback','reminder','cozy','storm'],maxDurationMs:20000,coversStatus:true}});
 

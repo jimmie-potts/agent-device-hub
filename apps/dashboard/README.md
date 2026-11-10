@@ -470,7 +470,7 @@ forward cyan selection, magenta pending states, compact controls, a quiet grid,
 local Bahnschrift/Segoe UI typography and focus-preserving interaction. It does
 not copy wall geometry, physical Locate controls or animation rendering. UI
 candidates follow the [SDLC verification policy](../../docs/sdlc.md#ui-approval-scope):
-retain automated, browser and accessibility evidence without human approval.
+retain automated and browser evidence without human approval.
 
 `npm run test:dashboard` checks command guards and links, every command
 lifecycle transition for both the form and the action wording, the route parser
@@ -489,8 +489,8 @@ drives updates that step and its feature map together.
 `npm run test:dashboard:browser` starts disposable hub and fake-controller fixtures
 and checks control, no-write inspection, heterogeneous components, reconnect,
 expired cursors, slow devices, concurrent edits, terminal and uncertain outcomes,
-known observations, external control, focus, keyboard, reduced motion, responsive
-layout and automated accessibility. The Hub #151 matrix scenarios add guarded
+known observations, external control, focus, keyboard and responsive
+layout. The Hub #151 matrix scenarios add guarded
 general commands in Media, Monitor gating with the explicit switch and a pending
 mode, concurrent edits with typed conflicts and locked uncertain actions, and
 read-only or undeclared capabilities with named reasons. The Hub #153 scenarios
@@ -502,14 +502,13 @@ rejection, revision conflict and uncertain result with no retry. The Hub #323
 scenario adds a read-only Panels component next to the Lines. It checks the
 controls that remain, the absent configuration forms and their one line, one
 guarded scene and brightness command with no extension write, a configuration
-operation withdrawn before sending that sends nothing, phone width and automated
-accessibility. The Hub #289
+operation withdrawn before sending that sends nothing and phone width. The Hub #289
 scenario (`tests/local-controllers.mjs`) runs the real local controller host with
 fake Tidbyt and LIFX transports behind the real hub. It checks the Tidbyt view's
 no-controls line, LIFX power, brightness, color and color temperature, one
 guarded lighting request per change with no power write, an unqualified bulb, a
 bulb read as off, a bulb with unknown power, an unreachable bulb, a read-only
-credential, phone width and automated accessibility. `tests/layout.mjs` fails
+credential and phone width. `tests/layout.mjs` fails
 any visited view whose text blocks overlap, ignoring the content of closed
 disclosures, and measures how far a view's controls reach across the main
 column; the browser, Pixoo, wall and synthetic views use it too. The Hub #277
@@ -539,16 +538,16 @@ layout with reservation colors, labels, keyboard selection and one geometry read
 per session, keeps the art marked stale while the controller is offline, draws
 the Panels from an 18-triangle fake, draws the schematic strip for a device
 without a saved layout, for an owner that predates the route and for a layout
-the renderer rejects, retries a failed geometry read after the next poll, runs
-axe at 1280 px and 390 px, and drives status, activity, mode, stale, the
-opening assembly and reduced motion through a component harness. `tests/art.test.mjs` covers the adapter and the
+the renderer rejects, retries a failed geometry read after the next poll, and
+drives status, activity, mode, stale and the
+opening assembly through a component harness. `tests/art.test.mjs` covers the adapter and the
 ported layout validator. Retain side-by-side comparison evidence against the
 wall map on the same fixture before merge; human approval is not required.
 
 `npm run test:dashboard:smoke` runs `tests/smoke.mjs`, the short check CI runs
 in place of the browser suite (Hub #827). It loads the built dashboard signed in
-through trusted loopback, checks the home's session and device widgets and its
-axe result, and sends one guarded mode command from the wall widget. The full
+through trusted loopback, checks the home's session and device widgets,
+and sends one guarded mode command from the wall widget. The full
 browser suite runs locally; see
 [Dashboard checks](../../docs/development.md#dashboard-checks).
 

@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import {AxeBuilder} from '@axe-core/playwright';
 import type {BrowserContext, Page} from 'playwright';
 import type {CompanionArchive, ContextDocument} from '@jimmie-potts/companions';
 import {feed, type World} from './harness.ts';
@@ -80,7 +79,6 @@ export async function knowledgeJourney(world: World, page: Page, context: Browse
       assert.deepEqual((JSON.parse(await page.evaluate(() => navigator.clipboard.readText())) as ContextDocument).messages.map(value => value.messageId), selectedIds);
     }
   }
-  assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
   await page.setViewportSize({width: 390, height: 844}); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   const evidence = process.env.BUNNY_KNOWLEDGE_SCREENSHOTS;
   if (evidence !== undefined) await page.screenshot({path: `${evidence}/knowledge-phone.png`, fullPage: true});

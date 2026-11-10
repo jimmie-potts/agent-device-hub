@@ -114,7 +114,7 @@ from the worktree root:
 npm run test:chompi-bridge:built          # adapter contract, synthetic feed, flag gating, runner tests
 npm run -s test:chompi-bridge:scenarios   # Tier 1: every catalog scenario in memory
 npm run test:chompi-bridge:verify:built   # boundary checks and every capture step
-npm run test:chompi-bridge:browser        # control page browser and accessibility check
+npm run test:chompi-bridge:browser        # control page browser check
 ```
 
 Tier 1 runs each scenario against the real CLI (`run --simulate --desktop sim`)
@@ -126,7 +126,7 @@ those, or pass `--list` or `--json`. The contracts CI job runs it after
 `test:chompi-bridge:verify:built` starts runs without a user manager. It starts
 the three negative-control runs and shows that each boundary check fails, and
 judges every capture step through `runCaptureStep`. `test:chompi-bridge:browser`
-drives the control page with the keyboard and runs axe (WCAG 2.1 A and AA) at
+drives the control page with the keyboard at
 1440 px and phone width. Both need Playwright Chromium. The App verification
 CI job runs them. Use an outside-checkout `TMPDIR` locally, as for
 the app verification tests.

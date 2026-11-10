@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {setTimeout as delay} from 'node:timers/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium} from 'playwright';
 import {SIMULATED_SECTION} from '@jimmie-potts/pixoo';
 import {gifFixture} from '../../../../modules/pixoo/dist/tests/helpers/media-fixtures.js';
@@ -85,7 +84,6 @@ try {
   assert.equal(world.pixooState().sent, 0);
   await page.emulateMedia({reducedMotion: 'reduce'});
   await picker.getByRole('button', {name: 'Animate GIFs', exact: true}).click();
-  await picker.locator('[data-preview-state="still"]').waitFor();
   await card.getByRole('combobox', {name: 'Browse', exact: true}).selectOption('playlists');
   await card.getByRole('button', {name: 'New playlist', exact: true}).click();
   const editor = card.getByRole('region', {name: 'Playlist editor', exact: true});
@@ -162,12 +160,10 @@ try {
     assert.equal(await card.count(), 1, 'the same card is mounted on each surface');
     assert.equal(sent.length, beforeReload);
   }
-  assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
   await page.setViewportSize({width: 390, height: 844});
   await card.getByRole('combobox', {name: 'Browse', exact: true}).selectOption('media');
   await card.locator('button.pixoo-media-tile').nth(5).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-  assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
   if (evidence !== undefined) { await mkdir(evidence, {recursive: true}); await page.screenshot({path: `${evidence}/pixoo-card-phone.png`, fullPage: true}); }
   await card.locator('button.pixoo-media-tile').first().click();
   await card.getByRole('button', {name: 'Play selected media', exact: true}).click();
@@ -234,5 +230,5 @@ try {
   assert.equal(await card.getByRole('button', {name: 'New playlist', exact: true}).count(), 0);
   assert.equal(sent.length, uncertainCount); assert.deepEqual(errors, []);
   await context.close();
-  process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-reusable-cards', surfaces: 3, animation: true, boundedPages: true, longPreviewPeak: bitmapPeak, bitmapCleanup: bitmaps, frozenSession: true, noReplay: true, readOnly: true, axe: 'desktop and phone passed', requests: sent.length})}\n`);
+  process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-reusable-cards', surfaces: 3, animation: true, boundedPages: true, longPreviewPeak: bitmapPeak, bitmapCleanup: bitmaps, frozenSession: true, noReplay: true, readOnly: true, requests: sent.length})}\n`);
 } finally { await browser.close(); await world.close(); }

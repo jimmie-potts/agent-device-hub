@@ -33,11 +33,25 @@ export const scenarioSchemas = (modules: readonly ModuleRegistration[] = registr
   ({...FIXTURE_SCHEMAS, ...moduleSchemas(modules)});
 export const SCENARIO_SCHEMAS: Readonly<Record<string, object>> = scenarioSchemas();
 
+/** The sealed validators of earlier harnesses, by the list of registrations each one holds. */
+const validators = new WeakMap<readonly ModuleRegistration[], MessageValidator>();
+
 /**
  * Profile 2.0 with the core and device families, the fixture families, and each registered module's families, with the
- * checks its registration adds beyond their schemas.
+ * checks its registration adds beyond their schemas. Compiling them took Ajv about 90 ms of every scenario's start, and
+ * more with each module added, so harnesses given the same list of registrations share one sealed validator (Hub
+ * #1534). It keeps nothing between messages and takes no later registration, so no scenario changes what another
+ * accepts. A list that fails to register is not kept, so each harness that names it throws as before.
  */
 export function scenarioValidator(modules: readonly ModuleRegistration[] = registrations): MessageValidator {
+  const known = validators.get(modules);
+  if (known !== undefined) return known;
+  const validator = compileScenarioValidator(modules);
+  validators.set(modules, validator.seal());
+  return validator;
+}
+
+function compileScenarioValidator(modules: readonly ModuleRegistration[]): MessageValidator {
   const validator = new MessageValidator();
   registerCoreFamilies(validator);
   registerDeviceFamilies(validator);

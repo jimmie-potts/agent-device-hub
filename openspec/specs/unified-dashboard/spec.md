@@ -118,12 +118,12 @@ The dashboard SHALL obtain authoritative snapshots on resync or expired cursors,
 - **THEN** the old task label draft is discarded, the new task uses fresh defaults, and no command is submitted
 - **AND** unrelated controls and tasks remain intact
 
-### Requirement: Accessible verified candidate
-The dashboard SHALL support keyboard navigation, readable contrast, reduced motion and narrow layouts. Verification SHALL use synthetic task bursts, two controller fixtures, concurrent frontend/MCP-equivalent commands and reconnect, retain latency measurements for Hub #30, and retain independent review and applicable CI without requiring human UI approval before merge.
+### Requirement: Verified candidate
+The dashboard SHALL support keyboard navigation and narrow layouts. Verification SHALL use synthetic task bursts, two controller fixtures, concurrent frontend/MCP-equivalent commands and reconnect, retain latency measurements for Hub #30, and retain independent review and applicable CI without requiring human UI approval before merge.
 
 #### Scenario: Synthetic acceptance
 - **WHEN** the candidate is qualified without personal sessions or devices
-- **THEN** browser evidence covers inspection without writes, controls, failures, responsive layout and accessibility separately from installed and physical acceptance
+- **THEN** browser evidence covers inspection without writes, controls, failures and responsive layout separately from installed and physical acceptance
 
 ### Requirement: Local owner browser launch
 The dashboard SHALL accept a single-use short-lived launch code from the installation owner's private launcher, remove it from browser history before exchange, and connect with a memory-only scoped bearer. A direct visit SHALL retain the manual credential path. Disconnect SHALL revoke a launcher session and clear browser memory.
@@ -268,7 +268,7 @@ The Power control SHALL be a button that names the one action left: Turn off whi
 
 ### Requirement: No dead controls and distinct disabled buttons
 
-The general controls SHALL show a form only for each of power, brightness, media and scenes that the controller v1 snapshot declares, and one line naming the undeclared ones. That line SHALL also name moments when the snapshot does not declare `moments` supported, without changing whether the general cards show. A component that declares none of the general capabilities SHALL show only one line saying it has no general controls, and that line SHALL also name moments when they are not declared. Every disabled button in the dashboard SHALL use a distinct disabled style from skin tokens, not transparency alone, and the view SHALL keep passing the automated accessibility scan.
+The general controls SHALL show a form only for each of power, brightness, media and scenes that the controller v1 snapshot declares, and one line naming the undeclared ones. That line SHALL also name moments when the snapshot does not declare `moments` supported, without changing whether the general cards show. A component that declares none of the general capabilities SHALL show only one line saying it has no general controls, and that line SHALL also name moments when they are not declared. Every disabled button in the dashboard SHALL use a distinct disabled style from skin tokens, not transparency alone.
 
 #### Scenario: Status-only component
 - **WHEN** the Tidbyt or another component declares no general capability
@@ -287,7 +287,7 @@ The general controls SHALL show a form only for each of power, brightness, media
 - **THEN** its button's computed background and text colors differ from an enabled button's, and it is not clickable
 
 ### Requirement: Shared Nanoleaf device art
-The dashboard SHALL draw each Nanoleaf component with a hub-owned shared device art component that renders the Lines as Prism crystal tubes between hexagonal connectors and the NL22 Panels as triangles in the same material, from the geometry the hub's read-only geometry route supplies and the presentation the component's inputs supply: mode, per-element colors, pending edits, activity, status and labels. The component SHALL issue no request and open no device state; it SHALL keep its own animation clock and selection state, and its Work flow SHALL derive from its activity input only, never from device frames. Reduced motion SHALL stop the flow and the opening assembly while Work, Quiet and Free remain distinguishable. Labels SHALL use element numbers and the controller's neutral identifiers. A device whose geometry is unavailable SHALL be drawn as a schematic strip that says so; a stale or unavailable snapshot SHALL keep the last art marked stale, never an empty device. The dashboard SHALL read the geometry once per component after its first snapshot and again only after a failed read. Maps to Hub #355's acceptance.
+The dashboard SHALL draw each Nanoleaf component with a hub-owned shared device art component that renders the Lines as Prism crystal tubes between hexagonal connectors and the NL22 Panels as triangles in the same material, from the geometry the hub's read-only geometry route supplies and the presentation the component's inputs supply: mode, per-element colors, pending edits, activity, status and labels. The component SHALL issue no request and open no device state; it SHALL keep its own animation clock and selection state, and its Work flow SHALL derive from its activity input only, never from device frames. Labels SHALL use element numbers and the controller's neutral identifiers. A device whose geometry is unavailable SHALL be drawn as a schematic strip that says so; a stale or unavailable snapshot SHALL keep the last art marked stale, never an empty device. The dashboard SHALL read the geometry once per component after its first snapshot and again only after a failed read. Maps to Hub #355's acceptance.
 
 #### Scenario: Lines drawn from geometry with project colors
 - **WHEN** a Nanoleaf Lines component has a saved layout and its snapshot reserves elements for projects in the project layout style
@@ -307,7 +307,7 @@ The dashboard SHALL draw each Nanoleaf component with a hub-owned shared device 
 
 #### Scenario: Status marks and Work flow from inputs
 - **WHEN** the component receives per-element status and activity inputs in Work
-- **THEN** it colors those elements by status, names the status in their labels and runs the two-second flow on active elements, and stops the flow under reduced motion while the modes stay distinct
+- **THEN** it colors those elements by status, names the status in their labels and runs the two-second flow on active elements
 
 #### Scenario: Reads only
 - **WHEN** the operator opens, inspects and selects elements in the art
@@ -367,7 +367,7 @@ A component page SHALL show a one-line status strip with mode, power, brightness
 
 #### Scenario: Unchanged control behavior
 - **WHEN** the browser, matrix, retirement and local-controllers checks run against the dense layout
-- **THEN** every command, gating, rejection, uncertain, focus, keyboard, reduced-motion and accessibility check passes with the same status sentences
+- **THEN** every command, gating, rejection, uncertain, focus and keyboard check passes with the same status sentences
 
 ### Requirement: Skin-owned scale
 The application skin SHALL define the spacing steps and type sizes as tokens alongside its color roles, and the layout SHALL read its colors, spacing steps and type sizes only through tokens, so a skin changes values while the layout keeps its semantics. Structural sizes such as column tracks, control heights and breakpoints are layout, not skin.
@@ -387,7 +387,7 @@ Session views SHALL request snapshot 1.2 and display explicit labels before shar
 - **WHEN** a session has no label or title
 - **THEN** the dashboard retains a distinct neutral identity fallback
 
-### Requirement: Optional accessible supporting details
+### Requirement: Optional supporting details
 The dashboard SHALL keep session names, project/provider, activity, attention and stale evidence visible. Secondary session facts and label editing SHALL be available through an expandable Details panel. Supporting status information SHALL be available on mouse hover and keyboard focus, dismissible with Escape, and reachable by touch. Indicators SHALL include text rather than relying on color alone. Brightness meters SHALL represent only known values, never agent completion estimates. Inspection SHALL send no device commands.
 
 #### Scenario: Compact session inspection
@@ -439,7 +439,7 @@ The card SHALL show one live line from the snapshot's `state.moment`: "Scheduled
 
 ### Requirement: Reusable Pixoo media previews
 
-The dashboard SHALL register media-grid and playlist widgets at medium/large sizes and a now-showing widget at small/medium sizes. The component page SHALL compose all three and the home SHALL show now showing. Exact 64x64 rendition PNG frames SHALL animate in manifest order and delays with nearest-neighbor scaling, bounded sequential loading and cancellation on inactivity or selection change. Reduced motion SHALL prevent autoplay. Loading failure MUST NOT be presented as a complete animation. Device compatibility SHALL be shown independently from preview availability. Names SHALL preserve the producer's existing 120-character semantics; unnamed playlists use IDs.
+The dashboard SHALL register media-grid and playlist widgets at medium/large sizes and a now-showing widget at small/medium sizes. The component page SHALL compose all three and the home SHALL show now showing. Exact 64x64 rendition PNG frames SHALL animate in manifest order and delays with nearest-neighbor scaling, bounded sequential loading and cancellation on inactivity or selection change. Loading failure MUST NOT be presented as a complete animation. Device compatibility SHALL be shown independently from preview availability. Names SHALL preserve the producer's existing 120-character semantics; unnamed playlists use IDs.
 
 #### Scenario: Complete variable-delay animation
 - **WHEN** the owner selects an admitted 20-frame rendition with duplicate and full-color frames
