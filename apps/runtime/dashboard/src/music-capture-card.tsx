@@ -9,7 +9,7 @@ import {MusicResponseControls} from './music-response-controls.tsx';
 import {MusicLightingCard} from './music-lighting-card.tsx';
 import './music.css';
 
-const empty: MusicCaptureView = {synced: false, state: undefined, features: undefined, clockQualified: false};
+const empty: MusicCaptureView = {synced: false, state: undefined, features: undefined, clockQualified: false, rechecking: false};
 const emptySubscribe = (): (() => void) => () => {};
 const emptySnapshot = (): MusicCaptureView => empty;
 const resultText = (text: string): string => text.replace('The module observed the result.', 'The capture owner confirmed the result.')
@@ -23,7 +23,7 @@ function statusText(view: MusicCaptureView, live: boolean): string {
   switch (state.session.status) {
     case 'idle': return 'Ready to measure Music.';
     case 'starting': return 'Starting measurement. Waiting for source evidence.';
-    case 'active': return view.features !== undefined ? state.session.input === 'microphone' ? `Receiving ${state.session.microphoneId} measurements.` : 'Receiving Music measurements.' : view.clockQualified ? 'Waiting for fresh measurements.' : 'Measurement timing is unavailable. Refresh status to check again.';
+    case 'active': return view.features !== undefined ? state.session.input === 'microphone' ? `Receiving ${state.session.microphoneId} measurements.` : 'Receiving Music measurements.' : view.clockQualified ? 'Waiting for fresh measurements.' : view.rechecking ? 'Checking measurement timing again.' : 'Measurement timing is unavailable. Refresh status to check again.';
     case 'stale': return 'Measurements are stale.';
     case 'stopping': return 'Stopping measurement. Waiting for confirmed cleanup.';
     case 'uncertain': return 'Capture may still be running. Its result is uncertain.';

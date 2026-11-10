@@ -4,14 +4,16 @@ import {CAPTURE_CLOCK_DRIFT_MS, CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_REGISTRATION_
   CAPTURE_WINDOW_MS, MUSIC_PRODUCER_SOURCE, type CaptureFeatures, type CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture-data';
 import type {RemoteParticipant, Scheduler, Subscription, SyncedCopy, SyncCompleted} from '@jimmie-potts/sdk/remote';
 export type CaptureReading = {wallMs: number; monotonicMs: number};
-export type MusicCaptureView = {synced: boolean; state: CaptureState | undefined; features: CaptureFeatures | undefined; response?: MusicResponseValue; clockQualified: boolean};
+export type MusicCaptureView = {synced: boolean; state: CaptureState | undefined; features: CaptureFeatures | undefined; response?: MusicResponseValue; clockQualified: boolean;
+  /** A sync left the clock unqualified and the feed will sync again on its own (#1580). */
+  rechecking: boolean};
 const finite = (value: number): boolean => Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER;
 const validReading = (value: CaptureReading): boolean => Number.isSafeInteger(value.wallMs) && finite(value.wallMs) && finite(value.monotonicMs);
 type ClockAnchor = {sent: CaptureReading; received: CaptureReading; replyAt: number; lastMono: number};
 const identity = (state: CaptureState | undefined): string => state?.session.status !== undefined && state.session.status !== 'idle'
   ? `${state.endpointId ?? ''}/${state.session.generation}/${state.session.input}/${state.session.input === 'microphone' ? state.session.microphoneId : ''}` : '';
 export class CaptureProjection {
-  view: MusicCaptureView = {synced: false, state: undefined, features: undefined, clockQualified: false};
+  view: MusicCaptureView = {synced: false, state: undefined, features: undefined, clockQualified: false, rechecking: false};
   #clock: ClockAnchor | undefined;
   #sequence = 0;
   #sourceEnd = -1;
@@ -74,6 +76,7 @@ export class CaptureProjection {
       this.#retirePreview();this.view = {...this.view, features: undefined};this.#preview();
     }
   }
+  rechecking(value: boolean): void {if (this.view.rechecking !== value) this.view = {...this.view, rechecking: value};}
   invalidate(): void {this.#clock = undefined; this.view = {...this.view, synced: false, features: undefined, clockQualified: false};this.#preview();}
   #retirePreview(): void {
     const state = this.view.state;
@@ -103,6 +106,12 @@ const reading = (): CaptureReading => ({wallMs: Date.now(), monotonicMs: perform
 const timers: Scheduler = {after: (ms, callback) => {const timer = setTimeout(callback, ms); return () => clearTimeout(timer);}};
 /** A copy's close waits for the edge with no deadline, so a refresh waits for a replaced copy's close at most this long (#1562). */
 const REPLACED_CLOSE_WAIT_MS = 250;
+/**
+ * A sync whose round trip is too slow to qualify the clock is repeated after each of these delays in turn (#1580). A loaded
+ * moment, such as a page load, then cannot leave the card without measurements until someone presses Refresh. Once these
+ * attempts are spent, timing stays unavailable until Refresh, which starts a new budget.
+ */
+const RECHECK_DELAYS_MS = [250, 500, 1000, 2000] as const;
 type CaptureParticipant = Pick<RemoteParticipant, 'sync' | 'subscribe'>;
 /** Read-only Audio-page scope. The dashboard supplies its existing authenticated participant. */
 export class MusicCaptureFeed implements Subscription {
@@ -115,20 +124,36 @@ export class MusicCaptureFeed implements Subscription {
   #subscription: Subscription | undefined;
   #opening: Promise<Subscription> | undefined;
   #copy: SyncedCopy<CaptureState> | undefined;
+  /** The read whose copy is shown; its handler stays live while a recheck reads a replacement. */
+  #shown = 0;
   #epoch = 0;
   #closed = false;
   #cancel: () => void = () => {};
+  #recheck: (() => void) | undefined;
+  #rechecks = 0;
   constructor({participant, now = reading, scheduler = timers, onClosed = () => {}}:
     {participant: CaptureParticipant; now?: () => CaptureReading; scheduler?: Scheduler; onClosed?: () => void}) {
     this.#participant = participant; this.#now = now; this.#scheduler = scheduler; this.#onClosed = onClosed;
   }
   readonly getSnapshot = (): MusicCaptureView => this.#projection.view;
   readonly subscribe = (listener: () => void): (() => void) => {this.#listeners.add(listener); return () => {this.#listeners.delete(listener);};};
-  async refresh(): Promise<boolean> {
+  /** Reads the capture state again. A caller's refresh, unlike the feed's own recheck, starts a new recheck budget. */
+  refresh(): Promise<boolean> {
+    this.#stopRecheck(); this.#rechecks = 0;
+    return this.#read(false);
+  }
+  /**
+   * A refresh closes the shown copy and shows nothing until its sync completes. A recheck keeps the shown copy, its live
+   * changes and so the card's controls in place, and replaces it only once the new sync completes: only the clock was
+   * unqualified. A recheck that cannot read leaves the shown copy and spends the rest of its budget.
+   */
+  async #read(recheck: boolean): Promise<boolean> {
     if (this.#closed) return false;
     const epoch = ++this.#epoch;
-    this.invalidate();
-    const previous = this.#copy; this.#copy = undefined; await this.#closeReplaced(previous);
+    if (!recheck) {
+      this.invalidate();
+      const previous = this.#copy; this.#copy = undefined; this.#shown = 0; await this.#closeReplaced(previous);
+    }
     try {
       if (this.#subscription === undefined) {
         this.#opening ??= this.#participant.subscribe<CaptureFeatures>('bunny.event.music-capture-features.*', message => {
@@ -143,8 +168,9 @@ export class MusicCaptureFeed implements Subscription {
       let sent = this.#now(), restarted = false;
       let completed: {message: Message<SyncCompleted>; sent: CaptureReading; received: CaptureReading} | undefined;
       const current = (): boolean => !this.#closed && this.#epoch === epoch;
+      const live = (): boolean => current() || (!this.#closed && this.#shown === epoch);
       const result = await this.#participant.sync<CaptureState>(['music-capture-state'], change => {
-        if (!current()) return;
+        if (!live()) return;
         if (change.type === 'failed' || change.type === 'removed') {this.invalidate(); return;}
         if (change.type === 'synced') {
           completed = {message: change.message, sent, received: this.#now()};
@@ -152,16 +178,20 @@ export class MusicCaptureFeed implements Subscription {
         }
         else this.#state();
       }, {owner: 'bunny/core', timeoutMs: 5000, onRestarted: () => {
-        if (current()) {sent = this.#now(); restarted = true; completed = undefined; this.invalidate();}
+        if (live()) {sent = this.#now(); restarted = true; completed = undefined; this.invalidate();}
       }});
-      if (result.status === 'rejected') {if (current()) this.invalidate(); return false;}
+      if (result.status === 'rejected') {if (current()) this.#unread(recheck); return false;}
       if (!current()) {await this.#closeReplaced(result.copy); return false;}
-      this.#copy = result.copy;
+      const replaced = this.#copy; this.#copy = result.copy; this.#shown = epoch;
+      if (replaced !== undefined) void this.#closeReplaced(replaced);
       if (completed !== undefined) this.#synchronized(completed.message, completed.sent, completed.received);
       else if (!restarted) this.#synchronized(result.message, sent, this.#now());
       return this.#projection.view.synced;
-    } catch {if (!this.#closed && epoch === this.#epoch) this.invalidate(); return false;}
+    } catch {if (!this.#closed && epoch === this.#epoch) this.#unread(recheck); return false;}
     finally {this.#opening = undefined;}
+  }
+  #unread(recheck: boolean): void {
+    if (recheck && this.#copy !== undefined && this.#projection.view.synced) {this.#recheckClock(); this.#show();} else this.invalidate();
   }
   /**
    * Closes a copy this scope no longer reads. A healthy close keeps its place before the next read; a slow or stuck one
@@ -176,7 +206,7 @@ export class MusicCaptureFeed implements Subscription {
   invalidate(): void {this.#cancel(); this.#projection.invalidate(); this.#show();}
   async close(): Promise<void> {
     if (this.#closed) return;
-    this.#closed = true; ++this.#epoch; this.invalidate(); this.#onClosed();
+    this.#closed = true; ++this.#epoch; this.#stopRecheck(); this.invalidate(); this.#onClosed();
     const owned = [this.#subscription, this.#copy]; this.#subscription = undefined; this.#copy = undefined;
     await Promise.all(owned.map(async subscription => {await subscription?.close();}));
   }
@@ -195,8 +225,18 @@ export class MusicCaptureFeed implements Subscription {
   #synchronized(completed: Message<SyncCompleted>, sent: CaptureReading, received: CaptureReading): void {
     const state = this.#record();
     if (state === undefined || completed.source !== 'bunny/core') {this.invalidate(); return;}
-    this.#projection.synchronize(state, Date.parse(completed.time), sent, received); this.#show();
+    this.#projection.synchronize(state, Date.parse(completed.time), sent, received); this.#recheckClock(); this.#show();
   }
+  /** One recheck at a time. A read can report its completion twice, from its handler and as it settles, so a pending recheck is kept. */
+  #recheckClock(): void {
+    if (this.#projection.view.clockQualified) {this.#stopRecheck(); this.#rechecks = 0; return;}
+    if (this.#closed || this.#recheck !== undefined) return;
+    const delay = RECHECK_DELAYS_MS[this.#rechecks];
+    if (delay === undefined) {this.#projection.rechecking(false); return;}
+    this.#rechecks += 1; this.#projection.rechecking(true);
+    this.#recheck = this.#scheduler.after(delay, () => {this.#recheck = undefined; void this.#read(true);});
+  }
+  #stopRecheck(): void {this.#recheck?.(); this.#recheck = undefined; this.#projection.rechecking(false);}
   #show(): void {
     this.#cancel();
     const now = this.#now(); this.#projection.tick(now);
