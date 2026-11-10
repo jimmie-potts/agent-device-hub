@@ -5,6 +5,7 @@ import {chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile} from 'n
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {admission, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, reportOverflow} from './test-container/pool.mjs';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const suites = Object.freeze({all: ['test:runtime:scenarios:built', 'test:runtime:verify:built'],
@@ -46,8 +47,14 @@ export async function snapshot(repository, destination) {
 // Two CPUs keep node --test at a small worker count; swap equal to memory means no swap.
 export const limits = Object.freeze({cpus:'2', memory:'1536m'});
 
-export function createArgs(name, imageId, suite) {
+// The free pool memory this runner waits for before its container (its own limit) and before an image build.
+export const NEED_BYTES = 1536 * 1024 ** 2;
+export const BUILD_BYTES = 2048 * 1024 ** 2;
+
+/** The container's create arguments; `pool` is the shared test pool's name (Hub #1641), or null. */
+export function createArgs(name, imageId, suite, pool = null) {
   return ['create','--init','--name',name,'--network','none','--cpus',limits.cpus,'--memory',limits.memory,'--memory-swap',limits.memory,
+    ...(pool ? ['--cgroup-parent',`/${pool}`] : []),
     '--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges','--restart','no',
     '--env','TMPDIR=/tmp','--env','XDG_RUNTIME_DIR=','--env','DBUS_SESSION_BUS_ADDRESS=',imageId,suite];
 }
@@ -68,8 +75,26 @@ function command(program, args, options = {}) {
   });
 }
 
+function captured(args) {
+  try { return execFileSync('docker', args, {encoding:'utf8', stdio:['ignore','pipe','ignore']}).trim(); } catch { return null; }
+}
+
+const io = Object.freeze({
+  ...hostFacts,
+  run: args => command('docker', args),
+  read: captured,
+  log: line => console.error('runtime-container: ' + line),
+});
+
 async function main() {
   const suite = parse(process.argv.slice(2));
+  const pool = await ensurePool(io, poolName(process.env));
+  let release = null;
+  const admit = async bytes => {
+    const gate = await admission(io, {pool, need:{bytes, slots:1}, waitMinutes:30});
+    if (gate.status !== 0) throw Object.assign(new Error('admission-gave-up'), {status:gate.status});
+    release = gate.release;
+  };
   const scratch = await mkdtemp(join(tmpdir(), 'bunny-runtime-check-'));
   const name = 'bunny-runtime-check-' + randomUUID();
   let created = false;
@@ -88,17 +113,27 @@ async function main() {
     const recipe = await readFile(join(source,'scripts/runtime-container/Dockerfile'));
     hash.update(recipe); await writeFile(join(context,'Dockerfile'), recipe);
     const image = 'bunny-runtime-check-tools:' + hash.digest('hex').slice(0,24);
-    status = await command('docker', ['build','--tag',image,context]);
-    if (status !== 0) throw Object.assign(new Error('container-check-failed'), {status});
+    if (captured(['image','inspect','--format','{{.Id}}',image]) === null) {
+      await admit(BUILD_BYTES);
+      status = await command('docker', ['build','--tag',image,context]);
+      await release(); release = null;
+      if (status !== 0) throw Object.assign(new Error('container-check-failed'), {status});
+    }
     const imageId = execFileSync('docker', ['image','inspect','--format','{{.Id}}',image], {encoding:'utf8'}).trim();
     if (!/^sha256:[a-f0-9]{64}$/.test(imageId)) throw new Error('tool-image-identity-refused');
-    const id = execFileSync('docker', createArgs(name, imageId, suite), {encoding:'utf8'}).trim();
+    await admit(NEED_BYTES);
+    const before = oomKills(io, pool);
+    console.log(pool ? `In the /${pool} pool.` : 'No pool: per-container limits and the count check.');
+    const id = execFileSync('docker', createArgs(name, imageId, suite, pool), {encoding:'utf8'}).trim();
     if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('container-identity-refused');
     created = id;
     console.log('Disposable runtime checks: ' + name + ' ' + id);
     status = await command('docker',['cp',source + '/.',id + ':/work/source']);
     if (status !== 0) throw Object.assign(new Error('container-check-failed'), {status});
+    const held = release;
+    io.later(HOLD_MS, () => { void held?.(); });
     status = await command('docker',['start','--attach',id]);
+    reportOverflow(io, pool, before, oomKills(io, pool));
     // docker start --attach may return zero for a failed process on some engine versions.
     const state = JSON.parse(execFileSync('docker',['inspect','--format','{{json .State}}',id],{encoding:'utf8'}));
     if (state.Running || state.Pid !== 0 || !Number.isInteger(state.ExitCode)) throw new Error('container-completion-unknown');
@@ -107,6 +142,7 @@ async function main() {
     if (!error.status) throw error;
     status = error.status;
   } finally {
+    await release?.().catch(() => {});
     if (created) {
       const cleaned = await command('docker',['rm','--force',created]);
       if (cleaned !== 0) cleanupError = new Error('owned-container-cleanup-failed: ' + created);

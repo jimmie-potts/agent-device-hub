@@ -1435,7 +1435,9 @@ swap equal to memory so it cannot swap; Node inside then reports 2 CPUs, so
 `node --test` starts fewer workers. On macOS the verification suite's processes
 used at least 1.2 GB (the largest sample, a lower bound), and at a 1250 MiB
 limit the run was killed for memory. The image build is a separate step without
-these limits.
+these limits. The container also runs under the shared test pool and waits for
+admission, as described in [Shared test pool](#shared-test-pool). An image
+build, which is needed only when its tag is missing, waits for the same admission.
 The temporary Git commit identifies a working-tree snapshot, not a reviewed
 release or independent Acceptance result. Dependency preparation needs network
 access; the checks install from the image's offline npm cache.
@@ -1474,7 +1476,7 @@ On macOS with Docker Desktop, run one package script in a disposable Linux
 container that starts from installed dependencies:
 
 ```bash
-npm run test:container -- --issue <n> --job <name> [--size standard|wide] [--no-build] [--network] -- <package script> [arguments...]
+npm run test:container -- --issue <n> --job <name> [--size standard|wide] [--no-build] [--network] [--wait-minutes <n>] -- <package script> [arguments...]
 ```
 
 The container is `bunny-gh<n>-<name>`, or `bunny-gh<n>-<name>-wide` at the wide
@@ -1531,17 +1533,80 @@ memory outside the job's limits, and the command prints that it is building.
 Every run recomputes the key from its snapshot, runs by image ID, and refuses an
 image whose label does not match, so an image built for another lockfile is
 never used. Each image is about 3.5 GB, and a new one appears for each lockfile
-or recipe change. Two first runs at the same time can each build the image; one
-tag wins and the other build is left untagged. The images are caches shared by
-every run of the same lockfile;
+or recipe change. A build takes the start lock described below, and a run that
+waited rechecks the tag, so two first runs normally build once. A build that
+bypasses the lock, such as one interrupted and rerun, can leave an untagged
+image. The images are caches shared by every run of the same lockfile;
 [Cleanup after delivery](sdlc.md#cleanup-after-delivery) keeps them, and the
-owner removes old `bunny-test-deps` images, including such untagged builds.
+owner removes old `bunny-test-deps` images, including untagged builds.
 
 Inside a 2-CPU container `node --test` already starts one worker, so the command
 runs package scripts directly, not through `scripts/native-test.mjs`. The
 command's argument, key, refusal, cleanup and exit-status checks are in
-`scripts/tests/test-container.test.mjs`, which `npm run test:workspace-audit`
-runs in core CI.
+`scripts/tests/test-container.test.mjs`, and the pool's in
+`scripts/tests/test-container-pool.test.mjs`. `npm run test:workspace-audit`
+runs both in core CI.
+
+#### Shared test pool
+
+Both `npm run test:container` and `npm run test:runtime:container` start their
+containers under one cgroup in the Docker VM, `/sys/fs/cgroup/bunny-tests`
+(`--cgroup-parent /bunny-tests`). The pool's limits apply to all those
+containers together:
+
+| Limit | Value |
+| --- | --- |
+| `memory.max` | 5 GiB |
+| `memory.swap.max` | 0, so no swap |
+| `cpu.max` | 6 CPUs |
+| `cpu.weight` | 25, against the default 100 the installed core keeps |
+
+Each container keeps its own size limits inside the pool. The code is
+`scripts/test-container/pool.mjs`.
+
+The cgroup lives in the VM's memory, so a Docker VM restart removes it. Before
+each start the command reads it, recreates it when it is missing and sets its
+limits when they differ. It then prints the limits it read back and which helper
+set them. Every helper is named `bunny-tests-pool-<uuid>`, runs the pinned alpine
+image with `--network none`, and is removed when it exits:
+
+- A read-only reader mounts `/sys/fs/cgroup` read-only.
+- The pool directory is created by a container started with
+  `--cgroup-parent /bunny-tests`.
+- The limits are written first by an unprivileged helper with all capabilities
+  dropped, which mounts only the pool's own directory.
+- Only if that helper cannot write them does the owner-approved privileged helper
+  (`--privileged --cgroupns=host`) write them, and only inside that directory.
+
+Nothing writes the VM's root `cgroup.subtree_control` or anything under
+`docker/`. If the root cgroup does not give its children the memory and CPU
+controllers, or neither helper can set the limits, the command prints why and
+falls back to per-container limits with the count check. The count check counts
+every running container except the installed core, the diagnostics containers,
+the Tronbyt server and the pool helpers, with a `-wide` name as two, and waits
+while five are taken. `BUNNY_TEST_POOL_SCRATCH_NAME` names another pool for
+scratch exercises only. It must be one path segment that starts with `bunny-`.
+
+Admission runs without a daemon. Before an image build and before each job, the
+command waits until all of these hold:
+
+- the host's 1-minute load (`os.loadavg()`) is under 8;
+- the installed core is `healthy` and its last health check took under 500 ms;
+- the pool's `memory.max` minus its `anon` and `shmem` memory is at least the
+  job's memory size (2 GiB for an image build), or, without a pool, the count
+  check passes.
+
+It rechecks every 30 seconds and prints a line only when the reason changes.
+After `--wait-minutes` (default 30) it stops with exit status 75 and the last
+reason. A start also takes one lock that every session on this machine shares,
+`/private/tmp/bunny-test-start/lock` (owner-only). It holds the lock from its
+admission check until its container has run for 30 seconds, and through an
+image build. A lock whose process is gone, or that is older than 10 minutes, is
+taken over with a printed line. When the pool kills a process for memory while
+a job runs, the command says so in one line. That is a failed run to retry, not
+a reason to raise the ceiling. A real Docker VM restart restarts the installed
+core, so recreation after one is observed only when the owner restarts the VM
+for other reasons. The six-job observation is recorded on Hub #1641.
 
 ### Workspace audit
 

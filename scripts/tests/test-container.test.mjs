@@ -1,19 +1,23 @@
-import test from 'node:test';
+import test, {after} from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync} from 'node:fs';
 import {mkdtemp, mkdir, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {admit, imageKey, parse, runArgs, runJob, sizes} from '../test-container.mjs';
+import {LIMITS} from '../test-container/pool.mjs';
 import {statusOf, steps} from '../test-container/inside.mjs';
 
 const scripts = {'test:runtime:built':'node --test x', 'test:runtime:verify:built':'node --test y', 'test:sdk:built':'node --test z', 'lint:js':'eslint .'};
 const image = 'sha256:' + 'b'.repeat(64);
 const id = 'c'.repeat(64);
+const nameOf = args => args[args.indexOf('--name') + 1] ?? '';
+const lockDir = await mkdtemp(join(tmpdir(), 'test-container-lock-'));
+after(() => rm(lockDir, {recursive:true, force:true}));
 
 test('a job is named for its issue and job, and the wide size says so in its name', () => {
   const plan = parse(['--issue','1638','--job','unit','--','test:runtime:built','--test-name-pattern=x'], scripts);
-  assert.deepEqual({...plan}, {issue:'1638', job:'unit', size:'standard', build:true, network:false, script:'test:runtime:built', args:['--test-name-pattern=x'], name:'bunny-gh1638-unit', slots:1});
+  assert.deepEqual({...plan}, {issue:'1638', job:'unit', size:'standard', build:true, network:false, waitMinutes:30, script:'test:runtime:built', args:['--test-name-pattern=x'], name:'bunny-gh1638-unit', slots:1});
   const wide = parse(['--size','wide','--issue','7','--job','sdk','--no-build','--network','--','test:sdk:built'], scripts);
   assert.equal(wide.name, 'bunny-gh7-sdk-wide');
   assert.equal(wide.slots, 2);
@@ -30,6 +34,8 @@ test('the command refuses malformed options, raw commands, unknown scripts and l
   assert.match(refusal(['--issue','01','--job','a','--','test:runtime:built']), /issue must be a GitHub issue number/);
   for (const job of ['Unit','-a','a-','a_b','x'.repeat(33),'unit-wide']) assert.match(refusal(['--issue','1','--job',job,'--','test:runtime:built']), /job name must be/);
   assert.match(refusal(['--issue','1','--job','a','--size','huge','--','test:runtime:built']), /size must be standard or wide/);
+  for (const wait of ['0','241','1.5','x']) assert.match(refusal(['--issue','1','--job','a','--wait-minutes',wait,'--','test:runtime:built']), /wait must be 1 to 240 minutes/);
+  assert.equal(parse(['--issue','1','--job','a','--wait-minutes','5','--','test:runtime:built'], scripts).waitMinutes, 5);
   assert.equal(refusal(['--issue','1','--job','a','--','lint:js']), 'lint:js does not fit a test container: run it natively, one at a time, with npm run lint:js (see docs/static-analysis.md "Heap budget")');
   assert.equal(refusal(['--issue','1','--job','a','--','node','--test','x']), 'no package script named node: pass the name of a package.json script, not a command');
   assert.match(refusal(['--issue','1','--job','a','--','test:container']), /cannot run inside a test container/);
@@ -54,6 +60,9 @@ test('the docker run arguments pin the name, removal, limits, no swap, no networ
   assert.deepEqual(runArgs(parse(['--issue','1638','--job','sdk','--size','wide','--no-build','--','test:sdk:built'], scripts), where), [
     'run','--rm','--init','--name','bunny-gh1638-sdk-wide','--cidfile','/tmp/w/cid','--network','none',
     '--cpus','4','--memory','2048m','--memory-swap','2048m',...tail,'no-build','test:sdk:built']);
+  assert.deepEqual(runArgs(parse(['--issue','1638','--job','unit','--','test:runtime:built'], scripts), {...where, pool:'bunny-tests'}), [
+    'run','--rm','--init','--name','bunny-gh1638-unit','--cidfile','/tmp/w/cid','--network','none',
+    '--cpus','2','--memory','1250m','--memory-swap','1250m','--cgroup-parent','/bunny-tests',...tail,'build','test:runtime:built']);
   const networked = runArgs(parse(['--issue','1','--job','a','--network','--','test:runtime:built'], scripts), where);
   assert.equal(networked[networked.indexOf('--network') + 1], 'bridge');
   assert.throws(() => runArgs(parse(['--issue','1','--job','a','--','test:runtime:built'], scripts), {...where, source:'/tmp/a b'}), /scratch-path-refused/);
@@ -87,13 +96,31 @@ test('the in-container steps copy the snapshot, commit it, build unless told not
 });
 
 /** A fake Docker host: an image store keyed by tag, a container table and a call log. */
-function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuringRun = false, interruptBeforeId = false, runWithoutId = null, rmExit = 0, buildExit = 0, rmRejects = false, interruptOnSnapshot = false, lateCid = false} = {}) {
+function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuringRun = false, interruptBeforeId = false, runWithoutId = null, rmExit = 0, buildExit = 0, rmRejects = false, interruptOnSnapshot = false, lateCid = false, pool = {exists:true, oomAfter:0}, loads = [1]} = {}) {
   const calls = [];
   const containers = new Set();
   let interrupt;
+  let clock = 0;
+  let ranJob = false;
+  const lines = [];
+  const poolText = () => {
+    if (!pool) return null;
+    if (!pool.exists) return 'controllers=cpu io memory pids\nexists=0';
+    const oom = ranJob ? pool.oomAfter : 0;
+    return ['controllers=cpu io memory pids', 'exists=1', ...Object.entries(LIMITS).map(([key, value]) => `${key}=${value}`), `anon=${String(pool.anon ?? 0)}`, 'shmem=0', `oom_kill=${String(oom)}`].join('\n');
+  };
   const io = {
-    calls, images,
-    log: () => {},
+    calls, images, lines,
+    log: line => lines.push(line),
+    env: {},
+    loadavg: () => [loads[Math.min(Math.floor(clock / 30_000), loads.length - 1)], 0, 0],
+    now: () => clock,
+    sleep: async ms => { clock += ms; },
+    later: (_ms, task) => { task(); },
+    alive: () => true,
+    pid: 1,
+    uid: process.getuid?.(),
+    lockDir,
     onInterrupt: handler => { interrupt = handler; },
     snapshot: async (_repository, destination) => {
       if (interruptOnSnapshot) interrupt();
@@ -105,6 +132,9 @@ function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuring
     },
     read: args => {
       calls.push(['read', ...args]);
+      if (args[0] === 'run' && nameOf(args).startsWith('bunny-tests-pool-')) return poolText();
+      if (args[0] === 'inspect') return JSON.stringify({Status:'healthy', Log:[{Start:'2026-11-10T00:00:00.000Z', End:'2026-11-10T00:00:00.050Z'}]});
+      if (args[0] === 'ps') return '';
       if (args[0] === 'container') return containers.has(args.at(-1)) ? args.at(-1) : null;
       const entry = images.get(args.at(-1));
       if (!entry) return null;
@@ -115,6 +145,7 @@ function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuring
       if (args[0] === 'build') { if (buildExit === 0) images.set(args[2], {id:image, label:args[4].split('=')[1]}); return buildExit; }
       if (args[0] === 'kill') { containers.delete(args[1]); return 0; }
       if (args[0] === 'rm') { if (rmRejects) throw new Error('spawn docker ENOENT'); if (rmExit === 0) containers.delete(args.at(-1)); return rmExit; }
+      if (args[0] === 'run' && nameOf(args).startsWith('bunny-tests-pool-')) return 1;
       if (args[0] === 'run') {
         // docker run refusing before it creates a container writes no cidfile, like a 125 from the engine.
         if (runWithoutId !== null) return runWithoutId;
@@ -122,13 +153,13 @@ function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuring
         if (lateCid) {
           interrupt();
           await new Promise(wait => setTimeout(wait, 200));
-          containers.add(id);
+          containers.add(id); ranJob = true;
           await writeFile(args[args.indexOf('--cidfile') + 1], id + '\n');
           await new Promise(wait => setTimeout(wait, 200));
           containers.delete(id);
           return 137;
         }
-        containers.add(id);
+        containers.add(id); ranJob = true;
         await writeFile(args[args.indexOf('--cidfile') + 1], id + '\n');
         if (interruptDuringRun) {
           await new Promise(wait => setTimeout(wait, 150));
@@ -285,5 +316,62 @@ test('an interrupt that arrives before the cidfile is written kills that ID exac
     const io = fakeHost({lateCid:true});
     assert.equal(await runJob(argv, io, repo), 137);
     assert.deepEqual(io.calls.filter(call => call[0] === 'kill'), [['kill', id]]);
+  } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+const jobRun = io => io.calls.find(call => call[0] === 'run' && nameOf(call).startsWith('bunny-gh'));
+
+test('a job runs in the pool when it exists, and with per-container limits when the pool cannot be read', async () => {
+  const repo = await repository();
+  try {
+    const pooled = fakeHost();
+    assert.equal(await runJob(argv, pooled, repo), 0);
+    assert.deepEqual(jobRun(pooled).slice(jobRun(pooled).indexOf('--cgroup-parent'), jobRun(pooled).indexOf('--cgroup-parent') + 2), ['--cgroup-parent','/bunny-tests']);
+    assert.ok(pooled.lines.some(line => line.endsWith('in the /bunny-tests pool')));
+    const fallback = fakeHost({pool:null});
+    assert.equal(await runJob(argv, fallback, repo), 0);
+    assert.equal(jobRun(fallback).includes('--cgroup-parent'), false);
+    assert.ok(fallback.lines.includes('pool unavailable: the read-only pool reader could not run; using per-container limits and the count check'));
+    assert.ok(fallback.lines.some(line => line.endsWith('no pool (count check)')));
+  } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+test('a job and an image build wait for admission, and a memory kill inside the pool is reported once', async () => {
+  const repo = await repository();
+  try {
+    const busy = fakeHost({loads:[9.5, 9.5, 2], pool:{exists:true, oomAfter:1}});
+    assert.equal(await runJob(argv, busy, repo), 0);
+    assert.deepEqual(busy.lines.filter(line => line.startsWith('waiting:')), ["waiting: the host's 1-minute load is 9.5, at or above 8"]);
+    assert.ok(busy.lines.indexOf("waiting: the host's 1-minute load is 9.5, at or above 8") < busy.lines.findIndex(line => line.startsWith('building ')), 'the build waited');
+    assert.ok(busy.lines.includes('the pool killed 1 process(es) for memory while this job ran: treat that as a failed run to retry, not a reason to raise the /bunny-tests ceiling'));
+    const stuck = fakeHost({loads:[9.5]});
+    assert.equal(await runJob(['--issue','1638','--job','unit','--wait-minutes','2','--','test:runtime:built'], stuck, repo), 75);
+    assert.ok(stuck.lines.includes("gave up after 2 min: the host's 1-minute load is 9.5, at or above 8"));
+    assert.equal(jobRun(stuck), undefined);
+    assert.equal(stuck.calls.some(call => call[0] === 'build'), false);
+  } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+test('an unsafe scratch pool name in the environment is refused before anything runs', async () => {
+  const repo = await repository();
+  try {
+    const io = fakeHost();
+    io.env = {BUNNY_TEST_POOL_SCRATCH_NAME:'../docker'};
+    assert.equal(await runJob(argv, io, repo), 2);
+    assert.match(io.lines.at(-1), /^BUNNY_TEST_POOL_SCRATCH_NAME must be one path segment/);
+    assert.equal(io.calls.some(call => call[0] === 'run' || call[1] === 'run'), false);
+  } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+test('a run that waited while another built the same image uses that image and builds nothing', async () => {
+  const repo = await repository();
+  try {
+    const io = fakeHost({loads:[9.5, 2]});
+    const tag = `bunny-test-deps:${imageKey(Buffer.from('{"lockfileVersion":3}'), Buffer.from('FROM node'))}`;
+    const sleep = io.sleep;
+    io.sleep = async ms => { io.images.set(tag, {id:image, label:tag.split(':')[1]}); await sleep(ms); };
+    assert.equal(await runJob(argv, io, repo), 0);
+    assert.equal(io.calls.some(call => call[0] === 'build'), false);
+    assert.equal(io.lines.some(line => line.startsWith('building ')), false);
   } finally { await rm(repo, {recursive:true, force:true}); }
 });

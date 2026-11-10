@@ -48,4 +48,9 @@ test('the check container keeps its protections and has CPU and memory limits an
     '--cpus','2','--memory','1536m','--memory-swap','1536m',
     '--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges','--restart','no',
     '--env','TMPDIR=/tmp','--env','XDG_RUNTIME_DIR=','--env','DBUS_SESSION_BUS_ADDRESS=',image,'verify']);
+  assert.deepEqual(createArgs('bunny-runtime-check-test', image, 'verify', 'bunny-tests'), [
+    'create','--init','--name','bunny-runtime-check-test','--network','none',
+    '--cpus','2','--memory','1536m','--memory-swap','1536m','--cgroup-parent','/bunny-tests',
+    '--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges','--restart','no',
+    '--env','TMPDIR=/tmp','--env','XDG_RUNTIME_DIR=','--env','DBUS_SESSION_BUS_ADDRESS=',image,'verify']);
 });
