@@ -290,7 +290,11 @@ for (const [name, code] of [
   ['shared', 'state-dir-not-private'],
 ] as const) {
   it(`a refused state directory (${name}) names its reason in runtime.failed`, async context => {
-    const root = await stateDir(context);
+    // The checkout and file refusals quote their path. The SDK redacts a run of 40 or more path characters that holds
+    // letters and digits and no dot, as an opaque token; macOS temporary paths (/private/var/folders/<id>/T/...) form
+    // one, Linux's /tmp does not. A dot in the root's name ends every such run, so the zero-redaction check below sees
+    // only the refusal's own text on any host.
+    const root = await stateDir(context, 'bunny-runtime.');
     const checkout = join(root, 'checkout');
     await mkdir(join(checkout, '.git'), {recursive: true});
     await mkdir(join(root, 'real'), {mode: 0o700});
