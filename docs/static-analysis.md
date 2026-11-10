@@ -118,21 +118,30 @@ findings, the [adoption baseline](#adoption-baseline) checks and the exit status
 match a single `eslint .` run. Options after `--` reach every shard, for
 example `npm run lint:js -- --prune-suppressions`. Pass options only: a file or
 directory argument would be linted again by every shard. To lint a few files,
-run `npx eslint <files>`.
+run `npx eslint <files>`. Each shard reports on its own: a format such as
+`--format json` prints one document per shard, and a warning limit above zero
+applies to each shard separately. The script refuses `--output-file`, because
+each shard would overwrite the file; redirect standard output instead.
+`tests/strict_profile.test.mjs` checks, through ESLint's ignore handling, that
+the shards together lint each file a single `eslint .` lints exactly once.
 
 Measured need (2026-11-10, ESLint 10.12.0, typescript-eslint 8.71.1,
 TypeScript 5.9.3, Node 24):
 
 - The largest shard holds 842 MB after a full collection. Under the budget,
-  no shard process exceeded 1.8 GB of resident memory.
+  shards peaked at 1.4 to 1.9 GB of resident memory.
 - Every shard passes at `--heap-mb=1024`, but frequent collection slows lint by
   about 40%. The 2,048 MB budget leaves twice the measured need.
-- Lint took 39 to 42 s locally, against 41 to 54 s for one `eslint .`.
+- Lint took about 42 s locally, the same median as one `eslint .`.
 
-To re-measure, run `node scripts/eslint/lint-shards.mjs --heap-mb=<MB>
---max-warnings=0` with a lower budget until a shard fails, and note each
-shard's printed time. When a shard nears the budget, split it in `shards`
-rather than raising the budget. Test container sizing depends on this figure
+Each shard's line gives its time and peak resident memory. A small preload,
+`scripts/eslint/report-peak.mjs`, reports the memory without changing ESLint's
+command line. Resident memory includes more than the heap, so it reads above
+the heap a shard needs. A shard whose peak climbs well past 1.9 GB is the early
+signal to re-measure (the 2,048 MB budget limits the heap, not resident
+memory, so a peak can pass 2 GB before the heap fails): run `node scripts/eslint/lint-shards.mjs --heap-mb=<MB>
+--max-warnings=0` with a lower budget until a shard fails. When a shard nears
+the budget, split it in `shards` rather than raising the budget. Test container sizing depends on this figure
 (Hub #1642), so a higher budget needs the owner's agreement.
 
 ### Adoption baseline

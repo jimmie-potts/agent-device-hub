@@ -591,6 +591,28 @@ describe('lint shards', () => {
     assert.deepEqual(shardArguments([['modules/pixoo-extra'], ['modules/pixoo']])[1], ['modules/pixoo']);
   });
 
+  it('lints each file a single `eslint .` run lints exactly once', async () => {
+    // ESLint's own ignore handling decides, without parsing any file: the whole run's configuration for `eslint .`,
+    // and for each shard the same configuration plus that shard's --ignore-pattern values, limited to its paths.
+    const candidates = spawnSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {cwd: root, encoding: 'utf8'})
+      .stdout.split('\0').filter(file => /\.(js|mjs|cjs|ts|tsx)$/.test(file) && existsSync(join(root, file)));
+    const linted = async (eslint, files) => (await Promise.all(files.map(async file => (await eslint.isPathIgnored(join(root, file)) ? [] : [file])))).flat();
+    const whole = await linted(new ESLint({cwd: root}), candidates);
+    assert.ok(whole.length > 1000, `${whole.length} files`);
+    const counts = new Map();
+    for (const args of shardArguments()) {
+      const paths = [], ignorePatterns = [];
+      for (let index = 0; index < args.length; index++) {
+        if (args[index] === '--ignore-pattern') ignorePatterns.push(args[++index]);
+        else paths.push(args[index]);
+      }
+      const own = whole.filter(file => paths.some(path => path === '.' || file.startsWith(`${path}/`)));
+      for (const file of await linted(new ESLint({cwd: root, ignorePatterns}), own)) counts.set(file, (counts.get(file) ?? 0) + 1);
+    }
+    assert.deepEqual(whole.filter(file => counts.get(file) !== 1).map(file => `${file}: ${counts.get(file) ?? 0}`), []);
+    assert.deepEqual([...counts.keys()].filter(file => !whole.includes(file)), []);
+  });
+
   it('refuses a path listed in two shards, and every listed path exists', () => {
     assert.throws(() => shardArguments([['modules'], ['modules']]), /listed twice: modules/);
     for (const path of shards.flat()) assert.ok(existsSync(join(root, path)), path);

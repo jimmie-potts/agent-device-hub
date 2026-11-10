@@ -7,10 +7,10 @@
 //
 // Usage: node scripts/eslint/lint-shards.mjs --heap-mb=<MB> [ESLint options...]
 // Every other argument is an ESLint option passed to each shard, such as --max-warnings=0 or --prune-suppressions.
-// Pass options only: a file or directory argument would be linted again by every shard.
+// Pass options only: a file or directory argument would be linted again by every shard. --output-file is refused.
 import {spawnSync} from 'node:child_process';
 import {join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
 
@@ -41,6 +41,9 @@ export function shardArguments(list = shards) {
   ];
 }
 
+// Options that name one output file: each shard would overwrite it with only its own results.
+const singleOutput = arg => arg === '-o' || arg.startsWith('-o=') || arg === '--output-file' || arg.startsWith('--output-file=');
+
 function main(argv) {
   const budget = argv.find(arg => arg.startsWith('--heap-mb='));
   const heapMb = Number(budget?.slice('--heap-mb='.length));
@@ -48,28 +51,37 @@ function main(argv) {
     console.error('lint-shards: pass the heap budget as --heap-mb=<MB>');
     return 2;
   }
+  if (argv.some(singleOutput)) {
+    console.error('lint-shards: --output-file is not supported, because each shard would overwrite the file with only its ' +
+      'own results. Redirect standard output instead.');
+    return 2;
+  }
   const options = argv.filter(arg => arg !== budget);
   // This path also tells typescript-eslint that each process is a single CLI run, as `eslint .` was.
   const eslint = join(root, 'node_modules', 'eslint', 'bin', 'eslint.js');
+  const peak = pathToFileURL(join(root, 'scripts', 'eslint', 'report-peak.mjs')).href;
   const all = shardArguments();
   let status = 0;
   for (const [index, paths] of all.entries()) {
     const started = performance.now();
     // A command-line heap limit takes precedence over one in NODE_OPTIONS, so the budget holds wherever lint runs.
-    const run = spawnSync(process.execPath, [`--max-old-space-size=${heapMb}`, eslint, ...options, ...paths],
-      {cwd: root, stdio: 'inherit'});
+    // The preload reports the shard's peak resident memory on descriptor 3 without changing ESLint's argv.
+    const run = spawnSync(process.execPath, [`--max-old-space-size=${heapMb}`, '--import', peak, eslint, ...options, ...paths],
+      {cwd: root, stdio: ['inherit', 'inherit', 'inherit', 'pipe']});
     const seconds = ((performance.now() - started) / 1000).toFixed(1);
     const name = `lint shard ${index + 1}/${all.length} (${paths.filter(arg => !arg.startsWith('-') && !arg.includes('*')).join(' ')})`;
     if (run.error) throw run.error;
+    const kilobytes = Number(run.output?.[3]?.toString().trim());
+    const resident = kilobytes > 0 ? `, peak ${Math.round(kilobytes / 1024)} MB resident` : '';
     if (run.status === 0) {
-      console.error(`${name}: passed in ${seconds} s`);
+      console.error(`${name}: passed in ${seconds} s${resident}`);
       continue;
     }
     status = Math.max(status, run.status ?? 2);
     console.error(run.signal || run.status === 134
       ? `${name}: ended by ${run.signal ?? 'exit 134'} after ${seconds} s. A heap out of memory error above means the shard ` +
         `outgrew the ${heapMb} MB budget; see docs/static-analysis.md "Heap budget".`
-      : `${name}: exit ${run.status} after ${seconds} s`);
+      : `${name}: exit ${run.status} after ${seconds} s${resident}`);
   }
   return status;
 }
