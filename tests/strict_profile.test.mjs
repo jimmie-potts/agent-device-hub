@@ -10,6 +10,7 @@ import {ESLint, RuleTester} from 'eslint';
 import tseslint from 'typescript-eslint';
 import config, {staged as stagedGlobs, streamOwners, strict as strictGlobs, workspaceScopes} from '../eslint.config.mjs';
 import bunny from '../scripts/eslint/bunny-rules.mjs';
+import {shardArguments, shards} from '../scripts/eslint/lint-shards.mjs';
 
 const root = join(import.meta.dirname, '..');
 const strictRules = ['@typescript-eslint/switch-exhaustiveness-check', '@typescript-eslint/strict-boolean-expressions',
@@ -569,4 +570,29 @@ test('the outcome-word rule reads its words from sdk/evidence and covers product
     assert.ok(on(await eslint.calculateConfigForFile(join(root, file)), 'bunny/no-raw-outcome-literal'), file);
   for (const file of ['packages/sdk/src/evidence.ts', 'apps/runtime/tests/a.test.ts', 'modules/example/src/frontend/a.tsx'])
     assert.ok(!severity(await eslint.calculateConfigForFile(join(root, file)), 'bunny/no-raw-outcome-literal'), file);
+});
+
+// lint:js runs ESLint in path shards under one heap budget (Hub #1636); together they must lint what `eslint .` lints.
+describe('lint shards', () => {
+  it('runs lint:js through the shards under a heap budget', () => {
+    assert.match(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts['lint:js'],
+      /^node scripts\/eslint\/lint-shards\.mjs --heap-mb=\d+ /);
+  });
+
+  it('skips only the claimed paths nested inside a shard and ends with the rest of the repository', () => {
+    assert.deepEqual(shardArguments([['apps/runtime/dashboard'], ['apps/runtime'], ['modules/pixoo'], ['modules', 'packages']]), [
+      ['apps/runtime/dashboard'],
+      ['apps/runtime', '--ignore-pattern', 'apps/runtime/dashboard/**'],
+      ['modules/pixoo'],
+      ['modules', 'packages', '--ignore-pattern', 'modules/pixoo/**'],
+      ['.', ...['apps/runtime/dashboard', 'apps/runtime', 'modules/pixoo', 'modules', 'packages'].flatMap(path => ['--ignore-pattern', `${path}/**`])],
+    ]);
+    // A prefix that is not a parent directory is not nested.
+    assert.deepEqual(shardArguments([['modules/pixoo-extra'], ['modules/pixoo']])[1], ['modules/pixoo']);
+  });
+
+  it('refuses a path listed in two shards, and every listed path exists', () => {
+    assert.throws(() => shardArguments([['modules'], ['modules']]), /listed twice: modules/);
+    for (const path of shards.flat()) assert.ok(existsSync(join(root, path)), path);
+  });
 });

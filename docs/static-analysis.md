@@ -44,7 +44,8 @@ declared source coverage locally and in CI.
 
 ## Static analysis
 
-`npm run lint:js` runs ESLint with [`eslint.config.mjs`](../eslint.config.mjs).
+`npm run lint:js` runs ESLint with [`eslint.config.mjs`](../eslint.config.mjs),
+in path shards under a fixed heap budget (see [Heap budget](#heap-budget)).
 Run `npm run build` first. Typed rules read the workspace packages' built
 declaration files, so missing or stale `dist/` output changes the results. The
 core CI job runs it right after the build and typecheck, and never fixes files.
@@ -91,6 +92,49 @@ defects:
 For a deliberate exception elsewhere, outside the strict profile, use
 `// eslint-disable-next-line <rule> -- <reason>`. Unused disable directives fail.
 
+### Heap budget
+
+`npm run lint:js` runs
+[`scripts/eslint/lint-shards.mjs`](../scripts/eslint/lint-shards.mjs) with
+`--heap-mb=2048`. The script runs ESLint once per shard, one shard at a time,
+each in its own Node process started with `--max-old-space-size=2048`. A
+command-line limit overrides `NODE_OPTIONS`, so the budget is the same locally,
+in containers and in hosted CI. A shard that outgrows it ends with "JavaScript
+heap out of memory", and lint fails.
+
+Why it shards: typescript-eslint's project service keeps a TypeScript program
+alive for every `tsconfig.json` project a process has touched, because ESLint
+never closes the files it lints. One `eslint .` process ends with 41 programs
+(38 projects and 3 default projects) holding 12,922 source files, 2,827 of
+them distinct. After a full garbage collection it still holds 3.5 GB, so it
+needed about 4.3 GB of heap and failed at 3,584 MB (Hub #1636). A shard holds
+only the programs for its own files. ESLint's `--concurrency` does not help,
+because each worker loads its own programs.
+
+The shards are listed in `lint-shards.mjs`. A shard skips the paths that more
+specific shards inside it claim, and the last shard lints everything no shard
+claims. Each file is linted once, by the same configuration and rules, so the
+findings, the [adoption baseline](#adoption-baseline) checks and the exit status
+match a single `eslint .` run. Options after `--` reach every shard, for
+example `npm run lint:js -- --prune-suppressions`. Pass options only: a file or
+directory argument would be linted again by every shard. To lint a few files,
+run `npx eslint <files>`.
+
+Measured need (2026-11-10, ESLint 10.12.0, typescript-eslint 8.71.1,
+TypeScript 5.9.3, Node 24):
+
+- The largest shard holds 842 MB after a full collection. Under the budget,
+  no shard process exceeded 1.8 GB of resident memory.
+- Every shard passes at `--heap-mb=1024`, but frequent collection slows lint by
+  about 40%. The 2,048 MB budget leaves twice the measured need.
+- Lint took 39 to 42 s locally, against 41 to 54 s for one `eslint .`.
+
+To re-measure, run `node scripts/eslint/lint-shards.mjs --heap-mb=<MB>
+--max-warnings=0` with a lower budget until a shard fails, and note each
+shard's printed time. When a shard nears the budget, split it in `shards`
+rather than raising the budget. Test container sizing depends on this figure
+(Hub #1642), so a higher budget needs the owner's agreement.
+
 ### Adoption baseline
 
 [`eslint-suppressions.json`](../eslint-suppressions.json) records how many
@@ -98,7 +142,7 @@ findings each file had for each rule when the gate was adopted.
 
 ESLint fails when a file exceeds its recorded count for a rule. It also fails
 when a linted file has fewer findings than recorded, until you run
-`npx eslint . --prune-suppressions` and commit the smaller file. After deleting
+`npm run lint:js -- --prune-suppressions` and commit the smaller file. After deleting
 or renaming a file, run the same prune, because entries for files ESLint no
 longer lints are not reported.
 
