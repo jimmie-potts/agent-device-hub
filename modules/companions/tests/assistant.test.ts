@@ -123,34 +123,21 @@ void test('an approved proposal dispatches one mode-set bound to the proposal an
   await w.restart(); assert.equal(dispatched.length, 1);
 });
 
-void test('an approval sends the Hub-mode revision current when it is sent, after an owner mode change, and says when the core still saw a change', async context => {
-  // #1657 (AC3): the owner changed the mode on the dashboard after the proposal and before approving it.
-  let revision = 3, synced = true, answer: RequestResult | undefined;
+void test('an approval stays bound to the revision it was proposed against after an owner mode change, and the reply explains the refusal', async context => {
+  // #1657 (AC3): the owner changed the mode by hand after the proposal and before approving it. The approval must not
+  // override that choice, so it still carries the proposed revision, and the core's refusal is explained in the reply.
+  let revision = 3;
   const dispatched: {mode: string; expectedRevision?: number}[] = [];
-  const w = await world(context, {provider: counted(), tools: ['set_mode'],
-    core: () => synced ? {sessions: [], mode: hub(revision), synced: true} : {sessions: [], mode: undefined, synced: false},
-    dispatch: data => {dispatched.push(data.data); return Promise.resolve(answer ?? accepted(data.requestId));}});
+  const w = await world(context, {provider: counted(), tools: ['set_mode'], core: () => ({sessions: [], mode: hub(revision), synced: true}),
+    dispatch: data => {dispatched.push(data.data); return Promise.resolve({status: 'rejected', requestId: data.requestId, error: errorBody('revision-conflict')});}});
   await control(w.core, w.module(), 'enable');
   await input(w.core, w.module(), 'quiet mode now'); await until(() => status(w) === 'waiting');
   assert.equal((await page(w)).currentTask?.question?.proposal?.expectedRevision, 3);
   revision = 9;
   assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
   await until(() => status(w) === 'succeeded');
-  assert.deepEqual(dispatched, [{mode: 'quiet', expectedRevision: 9}]);
-  // A change the module had not seen yet still conflicts: the reply says so, and the model hears why.
-  answer = {status: 'rejected', requestId: 'r', error: errorBody('revision-conflict')};
-  await input(w.core, w.module(), 'work mode'); await until(() => status(w) === 'waiting');
-  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
-  await until(() => status(w) === 'succeeded');
-  assert.match((await page(w)).messages.at(-1)?.text ?? '', /not applied: refused: revision-conflict: the Hub mode changed just before this change was sent; nothing was changed/);
-  assert.equal(dispatched.length, 2);
-  // With no synced mode to bind it to when approved, the approval sends nothing and says why.
-  await input(w.core, w.module(), 'free mode'); await until(() => status(w) === 'waiting');
-  synced = false;
-  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
-  await until(() => status(w) === 'succeeded');
-  assert.equal(dispatched.length, 2, 'nothing was sent');
-  assert.match((await page(w)).messages.at(-1)?.text ?? '', /not synced/);
+  assert.deepEqual(dispatched, [{mode: 'quiet', expectedRevision: 3}], 'the proposed revision, never the newer one');
+  assert.match((await page(w)).messages.at(-1)?.text ?? '', /not applied: refused: revision-conflict: the Hub mode changed since this was proposed; nothing was changed/);
 });
 
 void test('a declined proposal sends nothing and a stale approval is reported as refused', async context => {

@@ -4,16 +4,16 @@ The core's `InboxRecords.tracked` runs in every tracked operation's change trans
 
 ## Goals / Non-Goals
 
-**Goals:** open no item that only Dismiss could clear (D1, D3), keep every outcome in history, keep Send again's answers the same apart from stale mode revisions, and stop the assistant's own mode change from conflicting with a mode change the owner made just before approving it.
+**Goals:** open no item that only Dismiss could clear (D1, D3), keep every outcome in history, keep Send again's answers the same apart from stale mode revisions, and make a stale assistant mode change explain its refusal in the reply without leaving an item.
 
 **Non-Goals:** expiry or clearing on a later success (D2), clearing items already open, new codes, message formats or error shapes, labels for raw target IDs.
 
 ## Decisions
 
 - **One predicate.** `resendRefusal(operation, handler)` in `inbox.ts` returns Send again's refusal or nothing. Send again calls it with the handling command's source. `historyOnly(operation)` calls it with the dashboard's source, the handler with the widest resend authority, for a rejected operation only. The dispatcher's requester checks move unchanged into `requesterRefusal(family, requestedBy)` in `tracker.ts`, which both the dispatcher and the predicate call.
-- **A refusal means a rejected reply.** Status `rejected` (result `failed`, evidence `none`) proves the owner refused the command before acting, so it holds nothing. An `expired` command, a failure after acceptance, an uncertain result and a conflict keep opening items: each may hide an effect or a fault a person should see.
+- **A refusal means a rejected reply.** Status `rejected` (result `failed`, evidence `none`) proves the owner refused the command before acting, so it holds nothing. A late outcome on it keeps the status `rejected` (`operations.ts`) but contradicts the refusal, so the skip applies only while the operation has no recorded outcome. An `expired` command, a failure after acceptance, an uncertain result and a conflict keep opening items: each may hide an effect or a fault a person should see.
 - **Stale mode revisions are dismiss-only.** The Hub mode's revision is the core store's revision and only grows. A `mode-set` or `mode-override-set` refused `revision-conflict` with a saved `expectedRevision` can never be accepted again with that payload, so Send again refuses it up front with `revision-conflict`, and the open rule skips it. The dashboard's Hub mode and per-device mode controls send the record's revision too, so a choice made from a stale page is refused the same way; the page shows the refusal when it happens, and the owner chooses again from the current mode.
-- **The assistant binds the revision at send time.** The approval names a mode. At the act step the engine reads its synced core copy and sends that revision. An admitted call is never sent again, so a replay after a restart needs no copy. With no synced copy it sends nothing and says so. A conflict that still happens says the mode changed just before sending and that nothing changed.
+- **The assistant keeps the proposed revision.** An approval stays bound to the revision its proposal saw (`bunny-assistant-tasks`), so an older proposal never overrides a mode the owner set by hand in between. The core refuses a stale one `revision-conflict`. The tool result says the mode changed since the proposal and that nothing changed, and the refusal opens no item under the stale-mode rule.
 
 ## Risks / Trade-offs
 

@@ -2450,8 +2450,8 @@ tracker/history evidence and never enter this device-operation inbox. Items and 
 device holds stay separate.
 
 Results whose only possible handling is Dismiss open no item (#1657, owner
-decisions of 2026-11-10). A rejected reply opens none when Send again by the
-dashboard would be refused for it: scheduled art moments, core-dispatched Music
+decisions of 2026-11-10). A rejected reply opens none while no later outcome
+contradicts it and Send again by the dashboard would be refused for it: scheduled art moments, core-dispatched Music
 lighting work, companion speech, MicroDuck commands, omitted payloads and a Hub
 mode change refused `revision-conflict` for its saved expected revision. An
 uncertain companion speech line opens none either. `resendRefusal` in

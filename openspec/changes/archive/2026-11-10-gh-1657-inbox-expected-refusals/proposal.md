@@ -14,7 +14,7 @@ Owner decisions, 2026-11-10:
 - **Refusals that only Dismiss could clear open no item.** A rejected reply (the owner refused the command before acting, so it left no effect and holds no device) opens no item when Send again by the dashboard would be refused for it. Its tracked operation and history keep the result, code and detail.
 - **Unconfirmed speech opens no item.** A `companion-speech-*` operation whose result is `uncertain` opens no item. A definitive failure after acceptance still opens one.
 - **Stale mode revisions.** Send again of a mode change refused `revision-conflict` for its saved expected revision is refused with `revision-conflict` before anything is handled or sent. Before this change it handled the item and sent a command that the mode owner was certain to refuse again, which opened a fresh item.
-- **Assistant mode changes.** An approved assistant mode change binds the Hub-mode revision current when it is sent, not the one the proposal saw. A conflict that still happens is explained in the assistant's tool result, and it opens no item under the rule above.
+- **Assistant mode changes.** An approved assistant mode change stays bound to the revision it was proposed against (`bunny-assistant-tasks`), so approving an older proposal never overrides a mode the owner set by hand in between. The core's `revision-conflict` refusal is explained in the assistant's tool result ("the Hub mode changed since this was proposed; nothing was changed"), and it opens no item under the rule above.
 - **Unchanged:** every other failed, uncertain or conflicting outcome opens an item, including uncertain device writes that may set a hold, conflicts, failures after acceptance, expired commands and refusals the dashboard can send again. Items have no time limit, a later success clears nothing, handling never releases a hold and nothing resends automatically. Codes stay registry codes; no message format, error shape or polling path is added.
 
 ## Capabilities
@@ -25,6 +25,6 @@ Owner decisions, 2026-11-10:
 ## Impact
 
 - `apps/runtime/src/core/inbox.ts` and `tracker.ts`: the shared resend rule and the open rule.
-- `modules/companions/src/assistant/engine.ts`: the approved mode change's revision and its conflict reply.
+- `modules/companions/src/assistant/engine.ts`: the stale approval's conflict reply.
 - Runtime and companions tests, the runtime and dashboard READMEs and ADR 0012's Inbox paragraph.
 - No contract, schema, storage or migration change. Items already open stay open until handled. Installation follows the runtime upgrade procedure separately.

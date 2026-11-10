@@ -28,7 +28,8 @@ returns that device to the global choice. The Hub card keeps its artwork and
 three buttons, with a neutral collapsed summary when saved exceptions or fresh
 native differences exist. Expanding it shows the choices, available device
 request evidence and links to device controls. It makes no physical-mode claim.
-Failures keep using Check Inbox. Native Monitor/Media, scene, power, brightness
+Failures that open an Inbox item keep using Check Inbox; a mode change refused
+for a stale revision opens none and shows its refusal on the page (#1657). Native Monitor/Media, scene, power, brightness
 and media controls keep their own meaning and never create saved exceptions.
 All placements use the same controls and existing shell copies; opening,
 navigating, reconnecting and reloading send no mode command.

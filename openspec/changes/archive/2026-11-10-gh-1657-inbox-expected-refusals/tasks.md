@@ -6,7 +6,7 @@
 
 ## 2. Assistant mode change
 
-- [x] 2.1 Bind an approved assistant mode change to the Hub-mode revision current when it is sent, send nothing without a synced copy, and explain a remaining `revision-conflict` in the tool result. Verify with `modules/companions/tests/assistant.test.ts`.
+- [x] 2.1 Keep an approved assistant mode change bound to its proposed revision, and explain a `revision-conflict` refusal in the tool result. Verify with `modules/companions/tests/assistant.test.ts`, the `assistant-mode-approval` catalog scenario (reply text and no inbox item) and `assistant-dispatch.test.ts`.
 
 ## 3. Documentation and delivery
 

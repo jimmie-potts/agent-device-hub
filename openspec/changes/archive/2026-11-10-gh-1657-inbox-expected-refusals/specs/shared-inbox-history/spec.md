@@ -8,7 +8,7 @@ The families `art-auto`, `art-stage` and `art-ambient-set` are routine backgroun
 
 An operation whose only possible handling is Dismiss SHALL raise no item (owner decisions D1 and D3, #1657, 2026-11-10), whoever requested it:
 
-- a rejected reply, which proves the owner refused the command before acting, so it left no effect and holds no device, when Send again by the dashboard would be refused for it under the rule that Send again applies;
+- a rejected reply, which proves the owner refused the command before acting, so it left no effect and holds no device, when no later outcome contradicts it and Send again by the dashboard would be refused for it under the rule that Send again applies;
 - a `companion-speech-*` operation whose result is uncertain, which holds no device.
 
 The open rule and Send again SHALL read one shared rule, so they cannot disagree. Every such operation SHALL still record its result, code and detail in its tracked operation and history. Every other failed, uncertain or conflicting operation SHALL raise an item, including an uncertain write that may set a device hold, a conflict, a failure after acceptance, an expired command and a refusal the dashboard can send again.

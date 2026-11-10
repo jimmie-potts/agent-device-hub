@@ -171,7 +171,9 @@ Device commands, moments and mode changes are tracked:
 - If its deadline passes first, the core records it as uncertain. A command
   still queued at its deadline never reached the owner, so the SDK answers it
   `expired` instead; the core records only an unknown fate as uncertain. Failed
-  and uncertain results go to the shared inbox. A later outcome is handled as
+  and uncertain results go to the shared inbox, except routine background art
+  and results whose only possible handling is Dismiss (amendments of 2026-11-03
+  and 2026-11-10). A later outcome is handled as
   [Errors, effects and outcomes](#errors-effects-and-outcomes) describes.
 - Every step is logged.
 - A timed-out command is never retried automatically.

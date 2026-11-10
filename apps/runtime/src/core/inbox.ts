@@ -45,12 +45,13 @@ export function resendRefusal(operation: Operation, handler: string): ErrorBody 
 
 /**
  * Whether an outcome stays in history and opens no inbox item (Hub #1657, owner decisions D1 and D3): a refusal the
- * dashboard could never send again, which left no effect and holds no device, and an unconfirmed companion speech line,
+ * dashboard could never send again, which left no effect and holds no device while no outcome contradicts it, and an unconfirmed companion speech line,
  * which holds no device either. Every other failed, uncertain or conflicting outcome opens an item.
  */
 export function historyOnly(operation: Operation): boolean {
   if (operation.family.startsWith('companion-speech-') && operation.result === Outcome.uncertain) return true;
-  return operation.status === 'rejected' && resendRefusal(operation, DASHBOARD_SOURCE) !== undefined;
+  // A late outcome on a refused command keeps it `rejected` but contradicts the refusal, so it opens an item.
+  return operation.status === 'rejected' && operation.outcomes.length === 0 && resendRefusal(operation, DASHBOARD_SOURCE) !== undefined;
 }
 
 export class InboxRecords {

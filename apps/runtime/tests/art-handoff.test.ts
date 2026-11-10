@@ -456,6 +456,12 @@ it('a display refusing a scheduled art moment keeps the refusal in history and o
     assert.ok(kept.some(step => step.status === 'rejected' && step.error?.code === 'invalid-state' && step.error.detail === 'the Tidbyt holds a pin the owner chose'),
       'history keeps the refusal with its code and detail');
   }
+  // A display that later reports an outcome for a moment it refused contradicts its own refusal: that opens an item.
+  await outcomes.get(w.seen)?.publish('bunny.event.moment-play.panel', {kind: 'outcome', type: 'org.bunny.moment.play.completed', subject: 'panel',
+    dataschema: 'https://bunny.invalid/events/outcome/2.0', data: {requestId: 'plan-busy', result: 'uncertain', evidence: 'transmitted', error: {code: 'uncertain-result', retryable: false}}});
+  await waitFor(async () => (await inboxOf(w.art)).length === 2);
+  assert.deepEqual((await inboxOf(w.art)).map(item => item.item.requestId).sort(), ['automation-plain', 'plan-busy']);
+  assert.equal(w.handle.operation('plan-busy')?.status, 'rejected', 'the late outcome keeps the operation rejected');
 });
 
 it('a device refusing a lapsed copy leaves the operation rejected, never claiming the command failed to reach its owner', async context => {

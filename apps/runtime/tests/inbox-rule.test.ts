@@ -56,6 +56,11 @@ it('every other failed, uncertain or conflicting outcome still opens an item', (
     ['an owner art request', refused('art-request', 'unavailable')],
     ['a mode change refused for another reason', refused('mode-set', 'capacity', {data: {mode: 'quiet', expectedRevision: 4}})],
     ['a mode change with no saved revision', refused('mode-set', 'revision-conflict', {data: {mode: 'quiet'}})],
+    // A late outcome keeps the operation `rejected` (operations.ts) but contradicts the refusal.
+    ['a refused art moment that later reports an uncertain outcome', refused('moment-play', 'invalid-state', {requestedBy: CORE, data: {art: ART},
+      outcomes: [{source: 'bunny/modules/pixoo', id: 'late', result: 'uncertain', evidence: 'transmitted', atMs: AT + 10}]})],
+    ['a refused lighting work that later reports a failure', refused('music-lighting-work', 'invalid-state', {requestedBy: CORE,
+      outcomes: [{source: 'bunny/modules/nanoleaf', id: 'late', result: 'failed', evidence: 'none', atMs: AT + 10}]})],
     ['a command that expired before its owner took it', operation('microduck-auto', {status: 'expired', result: 'failed', evidence: 'none', reply: 'expired',
       command: 'org.bunny.microduck.auto.requested', error: {code: 'expired', retryable: true}})],
   ];
