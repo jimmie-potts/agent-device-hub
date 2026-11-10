@@ -313,13 +313,17 @@ not a source-delivery blocker. See [Project maintenance](project-maintenance.md)
    A finding in code the change did not touch does not block it unless the
    change makes that defect reachable or worse; record it with an owner and
    follow-up, as `AGENTS.md` does for unrelated failures.
+   The review report gives it the state `pre-existing`, which the preflight
+   reads and never counts as open. A finding the change makes reachable or
+   worse stays `unresolved`.
    The same reviewer may perform the disposable acceptance exercise below.
    Re-review changed behavior and affected assumptions, not unchanged evidence.
    A pure rebase or prose correction needs one confirmation of the delta and new
    comparison. Never carry a verdict over a change that invalidates its evidence.
    Count final review rounds that assess a new candidate or one corrected to
    resolve a P0–P2 finding, whatever its file types. Confirming a base move, a
-   pure rebase or a correction that resolves no P0–P2 finding does not count.
+   pure rebase or a correction that targets no P0–P2 finding does not count,
+   and a correction that targets one counts whether or not it resolves it.
    If the third counted round leaves a P0–P2 finding open, stop fixing: the
    coordinator reports the open findings and proposes a changed approach to the
    owner, and the merge stays blocked until the owner chooses. Independent
