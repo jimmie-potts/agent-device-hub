@@ -1494,6 +1494,12 @@ pinned Node 24 base and lockfile-selected Chromium, then runs `npm ci --include=
 failure exits nonzero. The container has its own copied source, dependencies and
 synthetic state, `TMPDIR=/tmp`, no networking during checks, no host mounts and
 no published ports. Docker's init process reaps exited descendants. It never attaches to the installed runtime or its volumes.
+The check container is limited to 2 CPUs and 1536 MiB (1.5 GiB) of memory, with
+swap equal to memory so it cannot swap; Node inside then reports 2 CPUs, so
+`node --test` starts fewer workers. On macOS the verification suite's processes
+used at least 1.2 GB (the largest sample, a lower bound), and at a 1250 MiB
+limit the run was killed for memory. The image build is a separate step without
+these limits.
 The temporary Git commit identifies a working-tree snapshot, not a reviewed
 release or independent Acceptance result. Dependency preparation needs network
 access; the checks install from the image's offline npm cache.
@@ -1513,7 +1519,7 @@ manifests and recipe, shared by every run of the same lockfile across tasks and
 sessions; [Cleanup after delivery](sdlc.md#cleanup-after-delivery) keeps them,
 and only the owner removes a cache no live lockfile produces.
 
-The wrapper's fixed-suite, source-isolation and failure-propagation checks are
+The wrapper's fixed-suite, source-isolation, resource-limit and failure-propagation checks are
 `node --test scripts/tests/runtime-container.test.mjs`, included in core CI.
 Hosted runtime suites remain unchanged.
 
@@ -2352,9 +2358,9 @@ The Audio Music lighting controls (#722 over #1272) use the existing dashboard
 unit discovery and the hosted smoke entry. After `npm run build`, run
 `npm run typecheck`, `npm run lint:js`, `npm run test:runtime-dashboard:built`
 and `node apps/runtime/dashboard/tests/music-lighting.browser.ts`. The journey
-uses the real disposable core and Nanoleaf module on a simulated Lines controller
-with the numeric producer fixture. It sends no physical device command and
-qualifies no installed or physical behavior.
+uses the real disposable core and Nanoleaf module on simulated Lines and NL22
+Light Panels controllers with the numeric producer fixture. It sends no physical
+device command and qualifies no installed or physical behavior.
 
 The Music playback adapter (#571) uses those same producer/native commands and
 the existing event, SDK, runtime and playback test discovery. Native playback

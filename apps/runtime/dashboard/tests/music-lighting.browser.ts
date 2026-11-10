@@ -1,24 +1,26 @@
-// #722 Music lighting controls over the real disposable core, gateway and Nanoleaf module on a simulated Lines
-// controller, with the numeric-only Music producer fixture. No device, capture, network light or installed service.
+// #722 Music lighting controls over the real disposable core, gateway and Nanoleaf module on simulated Lines and NL22
+// Light Panels controllers (#1272), with the numeric-only Music producer fixture. No device, capture, network light or
+// installed service.
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
 import {expect} from 'playwright/test';
-import {LINES_ADDRESS} from '@jimmie-potts/nanoleaf';
+import {LINES_ADDRESS, PANELS_ADDRESS} from '@jimmie-potts/nanoleaf';
 import {startWorld, changes, feed} from './harness.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 
 type Control = {target: string; requestId: string; data: {action: 'start' | 'stop'; expectedRevision: number; capture?: {endpointId: string; generation: string}; presetId?: string}};
 const RECIPE = {rendererVersion: 1, effect: 'level-glow', palette: ['#12ab34'], intensity: 0.5, sensitivity: 1, smoothingMs: 0};
-const world = await startWorld({nanoleaf: true, musicCapture: true});
-/** Sets the light's mode outside the lighting card, as the light card would, and waits until the module applied it. */
-async function mode(value: 'free' | 'work'): Promise<void> {
-  assert.equal((await world.credentialAction('device-mode-set', 'wall', {mode: value})).status, 200);
+const world = await startWorld({nanoleaf: true, nanoleafPanels: true, musicCapture: true});
+/** Sets a light's mode outside the lighting card, as the light card would, and waits until the module applied it. */
+async function mode(value: 'free' | 'work', light: 'wall' | 'nl22' = 'wall'): Promise<void> {
+  assert.equal((await world.credentialAction('device-mode-set', light, {mode: value})).status, 200);
+  const address = light === 'wall' ? LINES_ADDRESS : PANELS_ADDRESS;
   await expect.poll(async () => {
-    const wall = await world.nanoleafWall() as unknown as {mode?: string; modePending?: boolean};
-    return wall.mode === value && wall.modePending === false && world.nanoleafState().devices[LINES_ADDRESS]?.select !== undefined;
+    const wall = await world.nanoleafWall(light) as unknown as {mode?: string; modePending?: boolean};
+    return wall.mode === value && wall.modePending === false && world.nanoleafState().devices[address]?.select !== undefined;
   }, {timeout: 10_000}).toBe(true);
 }
 let producer: Awaited<ReturnType<typeof musicCaptureProducer>> | undefined;
@@ -34,8 +36,10 @@ try {
   });
   await page.goto(world.url + '/#/audio'); await feed(page, 'connected');
   const card = page.getByRole('article', {name: 'Music lighting', exact: true});
-  const light = card.getByRole('region', {name: /Music lighting$/});
-  await expect(light).toHaveCount(1);
+  // One section per light: the Lines (`wall`) and the NL22 Light Panels (`nl22`).
+  await expect(card.getByRole('region', {name: /Music lighting$/})).toHaveCount(2);
+  const light = card.getByRole('region', {name: 'wall Music lighting', exact: true});
+  const panels = card.getByRole('region', {name: 'nl22 Music lighting', exact: true});
   const start = light.getByRole('button', {name: 'Start Music lighting', exact: true});
   const stop = light.getByRole('button', {name: 'Stop Music lighting', exact: true});
   const preset = light.getByRole('combobox', {name: 'Saved reactive preset', exact: true});
@@ -153,6 +157,30 @@ try {
   await stop.click(); await light.getByText(/Last session ended: stopped on request/).waitFor();
   assert.deepEqual(controls.map(control => control.data.action), ['start', 'stop', 'start', 'start', 'start', 'start', 'stop']);
 
+  // #1272: the Panels card starts and stops the NL22's own session through its version 1 stream; the Lines stay idle.
+  const panelsStart = panels.getByRole('button', {name: 'Start Music lighting', exact: true});
+  const panelsStop = panels.getByRole('button', {name: 'Stop Music lighting', exact: true});
+  await panels.getByText(/saved mode is not Free, so a Start would be refused/).waitFor();
+  await mode('free', 'nl22');
+  await expect(panels.getByText(/saved mode is not Free/)).toHaveCount(0);
+  await expect(panelsStart).toBeEnabled();
+  const linesBefore = world.nanoleafState().devices[LINES_ADDRESS];
+  await panelsStart.click();
+  await panels.getByText('Active. The light reported that it is playing this session.', {exact: true}).waitFor();
+  await panels.getByText(/Start light work: Completed: succeeded\. Written to the light; the physical effect was not observed\./).waitFor();
+  await light.getByText('Idle. No Music lighting session is running.', {exact: true}).waitFor();
+  await expect.poll(() => world.nanoleafState().devices[PANELS_ADDRESS]?.streamed ?? 0).toBeGreaterThan(2);
+  const streaming = world.nanoleafState().devices[PANELS_ADDRESS];
+  assert.deepEqual({select: streaming?.select, streaming: streaming?.streaming}, {select: '*ExtControl*', streaming: {version: 'v1', port: 60221}});
+  assert.deepEqual(Object.keys(streaming?.frame ?? {}).sort(), ['200', '201', '202', '203'], 'the NL22 frames light its own panels');
+  const linesNow = world.nanoleafState().devices[LINES_ADDRESS];
+  assert.deepEqual({writes: linesNow?.writes, streamed: linesNow?.streamed}, {writes: linesBefore?.writes, streamed: linesBefore?.streamed}, 'the Lines are untouched');
+  await page.screenshot({path: join(artifacts, 'music-lighting-panels-active-desktop.png'), fullPage: true});
+  await panelsStop.click();
+  await panels.getByText(/Last session ended: stopped on request\. The current base scene and brightness were restored\./).waitFor();
+  assert.equal(world.nanoleafState().devices[PANELS_ADDRESS]?.select, 'Beach Waves');
+  assert.deepEqual(controls.slice(-2).map(control => [control.target, control.data.action]), [['nl22', 'start'], ['nl22', 'stop']]);
+
   // Read-only access disables both controls and sends nothing.
   await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
   await page.reload(); await feed(page, 'connected');
@@ -172,8 +200,8 @@ try {
   await capture.getByText('Receiving studio-mic measurements.', {exact: true}).waitFor();
   await light.getByText(/Start unavailable: Lights use Music.app input only, never a microphone/).waitFor();
   await expect(start).toBeDisabled();
-  assert.equal(controls.length, 7);
-  assert.equal(sent.filter(path => path === '/api/v2/commands/music-lighting-control').length, 7);
+  assert.equal(controls.length, 9);
+  assert.equal(sent.filter(path => path === '/api/v2/commands/music-lighting-control').length, 9);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({journey: 'music-lighting', lightingCommands: controls.length, lostReplies: lost, artifacts, physical: false}));
   await context.close();
