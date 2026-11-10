@@ -20,8 +20,10 @@ const AXES = ['standards', 'specification'];
 // `- <ID> (<severity>, <axes>, <state>): <file:line>, <failure condition>[; aliases <axis>:<raw ID>, ...]; first <round>, latest <round>`,
 // where the axes are one or more lowercase axis names joined by `+`, each
 // listed once and never `both`, and each alias names a listed axis.
+// `pre-existing` marks a finding in code the change did not touch; like
+// `accepted` and `deferred` it is settled, so it is never an open blocker.
 const ID = '[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*';
-const FINDING = new RegExp(`^- (${ID}) \\((P[0-3]), ([a-z]+(?:\\+[a-z]+)*), (unresolved|resolved|regression|accepted|deferred)\\): (.*)$`);
+const FINDING = new RegExp(`^- (${ID}) \\((P[0-3]), ([a-z]+(?:\\+[a-z]+)*), (unresolved|resolved|regression|pre-existing|accepted|deferred)\\): (.*)$`);
 const ALIAS = new RegExp(`^([a-z]+):(${ID})$`);
 const ALIASES = '; aliases ';
 const WRAPPER = /^(?:<details>|<\/details>|<summary>.*<\/summary>)$/;
