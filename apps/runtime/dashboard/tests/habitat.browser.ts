@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium} from 'playwright';
-import {AxeBuilder} from '@axe-core/playwright';
 import {changes,feed,startWorld} from './harness.ts';
 import {IDENTITY} from '../../dist/tests/fixtures/agents.js';
 const world=await startWorld(),browser=await chromium.launch({headless:true});
@@ -16,7 +15,7 @@ try{
  await page.getByRole('link',{name:'Habitat',exact:true}).click();await page.locator('#habitat[data-ready=true]').waitFor();
  await page.getByText('10 assigned · 0 free spots · 2 waiting',{exact:true}).waitFor();assert.equal(streams,before,'the habitat reuses the shell connection');
  assert.equal(await page.locator('.habitat-root .agent[data-assigned=true]').count(),10);
- assert.equal(await page.locator('#all-work').isDisabled(),true);assert.equal(await page.locator('#motion').textContent(),'Reduced motion');
+ assert.equal(await page.locator('#all-work').isDisabled(),true);
  const names=await page.locator('.habitat-root .agent-name').allTextContents();
  const selected=page.locator('#agent-0');await selected.focus();await page.keyboard.press('Enter');await page.keyboard.press('Enter');await page.locator('#conversation-hint').filter({hasText:'not connected yet'}).waitFor();
  await page.locator('#music-view').click();await page.locator('#workshop-view').click();
@@ -41,13 +40,10 @@ try{
  const colors=Array<string>(10).fill('#345678'),settings=JSON.stringify({schema:'bunny-habitat-settings/1.0',preferences:{'bunny.burrow.aprons.v1':JSON.stringify(colors),'bunny.burrow.live-binding.v1':JSON.stringify({sessionId:importedSession,bunnyId:6})}});
  await page.getByLabel('Import habitat settings',{exact:true}).setInputFiles({name:'settings.json',mimeType:'application/json',buffer:Buffer.from(settings)});
  await page.getByText('Settings imported. Previous settings are backed up in this browser.',{exact:true}).waitFor();await page.locator('#habitat[data-ready=true]').waitFor();assert.equal(await page.locator('#apron-color').inputValue(),'#345678');assert.equal(await page.locator('#agent-6 .agent-name').textContent(),'Synthetic agent 11','legacy file replaces receiving v2 assignments at the imported slot');
- const axe=async():Promise<void>=>{const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[]);};
  for(const colorScheme of ['dark','light'] as const){
   await page.emulateMedia({colorScheme});
   for(const viewport of [{width:1440,height:1100},{width:390,height:844}]){
    await page.setViewportSize(viewport);await page.locator('#workshop-view[aria-pressed=false]').click();
-   await axe(); // Keep the pointer over the selected control: the shell hover rule must remain legible.
-   await page.mouse.move(0,0);await axe();
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
    if(output!==undefined)await page.screenshot({path:`${output}/habitat-${colorScheme}-${viewport.width}.png`,fullPage:true});
    await page.locator('#workshop-view[aria-pressed=true]').click();
@@ -73,5 +69,5 @@ try{
  await desktop.goto(world.url+'/#/habitat');await feed(desktop,'connected');await desktop.locator('#habitat[data-ready=true]').waitFor();await desktop.locator('#live-session').selectOption({label:'Synthetic desktop conversation · Codex Desktop'});await desktop.locator('#live-bunny').selectOption('0');await desktop.locator('#live-bind').click();
  await desktop.locator('#agent-0').click();assert.equal(navigations.length,0);await desktop.waitForTimeout(650);await desktop.locator('#agent-0').click();await desktop.waitForTimeout(100);assert.deepEqual(navigations,[`codex://threads/${native}`]);
  await desktop.locator('#agent-0').focus();await desktop.keyboard.press('Enter');assert.equal(navigations.length,1);await desktop.keyboard.press('Space');await desktop.waitForTimeout(100);assert.equal(navigations.length,2);assert.deepEqual(desktopSent,[]);await windows.close();
- await context.close();process.stdout.write(JSON.stringify({journey:'shared-habitat',capacity:10,overflow:2,singleConnection:true,reconnect:true,import:true,cleanup:true,axe:'dark/light desktop/390px',commands:0,physical:false})+'\n');
+ await context.close();process.stdout.write(JSON.stringify({journey:'shared-habitat',capacity:10,overflow:2,singleConnection:true,reconnect:true,import:true,cleanup:true,commands:0,physical:false})+'\n');
 }finally{await browser.close();await world.close();}

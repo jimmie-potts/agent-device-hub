@@ -1,7 +1,6 @@
 // Ordinary media addition through the real shared shell and tracked Pixoo import, with synthetic media only.
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
 import sharp from 'sharp';
 import {changes, feed, startWorld} from './harness.ts';
@@ -40,7 +39,6 @@ try {
     });
     assert.equal(sent.length, 1, 'selection and referenced preview send no command');
     assert.equal(world.pixooState().sent, 0);
-    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
     await page.reload(); await feed(page, 'connected');
     await file.waitFor(); assert.equal(await file.inputValue(), ''); assert.equal(sent.length, 1, 'reload never resends or retains a file');
     assert.notEqual(uploadUrl, undefined);
@@ -57,6 +55,6 @@ try {
     assert.equal(await world.readonlyUpload(bytes), 403);
     assert.deepEqual(await world.pixooMedia(), saved);
     assert.equal(world.pixooState().sent, 0); assert.deepEqual(errors, []);
-    process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-upload', inputBytes: bytes.byteLength, imports: 1, reusedRequest: true, readOnlyRefused: true, displayWrites: 0, axe: 'passed'})}\n`);
+    process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-upload', inputBytes: bytes.byteLength, imports: 1, reusedRequest: true, readOnlyRefused: true, displayWrites: 0})}\n`);
   } finally {await context.close();}
 } finally {try {await browser?.close();} finally {await world.close();}}

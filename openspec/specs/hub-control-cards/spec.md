@@ -8,7 +8,7 @@ Provide concise reusable Hub mode and shared Inbox cards while preserving explic
 
 ### Requirement: Concise mode controls
 
-The dashboard SHALL show the synced saved mode and matching artwork with Work, Free and Quiet buttons. Clicking the selected mode SHALL submit an explicit new revision-guarded request. The face SHALL omit Saved choice, device lists, routine bottom status, Latest request and a separate Reapply button. Requested or accepted evidence SHALL NOT select a mode. Stale, unavailable and read-only evidence SHALL remain apparent and prevent unauthorized changes. Routine feedback SHALL remain available to assistive technology.
+The dashboard SHALL show the synced saved mode and matching artwork with Work, Free and Quiet buttons. Clicking the selected mode SHALL submit an explicit new revision-guarded request. The face SHALL omit Saved choice, device lists, routine bottom status, Latest request and a separate Reapply button. Requested or accepted evidence SHALL NOT select a mode. Stale, unavailable and read-only evidence SHALL remain apparent and prevent unauthorized changes.
 
 #### Scenario: Explicit selection and reapplication
 - **WHEN** the operator clicks Work twice after each request settles
@@ -46,7 +46,7 @@ Reusable Inbox entries SHALL show device, action and result concisely, with evid
 - **WHEN** an explicit Send again reply is lost
 - **THEN** the UI retains uncertainty and does not resend on update or reconnect
 
-### Requirement: Accessible shared presentation
+### Requirement: Shared presentation
 
 The cards SHALL reuse the shell-owned state and command adapters without new subscriptions or writers. Keyboard, desktop and phone light/dark presentation SHALL preserve readable text, stable target focus and nonoverlapping controls. The same presentation SHALL be independently composable from passed state and callbacks.
 

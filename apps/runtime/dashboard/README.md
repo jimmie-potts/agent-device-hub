@@ -282,7 +282,7 @@ its connection ends.
 
 The numeric-only source fixture in `tests/music-capture.browser.ts` exercises
 the real disposable core and gateway. It runs through both the Music-card
-browser entry and hosted smoke. Its screenshots and accessibility checks are
+browser entry and hosted smoke. Its screenshots are
 source evidence; installation and physical acceptance remain separate.
 
 ## Music lighting
@@ -329,7 +329,7 @@ participant, and closes both when Audio unmounts or the connection ends.
 Nanoleaf module on a simulated Lines controller with the numeric producer
 fixture. It covers the passive lifecycle, the stopped, source-lost and
 refused-outside-Free endings, stale reads, a lost reply, read-only access and
-microphone exclusion. It also runs axe at 1280, 390 and 320 px in both themes.
+microphone exclusion.
 It runs in the Music-card browser entry and hosted smoke. This is source
 evidence only; installed and physical acceptance belong to #725.
 
@@ -450,7 +450,7 @@ The cue storyboard shows timing, palettes and effect names; it plays no music
 and sends no light command. Replay and synchronization are unavailable. The
 existing Nanoleaf browser journey covers the authoring flow, conflict and
 authority refusals, reload without resend, unchanged simulated device state
-and light/dark desktop/phone accessibility.
+and light/dark desktop/phone layout.
 
 The authenticated module catalog and static browser build jointly select each
 React page. A missing component, unavailable module or undeclared route opens
@@ -535,7 +535,7 @@ The page reports playback separately from its tracked operation, without claimin
 an alert was heard. The [companions guide](../../../modules/companions/README.md#browser-speech)
 owns the private qualification receipt and bounded voice checks.
 Run `npm run test:companions:browser` after the root build for persisted controls,
-priority and attribution, reconnect, keyboard, narrow-screen and axe checks.
+priority and attribution, reconnect, keyboard and narrow-screen checks.
 
 ## Agent sessions
 
@@ -700,7 +700,7 @@ runs the tests' TypeScript as it is. See
 The focused label/reload journey runs with
 `node apps/runtime/dashboard/tests/session-label.browser.ts` after a build.
 It shares its label assertions with the full `browser.ts` suite and checks
-conflict drafts, explicit retry, Clear, keyboard focus and desktop/phone axe.
+conflict drafts, explicit retry, Clear and keyboard focus.
 
 The focused artwork journey runs with
 `node apps/runtime/dashboard/tests/playback-artwork.browser.ts` after a build.
@@ -806,7 +806,7 @@ health screenshots remain health evidence; the focused browser journey provides
 UI evidence. Run that journey with
 `node apps/runtime/dashboard/tests/controls.browser.ts` after a build. It checks
 accepted/completed timing, an uncertain lock after reload and explicit refresh,
-no replay, declared-page navigation, keyboard operation and desktop/phone axe.
+no replay, declared-page navigation and keyboard operation.
 Installation and physical acceptance remain separate.
 
 ## Inbox and timeline
@@ -833,12 +833,12 @@ are canceled. A failed refresh retains earlier rows with an unavailable label.
 Historical evidence never establishes current device state.
 After a build, `node apps/runtime/dashboard/tests/timeline-card.browser.ts`
 checks saved Home placement, passive browsing, evidence, failed reads, keyboard
-and light/dark desktop/phone accessibility. Unit checks cover malformed replies,
+and light/dark desktop/phone layout. Unit checks cover malformed replies,
 unknown evidence and reverse completion even when a transport ignores abort.
 The focused synthetic journey is
 `node apps/runtime/dashboard/tests/inbox-history.browser.ts` after a build;
 it checks explicit resend, dashboard dismissal visible through MCP, timeline
-filters, keyboard, read-only presentation and desktop/phone axe.
+filters, keyboard and read-only presentation.
 
 ## Shared habitat
 
@@ -850,7 +850,7 @@ Select a bunny once to inspect it and again to open a qualified Codex Desktop co
 
 Settings are local to the browser origin. Use **Export habitat settings** in the private preview, then **Move your habitat settings → Import habitat settings** here. The bounded JSON transfer includes only room positions, apron colors, recovery preference and assignments; it never uploads a file. Import validates before writing and retains a browser-local backup. Storage failure keeps the current visit usable; assignments cannot be promised across reload without storage.
 
-The focused `tests/habitat.browser.ts` journey runs through the real disposable runtime with synthetic sessions. It covers ten residents plus overflow, shared connection, lifecycle updates, reconnect, demo isolation, preference import, unmount cleanup, fallback, keyboard and axe in dark/light desktop/phone views. It is included in both the local browser suite and hosted dashboard smoke entry. Unit policy and preference tests run in `test:runtime-dashboard:built`. These checks do not establish mobile app deep links or physical device behavior.
+The focused `tests/habitat.browser.ts` journey runs through the real disposable runtime with synthetic sessions. It covers ten residents plus overflow, shared connection, lifecycle updates, reconnect, demo isolation, preference import, unmount cleanup, fallback and keyboard in dark/light desktop/phone views. It is included in both the local browser suite and hosted dashboard smoke entry. Unit policy and preference tests run in `test:runtime-dashboard:built`. These checks do not establish mobile app deep links or physical device behavior.
 
 The Wall Music effect preview also lists private saved reactive presets. Saving
 is explicit and requires control access and a current library; read-only users

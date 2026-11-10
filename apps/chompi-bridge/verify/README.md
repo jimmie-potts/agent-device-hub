@@ -126,13 +126,13 @@ Open the run's URL from `start` to use the page. Proof goes under the main check
 
 The page has no external requests. Its API accepts JSON from its own origin and host only, and every value is
 checked. [`tests/page.browser.mjs`](tests/page.browser.mjs) checks keyboard operation, focus kept across refreshes
-and axe (WCAG 2.1 A and AA) at 1440 px and phone width.
+and the layout at phone width.
 
 ## Steps and scenarios
 
 | Step | Scenario | Observation |
 | --- | --- | --- |
-| `controls-page` | `desk-basic` | Every control is labelled; knob 4's light names page 1; both tasks hold lit slot keys; no axe violations; boundaries hold |
+| `controls-page` | `desk-basic` | Every control is labelled; knob 4's light names page 1; both tasks hold lit slot keys; boundaries hold |
 | `focus-and-send` | `desk-basic` | Space on the Codex slot key brings Codex to the front on the task with its composer focused; typed text goes out with one Play press; the bridge logs `sent` |
 | `scenario-<id>` | `<id>` | The page runs the catalog scenario `<id>`; every step passes; the result is attached as `scenario-result.json` |
 | `control-attention-light` | `desk-basic` | Negative control, not a catalog scenario: expects attention that no task has, so it fails |
@@ -194,7 +194,7 @@ npm run -s test:chompi-bridge:scenarios -- --list
 npm run test:chompi-bridge:built          # includes the adapter contract, synthetic feed, flag and runner tests
 npm run test:chompi-bridge:scenarios      # Tier 1 catalog
 npm run test:chompi-bridge:verify:built   # boundary checks and every capture step through runCaptureStep
-npm run test:chompi-bridge:browser        # control page browser and accessibility check
+npm run test:chompi-bridge:browser        # control page browser check
 ```
 
 The last two need Playwright Chromium but no user manager. The App verification CI job runs both; the

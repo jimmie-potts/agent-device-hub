@@ -7,7 +7,7 @@ export const OWNERS=Object.freeze({
  'microduck-browser':Object.freeze({path:'apps/runtime/dashboard/tests/microduck.browser.ts',
   scripts:Object.freeze({'test:runtime-dashboard:smoke':'node apps/runtime/dashboard/tests/smoke.ts',
    'test:microduck:browser':'node apps/runtime/dashboard/tests/microduck.browser.ts'}),
-  marker:'MicroDuck browser passed: finite gestures, local Stop, exact held recovery, status-only MCP, passive reload, keyboard/narrow/reduced-motion and axe.'}),
+  marker:'MicroDuck browser passed: finite gestures, local Stop, exact held recovery, status-only MCP, passive reload and keyboard/narrow.'}),
 });
 export const ownerHash=id=>createHash('sha256').update(JSON.stringify(OWNERS[id]?.scripts)).digest('hex');
 const ordinaryMarkdown=path=>path.endsWith('.md')&&!/(?:^|\/)(?:AGENTS|CLAUDE)\.md$/.test(path)

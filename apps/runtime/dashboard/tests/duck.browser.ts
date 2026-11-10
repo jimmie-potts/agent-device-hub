@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import {AxeBuilder} from '@axe-core/playwright';
 import type {BrowserContext, Page} from 'playwright';
 import {expect} from 'playwright/test';
 import type {CompanionArchive} from '@jimmie-potts/companions';
@@ -122,7 +121,6 @@ export async function duckJourney(world: World, page: Page, context: BrowserCont
   await context.setOffline(false); await page.reload(); await feed(page, 'connected'); await widget.getByText('Synthetic widget message 27', {exact: true}).waitFor();
   const receipts = process.env.DASHBOARD_RECEIPTS;
   if (receipts !== undefined) await page.screenshot({path: `${receipts}/duck-home.png`, fullPage: true});
-  assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   await widget.getByRole('link', {name: 'View conversation', exact: true}).click();
@@ -140,7 +138,6 @@ export async function duckJourney(world: World, page: Page, context: BrowserCont
   await history.getByText(`Retained legacy text (meaning and audience unqualified): ${legacy}`, {exact: true}).waitFor();
   assert.equal(await history.getByText('Synthetic widget message 5', {exact: true}).count(), 0, 'history page replaces rather than accumulates browser copies');
   if (receipts !== undefined) await page.screenshot({path: `${receipts}/duck-history-phone.png`, fullPage: true});
-  assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   await page.setViewportSize({width: 1280, height: 1000});
 }

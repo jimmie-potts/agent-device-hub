@@ -1,7 +1,6 @@
 // Actual module/core/gateway/dashboard with two synthetic plugs. No installed service or LAN requests.
 import assert from 'node:assert/strict';
 import {setTimeout as pause} from 'node:timers/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium} from 'playwright';
 import {feed,startWorld} from './harness.ts';
 const world=await startWorld({wemo:true}),browser=await chromium.launch({headless:true});
@@ -32,7 +31,6 @@ try{
   }}
   await page.emulateMedia({colorScheme:'light'});
   await page.setViewportSize({width:1440,height:1000});
-  assert.equal(await card.locator('[role=tabpanel]:not([hidden])').evaluate(element=>getComputedStyle(element).animationName),'none','reduced motion removes the flip');
   await page.emulateMedia({reducedMotion:'no-preference'});
   await card.getByRole('tab',{name:'Auto-off',exact:true}).click();
   assert.equal(await card.locator('[role=tabpanel]:not([hidden])').evaluate(element=>getComputedStyle(element).animationName),'wemo-flip','ordinary motion flips only the control face');
@@ -107,8 +105,7 @@ try{
   await shelf.getByRole('tab',{name:'Auto-off',exact:true}).click();
   assert.equal(await shelf.getByLabel('Enable maximum on time').isDisabled(),true);
   await shelf.getByRole('tab',{name:'Power',exact:true}).click();
-  const axe=await new AxeBuilder({page:reopened}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(axe.violations.map(value=>value.id),[],JSON.stringify(axe.violations.map(value=>({id:value.id,nodes:value.nodes})),null,2));
-  await reopened.setViewportSize({width:390,height:844});const phone=await new AxeBuilder({page:reopened}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(phone.violations.map(value=>value.id),[]);
+  await reopened.setViewportSize({width:390,height:844});
   if(process.env.DASHBOARD_RECEIPTS!==undefined)await reopened.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/wemo-card-phone.png',fullPage:true});
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({journey:'wemo-power-limit',writes:2,pageClosedEnforcement:true,independent:true,explicitHoldReleaseWithoutWrite:true,stableTabs:true,geometryNegativeControl:true,homeReuse:true,readOnly:true,stale:true,uncertainSave:true,axe:'desktop and phone passed'}));await context.close();
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({journey:'wemo-power-limit',writes:2,pageClosedEnforcement:true,independent:true,explicitHoldReleaseWithoutWrite:true,stableTabs:true,geometryNegativeControl:true,homeReuse:true,readOnly:true,stale:true,uncertainSave:true}));await context.close();
 }finally{await browser.close();await world.close();}

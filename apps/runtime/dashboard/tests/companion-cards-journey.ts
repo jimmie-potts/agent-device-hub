@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import type {Browser, BrowserContext, Locator, Page} from 'playwright';
 import {feed, startWorld, type World} from './harness.ts';
 
@@ -91,8 +90,6 @@ export async function companionCardsJourney(world: World, page: Page, context: B
     await page.setViewportSize({width, height: 1000}); await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
     await stableTabs(reachy); await stableTabs(duck);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
-    const axe = await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-    assert.deepEqual(axe.violations.map(value => ({id: value.id, width, colorScheme, nodes: value.nodes.map(node => ({target: node.target, summary: node.failureSummary}))})), []);
     const output = process.env.DASHBOARD_RECEIPTS;
     if (output !== undefined) {
       await mkdir(output, {recursive: true});

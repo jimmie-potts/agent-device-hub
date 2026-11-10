@@ -1,5 +1,5 @@
-/* Browser harness for the shared device art: mounts NanoleafArt with the inputs a test supplies, so status,
-   activity and reduced motion can be exercised without a hub. Bundled by apps/dashboard/tests/art.mjs; not shipped. */
+/* Browser harness for the shared device art: mounts NanoleafArt with the inputs a test supplies, so status
+   and activity can be exercised without a hub. Bundled by apps/dashboard/tests/art.mjs; not shipped. */
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import {NanoleafArt, type NanoleafArtProps} from '../src/art/NanoleafArt';

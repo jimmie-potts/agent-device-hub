@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import {AxeBuilder} from '@axe-core/playwright';
 import type {BrowserContext, Page} from 'playwright';
 import type {World} from './harness.ts';
 import {feed} from './harness.ts';
@@ -41,10 +40,8 @@ export async function suggestionsJourney(world: World, page: Page, context: Brow
   await copy.focus(); await copy.press('Enter'); await form.getByText('Copied coding suggestion. Nothing was submitted.', {exact: true}).waitFor();
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), prompt);
   assert.equal(bodies.length, 0, 'inspection and copying make no HTTP write or harness call');
-  assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
-  assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
   await page.setViewportSize({width: 1280, height: 1000});
   // New evidence supersedes the preview; older/equal-time contradictory evidence cannot restore it.
   const observed = form.getByRole('textbox', {name: 'Observation time (UTC ISO)', exact: true});

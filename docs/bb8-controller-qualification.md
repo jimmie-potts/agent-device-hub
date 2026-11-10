@@ -389,7 +389,7 @@ before executable implementation. A separate `test:bb8-windows:native` check
 must remain explicitly passive by default, and any radio qualification must
 require named target/permission inputs. Required existing
 checks include build/type/lint, workflow, affected event/SDK/contract consumers,
-runtime both-transport scenario catalog, focused runtime-dashboard browser/axe
+runtime both-transport scenario catalog, focused runtime-dashboard browser
 checks and disposable independent Acceptance review. The existing command set to retain is `npm run build`, `npm run typecheck`,
 `npm run lint:js`, `npm run check:workflow`, `npm run test:workflow`,
 `npm run test:events`, `npm run test:events:python`, `npm run test:sdk`,
@@ -410,7 +410,7 @@ product. No passing product check is claimed here.
   one enrolled simulated robot, unavailable/uncertain device isolation, stale
   telemetry and retained consumer compatibility. Negative controls must expose
   missing target checks, incorrect MRSP success and replay.
-- Browser/axe: connection/wake effects clear, manual LED/status usable, tracked
+- Browser: connection/wake effects clear, manual LED/status usable, tracked
   accepted/completed/uncertain outcomes, readonly authority and unavailable motion;
   later pointer/focus/page loss, arming/aim validity and stop access during a fence.
 - Disposable Acceptance: installed source fixture only, synthetic target/state,

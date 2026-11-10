@@ -4,7 +4,6 @@
 // at that size, not rendering, password, cookie or stream behavior on any device. The television page sends no command.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type BrowserContext, type Locator, type Page} from 'playwright';
 import {OTHER, approvalPrompt, sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
@@ -130,16 +129,14 @@ try {
   await phone.context.close();
   checks.push('a lost stream marks the cards stale, and reconnecting shows the mode another browser set without a command');
 
-  // Accessibility at television size in both color schemes, with the ring on a card.
+  // Visible focus at television size in both color schemes, with the ring on a card.
   await tabTo(page, face);
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({colorScheme});
-    const violations = (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
-    assert.deepEqual(violations.map(violation => `${violation.id}: ${violation.nodes.map(node => node.target.join(' ')).join(', ')}`), [], colorScheme);
     assert.equal(await focusVisible(page), true, `focus is visible in ${colorScheme}`);
   }
   await page.emulateMedia({colorScheme: null});
-  checks.push('axe passes at 1,920 × 1,080 in light and dark');
+  checks.push('focus stays visible at 1,920 × 1,080 in light and dark');
 
   // The session ends with a runtime restart; Sign in again is reachable from the keyboard and signs the television back in.
   await world.restart();

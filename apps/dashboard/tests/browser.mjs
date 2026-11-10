@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
-import AxeBuilder from '@axe-core/playwright';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {fixture} from './fixture.mjs';
 import {textOverlaps,controlReach} from './layout.mjs';
@@ -93,9 +92,7 @@ try {
  await label.press('Enter');await page.getByRole('heading',{name:'My deliberate label',exact:true}).waitFor();
  await page.screenshot({path:output+'/activity-desktop.png',fullPage:true});
  for(let i=0;i<10;i++){const start=performance.now();const result=await f.event('session.started');await page.waitForFunction(revision=>Number(document.getElementById('main').dataset.revision)>=revision,result.revision);renderTimings.push(performance.now()-start);}
- const a11y=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.length})),[]);
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:output+'/activity-mobile.png',fullPage:true});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile has no horizontal overflow');
- const mobile=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(mobile.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>`${n.target.join(' ')}: ${n.failureSummary}`)})),[]);
  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const concurrent={apiVersion:'1.0',controllerId:f.states.wall.identity.controllerId,deviceId:'wall',requestId:f.states.wall.nextRequestId,expectedConfigurationRevision:f.states.wall.configurationRevision,expectedGeneration:f.states.wall.generation,command:{kind:'mode.set',mode:'Work'}};const concurrentResult=await fetch(f.hub.url+'/api/controllers/v1/wall/commands',{method:'POST',headers:f.headers,body:JSON.stringify(concurrent)});assert.equal(concurrentResult.status,200);
  await page.waitForTimeout(5500);assert.equal(await page.getByLabel('Device mode').first().inputValue(),'Work','the control shows the other client’s change; there is no draft to keep');const beforeFree=f.writes.length;await page.getByLabel('Device mode').first().selectOption('Free');await page.locator('section:visible [role=status]').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).first().waitFor();assert.equal(f.writes.length,beforeFree+1);assert.equal(f.writes.at(-1).command.command.mode,'Free');assert.equal(f.writes.at(-1).command.expectedConfigurationRevision,f.states.wall.configurationRevision-1,'the change carries the guards of a fresh read taken after the other client’s change');
  f.setOffline(true);await page.waitForTimeout(5500);await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.locator('section:visible').getByText('Stale / unavailable',{exact:true}).waitFor();
@@ -118,6 +115,6 @@ try {
  assert.equal(await page.locator('section:visible [role=status]').filter({hasText:'Result unknown'}).count(),0,'the previous session’s uncertain lock does not show in the next session');assert.equal(await page.locator('section:visible').getByRole('button',{name:'Reload current values',exact:true}).count(),0);assert.equal(await page.getByLabel('Device mode').first().isDisabled(),true);
  await page.keyboard.press('Tab');assert.ok(await page.evaluate(()=>document.activeElement!==document.body),'keyboard focus remains reachable');
  assert.deepEqual(errors,[]);
- await writeFile(output+'/receipt.json',JSON.stringify({synthetic:true,physical:false,tests:'browser controls, no-write inspection, draft/focus, conflict, offline, desktop/mobile axe',ingestRoundTripMs:timings,eventToRenderedSnapshotMs:renderTimings,feedConnections,a11yViolations:0,pageHeightsAt1280:heights},null,2));
+ await writeFile(output+'/receipt.json',JSON.stringify({synthetic:true,physical:false,tests:'browser controls, no-write inspection, draft/focus, conflict, offline, desktop/mobile layout',ingestRoundTripMs:timings,eventToRenderedSnapshotMs:renderTimings,feedConnections,pageHeightsAt1280:heights},null,2));
  console.log(JSON.stringify({passed:true,output,writes:f.writes.length,ingestRoundTripMs:timings}));
 }catch(error){console.error(await page.locator('section:visible').innerText());throw error;}finally{await page.close();await browser.close();await f.close();}

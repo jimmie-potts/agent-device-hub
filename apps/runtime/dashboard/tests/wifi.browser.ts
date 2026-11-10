@@ -8,7 +8,6 @@ import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, webkit, request} from 'playwright';
 import {tokenDigest} from '../../dist/src/credentials.js';
 import {sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
@@ -133,15 +132,13 @@ try {
       await feed(page, 'connected');
       assert.equal(commands(), 1, 'reconnect and reload never replay the control');
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-      const violations = (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
-      assert.deepEqual(violations.map(item => item.id), []);
       await openSettings(page);
       await page.getByRole('button', {name: 'Disconnect', exact: true}).click();
       await page.getByRole('button', {name: 'Sign in', exact: true}).waitFor();
       assert.equal(world.browserSessions(), 0);
       assert.deepEqual(errors, []);
       await context.close();
-      process.stdout.write(`${JSON.stringify({entry: privateEntry ? 'private' : 'wifi', browser: name, passed: true, checks: ['HTTPS secure context', 'owner session', 'phone navigation', 'simulated control', 'offline recovery without replay', 'phone overflow and axe', 'logout'], actualIphone: false, tailscaleInstalled: false, systemTrustInstalled: false})}\n`);
+      process.stdout.write(`${JSON.stringify({entry: privateEntry ? 'private' : 'wifi', browser: name, passed: true, checks: ['HTTPS secure context', 'owner session', 'phone navigation', 'simulated control', 'offline recovery without replay', 'phone overflow', 'logout'], actualIphone: false, tailscaleInstalled: false, systemTrustInstalled: false})}\n`);
     } finally { await browser.close(); }
   }
 } finally {

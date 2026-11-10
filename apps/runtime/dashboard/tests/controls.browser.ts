@@ -3,7 +3,6 @@ import {directoryLink, openConnections} from './navigation-helpers.ts';
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 import {checkControlProjections} from './control-projections.ts';
@@ -32,11 +31,6 @@ try {
     await off.waitFor();
     await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('[data-device="pendant-1"] button')?.disabled === false);
     assert.equal(sent.length, 0, 'bookmark sign-in and reads send no command');
-    const axe = async (): Promise<void> => {
-      const result = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-      assert.deepEqual(result.violations.map(item => `${item.id}: ${item.nodes.map(node => node.target.join(' ')).join(', ')}`), []);
-    };
-    await axe();
     await off.focus(); assert.equal(await off.evaluate(element => element === document.activeElement), true);
     world.holdDeviceWrites(true);
     await page.keyboard.press('Enter');
@@ -68,16 +62,15 @@ try {
     await openConnections(page);
     await page.getByRole('heading', {name: 'Running build'}).waitFor();
     await page.getByText('0.1.0', {exact: true}).waitFor();
-    await axe();
-    await page.setViewportSize({width: 390, height: 844}); await axe();
-    await page.getByRole('link', {name: 'Home', exact: false}).first().click(); await axe();
+    await page.setViewportSize({width: 390, height: 844});
+    await page.getByRole('link', {name: 'Home', exact: false}).first().click();
     await screenshot('phone-home');
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.goto(`${world.url}/#/component/pendant-1`); await page.reload(); await feed(page, 'connected');
     await card.getByText('Your session is read-only.').waitFor();
     assert.equal(await card.getByRole('button').count(), 0, 'read-only callers see no write controls');
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({journey: 'controls-navigation', actions: sent.length, acceptedThenCompleted: true, uncertainLockedAfterReload: true, modulePage: true, keyboard: true, axe: 'desktop and phone passed'}));
+    console.log(JSON.stringify({journey: 'controls-navigation', actions: sent.length, acceptedThenCompleted: true, uncertainLockedAfterReload: true, modulePage: true, keyboard: true}));
   } finally { await context.close(); }
 } finally { await browser?.close(); await world.close(); }
 

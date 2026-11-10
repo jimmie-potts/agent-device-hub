@@ -244,7 +244,7 @@ Implementation verification must cover typed actions and safe input, target
 selection, lifetime cancellation, refusal before write, ambiguity after write,
 duplicates, queue/expiry/storage failure, reconnect/restart without replay and
 credential exclusion across all durable surfaces. Use existing SDK/module test
-facilities, fake protocol services and disposable runtime/browser/accessibility
+facilities, fake protocol services and disposable runtime/browser
 checks. Then qualify the installed TypeScript client through the authenticated
 dashboard and a real MCP client, with a separately approved physical sequence.
 Keep every source, protocol, client and physical result distinct.

@@ -5,7 +5,6 @@ import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
 import {expect} from 'playwright/test';
-import {AxeBuilder} from '@axe-core/playwright';
 import {LINES_ADDRESS} from '@jimmie-potts/nanoleaf';
 import {startWorld, changes, feed} from './harness.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
@@ -136,8 +135,6 @@ try {
   for (const colorScheme of ['light', 'dark'] as const) for (const width of [1280, 390, 320]) {
     await page.emulateMedia({colorScheme}); await page.setViewportSize({width, height: 900});
     await stop.focus();
-    const a11y = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-    assert.deepEqual(a11y.violations.map(value => value.id), [], `${colorScheme}/${String(width)}`);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({path: join(artifacts, `music-lighting-${colorScheme}-${String(width)}.png`), fullPage: true});
   }

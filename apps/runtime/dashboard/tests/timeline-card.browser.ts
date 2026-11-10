@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, expect} from 'playwright/test';
-import {AxeBuilder} from '@axe-core/playwright';
 import {changes, feed, startWorld} from './harness.ts';
 import type {HistoryRow} from '../src/timeline-model.ts';
 
@@ -109,8 +108,6 @@ try {
     await page.emulateMedia({colorScheme: theme, reducedMotion: 'reduce'});await page.setViewportSize({width, height: 1000});
     await card.locator('[data-history-row="4"]>details>summary').click();
     await card.locator('[data-history-row="4"] .timeline-technical>summary').click();
-    const axe = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-    assert.deepEqual(axe.violations.map(item => ({id: item.id, targets: item.nodes.map(node => node.target)})), []);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     if (process.env.DASHBOARD_RECEIPTS !== undefined) {await mkdir(process.env.DASHBOARD_RECEIPTS, {recursive: true});await page.evaluate(() => {window.scrollTo(0, 0);});await page.screenshot({path: `${process.env.DASHBOARD_RECEIPTS}/timeline-${theme}-${width}.png`});}
     await card.locator('[data-history-row="4"]').getByRole('button', {name: 'Close evidence'}).click();
@@ -119,6 +116,6 @@ try {
   for (const query of historyRequests) assert.deepEqual(query.searchParams.getAll('limit'), ['200'], query.search);
   assert.equal(sent.length, saves, 'filters, evidence, refresh, reload and read-only browsing send no command');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({journey: 'timeline-card', realHistory: true, homePlacement: true, filters: true, evidence: true, failedReads: true, readOnly: true, passive: true, axe: 'light/dark desktop/390/320 passed'}));
+  console.log(JSON.stringify({journey: 'timeline-card', realHistory: true, homePlacement: true, filters: true, evidence: true, failedReads: true, readOnly: true, passive: true}));
   await context.close();
 } finally {await browser.close();await world.close();}

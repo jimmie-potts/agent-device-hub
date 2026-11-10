@@ -71,7 +71,7 @@ Use Node 24 from the repository root. Run `npm run test:wemo`,
 and the runtime scenarios. Tests use loopback SOAP or synthetic plugs. The
 `wemo-power-limit` scenario exercises the production module, core, gateway and
 SDK state across restart; browser checks include page-closed enforcement and
-independent plugs, with desktop/phone accessibility.
+independent plugs, with desktop/phone layout.
 
 For a complete diff confined to modifications of
 `modules/wemo/tests/module.test.ts` and ordinary Markdown, the standalone-test

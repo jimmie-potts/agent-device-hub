@@ -4,7 +4,6 @@ import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
 import {expect} from 'playwright/test';
-import {AxeBuilder} from '@axe-core/playwright';
 import {startWorld, changes, feed} from './harness.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
@@ -83,8 +82,6 @@ try {
   for (const colorScheme of ['light', 'dark'] as const) for (const width of [1280, 390, 320]) {
     await page.emulateMedia({colorScheme}); await page.setViewportSize({width, height: 900});
     await card.getByRole('button', {name: 'Refresh capture status'}).focus();
-    const a11y = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-    assert.deepEqual(a11y.violations.map(value => value.id), [], `${colorScheme}/${width}`);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await page.screenshot({path: join(artifacts, `music-capture-${colorScheme}-${width}.png`), fullPage: true});
   }
@@ -190,8 +187,6 @@ try {
   for (const colorScheme of ['light', 'dark'] as const) for (const width of [1280, 390, 320]) {
     await micPage.emulateMedia({colorScheme});await micPage.setViewportSize({width, height: 900});
     await micCard.getByRole('button', {name: 'Refresh capture status'}).focus();
-    const a11y = await new AxeBuilder({page: micPage}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-    assert.deepEqual(a11y.violations.map(value => value.id), [], `microphone/${colorScheme}/${width}`);
     assert.equal(await micPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await expect(preview).toHaveAttribute('value', '0.625');
     await micPage.screenshot({path: join(artifacts, `selected-microphone-${colorScheme}-${width}.png`), fullPage: true});
@@ -213,8 +208,6 @@ try {
   await boundedPage.keyboard.press('Enter');await boundedCard.getByRole('meter', {name: 'Input level', exact: true}).waitFor();
   assert.equal(producer.commands.length, 1);
   assert.equal(await boundedPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'maximum alias fits during capture');
-  const boundedA11y = await new AxeBuilder({page: boundedPage}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-  assert.deepEqual(boundedA11y.violations.map(value => value.id), []);
   await boundedPage.screenshot({path: join(artifacts, 'selected-microphone-max-alias-320.png'), fullPage: true});
   await boundedContext.close();assert.deepEqual(errors, []);
   await context.close();

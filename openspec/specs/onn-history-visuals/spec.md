@@ -55,7 +55,7 @@ as a retained read, and never relabelled as a successful current query.
 - **WHEN** a read fails, a delayed earlier query returns after a new query, or the browser reconnects
 - **THEN** the view keeps the failed/stale context truthful, discards superseded replies, and obtains current owner evidence without a device command
 
-### Requirement: Accessible private read-only interactions
+### Requirement: Private read-only interactions
 
 The history interface SHALL work with keyboard navigation and phone/desktop
 layouts without horizontal overflow. Labels, status, empty and error states SHALL
@@ -65,9 +65,9 @@ browser persistence. History navigation, filtering, paging and refresh SHALL
 send no device control or model call, including for a read-only session. Existing
 controls SHALL keep their authority, freshness, tracking and no-replay behavior.
 
-#### Scenario: Accessible browsing without effects
+#### Scenario: Browsing without effects
 - **WHEN** a read-only synthetic user browses empty/long/unsupported history by keyboard on phone and desktop
-- **THEN** accessible names/statuses and content remain usable, automatic accessibility checks pass, and the device effect count remains unchanged
+- **THEN** names/statuses and content remain usable and the device effect count remains unchanged
 
 #### Scenario: Shared executable acceptance
 - **WHEN** CI and independent disposable Acceptance run the registered ONN history journey
@@ -75,7 +75,7 @@ controls SHALL keep their authority, freshness, tracking and no-replay behavior.
 
 ### Requirement: ONN hibernation governs active availability
 
-The system SHALL keep ONN dormant until a new owner decision and restored verification. Hibernation SHALL override the active ONN behavior described by this capability. It SHALL expose no ONN controls, observations, title-history pages, MCP tools or runtime registration. Dedicated ONN default checks SHALL be dormant. Retained source, private history, stored-command privacy and backup/upgrade compatibility SHALL remain intact without data migration or deletion. Shared dashboard authentication, keyboard accessibility and reconnect checks SHALL remain active.
+The system SHALL keep ONN dormant until a new owner decision and restored verification. Hibernation SHALL override the active ONN behavior described by this capability. It SHALL expose no ONN controls, observations, title-history pages, MCP tools or runtime registration. Dedicated ONN default checks SHALL be dormant. Retained source, private history, stored-command privacy and backup/upgrade compatibility SHALL remain intact without data migration or deletion. Shared dashboard authentication, keyboard and reconnect checks SHALL remain active.
 
 #### Scenario: Start and browse after hibernation
 - **WHEN** a hibernated release starts or a client opens a saved ONN page

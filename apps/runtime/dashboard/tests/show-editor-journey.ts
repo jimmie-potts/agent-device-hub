@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
 import type {Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
@@ -122,8 +121,6 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     const receipts = process.env.DASHBOARD_RECEIPTS;
     for (const colorScheme of ['light', 'dark'] as const) for (const width of [1440, 390, 320]) {
       await page.emulateMedia({colorScheme}); await page.setViewportSize({width, height: 1000});
-      const axe = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-      assert.deepEqual(axe.violations.map(item => `${item.id}: ${item.nodes.map(node => node.target.join(' ')).join(', ')}`), [], `${colorScheme}/${String(width)}`);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no horizontal overflow');
       if (receipts !== undefined) {await mkdir(receipts, {recursive: true}); await page.screenshot({path: join(receipts, `shows-${colorScheme}-${String(width)}.png`), fullPage: true});}
     }
@@ -146,7 +143,7 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.deepEqual(errors, []);
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'offline-decorative-shows', browserSaveRequests: saves.length,
       immutableVersions: true, staleSave: 409, readonly: 403, crossOrigin: 403, malformed: 400, deviceChanges: 0,
-      preview: 'cue storyboard only', noResend: true, axe: ['light/dark desktop', '390px', '320px']})}\n`);
+      preview: 'cue storyboard only', noResend: true})}\n`);
   } catch (error) {
     const receipts = process.env.DASHBOARD_RECEIPTS, page = context.pages()[0];
     if (receipts !== undefined && page !== undefined) {

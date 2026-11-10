@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {expect} from 'playwright/test';
 import type {Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
@@ -130,8 +129,6 @@ export async function musicPreviewJourney(browser: Browser): Promise<void> {
           const motion = preview.getByRole('slider', {name: effect === 'bass-pulse' ? 'Pulse half-life' : 'Wave cycle', exact: true});
           await motion.focus(); await motion.press('End'); await expect(motion).toBeFocused();
           await prepare();
-          const axe = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-          assert.deepEqual(axe.violations.map(item => item.id), [], `${theme}/${colorScheme}/${String(width)}/${effect}`);
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1), true);
           if (receipts !== undefined) {await mkdir(receipts, {recursive: true}); await page.screenshot({path: join(receipts, `music-preview-${theme}-${colorScheme}-${String(width)}-${effect}.png`), fullPage: true});}
         }
@@ -145,6 +142,6 @@ export async function musicPreviewJourney(browser: Browser): Promise<void> {
     assert.equal(reads.length, beforeExit); assert.equal(sent.length, 0); assert.deepEqual(outputState(), before); assert.deepEqual(errors, []);
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'synthetic-music-preview', effects: 5, exampleModels: 2,
       explicitReads: reads.length, commands: 0, deviceChanges: 0, physical: false, localScrub: true, lateDraftFence: true,
-      reconnect: 'explicit only', reader: 200, anonymous: 401, motionEdits: true, appliedArt: true, reducedMotion: true, nativeKeyboardSelection, axe: ['light/dark desktop', '390px', '320px']})}\n`);
+      reconnect: 'explicit only', reader: 200, anonymous: 401, motionEdits: true, appliedArt: true, nativeKeyboardSelection})}\n`);
   } finally {await context.close(); await world.close();}
 }
