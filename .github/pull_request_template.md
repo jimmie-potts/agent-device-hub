@@ -36,7 +36,8 @@ main CI before issue closure. Record installation and verified runtime identity/
 for the established target, or the applicable instruction/tool readback or reason
 no runtime installation applies. A source-only exception identifies its reason
 and linked installation owner; overall delivery remains installation pending.
-For an installed change only, add one line naming its risk and the way back.
+For a change that installation applies to, including installation pending, add
+one line naming its risk and the way back.
 
 ## Work guide, when intentionally updated or published
 

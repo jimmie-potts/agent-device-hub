@@ -299,13 +299,17 @@ not a source-delivery blocker. See [Project maintenance](project-maintenance.md)
    Fix P0–P2 and correctness/test-coverage P3 findings; disposition other P3s.
    A finding in code the change did not touch does not block it unless the
    change makes that defect reachable or worse; record it with an owner and
-   follow-up, as `AGENTS.md` does for unrelated failures. A change stops after
-   three final review rounds: the coordinator reports the open findings and
-   proposes a changed approach instead of a fourth fix round.
+   follow-up, as `AGENTS.md` does for unrelated failures.
    The same reviewer may perform the disposable acceptance exercise below.
    Re-review changed behavior and affected assumptions, not unchanged evidence.
    A pure rebase or prose correction needs one confirmation of the delta and new
    comparison. Never carry a verdict over a change that invalidates its evidence.
+   Count final review rounds that assess a new or corrected candidate; a
+   confirmation of a base move, pure rebase or prose correction does not count.
+   If the third counted round leaves a P0–P2 finding open, stop fixing: the
+   coordinator reports the open findings and proposes a changed approach to the
+   owner, and the merge stays blocked until the owner chooses. Independent
+   authorized work continues. A new PR for the same issue gets no fresh rounds.
    Reviewers make no GitHub/source writes. They read the shared candidate or build
    and test in their own disposable clone and clean it up; they do not build in
    the coordinator's worktree.
@@ -316,9 +320,16 @@ not a source-delivery blocker. See [Project maintenance](project-maintenance.md)
    resolve conflicts and renew evidence invalidated by integration. No extra report
    format or duplicated receipt dossier is required; a PR review summary with
    comparison, verdicts and links to existing evidence is sufficient.
-   A change to `.github/workflows`, branch protection or gate policy also needs
-   the owner's acknowledgement, a comment or approval from the owner on the PR,
-   before merge. The focused second review areas in step 3 gain no human gate.
+   A **gate-policy change** touches `.github/workflows/**`, branch protection
+   settings, `scripts/ci-selection/**`, `scripts/delivery-preflight/**`, or the
+   "Review and merge", "CI evidence", "Markdown-only CI routing" or "Affected PR
+   checks" sections of this file. It also needs the owner's acknowledgement
+   before merge: the owner's own words, on the PR or in chat to the coordinating
+   session. The coordinator records a chat acknowledgement on the PR, quoted with
+   its time. No agent originates one or infers it from silence, an earlier
+   approval or another session's report. Other edits to `AGENTS.md`, this file or
+   `docs/development.md` do not need it, and the focused second review areas in
+   step 3 gain no human gate.
 5. Recheck scope, base and head, then squash the reviewed head with
    `gh pr merge <number> --repo jimmie-potts/agent-device-hub --squash --match-head-commit <head> --body "Refs #<issue>"`
    or the API equivalent with an expected-head guard. Never use `--admin`.
@@ -733,9 +744,10 @@ Selected jobs must succeed on the exact candidate. An unselected job must report
 must succeed. Missing results, failed selection, unexpected skips, cancellation
 or wrong revisions block admission. Hosted focused notices bind both core groups
 and omitted jobs. The preflight checks that published coverage covers its own.
-Policy changes pass the conservative gate, independent review and the owner's
-acknowledgement in [Review and merge](#review-and-merge) before they activate;
-a candidate cannot waive its own missing evidence.
+Policy changes pass the conservative gate and independent review before they
+activate, plus the owner's acknowledgement for a gate-policy change as defined
+in [Review and merge](#review-and-merge); a candidate cannot waive its own
+missing evidence.
 
 ### Integration, qualification and deployment
 
