@@ -743,8 +743,9 @@ Admission-policy changes retain full coverage before their new rules activate.
 Use one worktree per task. Own its build outputs, container identity, writable
 state, ports, synthetic credentials, browser context and client configuration.
 Research may read shared source and caches. Runtime/test/browser runs must use
-their own mutable resources. Independent work needs no installation handoff and
-has no default concurrency cap. Stop only exact owned runs. Managed verification
+their own mutable resources. Independent work needs no installation handoff; on
+the Mac its test jobs share the slots in [Test work on the Mac](#test-work-on-the-mac).
+Stop only exact owned runs. Managed verification
 retains its two-hour lease; finite container checks retain their declared deadline
 and interruption/cleanup limits. See [runtime verification](#runtime-verification-runs)
 and [portable acceptance](../apps/runtime/verify/PORTABLE.md).
@@ -784,6 +785,46 @@ the selected live operation. Its verified private record supplies completion and
 writer release; feature tasks reuse the public sanitized result without asking
 for another acknowledgment. Device permission and each issue's own acceptance
 remain separate.
+
+### Test work on the Mac
+
+The Mac's Docker Desktop VM also runs the installed core, the diagnostics stack
+and the Tronbyt server. Test work shares that host, and host load sets how much
+can run. Each session applies this rule itself; no coordinator grant is needed.
+
+1. **Slots.** At most 5 test jobs run at once, across all sessions. A job is
+   one test container (`bunny-gh*` or `bunny-runtime-check-*`) or one native
+   test suite. An `npm run test:runtime:container` run carries its own limits
+   and is one slot ([Runtime verification runs](#runtime-verification-runs)).
+2. **Start check.** Read `uptime` and count the jobs:
+   `docker ps --format '{{.Names}}' | grep -E '^bunny-(gh|runtime-check-)'`
+   plus native suites (`pgrep -fl -- '[n]ode --test|[p]laywright test'` lists
+   them; count one per suite, not per process).
+   Start only if the 1-minute load is under 8 and enough slots are free.
+   Otherwise wait a minute and check again.
+3. **Containers.** Use
+   `docker run --rm --name bunny-gh<issue>-<job> --cpus 2 --memory 1250m --memory-swap 1250m`.
+   Run one job per container and let it exit when the job ends. No
+   `sleep infinity` holders, no container without limits, and no swap:
+   `--memory-swap` always equals `--memory`. The SDK suite is flaky at 2 CPUs,
+   so run it with `--cpus 4 --memory 2g --memory-swap 2g` and count it as two
+   slots.
+4. **Lint** runs natively only, one at a time, with default settings. It needs
+   more than 3.5 GB of heap and crashes under container limits.
+5. **Host work.** Build, typecheck, lint and `npm ci` on the host take no slot.
+   A native suite takes one slot and bounds its workers, for example
+   `node --test --test-concurrency=2 <files>`.
+6. **Evidence.** A native macOS run of build, typecheck, lint, the Node suites,
+   the scenario catalog and the browser journeys is accepted local validation
+   before a push. Hosted Linux CI is the gate. Use a Linux container only for a
+   Linux-only test or to reproduce a hosted failure.
+7. **Stop.** If the 1-minute load passes 12, or the installed core is not
+   `healthy` (`docker inspect -f '{{.State.Health.Status}}' bunny-mac-personal-core-1`),
+   the owner of the newest job stops it.
+
+Test work never stops, restarts or reconfigures the installed core, the
+diagnostics containers or the Tronbyt server. Stop and remove only your own
+jobs; never touch another session's containers.
 
 ### Old system checks
 

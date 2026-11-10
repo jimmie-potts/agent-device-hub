@@ -531,7 +531,8 @@ cover the affected behavior, their results and any skips or evidence limits.
 Required checks must pass. The [Acceptance review policy](../../docs/sdlc.md#acceptance-review)
 still requires an independent reviewer. Independent tasks may run simulated
 runtimes concurrently, each from its own worktree and build outputs, with
-separate ports, credentials and state. There is no default run-count limit.
+separate ports, credentials and state. The launchers set no run-count limit;
+on the Mac, test jobs follow [Test work on the Mac](../../docs/development.md#test-work-on-the-mac).
 All runs keep the existing leases, synthetic data, simulated devices and an
 outside-checkout `TMPDIR`; they grant no installed-system or physical-device
 authority. Reset and stop only owned runs.
