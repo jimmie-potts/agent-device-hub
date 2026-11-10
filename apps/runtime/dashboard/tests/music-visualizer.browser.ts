@@ -20,12 +20,14 @@ const canvasImage = (canvas: Locator): Promise<string> => canvas.evaluate(node =
 let clockRetries = 0;
 /**
  * Waits for a surface on a freshly loaded page to go live. Under a loaded runner the page's capture sync can miss the
- * capture clock's round-trip bound (#1580); the surface then rests with exactly that reason, and a reload syncs again.
- * Any other resting reason fails at once. In-page navigation never uses this: it must go live on the same page load.
+ * capture clock's round-trip bound (#1580). The feed then rechecks on its own (#1629), so the wait covers its whole
+ * recheck budget; only once the budget is spent and the surface rests with "Measurement timing is unavailable." does a
+ * reload sync again. Any other resting reason fails at once. In-page navigation never uses this: it must go live on the
+ * same page load.
  */
 async function liveAfterLoad(page: Page, canvas: Locator): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {await expect(canvas).toHaveAttribute('data-visualizer-state', 'live', {timeout: 5000}); return;} catch {/* Check the reason below. */}
+    try {await expect(canvas).toHaveAttribute('data-visualizer-state', 'live', {timeout: 12_000}); return;} catch {/* Check the reason below. */}
     const label = await canvas.getAttribute('aria-label') ?? '';
     assert.match(label, /Resting: Measurement timing is unavailable\.$/, `only the capture clock bound may be retried: ${label}`);
     clockRetries += 1; await page.reload(); await feed(page, 'connected');

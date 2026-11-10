@@ -302,12 +302,15 @@ connection, which never runs more than one capture sync at a time, so a sync's
 clock check is not slowed by a concurrent one. Moving between Audio, the full view and Home within the page
 hands the synced scope to the next surface without a new sync. A scope the
 connection has already closed is replaced, and a surface that mounts later
-resyncs an unsynced view unless a sync is in flight.
-It sends no command, starts no capture and controls no lights.
+resyncs an unsynced view unless a sync or the feed's own clock recheck is in
+flight. That recheck runs once per shared scope, so a visualizer-only page, such
+as the full view or Home, recovers from a first sync that misses the clock bound
+without a reload. It sends no command, starts no capture and controls no lights.
 Effects draw on a canvas at the display's frame rate and ease toward the newest
 feature window without replaying skipped ones. When measurement is off, idle,
-starting, stale, stopping, uncertain or without fresh windows, the canvas shows a
-still resting scene and the panel says why.
+starting, stale, stopping, uncertain or without fresh windows, or while the
+clock is being checked again, the canvas shows a still resting scene and the
+panel says why.
 
 The first effects are **Spectrum bars** and **Bass pulse**. Each is one entry in
 `visualizerEffects` (`src/music-visualizer-effects.ts`); a new effect is appended

@@ -41,7 +41,8 @@ export function restingReason(view: MusicCaptureView, live: boolean): string | u
     case 'stopping': return 'Measurement is stopping.';
     case 'uncertain': return 'Measurement state is uncertain.';
     case 'unavailable': return 'Measurement is unavailable.';
-    case 'active': return view.features !== undefined ? undefined : view.clockQualified ? 'Waiting for fresh measurements.' : 'Measurement timing is unavailable.';
+    case 'active': return view.features !== undefined ? undefined : view.clockQualified ? 'Waiting for fresh measurements.'
+      : view.rechecking ? 'Checking measurement timing again.' : 'Measurement timing is unavailable.';
   }
 }
 

@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {CaptureFeatures, CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture-data';
-import {CaptureProjection, type MusicCaptureView} from '../src/music-capture-feed.ts';
+import type {Scheduler, SyncHandler, SyncOptions, SyncResult} from '@jimmie-potts/sdk/remote';
+import {CaptureProjection, MusicCaptureFeed, type MusicCaptureView} from '../src/music-capture-feed.ts';
 import {FeatureInterpolator, VisualizerEngine, restingReason, visualizerSignal, type Shape, type VisualizerEffect, type VisualizerSignal} from '../src/music-visualizer-model.ts';
 import {bassPulse, effectById, spectrumBars, visualizerEffects} from '../src/music-visualizer-effects.ts';
 import {EFFECT_CHOICE_KEY, EffectChoiceStore} from '../src/music-visualizer-preference.ts';
@@ -177,6 +178,7 @@ void test('each resting reason says why measurement is not shown', () => {
     [{...base, state: state('unavailable')}, true, 'Measurement is unavailable.'],
     [base, true, 'Waiting for fresh measurements.'],
     [{...base, clockQualified: false}, true, 'Measurement timing is unavailable.'],
+    [{...base, clockQualified: false, rechecking: true}, true, 'Checking measurement timing again.'],
   ];
   for (const [view, live, reason] of cases) assert.equal(restingReason(view, live), reason, reason);
 });
@@ -225,7 +227,7 @@ void test('surfaces on one page share one capture scope, so the page makes one c
   const opened: {refreshed: number; closed: number}[] = [];
   const connection = {openMusicCapture: () => {
     const record = {refreshed: 0, closed: 0}; opened.push(record);
-    return {closed: false, getSnapshot: () => ({synced: true}),
+    return {closed: false, getSnapshot: () => ({synced: true, rechecking: false}),
       refresh: () => {record.refreshed += 1; return Promise.resolve(true);}, close: () => {record.closed += 1; return Promise.resolve();}};
   }};
   const first = acquireMusicCapture(connection), second = acquireMusicCapture(connection);
@@ -241,11 +243,11 @@ void test('surfaces on one page share one capture scope, so the page makes one c
 
 /** A controllable fake scope: its sync stays pending until `finish`, and the connection may close it itself. */
 function fakeScopes() {
-  const scopes: {closed: boolean; synced: boolean; refreshed: number; closes: number; finish: () => void}[] = [];
+  const scopes: {closed: boolean; synced: boolean; rechecking: boolean; refreshed: number; closes: number; finish: () => void}[] = [];
   const connection = {openMusicCapture: () => {
     let finish = (): void => {};
-    const scope = {closed: false, synced: false, refreshed: 0, closes: 0, finish: () => {finish();},
-      getSnapshot: () => ({synced: scope.synced}),
+    const scope = {closed: false, synced: false, rechecking: false, refreshed: 0, closes: 0, finish: () => {finish();},
+      getSnapshot: () => ({synced: scope.synced, rechecking: scope.rechecking}),
       refresh: () => {scope.refreshed += 1; return new Promise<boolean>(resolve => {finish = () => {scope.synced = true; resolve(true);};});},
       close: () => {scope.closes += 1; scope.closed = true; return Promise.resolve();}};
     scopes.push(scope); return scope;
@@ -284,6 +286,66 @@ void test('a later surface resyncs an unsynced shared view, but never beside a s
   first.synced = false; // Invalidated, for example by a dropped stream.
   acquireMusicCapture(connection); assert.equal(first.refreshed, 2, 'a later surface refreshes an unsynced view');
   assert.equal(scopes.length, 1);
+});
+
+void test('a later surface never refreshes beside the feed\'s own clock recheck', async () => {
+  const {connection} = fakeScopes();
+  const first = acquireMusicCapture(connection); assert.ok(first !== undefined);
+  first.finish(); await Promise.resolve(); await Promise.resolve();
+  first.synced = false; first.rechecking = true; // A recheck is pending or reading (#1629).
+  acquireMusicCapture(connection); assert.equal(first.refreshed, 1, 'the recheck owns the next sync');
+});
+
+/** A real MusicCaptureFeed over a fake participant whose syncs take the given round trips, on a hand-run scheduler. */
+function sharedFeed(rounds: readonly number[]) {
+  let mono = 1000, syncs = 0;
+  const pending = new Set<{at: number; delay: number; callback: () => void}>();
+  const scheduler: Scheduler = {after: (delay, callback) => {const entry = {at: mono + delay, delay, callback}; pending.add(entry); return () => {pending.delete(entry);};}};
+  const stateMessage = (): Message<CaptureState> => ({...frame(1), kind: 'state', type: 'org.bunny.music-capture.updated', source: 'bunny/core',
+    subject: 'music', dataschema: 'https://bunny.invalid/events/music-capture-state/2.0', data: state()});
+  const participant = {
+    subscribe: () => Promise.resolve({close: () => Promise.resolve()}),
+    sync: async (_families: readonly string[], handler: SyncHandler<CaptureState>, _options: SyncOptions): Promise<SyncResult<CaptureState>> => {
+      const round = rounds[syncs] ?? 10; syncs += 1; const id = `sync-${String(syncs)}`, source = stateMessage();
+      const reply: Extract<SyncResult<CaptureState>, {status: 'synced'}> = {status: 'synced', copy: {states: () => [source], get: () => source, close: () => Promise.resolve()},
+        message: {...source, id, kind: 'sync-completed', time: new Date(101005).toISOString(), data: {requestId: id, revision: 1, members: []}}};
+      mono += round;
+      await handler({type: 'updated', entity: {family: 'music-capture-state', id: 'music'}, message: source});
+      await handler({type: 'synced', message: reply.message}); return reply;
+    },
+  };
+  let opened = 0;
+  const connection = {openMusicCapture: () => {opened += 1;
+    return new MusicCaptureFeed({participant: participant as unknown as ConstructorParameters<typeof MusicCaptureFeed>[0]['participant'], now: () => now(mono), scheduler});}};
+  const flush = async (): Promise<void> => {await new Promise(resolve => {setImmediate(resolve);});};
+  return {connection, flush, syncs: () => syncs, opened: () => opened, delays: () => [...pending].map(entry => entry.delay),
+    async fire(): Promise<void> {const next = [...pending].sort((a, b) => a.at - b.at)[0]; assert.ok(next !== undefined); pending.delete(next); mono = next.at; next.callback(); await flush();}};
+}
+
+void test('the shared scope runs one clock recheck for all surfaces, and a visualizer-only page recovers without a reload', async () => {
+  const shared = sharedFeed([200, 10]);
+  const fullView = acquireMusicCapture(shared.connection), homeCard = acquireMusicCapture(shared.connection);
+  assert.ok(fullView !== undefined); assert.equal(fullView, homeCard);
+  await shared.flush();
+  assert.equal(shared.syncs(), 1, 'one sync for both surfaces');
+  assert.equal(fullView.getSnapshot().clockQualified, false); assert.deepEqual(shared.delays(), [250], 'one recheck for the shared scope, not one per surface');
+  assert.equal(restingReason(fullView.getSnapshot(), true), 'Checking measurement timing again.');
+  assert.equal(acquireMusicCapture(shared.connection), fullView); await shared.flush();
+  assert.equal(shared.syncs(), 1, 'a surface mounting meanwhile starts no sync beside the recheck'); assert.deepEqual(shared.delays(), [250]);
+  await shared.fire();
+  assert.equal(shared.syncs(), 2); assert.equal(fullView.getSnapshot().clockQualified, true);
+  assert.equal(restingReason(fullView.getSnapshot(), true), 'Waiting for fresh measurements.', 'the page recovers on its own, with no reload');
+  await fullView.close();
+});
+
+void test('closing the shared scope leaves no clock recheck behind', async () => {
+  const shared = sharedFeed([200]);
+  const scope = acquireMusicCapture(shared.connection); assert.ok(scope !== undefined);
+  await shared.flush(); assert.deepEqual(shared.delays(), [250]);
+  releaseMusicCapture(shared.connection, scope); assert.deepEqual(shared.delays(), [250], 'the scope stays open until the page settles');
+  await new Promise(resolve => {setTimeout(resolve, 0);});
+  assert.equal(scope.closed, true); assert.deepEqual(shared.delays(), [], 'the pending recheck is cancelled with the scope');
+  assert.notEqual(acquireMusicCapture(shared.connection), scope); assert.equal(shared.opened(), 2);
 });
 
 void test('the full view has its own address under Audio', () => {
