@@ -1,5 +1,5 @@
 // The Nanoleaf runtime module (Hub #844; ADR 0012): the port of codex-nanoleaf (Hub #26) as one of the runtime's shipped
-// modules. `createNanoleafModule({transport})` takes how the module reaches its controllers, as every module factory does
+// modules. `createNanoleafModule({transport, datagram})` takes how the module reaches its controllers, as every module factory does
 // (#846): the Nanoleaf HTTP client (`lightRequest`), or a simulated controller in tests and disposable runs. The devices'
 // addresses and tokens come through the module's configuration and secrets (#919), never through the factory.
 import {deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
@@ -11,9 +11,6 @@ import {LINES_ADDRESS, SimulatedNanoleaf} from './simulated.js';
 import {configureNanoleaf, type NanoleafConfig} from './config.js';
 import {NanoleafRuntime} from './runtime.js';
 import {nanoleafSchemas} from './schemas.js';
-
-/** A module given no datagram transport cannot stream: a live session's first frame fails. */
-const noDatagram: LightDatagram = () => Promise.reject(new Error('No streaming transport.'));
 
 export {configureNanoleaf, registryFile, MAX_DEVICES, type DeviceSection, type NanoleafConfig} from './config.js';
 export {CONSUMER, CORE_OWNER, envelopeOf, SessionFeed, sharedConfig, sharedSession, type Projected} from './feed.js';
@@ -43,11 +40,8 @@ export const SIMULATED_SECTION = Object.freeze({
 export type NanoleafModuleOptions = {
   /** How the module reaches each controller: `lightRequest` for real devices, or a simulated controller's `request`. */
   transport: LightRequest;
-  /**
-   * How the module sends live Music frame datagrams (#1598): `lightDatagram` for real devices, or a simulated controller's
-   * `datagram`. Without it, a live session's first frame fails and the session ends as a device failure.
-   */
-  datagram?: LightDatagram;
+  /** How the module sends live Music frame datagrams (#1598): `lightDatagram` for real devices, or a simulated controller's `datagram`. */
+  datagram: LightDatagram;
 };
 
 /**
@@ -60,7 +54,7 @@ export const nanoleafMessageSchemas: Readonly<Record<string, object>> = {
 };
 
 /** The Nanoleaf module with the given controller transport. */
-export function createNanoleafModule({transport, datagram = noDatagram}: NanoleafModuleOptions): BunnyModule<NanoleafConfig> {
+export function createNanoleafModule({transport, datagram}: NanoleafModuleOptions): BunnyModule<NanoleafConfig> {
   let running: NanoleafRuntime | undefined;
   return {
     manifest: {

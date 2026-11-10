@@ -275,6 +275,28 @@ test('#1598: an app scene the light serves while one of the session\'s requests 
   }
 });
 
+for (const change of ['stop', 'moment', 'alert'] as const) {
+  test(`a${change === 'alert' ? 'n' : ''} ${change} admitted during the streaming entry stops the first frame`, async () => {
+    const world = open();
+    try {
+      let raised = false;
+      world.onWrite = (_endpoint, payload) => {
+        if (raised || (payload as {write?: {animType?: unknown}}).write?.animType !== 'extControl') return;
+        raised = true;
+        if (change === 'alert') world.alert = true;
+        else if (change === 'stop') transaction(world.db, () => admitMusicStop(world.db, 'wall', {kind: 'music.stop', requestId: 'stop', generation: GENERATION}, world.now, world.now + 5000));
+        else world.db.prepare("INSERT INTO control_journal(id,device,kind,command,mode_revision,phase,accepted,expires) VALUES('moment','wall','moment.play','{}',0,'queued',1,99999999999)").run();
+      };
+      await run(world, () => {});
+      assert.ok(raised);
+      assert.equal(frameWrites(world).length, 0, 'no frame follows a change admitted during the entry');
+      assert.deepEqual(ended(world), {reason: change === 'stop' ? 'stopped' : change === 'alert' ? 'alert' : 'manual', restoration: change === 'moment' ? 'none' : 'restored'});
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
 test('a playing session streams every frame and reads the light only for the once-per-second check (#1598)', async () => {
   const world = open();
   try {

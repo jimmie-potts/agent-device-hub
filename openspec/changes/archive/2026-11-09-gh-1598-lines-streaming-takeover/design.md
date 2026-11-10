@@ -26,9 +26,9 @@ The module already reads the Lines' zone IDs from the controller's reported `pan
 
 ### D1. Entry is the Start's journaled write
 
-After the existing base checks (the light still shows the named Free base, read just before), the Start's `Execution` sends `PUT /effects {"write": {"command": "display", "animType": "extControl", "extControlVersion": "v2"}}`.
+After the existing base checks (the light still shows the named Free base, read just before), the Start's `Execution` sends `PUT /effects {"write": {"command": "display", "animType": "extControl", "extControlVersion": "v2", "logicalPanelsEnabled": true}}`. The flag matches every Lines display write, which addresses the same logical zone IDs.
 - A lost answer keeps today's uncertain outcome and hold. An answered refusal fails the Start as a device ending.
-- Once it is answered, the session sends its first datagram, marks the device playing and finishes the Start as `sent`.
+- Once it is answered, the session marks the device playing and finishes the Start as `sent`. The first datagram then waits behind the playing loop's ending checks, like every later frame, so a Stop, newer choice, alert or source loss admitted during the entry write ends the session before any frame.
 
 The short gap between the base read and this write remains, once per session; that is the only place an app pick can be painted over. *Alternative:* keep the first frame as a static display and enter streaming afterwards. Rejected, because it adds a write and a second gap.
 
@@ -66,7 +66,7 @@ Datagrams are device protocol, not bus messages. They add no message format, err
 ## Risks / Trade-offs
 
 All of the device behavior below comes from third-party notes, not Nanoleaf's specification. #725 checks each on the installed Lines before acceptance:
-- **[Zone addressing on Lines]** Datagrams may not address the logical zone IDs. → #725 checks that every Line group shows its color. If they don't, the change does not qualify and a new decision is needed.
+- **[Zone addressing on Lines]** Datagrams may not address the logical zone IDs, or the light may refuse or ignore `logicalPanelsEnabled` on the entry; a refused entry fails the Start with the light's code and writes nothing more. → #725 checks that every Line group shows its color. If they don't, the change does not qualify and a new decision is needed.
 - **[App pick still painted]** The light might keep applying datagrams after an app pick. → The check still ends the session `manual` within about 1 s, and #725 records whether the pick stayed.
 - **[Brightness while streaming]** Whether `/state` brightness scales streamed colors is unconfirmed. → #725 records it. The check's brightness rule is unchanged.
 - **[Detection latency]** A takeover is noticed within about 1 s instead of before the next frame. It is acceptable because the frames sent meanwhile are ignored.

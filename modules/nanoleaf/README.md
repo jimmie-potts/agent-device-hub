@@ -16,9 +16,10 @@ use the optional [migration](#migration) tool.
 
 ## Factory
 
-`createNanoleafModule({transport})` takes how the module reaches its controllers, a
-`LightRequest`: `lightRequest`, the Nanoleaf HTTP client, in the shipped runtime, or a
-`SimulatedNanoleaf` controller's `request` in tests and with `--simulate`. Addresses and
+`createNanoleafModule({transport, datagram})` takes how the module reaches its
+controllers: a `LightRequest` (`lightRequest`, the Nanoleaf HTTP client, in the shipped
+runtime) and a `LightDatagram` for live Music frames (`lightDatagram`, #1598), or a
+`SimulatedNanoleaf` controller's `request` and `datagram` in tests and with `--simulate`. Addresses and
 tokens come from the module's configuration and secrets, never from the factory.
 
 ## Configuration
@@ -310,7 +311,7 @@ Known limits:
 
 - A scene chosen in the Nanoleaf app in the short gap between the base read and the streaming entry is replaced by the entry, once per session.
 - An app takeover, and brightness and power changes made outside the hub, are seen within about a second.
-- After a `device` ending the light stays in streaming mode, showing the last frame, until it times out or a scene is chosen; the scene restorer treats `*ExtControl*` in Free as someone else's choice.
+- After a `device` or `restart` ending, or a module stop mid-session, nothing is written: the light stays in streaming mode, showing the last frame, until it times out or a scene is chosen. The scene restorer treats `*ExtControl*` in Free as someone else's choice.
 - The streaming behavior (zone addressing, app takeover, brightness) comes from third-party protocol notes; #725 qualifies it on the installed Lines.
 - The input reads the runtime's one clock for both its wall and monotonic readings.
 - #725 owns physical cadence and appearance.

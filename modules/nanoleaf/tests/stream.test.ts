@@ -11,7 +11,7 @@ test('a datagram is a big-endian zone count, then each zone\'s ID, color, white 
   assert.deepEqual([...packet], [0, 2, 0, 1, 255, 0, 16, 0, 0, 1, 1, 2, 1, 2, 3, 0, 0, 1]);
   assert.equal(streamPacket([]).length, 2);
   assert.equal(STREAM_PORT, 60222);
-  assert.deepEqual(ENTER_STREAMING, {write: {command: 'display', animType: 'extControl', extControlVersion: 'v2'}});
+  assert.deepEqual(ENTER_STREAMING, {write: {command: 'display', animType: 'extControl', extControlVersion: 'v2', logicalPanelsEnabled: true}});
 });
 
 test('the UDP sender delivers one datagram to the address and port, and a failed send rejects', async () => {
@@ -23,7 +23,8 @@ test('the UDP sender delivers one datagram to the address and port, and a failed
     const packet = streamPacket([[7, [[10, 20, 30, 1]]]]);
     await datagramTo(port)({ip: '127.0.0.1'}, packet);
     assert.deepEqual([...await received], [...packet]);
-    await assert.rejects(datagramTo(port)({ip: 'not-an-address.invalid'}, packet));
+    // Port 0 is refused before anything is sent or looked up, and the socket is still closed.
+    await assert.rejects(datagramTo(0)({ip: '127.0.0.1'}, packet));
   } finally {
     server.close();
   }

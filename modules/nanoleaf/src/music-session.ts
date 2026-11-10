@@ -338,8 +338,10 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
       return false;
     }
   };
-  if (!await stream(first.zones)) return;
-  let lastWrite = now();
+  // The first frame waits behind every ending check, as each later frame does: a Stop, newer choice, alert or source
+  // loss admitted while the entry write was out ends the session before any frame.
+  let unsent: readonly Zone[] | undefined = first.zones;
+  let lastWrite = now() - FRAME_MS;
   let lastSequence = first.sample.feature.sequence;
   let lastCheck = now();
   for (;;) {
@@ -367,6 +369,16 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
       // The read took time: every check runs again before the next frame.
       continue;
     }
+    if (unsent !== undefined && next.feature.sequence === lastSequence) {
+      // The sample the first frame rendered is still the newest fresh one.
+      const zones = unsent;
+      unsent = undefined;
+      if (!await stream(zones)) return;
+      lastWrite = now();
+      continue;
+    }
+    // A newer sample replaces an unsent first frame.
+    unsent = undefined;
     if (next.feature.sequence === lastSequence || now() - lastWrite < FRAME_MS) continue;
     let frame: {zones: readonly Zone[]} | null;
     try {

@@ -218,6 +218,8 @@ test('50 Hz features give at most ten writes a second from the newest sample, an
   }
   // A repeated sequence renews nothing: nothing is written for it, and the input lapses.
   const last = session.sequence;
+  // The newest real sample's paced frame goes out first; only what follows the repeats counts.
+  await world.advance(100);
   const repeat = world.clock.now();
   for (let index = 0; index < 3; index += 1) {
     await publish(session, {...frame(session), sequence: last});

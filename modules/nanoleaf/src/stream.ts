@@ -10,7 +10,9 @@ export const STREAM_PORT = 60222;
 /** The selection a light reports while it is in external-control mode. */
 export const STREAMING = '*ExtControl*';
 /** The write that enters version 2 external-control mode. */
-export const ENTER_STREAMING = Object.freeze({write: Object.freeze({command: 'display', animType: 'extControl', extControlVersion: 'v2'})});
+// Lines frames address the two logical zones of each Line, as every Lines display write does (`effects.ts`).
+export const ENTER_STREAMING = Object.freeze({write: Object.freeze({command: 'display', animType: 'extControl', extControlVersion: 'v2',
+  logicalPanelsEnabled: true})});
 /** A frame's transition in 100 ms units, as each display frame's. */
 export const STREAM_TRANSITION = 1;
 
@@ -54,7 +56,11 @@ export const datagramTo = (port: number): LightDatagram => (address, packet) => 
   timer = setTimeout(() => { settle(Object.assign(new Error('The datagram was not sent in time.'), {code: 'ETIMEDOUT'})); },
     LIGHT_TIMEOUT_SECONDS * 1000);
   socket.once('error', error => { settle(error); });
-  socket.send(packet, port, address.ip, error => { settle(error ?? undefined); });
+  try {
+    socket.send(packet, port, address.ip, error => { settle(error ?? undefined); });
+  } catch (error) {
+    settle(error instanceof Error ? error : new Error('The datagram was not sent.', {cause: error}));
+  }
 });
 
 /** The real datagram transport, to the light's streaming port. */

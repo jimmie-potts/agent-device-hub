@@ -65,7 +65,7 @@ it('a mode command and an edit are answered while the worker waits on the wall, 
     await sdk.subscribe('bunny.event.*.wall', message => { if (message.kind === 'outcome') outcomes.push(message); });
   });
   const configFile = await writeConfiguration(join(await stateDir(context), 'config'), {modules: {nanoleaf: NANOLEAF_SECTION}, tokens: partTokens()});
-  const {runtime, logs} = await run(context, {modules: [createCoreModule(), createNanoleafModule({transport: wall.request}), probe], configFile,
+  const {runtime, logs} = await run(context, {modules: [createCoreModule(), createNanoleafModule({transport: wall.request, datagram: wall.datagram}), probe], configFile,
     lagCheck: {limitMs: LAG_LIMIT_MS}});
   assert.equal(runtime.health().status, 'ok');
   assert.equal(entry(runtime.health(), 'nanoleaf').state, 'running');
@@ -128,7 +128,7 @@ it('the runtime routes a requested NL22 animation to Panels and preserves Lines 
   const section = {...NANOLEAF_SECTION, devices: [...NANOLEAF_SECTION.devices,
     {id: 'nl22', kind: 'panels', address: PANELS_ADDRESS, secret: 'token'}]};
   const configFile = await writeConfiguration(join(await stateDir(context), 'config'), {modules: {nanoleaf: section}, tokens: partTokens()});
-  const {runtime} = await run(context, {modules: [createCoreModule(), createNanoleafModule({transport: devices.request}), probe], configFile,
+  const {runtime} = await run(context, {modules: [createCoreModule(), createNanoleafModule({transport: devices.request, datagram: devices.datagram}), probe], configFile,
     lagCheck: {limitMs: LAG_LIMIT_MS}});
   assert.equal(runtime.health().status, 'ok');
   const sdk = operator;

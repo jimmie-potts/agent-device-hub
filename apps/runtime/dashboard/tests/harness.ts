@@ -287,7 +287,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}})]
         : options.pixooPages === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
-      ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request})] : [])],
+      ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request, datagram: lines.datagram})] : [])],
     ...(options.artSchedule === undefined ? {} : {clock: options.artSchedule.clock, scheduler: options.artSchedule.scheduler}),
     port, stateDir, configFile: config, edge: {schemas: {...(options.artSchedule === undefined ? {} : weatherSchemas),...(options.art === true ? artRegistration.schemas : {}),...(options.microduck===true?microduckSchemas:{}),...(options.reachy===true?reachySchemas:{}),...(options.wemo===true?wemoSchemas:{}),...options.roborock===true?roborockSchemas:{}, ...options.volcano===true?volcanoSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
