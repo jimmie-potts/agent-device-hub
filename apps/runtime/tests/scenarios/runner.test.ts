@@ -12,6 +12,7 @@ import {RuntimeError, type LogRecord} from '../../src/index.js';
 import {assertContractRecords, it, stateDir} from '../support.js';
 import {StepFailure, act, expect, hookProblem, holds, runScenario, scenario, TRANSPORTS, type Harness, type Scenario, type Seed, type TransportName} from './catalog.js';
 import {INSTALLED_PORTS, listenLoopback, startMemoryHarness} from './memory.js';
+import {scenarioValidator} from './parts.js';
 
 const EMPTY = {modules: [], follows: []} as const;
 const named = (id: string): Scenario => {
@@ -121,6 +122,24 @@ it('a worker call\'s rejection that the module leaves unhandled stays unhandled 
     for (const listener of saved) process.on('unhandledRejection', listener);
     await h?.close();
   }
+});
+
+// Compiling the catalog's schemas once per harness cost each scenario's start more with every module added (Hub #1534).
+it('harnesses given the same registrations share one sealed validator, and a different list gets its own', () => {
+  const shared = scenarioValidator();
+  assert.equal(scenarioValidator(), shared, 'compiled once for the runtime\'s registrations');
+  assert.throws(() => { shared.register('https://bunny.invalid/events/example-extra/2.0', {type: 'object'}); }, /sealed validator/, 'no scenario changes what another accepts');
+  const module = (): BunnyModule => ({manifest: {name: 'zz-own', apiVersion: '1.0'}, start: () => {}, stop: () => {}});
+  const schemas = {'https://bunny.invalid/events/zz-own-state/2.0': {type: 'object', required: ['level'], properties: {level: {type: 'integer'}}, additionalProperties: false}};
+  const registrations: readonly ModuleRegistration[] = [{name: 'zz-own', shipped: false, order: 1, create: module, simulate: module, schemas}];
+  const own = scenarioValidator(registrations);
+  assert.notEqual(own, shared);
+  assert.equal(scenarioValidator(registrations), own, 'the same list is compiled once');
+  assert.notEqual(scenarioValidator([...registrations]), own, 'an equal list of its own is not shared');
+  // A list that cannot register is not kept: every harness that names it fails the same way.
+  const twice: readonly ModuleRegistration[] = [...registrations, {...registrations[0] as ModuleRegistration, name: 'zz-again'}];
+  assert.throws(() => scenarioValidator(twice), /schema already registered/);
+  assert.throws(() => scenarioValidator(twice), /schema already registered/);
 });
 
 it('an expectation that never holds fails with what it observed, and stops the scenario', async () => {

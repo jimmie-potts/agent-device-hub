@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {MessageValidator} from '../dist/v2/index.js';
 import {registerCoreFamilies, sessionEntityId} from '../dist/v2/families.js';
-import {decideReadReceipt, READ_RECEIPT_SCHEMA, registerReadReceiptFamily} from '@jimmie-potts/event-contracts/v2/read-receipts';
+import {decideReadReceipt, READ_RECEIPT_SCHEMA, readReceiptValidator, registerReadReceiptFamily} from '@jimmie-potts/event-contracts/v2/read-receipts';
 
 const fixtures = JSON.parse(readFileSync(new URL('../fixtures/v2/families.json', import.meta.url), 'utf8')).valid;
 function validator(optIn = true) {
@@ -36,6 +36,23 @@ function readSession() {
     source: message.source, receipt: message.data.event.receipt};
   return {...structuredClone(fixtures.session), subject: session.id, dataschema: 'https://bunny.invalid/events/session/2.1', data: session};
 }
+
+test('the shared receipt validator is one sealed validator that decides as an opted-in validator of its own does (Hub #1534)', () => {
+  const shared = readReceiptValidator();
+  assert.equal(readReceiptValidator(), shared, 'compiled once per process');
+  const own = validator();
+  const {message} = example();
+  const unknownKind = structuredClone(message);
+  unknownKind.data.event.receipt.kind = 'guessed';
+  for (const [name, input] of Object.entries({...fixtures, receipt: message, 'owned-ui receipt': example('claude', 'owned-ui').message, 'read session': readSession(), unknownKind})) {
+    assert.deepEqual(shared.validate(input, {nowMs: Date.parse(input.time)}), own.validate(input, {nowMs: Date.parse(input.time)}), name);
+  }
+  assert.equal(shared.validate(message, {nowMs: Date.parse(message.time)}).ok, true, 'it takes the opt-in family');
+  assert.equal(shared.validate(unknownKind, {nowMs: Date.parse(message.time)}).ok, false);
+  assert.throws(() => shared.register('https://bunny.invalid/events/example-extra/2.0', {type: 'object'}), /sealed validator/);
+  assert.throws(() => registerReadReceiptFamily(shared), /sealed validator/);
+  assert.equal(shared.validate(message, {nowMs: Date.parse(message.time)}).ok, true, 'a refused registration changes nothing');
+});
 
 test('session/2.1 exposes a qualified Claude receipt without weakening session/2.0', () => {
   const v = validator(false), message = readSession();
