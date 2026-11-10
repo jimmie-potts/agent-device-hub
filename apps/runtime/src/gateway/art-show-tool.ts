@@ -30,7 +30,8 @@ export function artShowTool(host: Pick<McpHost, 'access' | 'dispatch'>, resultSc
       + '(Pixoo 10 s, Tidbyt 30 s) and one browser selection. Saved art only: this never creates art. Quiet hours and the daily '
       + 'schedule do not apply and are not used up; attention, holds, pins and each display still decide. accepted means the core took the show; '
       + "each surface's request IDs name its own operation records, whose transmitted evidence is not proof the panel showed it. "
-      + 'A target without a composition is skipped, an unknown artwork is not-found, and a show while another prepares is capacity. Never retry automatically.',
+      + 'Any saved artwork the art owner still retains can be shown, not only the most recent. A target without a composition is skipped, '
+      + 'an artwork that is not retained is not-found, and a show while another prepares is capacity. Never retry automatically.',
     annotations: {readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true},
     async invoke(args, context) {
       const credential = host.access.current(context.principalId);

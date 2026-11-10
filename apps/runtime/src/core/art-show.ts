@@ -8,6 +8,7 @@ import {ART_SHOW_BROWSER, ART_SHOW_KEY, ART_SHOW_LEAD_MS, ART_SHOW_SUBJECT, artS
 import type {ArtRecord, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import {Outcome, type Command, type Reply, type TraceContext} from '@jimmie-potts/sdk';
+import type {ArtCatalogRead} from './art-catalog.js';
 import type {ArtPermit, ArtPlan, ArtPlanAttempt, ArtPlanResult, ArtPlans} from './art-plans.js';
 import {START_TOLERANCE_MS} from './art-schedule-model.js';
 import type {NewLogRow} from './automation-store.js';
@@ -19,11 +20,17 @@ import type {CompletedOutcome} from './tracker.js';
 /** The automation log's rule identity for owner shows: `priorityClass` `event`, so no flourish budget or spacing counts them. */
 export const ART_SHOW_RULE = 'art-show';
 const DURATION_MS = {pixoo: 10_000, tidbyt: 30_000} as const;
+/** Time kept after a catalog read for the refusal to reach the dispatcher before the command's reply deadline. */
+export const ART_CATALOG_REPLY_MARGIN_MS = 1000;
+/** The longest catalog read, for a command without a reply deadline. */
+const ART_CATALOG_LONGEST_MS = 5000;
 
 export type ArtShowOptions = {
   clock: () => number; active: () => boolean; plans: Pick<ArtPlans, 'targets' | 'present'>;
   /** The art owner's current published record, read whatever the schedule policy says. */
   art: () => Promise<ArtRecord | undefined>;
+  /** Retained art outside that record, from the art owner's catalog (Hub #1584); read only when the record lacks the artwork. */
+  retained?: ArtCatalogRead;
   attention: () => boolean;
   /** Appends owner evidence beside scheduled and rule attempts. */
   log: (rows: readonly NewLogRow[]) => void;
@@ -67,11 +74,12 @@ export function createArtShow(options: ArtShowOptions) {
   };
   return {
     /**
-     * Checks one request against the current saved art and configured targets and takes the one show slot. A refusal
-     * sends nothing: an unknown artwork is `not-found`, a target with no usable composition `unsupported-capability` and
-     * an unconfigured display `not-found`, each for that target alone unless no target remains.
+     * Checks one request against the current saved art and configured targets and takes the one show slot. Art outside
+     * the published record is looked up in the art owner's retained catalog. A refusal sends nothing: art the owner no
+     * longer retains is `not-found`, an unreadable catalog `unavailable`, a target with no usable composition
+     * `unsupported-capability` and an unconfigured display `not-found`, each for that target alone unless no target remains.
      */
-    async prepare(request: ArtShowRequest): Promise<PreparedShow | ErrorBody> {
+    async prepare(request: ArtShowRequest, replyByMs = Number.POSITIVE_INFINITY): Promise<PreparedShow | ErrorBody> {
       if (!options.active()) return errorBody('unavailable', {detail: 'the core is not taking art shows now'});
       if (showing) return errorBody('capacity', {detail: 'another owner art show is still preparing; read its results before a new request'});
       showing = true;
@@ -80,8 +88,16 @@ export function createArtShow(options: ArtShowOptions) {
         const catalog = await options.art();
         if (!options.active()) return errorBody('unavailable', {detail: 'the core is not taking art shows now'});
         if (catalog === undefined) return errorBody('unavailable', {detail: 'saved art records are unavailable now'});
-        const artwork = catalog.artworks.find(value => value.artworkId === request.artworkId);
-        if (artwork === undefined) return errorBody('not-found', {detail: 'no such saved artwork in the current art record'});
+        let artwork: ArtworkSummary | ErrorBody | undefined = catalog.artworks.find(value => value.artworkId === request.artworkId);
+        if (artwork === undefined && options.retained !== undefined) {
+          // The read ends before the command's reply deadline, so a slow catalog is refused, never left uncertain.
+          const leftMs = Math.min(ART_CATALOG_LONGEST_MS, replyByMs - options.clock() - ART_CATALOG_REPLY_MARGIN_MS);
+          if (leftMs <= 0) return errorBody('unavailable', {detail: 'no time is left to read the art owner\'s saved art catalog'});
+          artwork = await options.retained(request.artworkId, leftMs);
+          if (!options.active()) return errorBody('unavailable', {detail: 'the core is not taking art shows now'});
+        }
+        if (artwork === undefined) return errorBody('not-found', {detail: 'the art owner retains no such saved artwork'});
+        if ('error' in artwork) return artwork;
         const configured = options.plans.targets(), refused: Refusal[] = [], displays: ArtPlan['displays'][number][] = [];
         let browser: string | undefined;
         for (const target of request.targets) {
@@ -167,7 +183,8 @@ export class ArtShowPart implements CorePart {
       const core = this.#core, show = this.#show();
       if (this.#closed || core === undefined || show === undefined) return errorBody('unavailable', {detail: 'the core art show has not started'});
       await core.ready;
-      const prepared = await show.prepare(admitted.data);
+      const replyByMs = Date.parse(command.expiresat ?? '');
+      const prepared = await show.prepare(admitted.data, Number.isNaN(replyByMs) ? undefined : replyByMs);
       if ('error' in prepared) return prepared;
       handedOff = true;
       void this.#finish(core, show, admitted, prepared);

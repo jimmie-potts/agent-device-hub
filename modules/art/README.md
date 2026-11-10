@@ -216,9 +216,9 @@ Show now (Hub #1581) shows one saved artwork on chosen surfaces about 20 seconds
 later through the core's `art-show` command: the Selected artwork panel's
 button and each card's. The Show on choices list Browser and every configured
 art display from `/api/v2/automation/art/targets`, all chosen by default; a show
-sends only the chosen surfaces the artwork has a usable composition for. Only
-artwork in the current art record, the 24 most recent, can be shown, and the
-control explains this for older pages. The shell's tracked attempt locks the
+sends only the chosen surfaces the artwork has a usable composition for. Every
+artwork the gallery lists can be shown, on any page: for art past the record's
+24 most recent, the core reads this module's `catalog` content (Hub #1584). The shell's tracked attempt locks the
 control until the show settles. Each surface's line reads the core's operation
 records through the identities `artShowSurfaces` derives: a display's
 preparation and appearance, where a successful appearance is transmitted, not

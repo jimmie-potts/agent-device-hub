@@ -34,6 +34,7 @@ import {ArtShowPart} from './art-show.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
 import type {AutomationDevice} from './automation-devices.js';
+import type {ArtCatalogRead} from './art-catalog.js';
 import type {ModeParticipant} from './mode-participants.js';
 import type {Operation} from './operations.js';
 import {Tracker, type Action, type ActionAnswer, type CoreActions, type CoreOperatorActions, type Tracked} from './tracker.js';
@@ -179,6 +180,8 @@ export interface CoreModule extends BunnyModule {
   /** Internal qualified host admission bridge; assignment sends nothing. */
   setModeParticipants(participants: readonly ModeParticipant[]): void;
   setAutomationDevices(devices:readonly AutomationDevice[]):void;
+  /** The host binds its reader of the art owner's retained catalog for owner shows (Hub #1584); binding sends nothing. */
+  setArtCatalog(read: ArtCatalogRead): void;
   /** The host binds only the fixed Music producer connection lifetime. */
   setMusicCaptureRetirement(retire: () => void): void;
   readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody};
@@ -270,6 +273,10 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
       core.setAutomationDevices(devices);
     },
     setMusicCaptureRetirement: retire => {core?.setMusicCaptureRetirement(retire);},
+    setArtCatalog: read => {
+      if (core === undefined) throw new Error('core-not-started');
+      core.setArtCatalog(read);
+    },
     setModeParticipants: participants => {
       if (core === undefined) throw new Error('core-not-started');
       core.setModeParticipants(participants);
@@ -294,6 +301,7 @@ class Core {
   setMusicCaptureRetirement(retire: () => void): void {this.#music.setRetirement(retire);}
   get automation(): AutomationControls {return this.#automation.controls;}
   setAutomationDevices(devices:readonly AutomationDevice[]):void {this.#automation.setDevices(devices);}
+  setArtCatalog(read: ArtCatalogRead): void {this.#automation.setArtCatalog(read);}
   readonly #mode: ModePart;
   readonly #music: MusicCapturePart;
   readonly #lighting: MusicLightingPart;
