@@ -227,7 +227,7 @@ void test('surfaces on one page share one capture scope, so the page makes one c
   const opened: {refreshed: number; closed: number}[] = [];
   const connection = {openMusicCapture: () => {
     const record = {refreshed: 0, closed: 0}; opened.push(record);
-    return {closed: false, getSnapshot: () => ({synced: true, rechecking: false}),
+    return {closed: false, busy: false, getSnapshot: () => ({synced: true, rechecking: false}),
       refresh: () => {record.refreshed += 1; return Promise.resolve(true);}, close: () => {record.closed += 1; return Promise.resolve();}};
   }};
   const first = acquireMusicCapture(connection), second = acquireMusicCapture(connection);
@@ -243,10 +243,10 @@ void test('surfaces on one page share one capture scope, so the page makes one c
 
 /** A controllable fake scope: its sync stays pending until `finish`, and the connection may close it itself. */
 function fakeScopes() {
-  const scopes: {closed: boolean; synced: boolean; rechecking: boolean; refreshed: number; closes: number; finish: () => void}[] = [];
+  const scopes: {closed: boolean; busy: boolean; synced: boolean; rechecking: boolean; refreshed: number; closes: number; finish: () => void}[] = [];
   const connection = {openMusicCapture: () => {
     let finish = (): void => {};
-    const scope = {closed: false, synced: false, rechecking: false, refreshed: 0, closes: 0, finish: () => {finish();},
+    const scope = {closed: false, busy: false, synced: false, rechecking: false, refreshed: 0, closes: 0, finish: () => {finish();},
       getSnapshot: () => ({synced: scope.synced, rechecking: scope.rechecking}),
       refresh: () => {scope.refreshed += 1; return new Promise<boolean>(resolve => {finish = () => {scope.synced = true; resolve(true);};});},
       close: () => {scope.closes += 1; scope.closed = true; return Promise.resolve();}};
@@ -292,12 +292,12 @@ void test('a later surface never refreshes beside the feed\'s own clock recheck'
   const {connection} = fakeScopes();
   const first = acquireMusicCapture(connection); assert.ok(first !== undefined);
   first.finish(); await Promise.resolve(); await Promise.resolve();
-  first.synced = false; first.rechecking = true; // A recheck is pending or reading (#1629).
+  first.synced = false; first.rechecking = true; first.busy = true; // A recheck is pending or reading (#1629).
   acquireMusicCapture(connection); assert.equal(first.refreshed, 1, 'the recheck owns the next sync');
 });
 
 /** A real MusicCaptureFeed over a fake participant whose syncs take the given round trips, on a hand-run scheduler. */
-function sharedFeed(rounds: readonly number[]) {
+function sharedFeed(rounds: readonly (number | 'refused')[]) {
   let mono = 1000, syncs = 0;
   const pending = new Set<{at: number; delay: number; callback: () => void}>();
   const scheduler: Scheduler = {after: (delay, callback) => {const entry = {at: mono + delay, delay, callback}; pending.add(entry); return () => {pending.delete(entry);};}};
@@ -309,6 +309,7 @@ function sharedFeed(rounds: readonly number[]) {
       const round = rounds[syncs] ?? 10; syncs += 1; const id = `sync-${String(syncs)}`, source = stateMessage();
       const reply: Extract<SyncResult<CaptureState>, {status: 'synced'}> = {status: 'synced', copy: {states: () => [source], get: () => source, close: () => Promise.resolve()},
         message: {...source, id, kind: 'sync-completed', time: new Date(101005).toISOString(), data: {requestId: id, revision: 1, members: []}}};
+      if (round === 'refused') {mono += 10; return {status: 'rejected', requestId: id, error: {error: {code: 'unavailable', retryable: true, requestId: id}}};}
       mono += round;
       await handler({type: 'updated', entity: {family: 'music-capture-state', id: 'music'}, message: source});
       await handler({type: 'synced', message: reply.message}); return reply;
@@ -336,6 +337,21 @@ void test('the shared scope runs one clock recheck for all surfaces, and a visua
   assert.equal(shared.syncs(), 2); assert.equal(fullView.getSnapshot().clockQualified, true);
   assert.equal(restingReason(fullView.getSnapshot(), true), 'Waiting for fresh measurements.', 'the page recovers on its own, with no reload');
   await fullView.close();
+});
+
+void test('a later surface resyncs when a failed recheck left the view unsynced with nothing scheduled', async () => {
+  const shared = sharedFeed([200, 'refused', 10]);
+  const audio = acquireMusicCapture(shared.connection); assert.ok(audio !== undefined);
+  await shared.flush(); assert.deepEqual(shared.delays(), [250], 'a recheck is pending');
+  audio.invalidate(); // The shown copy is invalidated, for example by a stream overflow, while the recheck waits.
+  await shared.fire(); // The recheck's read is refused.
+  assert.equal(audio.getSnapshot().synced, false); assert.equal(shared.syncs(), 2);
+  assert.deepEqual(shared.delays(), [], 'no recheck is scheduled any more');
+  const fullView = acquireMusicCapture(shared.connection); assert.equal(fullView, audio); await shared.flush();
+  assert.equal(shared.syncs(), 3, 'the later surface resyncs');
+  assert.equal(audio.getSnapshot().synced, true); assert.equal(audio.getSnapshot().clockQualified, true);
+  assert.equal(restingReason(audio.getSnapshot(), true), 'Waiting for fresh measurements.', 'and the page goes live without Refresh or a reload');
+  await audio.close();
 });
 
 void test('closing the shared scope leaves no clock recheck behind', async () => {
