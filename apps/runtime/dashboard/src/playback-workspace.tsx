@@ -8,6 +8,7 @@ import type {DashboardConnection} from './connection.ts';
 import type {RuntimeData} from './runtime-feeds.ts';
 import type {Route} from './routes.ts';
 import {MusicCaptureCard} from './music-capture-card.tsx';
+import {MusicVisualizerFullView, MusicVisualizerPanel} from './music-visualizer.tsx';
 
 /** Composition and saved placement share the shell participant; no playback owner or room routing is added. */
 export function PlaybackWorkspace({runtime, connected, operations, operationsLive, connection, route, homeSource}: {
@@ -63,6 +64,7 @@ export function PlaybackWorkspace({runtime, connected, operations, operationsLiv
     })}
     {layoutLive && roomsLive && !rooms.some(room => players.some(player => layout?.assignments.some(item => item.playback === player.record.id && item.rooms.includes(room.id)) === true)) && <p className="hint">Choose room placement on the <a href="#/audio">Audio page</a>.</p>}
   </section>;
+  if (route.kind === 'visualizer') return <MusicVisualizerFullView connection={connection} connected={connected} coreLive={coreLive && !runtime.catalogFailed}/>;
   if (route.kind !== 'home' && route.kind !== 'audio' && route.kind !== 'playback') return null;
   const wallPage = !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'nanoleaf' && module.state === 'running' && module.pages.some(page => page.id === 'wall')) === true;
   const selected = homeSource !== undefined ? players.filter(player => player.copy.owner === homeSource.owner && player.record.id === homeSource.instance) : route.kind === 'playback' ? players.filter(player => player.record.id === route.sourceId) : players;
@@ -73,6 +75,7 @@ export function PlaybackWorkspace({runtime, connected, operations, operationsLiv
     {route.kind === 'audio' && wallPage && <p><a href="#/module/nanoleaf/wall">Music effect preview</a> · Compare generated examples in the Wall page.</p>}
     {selected.length === 0 && <p className="hint">No playback records are available.</p>}
     <div className="music-grid">{selected.map(card)}</div>
+    {route.kind === 'audio' && <MusicVisualizerPanel connection={connection} connected={connected} coreLive={coreLive && !runtime.catalogFailed}/>}
     {route.kind === 'audio' && <MusicCaptureCard connection={connection} connected={connected} coreLive={coreLive && !runtime.catalogFailed}
       control={runtime.control} operations={operations} operationsLive={operationsLive} presetPage={wallPage}
       devices={runtime.copies.filter(copy => copy.owner === 'bunny/modules/nanoleaf' && copy.family === 'device').flatMap(copy => copy.records as readonly DeviceRecord[])}/>}

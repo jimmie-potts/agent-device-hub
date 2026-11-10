@@ -12,6 +12,8 @@ export type Route =
   | {kind: 'lighting-brand'; brand: string}
   | {kind: 'rooms'}
   | {kind: 'audio'}
+  /** The music visualizer's full view (#1619), under Audio. */
+  | {kind: 'visualizer'}
   | {kind: 'timeline'}
   | {kind: 'automation'}
   | {kind: 'component'; id: string}
@@ -45,6 +47,7 @@ export function parseRoute(hash: string): Route {
   if (parts.length === 1 && first === 'settings') return {kind: 'settings'};
   if (parts.length === 3 && first === 'module' && second !== undefined && third !== undefined && second !== '' && third !== '') return {kind: 'module', module: second, page: third};
   if (parts.length === 1 && first === 'audio') return {kind: 'audio'};
+  if (parts.length === 2 && first === 'audio' && second === 'visualizer') return {kind: 'visualizer'};
   if (parts.length === 1 && first === 'rooms') return {kind: 'rooms'};
   if (parts.length === 2 && first === 'lights' && second !== undefined && /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(second)) return {kind: 'lighting-brand', brand: second};
   if (parts.length === 1 && first === 'timeline') return {kind: 'timeline'};
@@ -64,6 +67,7 @@ export function routeHash(route: Route): string {
     case 'devices': return '#/devices';
     case 'settings': return '#/settings';
     case 'audio': return '#/audio';
+    case 'visualizer': return '#/audio/visualizer';
     case 'rooms': return '#/rooms';
     case 'lighting-brand': return `#/lights/${encodeURIComponent(route.brand)}`;
     case 'timeline': return '#/timeline';
@@ -89,7 +93,7 @@ export function navigationDestination(route: Route): 'home' | 'habitat' | 'rooms
     case 'home': case 'timeline': return 'home';
     case 'habitat': return 'habitat';
     case 'rooms': return 'rooms';
-    case 'devices': case 'lighting-brand': case 'component': case 'playback': case 'audio': case 'module': return 'devices';
+    case 'devices': case 'lighting-brand': case 'component': case 'playback': case 'audio': case 'visualizer': case 'module': return 'devices';
     case 'automation': return 'automation';
     case 'connections': case 'settings': return 'settings';
     case 'missing': return undefined;

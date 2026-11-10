@@ -170,6 +170,9 @@ try {
   await context.close();
 } finally {await browser.close(); await world.close();}
 
+// The music visualizer (#1619) reads the same numeric producer fixture and sends nothing itself.
+await import('./music-visualizer.browser.ts');
+
 // Explicit Music input measurements use only a numeric producer fixture.
 await import('./music-capture.browser.ts');
 

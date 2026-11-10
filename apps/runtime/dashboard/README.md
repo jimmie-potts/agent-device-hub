@@ -285,6 +285,42 @@ the real disposable core and gateway. It runs through both the Music-card
 browser entry and hosted smoke. Its screenshots and accessibility checks are
 source evidence; installation and physical acceptance remain separate.
 
+## Music visualizer
+
+Audio shows a **Music visualizer** (#1619) above the measurement card. It draws
+the derived capture features that the measurement card reads: the applied
+response values when the core has them, otherwise the measured level and bass,
+mid and treble bands. It opens its own read-only capture scope on the shell
+participant, so it sends no command, starts no capture and controls no lights.
+Effects draw on a canvas at the display's frame rate and ease toward the newest
+feature window without replaying skipped ones. When measurement is off, idle,
+starting, stale, stopping, uncertain or without fresh windows, the canvas shows a
+still resting scene and the panel says why.
+
+The first effects are **Spectrum bars** and **Bass pulse**. Each is one entry in
+`visualizerEffects` (`src/music-visualizer-effects.ts`); a new effect is appended
+there and needs no change to the others or to the engine in
+`src/music-visualizer-model.ts`. The **Effect** choice is a per-viewer preference
+in this browser's local storage (`bunny.music-visualizer.effect`), followed across
+its tabs. It is not a shared setting and has no message format. Without storage,
+the choice lasts for the page.
+
+**Fill window** opens `#/audio/visualizer`, which covers the page chrome. Its
+**Full screen** button uses the browser's Fullscreen API, which is how the Mac's
+browser fills a 4K television. Its controls fade after three still seconds and
+return on movement or a key. **Exit full view** or Escape returns to Audio. The
+**Music visualizer** Home card is in the Audio category of Add card. It is not on
+Home by default. It shows the chosen effect, why it rests when it does, and
+**Open full view**.
+
+`tests/music-visualizer.test.ts` drives both effects with a fake feature stream
+through the real `CaptureProjection`. `tests/music-visualizer.browser.ts` runs from
+the Music-card browser entry against the numeric producer fixture. It covers
+the panel, full view and Home card at 1440, 390 and 320 px and a 3,840 × 2,160
+window. Set `VISUALIZER_EVIDENCE` to a private directory to keep its screenshots
+and frame timings. This is source evidence; the owner's view of the installed
+dashboard with Music playing remains separate.
+
 ## Music lighting
 
 Below Music input measurement, the **Music lighting** card (#722) has one section
