@@ -255,7 +255,9 @@ latency, a local clock jump or lost state freshness hides the measurement.
 When a sync's round trip is too slow to qualify the clock, as on a loaded page
 load, the card shows **Checking measurement timing again.** and reads again
 after 0.25, 0.5, 1 and 2 seconds, stopping once one read qualifies (#1580).
-If all four are slow, timing stays unavailable until **Refresh capture status**,
+Each recheck keeps the current state and controls in place and replaces them
+only once its read completes; a recheck that gets no answer counts as one more
+slow read. If all four fail, timing stays unavailable until **Refresh capture status**,
 which performs one read to qualify it again and starts a new set of rechecks. It never
 restarts capture or clears an uncertain command. Start and Stop retain separate
 tracked attempts, so a permitted Stop remains available during an unresolved
