@@ -41,13 +41,11 @@ test('suite failure is returned and stops subsequent suites', async () => {
   assert.deepEqual(calls.at(-1), ['run','test:runtime:verify:built']);
 });
 
-test('the check container has CPU and memory limits and no swap', () => {
-  const args = createArgs('bunny-runtime-check-test', 'sha256:' + 'a'.repeat(64), 'verify');
-  const value = option => {const at = args.indexOf(option); assert.ok(at > 0, option); return args[at + 1];};
-  assert.ok(Number(value('--cpus')) > 0);
-  assert.match(value('--memory'), /^\d+[mg]$/);
-  assert.equal(value('--memory-swap'), value('--memory'));
-  assert.equal(value('--network'), 'none');
-  assert.equal(value('--name'), 'bunny-runtime-check-test');
-  assert.deepEqual(args.slice(-2), ['sha256:' + 'a'.repeat(64), 'verify']);
+test('the check container keeps its protections and has CPU and memory limits and no swap', () => {
+  const image = 'sha256:' + 'a'.repeat(64);
+  assert.deepEqual(createArgs('bunny-runtime-check-test', image, 'verify'), [
+    'create','--init','--name','bunny-runtime-check-test','--network','none',
+    '--cpus','2','--memory','1536m','--memory-swap','1536m',
+    '--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges','--restart','no',
+    '--env','TMPDIR=/tmp','--env','XDG_RUNTIME_DIR=','--env','DBUS_SESSION_BUS_ADDRESS=',image,'verify']);
 });

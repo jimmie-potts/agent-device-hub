@@ -1419,11 +1419,12 @@ pinned Node 24 base and lockfile-selected Chromium, then runs `npm ci --include=
 failure exits nonzero. The container has its own copied source, dependencies and
 synthetic state, `TMPDIR=/tmp`, no networking during checks, no host mounts and
 no published ports. Docker's init process reaps exited descendants. It never attaches to the installed runtime or its volumes.
-The check container is limited to 2 CPUs and 1536 MB (1.5 GiB) of memory, with
+The check container is limited to 2 CPUs and 1536 MiB (1.5 GiB) of memory, with
 swap equal to memory so it cannot swap; Node inside then reports 2 CPUs, so
-`node --test` starts fewer workers. The verification suite's processes peaked
-near 1.2 GB on macOS, so a 1250 MB limit is too small. The image build is a
-separate step without these limits.
+`node --test` starts fewer workers. On macOS the verification suite's processes
+used at least 1.2 GB (the largest sample, a lower bound), and at a 1250 MiB
+limit the run was killed for memory. The image build is a separate step without
+these limits.
 The temporary Git commit identifies a working-tree snapshot, not a reviewed
 release or independent Acceptance result. Dependency preparation needs network
 access; the checks install from the image's offline npm cache.
