@@ -106,7 +106,8 @@ facilities where possible; this is not a general backup-tooling requirement.
 
 For each meaningful cut, name the capability or assurance lost and reconcile
 dependent issues and specifications within the task's authority. Never silently
-remove requested behavior; ask the user when a cut would change it. Scope
+remove requested behavior; ask the user when a cut would change it. A deferral
+that rests on an agent's difficulty estimate records the evidence for it. Scope
 defaults retain focused review, applicable CI, UI verification and the source,
 installation and physical boundaries. OpenSpec is proportional to the change.
 
@@ -296,6 +297,11 @@ not a source-delivery blocker. See [Project maintenance](project-maintenance.md)
    safety changes; document which risk it covers. A prose-only policy change does
    not automatically need a second reviewer, but a new safety design does.
    Fix P0–P2 and correctness/test-coverage P3 findings; disposition other P3s.
+   A finding in code the change did not touch does not block it unless the
+   change makes that defect reachable or worse; record it with an owner and
+   follow-up, as `AGENTS.md` does for unrelated failures. A change stops after
+   three final review rounds: the coordinator reports the open findings and
+   proposes a changed approach instead of a fourth fix round.
    The same reviewer may perform the disposable acceptance exercise below.
    Re-review changed behavior and affected assumptions, not unchanged evidence.
    A pure rebase or prose correction needs one confirmation of the delta and new
@@ -310,6 +316,9 @@ not a source-delivery blocker. See [Project maintenance](project-maintenance.md)
    resolve conflicts and renew evidence invalidated by integration. No extra report
    format or duplicated receipt dossier is required; a PR review summary with
    comparison, verdicts and links to existing evidence is sufficient.
+   A change to `.github/workflows`, branch protection or gate policy also needs
+   the owner's acknowledgement, a comment or approval from the owner on the PR,
+   before merge. The focused second review areas in step 3 gain no human gate.
 5. Recheck scope, base and head, then squash the reviewed head with
    `gh pr merge <number> --repo jimmie-potts/agent-device-hub --squash --match-head-commit <head> --body "Refs #<issue>"`
    or the API equivalent with an expected-head guard. Never use `--admin`.
@@ -724,8 +733,9 @@ Selected jobs must succeed on the exact candidate. An unselected job must report
 must succeed. Missing results, failed selection, unexpected skips, cancellation
 or wrong revisions block admission. Hosted focused notices bind both core groups
 and omitted jobs. The preflight checks that published coverage covers its own.
-Policy changes pass the conservative gate and independent review before they
-activate; a candidate cannot waive its own missing evidence.
+Policy changes pass the conservative gate, independent review and the owner's
+acknowledgement in [Review and merge](#review-and-merge) before they activate;
+a candidate cannot waive its own missing evidence.
 
 ### Integration, qualification and deployment
 

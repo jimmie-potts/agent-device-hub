@@ -96,7 +96,9 @@ PRs use the selector's focused or conservative gate. Draft checkpoints skip
 expensive checks, and broad qualification runs on pinned integrated snapshots.
 Do not rebase solely for an up-to-date build; recheck the actual comparison and
 renew evidence invalidated by integration. Gate-policy changes retain full checks
-and independent review before activation.
+and independent review before activation. Gate-policy, `.github/workflows` and
+branch protection changes also need the owner's acknowledgement under
+[Review and merge](docs/sdlc.md#review-and-merge).
 
 Use the CI evidence rules in docs/sdlc.md for routine check-run verification
 and conditional job/log inspection; diagnostic access is in docs/development.md.
