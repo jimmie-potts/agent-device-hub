@@ -24,6 +24,7 @@ import type {ArtScheduleRecord} from '@jimmie-potts/event-contracts/v2/art-sched
 import type {TraceContext} from '@jimmie-potts/sdk';
 import {createArtPlans, type ArtPlans, type ArtPlanTarget} from './art-plans.js';
 import {createArtShow, type ArtShow} from './art-show.js';
+import type {ArtCatalogRead} from './art-catalog.js';
 
 const KINDS = new Map([
   ['org.bunny.attention.raised','attention-raised'], ['org.bunny.attention.cleared','attention-cleared'],
@@ -49,6 +50,8 @@ export class AutomationPart implements CorePart {
   #routines:Routines|undefined;
   #art:ArtPlans|undefined;
   #show:ArtShow|undefined;
+  /** The host's reader of the art owner's retained catalog; unbound, a show finds only art in the published record. */
+  #artCatalog:ArtCatalogRead|undefined;
   /** The owner's on-demand show (Hub #1581), once the store is open. */
   get artShow():ArtShow|undefined {return this.#closed?undefined:this.#show;}
   #configured:readonly AutomationDevice[]=[];
@@ -61,6 +64,7 @@ export class AutomationPart implements CorePart {
     this.#participants=participants;
     this.#followDevices();
   }
+  setArtCatalog(read:ArtCatalogRead):void {this.#artCatalog=read;}
   setDevices(devices:readonly AutomationDevice[]):void {
     this.#configured=checkAutomationDevices(devices);this.#followDevices();
   }
@@ -192,6 +196,7 @@ export class AutomationPart implements CorePart {
       failed:()=>recordLog(handle.log,'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal'})});
     const inputs=this.#inputs;
     this.#show=createArtShow({clock:()=>handle.clock.now(),active:()=>!this.#closed&&!this.#signal.aborted,plans:this.#art,art:()=>inputs.ownerArt(),
+      retained:artworkId=>this.#artCatalog?.(artworkId)??Promise.resolve(undefined),
       attention:()=>[...this.#sessions.values()].some(session=>session.attention.length>0),log:rows=>{store.appendLog(rows);},operation:requestId=>handle.operation(requestId),
       failed:()=>recordLog(handle.log,'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal'})});
   }

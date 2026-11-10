@@ -8,6 +8,7 @@ import {ART_SHOW_BROWSER, ART_SHOW_KEY, ART_SHOW_LEAD_MS, ART_SHOW_SUBJECT, artS
 import type {ArtRecord, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import {Outcome, type Command, type Reply, type TraceContext} from '@jimmie-potts/sdk';
+import type {ArtCatalogRead} from './art-catalog.js';
 import type {ArtPermit, ArtPlan, ArtPlanAttempt, ArtPlanResult, ArtPlans} from './art-plans.js';
 import {START_TOLERANCE_MS} from './art-schedule-model.js';
 import type {NewLogRow} from './automation-store.js';
@@ -24,6 +25,8 @@ export type ArtShowOptions = {
   clock: () => number; active: () => boolean; plans: Pick<ArtPlans, 'targets' | 'present'>;
   /** The art owner's current published record, read whatever the schedule policy says. */
   art: () => Promise<ArtRecord | undefined>;
+  /** Retained art outside that record, from the art owner's catalog (Hub #1584); read only when the record lacks the artwork. */
+  retained?: ArtCatalogRead;
   attention: () => boolean;
   /** Appends owner evidence beside scheduled and rule attempts. */
   log: (rows: readonly NewLogRow[]) => void;
@@ -67,9 +70,10 @@ export function createArtShow(options: ArtShowOptions) {
   };
   return {
     /**
-     * Checks one request against the current saved art and configured targets and takes the one show slot. A refusal
-     * sends nothing: an unknown artwork is `not-found`, a target with no usable composition `unsupported-capability` and
-     * an unconfigured display `not-found`, each for that target alone unless no target remains.
+     * Checks one request against the current saved art and configured targets and takes the one show slot. Art outside
+     * the published record is looked up in the art owner's retained catalog. A refusal sends nothing: art the owner no
+     * longer retains is `not-found`, an unreadable catalog `unavailable`, a target with no usable composition
+     * `unsupported-capability` and an unconfigured display `not-found`, each for that target alone unless no target remains.
      */
     async prepare(request: ArtShowRequest): Promise<PreparedShow | ErrorBody> {
       if (!options.active()) return errorBody('unavailable', {detail: 'the core is not taking art shows now'});
@@ -80,8 +84,13 @@ export function createArtShow(options: ArtShowOptions) {
         const catalog = await options.art();
         if (!options.active()) return errorBody('unavailable', {detail: 'the core is not taking art shows now'});
         if (catalog === undefined) return errorBody('unavailable', {detail: 'saved art records are unavailable now'});
-        const artwork = catalog.artworks.find(value => value.artworkId === request.artworkId);
-        if (artwork === undefined) return errorBody('not-found', {detail: 'no such saved artwork in the current art record'});
+        let artwork: ArtworkSummary | ErrorBody | undefined = catalog.artworks.find(value => value.artworkId === request.artworkId);
+        if (artwork === undefined && options.retained !== undefined) {
+          artwork = await options.retained(request.artworkId);
+          if (!options.active()) return errorBody('unavailable', {detail: 'the core is not taking art shows now'});
+        }
+        if (artwork === undefined) return errorBody('not-found', {detail: 'the art owner retains no such saved artwork'});
+        if ('error' in artwork) return artwork;
         const configured = options.plans.targets(), refused: Refusal[] = [], displays: ArtPlan['displays'][number][] = [];
         let browser: string | undefined;
         for (const target of request.targets) {

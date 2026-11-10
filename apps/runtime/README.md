@@ -479,11 +479,17 @@ The owner can also show saved art now
 ([#1581](https://github.com/jimmie-potts/agent-device-hub/issues/1581)).
 `art-show/2.0` on `bunny.cmd.art-show.hub` comes from the gallery's Show now or
 the MCP tool `core_art_show` through the tracked dispatcher, which admits it as
-it admits the Hub mode; a direct bus command is `forbidden`, and the gateway refuses a target other than `hub` with `not-found`. The core checks the
-artwork against the art owner's current published record, its 24 most recent
-artworks (`not-found` otherwise), and each target against the configured art
-displays (`not-found`) and the artwork's usable compositions
-(`unsupported-capability`). A refused target is skipped while the others
+it admits the Hub mode; a direct bus command is `forbidden`, and the gateway refuses a target other than `hub` with `not-found`. The core looks the
+artwork up in the art owner's current published record, its 24 most recent
+artworks. For older art
+([#1584](https://github.com/jimmie-potts/agent-device-hub/issues/1584)) it then
+reads the art owner's private `catalog` content newest first. The runtime host
+binds that reader, which calls the art module's content contribution as the
+gateway does for an authenticated reader. It runs once per show, within
+5 seconds, and stops at the artwork or the last page. Art the owner no longer
+retains is `not-found`, and a catalog that cannot be read is `unavailable`. The
+core then checks each target against the configured art displays (`not-found`)
+and the artwork's usable compositions (`unsupported-capability`). A refused target is skipped while the others
 proceed; with none left the command is refused and nothing is sent. One show
 prepares at a time (`capacity`). The accepted show runs `present` with a start
 20 seconds ahead, the schedule's 5-second tolerance and 1-second preparation

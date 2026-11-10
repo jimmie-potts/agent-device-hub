@@ -81,8 +81,8 @@ function GalleryBody({context, state, live, command, show}: {context: FrontendCo
   const [chosen, setChosen] = useState<string[]>(), [sent, setSent] = useState<SentShow>();
   const surfaces = ['browser', ...targets.map(item => item.target)], picked = chosen ?? surfaces;
   const showDisabled = !mayChange(context, live, show);
-  const inRecord = (art: ArtworkSummary): boolean => state?.artworks.some(value => value.artworkId === art.artworkId) === true;
-  const showable = (art: ArtworkSummary | undefined): string[] => art === undefined || !inRecord(art) ? [] : showableSurfaces(art, picked, targets);
+  // Every listed artwork is retained by the art owner, whose catalog the core reads for art past the record (Hub #1584).
+  const showable = (art: ArtworkSummary | undefined): string[] => art === undefined ? [] : showableSurfaces(art, picked, targets);
   const showNow = (art: ArtworkSummary): void => {
     const selected = showable(art);
     if (showDisabled || selected.length === 0) return;
@@ -104,7 +104,6 @@ function GalleryBody({context, state, live, command, show}: {context: FrontendCo
         {shows.error && <p className="hint">Configured displays are unavailable, so only the browser can be chosen.</p>}
         <p className="hint">Shows this saved art about 20 seconds from now on each chosen surface that has a composition for it: 10 seconds on Pixoo, 30 on Tidbyt. It creates no art and does not use up the daily schedule. Attention, holds and each display's own state still decide.</p>
         <button type="button" disabled={showDisabled || current === undefined || showable(current).length === 0} onClick={() => {if (current !== undefined) showNow(current);}}>Show now</button>
-        {current !== undefined && !inRecord(current) && <p className="hint">Only artwork in the current art record, the most recent saved art, can be shown now.</p>}
         <p role="status" className="hint">{show.text}</p>
         <ShowResults context={context} show={show} sent={sent} targets={targets}/>
       </section>

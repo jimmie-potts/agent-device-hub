@@ -6,7 +6,7 @@ import type {ArtAuto21} from '@jimmie-potts/event-contracts/v2/art';
 import {artShowPlanId, artShowSurfaces, type ArtShowRequest} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtState, ArtTarget, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
-import type {BunnyModule, Command, ModuleContext, Reply} from '@jimmie-potts/sdk';
+import type {BunnyModule, Command, ModuleContent, ModuleContentRequest, ModuleContext, Reply} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import {artPlanRequestId, type ArtPermit, type ArtPlan, type ArtPlanResult} from '../src/core/art-plans.js';
 import {createArtShow, artShowOutcome} from '../src/core/art-show.js';
@@ -30,13 +30,25 @@ const catalog = (): ArtState => ({id: 'art', revision: 1, month: '2026-11', day:
   retention: {recentLimit: 24, recent: 3, favorites: 0, retained: []}});
 
 type DisplayReply = (command: Command<MomentPlayRequest>) => Reply;
-async function world(t: TestContext, replies: Partial<Record<'desk-display' | 'shelf-display', DisplayReply>> = {}) {
+type CatalogContent = (ref: string, request?: ModuleContentRequest) => ModuleContent | ReturnType<typeof errorBody> | undefined;
+/** The art owner's private catalog newest first, one page per array, as `catalog` content with descending `after` cursors. */
+const pagedCatalog = (pages: readonly (readonly ArtworkSummary[])[]): CatalogContent => (ref, request) => {
+  if (ref !== 'catalog') return undefined;
+  const after = Number(request?.query.after ?? 0), index = after === 0 ? 0 : pages.length - after;
+  const nextAfter = index + 1 < pages.length ? pages.length - index - 1 : null;
+  return {type: 'application/json', bytes: Buffer.from(JSON.stringify({artworks: pages[index] ?? [], nextAfter}))};
+};
+/** Older retained art outside the published record, on the catalog's second page. */
+const OLDER = artwork('older-art');
+async function world(t: TestContext, replies: Partial<Record<'desk-display' | 'shelf-display', DisplayReply>> = {}, content?: CatalogContent) {
   const clock = manualClock(1_700_000_000_000), art = catalog();
-  const presents: Command<ArtAuto21>[] = [], moments: Command<MomentPlayRequest>[] = [];
+  const presents: Command<ArtAuto21>[] = [], moments: Command<MomentPlayRequest>[] = [], reads: string[] = [];
   let artContext: ModuleContext | undefined, handle: CoreHandle | undefined;
   const makeCore = () => createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}]});
   let core = makeCore();
-  const artModule: BunnyModule = {manifest: {name: 'art', apiVersion: '1.3'}, start: async context => {
+  const serve = content ?? pagedCatalog([art.artworks, [OLDER]]);
+  const artModule: BunnyModule = {manifest: {name: 'art', apiVersion: '1.3', content: (ref, request) => {reads.push(`${ref}?after=${request?.query.after ?? ''}&limit=${request?.query.limit ?? ''}`); return serve(ref, request);}},
+    start: async context => {
     artContext = context;
     await context.sdk.serveSync(['art'], () => ({revision: art.revision, states: [{type: 'org.bunny.art.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art/2.0', data: art}]}));
     await context.sdk.respond<ArtAuto21>('bunny.cmd.art-auto.art', command => {presents.push(command); return {status: 'accepted'};});
@@ -61,7 +73,7 @@ async function world(t: TestContext, replies: Partial<Record<'desk-display' | 's
   await waitFor(() => displays.every(display => display.syncs() > 0)); await flush();
   const prepares = () => presents.filter(command => command.data.action === 'prepare');
   const browser = () => presents.filter(command => command.data.action === 'present');
-  return {clock, art, moments, prepares, browser, get core() {return core;}, get handle() {assert.ok(handle); return handle;},
+  return {clock, art, moments, prepares, browser, reads, get core() {return core;}, get handle() {assert.ok(handle); return handle;},
     get artContext() {assert.ok(artContext); return artContext;},
     show: (requestId: string, data: Omit<ArtShowRequest, 'requestId'>) => core.actions.dispatch({key: 'bunny.cmd.art-show.hub', requestedBy: 'bunny/parts/operator', requestId,
       draft: {type: 'org.bunny.art.show.requested', subject: 'hub', dataschema: 'https://bunny.invalid/events/art-show/2.0', data}}),
@@ -169,6 +181,50 @@ it('a restart before the start leaves the show uncertain and replays nothing', a
   assert.equal(w.moments.length, 0);assert.equal(w.browser().length, 0);assert.equal(w.prepares().length, 1);
   await w.show('show-restart', {artworkId: 'saved-art', targets: ['desk-display', 'browser']});
   await flush();assert.equal(w.prepares().length, 1, 'the same request is never sent again');
+});
+
+it('retained art outside the published record shows through the art owner\'s catalog, by the same plan', async t => {
+  const w = await world(t), targets = ['desk-display', 'browser'];
+  assert.deepEqual(await w.show('show-recent', {artworkId: 'saved-art', targets: ['browser']}), {status: 'accepted', requestId: 'show-recent'});
+  assert.deepEqual(w.reads, [], 'art in the published record never reads the catalog');
+  w.clock.advance(20_000); await flush();
+  await waitFor(() => w.handle.operation('show-recent')?.status === 'completed');
+  const acceptedAtMs = w.clock.now();
+  assert.deepEqual(await w.show('show-older', {artworkId: 'older-art', targets}), {status: 'accepted', requestId: 'show-older'});
+  assert.deepEqual(w.reads, ['catalog?after=0&limit=100', 'catalog?after=1&limit=100'], 'one newest-first scan, stopping at the artwork');
+  await waitFor(() => w.prepares().length === 1);
+  const prepare = w.prepares()[0]?.data;assert.ok(prepare?.action === 'prepare');
+  assert.deepEqual([prepare.artworkId, prepare.target, prepare.compositionId], ['older-art', 'desk-display', PIXOO]);
+  await w.complete(prepare.requestId);
+  await waitFor(() => w.moments.length === 1);
+  const moment = w.moments[0]?.data;assert.equal(moment?.art?.compositionId, PIXOO);assert.equal(moment.durationMs, 10_000);assert.equal(moment.startAtMs, acceptedAtMs + 20_000);
+  w.clock.advance(20_000); await flush();
+  await waitFor(() => w.browser().length === 2);
+  const present = w.browser()[1]?.data;assert.ok(present?.action === 'present');assert.deepEqual([present.artworkId, present.compositionId], ['older-art', BROWSER]);
+  await waitFor(() => w.handle.operation('show-older')?.status === 'completed');
+  assert.equal(w.handle.operation('show-older')?.result, 'succeeded');
+  assert.deepEqual(ownerRows(w, 'show-older').map(entry => [entry.target, entry.outcome, entry.event.source]).sort(),
+    [['browser', 'receipt', 'owner'], ['desk-display', 'receipt', 'owner']]);
+});
+
+it('art that is not retained stays not-found, and an unreadable catalog is unavailable; neither sends anything', async t => {
+  const missing = await world(t);
+  const gone = await missing.show('show-gone', {artworkId: 'pruned-art', targets: ['desk-display', 'browser']});
+  assert.ok('error' in gone);assert.equal(gone.error.code, 'not-found');
+  assert.equal(missing.reads.length, 2, 'the whole retained catalog was read once');
+  const refused = await world(t, {}, () => errorBody('unavailable'));
+  const unreadable = await refused.show('show-unreadable', {artworkId: 'older-art', targets: ['browser']});
+  assert.ok('error' in unreadable);assert.equal(unreadable.error.code, 'unavailable');
+  const malformed = await world(t, {}, () => ({type: 'application/json', bytes: Buffer.from(JSON.stringify({artworks: [{artworkId: 'older-art', compositions: 'none'}], nextAfter: null}))}));
+  const invalid = await malformed.show('show-malformed', {artworkId: 'older-art', targets: ['browser']});
+  assert.ok('error' in invalid);assert.equal(invalid.error.code, 'unavailable');
+  const looping = await world(t, {}, () => ({type: 'application/json', bytes: Buffer.from(JSON.stringify({artworks: [], nextAfter: 7}))}));
+  const loop = await looping.show('show-loop', {artworkId: 'older-art', targets: ['browser']});
+  assert.ok('error' in loop);assert.equal(loop.error.code, 'unavailable');assert.equal(looping.reads.length, 2, 'a cursor that does not move stops the scan');
+  await flush();
+  for (const w of [missing, refused, malformed, looping]) assert.equal(w.prepares().length + w.browser().length + w.moments.length, 0);
+  // The show slot is free again after each refusal.
+  assert.deepEqual(await refused.show('show-after', {artworkId: 'saved-art', targets: ['browser']}), {status: 'accepted', requestId: 'show-after'});
 });
 
 it('the owner permit holds every surface for attention and nothing else', async () => {
