@@ -87,6 +87,10 @@ void test('status, endings and outcomes keep saved, reported and restored eviden
   assert.match(endingText({generation: 'g', reason: 'refused', restoration: 'none', atMs: 1, code: 'invalid-state'}), /refused the start \(invalid-state\)\. No restoration.*Free mode/);
   assert.match(endingText({generation: 'g', reason: 'source-lost', restoration: 'skipped', atMs: 1}), /Music input was lost.*skipped/);
   assert.match(endingText({generation: 'g', reason: 'manual', restoration: 'none', atMs: 1}), /manual change/);
+  // #1272: the Lines and the NL22 both play live Music, so a capability refusal names the layout or the stream, never "Lines only".
+  const capability = endingText({generation: 'g', reason: 'device', restoration: 'none', atMs: 1, code: 'unsupported-capability'});
+  assert.match(capability, /cannot render this preset with its saved layout, or cannot take its streamed frames/);
+  assert.doesNotMatch(capability, /Lines/);
   assert.equal(controlText('Completed: succeeded. The module observed the result.'), 'Completed: succeeded. The core saved it; the light reports separately.');
   assert.match(controlText('Refused (unsupported-capability) without changing state.'), /Only Music.app capture/);
   assert.equal(controlText('Accepted. Waiting for completion.'), 'Accepted. Waiting for completion.');

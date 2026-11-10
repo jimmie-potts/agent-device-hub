@@ -220,7 +220,7 @@ a physical controller would keep its last presentation until another write.
 `music-effects.test.ts` and `music-input.test.ts` use synthetic inputs and explicit
 times to check these source contracts.
 
-## Live Music session on Lines
+## Live Music sessions on the Lines and the NL22
 
 `src/music-session.ts` runs the core's `music-lighting-work` for
 [#1272](https://github.com/jimmie-potts/agent-device-hub/issues/1272), under the
@@ -229,18 +229,23 @@ Frames stream through the light's external-control mode
 ([#1598](https://github.com/jimmie-potts/agent-device-hub/issues/1598), OpenSpec change
 `gh-1598-lines-streaming-takeover`). A Start goes ahead over whatever the light shows
 ([#1614](https://github.com/jimmie-potts/agent-device-hub/issues/1614), OpenSpec change
-`gh-1614-start-from-any-scene`).
-The core owns the session. The module owns admission and execution through the light's
-existing locked worker, as for a bounded moment.
+`gh-1614-start-from-any-scene`). The NL22 Light Panels take sessions too, through their
+own external-control version (OpenSpec change `gh-1272-nl22-live-sessions`, whose design
+separates the documented protocol from what only the installed NL22 can show).
+The core owns each light's session. The module owns admission and execution through that
+light's existing locked worker, as for a bounded moment. The Lines and the NL22 are
+independent: each has its own session, worker, journal, writes and record, and one
+light's ending never writes, holds or ends the other.
 
 - **Admission.** Only `bunny/core` may send the work; anyone else gets `forbidden`. A
   Start is refused, with nothing written and no mode changed, unless every check holds:
-  - the light is the Lines device (`unsupported-capability`);
   - it is already in Free with no pending mode (`invalid-state`);
   - it is not held (`unavailable`);
   - the hub's own power choice is not off (`invalid-state`);
   - no session is starting or playing (`invalid-state`) and no other content waits (`capacity`);
   - the saved reactive preset exists (`not-found`);
+  - the light's stream can address every zone of the saved layout (`unsupported-capability`):
+    on the NL22, no panel ID above 255 and at most 255 panels;
   - the renderer accepts it with the saved layout (`unsupported-capability`);
   - the light is on and reports a selection and a brightness (`invalid-state`, naming
     what the light showed; a failed read is `unavailable`).
@@ -273,16 +278,22 @@ existing locked worker, as for a bounded moment.
   session `manual`. A colour base also reads `GET /state` there, the one extra request
   before streaming: a different colour or colour mode, picked in the app while the light
   stays on `*Solid*`, ends the session `manual` with no write. Scene and unnamed bases
-  read only the selection. The Start's journaled write then puts the light in external-control mode,
-  version 2 (`PUT /effects` with `animType: extControl`), and the light reports
-  `*ExtControl*`. The write completes the work command `succeeded`/`transmitted`, the
+  read only the selection. The Start's journaled write then puts the light in external-control mode
+  (`PUT /effects` with `animType: extControl`): version 2 with logical panels on the Lines,
+  version 1 on the NL22. The light reports `*ExtControl*`. The NL22 answers with the UDP port
+  to stream to; an answer without one fails the Start `failed`/`transmitted` with
+  `unsupported-capability` and ends the session `device`, with no frame, no hold and no further
+  write. The write completes the work command `succeeded`/`transmitted`, the
   session becomes `playing`, and the first frame follows as a datagram. Without a fresh feature
   within 2 s, the session ends `source-lost` and the Start fails `unavailable`; an alert
   before the first frame fails it `invalid-state`.
-- **Frames** are UDP datagrams to the light's streaming port, 60222 (`src/stream.ts`).
-  Each carries the zones' colors: a 2-byte count, then per zone its 2-byte ID from the
-  saved layout, red, green, blue, white 0 and a 2-byte transition of 1 (100 ms), all
-  big-endian. Each renders the newest fresh sample only, with one request or datagram in
+- **Frames** are UDP datagrams to the light's configured address, never to an address a
+  reply names (`src/stream.ts`). On the Lines they go to port 60222 and carry the zones'
+  colors: a 2-byte count, then per zone its 2-byte ID from the saved layout, red, green,
+  blue, white 0 and a 2-byte transition of 1 (100 ms), all big-endian. On the NL22 they go
+  to the port its entry's answer named: a 1-byte count, then per triangle its 1-byte panel
+  ID, a frame count of 1, red, green, blue, white 0 and a 1-byte transition of 1 (100 ms).
+  Each renders the newest fresh sample only, with one request or datagram in
   flight, at least 100 ms between frames and no catch-up. Silent valid frames keep
   playing. Nothing answers a datagram, so it holds nothing and opens no span.
 - **App takeover.** A scene chosen in the Nanoleaf app leaves streaming mode, and the
@@ -325,7 +336,8 @@ Each light's record is served as `music-lighting-device` (subject: the light) an
 republished on every change. An ended record keeps `{generation, reason, restoration,
 atMs}`. A `refused`, `expired` or `device` ending also keeps the `code` behind it, such as
 `expired`, `unsupported-capability`, the device's answer, `unavailable` for a read without
-an answer or `uncertain-result` for a lost write answer. A Lines session never writes the Panels.
+an answer or `uncertain-result` for a lost write answer. A Lines session never writes the Panels,
+and an NL22 session never writes the Lines.
 
 Each light's `nanoleaf-wall` record also carries, from these same reads and with no
 request of its own:
@@ -347,7 +359,9 @@ Known limits:
 - Colour restoration follows the Nanoleaf API documentation; #1614's installed check qualifies it on the Lines.
 - An app takeover, and brightness and power changes made outside the hub, are seen within about a second. The entry checks only the selection (and a colour base's colour), so a brightness or power change made before it is seen by the first playing check, after a frame may have replaced the base.
 - After a `device` or `restart` ending, or a module stop mid-session, nothing is written: the light stays in streaming mode, showing the last frame, until it times out or a scene is chosen. The scene restorer treats `*ExtControl*` in Free as someone else's choice.
-- The streaming behavior (zone addressing, app takeover, brightness) comes from third-party protocol notes; #725 qualifies it on the installed Lines.
+- The Lines' streaming behavior (zone addressing, app takeover, brightness) comes from third-party protocol notes; #725 qualifies it on the installed Lines.
+- The NL22's version 1 entry, answer and datagram layout follow Nanoleaf's OpenAPI documentation; that it reports `*ExtControl*` while streaming, how an app scene and a timeout end the mode, how brightness applies and whether its panel IDs fit one byte are unqualified until #725 checks the installed NL22.
+- Every effect family plays on both lights from a saved preset; spatial effects need the saved positions, which an NL22 layout always has.
 - The input reads the runtime's one clock for both its wall and monotonic readings.
 - #725 owns physical cadence and appearance.
 
@@ -496,7 +510,7 @@ the wall pages (#934) apply that rule.
 | `nanoleaf-show-save` | command | Append a guarded named decorative version at target `shows`, with a metadata-only outcome |
 | `device-mode-set`, `power-set`, `brightness-set`, `scene-activate` | command | Work, Quiet and Free; power, brightness and scenes |
 | `moment-play` | command | Bounded Lines moments in Work or over a named Free base; terminal outcome follows restoration |
-| `music-lighting-work` | command | From the core only: start a live Music session on Lines over a named Free base, or stop it; Start completes with its streaming entry, Stop after its restoration |
+| `music-lighting-work` | command | From the core only: start a live Music session on the Lines or the NL22 over the Free base it shows, or stop it; Start completes with its streaming entry, Stop after its restoration |
 | `music-lighting-device` | state | Each light's live Music session record: none, `starting`, `playing`, or `ended` with its reason, restoration and time |
 | `zone-power-set`, `media-start`, `media-control` | command | Refused with `unsupported-capability` |
 | `nanoleaf-wall-edit` | command | One edit from the wall editor: settings and palette, element projects and halves, a task's project, a project's color, Locate, an eviction |

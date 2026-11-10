@@ -99,7 +99,7 @@ const RESTORATIONS: Record<LightingEnded['restoration'], string> = {
 const RESTORING: ReadonlySet<LightingEnded['reason']> = new Set(['stopped', 'alert', 'source-lost']);
 const CODE_HINTS: Partial<Record<string, string>> = {
   'invalid-state': 'The light must be on, already in Free mode, and free of another session.',
-  'unsupported-capability': 'Only the Lines render live Music, with a preset their renderer accepts.',
+  'unsupported-capability': 'The light cannot render this preset with its saved layout, or cannot take its streamed frames.',
   unavailable: 'The light was held or could not be read.',
   'not-found': 'The saved preset no longer exists.',
   capacity: 'Other light content was waiting.',

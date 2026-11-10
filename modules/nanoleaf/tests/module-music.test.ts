@@ -37,7 +37,8 @@ function work(session: Pick<Session, 'world' | 'core'>, data: LightingWork, devi
 }
 const start = (session: Session, requestId: string, gen = generation(1), presetId = 'preset-green', device = 'wall'): Promise<Answer> =>
   work(session, {requestId, generation: gen, action: 'start', capture: CAPTURE, presetId}, device);
-const stop = (session: Session, requestId: string, gen = generation(1)): Promise<Answer> => work(session, {requestId, generation: gen, action: 'stop'});
+const stop = (session: Session, requestId: string, gen = generation(1), device = 'wall'): Promise<Answer> =>
+  work(session, {requestId, generation: gen, action: 'stop'}, device);
 
 type MusicFeatures = Extract<CaptureFeatures, {input: 'music'}>;
 function frame(session: Session, patch: Partial<MusicFeatures> = {}): MusicFeatures {
@@ -268,22 +269,98 @@ test('a held light refuses a Start as unavailable', async context => {
   world.verifyMessages();
 });
 
-test('Panels refuse a session and a Lines session leaves Panels untouched', async context => {
-  const session = await lightsInFree(context, {
-    section: {...SECTION, devices: [...SECTION.devices, {id: 'nl22', kind: 'panels', address: PANELS_ADDRESS, secret: 'token'}]},
-    devices: {[LINES_ADDRESS]: 'lines', [PANELS_ADDRESS]: 'panels'},
-  });
+// #1272: the NL22 Light Panels take live sessions through their own version 1 stream, as an independent target beside
+// the Lines: each light has its own session, worker, journal and writes, and one light's ending never touches the other.
+const WITH_PANELS: WorldOptions = {
+  section: {...SECTION, devices: [...SECTION.devices, {id: 'nl22', kind: 'panels', address: PANELS_ADDRESS, secret: 'token'}]},
+  devices: {[LINES_ADDRESS]: 'lines', [PANELS_ADDRESS]: 'panels'},
+};
+const panelsOf = (world: ModuleWorld) => world.device.state().devices[PANELS_ADDRESS];
+async function bothInFree(context: TestContext): Promise<Session> {
+  const session = await lightsInFree(context, WITH_PANELS);
   const {world} = session;
+  await world.until(() => world.state<{layout?: string}>('nanoleaf-wall', 'nl22')?.layout === 'saved', 10000, 'the Panels answer');
   await mode(world, 'free', 'nl22');
-  const panels = (): number | undefined => world.device.state().devices[PANELS_ADDRESS]?.writes;
-  const before = panels();
-  assert.deepEqual(await start(session, 'panels-start', generation(1), 'preset-green', 'nl22'), {status: 'rejected', code: 'unsupported-capability'});
-  assert.equal(deviceState(world, 'nl22')?.session, null);
+  return session;
+}
+
+test('an NL22 session streams version 1 to the Panels only, and a Lines session beside it stays independent', async context => {
+  const session = await bothInFree(context);
+  const {world} = session;
+  const linesBefore = {writes: lines(world)?.writes, streamed: lines(world)?.streamed, ignored: lines(world)?.ignored};
+  assert.deepEqual(await start(session, 'panels-start', generation(1), 'preset-green', 'nl22'), {status: 'accepted'});
+  await play(session, 300);
+  await world.until(() => deviceState(world, 'nl22')?.session?.status === 'playing', 2000, 'the Panels playing');
+  await play(session, 1000);
+  assert.deepEqual(outcome(world, 'panels-start'), {requestId: 'panels-start', result: 'succeeded', evidence: 'transmitted'});
+  const panels = panelsOf(world);
+  assert.deepEqual({select: panels?.select, streaming: panels?.streaming}, {select: '*ExtControl*', streaming: {version: 'v1', port: 60221}});
+  assert.ok((panels?.streamed ?? 0) >= 5 && panels?.ignored === 0, `${panels?.streamed} applied, ${panels?.ignored} ignored`);
+  assert.deepEqual(Object.keys(panels?.frame ?? {}).sort(), ['200', '201', '202', '203'], 'every triangle by its panel ID');
+  assert.equal(panels?.tooSoon, 0, 'no datagram less than 100 ms after the last, on the module\'s clock');
+  assert.deepEqual({writes: lines(world)?.writes, streamed: lines(world)?.streamed, ignored: lines(world)?.ignored}, linesBefore, 'the Lines are untouched');
+  assert.equal(deviceState(world)?.session, null);
+
+  // A Lines session beside it: each light streams its own version, and the Lines' manual takeover ends only its own.
   assert.deepEqual(await start(session, 'lines-start', generation(2)), {status: 'accepted'});
+  await play(session, 300);
+  await world.until(() => deviceState(world)?.session?.status === 'playing', 2000, 'the Lines playing');
+  assert.equal(lines(world)?.streaming?.version, 'v2');
+  world.device.chooseScene(LINES_ADDRESS, 'Northern Lights');
+  const pickedAt = world.clock.now();
   await play(session, 1500);
-  assert.equal(deviceState(world)?.session?.status, 'playing');
-  assert.equal(panels(), before);
+  assert.deepEqual({reason: ended(world)?.reason, restoration: ended(world)?.restoration}, {reason: 'manual', restoration: 'none'});
+  assert.equal(lines(world)?.select, 'Northern Lights', 'the app\'s scene stays');
+  assert.equal(world.writes().filter(write => write.atMs > pickedAt).length, 0, 'nothing is written over the newer manual choice');
+  assert.equal(lines(world)?.streams.filter(entry => entry.applied && entry.atMs > pickedAt).length, 0);
+  assert.equal(deviceState(world, 'nl22')?.session?.status, 'playing', 'the Panels play on');
+
+  // Stopping the Panels restores their own scene and writes nothing to the Lines.
+  const linesWrites = lines(world)?.writes;
+  assert.deepEqual(await stop(session, 'panels-stop', generation(1), 'nl22'), {status: 'accepted'});
+  await play(session, 300);
+  await world.until(() => world.outcomes('panels-stop').length === 1, 2000, 'the Panels stop outcome');
+  assert.deepEqual(outcome(world, 'panels-stop'), {requestId: 'panels-stop', result: 'succeeded', evidence: 'transmitted'});
+  const endedPanels = deviceState(world, 'nl22')?.session;
+  assert.ok(endedPanels?.status === 'ended');
+  assert.deepEqual({reason: endedPanels.ended.reason, restoration: endedPanels.ended.restoration}, {reason: 'stopped', restoration: 'restored'});
+  assert.deepEqual({select: panelsOf(world)?.select, brightness: panelsOf(world)?.brightness}, {select: 'Beach Waves', brightness: 50});
+  assert.equal(lines(world)?.writes, linesWrites, 'no Panels write reached the Lines');
+  assert.equal(lines(world)?.select, 'Northern Lights');
+  world.verify();
+});
+
+test('the NL22 refuses a Start outside Free and the Lines\' own Start is unaffected', async context => {
+  const session = await bothInFree(context);
+  const {world} = session;
+  await mode(world, 'work', 'nl22');
+  const before = panelsOf(world)?.writes;
+  assert.deepEqual(await start(session, 'panels-work', generation(1), 'preset-green', 'nl22'), {status: 'rejected', code: 'invalid-state'});
+  assert.equal(panelsOf(world)?.writes, before, 'a refused Start writes nothing');
   assert.equal(deviceState(world, 'nl22')?.session, null);
+  assert.deepEqual(await start(session, 'lines-free', generation(2)), {status: 'accepted'});
+  await play(session, 500);
+  await world.until(() => deviceState(world)?.session?.status === 'playing', 2000, 'the Lines playing');
+  assert.equal(panelsOf(world)?.streamed, 0);
+  world.verify();
+});
+
+test('an alert ends both lights\' sessions, and each puts back its own scene', async context => {
+  const session = await bothInFree(context);
+  const {world} = session;
+  assert.deepEqual(await start(session, 'panels-start', generation(1), 'preset-green', 'nl22'), {status: 'accepted'});
+  assert.deepEqual(await start(session, 'lines-start', generation(2)), {status: 'accepted'});
+  await play(session, 500);
+  await world.until(() => deviceState(world)?.session?.status === 'playing' && deviceState(world, 'nl22')?.session?.status === 'playing', 2000, 'both playing');
+  await world.core.set('alpha', {attention: [{kind: 'approval', id: {status: 'known', id: 'approval-1'}, turn: {status: 'known', id: 't1'}}]});
+  await play(session, 1000);
+  await world.until(() => ended(world) !== undefined && deviceState(world, 'nl22')?.session?.status === 'ended', 3000, 'both endings');
+  for (const device of ['wall', 'nl22']) {
+    const record = deviceState(world, device)?.session;
+    assert.ok(record?.status === 'ended');
+    assert.deepEqual({reason: record.ended.reason, restoration: record.ended.restoration}, {reason: 'alert', restoration: 'restored'}, device);
+  }
+  assert.deepEqual([lines(world)?.select, panelsOf(world)?.select], ['Beach Waves', 'Beach Waves']);
   world.verify();
 });
 

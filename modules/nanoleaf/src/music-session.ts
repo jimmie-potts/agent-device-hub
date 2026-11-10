@@ -1,14 +1,15 @@
-// The live Music session on Lines (#1272, design D4): the core's `music-lighting-work` admitted over the Free base the
+// The live Music session on a light (#1272, design D4): the core's `music-lighting-work` admitted over the Free base the
 // light shows (music-base.ts, #1614), then run by the device's existing locked worker, as a bounded moment is (moments.ts).
 // The frozen saved preset renders the newest fresh feature from the capture binding (music-input.ts, music-effects.ts).
-// The Start's journaled write puts the light in external-control streaming, and frames then go as datagrams (stream.ts,
-// #1598). A Stop, an alert or source loss puts a saved scene or a plain colour back only while nothing newer took over,
-// and leaves any other base on the last frame; a newer choice, an external change or a failed write ends it with no
-// restoration. Nothing retries, resends, resumes or falls back to another input or light.
+// The Start's journaled write puts the light in external-control streaming, and frames then go as datagrams in the
+// version its kind takes: version 2 on the Lines (#1598), version 1 on the NL22 Light Panels (stream.ts). Each light has
+// its own session, worker and journal. A Stop, an alert or source loss puts a saved scene or a plain colour back only
+// while nothing newer took over, and leaves any other base on the last frame; a newer choice, an external change or a
+// failed write ends it with no restoration. Nothing retries, resends, resumes or falls back to another input or light.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {LightingCapture, LightingEndReason, LightingRestoration} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import {Cancelled, Execution, Refused} from './controls.js';
-import {DEFAULT, type Element, type Kind, type LayoutEntry} from './devices.js';
+import type {Element, Kind, LayoutEntry} from './devices.js';
 import {Rejected, type Zone} from './effects.js';
 import {ValueError} from './errors.js';
 import {finish, finishMusicStops, held, journal, journalRow, type End, type JournalRow, type Report, type Transact} from './journal.js';
@@ -22,7 +23,7 @@ import {endSession, liveSession, markPlaying, musicSession, MUSIC_PLAY, MUSIC_ST
 import type {RenderConfig} from './renderer.js';
 import {execute, type Db} from './sqlite.js';
 import {controlState, markDirty, overrides, type Overrides} from './store.js';
-import {ENTER_STREAMING, STREAMING, streamPacket} from './stream.js';
+import {STREAMING, streamProtocol} from './stream.js';
 import {HttpError, type LightRequest} from './transport.js';
 
 export {MUSIC_PLAY, MUSIC_STOP, musicDeviceState, initMusicSessions} from './music-store.js';
@@ -83,20 +84,20 @@ const probe = (binding: MusicBinding): MusicSample => ({endpointId: binding.endp
 }});
 
 /**
- * The checks a Start passes, in the design's order, before the device read and again in its admission: the Lines, Free
- * with no pending mode, no hold, no live session and no other content, a saved preset the renderer accepts with the
- * saved layout, and its expiry. The frozen recipe and layout.
+ * The checks a Start passes, in the design's order, before the device read and again in its admission: Free with no
+ * pending mode, no hold, no live session and no other content, a saved preset, a saved layout whose every zone the
+ * light's stream addresses, a preset the renderer accepts with that layout, and its expiry. The frozen recipe and layout.
+ * The Lines and the NL22 Light Panels take a session alike, each on its own device; only the stream differs.
  */
 export function checkMusicStart(db: Db, device: string, start: StartRequest, layout: LayoutEntry | undefined, nowMs: number,
   expiresMs: number): {recipe: MusicRecipeV1; layout: MusicStart['layout']} {
-  if (device !== DEFAULT) throw new Refused('unsupported-capability', 'Live Music plays on the Lines only.');
   const control = controlState(db, device);
   if (control.mode !== 'free' || control.revision !== control.applied) throw new Refused('invalid-state', 'Live Music starts only on a light already in Free.');
   if (held(db, control.revision, device)) throw new Refused('unavailable', 'A device hold waits for an explicit choice.');
   // The hub's own choice of power off is a choice Music must not override, as a moment does not.
   if (overrides(db, device).power === false) throw new Refused('invalid-state', 'The light is switched off.');
   if (liveSession(db, device)) throw new Refused('invalid-state', 'A Music session is already starting or playing.');
-  if (journal(db, device).length > 0) throw new Refused('capacity', 'Other content waits on the Lines.');
+  if (journal(db, device).length > 0) throw new Refused('capacity', 'Other content waits on the light.');
   let recipe: MusicRecipeV1 | undefined;
   try {
     recipe = readReactiveCatalog(db).presets.find(preset => preset.presetId === start.presetId)?.recipe;
@@ -104,7 +105,12 @@ export function checkMusicStart(db: Db, device: string, start: StartRequest, lay
     throw new Refused('invalid-state', 'The saved reactive library cannot be read.');
   }
   if (recipe === undefined) throw new Refused('not-found', 'No saved reactive preset has this ID.');
-  if (layout === undefined) throw new Refused('invalid-state', 'The saved Lines layout is not available yet.');
+  if (layout === undefined) throw new Refused('invalid-state', 'The saved layout is not available yet.');
+  // The NL22's version 1 stream carries one-byte panel IDs and counts: a layout it cannot address is refused before any
+  // device request, never sent truncated.
+  if (!streamProtocol(layout.kind).addresses(layout.elements.flatMap(element => element.zones))) {
+    throw new Refused('unsupported-capability', 'The light\'s stream cannot address every zone of its saved layout.');
+  }
   let binding: MusicBinding;
   try {
     binding = musicBinding(start.capture);
@@ -117,7 +123,7 @@ export function checkMusicStart(db: Db, device: string, start: StartRequest, lay
     if (new MusicRenderer(recipe, frozen, binding).render(probe(binding)) === null) throw new Rejected('unsupported-capability');
   } catch (error) {
     if (error instanceof ValueError || error instanceof TypeError) {
-      throw new Refused('unsupported-capability', 'The Lines cannot render this preset with the saved layout.');
+      throw new Refused('unsupported-capability', 'The light cannot render this preset with the saved layout.');
     }
     throw error;
   }
@@ -176,8 +182,8 @@ export function endInterruptedMusic(db: Db, device: string, nowMs: number, repor
 
 export type MusicPlayback = {
   db: Db; device: string; row: JournalRow; config: RenderConfig; transact: Transact; request: LightRequest;
-  /** Sends one frame datagram to the device's streaming port. */
-  stream: (packet: Uint8Array) => Promise<void>;
+  /** Sends one frame datagram to `port` at the device's configured address. */
+  stream: (packet: Uint8Array, port: number) => Promise<void>;
   /** The runtime's clock in epoch milliseconds, and the input's clock readings. */
   now: () => number; clock: () => MusicClock;
   sleep: (seconds: number) => Promise<void>;
@@ -286,15 +292,23 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   }
   // The light reports this selection while it streams; a scene chosen on it leaves the mode.
   const shown = STREAMING;
+  // The stream the light's kind takes: the Lines version 2 on its fixed port, the Panels version 1 on the port its
+  // entry's answer names.
+  const protocol = streamProtocol(command.layout.kind);
   // Entering streaming is the Start's own journaled write: a lost answer ends it uncertain and holds the device, and an
   // answered refusal fails it; either way `finish` ends the session as a device failure (#1598).
+  let answer: unknown;
   try {
-    await new Execution(db, row.revision, row.id, device, transact, now).call(() => send('/effects', ENTER_STREAMING));
+    answer = await new Execution(db, row.revision, row.id, device, transact, now).call(() => send('/effects', protocol.entry));
   } catch (error) {
     if (error instanceof Cancelled) return end('manual', 'none');
     deviceFailure(error);
     return end('device', 'none', {kind: 'uncertain'});
   }
+  // An answer that names no streaming port took the write but leaves nowhere to stream: the Start fails as transmitted
+  // and the session ends as a device failure, with no frame and no further write, as after any device ending.
+  const port = protocol.port(answer);
+  if (port === undefined) return end('device', 'none', {kind: 'answered', code: 'unsupported-capability'});
   await transact(report => {
     markPlaying(db, device, generation, report);
     const start = journalRow(db, row.id);
@@ -338,7 +352,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   // the session as a device failure, with no retry.
   const stream = async (zones: readonly Zone[]): Promise<boolean> => {
     try {
-      await flagged(options.stream(streamPacket(zones)));
+      await flagged(options.stream(protocol.packet(zones), port));
       return true;
     } catch (error) {
       deviceFailure(error);

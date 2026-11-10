@@ -6,10 +6,14 @@
 // error, delete one of its scenes, or change its power, colour or token as the Nanoleaf app would. A colour write, by
 // hue and saturation or colour temperature, selects `*Solid*` (#1614). A device that answers with an
 // error status throws the transport's `HttpError`, as the Nanoleaf HTTP client does.
+// External control follows each kind's documented version (`stream.ts`): the Lines enter version 2 and take it on port
+// 60222, the Panels enter version 1, answer with their streaming port and take one-byte panel IDs. The simulation is
+// stricter than a light is known to be, so a wrong version, port, layout or zone fails loudly: it refuses the other
+// version's entry and rejects a datagram on another port, of another layout or for a zone it does not light.
 import {isObject} from '../compat.js';
 import {ValueError} from '../errors.js';
 import {NEIGHBOR} from '../panels.js';
-import {STREAMING, type LightDatagram} from '../stream.js';
+import {STREAM_PORT, STREAMING, type LightDatagram} from '../stream.js';
 import {HttpError, type LightAddress, type LightRequest} from '../transport.js';
 
 /** The synthetic token every simulated controller accepts. It is no credential and must appear in no message, record or proof. */
@@ -34,6 +38,10 @@ export type SimulatedWrite = {
 };
 /** How many recent writes a simulated controller keeps. */
 export const KEPT_WRITES = 64;
+/** The streaming port a simulated Panels controller names in its version 1 answer, as the documentation's example does. */
+export const PANELS_STREAM_PORT = 60221;
+/** The least time between two datagrams the documentation allows: no faster than 10 Hz. */
+export const STREAM_SPACING_MS = 100;
 
 /** What one simulated controller shows, as plain data a disposable run can report. */
 export type SimulatedDevice = {
@@ -55,6 +63,12 @@ export type SimulatedDevice = {
   frame: Record<string, [number, number, number]> | null;
   /** The last `KEPT_WRITES` datagrams, oldest first: when each arrived and whether it was applied. */
   streams: {atMs: number; applied: boolean}[];
+  /** The external-control version entered and the port it streams on, or null while not streaming. */
+  streaming: {version: 'v1' | 'v2'; port: number} | null;
+  /** Applied datagrams that arrived less than `STREAM_SPACING_MS` after the previous applied one, on the simulation's clock. */
+  tooSoon: number;
+  /** When a scene was last chosen or the power switched as the Nanoleaf app would, or null before that. */
+  manualAtMs: number | null;
   /** Requests that reached the controller: reads and writes. */
   reads: number;
   writes: number;
@@ -121,7 +135,7 @@ export class SimulatedNanoleaf {
 
   #add(address: string, kind: SimulatedKind): SimulatedDevice {
     const device: SimulatedDevice = {kind, on: true, brightness: 50, select: SCENES[0] ?? '', hue: 0, sat: 0, ct: 4000, colorMode: 'effect', scenes: [...SCENES],
-      effect: null, streamed: 0, ignored: 0, frame: null, streams: [], reads: 0, writes: 0, recent: []};
+      effect: null, streamed: 0, ignored: 0, frame: null, streams: [], streaming: null, tooSoon: 0, manualAtMs: null, reads: 0, writes: 0, recent: []};
     this.#devices.set(address, device);
     return device;
   }
@@ -142,30 +156,32 @@ export class SimulatedNanoleaf {
 
   /**
    * The module's datagram transport. As a light does, the controller applies a datagram only while streaming and ignores
-   * it otherwise. Nothing answers a datagram, so one sent to an offline or absent controller is simply lost.
+   * it otherwise. Nothing answers a datagram, so one sent to an offline or absent controller is simply lost. A streaming
+   * controller rejects one sent to another port, of another version's layout, or addressing a zone it does not light.
+   * An applied datagram changes only the zones it addresses: the documentation says a frame need not hold every panel.
    */
   readonly datagram: LightDatagram = (address, packet): Promise<void> => {
     const device = this.#devices.get(address.ip);
     if (!this.#online || device === undefined) return Promise.resolve();
+    const atMs = this.#now();
     const kept = (applied: boolean): void => {
-      device.streams.push({atMs: this.#now(), applied});
+      device.streams.push({atMs, applied});
       if (device.streams.length > KEPT_WRITES) device.streams.shift();
     };
-    if (device.select !== STREAMING) {
+    const streaming = device.select === STREAMING ? device.streaming : null;
+    if (streaming === null) {
       device.ignored += 1;
       kept(false);
       return Promise.resolve();
     }
-    const view = Buffer.from(packet.buffer, packet.byteOffset, packet.byteLength);
-    const count = view.readUInt16BE(0);
-    if (view.length !== 2 + 8 * count) return Promise.reject(new ValueError('A malformed streaming datagram.'));
-    const frame: Record<string, [number, number, number]> = {};
-    for (let index = 0; index < count; index += 1) {
-      const at = 2 + 8 * index;
-      frame[String(view.readUInt16BE(at))] = [view.readUInt8(at + 2), view.readUInt8(at + 3), view.readUInt8(at + 4)];
-    }
+    if (address.port !== streaming.port) return Promise.reject(new ValueError('No stream listens on this port.'));
+    const colors = decode(Buffer.from(packet.buffer, packet.byteOffset, packet.byteLength), streaming.version);
+    const zones = lightZones(device.kind);
+    if (colors === undefined || colors.some(([id]) => !zones.has(id))) return Promise.reject(new ValueError('A malformed streaming datagram.'));
+    const previous = device.streams.filter(entry => entry.applied).at(-1);
+    if (previous !== undefined && atMs - previous.atMs < STREAM_SPACING_MS) device.tooSoon += 1;
     device.streamed += 1;
-    device.frame = frame;
+    device.frame = {...device.frame, ...Object.fromEntries(colors.map(([id, color]) => [String(id), color]))};
     kept(true);
     return Promise.resolve();
   };
@@ -176,6 +192,8 @@ export class SimulatedNanoleaf {
     if (device !== undefined && device.scenes.includes(name)) {
       device.select = name;
       device.colorMode = 'effect';
+      device.streaming = null;
+      device.manualAtMs = this.#now();
     }
   }
 
@@ -236,12 +254,15 @@ export class SimulatedNanoleaf {
   /** Switches a controller on or off as the Nanoleaf app or its power button would. */
   setPower(address: string, on: boolean): void {
     const device = this.#devices.get(address);
-    if (device !== undefined) device.on = on;
+    if (device === undefined) return;
+    device.on = on;
+    device.manualAtMs = this.#now();
   }
 
   state(): SimulatedState {
     return {online: this.#online, held: this.#held.length,
       devices: Object.fromEntries([...this.#devices].map(([address, device]) => [address, {...device, recent: device.recent.map(write => ({...write})), streams: device.streams.map(entry => ({...entry})),
+        streaming: device.streaming === null ? null : {...device.streaming},
         frame: device.frame === null ? null : Object.fromEntries(Object.entries(device.frame).map(([id, color]) => [id, [...color] as [number, number, number]]))}]))};
   }
 
@@ -282,6 +303,7 @@ export class SimulatedNanoleaf {
       if (hue !== undefined || sat !== undefined || ct !== undefined) {
         device.colorMode = ct !== undefined ? 'ct' : 'hs';
         device.select = '*Solid*';
+        device.streaming = null;
       }
       return record({...(isObject(on) && typeof on.value === 'boolean' ? {on: on.value} : {}),
         ...(isObject(brightness) && typeof brightness.value === 'number' ? {brightness: brightness.value} : {}),
@@ -293,15 +315,58 @@ export class SimulatedNanoleaf {
         if (!device.scenes.includes(select)) throw new HttpError(404);
         device.select = select;
         device.colorMode = 'effect';
+        device.streaming = null;
         return record({select});
       }
       if (isObject(write) && typeof write.animType === 'string') {
-        device.select = write.animType === 'extControl' ? STREAMING : write.animType === 'static' ? '*Static*' : '*Dynamic*';
+        const streaming = write.animType === 'extControl' ? entered(device.kind, write) : null;
+        device.select = streaming !== null ? STREAMING : write.animType === 'static' ? '*Static*' : '*Dynamic*';
         device.colorMode = 'effect';
         device.effect = write.animType;
-        return record({animType: write.animType, ...(typeof write.loop === 'boolean' ? {loop: write.loop} : {})});
+        device.streaming = streaming;
+        record({animType: write.animType, ...(typeof write.loop === 'boolean' ? {loop: write.loop} : {})});
+        // A version 1 light answers the entry with where to stream; a version 2 light answers with no body.
+        return streaming?.version === 'v1' ? {streamControlIpAddr: address.ip, streamControlPort: streaming.port, streamControlProtocol: 'udp'} : null;
       }
     }
     throw new ValueError('The simulated controller takes no such write.');
   }
+}
+
+/**
+ * The external control a write of `kind` enters: the Lines version 2 with logical panels, the Panels version 1 (or an
+ * omitted version, which the documentation reads as version 1) without them. Any other entry is refused with HTTP 400
+ * before it changes anything, so a wrong version fails loudly.
+ */
+function entered(kind: SimulatedKind, write: Record<string, unknown>): {version: 'v1' | 'v2'; port: number} {
+  const version = write.extControlVersion ?? 'v1';
+  if (kind === 'lines' && version === 'v2' && write.logicalPanelsEnabled === true) return {version: 'v2', port: STREAM_PORT};
+  if (kind === 'panels' && version === 'v1' && write.logicalPanelsEnabled === undefined) return {version: 'v1', port: PANELS_STREAM_PORT};
+  throw new HttpError(400);
+}
+
+/** The zone IDs a simulated layout lights: two per Line, one per triangle. Connectors light nothing. */
+function lightZones(kind: SimulatedKind): ReadonlySet<number> {
+  return new Set(kind === 'lines' ? Array.from({length: 2 * SIMULATED_LINES}, (_, index) => 100 + index)
+    : Array.from({length: SIMULATED_TRIANGLES}, (_, index) => 200 + index));
+}
+
+/**
+ * A datagram's zone colors in its version's layout (`stream.ts`), or undefined when it is malformed for that version:
+ * version 1 has a one-byte count and seven bytes per panel with a frame count of 1, version 2 a two-byte count and
+ * eight bytes per zone.
+ */
+function decode(view: Buffer, version: 'v1' | 'v2'): [number, [number, number, number]][] | undefined {
+  const v1 = version === 'v1';
+  const header = v1 ? 1 : 2, width = v1 ? 7 : 8;
+  if (view.length < header) return undefined;
+  const count = v1 ? view.readUInt8(0) : view.readUInt16BE(0);
+  if (view.length !== header + width * count) return undefined;
+  const colors: [number, [number, number, number]][] = [];
+  for (let index = 0; index < count; index += 1) {
+    const at = header + width * index;
+    if (v1 && view.readUInt8(at + 1) !== 1) return undefined;
+    colors.push([v1 ? view.readUInt8(at) : view.readUInt16BE(at), [view.readUInt8(at + 2), view.readUInt8(at + 3), view.readUInt8(at + 4)]]);
+  }
+  return colors;
 }

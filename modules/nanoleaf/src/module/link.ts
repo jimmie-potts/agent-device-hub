@@ -164,14 +164,15 @@ export class DeviceLink {
   };
 
   /**
-   * Sends one live Music frame datagram to the device's configured address (#1598). Nothing answers a datagram, so it
-   * neither reaches nor fails the device's availability, and it opens no span: the session's ending reports a failure.
+   * Sends one live Music frame datagram to `port` at the device's configured address (#1598, #1272): the address is
+   * never one a reply named. Nothing answers a datagram, so it neither reaches nor fails the device's availability, and
+   * it opens no span: the session's ending reports a failure.
    */
-  readonly stream = (packet: Uint8Array): Promise<void> => {
+  readonly stream = (packet: Uint8Array, port: number): Promise<void> => {
     const {address, datagram, signal} = this.#options;
     if (signal.aborted) return Promise.reject(new LinkStopped());
     try {
-      return datagram({ip: address}, packet);
+      return datagram({ip: address, port}, packet);
     } catch (error) {
       return Promise.reject(error);
     }
