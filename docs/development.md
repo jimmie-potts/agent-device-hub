@@ -824,6 +824,8 @@ can run. Each session applies this rule itself; no coordinator grant is needed.
    `--memory-swap` always equals `--memory`. The SDK suite is flaky at 2 CPUs,
    so run it wide, as two slots:
    `docker run --rm --name bunny-gh<issue>-<job>-wide --cpus 4 --memory 2g --memory-swap 2g`.
+   The runtime verification suite does not fit the standard size either: run it
+   with `npm run test:runtime:container -- --suite verify` (one slot) or wide.
 4. **Lint** (`npm run lint:js`) runs natively only, with default settings, and
    one at a time across all sessions. Its shards run one after another, each
    under a 2,048 MB heap budget ([Heap budget](static-analysis.md#heap-budget)),
@@ -1486,7 +1488,8 @@ See [Runtime test layers](../apps/runtime/DEVELOPMENT.md#runtime-test-layers) fo
 
 ### Runtime verification runs
 
-On macOS with Docker Desktop, run `npm run test:runtime:container`. It snapshots
+On macOS with Docker Desktop, the Linux route is `npm run test:runtime:container`;
+the native route follows below. It snapshots
 current tracked and nonignored new source, prepares a reusable image using the
 pinned Node 24 base and lockfile-selected Chromium, then runs `npm ci --include=dev`,
 `npm run build`, `npm run test:runtime:scenarios:built` and
@@ -1506,7 +1509,8 @@ access; the checks install from the image's offline npm cache.
 
 Use `-- --suite scenarios` or `-- --suite verify` for a focused suite, and
 `-- --suite browser` for the runtime dashboard browser smoke check. Separate
-invocations may run concurrently, including from independent worktrees. Each
+invocations may run concurrently, including from independent worktrees, within
+the slots of [Test work on the Mac](#test-work-on-the-mac). Each
 owns a unique container; cleanup removes only that container. The source copy
 excludes ignored files, private paths and build output and refuses symlinks.
 Keep private work outside tracked/nonignored source. The in-container two-hour
