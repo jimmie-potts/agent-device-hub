@@ -52,6 +52,11 @@ export const widgetCatalog: readonly WidgetDefinition[] = [
     sizes: ['medium', 'large'], source: {kind: 'core', families: [], content: ['/api/v2/history']}, commands: false,
   },
   {
+    // Reads the capture state and the existing derived feature stream in the browser (#1619); it starts no capture.
+    id: 'music-visualizer', name: 'Music visualizer', description: 'A live visualizer of the measured Music audio, in the effect chosen in this browser.',
+    sizes: ['medium', 'large'], source: {kind: 'core', families: ['music-capture-state']}, commands: false,
+  },
+  {
     id: 'wispr', name: 'Wispr', description: 'Numeric dictation totals from the manually selected collector files.',
     sizes: ['small', 'medium'], source: {kind: 'module', families: [], content: ['wispr/status', 'wispr/summary']}, commands: false,
   },

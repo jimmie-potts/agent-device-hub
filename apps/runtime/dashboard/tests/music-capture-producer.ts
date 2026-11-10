@@ -8,6 +8,7 @@ export async function musicCaptureProducer(url: string, token: string, microphon
   const commands: Command<CaptureWork>[] = [];
   let endpoint: RemoteEndpoint, current: Command<CaptureWork> | undefined, sequence = 0, level = 0.25, automatic = true;
   let timer: ReturnType<typeof setInterval> | undefined, closed = false, refuse = false;
+  let bands: CaptureFeatures['bands'] | undefined;
   let sourceMono = 0, sourceWall = 0;
   const progress = (command: Command<CaptureWork>, status: 'started' | 'stopped' | 'failed') => endpoint.publish<CaptureProgress>('music-capture-progress', {
     kind: 'occurrence', type: 'org.bunny.music-capture.progress.observed', dataschema: 'https://bunny.invalid/events/music-capture-progress/2.0',
@@ -22,7 +23,7 @@ export async function musicCaptureProducer(url: string, token: string, microphon
       dataschema: `https://bunny.invalid/events/music-capture-features/${selection.input === 'music' ? '2.0' : '2.1'}`, data: {
         generation: current.data.generation, ...selection, sequence: ++sequence, sampleRateHz: 48000, channels: 2, frameCount: 4800,
         startMonotonicMs: mono - 100, endMonotonicMs: mono, emittedMonotonicMs: mono, observedAtMs, validUntilMs: observedAtMs + 400,
-        rms: level, peak: level, clippedFraction: 0, bands: {bass: level, mid: 0, treble: 0}, onset: {strength: 0, confidence: 0}, discontinuity: false, ...overrides,
+        rms: level, peak: level, clippedFraction: 0, bands: bands ?? {bass: level, mid: 0, treble: 0}, onset: {strength: 0, confidence: 0}, discontinuity: false, ...overrides,
       }}, {parent: current});
   };
   const pause = (): void => {if (timer !== undefined) clearInterval(timer); timer = undefined;};
@@ -63,6 +64,8 @@ export async function musicCaptureProducer(url: string, token: string, microphon
     data: {requestId, action: 'enable', input: 'music', ...(microphoneId === undefined ? {} : {microphone: {id: microphoneId}})}}, {requestId, timeoutMs: 5000});
   return {commands, endpointId: endpoint.id, emit, pause, start,
     automatic(value: boolean) {automatic = value;}, level(value: number) {level = value;},
+    /** Sets explicit bass, mid and treble values; undefined returns to bass following the level. */
+    bands(value: CaptureFeatures['bands'] | undefined) {bands = value;},
     refuse(value: boolean) {refuse = value;},
     async close() {if (closed) return; closed = true; pause(); await endpoint.close(); await edge.close();}};
 }

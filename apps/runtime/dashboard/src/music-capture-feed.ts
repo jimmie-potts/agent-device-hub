@@ -131,11 +131,17 @@ export class MusicCaptureFeed implements Subscription {
   #cancel: () => void = () => {};
   #recheck: (() => void) | undefined;
   #rechecks = 0;
+  /** Reads past their setup, counted only so `busy` can report them. */
+  #reads = 0;
   constructor({participant, now = reading, scheduler = timers, onClosed = () => {}}:
     {participant: CaptureParticipant; now?: () => CaptureReading; scheduler?: Scheduler; onClosed?: () => void}) {
     this.#participant = participant; this.#now = now; this.#scheduler = scheduler; this.#onClosed = onClosed;
   }
   readonly getSnapshot = (): MusicCaptureView => this.#projection.view;
+  /** True once this scope is closed, by its last user or by the connection; it then reads nothing more. */
+  get closed(): boolean {return this.#closed;}
+  /** True while a clock recheck is scheduled or a read is in flight, so a shared scope never starts a read beside it. */
+  get busy(): boolean {return this.#recheck !== undefined || this.#reads > 0;}
   readonly subscribe = (listener: () => void): (() => void) => {this.#listeners.add(listener); return () => {this.#listeners.delete(listener);};};
   /** Reads the capture state again. A caller's refresh, unlike the feed's own recheck, starts a new recheck budget. */
   refresh(): Promise<boolean> {
@@ -154,6 +160,7 @@ export class MusicCaptureFeed implements Subscription {
       this.invalidate();
       const previous = this.#copy; this.#copy = undefined; this.#shown = 0; await this.#closeReplaced(previous);
     }
+    this.#reads += 1;
     try {
       if (this.#subscription === undefined) {
         this.#opening ??= this.#participant.subscribe<CaptureFeatures>('bunny.event.music-capture-features.*', message => {
@@ -188,7 +195,7 @@ export class MusicCaptureFeed implements Subscription {
       else if (!restarted) this.#synchronized(result.message, sent, this.#now());
       return this.#projection.view.synced;
     } catch {if (!this.#closed && epoch === this.#epoch) this.#unread(recheck); return false;}
-    finally {this.#opening = undefined;}
+    finally {this.#opening = undefined; this.#reads -= 1;}
   }
   #unread(recheck: boolean): void {
     if (recheck && this.#copy !== undefined && this.#projection.view.synced) {this.#recheckClock(); this.#show();} else this.invalidate();

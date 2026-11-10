@@ -10,7 +10,10 @@ export type HomeCardDefinition = {id: string; name: string; category: string; si
 const ordinarySizes: readonly WidgetSize[] = ['medium', 'large'];
 export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardDefinition[] {
   // Roborock and Volcano metadata describe each existing device placement, not a second default card.
-  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock' && widget.id !== 'volcano').map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: !['art', 'wispr', 'duck-latest', 'reachy', 'timeline'].includes(widget.id)}));
+  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock' && widget.id !== 'volcano').map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: !['art', 'wispr', 'duck-latest', 'reachy', 'timeline', 'music-visualizer'].includes(widget.id)}));
+  // The visualizer stays addable while measurement is off; the placed card rests and says why.
+  const visualizer = result.find(card => card.id === 'music-visualizer');
+  if (visualizer !== undefined) visualizer.category = 'Audio';
   const art = result.find(card => card.id === 'art');
   if (art !== undefined) {
     art.category = 'Art';

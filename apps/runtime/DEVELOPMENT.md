@@ -693,6 +693,24 @@ in App verification and the full local dashboard browser suite, using synthetic
 tracks and room IDs without household-device contact. Keep the existing artwork
 race journey and full owning checks; simulated proof establishes no audible result.
 
+The music visualizer (#1619) adds `dashboard/tests/music-visualizer.test.ts` to the
+existing dashboard unit discovery. It drives both effects with a fake feature stream
+through the real `CaptureProjection`: silence, a steady level, a single beat,
+band changes, and rest when the stream stops, goes stale or changes generation.
+It also covers the browser-only effect choice, the shared capture scope, the
+catalog entry and the `#/audio/visualizer` address. After the root build, run
+`node apps/runtime/dashboard/tests/music-visualizer.browser.ts`, which the
+Music-card browser entry also imports. It checks both effects and the resting
+state on the Audio panel at 1440, 390 and 320 px, and the Home card at 1440 and
+390 px. Layout editing (add, move, reload and remove) runs at 1440 px. The full
+view and its Fullscreen API run at 1440 px and at 3,840 × 2,160. The journey also
+checks that the visualizer sends no command. It records frame timings at
+3,840 × 2,160 for the live effects and for a resting and a blank-canvas baseline in
+the same run. These headless, software-rendered timings do not qualify AC6 either
+way; whether the full-screen view drops frames is judged at the owner's installed
+TV check. `VISUALIZER_EVIDENCE` keeps the screenshots and timings
+private. The owner's view of the installed dashboard is separate.
+
 Reusable lighting (#1135) uses the existing event and core test discovery in CI.
 After the root build, run
 `node --test packages/event-contracts/tests/lighting-layout.test.mjs apps/runtime/dist/tests/lighting-layout.test.js`
@@ -735,6 +753,7 @@ node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # f
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
 node apps/runtime/dashboard/tests/automation.browser.ts # routine/rule tabs, drafts and lost replies
 node apps/runtime/dashboard/tests/music-capture.browser.ts # Music/microphone measurement, tracked start/stop and freshness; also in hosted smoke and Music-card browser entry
+node apps/runtime/dashboard/tests/music-visualizer.browser.ts # visualizer panel, full view and Home card over the numeric fixture; also in the Music-card browser entry
 node apps/runtime/dashboard/tests/music-lighting.browser.ts # Music lighting Start/Stop on simulated Lines, endings, stale reads and lost replies; also in hosted smoke and Music-card browser entry
 node apps/runtime/dashboard/tests/pixoo-pages.browser.ts # shared Pixoo cards, playlist drafts and trusted editor bundle
 node apps/runtime/dashboard/tests/pixoo-upload.browser.ts # ordinary binary import, retained request and read-only refusal

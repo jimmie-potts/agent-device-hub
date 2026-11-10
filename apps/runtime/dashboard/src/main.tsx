@@ -10,6 +10,7 @@ import {DeviceDirectory} from './device-directory.tsx';
 import {NavLink, ShellNavigation, useRoute} from './navigation.tsx';
 import {InboxPanel, type InboxFocus} from './inbox.tsx';
 import {Timeline, TimelinePanel} from './timeline.tsx';
+import {MusicVisualizerCard} from './music-visualizer.tsx';
 import {AutomationPage} from './automation.tsx';
 // The B.U.N.N.Y. dashboard on the runtime (Hub #922), converted from `apps/dashboard/src/main.tsx` at main 5abbae9: the
 // shell, its hash routes, the Places navigation, browser sign-in on the runtime's gateway and the agent sessions, which
@@ -194,7 +195,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const selectedPlayback = route.kind === 'playback' && playback.some(({record}) => record.id === route.sourceId);
   const selectedModule = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module) : undefined;
   const selectedPage = route.kind === 'module' ? selectedModule?.pages.find(page => page.id === route.page) : undefined;
-  const known = route.kind === 'habitat' || route.kind === 'devices' || route.kind === 'settings' || route.kind === 'audio' || route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
+  const known = route.kind === 'habitat' || route.kind === 'devices' || route.kind === 'settings' || route.kind === 'audio' || route.kind === 'visualizer' || route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
   const contextModule = route.kind === 'module' ? selectedModule : route.kind === 'lighting-brand' ? runtime.modules?.find(module => module.name === route.brand)
     : route.kind === 'component' ? runtime.modules?.find(module => devices.some(device => device.record.id === route.id && device.copy.owner === `bunny/modules/${module.name}`)) : undefined;
   const deviceCard = ({record, copy}: (typeof devices)[number]): React.ReactNode => (record.kind === 'pixoo' && copy.owner === 'bunny/modules/pixoo' && runtime.modules?.some(module => module.name === 'pixoo' && module.serves.includes('pixoo-display')) === true && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <>
@@ -244,6 +245,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size} showHeading={false}><HubMode record={mode} devices={modeDevices}
       live={state.feed === 'connected' && modeCopy?.synced === true} control={runtime.control} operations={operations} operationsSynced={operationsLive}
       items={inboxItems} inboxSynced={inboxLive} headingId="widget-hub-mode" onCheckInbox={id => {setInboxFocus(previous => ({id, serial: (previous?.serial ?? 0) + 1}));}}/></Widget>;
+    if (placement.widget === 'music-visualizer') return <Widget key="music-visualizer" id="music-visualizer" size={placement.size}><MusicVisualizerCard connection={connection}
+      connected={state.feed === 'connected'} coreLive={!runtime.catalogFailed && runtime.modules?.some(module => module.name === 'core' && module.state === 'running') === true}/></Widget>;
     if (placement.widget === 'timeline') return <Widget key="timeline" id="timeline" size={placement.size} showHeading={false}><TimelinePanel headingId="widget-timeline" connected={state.feed === 'connected'}/></Widget>;
     if (placement.widget === 'inbox') {
       return <Widget key="inbox" id="inbox" size={placement.size} showHeading={false}><InboxPanel items={inboxItems} live={inboxLive} control={runtime.control}
