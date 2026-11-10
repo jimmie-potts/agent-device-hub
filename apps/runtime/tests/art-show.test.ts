@@ -30,7 +30,7 @@ const catalog = (): ArtState => ({id: 'art', revision: 1, month: '2026-11', day:
   retention: {recentLimit: 24, recent: 3, favorites: 0, retained: []}});
 
 type DisplayReply = (command: Command<MomentPlayRequest>) => Reply;
-type CatalogContent = (ref: string, request?: ModuleContentRequest) => ModuleContent | ReturnType<typeof errorBody> | undefined;
+type CatalogContent = (ref: string, request?: ModuleContentRequest) => ModuleContent | ReturnType<typeof errorBody> | undefined | Promise<never>;
 /** The art owner's private catalog newest first, one page per array, as `catalog` content with descending `after` cursors. */
 const pagedCatalog = (pages: readonly (readonly ArtworkSummary[])[]): CatalogContent => (ref, request) => {
   if (ref !== 'catalog') return undefined;
@@ -225,6 +225,22 @@ it('art that is not retained stays not-found, and an unreadable catalog is unava
   for (const w of [missing, refused, malformed, looping]) assert.equal(w.prepares().length + w.browser().length + w.moments.length, 0);
   // The show slot is free again after each refusal.
   assert.deepEqual(await refused.show('show-after', {artworkId: 'saved-art', targets: ['browser']}), {status: 'accepted', requestId: 'show-after'});
+});
+
+it('a catalog that does not answer is refused unavailable before the reply deadline, never left uncertain', async t => {
+  const w = await world(t, {}, () => new Promise<never>(() => {}));
+  const pending = w.show('show-late', {artworkId: 'older-art', targets: ['desk-display', 'browser']});
+  await waitFor(() => w.reads.length === 1);
+  // The command's reply deadline is 5000 ms; the read keeps a second of it for the refusal.
+  w.clock.advance(4000); await flush();
+  let late: Awaited<typeof pending> | undefined;
+  void pending.then(value => {late = value;});
+  await waitFor(() => late !== undefined, 5000, 'a refusal before the reply deadline');
+  assert.ok(late !== undefined && 'error' in late);assert.equal(late.error.code, 'unavailable');
+  assert.equal(w.handle.operation('show-late')?.status, 'rejected', 'a definite refusal, not an uncertain result');
+  w.clock.advance(20_000); await flush();
+  assert.equal(w.prepares().length + w.browser().length + w.moments.length, 0);
+  assert.deepEqual(await w.show('show-next', {artworkId: 'saved-art', targets: ['browser']}), {status: 'accepted', requestId: 'show-next'});
 });
 
 it('the owner permit holds every surface for attention and nothing else', async () => {

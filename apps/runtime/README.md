@@ -485,8 +485,10 @@ artworks. For older art
 ([#1584](https://github.com/jimmie-potts/agent-device-hub/issues/1584)) it then
 reads the art owner's private `catalog` content newest first. The runtime host
 binds that reader, which calls the art module's content contribution as the
-gateway does for an authenticated reader. It runs once per show, within
-5 seconds, and stops at the artwork or the last page. Art the owner no longer
+gateway does for an authenticated reader. It runs once per show and stops
+at the artwork or the last page. It ends a second before the command's
+5-second reply deadline, so a slow catalog is refused rather than left
+uncertain. Art the owner no longer
 retains is `not-found`, and a catalog that cannot be read is `unavailable`. The
 core then checks each target against the configured art displays (`not-found`)
 and the artwork's usable compositions (`unsupported-capability`). A refused target is skipped while the others

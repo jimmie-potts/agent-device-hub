@@ -4,7 +4,7 @@
 
 ## What Changes
 
-- When the artwork is not in the published record, the core reads that artwork's summary from the art owner's private `catalog` content, newest first, and applies the same composition rules. The runtime host binds this reader, which calls the art module's content contribution through the module host, as the gateway does for an authenticated reader. It runs once per show command within 5 seconds and stops at the artwork or the last page. Each cursor must move toward older art, so a scan always ends.
+- When the artwork is not in the published record, the core reads that artwork's summary from the art owner's private `catalog` content, newest first, and applies the same composition rules. The runtime host binds this reader, which calls the art module's content contribution through the module host, as the gateway does for an authenticated reader. It runs once per show command, ends a second before the command's 5-second reply deadline so a slow catalog is refused rather than left uncertain, and stops at the artwork or the last page. Each cursor must move toward older art, so a scan always ends.
 - Art the owner no longer retains stays `not-found`. A catalog that cannot be read, or one that returns a malformed page, is refused `unavailable`. Nothing is sent in either case.
 - The gallery enables Show now for every artwork it lists and drops the "only the most recent saved art" explanation.
 - `art-show/2.0`, its admission, the plan path, the owner permit, the automation log evidence, the typed refusals and `core_art_show` stay as they are. The tool description now says any retained artwork can be shown.

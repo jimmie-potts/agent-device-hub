@@ -20,6 +20,10 @@ import type {CompletedOutcome} from './tracker.js';
 /** The automation log's rule identity for owner shows: `priorityClass` `event`, so no flourish budget or spacing counts them. */
 export const ART_SHOW_RULE = 'art-show';
 const DURATION_MS = {pixoo: 10_000, tidbyt: 30_000} as const;
+/** Time kept after a catalog read for the refusal to reach the dispatcher before the command's reply deadline. */
+export const ART_CATALOG_REPLY_MARGIN_MS = 1000;
+/** The longest catalog read, for a command without a reply deadline. */
+const ART_CATALOG_LONGEST_MS = 5000;
 
 export type ArtShowOptions = {
   clock: () => number; active: () => boolean; plans: Pick<ArtPlans, 'targets' | 'present'>;
@@ -75,7 +79,7 @@ export function createArtShow(options: ArtShowOptions) {
      * longer retains is `not-found`, an unreadable catalog `unavailable`, a target with no usable composition
      * `unsupported-capability` and an unconfigured display `not-found`, each for that target alone unless no target remains.
      */
-    async prepare(request: ArtShowRequest): Promise<PreparedShow | ErrorBody> {
+    async prepare(request: ArtShowRequest, replyByMs = Number.POSITIVE_INFINITY): Promise<PreparedShow | ErrorBody> {
       if (!options.active()) return errorBody('unavailable', {detail: 'the core is not taking art shows now'});
       if (showing) return errorBody('capacity', {detail: 'another owner art show is still preparing; read its results before a new request'});
       showing = true;
@@ -86,7 +90,10 @@ export function createArtShow(options: ArtShowOptions) {
         if (catalog === undefined) return errorBody('unavailable', {detail: 'saved art records are unavailable now'});
         let artwork: ArtworkSummary | ErrorBody | undefined = catalog.artworks.find(value => value.artworkId === request.artworkId);
         if (artwork === undefined && options.retained !== undefined) {
-          artwork = await options.retained(request.artworkId);
+          // The read ends before the command's reply deadline, so a slow catalog is refused, never left uncertain.
+          const leftMs = Math.min(ART_CATALOG_LONGEST_MS, replyByMs - options.clock() - ART_CATALOG_REPLY_MARGIN_MS);
+          if (leftMs <= 0) return errorBody('unavailable', {detail: 'no time is left to read the art owner\'s saved art catalog'});
+          artwork = await options.retained(request.artworkId, leftMs);
           if (!options.active()) return errorBody('unavailable', {detail: 'the core is not taking art shows now'});
         }
         if (artwork === undefined) return errorBody('not-found', {detail: 'the art owner retains no such saved artwork'});
@@ -176,7 +183,8 @@ export class ArtShowPart implements CorePart {
       const core = this.#core, show = this.#show();
       if (this.#closed || core === undefined || show === undefined) return errorBody('unavailable', {detail: 'the core art show has not started'});
       await core.ready;
-      const prepared = await show.prepare(admitted.data);
+      const replyByMs = Date.parse(command.expiresat ?? '');
+      const prepared = await show.prepare(admitted.data, Number.isNaN(replyByMs) ? undefined : replyByMs);
       if ('error' in prepared) return prepared;
       handedOff = true;
       void this.#finish(core, show, admitted, prepared);

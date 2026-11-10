@@ -1,14 +1,17 @@
 // Retained saved art beyond the art owner's published record (Hub #1584). The `art` record holds the 24 most recent
 // artworks. For an owner show of an older one, the core reads that artwork's summary from the art owner's private
 // `catalog` content, the pages the gallery reads, through the module host, as the gateway does for an authenticated
-// reader. This is ADR 0012's fetch of larger content by reference from its owner. It runs once per show command with a
-// bounded wait. It never repeats to watch for state, and it never retries.
+// reader. This is ADR 0012's fetch of larger content by reference from its owner. It runs once per show command, with a
+// wait the caller bounds inside the command's reply deadline. It never repeats to watch for state, and it never retries.
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {artContentRef, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {ModuleContent, ModuleManifest, ModuleScheduler} from '@jimmie-potts/sdk';
 
-/** One retained artwork's summary, `undefined` when the art owner retains no such artwork, or why it could not be read. */
-export type ArtCatalogRead = (artworkId: string) => Promise<ArtworkSummary | undefined | ErrorBody>;
+/**
+ * One retained artwork's summary, `undefined` when the art owner retains no such artwork, or why it could not be read
+ * within `timeoutMs`.
+ */
+export type ArtCatalogRead = (artworkId: string, timeoutMs: number) => Promise<ArtworkSummary | undefined | ErrorBody>;
 /** The module host's running contributions, as the gateway reads them. */
 export type ArtCatalogHost = {
   modules(): readonly {readonly name: string; readonly admitted: boolean; readonly manifest: Pick<ModuleManifest, 'apiVersion' | 'content'>}[];
@@ -19,8 +22,6 @@ export type ArtCatalogHost = {
 const ART_MODULE = 'art';
 /** The art owner's largest catalog page. */
 const PAGE = 100;
-/** The whole scan's bound, as the gateway bounds one contribution; the show's 20 s lead starts after it. */
-export const ART_CATALOG_TIMEOUT_MS = 5000;
 
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 /** The fields the show's composition rules read, checked before the summary is trusted. */
@@ -46,14 +47,14 @@ function pageOf(found: ModuleContent | ErrorBody | undefined): Page | undefined 
  * `unavailable`.
  */
 export function hostedArtCatalog(host: ArtCatalogHost, scheduler: ModuleScheduler): ArtCatalogRead {
-  return async artworkId => {
+  return async (artworkId, timeoutMs) => {
     const unavailable = errorBody('unavailable', {detail: 'the art owner\'s saved art catalog is unavailable now'});
     const owner = host.modules().find(module => module.name === ART_MODULE && module.admitted);
     const content = owner?.manifest.content;
     if (owner === undefined || content === undefined || Number(owner.manifest.apiVersion.split('.')[1]) < 3) return unavailable;
     const controller = new AbortController();
     let cancel = (): void => {};
-    const late = new Promise<ErrorBody>(resolve => {cancel = scheduler.after(ART_CATALOG_TIMEOUT_MS, () => {controller.abort(); resolve(unavailable);});});
+    const late = new Promise<ErrorBody>(resolve => {cancel = scheduler.after(timeoutMs, () => {controller.abort(); resolve(unavailable);});});
     const scan = async (): Promise<ArtworkSummary | undefined | ErrorBody> => {
       let after = 0;
       for (;;) {

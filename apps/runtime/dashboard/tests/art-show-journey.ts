@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, expect} from 'playwright/test';
+import {CATALOG_PAGE_SIZE} from '../../../../modules/art/dist/src/frontend/model.js';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {feed, startWorld} from './harness.ts';
 
@@ -61,15 +62,20 @@ export async function artShowJourney(): Promise<void> {
       await expect.poll(() => world.art.state().imageCalls).toBe(before + 1);
       await expect(page.locator('[data-gallery-art]').first()).not.toHaveAttribute('data-gallery-art', newest ?? '');
     }
-    const record = await (await fetch(`${world.url}/modules/art/content/catalog?after=0&limit=24`, {headers: {authorization: `Bearer ${world.readerToken}`}})).json() as {artworks: {artworkId: string}[]};
-    assert.ok(!record.artworks.some(item => item.artworkId === artworkId), 'the first artwork is past the 24 most recent');
+    const catalog = await (await fetch(`${world.url}/modules/art/content/catalog?after=0&limit=100`, {headers: {authorization: `Bearer ${world.readerToken}`}})).json() as {artworks: {artworkId: string}[]};
+    const position = catalog.artworks.findIndex(item => item.artworkId === artworkId);
+    assert.ok(position >= 24, 'the first artwork is past the 24 most recent');
     const older = page.locator(`[data-gallery-art="${artworkId}"]`);
     const pager = page.getByRole('navigation', {name: 'Gallery pages', exact: true});
-    for (let number = 2; number <= 6 && await older.count() === 0; number += 1) {
+    // Page straight to the artwork's page. The previous page's tiles and Next art stay for a render after each click, so
+    // the next click waits until the first tile belongs to the new page; probing tiles earlier could page past the artwork.
+    const olderPage = Math.floor(position / CATALOG_PAGE_SIZE) + 1, tiles = page.locator('[data-gallery-art]');
+    for (let number = 2; number <= olderPage; number += 1) {
+      const shown = await tiles.first().getAttribute('data-gallery-art');assert.ok(shown !== null);
       await pager.getByRole('button', {name: 'Next art', exact: true}).click();
-      // Count tiles only once the next page has loaded, or the scan pages past the artwork.
       await expect(pager.getByText(`Page ${number}`, {exact: true})).toBeVisible();
-      await expect(page.locator('[data-gallery-art]').first()).toBeVisible();
+      await expect(tiles.first()).toHaveAttribute('data-gallery-art', catalog.artworks[(number - 1) * CATALOG_PAGE_SIZE]?.artworkId ?? '');
+      assert.notEqual(await tiles.first().getAttribute('data-gallery-art'), shown);
     }
     await expect(older).toBeVisible();
     const olderShow = older.getByRole('button', {name: 'Show now', exact: true});

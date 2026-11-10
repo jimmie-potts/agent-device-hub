@@ -196,7 +196,7 @@ export class AutomationPart implements CorePart {
       failed:()=>recordLog(handle.log,'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal'})});
     const inputs=this.#inputs;
     this.#show=createArtShow({clock:()=>handle.clock.now(),active:()=>!this.#closed&&!this.#signal.aborted,plans:this.#art,art:()=>inputs.ownerArt(),
-      retained:artworkId=>this.#artCatalog?.(artworkId)??Promise.resolve(undefined),
+      retained:(artworkId,timeoutMs)=>this.#artCatalog?.(artworkId,timeoutMs)??Promise.resolve(undefined),
       attention:()=>[...this.#sessions.values()].some(session=>session.attention.length>0),log:rows=>{store.appendLog(rows);},operation:requestId=>handle.operation(requestId),
       failed:()=>recordLog(handle.log,'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal'})});
   }
