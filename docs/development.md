@@ -796,63 +796,62 @@ remain separate.
 ### Test work on the Mac
 
 The Mac's Docker Desktop VM also runs the installed core, the diagnostics stack
-and the Tronbyt server. Test work shares that host, and host load sets how much
-can run. Each session applies this rule itself; no coordinator grant is needed.
+and the Tronbyt server, and host load limits the test work beside them. Each
+session applies this rule itself; no coordinator grant is needed.
 
-1. **Slots.** At most 5 test jobs run at once, across all sessions. A job is
-   one test container or one native test suite. Any container started for
-   testing counts, whatever its name; the known names start with `bunny-gh` and
-   `bunny-runtime-check-`. A wide container (name ending `-wide`, item 3) counts
-   as two slots. An `npm run test:runtime:container` run is one slot and
-   carries its own, larger limits, stated in
-   [Runtime verification runs](#runtime-verification-runs).
-2. **Start check.** Start only if all three hold; otherwise wait a minute and
-   check again:
-   - the 1-minute load in `uptime` is under 8;
-   - the installed core is `healthy`:
-     `docker inspect -f '{{.State.Health.Status}}' bunny-mac-personal-core-1`;
-   - enough slots are free. Count test containers with
-     `docker ps --format '{{.Names}}'`. List native suites with
-     `ps -axo command= | grep -E '^([^ ]*/)?(node|python3?)( |$)' | grep -E -- '--test|/tests/|unittest|vitest|scripts/check-' | grep -v -- '--test-isolation=process'`.
-     The listing is an aid: it shows one parent line per suite (the line that
-     names the test files or the browser entry script) and hides test workers.
-     Also count every native suite you started yourself.
-3. **Containers.** Use
+1. **Slots.** At most 5 test jobs at once, across all sessions. A job is one
+   container (any except the core, the diagnostics containers and the Tronbyt
+   server) or one native test suite. A container named `…-wide` counts as two.
+2. **Start check.** Start only when the 1-minute load is under 8, the
+   installed core is `healthy` and enough slots are free
+   ([Counting test jobs](#counting-test-jobs)). Otherwise wait a minute.
+3. **Containers.** One job per container, exiting when it ends; no
+   `sleep infinity` holders, no container without limits, no swap:
    `docker run --rm --name bunny-gh<issue>-<job> --cpus 2 --memory 1250m --memory-swap 1250m`.
-   Run one job per container and let it exit when the job ends. No
-   `sleep infinity` holders, no container without limits, and no swap:
-   `--memory-swap` always equals `--memory`. The SDK suite is flaky at 2 CPUs,
-   so run it wide, as two slots:
+   The SDK suite runs wide:
    `docker run --rm --name bunny-gh<issue>-<job>-wide --cpus 4 --memory 2g --memory-swap 2g`.
-   The runtime verification suite does not fit the standard size either: run it
-   with `npm run test:runtime:container -- --suite verify` (one slot) or wide.
-4. **Lint** (`npm run lint:js`) runs natively only, with default settings, and
-   one at a time across all sessions. Its shards run one after another, each
-   under a 2,048 MB heap budget ([Heap budget](static-analysis.md#heap-budget)),
-   which a test container's memory cannot hold. Start it only when this prints
-   nothing:
-   `ps -axo command= | grep -E '^([^ ]*/)?node .*(eslint/bin/eslint\.js|lint-shards\.mjs)'`.
-   An editor's ESLint language server does not match.
-5. **Host work.** Build, typecheck, lint and `npm ci` on the host take no slot.
-   A native suite takes one slot. Run a `node --test` suite with
-   `node scripts/native-test.mjs <package script>`, which bounds it to 2
-   workers (`--workers N` to change) and gives the run a private temporary
-   directory; [Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos)
-   has the commands. Do not run a full native suite through its plain npm test
-   script, which starts one worker per core less one.
+   The runtime verification suite runs wide or through
+   `npm run test:runtime:container -- --suite verify`, one slot with its own
+   limits ([Runtime verification runs](#runtime-verification-runs)).
+4. **Lint** (`npm run lint:js`) runs natively only, one at a time across all
+   sessions; [Counting test jobs](#counting-test-jobs) has the check and
+   [Heap budget](static-analysis.md#heap-budget) the reason.
+5. **Native work.** Build, typecheck, lint and `npm ci` take no slot. A native
+   suite takes one. Run a package script that is one bare `node --test` command
+   as `node scripts/native-test.mjs <script>` (2 workers); that satisfies a
+   check list naming the npm script. Run other scripts, such as the browser
+   journeys, the `test:*:package:built` scripts and `test:workflow`, as their
+   check lists name them
+   ([Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos)).
 6. **Evidence.** A native macOS run of build, typecheck, lint, the Node suites,
    the scenario catalog and the browser journeys is accepted local validation
-   before a push. Hosted Linux CI is the gate. A Linux container is needed only
-   for a test that still needs Linux (listed in
-   [Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos),
-   or so marked in its own guide) or to reproduce a hosted failure; it stays
-   allowed otherwise.
-7. **Stop.** If the 1-minute load passes 12, or the installed core is not
-   `healthy`, the owner of the newest job stops it.
+   before a push; hosted Linux CI is the gate. A Linux container is needed only
+   for a test that still needs Linux (listed in Native runs on macOS, or so
+   marked in its own guide) or to reproduce a hosted failure; it stays allowed
+   otherwise.
+7. **Stop.** If the 1-minute load passes 12 or the core is not `healthy`, the
+   owner of the newest job stops it.
 
 Test work never stops, restarts or reconfigures the installed core, the
 diagnostics containers or the Tronbyt server. Stop and remove only your own
 jobs; never touch another session's containers.
+
+#### Counting test jobs
+
+- Load: `uptime`. Core:
+  `docker inspect -f '{{.State.Health.Status}}' bunny-mac-personal-core-1`
+  prints `healthy`.
+- Containers: `docker ps --format '{{.Names}}'`. Test containers usually start
+  with `bunny-gh` or `bunny-runtime-check-`; count a `…-wide` name twice.
+- Native suites:
+  `ps -axo command= | grep -E '^([^ ]*/)?(node|[Pp]ython[0-9.]*)( |$)' | grep -E -- '--test|/tests/|unittest|vitest|scripts/check-' | grep -v -- '--test-isolation=process'`.
+  The listing is an aid. It hides test workers, and most suites show one line,
+  the one naming the test files or the browser entry script; a
+  `scripts/package-*.mjs --test` suite shows two lines. Also count every native
+  suite you started yourself.
+- Lint: start it only when
+  `ps -axo command= | grep -E '^([^ ]*/)?node .*(eslint/bin/eslint\.js|lint-shards\.mjs)'`
+  prints nothing. An editor's ESLint language server does not match.
 
 ### Old system checks
 
