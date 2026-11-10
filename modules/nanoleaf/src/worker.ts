@@ -46,8 +46,8 @@ export interface WorkerOptions {
   signal: AbortSignal;
   /** The device transport, for layout reads, scene observation and every write. */
   request?: LightRequest;
-  /** Sends one live Music frame datagram to the device's streaming port (#1598); without it a session's frames fail. */
-  stream?: (packet: Uint8Array) => Promise<void>;
+  /** Sends one live Music frame datagram to the device's streaming `port` (#1598); without it a session's frames fail. */
+  stream?: (packet: Uint8Array, port: number) => Promise<void>;
   /** Replaces the rendered-effect sender, as Python's tests did. */
   send?: Sender;
   /** Restore the device's saved scene around the indicators (the default); false draws every state itself. */
