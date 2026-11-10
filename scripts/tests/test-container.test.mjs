@@ -87,7 +87,7 @@ test('the in-container steps copy the snapshot, commit it, build unless told not
 });
 
 /** A fake Docker host: an image store keyed by tag, a container table and a call log. */
-function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuringRun = false, interruptBeforeId = false, runWithoutId = null, rmExit = 0, buildExit = 0} = {}) {
+function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuringRun = false, interruptBeforeId = false, runWithoutId = null, rmExit = 0, buildExit = 0, rmRejects = false, interruptOnSnapshot = false, lateCid = false} = {}) {
   const calls = [];
   const containers = new Set();
   let interrupt;
@@ -96,6 +96,7 @@ function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuring
     log: () => {},
     onInterrupt: handler => { interrupt = handler; },
     snapshot: async (_repository, destination) => {
+      if (interruptOnSnapshot) interrupt();
       await mkdir(join(destination, 'scripts/test-container'), {recursive:true});
       await writeFile(join(destination, 'package-lock.json'), '{"lockfileVersion":3}');
       await writeFile(join(destination, 'scripts/test-container/Dockerfile'), 'FROM node');
@@ -113,11 +114,20 @@ function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuring
       calls.push(args);
       if (args[0] === 'build') { if (buildExit === 0) images.set(args[2], {id:image, label:args[4].split('=')[1]}); return buildExit; }
       if (args[0] === 'kill') { containers.delete(args[1]); return 0; }
-      if (args[0] === 'rm') { if (rmExit === 0) containers.delete(args.at(-1)); return rmExit; }
+      if (args[0] === 'rm') { if (rmRejects) throw new Error('spawn docker ENOENT'); if (rmExit === 0) containers.delete(args.at(-1)); return rmExit; }
       if (args[0] === 'run') {
         // docker run refusing before it creates a container writes no cidfile, like a 125 from the engine.
         if (runWithoutId !== null) return runWithoutId;
         if (interruptBeforeId) { interrupt(); await new Promise(wait => setTimeout(wait, 20)); return 130; }
+        if (lateCid) {
+          interrupt();
+          await new Promise(wait => setTimeout(wait, 200));
+          containers.add(id);
+          await writeFile(args[args.indexOf('--cidfile') + 1], id + '\n');
+          await new Promise(wait => setTimeout(wait, 200));
+          containers.delete(id);
+          return 137;
+        }
         containers.add(id);
         await writeFile(args[args.indexOf('--cidfile') + 1], id + '\n');
         if (interruptDuringRun) {
@@ -240,4 +250,40 @@ test('a scratch path docker cannot carry unchanged is refused with what to do, a
     await rm(odd, {recursive:true, force:true});
     await rm(repo, {recursive:true, force:true});
   }
+});
+
+test('a removal call that rejects is reported, keeps a failing status and still removes the scratch directories', async () => {
+  const repo = await repository();
+  try {
+    for (const [exit, expected] of [[3, 3], [0, 1]]) {
+      const io = fakeHost({exit, linger:true, rmRejects:true});
+      const said = [];
+      io.log = line => said.push(line);
+      assert.equal(await runJob(argv, io, repo), expected);
+      assert.ok(said.some(line => line.startsWith('could not run docker rm: spawn docker ENOENT')));
+      const run = io.calls.find(call => call[0] === 'run');
+      const source = run[run.indexOf('--volume') + 1].split(':')[0];
+      const cidfile = run[run.indexOf('--cidfile') + 1];
+      assert.equal(existsSync(source), false, 'the snapshot is removed');
+      assert.equal(existsSync(cidfile), false, 'the work directory is removed');
+    }
+  } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+test('an interrupt before docker run starts returns 130 and runs nothing', async () => {
+  const repo = await repository();
+  try {
+    const io = fakeHost({interruptOnSnapshot:true});
+    assert.equal(await runJob(argv, io, repo), 130);
+    assert.equal(io.calls.some(call => ['run','kill','rm'].includes(call[0])), false);
+  } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+test('an interrupt that arrives before the cidfile is written kills that ID exactly once when it appears', async () => {
+  const repo = await repository();
+  try {
+    const io = fakeHost({lateCid:true});
+    assert.equal(await runJob(argv, io, repo), 137);
+    assert.deepEqual(io.calls.filter(call => call[0] === 'kill'), [['kill', id]]);
+  } finally { await rm(repo, {recursive:true, force:true}); }
 });

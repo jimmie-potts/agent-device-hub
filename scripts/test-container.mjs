@@ -133,7 +133,7 @@ export async function runJob(argv, io = host, repository = root) {
   const refusal = admit(plan, {nameTaken: io.read(['container','inspect','--format','{{.Id}}',plan.name]) !== null});
   if (refusal) { io.log(refusal); return 2; }
   const state = {interrupted:false, id:null};
-  io.onInterrupt(() => { state.interrupted = true; if (state.id) void io.run(['kill', state.id]); });
+  io.onInterrupt(() => { state.interrupted = true; if (state.id) kill(io, state.id); });
   const scratch = await mkdtemp(join(tmpdir(), 'bunny-test-container-')); // Mode 0700; it holds only the snapshot.
   const work = await mkdtemp(join(tmpdir(), 'bunny-test-container-work-'));
   const source = join(scratch, 'source');
@@ -152,9 +152,15 @@ export async function runJob(argv, io = host, repository = root) {
     state.id ??= await containerId(cidfile);
     // --rm removes the container when it exits; remove it here only if it is still there, and only by its own ID.
     // A cleanup failure is reported; it turns a passing job into status 1 and leaves a failing job's status alone.
-    if (state.id && io.read(['container','inspect','--format','{{.Id}}',state.id]) !== null && await io.run(['rm','--force',state.id]) !== 0) {
-      io.log(`could not remove container ${state.id}`);
-      if (status === 0) status = 1;
+    if (state.id && io.read(['container','inspect','--format','{{.Id}}',state.id]) !== null) {
+      const removed = await io.run(['rm','--force',state.id]).catch(error => {
+        io.log(`could not run docker rm: ${error instanceof Error ? error.message : String(error)}`);
+        return 1;
+      });
+      if (removed !== 0) {
+        io.log(`could not remove container ${state.id}`);
+        if (status === 0) status = 1;
+      }
     }
     for (const directory of [scratch, work]) {
       await rm(directory, {recursive:true, force:true, maxRetries:3}).catch(error => {
@@ -164,6 +170,11 @@ export async function runJob(argv, io = host, repository = root) {
     }
   }
   return status;
+}
+
+/** Kills the job's own container by its ID; a failure to do so is reported and the run goes on to its cleanup. */
+function kill(io, id) {
+  io.run(['kill', id]).catch(error => io.log(`could not run docker kill: ${error instanceof Error ? error.message : String(error)}`));
 }
 
 async function containerId(cidfile) {
@@ -204,7 +215,7 @@ async function job(plan, io, state, {repository, source, work, cidfile}) {
     state.id = await containerId(cidfile);
     if (!state.id) await new Promise(wait => setTimeout(wait, 50));
   }
-  if (state.id && state.interrupted) void io.run(['kill', state.id]);
+  if (state.id && state.interrupted) kill(io, state.id);
   return await running;
 }
 
