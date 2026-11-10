@@ -173,16 +173,20 @@ void test('an initial sync result retained across a restart cannot revive old fr
 });
 
 /** A feed whose syncs take the given round trips, on a scheduler the test advances by hand. */
-function slowSyncs(rounds: readonly number[]) {
-  let mono = 1000, syncs = 0;
+function slowSyncs(rounds: readonly (number | 'held')[]) {
+  let mono = 1000, syncs = 0, release = (): void => {throw new Error('no held sync');};
   const pending = new Set<{at: number; delay: number; callback: () => void}>();
   const scheduler: Scheduler = {after: (delay, callback) => {const entry = {at: mono + delay, delay, callback}; pending.add(entry); return () => {pending.delete(entry);};}};
   const participant = {
     subscribe: () => Promise.resolve({close: () => Promise.resolve()}),
-    sync: () => {mono += rounds[syncs] ?? 10; syncs += 1; return Promise.resolve(answer(() => Promise.resolve(), `sync-${String(syncs)}`));},
+    sync: () => {
+      const round = rounds[syncs] ?? 10; syncs += 1; const reply = answer(() => Promise.resolve(), `sync-${String(syncs)}`);
+      if (round === 'held') return new Promise<SyncResult<CaptureState>>(resolve => {release = () => {mono += 10; resolve(reply);};});
+      mono += round; return Promise.resolve(reply);
+    },
   };
   const feed = new MusicCaptureFeed({participant: participant as unknown as ConstructorParameters<typeof MusicCaptureFeed>[0]['participant'], now: () => now(mono), scheduler});
-  return {feed, syncs: () => syncs, delays: () => [...pending].map(entry => entry.delay),
+  return {feed, syncs: () => syncs, delays: () => [...pending].map(entry => entry.delay), release: () => {release();},
     /** Runs the earliest scheduled callback and lets the sync it starts settle. */
     async fire(): Promise<number> {
       const next = [...pending].sort((a, b) => a.at - b.at)[0];
@@ -199,6 +203,17 @@ void test('a sync too slow to qualify the clock is repeated with backoff until o
   assert.equal(await slow.fire(), 500); assert.equal(slow.syncs(), 3);
   assert.equal(slow.feed.getSnapshot().clockQualified, true); assert.equal(slow.feed.getSnapshot().rechecking, false);
   assert.deepEqual(slow.delays(), [], 'a qualified clock schedules nothing more');
+  await slow.feed.close();
+});
+void test('a recheck keeps the synced state and controls while it reads again (#1580)', async () => {
+  const slow = slowSyncs([200, 'held']);
+  await slow.feed.refresh(); const shown = slow.feed.getSnapshot();
+  assert.equal(shown.synced, true); assert.equal(shown.clockQualified, false);
+  await slow.fire(); assert.equal(slow.syncs(), 2, 'the recheck is reading');
+  assert.equal(slow.feed.getSnapshot().synced, true, 'a recheck does not take the card offline, so its controls stay usable');
+  assert.equal(slow.feed.getSnapshot().state, shown.state); assert.equal(slow.feed.getSnapshot().rechecking, true);
+  slow.release(); await flush();
+  assert.equal(slow.feed.getSnapshot().clockQualified, true); assert.equal(slow.feed.getSnapshot().rechecking, false);
   await slow.feed.close();
 });
 void test('repeated slow syncs stop after a bounded number and leave timing unavailable until Refresh (#1580)', async () => {

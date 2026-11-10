@@ -138,12 +138,16 @@ export class MusicCaptureFeed implements Subscription {
   /** Reads the capture state again. A caller's refresh, unlike the feed's own recheck, starts a new recheck budget. */
   refresh(): Promise<boolean> {
     this.#stopRecheck(); this.#rechecks = 0;
-    return this.#read();
+    return this.#read(false);
   }
-  async #read(): Promise<boolean> {
+  /**
+   * A refresh shows nothing until its sync completes. A recheck keeps the synced state, and so the card's controls, in
+   * place while it reads again: only its clock was unqualified, and a failed read still invalidates the view.
+   */
+  async #read(recheck: boolean): Promise<boolean> {
     if (this.#closed) return false;
     const epoch = ++this.#epoch;
-    this.invalidate();
+    if (!recheck) this.invalidate();
     const previous = this.#copy; this.#copy = undefined; await this.#closeReplaced(previous);
     try {
       if (this.#subscription === undefined) {
@@ -218,9 +222,9 @@ export class MusicCaptureFeed implements Subscription {
     if (this.#projection.view.clockQualified) {this.#stopRecheck(); this.#rechecks = 0; return;}
     if (this.#closed || this.#recheck !== undefined) return;
     const delay = RECHECK_DELAYS_MS[this.#rechecks];
-    if (delay === undefined) return;
+    if (delay === undefined) {this.#projection.rechecking(false); return;}
     this.#rechecks += 1; this.#projection.rechecking(true);
-    this.#recheck = this.#scheduler.after(delay, () => {this.#recheck = undefined; this.#projection.rechecking(false); void this.#read();});
+    this.#recheck = this.#scheduler.after(delay, () => {this.#recheck = undefined; void this.#read(true);});
   }
   #stopRecheck(): void {this.#recheck?.(); this.#recheck = undefined; this.#projection.rechecking(false);}
   #show(): void {
