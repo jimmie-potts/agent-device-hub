@@ -50,6 +50,8 @@ type World = {
   /** Changes every later feature's measurements, as silence or a quiet passage would. */
   patch: Partial<CaptureFeatures>;
   now: number; selected: string; brightness: number; alert: boolean; feeding: boolean; sequence: number; input: MusicInput;
+  /** Whether `/state` reports the light on: the app or the light's own switch can turn it off. */
+  on: boolean;
   /** The plain colour `/state` reports, if one was chosen: a colour write selects `*Solid*` (#1614). */
   color: MusicColor | undefined;
   /** Answers the next `/state` read with this instead of the light's state, once. */
@@ -76,7 +78,7 @@ function open(target: Target = LINES_TARGET): World {
     recipe: {rendererVersion: 1, effect: 'level-glow', palette: ['#12ab34'], intensity: 0.5, sensitivity: 1, smoothingMs: 0}}, 1));
   const now = 1_793_836_800_000;
   const clock: MusicClock = {wallMs: now, monotonicMs: now};
-  return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, target, entryAnswer: V1_ANSWER, datagrams: [], reads: [], failSend: false, patch: {}, now, selected: 'Ocean', brightness: 50, alert: false, feeding: true, sequence: 0,
+  return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, target, entryAnswer: V1_ANSWER, datagrams: [], reads: [], failSend: false, patch: {}, now, selected: 'Ocean', brightness: 50, on: true, alert: false, feeding: true, sequence: 0,
     input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined, onRead: () => {}, onArrive: () => {}, color: undefined, stateAnswer: undefined};
 }
 
@@ -120,7 +122,7 @@ async function run(world: World, step: (world: World) => void, base: MusicBase =
       if (scripted !== undefined) return scripted.value;
       const color = world.color === undefined ? {colorMode: 'effect'} : 'ct' in world.color ? {colorMode: 'ct', ct: {value: world.color.ct}}
         : {colorMode: 'hs', hue: {value: world.color.hue}, sat: {value: world.color.sat}};
-      return endpoint === '/effects' ? {select: world.selected, effectsList: ['Ocean', 'New scene']} : {on: {value: true}, brightness: {value: world.brightness}, ...color};
+      return endpoint === '/effects' ? {select: world.selected, effectsList: ['Ocean', 'New scene']} : {on: {value: world.on}, brightness: {value: world.brightness}, ...color};
     }
     if (world.refuse !== undefined) {
       const status = world.refuse;
@@ -885,7 +887,8 @@ test('an NL22 Start enters version 1, streams one-byte panel datagrams to the po
 });
 
 for (const [why, answer] of [['no body', null], ['no port', {streamControlIpAddr: '192.0.2.99', streamControlProtocol: 'udp'}],
-  ['a port out of range', {...V1_ANSWER, streamControlPort: 70000}], ['another protocol', {...V1_ANSWER, streamControlProtocol: 'tcp'}]] as const) {
+  ['a port out of range', {...V1_ANSWER, streamControlPort: 70000}], ['a well-known port', {...V1_ANSWER, streamControlPort: 53}],
+  ['another protocol', {...V1_ANSWER, streamControlProtocol: 'tcp'}]] as const) {
   test(`an NL22 entry answer with ${why} fails the Start as transmitted, sends no frame and holds nothing`, async () => {
     const world = open(PANELS_TARGET);
     try {
@@ -985,6 +988,49 @@ test('a failed NL22 datagram send ends the session as a device failure with no r
     world.db.close();
   }
 });
+
+test('an NL22 that refuses the version 1 entry ends the session with the answer\'s code: no frame, no retry and no hold', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    world.refuse = 400;
+    await run(world, () => {});
+    assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'invalid-request'});
+    const start = world.outcomes.find(outcome => outcome.requestId === 'start');
+    assert.deepEqual({result: start?.result, evidence: start?.evidence, code: start?.error?.code}, {result: 'failed', evidence: 'transmitted', code: 'invalid-request'});
+    assert.equal(world.writes.length, 0, 'the refused entry is not retried and nothing else is written');
+    assert.equal(frameWrites(world).length, 0);
+    assert.equal(held(world.db, 0, 'nl22'), false);
+  } finally {
+    world.db.close();
+  }
+});
+
+for (const change of ['brightness', 'power off', 'not streaming'] as const) {
+  test(`${change === 'not streaming' ? 'an NL22 that no longer reports external control' : `a ${change} made in the app`} during an NL22 session ends it as manual at the next check, with no datagram after and no restoration`, async () => {
+    const world = open(PANELS_TARGET);
+    try {
+      let changedAt: number | undefined;
+      await run(world, current => {
+        if (changedAt !== undefined || frameWrites(current).length !== 3) return;
+        changedAt = current.now;
+        if (change === 'brightness') current.brightness = 20;
+        else if (change === 'power off') current.on = false;
+        else current.selected = '*Dynamic*';
+      });
+      assert.ok(changedAt !== undefined);
+      const session = musicDeviceState(world.db, 'nl22').session;
+      assert.ok(session?.status === 'ended');
+      assert.deepEqual({reason: session.ended.reason, restoration: session.ended.restoration}, {reason: 'manual', restoration: 'none'});
+      assert.ok(session.ended.atMs - changedAt <= 1100, 'the once-per-second check ends it');
+      assert.equal(frameWrites(world).filter(frame => frame.atMs > session.ended.atMs).length, 0, 'no datagram after the ending');
+      if (change === 'not streaming') assert.equal(frameWrites(world).filter(frame => frame.atMs > (changedAt ?? 0) && frame.applied).length, 0);
+      assert.deepEqual(sequence(world), ['stream'], 'no restoration write over the newer choice');
+      assert.deepEqual({brightness: world.brightness, on: world.on}, {brightness: change === 'brightness' ? 20 : 50, on: change !== 'power off'});
+    } finally {
+      world.db.close();
+    }
+  });
+}
 
 test('silence keeps an NL22 session playing with dark frames, and stale input ends it as source loss', async () => {
   const world = open(PANELS_TARGET);

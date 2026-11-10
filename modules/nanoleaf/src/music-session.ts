@@ -305,8 +305,10 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     deviceFailure(error);
     return end('device', 'none', {kind: 'uncertain'});
   }
-  // An answer that names no streaming port took the write but leaves nowhere to stream: the Start fails as transmitted
-  // and the session ends as a device failure, with no frame and no further write, as after any device ending.
+  // An answer that names no usable streaming port (a UDP port from 1024 to 65535) accepted the entry but leaves nowhere
+  // to stream: the Start fails as transmitted with `unsupported-capability`, and the session ends `device` with no frame,
+  // no hold and no further write. The light may stay in external control on its last presentation until it times out
+  // or a scene is chosen; nothing is put back, and no write is made to leave the mode.
   const port = protocol.port(answer);
   if (port === undefined) return end('device', 'none', {kind: 'answered', code: 'unsupported-capability'});
   await transact(report => {

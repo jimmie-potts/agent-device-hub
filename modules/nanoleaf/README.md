@@ -280,10 +280,13 @@ light's ending never writes, holds or ends the other.
   stays on `*Solid*`, ends the session `manual` with no write. Scene and unnamed bases
   read only the selection. The Start's journaled write then puts the light in external-control mode
   (`PUT /effects` with `animType: extControl`): version 2 with logical panels on the Lines,
-  version 1 on the NL22. The light reports `*ExtControl*`. The NL22 answers with the UDP port
-  to stream to; an answer without one fails the Start `failed`/`transmitted` with
-  `unsupported-capability` and ends the session `device`, with no frame, no hold and no further
-  write. The write completes the work command `succeeded`/`transmitted`, the
+  version 1 on the NL22. The version comes from the kind of the saved layout frozen into the
+  Start, which agrees with the registry's configured kind by construction: the module reads
+  and saves each light's layout by its configured kind, and only `wall` can be the Lines.
+  The light reports `*ExtControl*`. The NL22 answers with the UDP port to stream to, used
+  only if it is from 1024 to 65535. An answer without a usable port fails the Start
+  `failed`/`transmitted` with `unsupported-capability` and ends the session `device`, with no
+  frame, no hold and no further write. The write completes the work command `succeeded`/`transmitted`, the
   session becomes `playing`, and the first frame follows as a datagram. Without a fresh feature
   within 2 s, the session ends `source-lost` and the Start fails `unavailable`; an alert
   before the first frame fails it `invalid-state`.
@@ -291,7 +294,7 @@ light's ending never writes, holds or ends the other.
   reply names (`src/stream.ts`). On the Lines they go to port 60222 and carry the zones'
   colors: a 2-byte count, then per zone its 2-byte ID from the saved layout, red, green,
   blue, white 0 and a 2-byte transition of 1 (100 ms), all big-endian. On the NL22 they go
-  to the port its entry's answer named: a 1-byte count, then per triangle its 1-byte panel
+  to the port its entry's answer named (the device link refuses any port below 1024): a 1-byte count, then per triangle its 1-byte panel
   ID, a frame count of 1, red, green, blue, white 0 and a 1-byte transition of 1 (100 ms).
   Each renders the newest fresh sample only, with one request or datagram in
   flight, at least 100 ms between frames and no catch-up. Silent valid frames keep
@@ -360,6 +363,7 @@ Known limits:
 - An app takeover, and brightness and power changes made outside the hub, are seen within about a second. The entry checks only the selection (and a colour base's colour), so a brightness or power change made before it is seen by the first playing check, after a frame may have replaced the base.
 - After a `device` or `restart` ending, or a module stop mid-session, nothing is written: the light stays in streaming mode, showing the last frame, until it times out or a scene is chosen. The scene restorer treats `*ExtControl*` in Free as someone else's choice.
 - The Lines' streaming behavior (zone addressing, app takeover, brightness) comes from third-party protocol notes; #725 qualifies it on the installed Lines.
+- An NL22 that accepts the streaming entry but names no usable port (none, or one outside 1024 to 65535) is in external control with no frame sent. The ending reports `device` with `unsupported-capability`, and the Audio card says so. Nothing is put back and no write is made to leave the mode: the light keeps its last presentation until it times out or a scene is chosen.
 - The NL22's version 1 entry, answer and datagram layout follow Nanoleaf's OpenAPI documentation; that it reports `*ExtControl*` while streaming, how an app scene and a timeout end the mode, how brightness applies and whether its panel IDs fit one byte are unqualified until #725 checks the installed NL22.
 - Every effect family plays on both lights from a saved preset; spatial effects need the saved positions, which an NL22 layout always has.
 - The input reads the runtime's one clock for both its wall and monotonic readings.

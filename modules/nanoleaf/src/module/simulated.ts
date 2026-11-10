@@ -13,7 +13,7 @@
 import {isObject} from '../compat.js';
 import {ValueError} from '../errors.js';
 import {NEIGHBOR} from '../panels.js';
-import {STREAM_PORT, STREAMING, type LightDatagram} from '../stream.js';
+import {STREAM_PORT, STREAM_TRANSITION, STREAMING, type LightDatagram} from '../stream.js';
 import {HttpError, type LightAddress, type LightRequest} from '../transport.js';
 
 /** The synthetic token every simulated controller accepts. It is no credential and must appear in no message, record or proof. */
@@ -354,7 +354,8 @@ function lightZones(kind: SimulatedKind): ReadonlySet<number> {
 /**
  * A datagram's zone colors in its version's layout (`stream.ts`), or undefined when it is malformed for that version:
  * version 1 has a one-byte count and seven bytes per panel with a frame count of 1, version 2 a two-byte count and
- * eight bytes per zone.
+ * eight bytes per zone. Stricter than a light: a white byte other than 0 or a transition other than the module's 1
+ * (100 ms) is also refused, so an encoder that moves a byte fails here rather than only in the encoder test.
  */
 function decode(view: Buffer, version: 'v1' | 'v2'): [number, [number, number, number]][] | undefined {
   const v1 = version === 'v1';
@@ -366,6 +367,8 @@ function decode(view: Buffer, version: 'v1' | 'v2'): [number, [number, number, n
   for (let index = 0; index < count; index += 1) {
     const at = header + width * index;
     if (v1 && view.readUInt8(at + 1) !== 1) return undefined;
+    const transition = v1 ? view.readUInt8(at + 6) : view.readUInt16BE(at + 6);
+    if (view.readUInt8(at + 5) !== 0 || transition !== STREAM_TRANSITION) return undefined;
     colors.push([v1 ? view.readUInt8(at) : view.readUInt16BE(at), [view.readUInt8(at + 2), view.readUInt8(at + 3), view.readUInt8(at + 4)]]);
   }
   return colors;

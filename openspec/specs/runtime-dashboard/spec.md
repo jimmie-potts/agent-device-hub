@@ -598,7 +598,7 @@ The Audio page SHALL show a Music lighting card with one section per light in th
 
 #### Scenario: Each light from its own section
 - **WHEN** the Lines and the NL22 Light Panels are both configured, and the operator starts and stops the NL22 from its section
-- **THEN** each command targets the NL22 only, its section shows its own session and ending, the Lines' section and light stay as they were, and a capability refusal names the layout or the stream rather than saying only the Lines play
+- **THEN** each command targets the NL22 only, its section shows its own session and ending, the Lines' section and light stay as they were, and a capability refusal names the layout or the stream rather than saying only the Lines play; an ending where the light accepted the streaming entry but named no usable port says that no frame was sent, the light may stay in external control on its last presentation until it times out or a scene is chosen, and nothing was put back
 
 #### Scenario: Endings never restart
 - **WHEN** a session ends through Stop, an alert, a manual change, source loss, a device failure, a restart or a refusal, and Music capture later becomes active again

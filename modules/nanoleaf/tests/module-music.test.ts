@@ -345,6 +345,26 @@ test('the NL22 refuses a Start outside Free and the Lines\' own Start is unaffec
   world.verify();
 });
 
+test('a module restart mid-session ends the NL22 session as restart with nothing written and nothing replayed', async context => {
+  const session = await bothInFree(context);
+  const {world} = session;
+  assert.deepEqual(await start(session, 'panels-start', generation(1), 'preset-green', 'nl22'), {status: 'accepted'});
+  await play(session, 300);
+  await world.until(() => deviceState(world, 'nl22')?.session?.status === 'playing', 2000, 'the Panels playing');
+  await play(session, 500);
+  await world.stopModule();
+  const stopped = {writes: panelsOf(world)?.writes, streamed: panelsOf(world)?.streamed, select: panelsOf(world)?.select};
+  await world.restart();
+  await play(session, 3000);
+  const record = deviceState(world, 'nl22')?.session;
+  assert.ok(record?.status === 'ended');
+  assert.deepEqual({reason: record.ended.reason, restoration: record.ended.restoration}, {reason: 'restart', restoration: 'none'});
+  assert.deepEqual({writes: panelsOf(world)?.writes, streamed: panelsOf(world)?.streamed, select: panelsOf(world)?.select}, stopped,
+    'no write, no frame and no replay after the restart: the Panels keep their last frame');
+  assert.equal(stopped.select, '*ExtControl*');
+  world.verifyMessages();
+});
+
 test('an alert ends both lights\' sessions, and each puts back its own scene', async context => {
   const session = await bothInFree(context);
   const {world} = session;

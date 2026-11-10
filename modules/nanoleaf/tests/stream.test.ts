@@ -3,6 +3,7 @@
 // light is contacted.
 import assert from 'node:assert/strict';
 import {createSocket} from 'node:dgram';
+import {DeviceLink, type LinkOptions} from '../src/module/link.js';
 import {nanoleafSimulation} from '../src/module/registration.js';
 import {LINES_ADDRESS, PANELS_ADDRESS, SimulatedNanoleaf, SYNTHETIC_TOKEN} from '../src/module/simulated.js';
 import {ENTER_STREAMING, ENTER_STREAMING_V1, lightDatagram, STREAM_PORT, STREAMING, streamPacket, streamPacketV1, streamPortV1,
@@ -34,6 +35,25 @@ test('the version 1 entry\'s answer names the streaming port; anything else name
     {streamControlPort: 60221, streamControlProtocol: 'tcp'}, [60221]]) {
     assert.equal(streamPortV1(answer), undefined, JSON.stringify(answer));
   }
+});
+
+test('the answered streaming port must be unprivileged: 1024 to 65535, never a well-known port', () => {
+  for (const port of [1024, 60221, 65535]) assert.equal(streamPortV1({streamControlPort: port, streamControlProtocol: 'udp'}), port, String(port));
+  for (const port of [0, 1, 53, 123, 1023, 65536]) {
+    assert.equal(streamPortV1({streamControlPort: port, streamControlProtocol: 'udp'}), undefined, `port ${port} names no usable port`);
+  }
+});
+
+test('the device link sends a frame to the configured address on an unprivileged port only', async () => {
+  const sent: {ip: string; port: number}[] = [];
+  // Only `stream` is exercised: it reads the address, the datagram transport and the stop signal.
+  const link = new DeviceLink({device: 'nl22', address: PANELS_ADDRESS, token: SYNTHETIC_TOKEN, transport: () => Promise.reject(new Error('no request')),
+    datagram: (address: {ip: string; port: number}) => { sent.push(address); return Promise.resolve(); }, signal: new AbortController().signal} as unknown as LinkOptions);
+  const packet = streamPacketV1([[200, [[1, 2, 3, 1]]]]);
+  await link.stream(packet, 60221);
+  await link.stream(packet, STREAM_PORT);
+  for (const port of [0, 53, 1023, 65536, 1.5]) await assert.rejects(link.stream(packet, port), RangeError, `port ${port}`);
+  assert.deepEqual(sent, [{ip: PANELS_ADDRESS, port: 60221}, {ip: PANELS_ADDRESS, port: STREAM_PORT}], 'nothing goes to a well-known port');
 });
 
 test('each kind streams its own version: the Lines version 2 on the fixed port, the Panels version 1 on the port their answer names', () => {
@@ -87,6 +107,8 @@ test('the simulated Lines apply datagrams only while streaming, and a scene chos
   await nanoleaf.request(address, 'PUT', '/effects', ENTER_STREAMING);
   await assert.rejects(nanoleaf.datagram(stream, Buffer.from([0, 2, 0, 1])), 'a streaming light refuses a malformed datagram');
   await assert.rejects(nanoleaf.datagram(stream, streamPacket([[1000, [[1, 2, 3, 1]]]])), 'a connector or unknown zone is no light zone');
+  await assert.rejects(nanoleaf.datagram(stream, Buffer.from([0, 1, 0, 100, 1, 2, 3, 7, 0, 1])), 'a white byte other than 0');
+  await assert.rejects(nanoleaf.datagram(stream, Buffer.from([0, 1, 0, 100, 1, 2, 3, 0, 0, 2])), 'a transition other than 100 ms');
   await assert.rejects(nanoleaf.datagram({ip: LINES_ADDRESS, port: 60221}, streamPacket([[100, [[1, 2, 3, 1]]]])), 'nothing streams on another port');
   await assert.rejects(nanoleaf.request(address, 'PUT', '/effects', ENTER_STREAMING_V1), 'the simulated Lines take version 2 only');
 });
@@ -124,6 +146,9 @@ test('the simulated Panels enter version 1, answer with their streaming port and
   await assert.rejects(nanoleaf.datagram({ip: PANELS_ADDRESS, port}, streamPacketV1([[100, [[1, 2, 3, 1]]]])), 'a Lines zone is no panel here');
   await assert.rejects(nanoleaf.datagram({ip: PANELS_ADDRESS, port: STREAM_PORT}, streamPacketV1([[200, [[1, 2, 3, 1]]]])), 'nothing streams on the version 2 port');
   await assert.rejects(nanoleaf.datagram({ip: PANELS_ADDRESS, port}, Buffer.from([1, 200, 2, 1, 2, 3, 0, 1])), 'one frame per panel only');
+  await assert.rejects(nanoleaf.datagram({ip: PANELS_ADDRESS, port}, Buffer.from([1, 200, 1, 1, 2, 3, 5, 1])), 'a white byte other than 0');
+  await assert.rejects(nanoleaf.datagram({ip: PANELS_ADDRESS, port}, Buffer.from([1, 200, 1, 1, 2, 3, 0, 0])), 'a transition other than 100 ms');
+  assert.equal(panels()?.streamed, 3, 'no rejected datagram is applied');
   nanoleaf.chooseScene(PANELS_ADDRESS, 'Northern Lights');
   await nanoleaf.datagram({ip: PANELS_ADDRESS, port}, streamPacketV1([[200, [[9, 9, 9, 1]]]]));
   assert.equal(panels()?.ignored, 1, 'a scene chosen in the app leaves streaming');

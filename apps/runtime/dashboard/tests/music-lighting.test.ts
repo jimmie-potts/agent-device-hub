@@ -88,9 +88,16 @@ void test('status, endings and outcomes keep saved, reported and restored eviden
   assert.match(endingText({generation: 'g', reason: 'source-lost', restoration: 'skipped', atMs: 1}), /Music input was lost.*skipped/);
   assert.match(endingText({generation: 'g', reason: 'manual', restoration: 'none', atMs: 1}), /manual change/);
   // #1272: the Lines and the NL22 both play live Music, so a capability refusal names the layout or the stream, never "Lines only".
-  const capability = endingText({generation: 'g', reason: 'device', restoration: 'none', atMs: 1, code: 'unsupported-capability'});
-  assert.match(capability, /cannot render this preset with its saved layout, or cannot take its streamed frames/);
+  const capability = endingText({generation: 'g', reason: 'refused', restoration: 'none', atMs: 1, code: 'unsupported-capability'});
+  assert.match(capability, /refused the start \(unsupported-capability\).*cannot render this preset with its saved layout, or its stream cannot address every zone/);
   assert.doesNotMatch(capability, /Lines/);
+  // An entry the light accepted without naming a usable port: no write or read failed, and the light may stay in external control.
+  const unstreamable = endingText({generation: 'g', reason: 'device', restoration: 'none', atMs: 1, code: 'unsupported-capability'});
+  assert.equal(unstreamable, 'Last session ended: the light accepted the streaming entry but named no usable port to stream to (unsupported-capability), ' +
+    'so no Music frame was sent. The light may keep showing its last presentation in external control until it times out or a scene is chosen on it. ' +
+    'Nothing was put back and nothing more was written. Nothing restarts automatically.');
+  assert.doesNotMatch(unstreamable, /write or read failed/);
+  assert.match(endingText({generation: 'g', reason: 'device', restoration: 'none', atMs: 1, code: 'unavailable'}), /a light write or read failed \(unavailable\)/);
   assert.equal(controlText('Completed: succeeded. The module observed the result.'), 'Completed: succeeded. The core saved it; the light reports separately.');
   assert.match(controlText('Refused (unsupported-capability) without changing state.'), /Only Music.app capture/);
   assert.equal(controlText('Accepted. Waiting for completion.'), 'Accepted. Waiting for completion.');

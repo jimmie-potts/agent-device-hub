@@ -84,15 +84,19 @@ export function streamPacketV1(zones: readonly Zone[]): Uint8Array {
   return packet;
 }
 
+/** The lowest port a light's answer may direct frames to: never a privileged or well-known one. */
+export const MIN_STREAM_PORT = 1024;
+
 /**
- * The port a version 1 entry's answer names (`streamControlPort`), or undefined when it names no UDP port. The answer's
- * address is never used: frames go to the light's configured address only.
+ * The port a version 1 entry's answer names (`streamControlPort`), or undefined when it names no usable UDP port: only
+ * 1024 to 65535, so whatever answers at the light's address cannot direct frames at a well-known service. The documented
+ * ports are 60221 and 60222. The answer's address is never used: frames go to the light's configured address only.
  */
 export function streamPortV1(answer: unknown): number | undefined {
   if (!isObject(answer)) return undefined;
   const {streamControlPort: port, streamControlProtocol: protocol} = answer;
   if (protocol !== undefined && protocol !== 'udp') return undefined;
-  return typeof port === 'number' && Number.isInteger(port) && port >= 1 && port <= 0xffff ? port : undefined;
+  return typeof port === 'number' && Number.isInteger(port) && port >= MIN_STREAM_PORT && port <= 0xffff ? port : undefined;
 }
 
 const LINES_STREAM: StreamProtocol = Object.freeze({

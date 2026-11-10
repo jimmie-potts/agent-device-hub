@@ -20,3 +20,9 @@
 - [x] 4.1 Update the Nanoleaf README's live-session section, and the development guide's Music lighting checks, where their facts change.
 - [x] 4.2 Run build, typecheck, focused lint, the Nanoleaf, runtime dashboard, runtime music-lighting and Nanoleaf scenario checks, OpenSpec validation and the workflow checks, and record the actual results.
 - [x] 4.3 Sync and archive this change on the delivery branch. Independent Standards and Specification review, a focused device-command safety review, and #725's installed and physical acceptance follow outside this change.
+
+## 5. Device-safety review fixes
+
+- [x] 5.1 Accept an answered port only from 1024 to 65535, and refuse any lower port in the device link. Write failing tests for ports 0, 53 and 1023, and an NL22 session answered with port 53, then pass them. Verify with `stream.test.ts` and `music-session.test.ts`.
+- [x] 5.2 Describe an accepted entry without a usable port truthfully on the Audio card, in the README's known limits and in the spec scenario, with no new write. Verify with the dashboard unit test.
+- [x] 5.3 Add NL22 tests for a refused entry, a brightness change, power off and a lost external-control selection while streaming, and a module restart mid-session. Make the simulated controllers refuse a wrong white or transition byte. Verify with `music-session.test.ts`, `module-music.test.ts` and `stream.test.ts`.
