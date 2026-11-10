@@ -24,8 +24,10 @@ current commands and paths in CI, including Markdown-only changes.
 
 ## Reachy simulator checks
 
-Use Node 24. The runtime and browser harness runs on Linux or
-[natively on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos). Build first, then run `npm run test:reachy:built`,
+Use Node 24. The runtime and browser harness no longer needs Linux: the runtime
+unit suite, the scenario catalog and the runtime dashboard browser journeys run
+[natively on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos). The
+Reachy suites have not been measured natively on macOS. Build first, then run `npm run test:reachy:built`,
 `npm run test:reachy:browser`, event/SDK/runtime consumers and the shared
 build/type/lint/workflow checks. The modules and browser CI jobs run those
 checks. Module conformance, transport, storage/restart and policy tests use

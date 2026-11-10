@@ -4,6 +4,7 @@
 import {spawn} from 'node:child_process';
 import {readFileSync} from 'node:fs';
 import {mkdtemp, realpath, rm} from 'node:fs/promises';
+import {constants} from 'node:os';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -35,6 +36,13 @@ export function boundedCommand(script, workers, extra = []) {
   return ['node --test', `--test-concurrency=${String(workers)}`, ...quoted, script.slice('node --test '.length)].join(' ');
 }
 
+/** The run's exit status: the child's code, or 128 plus the number of the signal that ended it, as a shell reports. */
+export function exitStatus(code, signal) {
+  if (code !== null) return code;
+  const number = signal === null ? undefined : constants.signals[signal];
+  return number === undefined ? 1 : 128 + number;
+}
+
 async function main() {
   const {name, workers, extra} = parse(process.argv.slice(2));
   const scripts = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts ?? {};
@@ -49,9 +57,12 @@ async function main() {
   const forward = signal => child.kill(signal);
   process.on('SIGINT', forward);
   process.on('SIGTERM', forward);
-  const code = await new Promise(done => { child.once('exit', exitCode => done(exitCode)); });
-  await rm(scratch, {recursive: true, force: true});
-  process.exitCode = code ?? 1;
+  const [code, signal] = await new Promise(done => { child.once('exit', (...result) => done(result)); });
+  process.exitCode = exitStatus(code, signal);
+  // A directory left behind is reported, never allowed to replace the suite's own status.
+  await rm(scratch, {recursive: true, force: true, maxRetries: 3}).catch(error => {
+    process.stderr.write(`native-test: could not remove ${scratch}: ${error instanceof Error ? error.message : String(error)}\n`);
+  });
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

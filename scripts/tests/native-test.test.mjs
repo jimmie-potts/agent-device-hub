@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {DEFAULT_WORKERS, boundedCommand, parse} from '../native-test.mjs';
+import {DEFAULT_WORKERS, boundedCommand, exitStatus, parse} from '../native-test.mjs';
 
 const scripts = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).scripts;
 
@@ -29,4 +29,12 @@ test('only one plain, unbounded node --test command is run', () => {
     assert.throws(() => boundedCommand(scripts[name], 2), undefined, name);
   }
   assert.throws(() => boundedCommand(undefined, 2));
+});
+
+test('the run exits with the suite\'s code, or 128 plus the number of the signal that ended it', () => {
+  assert.equal(exitStatus(0, null), 0);
+  assert.equal(exitStatus(1, null), 1);
+  assert.equal(exitStatus(null, 'SIGINT'), 130);
+  assert.equal(exitStatus(null, 'SIGTERM'), 143);
+  assert.equal(exitStatus(null, null), 1);
 });
