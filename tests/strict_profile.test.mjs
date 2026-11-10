@@ -10,6 +10,7 @@ import {ESLint, RuleTester} from 'eslint';
 import tseslint from 'typescript-eslint';
 import config, {staged as stagedGlobs, streamOwners, strict as strictGlobs, workspaceScopes} from '../eslint.config.mjs';
 import bunny from '../scripts/eslint/bunny-rules.mjs';
+import {shardArguments, shards} from '../scripts/eslint/lint-shards.mjs';
 
 const root = join(import.meta.dirname, '..');
 const strictRules = ['@typescript-eslint/switch-exhaustiveness-check', '@typescript-eslint/strict-boolean-expressions',
@@ -569,4 +570,51 @@ test('the outcome-word rule reads its words from sdk/evidence and covers product
     assert.ok(on(await eslint.calculateConfigForFile(join(root, file)), 'bunny/no-raw-outcome-literal'), file);
   for (const file of ['packages/sdk/src/evidence.ts', 'apps/runtime/tests/a.test.ts', 'modules/example/src/frontend/a.tsx'])
     assert.ok(!severity(await eslint.calculateConfigForFile(join(root, file)), 'bunny/no-raw-outcome-literal'), file);
+});
+
+// lint:js runs ESLint in path shards under one heap budget (Hub #1636); together they must lint what `eslint .` lints.
+describe('lint shards', () => {
+  it('runs lint:js through the shards under a heap budget', () => {
+    assert.match(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts['lint:js'],
+      /^node scripts\/eslint\/lint-shards\.mjs --heap-mb=\d+ /);
+  });
+
+  it('skips only the claimed paths nested inside a shard and ends with the rest of the repository', () => {
+    assert.deepEqual(shardArguments([['apps/runtime/dashboard'], ['apps/runtime'], ['modules/pixoo'], ['modules', 'packages']]), [
+      ['apps/runtime/dashboard'],
+      ['apps/runtime', '--ignore-pattern', 'apps/runtime/dashboard/**'],
+      ['modules/pixoo'],
+      ['modules', 'packages', '--ignore-pattern', 'modules/pixoo/**'],
+      ['.', ...['apps/runtime/dashboard', 'apps/runtime', 'modules/pixoo', 'modules', 'packages'].flatMap(path => ['--ignore-pattern', `${path}/**`])],
+    ]);
+    // A prefix that is not a parent directory is not nested.
+    assert.deepEqual(shardArguments([['modules/pixoo-extra'], ['modules/pixoo']])[1], ['modules/pixoo']);
+  });
+
+  it('lints each file a single `eslint .` run lints exactly once', async () => {
+    // ESLint's own ignore handling decides, without parsing any file: the whole run's configuration for `eslint .`,
+    // and for each shard the same configuration plus that shard's --ignore-pattern values, limited to its paths.
+    const candidates = spawnSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {cwd: root, encoding: 'utf8'})
+      .stdout.split('\0').filter(file => /\.(js|mjs|cjs|ts|tsx)$/.test(file) && existsSync(join(root, file)));
+    const linted = async (eslint, files) => (await Promise.all(files.map(async file => (await eslint.isPathIgnored(join(root, file)) ? [] : [file])))).flat();
+    const whole = await linted(new ESLint({cwd: root}), candidates);
+    assert.ok(whole.length > 1000, `${whole.length} files`);
+    const counts = new Map();
+    for (const args of shardArguments()) {
+      const paths = [], ignorePatterns = [];
+      for (let index = 0; index < args.length; index++) {
+        if (args[index] === '--ignore-pattern') ignorePatterns.push(args[++index]);
+        else paths.push(args[index]);
+      }
+      const own = whole.filter(file => paths.some(path => path === '.' || file.startsWith(`${path}/`)));
+      for (const file of await linted(new ESLint({cwd: root, ignorePatterns}), own)) counts.set(file, (counts.get(file) ?? 0) + 1);
+    }
+    assert.deepEqual(whole.filter(file => counts.get(file) !== 1).map(file => `${file}: ${counts.get(file) ?? 0}`), []);
+    assert.deepEqual([...counts.keys()].filter(file => !whole.includes(file)), []);
+  });
+
+  it('refuses a path listed in two shards, and every listed path exists', () => {
+    assert.throws(() => shardArguments([['modules'], ['modules']]), /listed twice: modules/);
+    for (const path of shards.flat()) assert.ok(existsSync(join(root, path)), path);
+  });
 });

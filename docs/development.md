@@ -906,6 +906,14 @@ owns coverage, Python targets and direct consumer checks. The Workflow checks jo
 runs both commands on ready PRs and full release qualification; ordinary main
 Integration is separate.
 
+### Heap budget
+
+`npm run lint:js` runs ESLint in path shards, each in its own process under a
+2,048 MB heap, and fails when a shard outgrows it. The largest shard needed
+842 MB after a full collection on 2026-11-10; one `eslint .` process needed
+about 4.3 GB. See [Heap budget](static-analysis.md#heap-budget) for the cause,
+the shard list and how to re-measure.
+
 ### Adoption baseline
 
 See [Adoption baseline](static-analysis.md#adoption-baseline) for the authoritative procedure.
