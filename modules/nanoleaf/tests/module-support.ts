@@ -241,7 +241,7 @@ export class ModuleWorld {
   }
 
   #fresh(): ModuleHarness {
-    const module = createNanoleafModule({transport: this.device.request});
+    const module = createNanoleafModule({transport: this.device.request, datagram: this.device.datagram});
     this.#content = module.manifest.content;
     const wrapped: typeof module = {...module, start: context => module.start({...context, sdk: {...context.sdk,
       publishMessage: (key, message) => (this.refuseShowPublication && key.includes('nanoleaf-show') || this.refuseReactivePublication && key.includes('nanoleaf-reactive'))

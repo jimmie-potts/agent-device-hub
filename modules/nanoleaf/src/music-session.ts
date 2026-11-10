@@ -1,16 +1,16 @@
 // The live Music session on Lines (#1272, design D4): the core's `music-lighting-work` admitted over a named Free base,
 // then run by the device's existing locked worker, as a bounded moment is (moments.ts). The frozen saved preset renders
-// the newest fresh feature from the capture binding (music-input.ts, music-effects.ts). The first frame is the Start's
-// journaled write; later frames are the module's own paints of the admitted session. A Stop, an alert or source loss
+// the newest fresh feature from the capture binding (music-input.ts, music-effects.ts). The Start's journaled write puts
+// the light in external-control streaming, and frames then go as datagrams (stream.ts, #1598). A Stop, an alert or source loss
 // restores the named base only while nothing newer took over; a newer choice, an external change or a failed write
 // ends it with no restoration. Nothing retries, resends, resumes or falls back to another input or light.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {LightingCapture, LightingEndReason, LightingRestoration} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import {Cancelled, Execution, Refused} from './controls.js';
 import {DEFAULT, type Element, type Kind, type LayoutEntry} from './devices.js';
-import {Rejected, type Display} from './effects.js';
+import {Rejected, type Zone} from './effects.js';
 import {ValueError} from './errors.js';
-import {answerCode, finish, finishMusicStops, held, journal, journalRow, type End, type JournalRow, type Report, type Transact} from './journal.js';
+import {finish, finishMusicStops, held, journal, journalRow, type End, type JournalRow, type Report, type Transact} from './journal.js';
 import type {Indication} from './line-projection.js';
 import {alerting, newerChoice, NEWER_CHOICES, restoreFreeBase, type Admitted, type DeviceRead, type FreeBase} from './moments.js';
 import {MusicRenderer, type MusicRecipeV1} from './music-effects.js';
@@ -20,6 +20,7 @@ import {endSession, liveSession, markPlaying, musicSession, MUSIC_PLAY, MUSIC_ST
 import type {RenderConfig} from './renderer.js';
 import {execute, type Db} from './sqlite.js';
 import {controlState, markDirty, overrides, type Overrides} from './store.js';
+import {ENTER_STREAMING, STREAMING, streamPacket} from './stream.js';
 import {HttpError, type LightRequest} from './transport.js';
 
 export {MUSIC_PLAY, MUSIC_STOP, musicDeviceState, initMusicSessions} from './music-store.js';
@@ -171,11 +172,10 @@ export function endInterruptedMusic(db: Db, device: string, nowMs: number, repor
   finishMusicStops(db, device, session.generation, {kind: 'refused', code: 'invalid-state'}, report, nowMs);
 }
 
-/** The selection a device reports while it shows a frame: a static display or an animated one. */
-const shownBy = (payload: Display): string => payload.write.animType === 'static' ? '*Static*' : '*Dynamic*';
-
 export type MusicPlayback = {
   db: Db; device: string; row: JournalRow; config: RenderConfig; transact: Transact; request: LightRequest;
+  /** Sends one frame datagram to the device's streaming port. */
+  stream: (packet: Uint8Array) => Promise<void>;
   /** The runtime's clock in epoch milliseconds, and the input's clock readings. */
   now: () => number; clock: () => MusicClock;
   sleep: (seconds: number) => Promise<void>;
@@ -211,8 +211,6 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   const deviceFailure = (error: unknown): void => {
     if (!deviceFailed || stopping()) throw error;
   };
-  /** The code a device failure ends with: the device's answer, or an uncertain result when no answer came. */
-  const failureCode = (error: unknown): ErrorCode => error instanceof HttpError ? answerCode(error.status) : 'uncertain-result';
   /** The code a Start's ending names, from how its journal row ends. */
   const startCode = (startEnd: End): ErrorCode | undefined => startEnd.kind === 'refused' || startEnd.kind === 'answered' ? startEnd.code
     : startEnd.kind === 'expired' ? 'expired' : startEnd.kind === 'uncertain' ? 'uncertain-result' : undefined;
@@ -241,9 +239,9 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     return;
   }
   const deadline = now() + FIRST_FEATURE_MS;
-  let first: {sample: MusicSample; payload: Display} | undefined;
-  // The selection the light reported, read since the last checks: every check runs again after that read, and the frame
-  // is written with no wait between the last check and the write. Nothing was shown yet, so an ending restores nothing.
+  let first: {sample: MusicSample; zones: readonly Zone[]} | undefined;
+  // The selection the light reported, read since the last checks: every check runs again after that read, and streaming
+  // is entered with no wait between the last check and the write. Nothing was shown yet, so an ending restores nothing.
   let selection: {value: unknown} | undefined;
   for (;;) {
     const stop = stopRow();
@@ -266,27 +264,27 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     }
     if (sample !== null && answered !== undefined) {
       if (answered.value !== freeBase.name) return end('manual', 'none');
-      let payload: Display | null;
+      let rendered: {zones: readonly Zone[]} | null;
       try {
-        payload = renderer.render(sample);
+        rendered = renderer.frame(sample);
       } catch (error) {
         if (error instanceof Rejected) return end('device', 'none', {kind: 'refused', code: error.code});
         throw error;
       }
-      if (payload !== null) {
-        first = {sample, payload};
+      if (rendered !== null) {
+        first = {sample, zones: rendered.zones};
         break;
       }
     }
     if (now() >= deadline) return end('source-lost', 'none', {kind: 'refused', code: 'unavailable'});
     await sleep(POLL_MS / 1000);
   }
-  const {payload} = first;
-  const shown = shownBy(payload);
-  // The first frame is the Start's own journaled write: a lost answer ends it uncertain and holds the device, and an
-  // answered refusal fails it; either way `finish` ends the session as a device failure.
+  // The light reports this selection while it streams; a scene chosen on it leaves the mode.
+  const shown = STREAMING;
+  // Entering streaming is the Start's own journaled write: a lost answer ends it uncertain and holds the device, and an
+  // answered refusal fails it; either way `finish` ends the session as a device failure (#1598).
   try {
-    await new Execution(db, row.revision, row.id, device, transact, now).call(() => send('/effects', payload));
+    await new Execution(db, row.revision, row.id, device, transact, now).call(() => send('/effects', ENTER_STREAMING));
   } catch (error) {
     if (error instanceof Cancelled) return end('manual', 'none');
     deviceFailure(error);
@@ -299,8 +297,8 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   });
   options.taken();
 
-  // Later frames are the module's own paints of the admitted session: no command waits on them, so a lost answer holds
-  // nothing (as the worker's indicator paints) and ends the session as a device failure, with no retry.
+  // An alert's or source loss's restoration writes are the module's own: no command waits on them, so a lost answer holds
+  // nothing, as the worker's indicator paints.
   const paint = new Execution(db, row.revision, null, device, transact, now);
   /**
    * Each restoration write is guarded before and after, so a newer choice wins over the rest of it. A write whose answer
@@ -328,52 +326,36 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
       return lost ? 'uncertain' : 'skipped';
     }
   };
+  // Frames are datagrams: nothing answers them, so a frame holds nothing and no command waits on it. A failed send ends
+  // the session as a device failure, with no retry.
+  const stream = async (zones: readonly Zone[]): Promise<boolean> => {
+    try {
+      await flagged(options.stream(streamPacket(zones)));
+      return true;
+    } catch (error) {
+      deviceFailure(error);
+      await end('device', 'none', undefined, undefined, 'unavailable');
+      return false;
+    }
+  };
+  if (!await stream(first.zones)) return;
   let lastWrite = now();
   let lastSequence = first.sample.feature.sequence;
   let lastCheck = now();
-  // As before the first frame: the selection read since the last checks, after which every check runs again.
-  let reported: {value: unknown} | undefined;
   for (;;) {
-    if (reported === undefined) await sleep(Math.max(POLL_MS, lastWrite + FRAME_MS - now()) / 1000);
-    const checked = reported;
-    reported = undefined;
+    await sleep(Math.max(POLL_MS, lastWrite + FRAME_MS - now()) / 1000);
     const stop = stopRow();
     if (stop !== undefined) return end('stopped', await restore(stop), undefined, stop);
     if (stale()) return end('manual', 'none');
     if (alerting(current())) return end('alert', await restore(undefined));
     const next = input?.current(clock()) ?? null;
     if (next === null) return end('source-lost', await restore(undefined));
-    if (checked !== undefined) {
-      // Immediately before each frame, the light must still show the session's frames: a scene chosen in the app since
-      // the last frame is a manual takeover, and the frame would paint over it. Only the short read-to-write gap is unseen.
-      if (checked.value !== shown) return end('manual', 'none');
-      // The sample read after the selection: no wait separates these checks from the write.
-      if (next.feature.sequence === lastSequence) continue;
-      let frame: Display | null;
-      try {
-        frame = renderer.render(next);
-      } catch (error) {
-        if (error instanceof Rejected) return end('device', 'none', undefined, undefined, error.code);
-        throw error;
-      }
-      if (frame === null) continue;
-      try {
-        await paint.call(() => send('/effects', frame));
-      } catch (error) {
-        // A hold or a mode command overtook the write before it was sent: the next check ends the session.
-        if (error instanceof Cancelled) continue;
-        deviceFailure(error);
-        return end('device', 'none', undefined, undefined, failureCode(error));
-      }
-      lastWrite = now();
-      lastSequence = next.feature.sequence;
-      continue;
-    }
     if (now() - lastCheck >= EXTERNAL_CHECK_MS) {
       lastCheck = now();
       let showing: boolean;
       try {
-        // An external scene, brightness or power choice is a manual takeover. Each frame also reads the selection first.
+        // A scene chosen on the light leaves streaming, and the datagrams sent since cannot replace it: any selection other
+        // than streaming, or an external brightness or power choice, is a manual takeover.
         const listing = await read('/effects') as {select?: unknown};
         const state = listing.select === shown ? await read('/state') as {on?: {value?: unknown}; brightness?: {value?: unknown}} : undefined;
         showing = state?.brightness?.value === freeBase.brightness && state.on?.value !== false;
@@ -382,15 +364,20 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
         return end('device', 'none', undefined, undefined, 'unavailable');
       }
       if (!showing) return end('manual', 'none');
-      // The read took time: every check runs again before the next write.
+      // The read took time: every check runs again before the next frame.
       continue;
     }
     if (next.feature.sequence === lastSequence || now() - lastWrite < FRAME_MS) continue;
+    let frame: {zones: readonly Zone[]} | null;
     try {
-      reported = {value: await read('/effects/select')};
+      frame = renderer.frame(next);
     } catch (error) {
-      deviceFailure(error);
-      return end('device', 'none', undefined, undefined, 'unavailable');
+      if (error instanceof Rejected) return end('device', 'none', undefined, undefined, error.code);
+      throw error;
     }
+    if (frame === null) continue;
+    if (!await stream(frame.zones)) return;
+    lastWrite = now();
+    lastSequence = next.feature.sequence;
   }
 }

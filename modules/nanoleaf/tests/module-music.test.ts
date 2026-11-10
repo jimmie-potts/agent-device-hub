@@ -60,8 +60,8 @@ async function play(session: Session, ms: number, everyMs = 100, patch: Partial<
 const deviceState = (world: ModuleWorld, device = 'wall'): LightingDeviceState | undefined =>
   world.state<LightingDeviceState>('music-lighting-device', device);
 const lines = (world: ModuleWorld) => world.device.state().devices[LINES_ADDRESS];
-/** Static frame writes the session made: the module's music paints are static displays. */
-const frames = (world: ModuleWorld, sinceMs: number) => world.writes().filter(write => write.atMs >= sinceMs && write.animType === 'static');
+/** Frame datagrams the session sent since `sinceMs` (#1598): the light applies them only while streaming. */
+const frames = (world: ModuleWorld, sinceMs: number) => (lines(world)?.streams ?? []).filter(entry => entry.atMs >= sinceMs);
 
 async function mode(world: ModuleWorld, value: 'work' | 'quiet' | 'free', device = 'wall'): Promise<void> {
   const command = deviceCommand('device-mode-set', {requestId: `${device}-${value}-${world.clock.now()}`, mode: value}, device);
@@ -172,8 +172,10 @@ test('the first frame completes Start as transmitted and Stop restores the named
   const {world} = session;
   assert.deepEqual(outcome(world, 'start-1'), {requestId: 'start-1', result: 'succeeded', evidence: 'transmitted'});
   assert.equal(world.outcomes('start-1')[0]?.type, 'org.bunny.music-lighting.work.completed');
-  assert.equal(lines(world)?.select, '*Static*');
-  assert.ok(frames(world, session.since).length >= 1);
+  assert.equal(lines(world)?.select, '*ExtControl*');
+  assert.ok(frames(world, session.since).length >= 1 && frames(world, session.since).every(entry => entry.applied));
+  assert.deepEqual(world.writes().filter(write => write.atMs >= session.since && write.animType !== undefined).map(write => write.animType), ['extControl'],
+    'one streaming entry and no display frame');
   assert.deepEqual(await stop(session, 'stop-1'), {status: 'accepted'});
   await play(session, 300);
   await world.until(() => world.outcomes('stop-1').length === 1, 2000, 'the stop outcome');
@@ -181,9 +183,9 @@ test('the first frame completes Start as transmitted and Stop restores the named
   assert.equal(lines(world)?.select, 'Beach Waves');
   assert.equal(lines(world)?.brightness, 50);
   assert.deepEqual(ended(world), {generation: generation(1), reason: 'stopped', restoration: 'restored', atMs: ended(world)?.atMs});
-  const after = lines(world)?.writes;
+  const after = {writes: lines(world)?.writes, streamed: lines(world)?.streamed, ignored: lines(world)?.ignored};
   await play(session, 1000);
-  assert.equal(lines(world)?.writes, after, 'nothing renders after the session ended');
+  assert.deepEqual({writes: lines(world)?.writes, streamed: lines(world)?.streamed, ignored: lines(world)?.ignored}, after, 'nothing renders after the session ended');
   assert.deepEqual(await stop(session, 'stop-again'), {status: 'rejected', code: 'invalid-state'});
   world.verify();
 });
@@ -216,13 +218,12 @@ test('50 Hz features give at most ten writes a second from the newest sample, an
   }
   // A repeated sequence renews nothing: nothing is written for it, and the input lapses.
   const last = session.sequence;
-  const repeat = lines(world)?.writes ?? 0;
+  const repeat = world.clock.now();
   for (let index = 0; index < 3; index += 1) {
     await publish(session, {...frame(session), sequence: last});
     await world.advance(100);
   }
-  const restorations = world.writes().filter(write => write.atMs > world.clock.now() - 300 && write.animType === undefined).length;
-  assert.equal((lines(world)?.writes ?? 0) - restorations, repeat, 'duplicates add no frames');
+  assert.equal(frames(world, repeat + 1).length, 0, 'duplicates add no frames');
   world.verify();
 });
 
@@ -267,7 +268,7 @@ for (const change of ['scene', 'brightness', 'power', 'mode'] as const) {
   });
 }
 
-test('a scene chosen in the app between two frames ends the session as manual, and a later Stop restores nothing', async context => {
+test('a scene chosen in the app leaves streaming and ends the session as manual, and a later Stop restores nothing', async context => {
   const session = await playing(context);
   const {world} = session;
   await world.device.request({ip: LINES_ADDRESS, token: SYNTHETIC_TOKEN}, 'PUT', '/effects', {select: 'Northern Lights'});
@@ -275,7 +276,9 @@ test('a scene chosen in the app between two frames ends the session as manual, a
   await play(session, 1500);
   assert.equal(ended(world)?.reason, 'manual');
   assert.equal(ended(world)?.restoration, 'none');
-  assert.equal(frames(world, changed).length, 0, 'no music frame paints over the app\'s choice');
+  // Datagrams sent before the next once-per-second check reach a light that is no longer streaming, which ignores them.
+  assert.equal(frames(world, changed).filter(entry => entry.applied).length, 0, 'no music frame paints over the app\'s choice');
+  assert.ok(frames(world, changed).length <= 11, 'the next check ends the session');
   assert.deepEqual(await stop(session, 'stop-after-manual'), {status: 'rejected', code: 'invalid-state'});
   await play(session, 500);
   assert.equal(lines(world)?.select, 'Northern Lights');
@@ -322,12 +325,12 @@ test('a scene chosen and shown during the Start\'s base read refuses the Start',
   world.verify();
 });
 
-test('a Stop that waits while a frame write is slow still ends the session', async context => {
+test('a Stop that waits while the light is slow to answer the playing check still ends the session', async context => {
   const session = await playing(context);
   const {world} = session;
   world.device.hold();
-  await play(session, 200);
-  assert.equal(world.device.state().held, 1);
+  await play(session, 1200);
+  assert.equal(world.device.state().held, 1, 'the once-per-second check waits for its answer');
   let answered: RequestResult | undefined;
   void session.core.request('bunny.cmd.music-lighting-work.wall', {type: 'org.bunny.music-lighting.work.requested', subject: 'wall',
     dataschema: 'https://bunny.invalid/events/music-lighting-work/2.0', data: {requestId: 'slow-stop', generation: generation(1), action: 'stop'}},

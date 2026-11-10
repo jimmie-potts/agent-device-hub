@@ -224,6 +224,9 @@ times to check these source contracts.
 `src/music-session.ts` runs the core's `music-lighting-work` for
 [#1272](https://github.com/jimmie-potts/agent-device-hub/issues/1272), under the
 first-trial policy in #40 and OpenSpec change `gh-1272-live-lines-session` (design D4).
+Frames stream through the light's external-control mode
+([#1598](https://github.com/jimmie-potts/agent-device-hub/issues/1598), OpenSpec change
+`gh-1598-lines-streaming-takeover`).
 The core owns the session. The module owns admission and execution through the light's
 existing locked worker, as for a bounded moment.
 
@@ -250,33 +253,38 @@ existing locked worker, as for a bounded moment.
   generation. A subscription overflow retires every input. A single missed capture window
   is not source loss: the session keeps playing until no fresh feature remains (#1588).
   Features are never stored.
-- **The first frame** is written only if the light still shows the base scene; a scene
-  chosen since the read ends the session `manual`. The frame is the Start's journaled write. It completes the work command
-  `succeeded`/`transmitted`, and the session becomes `playing`. Without a fresh feature
+- **Streaming entry.** Once the first fresh sample renders, the light must still show the
+  base scene (`GET /effects/select`); a scene chosen since the read ends the session
+  `manual`. The Start's journaled write then puts the light in external-control mode,
+  version 2 (`PUT /effects` with `animType: extControl`), and the light reports
+  `*ExtControl*`. The write completes the work command `succeeded`/`transmitted`, the
+  session becomes `playing`, and the first frame follows as a datagram. Without a fresh feature
   within 2 s, the session ends `source-lost` and the Start fails `unavailable`; an alert
   before the first frame fails it `invalid-state`.
-- **Pacing.** Later frames are the module's own paints of the admitted session. Each
-  renders the newest fresh sample only, with one request in flight, at least 100 ms
-  between writes and no catch-up. Silent valid frames keep playing.
-- **Per-frame check.** Immediately before each frame, `GET /effects/select` must still
-  report the session's frame selection. Otherwise a scene chosen in the Nanoleaf app is
-  a manual takeover: the session ends `manual`, no frame paints over the choice, and a
-  later Stop has no session to restore. After that read, and after every other read,
-  every ending check runs again before anything is written: the Stop, a newer choice,
-  an alert, the input's freshness and, before the first frame, the Start's expiry. The
-  frame then renders the sample read after the selection. A Stop or alert during the
-  first frame's read ends the session with no write and restoration `none`, since nothing
-  was shown. Each frame now costs two requests, which lowers the effective frame rate.
+- **Frames** are UDP datagrams to the light's streaming port, 60222 (`src/stream.ts`).
+  Each carries the zones' colors: a 2-byte count, then per zone its 2-byte ID from the
+  saved layout, red, green, blue, white 0 and a 2-byte transition of 1 (100 ms), all
+  big-endian. Each renders the newest fresh sample only, with one request or datagram in
+  flight, at least 100 ms between frames and no catch-up. Silent valid frames keep
+  playing. Nothing answers a datagram, so it holds nothing and opens no span.
+- **App takeover.** A scene chosen in the Nanoleaf app leaves streaming mode, and the
+  light ignores later datagrams, so no frame can paint over it. The once-per-second read
+  finds the scene and ends the session `manual` with no restoration; a later Stop has no
+  session to restore. While playing, the session's only HTTP requests are that read
+  (`/effects`, then `/state`), not a read and write per frame. After every read, every
+  ending check runs again before the next frame: the Stop, a newer choice, an alert, the
+  input's freshness and, before streaming starts, the Start's expiry. A Stop or alert
+  during the base read ends the session with no write and restoration `none`, since
+  nothing was shown.
 - **Endings**, checked on every wake in this order: a queued `music.stop` (`stopped`,
   then restore); a newer mode, configuration, override, hold, scene, animation, power,
   brightness or moment (`manual`, no restoration); an alert (`alert`, then restore); a
   retired or stale input (`source-lost`, then restore); a once-per-second read that finds
   another selection, a changed brightness or the power off (`manual`, no restoration);
-  another selection before a frame (`manual`, no restoration); a failed frame write or
-  read (`device`, no restoration, no retry). A paint whose answer is lost holds
-  nothing, since no command waits on it.
+  a failed datagram send or read (`device`, code `unavailable`, no restoration, no retry).
+  A lost answer to the streaming entry ends the Start `uncertain` and holds the light.
 - **Restoration** re-reads the light and writes brightness, then the base scene. It
-  writes only while the light still shows the session's frames, the base is listed, the
+  writes only while the light still reports `*ExtControl*`, the base is listed, the
   light is not off, the brightness is unchanged and nothing newer exists before and
   after each write. Moments use the same guard. The result is `restored`; `skipped`
   with no further write; or `uncertain` when a restoration write's answer was lost,
@@ -300,9 +308,10 @@ an answer or `uncertain-result` for a lost write answer. A Lines session never w
 
 Known limits:
 
-- A frame shows the device's `*Static*` selection, which the external read expects.
-- A scene chosen in the Nanoleaf app in the short gap between the per-frame read and the frame write is still painted over.
-- Brightness and power changes made outside the hub are seen within about a second.
+- A scene chosen in the Nanoleaf app in the short gap between the base read and the streaming entry is replaced by the entry, once per session.
+- An app takeover, and brightness and power changes made outside the hub, are seen within about a second.
+- After a `device` ending the light stays in streaming mode, showing the last frame, until it times out or a scene is chosen; the scene restorer treats `*ExtControl*` in Free as someone else's choice.
+- The streaming behavior (zone addressing, app takeover, brightness) comes from third-party protocol notes; #725 qualifies it on the installed Lines.
 - The input reads the runtime's one clock for both its wall and monotonic readings.
 - #725 owns physical cadence and appearance.
 
@@ -451,7 +460,7 @@ the wall pages (#934) apply that rule.
 | `nanoleaf-show-save` | command | Append a guarded named decorative version at target `shows`, with a metadata-only outcome |
 | `device-mode-set`, `power-set`, `brightness-set`, `scene-activate` | command | Work, Quiet and Free; power, brightness and scenes |
 | `moment-play` | command | Bounded Lines moments in Work or over a named Free base; terminal outcome follows restoration |
-| `music-lighting-work` | command | From the core only: start a live Music session on Lines over a named Free base, or stop it; Start completes with its first frame, Stop after its restoration |
+| `music-lighting-work` | command | From the core only: start a live Music session on Lines over a named Free base, or stop it; Start completes with its streaming entry, Stop after its restoration |
 | `music-lighting-device` | state | Each light's live Music session record: none, `starting`, `playing`, or `ended` with its reason, restoration and time |
 | `zone-power-set`, `media-start`, `media-control` | command | Refused with `unsupported-capability` |
 | `nanoleaf-wall-edit` | command | One edit from the wall editor: settings and palette, element projects and halves, a task's project, a project's color, Locate, an eviction |
@@ -553,7 +562,7 @@ physical-device qualification are outside this port.
   once as it is released. The record after the release has no `held`. The journal keeps
   the held operation with the hold (`control_holds`), so a restart shows the same `held`.
 - **Live Music.** A `music-lighting-work` Start ends `succeeded`/`transmitted` with its
-  first frame, or fails before it (`unavailable` for no fresh feature, `invalid-state` for
+  streaming entry, or fails before it (`unavailable` for no fresh feature, `invalid-state` for
   an alert, `cancelled` for a newer choice or Stop, `expired`). A Stop ends after its
   restoration: `transmitted` if restored, `observed` if skipped, `uncertain` if a
   restoration write's answer was lost, and `invalid-state` if its session ended another

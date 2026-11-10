@@ -451,7 +451,7 @@ A single browser-safe response implementation SHALL apply gate, sensitivity and 
 
 ### Requirement: Live Music sessions on Lines through the existing writer
 
-The Nanoleaf module SHALL accept Music lighting work only from the core. It SHALL admit a Start only on the Lines device in Free with no pending mode, no hold, power not switched off by the hub or at the light, no other live session or waiting content, an existing frozen preset that the renderer accepts, and a current named Free scene with readable brightness as the base. A refused Start SHALL make no device write and SHALL NOT change mode. An admitted session SHALL render only the newest fresh Music feature for its capture binding inside the device's locked worker, with at most one write in flight, at most one write per 100 ms and no catch-up.
+The Nanoleaf module SHALL accept Music lighting work only from the core. It SHALL admit a Start only on the Lines device in Free with no pending mode, no hold, power not switched off by the hub or at the light, no other live session or waiting content, an existing frozen preset that the renderer accepts, and a current named Free scene with readable brightness as the base. A refused Start SHALL make no device write and SHALL NOT change mode. An admitted session SHALL enter the light's external-control streaming mode (version 2) with the Start's journaled write, and SHALL then send each frame as one UDP datagram to the device's configured address, addressed by the saved layout's zone IDs. It SHALL render only the newest fresh Music feature for its capture binding inside the device's locked worker, with at most one device request or datagram in flight, at most one frame per 100 ms and no catch-up. While playing, its device HTTP requests SHALL be limited to the external-change check.
 
 #### Scenario: Admission outside the first trial
 - **WHEN** work asks to start on Panels, in Work or Quiet, while held, without a named Free scene, with an unknown preset or from a source other than the core
@@ -459,15 +459,27 @@ The Nanoleaf module SHALL accept Music lighting work only from the core. It SHAL
 
 #### Scenario: Paced latest-value rendering
 - **WHEN** features arrive faster than ten per second, repeat a sequence, are stale or belong to another generation
-- **THEN** only the newest fresh feature is rendered, duplicates and stale or foreign features produce no write, and valid silence keeps the session playing
+- **THEN** only the newest fresh feature is rendered, duplicates and stale or foreign features produce no datagram, and valid silence keeps the session playing
+
+#### Scenario: Streaming entry and frames
+- **WHEN** an admitted Start's first fresh feature renders while the light still shows the named base
+- **THEN** the Start's journaled write puts the light in external-control mode, each later frame is one datagram of the zones' colors, and no HTTP display write or per-frame read follows
+
+#### Scenario: Bounded request rate
+- **WHEN** a session plays for several seconds with fresh features every 100 ms
+- **THEN** its device HTTP reads stay at the once-per-second external check, and its datagrams at no more than one per 100 ms
 
 ### Requirement: Interruption, Stop and current-base return
 
-Before each frame write the module SHALL confirm that the device still shows the music frame's selection. A live session SHALL end on an explicit Stop, an alert, a newer manual or external change, loss of fresh input or a failed device write, and its record SHALL name that reason. Stop and alert endings SHALL restore the Free base only while the device still shows the music effect, the base is still listed, brightness is unchanged and no newer change exists before and after each write, and the light is on; otherwise restoration is skipped, or uncertain when a write's answer was lost. Manual, external and device endings SHALL make no restoration write. A module restart SHALL end a live session as `restart` without a device write or replay.
+While a session plays, the module SHALL read the light's selection at least once per second and SHALL require the external-control selection, the base brightness and power on. A live session SHALL end on an explicit Stop, an alert, a newer manual or external change, loss of fresh input or a failed device write or datagram send, and its record SHALL name that reason. Stop and alert endings SHALL restore the Free base only while the device still shows the external-control selection, the base is still listed, brightness is unchanged and no newer change exists before and after each write, and the light is on; otherwise restoration is skipped, or uncertain when a write's answer was lost. Manual, external and device endings SHALL make no restoration write. A module restart SHALL end a live session as `restart` without a device write or replay.
 
 #### Scenario: Newer manual change wins
 - **WHEN** a scene, brightness, power, mode or moment request arrives during a session, or during its restoration
 - **THEN** the session ends as manual and no music or restoration write follows the newer change
+
+#### Scenario: App scene during streaming
+- **WHEN** a scene is chosen in the Nanoleaf app at any point after streaming began, including while one of the session's own requests is in flight
+- **THEN** later datagrams cannot replace it, the next external check ends the session as manual with no restoration, and the chosen scene stays
 
 #### Scenario: Alert and source loss
 - **WHEN** an alert indication appears, or the input expires, is retired or overflows

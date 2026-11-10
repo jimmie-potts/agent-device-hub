@@ -10,6 +10,7 @@
 import type {Clock, DeviceAvailability, Logger, ModuleScheduler, TraceContext, Tracing} from '@jimmie-potts/sdk';
 import {recordLog} from '@jimmie-potts/sdk';
 import {isObject} from '../compat.js';
+import type {LightDatagram} from '../stream.js';
 import {HttpError, LIGHT_TIMEOUT_SECONDS, type LightAddress, type LightRequest} from '../transport.js';
 
 /** How long one request to a device may take: the Python client's light request timeout. */
@@ -49,6 +50,8 @@ export type LinkOptions = {
   /** The token the module read with `secrets.read`. It stays in memory, in this link only. */
   token: string;
   transport: LightRequest;
+  /** Sends a live Music frame datagram (#1598). */
+  datagram: LightDatagram;
   clock: Clock;
   scheduler: ModuleScheduler;
   /** The module's stop signal: a request still out when it aborts is abandoned. */
@@ -158,6 +161,20 @@ export class DeviceLink {
         failed(error);
       });
     });
+  };
+
+  /**
+   * Sends one live Music frame datagram to the device's configured address (#1598). Nothing answers a datagram, so it
+   * neither reaches nor fails the device's availability, and it opens no span: the session's ending reports a failure.
+   */
+  readonly stream = (packet: Uint8Array): Promise<void> => {
+    const {address, datagram, signal} = this.#options;
+    if (signal.aborted) return Promise.reject(new LinkStopped());
+    try {
+      return datagram({ip: address}, packet);
+    } catch (error) {
+      return Promise.reject(error);
+    }
   };
 
   /** A write the device answered reached it, for the command it served, if any. */

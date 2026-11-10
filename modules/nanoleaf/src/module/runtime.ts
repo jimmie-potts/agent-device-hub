@@ -41,6 +41,7 @@ import {admitMusicStart, admitMusicStop, checkMusicStart, endMusicAtStart, Music
 import {presented} from '../shared-input.js';
 import {execute, first, rows, text, type Db, type Synchronous} from '../sqlite.js';
 import {controlState} from '../store.js';
+import type {LightDatagram} from '../stream.js';
 import {HttpError, type LightRequest} from '../transport.js';
 import {superviseWorker, type SupervisorEnd} from '../worker.js';
 import {registryFile, type DeviceSection, type NanoleafConfig} from './config.js';
@@ -189,7 +190,8 @@ export class NanoleafRuntime {
    * private folder and the registry file the port reads there, its token files, its responders and its sync owner, and
    * the core's sessions, which the core serves before it awaits anything.
    */
-  static async start(context: ModuleContext<NanoleafConfig>, config: NanoleafConfig, transport: LightRequest): Promise<NanoleafRuntime> {
+  static async start(context: ModuleContext<NanoleafConfig>, config: NanoleafConfig, transport: LightRequest,
+    datagram: LightDatagram): Promise<NanoleafRuntime> {
     const db = context.database();
     const directory = context.files();
     initialize(db, () => context.clock.now() / 1000);
@@ -205,14 +207,14 @@ export class NanoleafRuntime {
       const saved = savedTransmission(db, device.id);
       if (saved !== undefined) runtime.#written.set(device.id, {latest: saved, commandWritten: false});
     }
-    for (const device of config.devices) runtime.#link(device, tokens.get(device.secret) ?? '', transport);
+    for (const device of config.devices) runtime.#link(device, tokens.get(device.secret) ?? '', transport, datagram);
     await runtime.#begin();
     return runtime;
   }
 
-  #link(device: DeviceSection, token: string, transport: LightRequest): void {
+  #link(device: DeviceSection, token: string, transport: LightRequest, datagram: LightDatagram): void {
     const {clock, scheduler, signal, log, trace} = this.#context;
-    this.#links.set(device.id, new DeviceLink({device: device.id, address: device.address, token, transport, clock, scheduler, signal, log, trace,
+    this.#links.set(device.id, new DeviceLink({device: device.id, address: device.address, token, transport, datagram, clock, scheduler, signal, log, trace,
       availability: this.#availability, commandWrite: id => this.#commandWrite(id), onWrite: (id, write) => { this.#wrote(id, write); },
       onSettled: id => { this.#answered(id); this.#changed(id); }}));
   }
@@ -605,7 +607,7 @@ export class NanoleafRuntime {
     // each wait is rounded up to the next one.
     const whole = {after: (delayMs: number, callback: () => void): Cancel => scheduler.after(Math.max(0, Math.ceil(delayMs)), callback)};
     const running: Promise<void> = superviseWorker({
-      directory: this.#directory, database: this.#context.database, device, clock, scheduler: whole, signal, request: link.request,
+      directory: this.#directory, database: this.#context.database, device, clock, scheduler: whole, signal, request: link.request, stream: link.stream,
       transact: this.#transact, music: this.#feeds, onFailure: (error, failed) => { this.#passFailed(failed, error); },
     }).then((end: SupervisorEnd) => {
       this.#supervisors.delete(device);

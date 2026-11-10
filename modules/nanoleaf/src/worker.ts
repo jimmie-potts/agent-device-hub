@@ -46,6 +46,8 @@ export interface WorkerOptions {
   signal: AbortSignal;
   /** The device transport, for layout reads, scene observation and every write. */
   request?: LightRequest;
+  /** Sends one live Music frame datagram to the device's streaming port (#1598); without it a session's frames fail. */
+  stream?: (packet: Uint8Array) => Promise<void>;
   /** Replaces the rendered-effect sender, as Python's tests did. */
   send?: Sender;
   /** Restore the device's saved scene around the indicators (the default); false draws every state itself. */
@@ -423,6 +425,7 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
             // A live Music session runs in this locked pass until it ends, as a moment does (#1272).
             active=null;
             await playMusic({db,device,row,config,transact,request,now:()=>clock.now(),sleep,current,taken,
+              stream:options.stream ?? (()=>Promise.reject(new Error('No streaming transport.'))),
               input:options.music?.input(device,(row.command as MusicStart).generation),
               clock:options.music?.clock ?? (()=>({wallMs:clock.now(),monotonicMs:clock.now()})),stopping:()=>signal.aborted});
             execute(db,'DELETE FROM display_v3 WHERE device=?',device);

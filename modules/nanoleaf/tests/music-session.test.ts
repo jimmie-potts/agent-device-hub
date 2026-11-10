@@ -1,6 +1,6 @@
-// The live Music session's loop on its own store and a scripted device (#1272, design D4): restoration rechecks for a
-// newer choice around each write, a lost frame answer ends the session without a retry, and the loop never overlaps two
-// device requests.
+// The live Music session's loop on its own store and a scripted device (#1272, design D4; #1598): the Start enters
+// streaming, frames go as datagrams the light applies only while streaming, restoration rechecks for a newer choice
+// around each write, a failed send ends the session without a retry, and the loop never overlaps two device requests.
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import type {CaptureFeatures} from '@jimmie-potts/event-contracts/v2/music-capture';
@@ -25,10 +25,16 @@ const LAYOUT: LayoutEntry = {kind: 'lines', elements: [0, 1, 2].map(index => ({i
 
 type World = {
   db: DatabaseSync; outcomes: Outcome[]; writes: {endpoint: string; payload: unknown; atMs: number}[]; inFlight: number; maxInFlight: number;
+  /** Every frame datagram sent, whether the light applied it (streaming) or ignored it, and every read. */
+  datagrams: {atMs: number; applied: boolean; packet: Buffer}[]; reads: {endpoint: string; atMs: number}[];
+  /** The next datagram send fails, as a socket error. */
+  failSend: boolean;
   now: number; selected: string; brightness: number; alert: boolean; feeding: boolean; sequence: number; input: MusicInput;
   onWrite: (endpoint: string, payload: unknown) => void; lose: string | undefined; refuse: number | undefined;
   /** Runs while a read is in flight, before it is answered: what changes during the read. */
   onRead: (endpoint: string) => void;
+  /** Runs as a request reaches the light, before it is served: what the light applied since its last answer. */
+  onArrive: () => void;
 };
 
 function open(): World {
@@ -42,8 +48,8 @@ function open(): World {
     recipe: {rendererVersion: 1, effect: 'level-glow', palette: ['#12ab34'], intensity: 0.5, sensitivity: 1, smoothingMs: 0}}, 1));
   const now = 1_793_836_800_000;
   const clock: MusicClock = {wallMs: now, monotonicMs: now};
-  return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, now, selected: 'Ocean', brightness: 50, alert: false, feeding: true, sequence: 0,
-    input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined, onRead: () => {}};
+  return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, datagrams: [], reads: [], failSend: false, now, selected: 'Ocean', brightness: 50, alert: false, feeding: true, sequence: 0,
+    input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined, onRead: () => {}, onArrive: () => {}};
 }
 
 const feature = (world: World): CaptureFeatures => {
@@ -70,9 +76,11 @@ async function run(world: World, step: (world: World) => void): Promise<void> {
   const request: LightRequest = async (_target, method, endpoint = '', payload = null) => {
     world.inFlight += 1;
     world.maxInFlight = Math.max(world.maxInFlight, world.inFlight);
+    world.onArrive();
     await Promise.resolve();
     world.inFlight -= 1;
     if (method === 'GET') {
+      world.reads.push({endpoint, atMs: world.now});
       world.onRead(endpoint);
       if (endpoint === '/effects/select') return world.selected;
       return endpoint === '/effects' ? {select: world.selected, effectsList: ['Ocean', 'New scene']} : {on: {value: true}, brightness: {value: world.brightness}};
@@ -88,16 +96,31 @@ async function run(world: World, step: (world: World) => void): Promise<void> {
       throw new Error('the answer was lost');
     }
     const body = payload as {select?: string; write?: {animType: string}; brightness?: {value: number}};
-    if (endpoint === '/effects') world.selected = body.select ?? (body.write?.animType === 'static' ? '*Static*' : '*Dynamic*');
+    if (endpoint === '/effects') {
+      world.selected = body.select ?? (body.write?.animType === 'extControl' ? '*ExtControl*' : body.write?.animType === 'static' ? '*Static*' : '*Dynamic*');
+    }
     if (body.brightness !== undefined) world.brightness = body.brightness.value;
     world.onWrite(endpoint, payload);
     return {};
+  };
+  // A datagram reaches the light behind any request already there, and only a streaming light applies it.
+  const stream = async (packet: Uint8Array): Promise<void> => {
+    world.inFlight += 1;
+    world.maxInFlight = Math.max(world.maxInFlight, world.inFlight);
+    world.onArrive();
+    await Promise.resolve();
+    world.inFlight -= 1;
+    if (world.failSend) {
+      world.failSend = false;
+      throw Object.assign(new Error('the datagram was not sent'), {code: 'EHOSTUNREACH'});
+    }
+    world.datagrams.push({atMs: world.now, applied: world.selected === '*ExtControl*', packet: Buffer.from(packet)});
   };
   const row = journalRow(db, 'start');
   assert.ok(row);
   let fed = world.now - 100;
   await playMusic({db, device: 'wall', row, config: {ip: 'synthetic', token: 'synthetic', line_groups: LAYOUT.elements.map(element => element.zones)},
-    transact, request, input: world.input, now: () => world.now, clock: () => ({wallMs: world.now, monotonicMs: world.now}),
+    transact, request, stream, input: world.input, now: () => world.now, clock: () => ({wallMs: world.now, monotonicMs: world.now}),
     sleep: seconds => {
       world.now += seconds * 1000;
       // A bound on every run: after 200 features the source goes quiet, so a session that should have ended ends anyway.
@@ -114,7 +137,9 @@ const ended = (world: World) => {
   return session?.status === 'ended' ? {reason: session.ended.reason, restoration: session.ended.restoration,
     ...(session.ended.code === undefined ? {} : {code: session.ended.code})} : undefined;
 };
-const frameWrites = (world: World) => world.writes.filter(write => (write.payload as {write?: unknown}).write !== undefined);
+/** The frames the session sent: datagrams after the Start's streaming entry. */
+const frameWrites = (world: World) => world.datagrams;
+const entries = (world: World) => world.writes.filter(write => (write.payload as {write?: {animType?: unknown}}).write?.animType === 'extControl');
 
 for (const choice of ['none', 'scene', 'brightness', 'mode'] as const) {
   test(`an alert restores the base unless a newer ${choice} choice lands between the restoration's writes`, async () => {
@@ -159,15 +184,30 @@ test('Stop restores the base and completes after its restoration', async () => {
   }
 });
 
-test('a lost frame answer ends the session as a device failure with no retry or restoration', async () => {
+test('a failed datagram send ends the session as a device failure with no retry or restoration', async () => {
   const world = open();
   try {
-    await run(world, current => { if (frameWrites(current).length === 4) current.lose = '/effects'; });
-    assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'uncertain-result'});
-    assert.equal(frameWrites(world).length, 5, 'the lost write is not retried');
+    await run(world, current => { if (frameWrites(current).length === 4) current.failSend = true; });
+    assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'unavailable'});
+    assert.equal(frameWrites(world).length, 4, 'the failed frame is not retried');
     assert.equal(world.writes.filter(write => (write.payload as {select?: unknown}).select !== undefined).length, 0);
     assert.equal(transaction(world.db, () => world.db.prepare("SELECT value FROM meta WHERE key LIKE 'controller_hold_revision%'").all().length), 0,
-      'a paint after the Start completed holds nothing');
+      'a frame after the Start completed holds nothing');
+  } finally {
+    world.db.close();
+  }
+});
+
+test('a lost answer to the streaming entry ends the Start uncertain, holds the light and sends no frame', async () => {
+  const world = open();
+  try {
+    world.lose = '/effects';
+    await run(world, () => {});
+    assert.deepEqual(ended(world)?.reason, 'device');
+    assert.equal(entries(world).length, 1, 'the entry is not retried');
+    assert.equal(frameWrites(world).length, 0);
+    assert.equal(world.outcomes.find(outcome => outcome.requestId === 'start')?.result, 'uncertain');
+    assert.equal(held(world.db, 0, 'wall'), true);
   } finally {
     world.db.close();
   }
@@ -192,16 +232,72 @@ test('frames are paced to the newest sample, at least 100 ms apart, with no catc
   }
 });
 
-test('a scene chosen between two frames is read before the next frame, which is never written', async () => {
+test('a scene chosen in the app leaves streaming: later frames are ignored and the next check ends the session as manual', async () => {
+  const world = open();
+  try {
+    let pickedAt: number | undefined;
+    await run(world, current => {
+      if (pickedAt === undefined && frameWrites(current).length === 3) { pickedAt = current.now; current.selected = 'New scene'; }
+    });
+    assert.ok(pickedAt !== undefined);
+    assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
+    assert.equal(world.selected, 'New scene', 'the app\'s scene stays');
+    assert.equal(frameWrites(world).filter(frame => frame.atMs >= (pickedAt ?? 0) && frame.applied).length, 0, 'no frame paints over it');
+    const endedAt = musicDeviceState(world.db, 'wall').session;
+    assert.ok(endedAt?.status === 'ended' && endedAt.ended.atMs - pickedAt <= 1100, 'the once-per-second check ends it');
+    assert.equal(world.writes.filter(write => (write.payload as {select?: unknown}).select !== undefined).length, 0, 'nothing is restored');
+  } finally {
+    world.db.close();
+  }
+});
+
+test('#1598: an app scene the light serves while one of the session\'s requests is in flight still ends the session as manual', async () => {
+  // The light answers one request at a time, in arrival order: an app choice that arrives while the session's check read
+  // is in flight is applied after that read is answered and before the session's next datagram.
   const world = open();
   try {
     let chosen = false;
-    await run(world, current => {
-      if (!chosen && frameWrites(current).length === 3) { chosen = true; current.selected = 'New scene'; }
-    });
+    let queued = false;
+    world.onRead = endpoint => {
+      if (endpoint === '/effects' && !chosen && frameWrites(world).length >= 3) { chosen = true; queued = true; }
+    };
+    world.onArrive = () => {
+      if (!queued) return;
+      queued = false;
+      world.selected = 'New scene';
+    };
+    await run(world, () => {});
+    assert.ok(chosen, 'the app chose a scene during the check read');
     assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
-    assert.equal(frameWrites(world).length, 3, 'no frame paints over the app\'s scene');
-    assert.equal(world.selected, 'New scene');
+    assert.equal(world.selected, 'New scene', 'the app\'s scene stays');
+  } finally {
+    world.db.close();
+  }
+});
+
+test('a playing session streams every frame and reads the light only for the once-per-second check (#1598)', async () => {
+  const world = open();
+  try {
+    let startedAt: number | undefined;
+    await run(world, current => {
+      startedAt ??= frameWrites(current).length > 0 ? current.now : undefined;
+      if (current.sequence > 50) current.feeding = false;
+    });
+    assert.ok(startedAt !== undefined);
+    assert.deepEqual(entries(world).length, 1);
+    assert.equal(world.writes.filter(write => (write.payload as {write?: unknown}).write !== undefined).length, 1, 'no HTTP display frame');
+    const playing = world.reads.filter(read => read.atMs >= (startedAt ?? 0));
+    assert.equal(playing.filter(read => read.endpoint === '/effects/select').length, 0, 'no per-frame selection read');
+    const seconds = (world.now - startedAt) / 1000;
+    assert.ok(playing.length <= 2 * Math.ceil(seconds) + 2, `${playing.length} reads in ${seconds} s`);
+    assert.ok(frameWrites(world).length > 30 && frameWrites(world).every(frame => frame.applied));
+    // Each datagram carries the six zones' colors: a count, then ID, red, green, blue, white 0 and a 100 ms transition.
+    const packet = frameWrites(world)[0]?.packet;
+    assert.ok(packet);
+    assert.equal(packet.readUInt16BE(0), 6);
+    assert.deepEqual([0, 1, 2, 3, 4, 5].map(index => packet.readUInt16BE(2 + 8 * index)), [1, 2, 3, 4, 5, 6]);
+    assert.deepEqual([0, 1, 2, 3, 4, 5].map(index => [packet.readUInt8(7 + 8 * index), packet.readUInt16BE(8 + 8 * index)]), Array(6).fill([0, 1]));
+    assert.equal(world.maxInFlight, 1, 'one device request or datagram at a time');
   } finally {
     world.db.close();
   }
@@ -224,12 +320,14 @@ test('a newer moment ends the session as manual with no frame after it', async (
   }
 });
 
-test('a device that refuses a frame ends the session with the answer\'s code', async () => {
+test('a light that refuses the streaming entry ends the session with the answer\'s code and sends no frame', async () => {
   const world = open();
   try {
-    await run(world, current => { if (frameWrites(current).length === 2) current.refuse = 503; });
+    world.refuse = 503;
+    await run(world, () => {});
     assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'unavailable'});
-    assert.equal(frameWrites(world).length, 2);
+    assert.equal(frameWrites(world).length, 0);
+    assert.equal(world.outcomes.find(outcome => outcome.requestId === 'start')?.result, 'failed');
   } finally {
     world.db.close();
   }
@@ -294,7 +392,7 @@ test('the expiry sweep leaves a live session\'s Stop for its loop and a second S
 /** Each device write as `endpoint` and what it set: a frame, a brightness or a scene. */
 const sequence = (world: World): string[] => world.writes.map(write => {
   const body = write.payload as {write?: unknown; select?: string; brightness?: {value: number}};
-  return body.write !== undefined ? 'frame' : body.select !== undefined ? `select ${body.select}` : `brightness ${body.brightness?.value}`;
+  return body.write !== undefined ? 'stream' : body.select !== undefined ? `select ${body.select}` : `brightness ${body.brightness?.value}`;
 });
 
 for (const change of ['alert', 'stop'] as const) {
@@ -323,13 +421,15 @@ for (const change of ['alert', 'stop'] as const) {
 }
 
 for (const change of ['alert', 'stop', 'source-loss'] as const) {
-  test(`${change} during a later frame's selection read ends the session before that frame`, async () => {
+  test(`${change} during the playing check's read ends the session before the next frame`, async () => {
     const world = open();
     try {
       let raised = false;
+      let sent = 0;
       world.onRead = endpoint => {
-        if (endpoint !== '/effects/select' || raised || frameWrites(world).length !== 3) return;
+        if (endpoint !== '/effects' || raised || frameWrites(world).length < 3) return;
         raised = true;
+        sent = frameWrites(world).length;
         if (change === 'alert') world.alert = true;
         else if (change === 'stop') transaction(world.db, () => admitMusicStop(world.db, 'wall', {kind: 'music.stop', requestId: 'stop', generation: GENERATION}, world.now, world.now + 5000));
         else {
@@ -340,7 +440,8 @@ for (const change of ['alert', 'stop', 'source-loss'] as const) {
       };
       await run(world, () => {});
       assert.ok(raised);
-      assert.deepEqual(sequence(world), ['frame', 'frame', 'frame', 'brightness 50', 'select Ocean'], 'no frame after the read; the base is restored');
+      assert.equal(frameWrites(world).length, sent, 'no frame after the read');
+      assert.deepEqual(sequence(world), ['stream', 'brightness 50', 'select Ocean'], 'the base is restored');
       assert.deepEqual(ended(world), {reason: change === 'alert' ? 'alert' : change === 'stop' ? 'stopped' : 'source-lost', restoration: 'restored'});
       assert.equal(world.maxInFlight, 1);
     } finally {
