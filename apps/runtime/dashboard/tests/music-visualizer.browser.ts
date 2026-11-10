@@ -17,6 +17,20 @@ const evidence = process.env.VISUALIZER_EVIDENCE ?? await browserArtifactDirecto
 await mkdir(evidence, {recursive: true});
 const fits = (page: Page): Promise<boolean> => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
 const canvasImage = (canvas: Locator): Promise<string> => canvas.evaluate(node => (node as HTMLCanvasElement).toDataURL());
+/**
+ * Waits for a freshly synced surface to go live. Under a loaded runner a page's capture sync can miss the capture
+ * clock's round-trip bound (#1580); the surface then rests with that reason, and a reload syncs again. Any other
+ * resting reason fails.
+ */
+async function liveAfterSync(page: Page, canvas: Locator): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {await expect(canvas).toHaveAttribute('data-visualizer-state', 'live', {timeout: 5000}); return;} catch {/* Check the reason below. */}
+    const label = await canvas.getAttribute('aria-label') ?? '';
+    assert.match(label, /Resting: Measurement (timing|status) is unavailable\./, 'only an unqualified sync may be retried');
+    await page.reload(); await feed(page, 'connected');
+  }
+  await expect(canvas).toHaveAttribute('data-visualizer-state', 'live');
+}
 try {
   const context = await browser.newContext({viewport: {width: 1440, height: 1000}});
   const page = await context.newPage(); page.setDefaultTimeout(12_000);
@@ -70,7 +84,7 @@ try {
   // The choice survives a reload, per browser.
   await page.reload(); await feed(page, 'connected');
   await expect(effect).toHaveValue('bass-pulse'); await expect(canvas).toHaveAttribute('data-visualizer-effect', 'bass-pulse');
-  await expect(canvas).toHaveAttribute('data-visualizer-state', 'live');
+  await liveAfterSync(page, canvas);
   assert.equal(await page.evaluate(() => localStorage.getItem('bunny.music-visualizer.effect')), 'bass-pulse');
 
   // Phone widths keep the page intact, live and resting alike.
@@ -103,7 +117,7 @@ try {
   await panel.getByRole('link', {name: 'Fill window', exact: true}).click();
   await expect(page).toHaveURL(/#\/audio\/visualizer$/);
   const full = page.getByRole('region', {name: 'Music visualizer full view', exact: true}), fullCanvas = full.locator('canvas');
-  await expect(fullCanvas).toHaveAttribute('data-visualizer-state', 'live');
+  await liveAfterSync(page, fullCanvas);
   const fullBox = await fullCanvas.boundingBox(); assert.deepEqual(fullBox, {x: 0, y: 0, width: 1440, height: 1000});
   await shot('full-view-bass-pulse-1440');
   if (await page.evaluate(() => document.fullscreenEnabled)) {
@@ -123,7 +137,7 @@ try {
     const tvPage = await tv.newPage(); tvPage.setDefaultTimeout(12_000);
     await tvPage.goto(world.url + '/#/audio/visualizer'); await feed(tvPage, 'connected');
     const tvCanvas = tvPage.getByRole('region', {name: 'Music visualizer full view', exact: true}).locator('canvas');
-    await expect(tvCanvas).toHaveAttribute('data-visualizer-state', 'live');
+    await liveAfterSync(tvPage, tvCanvas);
     assert.deepEqual(await tvCanvas.evaluate(node => [(node as HTMLCanvasElement).width, (node as HTMLCanvasElement).height]), [3840, 2160]);
     assert.equal(await fits(tvPage), true);
     const frames = await tvPage.evaluate(async () => {
@@ -163,7 +177,7 @@ try {
   const card = page.locator('[data-home-card="music-visualizer"]'), cardCanvas = card.locator('canvas');
   await expect(card).toBeVisible(); assert.deepEqual(await order(), moved, 'the saved position survives a reload');
   await expect(card.getByRole('heading', {name: 'Music visualizer', exact: true})).toBeVisible();
-  await expect(cardCanvas).toHaveAttribute('data-visualizer-state', 'live'); await expect(cardCanvas).toHaveAttribute('data-visualizer-effect', 'bass-pulse');
+  await liveAfterSync(page, cardCanvas); await expect(cardCanvas).toHaveAttribute('data-visualizer-effect', 'bass-pulse');
   await card.getByText('Showing measured Music.', {exact: false}).waitFor(); await expect(card.getByText('Bass pulse', {exact: true})).toBeVisible();
   await card.scrollIntoViewIfNeeded(); await card.screenshot({path: join(evidence, 'home-card-bass-pulse-live-1440.png')}); await shot('home-bass-pulse-live-1440');
   const audio = await context.newPage(); audio.setDefaultTimeout(12_000); const audioSent = changes(audio);
