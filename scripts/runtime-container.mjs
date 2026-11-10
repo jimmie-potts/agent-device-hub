@@ -43,6 +43,15 @@ export async function snapshot(repository, destination) {
   return copied;
 }
 
+// Two CPUs keep node --test at a small worker count; swap equal to memory means no swap.
+export const limits = Object.freeze({cpus:'2', memory:'1536m'});
+
+export function createArgs(name, imageId, suite) {
+  return ['create','--init','--name',name,'--network','none','--cpus',limits.cpus,'--memory',limits.memory,'--memory-swap',limits.memory,
+    '--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges','--restart','no',
+    '--env','TMPDIR=/tmp','--env','XDG_RUNTIME_DIR=','--env','DBUS_SESSION_BUS_ADDRESS=',imageId,suite];
+}
+
 export async function runSuites(suite, run) {
   for (const name of suites[suite]) {
     const status = await run(['run', name]);
@@ -83,7 +92,7 @@ async function main() {
     if (status !== 0) throw Object.assign(new Error('container-check-failed'), {status});
     const imageId = execFileSync('docker', ['image','inspect','--format','{{.Id}}',image], {encoding:'utf8'}).trim();
     if (!/^sha256:[a-f0-9]{64}$/.test(imageId)) throw new Error('tool-image-identity-refused');
-    const id = execFileSync('docker', ['create','--init','--name',name,'--network','none','--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges','--restart','no','--env','TMPDIR=/tmp','--env','XDG_RUNTIME_DIR=','--env','DBUS_SESSION_BUS_ADDRESS=',imageId,suite], {encoding:'utf8'}).trim();
+    const id = execFileSync('docker', createArgs(name, imageId, suite), {encoding:'utf8'}).trim();
     if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('container-identity-refused');
     created = id;
     console.log('Disposable runtime checks: ' + name + ' ' + id);
