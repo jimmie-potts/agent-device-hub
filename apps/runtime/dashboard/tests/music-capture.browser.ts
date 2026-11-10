@@ -32,15 +32,23 @@ try {
   const stalled = Date.now(); while (Date.now() - stalled < 1000) {/* hold this process's event loop */}
   await delay(1000); await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.25');
   await page.screenshot({path: join(artifacts, 'music-capture-active-desktop.png'), fullPage: true});
+  // A capture-state sync slower than the clock bound (100 ms) leaves measurement timing unqualified. The feed syncs again
+  // on its own with backoff, so one slow reply, as on a loaded page load, recovers without Refresh (#1580).
+  let slowSyncs = 1;
   await page.route('**/api/sdk/v1/sync', async route => {
     const request = route.request().postDataJSON() as {request?: {data?: {families?: string[]}}};
-    if (request.request?.data?.families?.includes('music-capture-state') !== true) {await route.continue(); return;}
-    const reply = await route.fetch(); await new Promise(resolve => {setTimeout(resolve, 150);}); await route.fulfill({response: reply});
+    if (request.request?.data?.families?.includes('music-capture-state') !== true || slowSyncs === 0) {await route.continue(); return;}
+    slowSyncs -= 1; const reply = await route.fetch(); await new Promise(resolve => {setTimeout(resolve, 150);}); await route.fulfill({response: reply});
   });
   await card.getByRole('button', {name: 'Refresh capture status'}).click();
-  await card.getByText('Measurement timing is unavailable. Refresh status to check again.', {exact: true}).waitFor();
+  await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveCount(0);
+  await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveCount(1); assert.equal(slowSyncs, 0);
+  // When every recheck is slow too, the bounded rechecks end and timing stays unavailable until Refresh.
+  slowSyncs = Infinity; await card.getByRole('button', {name: 'Refresh capture status'}).click();
+  await card.getByText('Checking measurement timing again.', {exact: true}).waitFor();
+  await card.getByText('Measurement timing is unavailable. Refresh status to check again.', {exact: true}).waitFor({timeout: 15_000});
   await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveCount(0); await expect(stop).toBeEnabled();
-  await page.unroute('**/api/sdk/v1/sync'); await card.getByRole('button', {name: 'Refresh capture status'}).click();
+  slowSyncs = 0; await page.unroute('**/api/sdk/v1/sync'); await card.getByRole('button', {name: 'Refresh capture status'}).click();
   await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveCount(1);
   producer.level(0); await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0');
   producer.pause(); await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveCount(0); await card.getByText('Measurements are stale.', {exact: true}).waitFor();

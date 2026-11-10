@@ -172,6 +172,49 @@ void test('an initial sync result retained across a restart cannot revive old fr
   await feed.close();
 });
 
+/** A feed whose syncs take the given round trips, on a scheduler the test advances by hand. */
+function slowSyncs(rounds: readonly number[]) {
+  let mono = 1000, syncs = 0;
+  const pending = new Set<{at: number; delay: number; callback: () => void}>();
+  const scheduler: Scheduler = {after: (delay, callback) => {const entry = {at: mono + delay, delay, callback}; pending.add(entry); return () => {pending.delete(entry);};}};
+  const participant = {
+    subscribe: () => Promise.resolve({close: () => Promise.resolve()}),
+    sync: () => {mono += rounds[syncs] ?? 10; syncs += 1; return Promise.resolve(answer(() => Promise.resolve(), `sync-${String(syncs)}`));},
+  };
+  const feed = new MusicCaptureFeed({participant: participant as unknown as ConstructorParameters<typeof MusicCaptureFeed>[0]['participant'], now: () => now(mono), scheduler});
+  return {feed, syncs: () => syncs, delays: () => [...pending].map(entry => entry.delay),
+    /** Runs the earliest scheduled callback and lets the sync it starts settle. */
+    async fire(): Promise<number> {
+      const next = [...pending].sort((a, b) => a.at - b.at)[0];
+      assert.ok(next !== undefined, 'a callback is scheduled'); pending.delete(next); mono = next.at; next.callback(); await flush(); return next.delay;
+    }};
+}
+void test('a sync too slow to qualify the clock is repeated with backoff until one qualifies (#1580)', async () => {
+  const slow = slowSyncs([200, 150, 10]);
+  assert.equal(await slow.feed.refresh(), true);
+  assert.equal(slow.feed.getSnapshot().clockQualified, false); assert.equal(slow.feed.getSnapshot().rechecking, true);
+  assert.deepEqual(slow.delays(), [250]);
+  assert.equal(await slow.fire(), 250); assert.equal(slow.syncs(), 2);
+  assert.equal(slow.feed.getSnapshot().clockQualified, false); assert.deepEqual(slow.delays(), [500], 'the next attempt backs off');
+  assert.equal(await slow.fire(), 500); assert.equal(slow.syncs(), 3);
+  assert.equal(slow.feed.getSnapshot().clockQualified, true); assert.equal(slow.feed.getSnapshot().rechecking, false);
+  assert.deepEqual(slow.delays(), [], 'a qualified clock schedules nothing more');
+  await slow.feed.close();
+});
+void test('repeated slow syncs stop after a bounded number and leave timing unavailable until Refresh (#1580)', async () => {
+  const slow = slowSyncs(Array.from({length: 20}, () => 200));
+  await slow.feed.refresh();
+  const waited: number[] = [];
+  while (slow.delays().length > 0) waited.push(await slow.fire());
+  assert.deepEqual(waited, [250, 500, 1000, 2000]); assert.equal(slow.syncs(), 5);
+  assert.equal(slow.feed.getSnapshot().synced, true); assert.equal(slow.feed.getSnapshot().clockQualified, false);
+  assert.equal(slow.feed.getSnapshot().rechecking, false, 'an exhausted budget asks for a manual Refresh');
+  await slow.feed.refresh(); assert.equal(slow.syncs(), 6); assert.deepEqual(slow.delays(), [250], 'Refresh starts a new budget');
+  await slow.feed.refresh(); assert.equal(slow.syncs(), 7); assert.deepEqual(slow.delays(), [250], 'Refresh replaces a pending attempt');
+  await slow.feed.close(); assert.deepEqual(slow.delays(), [], 'close cancels the pending attempt');
+  assert.equal(slow.syncs(), 7);
+});
+
 void test('Audio scope reads registered state versions and ignores unregistered versions', async () => {
   for (const version of ['2.0', '2.1', '2.2', '2.3']) {
     let mono = 1000;
