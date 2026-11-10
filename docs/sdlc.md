@@ -52,6 +52,12 @@ remove an accepted capability or change scope, acceptance, compatibility, author
 or accepted risk. In unattended work, defer that decision-dependent branch and
 continue independent authorized work. A read-only assessment makes no changes.
 
+Before any code, search open PRs that reference the issue
+(`gh pr list --state open --search "<number> in:body"`) and read its workflow
+label. If it is `status:in-progress` or `status:review` or has an open PR, do not
+start it: review or join that work, or report the conflict. Otherwise set
+`status:in-progress` and read it back before creating a branch.
+
 A small issue needs the requested outcome, acceptance checks and delivery target.
 Add implementation, risks, dependencies and deferrals only when they matter.
 The [Work item template](../.github/ISSUE_TEMPLATE/feature.md) supplies optional
