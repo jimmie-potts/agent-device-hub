@@ -9,5 +9,5 @@ try {
   const page = await context.newPage(); page.setDefaultTimeout(12_000);
   await companionCardsJourney(world, page, context);
   await context.close();
-  process.stdout.write('Companion cards: Home/page reuse, fixed artwork and tab geometry, explicit private selection, reload, keyboard, themes, phone layout, axe and no passive effects passed.\n');
+  process.stdout.write('Companion cards: Home/page reuse, fixed artwork and tab geometry, explicit private selection, reload, keyboard, themes, phone layout and no passive effects passed.\n');
 } finally {await browser.close(); await world.close();}

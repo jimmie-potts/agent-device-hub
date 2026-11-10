@@ -8,7 +8,6 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {createServer, type Server} from 'node:http';
 import type {AddressInfo} from 'node:net';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type BrowserContext, type Page, type Response} from 'playwright';
 import {requestBrowserLaunch} from '../../dist/src/index.js';
 import {changes, feed, startWorld, type World} from './harness.ts';
@@ -38,7 +37,6 @@ const signedIn = async (page: Page): Promise<void> => {
   await page.getByText('Control enabled · Local', {exact: true}).waitFor();
   await feed(page, 'connected');
 };
-const axe = async (page: Page): Promise<string[]> => (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(violation => violation.id);
 
 let world: World | undefined;
 try {
@@ -49,7 +47,6 @@ try {
     const page = await open(context, world.url);
     await page.getByRole('heading', {name: 'Open B.U.N.N.Y. with the launcher.', exact: true}).waitFor();
     assert.equal(world.browserSessions(), 0);
-    assert.deepEqual(await axe(page), []);
     const launch = await requestBrowserLaunch(world.stateDir);
     // The launcher opens a new tab at the runtime's origin with the code.
     const launched = await open(context, `${launch.url}#launch=${launch.code}`);

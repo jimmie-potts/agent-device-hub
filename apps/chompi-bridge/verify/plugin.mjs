@@ -200,7 +200,7 @@ export default definePlugin({
   ],
   captureSteps: {
     'controls-page': {
-      description: 'The control page shows every controller control with its light, the desktop and the Hub, and passes the accessibility check',
+      description: 'The control page shows every controller control with its light, the desktop and the Hub',
       scenario: 'desk-basic',
       fresh: true,
       viewport: { width: 1440, height: 1100 },
@@ -222,12 +222,6 @@ export default definePlugin({
           const codex = await slotOf(t, 'Synthetic Codex task 1');
           const claude = await slotOf(t, 'Synthetic Claude task 2');
           for (const slot of [codex, claude]) await t.page.getByRole('button', { name: new RegExp(`^Slot ${slot}, light idle$`) }).waitFor();
-        });
-        await t.expect('the page has no WCAG 2.1 A or AA violations', async () => {
-          const { AxeBuilder } = await import('@axe-core/playwright');
-          // Legacy mode runs axe in this page only; otherwise axe opens a blank page whose video would sit beside interaction.webm.
-          const result = await new AxeBuilder({ page: t.page }).setLegacyMode(true).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-          if (result.violations.length) throw new Error(JSON.stringify(result.violations.map((/** @type {any} */ v) => ({ id: v.id, nodes: v.nodes.length }))));
         });
         await boundariesHold(t);
       },

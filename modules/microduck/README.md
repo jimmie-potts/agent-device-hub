@@ -70,7 +70,7 @@ For a complete diff confined to modifications of
 standalone-test exception runs Node 24 setup, build, typecheck, lint, Chromium
 setup, `npm run test:runtime-dashboard:smoke`, the **entire**
 `npm run test:microduck:browser`, and Workflow/docs checks. Completion follows all
-keyboard, narrow viewport, reduced-motion and axe assertions on the exact head;
+keyboard and narrow viewport assertions on the exact head;
 it is not inferred from a Node test count. Independent review and disposable
 acceptance remain required. Product, helper, fixture, contract, policy,
 added/deleted/renamed or uncertain changes retain the broader validation above.

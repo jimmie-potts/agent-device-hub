@@ -39,7 +39,7 @@ test('Node coverage requires both overall and actual changed compiled entry summ
   rows.map(row=>({...row,counts:{...counts,todo:1}}))])assert.throws(()=>wemoCoverage(summaries(bad)));
 });
 test('MicroDuck requires successful complete marker, never partial stdout',()=>{
- const marker='MicroDuck browser passed: finite gestures, local Stop, exact held recovery, status-only MCP, passive reload, keyboard/narrow/reduced-motion and axe.';
+ const marker='MicroDuck browser passed: finite gestures, local Stop, exact held recovery, status-only MCP, passive reload and keyboard/narrow.';
  browserCompleted({status:0,stdout:marker+'\n'});
  for(const result of [{status:1,stdout:marker},{status:0,stdout:'smoke passed'},{status:0,stdout:marker,error:new Error('terminated')}])assert.throws(()=>browserCompleted(result));
 });

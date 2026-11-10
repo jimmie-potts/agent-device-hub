@@ -1,13 +1,12 @@
-// Hub #853: browser and accessibility check of the CHOMPI bridge verification run's control page, in the manner of
+// Hub #853: browser check of the CHOMPI bridge verification run's control page, in the manner of
 // the dashboard's browser checks. It starts a run in this process (synthetic feed, simulated controller and
-// desktop), drives the page with the keyboard in Chromium and runs axe (WCAG 2.1 A and AA) at desktop and phone
-// widths. `npm run test:chompi-bridge:browser`; exits non-zero on any failure.
+// desktop), drives the page with the keyboard in Chromium and checks the layout at
+// phone width. `npm run test:chompi-bridge:browser`; exits non-zero on any failure.
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import AxeBuilder from '@axe-core/playwright';
 import { chromium } from 'playwright';
 import { seedRun, startServer } from '../server.mjs';
 
@@ -170,16 +169,9 @@ try {
     await page.locator('#desktop-log li').filter({ hasText: 'key down LeftControl+LeftWindows' }).first().waitFor();
   });
 
-  await check('no WCAG 2.1 A or AA violations at 1440 px', async () => {
-    const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-    assert.deepEqual(result.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target.join(' ')) })), []);
-  });
-
-  await check('no WCAG 2.1 A or AA violations at phone width, and no page scroll sideways', async () => {
+  await check('no page scroll sideways at phone width', async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(400);
-    const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-    assert.deepEqual(result.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => `${n.target.join(' ')}: ${n.failureSummary}`) })), []);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'the page itself does not scroll sideways; only the key rows do');
   });
 

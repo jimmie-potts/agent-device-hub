@@ -55,7 +55,7 @@ Unsupported, malformed or over-limit input SHALL be refused without library chan
 - **THEN** access is refused according to the existing grants, and no write occurs
 - **AND** restart or duplicate control never replays a preference mutation
 
-### Requirement: Accessible dashboard management
+### Requirement: Dashboard management
 
 The existing dashboard SHALL provide inspect/add/edit, Stop using, Reactivate, selected copy and private import/export with keyboard access and truthful disconnected, refusal and uncertain-result states. Existing assistant and fixed-text companion behavior SHALL remain available independently.
 

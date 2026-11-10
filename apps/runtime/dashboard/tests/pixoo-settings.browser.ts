@@ -1,6 +1,5 @@
 // Device settings remain one runtime configuration; explicit display controls use tracked commands.
 import assert from 'node:assert/strict';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 
@@ -39,12 +38,11 @@ try {
     await page.getByRole('button', {name: 'Refresh settings', exact: true}).click();
     await page.getByText('pixoo64-gif-2026-10-01', {exact: true}).waitFor();
     assert.equal(sent.length, 3); assert.equal(world.pixooState().sent, written);
-    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
     await page.reload(); await feed(page, 'connected'); assert.equal(sent.length, 3);
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.reload(); await feed(page, 'connected'); await page.getByText('Read-only access.', {exact: true}).waitFor();
     assert.equal(await apply.count(), 0); assert.equal(await page.getByRole('button', {name: 'Screen off', exact: true}).count(), 0);
     assert.equal(sent.length, 3); assert.equal(world.pixooState().sent, written); assert.deepEqual(errors, []);
-    process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-settings', requests: 3, brightness: 37, readOnlyControls: true, configurationReadOnly: true, noReplay: true, axe: 'passed'})}\n`);
+    process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-settings', requests: 3, brightness: 37, readOnlyControls: true, configurationReadOnly: true, noReplay: true})}\n`);
   } finally {await context.close();}
 } finally {try {await browser?.close();} finally {await world.close();}}

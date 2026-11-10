@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import {directoryLink} from './navigation-helpers.ts';
 import {setTimeout as delay} from 'node:timers/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 
@@ -36,8 +35,6 @@ try {
     await page.getByRole('combobox', {name: 'Playlist', exact: true}).selectOption(before.id); await name.waitFor();
     assert.equal(await name.inputValue(), 'Evening desk'); assert.equal(sent.length, 1, 'reload never resends');
     assert.equal(world.pixooState().sent, 0, 'page, drafts and playlist metadata save do not write to the display');
-    const violations = (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
-    assert.deepEqual(violations.map(item => item.id), []);
     await (await directoryLink(page, 'Other', 'Trusted editor fixture')).click();
     const frame = page.frameLocator('iframe.module-page');
     await frame.getByText('Editor ready', {exact: true}).waitFor();
@@ -57,7 +54,7 @@ try {
     assert.equal(await world.readonlyPlaylistCommand({change: {operation: 'rename', playlistId: after.id, revision: after.playlistRevision, name: 'Denied'}}), 403);
     assert.deepEqual(await world.pixooPlaylists(), [after]); assert.equal(sent.length, 1);
     assert.deepEqual(errors, []);
-    process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-playlist-rename', requests: sent.length, ownerRevision: after.playlistRevision, displayWrites: world.pixooState().sent, trustedBundle: true, passiveScriptBlocked: true, readOnlyRefused: true, axe: 'passed'})}\n`);
+    process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-playlist-rename', requests: sent.length, ownerRevision: after.playlistRevision, displayWrites: world.pixooState().sent, trustedBundle: true, passiveScriptBlocked: true, readOnlyRefused: true})}\n`);
   } finally {await context.close();}
 } finally {try {await browser?.close();} finally {await world.close();}}
 

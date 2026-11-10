@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {AxeBuilder} from '@axe-core/playwright';
 import type {Browser} from 'playwright';
 import {connectRemote} from '@jimmie-potts/sdk/remote';
 import type {CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
@@ -50,9 +49,8 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     await messages.getByRole('article', {name: 'tool message', exact: true}).getByText(/^completed \(tested-candidate\): Added the test; it passes\./).waitFor();
     await messages.getByText(/coding worker: completed/).waitFor();
     await assistant.getByText('Connected and idle', {exact: true}).waitFor();
-    assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
     assert.equal(JSON.stringify(world.logs).includes('readout generator'), false, 'briefs reach no diagnostic record');
     assert.deepEqual(errors, []);
   } finally {await worker.close(); await context.close(); await world.close();}
-  process.stdout.write('Coding delegation browser: worker endpoint through the real gateway, proposal with repository and bound revision, approval by keyboard, delegated wait without an answer box, worker status, result as a tool message and axe passed.\n');
+  process.stdout.write('Coding delegation browser: worker endpoint through the real gateway, proposal with repository and bound revision, approval by keyboard, delegated wait without an answer box, worker status and result as a tool message passed.\n');
 }

@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {setTimeout as pause} from 'node:timers/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {LINES_ADDRESS} from '@jimmie-potts/nanoleaf';
 import {chromium, type Browser, type Page} from 'playwright';
 import {expect} from 'playwright/test';
@@ -136,8 +135,6 @@ try {
     await automation().getByLabel('Palette (optional, comma-separated #rrggbb)', {exact: true}).fill('#112233, #445566'); await save('Save rule');
     await automation().getByRole('heading', {name: 'Edited Celebrate Enabled', exact: true}).waitFor();
     await save('Disable Edited Celebrate'); await automation().getByRole('heading', {name: 'Edited Celebrate Disabled', exact: true}).waitFor();
-    const violations = (await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
-    assert.deepEqual(violations.map(item => item.id), []);
     await save('Delete Edited Celebrate'); await automation().getByText('No rules yet.', {exact: true}).waitFor();
     assert.ok(writes.every(write => write.header === '1'), 'every mutation, including DELETE, carries bunny-request:1');
     assert.equal(writes.filter(write => write.method === 'DELETE').length, 1);
@@ -229,10 +226,6 @@ try {
     const routineWrites = writes.length;
     world.dropDashboardStreams(); await feed(page, 'connected'); await pause(300);
     assert.equal(writes.length, routineWrites, 'routines are not resent or run after reconnect');
-    const labelViolations = (await new AxeBuilder({page}).include('main').withRules(['label-content-name-mismatch']).analyze()).violations;
-    assert.deepEqual(labelViolations.map(item => ({id: item.id, targets: item.nodes.map(node => node.target)})), []);
-    const routineViolations = (await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
-    assert.deepEqual(routineViolations.map(item => item.id), []);
     await save('Disable routine Weekday desk');
     await page.route('**/api/v2/automation/routines', async route => {
       if (route.request().method() === 'POST') { await route.fetch(); await route.abort('failed'); } else await route.continue();
@@ -264,8 +257,6 @@ try {
         if (output !== undefined) await page.screenshot({path: `${output}/automation-${theme}-${String(width)}-${name.toLowerCase()}-list.png`, fullPage: true});
         if (name !== 'Settings') await automation().getByRole('button', {name: name === 'Routines' ? 'New routine' : 'New rule', exact: true}).click();
         await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-        const failures = (await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
-        assert.deepEqual(failures.map(item => ({id: item.id, targets: item.nodes.map(node => node.target)})), [], `${theme}/${String(width)}/${name}`);
         if (output !== undefined) await page.screenshot({path: `${output}/automation-${theme}-${String(width)}-${name.toLowerCase()}.png`, fullPage: true});
         if (name !== 'Settings') await automation().getByRole('button', {name: name === 'Routines' ? 'Cancel routine edit' : 'Cancel edit', exact: true}).click();
       }
@@ -283,6 +274,6 @@ try {
     for (const button of ['Save settings', 'Save interrupt set']) await expect(automation().getByRole('button', {name: button, exact: true})).toBeDisabled();
     assert.equal(writes.length, beforeReadonly); assert.deepEqual(errors, []);
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'automation', checks: ['explicit disabled-create/enable', 'interrupt and settings persisted', 'passive drafts and reconnect',
-      'approval resolved before turn end', 'page-closed single effect and restoration', 'separate tracked outcome', 'edit/disable/delete', 'tab keyboard and focus restoration', 'preserved cross-tab drafts', 'light/dark 320/390/1440px axe and overflow', 'axe', 'read-only UI interception only','independent routines', 'incomplete routine actions', 'ordered action edit', 'run now logged', 'routine reconnect passive', 'lost routine mutation reply', 'routine axe'], mutations: writes.length})}\n`);
+      'approval resolved before turn end', 'page-closed single effect and restoration', 'separate tracked outcome', 'edit/disable/delete', 'tab keyboard and focus restoration', 'preserved cross-tab drafts', 'light/dark 320/390/1440px overflow', 'read-only UI interception only','independent routines', 'incomplete routine actions', 'ordered action edit', 'run now logged', 'routine reconnect passive', 'lost routine mutation reply'], mutations: writes.length})}\n`);
   } finally { await context.close(); }
 } finally { try { await browser?.close(); } finally { await world.close(); } }

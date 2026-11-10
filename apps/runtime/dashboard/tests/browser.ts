@@ -3,10 +3,9 @@ import {openConnections, openSettings} from './navigation-helpers.ts';
 // its routes and Places, and the agent sessions it syncs from the core, on the built runtime with a synthetic hook.
 // Sessions appear, an approval is raised and cleared, a finished turn stays unread until the session record clears it,
 // a lost stream resyncs with nothing replayed, read evidence and a device acknowledgment clear their rows, an ended session offers one
-// sign-in, and the pages pass axe at desktop and phone widths. It contacts no device and no installed service.
+// sign-in, and the pages fit at desktop and phone widths. It contacts no device and no installed service.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Page} from 'playwright';
 import {OTHER, SESSION_ID, approvalPrompt, approvalResolved, runtimeEnded, sessionStarted, turnEnded, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
@@ -21,8 +20,6 @@ const browser = await chromium.launch({headless: true});
 const output = process.env.DASHBOARD_RECEIPTS;
 if (output !== undefined) await mkdir(output, {recursive: true});
 const shot = async (page: Page, name: string): Promise<void> => { if (output !== undefined) await page.screenshot({path: `${output}/${name}.png`, fullPage: true}); };
-const axe = async (page: Page): Promise<string[]> => (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations
-  .map(violation => `${violation.id}: ${violation.nodes.map(node => node.target.join(' ')).join(', ')}`);
 const checks: string[] = [];
 const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
 const errors: string[] = [];
@@ -220,24 +217,21 @@ try {
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({width, height: 900});
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      assert.deepEqual(await axe(page), []);
       await shot(page, `agent-cards-${colorScheme}-${width}`);
     }
   }
   await world.observe(approvalResolved('approval-colors'));
   await page.setViewportSize({width: 1440, height: 900});
 
-  // Layout and accessibility, desktop and phone.
+  // Layout, desktop and phone.
   assert.deepEqual(await textOverlaps(page), [], 'home text never overlaps');
   assert.ok(await controlReach(page) >= 0.5, 'the home uses the width');
-  assert.deepEqual(await axe(page), []);
   await shot(page, 'runtime-home-desktop');
   await page.setViewportSize({width: 390, height: 844});
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no horizontal overflow on a phone');
-  assert.deepEqual(await axe(page), []);
   await shot(page, 'runtime-home-mobile');
   await page.setViewportSize({width: 1440, height: 900});
-  checks.push('no overlap, axe at 1440 and 390 px, no phone overflow');
+  checks.push('no overlap at 1440 px, no phone overflow');
 
   // A restart ends every browser session: the page offers one sign-in, and never signs in by itself.
   await world.restart();
@@ -266,7 +260,7 @@ try {
 
   assert.deepEqual(sent, [], 'the page sent no command before explicit label controls');
 
-  checks.push(await labelJourney(page, world, sent, axe));
+  checks.push(await labelJourney(page, world, sent));
   const sentBeforeInspection = sent.length;
   await row('Port the wall').getByRole('button', {name: 'Edit label for Port the wall', exact: true}).click();
   await page.getByLabel('Session label', {exact: true}).fill('Retire this draft');

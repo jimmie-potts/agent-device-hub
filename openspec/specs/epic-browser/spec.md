@@ -31,8 +31,8 @@ The browser SHALL distinguish no open blocker from accepted prerequisite outcome
 - **WHEN** a native prerequisite was cancelled or has an unresolved duplicate closure
 - **THEN** the dependent is not shown as eligible Up next and the missing acceptance evidence is visible
 
-### Requirement: Accessible navigation and safe briefs
-The browser SHALL preserve shareable search/filter and Back state, theme, keyboard/focus, reduced motion, mobile destinations and per-page print. Briefs SHALL offer Explain, Plan, Implement and Review without inference. Valid current recommendations SHALL add guidance; absent, stale, insufficient or malformed recommendations SHALL use generic commands. Copy SHALL never execute commands and SHALL offer a selectable-text fallback.
+### Requirement: Navigation and safe briefs
+The browser SHALL preserve shareable search/filter and Back state, theme, keyboard/focus, mobile destinations and per-page print. Briefs SHALL offer Explain, Plan, Implement and Review without inference. Valid current recommendations SHALL add guidance; absent, stale, insufficient or malformed recommendations SHALL use generic commands. Copy SHALL never execute commands and SHALL offer a selectable-text fallback.
 
 #### Scenario: Navigation and clipboard failure
 - **WHEN** the reader navigates from filtered results into a brief and returns, or clipboard permission is denied

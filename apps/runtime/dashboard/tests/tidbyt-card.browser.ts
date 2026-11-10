@@ -1,7 +1,6 @@
 // Real Tidbyt owner and synthetic cloud only; never installed services or physical devices.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Request} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 
@@ -51,13 +50,10 @@ try {
         await page.getByText('Device evidence', {exact: true}).click();
       }
       assert.equal(world.browserSessions(), 1);
-      const violations = (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
-      assert.deepEqual(violations.map(value => ({id: value.id, nodes: value.nodes.map(node => ({target: node.target, summary: node.failureSummary}))})), []);
     }
     await page.emulateMedia({reducedMotion: 'reduce'});
     await page.setViewportSize({width: 390, height: 844});
     await card.getByRole('tab', {name: 'Status', exact: true}).click();
-    assert.equal(await card.getByRole('tabpanel').evaluate(node => getComputedStyle(node).animationName), 'none');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     const evidence = process.env.DASHBOARD_RECEIPTS;
     if (evidence !== undefined) { await mkdir(evidence, {recursive: true}); await page.screenshot({path: `${evidence}/tidbyt-phone.png`, fullPage: true}); }
@@ -92,6 +88,6 @@ try {
     assert.equal(await card.getByRole('button', {name: /power|brightness|push|remove|play|screen/i}).count(), 0);
     assert.deepEqual(sent, [], 'inspection, reconnect and read-only navigation issue no command');
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({passed: true, journey: 'tidbyt-reusable-card', surfaces: surfaces.length, stationaryArtwork: true, heldOwnerSync: true, refusedOwnerRecovered: true, readOnly: true, phone: true, axe: true, commandRequests: sent.length}));
+    console.log(JSON.stringify({passed: true, journey: 'tidbyt-reusable-card', surfaces: surfaces.length, stationaryArtwork: true, heldOwnerSync: true, refusedOwnerRecovered: true, readOnly: true, phone: true, commandRequests: sent.length}));
   } finally { await context.close(); }
 } finally { try { await browser.close(); } finally { await world.close(); } }

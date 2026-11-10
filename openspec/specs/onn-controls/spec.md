@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provide owner-requested controls for one configured ONN through the authenticated runtime, with truthful outcomes, private no-replay records and an accessible shared-dashboard page.
+Provide owner-requested controls for one configured ONN through the authenticated runtime, with truthful outcomes, private no-replay records and a shared-dashboard page.
 
 ## Requirements
 
@@ -44,7 +44,7 @@ Focused text SHALL be nonempty, at most 256 characters and limited to the qualif
 - **WHEN** a page opens, reconnects or reads a stale/unavailable ONN
 - **THEN** it shows honest unknown/stale evidence and sends no control command
 
-### Requirement: Accessible module page and compatible MCP
+### Requirement: Module page and compatible MCP
 
 The ONN-owned React page SHALL compile into the shared dashboard, reuse authenticated connection and command feedback, provide keyboard/phone/desktop operation and label focus-dependent seeking and focused text. It SHALL disable unavailable, stale or forbidden actions visibly and distinguish admission, transmission and observation. A compatible MCP client SHALL discover ONN state and send the same typed actions through the existing core tool without a native assistant or model call.
 
@@ -54,7 +54,7 @@ The ONN-owned React page SHALL compile into the shared dashboard, reuse authenti
 
 ### Requirement: Reusable Soft keys ONN card
 
-The dashboard SHALL use the approved Soft keys card on Home, the ONN component view and the ONN controls page, retaining existing device identity and saved Home placement. The TV/box illustration SHALL stay mounted and visible when keyboard-accessible Remote and Apps tabs change only the controls. Both tabs SHALL retain one stable card geometry in light/dark desktop and phone layouts, with reduced-motion support and no horizontal overflow. Healthy cards SHALL omit repeated connection/desired-state facts and default no-command text; necessary access, freshness and request evidence SHALL remain available without an Activity or Details tab.
+The dashboard SHALL use the approved Soft keys card on Home, the ONN component view and the ONN controls page, retaining existing device identity and saved Home placement. The TV/box illustration SHALL stay mounted and visible when keyboard-accessible Remote and Apps tabs change only the controls. Both tabs SHALL retain one stable card geometry in light/dark desktop and phone layouts, with no horizontal overflow. Healthy cards SHALL omit repeated connection/desired-state facts and default no-command text; necessary access, freshness and request evidence SHALL remain available without an Activity or Details tab.
 
 #### Scenario: Move between control tabs
 - **WHEN** a user switches Remote and Apps by pointer or keyboard
@@ -86,7 +86,7 @@ The card's History link SHALL open the existing retained ONN history UI through 
 
 ### Requirement: ONN hibernation governs active availability
 
-The system SHALL keep ONN dormant until a new owner decision and restored verification. Hibernation SHALL override the active ONN behavior described by this capability. It SHALL expose no ONN controls, observations, title-history pages, MCP tools or runtime registration. Dedicated ONN default checks SHALL be dormant. Retained source, private history, stored-command privacy and backup/upgrade compatibility SHALL remain intact without data migration or deletion. Shared dashboard authentication, keyboard accessibility and reconnect checks SHALL remain active.
+The system SHALL keep ONN dormant until a new owner decision and restored verification. Hibernation SHALL override the active ONN behavior described by this capability. It SHALL expose no ONN controls, observations, title-history pages, MCP tools or runtime registration. Dedicated ONN default checks SHALL be dormant. Retained source, private history, stored-command privacy and backup/upgrade compatibility SHALL remain intact without data migration or deletion. Shared dashboard authentication, keyboard and reconnect checks SHALL remain active.
 
 #### Scenario: Start and browse after hibernation
 - **WHEN** a hibernated release starts or a client opens a saved ONN page

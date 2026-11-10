@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
-import AxeBuilder from '@axe-core/playwright';
 import {build} from 'esbuild';
 import {mkdir} from 'node:fs/promises';
 import {fixture,linesGeometry,panelsGeometry} from './fixture.mjs';
@@ -9,7 +8,6 @@ import {textOverlaps} from './layout.mjs';
 const browser=await chromium.launch({headless:true});
 const output=process.env.DASHBOARD_RECEIPTS??'/tmp/gh355-art-receipts';await mkdir(output,{recursive:true});
 const checks=[];
-async function axe(page){const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>`${n.target.join(' ')}: ${n.failureSummary}`)})),[]);}
 async function scenario(name,run,{options={},viewport={width:1280,height:900},reducedMotion='reduce'}={}){
  const f=await fixture(options),context=await browser.newContext({viewport,reducedMotion}),page=await context.newPage();page.setDefaultTimeout(12000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
  try{await page.goto(f.hub.url);await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.locator('#main[data-received]:not([data-received="0"])').waitFor();await run(f,page);assert.deepEqual(errors,[]);checks.push(name);}
@@ -24,7 +22,7 @@ try {
   const art=page.locator('figure.device-art[data-art-kind=lines]');await art.locator('svg.prism-scene').waitFor();
   await page.waitForFunction(()=>document.querySelector('figure.device-art figcaption')?.textContent.includes('Signature zones show reservation colors.'));
   assert.equal(await art.locator('[data-control]').count(),15);assert.equal(await art.locator('[data-node]').count(),12);
-  assert.equal(await art.locator('svg').getAttribute('data-prism-mode'),'work');assert.equal(await art.locator('svg').getAttribute('data-reduced-motion'),'true');
+  assert.equal(await art.locator('svg').getAttribute('data-prism-mode'),'work');
   assert.equal(await stopColor(page,0,0),f.nano.projects[0].color,'the first element\'s signature zone shows its reservation');assert.equal(await stopColor(page,0,1),'#193cff','the other zone is the no-task base');
   assert.equal(await stopColor(page,2,0),'#193cff');assert.equal(await stopColor(page,2,1),'#193cff');
   assert.equal(await art.locator('[data-control="0"]').getAttribute('aria-label'),`Line 1 · Reserved: ${f.nano.projects[0].id} · No task shown`);
@@ -40,9 +38,8 @@ try {
   await page.waitForFunction(()=>document.querySelector('figure.device-art svg')?.dataset.prismMode==='quiet');assert.ok(await art.locator('[data-control="1"]').evaluate(el=>el.classList.contains('pending')));
   assert.equal(f.writes.length,0,'opening, selecting and polling send no command');
   await page.screenshot({path:output+'/art-lines-desktop.png',fullPage:true});
-  await axe(page);
   await page.waitForTimeout(6000);assert.equal(geometryReads(f,'wall'),1,'the geometry is read once, not on every poll');
-  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'phone width has no horizontal overflow');await page.screenshot({path:output+'/art-lines-phone.png',fullPage:true});await axe(page);
+  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'phone width has no horizontal overflow');await page.screenshot({path:output+'/art-lines-phone.png',fullPage:true});
   assert.equal(await art.locator('[data-control]').count(),15);
  });
  await scenario('a stale controller keeps the art marked stale, never an empty wall',async(f,page)=>{
@@ -56,11 +53,11 @@ try {
   assert.equal(await art.locator('[data-control]').count(),18);assert.equal(await art.locator('[data-control="0"]').getAttribute('aria-label'),'Panel 1 · No task shown');
   assert.match(await art.locator('figcaption').innerText(),/18 Panels from the controller’s saved layout\./);
   await art.locator('[data-control="4"]').click();assert.equal(await art.locator('[data-control="4"]').getAttribute('aria-pressed'),'true');
-  assert.deepEqual(await textOverlaps(page),[]);await axe(page);assert.equal(f.writes.length,0);
+  assert.deepEqual(await textOverlaps(page),[]);assert.equal(f.writes.length,0);
   await page.screenshot({path:output+'/art-panels-desktop.png',fullPage:true});
   // The Panels' controller goes away: the triangles stay, marked stale.
   f.setOffline(true,'panels');await page.waitForFunction(()=>document.querySelector('figure.device-art[data-art-kind=panels]')?.dataset.artState==='stale');assert.equal(await art.locator('[data-control]').count(),18);await art.locator('figcaption').getByText('Stale: showing the last snapshot.').waitFor();f.setOffline(false);
-  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'the Panels page has no horizontal overflow at phone width');await axe(page);await page.setViewportSize({width:1280,height:900});
+  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'the Panels page has no horizontal overflow at phone width');await page.setViewportSize({width:1280,height:900});
   // The Lines page in the same session draws its own device.
   await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.locator('figure.device-art[data-art-kind=lines] svg.prism-scene').waitFor();assert.equal(await page.locator('figure.device-art[data-art-kind=lines] [data-control]').count(),15);
  },{options:{panels:true}});
@@ -72,7 +69,7 @@ try {
   const first=art.locator('button.art-cell').first();assert.equal(await first.getAttribute('aria-label'),`Line 1 · Reserved: ${f.nano.projects[0].id} · No task shown`);
   assert.equal(await first.locator('span').first().evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(169, 195, 255)');
   await art.locator('button.art-cell').nth(2).click();assert.equal(await page.getByRole('combobox',{name:'Element',exact:true}).filter({visible:true}).inputValue(),'105:106');assert.equal(await art.locator('button.art-cell').nth(2).getAttribute('aria-pressed'),'true');
-  assert.deepEqual(await textOverlaps(page),[]);await axe(page);await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await axe(page);
+  assert.deepEqual(await textOverlaps(page),[]);await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.screenshot({path:output+'/art-strip-phone.png',fullPage:true});assert.equal(f.writes.length,0);
  },{options:{geometry:'none'}});
  await scenario('an owner that predates the geometry route gets the strip once, with no retry',async(f,page)=>{
@@ -103,15 +100,14 @@ try {
   try{
    await page.setContent(html);await page.waitForFunction(()=>typeof window.mountArt==='function');await page.evaluate(p=>window.mountArt(p),props);
    const art=page.locator('figure.device-art');await art.locator('svg.prism-scene').waitFor();
-   assert.equal(await art.locator('svg').getAttribute('data-reduced-motion'),String(reducedMotion==='reduce'));assert.equal(await art.locator('svg').getAttribute('data-prism-mode'),'work');
+   assert.equal(await art.locator('svg').getAttribute('data-prism-mode'),'work');
    assert.equal(await stopColor(page,0,0),'#a9c3ff');assert.equal(await stopColor(page,0,1),'#00ff00','the status color fills the other zone');
    // In the project style an unreserved signature zone stays the base color while the other zone carries the status, as on the wall map for a Line whose task project is unknown.
    assert.equal(await stopColor(page,1,0),'#193cff');assert.equal(await stopColor(page,1,1),'#ff0000');assert.equal(await stopColor(page,2,1),'#ffff00');
    assert.equal(await art.locator('[data-control="0"]').getAttribute('aria-label'),'Line 1 · Reserved: project-a · working, active');assert.equal(await art.locator('[data-control="0"]').getAttribute('data-status'),'working');assert.equal(await art.locator('[data-control="1"]').getAttribute('data-status'),'blocked');
    assert.equal(await art.locator('figcaption').innerText(),'15 Lines from the controller’s saved layout. Mode Work. Signature zones show reservation colors.');
    const packet=()=>page.locator('[data-packet="0"][data-zone="0"]').first().evaluate(el=>Number(el.getAttribute('opacity')));
-   if(reducedMotion==='reduce'){await page.waitForTimeout(400);assert.equal(await packet(),0,'reduced motion stops the flow');}
-   else{let seen=false;const deadline=Date.now()+3000;while(Date.now()<deadline){if(await packet()>0){seen=true;break;}await page.waitForTimeout(50);}assert.ok(seen,'the Work flow runs on the active element');}
+   if(reducedMotion!=='reduce'){let seen=false;const deadline=Date.now()+3000;while(Date.now()<deadline){if(await packet()>0){seen=true;break;}await page.waitForTimeout(50);}assert.ok(seen,'the Work flow runs on the active element');}
    assert.equal(await page.locator('[data-packet="1"][data-zone="0"]').first().evaluate(el=>Number(el.getAttribute('opacity'))),0,'an inactive element has no packet');
    await page.evaluate(p=>window.mountArt(p),{...props,snapshot:{...snapshot,mode:'Quiet'}});await page.waitForFunction(()=>document.querySelector('figure.device-art svg')?.dataset.prismMode==='quiet');await page.waitForTimeout(100);assert.equal(await packet(),0,'Quiet stops the flow');
    const bed=()=>page.locator('[data-bed="0"]').first().evaluate(el=>Number(el.getAttribute('opacity')));const quietBed=await bed();
@@ -120,14 +116,13 @@ try {
    await page.evaluate(p=>window.mountArt(p),{...props,stale:true});await page.waitForFunction(()=>document.querySelector('figure.device-art')?.dataset.artState==='stale');
    // The Panels pulse on the same clock from the same inputs.
    await page.evaluate(p=>window.mountArt(p),{...props,read:{geometry:panelsGeometry(),final:true},snapshot:{...snapshot,elements:[]},status:{'4001':'working'},activity:['4001']});
-   const panels=art.locator('svg.prism-panels');await panels.waitFor();assert.equal(await art.locator('[data-control]').count(),18);assert.equal(await panels.getAttribute('data-flow'),String(reducedMotion!=='reduce'));
+   const panels=art.locator('svg.prism-panels');await panels.waitFor();assert.equal(await art.locator('[data-control]').count(),18);
    assert.equal(await art.locator('[data-part="light"][data-light="0"]').getAttribute('fill'),'#00ff00');assert.equal(await art.locator('[data-control="0"]').getAttribute('aria-label'),'Panel 1 · Shared pool · working, active');
-   // The opening assembly plays once on first draw and ends within two seconds; reduced motion skips it.
+   // The opening assembly plays once on first draw and ends within two seconds.
    await page.evaluate(p=>window.mountArt(p),{...props,assemble:true,read:{geometry:{...linesGeometry(),identity:{...linesGeometry().identity,controllerEpoch:'assembly'}},final:true}});await page.locator('svg.prism-scene [data-charge]').waitFor({state:'attached'});
    const charge=()=>page.locator('svg.prism-scene [data-charge]').first().getAttribute('visibility');
-   if(reducedMotion==='reduce')assert.equal(await charge(),'hidden','reduced motion skips the assembly');
-   else{assert.equal(await charge(),'visible','the assembly starts from the root connector');await page.waitForFunction(()=>document.querySelector('svg.prism-scene [data-charge]')?.getAttribute('visibility')==='hidden',null,{timeout:4000});}
-   await axe(page);assert.deepEqual(errors,[]);
+   if(reducedMotion!=='reduce'){assert.equal(await charge(),'visible','the assembly starts from the root connector');await page.waitForFunction(()=>document.querySelector('svg.prism-scene [data-charge]')?.getAttribute('visibility')==='hidden',null,{timeout:4000});}
+   assert.deepEqual(errors,[]);
    if(reducedMotion==='no-preference')await page.screenshot({path:output+'/art-harness-status.png'});
    checks.push('harness status/activity ('+reducedMotion+')');
   }finally{await context.close();}

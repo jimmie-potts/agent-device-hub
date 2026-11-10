@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, expect} from 'playwright/test';
 import {CATALOG_PAGE_SIZE} from '../../../../modules/art/dist/src/frontend/model.js';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
@@ -43,7 +42,6 @@ export async function artShowJourney(): Promise<void> {
     // This harness's simulated Tidbyt declares no exact art, so the plan skips it and says so; the browser proceeds alone.
     await expect(results.locator(`[data-art-show-surface="${target}"]`)).toContainText('Not sent. Recent automation attempts on the Automation page give the reason.');
     assert.equal(world.art.state().imageCalls, calls, 'Show now never calls a provider');
-    const axe = await new AxeBuilder({page}).include('.art-show').analyze();assert.deepEqual(axe.violations.map(item => item.id), []);
     await page.screenshot({path: join(artifacts, 'art-show-now.png'), fullPage: true});
     // The owner attempts appear beside rule attempts on the Automation page.
     await page.goto(`${world.url}/#/automation`);await feed(page, 'connected');

@@ -432,7 +432,7 @@ async function evaluateFeedback(ctx, comments) {
 function evaluateUi(ctx) {
   // Retain the schema-1 entry for readers of older reports. Neither path nor
   // legacy CLI declarations create a human approval requirement.
-  ctx.gates.ui.notApplicable('human UI approval is not required; applicable browser/accessibility checks, independent reviews and CI remain required');
+  ctx.gates.ui.notApplicable('human UI approval is not required; applicable browser checks, independent reviews and CI remain required');
 }
 
 async function evaluateProof(ctx) {

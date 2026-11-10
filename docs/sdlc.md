@@ -701,7 +701,11 @@ merge or completion gate pending. Preserve independent reviews, the head guard a
 
 No project UI requires human approval, including new or materially changed Hub,
 dashboard and device-facing interfaces. Record the affected UI and
-applicable automated, browser, visual and accessibility evidence in the PR.
+applicable automated, browser and visual evidence in the PR.
+No accessibility requirement applies to this private-use app (owner decision
+2026-11-10): do not add accessibility scans, reduced-motion variants or
+accessibility acceptance criteria, and do not hold a change for one. Keyboard
+and focus checks remain ordinary product behavior.
 The independent review and proportionate
 [acceptance exercise](#acceptance-review), applicable CI and guarded merge
 remain required. A missing required check or blocking finding
@@ -750,7 +754,7 @@ renames, type changes and incomplete metadata keep conservative selection.
 For this route Core checks out the exact PR head. Wemo completion must show a
 nonempty successful full suite and the changed compiled entry, with no failed,
 cancelled, skipped or todo cases. MicroDuck completion follows the entire existing
-browser journey, including keyboard, viewport, reduced-motion and accessibility
+browser journey, including keyboard and viewport
 assertions; its dashboard smoke must also pass. Native notices bind the owner,
 fixed complete command, head, run and attempt. The gate requires completion and
 the preflight checks the notice against the actual native Core execution.
@@ -778,7 +782,7 @@ missing evidence.
 
 Main records integrated source. Its Integration workflow runs cheap workflow and
 admission-regression checks on the exact merged revision. The separate Release
-qualification workflow runs all applicable existing source, browser/accessibility
+qualification workflow runs all applicable existing source, browser
 and packaged ARM64 coverage on a pinned integrated snapshot. One active run
 finishes while new arrivals replace the pending candidate. Omitted intermediate
 revisions are not qualified. A feature PR need not wait for qualification or a

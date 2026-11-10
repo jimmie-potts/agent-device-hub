@@ -1,7 +1,6 @@
 // The existing player through authenticated content and tracked commands, with fresh synthetic media only (Hub #932).
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
 import sharp from 'sharp';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
@@ -130,7 +129,6 @@ try {
     await page.getByText('free', {exact: true}).waitFor();
     assert.equal(sent.length, beforeMode + 2);
     await advanced.getByRole('status').filter({hasText: 'Completed: succeeded.'}).waitFor();
-    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.reload(); await feed(page, 'connected');
     await page.getByText('Advanced player', {exact: true}).click(); await advanced.getByText('Read-only access.', {exact: true}).waitFor();
@@ -138,6 +136,6 @@ try {
     const readerRequests = sent.length; await readPlayer(); assert.equal(sent.length, readerRequests);
     assert.equal(sent.length, 14); assert.deepEqual(errors, []);
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-player-controls', requests: sent.length, simulatedWrites: world.pixooState().sent,
-      frozenSession: true, restartWithChanges: true, noReplay: true, readOnlyControls: true, axe: 'passed'})}\n`);
+      frozenSession: true, restartWithChanges: true, noReplay: true, readOnlyControls: true})}\n`);
   } finally {await context.close();}
 } finally {try {await browser?.close();} finally {await world.close();}}

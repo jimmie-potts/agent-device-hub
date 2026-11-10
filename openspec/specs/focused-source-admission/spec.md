@@ -66,7 +66,7 @@ Each disposable task SHALL own its mutable worktree, build outputs, container, s
 
 ### Requirement: Owning-command evidence
 
-Standalone admission SHALL bind fixed expected commands and their actual successful nonempty completion to the exact candidate and authentic hosted job. The changed compiled unit-test entry SHALL execute nonempty successful cases within its complete owning suite. A standalone browser journey SHALL finish its existing keyboard, viewport, reduced-motion and accessibility assertions; a fictitious test count SHALL NOT substitute for completion. Missing, failed, skipped, cancelled, empty, wrong-command or wrong-revision evidence SHALL refuse admission. Labels SHALL NOT waive requirements.
+Standalone admission SHALL bind fixed expected commands and their actual successful nonempty completion to the exact candidate and authentic hosted job. The changed compiled unit-test entry SHALL execute nonempty successful cases within its complete owning suite. A standalone browser journey SHALL finish its existing keyboard and viewport assertions; a fictitious test count SHALL NOT substitute for completion. Missing, failed, skipped, cancelled, empty, wrong-command or wrong-revision evidence SHALL refuse admission. Labels SHALL NOT waive requirements.
 
 #### Scenario: Wemo owning suite
 - **WHEN** the verified standalone Wemo module test changes

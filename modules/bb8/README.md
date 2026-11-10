@@ -14,7 +14,7 @@ From the repository root, using Node 24 (`fnm exec --using=.nvmrc --`):
 - `test:bb8` builds and tests module admission, durable completion, restart and packet-free recovery.
 - `test:bb8:built` uses current build output and includes module-kit conformance.
 - `test:bb8:package` builds and checks isolated package exports/consumer compatibility; CI uses `test:bb8:package:built` after its single build.
-- `test:bb8:browser` exercises explicit controls/read-only/stale/failure/reconnect through the real authenticated shell and axe.
+- `test:bb8:browser` exercises explicit controls/read-only/stale/failure/reconnect through the real authenticated shell.
 
 Also run build, typecheck, lint:js, check:workflow, test:workflow, events/Python, SDK, runtime/both-transport catalog and dashboard/full browser checks. Disposable Acceptance runs `verify:runtime` independently on the frozen source candidate. Tests use synthetic configuration and injected transport, never installed state or radio. Source CI is not installation or physical qualification.
 

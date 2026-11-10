@@ -1,10 +1,9 @@
 // CI's smoke check of the runtime's dashboard (Hub #922), as PR #986 gave the old one: the full browser suite
 // (`npm run test:runtime-dashboard:browser`) runs locally. One trusted loopback page on the built runtime with the core:
 // the gateway serves the built page, which signs in without a form, shows a synthetic session's finished turn as unread
-// from its synced record, keeps the Hub mode and inbox panels, passes axe, and sends no command while it loads.
+// from its synced record, keeps the Hub mode and inbox panels, and sends no command while it loads.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 
@@ -49,10 +48,7 @@ try {
   assert.equal(world.pixooState().sent, 0);
   checks.push('the reusable Pixoo card mounts and changes tabs without a display command');
 
-  const a11y = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-  assert.deepEqual(a11y.violations.map(violation => ({id: violation.id, nodes: violation.nodes.map(node => `${node.target.join(' ')}: ${node.failureSummary ?? ''}`)})), []);
   if (output !== undefined) await page.screenshot({path: `${output}/runtime-smoke-home.png`, fullPage: true});
-  checks.push('the home passes axe');
 
   assert.deepEqual(sent, [], 'loading and inspecting send no command');
   assert.deepEqual(errors, []);

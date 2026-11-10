@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
-import AxeBuilder from '@axe-core/playwright';
 import {mkdir} from 'node:fs/promises';
 import {fixture} from './fixture.mjs';
 // Hub #495: a verification preview's Places lead to its paired runs or nowhere, never to an installed service.
@@ -18,8 +17,7 @@ async function open(options,name){
  await page.getByRole('heading',{name:'Build the integration',exact:true}).waitFor();
  const places=await placesOf(page);
  if(output)await page.screenshot({path:`${output}/${name}.png`,fullPage:true});
- const axe=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
- return {f,context,page,places,errors,violations:axe.violations.map(v=>v.id)};
+ return {f,context,page,places,errors};
 }
 const PUBLIC=[['Architecture','https://jimmie-potts.github.io/agent-device-guide/architecture/arch-shared-system.html'],['Atlas','https://jimmie-potts.github.io/agent-device-guide/atlas/'],['Reference','https://jimmie-potts.github.io/agent-device-guide/atlas/reference/']];
 try{
@@ -32,7 +30,7 @@ try{
    assert.equal(run.places[3].href,null,'B.U.N.N.Y. is the current place, not a link');
    assert.equal(run.places[4].href,paired,'Wall leads to the paired wall run');
    assert.equal(await run.page.getByRole('navigation',{name:'Places'}).getByRole('link',{name:'Wall Local'}).getAttribute('target'),'_blank');
-   assert.deepEqual(run.violations,[]);assert.deepEqual(run.errors,[]);
+   assert.deepEqual(run.errors,[]);
    assert.equal(run.f.writes.length,0,'Places send no controller command');
    checks.push('a paired preview links Wall to its paired run');
   }finally{await run.context.close();await run.f.close();}
@@ -42,7 +40,7 @@ try{
   try{
    assert.deepEqual(run.places.map(p=>p.text),['Architecture','Atlas','Reference','B.U.N.N.Y.Local'],'a Hub-only preview has no Wall link');
    assert.equal(run.places.some(p=>p.href&&INSTALLED.includes(Number(new URL(p.href,'http://x').port))),false,'no Places link leads to an installed port');
-   assert.deepEqual(run.violations,[]);assert.deepEqual(run.errors,[]);
+   assert.deepEqual(run.errors,[]);
    assert.equal(run.f.writes.length,0,'Places send no controller command');
    checks.push('a Hub-only preview omits Wall');
   }finally{await run.context.close();await run.f.close();}

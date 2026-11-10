@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, expect} from 'playwright/test';
 import {manualClock} from '../../dist/tests/support.js';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
@@ -65,8 +64,6 @@ export async function artNoticeJourney(): Promise<void> {
       await page.setViewportSize({width, height: 1100});await image.scrollIntoViewIfNeeded();
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await expect(notice).toBeVisible();
-      const failures = (await new AxeBuilder({page}).include('[data-home-card="art"]').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
-      assert.deepEqual(failures.map(value => value.id), []);
       await page.screenshot({path: join(artifacts, `art-notice-${String(width)}.png`), fullPage: true});
     }
     await advance(30_001);await expect(notice).toHaveCount(0);await expect(image).toHaveAttribute('data-artwork', artworkId);

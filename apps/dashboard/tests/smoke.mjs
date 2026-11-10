@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
-import AxeBuilder from '@axe-core/playwright';
 import {mkdir} from 'node:fs/promises';
 import {fixture} from './fixture.mjs';
 // Hub #827: CI's smoke check of the built dashboard. The full browser suite (`npm run test:dashboard:browser`) runs locally.
 // One trusted-loopback page: the built bundle loads and signs in, the home renders the fixture's session and device
-// widgets and passes axe, and one widget control sends exactly one guarded command.
+// widgets, and one widget control sends exactly one guarded command.
 const started=performance.now();
 const f=await fixture({browserAccess:'trusted-loopback'});
 const browser=await chromium.launch({headless:true});
@@ -33,10 +32,7 @@ try{
  assert.equal(f.writes.length,0,'loading and inspecting send no device command');
  checks.push('the home renders the fixture session and device widgets');
 
- const a11y=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
- assert.deepEqual(a11y.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>`${n.target.join(' ')}: ${n.failureSummary}`)})),[]);
  if(output)await page.screenshot({path:output+'/smoke-home.png',fullPage:true});
- checks.push('the home passes axe');
 
  const wall=widgets.filter({has:page.getByRole('heading',{name:'wall',exact:true})});
  const status=wall.locator('form.edit').filter({has:page.getByRole('heading',{name:'Mode',exact:true})}).locator(':scope>[role=status]');

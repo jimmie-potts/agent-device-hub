@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, expect, type Page} from 'playwright/test';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {feed, startWorld} from './harness.ts';
@@ -78,8 +77,6 @@ export async function artScheduleJourney(): Promise<void> {
       await page.emulateMedia({colorScheme: theme, reducedMotion: width === 390 ? 'no-preference' : 'reduce'});
       await page.setViewportSize({width, height: 1100});
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${theme}/${String(width)} overflow`);
-      const failures = (await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
-      assert.deepEqual(failures.map(value => ({id: value.id, targets: value.nodes.map(node => node.target)})), []);
       await page.screenshot({path: join(artifacts, `art-schedule-${theme}-${String(width)}.png`), fullPage: true});
     }
     // Authority interception tests the browser's read-only rendering; gateway authorization has separate tests.

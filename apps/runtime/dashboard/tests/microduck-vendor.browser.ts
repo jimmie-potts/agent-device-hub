@@ -4,7 +4,6 @@ import {access,readFile,readdir,writeFile} from 'node:fs/promises';
 import {setTimeout as pause} from 'node:timers/promises';
 import {once} from 'node:events';
 import {chromium} from 'playwright';
-import {AxeBuilder} from '@axe-core/playwright';
 import {startFixture} from '../../../../modules/microduck/dist/src/fixture.js';
 import {validState} from '../../../../modules/microduck/dist/src/families.js';
 import type {MicroDuckState} from '../../../../modules/microduck/dist/src/contracts.js';
@@ -49,7 +48,6 @@ try {
   check('finite notice returns to zero input',(await state()).observation?.head.every(x=>Math.abs(x)<=.005)===true);
   const beforeReload=(await state()).lastTransmission;
   await open();await pause(300);check('page reload never replays head input',JSON.stringify((await state()).lastTransmission)===JSON.stringify(beforeReload));
-  const violations=(await new AxeBuilder({page}).analyze()).violations;check('actual-vendor controls pass accessibility',violations.length===0);
   for(const failed of ['body','daemon'] as const) {
     const existing=await state();
     if(existing.held!==null){const box=panel.getByRole('checkbox',{name:/I acknowledge this held operation/});await box.check();await panel.getByRole('button',{name:'Neutral head input',exact:true}).click();await until(s=>s.held===null&&s.active===null);}

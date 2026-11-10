@@ -17,7 +17,7 @@ check. Use the outside-checkout `TMPDIR` documented under Standalone hub checks;
 this fixture uses the real private Hub store. `DASHBOARD_RECEIPTS` retains synthetic
 screenshots. The check covers hand-calculated totals, stages, separate edit pairs,
 numeric downloads, independent home/page filters, permission retirement and
-responsive accessibility. Unit tests cover preset coverage, missing values and
+responsive layout. Unit tests cover preset coverage, missing values and
 in-flight snapshot/opt-out guards. No personal database or installed service is used.
 
 Hub #6 uses Node 24 and React/TypeScript. Run `npm ci`, `npm run build`,
@@ -42,7 +42,6 @@ fixture's Hub and checks that:
 - the Hub serves the built dashboard, which opens signed in without a login form;
 - the home renders the fixture's session and its `wall` and `pixel` widgets
   without sending a device command;
-- axe finds no WCAG 2.1 A or AA violation on the home at 1,280 px;
 - choosing Quiet in the `wall` widget's mode select sends exactly one guarded
   `mode.set` command with the snapshot's request ID, configuration revision and
   generation.
@@ -54,7 +53,7 @@ a short smoke check in CI and its full browser suite as a local check; see
 The browser matrix's `running Hub build` cases check Connections with synthetic
 known metadata and an older context without a build field. They cover read-only
 inspection, full revision copying and clipboard failure, unknown fallback,
-desktop/mobile accessibility and zero device commands. Set `DASHBOARD_SCENARIO`
+desktop/mobile layout and zero device commands. Set `DASHBOARD_SCENARIO`
 to `running Hub build` to run these cases alone; set `DASHBOARD_RECEIPTS` to an
 evidence directory to retain their screenshots. Actual process identity is
 verified separately by the Hub tests described above.
@@ -138,9 +137,9 @@ hub-valid layout the renderer rejects, or one transport failure before the
 layout. The browser check covers the drawn Lines with reservation colors and
 labels, keyboard selection shared with the mapping form, pending marks, one
 geometry read per session, a stale controller, the Panels with their controller
-offline, the schematic fallbacks, the retried read, reads only and axe at
-1280 px and 390 px, then drives status, activity, mode, the opening assembly and
-reduced motion through a component harness bundled from `tests/art-harness.tsx`.
+offline, the schematic fallbacks, the retried read and reads only at
+1280 px and 390 px, then drives status, activity, mode and the opening assembly
+through a component harness bundled from `tests/art-harness.tsx`.
 Record current-candidate UI evidence under the
 [UI verification policy](../../docs/sdlc.md#ui-approval-scope).
 
@@ -235,8 +234,7 @@ clock. The suite covers:
 - the uncertain lock with focus on the reload;
 - supersede;
 - the live line from scheduled to playing to each ending;
-- the faster refresh stopping within 5 s of the end and never on a hidden page;
-- axe at 1,280 px and 390 px.
+- the faster refresh stopping within 5 s of the end and never on a hidden page.
 
 The existing matrix and local-controller suites now expect moments in the
 undeclared line. The device page reads `?apiVersion=1.1`, which 1.0 fakes answer
