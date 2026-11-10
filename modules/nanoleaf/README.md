@@ -270,7 +270,10 @@ existing locked worker, as for a bounded moment.
   Features are never stored.
 - **Streaming entry.** Once the first fresh sample renders, the light must still report the
   base's selection (`GET /effects/select`); any other selection since the read ends the
-  session `manual`. The Start's journaled write then puts the light in external-control mode,
+  session `manual`. A colour base also reads `GET /state` there, the one extra request
+  before streaming: a different colour or colour mode, picked in the app while the light
+  stays on `*Solid*`, ends the session `manual` with no write. Scene and unnamed bases
+  read only the selection. The Start's journaled write then puts the light in external-control mode,
   version 2 (`PUT /effects` with `animType: extControl`), and the light reports
   `*ExtControl*`. The write completes the work command `succeeded`/`transmitted`, the
   session becomes `playing`, and the first frame follows as a datagram. Without a fresh feature
@@ -340,7 +343,7 @@ No record holds a scene name.
 
 Known limits:
 
-- A scene chosen in the Nanoleaf app in the short gap between the base read and the streaming entry is replaced by the entry, once per session. So is a different colour picked there while the light stays on `*Solid*`.
+- A scene chosen in the Nanoleaf app in the short gap between the entry's read and the streaming entry is replaced by the entry, once per session. So is a different colour picked in the gap between a colour base's `/state` read and the entry write; one picked before that read ends the session `manual`.
 - Colour restoration follows the Nanoleaf API documentation; #1614's installed check qualifies it on the Lines.
 - An app takeover, and brightness and power changes made outside the hub, are seen within about a second.
 - After a `device` or `restart` ending, or a module stop mid-session, nothing is written: the light stays in streaming mode, showing the last frame, until it times out or a scene is chosen. The scene restorer treats `*ExtControl*` in Free as someone else's choice.

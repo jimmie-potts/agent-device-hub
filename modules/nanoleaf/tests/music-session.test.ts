@@ -661,3 +661,111 @@ test('an unchanged selection keeps its read time for a minute, and a changed one
     world.db.close();
   }
 });
+
+// #1614 fix round 1: a colour picked in the app before the streaming entry is a newer manual choice, and the colour
+// restoration's second write keeps the scene path's lost-answer, takeover and classification rules.
+const writesColour = (world: World): number => world.writes.filter(write => {
+  const body = write.payload as {hue?: unknown; ct?: unknown};
+  return body.hue !== undefined || body.ct !== undefined;
+}).length;
+
+test('a colour picked in the app before the streaming entry is a newer manual choice: no entry and no colour write', async () => {
+  const world = open();
+  try {
+    world.selected = '*Solid*';
+    world.color = {hue: 120, sat: 80};
+    // The app picks another colour while the session's entry read is in flight; the light still reports *Solid*.
+    world.onRead = endpoint => { if (endpoint === '/effects/select') world.color = {hue: 10, sat: 90}; };
+    await run(world, () => {}, COLOR);
+    assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
+    assert.equal(entries(world).length, 0, 'streaming does not replace the new colour');
+    assert.equal(writesColour(world), 0, 'the old colour is not written back');
+    assert.deepEqual(world.color, {hue: 10, sat: 90}, 'the app\'s colour stays');
+  } finally {
+    world.db.close();
+  }
+});
+
+test('only a colour base reads the state before the streaming entry; scene and unnamed bases keep one selection read', async () => {
+  for (const [base, selected, color] of [[COLOR, '*Solid*', {hue: 120, sat: 80}], [OCEAN, 'Ocean', undefined],
+    [{kind: 'unnamed', selection: '*Dynamic*', brightness: 50}, '*Dynamic*', undefined]] as const) {
+    const world = open();
+    try {
+      world.selected = selected;
+      world.color = color;
+      let entered: number | undefined;
+      world.onWrite = (_endpoint, payload) => {
+        if ((payload as {write?: {animType?: unknown}}).write?.animType === 'extControl') entered ??= world.reads.length;
+      };
+      await run(world, stopAfter(3), base);
+      assert.deepEqual(world.reads.slice(0, entered).map(read => read.endpoint),
+        base.kind === 'color' ? ['/effects/select', '/state'] : ['/effects/select'], base.kind);
+    } finally {
+      world.db.close();
+    }
+  }
+});
+
+for (const path of ['alert', 'stop'] as const) {
+  test(`a lost answer on a ${path}'s colour write records an uncertain restoration without a retry`, async () => {
+    const world = open();
+    try {
+      world.selected = '*Solid*';
+      world.color = {hue: 120, sat: 80};
+      let triggered = false;
+      // The brightness write is answered; the colour write after it reaches the light, and its answer is lost.
+      world.onWrite = (endpoint, payload) => {
+        if (triggered && endpoint === '/state' && (payload as {brightness?: unknown}).brightness !== undefined) world.lose = '/state';
+      };
+      await run(world, current => {
+        if (triggered || frameWrites(current).length !== 3) return;
+        triggered = true;
+        if (path === 'alert') current.alert = true;
+        else transaction(current.db, () => admitMusicStop(current.db, 'wall', {kind: 'music.stop', requestId: 'stop', generation: GENERATION}, current.now, current.now + 5000));
+      }, COLOR);
+      assert.deepEqual(ended(world), {reason: path === 'alert' ? 'alert' : 'stopped', restoration: 'uncertain'});
+      assert.equal(writesColour(world), 1, 'the lost colour write is not retried');
+      assert.equal(world.writes.filter(write => write.endpoint === '/state').length, 2);
+      if (path === 'stop') {
+        assert.equal(world.outcomes.find(outcome => outcome.requestId === 'stop')?.result, 'uncertain');
+        assert.equal(held(world.db, 0, 'wall'), true, 'the Stop\'s own lost write holds the light');
+      } else {
+        assert.equal(held(world.db, 0, 'wall'), false, 'a commandless restoration holds nothing');
+      }
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
+test('a scene chosen in the app during a colour-base session ends it as manual with no colour write', async () => {
+  const world = open();
+  try {
+    world.selected = '*Solid*';
+    world.color = {hue: 120, sat: 80};
+    let picked = false;
+    await run(world, current => {
+      if (!picked && frameWrites(current).length === 3) { picked = true; current.selected = 'New scene'; }
+    }, COLOR);
+    assert.ok(picked);
+    assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
+    assert.equal(writesColour(world), 0);
+    assert.equal(world.selected, 'New scene', 'the app\'s scene stays');
+  } finally {
+    world.db.close();
+  }
+});
+
+test('a plain colour the light does not report completely is an unnamed base', async () => {
+  const reads = (state: unknown) => (endpoint: string): Promise<unknown> =>
+    Promise.resolve(endpoint === '/effects' ? {select: '*Solid*', effectsList: ['Ocean']} : state);
+  const on = (patch: object) => ({on: {value: true}, brightness: {value: 40, max: 100, min: 0}, ...patch});
+  const unnamed = {observed: {selection: '*Solid*', saved: false, restores: 'nothing'}, base: {kind: 'unnamed', selection: '*Solid*', brightness: 40}};
+  for (const [why, state] of [
+    ['an effect colour mode', on({colorMode: 'effect', hue: {value: 200, max: 360, min: 0}, sat: {value: 60, max: 100, min: 0}})],
+    ['a temperature outside the light\'s bounds', on({colorMode: 'ct', ct: {value: 9000, max: 6500, min: 1200}})],
+    ['a missing saturation', on({colorMode: 'hs', hue: {value: 200, max: 360, min: 0}})],
+  ] as const) {
+    assert.deepEqual(await readMusicBase(reads(state)), unnamed, why);
+  }
+});

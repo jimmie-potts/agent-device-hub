@@ -159,7 +159,7 @@ void test('#1614: the card explains what an ending puts back, before Start and a
     ({saved: false, sceneId: null, placeholder: null, restores: 'nothing' as const, readAtMs: 1000, ...patch});
   const scene = read({saved: true, sceneId: `scene-${'a'.repeat(64)}`, restores: 'scene'});
   assert.equal(baseText(scene, '10:00'), 'Last read at 10:00: a scene saved on the light. Stop, an alert or lost Music input puts that scene back at its brightness.'
-    + ' A manual change on the light always wins, and then nothing is put back.');
+    + ' A manual change on the light wins, and then nothing is put back; only a change in the instant the session takes the light is replaced by its frames.');
   assert.match(baseText(read({placeholder: '*Solid*', restores: 'color'}), '10:00'), /a plain colour\. .*puts that colour back/);
   assert.match(baseText(read({placeholder: '*Solid*'}), '10:00'), /a plain colour whose value could not be read\. .*puts nothing back.*last Music frame/);
   assert.match(baseText(read({placeholder: '*ExtControl*'}), '10:00'), /streamed frames.*earlier Music session.*puts nothing back/);

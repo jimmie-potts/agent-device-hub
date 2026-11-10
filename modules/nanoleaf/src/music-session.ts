@@ -14,7 +14,7 @@ import {ValueError} from './errors.js';
 import {finish, finishMusicStops, held, journal, journalRow, type End, type JournalRow, type Report, type Transact} from './journal.js';
 import type {Indication} from './line-projection.js';
 import {alerting, newerChoice, NEWER_CHOICES, type Admitted, type DeviceRead} from './moments.js';
-import {restoreMusicBase, selectionOf, selectionRead, type MusicBase} from './music-base.js';
+import {restoreMusicBase, sameColorOf, selectionOf, selectionRead, type MusicBase} from './music-base.js';
 import {MusicRenderer, type MusicRecipeV1} from './music-effects.js';
 import {musicBinding, MusicInput, type MusicBinding, type MusicClock, type MusicSample} from './music-input.js';
 import {readReactiveCatalog} from './music-presets.js';
@@ -245,7 +245,8 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   // The selection the light reported, read since the last checks: every check runs again after that read, and streaming
   // is entered with no wait between the last check and the write. Nothing was shown yet, so an ending restores nothing.
   // The light must still report the base's selection, so any other choice since the Start's read is a newer manual one.
-  let selection: {value: unknown} | undefined;
+  // A colour base also reads `/state`: a colour picked in the app keeps `*Solid*`, so only the colour itself shows it.
+  let selection: {value: unknown; sameColor: boolean} | undefined;
   for (;;) {
     const stop = stopRow();
     if (stop !== undefined) return end('stopped', 'none', {kind: 'refused', code: 'cancelled'}, stop);
@@ -258,7 +259,8 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     if (sample !== null && answered === undefined) {
       // The light must still show its base: a scene chosen since the Start's read is a newer manual choice.
       try {
-        selection = {value: await read('/effects/select')};
+        const value = await read('/effects/select');
+        selection = {value, sameColor: freeBase.kind !== 'color' || value !== freeBase.selection || sameColorOf(await read('/state'), freeBase.color)};
       } catch (error) {
         deviceFailure(error);
         return end('device', 'none', {kind: 'refused', code: 'unavailable'});
@@ -266,7 +268,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
       continue;
     }
     if (sample !== null && answered !== undefined) {
-      if (answered.value !== selectionOf(freeBase)) return end('manual', 'none');
+      if (answered.value !== selectionOf(freeBase) || !answered.sameColor) return end('manual', 'none');
       let rendered: {zones: readonly Zone[]} | null;
       try {
         rendered = renderer.frame(sample);

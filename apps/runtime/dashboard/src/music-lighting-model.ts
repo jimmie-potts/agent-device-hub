@@ -137,7 +137,7 @@ const PUTS_BACK: Record<Restores, string> = {
   color: 'Stop, an alert or lost Music input puts that colour back at its brightness.',
   nothing: 'The light cannot select it again, so Stop, an alert or lost Music input puts nothing back and the light keeps the last Music frame.',
 };
-const MANUAL = 'A manual change on the light always wins, and then nothing is put back.';
+const MANUAL = 'A manual change on the light wins, and then nothing is put back; only a change in the instant the session takes the light is replaced by its frames.';
 /** What a read selection is, in plain words: never a scene's name, which the light module does not publish. */
 function selectionWords(selection: WallSelection): string {
   if (selection.saved) return 'a scene saved on the light';

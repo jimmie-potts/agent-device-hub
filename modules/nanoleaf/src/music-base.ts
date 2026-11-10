@@ -59,6 +59,13 @@ export function colorOf(state: unknown): MusicColor | undefined {
   return undefined;
 }
 
+/** Whether `/state` still reports `color` in its own colour mode: any other colour or mode is a newer choice. */
+export function sameColorOf(state: unknown, color: MusicColor): boolean {
+  const now = colorOf(state);
+  return now !== undefined && ('ct' in color ? 'ct' in now && now.ct === color.ct
+    : 'hue' in now && now.hue === color.hue && now.sat === color.sat);
+}
+
 /** Why a Start cannot take the base it read: the light is off, or it reported no selection or brightness. */
 export type BaseRefusal = 'off' | 'unreadable';
 /**

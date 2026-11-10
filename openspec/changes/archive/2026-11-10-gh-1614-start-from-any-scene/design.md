@@ -33,7 +33,7 @@ A light that is off, or reports no selection or brightness, still refuses `inval
 
 ### D3. The streaming entry checks the base's selection
 
-The entry's `/effects/select` read must report the base's selection, the scene's name or the kept selection. Any other selection is a newer manual choice, as before. A colour changed in the app while still `*Solid*` is not seen at the entry: the entry replaces it, as the existing known limit already says for a scene chosen in the gap.
+The entry's `/effects/select` read must report the base's selection, the scene's name or the kept selection. Any other selection is a newer manual choice, as before. A colour picked in the app keeps `*Solid*`, so a colour base also reads `/state` there and ends the session `manual`, with no write, when the colour or colour mode differs. That is the only request added before streaming; scene and unnamed bases keep exactly their earlier requests, and nothing is added during play. A colour picked between that read and the entry write is replaced by the entry, as the existing known limit already says for a scene chosen in the gap.
 
 ### D4. The selection lives in the module's `nanoleaf-wall` record
 

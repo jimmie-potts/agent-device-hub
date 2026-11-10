@@ -2,7 +2,7 @@
 
 ### Requirement: Live Music sessions on Lines through the existing writer
 
-The Nanoleaf module SHALL accept Music lighting work only from the core. It SHALL admit a Start only on the Lines device in Free with no pending mode, no hold, power not switched off by the hub or at the light, no other live session or waiting content, an existing frozen preset that the renderer accepts, and a readable current selection and brightness as the base. The base SHALL be a scene saved on the light, a plain colour read from the light's state, or any other selection, which nothing can select again; no scene SHALL be guessed. A refused Start SHALL make no device write, SHALL NOT change mode, and SHALL name the selection it read without a scene name. An admitted session SHALL enter the light's external-control streaming mode (version 2) with the Start's journaled write, and SHALL then send each frame as one UDP datagram to the device's configured address, addressed by the saved layout's zone IDs. It SHALL render only the newest fresh Music feature for its capture binding inside the device's locked worker, with at most one device request or datagram in flight, at most one frame per 100 ms and no catch-up. While playing, its device HTTP requests SHALL be limited to the external-change check.
+The Nanoleaf module SHALL accept Music lighting work only from the core. It SHALL admit a Start only on the Lines device in Free with no pending mode, no hold, power not switched off by the hub or at the light, no other live session or waiting content, an existing frozen preset that the renderer accepts, and a readable current selection and brightness as the base. The base SHALL be a scene saved on the light, a plain colour read from the light's state, or any other selection, which nothing can select again; no scene SHALL be guessed. A refused Start SHALL make no device write, SHALL NOT change mode, and SHALL name the selection it read without a scene name. An admitted session SHALL check, just before streaming, that the light still reports the base's selection and, for a colour base, its colour, and SHALL otherwise end as manual with no write. It SHALL enter the light's external-control streaming mode (version 2) with the Start's journaled write, and SHALL then send each frame as one UDP datagram to the device's configured address, addressed by the saved layout's zone IDs. It SHALL render only the newest fresh Music feature for its capture binding inside the device's locked worker, with at most one device request or datagram in flight, at most one frame per 100 ms and no catch-up. While playing, its device HTTP requests SHALL be limited to the external-change check.
 
 #### Scenario: Admission outside the first trial
 - **WHEN** work asks to start on Panels, in Work or Quiet, while held, on a light that is off or reports no readable selection or brightness, with an unknown preset or from a source other than the core
@@ -19,6 +19,10 @@ The Nanoleaf module SHALL accept Music lighting work only from the core. It SHAL
 #### Scenario: Streaming entry and frames
 - **WHEN** an admitted Start's first fresh feature renders while the light still reports the base's selection
 - **THEN** the Start's journaled write puts the light in external-control mode, each later frame is one datagram of the zones' colors, and no HTTP display write or per-frame read follows
+
+#### Scenario: Colour changed before the streaming entry
+- **WHEN** a session admitted over a plain colour is about to enter streaming and the light reports another colour or colour mode while still on `*Solid*`
+- **THEN** the session ends as manual with restoration `none`, with no streaming entry and no colour write; only a colour base reads the light's state before the entry, and a colour picked between that read and the entry write is replaced by the entry
 
 #### Scenario: Bounded request rate
 - **WHEN** a session plays for several seconds with fresh features every 100 ms

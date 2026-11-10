@@ -1,7 +1,7 @@
 ## 1. Base and restoration
 
 - [x] 1.1 Write failing fake-light tests for a Start over a plain colour, a colour temperature, an unsaved scene, an effect and `*ExtControl*` frames, with Stop, alert and source-loss endings. Then add `readMusicBase` and `restoreMusicBase` and pass them. Verify with `music-session.test.ts`.
-- [x] 1.2 Keep the streaming entry's manual check against the base's own selection, and the newer-choice guard between a colour restoration's writes. Verify with session tests.
+- [x] 1.2 Keep the streaming entry's manual check against the base's own selection, with a colour base's colour read from `/state` there, and the newer-choice guard between a colour restoration's writes. Verify with session tests, including a colour picked before the entry, a lost colour write and an app takeover over a colour base.
 - [x] 1.3 Model a plain colour in the simulated controller. Verify a Start over a colour, a colour temperature, an effect and an earlier session's frames through the module in `module-music.test.ts`.
 
 ## 2. Selection in the record
