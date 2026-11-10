@@ -227,7 +227,9 @@ times to check these source contracts.
 first-trial policy in #40 and OpenSpec change `gh-1272-live-lines-session` (design D4).
 Frames stream through the light's external-control mode
 ([#1598](https://github.com/jimmie-potts/agent-device-hub/issues/1598), OpenSpec change
-`gh-1598-lines-streaming-takeover`).
+`gh-1598-lines-streaming-takeover`). A Start goes ahead over whatever the light shows
+([#1614](https://github.com/jimmie-potts/agent-device-hub/issues/1614), OpenSpec change
+`gh-1614-start-from-any-scene`).
 The core owns the session. The module owns admission and execution through the light's
 existing locked worker, as for a bounded moment.
 
@@ -240,9 +242,21 @@ existing locked worker, as for a bounded moment.
   - no session is starting or playing (`invalid-state`) and no other content waits (`capacity`);
   - the saved reactive preset exists (`not-found`);
   - the renderer accepts it with the saved layout (`unsupported-capability`);
-  - the light is on and shows a listed named scene with a readable brightness (`invalid-state`; a failed read is `unavailable`).
+  - the light is on and reports a selection and a brightness (`invalid-state`, naming
+    what the light showed; a failed read is `unavailable`).
 
-  That scene and brightness become the Free base. The read is the work command's first
+  What the light shows and its brightness become the Free base (`src/music-base.ts`):
+  - a **saved scene**, listed in the light's `effectsList`;
+  - a **plain colour**, `*Solid*` whose `/state` reports `colorMode` `hs` with a hue and
+    saturation, or `ct` with a colour temperature;
+  - anything else, an **unnamed** base: an unsaved scene, an effect, `*ExtControl*` frames
+    an earlier session left, or `*Solid*` whose colour is unreadable. Nothing can select
+    it again, and no scene is guessed.
+
+  A refusal names the selection without a scene name: `saved scene scene-…` (the
+  opaque ID the device record lists), the light's own placeholder (`*Solid*`,
+  `*Static*`, `*Dynamic*` or `*ExtControl*`), or `a selection not saved on the light`.
+  Bounded moments keep the named-scene rule. The read is the work command's first
   device call in its trace. If a mode or configuration change, or any journaled command
   (even one that already ran), lands during the read, the Start is refused
   `revision-conflict`, so a Start sent again reads afresh. The check uses the journal's
@@ -254,9 +268,9 @@ existing locked worker, as for a bounded moment.
   generation. A subscription overflow retires every input. A single missed capture window
   is not source loss: the session keeps playing until no fresh feature remains (#1588).
   Features are never stored.
-- **Streaming entry.** Once the first fresh sample renders, the light must still show the
-  base scene (`GET /effects/select`); a scene chosen since the read ends the session
-  `manual`. The Start's journaled write then puts the light in external-control mode,
+- **Streaming entry.** Once the first fresh sample renders, the light must still report the
+  base's selection (`GET /effects/select`); any other selection since the read ends the
+  session `manual`. The Start's journaled write then puts the light in external-control mode,
   version 2 (`PUT /effects` with `animType: extControl`), and the light reports
   `*ExtControl*`. The write completes the work command `succeeded`/`transmitted`, the
   session becomes `playing`, and the first frame follows as a datagram. Without a fresh feature
@@ -284,18 +298,21 @@ existing locked worker, as for a bounded moment.
   another selection, a changed brightness or the power off (`manual`, no restoration);
   a failed datagram send or read (`device`, code `unavailable`, no restoration, no retry).
   A lost answer to the streaming entry ends the Start `uncertain` and holds the light.
-- **Restoration** re-reads the light and writes brightness, then the base scene. It
-  writes only while the light still reports `*ExtControl*`, the base is listed, the
-  light is not off, the brightness is unchanged and nothing newer exists before and
-  after each write. Moments use the same guard. The result is `restored`; `skipped`
-  with no further write; or `uncertain` when a restoration write's answer was lost,
-  since it may have landed. A lost write is never retried.
+- **Restoration** re-reads the light and writes brightness, then the base: a scene by
+  name (`PUT /effects {select}`), or a colour in one `PUT /state` with its hue and
+  saturation or its colour temperature. It writes only while the light still reports
+  `*ExtControl*`, a scene base is listed, the light is not off, the brightness is
+  unchanged and nothing newer exists before and after each write. Moments use the
+  same guard for their named scene. The result is `restored`; `skipped` with no further
+  write; or `uncertain` when a restoration write's answer was lost, since it may have
+  landed. A lost write is never retried. An unnamed base gets no restoration read or
+  write: the light keeps the last frame and the ending reports `none`.
 - **Stop** is accepted only for a session of that generation that is starting or
   playing, including when an earlier Stop for it still waits; otherwise it gets
   `invalid-state`. The expiry sweep never expires a Stop while its session is live,
   because the session's loop ends it. Its restoration writes are its own journaled
   writes, so its outcome follows the restoration: `succeeded`/`transmitted` if restored,
-  `succeeded`/`observed` if skipped, `uncertain` with a device hold if a write's answer
+  `succeeded`/`observed` if skipped or over an unnamed base, `uncertain` with a device hold if a write's answer
   was lost. A second Stop completes `succeeded`/`observed`.
 - **Restarts.** At module start, a session left starting or playing ends `restart` with
   restoration `none`, with no device write and no replay. A worker that starts again
@@ -307,9 +324,24 @@ atMs}`. A `refused`, `expired` or `device` ending also keeps the `code` behind i
 `expired`, `unsupported-capability`, the device's answer, `unavailable` for a read without
 an answer or `uncertain-result` for a lost write answer. A Lines session never writes the Panels.
 
+Each light's `nanoleaf-wall` record also carries, from these same reads and with no
+request of its own:
+
+- `selection`: the last read selection, or `null` before the first read. It holds
+  `saved` (a scene saved on the light), `sceneId` (that scene's opaque ID, or `null`),
+  `placeholder` (one of the four placeholder names above, or `null`), `restores`
+  (`scene`, `color` or `nothing`: what an ending over it would put back) and `readAtMs`.
+  The Start's read and the playing check's `/effects` read keep it in the private
+  `nanoleaf_selections` table. An unchanged selection keeps its read time for up to a
+  minute, so the once-per-second check does not republish the record every second.
+- `musicBase`: the latest session's `generation` and what its ending puts back (`restores`).
+
+No record holds a scene name.
+
 Known limits:
 
-- A scene chosen in the Nanoleaf app in the short gap between the base read and the streaming entry is replaced by the entry, once per session.
+- A scene chosen in the Nanoleaf app in the short gap between the base read and the streaming entry is replaced by the entry, once per session. So is a different colour picked there while the light stays on `*Solid*`.
+- Colour restoration follows the Nanoleaf API documentation; #1614's installed check qualifies it on the Lines.
 - An app takeover, and brightness and power changes made outside the hub, are seen within about a second.
 - After a `device` or `restart` ending, or a module stop mid-session, nothing is written: the light stays in streaming mode, showing the last frame, until it times out or a scene is chosen. The scene restorer treats `*ExtControl*` in Free as someone else's choice.
 - The streaming behavior (zone addressing, app takeover, brightness) comes from third-party protocol notes; #725 qualifies it on the installed Lines.
@@ -453,7 +485,7 @@ the wall pages (#934) apply that rule.
 | Family | Kind | What it does |
 | --- | --- | --- |
 | `device` | state | Each controller's `device/2.1` record, with `held` while a hold stops its writes |
-| `nanoleaf-wall` | state | Each controller's wall map: settings, palette, projects, elements and tasks with their eviction tokens, whether its last pass failed or no worker runs (`failing`), and whether a hold stops its writes (`held`) |
+| `nanoleaf-wall` | state | Each controller's wall map: settings, palette, projects, elements and tasks with their eviction tokens, whether its last pass failed or no worker runs (`failing`), whether a hold stops its writes (`held`), and the light's last read selection and latest Music base (`selection`, `musicBase`; #1614) |
 | `nanoleaf-animations` | state | Each device's animation options: presets, favorites, patterns, bounds, the queued animation, saved positions and the remembered scene |
 | `nanoleaf-reactive-presets` | state | The bounded private library of frozen reactive recipes at `reactive-presets` |
 | `nanoleaf-reactive-preset-save` | command | Save one immutable named reactive recipe against the current library revision, with a metadata-only outcome |

@@ -36,6 +36,8 @@ import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, ty
 import {changeMode} from '../modes.js';
 import {Metadata} from '../project-map.js';
 import {admitMoment, initMoments, momentRevision, readFreeBase, type FreeBase} from '../moments.js';
+import {readMusicBase} from '../music-base.js';
+import {saveSelection} from '../music-store.js';
 import type {LightingWork} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import {admitMusicStart, admitMusicStop, checkMusicStart, endMusicAtStart, MusicFeeds, musicDeviceState, MUSIC_STOP} from '../music-session.js';
 import {presented} from '../shared-input.js';
@@ -55,8 +57,8 @@ import {editorContent} from './editor-content.js';
 import {showContent} from './show-content.js';
 import {musicPreviewContent} from './music-preview-content.js';
 import {
-  animationsView, capabilities, configurationRevision, deviceRecord, MODULE_TABLES, nextTransmission, savedLayout, savedTransmission, STATE_TYPES, storeEpoch,
-  wallView, type Presence, type ShownTransmission,
+  animationsView, capabilities, configurationRevision, deviceRecord, MODULE_TABLES, nextTransmission, savedLayout, savedTransmission, selectionText, STATE_TYPES,
+  storeEpoch, wallView, type Presence, type ShownTransmission,
 } from './views.js';
 
 /** How often each controller's power is read while it answers, and the longest wait between reads while it does not. */
@@ -905,8 +907,9 @@ export class NanoleafRuntime {
 
   /**
    * The core's live Music work for one light (#1272, design D4). A Start is checked before the device read, reads the
-   * named Free base as the work command's first device call, and is admitted only if nothing changed during the read; it
-   * opens the session's input after commit and wakes the worker. A Stop is journaled for the running session's loop.
+   * Free base the light shows as the work command's first device call (#1614), and is admitted only if nothing changed
+   * during the read; it opens the session's input after commit and wakes the worker. The light's record keeps the
+   * selection the read found, and a refusal names it. A Stop is journaled for the running session's loop.
    */
   async #musicWork(device: string, command: Command<LightingWork>): Promise<Reply> {
     const {requestId} = command.data;
@@ -930,20 +933,32 @@ export class NanoleafRuntime {
       if (error instanceof PortRefused) return errorBody(error.code, {requestId, detail: MUSIC_REFUSALS[error.code] ?? OTHER_REFUSAL});
       throw error;
     }
-    let freeBase: FreeBase | undefined;
-    // The read of the current scene and brightness is the work command's first device call, as a moment's is (Hub #813).
+    const link = this.#links.get(device);
+    if (link === undefined) return errorBody('not-found', {requestId});
+    let read: Awaited<ReturnType<typeof readMusicBase>>;
+    // The read of the current selection and state is the work command's first device call, as a moment's is (Hub #813).
     const call = this.#context.trace.start('bunny.device.call', {parent: command, kind: 'client',
       attributes: {'bunny.device.id': device, 'bunny.operation': 'snapshot', 'bunny.request.id': requestId}});
     try {
-      const link = this.#links.get(device);
-      freeBase = link === undefined ? undefined : await readFreeBase(endpoint => link.request({ip: '', token: ''}, 'GET', endpoint), true);
+      read = await readMusicBase(endpoint => link.request({ip: '', token: ''}, 'GET', endpoint));
       call.end();
     } catch {
       call.end('error');
-      return errorBody('unavailable', {requestId, detail: 'the light did not answer the read of its current scene'});
+      return errorBody('unavailable', {requestId, detail: 'the light did not answer the read of its current selection'});
     }
-    if (freeBase === undefined) return errorBody('invalid-state', {requestId, detail: 'live Music starts only over a listed named scene on a light that is on'});
-    const base = freeBase;
+    const {observed} = read;
+    if (observed !== undefined) {
+      await this.#transact(report => { saveSelection(this.#db, device, observed, clock.now(), report); }).catch(() => {
+        // The store refused: the record keeps the earlier selection, and an admission below fails on the same store.
+      });
+    }
+    if ('refusal' in read) {
+      const shows = observed === undefined ? 'no selection' : selectionText(this.#db, device, observed);
+      return errorBody('invalid-state', {requestId, detail: read.refusal === 'off'
+        ? `live Music starts only on a light that is on; the light is off, showing ${shows}`
+        : `live Music needs the light's selection and brightness; the light reported ${shows}`});
+    }
+    const base = read.base;
     return this.#admit(command, report => {
       const latest = controlState(this.#db, device);
       // The read is stale, not the light's state wrong: `revision-conflict` says a Start sent again reads it afresh. The
@@ -1134,7 +1149,7 @@ const OTHER_REFUSAL = 'the command is not one the device takes';
 /** Fixed text for each refusal of a live Music Start or Stop (`music-session.ts`). */
 const MUSIC_REFUSALS: Partial<Readonly<Record<ErrorCode, string>>> = {
   'unsupported-capability': 'live Music plays on the Lines with a preset the saved layout renders',
-  'invalid-state': 'live Music needs a light already in Free showing a named scene, and no session already starting or playing',
+  'invalid-state': 'live Music needs a light already in Free and on, and no session already starting or playing',
   unavailable: 'a device hold waits for an explicit choice',
   capacity: 'other content waits on the light',
   'not-found': 'no saved reactive preset has this ID',

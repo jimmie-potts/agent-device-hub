@@ -1,9 +1,10 @@
-// The live Music session on Lines (#1272, design D4): the core's `music-lighting-work` admitted over a named Free base,
-// then run by the device's existing locked worker, as a bounded moment is (moments.ts). The frozen saved preset renders
-// the newest fresh feature from the capture binding (music-input.ts, music-effects.ts). The Start's journaled write puts
-// the light in external-control streaming, and frames then go as datagrams (stream.ts, #1598). A Stop, an alert or source loss
-// restores the named base only while nothing newer took over; a newer choice, an external change or a failed write
-// ends it with no restoration. Nothing retries, resends, resumes or falls back to another input or light.
+// The live Music session on Lines (#1272, design D4): the core's `music-lighting-work` admitted over the Free base the
+// light shows (music-base.ts, #1614), then run by the device's existing locked worker, as a bounded moment is (moments.ts).
+// The frozen saved preset renders the newest fresh feature from the capture binding (music-input.ts, music-effects.ts).
+// The Start's journaled write puts the light in external-control streaming, and frames then go as datagrams (stream.ts,
+// #1598). A Stop, an alert or source loss puts a saved scene or a plain colour back only while nothing newer took over,
+// and leaves any other base on the last frame; a newer choice, an external change or a failed write ends it with no
+// restoration. Nothing retries, resends, resumes or falls back to another input or light.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {LightingCapture, LightingEndReason, LightingRestoration} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import {Cancelled, Execution, Refused} from './controls.js';
@@ -12,11 +13,12 @@ import {Rejected, type Zone} from './effects.js';
 import {ValueError} from './errors.js';
 import {finish, finishMusicStops, held, journal, journalRow, type End, type JournalRow, type Report, type Transact} from './journal.js';
 import type {Indication} from './line-projection.js';
-import {alerting, newerChoice, NEWER_CHOICES, restoreFreeBase, type Admitted, type DeviceRead, type FreeBase} from './moments.js';
+import {alerting, newerChoice, NEWER_CHOICES, type Admitted, type DeviceRead} from './moments.js';
+import {restoreMusicBase, selectionOf, selectionRead, type MusicBase} from './music-base.js';
 import {MusicRenderer, type MusicRecipeV1} from './music-effects.js';
 import {musicBinding, MusicInput, type MusicBinding, type MusicClock, type MusicSample} from './music-input.js';
 import {readReactiveCatalog} from './music-presets.js';
-import {endSession, liveSession, markPlaying, musicSession, MUSIC_PLAY, MUSIC_STOP, saveStarting} from './music-store.js';
+import {endSession, liveSession, markPlaying, musicSession, MUSIC_PLAY, MUSIC_STOP, saveSelection, saveStarting} from './music-store.js';
 import type {RenderConfig} from './renderer.js';
 import {execute, type Db} from './sqlite.js';
 import {controlState, markDirty, overrides, type Overrides} from './store.js';
@@ -39,7 +41,7 @@ const NEWER_THAN_MUSIC = [...NEWER_CHOICES, 'moment.play'] as const;
 /** A Start as the journal keeps it: the frozen recipe and layout, the Free base and what it was admitted over. */
 export type MusicStart = {
   kind: typeof MUSIC_PLAY; requestId: string; generation: string; capture: LightingCapture; presetId: string; recipe: MusicRecipeV1;
-  layout: {kind: Kind; elements: Element[]}; freeBase: FreeBase; configurationRevision: number; overrides: Overrides;
+  layout: {kind: Kind; elements: Element[]}; freeBase: MusicBase; configurationRevision: number; overrides: Overrides;
 };
 export type MusicStop = {kind: typeof MUSIC_STOP; requestId: string; generation: string};
 export type StartRequest = {requestId: string; generation: string; capture: LightingCapture; presetId: string};
@@ -127,7 +129,7 @@ export function checkMusicStart(db: Db, device: string, start: StartRequest, lay
  * Admits a Start over the Free base read before it, inside the caller's transaction: checks again, journals its
  * `music.play`, saves the session as starting and wakes the worker. The caller opens the session's input after commit.
  */
-export function admitMusicStart(db: Db, device: string, start: StartRequest, layout: LayoutEntry | undefined, freeBase: FreeBase,
+export function admitMusicStart(db: Db, device: string, start: StartRequest, layout: LayoutEntry | undefined, freeBase: MusicBase,
   configurationRevision: number, nowMs: number, expiresMs: number, report: Report): MusicStart {
   const {recipe, layout: frozen} = checkMusicStart(db, device, start, layout, nowMs, expiresMs);
   const control = controlState(db, device);
@@ -242,6 +244,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   let first: {sample: MusicSample; zones: readonly Zone[]} | undefined;
   // The selection the light reported, read since the last checks: every check runs again after that read, and streaming
   // is entered with no wait between the last check and the write. Nothing was shown yet, so an ending restores nothing.
+  // The light must still report the base's selection, so any other choice since the Start's read is a newer manual one.
   let selection: {value: unknown} | undefined;
   for (;;) {
     const stop = stopRow();
@@ -263,7 +266,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
       continue;
     }
     if (sample !== null && answered !== undefined) {
-      if (answered.value !== freeBase.name) return end('manual', 'none');
+      if (answered.value !== selectionOf(freeBase)) return end('manual', 'none');
       let rendered: {zones: readonly Zone[]} | null;
       try {
         rendered = renderer.frame(sample);
@@ -302,13 +305,16 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   const paint = new Execution(db, row.revision, null, device, transact, now);
   /**
    * Each restoration write is guarded before and after, so a newer choice wins over the rest of it. A write whose answer
-   * was lost may have landed: the restoration is uncertain, never retried. A Stop's own write also holds the light.
+   * was lost may have landed: the restoration is uncertain, never retried. A Stop's own write also holds the light. A base
+   * nothing can select again is not restored: the light keeps the last frame, with no read or write (#1614).
    */
   const restore = async (stop: JournalRow | undefined): Promise<LightingRestoration> => {
+    if (freeBase.kind === 'unnamed') return 'none';
+    const base = freeBase;
     const writer = stop === undefined ? paint : new Execution(db, row.revision, stop.id, device, transact, now);
     let lost = false;
     try {
-      return await restoreFreeBase(read, freeBase, shown, stale, async (endpoint, body) => {
+      return await restoreMusicBase(read, base, shown, stale, async (endpoint, body) => {
         if (stale()) throw new Cancelled();
         let result: unknown;
         try {
@@ -355,16 +361,20 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     if (now() - lastCheck >= EXTERNAL_CHECK_MS) {
       lastCheck = now();
       let showing: boolean;
+      let listing: {select?: unknown};
       try {
         // A scene chosen on the light leaves streaming, and the datagrams sent since cannot replace it: any selection other
         // than streaming, or an external brightness or power choice, is a manual takeover.
-        const listing = await read('/effects') as {select?: unknown};
+        listing = await read('/effects') as {select?: unknown};
         const state = listing.select === shown ? await read('/state') as {on?: {value?: unknown}; brightness?: {value?: unknown}} : undefined;
         showing = state?.brightness?.value === freeBase.brightness && state.on?.value !== false;
       } catch (error) {
         deviceFailure(error);
         return end('device', 'none', undefined, undefined, 'unavailable');
       }
+      // The light's record keeps the selection this read found (#1614), with no request of its own.
+      const found = selectionRead(listing);
+      if (found !== undefined) await transact(report => { saveSelection(db, device, found, now(), report); });
       if (!showing) return end('manual', 'none');
       // The read took time: every check runs again before the next frame.
       continue;

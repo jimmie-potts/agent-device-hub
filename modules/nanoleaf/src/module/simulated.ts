@@ -3,7 +3,8 @@
 // NL22 Light Panels controller would: its layout, its saved scenes and selection, its power and brightness, and effect
 // writes. Like real devices, simulated ones keep their state across a runtime restart. A test can take one offline, so
 // that it never answers, hold its requests until released, lose a write's answer, make it answer one write with an HTTP
-// error, delete one of its scenes, or change its power or token as the Nanoleaf app would. A device that answers with an
+// error, delete one of its scenes, or change its power, colour or token as the Nanoleaf app would. A colour write, by
+// hue and saturation or colour temperature, selects `*Solid*` (#1614). A device that answers with an
 // error status throws the transport's `HttpError`, as the Nanoleaf HTTP client does.
 import {isObject} from '../compat.js';
 import {ValueError} from '../errors.js';
@@ -29,7 +30,7 @@ export type SimulatedAction = 'online' | 'offline' | 'power-on' | 'power-off' | 
 
 /** One write a simulated controller took, summarized: its endpoint and what it set. */
 export type SimulatedWrite = {
-  endpoint: string; atMs: number; on?: boolean; brightness?: number; select?: string; animType?: string; loop?: boolean;
+  endpoint: string; atMs: number; on?: boolean; brightness?: number; hue?: number; sat?: number; ct?: number; select?: string; animType?: string; loop?: boolean;
 };
 /** How many recent writes a simulated controller keeps. */
 export const KEPT_WRITES = 64;
@@ -39,8 +40,10 @@ export type SimulatedDevice = {
   kind: SimulatedKind;
   on: boolean;
   brightness: number;
-  /** The playing selection: a saved scene's name, `*Dynamic*` after an effect write, `*Static*`, or `*ExtControl*` while streaming. */
+  /** The playing selection: a saved scene's name, `*Solid*` after a colour write, `*Dynamic*` after an effect write, `*Static*`, or `*ExtControl*` while streaming. */
   select: string;
+  /** The last colour written, and the colour mode `/state` reports: `hs` or `ct` after a colour write, `effect` otherwise. */
+  hue: number; sat: number; ct: number; colorMode: 'hs' | 'ct' | 'effect';
   /** The scenes saved on the controller, which its effect list reports. */
   scenes: string[];
   /** The animation type of the last effect write (`custom`, `static` or `extControl`), or null before one. */
@@ -117,7 +120,8 @@ export class SimulatedNanoleaf {
   }
 
   #add(address: string, kind: SimulatedKind): SimulatedDevice {
-    const device: SimulatedDevice = {kind, on: true, brightness: 50, select: SCENES[0] ?? '', scenes: [...SCENES], effect: null, streamed: 0, ignored: 0, frame: null, streams: [], reads: 0, writes: 0, recent: []};
+    const device: SimulatedDevice = {kind, on: true, brightness: 50, select: SCENES[0] ?? '', hue: 0, sat: 0, ct: 4000, colorMode: 'effect', scenes: [...SCENES],
+      effect: null, streamed: 0, ignored: 0, frame: null, streams: [], reads: 0, writes: 0, recent: []};
     this.#devices.set(address, device);
     return device;
   }
@@ -169,7 +173,10 @@ export class SimulatedNanoleaf {
   /** Chooses a saved scene on a controller as the Nanoleaf app would, which also leaves streaming. */
   chooseScene(address: string, name: string): void {
     const device = this.#devices.get(address);
-    if (device !== undefined && device.scenes.includes(name)) device.select = name;
+    if (device !== undefined && device.scenes.includes(name)) {
+      device.select = name;
+      device.colorMode = 'effect';
+    }
   }
 
   online(): void {
@@ -248,7 +255,8 @@ export class SimulatedNanoleaf {
         case '': return {name: 'Simulated', panelLayout: device.kind === 'lines' ? linesLayout(SIMULATED_LINES) : panelsLayout(SIMULATED_TRIANGLES)};
         case '/effects': return {select: device.select, effectsList: [...device.scenes]};
         case '/effects/select': return device.select;
-        case '/state': return {on: {value: device.on}, brightness: {value: device.brightness, max: 100, min: 0}};
+        case '/state': return {on: {value: device.on}, brightness: {value: device.brightness, max: 100, min: 0}, hue: {value: device.hue, max: 360, min: 0},
+          sat: {value: device.sat, max: 100, min: 0}, ct: {value: device.ct, max: 6500, min: 1200}, colorMode: device.colorMode};
         default: throw new HttpError(404);
       }
     }
@@ -263,20 +271,33 @@ export class SimulatedNanoleaf {
     };
     if (endpoint === '/state') {
       const {on, brightness} = payload;
+      const number = (field: unknown): number | undefined => isObject(field) && typeof field.value === 'number' ? field.value : undefined;
+      const hue = number(payload.hue), sat = number(payload.sat), ct = number(payload.ct);
       if (isObject(on) && typeof on.value === 'boolean') device.on = on.value;
       if (isObject(brightness) && typeof brightness.value === 'number') device.brightness = brightness.value;
+      // A colour leaves any scene, effect or streaming for a plain colour.
+      if (hue !== undefined) device.hue = hue;
+      if (sat !== undefined) device.sat = sat;
+      if (ct !== undefined) device.ct = ct;
+      if (hue !== undefined || sat !== undefined || ct !== undefined) {
+        device.colorMode = ct !== undefined ? 'ct' : 'hs';
+        device.select = '*Solid*';
+      }
       return record({...(isObject(on) && typeof on.value === 'boolean' ? {on: on.value} : {}),
-        ...(isObject(brightness) && typeof brightness.value === 'number' ? {brightness: brightness.value} : {})});
+        ...(isObject(brightness) && typeof brightness.value === 'number' ? {brightness: brightness.value} : {}),
+        ...(hue === undefined ? {} : {hue}), ...(sat === undefined ? {} : {sat}), ...(ct === undefined ? {} : {ct})});
     }
     if (endpoint === '/effects') {
       const {select, write} = payload;
       if (typeof select === 'string') {
         if (!device.scenes.includes(select)) throw new HttpError(404);
         device.select = select;
+        device.colorMode = 'effect';
         return record({select});
       }
       if (isObject(write) && typeof write.animType === 'string') {
         device.select = write.animType === 'extControl' ? STREAMING : write.animType === 'static' ? '*Static*' : '*Dynamic*';
+        device.colorMode = 'effect';
         device.effect = write.animType;
         return record({animType: write.animType, ...(typeof write.loop === 'boolean' ? {loop: write.loop} : {})});
       }

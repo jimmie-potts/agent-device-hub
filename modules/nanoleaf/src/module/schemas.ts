@@ -8,6 +8,7 @@ import {SETTING_NAMES} from '../project-map.js';
 import {MUSIC_DIRECTIONS} from '../music-recipe-data.js';
 import {REACTIVE_ID_PATTERN, REACTIVE_LIMITS, REACTIVE_SCHEMA, REACTIVE_TARGET} from '../music-preset-data.js';
 import {SHOW_ID_PATTERN, SHOW_LIMITS, SHOW_TARGET} from '../music-show-data.js';
+import {PLACEHOLDERS, RESTORES} from '../music-base.js';
 import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS} from '../music-timeline.js';
 
 const BASE = 'https://bunny.invalid/events/';
@@ -70,6 +71,8 @@ const SHOW_TIMELINE = closed({version: {const: 1}, durationMs: {type: 'integer',
     durationMs: {type: 'integer', minimum: MIN_MUSIC_CUE_MS, maximum: MAX_MUSIC_DURATION_MS},
     recipe: {oneOf: [closed({preset: {enum: Object.keys(PRESETS)}}), RECIPE]}, intensity: {type: 'number', minimum: 0, maximum: 1},
   }, ['intensity']), 1, MAX_MUSIC_CUES)});
+/** A saved scene's opaque ID, as the device record's capabilities list it. */
+const SCENE_ID = {type: 'string', pattern: '^scene-[0-9a-f]{64}$'};
 const ASSIGNMENT = closed({id: ELEMENT, project: nullable(PROJECT), signature: {enum: [0, 1]}}, ['project', 'signature']);
 
 /** The map edits both the wall editor and a machine make; the wall also locates, evicts and recolors its palette. */
@@ -111,7 +114,7 @@ export const nanoleafSchemas: Readonly<Record<string, object>> = {
       name: text(SHOW_LIMITS.name), versionName: text(SHOW_LIMITS.name), timeline: SHOW_TIMELINE}),
   },
   [schemaOf('nanoleaf-wall')]: {
-    description: 'State: one device\'s wall map as the wall editor shows it, from saved state only (Hub #844), with whether its last pass failed or no worker runs (`failing`) and whether a hold after an uncertain write stops its writes until an explicit mode command or fresh control (`held`). It never holds a credential, an address, a favorite or a preset name.',
+    description: 'State: one device\'s wall map as the wall editor shows it, from saved state only (Hub #844), with whether its last pass failed or no worker runs (`failing`) and whether a hold after an uncertain write stops its writes until an explicit mode command or fresh control (`held`). `selection` is the light\'s last read selection (#1614): whether it is a scene saved on the light, by opaque scene ID, or the light\'s own placeholder, what a live Music ending over it would put back, and when it was read; `musicBase` is what the latest live Music session\'s ending puts back. It never holds a credential, an address, a favorite, a preset name or a scene name.',
     ...closed({
       id: block('routingId'), revision: block('revision'), configurationRevision: block('revision'), kind: {enum: ['lines', 'panels']},
       mode: {enum: ['work', 'quiet', 'free']}, modePending: {type: 'boolean'}, failing: {type: 'boolean'}, held: {type: 'boolean'},
@@ -126,7 +129,10 @@ export const nanoleafSchemas: Readonly<Record<string, object>> = {
         startedAtMs: block('instantMs'), element: nullable(ELEMENT), manualProject: nullable(PROJECT), evictionToken: {type: 'string', pattern: '^[0-9a-f]{64}$'},
         codexUrl: {type: 'string', pattern: '^codex://threads/[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$'},
         statusEvidence: {enum: ['current', 'uncertain']}}, ['startedAtMs', 'evictionToken', 'codexUrl']), 0, 1024),
-    }),
+      selection: nullable(closed({saved: {type: 'boolean'}, sceneId: nullable(SCENE_ID), placeholder: nullable({enum: [...PLACEHOLDERS]}),
+        restores: {enum: [...RESTORES]}, readAtMs: block('instantMs')})),
+      musicBase: nullable(closed({generation: text(64), restores: {enum: [...RESTORES]}})),
+    }, ['selection', 'musicBase']),
   },
   [schemaOf('nanoleaf-animations')]: {
     description: 'State: the device\'s animation options (Hub #844): the presets, the saved favorites, the patterns, speeds, directions, defaults and bounds a play request uses, the queued animation, whether the saved layout places spatial patterns, and the remembered scene\'s ID.',
@@ -141,7 +147,7 @@ export const nanoleafSchemas: Readonly<Record<string, object>> = {
       limits: closed(Object.fromEntries(['minColors', 'maxColors', 'maxFramesPerZone', 'maxEffectBytes', 'maxFavorites', 'maxFavoriteName']
         .map(name => [name, {type: 'integer', minimum: 0}]))),
       queuedAnimation: nullable(closed({requestId: block('requestId')})), positionsSaved: {type: 'boolean'},
-      rememberedSceneId: nullable({type: 'string', pattern: '^scene-[0-9a-f]{64}$'}),
+      rememberedSceneId: nullable(SCENE_ID),
     }),
   },
   [schemaOf('nanoleaf-wall-edit')]: {

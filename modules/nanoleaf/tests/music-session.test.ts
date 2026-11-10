@@ -9,6 +9,8 @@ import {initialize} from '../src/database.js';
 import {elementId, type LayoutEntry} from '../src/devices.js';
 import {expireQueued, held, initJournal, journalRow, type Outcome, type Transact} from '../src/journal.js';
 import {restoreFreeBase} from '../src/moments.js';
+import {readMusicBase, restoreMusicBase, type MusicBase, type MusicColor} from '../src/music-base.js';
+import {lastSelection, saveSelection, SELECTION_REFRESH_MS} from '../src/music-store.js';
 import {HttpError} from '../src/transport.js';
 import type {Indication} from '../src/line-projection.js';
 import {MusicInput, type MusicClock} from '../src/music-input.js';
@@ -30,6 +32,8 @@ type World = {
   /** The next datagram send fails, as a socket error. */
   failSend: boolean;
   now: number; selected: string; brightness: number; alert: boolean; feeding: boolean; sequence: number; input: MusicInput;
+  /** The plain colour `/state` reports, if one was chosen: a colour write selects `*Solid*` (#1614). */
+  color: MusicColor | undefined;
   onWrite: (endpoint: string, payload: unknown) => void; lose: string | undefined; refuse: number | undefined;
   /** Runs while a read is in flight, before it is answered: what changes during the read. */
   onRead: (endpoint: string) => void;
@@ -49,7 +53,7 @@ function open(): World {
   const now = 1_793_836_800_000;
   const clock: MusicClock = {wallMs: now, monotonicMs: now};
   return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, datagrams: [], reads: [], failSend: false, now, selected: 'Ocean', brightness: 50, alert: false, feeding: true, sequence: 0,
-    input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined, onRead: () => {}, onArrive: () => {}};
+    input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined, onRead: () => {}, onArrive: () => {}, color: undefined};
 }
 
 const feature = (world: World): CaptureFeatures => {
@@ -67,12 +71,16 @@ const deliver = (world: World): void => {
     traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', data: feature(world)}, {wallMs: world.now, monotonicMs: world.now});
 };
 
-/** Admits a Start over the `Ocean` base at 50 % and runs it until it ends, feeding a feature every 100 ms while `feeding`. */
-async function run(world: World, step: (world: World) => void): Promise<void> {
+const OCEAN: MusicBase = {kind: 'scene', name: 'Ocean', brightness: 50};
+/**
+ * Admits a Start over `base`, the `Ocean` scene at 50 % unless named, and runs it until it ends, feeding a feature every
+ * 100 ms while `feeding`.
+ */
+async function run(world: World, step: (world: World) => void, base: MusicBase = OCEAN): Promise<void> {
   const {db} = world;
   const transact: Transact = action => Promise.resolve(transaction(db, () => action(message => { if (message.type === 'outcome') world.outcomes.push(message); })));
   transaction(db, () => admitMusicStart(db, 'wall', {requestId: 'start', generation: GENERATION, capture: CAPTURE, presetId: 'preset-green'}, LAYOUT,
-    {name: 'Ocean', brightness: 50}, 0, world.now, world.now + 5000, () => {}));
+    base, 0, world.now, world.now + 5000, () => {}));
   const request: LightRequest = async (_target, method, endpoint = '', payload = null) => {
     world.inFlight += 1;
     world.maxInFlight = Math.max(world.maxInFlight, world.inFlight);
@@ -83,7 +91,9 @@ async function run(world: World, step: (world: World) => void): Promise<void> {
       world.reads.push({endpoint, atMs: world.now});
       world.onRead(endpoint);
       if (endpoint === '/effects/select') return world.selected;
-      return endpoint === '/effects' ? {select: world.selected, effectsList: ['Ocean', 'New scene']} : {on: {value: true}, brightness: {value: world.brightness}};
+      const color = world.color === undefined ? {colorMode: 'effect'} : 'ct' in world.color ? {colorMode: 'ct', ct: {value: world.color.ct}}
+        : {colorMode: 'hs', hue: {value: world.color.hue}, sat: {value: world.color.sat}};
+      return endpoint === '/effects' ? {select: world.selected, effectsList: ['Ocean', 'New scene']} : {on: {value: true}, brightness: {value: world.brightness}, ...color};
     }
     if (world.refuse !== undefined) {
       const status = world.refuse;
@@ -100,6 +110,10 @@ async function run(world: World, step: (world: World) => void): Promise<void> {
       world.selected = body.select ?? (body.write?.animType === 'extControl' ? '*ExtControl*' : body.write?.animType === 'static' ? '*Static*' : '*Dynamic*');
     }
     if (body.brightness !== undefined) world.brightness = body.brightness.value;
+    const colored = payload as {hue?: {value: number}; sat?: {value: number}; ct?: {value: number}};
+    if (colored.ct !== undefined) world.color = {ct: colored.ct.value};
+    else if (colored.hue !== undefined && colored.sat !== undefined) world.color = {hue: colored.hue.value, sat: colored.sat.value};
+    if (colored.ct !== undefined || colored.hue !== undefined) world.selected = '*Solid*';
     world.onWrite(endpoint, payload);
     return {};
   };
@@ -392,6 +406,12 @@ test('restoration skips a light that was powered off, for moments and Music alik
   assert.deepEqual(writes, []);
   assert.equal(await restoreFreeBase(reader(true), base, '*Static*', () => false, write), true);
   assert.deepEqual(writes, ['/state', '/effects']);
+  writes.length = 0;
+  const colour = {kind: 'color', selection: '*Solid*', color: {hue: 120, sat: 80}, brightness: 50} as const;
+  for (const music of [{kind: 'scene', name: 'Ocean', brightness: 50} as const, colour]) {
+    assert.equal(await restoreMusicBase(reader(false), music, '*Static*', () => false, write), false);
+  }
+  assert.deepEqual(writes, [], 'a light switched off by hand keeps its choice');
 });
 
 test('the expiry sweep leaves a live session\'s Stop for its loop and a second Stop is accepted', () => {
@@ -399,7 +419,7 @@ test('the expiry sweep leaves a live session\'s Stop for its loop and a second S
   try {
     const {db} = world;
     transaction(db, () => admitMusicStart(db, 'wall', {requestId: 'start', generation: GENERATION, capture: CAPTURE, presetId: 'preset-green'}, LAYOUT,
-      {name: 'Ocean', brightness: 50}, 0, world.now, world.now + 5000, () => {}));
+      OCEAN, 0, world.now, world.now + 5000, () => {}));
     transaction(db, () => admitMusicStop(db, 'wall', {kind: 'music.stop', requestId: 'stop-a', generation: GENERATION}, world.now, world.now + 300));
     transaction(db, () => admitMusicStop(db, 'wall', {kind: 'music.stop', requestId: 'stop-b', generation: GENERATION}, world.now, world.now + 300));
     const outcomes: Outcome[] = [];
@@ -471,3 +491,173 @@ for (const change of ['alert', 'stop', 'source-loss'] as const) {
     }
   });
 }
+
+// #1614: a Start over any selection. A saved scene and a plain colour are put back; anything else is left on the last
+// frame with restoration `none`, and no scene is guessed.
+const COLOR: MusicBase = {kind: 'color', selection: '*Solid*', color: {hue: 120, sat: 80}, brightness: 50};
+const WARM: MusicBase = {kind: 'color', selection: '*Solid*', color: {ct: 2700}, brightness: 50};
+const stopAfter = (frames: number) => (current: World): void => {
+  if (frameWrites(current).length === frames && journalRow(current.db, 'stop') === undefined && current.outcomes.every(outcome => outcome.requestId !== 'stop')) {
+    transaction(current.db, () => admitMusicStop(current.db, 'wall', {kind: 'music.stop', requestId: 'stop', generation: GENERATION}, current.now, current.now + 5000));
+  }
+};
+
+test('a Start over a plain colour streams, and Stop puts the colour back after its brightness', async () => {
+  const world = open();
+  try {
+    world.selected = '*Solid*';
+    world.color = {hue: 120, sat: 80};
+    await run(world, stopAfter(3), COLOR);
+    assert.equal(entries(world).length, 1, 'the light entered streaming');
+    assert.deepEqual(ended(world), {reason: 'stopped', restoration: 'restored'});
+    assert.deepEqual(world.writes.slice(-2).map(write => write.payload), [{brightness: {value: 50, duration: 0}}, {hue: {value: 120}, sat: {value: 80}}]);
+    assert.deepEqual({selected: world.selected, color: world.color}, {selected: '*Solid*', color: {hue: 120, sat: 80}});
+    assert.deepEqual(world.outcomes.find(outcome => outcome.requestId === 'stop'), {type: 'outcome', device: 'wall', requestId: 'stop', result: 'succeeded', evidence: 'transmitted'});
+    assert.equal(world.writes.filter(write => (write.payload as {select?: unknown}).select !== undefined).length, 0, 'no scene is selected');
+    assert.equal(world.maxInFlight, 1);
+  } finally {
+    world.db.close();
+  }
+});
+
+for (const ending of ['alert', 'source-lost'] as const) {
+  test(`${ending === 'alert' ? 'an alert' : 'source loss'} over a colour temperature puts it back`, async () => {
+    const world = open();
+    try {
+      world.selected = '*Solid*';
+      world.color = {ct: 2700};
+      await run(world, current => {
+        if (frameWrites(current).length < 3) return;
+        if (ending === 'alert') current.alert = true;
+        else current.feeding = false;
+      }, WARM);
+      assert.deepEqual(ended(world), {reason: ending, restoration: 'restored'});
+      assert.deepEqual(world.writes.slice(-2).map(write => write.payload), [{brightness: {value: 50, duration: 0}}, {ct: {value: 2700}}]);
+      assert.deepEqual(world.color, {ct: 2700});
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
+test('a newer choice between a colour restoration\'s writes stops the colour write', async () => {
+  const world = open();
+  try {
+    world.selected = '*Solid*';
+    world.color = {hue: 120, sat: 80};
+    world.onWrite = (_endpoint, payload) => {
+      if ((payload as {brightness?: unknown}).brightness === undefined) return;
+      transaction(world.db, () => admitCommand(world.db, 'unused', {id: 'owner', device: 'wall', command: {kind: 'brightness.set', percent: 10},
+        instant: world.now / 1000, expires: world.now / 1000 + 5}, () => {}));
+    };
+    await run(world, current => { if (frameWrites(current).length >= 3) current.alert = true; }, COLOR);
+    assert.deepEqual(ended(world), {reason: 'alert', restoration: 'skipped'});
+    assert.equal(world.writes.filter(write => (write.payload as {hue?: unknown}).hue !== undefined).length, 0, 'the newer choice wins');
+  } finally {
+    world.db.close();
+  }
+});
+
+for (const selection of ['*ExtControl*', '*Dynamic*', 'Unsaved preview'] as const) {
+  for (const ending of ['stopped', 'alert', 'source-lost'] as const) {
+    test(`a Start over ${selection} plays, and ${ending === 'stopped' ? 'Stop' : ending === 'alert' ? 'an alert' : 'source loss'} leaves the last frame with restoration none`, async () => {
+      const world = open();
+      try {
+        world.selected = selection;
+        const base: MusicBase = {kind: 'unnamed', selection, brightness: 50};
+        await run(world, current => {
+          if (ending === 'stopped') stopAfter(3)(current);
+          else if (frameWrites(current).length >= 3) {
+            if (ending === 'alert') current.alert = true;
+            else current.feeding = false;
+          }
+        }, base);
+        assert.equal(entries(world).length, 1, 'the light entered streaming');
+        assert.ok(frameWrites(world).length >= 3 && frameWrites(world).every(frame => frame.applied));
+        assert.deepEqual(ended(world), {reason: ending, restoration: 'none'});
+        assert.deepEqual(sequence(world), ['stream'], 'nothing is written after the frames, and no scene is guessed');
+        assert.equal(world.selected, '*ExtControl*', 'the light keeps the last frame');
+        if (ending === 'stopped') {
+          assert.deepEqual(world.outcomes.find(outcome => outcome.requestId === 'stop'), {type: 'outcome', device: 'wall', requestId: 'stop', result: 'succeeded', evidence: 'observed'});
+        }
+        assert.equal(held(world.db, 0, 'wall'), false);
+      } finally {
+        world.db.close();
+      }
+    });
+  }
+}
+
+test('a selection other than the unnamed base\'s before the streaming entry is a newer manual choice', async () => {
+  const world = open();
+  try {
+    world.selected = 'Unsaved preview';
+    world.onRead = endpoint => { if (endpoint === '/effects/select') world.selected = 'Ocean'; };
+    await run(world, () => {}, {kind: 'unnamed', selection: 'Unsaved preview', brightness: 50});
+    assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
+    assert.deepEqual(sequence(world), [], 'nothing is written over the newer choice');
+  } finally {
+    world.db.close();
+  }
+});
+
+test('the base read takes a saved scene, a plain colour or an unnamed selection, and refuses a light that is off', async () => {
+  const reads = (listing: unknown, state: unknown) => (endpoint: string): Promise<unknown> => Promise.resolve(endpoint === '/effects' ? listing : state);
+  const on = (patch: object = {}) => ({on: {value: true}, brightness: {value: 40, max: 100, min: 0}, colorMode: 'effect', ...patch});
+  const list = (select: string) => ({select, effectsList: ['Ocean']});
+  assert.deepEqual(await readMusicBase(reads(list('Ocean'), on())),
+    {observed: {selection: 'Ocean', saved: true, restores: 'scene'}, base: {kind: 'scene', name: 'Ocean', brightness: 40}});
+  assert.deepEqual(await readMusicBase(reads(list('*Solid*'), on({colorMode: 'hs', hue: {value: 200, max: 360, min: 0}, sat: {value: 60, max: 100, min: 0}}))),
+    {observed: {selection: '*Solid*', saved: false, restores: 'color'}, base: {kind: 'color', selection: '*Solid*', color: {hue: 200, sat: 60}, brightness: 40}});
+  assert.deepEqual(await readMusicBase(reads(list('*Solid*'), on({colorMode: 'ct', ct: {value: 2700, max: 6500, min: 1200}}))),
+    {observed: {selection: '*Solid*', saved: false, restores: 'color'}, base: {kind: 'color', selection: '*Solid*', color: {ct: 2700}, brightness: 40}});
+  // A colour the light does not report readably is put back by no one.
+  assert.deepEqual(await readMusicBase(reads(list('*Solid*'), on({colorMode: 'hs', hue: {value: 400}}))),
+    {observed: {selection: '*Solid*', saved: false, restores: 'nothing'}, base: {kind: 'unnamed', selection: '*Solid*', brightness: 40}});
+  for (const select of ['*ExtControl*', '*Dynamic*', '*Static*', 'Unsaved preview']) {
+    assert.deepEqual(await readMusicBase(reads(list(select), on())),
+      {observed: {selection: select, saved: false, restores: 'nothing'}, base: {kind: 'unnamed', selection: select, brightness: 40}});
+  }
+  assert.deepEqual(await readMusicBase(reads(list('Ocean'), on({on: {value: false}}))),
+    {observed: {selection: 'Ocean', saved: true, restores: 'scene'}, refusal: 'off'});
+  assert.deepEqual(await readMusicBase(reads(list('Ocean'), {on: {value: true}})),
+    {observed: {selection: 'Ocean', saved: true, restores: 'scene'}, refusal: 'unreadable'});
+  assert.deepEqual(await readMusicBase(reads({effectsList: []}, on())), {observed: undefined, refusal: 'unreadable'});
+});
+
+test('the playing check keeps the light\'s selection for its record with no request of its own', async () => {
+  const world = open();
+  try {
+    let startedAt: number | undefined;
+    await run(world, current => { startedAt ??= frameWrites(current).length > 0 ? current.now : undefined; });
+    assert.ok(startedAt !== undefined);
+    const kept = lastSelection(world.db, 'wall');
+    assert.deepEqual(kept === undefined ? undefined : {selection: kept.selection, saved: kept.saved, restores: kept.restores},
+      {selection: '*ExtControl*', saved: false, restores: 'nothing'});
+    assert.ok(kept !== undefined && kept.readAtMs >= startedAt && kept.readAtMs <= world.now);
+    const playing = world.reads.filter(read => read.atMs >= (startedAt ?? 0));
+    const seconds = (world.now - startedAt) / 1000;
+    assert.ok(playing.length <= 2 * Math.ceil(seconds) + 2, `${playing.length} reads in ${seconds} s`);
+  } finally {
+    world.db.close();
+  }
+});
+
+test('an unchanged selection keeps its read time for a minute, and a changed one is kept at once', () => {
+  const world = open();
+  try {
+    const reported: string[] = [];
+    const save = (selection: string, atMs: number): void => transaction(world.db, () => saveSelection(world.db, 'wall',
+      {selection, saved: false, restores: 'nothing'}, atMs, message => { reported.push(message.type); }));
+    save('*ExtControl*', 1000);
+    save('*ExtControl*', 2000);
+    assert.equal(lastSelection(world.db, 'wall')?.readAtMs, 1000);
+    save('*ExtControl*', 1000 + SELECTION_REFRESH_MS);
+    assert.equal(lastSelection(world.db, 'wall')?.readAtMs, 1000 + SELECTION_REFRESH_MS);
+    save('*Dynamic*', 2000 + SELECTION_REFRESH_MS);
+    assert.equal(lastSelection(world.db, 'wall')?.selection, '*Dynamic*');
+    assert.deepEqual(reported, ['selection', 'selection', 'selection']);
+  } finally {
+    world.db.close();
+  }
+});

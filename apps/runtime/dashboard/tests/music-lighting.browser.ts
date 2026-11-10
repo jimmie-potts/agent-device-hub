@@ -58,12 +58,15 @@ try {
   await page.getByRole('article', {name: 'Music input measurement', exact: true}).getByRole('button', {name: 'Start measuring Music', exact: true}).click();
   await expect(start).toBeEnabled();
   assert.equal(controls.length, 0, 'opening Audio and every state change send no lighting command');
+  // #1614: before any read, the card explains what an ending will and won't put back.
+  await light.getByText(/^Start reads what the light shows\. .*scene saved on the light or a plain colour, and leaves anything else on the last Music frame\./).waitFor();
 
   await start.focus(); await page.keyboard.press('Enter');
   await light.getByText('Active. The light reported that it is playing this session.', {exact: true}).waitFor();
   await light.getByText(/Start request: Completed: succeeded\. The core saved it; the light reports separately\./).waitFor();
   await light.getByText(/Start light work: Completed: succeeded\. Written to the light; the physical effect was not observed\./).waitFor();
   await light.getByText(/Preset: Synthetic green\./).waitFor();
+  await light.getByText(/^This session started over a scene saved on the light\. .*puts it back at its brightness\./).waitFor();
   const first = controls[0];
   assert.equal(controls.length, 1); assert.ok(first?.data.action === 'start');
   assert.equal(first.target, 'wall'); assert.equal(first.data.presetId, 'preset-green');
@@ -102,6 +105,14 @@ try {
   assert.equal(controls.length, 4);
   await mode('free'); await expect(light.getByText(/saved mode is not Free/)).toHaveCount(0);
 
+  // #1614: a light that is off refuses the Start; the card then says what it read and what an ending would put back.
+  world.nanoleafPower(false);
+  await start.click();
+  await light.getByText(/^Last read at .+?: (a scene saved on the light|a plain colour|streamed frames|an effect|a selection)[^.]*\. /).waitFor();
+  await light.getByText(/Start light work: Refused \(invalid-state\)/).waitFor();
+  assert.equal(controls.length, 5);
+  world.nanoleafPower(true);
+
   // A stale lighting read disables controls until an explicit refresh succeeds.
   let refusedReads = 0;
   await page.route('**/api/sdk/v1/sync', async route => {
@@ -131,7 +142,7 @@ try {
   await light.getByText('Active. The light reported that it is playing this session.', {exact: true}).waitFor();
   await expect(stop).toBeEnabled(); await page.reload(); await feed(page, 'connected');
   await light.getByText('Active. The light reported that it is playing this session.', {exact: true}).waitFor();
-  await expect(stop).toBeEnabled(); await expect(start).toBeDisabled(); assert.equal(lost, 1); assert.equal(controls.length, 5);
+  await expect(stop).toBeEnabled(); await expect(start).toBeDisabled(); assert.equal(lost, 1); assert.equal(controls.length, 6);
 
   for (const colorScheme of ['light', 'dark'] as const) for (const width of [1280, 390, 320]) {
     await page.emulateMedia({colorScheme}); await page.setViewportSize({width, height: 900});
@@ -143,7 +154,7 @@ try {
   }
   await page.setViewportSize({width: 1280, height: 900});
   await stop.click(); await light.getByText(/Last session ended: stopped on request/).waitFor();
-  assert.deepEqual(controls.map(control => control.data.action), ['start', 'stop', 'start', 'start', 'start', 'stop']);
+  assert.deepEqual(controls.map(control => control.data.action), ['start', 'stop', 'start', 'start', 'start', 'start', 'stop']);
 
   // Read-only access disables both controls and sends nothing.
   await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
@@ -164,8 +175,8 @@ try {
   await capture.getByText('Receiving studio-mic measurements.', {exact: true}).waitFor();
   await light.getByText(/Start unavailable: Lights use Music.app input only, never a microphone/).waitFor();
   await expect(start).toBeDisabled();
-  assert.equal(controls.length, 6);
-  assert.equal(sent.filter(path => path === '/api/v2/commands/music-lighting-control').length, 6);
+  assert.equal(controls.length, 7);
+  assert.equal(sent.filter(path => path === '/api/v2/commands/music-lighting-control').length, 7);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({journey: 'music-lighting', lightingCommands: controls.length, lostReplies: lost, artifacts, physical: false}));
   await context.close();

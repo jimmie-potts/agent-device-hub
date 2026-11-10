@@ -18,6 +18,8 @@ const RECIPE = {rendererVersion: 1, effect: 'level-glow', palette: ['#12ab34'], 
 type Session = {world: ModuleWorld; core: Participant; producer: Participant; sequence: number};
 type Answer = {status: string; code?: string};
 
+/** The last refusal's detail, which a test reads when the refusal must name what the light showed. */
+let lastDetail: string | undefined;
 async function ask(world: ModuleWorld, from: Participant, key: string, draft: Parameters<Participant['request']>[1], timeoutMs = 5000): Promise<Answer> {
   let answered: RequestResult | undefined;
   // The SDK sets the payload's `requestId`; a test names it through the request's options.
@@ -25,6 +27,7 @@ async function ask(world: ModuleWorld, from: Participant, key: string, draft: Pa
   void from.request(key, draft, {timeoutMs, ...(typeof requestId === 'string' ? {requestId} : {})}).then(value => { answered = value; });
   await world.until(() => answered !== undefined, timeoutMs + 100, `the answer to ${key}`);
   const result = answered as RequestResult;
+  lastDetail = result.status === 'accepted' ? undefined : result.error.error.detail;
   return result.status === 'accepted' ? {status: 'accepted'} : {status: result.status, code: result.error.error.code};
 }
 
@@ -120,18 +123,135 @@ test('only the core may start a session, and a refused Start writes nothing and 
   world.verify();
 });
 
-test('a Free light refuses a missing preset, an unnamed base and an unknown session stop', async context => {
+test('a Free light refuses a missing preset and an unknown session stop', async context => {
   const session = await lightsInFree(context);
   const {world} = session;
   const before = lines(world)?.writes;
   assert.deepEqual(await start(session, 'missing', generation(1), 'preset-absent'), {status: 'rejected', code: 'not-found'});
   assert.deepEqual(await stop(session, 'stop-nothing'), {status: 'rejected', code: 'invalid-state'});
   assert.equal(lines(world)?.writes, before);
-  await world.device.request({ip: LINES_ADDRESS, token: SYNTHETIC_TOKEN}, 'PUT', '/effects', {write: {command: 'display', animType: 'custom', animData: '1 1 1 1 1 1 0 1'}});
-  const unnamed = lines(world)?.writes;
-  assert.deepEqual(await start(session, 'animation-base'), {status: 'rejected', code: 'invalid-state'});
-  assert.equal(lines(world)?.writes, unnamed);
-  assert.equal(world.outcomes('animation-base').length, 0);
+  world.verify();
+});
+
+// #1614: a Start over whatever the Lines show. A saved scene and a plain colour are put back; anything else is left on
+// the last frame, reported `none`, and no scene is guessed.
+const LIGHT = {ip: LINES_ADDRESS, token: SYNTHETIC_TOKEN};
+/** Plays for a while, then Stops, and returns once the session ended. */
+async function playThenStop(session: Session, requestId: string, gen = generation(1)): Promise<void> {
+  await play(session, 300);
+  await session.world.until(() => deviceState(session.world)?.session?.status === 'playing', 2000, 'playing');
+  await play(session, 500);
+  assert.deepEqual(await stop(session, requestId, gen), {status: 'accepted'});
+  await play(session, 300);
+  await session.world.until(() => session.world.outcomes(requestId).length === 1, 2000, 'the stop outcome');
+}
+
+test('a Start over a plain colour plays, and Stop puts the colour back', async context => {
+  const session = await lightsInFree(context);
+  const {world} = session;
+  await world.device.request(LIGHT, 'PUT', '/state', {hue: {value: 200}, sat: {value: 60}});
+  assert.equal(lines(world)?.select, '*Solid*');
+  assert.deepEqual(await start(session, 'over-colour'), {status: 'accepted'});
+  await playThenStop(session, 'stop-colour');
+  assert.deepEqual(outcome(world, 'over-colour'), {requestId: 'over-colour', result: 'succeeded', evidence: 'transmitted'});
+  assert.deepEqual(outcome(world, 'stop-colour'), {requestId: 'stop-colour', result: 'succeeded', evidence: 'transmitted'});
+  assert.deepEqual({reason: ended(world)?.reason, restoration: ended(world)?.restoration}, {reason: 'stopped', restoration: 'restored'});
+  const light = lines(world);
+  assert.deepEqual({select: light?.select, hue: light?.hue, sat: light?.sat, colorMode: light?.colorMode, brightness: light?.brightness},
+    {select: '*Solid*', hue: 200, sat: 60, colorMode: 'hs', brightness: 50});
+  assert.equal(world.wall()?.musicBase?.restores, 'color');
+  world.verify();
+});
+
+test('a Start over a colour temperature plays, and an alert puts it back', async context => {
+  const session = await lightsInFree(context);
+  const {world} = session;
+  await world.device.request(LIGHT, 'PUT', '/state', {ct: {value: 2700}});
+  assert.deepEqual(await start(session, 'over-warm'), {status: 'accepted'});
+  await play(session, 300);
+  await world.until(() => deviceState(world)?.session?.status === 'playing', 2000, 'playing');
+  await world.core.set('alpha', {attention: [{kind: 'approval', id: {status: 'known', id: 'approval-1'}, turn: {status: 'known', id: 't1'}}]});
+  await play(session, 500);
+  await world.until(() => ended(world) !== undefined, 2000, 'the alert ending');
+  assert.deepEqual({reason: ended(world)?.reason, restoration: ended(world)?.restoration}, {reason: 'alert', restoration: 'restored'});
+  assert.deepEqual({select: lines(world)?.select, ct: lines(world)?.ct, colorMode: lines(world)?.colorMode}, {select: '*Solid*', ct: 2700, colorMode: 'ct'});
+  world.verify();
+});
+
+for (const shown of ['effect', 'earlier frames'] as const) {
+  test(`a Start over ${shown === 'effect' ? 'an unsaved effect' : 'the frames an earlier session left'} plays, and Stop leaves the last frame with restoration none`, async context => {
+    const session = await lightsInFree(context);
+    const {world} = session;
+    if (shown === 'effect') {
+      await world.device.request(LIGHT, 'PUT', '/effects', {write: {command: 'display', animType: 'custom', animData: '1 1 1 1 1 1 0 1'}});
+    } else {
+      // An earlier session ended without restoring, as a module restart ends one: the light still streams its last frame.
+      assert.deepEqual(await start(session, 'earlier'), {status: 'accepted'});
+      await play(session, 300);
+      await world.until(() => deviceState(world)?.session?.status === 'playing', 2000, 'playing');
+      await world.stopModule();
+      await world.restart();
+      await world.advance(3000);
+      assert.equal(ended(world)?.reason, 'restart');
+    }
+    const shownAs = lines(world)?.select;
+    assert.ok(shownAs === '*Dynamic*' || shownAs === '*ExtControl*', shownAs);
+    const gen = shown === 'effect' ? generation(1) : generation(2);
+    assert.deepEqual(await start(session, 'over-unnamed', gen), {status: 'accepted'});
+    const startedAt = world.clock.now();
+    await playThenStop(session, 'stop-unnamed', gen);
+    assert.deepEqual(outcome(world, 'over-unnamed'), {requestId: 'over-unnamed', result: 'succeeded', evidence: 'transmitted'});
+    assert.deepEqual(outcome(world, 'stop-unnamed'), {requestId: 'stop-unnamed', result: 'succeeded', evidence: 'observed'});
+    assert.deepEqual({reason: ended(world)?.reason, restoration: ended(world)?.restoration}, {reason: 'stopped', restoration: 'none'});
+    assert.equal(lines(world)?.select, '*ExtControl*', 'the light keeps the last frame');
+    assert.equal(world.writes().filter(write => write.atMs >= startedAt && (write.select !== undefined || write.brightness !== undefined)).length, 0,
+      'nothing is restored and no scene is guessed');
+    assert.deepEqual(world.wall()?.musicBase, {generation: gen, restores: 'nothing'});
+    if (shown === 'effect') world.verify();
+    else world.verifyMessages();
+  });
+}
+
+test('the wall record shows the last read selection, whether it is saved and when, and a refused Start names it', async context => {
+  const session = await lightsInFree(context);
+  const {world} = session;
+  assert.equal(world.wall()?.selection, null, 'nothing is read before a Start');
+  // A Start over the saved scene, then a playing check that finds the streaming selection.
+  assert.deepEqual(await start(session, 'over-scene'), {status: 'accepted'});
+  const readAt = world.clock.now();
+  await play(session, 300);
+  await world.until(() => deviceState(world)?.session?.status === 'playing', 2000, 'playing');
+  await play(session, 1500);
+  assert.deepEqual(await stop(session, 'stop-scene'), {status: 'accepted'});
+  await play(session, 300);
+  await world.until(() => world.outcomes('stop-scene').length === 1, 2000, 'the stop outcome');
+  const scenes = world.device_()?.capabilities.scenes;
+  const sceneId = scenes?.supported === true ? scenes.sceneIds[0] : undefined;
+  assert.ok(sceneId !== undefined);
+  await world.advance(100);
+  const selection = world.wall()?.selection;
+  assert.ok(selection !== undefined && selection !== null);
+  // The playing check kept the streaming selection once a session played; the Start kept the scene.
+  assert.deepEqual({saved: selection.saved, placeholder: selection.placeholder, restores: selection.restores}, {saved: false, placeholder: '*ExtControl*', restores: 'nothing'});
+  assert.ok(selection.readAtMs >= readAt && selection.readAtMs <= world.clock.now());
+  assert.ok(JSON.stringify(world.wall()).includes('Beach Waves') === false, 'no scene name is published');
+  // A light that is off refuses, naming what it showed.
+  await world.device.request(LIGHT, 'PUT', '/state', {hue: {value: 10}, sat: {value: 90}});
+  world.device.setPower(LINES_ADDRESS, false);
+  const before = lines(world)?.writes;
+  assert.deepEqual(await start(session, 'off-colour', generation(2)), {status: 'rejected', code: 'invalid-state'});
+  assert.equal(lastDetail, 'live Music starts only on a light that is on; the light is off, showing *Solid*');
+  assert.equal(lines(world)?.writes, before, 'a refused Start writes nothing');
+  await world.advance(100);
+  assert.deepEqual(world.wall()?.selection, {saved: false, sceneId: null, placeholder: '*Solid*', restores: 'color', readAtMs: world.wall()?.selection?.readAtMs});
+  // A saved scene shows as its opaque ID.
+  world.device.setPower(LINES_ADDRESS, true);
+  world.device.chooseScene(LINES_ADDRESS, 'Beach Waves');
+  world.device.setPower(LINES_ADDRESS, false);
+  assert.deepEqual(await start(session, 'off-scene', generation(3)), {status: 'rejected', code: 'invalid-state'});
+  assert.equal(lastDetail, `live Music starts only on a light that is on; the light is off, showing saved scene ${sceneId}`);
+  await world.advance(100);
+  assert.deepEqual(world.wall()?.selection, {saved: true, sceneId, placeholder: null, restores: 'scene', readAtMs: world.wall()?.selection?.readAtMs});
   world.verify();
 });
 

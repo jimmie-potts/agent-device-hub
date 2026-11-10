@@ -14,7 +14,13 @@ export type WallRecord = {
   tasks: {id: string; title: string; project: string | null; status: 'blocked' | 'question' | 'working' | 'unread' | 'idle';
     startedAtMs?: number; element: string | null; manualProject: string | null; evictionToken?: string; codexUrl?: string;
     statusEvidence: 'current' | 'uncertain'}[];
+  /** The light's last read selection (#1614), as live Music reads it, and what the latest Music session's ending puts back. */
+  selection?: WallSelection | null; musicBase?: {generation: string; restores: Restores} | null;
 };
+/** What a live Music ending puts back: a saved scene, a plain colour or nothing. */
+export type Restores = 'scene' | 'color' | 'nothing';
+/** A read selection, with no scene name: a saved scene by its opaque ID, or the light's own placeholder such as `*Solid*`. */
+export type WallSelection = {saved: boolean; sceneId: string | null; placeholder: string | null; restores: Restores; readAtMs: number};
 export type WallDevice = {id: string; name: string; default: boolean};
 export type LegacyWall = {
   id: string; current: boolean; kind: WallRecord['kind']; mode: WallRecord['mode']; mode_pending: boolean; pending: boolean;

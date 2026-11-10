@@ -586,7 +586,7 @@ The Audio page SHALL provide explicit quiet measurement, Cancel and Apply contro
 
 ### Requirement: Explicit Music lighting controls on Audio
 
-The Audio page SHALL show a Music lighting card with one section per light in the core's synced `music-lighting-state` records. Each section SHALL show the session status, the saved preset in use and the last recorded ending, including its reason, restoration (with `uncertain`) and code when present. It SHALL offer a saved reactive preset from the private Nanoleaf library and explicit Start and Stop through the shared tracked command path. Start SHALL carry the record's revision, the chosen preset and the current active Music.app capture endpoint and generation. Start SHALL be enabled only for an idle light, from fresh records, with an active Music.app capture, a fresh library holding the preset and control authority. Stop SHALL be available for starting, active, stopping and uncertain sessions, independent of an unresolved Start. The page SHALL never offer the microphone, switch a light's mode, send a command on load, reload, reconnect or record change, or restart a session after any ending. This contributes #722 AC2, AC3 and AC5.
+The Audio page SHALL show a Music lighting card with one section per light in the core's synced `music-lighting-state` records. Each section SHALL show the session status, the saved preset in use and the last recorded ending, including its reason, restoration (with `uncertain`) and code when present. Each section SHALL explain what an ending will and won't put back: before Start from the light module's last read selection, unless the base was put back after that read, and otherwise by the general rule; during a session and after its ending from what the light module says that session's base was. The card SHALL name no scene. It SHALL offer a saved reactive preset from the private Nanoleaf library and explicit Start and Stop through the shared tracked command path. Start SHALL carry the record's revision, the chosen preset and the current active Music.app capture endpoint and generation. Start SHALL be enabled only for an idle light, from fresh records, with an active Music.app capture, a fresh library holding the preset and control authority. Stop SHALL be available for starting, active, stopping and uncertain sessions, independent of an unresolved Start. The page SHALL never offer the microphone, switch a light's mode, send a command on load, reload, reconnect or record change, or restart a session after any ending. This contributes #722 AC2, AC3 and AC5, and #1614 AC3.
 
 #### Scenario: Passive page lifecycle
 - **WHEN** Audio opens, reloads, reconnects or the lighting, capture or library records change
@@ -599,6 +599,10 @@ The Audio page SHALL show a Music lighting card with one section per light in th
 #### Scenario: Endings never restart
 - **WHEN** a session ends through Stop, an alert, a manual change, source loss, a device failure, a restart or a refusal, and Music capture later becomes active again
 - **THEN** the card shows the ending in plain words with its restoration and code, and no Start is sent until the operator chooses Start again
+
+#### Scenario: What an ending puts back
+- **WHEN** the light's last read selection is a saved scene, a plain colour or a selection that cannot be selected again, a session plays over one of them, or it ends
+- **THEN** the card says before Start, during the session and after the ending whether Stop, an alert or lost Music input puts the scene or colour back or leaves the last Music frame, that a manual change always wins, and, for an ending with restoration `none` over an unnamed base, that nothing was put back and why
 
 #### Scenario: Light outside Free
 - **WHEN** the light's saved mode is not Free and the operator starts it

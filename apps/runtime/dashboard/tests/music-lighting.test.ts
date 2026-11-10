@@ -7,8 +7,8 @@ import type {ReactiveCatalogView} from '@jimmie-potts/nanoleaf/reactive-presets'
 import type {SyncedCopy, SyncHandler, SyncOptions, SyncResult} from '@jimmie-potts/sdk/remote';
 import {lightingWorkRequestId} from '../../dist/src/core/music-lighting.js';
 import {MusicLightingFeed, NANOLEAF_OWNER, type PresetFollower} from '../src/music-lighting-feed.ts';
-import {controlText, endingText, lightingRecord, lightingWorkId, sessionText, startBlocked, startCapture, stopBlocked, workText,
-  type LightingControls} from '../src/music-lighting-model.ts';
+import {baseText, controlText, endingText, lightBase, lightingRecord, lightingWorkId, sessionBaseText, sessionText, startBlocked, startCapture, stopBlocked,
+  workText, type LightingControls} from '../src/music-lighting-model.ts';
 
 const capture = {endpointId: 'endpoint-one', generation: 'capture-one'};
 const idle: LightingState = {id: 'wall', revision: 4, session: {status: 'idle'}, last: null};
@@ -152,4 +152,34 @@ void test('a foreign or malformed record makes the lighting copy unavailable', a
   const {feed} = world(() => [message(idle), message(idle, {source: 'bunny/parts/dashboard'})]);
   assert.equal(await feed.refresh(), false);
   assert.deepEqual(feed.getSnapshot().records, []);
+});
+
+void test('#1614: the card explains what an ending puts back, before Start and after it, without a scene name', () => {
+  const read = (patch: Partial<{saved: boolean; sceneId: string | null; placeholder: string | null; restores: 'scene' | 'color' | 'nothing'}>) =>
+    ({saved: false, sceneId: null, placeholder: null, restores: 'nothing' as const, readAtMs: 1000, ...patch});
+  const scene = read({saved: true, sceneId: `scene-${'a'.repeat(64)}`, restores: 'scene'});
+  assert.equal(baseText(scene, '10:00'), 'Last read at 10:00: a scene saved on the light. Stop, an alert or lost Music input puts that scene back at its brightness.'
+    + ' A manual change on the light always wins, and then nothing is put back.');
+  assert.match(baseText(read({placeholder: '*Solid*', restores: 'color'}), '10:00'), /a plain colour\. .*puts that colour back/);
+  assert.match(baseText(read({placeholder: '*Solid*'}), '10:00'), /a plain colour whose value could not be read\. .*puts nothing back.*last Music frame/);
+  assert.match(baseText(read({placeholder: '*ExtControl*'}), '10:00'), /streamed frames.*earlier Music session.*puts nothing back/);
+  assert.match(baseText(read({placeholder: '*Dynamic*'}), '10:00'), /an effect that is not a scene saved on the light.*puts nothing back/);
+  assert.match(baseText(read({}), '10:00'), /a selection that is not a scene saved on the light.*puts nothing back/);
+  assert.match(baseText(null, ''), /^Start reads what the light shows\..*scene saved on the light or a plain colour.*last Music frame/);
+  assert.match(sessionBaseText('color'), /started over a plain colour\. .*puts it back/);
+  assert.match(sessionBaseText('nothing'), /cannot select again\. .*puts nothing back.*last Music frame.*manual change/);
+  // After the ending: a colour restored, and an unnamed base truthfully left as it was.
+  assert.match(endingText({generation: 'g', reason: 'stopped', restoration: 'restored', atMs: 1}, 'color'), /The base colour and brightness were restored\./);
+  assert.equal(endingText({generation: 'g', reason: 'alert', restoration: 'none', atMs: 1}, 'nothing'),
+    'Last session ended: an agent alert interrupted it. Nothing was put back: the session started over a selection the light cannot select again,'
+    + ' so the light keeps what it last showed. Nothing restarts automatically.');
+  assert.match(endingText({generation: 'g', reason: 'manual', restoration: 'none', atMs: 1}, 'nothing'), /No restoration was attempted/);
+  assert.match(endingText({generation: 'g', reason: 'refused', restoration: 'none', atMs: 1, code: 'invalid-state'}), /must be on, already in Free mode, and free/);
+  // The light module's record is checked at the browser boundary.
+  assert.deepEqual(lightBase({id: 'wall', selection: scene, musicBase: {generation: 'g', restores: 'scene'}}), {selection: scene, musicBase: {generation: 'g', restores: 'scene'}});
+  assert.deepEqual(lightBase({id: 'wall', selection: null, musicBase: null}), {selection: null, musicBase: null});
+  assert.equal(lightBase({id: 'wall'}), undefined, 'a record without the fields shows no base');
+  assert.equal(lightBase({id: 'wall', selection: {...scene, restores: 'everything'}, musicBase: null}), undefined);
+  assert.equal(lightBase({id: 'wall', selection: null, musicBase: {generation: '', restores: 'scene'}}), undefined);
+  assert.equal(lightBase(undefined), undefined);
 });
