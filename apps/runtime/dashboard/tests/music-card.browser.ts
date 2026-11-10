@@ -157,9 +157,7 @@ try {
   assert.equal(await studio.isDisabled(), true); assert.equal(await card.getByRole('button', {name: 'Next', exact: true}).isDisabled(), true);
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  for (const colorScheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({colorScheme});
-  }
+  await page.emulateMedia({colorScheme: 'dark'});
   if (process.env.DASHBOARD_RECEIPTS !== undefined) await page.screenshot({path: process.env.DASHBOARD_RECEIPTS + '/music-card-phone.png', fullPage: true});
   assert.equal(sent.filter(url => url.endsWith('/playback-control')).length, 1, 'only the explicit synthetic pause sent playback');
   assert.deepEqual(errors, []);

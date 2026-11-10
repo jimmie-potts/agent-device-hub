@@ -69,7 +69,7 @@ export async function checkModeOverrides(browser: Browser, evidence?: string): P
     for (const width of [1440, 390, 320]) for (const colorScheme of ['light', 'dark'] as const) {
       await page.setViewportSize({width, height: 1000}); await page.emulateMedia({colorScheme});
       await details.locator('summary').click();
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
       if (evidence !== undefined) {await mkdir(evidence, {recursive: true}); await page.screenshot({path: join(evidence, `mode-overrides-${width}-${colorScheme}.png`), fullPage: true});}
     }
     await hub.getByRole('button', {name: 'Work', exact: true}).click(); await settled(8);

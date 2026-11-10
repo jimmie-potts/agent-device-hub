@@ -69,7 +69,7 @@ try {
     await panel.locator('.hub-mode-choice', {hasText: 'Quiet'}).waitFor(); assert.equal(nativeCalls(), 10, 'restart restores choice without effects');
     for (const width of [1440, 390, 320]) for (const colorScheme of ['light', 'dark'] as const) {
       await page.setViewportSize({width, height: 1000}); await page.emulateMedia({colorScheme});
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
       if (process.argv[2] !== undefined) {await mkdir(process.argv[2], {recursive: true}); await page.screenshot({path: join(process.argv[2], `mode-inbox-${width}-${colorScheme}.png`), fullPage: true});}
     }
     // A real transport failure without an operation cannot claim an Inbox item.

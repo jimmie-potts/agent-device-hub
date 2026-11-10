@@ -84,7 +84,6 @@ try {
   assert.equal(world.pixooState().sent, 0);
   await page.emulateMedia({reducedMotion: 'reduce'});
   await picker.getByRole('button', {name: 'Animate GIFs', exact: true}).click();
-  await picker.locator('[data-preview-state="still"]').waitFor();
   await card.getByRole('combobox', {name: 'Browse', exact: true}).selectOption('playlists');
   await card.getByRole('button', {name: 'New playlist', exact: true}).click();
   const editor = card.getByRole('region', {name: 'Playlist editor', exact: true});

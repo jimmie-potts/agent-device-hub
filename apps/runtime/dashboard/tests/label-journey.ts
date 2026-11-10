@@ -64,7 +64,7 @@ export async function labelJourney(page: Page, world: World, sent: string[]): Pr
   await page.getByRole('button', {name: 'Save label', exact: true}).click();
   await row('Updated label').getByRole('status').filter({hasText: 'Label confirmed by the synced record.'}).waitFor();
   await page.setViewportSize({width: 390, height: 844});
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
   await page.setViewportSize({width: 1440, height: 900});
   await page.getByRole('button', {name: 'Clear label', exact: true}).click();
   await row('Port the wall').getByRole('status').filter({hasText: 'Label confirmed by the synced record.'}).waitFor();
