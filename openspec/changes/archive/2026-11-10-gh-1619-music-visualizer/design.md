@@ -19,7 +19,7 @@ The Audio page already projects the core's `music-capture-state` copy and the pr
 ## Risks / Trade-offs
 
 - Under a loaded browser the single page sync can still miss the clock bound, as before this change (#1580). The visualizer then rests with "Measurement timing is unavailable" rather than drawing unqualified data.
-- Frame timings at 3,840 × 2,160 come from headless Chromium in a capped container. Whether the TV drops frames is the owner's installed check.
+- Frame timings at 3,840 × 2,160 come from headless, software-rendered Chromium in a capped container and do not qualify AC6 either way; whether the full-screen view drops frames is judged at the owner's installed TV check.
 
 ## Migration Plan
 

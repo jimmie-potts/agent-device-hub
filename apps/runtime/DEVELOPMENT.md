@@ -707,8 +707,9 @@ state on the Audio panel at 1440, 390 and 320 px, and the Home card at 1440 and
 view and its Fullscreen API run at 1440 px and at 3,840 × 2,160. The journey also
 checks that the visualizer sends no command. It records frame timings at
 3,840 × 2,160 for the live effects and for a resting and a blank-canvas baseline in
-the same run. These are headless Chromium numbers; they do not establish whether
-the TV drops frames. `VISUALIZER_EVIDENCE` keeps the screenshots and timings
+the same run. These headless, software-rendered timings do not qualify AC6 either
+way; whether the full-screen view drops frames is judged at the owner's installed
+TV check. `VISUALIZER_EVIDENCE` keeps the screenshots and timings
 private. The owner's view of the installed dashboard is separate.
 
 Reusable lighting (#1135) uses the existing event and core test discovery in CI.

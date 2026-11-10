@@ -292,8 +292,8 @@ the derived capture features that the measurement card reads: the applied
 response values when the core has them, otherwise the measured level and bass,
 mid and treble bands. It reads them through the same read-only capture scope as
 the measurement card: `src/music-capture-scope.ts` keeps one scope per page
-connection, so a page makes one capture sync and its clock check is not slowed
-by a second one. Moving between Audio, the full view and Home within the page
+connection, which never runs more than one capture sync at a time, so a sync's
+clock check is not slowed by a concurrent one. Moving between Audio, the full view and Home within the page
 hands the synced scope to the next surface without a new sync. A scope the
 connection has already closed is replaced, and a surface that mounts later
 resyncs an unsynced view unless a sync is in flight.
@@ -325,9 +325,9 @@ the Music-card browser entry against the numeric producer fixture. It checks
 the Audio panel at 1440, 390 and 320 px and the Home card at 1440 and 390 px.
 Layout editing runs at 1440 px, and the full view at 1440 px and 3,840 × 2,160.
 At 3,840 × 2,160 it records frame timings for the live effects beside a resting
-and a blank-canvas baseline from the same run. These headless Chromium numbers
-do not settle whether the TV drops frames; the owner judges that on the
-installed TV. Set `VISUALIZER_EVIDENCE` to a private directory to keep its
+and a blank-canvas baseline from the same run. These headless, software-rendered
+timings do not qualify AC6 either way; whether the full-screen view drops frames
+is judged at the owner's installed TV check. Set `VISUALIZER_EVIDENCE` to a private directory to keep its
 screenshots and frame timings. This is source evidence; the owner's view of the
 installed dashboard with Music playing remains separate.
 

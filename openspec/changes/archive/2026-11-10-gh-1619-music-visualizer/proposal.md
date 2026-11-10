@@ -8,7 +8,7 @@
 - The visualizer shows only qualified, fresh, generation-bound measurements. It eases toward the newest feature window and never replays skipped ones. Otherwise it rests: a still scene with the reason.
 - **Fill window** opens `#/audio/visualizer`, a view that covers the page chrome and offers **Full screen** through the browser's Fullscreen API. **Exit full view** or Escape returns to Audio.
 - A **Music visualizer** Home card in the Audio category of Add card shows the chosen effect, why it rests and **Open full view**. It is not on Home by default.
-- Surfaces on one page share one read-only capture scope, so a page makes one capture sync. The measurement card uses the same scope.
+- Surfaces on one page share one read-only capture scope, which never runs more than one capture sync at a time. The measurement card uses the same scope.
 - The effect choice is kept in this browser's local storage. It is not a shared setting.
 
 ADR 0012: no new message format, error shape, family, command or gateway route, and no new path that polls the Hub. The visualizer reads the existing `music-capture-state` copy and `music-capture-features` occurrences through the shell participant.

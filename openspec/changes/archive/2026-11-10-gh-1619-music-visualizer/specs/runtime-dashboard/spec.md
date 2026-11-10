@@ -17,7 +17,7 @@ The dashboard SHALL offer a music visualizer on the Audio page, in a full view a
 
 #### Scenario: The visualizer sends nothing
 - **WHEN** a viewer opens, switches and expands the visualizer
-- **THEN** no command, capture start or lighting request is sent, and the page makes one capture sync for all its surfaces
+- **THEN** no command, capture start or lighting request is sent, and all surfaces on the page share one capture scope that never runs more than one sync at a time
 
 ### Requirement: Browser-only visualizer effect choice
 The visualizer SHALL offer Spectrum bars and Bass pulse. The chosen effect SHALL be a per-viewer preference kept in the browser's local storage, followed by the browser's other tabs, and SHALL NOT be a shared saved setting or a message. When storage is unavailable or refuses access, the choice SHALL still apply for the page.
