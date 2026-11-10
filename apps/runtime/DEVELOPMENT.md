@@ -694,18 +694,22 @@ in App verification and the full local dashboard browser suite, using synthetic
 tracks and room IDs without household-device contact. Keep the existing artwork
 race journey and full owning checks; simulated proof establishes no audible result.
 
-The music visualizer (#1619) adds `tests/music-visualizer.test.ts` to the existing
-dashboard unit discovery. It drives both effects with a fake feature stream
+The music visualizer (#1619) adds `dashboard/tests/music-visualizer.test.ts` to the
+existing dashboard unit discovery. It drives both effects with a fake feature stream
 through the real `CaptureProjection`: silence, a steady level, a single beat,
 band changes, and rest when the stream stops, goes stale or changes generation.
-It also covers the browser-only effect choice, the catalog entry and the
-`#/audio/visualizer` address. After the root build, run
+It also covers the browser-only effect choice, the shared capture scope, the
+catalog entry and the `#/audio/visualizer` address. After the root build, run
 `node apps/runtime/dashboard/tests/music-visualizer.browser.ts`, which the
-Music-card browser entry also imports. It covers both effects and the resting
-state on Audio, the full view and Fullscreen API, a 3,840 × 2,160 window, and the
-Home card's add, move, reload and remove at 1440, 390 and 320 px. It checks that
-the visualizer sends no command. `VISUALIZER_EVIDENCE` keeps its screenshots and
-frame timings private. The owner's view of the installed dashboard is separate.
+Music-card browser entry also imports. It checks both effects and the resting
+state on the Audio panel at 1440, 390 and 320 px, and the Home card at 1440 and
+390 px. Layout editing (add, move, reload and remove) runs at 1440 px. The full
+view and its Fullscreen API run at 1440 px and at 3,840 × 2,160. The journey also
+checks that the visualizer sends no command. It records frame timings at
+3,840 × 2,160 for the live effects and for a resting and a blank-canvas baseline in
+the same run. These are headless Chromium numbers; they do not establish whether
+the TV drops frames. `VISUALIZER_EVIDENCE` keeps the screenshots and timings
+private. The owner's view of the installed dashboard is separate.
 
 Reusable lighting (#1135) uses the existing event and core test discovery in CI.
 After the root build, run

@@ -293,7 +293,11 @@ response values when the core has them, otherwise the measured level and bass,
 mid and treble bands. It reads them through the same read-only capture scope as
 the measurement card: `src/music-capture-scope.ts` keeps one scope per page
 connection, so a page makes one capture sync and its clock check is not slowed
-by a second one. It sends no command, starts no capture and controls no lights.
+by a second one. Moving between Audio, the full view and Home within the page
+hands the synced scope to the next surface without a new sync. A scope the
+connection has already closed is replaced, and a surface that mounts later
+resyncs an unsynced view unless a sync is in flight.
+It sends no command, starts no capture and controls no lights.
 Effects draw on a canvas at the display's frame rate and ease toward the newest
 feature window without replaying skipped ones. When measurement is off, idle,
 starting, stale, stopping, uncertain or without fresh windows, the canvas shows a
@@ -317,11 +321,15 @@ Home by default. It shows the chosen effect, why it rests when it does, and
 
 `tests/music-visualizer.test.ts` drives both effects with a fake feature stream
 through the real `CaptureProjection`. `tests/music-visualizer.browser.ts` runs from
-the Music-card browser entry against the numeric producer fixture. It covers
-the panel, full view and Home card at 1440, 390 and 320 px and a 3,840 × 2,160
-window. Set `VISUALIZER_EVIDENCE` to a private directory to keep its screenshots
-and frame timings. This is source evidence; the owner's view of the installed
-dashboard with Music playing remains separate.
+the Music-card browser entry against the numeric producer fixture. It checks
+the Audio panel at 1440, 390 and 320 px and the Home card at 1440 and 390 px.
+Layout editing runs at 1440 px, and the full view at 1440 px and 3,840 × 2,160.
+At 3,840 × 2,160 it records frame timings for the live effects beside a resting
+and a blank-canvas baseline from the same run. These headless Chromium numbers
+do not settle whether the TV drops frames; the owner judges that on the
+installed TV. Set `VISUALIZER_EVIDENCE` to a private directory to keep its
+screenshots and frame timings. This is source evidence; the owner's view of the
+installed dashboard with Music playing remains separate.
 
 ## Music lighting
 

@@ -17,20 +17,30 @@ const evidence = process.env.VISUALIZER_EVIDENCE ?? await browserArtifactDirecto
 await mkdir(evidence, {recursive: true});
 const fits = (page: Page): Promise<boolean> => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
 const canvasImage = (canvas: Locator): Promise<string> => canvas.evaluate(node => (node as HTMLCanvasElement).toDataURL());
+let clockRetries = 0;
 /**
- * Waits for a freshly synced surface to go live. Under a loaded runner a page's capture sync can miss the capture
- * clock's round-trip bound (#1580); the surface then rests with that reason, and a reload syncs again. Any other
- * resting reason fails.
+ * Waits for a surface on a freshly loaded page to go live. Under a loaded runner the page's capture sync can miss the
+ * capture clock's round-trip bound (#1580); the surface then rests with exactly that reason, and a reload syncs again.
+ * Any other resting reason fails at once. In-page navigation never uses this: it must go live on the same page load.
  */
-async function liveAfterSync(page: Page, canvas: Locator): Promise<void> {
+async function liveAfterLoad(page: Page, canvas: Locator): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {await expect(canvas).toHaveAttribute('data-visualizer-state', 'live', {timeout: 5000}); return;} catch {/* Check the reason below. */}
     const label = await canvas.getAttribute('aria-label') ?? '';
-    assert.match(label, /Resting: Measurement (timing|status) is unavailable\./, 'only an unqualified sync may be retried');
-    await page.reload(); await feed(page, 'connected');
+    assert.match(label, /Resting: Measurement timing is unavailable\.$/, `only the capture clock bound may be retried: ${label}`);
+    clockRetries += 1; await page.reload(); await feed(page, 'connected');
   }
   await expect(canvas).toHaveAttribute('data-visualizer-state', 'live');
 }
+/** Display-frame gaps over 120 animation frames, and how many the visualizer canvas painted meanwhile. */
+const frameTimes = (page: Page, selector: string) => page.evaluate(async (query: string) => {
+  const canvasNode = document.querySelector<HTMLCanvasElement>(query);
+  const before = Number(canvasNode?.dataset.visualizerPainted ?? 0), times: number[] = [];
+  await new Promise<void>(resolve => {const tick = (time: number): void => {times.push(time); if (times.length < 121) requestAnimationFrame(tick); else resolve();}; requestAnimationFrame(tick);});
+  const gaps = times.slice(1).map((time, index) => time - (times[index] ?? time)).sort((a, b) => a - b);
+  return {frames: gaps.length, painted: Number(canvasNode?.dataset.visualizerPainted ?? 0) - before, medianMs: gaps[Math.floor(gaps.length / 2)] ?? 0,
+    p95Ms: gaps[Math.floor(gaps.length * 0.95)] ?? 0, longestMs: gaps.at(-1) ?? 0, over20ms: gaps.filter(gap => gap > 20).length, over50ms: gaps.filter(gap => gap > 50).length};
+}, selector);
 try {
   const context = await browser.newContext({viewport: {width: 1440, height: 1000}});
   const page = await context.newPage(); page.setDefaultTimeout(12_000);
@@ -84,7 +94,7 @@ try {
   // The choice survives a reload, per browser.
   await page.reload(); await feed(page, 'connected');
   await expect(effect).toHaveValue('bass-pulse'); await expect(canvas).toHaveAttribute('data-visualizer-effect', 'bass-pulse');
-  await liveAfterSync(page, canvas);
+  await liveAfterLoad(page, canvas);
   assert.equal(await page.evaluate(() => localStorage.getItem('bunny.music-visualizer.effect')), 'bass-pulse');
 
   // Phone widths keep the page intact, live and resting alike.
@@ -99,7 +109,8 @@ try {
   }
   await page.setViewportSize({width: 1440, height: 1000});
 
-  // The stream stops, goes stale and then a different generation arrives: resting each time, never frozen motion.
+  // The stream stops and goes stale, and a frame from a foreign generation is ignored: resting, never frozen motion.
+  // (A real generation change from live is covered by the unit tests through CaptureProjection.)
   producer.pause();
   await expect(canvas).toHaveAttribute('data-visualizer-state', 'resting');
   await panel.getByText('Resting. Measurements are stale.', {exact: true}).waitFor();
@@ -117,7 +128,7 @@ try {
   await panel.getByRole('link', {name: 'Fill window', exact: true}).click();
   await expect(page).toHaveURL(/#\/audio\/visualizer$/);
   const full = page.getByRole('region', {name: 'Music visualizer full view', exact: true}), fullCanvas = full.locator('canvas');
-  await liveAfterSync(page, fullCanvas);
+  await expect(fullCanvas).toHaveAttribute('data-visualizer-state', 'live');
   const fullBox = await fullCanvas.boundingBox(); assert.deepEqual(fullBox, {x: 0, y: 0, width: 1440, height: 1000});
   await shot('full-view-bass-pulse-1440');
   if (await page.evaluate(() => document.fullscreenEnabled)) {
@@ -127,33 +138,44 @@ try {
     await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
   }
   await page.keyboard.press('Escape'); await expect(page).toHaveURL(/#\/audio$/);
-  await panel.getByRole('link', {name: 'Fill window', exact: true}).click();
+  await expect(canvas).toHaveAttribute('data-visualizer-state', 'live');
+  await panel.getByRole('link', {name: 'Fill window', exact: true}).click(); await expect(fullCanvas).toHaveAttribute('data-visualizer-state', 'live');
   await full.getByRole('button', {name: 'Exit full view', exact: true}).click(); await expect(page).toHaveURL(/#\/audio$/);
+  await expect(canvas).toHaveAttribute('data-visualizer-state', 'live');
   assert.deepEqual(sent, ['/api/v2/commands/music-capture-control'], 'only the explicit capture Start was sent');
 
-  // A 4K window: the full view fills 3,840 x 2,160 and keeps painting every display frame it gets.
+  // A 4K window: the full view fills 3,840 x 2,160. Frame timings for both live effects are recorded beside a
+  // resting-scene and a blank-canvas baseline from the same run, so runner stalls can be told from effect cost.
+  // They are evidence, not a gate; whether the TV drops frames is the owner's installed check.
   const tv = await browser.newContext({viewport: {width: 3840, height: 2160}, deviceScaleFactor: 1});
   try {
+    const blank = await tv.newPage();
+    await blank.setContent('<body style="margin:0;background:#000"><canvas style="display:block;width:100vw;height:100vh"></canvas></body>');
+    const blankFrames = await frameTimes(blank, 'canvas'); await blank.close();
     const tvPage = await tv.newPage(); tvPage.setDefaultTimeout(12_000);
     await tvPage.goto(world.url + '/#/audio/visualizer'); await feed(tvPage, 'connected');
-    const tvCanvas = tvPage.getByRole('region', {name: 'Music visualizer full view', exact: true}).locator('canvas');
-    await liveAfterSync(tvPage, tvCanvas);
+    const tvFull = tvPage.getByRole('region', {name: 'Music visualizer full view', exact: true}), tvCanvas = tvFull.locator('canvas');
+    await liveAfterLoad(tvPage, tvCanvas);
     assert.deepEqual(await tvCanvas.evaluate(node => [(node as HTMLCanvasElement).width, (node as HTMLCanvasElement).height]), [3840, 2160]);
     assert.equal(await fits(tvPage), true);
-    const frames = await tvPage.evaluate(async () => {
-      const canvasNode = document.querySelector<HTMLCanvasElement>('.music-visualizer-full canvas');
-      const before = Number(canvasNode?.dataset.visualizerPainted ?? 0), times: number[] = [];
-      await new Promise<void>(resolve => {const tick = (time: number): void => {times.push(time); if (times.length < 121) requestAnimationFrame(tick); else resolve();}; requestAnimationFrame(tick);});
-      const gaps = times.slice(1).map((time, index) => time - (times[index] ?? time)).sort((a, b) => a - b);
-      return {frames: gaps.length, painted: Number(canvasNode?.dataset.visualizerPainted ?? 0) - before, medianMs: gaps[Math.floor(gaps.length / 2)] ?? 0,
-        p95Ms: gaps[Math.floor(gaps.length * 0.95)] ?? 0, longest: gaps.at(-1) ?? 0, over50ms: gaps.filter(gap => gap > 50).length};
-    });
-    await writeFile(join(evidence, 'full-view-3840x2160-frames.json'), JSON.stringify(frames, null, 2));
-    // Frame timings are evidence, not a gate: a loaded runner can stall long enough for the stream to expire and rest.
-    assert.ok(frames.painted > 0, `the 4K view paints the effect: ${JSON.stringify(frames)}`);
-    console.log(JSON.stringify({journey: 'music-visualizer-4k', ...frames}));
+    const selector = '.music-visualizer-full canvas', tvEffect = tvFull.getByRole('combobox', {name: 'Effect', exact: true});
+    // A separate browser context has its own storage, so it starts on the default effect.
+    await tvEffect.selectOption('bass-pulse'); await expect(tvCanvas).toHaveAttribute('data-visualizer-effect', 'bass-pulse');
+    const bassFrames = await frameTimes(tvPage, selector);
     await tvPage.screenshot({path: join(evidence, 'full-view-bass-pulse-3840x2160.png')});
+    await tvEffect.selectOption('spectrum-bars'); await expect(tvCanvas).toHaveAttribute('data-visualizer-effect', 'spectrum-bars');
+    const barsFrames = await frameTimes(tvPage, selector);
+    await tvPage.screenshot({path: join(evidence, 'full-view-spectrum-bars-3840x2160.png')});
+    producer.pause(); await expect(tvCanvas).toHaveAttribute('data-visualizer-state', 'resting');
+    const restingFrames = await frameTimes(tvPage, selector);
+    await tvPage.screenshot({path: join(evidence, 'full-view-resting-3840x2160.png')});
+    await producer.start(); await expect(tvCanvas).toHaveAttribute('data-visualizer-state', 'live');
+    const frames = {blankCanvas: blankFrames, resting: restingFrames, bassPulse: bassFrames, spectrumBars: barsFrames};
+    await writeFile(join(evidence, 'full-view-3840x2160-frames.json'), JSON.stringify(frames, null, 2));
+    assert.ok(bassFrames.painted > 0 && barsFrames.painted > 0, `the 4K view paints both effects: ${JSON.stringify(frames)}`);
+    console.log(JSON.stringify({journey: 'music-visualizer-4k', ...frames}));
   } finally {await tv.close();}
+  await expect(canvas).toHaveAttribute('data-visualizer-state', 'live');
 
   // Home: the card is in the catalog, and is added, moved, saved, reloaded and removed with the existing editor.
   await page.goto(world.url + '/#/'); await feed(page, 'connected');
@@ -177,7 +199,7 @@ try {
   const card = page.locator('[data-home-card="music-visualizer"]'), cardCanvas = card.locator('canvas');
   await expect(card).toBeVisible(); assert.deepEqual(await order(), moved, 'the saved position survives a reload');
   await expect(card.getByRole('heading', {name: 'Music visualizer', exact: true})).toBeVisible();
-  await liveAfterSync(page, cardCanvas); await expect(cardCanvas).toHaveAttribute('data-visualizer-effect', 'bass-pulse');
+  await liveAfterLoad(page, cardCanvas); await expect(cardCanvas).toHaveAttribute('data-visualizer-effect', 'bass-pulse');
   await card.getByText('Showing measured Music.', {exact: false}).waitFor(); await expect(card.getByText('Bass pulse', {exact: true})).toBeVisible();
   await card.scrollIntoViewIfNeeded(); await card.screenshot({path: join(evidence, 'home-card-bass-pulse-live-1440.png')}); await shot('home-bass-pulse-live-1440');
   const audio = await context.newPage(); audio.setDefaultTimeout(12_000); const audioSent = changes(audio);
@@ -206,7 +228,8 @@ try {
     'the visualizer added no command: only the explicit Start and the two layout saves');
   assert.deepEqual(producer.commands.map(command => command.data.action), ['start', 'stop'], 'capture work came only from the explicit Start and Stop');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({journey: 'music-visualizer', effects: ['spectrum-bars', 'bass-pulse'], resting: ['producer off', 'not running', 'stale', 'generation'], choiceSurvivesReload: true,
-    fullView: true, fullScreenApi: true, home: 'add/move/save/reload/remove', widths: [1440, 390, 320, 3840], evidence, physical: false}));
+  console.log(JSON.stringify({journey: 'music-visualizer', effects: ['spectrum-bars', 'bass-pulse'], resting: ['producer off', 'not running', 'stale', 'foreign-generation frame ignored'], choiceSurvivesReload: true,
+    fullView: 'in-page from Audio and Home, 1440 and 3840x2160', fullScreenApi: true, home: 'add/move/save/reload/remove at 1440; card at 1440 and 390',
+    audioWidths: [1440, 390, 320], clockRetries, evidence, physical: false}));
   await context.close();
 } finally {await browser.close(); await producer?.close(); await world.close();}

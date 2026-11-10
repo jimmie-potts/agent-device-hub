@@ -123,6 +123,8 @@ export class MusicCaptureFeed implements Subscription {
     this.#participant = participant; this.#now = now; this.#scheduler = scheduler; this.#onClosed = onClosed;
   }
   readonly getSnapshot = (): MusicCaptureView => this.#projection.view;
+  /** True once this scope is closed, by its last user or by the connection; it then reads nothing more. */
+  get closed(): boolean {return this.#closed;}
   readonly subscribe = (listener: () => void): (() => void) => {this.#listeners.add(listener); return () => {this.#listeners.delete(listener);};};
   async refresh(): Promise<boolean> {
     if (this.#closed) return false;

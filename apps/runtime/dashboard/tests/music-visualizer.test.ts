@@ -225,16 +225,65 @@ void test('surfaces on one page share one capture scope, so the page makes one c
   const opened: {refreshed: number; closed: number}[] = [];
   const connection = {openMusicCapture: () => {
     const record = {refreshed: 0, closed: 0}; opened.push(record);
-    return {refresh: () => {record.refreshed += 1; return Promise.resolve(true);}, close: () => {record.closed += 1; return Promise.resolve();}};
+    return {closed: false, getSnapshot: () => ({synced: true}),
+      refresh: () => {record.refreshed += 1; return Promise.resolve(true);}, close: () => {record.closed += 1; return Promise.resolve();}};
   }};
   const first = acquireMusicCapture(connection), second = acquireMusicCapture(connection);
   assert.ok(first !== undefined); assert.equal(first, second);
   assert.deepEqual(opened, [{refreshed: 1, closed: 0}], 'one scope and one sync for both surfaces');
   releaseMusicCapture(connection, first); assert.deepEqual(opened, [{refreshed: 1, closed: 0}], 'still in use');
-  releaseMusicCapture(connection, first); await Promise.resolve(); assert.deepEqual(opened, [{refreshed: 1, closed: 1}], 'the last user closes it');
+  releaseMusicCapture(connection, first); await new Promise(resolve => {setTimeout(resolve, 0);});
+  assert.deepEqual(opened, [{refreshed: 1, closed: 1}], 'the last user closes it once the page has settled');
   const reopened = acquireMusicCapture(connection); assert.notEqual(reopened, first); assert.equal(opened.length, 2, 'a later user opens a fresh scope');
   const refused = {openMusicCapture: () => {throw new Error('unavailable');}};
   assert.equal(acquireMusicCapture(refused), undefined);
+});
+
+/** A controllable fake scope: its sync stays pending until `finish`, and the connection may close it itself. */
+function fakeScopes() {
+  const scopes: {closed: boolean; synced: boolean; refreshed: number; closes: number; finish: () => void}[] = [];
+  const connection = {openMusicCapture: () => {
+    let finish = (): void => {};
+    const scope = {closed: false, synced: false, refreshed: 0, closes: 0, finish: () => {finish();},
+      getSnapshot: () => ({synced: scope.synced}),
+      refresh: () => {scope.refreshed += 1; return new Promise<boolean>(resolve => {finish = () => {scope.synced = true; resolve(true);};});},
+      close: () => {scope.closes += 1; scope.closed = true; return Promise.resolve();}};
+    scopes.push(scope); return scope;
+  }};
+  return {connection, scopes};
+}
+
+void test('a scope the connection already closed is never handed out', async () => {
+  const {connection, scopes} = fakeScopes();
+  const held = acquireMusicCapture(connection); assert.ok(held !== undefined);
+  held.closed = true; // The connection closes its music scopes itself when the feed or the core drops.
+  const next = acquireMusicCapture(connection);
+  assert.ok(next !== undefined); assert.notEqual(next, held, 'a later surface gets a fresh scope');
+  assert.equal(scopes.length, 2); assert.equal(next.refreshed, 1);
+  releaseMusicCapture(connection, held); assert.equal(next.closes, 0, 'releasing the dead scope leaves the fresh one open');
+  releaseMusicCapture(connection, next); await new Promise(resolve => {setTimeout(resolve, 0);}); assert.equal(next.closes, 1);
+});
+
+void test('in-page navigation hands the synced scope to the next surface without a new sync', async () => {
+  const {connection, scopes} = fakeScopes();
+  const panel = acquireMusicCapture(connection); assert.ok(panel !== undefined);
+  panel.finish(); await Promise.resolve(); await Promise.resolve();
+  releaseMusicCapture(connection, panel); // Audio unmounts its panel and card as the full view mounts in the same commit.
+  const full = acquireMusicCapture(connection);
+  assert.equal(full, panel); assert.equal(panel.refreshed, 1); assert.equal(panel.closes, 0);
+  await new Promise(resolve => {setTimeout(resolve, 0);});
+  assert.equal(panel.closes, 0, 'the scope is still in use'); assert.equal(scopes.length, 1);
+});
+
+void test('a later surface resyncs an unsynced shared view, but never beside a sync in flight', async () => {
+  const {connection, scopes} = fakeScopes();
+  const first = acquireMusicCapture(connection); assert.ok(first !== undefined); assert.equal(first.refreshed, 1);
+  acquireMusicCapture(connection); assert.equal(first.refreshed, 1, 'no second sync while the first is in flight');
+  first.finish(); await Promise.resolve(); await Promise.resolve();
+  acquireMusicCapture(connection); assert.equal(first.refreshed, 1, 'a synced view needs no refresh');
+  first.synced = false; // Invalidated, for example by a dropped stream.
+  acquireMusicCapture(connection); assert.equal(first.refreshed, 2, 'a later surface refreshes an unsynced view');
+  assert.equal(scopes.length, 1);
 });
 
 void test('the full view has its own address under Audio', () => {
