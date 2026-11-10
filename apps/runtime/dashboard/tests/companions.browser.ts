@@ -11,7 +11,6 @@ import {duckReplacementJourney} from './duck-replacement.ts';
 import assert from 'node:assert/strict';
 import {preferencesJourney} from './preferences.browser.ts';
 import {mkdir} from 'node:fs/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium} from 'playwright';
 import {approvalPrompt, approvalResolved, sessionStarted, turnEnded, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {feed, startWorld} from './harness.ts';
@@ -69,8 +68,6 @@ try {
   const muted = reachy.getByRole('button', {name: /^(Mute|Unmute) Coding attention$/}); await muted.click();
   await reachy.getByRole('button', {name: 'Unmute Coding attention', exact: true}).waitFor();
   await page.reload(); await feed(page, 'connected'); await tab('Controls'); assert.equal((await muted.getAttribute('aria-pressed')) === 'true', true);
-  const axe = await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-  assert.deepEqual(axe.violations.map(violation => violation.id), []);
   const output = process.env.DASHBOARD_RECEIPTS;
   if (output !== undefined) {await mkdir(output, {recursive: true}); await page.screenshot({path: `${output}/reachy-browser.png`, fullPage: true});}
   await page.setViewportSize({width: 390, height: 844});
@@ -120,7 +117,6 @@ try {
   const read = await world.assistantRead(); assert.equal(read.status, 200); assert.match(read.text, /PRIVATE-SYNTHETIC-BROWSER-ANSWER/);
   assert.equal(await world.readonlyAssistantUpload(), 403, 'the real gateway refuses reader input before staging');
   assert.equal(JSON.stringify(world.logs).includes('PRIVATE-SYNTHETIC'), false, 'diagnostics contain no transcript');
-  assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
   if (output !== undefined) await page.screenshot({path: `${output}/assistant-browser.png`, fullPage: true});
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
@@ -143,5 +139,5 @@ try {
   assert.equal(await enabled.isDisabled(), true);
   assert.deepEqual(errors, []);
   await context.close();
-  process.stdout.write('Companions browser: grounded owner-supplied coding form, no HTTP evidence writes, explicit clipboard, duplicate/superseded/changed-turn/mismatched/expired evidence, policy and disconnect fences; explicit knowledge, curated personas, current context, attributed correction/removal and additive recovery; private preference lifecycle, active-only clipboard, import/export, history, restart and accessibility; Reachy cards preserved; conversation start, approved and declined proposals by keyboard across reload, clarification with a read tool, cancellation, saved history, reader authorization, disconnection, keyboard, narrow viewport and axe passed.\n');
+  process.stdout.write('Companions browser: grounded owner-supplied coding form, no HTTP evidence writes, explicit clipboard, duplicate/superseded/changed-turn/mismatched/expired evidence, policy and disconnect fences; explicit knowledge, curated personas, current context, attributed correction/removal and additive recovery; private preference lifecycle, active-only clipboard, import/export, history and restart; Reachy cards preserved; conversation start, approved and declined proposals by keyboard across reload, clarification with a read tool, cancellation, saved history, reader authorization, disconnection, keyboard and narrow viewport passed.\n');
 } finally {await browser.close(); await world.close();}

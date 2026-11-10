@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, expect} from 'playwright/test';
-import {AxeBuilder} from '@axe-core/playwright';
 import {changes, feed, startWorld} from './harness.ts';
 import {approvalPrompt, approvalResolved} from '../../dist/tests/fixtures/agents.js';
 
@@ -158,8 +157,6 @@ try {
     assert.notEqual(await category('All').evaluate(node => getComputedStyle(node).backgroundColor), await category('Rooms').evaluate(node => getComputedStyle(node).backgroundColor), 'selected filter stays visible in each theme and viewport');
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     if (output !== undefined) await picker().screenshot({path: `${output}/home-picker-${theme}-${String(width)}.png`});
-    const labels = await new AxeBuilder({page}).withRules(['label-content-name-mismatch']).analyze();assert.deepEqual(labels.violations.map(item => item.id), []);
-    const axe = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();assert.deepEqual(axe.violations.map(item => ({id: item.id, targets: item.nodes.map(node => node.target)})), []);
     await search().fill('no-such-card-1316');await expect(picker().getByRole('status')).toHaveText('No cards found.');
     if (output !== undefined) await picker().screenshot({path: `${output}/home-picker-empty-${theme}-${String(width)}.png`});
     await picker().getByRole('button', {name: 'Reset filters', exact: true}).press('Enter');await expect(search()).toBeFocused();
@@ -183,7 +180,7 @@ try {
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   await world.observe(approvalResolved('layout-forced-focus'));
   assert.ok(sent.every(path => path.endsWith('/home-layout-set')), 'layout editing sent no device or lighting command');assert.deepEqual(errors, []);
-  assert.ok(original.length > 4);console.log(JSON.stringify({journey: 'home-layout', pickerSearch: 'name/category combined, case/space normalization, empty/reset', identifiers: 'neutral inline with no source acquisition', pickerDraftAndFocus: true, restartAndSecondBrowser: true, independentBreakpoints: true, draftNoEffects: true, attentionProtected: true, conflictGuard: true, unknownDefinitions: true, lostReplyNoReplay: true, accessibility: 'light/dark 1440/390/320', physical: false}));
+  assert.ok(original.length > 4);console.log(JSON.stringify({journey: 'home-layout', pickerSearch: 'name/category combined, case/space normalization, empty/reset', identifiers: 'neutral inline with no source acquisition', pickerDraftAndFocus: true, restartAndSecondBrowser: true, independentBreakpoints: true, draftNoEffects: true, attentionProtected: true, conflictGuard: true, unknownDefinitions: true, lostReplyNoReplay: true, physical: false}));
   await context.close();
 } finally {await browser.close();await world.close();}
 

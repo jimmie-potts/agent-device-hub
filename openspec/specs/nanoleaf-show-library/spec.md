@@ -42,9 +42,9 @@ The module SHALL expose a bounded authenticated catalog and explicit immutable v
 - **WHEN** a selected version cannot be read or fails validation
 - **THEN** the page reports it unavailable, never substitutes another version as the requested evidence and preserves stored bytes
 
-### Requirement: Explicit accessible authoring
+### Requirement: Explicit authoring
 
-The module page SHALL offer deterministic starter drafts, cue timing/effect/palette/intensity editing, explicit saves and version selection through the existing SDK frontend. Saved-state changes SHALL require current control authority and live catalog/operation evidence. Drafts SHALL remain visible after refusals or uncertain results, without automatic resend. Read-only users SHALL be able to inspect saved versions. Keyboard, small-screen and accessibility checks SHALL cover this workflow, including stale and conflict states. This covers the offline editing portion of #723 AC5.
+The module page SHALL offer deterministic starter drafts, cue timing/effect/palette/intensity editing, explicit saves and version selection through the existing SDK frontend. Saved-state changes SHALL require current control authority and live catalog/operation evidence. Drafts SHALL remain visible after refusals or uncertain results, without automatic resend. Read-only users SHALL be able to inspect saved versions. Keyboard and small-screen checks SHALL cover this workflow, including stale and conflict states. This covers the offline editing portion of #723 AC5.
 
 #### Scenario: Start and save a draft
 - **WHEN** the operator opens the page, chooses a starter and edits cues

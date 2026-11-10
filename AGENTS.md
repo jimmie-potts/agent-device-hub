@@ -112,8 +112,9 @@ Never use --admin. Read all applicable merged-revision main CI jobs before issue
 Then finish [Cleanup after delivery](docs/sdlc.md#cleanup-after-delivery), including
 in ordinary work without shared workflow skills: report each owned resource as removed
 with readback, retained with reason, owner and next action, or not applicable.
-No project UI requires human approval. Preserve applicable automated, browser
-and accessibility validation, independent reviews and CI under the
+No project UI requires human approval, and no accessibility requirement applies
+(owner decision 2026-11-10). Preserve applicable automated and browser
+validation, independent reviews and CI under the
 [UI verification policy](docs/sdlc.md#ui-approval-scope).
 
 For workflow/OpenSpec changes, use Node 24 and run npm ci for setup, then
@@ -265,11 +266,10 @@ walkthrough, make the action causing each view change visible:
   of live services or recorded user actions.
 
 In interactive walkthroughs, let clicking or typing take over and cancel pending
-demo actions. Honor reduced-motion preferences while retaining target highlights
-and step labels.
+demo actions.
 
 Before delivery, watch the full sequence and verify that the indicator matches
 the activated control, the action precedes its result and labels remain readable.
-For an interactive version, also check takeover and reduced motion. Videos that
+For an interactive version, also check takeover. Videos that
 do not demonstrate UI interactions do not need a cursor. This guidance does not
 require a preview for every change.

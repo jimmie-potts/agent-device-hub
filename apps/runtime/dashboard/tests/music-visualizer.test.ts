@@ -161,7 +161,7 @@ void test('the signal uses applied response values when the projection has them,
 });
 
 void test('each resting reason says why measurement is not shown', () => {
-  const base: MusicCaptureView = {synced: true, state: state(), features: undefined, clockQualified: true};
+  const base: MusicCaptureView = {synced: true, state: state(), features: undefined, clockQualified: true, rechecking: false};
   const idle: CaptureState = {id: 'music', revision: 1, endpointId: 'selected', availability: 'available', session: {status: 'idle'}};
   const cases: [MusicCaptureView, boolean, string][] = [
     [base, false, 'Measurement status is unavailable.'],

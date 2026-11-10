@@ -7,14 +7,14 @@ Provide reusable Pixoo controls and deliberate media selection throughout the cu
 ## Requirements
 
 ### Requirement: One display card across runtime surfaces
-The runtime SHALL reuse the module-owned Pixoo card on Home, its device page and Player. Display/Content tabs SHALL retain mounted artwork and support keyboard and reduced motion. Advanced pages SHALL remain reachable; the card SHALL expose no Activity tab or layout switch.
+The runtime SHALL reuse the module-owned Pixoo card on Home, its device page and Player. Display/Content tabs SHALL retain mounted artwork and support keyboard use. Advanced pages SHALL remain reachable; the card SHALL expose no Activity tab or layout switch.
 
 #### Scenario: Inspect the card
 - **WHEN** an operator opens a supported surface and changes tabs
 - **THEN** the artwork remains mounted, controls fit phone widths and no device command is sent
 
 ### Requirement: Bounded animated media selection
-The picker SHALL search and page through current owner media and animate only bounded visible previews. Hidden previews SHALL release owned frames. Reduced motion and pause SHALL provide still thumbnails. Selection SHALL remain distinct from explicit playback.
+The picker SHALL search and page through current owner media and animate only bounded visible previews. Hidden previews SHALL release owned frames. Pause SHALL provide still thumbnails. Selection SHALL remain distinct from explicit playback.
 
 #### Scenario: Browse without interrupting playback
 - **WHEN** the operator searches, changes pages or selects media

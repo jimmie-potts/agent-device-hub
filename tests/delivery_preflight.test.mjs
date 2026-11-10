@@ -868,7 +868,7 @@ test('review: a finding line keeps every listed axis in each state', () => {
       findings: [{ id: 'F1', severity: 'P2', axes: ['standards', 'specification'], state, aliases: [] }], problems: [],
     }, state);
   }
-  for (const state of ['accepted', 'deferred']) {
+  for (const state of ['accepted', 'deferred', 'pre-existing']) {
     const { findings, problems } = parsedFindings(findingLine('specification+standards', state, { severity: 'P3' }));
     assert.deepEqual([findings.map(item => [item.axes, item.state]), problems], [[[['specification', 'standards'], state]], []], state);
   }
@@ -890,6 +890,8 @@ test('review: malformed finding lines are unreadable', () => {
     findingLine('standards + specification', 'unresolved'),
     findingLine('Standards', 'unresolved'),
     findingLine('standards', 'open'),
+    findingLine('standards', 'preexisting'),
+    findingLine('standards', 'pre-existing-blocked'),
     findingLine('standards', 'unresolved', { id: 'F_1' }),
     findingLine('standards', 'unresolved', { id: 'F--1' }),
     findingLine('standards', 'unresolved', { aliases: '; aliases specification:S-1' }),
@@ -932,6 +934,29 @@ for (const state of ['unresolved', 'regression']) {
     assertUnresolved(await preflight(world), 'review', /^open P0-P2 findings: F1 \(P2\)$/);
   });
 }
+
+for (const severity of ['P0', 'P1', 'P2']) {
+  test(`review: a pre-existing ${severity} finding is read and leaves a satisfied round satisfied`, async () => {
+    const line = findingLine('standards', 'pre-existing', { severity })
+      .replace('breaks;', 'breaks; outside the changed code and not made reachable by it; owner the module owner, follow-up #9;');
+    assert.deepEqual(parsedFindings(line), {
+      findings: [{ id: 'F1', severity, axes: ['standards'], state: 'pre-existing', aliases: [] }], problems: [],
+    });
+    const world = cleanWorld();
+    world.comments = [comment(reviewReport({ findings: line }))];
+    const found = gate(await preflight(world), 'review');
+    assert.equal(found.status, 'satisfied', JSON.stringify(found.reasons));
+  });
+}
+
+test('review: a pre-existing finding does not hide an unresolved one beside it', async () => {
+  const world = cleanWorld();
+  world.comments = [comment(reviewReport({ findings: [
+    findingLine('standards', 'pre-existing', { severity: 'P1' }),
+    findingLine('specification', 'unresolved', { id: 'F2' }),
+  ].join('\n') }))];
+  assertUnresolved(await preflight(world), 'review', /^open P0-P2 findings: F2 \(P2\)$/);
+});
 
 function splitReport(text) {
   const [marker, ...body] = text.split('\n');

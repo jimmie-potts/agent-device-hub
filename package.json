@@ -186,7 +186,6 @@
     "test:python-types": "node --test tests/python_typecheck.test.mjs"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.13.0",
     "@eslint/js": "10.0.1",
     "@fission-ai/openspec": "1.12.0",
     "@opentelemetry/api": "1.9.1",

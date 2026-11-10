@@ -54,10 +54,10 @@ The dashboard SHALL keep analytics only in memory. Logout, loss of read access, 
 - **WHEN** a source is malformed, cleared, replaced or unavailable
 - **THEN** any retained numeric evidence remains visibly stale with its original identity and time; obsolete source text cannot return
 
-### Requirement: Compact coverage and accessible presentation
-The page SHALL display collection time/age, latest activity date, captured/retained span, archived/current row counts, missing/skipped/gap evidence, schema/algorithm versions, sharing state and dictionary/snippet numeric snapshots with unknown counter windows. Charts SHALL have table alternatives and equivalent keyboard/touch values. Views SHALL work at wide, intermediate and 390px widths with reduced motion and WCAG 2.1 AA checks.
+### Requirement: Compact coverage and presentation
+The page SHALL display collection time/age, latest activity date, captured/retained span, archived/current row counts, missing/skipped/gap evidence, schema/algorithm versions, sharing state and dictionary/snippet numeric snapshots with unknown counter windows. Charts SHALL have table alternatives and equivalent keyboard/touch values. Views SHALL work at wide, intermediate and 390px widths.
 
-#### Scenario: Accessible daily values
+#### Scenario: Daily values by keyboard or touch
 - **WHEN** the owner uses keyboard or touch at phone width
 - **THEN** every trend value is available through the table, labels remain readable and filters are operable without hover or color alone
 
@@ -67,7 +67,7 @@ The page SHALL display collection time/age, latest activity date, captured/retai
 
 ### Requirement: Reusable quiet-line Home summary
 
-The dashboard SHALL use a reusable quiet-line Wispr card with captured words and speaking minutes, a seven-date line and local day selection, Refresh and Open Wispr. Its Home adapter SHALL use the existing numeric-only acquisition and widget identity under the existing catalog exposure and layout rules. It SHALL leave the full analytics page, filters and numeric exports available. The card SHALL use shared light/dark styling and SHALL remain usable at desktop and phone widths with reduced motion. Chart values SHALL have equivalent keyboard/touch controls and a table alternative. Browsing or refreshing SHALL send no device or collector command, and SHALL introduce no polling.
+The dashboard SHALL use a reusable quiet-line Wispr card with captured words and speaking minutes, a seven-date line and local day selection, Refresh and Open Wispr. Its Home adapter SHALL use the existing numeric-only acquisition and widget identity under the existing catalog exposure and layout rules. It SHALL leave the full analytics page, filters and numeric exports available. The card SHALL use shared light/dark styling and SHALL remain usable at desktop and phone widths. Chart values SHALL have equivalent keyboard/touch controls and a table alternative. Browsing or refreshing SHALL send no device or collector command, and SHALL introduce no polling.
 
 #### Scenario: Inspect a missing day
 - **WHEN** an exposed Home card receives a partial seven-day numeric snapshot and the owner selects an absent date

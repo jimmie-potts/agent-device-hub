@@ -206,7 +206,7 @@ The browser SHALL show the shared private catalog through authenticated bounded 
 - **THEN** the browser shows that provider's remaining, reserved and uncertain amounts and the job's stated reason, preserves existing art and sends no automatic retry
 
 ### Requirement: Complete rich browser art before presentation
-The browser SHALL use the artwork's rich UI rendition, preserve its proportions and identify it as generated art with its supplied provenance. It SHALL validate content metadata and finish decoding all required image data before replacing the current presentation or reporting completion. Missing, malformed, refused or failed content SHALL produce an explicit unavailable state. Disconnect or incomplete sync SHALL preserve readable prior evidence marked stale. Reduced motion SHALL have a still presentation, and obsolete image loads SHALL NOT replace newer choices.
+The browser SHALL use the artwork's rich UI rendition, preserve its proportions and identify it as generated art with its supplied provenance. It SHALL validate content metadata and finish decoding all required image data before replacing the current presentation or reporting completion. Missing, malformed, refused or failed content SHALL produce an explicit unavailable state. Disconnect or incomplete sync SHALL preserve readable prior evidence marked stale. Obsolete image loads SHALL NOT replace newer choices.
 
 #### Scenario: A late response loses its selection
 - **WHEN** the owner selects B while A is still loading and A finishes last

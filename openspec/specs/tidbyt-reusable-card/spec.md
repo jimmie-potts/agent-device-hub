@@ -28,10 +28,10 @@ The card SHALL label existing owner availability as the selected backend's avail
 
 ### Requirement: Inspection is accessible and causes no command
 
-Read-only and control-authorized callers SHALL be able to inspect the card. Tabs SHALL support arrow, Home and End keys, narrow screens and reduced motion. Mounting, navigation, retry and reconnect SHALL issue no command, polling or second connection. Brightness, power, tile selection and push/removal controls SHALL be absent. This satisfies AC3.
+Read-only and control-authorized callers SHALL be able to inspect the card. Tabs SHALL support arrow, Home and End keys and narrow screens. Mounting, navigation, retry and reconnect SHALL issue no command, polling or second connection. Brightness, power, tile selection and push/removal controls SHALL be absent. This satisfies AC3.
 
 #### Scenario: Read-only interaction
-- **WHEN** a read-scoped owner navigates all surfaces and uses the tabs on a 390px screen with reduced motion
+- **WHEN** a read-scoped owner navigates all surfaces and uses the tabs on a 390px screen
 - **THEN** information remains readable and accessible, the artwork remains visible and no device command is attempted
 
 ### Requirement: Owner sync has a bounded page lifetime

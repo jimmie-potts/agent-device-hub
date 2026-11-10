@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
-import AxeBuilder from '@axe-core/playwright';
 import {mkdir,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -44,7 +43,6 @@ try {
  // A full-page capture taken while scrolled would draw the off-screen skip link mid-page, so capture from the top.
  // Every captured view is also checked for overlapping text.
  const capture=async(page,name)=>{assert.deepEqual(await textOverlaps(page),[],name+': no text overlaps');await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:join(output,name),fullPage:true});};
- const axe=async page=>{const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target.join(' '))})),[]);};
 
  const none='No general controls or moments: this controller declares no power, brightness, media, scenes or moments.';
  // Tidbyt: status only; one line instead of four disabled forms, and no editor or integration settings.
@@ -54,7 +52,7 @@ try {
  await section(page).getByText(none,{exact:true}).waitFor();
  assert.equal(await section(page).getByRole('button',{name:/^Apply|^Start|^Activate/}).count(),0,'Tidbyt shows no dead forms');
  assert.equal(await section(page).getByText(/Advanced editor|Settings unavailable|Rendition selection/).count(),0);
- await axe(page);await capture(page,'tidbyt-desktop.png');
+ await capture(page,'tidbyt-desktop.png');
 
  // LIFX: the page's first read queues one bulb read; the next refresh shows the bulb is off, and Power starts there.
  await page.getByRole('link',{name:'desk lifx',exact:true}).click();
@@ -70,7 +68,7 @@ try {
  assert.equal(await section(page).getByLabel('Brightness (%)').isDisabled(),false);
  assert.equal(await section(page).getByText(/Advanced editor|Settings unavailable|Rendition selection/).count(),0);
  assert.deepEqual([await kelvin.getAttribute('min'),await kelvin.getAttribute('max')],['1500','9000']);
- await axe(page);await capture(page,'lifx-desktop.png');
+ await capture(page,'lifx-desktop.png');
 
  // Turn on from the observed Off sends one power command.
  const colors=(on,name)=>section(on).getByRole('button',{name,exact:true}).evaluate(el=>{const c=getComputedStyle(el);return [el.matches(':disabled'),c.backgroundColor,c.color,c.opacity];});
@@ -115,7 +113,7 @@ try {
  assert.equal(await kelvin.isDisabled(),true);
  assert.equal(await powerGroup.getByRole('button',{name:'Turn off',exact:true}).isDisabled(),false,'power stays mode-independent');
  assert.equal(await section(page).getByLabel('Brightness (%)').isDisabled(),false,'brightness stays mode-independent');
- await axe(page);await capture(page,'lifx-mode-work.png');
+ await capture(page,'lifx-mode-work.png');
  // The one-click Switch to Free re-enables color and temperature; the button itself disappears once Free is observed.
  await section(page).getByRole('button',{name:'Switch to Free',exact:true}).click();
  await section(page).getByRole('button',{name:'Switch to Free',exact:true}).waitFor({state:'detached'});
@@ -134,7 +132,7 @@ try {
  await page.getByRole('link',{name:'lamp lifx',exact:true}).click();
  const lampPower=section(page).getByRole('group',{name:'Power',exact:true});await lampPower.getByText(/Current power is unknown/).waitFor();
  assert.deepEqual(await lampPower.getByRole('button').allTextContents(),['Turn on','Turn off'],'an unknown state offers both choices and never a guessed value');
- await axe(page);await capture(page,'lifx-unknown-power.png');
+ await capture(page,'lifx-unknown-power.png');
  await lampPower.getByRole('button',{name:'Turn on',exact:true}).click();
  await new Promise(resolve=>{const wait=()=>control.posts.some(p=>p.path==='/api/controllers/v1/lamp/commands')?resolve():setTimeout(wait,25);wait();});
  assert.deepEqual(control.posts.filter(p=>p.path==='/api/controllers/v1/lamp/commands').map(p=>p.body.command),[{kind:'power.set',on:true}]);

@@ -1,7 +1,6 @@
 import {openConnections} from './navigation-helpers.ts';
 // One focused confirmed Connections journey against the built synthetic runtime; no installed services or devices.
 import assert from 'node:assert/strict';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
 import {sessionStarted, turnStarted, turnEnded} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
@@ -31,8 +30,6 @@ try {
     await confirm.press('Escape');
     assert.equal(await clear.evaluate(button => button === document.activeElement), true);
     await clear.click();
-    const axe = (await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations;
-    assert.deepEqual(axe.map(item => item.id), []);
     await confirm.press('Enter');
     await page.getByText('Accepted. Completion and acknowledgments are shown separately.', {exact: true}).waitFor();
     await page.getByText('Completion: completed.', {exact: true}).waitFor();
@@ -66,6 +63,6 @@ try {
     await page.getByText('Read-only connection. Operator controls require control authority.', {exact: true}).waitFor();
     assert.equal(await clear.isDisabled(), true); assert.equal(clears(), 2);
     assert.deepEqual(errors, []);
-    process.stdout.write(`${JSON.stringify({passed: true, checks: ['confirmed notice override, synced acknowledgments, passive row, keyboard/axe, no replay and read-only refusal'], clearRequests: clears()})}\n`);
+    process.stdout.write(`${JSON.stringify({passed: true, checks: ['confirmed notice override, synced acknowledgments, passive row, keyboard, no replay and read-only refusal'], clearRequests: clears()})}\n`);
   } finally {await context.close();}
 } finally {try {await browser?.close();} finally {await world.close();}}

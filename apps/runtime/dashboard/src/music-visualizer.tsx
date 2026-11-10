@@ -19,7 +19,7 @@ const effectChoice = new EffectChoiceStore(() => window.localStorage);
 try {window.addEventListener('storage', event => {effectChoice.storageChanged(event.key, event.newValue);});} catch {/* No cross-tab follow. */}
 const useEffectChoice = (): VisualizerEffect => effectById(useSyncExternalStore(effectChoice.subscribe, effectChoice.getSnapshot, effectChoice.getSnapshot));
 
-const empty: MusicCaptureView = {synced: false, state: undefined, features: undefined, clockQualified: false};
+const empty: MusicCaptureView = {synced: false, state: undefined, features: undefined, clockQualified: false, rechecking: false};
 const emptySubscribe = (): (() => void) => () => {};
 const emptySnapshot = (): MusicCaptureView => empty;
 /** The page's shared read-only capture scope; opening it neither starts capture nor opens an endpoint. */

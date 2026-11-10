@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
-import AxeBuilder from '@axe-core/playwright';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {fixture} from './fixture.mjs';
 import {isolateWallReads,independentWallRead,deviceReads} from './isolation.mjs';
@@ -16,7 +15,6 @@ async function scenario(name,run,options,prepare){if(process.env.DASHBOARD_SCENA
 async function until(condition){const deadline=Date.now()+10000;while(!condition()){if(Date.now()>deadline)throw new Error('condition-timeout');await new Promise(r=>setTimeout(r,25));}}
 const form=(page,heading)=>page.locator('form.edit').filter({visible:true}).filter({has:page.getByRole('heading',{name:heading,exact:true})});
 const statusOf=(page,heading)=>form(page,heading).locator(':scope>[role=status]');
-async function axe(page){const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>`${n.target.join(' ')}: ${n.failureSummary}`)})),[]);}
 try {
  for(const known of [true,false])await scenario(`running Hub build ${known?'known and copyable':'unknown for older context'}`,async(f,page)=>{
   await page.getByRole('link',{name:'Connections',exact:true}).click();
@@ -34,9 +32,8 @@ try {
    assert.equal(await build.getByText('Unknown',{exact:true}).count(),2);
    assert.equal(await build.getByRole('button',{name:'Copy full revision',exact:true}).count(),0);
   }
-  await axe(page);
   if(process.env.DASHBOARD_RECEIPTS){await mkdir(process.env.DASHBOARD_RECEIPTS,{recursive:true});await page.screenshot({path:`${process.env.DASHBOARD_RECEIPTS}/connections-build-${known?'known':'unknown'}-desktop.png`,fullPage:true});}
-  await page.setViewportSize({width:390,height:844});await axe(page);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   if(process.env.DASHBOARD_RECEIPTS)await page.screenshot({path:`${process.env.DASHBOARD_RECEIPTS}/connections-build-${known?'known':'unknown'}-mobile.png`,fullPage:true});
   if(known){
    await page.evaluate(()=>Object.defineProperty(navigator.clipboard,'writeText',{value:async()=>{throw new Error('denied');}}));
@@ -48,12 +45,12 @@ try {
   f.reconnect({scopes:['read']});
   await page.route('**/api/dashboard/v1/context',async route=>{const response=await route.fetch(),body=await response.json();if(known)body.build={version:'0.4.1',sourceRevision:'0123456789abcdef0123456789abcdef01234567'};else delete body.build;await route.fulfill({response,json:body});});
  });
- await scenario('empty sessions retain useful controls; keyboard and all view accessibility',async(f,page)=>{
+ await scenario('empty sessions retain useful controls; keyboard across all views',async(f,page)=>{
   await page.getByRole('heading',{name:'No sessions observed',exact:true}).waitFor();
-  const wall=page.getByRole('link',{name:'wall nanoleaf',exact:true});await wall.focus();await page.keyboard.press('Enter');await page.getByLabel('Device mode').first().waitFor();assert.equal(await visible(page,'button','Switch to Free').isDisabled(),false,'Nanoleaf general controls need no observed session');await axe(page);
+  const wall=page.getByRole('link',{name:'wall nanoleaf',exact:true});await wall.focus();await page.keyboard.press('Enter');await page.getByLabel('Device mode').first().waitFor();assert.equal(await visible(page,'button','Switch to Free').isDisabled(),false,'Nanoleaf general controls need no observed session');
   await page.getByLabel('Device mode').first().focus();await page.keyboard.press('ArrowDown');await page.locator('section:visible [role=status]').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).first().waitFor();
-  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Monitor provider').waitFor();await page.getByLabel('Brightness (%)').filter({visible:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Pause',exact:true}).filter({visible:true}).isDisabled(),false,'general controls need no observed session');assert.deepEqual(await page.locator('section:visible').getByText('Unavailable:',{exact:false}).allTextContents(),[],'every declared Pixoo control is available');await page.locator('section:visible').getByText('Not declared by this controller: scenes and moments.',{exact:true}).waitFor();assert.equal(await page.getByRole('combobox',{name:'Saved scene',exact:true}).filter({visible:true}).count(),0,'the undeclared scene capability has no form');await axe(page);await page.setViewportSize({width:390,height:844});await axe(page);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-  await page.getByRole('link',{name:'Connections',exact:true}).click();await axe(page);
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Monitor provider').waitFor();await page.getByLabel('Brightness (%)').filter({visible:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Pause',exact:true}).filter({visible:true}).isDisabled(),false,'general controls need no observed session');assert.deepEqual(await page.locator('section:visible').getByText('Unavailable:',{exact:false}).allTextContents(),[],'every declared Pixoo control is available');await page.locator('section:visible').getByText('Not declared by this controller: scenes and moments.',{exact:true}).waitFor();assert.equal(await page.getByRole('combobox',{name:'Saved scene',exact:true}).filter({visible:true}).count(),0,'the undeclared scene capability has no form');await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.getByRole('link',{name:'Connections',exact:true}).click();
  },{empty:true});
  for(const order of ['wall-drained','wall-parked-first','pixel-first'])await scenario(`slow device serializes explicit commands while another device remains responsive (${order})`,async(f,page)=>{
   await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const mode=page.getByLabel('Device mode').filter({visible:true});await mode.waitFor();f.setDelay(800);await f.wallReads.arm(order);
@@ -101,7 +98,6 @@ try {
   // Keyboard: the applied brightness form is ready without a discard step; the range input and the apply button submit one command.
   assert.equal(await brightness.inputValue(),'30');
   await brightness.focus();await page.keyboard.press('ArrowDown');await until(()=>f.writes.length===7);assert.deepEqual(general(f).at(-1).command,{kind:'brightness.set',percent:29});
-  await axe(page);
  });
  await scenario('Monitor disables playlist and playback controls with the reason and a one-click explicit switch to Media',async(f,page)=>{
   f.pixoo.configuration.mode='monitor';await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();
@@ -134,9 +130,9 @@ try {
   f.states.pixel.state.desired.brightness={status:'unknown'};
   await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Brightness (%)').filter({visible:true}).waitFor();
   await page.locator('section:visible').getByText('Current brightness is unknown; the slider starts at a placeholder, not an observed value.',{exact:false}).waitFor();assert.equal(await page.getByLabel('Brightness (%)').filter({visible:true}).inputValue(),'50');
-  assert.ok(await page.locator('section:visible').getByText('Unavailable: Your credential is read-only',{exact:true}).count()>=4,'power, brightness, media and mode name the missing scope');assert.equal(await visible(page,'button','Pause').isDisabled(),true);assert.equal(await page.getByLabel('Brightness (%)').filter({visible:true}).isDisabled(),true);await axe(page);
+  assert.ok(await page.locator('section:visible').getByText('Unavailable: Your credential is read-only',{exact:true}).count()>=4,'power, brightness, media and mode name the missing scope');assert.equal(await visible(page,'button','Pause').isDisabled(),true);assert.equal(await page.getByLabel('Brightness (%)').filter({visible:true}).isDisabled(),true);
   await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.locator('section:visible').getByText('Not declared by this controller: media and moments.',{exact:true}).waitFor();assert.ok(await page.locator('section:visible').getByText('Unavailable: Your credential is read-only',{exact:true}).count()>=4,'Nanoleaf power, brightness, scenes and mode name the missing scope');assert.equal(await page.getByLabel('Saved scene').filter({visible:true}).isDisabled(),true);assert.equal(await visible(page,'button','Switch to Free').isDisabled(),true,'a read-only credential sees the switch disabled with its reason');await page.locator('section:visible').getByText('No brightness override is active',{exact:false}).waitFor();
-  await page.setViewportSize({width:390,height:844});await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'narrow layout has no horizontal overflow');await axe(page);
+  await page.setViewportSize({width:390,height:844});await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'narrow layout has no horizontal overflow');
   assert.equal(f.writes.length,0);
  },{empty:true});
  // Hub #153: Nanoleaf general controls on the declaration of Nanoleaf main 8062849 (#64).
@@ -168,7 +164,7 @@ try {
   await brightness.focus();await brightness.fill('35');await until(()=>wallGeneral(f).length===5);await settled(page,'Brightness 35%');await page.waitForFunction(()=>document.activeElement?.matches('input[type=range]'));assert.ok(await brightness.evaluate(el=>el===document.activeElement),'an applied form returns keyboard focus to its slider');
   const mode=page.getByLabel('Device mode').filter({visible:true});await mode.selectOption('Work');await until(()=>wallGeneral(f).length===6);assert.deepEqual(wallGeneral(f).at(-1).command,{kind:'mode.set',mode:'Work'});
   await page.locator('section:visible').getByText('Unavailable: Nanoleaf is in Work and presents agent status; scene activation needs Free',{exact:true}).waitFor();assert.equal(await scene.isDisabled(),true);assert.deepEqual(f.scenes.activated,[f.sceneB]);
-  await axe(page);await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await axe(page);
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  });
  // Hub #277, owner decision: no Apply button. A dragged slider sends once on release, a keyboard step through a select sends once, Enter submits a text field, an invalid field is not sent, and a color picker sends when it closes.
  await scenario('gestures send once: a dragged slider on release, keyboard steps on a select after a pause, Enter and blur on valid text fields, and a picker on close',async(f,page)=>{
@@ -201,7 +197,6 @@ try {
   await page.waitForTimeout(500);assert.equal(nanoWrites(),colorBefore,'picking sends nothing until the picker closes');
   await color.evaluate(el=>el.dispatchEvent(new Event('change',{bubbles:true})));await until(()=>nanoWrites()===colorBefore+1);
   assert.deepEqual(f.writes.filter(w=>w.id==='wall'&&w.integration).at(-1).command.command,{kind:'project.color',projectId:f.nano.projects[0].id,color:'#224466'});
-  await axe(page);
  });
  // Hub #277: a home widget renders the same control as the component page, sharing its guards, wording, running state and locks.
  await scenario('home quick actions send guarded commands, share their lifecycle with the component page, and the home keeps drafts across navigation',async(f,page)=>{
@@ -241,7 +236,6 @@ try {
   await page.locator('a.skip').focus();await page.keyboard.press('Enter');
   assert.equal(await page.evaluate(()=>document.activeElement?.id),'main','the skip link moves focus to the main column');assert.equal(new URL(page.url()).hash,'#/','the skip link changes no route');
   await page.getByRole('heading',{name:'Home',exact:true}).filter({visible:true}).waitFor();
-  await axe(page);
  });
  await scenario('a read-only Nanoleaf device shows mode, power, brightness and scenes without configuration edit forms',async(f,page)=>{
   await page.getByRole('link',{name:'panels nanoleaf',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
@@ -262,7 +256,7 @@ try {
   assert.deepEqual(panels()[1].command,{apiVersion:'1.0',controllerId:'wall-controller',deviceId:'panels',...expected,command:{kind:'brightness.set',percent:30}});
   await settled(page,'Brightness 30%');assert.equal(f.writes.filter(w=>w.integration).length,0,'a read-only device receives no extension command');assert.equal(f.writes.filter(w=>w.id==='wall').length,0,'the Lines receive nothing');
   if(process.env.DASHBOARD_RECEIPTS)await page.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/panels-read-only.png',fullPage:true});
-  await axe(page);await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(await textOverlaps(page),[]);await axe(page);
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(await textOverlaps(page),[]);
   if(process.env.DASHBOARD_RECEIPTS)await page.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/panels-read-only-mobile.png',fullPage:true});
   // The Lines keep every configuration edit alongside the Panels.
   await page.setViewportSize({width:1280,height:900});await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Layout style').filter({visible:true}).waitFor();
@@ -327,7 +321,6 @@ try {
   f.setUncertain(true);await brightness.fill('25');await statusOf(page,'Brightness').filter({hasText:'Result unknown: this may have reached the device (uncertain-result). Check the device, then reload current values before trying again.'}).waitFor();
   const submitted=f.writes.length;await page.waitForTimeout(5500);assert.equal(f.writes.length,submitted,'an uncertain change is not retried');assert.equal(await brightness.isDisabled(),true,'uncertain results keep the lock');assert.ok(await form(page,'Brightness').getByRole('button',{name:'Reload current values',exact:true}).evaluate(el=>el===document.activeElement),'a locked form keeps keyboard focus on its enabled reload button');f.setUncertain(false);
   await form(page,'Brightness').getByRole('button',{name:'Reload current values',exact:true}).click();await page.waitForFunction(()=>{const input=Array.from(document.querySelectorAll('input[type=range]')).find(el=>el.offsetParent);return input&&!input.disabled;});assert.equal(await brightness.inputValue(),'20','reload shows the controller\'s current desired value; the lost command never reached it');
-  await axe(page);
  });
  await scenario('Reapply Work ends a Nanoleaf override with one mode command; nothing to reapply is shown as already in effect',async(f,page)=>{
   await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
@@ -340,14 +333,14 @@ try {
   await page.getByRole('button',{name:'Reapply Work',exact:true,disabled:false}).filter({visible:true}).waitFor();
   f.states.wall.state.pending=[{requestId:structuredClone(f.states.wall.nextRequestId),command:{kind:'mode.set',mode:'Free'},generation:structuredClone(f.states.wall.generation)}];
   await page.locator('section:visible').getByText('Unavailable: a mode change is pending.',{exact:false}).waitFor();assert.equal(await reapply.isDisabled(),true);f.states.wall.state.pending=[];
-  await axe(page);await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await axe(page);
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  });
  await scenario('Start Monitor starts an inactive Pixoo Monitor with one mode command and names the screen-off reason',async(f,page)=>{
   f.pixoo.configuration.mode='monitor';f.pixoo.participating=false;f.states.pixel.state.desired.power={status:'known',value:false};
   await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const start=visible(page,'button','Start Monitor');await start.waitFor();
   // An initial device read can still carry the power state from before the fixture mutation.
   await page.locator('section:visible').getByText('Unavailable: The screen is off. Turn it on first; Monitor shows only while the screen is on.',{exact:false}).waitFor();assert.equal(await start.isDisabled(),true);
-  f.states.pixel.state.desired.power={status:'known',value:true};await page.getByRole('button',{name:'Start Monitor',exact:true,disabled:false}).filter({visible:true}).waitFor();await axe(page);
+  f.states.pixel.state.desired.power={status:'known',value:true};await page.getByRole('button',{name:'Start Monitor',exact:true,disabled:false}).filter({visible:true}).waitFor();
   const revision=f.pixoo.configurationRevision,generation=f.pixoo.generation;await start.click();await until(()=>f.writes.length===1);
   assert.equal(f.writes[0].integration,true);assert.deepEqual(f.writes[0].command.action,{operation:'mode',mode:'monitor'});assert.equal(f.writes[0].command.expectedConfigurationRevision,revision);assert.equal(f.writes[0].command.expectedGeneration,generation);
   await page.locator('section:visible [role=status]').filter({hasText:'Start Monitor: Saved. B.U.N.N.Y. can’t see the device, so check it to confirm.'}).waitFor();await page.getByText('Participation: yes',{exact:false}).waitFor();
@@ -365,7 +358,7 @@ try {
   f.setUncertain(true);await visible(page,'button','Start Monitor').click();await page.locator('section:visible [role=status]').filter({hasText:'Start Monitor: Result unknown'}).waitFor();f.setUncertain(false);f.pixoo.participating=true;
   await page.getByText('Participation: yes',{exact:false}).waitFor();await form(page,'Mode').getByRole('button',{name:'Reload current values',exact:true}).click();
   await form(page,'Mode').locator('.switch').waitFor({state:'detached'});assert.equal(f.writes.length,4,'nothing was retried');assert.equal(general(f).length,0,'no media or other command is sent across Start Monitor, the view edits and the uncertain retry check');
-  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await axe(page);
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  });
  await scenario('forms and actions share one lifecycle: a failed fresh read sends nothing, a failed refresh keeps the result, and a double activation sends once',async(f,page)=>{
   await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await visible(page,'button','Pause').waitFor();
@@ -394,7 +387,7 @@ try {
   // A double activation of one action is one deliberate command.
   await enabled('Next').waitFor();before=f.writes.length;await visible(page,'button','Next').dblclick();await until(()=>f.writes.length>before);await page.waitForTimeout(1000);
   assert.equal(f.writes.length,before+1,'a double click sends one command');assert.deepEqual(general(f).at(-1).command,{kind:'media.control',action:'next'});
-  await enabled('Next').waitFor();await axe(page);
+  await enabled('Next').waitFor();
  });
  await scenario('now playing shows the source text and only declared, permitted controls',async(f,page)=>{
   const section=page.locator('section:visible'),status=section.locator('[role=status]').last();
@@ -404,7 +397,7 @@ try {
   await section.getByRole('heading',{name:'Song',exact:true}).waitFor();
   assert.deepEqual([await fact('Artist'),await fact('Album'),await fact('Status'),await fact('Source')],['Artist','Album','Playing','ht-a9']);
   assert.deepEqual(await buttons(),['Pause','Next','Previous'],'only declared controls appear; Play is not declared');
-  await section.getByText('Not offered by this source: Play.',{exact:true}).waitFor();await axe(page);
+  await section.getByText('Not offered by this source: Play.',{exact:true}).waitFor();
   await section.getByRole('button',{name:'Next',exact:true}).click();await status.filter({hasText:'Next: Sent to the device.'}).waitFor();
   assert.deepEqual(f.sony.calls,['setPlayNextContent']);
   // The owner's live check: next and previous work while paused, but the receiver may keep the old title.
@@ -425,7 +418,7 @@ try {
   f.sony.reads='down';f.sony.skew=6000;await section.getByText('Unavailable: The source’s last read is stale; controls return when it answers again',{exact:true}).waitFor();
   assert.deepEqual(await buttons(),[]);assert.equal(await fact('Availability'),'Stale');
   f.sony.skew=31000;await section.getByRole('heading',{name:'No track information',exact:true}).waitFor();
-  await section.getByText('Unavailable: The source is unavailable',{exact:true}).waitFor();assert.equal(await fact('Title'),'Not reported');await axe(page);
+  await section.getByText('Unavailable: The source is unavailable',{exact:true}).waitFor();assert.equal(await fact('Title'),'Not reported');
   // Without the source grant the view disappears and polling stops.
   f.reconnect({granted:['wall','pixel']});await page.getByRole('link',{name:'ht-a9 now playing',exact:true}).waitFor({state:'detached',timeout:8000});
   let reads=0;page.on('request',r=>{if(r.url().includes('/api/playback/'))reads++;});await page.waitForTimeout(2500);assert.equal(reads,0,'no playback reads without the grant');

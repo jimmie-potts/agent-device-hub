@@ -14,9 +14,9 @@ The runtime SHALL serve the B.U.N.N.Y. dashboard (`apps/runtime/dashboard`), cop
 - **WHEN** a signed-in page opens Settings, follows the Connections link, goes back, and opens an address that names no page
 - **THEN** each page has its hash address, back returns to the preceding page, the unknown address shows that nothing is there with a link home, and nothing is sent
 
-#### Scenario: Accessible pages
-- **WHEN** the home and new shell destinations are checked at desktop and 320/390px widths in light/dark appearance and with reduced motion
-- **THEN** the changed pages have no WCAG 2.1 A or AA violations, text and controls fit without horizontal overflow, and keyboard focus remains visible
+#### Scenario: Responsive pages
+- **WHEN** the home and new shell destinations are checked at desktop and 320/390px widths in light/dark appearance
+- **THEN** text and controls fit without horizontal overflow and keyboard focus remains visible
 
 #### Scenario: Fixed attention colors
 - **WHEN** a session needs approval or input, or reports a continuing question
@@ -103,7 +103,7 @@ The Places navigation SHALL link a Local place only to the runtime's place link 
 
 ### Requirement: Session row label controls
 
-The dashboard SHALL let a person set or clear a session's explicit label from its row using the current synced session revision. It SHALL show requested command, accepted reply and confirmed record evidence separately; an accepted transport answer alone SHALL NOT confirm a label. A conflict SHALL retain the draft and require a refreshed explicit attempt with a new request identity. Stale or disconnected rows SHALL disable submission. Reload and reconnect SHALL show durable labels without resending a command. Ending or replacing a session SHALL retire its editor. Controls SHALL support keyboard use and the dashboard's accessibility checks.
+The dashboard SHALL let a person set or clear a session's explicit label from its row using the current synced session revision. It SHALL show requested command, accepted reply and confirmed record evidence separately; an accepted transport answer alone SHALL NOT confirm a label. A conflict SHALL retain the draft and require a refreshed explicit attempt with a new request identity. Stale or disconnected rows SHALL disable submission. Reload and reconnect SHALL show durable labels without resending a command. Ending or replacing a session SHALL retire its editor. Controls SHALL support keyboard use.
 
 #### Scenario: Label and clear from the row
 - **WHEN** a person saves a label and then clears it from a current session row
@@ -113,9 +113,9 @@ The dashboard SHALL let a person set or clear a session's explicit label from it
 - **WHEN** the row changes while its label draft is open or the stream is lost during submission
 - **THEN** the draft remains available, stale submission is disabled, and resync does not resend; a conflict requires a new explicit attempt
 
-#### Scenario: Reload and accessibility
+#### Scenario: Reload and keyboard
 - **WHEN** the person reloads after a confirmed label or uses the row controls with a keyboard
-- **THEN** the durable label is displayed without another command, the controls remain usable and the page passes its browser accessibility checks
+- **THEN** the durable label is displayed without another command and the controls remain usable
 
 ### Requirement: General controls from named runtime owners
 The dashboard SHALL sync device records from each declared owner and operations from the core through its existing SDK participant. It SHALL show desired state, observed state, pending counts/kinds, held state and last successful transmission separately, and keep copies stale until replacement sync completes. It SHALL restore the existing capability-gated general controls and playback view, with no writes for read-only callers. It SHALL take the Pixoo's mode and base from the device's advertised Hub mode and `pixoo-display/2.1`, with no Monitor/Media mapping of its own.
@@ -194,15 +194,15 @@ Connections SHALL offer an Operator tools override labeled `Clear this notice on
 
 #### Scenario: Keyboard and recovery
 - **WHEN** the operator uses the keyboard to confirm or cancel, or reconnects/reloads after a lost reply
-- **THEN** focus and accessible status remain usable, and recovery sends no command
+- **THEN** focus and status remain usable, and recovery sends no command
 
 ### Requirement: Explicit mode selection with separate outcomes
 
-The mode controls SHALL require a current synced selection, a live connection and control authority. Selecting a mode SHALL send once with a new request ID and the current selection revision. A reply SHALL NOT prove device success. The concise panel SHALL keep individual device results in shared Inbox and Timeline evidence, with a corner link for issues. Missing or unsynced evidence SHALL NOT establish device success or resolution. Reload, refresh and reconnect SHALL send nothing. Keyboard access and the changed control's accessibility SHALL be verified.
+The mode controls SHALL require a current synced selection, a live connection and control authority. Selecting a mode SHALL send once with a new request ID and the current selection revision. A reply SHALL NOT prove device success. The concise panel SHALL keep individual device results in shared Inbox and Timeline evidence, with a corner link for issues. Missing or unsynced evidence SHALL NOT establish device success or resolution. Reload, refresh and reconnect SHALL send nothing. Keyboard access SHALL be verified.
 
 #### Scenario: Select and reload
 - **WHEN** an operator selects Work using the keyboard and reloads after one device succeeds and another fails
-- **THEN** Work remains the saved choice, the failed device remains reviewable through Inbox and independent results remain available in Timeline, reload sends nothing and the changed control has no applicable accessibility violations
+- **THEN** Work remains the saved choice, the failed device remains reviewable through Inbox and independent results remain available in Timeline and reload sends nothing
 
 #### Scenario: Read-only view
 - **WHEN** a read-only connection opens the panel
@@ -210,7 +210,7 @@ The mode controls SHALL require a current synced selection, a live connection an
 
 ### Requirement: Optional artwork on the existing playback card
 
-The runtime dashboard SHALL use its existing shared Home, Audio and assigned Rooms playback card, also retained on Music deep links, to show optional artwork from the current declared playback owner through authenticated same-origin module content. Only live, synced, available, known playing or paused ready observations from an unambiguous running owner SHALL load an image. The image SHALL be bounded and contained in a stable square above readable title, artist, album and supported controls. Loading, missing, malformed or failed artwork SHALL retain text and existing control authority and operation evidence. The image SHALL be decorative to assistive technology and SHALL add no keyboard stop. Existing role tokens, narrow layout, keyboard focus and accessibility SHALL be preserved. The browser SHALL use no receiver URL, inline image bytes, executable image content or additional acquisition path, and SHALL preserve the current image content security policy.
+The runtime dashboard SHALL use its existing shared Home, Audio and assigned Rooms playback card, also retained on Music deep links, to show optional artwork from the current declared playback owner through authenticated same-origin module content. Only live, synced, available, known playing or paused ready observations from an unambiguous running owner SHALL load an image. The image SHALL be bounded and contained in a stable square above readable title, artist, album and supported controls. Loading, missing, malformed or failed artwork SHALL retain text and existing control authority and operation evidence. The image SHALL add no keyboard stop. Existing role tokens, narrow layout and keyboard focus SHALL be preserved. The browser SHALL use no receiver URL, inline image bytes, executable image content or additional acquisition path, and SHALL preserve the current image content security policy.
 
 #### Scenario: Home and Music share current artwork
 - **WHEN** an authorized browser visits Home and Music for the current ready observation
@@ -301,7 +301,7 @@ Devices SHALL group available brand, display, Audio, component and declared modu
 - **THEN** the card retains its existing lock and explicit refresh behavior and sends no replay
 
 ### Requirement: Reusable concise Wemo card
-The dashboard SHALL reuse one Wemo presentation on Home and existing Wemo device routes. Its primary illustration SHALL represent the connected desk lamp with a smaller Wemo plug. Power and Auto-off tabs SHALL retain artwork position and card dimensions at desktop and phone widths. Switching tabs SHALL preserve drafts, send nothing and make inactive controls unavailable to keyboard and accessibility interaction; reduced-motion appearance SHALL remove the flip animation.
+The dashboard SHALL reuse one Wemo presentation on Home and existing Wemo device routes. Its primary illustration SHALL represent the connected desk lamp with a smaller Wemo plug. Power and Auto-off tabs SHALL retain artwork position and card dimensions at desktop and phone widths. Switching tabs SHALL preserve drafts, send nothing and make inactive controls unavailable to keyboard interaction.
 
 Routine controls SHALL omit repeated On/Off observation text, reported-by-plug wording, Smart plug, Armed and the standing warning below Save limit. The selected power button SHALL reflect plug-reported power rather than desired state or command acceptance. Missing observations SHALL not select Off. Stale, unavailable, held and uncertain evidence SHALL remain explicit. A collapsed device evidence disclosure SHALL retain observation age, desired versus observed state, enforcement/run/deadline/attempt evidence and the Hub/reachability limitation without adding a Details or Activity tab.
 
@@ -344,8 +344,8 @@ The dashboard SHALL offer a Habitat destination at `#/habitat`, showing one conn
 - **THEN** the first activation inspects and the second same-resident activation requests the exact existing conversation only when qualified, with no rapid-click requirement, command, unread acknowledgment or invented destination
 
 #### Scenario: Safe presentation
-- **WHEN** Habitat is opened at desktop or phone width, with reduced motion, hidden document or unavailable canvas
-- **THEN** status remains readable, controls remain accessible without overflow, motion follows visibility/pause/reduced-motion, and rendering failure does not remove precise session information or crash the dashboard
+- **WHEN** Habitat is opened at desktop or phone width, with hidden document or unavailable canvas
+- **THEN** status remains readable, controls remain accessible without overflow, motion follows visibility/pause, and rendering failure does not remove precise session information or crash the dashboard
 
 ### Requirement: Consistent reusable card presentation
 
@@ -361,7 +361,7 @@ The runtime dashboard SHALL give existing reusable cards a shared glass frame, r
 
 #### Scenario: Phone and theme appearance
 - **WHEN** the cards are viewed at desktop, 390px and 320px widths in light and dark appearance
-- **THEN** padding follows one responsive rule, labels and controls fit without horizontal overflow, footer links have usable targets, and changed content passes applicable WCAG A/AA checks
+- **THEN** padding follows one responsive rule, labels and controls fit without horizontal overflow, and footer links have usable targets
 
 #### Scenario: Attention and unavailable evidence
 - **WHEN** an agent needs input, a source is stale or unavailable, or a control is disabled
@@ -372,7 +372,7 @@ The runtime dashboard SHALL give existing reusable cards a shared glass frame, r
 - **THEN** its idle face omits routine no-command boilerplate, while later command progress, errors and results remain visible through the existing feedback region
 
 ### Requirement: Quiet reusable companion cards
-The dashboard SHALL render the same Reachy and MicroDuck cards on Home and their companion pages. Reachy SHALL be an optional Home card; the existing MicroDuck placement identifier and saved Home layouts SHALL remain valid. Each card SHALL keep its illustration mounted while accessible tabs flip only the controls, retain its dimensions across tabs for unchanged content, support reduced motion and remain readable at phone widths. Detailed source evidence and existing companion tools SHALL remain available on the owning pages.
+The dashboard SHALL render the same Reachy and MicroDuck cards on Home and their companion pages. Reachy SHALL be an optional Home card; the existing MicroDuck placement identifier and saved Home layouts SHALL remain valid. Each card SHALL keep its illustration mounted while tabs flip only the controls, retain its dimensions across tabs for unchanged content and remain readable at phone widths. Detailed source evidence and existing companion tools SHALL remain available on the owning pages.
 
 #### Scenario: Place and navigate companion cards
 - **WHEN** the operator adds Reachy or MicroDuck through Edit Home and opens their companion pages
@@ -380,7 +380,7 @@ The dashboard SHALL render the same Reachy and MicroDuck cards on Home and their
 
 #### Scenario: Flip controls without moving artwork
 - **WHEN** the user switches tabs with a pointer or keyboard on a desktop or phone
-- **THEN** only the control face changes, artwork stays mounted, card dimensions remain stable for unchanged content, and reduced motion disables the flip
+- **THEN** only the control face changes, artwork stays mounted, and card dimensions remain stable for unchanged content
 
 #### Scenario: Preserve Reachy controls and provenance
 - **WHEN** the operator views Latest or changes text, category or social-snooze settings
@@ -407,14 +407,14 @@ Connections SHALL show a Diagnostics card that links **Open Grafana · Local** o
 
 #### Scenario: A runtime that names the viewer
 - **WHEN** a signed-in page opens Connections on a runtime whose links name `grafana` as `http://127.0.0.1:3000/`
-- **THEN** the Diagnostics card links **Open Grafana · Local** to that address in a new tab, beside the Connection, Running build, Operator tools and Observed sources cards, and passes the page's accessibility check
+- **THEN** the Diagnostics card links **Open Grafana · Local** to that address in a new tab, beside the Connection, Running build, Operator tools and Observed sources cards
 
 #### Scenario: A run that names none
 - **WHEN** a disposable run's links name no viewer
 - **THEN** the card offers no link and says no diagnostics viewer is configured, so a preview never leads to an installed viewer
 
 ### Requirement: Quiet Automation workspace
-Automation SHALL open on Routines and offer accessible Routines, Rules and
+Automation SHALL open on Routines and offer Routines, Rules and
 Settings tabs using arrow, Home and End keys. Saved lists SHALL offer explicit
 New/Edit actions, with editors hidden until requested. Switching tabs SHALL
 preserve unsaved drafts without commands. Cancel SHALL reset only that editor
@@ -468,12 +468,12 @@ The Audio input meter SHALL display only actual derived measurements from the se
 - **WHEN** the sync request is too delayed or the browser clock moves backward or jumps relative to its monotonic clock
 - **THEN** measurement display stays unavailable until a new bounded sync qualifies time, and no capture command is sent by that recovery
 
-### Requirement: Measurement-only accessible presentation
-The Audio card SHALL identify Music.app and any configured microphone by its public alias, and explain that it measures audio without controlling lights. A configured alias SHALL NOT imply device presence or permission. Selection alone SHALL start no capture. The card SHALL explain that microphone capture checks existing authorization and does not request permission. It SHALL offer no unsupported lighting effect or target control. The card SHALL use the existing shell and accessible semantic controls, with visible keyboard focus and fitting content at desktop and 320/390px widths in light/dark appearance and reduced motion.
+### Requirement: Measurement-only presentation
+The Audio card SHALL identify Music.app and any configured microphone by its public alias, and explain that it measures audio without controlling lights. A configured alias SHALL NOT imply device presence or permission. Selection alone SHALL start no capture. The card SHALL explain that microphone capture checks existing authorization and does not request permission. It SHALL offer no unsupported lighting effect or target control. The card SHALL use the existing shell and semantic controls, with visible keyboard focus and fitting content at desktop and 320/390px widths in light/dark appearance.
 
 #### Scenario: Synthetic browser acceptance
 - **WHEN** the card is exercised against a disposable runtime with synthetic producer features
-- **THEN** keyboard, responsive layout and accessibility checks pass, with no real source, microphone, device or installed service involved
+- **THEN** keyboard and responsive layout checks pass, with no real source, microphone, device or installed service involved
 
 #### Scenario: Bounded alias presentation
 - **WHEN** the configured microphone alias has the maximum accepted length
@@ -483,8 +483,8 @@ The Audio card SHALL identify Music.app and any configured microphone by its pub
 - **WHEN** the operator selects a configured microphone, then explicitly starts it and the producer refuses the input
 - **THEN** selection alone sends no capture command, the refusal leaves the meter unavailable, and the card directs the operator to check the device connection and existing Mac microphone permission without claiming a prompt was shown
 
-### Requirement: Module-owned accessible art presentation
-The runtime dashboard SHALL expose the shipped art widget and Gallery through its existing authenticated module frontend and card catalog. It SHALL reuse the shell's connection and tracked-command controls, without polling, generated application code or a second persistent catalog. The presentation SHALL retain keyboard focus, touch controls, visible stale/unavailable feedback and accessible captions at desktop and 320/390px widths in both browser appearances.
+### Requirement: Module-owned art presentation
+The runtime dashboard SHALL expose the shipped art widget and Gallery through its existing authenticated module frontend and card catalog. It SHALL reuse the shell's connection and tracked-command controls, without polling, generated application code or a second persistent catalog. The presentation SHALL retain keyboard focus, touch controls, visible stale/unavailable feedback and captions at desktop and 320/390px widths in both browser appearances.
 
 #### Scenario: Browse art with keyboard and a narrow screen
 - **WHEN** the owner opens Gallery, selects a saved composition and operates its explicit controls using the keyboard at 390px
@@ -612,9 +612,9 @@ The Audio page SHALL show a Music lighting card with one section per light in th
 - **WHEN** a lighting read fails or the connection drops, or a Start reply is lost
 - **THEN** the card shows the last known state with controls disabled until a fresh read succeeds: a reconnect reads again on its own without sending anything, a restarted copy re-syncs on its own, a failed read waits for an explicit refresh, the lost Start stays locked and is not resent across reload, and Stop remains available once the record shows the session
 
-#### Scenario: Accessible presentation
+#### Scenario: Keyboard and responsive presentation
 - **WHEN** the card is exercised with the keyboard against a disposable runtime at desktop, 390px and 320px widths in light and dark appearance
-- **THEN** controls are labelled, status changes use live regions, content fits without horizontal overflow and automated accessibility checks pass
+- **THEN** controls are labelled and content fits without horizontal overflow
 
 ### Requirement: Read-only music visualizer on Audio, its full view and Home
 The dashboard SHALL offer a music visualizer on the Audio page, in a full view at `#/audio/visualizer` and as a Home card that is not placed by default. Each surface SHALL draw only the derived capture features the Audio page already projects, and only while they are qualified: synchronized with a qualified clock, fresh, and from the active capture source and generation. It SHALL use the applied response values when present and otherwise the measured level and bass, mid and treble bands. It SHALL ease toward the newest feature window and SHALL NOT replay skipped windows. When measurement is off, idle, starting, stale, stopping, uncertain or unavailable, when no fresh window is present, or when the generation changes, it SHALL show a still resting scene and state the reason instead of frozen or invented motion. The full view SHALL cover the page chrome, SHALL offer full screen through the browser's Fullscreen API, and Exit or Escape SHALL return to Audio; the Home card SHALL show the chosen effect, any resting reason and a link to the full view. The visualizer SHALL send no command, start no capture, control no lights and add no message format. Surfaces on one page SHALL share one read-only capture scope.

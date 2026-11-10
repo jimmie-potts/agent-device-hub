@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 
@@ -26,7 +25,7 @@ try {
   assert.deepEqual(await primary.getByRole('link').allTextContents(), ['Home', 'Habitat', 'Rooms', 'Devices', 'Automation']);
   assert.equal(await primary.getByRole('link', {name: 'Settings'}).count(), 0);
   await page.locator('.light-bulb-glow').first().waitFor();
-  // Axe does not check decorative illustration or selected-state boundary contrast.
+  // Decorative illustration and selected-state boundary contrast.
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({colorScheme});
     const contrast = await page.evaluate(() => {
@@ -121,13 +120,11 @@ try {
         if (destination === 'Settings') await settings(); else await open(destination);
         if (destination === 'Devices') await category('Displays');
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${destination} fits ${width}px ${colorScheme}`);
-        const accessibility = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-        assert.deepEqual(accessibility.violations.map(item => ({id: item.id, nodes: item.nodes.map(node => `${node.target.join(' ')}: ${node.failureSummary ?? ''}`)})), [], `${destination} ${width}px ${colorScheme}`);
         if (receipts !== undefined && (width === 390 || width === 1440)) await page.screenshot({path: join(receipts, `shell-${destination.toLowerCase()}-${width}-${colorScheme}.png`), fullPage: true});
       }
     }
   }
-  checks.push('desktop and 320/390px light/dark pages fit and pass accessibility with reduced motion');
+  checks.push('desktop and 320/390px light/dark pages fit');
 
   await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
   await page.goto(`${world.url}/#/component/pendant-1`); await page.reload(); await feed(page, 'connected');

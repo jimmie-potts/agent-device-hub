@@ -42,7 +42,7 @@ device payloads, honest stale/missing geometry, finite bounded graph input and r
 Prism transform/zone identity. They use synthetic records and saved layout fixtures.
 The coordinator's browser and catalog checks cover a real authenticated tracked edit,
 read-only/Origin refusal, no effects on open or selection, no resend on reload,
-keyboard/accessibility, cleanup and observed simulated power. These checks replace the
+keyboard use, cleanup and observed simulated power. These checks replace the
 old standalone route/process campaign for this port; they establish no installed or
 physical-device acceptance.
 

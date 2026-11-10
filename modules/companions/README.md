@@ -36,7 +36,7 @@ after asynchronous waits and immediately before new publication.
 
 From the root with Node 24, run `npm run build`, `npm run typecheck`,
 `npm run lint:js`, `npm run test:companions:built`, the affected runtime/event
-checks, `reachy-text` catalog and the runtime dashboard browser/axe journey.
+checks, `reachy-text` catalog and the runtime dashboard browser journey.
 These checks use synthetic inputs and private disposable stores. Installed
 client smoke and desk installation are separate evidence in the owning issues.
 
@@ -195,7 +195,7 @@ the optional SDK frontend context, without broadening module-scoped sync. No new
 
 Run the fixed-corpus `suggestions.test.js` after build and the existing
 `test:companions:browser` journey for real form/clipboard, policy/context changes,
-connection failure, keyboard, narrow layout and axe. Source evidence establishes
+connection failure, keyboard and narrow layout. Source evidence establishes
 neither installed-client usefulness nor physical acceptance.
 
 ## Conversation and assistant tasks
@@ -429,7 +429,7 @@ checks the core's admission. The `assistant-task` and `assistant-mode-approval`
 runtime catalog cases run over both transports and in a disposable runtime. The
 existing companions browser check exercises the real authenticated page with
 approved and declined proposals across reload, a clarification with the read
-tool, cancellation, keyboard, axe, disconnection and reader refusals while
+tool, cancellation, keyboard, disconnection and reader refusals while
 preserving Reachy. These are synthetic source checks. They establish neither
 live-model usefulness nor installed or physical acceptance; live provider use is
 the installed acceptance of #508 under the owner's allowance.
@@ -513,7 +513,7 @@ After the root build, `test:companions:built` covers the real SQLite lifecycle,
 old/repeated import, rollback, full disk and staged-command boundaries. The
 `preferences` scenario checks gateway grants, restart and content-free metadata
 over both SDK transports and a disposable runtime. `test:companions:browser`
-covers management, clipboard, private files, keyboard, narrow viewport and axe,
+covers management, clipboard, private files, keyboard and narrow viewport,
 with existing assistant/Reachy journeys retained. Use a private temporary
 directory outside every Git checkout for runtime checks. These are synthetic
 source checks, not installed or physical acceptance.
@@ -633,7 +633,7 @@ source/revision/expiry checks, full disk and rollback. The `companion-knowledge`
 catalog scenario exercises public reads through two fake model adapters and a
 replacement test client over both transports and a disposable runtime. The
 companions browser journey covers keyboard, clipboard, private files, profile
-inspection, correction/removal, narrow layout, axe, reader access and disconnect.
+inspection, correction/removal, narrow layout, reader access and disconnect.
 All are synthetic source evidence; live providers, installed access paths and
 physical acceptance remain separate.
 

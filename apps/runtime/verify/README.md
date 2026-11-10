@@ -64,8 +64,8 @@ module that is not as expected, its state and its registry code, such as
 private synthetic qualification receipt and captures the real dashboard. Browser
 identity, voice and playback callbacks are synthetic. The capture checks manual availability, Work/Free
 questions, one selected tab, completion, Stop/Mute, category/Quiet suppression,
-delayed voices, reload/restart silence, uncertainty, keyboard controls, narrow
-layout and accessibility. It records labelled interactions and leaves speech off.
+delayed voices, reload/restart silence, uncertainty, keyboard controls and narrow
+layout. It records labelled interactions and leaves speech off.
 It uses no native audio or installed resource and does not qualify actual speech.
 
 
@@ -80,7 +80,7 @@ source compatibility.
 The same scenario checks explicit Duck Home selection, anonymous read refusal,
 one latest Duck message versus separate history, and retained selection with
 corrected/removal fallback after restart. The companions browser journey checks
-Home placement, selection labels, access loss, navigation, keyboard and axe.
+Home placement, selection labels, access loss, navigation and keyboard.
 
 
 `weekly-routines` uses the core and a simulated LIFX consumer. It saves,

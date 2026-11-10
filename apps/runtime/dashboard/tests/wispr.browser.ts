@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import {mkdir, readFile} from 'node:fs/promises';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 
@@ -91,7 +90,6 @@ try {
         await page.setViewportSize({width, height: 1100});
         assert.equal(await widget.evaluate(el => el.scrollWidth <= el.clientWidth + 1), true, `${colorScheme}/${width} card overflow`);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${colorScheme}/${width} document overflow`);
-        assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), [], `${colorScheme}/${width} axe`);
         if (process.env.DASHBOARD_RECEIPTS !== undefined) {
           await mkdir(process.env.DASHBOARD_RECEIPTS, {recursive: true});
           await widget.screenshot({path: `${process.env.DASHBOARD_RECEIPTS}/wispr-${colorScheme}-${width}.png`});
@@ -132,7 +130,6 @@ try {
       await refresh.click();
       await analytics.getByText('Language collection or sharing is off.', {exact: true}).first().waitFor();
       assert.equal(await analytics.getByRole('cell', {name: '=SUM(1,2)', exact: true}).count(), 0);
-      assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
       world.wisprPrivacy(false, false);
       await refresh.click(); await analytics.getByRole('status').filter({hasText: '(forbidden)'}).waitFor();
       assert.equal(await analytics.getByRole('heading', {name: 'Overview', exact: true}).count(), 0, 'refused exposure clears the retained numeric view');
@@ -142,7 +139,7 @@ try {
       assert.deepEqual(sent, []); assert.deepEqual(errors, []);
       process.stdout.write(`${JSON.stringify({passed: true, journey: 'wispr', source: 'synthetic selected files', machineReadWithoutExtraGrant: true,
         browserExposure: true, numericWidget: true, filtersSurviveNavigation: true, numericDownloads: ['CSV', 'JSON'], textRetiredOnOptOut: true,
-        quietLine: true, selectableGaps: true, failedRefreshAge: true, accessRetiresNumeric: true, loadingDisablesRefresh: true, responsiveThemes: 8, inspectionCommands: 0, keyboard: true, axe: 'passed'})}\n`);
+        quietLine: true, selectableGaps: true, failedRefreshAge: true, accessRetiresNumeric: true, loadingDisablesRefresh: true, responsiveThemes: 8, inspectionCommands: 0, keyboard: true})}\n`);
     } finally { await context.close(); }
   } finally { await world.close(); }
 } finally { await browser?.close(); }

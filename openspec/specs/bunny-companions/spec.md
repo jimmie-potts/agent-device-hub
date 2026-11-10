@@ -55,9 +55,9 @@ The module SHALL persist only settings and bounded admission/repetition/presenta
 - **THEN** controls persist and no pending or missed reaction is replayed
 - **AND** a saved card is explicitly history, not newly observed activity
 
-#### Scenario: Accessible and read-only interface
+#### Scenario: Legible and read-only interface
 - **WHEN** a reader opens the page or a keyboard user operates it
-- **THEN** source metadata and decision reasons are legible and accessible
+- **THEN** source metadata and decision reasons are legible
 - **AND** reader authority cannot change controls or submit fixtures
 
 ### Requirement: Deliberate grounded coding suggestions
@@ -78,7 +78,7 @@ The Reachy page SHALL accept a bounded owner-supplied form for one known synced 
 - **AND** identical repeated inspection creates no additional admission
 
 ### Requirement: Policy guarded inspect and copy
-Suggestions SHALL reuse Reachy enablement/category mute, current source freshness and attention priority. The page SHALL recheck policy, source context, input and expiry immediately before copy. Copy SHALL occur only on the owner's explicit action; it SHALL change only the clipboard. Keyboard, narrow viewport and accessible inspection SHALL be supported.
+Suggestions SHALL reuse Reachy enablement/category mute, current source freshness and attention priority. The page SHALL recheck policy, source context, input and expiry immediately before copy. Copy SHALL occur only on the owner's explicit action; it SHALL change only the clipboard. Keyboard and narrow viewport inspection SHALL be supported.
 
 #### Scenario: Policy or source changes
 - **WHEN** Reachy is disabled/muted, output/core is unavailable, attention takes priority, the selected session/turn changes or evidence expires

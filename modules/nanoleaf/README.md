@@ -386,7 +386,7 @@ Maximal requests fit the gateway's existing 512-character query-value bound.
 The module tests exercise old-schema initialization, SQLite and outbox failures,
 CAS, restart and unchanged device state. The existing Nanoleaf page browser
 entry includes save/load, full-recipe preview, stale and unauthorized refusals,
-read-only access, reconnect, uncertainty and phone/desktop accessibility.
+read-only access, reconnect, uncertainty and phone/desktop layout.
 These are source checks, with no raw audio, installed or physical evidence.
 
 ## Offline decorative shows
@@ -431,7 +431,7 @@ run through `npm run test:nanoleaf:built`. The existing
 `node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts` entry includes a
 real disposable gateway/core/module authoring journey, immutable versions,
 stale and unauthorized saves, no device changes, no resend and light/dark
-desktop/phone accessibility. Optional `DASHBOARD_RECEIPTS` keeps synthetic
+desktop/phone layout. Optional `DASHBOARD_RECEIPTS` keeps synthetic
 screenshots outside the checkout. Source checks do not establish installed
 or physical acceptance.
 

@@ -68,7 +68,7 @@ The module SHALL use profile 2.0, device/2.1, existing SDK/core tracking, regist
 
 ### Requirement: Operator UI and cached MCP status
 
-The dashboard SHALL expose tracked takeover, finite gestures, independent Stop, automatic preference/Resume and exact held-neutral recovery with simulation, freshness, connection, input/target/joint and uncertain evidence. It SHALL preserve companions' ownership and use the existing frontend connection. MCP SHALL expose cached status only and refuse controls, motion, internal dispatch and saved-command resend. Keyboard, narrow layout, reduced motion and accessibility checks SHALL exercise these controls.
+The dashboard SHALL expose tracked takeover, finite gestures, independent Stop, automatic preference/Resume and exact held-neutral recovery with simulation, freshness, connection, input/target/joint and uncertain evidence. It SHALL preserve companions' ownership and use the existing frontend connection. MCP SHALL expose cached status only and refuse controls, motion, internal dispatch and saved-command resend. Keyboard and narrow layout checks SHALL exercise these controls.
 
 #### Scenario: Status inspection
 - **WHEN** a page opens or MCP reads cached status

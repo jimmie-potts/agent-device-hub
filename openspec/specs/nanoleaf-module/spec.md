@@ -360,7 +360,7 @@ An explicit authenticated content read SHALL prepare twenty finite RGB samples f
 - **THEN** its complete frozen values and canonical RGB output are preserved without admitting device work or selecting an input
 
 ### Requirement: Truthful explicit synthetic preview
-The preview SHALL visibly identify generated input, example geometry and an unsaved draft, and SHALL make no live, calibrated, configured-layout or physical-timing claim. Only an explicit Preview action SHALL request preparation. Scrubbing SHALL remain browser-local. Edits, disconnect and unmount SHALL invalidate prior results, and delayed or malformed content SHALL not replace a newer draft. Reconnect or failure SHALL require explicit retry. Keyboard, phone and accessibility behavior SHALL remain supported, including read-only users.
+The preview SHALL visibly identify generated input, example geometry and an unsaved draft, and SHALL make no live, calibrated, configured-layout or physical-timing claim. Only an explicit Preview action SHALL request preparation. Scrubbing SHALL remain browser-local. Edits, disconnect and unmount SHALL invalidate prior results, and delayed or malformed content SHALL not replace a newer draft. Reconnect or failure SHALL require explicit retry. Keyboard and phone behavior SHALL remain supported, including read-only users.
 
 #### Scenario: Passive page lifecycle
 - **WHEN** the page opens, reloads, reconnects or changes its local sample slider

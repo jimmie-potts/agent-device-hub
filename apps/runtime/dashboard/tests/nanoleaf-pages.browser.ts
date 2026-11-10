@@ -7,7 +7,6 @@ import {setTimeout as delay} from 'node:timers/promises';
 import type {Identity} from '@jimmie-potts/event-contracts/v2/families';
 import {LINES_ADDRESS} from '@jimmie-potts/nanoleaf';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
 import {IDENTITY, sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
@@ -84,10 +83,6 @@ try {
       await mkdir(receipts, {recursive: true});
       await page.screenshot({path: join(receipts, `${name}.png`), fullPage: true});
     };
-    const axe = async (): Promise<void> => {
-      const result = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
-      assert.deepEqual(result.violations.map(item => `${item.id}: ${item.nodes.map(node => node.target.join(' ')).join(', ')}`), []);
-    };
     // Exercise a failed content read and explicit retry without replacing the real owner or command route.
     let failGeometry = true;
     await page.route('**/modules/nanoleaf/content/editor-layout?device=wall', async route => {
@@ -113,7 +108,6 @@ try {
       process.stdout.write(`${JSON.stringify({checkpoint: 'prism', diagnostic, errors})}\n`);
       throw error;
     }
-    assert.equal(await drawing.getAttribute('data-reduced-motion'), 'true');
     assert.equal(await wall.locator('#notice').isVisible(), false, 'successful geometry recovery clears the derived fallback notice');
     const line = wall.locator(`#wall [role="button"][data-line="${first.id}"]`);
     await line.focus(); await line.press('Enter');
@@ -126,7 +120,6 @@ try {
     await wall.locator('#showNumbers').click();
     assert.equal(await wall.locator('#showNumbers').getAttribute('aria-pressed'), 'true');
     await wall.locator('#replay').click();
-    assert.equal(await drawing.evaluate(element => element.classList.contains('assembling')), false, 'reduced motion suppresses assembly');
     assert.equal(sent.length, 0, 'open, read retry, keyboard selection and local presentation send no command');
     assert.deepEqual(saved(await world.nanoleafWall()), saved(initial));
     assert.deepEqual(await scene(), beforeScene, 'opening and local controls preserve the saved scene');
@@ -216,8 +209,8 @@ try {
     await codex.waitFor();
     assert.equal(await codex.getAttribute('href'), `codex://threads/${desktop.sessionId}`);
     assert.equal(sent.length, 3, 'task inspection and navigation-link rendering send no command');
-    await axe(); await screenshot('nanoleaf-desktop');
-    await page.setViewportSize({width: 390, height: 844}); await axe(); await screenshot('nanoleaf-mobile');
+    await screenshot('nanoleaf-desktop');
+    await page.setViewportSize({width: 390, height: 844}); await screenshot('nanoleaf-mobile');
 
     // UI projection is tested separately from the actual read-credential and Origin refusals above.
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json',
@@ -238,7 +231,7 @@ try {
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'nanoleaf-wall-editor', requests: sent.length,
       initialOpenAndLocalControls: 'no effects', readRetry: true, trackedEdit: true, inFlightLock: true,
       reloadAndReentry: 'no resend or duplicate handler', readCredential: 403, crossOrigin: 403,
-      safeTaskTextAndLinks: true, observedPower: [false, true], reducedMotion: true, axe: ['desktop', 'mobile']})}\n`);
+      safeTaskTextAndLinks: true, observedPower: [false, true]})}\n`);
   } finally { await context.close(); }
   await showEditorJourney(browser);
   await musicPreviewJourney(browser);

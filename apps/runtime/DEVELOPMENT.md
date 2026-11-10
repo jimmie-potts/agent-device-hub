@@ -39,7 +39,7 @@ owning build/type/lint, SDK, contracts and workflow checks. Real Caddy forwardin
 disposable browser acceptance and installed iPhone/PC/Mac checks remain distinct.
 Run `BUNNY_TEST_ENTRY=private BUNNY_TEST_CADDY=/path/to/verified/caddy node apps/runtime/dashboard/tests/wifi.browser.ts`
 for the real private forwarder, synthetic TLS termination, owner password,
-scoped machine refusal and mobile-width reconnect/logout/accessibility journey.
+scoped machine refusal and mobile-width reconnect/logout journey.
 Chromium answers the initial password challenge once; another challenge fails the
 journey so automatic test credentials cannot hide a browser sign-in loop.
 The test overrides only private loopback ports, uses synthetic data and qualifies
@@ -52,7 +52,7 @@ and `node --test apps/runtime/dashboard/tests/room-bindings.test.ts`, then
 runs in the runtime-selected App verification CI job and the local dashboard
 browser suite. It uses synthetic private geometry, real authenticated content
 reads, current room assignments and simulated light queues; it checks selection,
-reported power, unbound fixtures, reload without replay and desktop/phone axe.
+reported power, unbound fixtures and reload without replay.
 Reader tests cover unsafe permissions, links, malformed buffers, limits and
 cancellation. The negative control is the same authenticated read against a
 core without room content (404), and the initial browser journey without its
@@ -87,8 +87,8 @@ both and `automation-lines-moment` after changes to this shared path. The
 in-memory catalog is run on Linux or in a disposable Linux container (where its
 private-file check reads `/proc/self/fd`; off Linux the reader checks the path
 again after the open, Hub #1355). The Automation browser journey covers independent
-devices, invalid drafts, Run now, Preview, passive reconnect, lost mutation replies,
-read-only controls and axe accessibility.
+devices, invalid drafts, Run now, Preview, passive reconnect, lost mutation replies
+and read-only controls.
 These checks contact no household device and qualify no installed routine or maximum-on limit.
 
 Home-Wi-Fi admission (#1111) uses the existing runtime unit test discovery in CI.
@@ -291,7 +291,7 @@ require their separate evidence.
 The Automation browser journey uses the existing runtime harness with the real
 Nanoleaf module over `SimulatedNanoleaf`. It checks explicit disabled creation,
 enable/settings/edit/delete, passive drafts, one page-closed tracked moment,
-named Free scene/brightness restoration, keyboard and axe. Read-only UI uses an
+named Free scene/brightness restoration and keyboard. Read-only UI uses an
 intercepted authority response; the gateway suite separately checks real reader
 refusal. The `automation-lines-moment` catalog scenario adds reader resync and
 restart without replay over both existing transports. No physical proof is claimed.
@@ -400,7 +400,7 @@ loopback SOAP, bounded transport, independent queues, final-effect fences,
 persistent holds, explicit read-only release, storage refusal, silent-device
 startup/shutdown and SDK module conformance. `npm run test:wemo:browser` exercises
 the real module/core/gateway/dashboard with synthetic plugs, including page-closed
-enforcement, reload without replay and desktop/phone accessibility.
+enforcement, reload without replay and desktop/phone layout.
 
 `power-limits*.test.ts` covers unknown starts, original run deadlines through
 edits/restart, offline/held binding, durable attempt identity and authenticated
@@ -540,7 +540,7 @@ The Runtime verification CI job runs the full `test:runtime:verify:built` suite
 on each pinned release qualification and conservative PR selection. Focused
 presentation admission can omit the broad job while retaining affected disposable
 acceptance. Focused local verification does not waive an applicable failed or
-missing CI job, contract check, browser/accessibility check or independent review.
+missing CI job, contract check, browser check or independent review.
 
 `test:runtime:verify:built` starts runs without a user manager and judges every
 capture step through `runCaptureStep`: one per catalog scenario, so the same
@@ -588,7 +588,7 @@ pointer/focus/attention preservation; rich rendition decode, stale/unavailable
 content and late-load cancellation; and request/favorite/feedback/variation with
 truthful allowance and job outcomes. Layout-only operations and gallery reads
 must send no device command or provider request. Check 1440, 390 and 320px in
-light/dark appearance and reduced motion with axe. `DASHBOARD_RECEIPTS` keeps
+light/dark appearance. `DASHBOARD_RECEIPTS` keeps
 synthetic screenshots private. Run the full browser suite below for dashboard
 changes. Disposable acceptance uses the same synthetic art owner with the actual
 Gallery controls; this establishes no installed or physical result.
@@ -606,8 +606,7 @@ Home picker search and visual identifiers (#1316) extend the existing
 in hosted smoke and the full local browser suite. After the root build it checks
 combined name/category filtering, empty/reset, keyboard focus, neutral inline
 identifiers, draft-only add/show and the existing save, conflict and attention
-guards. It checks light/dark desktop and 320/390px accessibility with normal and
-reduced motion. Use an outside-checkout `TMPDIR`; optional `DASHBOARD_RECEIPTS`
+guards. It checks light/dark desktop and 320/390px layout. Use an outside-checkout `TMPDIR`; optional `DASHBOARD_RECEIPTS`
 keeps screenshots private. No installed source or physical device is used.
 
 Automation tabs (#1315) extend the existing
@@ -615,7 +614,7 @@ Automation tabs (#1315) extend the existing
 in hosted smoke as well as the full local browser suite. It checks keyboard tab
 navigation, on-demand editors, cross-tab drafts, Cancel/save focus, guarded
 mutations, global uncertain feedback, recent-attempt evidence and light/dark
-accessibility at 320, 390 and 1440 px. Run it after the root build with an
+layout at 320, 390 and 1440 px. Run it after the root build with an
 outside-checkout `TMPDIR`; optional `DASHBOARD_RECEIPTS` keeps screenshots private.
 These synthetic checks change no installed routines or devices.
 
@@ -623,7 +622,7 @@ Home row balance (#1311) extends the existing Home editor browser journey,
 already included in hosted smoke and the full browser suite. After the root
 build, `node apps/runtime/dashboard/tests/home-balance.browser.ts` checks one,
 two, three, five and eight real cards at desktop, tablet and phone widths,
-mixed sizes, hidden cards, independent phone order, editor preview and axe.
+mixed sizes, hidden cards, independent phone order and editor preview.
 It uses synthetic saved-layout metadata only; no device command or installed
 state is selected. Use an outside-checkout `TMPDIR` and optional private
 `DASHBOARD_RECEIPTS` screenshots. Keep the shared and full browser checks below.
@@ -636,7 +635,7 @@ Sign in again; the agent cards' name, client, state and attention on their face
 and last-evidence, attention and host/provider source text when opened; a dropped
 stream marked stale and reconnected without a command; a mode changed by another
 browser shown once and not repeated; Sign in again after a runtime restart from
-the keyboard; no text overlap, no horizontal scroll and axe in light and dark. It runs in App verification and in the
+the keyboard; no text overlap and no horizontal scroll in light and dark. It runs in App verification and in the
 full local browser suite. It is synthetic Chromium evidence for the shell; the
 owner's checks on the actual ONN are in
 [ONN dashboard display qualification](../../docs/onn-dashboard-qualification.md).
@@ -647,7 +646,7 @@ synthetic-runtime cards, including an empty room and optional empty MicroDuck
 placement, at desktop, the intermediate breakpoint and 320/390px in both themes.
 It also compares reused cards on their feature destinations. It checks shared spacing and
 type, tab selection/focus/boundary contrast, retained artwork and fixed faces,
-corner/footer targets, attention, unavailable controls, reduced motion and axe.
+corner/footer targets, attention and unavailable controls.
 Only fixture setup saves metadata; subsequent inspection sends no product
 command. Keep the full dashboard browser suite. Use an outside-checkout TMPDIR
 and `DASHBOARD_RECEIPTS` for private screenshots and rendered metrics; these
@@ -665,7 +664,7 @@ private. These checks use synthetic devices, not the installed runtime.
 Reusable agent cards (#1179) use the existing dashboard unit discovery for
 attention/freshness summary rules and Home placement. The existing `browser.ts`
 journey covers card disclosure, filtering, label drafts, unread preservation and
-reconnect, and checks light/dark desktop/phone keyboard and axe behavior. Run the
+reconnect, and checks light/dark desktop/phone keyboard behavior. Run the
 full dashboard suite below after building. Existing core CI and App verification
 cover these checks; no additional workflow or service is needed.
 
@@ -681,7 +680,7 @@ The cleaner shell (#1173) uses the existing dashboard unit discovery for routes,
 navigation grouping and directory projection. After the root build, run
 `node apps/runtime/dashboard/tests/shell.browser.ts` for five-destination
 navigation, retained page addresses, passive browsing and light/dark desktop/phone
-accessibility. The existing hosted smoke and full browser entries include this
+layout. The existing hosted smoke and full browser entries include this
 journey; synthetic browser proof does not establish actual-phone or device results.
 
 Reusable Music cards (#1164) use existing event/core/dashboard test discovery.
@@ -689,7 +688,7 @@ After the root build, run `node --test packages/event-contracts/tests/playback-l
 for bounded metadata, operator admission, atomic revision guards and restart.
 Run `node apps/runtime/dashboard/tests/music-card.browser.ts` for Home/Audio/Rooms,
 explicit persistent placement, read-only/stale/uncertain behavior, keyboard,
-artwork fallback, narrow layouts and card-scoped accessibility. The journey runs
+artwork fallback and narrow layouts. The journey runs
 in App verification and the full local dashboard browser suite, using synthetic
 tracks and room IDs without household-device contact. Keep the existing artwork
 race journey and full owning checks; simulated proof establishes no audible result.
@@ -752,7 +751,7 @@ BUNNY_TEST_CADDY=/path/to/verified/caddy node apps/runtime/dashboard/tests/wifi.
 node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls
 node apps/runtime/dashboard/tests/inbox-history.browser.ts # focused inbox actions and timeline
-node apps/runtime/dashboard/tests/automation.browser.ts # routine/rule tabs, drafts, lost replies and accessibility
+node apps/runtime/dashboard/tests/automation.browser.ts # routine/rule tabs, drafts and lost replies
 node apps/runtime/dashboard/tests/music-capture.browser.ts # Music/microphone measurement, tracked start/stop and freshness; also in hosted smoke and Music-card browser entry
 node apps/runtime/dashboard/tests/music-visualizer.browser.ts # visualizer panel, full view and Home card over the numeric fixture; also in the Music-card browser entry
 node apps/runtime/dashboard/tests/music-lighting.browser.ts # Music lighting Start/Stop on simulated Lines, endings, stale reads and lost replies; also in hosted smoke and Music-card browser entry
@@ -772,8 +771,8 @@ expiry, delayed clock qualification, pending and lost Start replies, independent
 Stop, read-only refusal, replacement generations and endpoint loss. The configured
 microphone journey checks selection without capture, 2.1 starts, fixed refusal,
 retry, reload and a return to unchanged 2.0 Music work. Desktop and
-320/390 px light/dark checks include keyboard use, reduced motion, overflow and
-axe. It opens no native helper or media source. The dashboard unit suite covers
+320/390 px light/dark checks include keyboard use and
+overflow. It opens no native helper or media source. The dashboard unit suite covers
 clock jumps, source identity/order, exact conservative expiry and late scope
 cleanup. The browser-safe `v2/music-capture-data` export keeps existing wire
 values; the event suite verifies export parity and a browser bundle with no
@@ -781,14 +780,14 @@ server registry dependency. Run `npm run test:events:built`,
 `npm run test:music-producer:built` and `npm run test:runtime:built` for its
 existing contract consumers after the shared build.
 
-The Nanoleaf editor check (#934) uses the actual module with a simulated Lines controller. It covers passive reads, local selection, tracked editing, read-only and Origin refusal, observed power, keyboard/accessibility, reduced motion and re-entry. The `nanoleaf-editor` catalog scenario runs through both tier-1 transports and disposable Acceptance. `test:nanoleaf:built` includes the literal-source Prism adapter test beside the compiled TypeScript tests; retained browser JavaScript does not require a second runtime build policy.
+The Nanoleaf editor check (#934) uses the actual module with a simulated Lines controller. It covers passive reads, local selection, tracked editing, read-only and Origin refusal, observed power, keyboard use and re-entry. The `nanoleaf-editor` catalog scenario runs through both tier-1 transports and disposable Acceptance. `test:nanoleaf:built` includes the literal-source Prism adapter test beside the compiled TypeScript tests; retained browser JavaScript does not require a second runtime build policy.
 
 The same `nanoleaf-pages.browser.ts` entry includes offline decorative show
 authoring (#723): starter drafts, immutable named saves, version reads and cue
 storyboards through the real gateway/core/module. It checks stale-save,
 read-only and Origin refusals, cancelled/failed reads retaining drafts, uncertain
 attempts without resend, unchanged simulated device state and light/dark
-desktop/390/320px accessibility. `DASHBOARD_RECEIPTS` keeps synthetic screenshots
+desktop/390/320px layout. `DASHBOARD_RECEIPTS` keeps synthetic screenshots
 outside the checkout. The Nanoleaf built suite covers atomic save/outcome
 rollback, full storage, deferred publication, core acknowledgment, restart,
 bounded content and delayed-sync freshness. No test uses an installed source,
@@ -797,7 +796,7 @@ personal media or physical controller.
 The same Nanoleaf browser entry covers reactive presets (#722): explicit named
 saves, exact reload and restart, full frozen V1 recipes in synthetic preview,
 read-only/Origin/stale/invalid refusals, local drafts through refresh and
-reconnect, uncertainty locks through reload, and light/dark 1440/390/320 px axe.
+reconnect, uncertainty locks through reload, and light/dark 1440/390/320 px layout.
 The Nanoleaf built suite includes a frozen previous-source SQLite schema,
 full-disk and transaction rollback, deferred outcome publication/core-only
 acknowledgment, mixed-family high water and maximal document/query bounds.
@@ -813,24 +812,24 @@ the system temporary directory, which must be outside every Git checkout, and a
 synthetic hook that publishes lifecycle observations through the SDK edge. They
 contact no device and no installed service. `smoke.ts` checks that the gateway
 serves the built page, which signs in without a form, shows a synthetic
-session's finished turn unread with the Hub mode and inbox panels, passes axe at
-1,280 px and sends no command while it loads. The full suite (`browser.ts` and
+session's finished turn unread with the Hub mode and inbox panels
+and sends no command while it loads. The full suite (`browser.ts` and
 `trusted.ts`) adds sessions appearing, an approval raised and cleared, a
 finished turn that stays unread until the record clears it, a resync after a
 lost stream with no replayed command, positive read evidence and a synthetic
 device acknowledgment clearing rows without a page command, routes,
-Places, axe at 1,440 and 390 px, a session that ends with a restart, Disconnect,
+Places, a session that ends with a restart, Disconnect,
 the launcher's code, the bookmark on either loopback name, a reload and a
 second tab, and another local app's link, frame and hostile re-navigation
 (Hub #561). The focused `controls.browser.ts` journey adds a simulated LIFX
 control that shows accepted before completion, an uncertain write locked across
 reload and read-only refresh without replay, a manifest-declared sign page in the
-shell, Connections build identity, keyboard activation and desktop/phone axe.
+shell, Connections build identity and keyboard activation.
 It also runs directly with `node apps/runtime/dashboard/tests/controls.browser.ts`
 after a build when the accepted local scope calls for only that changed journey.
 The focused `inbox-history.browser.ts` journey checks explicit resend, dashboard
 dismissal visible through MCP, timeline filters, keyboard and read-only access,
-reload without replay, and desktop/phone axe scans.
+and reload without replay.
 Run the full suite when a change touches `apps/runtime/dashboard`, the gateway's
 page or sign-in routes, or the SDK's remote client. Set `DASHBOARD_RECEIPTS` to
 a directory to keep their screenshots.
@@ -840,25 +839,25 @@ keyboard selection, matching artwork, same-mode reapply, correlated Inbox
 navigation/handling, pending versus definitive results, late conflicts, lost
 replies, read-only controls and reconnect/reload/restart without replay. Its
 controlled adapter checks verify stale evidence and accepted/uncertain handling
-locks without another command. It runs light/dark desktop/phone axe scans on
+locks without another command. It checks light/dark desktop/phone layout on
 both cards and writes screenshots to its optional private evidence directory.
 It contacts no physical device.
 
 The focused `pixoo-pages.browser.ts` journey uses the real Pixoo module with a
 fresh synthetic library and simulated display. It checks a revision-bound name
 save through the shared shell, owner-confirmed state, read-only refusal,
-reload without resend, no display write and accessibility. It also executes a
+reload without resend and no display write. It also executes a
 separately bundled trusted editor fixture while retaining passive-page script
 refusal. It also imports `pixoo-cards.browser.ts` (#1154), covering the shared card on
 Home/device/Player, animated visible pages, selection across searches/pages,
-bitmap cleanup, reduced motion, populated creation, draft preservation,
-revision refusal, frozen playback, restart, lost replies, reload and phone axe.
+bitmap cleanup, populated creation, draft preservation,
+revision refusal, frozen playback, restart, lost replies and reload.
 The CI smoke mounts the same card passively. The `pixoo-pages` catalog scenario
 also covers atomic populated creation and duplicate/invalid-item refusal through
 both transports and disposable verification. The full local browser command
 includes this journey and the Library,
 Playlists, Player, Monitor and Settings journeys. They cover saved renditions,
-referenced previews, explicit controls, read-only access and accessibility.
+referenced previews, explicit controls and read-only access.
 Monitor's synthetic Desktop module publishes metadata through its own SDK;
 no provider files are read. This proves a title-only update reaches the page
 without a manual refresh or a new command.
@@ -871,4 +870,4 @@ simulator checks, not physical-display acceptance.
 
 ### Shared habitat checks
 
-The permanent `#/habitat` page is covered by `test:runtime-dashboard:built`, the full dashboard browser suite and the hosted smoke entry. For a focused run after `npm run build`, use `node apps/runtime/dashboard/tests/habitat.browser.ts` with a private outside-checkout `TMPDIR` as required by the runtime state contract. This exercises synthetic session lifecycle events through the disposable core and existing shell connection, not an installed runtime or physical device. The browser check includes dark/light desktop and 390 px accessibility, local settings transfer, reconnection and renderer cleanup. Allocation and preference failure cases live in `dashboard/tests/habitat.test.ts`.
+The permanent `#/habitat` page is covered by `test:runtime-dashboard:built`, the full dashboard browser suite and the hosted smoke entry. For a focused run after `npm run build`, use `node apps/runtime/dashboard/tests/habitat.browser.ts` with a private outside-checkout `TMPDIR` as required by the runtime state contract. This exercises synthetic session lifecycle events through the disposable core and existing shell connection, not an installed runtime or physical device. The browser check includes dark/light desktop and 390 px layout, local settings transfer, reconnection and renderer cleanup. Allocation and preference failure cases live in `dashboard/tests/habitat.test.ts`.

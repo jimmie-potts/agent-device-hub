@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium, expect} from 'playwright/test';
-import {AxeBuilder} from '@axe-core/playwright';
 import type {HomeLayoutRecord, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
 import {changes, feed, startWorld} from './harness.ts';
 import {approvalPrompt, approvalResolved} from '../../dist/tests/fixtures/agents.js';
@@ -94,10 +93,9 @@ try {
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeFocused();await balanced();
   for (const theme of ['light', 'dark'] as const) for (const width of [1440, 390, 320]) {
     await page.emulateMedia({colorScheme: theme});await page.setViewportSize({width, height: 1000});await balanced();
-    const axe = await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();assert.deepEqual(axe.violations.map(item => item.id), []);
     if (width !== 320) await screenshot(`home-three-${theme}-${width}`);
   }
   assert.ok(sent.every(path => path.endsWith('/home-layout-set')), 'fixture setup and layout browsing send no device command');assert.deepEqual(errors, []);
-  console.log(JSON.stringify({journey: 'home-balance', counts: [1, 2, 3, 5, 8], widths: [1440, 1024, 768, 390, 320], mixedSizes: true, independentPhoneOrder: true, phonePreview: true, accessibility: 'light/dark', physical: false}));
+  console.log(JSON.stringify({journey: 'home-balance', counts: [1, 2, 3, 5, 8], widths: [1440, 1024, 768, 390, 320], mixedSizes: true, independentPhoneOrder: true, phonePreview: true, physical: false}));
   await context.close();
 } finally {await browser.close();await world.close();}

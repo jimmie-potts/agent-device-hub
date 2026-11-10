@@ -1611,7 +1611,7 @@ The runtime SHALL publish and sync one authoritative current music-capture recor
 
 ### Requirement: ONN hibernation governs active availability
 
-The system SHALL keep ONN dormant until a new owner decision and restored verification. Hibernation SHALL override the active ONN behavior described by this capability. It SHALL expose no ONN controls, observations, title-history pages, MCP tools or runtime registration. Dedicated ONN default checks SHALL be dormant. Retained source, private history, stored-command privacy and backup/upgrade compatibility SHALL remain intact without data migration or deletion. Shared dashboard authentication, keyboard accessibility and reconnect checks SHALL remain active.
+The system SHALL keep ONN dormant until a new owner decision and restored verification. Hibernation SHALL override the active ONN behavior described by this capability. It SHALL expose no ONN controls, observations, title-history pages, MCP tools or runtime registration. Dedicated ONN default checks SHALL be dormant. Retained source, private history, stored-command privacy and backup/upgrade compatibility SHALL remain intact without data migration or deletion. Shared dashboard authentication, keyboard and reconnect checks SHALL remain active.
 
 #### Scenario: Start and browse after hibernation
 - **WHEN** a hibernated release starts or a client opens a saved ONN page

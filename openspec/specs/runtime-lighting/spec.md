@@ -8,15 +8,15 @@ Let one operator reuse lighting controls and artwork across Home, brand and room
 
 ### Requirement: Reusable glass lighting cards
 
-The runtime dashboard SHALL use one lighting card implementation for individual lights, custom groups and room controls on Home and lighting brand/room views. Artwork SHALL remain mounted outside the animated control area across Power, Color, Scenes and Timer tabs. Tab changes SHALL send no command, preserve card height and support keyboard navigation, rapid selection and reduced motion. The glass treatment SHALL use the application token layer without changing fixed attention meanings or the existing shell's other surfaces. A placeholder SHALL be identified in Details rather than represented as live artwork.
+The runtime dashboard SHALL use one lighting card implementation for individual lights, custom groups and room controls on Home and lighting brand/room views. Artwork SHALL remain mounted outside the animated control area across Power, Color, Scenes and Timer tabs. Tab changes SHALL send no command, preserve card height and support keyboard navigation and rapid selection. The glass treatment SHALL use the application token layer without changing fixed attention meanings or the existing shell's other surfaces. A placeholder SHALL be identified in Details rather than represented as live artwork.
 
 #### Scenario: One light across views
 - **WHEN** a light appears on Home and its brand page and the operator switches control tabs
 - **THEN** both views use the same card and current owner records, the artwork stays in place, and no device command is sent
 
-#### Scenario: Accessible control faces
-- **WHEN** the operator uses the keyboard, quickly selects another tab, or enables reduced motion at desktop and phone widths
-- **THEN** the final selected panel remains usable, only that panel exposes controls, reduced motion removes rotation, and controls fit without overflow or accessibility violations
+#### Scenario: Keyboard and rapid control faces
+- **WHEN** the operator uses the keyboard or quickly selects another tab at desktop and phone widths
+- **THEN** the final selected panel remains usable, only that panel exposes controls, and controls fit without overflow
 
 ### Requirement: Declared capabilities and shared command admission
 

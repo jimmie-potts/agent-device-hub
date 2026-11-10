@@ -87,7 +87,7 @@ The Home widget SHALL show exactly one latest remaining Duck message by the sele
 - **WHEN** the initial companion sync is refused or fails, or its later copy stops
 - **THEN** Home and history hide private content, distinguish denied from unavailable, and offer an explicit refresh that starts a fresh sync without an output command
 
-#### Scenario: Accessible Home and history
+#### Scenario: Keyboard and narrow Home and history
 - **WHEN** the owner adds the card, opens history, pages through messages and returns Home using a keyboard or narrow viewport
 - **THEN** the selection and messages remain readable, updates do not steal focus, and Home displays no inline transcript or reveal control
 - **AND** history uses the owner's existing pagination and retention rules without a twenty-message cap or separate archive

@@ -1,7 +1,6 @@
 // Existing playlist editing through the shared tracked command UI, using fresh synthetic state (Hub #932).
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import {chromium, type Browser} from 'playwright';
 import sharp from 'sharp';
 import {changes, feed, startWorld} from './harness.ts';
@@ -107,7 +106,6 @@ try {
     await page.getByRole('combobox', {name: 'Playlist', exact: true}).selectOption(created.id);
     assert.equal(await page.getByRole('textbox', {name: 'Playlist name', exact: true}).inputValue(), 'Renamed sequence');
     assert.equal(sent.length, 7, 'reload never resends');
-    assert.deepEqual((await new AxeBuilder({page}).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(item => item.id), []);
     const finalSaved = (await world.pixooPlaylists())[0]; assert.ok(finalSaved);
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.reload(); await feed(page, 'connected');
@@ -125,6 +123,6 @@ try {
     for (let attempt = 0; (await world.pixooPlaylists()).length !== 0 && attempt < 100; attempt++) await delay(20);
     assert.deepEqual(await world.pixooPlaylists(), []); assert.equal(sent.length, 8);
     assert.equal(world.pixooState().sent, 0); assert.deepEqual(errors, []);
-    process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-playlist-create-rename-options-items-order-remove-delete', requests: sent.length, referencedThumbnail: true, displayWrites: 0, readOnlyRefused: true, axe: 'passed'})}\n`);
+    process.stdout.write(`${JSON.stringify({passed: true, journey: 'pixoo-playlist-create-rename-options-items-order-remove-delete', requests: sent.length, referencedThumbnail: true, displayWrites: 0, readOnlyRefused: true})}\n`);
   } finally {await context.close();}
 } finally {try {await browser?.close();} finally {await world.close();}}

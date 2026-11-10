@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import {AxeBuilder} from '@axe-core/playwright';
 import type {Browser, Page, Request} from 'playwright';
 import {feed, startWorld} from './harness.ts';
 import {installSyntheticSpeech} from '../../dist/verify/speech-fixture.js';
@@ -93,11 +92,9 @@ export async function speechJourney(browser: Browser): Promise<void> {
     await page.evaluate(() => window.speechFixture.releaseVoices());
     await controls(page).getByText('Playback: Speech did not start.', {exact: true}).waitFor(); assert.equal(await count(), 3);
     await tab(page, 'Controls'); await page.getByRole('button', {name: 'Unmute Coding attention', exact: true}).click(); await tab(page, 'Voice');
-    assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
     const receipts = process.env.DASHBOARD_RECEIPTS;
     if (receipts !== undefined) {await mkdir(receipts, {recursive: true}); await page.screenshot({path: `${receipts}/speech-desktop.png`, fullPage: true});}
     await page.setViewportSize({width: 390, height: 844}); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
-    assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
     if (receipts !== undefined) await page.screenshot({path: `${receipts}/speech-phone.png`, fullPage: true});
     world.dropDashboardStreams(); await feed(page, 'connected'); await controls(page).getByText('Spoken alerts enabled in this tab.', {exact: true}).waitFor({state: 'detached'});
     assert.equal(await count(), 3); await question('speech-disconnected'); assert.equal(await count(), 3);
@@ -115,7 +112,7 @@ export async function speechJourney(browser: Browser): Promise<void> {
     await page.reload(); await feed(page, 'connected'); await tab(page, 'Voice'); await page.getByText('Read-only access. Controls require operator authority.', {exact: true}).waitFor();
     assert.equal(await enable(page).isDisabled(), true); assert.deepEqual(errors, []);
   } finally {await context.close(); await world.close();}
-  process.stdout.write('Speech browser: selected tab, manual availability, completed/Stop/mute receipts, Quiet/category policy, delayed voice recheck, reload/disconnect/restart silence, uncertainty, reader controls, keyboard, narrow layout and axe passed with synthetic audio.\n');
+  process.stdout.write('Speech browser: selected tab, manual availability, completed/Stop/mute receipts, Quiet/category policy, delayed voice recheck, reload/disconnect/restart silence, uncertainty, reader controls, keyboard and narrow layout passed with synthetic audio.\n');
 }
 
 /** Removing an opted-in Home card withdraws its endpoint without enabling another tab. */
@@ -211,7 +208,6 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     await answer.click(); await assistant.getByText('Task status: succeeded', {exact: true}).waitFor();
     await page.waitForTimeout(300); assert.equal(await count(), 4, 'Quiet mode speaks no reply');
     await hub.getByRole('button', {name: 'Work', exact: true}).click(); await controls.getByText('Quiet mode suppresses spoken replies.', {exact: true}).waitFor({state: 'detached'});
-    assert.deepEqual((await new AxeBuilder({page}).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations.map(value => value.id), []);
     const receipts = process.env.DASHBOARD_RECEIPTS;
     if (receipts !== undefined) {await mkdir(receipts, {recursive: true}); await page.screenshot({path: `${receipts}/spoken-replies-desktop.png`, fullPage: true});}
     await controls.getByRole('button', {name: 'Mute spoken replies', exact: true}).click();
@@ -219,5 +215,5 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     assert.equal(JSON.stringify(world.logs).includes('PRIVATE-SYNTHETIC'), false, 'diagnostics contain no spoken text');
     assert.deepEqual(errors, []);
   } finally {await context.close(); await world.close();}
-  process.stdout.write('Spoken replies browser: question, result and Speak replay spoken through the Conversation tab, Stop without cancelling, Quiet silence, mute, keyboard and axe passed with synthetic audio.\n');
+  process.stdout.write('Spoken replies browser: question, result and Speak replay spoken through the Conversation tab, Stop without cancelling, Quiet silence, mute and keyboard passed with synthetic audio.\n');
 }

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
-import AxeBuilder from '@axe-core/playwright';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {fixture} from './fixture.mjs';
@@ -11,7 +10,6 @@ const output=process.env.DASHBOARD_RECEIPTS;if(output)await mkdir(output,{recurs
 const checks=[];
 const signedIn=page=>page.getByText('Control enabled · Local',{exact:true}).waitFor();
 async function until(condition,message){const deadline=Date.now()+10000;while(!condition()){if(Date.now()>deadline)throw new Error('condition-timeout: '+message);await new Promise(r=>setTimeout(r,25));}}
-async function axe(page){const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>v.id),[]);}
 try{
  {
   const f=await fixture({empty:true,browserAccess:'trusted-loopback'}),context=await browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'});
@@ -63,7 +61,6 @@ try{
    await page.getByRole('button',{name:'Disconnect',exact:true}).click();
    await page.getByText('You’re signed out.',{exact:true}).waitFor();
    assert.equal(await page.getByText('After a reload, run it again.',{exact:false}).count(),0,'no launcher reload hint in a trusted page');
-   await axe(page);
    if(output)await page.screenshot({path:output+'/trusted-signed-out.png',fullPage:true});
    await page.getByRole('button',{name:'Sign in',exact:true}).click();await signedIn(page);
    checks.push('Disconnect offers Sign in, which restores the dashboard');
@@ -79,7 +76,6 @@ try{
    await page.goto(f.hub.url);
    await page.getByRole('alert').filter({hasText:'B.U.N.N.Y. couldn’t sign you in. Reload to try again, or use the launcher.'}).waitFor();
    await page.getByText('Open B.U.N.N.Y. with the Hub launcher.',{exact:true}).waitFor();
-   await axe(page);
    if(output)await page.screenshot({path:output+'/trusted-failed.png',fullPage:true});
    await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await signedIn(page);
    checks.push('a failed sign-in shows the launcher and token fallbacks');

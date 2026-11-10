@@ -171,8 +171,8 @@ Production checks must cover both-app extraction, malformed and ambiguous
 samples, secrets versus ordinary text, bounds, durable intake/idempotence,
 same-title ambiguity, content change/exit, pause/seek reports, gaps/clock changes,
 restart retention, storage faults and bounded read-only API/MCP queries. Browser
-checks cover keyboard, mobile/desktop, empty/error/reconnect states and
-accessibility. Independent frozen-comparison reviews and applicable CI remain
+checks cover keyboard, mobile/desktop and empty/error/reconnect states.
+Independent frozen-comparison reviews and applicable CI remain
 required.
 
 After source delivery, one separately approved installed walkthrough can verify
