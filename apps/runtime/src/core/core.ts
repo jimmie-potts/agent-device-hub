@@ -1,4 +1,4 @@
-import {registerReadReceiptFamily, type Lifecycle21Observation} from '@jimmie-potts/event-contracts/v2/read-receipts';
+import {readReceiptValidator, type Lifecycle21Observation} from '@jimmie-potts/event-contracts/v2/read-receipts';
 import {isReadReceipt, receiptQualification} from '../read-receipts/qualification.js';
 // The agent-session core (Hub #831, ADR 0012): the one owner of agent sessions in the runtime, as the source `bunny/core`.
 // It runs agent-state's owner on the core store, takes hooks' 2.0 `lifecycle` observations into the reducer, publishes
@@ -11,9 +11,9 @@ import {isReadReceipt, receiptQualification} from '../read-receipts/qualificatio
 // Its own `operation` family (Hub #922, operation-records.ts) is the first such part: each tracked action's latest state.
 import type {DatabaseSync} from 'node:sqlite';
 import {createAgentState, type Consumer, type Outcome} from '@jimmie-potts/agent-state';
-import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  registerCoreFamilies, sessionEntityId, type ApprovalRecoverRequest, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
+  sessionEntityId, type ApprovalRecoverRequest, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
@@ -315,7 +315,7 @@ class Core {
   readonly #parts: readonly CorePart[];
   readonly #inbox: InboxRecords;
   readonly #consumers: readonly Consumer[];
-  readonly #validator = new MessageValidator();
+  readonly #validator = readReceiptValidator();
   readonly #ready: Promise<void>;
   #opened: () => void = () => {};
   #failed: (error: unknown) => void = () => {};
@@ -389,8 +389,6 @@ class Core {
     const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, this.#art, this.#show, this.#music, this.#lighting, ...added];
     this.#parts = parts;
     this.#consumers = consumers;
-    registerCoreFamilies(this.#validator);
-    registerReadReceiptFamily(this.#validator);
     this.#ready = new Promise<void>((resolve, reject) => {
       this.#opened = resolve;
       this.#failed = reject;
