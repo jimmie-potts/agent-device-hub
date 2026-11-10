@@ -8,6 +8,7 @@ import {CaptureProjection, type MusicCaptureView} from '../src/music-capture-fee
 import {FeatureInterpolator, VisualizerEngine, restingReason, visualizerSignal, type Shape, type VisualizerEffect, type VisualizerSignal} from '../src/music-visualizer-model.ts';
 import {bassPulse, effectById, spectrumBars, visualizerEffects} from '../src/music-visualizer-effects.ts';
 import {EFFECT_CHOICE_KEY, EffectChoiceStore} from '../src/music-visualizer-preference.ts';
+import {acquireMusicCapture, releaseMusicCapture} from '../src/music-capture-scope.ts';
 import {homeCatalog, addHomeCard, defaultHomeArrangements, savedHomeCard} from '../src/home-catalog.ts';
 import {widgetDefinition} from '../src/widgets.ts';
 import {navigationDestination, parseRoute, routeHash} from '../src/routes.ts';
@@ -218,6 +219,22 @@ void test('the visualizer is a placeable Audio card that reads only the capture 
   const next = addHomeCard(defaults, 'desktop', card);
   assert.equal(next.desktop.at(-1)?.widget, 'music-visualizer'); assert.equal(next.phone.at(-1)?.widget, 'music-visualizer');
   assert.deepEqual(savedHomeCard('music-visualizer', catalog), card);
+});
+
+void test('surfaces on one page share one capture scope, so the page makes one clock-qualified sync', async () => {
+  const opened: {refreshed: number; closed: number}[] = [];
+  const connection = {openMusicCapture: () => {
+    const record = {refreshed: 0, closed: 0}; opened.push(record);
+    return {refresh: () => {record.refreshed += 1; return Promise.resolve(true);}, close: () => {record.closed += 1; return Promise.resolve();}};
+  }};
+  const first = acquireMusicCapture(connection), second = acquireMusicCapture(connection);
+  assert.ok(first !== undefined); assert.equal(first, second);
+  assert.deepEqual(opened, [{refreshed: 1, closed: 0}], 'one scope and one sync for both surfaces');
+  releaseMusicCapture(connection, first); assert.deepEqual(opened, [{refreshed: 1, closed: 0}], 'still in use');
+  releaseMusicCapture(connection, first); await Promise.resolve(); assert.deepEqual(opened, [{refreshed: 1, closed: 1}], 'the last user closes it');
+  const reopened = acquireMusicCapture(connection); assert.notEqual(reopened, first); assert.equal(opened.length, 2, 'a later user opens a fresh scope');
+  const refused = {openMusicCapture: () => {throw new Error('unavailable');}};
+  assert.equal(acquireMusicCapture(refused), undefined);
 });
 
 void test('the full view has its own address under Audio', () => {

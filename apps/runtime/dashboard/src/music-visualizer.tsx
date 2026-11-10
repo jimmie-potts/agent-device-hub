@@ -1,12 +1,13 @@
 /**
  * The music visualizer's browser surfaces (#1619): a panel on the Audio page, a full view that fills the window and can
- * go full screen, and a Home card. Each reads the existing capture state and derived feature stream through its own
- * read-only scope; none sends a command, starts capture or touches a light. Effects draw on a canvas at the display's
+ * go full screen, and a Home card. Each reads the existing capture state and derived feature stream through the page's
+ * shared read-only scope; none sends a command, starts capture or touches a light. Effects draw on a canvas at the display's
  * frame rate.
  */
 import React, {useEffect, useId, useRef, useState, useSyncExternalStore} from 'react';
 import type {DashboardConnection} from './connection.ts';
-import type {MusicCaptureFeed, MusicCaptureView} from './music-capture-feed.ts';
+import type {MusicCaptureView} from './music-capture-feed.ts';
+import {useMusicCapture} from './music-capture-scope.ts';
 import {effectById, visualizerEffects} from './music-visualizer-effects.ts';
 import {VisualizerEngine, visualizerSignal, type Shape, type VisualizerEffect, type VisualizerSignal} from './music-visualizer-model.ts';
 import {EffectChoiceStore} from './music-visualizer-preference.ts';
@@ -21,17 +22,9 @@ const useEffectChoice = (): VisualizerEffect => effectById(useSyncExternalStore(
 const empty: MusicCaptureView = {synced: false, state: undefined, features: undefined, clockQualified: false};
 const emptySubscribe = (): (() => void) => () => {};
 const emptySnapshot = (): MusicCaptureView => empty;
-/** A read-only capture scope; opening it neither starts capture nor opens an endpoint. */
+/** The page's shared read-only capture scope; opening it neither starts capture nor opens an endpoint. */
 function useCaptureView(connection: DashboardConnection, connected: boolean, coreLive: boolean): {view: MusicCaptureView; live: boolean} {
-  const [scope, setScope] = useState<MusicCaptureFeed | undefined>();
-  useEffect(() => {
-    setScope(undefined);
-    if (!connected || !coreLive) return;
-    let current: MusicCaptureFeed;
-    try {current = connection.openMusicCapture();} catch {return;}
-    setScope(current); void current.refresh();
-    return () => {void current.close();};
-  }, [connection, connected, coreLive]);
+  const scope = useMusicCapture(connection, connected, coreLive);
   const view = useSyncExternalStore(scope?.subscribe ?? emptySubscribe, scope?.getSnapshot ?? emptySnapshot, emptySnapshot);
   return {view, live: connected && coreLive && scope !== undefined && view.synced};
 }

@@ -290,8 +290,10 @@ source evidence; installation and physical acceptance remain separate.
 Audio shows a **Music visualizer** (#1619) above the measurement card. It draws
 the derived capture features that the measurement card reads: the applied
 response values when the core has them, otherwise the measured level and bass,
-mid and treble bands. It opens its own read-only capture scope on the shell
-participant, so it sends no command, starts no capture and controls no lights.
+mid and treble bands. It reads them through the same read-only capture scope as
+the measurement card: `src/music-capture-scope.ts` keeps one scope per page
+connection, so a page makes one capture sync and its clock check is not slowed
+by a second one. It sends no command, starts no capture and controls no lights.
 Effects draw on a canvas at the display's frame rate and ease toward the newest
 feature window without replaying skipped ones. When measurement is off, idle,
 starting, stale, stopping, uncertain or without fresh windows, the canvas shows a

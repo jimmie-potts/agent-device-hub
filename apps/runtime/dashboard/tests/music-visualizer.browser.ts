@@ -28,7 +28,6 @@ try {
   const canvas = panel.locator('canvas'), effect = panel.getByRole('combobox', {name: 'Effect', exact: true});
   const capture = page.getByRole('article', {name: 'Music input measurement', exact: true});
   const startMusic = capture.getByRole('button', {name: 'Start measuring Music', exact: true});
-  const stopMusic = capture.getByRole('button', {name: 'Stop measuring', exact: true});
 
   // Resting before any source, then with the source ready but not measuring.
   await expect(canvas).toHaveAttribute('data-visualizer-state', 'resting');

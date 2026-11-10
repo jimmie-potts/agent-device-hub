@@ -1,10 +1,11 @@
-import React, {useEffect, useId, useState, useSyncExternalStore} from 'react';
+import React, {useId, useState, useSyncExternalStore} from 'react';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CaptureInput} from '@jimmie-potts/event-contracts/v2/music-capture-data';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {DashboardConnection} from './connection.ts';
 import {useAttempt} from './command-control.tsx';
-import type {MusicCaptureFeed, MusicCaptureView} from './music-capture-feed.ts';
+import type {MusicCaptureView} from './music-capture-feed.ts';
+import {useMusicCapture} from './music-capture-scope.ts';
 import {MusicResponseControls} from './music-response-controls.tsx';
 import {MusicLightingCard} from './music-lighting-card.tsx';
 import './music.css';
@@ -34,17 +35,9 @@ export function MusicCaptureCard({connection, connected, coreLive, control, oper
   connection: DashboardConnection; connected: boolean; coreLive: boolean; control: boolean;
   operations: readonly OperationRecord[]; operationsLive: boolean; devices?: readonly DeviceRecord[]; presetPage?: boolean;
 }): React.JSX.Element {
-  const [scope, setScope] = useState<MusicCaptureFeed | undefined>();
+  const scope = useMusicCapture(connection, connected, coreLive);
   const [refreshing, setRefreshing] = useState(false);
   const [input, setInput] = useState<CaptureInput>('music');
-  useEffect(() => {
-    setScope(undefined);
-    if (!connected || !coreLive) return;
-    let current: MusicCaptureFeed;
-    try {current = connection.openMusicCapture();} catch {return;}
-    setScope(current); void current.refresh();
-    return () => {void current.close();};
-  }, [connection, connected, coreLive]);
   const view = useSyncExternalStore(scope?.subscribe ?? emptySubscribe, scope?.getSnapshot ?? emptySnapshot, emptySnapshot);
   const selected = operations.filter(operation => operation.family === 'music-capture-control' && operation.target === 'music');
   const start = useAttempt('music', selected, operationsLive, undefined, 'core/music-capture/start');
