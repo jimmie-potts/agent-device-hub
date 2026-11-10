@@ -504,14 +504,26 @@ export class AssistantEngine {
     const settle = (answer: RequestResult, accepted: string): {text: string; units: number} => {
       // The dispatcher's own uncertainty reaches the module as a rejection carrying `uncertain-result`; the fate is unknown either way.
       if (answer.status === 'uncertain' || (answer.status === 'rejected' && answer.error.error.code === 'uncertain-result')) throw new Fault('uncertain-result');
-      return {text: answer.status === 'accepted' ? accepted : `refused: ${answer.error.error.code}`, units: 0};
+      if (answer.status === 'accepted') return {text: accepted, units: 0};
+      const code = answer.error.error.code;
+      return {text: proposal.family === 'mode-set' && code === 'revision-conflict'
+        ? 'refused: revision-conflict: the Hub mode changed just before this change was sent; nothing was changed. Read the mode again before proposing another change.'
+        : `refused: ${code}`, units: 0};
     };
     let result: string, delegation: Question | undefined;
     if (proposal.family === 'mode-set') {
       const dispatch = this.options.dispatch;
       if (dispatch === undefined) return refuse('refused', 'This tool is not permitted.');
+      // The owner's approval names the mode; bind it to the revision current now, not the one the proposal saw (Hub #1657),
+      // so a mode change made in between does not make the core refuse it. A call already admitted is never sent again,
+      // so its replay needs no revision.
+      const copy = this.#core(), current = copy.synced ? copy.mode?.revision : undefined;
+      if (current === undefined && this.store.call(id) === undefined) {
+        return refuse('refused', 'The Hub mode is not synced with the core right now, so the approved change cannot be bound to its revision; nothing was sent.');
+      }
+      const expectedRevision = current ?? proposal.expectedRevision;
       result = await this.#call(state.taskId, state.step, 'tool', signal => dispatch({requestId: id, family: proposal.family, target: proposal.target,
-        data: {mode: proposal.data.mode, expectedRevision: proposal.expectedRevision}}, active.span.context, signal)
+        data: {mode: proposal.data.mode, expectedRevision}}, active.span.context, signal)
         .then(answer => settle(answer, `accepted: the core accepted mode-set ${proposal.data.mode} as operation ${id}; its outcome is tracked separately`)));
     } else {
       const delegate = this.options.delegate;

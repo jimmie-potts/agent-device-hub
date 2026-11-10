@@ -52,6 +52,22 @@ const ART_REQUESTERS: Readonly<Record<string, string>> = Object.freeze({
   'art-request': DASHBOARD_SOURCE, 'art-catalog-edit': DASHBOARD_SOURCE, 'art-auto': CORE_SOURCE, 'art-stage': ART_MODULE_SOURCE, 'art-ambient-set': ART_MODULE_SOURCE,
 });
 /**
+ * Why the dispatcher refuses this family from this requester, if it does: work only its owner may ask for. Inbox Send
+ * again asks as whoever handles the item, so the inbox reads the same rule (Hub #1657).
+ */
+export function requesterRefusal(family: string, requestedBy: string): ErrorBody | undefined {
+  if (family.startsWith('music-capture-') && family !== 'music-capture-control') return errorBody('forbidden', {detail: 'capture endpoint work belongs to the capture owner'});
+  if (family.startsWith('music-lighting-') && family !== 'music-lighting-control' && (family !== 'music-lighting-work' || requestedBy !== CORE_SOURCE)) {
+    return errorBody('forbidden', {detail: 'music lighting work is dispatched only by the core\'s session owner'});
+  }
+  if (family.startsWith('companion-speech-') && (family !== 'companion-speech-play' || requestedBy !== 'bunny/modules/companions')) {
+    return errorBody('forbidden', {detail: 'speech is dispatched only by its companions owner'});
+  }
+  if (Object.hasOwn(ART_REQUESTERS, family) && requestedBy !== ART_REQUESTERS[family]) return errorBody('forbidden', {detail: 'this art command has one requester'});
+  return undefined;
+}
+
+/**
  * The commands whose payload stays in memory: the operation keeps a private digest for duplicate detection and no
  * payload, so it cannot be sent again. ONN text is private; a stage's bytes would grow the tracker. Each identity and
  * digest domain is fixed: a stored digest compares only under its own domain.
@@ -370,16 +386,8 @@ export class Tracker {
     if (family === undefined || target === undefined) return refuse('invalid-request', 'an action is a command on a key bunny.cmd.<family>.<target>');
     if (DIRECT_COMMANDS.includes(family)) return refuse('invalid-request', 'the core\'s operator commands are not tracked actions; send them as they are');
     if (OPERATOR_ACTIONS.includes(family) !== operator) return refuse('forbidden', 'this action requires its dedicated operator admission');
-    if (family.startsWith('music-capture-') && family !== 'music-capture-control') return refuse('forbidden', 'capture endpoint work belongs to the capture owner');
-    if (family.startsWith('music-lighting-') && family !== 'music-lighting-control' && (family !== 'music-lighting-work' || action.requestedBy !== CORE_SOURCE)) {
-      return refuse('forbidden', 'music lighting work is dispatched only by the core\'s session owner');
-    }
-    if (family.startsWith('companion-speech-') && (family !== 'companion-speech-play' || action.requestedBy !== 'bunny/modules/companions')) {
-      return refuse('forbidden', 'speech is dispatched only by its companions owner');
-    }
-    if (Object.hasOwn(ART_REQUESTERS, family) && action.requestedBy !== ART_REQUESTERS[family]) {
-      return refuse('forbidden', 'this art command has one requester');
-    }
+    const requester = requesterRefusal(family, action.requestedBy);
+    if (requester !== undefined) return refuse(requester.error.code, requester.error.detail ?? 'this requester may not ask for this action');
     if (!ID.test(requestId)) return refuse('invalid-request', 'a request ID is 1 to 128 letters, digits, underscores, dots or hyphens');
     if (draft.subject !== target) return refuse('invalid-message', 'a command\'s subject is its key\'s last token');
     if (!COMMAND_TYPE.test(draft.type) || typeof draft.dataschema !== 'string' || typeof draft.data !== 'object' || draft.data === null || Array.isArray(draft.data)) {

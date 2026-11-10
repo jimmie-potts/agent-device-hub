@@ -2,7 +2,7 @@
 // one operation requested by the module, only the allowlisted family and target, and only from that module.
 import assert from 'node:assert/strict';
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
-import type {ModeState} from '@jimmie-potts/event-contracts/v2/families';
+import type {InboxItem, ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import {contextOf, fixture, it, run, waitFor} from './support.js';
 
@@ -52,4 +52,13 @@ it('only companions can dispatch an allowlisted mode-set, tracked as its own ope
   const stale = await send({...data, requestId: 'assistant-stale-test'});
   assert.equal(stale.status === 'rejected' && stale.error.error.code, 'revision-conflict');
   assert.equal(handle?.operation('assistant-stale-test')?.status, 'rejected');
+  // #1657 (AC3): the stale revision can never match again, so the refusal stays in history and the assistant's own
+  // reply reports it; it opens no inbox item.
+  assert.equal(handle?.operation('assistant-stale-test')?.error?.code, 'revision-conflict');
+  const inbox = await contextOf(other).sdk.sync<InboxItem>(['inbox-item'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
+  assert.equal(inbox.status, 'synced');
+  if (inbox.status === 'synced') {
+    assert.deepEqual(inbox.copy.states().map(message => message.data.item.requestId), []);
+    await inbox.copy.close();
+  }
 });

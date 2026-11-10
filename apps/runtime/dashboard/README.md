@@ -873,7 +873,11 @@ Installation and physical acceptance remain separate.
 ## Inbox and timeline
 
 Home syncs the core's shared inbox and shows failed, uncertain and conflicting
-operations. **Send again** explicitly sends saved operation data as a fresh
+operations. A result whose only possible handling is Dismiss never reaches it
+(#1657). Examples are a display refusing a scheduled art moment, a light
+refusing core-dispatched Music lighting work, an unconfirmed companion speech
+line and a mode change refused for a stale revision. Each stays in **Timeline**
+history with its code and detail. **Send again** explicitly sends saved operation data as a fresh
 tracked command and handles the old item; **Dismiss** only handles the item.
 Both use its current revision. Stale copies disable actions; read-only sessions
 show the records without controls. A handling reply is separate from the synced
