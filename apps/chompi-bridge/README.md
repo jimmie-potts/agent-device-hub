@@ -428,7 +428,9 @@ client allows it; model lists and level names come from each client and are neve
   stillness calls `Select` on the option holding focus, which applies it and closes the menu. The readback waits for
   the `Model: <name>` button to name the pick and, when the router can tell the session in front from the sessions it
   knows (strictly the newest `lastFocusedAt`), for that session record's `model` to change. Then the composer gets
-  focus back, so Play still works.
+  focus back, so Play still works. A model change costs something on a long task (Anthropic's model guide, read
+  2026-11-09): the prompt cache belongs to the model that wrote it, so the next turn rewrites the whole conversation
+  to the new model's cache, and moving to a smaller model drops the earlier reasoning.
 - **Claude effort (knob 2).** A detent expands the `Effort: <level>` button when the slider is not open and sets the
   slider one `SmallChange` from the value it reads (`RangeValue.SetValue`), which applies at once. The range comes from
   the slider, so at an end nothing is set: one `at-limit` with a red flash, and the detents still waiting are dropped.
