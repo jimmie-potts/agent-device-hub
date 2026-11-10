@@ -84,9 +84,8 @@ with a Pixoo playlist start and a LIFX color, previews it in Work (the start
 blocked for the mode, the color would send, nothing admitted or logged), then on Run now in Work and in
 Free, then once at its minute, in memory and in disposable runtime runs. Run
 both and `automation-lines-moment` after changes to this shared path. The
-in-memory catalog is run on Linux or in a disposable Linux container (where its
-private-file check reads `/proc/self/fd`; off Linux the reader checks the path
-again after the open, Hub #1355). The Automation browser journey covers independent
+in-memory catalog runs on Linux, in a disposable Linux container or
+[natively on macOS](#native-runs-on-macos). The Automation browser journey covers independent
 devices, invalid drafts, Run now, Preview, passive reconnect, lost mutation replies
 and read-only controls.
 These checks contact no household device and qualify no installed routine or maximum-on limit.
@@ -417,7 +416,7 @@ admission; none of these checks contact a household device.
 ### CLI refusal checks
 
 After the root build, run `node --test apps/runtime/dist/tests/process.test.js`
-on Linux for state-directory and configuration admission, service startup and
+on Linux or [natively on macOS](#native-runs-on-macos) for state-directory and configuration admission, service startup and
 shutdown, and process diagnostics. Each independent refusal registers its own
 test through the existing helper, retaining its 20-second deadline and child
 cleanup. Valid private configuration startup has its own test. Adding another
@@ -492,6 +491,49 @@ These checks cover the durable selection, independent device outcomes, failed
 saves, duplicates, explicit reapply, authorization and restart without replay.
 The existing runtime and catalog CI suites discover them. The inbox-dependent
 Acceptance journey uses the real inbox in a disposable run.
+
+### Native runs on macOS
+
+The runtime unit suite, the scenario catalog and the runtime dashboard browser
+journeys also run natively on macOS with Node 24, from the session's own worktree
+after its own `npm run build` (Hub #1639). Off Linux the private-file reader checks
+the path again after the open instead of reading `/proc/self/fd` (Hub #1355).
+
+```bash
+node scripts/native-test.mjs test:runtime:built
+node scripts/native-test.mjs test:runtime:scenarios:built
+node scripts/native-test.mjs test:runtime:scenarios:built --workers 1 -- --test-name-pattern=art-show
+npm run test:runtime-dashboard:browser
+```
+
+A bare `node --test` starts one test worker per core less one, and Node refuses
+`--test-concurrency` in `NODE_OPTIONS`. `scripts/native-test.mjs` takes a package
+script that is one plain `node --test` command, adds `--test-concurrency` (2 unless
+`--workers` names another number) and passes the options after `--` to
+`node --test`. It sets `TMPDIR` to a new private directory under `/tmp`, by its
+resolved path, and removes it afterwards: macOS reaches `/tmp` and its per-user
+temporary directory through links, which the private-file checks refuse, and the
+resolved per-user path is too long for the launcher's Unix socket. The browser
+journeys already run one at a time. Hosted CI keeps calling the package scripts.
+`node --test scripts/tests/native-test.test.mjs` checks the runner.
+
+Each run uses its own worktree, build output, ports, synthetic credentials and
+state, and never attaches to an installed runtime or its ports.
+
+These runtime unit tests still need Linux and skip elsewhere with a printed reason:
+
+| Test file | Linux need |
+| --- | --- |
+| `upgrade-lock.test.ts`, two cases of the documented lock block | util-linux `/usr/bin/flock` |
+| `runtime-upgrade-check.test.ts`, the inspected receipt resolution | util-linux `/usr/bin/flock` |
+| `full-disk.test.ts`, `nanoleaf-full-disk.test.ts`, `pixoo-migration.test.ts` (one case each) | `unshare` for a private tmpfs |
+| `remote-hooks.test.ts`, the two stalled native DNS cases | an `LD_PRELOAD` resolver shim |
+| `container-listener.test.ts` | the loopback address 127.0.0.2 |
+| `codex-desktop-collector.test.ts`, the entry point against a real runtime | kept to Linux by choice, where CI runs it |
+
+On Linux they run, except that the `unshare` cases also skip on a host that refuses
+an unprivileged user namespace. The other `:built` unit suites, the old dashboard's
+journeys and the Python-dependent tests have not been measured natively.
 
 ### Runtime verification runs
 
