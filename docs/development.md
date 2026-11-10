@@ -793,34 +793,46 @@ and the Tronbyt server. Test work shares that host, and host load sets how much
 can run. Each session applies this rule itself; no coordinator grant is needed.
 
 1. **Slots.** At most 5 test jobs run at once, across all sessions. A job is
-   one test container (`bunny-gh*` or `bunny-runtime-check-*`) or one native
-   test suite. An `npm run test:runtime:container` run carries its own limits
+   one test container or one native test suite. Any container started for
+   testing counts, whatever its name; the known names start with `bunny-gh` and
+   `bunny-runtime-check-`. A wide container (name ending `-wide`, item 3) counts
+   as two slots. An `npm run test:runtime:container` run carries its own limits
    and is one slot ([Runtime verification runs](#runtime-verification-runs)).
-2. **Start check.** Read `uptime` and count the jobs:
-   `docker ps --format '{{.Names}}' | grep -E '^bunny-(gh|runtime-check-)'`
-   plus native suites (`pgrep -fl -- '[n]ode --test|[p]laywright test'` lists
-   them; count one per suite, not per process).
-   Start only if the 1-minute load is under 8 and enough slots are free.
-   Otherwise wait a minute and check again.
+2. **Start check.** Start only if all three hold; otherwise wait a minute and
+   check again:
+   - the 1-minute load in `uptime` is under 8;
+   - the installed core is `healthy`:
+     `docker inspect -f '{{.State.Health.Status}}' bunny-mac-personal-core-1`;
+   - enough slots are free. Count test containers with
+     `docker ps --format '{{.Names}}'`. List native suites with
+     `ps -axo command= | grep -E '^([^ ]*/)?(node|python3?)( |$)' | grep -E -- '--test|/tests/|unittest|vitest|scripts/check-' | grep -v -- '--test-isolation=process'`.
+     The listing is an aid: it shows one parent line per suite (the line that
+     names the test files or the browser entry script) and hides test workers.
+     Also count every native suite you started yourself.
 3. **Containers.** Use
    `docker run --rm --name bunny-gh<issue>-<job> --cpus 2 --memory 1250m --memory-swap 1250m`.
    Run one job per container and let it exit when the job ends. No
    `sleep infinity` holders, no container without limits, and no swap:
    `--memory-swap` always equals `--memory`. The SDK suite is flaky at 2 CPUs,
-   so run it with `--cpus 4 --memory 2g --memory-swap 2g` and count it as two
-   slots.
-4. **Lint** runs natively only, one at a time, with default settings. It needs
-   more than 3.5 GB of heap and crashes under container limits.
+   so run it wide, as two slots:
+   `docker run --rm --name bunny-gh<issue>-<job>-wide --cpus 4 --memory 2g --memory-swap 2g`.
+4. **Lint** runs natively only, with default settings, and one at a time
+   across all sessions: start it only when `pgrep -fl '[e]slint'` prints
+   nothing. It needs more than 3.5 GB of heap and crashes under container
+   limits.
 5. **Host work.** Build, typecheck, lint and `npm ci` on the host take no slot.
    A native suite takes one slot and bounds its workers, for example
-   `node --test --test-concurrency=2 <files>`.
+   `node --test --test-concurrency=2 <files>`. Do not start a native suite
+   through the plain npm test scripts: they start one worker per core less one
+   (11 on this Mac), and `--test-concurrency` cannot be set through
+   `NODE_OPTIONS`.
 6. **Evidence.** A native macOS run of build, typecheck, lint, the Node suites,
    the scenario catalog and the browser journeys is accepted local validation
-   before a push. Hosted Linux CI is the gate. Use a Linux container only for a
-   Linux-only test or to reproduce a hosted failure.
+   before a push. Hosted Linux CI is the gate. A Linux container is needed only
+   for a Linux-only test or to reproduce a hosted failure; it stays allowed
+   otherwise.
 7. **Stop.** If the 1-minute load passes 12, or the installed core is not
-   `healthy` (`docker inspect -f '{{.State.Health.Status}}' bunny-mac-personal-core-1`),
-   the owner of the newest job stops it.
+   `healthy`, the owner of the newest job stops it.
 
 Test work never stops, restarts or reconfigures the installed core, the
 diagnostics containers or the Tronbyt server. Stop and remove only your own
