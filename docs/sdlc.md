@@ -304,12 +304,14 @@ not a source-delivery blocker. See [Project maintenance](project-maintenance.md)
    Re-review changed behavior and affected assumptions, not unchanged evidence.
    A pure rebase or prose correction needs one confirmation of the delta and new
    comparison. Never carry a verdict over a change that invalidates its evidence.
-   Count final review rounds that assess a new or corrected candidate; a
-   confirmation of a base move, pure rebase or prose correction does not count.
+   Count final review rounds that assess a new candidate or one corrected to
+   resolve a P0–P2 finding, whatever its file types. Confirming a base move, a
+   pure rebase or a correction that resolves no P0–P2 finding does not count.
    If the third counted round leaves a P0–P2 finding open, stop fixing: the
    coordinator reports the open findings and proposes a changed approach to the
    owner, and the merge stays blocked until the owner chooses. Independent
-   authorized work continues. A new PR for the same issue gets no fresh rounds.
+   authorized work continues. A changed approach the owner chooses starts a new
+   allowance of rounds; a new PR for the same issue without that choice does not.
    Reviewers make no GitHub/source writes. They read the shared candidate or build
    and test in their own disposable clone and clean it up; they do not build in
    the coordinator's worktree.
@@ -321,9 +323,13 @@ not a source-delivery blocker. See [Project maintenance](project-maintenance.md)
    format or duplicated receipt dossier is required; a PR review summary with
    comparison, verdicts and links to existing evidence is sufficient.
    A **gate-policy change** touches `.github/workflows/**`, branch protection
-   settings, `scripts/ci-selection/**`, `scripts/delivery-preflight/**`, or the
-   "Review and merge", "CI evidence", "Markdown-only CI routing" or "Affected PR
-   checks" sections of this file. It also needs the owner's acknowledgement
+   settings, `scripts/ci-selection/**`, `scripts/delivery-preflight/**`, the
+   numbered steps of "Review and merge", or its "Acceptance review", "CI
+   evidence", "UI approval scope", "Markdown-only CI routing", "Affected PR
+   checks" or "Integration, qualification and deployment" subsections. Its
+   other subsections, such as
+   "Cleanup after delivery", "Workspace audit" and "Tracker audit", are not gate
+   policy. A gate-policy change also needs the owner's acknowledgement
    before merge: the owner's own words, on the PR or in chat to the coordinating
    session. The coordinator records a chat acknowledgement on the PR, quoted with
    its time. No agent originates one or infers it from silence, an earlier
