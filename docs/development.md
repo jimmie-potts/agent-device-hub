@@ -1524,9 +1524,12 @@ that tag is missing. The build is a host step with network that uses CPU and
 memory outside the job's limits, and the command prints that it is building.
 Every run recomputes the key from its snapshot, runs by image ID, and refuses an
 image whose label does not match, so an image built for another lockfile is
-never used. The images are caches shared by every run of the same lockfile;
+never used. Each image is about 3.5 GB, and a new one appears for each lockfile
+or recipe change. Two first runs at the same time can each build the image; one
+tag wins and the other build is left untagged. The images are caches shared by
+every run of the same lockfile;
 [Cleanup after delivery](sdlc.md#cleanup-after-delivery) keeps them, and the
-owner removes old `bunny-test-deps` images.
+owner removes old `bunny-test-deps` images, including such untagged builds.
 
 Inside a 2-CPU container `node --test` already starts one worker, so the command
 runs package scripts directly, not through `scripts/native-test.mjs`. The

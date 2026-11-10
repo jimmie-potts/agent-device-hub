@@ -82,9 +82,12 @@ export function imageKey(lockfile, recipe) {
   return hash.digest('hex').slice(0, 24);
 }
 
+// A path docker's --volume and --cidfile options carry unchanged.
+const safePath = path => /^\/[A-Za-z0-9._/-]+$/.test(path);
+
 /** Every docker run argument of a job. The one place that builds them (#1641 adds --cgroup-parent here). */
 export function runArgs(plan, {imageId, source, cidfile}) {
-  if (!/^\/[A-Za-z0-9._/-]+$/.test(source) || !/^\/[A-Za-z0-9._/-]+$/.test(cidfile)) throw new Error('scratch-path-refused');
+  if (!safePath(source) || !safePath(cidfile)) throw new Error('scratch-path-refused');
   const size = sizes[plan.size];
   return ['run','--rm','--init','--name',plan.name,'--cidfile',cidfile,'--network',plan.network ? 'bridge' : 'none',
     '--cpus',size.cpus,'--memory',size.memory,'--memory-swap',size.memory,
@@ -133,21 +136,32 @@ export async function runJob(argv, io = host, repository = root) {
   io.onInterrupt(() => { state.interrupted = true; if (state.id) void io.run(['kill', state.id]); });
   const scratch = await mkdtemp(join(tmpdir(), 'bunny-test-container-')); // Mode 0700; it holds only the snapshot.
   const work = await mkdtemp(join(tmpdir(), 'bunny-test-container-work-'));
+  const source = join(scratch, 'source');
   const cidfile = join(work, 'cid');
   let status = 1;
   try {
-    status = await job(plan, io, state, {repository, source:join(scratch, 'source'), work, cidfile});
+    if (!safePath(source) || !safePath(cidfile)) {
+      io.log(`the scratch path ${scratch} cannot be passed to docker unchanged: set TMPDIR to a directory whose path uses only letters, digits, dot, underscore, slash and hyphen`);
+      status = 2;
+    } else {
+      status = await job(plan, io, state, {repository, source, work, cidfile});
+    }
   } catch (error) {
     io.log(error instanceof Error ? error.message : String(error));
   } finally {
     state.id ??= await containerId(cidfile);
     // --rm removes the container when it exits; remove it here only if it is still there, and only by its own ID.
+    // A cleanup failure is reported; it turns a passing job into status 1 and leaves a failing job's status alone.
     if (state.id && io.read(['container','inspect','--format','{{.Id}}',state.id]) !== null && await io.run(['rm','--force',state.id]) !== 0) {
       io.log(`could not remove container ${state.id}`);
       if (status === 0) status = 1;
     }
-    await rm(scratch, {recursive:true, force:true});
-    await rm(work, {recursive:true, force:true});
+    for (const directory of [scratch, work]) {
+      await rm(directory, {recursive:true, force:true, maxRetries:3}).catch(error => {
+        io.log(`could not remove ${directory}: ${error instanceof Error ? error.message : String(error)}`);
+        if (status === 0) status = 1;
+      });
+    }
   }
   return status;
 }
@@ -175,7 +189,10 @@ async function job(plan, io, state, {repository, source, work, cidfile}) {
     if (built !== 0) { io.log(`the dependency image build failed with status ${String(built)}`); return built; }
   }
   const [imageId, label] = (io.read(['image','inspect','--format',`{{.Id}} {{index .Config.Labels "${keyLabel}"}}`,tag]) ?? '').split(' ');
-  if (!/^sha256:[a-f0-9]{64}$/.test(imageId ?? '') || label !== key) { io.log(`${tag} does not carry this lockfile's key; refusing to use it`); return 2; }
+  if (!/^sha256:[a-f0-9]{64}$/.test(imageId ?? '') || label !== key) {
+    io.log(`${tag} does not carry this lockfile's key, so it is not used: ask the owner to remove the ${tag} tag, then run again to rebuild it`);
+    return 2;
+  }
   if (state.interrupted) return 130;
   const size = sizes[plan.size];
   io.log(`${plan.name}: ${plan.size} size (${size.cpus} CPUs, ${size.memory} memory, no swap), ${String(size.slots)} slot${size.slots === 1 ? '' : 's'}, network ${plan.network ? 'enabled for this job' : 'none'}`);
@@ -192,5 +209,8 @@ async function job(plan, io, state, {repository, source, work, cidfile}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  runJob(process.argv.slice(2)).then(status => { process.exitCode = status; });
+  runJob(process.argv.slice(2)).then(status => { process.exitCode = status; }, error => {
+    host.log(`stopped: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
 }

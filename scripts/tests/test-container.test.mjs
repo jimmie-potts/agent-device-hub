@@ -5,7 +5,7 @@ import {mkdtemp, mkdir, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {admit, imageKey, parse, runArgs, runJob, sizes} from '../test-container.mjs';
-import {steps} from '../test-container/inside.mjs';
+import {statusOf, steps} from '../test-container/inside.mjs';
 
 const scripts = {'test:runtime:built':'node --test x', 'test:runtime:verify:built':'node --test y', 'test:sdk:built':'node --test z', 'lint:js':'eslint .'};
 const image = 'sha256:' + 'b'.repeat(64);
@@ -79,10 +79,15 @@ test('the in-container steps copy the snapshot, commit it, build unless told not
   assert.deepEqual(steps('no-build', 'test:runtime:built', []).at(-1), ['npm', ['run', 'test:runtime:built']]);
   assert.equal(steps('no-build', 'test:runtime:built', []).length, 5);
   assert.throws(() => steps('maybe', 'x', []), /usage/);
+  assert.equal(statusOf({status:0, signal:null}), 0);
+  assert.equal(statusOf({status:3, signal:null}), 3);
+  assert.equal(statusOf({status:null, signal:'SIGTERM'}), 143);
+  assert.equal(statusOf({status:null, signal:'SIGKILL'}), 137);
+  assert.equal(statusOf({status:null, signal:null}), 1);
 });
 
 /** A fake Docker host: an image store keyed by tag, a container table and a call log. */
-function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuringRun = false} = {}) {
+function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuringRun = false, interruptBeforeId = false, runWithoutId = null, rmExit = 0, buildExit = 0} = {}) {
   const calls = [];
   const containers = new Set();
   let interrupt;
@@ -106,10 +111,13 @@ function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuring
     },
     run: async args => {
       calls.push(args);
-      if (args[0] === 'build') { images.set(args[2], {id:image, label:args[4].split('=')[1]}); return 0; }
+      if (args[0] === 'build') { if (buildExit === 0) images.set(args[2], {id:image, label:args[4].split('=')[1]}); return buildExit; }
       if (args[0] === 'kill') { containers.delete(args[1]); return 0; }
-      if (args[0] === 'rm') { containers.delete(args.at(-1)); return 0; }
+      if (args[0] === 'rm') { if (rmExit === 0) containers.delete(args.at(-1)); return rmExit; }
       if (args[0] === 'run') {
+        // docker run refusing before it creates a container writes no cidfile, like a 125 from the engine.
+        if (runWithoutId !== null) return runWithoutId;
+        if (interruptBeforeId) { interrupt(); await new Promise(wait => setTimeout(wait, 20)); return 130; }
         containers.add(id);
         await writeFile(args[args.indexOf('--cidfile') + 1], id + '\n');
         if (interruptDuringRun) {
@@ -168,8 +176,11 @@ test('an image without this lockfile key is never used, and a taken name or refu
   try {
     const key = imageKey(Buffer.from('{"lockfileVersion":3}'), Buffer.from('FROM node'));
     const stale = fakeHost({images:new Map([[`bunny-test-deps:${key}`, {id:image, label:'0'.repeat(24)}]])});
+    const said = [];
+    stale.log = line => said.push(line);
     assert.equal(await runJob(argv, stale, repo), 2);
     assert.equal(stale.calls.some(call => call[0] === 'run'), false);
+    assert.ok(said.includes(`bunny-test-deps:${key} does not carry this lockfile's key, so it is not used: ask the owner to remove the bunny-test-deps:${key} tag, then run again to rebuild it`));
     const taken = fakeHost();
     taken.read = args => { taken.calls.push(['read', ...args]); return args[0] === 'container' ? id : null; };
     let snapshotted = false;
@@ -181,4 +192,52 @@ test('an image without this lockfile key is never used, and a taken name or refu
     assert.equal(await runJob(['--issue','1','--job','a','--','lint:js'], lint, repo), 2);
     assert.deepEqual(lint.calls, []);
   } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+test('an interrupt before the container ID exists, or a docker run refused before it, kills and removes nothing', async () => {
+  const repo = await repository();
+  try {
+    const early = fakeHost({interruptBeforeId:true});
+    assert.equal(await runJob(argv, early, repo), 130);
+    assert.equal(early.calls.some(call => call[0] === 'kill' || call[0] === 'rm'), false);
+    const refused = fakeHost({runWithoutId:125});
+    assert.equal(await runJob(argv, refused, repo), 125);
+    assert.equal(refused.calls.some(call => call[0] === 'kill' || call[0] === 'rm'), false);
+  } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+test('a failed removal turns a passing job into status 1 and leaves a failing job its own status', async () => {
+  const repo = await repository();
+  try {
+    assert.equal(await runJob(argv, fakeHost({exit:0, linger:true, rmExit:1}), repo), 1);
+    assert.equal(await runJob(argv, fakeHost({exit:3, linger:true, rmExit:1}), repo), 3);
+  } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+test('a failed image build returns its status and runs nothing', async () => {
+  const repo = await repository();
+  try {
+    const io = fakeHost({buildExit:17});
+    assert.equal(await runJob(argv, io, repo), 17);
+    assert.equal(io.calls.some(call => call[0] === 'run'), false);
+  } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+test('a scratch path docker cannot carry unchanged is refused with what to do, and nothing runs', async () => {
+  const repo = await repository();
+  const odd = await mkdtemp(join(tmpdir(), 'test container '));
+  const saved = process.env.TMPDIR;
+  try {
+    process.env.TMPDIR = odd;
+    const lines = [];
+    const io = fakeHost();
+    io.log = line => lines.push(line);
+    assert.equal(await runJob(argv, io, repo), 2);
+    assert.match(lines.join('\n'), /set TMPDIR to a directory whose path uses only letters, digits, dot, underscore, slash and hyphen/);
+    assert.equal(io.calls.some(call => ['build','run'].includes(call[0])), false);
+  } finally {
+    if (saved === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = saved;
+    await rm(odd, {recursive:true, force:true});
+    await rm(repo, {recursive:true, force:true});
+  }
 });

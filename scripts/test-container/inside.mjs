@@ -18,13 +18,20 @@ export function steps(mode, script, args) {
   ];
 }
 
+/** A step's exit status as a shell reports it: its code, or 128 plus the number of the signal that ended it. */
+export function statusOf({status, signal}) {
+  if (status !== null && status !== undefined) return status;
+  const number = signal ? constants.signals[signal] : undefined;
+  return number === undefined ? 1 : 128 + number;
+}
+
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   const [mode, script, ...args] = process.argv.slice(2);
   let status = 0;
   for (const [program, programArgs] of steps(mode, script, args)) {
     const result = spawnSync(program, programArgs, {stdio:'inherit', cwd:'/work/source'});
     if (result.error) throw result.error;
-    status = result.status ?? 128 + (constants.signals[result.signal] ?? 0);
+    status = statusOf(result);
     if (status !== 0) break;
   }
   process.exitCode = status;
