@@ -70,6 +70,11 @@ export class MusicRenderer {
 
   /** At most one static payload per accepted source sequence. Never performs catch-up interpolation. */
   render(sample: MusicSample): Display | null {
+    return this.frame(sample)?.display ?? null;
+  }
+
+  /** As `render`, with the zones the payload lights: a live session streams them (#1598). */
+  frame(sample: MusicSample): {zones: readonly Zone[]; display: Display} | null {
     const frame = sample.feature;
     if (this.#retired || sample.endpointId !== this.#binding.endpointId || frame.generation !== this.#binding.generation
         || !Number.isFinite(sample.elapsedMs) || sample.elapsedMs < 0) return null;
@@ -117,6 +122,6 @@ export class MusicRenderer {
     this.#response = response;
     this.#pulse = pulse;
     this.#ambient = ambient;
-    return payload;
+    return {zones, display: payload};
   }
 }

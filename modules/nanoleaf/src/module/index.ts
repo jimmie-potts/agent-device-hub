@@ -1,10 +1,11 @@
 // The Nanoleaf runtime module (Hub #844; ADR 0012): the port of codex-nanoleaf (Hub #26) as one of the runtime's shipped
-// modules. `createNanoleafModule({transport})` takes how the module reaches its controllers, as every module factory does
+// modules. `createNanoleafModule({transport, datagram})` takes how the module reaches its controllers, as every module factory does
 // (#846): the Nanoleaf HTTP client (`lightRequest`), or a simulated controller in tests and disposable runs. The devices'
 // addresses and tokens come through the module's configuration and secrets (#919), never through the factory.
 import {deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {BunnyModule} from '@jimmie-potts/sdk';
+import {lightDatagram, type LightDatagram} from '../stream.js';
 import {lightRequest, type LightRequest} from '../transport.js';
 import {LINES_ADDRESS, SimulatedNanoleaf} from './simulated.js';
 import {configureNanoleaf, type NanoleafConfig} from './config.js';
@@ -39,6 +40,8 @@ export const SIMULATED_SECTION = Object.freeze({
 export type NanoleafModuleOptions = {
   /** How the module reaches each controller: `lightRequest` for real devices, or a simulated controller's `request`. */
   transport: LightRequest;
+  /** How the module sends live Music frame datagrams (#1598): `lightDatagram` for real devices, or a simulated controller's `datagram`. */
+  datagram: LightDatagram;
 };
 
 /**
@@ -51,7 +54,7 @@ export const nanoleafMessageSchemas: Readonly<Record<string, object>> = {
 };
 
 /** The Nanoleaf module with the given controller transport. */
-export function createNanoleafModule({transport}: NanoleafModuleOptions): BunnyModule<NanoleafConfig> {
+export function createNanoleafModule({transport, datagram}: NanoleafModuleOptions): BunnyModule<NanoleafConfig> {
   let running: NanoleafRuntime | undefined;
   return {
     manifest: {
@@ -62,7 +65,7 @@ export function createNanoleafModule({transport}: NanoleafModuleOptions): BunnyM
     },
     async start(context) {
       if (context.config === undefined) throw new Error('the Nanoleaf module started without its configuration');
-      running = await NanoleafRuntime.start({...context, config: context.config}, context.config, transport);
+      running = await NanoleafRuntime.start({...context, config: context.config}, context.config, transport, datagram);
     },
     async stop() {
       const current = running;
@@ -73,7 +76,7 @@ export function createNanoleafModule({transport}: NanoleafModuleOptions): BunnyM
 }
 
 /** The module with the real Nanoleaf HTTP client. */
-export const createRealNanoleafModule = (): BunnyModule<NanoleafConfig> => createNanoleafModule({transport: lightRequest});
+export const createRealNanoleafModule = (): BunnyModule<NanoleafConfig> => createNanoleafModule({transport: lightRequest, datagram: lightDatagram});
 
 /**
  * The shipped list's factory: the real controllers over the Nanoleaf HTTP client, or, under `--simulate`, a simulated
@@ -83,7 +86,10 @@ export const createRealNanoleafModule = (): BunnyModule<NanoleafConfig> => creat
 export const nanoleafFactory = {
   name: NANOLEAF_MODULE,
   create: createRealNanoleafModule,
-  simulate: (): BunnyModule<NanoleafConfig> => createNanoleafModule({transport: new SimulatedNanoleaf({anyAddress: true}).request}),
+  simulate: (): BunnyModule<NanoleafConfig> => {
+    const nanoleaf = new SimulatedNanoleaf({anyAddress: true});
+    return createNanoleafModule({transport: nanoleaf.request, datagram: nanoleaf.datagram});
+  },
   schemas: nanoleafSchemas,
   // The simulated Lines' token comes from the secret `token`, whose synthetic file each consumer writes.
   simulatedSection: {config: SIMULATED_SECTION, secrets: ['token']},

@@ -8,6 +8,7 @@
 import {isObject} from '../compat.js';
 import {ValueError} from '../errors.js';
 import {NEIGHBOR} from '../panels.js';
+import {STREAMING, type LightDatagram} from '../stream.js';
 import {HttpError, type LightAddress, type LightRequest} from '../transport.js';
 
 /** The synthetic token every simulated controller accepts. It is no credential and must appear in no message, record or proof. */
@@ -38,12 +39,19 @@ export type SimulatedDevice = {
   kind: SimulatedKind;
   on: boolean;
   brightness: number;
-  /** The playing selection: a saved scene's name, `*Dynamic*` after an effect write, or `*Static*`. */
+  /** The playing selection: a saved scene's name, `*Dynamic*` after an effect write, `*Static*`, or `*ExtControl*` while streaming. */
   select: string;
   /** The scenes saved on the controller, which its effect list reports. */
   scenes: string[];
-  /** The animation type of the last effect write (`custom` or `static`), or null before one. */
+  /** The animation type of the last effect write (`custom`, `static` or `extControl`), or null before one. */
   effect: string | null;
+  /** Datagrams applied while streaming, and datagrams ignored because the controller was not streaming (#1598). */
+  streamed: number;
+  ignored: number;
+  /** The zone colors of the last applied datagram, by zone ID, or null before one. */
+  frame: Record<string, [number, number, number]> | null;
+  /** The last `KEPT_WRITES` datagrams, oldest first: when each arrived and whether it was applied. */
+  streams: {atMs: number; applied: boolean}[];
   /** Requests that reached the controller: reads and writes. */
   reads: number;
   writes: number;
@@ -109,7 +117,7 @@ export class SimulatedNanoleaf {
   }
 
   #add(address: string, kind: SimulatedKind): SimulatedDevice {
-    const device: SimulatedDevice = {kind, on: true, brightness: 50, select: SCENES[0] ?? '', scenes: [...SCENES], effect: null, reads: 0, writes: 0, recent: []};
+    const device: SimulatedDevice = {kind, on: true, brightness: 50, select: SCENES[0] ?? '', scenes: [...SCENES], effect: null, streamed: 0, ignored: 0, frame: null, streams: [], reads: 0, writes: 0, recent: []};
     this.#devices.set(address, device);
     return device;
   }
@@ -127,6 +135,42 @@ export class SimulatedNanoleaf {
     if (!this.#holding) return Promise.resolve().then(answer);
     return new Promise<void>(resolve => { this.#held.push({resolve}); }).then(answer);
   };
+
+  /**
+   * The module's datagram transport. As a light does, the controller applies a datagram only while streaming and ignores
+   * it otherwise. Nothing answers a datagram, so one sent to an offline or absent controller is simply lost.
+   */
+  readonly datagram: LightDatagram = (address, packet): Promise<void> => {
+    const device = this.#devices.get(address.ip);
+    if (!this.#online || device === undefined) return Promise.resolve();
+    const kept = (applied: boolean): void => {
+      device.streams.push({atMs: this.#now(), applied});
+      if (device.streams.length > KEPT_WRITES) device.streams.shift();
+    };
+    if (device.select !== STREAMING) {
+      device.ignored += 1;
+      kept(false);
+      return Promise.resolve();
+    }
+    const view = Buffer.from(packet.buffer, packet.byteOffset, packet.byteLength);
+    const count = view.readUInt16BE(0);
+    if (view.length !== 2 + 8 * count) return Promise.reject(new ValueError('A malformed streaming datagram.'));
+    const frame: Record<string, [number, number, number]> = {};
+    for (let index = 0; index < count; index += 1) {
+      const at = 2 + 8 * index;
+      frame[String(view.readUInt16BE(at))] = [view.readUInt8(at + 2), view.readUInt8(at + 3), view.readUInt8(at + 4)];
+    }
+    device.streamed += 1;
+    device.frame = frame;
+    kept(true);
+    return Promise.resolve();
+  };
+
+  /** Chooses a saved scene on a controller as the Nanoleaf app would, which also leaves streaming. */
+  chooseScene(address: string, name: string): void {
+    const device = this.#devices.get(address);
+    if (device !== undefined && device.scenes.includes(name)) device.select = name;
+  }
 
   online(): void {
     this.#online = true;
@@ -190,7 +234,8 @@ export class SimulatedNanoleaf {
 
   state(): SimulatedState {
     return {online: this.#online, held: this.#held.length,
-      devices: Object.fromEntries([...this.#devices].map(([address, device]) => [address, {...device, recent: device.recent.map(write => ({...write}))}]))};
+      devices: Object.fromEntries([...this.#devices].map(([address, device]) => [address, {...device, recent: device.recent.map(write => ({...write})), streams: device.streams.map(entry => ({...entry})),
+        frame: device.frame === null ? null : Object.fromEntries(Object.entries(device.frame).map(([id, color]) => [id, [...color] as [number, number, number]]))}]))};
   }
 
   #answer(address: LightAddress, method: string, endpoint: string, payload: unknown): unknown {
@@ -231,7 +276,7 @@ export class SimulatedNanoleaf {
         return record({select});
       }
       if (isObject(write) && typeof write.animType === 'string') {
-        device.select = write.animType === 'static' ? '*Static*' : '*Dynamic*';
+        device.select = write.animType === 'extControl' ? STREAMING : write.animType === 'static' ? '*Static*' : '*Dynamic*';
         device.effect = write.animType;
         return record({animType: write.animType, ...(typeof write.loop === 'boolean' ? {loop: write.loop} : {})});
       }

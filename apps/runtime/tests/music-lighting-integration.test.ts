@@ -37,7 +37,7 @@ async function setup(t: TestContext) {
   const files = await edgeConfig(t, [], {modules: {nanoleaf: {...SIMULATED_SECTION, secrets: {token: tokenFile}}}, credentials: JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: [
     {id: 'music-producer', source: MUSIC_PRODUCER_SOURCE, digest: tokenDigest(PRODUCER_TOKEN), scopes: [], role: 'music-producer'},
   ]})});
-  const {runtime} = await run(t, {modules: [core, createNanoleafModule({transport: wall.request}), operator], configFile: files.config, edge: {schemas: {}}});
+  const {runtime} = await run(t, {modules: [core, createNanoleafModule({transport: wall.request, datagram: wall.datagram}), operator], configFile: files.config, edge: {schemas: {}}});
   const producer = await connectRemote({url: runtime.url, source: MUSIC_PRODUCER_SOURCE, token: PRODUCER_TOKEN});
   const pumping = {stopped: false};
   t.after(async () => {pumping.stopped = true;await producer.close();});
@@ -98,7 +98,8 @@ async function setup(t: TestContext) {
     start: (requestId: string) => control(requestId, {action: 'start', capture, presetId: 'preset-green'}),
     stop: (requestId: string) => control(requestId, {action: 'stop'}),
     status: (expected: string, what: string) => waitFor(async () => (await light()).session.status === expected, 8000, what),
-    frames: () => (lines()?.recent ?? []).filter(write => write.animType === 'static')};
+    // Frames are datagrams the simulated Lines apply only while streaming (#1598).
+    frames: () => (lines()?.streams ?? []).filter(entry => entry.applied)};
 }
 
 it('the real core and Nanoleaf module play Music frames, restore on Stop and end manual on a newer brightness change', async t => {
@@ -126,7 +127,7 @@ it('the real core and Nanoleaf module play Music frames, restore on Stop and end
   const manual = (await h.light()).last, endedAt = Date.now();
   assert.deepEqual([manual?.reason, manual?.restoration], ['manual', 'none']);
   await sleep(500);
-  assert.equal((h.lines()?.recent ?? []).filter(write => write.atMs > endedAt && (write.animType === 'static' || write.select === base.select)).length, 0,
+  assert.equal(h.frames().filter(entry => entry.atMs > endedAt).length + (h.lines()?.recent ?? []).filter(write => write.atMs > endedAt && write.select === base.select).length, 0,
     'no frame or restoration follows the manual change');
   assert.equal(h.lines()?.brightness, 20);
 

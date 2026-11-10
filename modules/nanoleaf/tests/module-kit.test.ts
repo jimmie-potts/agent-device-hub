@@ -11,7 +11,7 @@ const reportsUnavailable = (message: Message): boolean =>
   message.dataschema === 'https://bunny.invalid/events/device/2.1' && (message.data as {availability?: unknown}).availability === 'unavailable';
 
 moduleConformance({
-  create: () => createNanoleafModule({transport: new SimulatedNanoleaf().request}),
+  create: () => { const nanoleaf = new SimulatedNanoleaf(); return createNanoleafModule({transport: nanoleaf.request, datagram: nanoleaf.datagram}); },
   schemas: nanoleafMessageSchemas,
   serves: [...READ_FAMILIES],
   copies: {families: ['session'], snapshot: {revision: 1, states: []}},
@@ -22,5 +22,5 @@ moduleConformance({
       coversStatus: false, startAtMs: Date.now(), toleranceMs: 100}}, code: 'unsupported-capability'},
   config: SECTION,
   secrets: {token: SYNTHETIC_TOKEN},
-  offline: {create: () => createNanoleafModule({transport: new SimulatedNanoleaf({online: false}).request}), unavailable: reportsUnavailable},
+  offline: {create: () => { const nanoleaf = new SimulatedNanoleaf({online: false}); return createNanoleafModule({transport: nanoleaf.request, datagram: nanoleaf.datagram}); }, unavailable: reportsUnavailable},
 });
