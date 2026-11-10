@@ -26,8 +26,8 @@ change, apply the [scope defaults](docs/sdlc.md#scope-defaults), including in
 ordinary work without `plan-work` or `deliver-work`. At every pickup, refresh
 alignment with current project direction, accepted architecture, reusable patterns
 and related work; do not restrict discovery to the issue’s original sources.
-Before any code, run the scope defaults' existing-pickup check; do not start an
-issue already in progress, in review or with an open PR.
+Before any code, run the [pickup check](docs/sdlc.md#pickup-check): do not start
+an issue someone else holds in progress, in review or with an open PR.
 A read-only request reports the assessment without writing.
 
 At accepted child completion, reopening, material scope/prerequisite change or
