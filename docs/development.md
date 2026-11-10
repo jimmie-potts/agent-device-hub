@@ -145,7 +145,8 @@ ledger and private store. They cover favorite/reuse/variation, invalid bytes, lo
 responses, restart without replay, recent retention and the monthly ceiling.
 After building, focus them with
 `node --test --test-name-pattern='art-theme|art-gallery|art-catalog|art-spending-limit' apps/runtime/dist/tests/scenarios/catalog.test.js`.
-On a Mac, use `npm run test:runtime:container -- --suite scenarios`.
+On a Mac, run it natively ([Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos))
+or with `npm run test:runtime:container -- --suite scenarios`.
 
 For local theme controls, select `scenario-art-theme`; its labelled capture shows
 contrasting saved art, locking the colors, restoring defaults and following again,
@@ -753,8 +754,11 @@ retains its two-hour lease; finite container checks retain their declared deadli
 and interruption/cleanup limits. See [runtime verification](#runtime-verification-runs)
 and [portable acceptance](../apps/runtime/verify/PORTABLE.md).
 
-On a Mac, use `npm run test:runtime:container -- --suite scenarios` and
-`-- --suite browser` from each task worktree. The runner copies source and uses
+On a Mac, run the scenario and browser suites natively
+([Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos)) or
+with `npm run test:runtime:container -- --suite scenarios` and
+`-- --suite browser` from each task worktree, under
+[Test work on the Mac](#test-work-on-the-mac). The container runner copies source and uses
 its own synthetic state with no installed volumes, mounts or ports. For a
 reviewable runtime capture, use the exact committed candidate and the existing
 portable acceptance route. Keep synthetic credentials scoped to that runtime's
@@ -799,8 +803,9 @@ can run. Each session applies this rule itself; no coordinator grant is needed.
    one test container or one native test suite. Any container started for
    testing counts, whatever its name; the known names start with `bunny-gh` and
    `bunny-runtime-check-`. A wide container (name ending `-wide`, item 3) counts
-   as two slots. An `npm run test:runtime:container` run carries its own limits
-   and is one slot ([Runtime verification runs](#runtime-verification-runs)).
+   as two slots. An `npm run test:runtime:container` run is one slot and
+   carries its own, larger limits, stated in
+   [Runtime verification runs](#runtime-verification-runs).
 2. **Start check.** Start only if all three hold; otherwise wait a minute and
    check again:
    - the 1-minute load in `uptime` is under 8;
@@ -819,21 +824,27 @@ can run. Each session applies this rule itself; no coordinator grant is needed.
    `--memory-swap` always equals `--memory`. The SDK suite is flaky at 2 CPUs,
    so run it wide, as two slots:
    `docker run --rm --name bunny-gh<issue>-<job>-wide --cpus 4 --memory 2g --memory-swap 2g`.
-4. **Lint** runs natively only, with default settings, and one at a time
-   across all sessions: start it only when `pgrep -fl '[e]slint'` prints
-   nothing. It needs more than 3.5 GB of heap and crashes under container
-   limits.
+4. **Lint** (`npm run lint:js`) runs natively only, with default settings, and
+   one at a time across all sessions. Its shards run one after another, each
+   under a 2,048 MB heap budget ([Heap budget](static-analysis.md#heap-budget)),
+   which a test container's memory cannot hold. Start it only when this prints
+   nothing:
+   `ps -axo command= | grep -E '^([^ ]*/)?node .*(eslint/bin/eslint\.js|lint-shards\.mjs)'`.
+   An editor's ESLint language server does not match.
 5. **Host work.** Build, typecheck, lint and `npm ci` on the host take no slot.
-   A native suite takes one slot and bounds its workers, for example
-   `node --test --test-concurrency=2 <files>`. Do not start a native suite
-   through the plain npm test scripts: they start one worker per core less one
-   (11 on this Mac), and `--test-concurrency` cannot be set through
-   `NODE_OPTIONS`.
+   A native suite takes one slot. Run a `node --test` suite with
+   `node scripts/native-test.mjs <package script>`, which bounds it to 2
+   workers (`--workers N` to change) and gives the run a private temporary
+   directory; [Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos)
+   has the commands. Do not run a full native suite through its plain npm test
+   script, which starts one worker per core less one.
 6. **Evidence.** A native macOS run of build, typecheck, lint, the Node suites,
    the scenario catalog and the browser journeys is accepted local validation
    before a push. Hosted Linux CI is the gate. A Linux container is needed only
-   for a Linux-only test or to reproduce a hosted failure; it stays allowed
-   otherwise.
+   for a test that still needs Linux (listed in
+   [Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos),
+   or so marked in its own guide) or to reproduce a hosted failure; it stays
+   allowed otherwise.
 7. **Stop.** If the 1-minute load passes 12, or the installed core is not
    `healthy`, the owner of the newest job stops it.
 
