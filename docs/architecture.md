@@ -404,7 +404,12 @@ runs without device modules. The 1.x field mapping is in
   sharing remain separate, off-by-default choices. Analytics stay outside MCP,
   agent snapshots and general broadcasts.
 - **No replay.** Past occurrences or effects are never redelivered to views or
-  devices.
+  devices so that they happen again, and a past fact never triggers a command
+  by itself. Reading is not replay: any view, display or device may read and
+  show past facts, and a named reader, such as the decision maker or a peer
+  installation, may read facts from the core's history after a cursor it keeps.
+  B.U.N.N.Y. does not use event sourcing, and its stores stay on SQLite
+  ([ADR 0012 amendment of 2026-11-11](decisions/0012-bunny-event-platform.md#amendment-2026-11-11)).
 
 [Epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) and
 [#840](https://github.com/jimmie-potts/agent-device-hub/issues/840) record the

@@ -1,7 +1,9 @@
 # ADR 0012: One event and messaging platform for every component
 
 Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-17,
-2026-10-30 and 2026-11-03 (see [Amendments](#amendments)).
+2026-10-30, 2026-11-03 and 2026-11-11 (see [Amendments](#amendments); the
+[2026-11-11 amendment](#amendment-2026-11-11) adopts no event sourcing, makes
+history a fact log and says what a past fact may do).
 Supersedes [ADR 0010](0010-shared-event-contracts.md).
 This decision implements and installs nothing by itself. The children of
 [epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) own
@@ -153,13 +155,19 @@ Existing formats move in one offline cutover:
 - A consumer then follows live events. It drops duplicates and stale revisions,
   and ignores commands and sync requests past their expiry.
 - This delivery has no replay. Here, replay means redelivering past
-  occurrences or effects to views or devices. That rules out:
-  - rebuilding views from the log;
-  - replaying history into views;
-  - catch-up for displays.
+  occurrences or effects to views or devices so that they happen again. That
+  rules out:
+  - rebuilding current state from the log instead of syncing it;
+  - replaying history into views as if it were live;
+  - catch-up that plays past moments or effects on displays again.
 
   Syncing current state is not replay. Neither is reporting a module's
-  unreported outcome again after a restart.
+  unreported outcome again after a restart. Since the
+  [2026-11-11 amendment](#amendment-2026-11-11), neither is reading past facts:
+  any view, display or device may read and show them, and a named reader, such
+  as the decision maker or a peer installation, may read the facts from an
+  origin after a cursor it keeps. A past fact never triggers a command by
+  itself.
 - History and the tracker live in the core and record durably. A slow consumer
   lags only itself and cannot block the bus.
 
@@ -464,7 +472,11 @@ These alternatives were rejected:
   Downtime is acceptable (owner decision, 2026-10-06), so one offline cutover
   avoids shadow runtimes and compatibility feeds.
 - **A durable log hosted in the Hub.** We would have to build consumer
-  positions, redelivery and retention ourselves.
+  positions, redelivery and retention ourselves. This reasoning still applies
+  to a log that the platform delivers from. Since the
+  [2026-11-11 amendment](#amendment-2026-11-11), the accepted form is a fact
+  log on the core's history. Each reader keeps its own position, nothing is
+  redelivered, and the log is kept for as long as history.
 - **Staged, need-only adoption (ADR 0010).** It produced no adopter while new
   formats kept appearing.
 - **Fine-grained change events only.** Every consumer would have to rebuild the
@@ -473,7 +485,10 @@ These alternatives were rejected:
 - **AWS SNS and SQS now.** They would add an internet round trip and an internet
   dependency to every device reaction, and they lack request/reply
   primitives.
-- **Event sourcing.** Deferred to a later deliberate decision.
+- **Event sourcing.** First deferred to a later deliberate decision, then not
+  adopted for existing modules or new components
+  ([2026-11-11 amendment](#amendment-2026-11-11)). Reopen it if a component
+  needs to rebuild past state exactly, or if the fact log proves insufficient.
 
 The consequences:
 - One process: a crash, a blocked event loop or memory exhaustion stops every
@@ -488,7 +503,10 @@ The consequences:
 - No replay: a consumer that was down misses occurrences such as `turn.ended`
   and sees only the current state after its sync. That state includes each
   session's unread finished turn and the shared inbox; history keeps the
-  occurrences it receives.
+  occurrences it receives. Since the
+  [2026-11-11 amendment](#amendment-2026-11-11), the consumer may then read the
+  facts it missed from history, to use or show them. Reading them does not make
+  them happen again, and none of them triggers a command by itself.
 - Live-only commands: a command to an offline module is lost, not queued. The
   owner sees it as failed or uncertain and can resend it.
 - Tracking: each tracked kind needs a deadline. Uncertain items need a person to
@@ -742,3 +760,103 @@ result still raises an item. That includes an uncertain write that may set a dev
 hold, a failure after acceptance, an expired command and a refusal the dashboard can
 send again. The trade-off is that a refusal like this is seen only when it happens, in
 its caller's reply, and in history.
+
+### Amendment, 2026-11-11
+
+**No event sourcing, history as a fact log, and what a past fact may do.** On
+2026-11-11 the owner reopened how B.U.N.N.Y. keeps events, because the delivery
+orchestrator, the decision maker and two machines all ask more of them. The
+options paper on [#1729](https://github.com/jimmie-potts/agent-device-hub/issues/1729)
+put eight decisions to the owner, each with a recommendation. The owner answered
+in chat to the coordinating session, which recorded both answers on #1729.
+
+At 2026-11-11T17:29:53Z, answering the paper's decisions and their
+recommendations:
+
+> For the T3-related decisions, let's go with your recommendations for these.
+> Except for 3, I don't want to put in any facts or rules saying that the
+> displays or devices can't display facts, texts, or logs. These are all run on
+> my home network, so I want to be able to see agent output and possible other
+> logs and personal information on my own devices.
+
+At 2026-11-11T17:38:20Z, answering whether the event rules keep one sentence
+about commands:
+
+> A past fact never triggers a command by itself. Stays in the event rules
+
+A prototype on #1729 then showed that the fact log works. Two disposable
+runtimes with different origins read each other's facts after a cursor and
+merged them without duplicates. The merge wrote only history rows, with no
+publication, no tracker change and no device call.
+
+The decisions:
+
+1. **Event sourcing is not adopted**, for existing modules or for new
+   components. Each owner keeps saving its own current state, and that state
+   stays authoritative. Reopen this only if a component needs to rebuild past
+   state exactly, or if the fact log proves insufficient. (Recommendation
+   accepted at 17:29:53Z.)
+2. **History becomes a fact log.** Every history row carries the installation
+   it came from, its origin, and a sequence number per origin. A reader may ask
+   for everything from one origin after a number N, and it keeps its own
+   cursor. The core keeps no reader positions and redelivers nothing. History
+   may record that a command was sent and how it ended, as it does today, but
+   commands themselves are never in the log. (Accepted in principle at
+   17:29:53Z, pending the prototype, which then passed.)
+3. **What a past fact may do.** This decision has two parts.
+   - No rule limits what a display or device on the owner's own network may
+     read and show. Past facts, text, agent output and logs, personal
+     information included, may be read and shown on any of them. (The owner at
+     17:29:53Z, in place of the paper's recommendation, which would have kept
+     views, displays and devices from reading past facts.)
+   - One sentence stays in the event rules: **a past fact never triggers a
+     command by itself.** (The owner at 17:38:20Z.)
+
+   The first part is about reading and the second about acting. A dashboard
+   page or a display showing yesterday's agent output is reading, and any view
+   may do it. A device running yesterday's "turn on" again, or a moment playing
+   again as if it had just happened, is a command sent again, and no past fact
+   causes one.
+4. **The fact log is kept as long as history**, with no time limit, under
+   [ADR 0011](0011-private-personal-data-retention.md). Whether history also
+   keeps raw agent-hook observations is decided after their size is measured.
+   (Recommendation accepted at 17:29:53Z.)
+5. **Nothing is retried automatically, and an unknown outcome stays
+   `uncertain`**, for the orchestrator and the decision maker too. Automatic
+   retries and automatic continuation after a restart are not adopted.
+   (Recommendation accepted at 17:29:53Z.)
+6. **No store moves off SQLite.** No store switches to a document database or
+   other NoSQL store, and a record that really is document-shaped is kept in a
+   JSON column in SQLite. (Recommendation accepted at 17:29:53Z.)
+7. **The orchestrator and the decision maker live inside the core**, so their
+   records, budgets, tracker rows and outbox commit together. (Recommendation
+   accepted at 17:29:53Z.)
+
+The paper's eighth decision, how settings replicate between two machines,
+belongs to [#1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723)
+and is not recorded here.
+
+**"No replay" is narrowed, not removed.** After this amendment:
+- A named reader, such as the decision maker or a peer installation, may read
+  the facts from an origin after a cursor it keeps. Such a read is not replay.
+- Any view may read and show past facts.
+- Commands stay live-only. They carry an expiry, are never stored and are never
+  sent again.
+- A consumer that catches up on facts does not make past moments or device
+  actions happen again. It still starts from a sync of current state.
+
+Everything else in this record stands: no broker, each owner keeps and
+publishes its own state, consumers sync current state, and nothing is retried
+automatically. "Consumers and recovery", "Alternatives and consequences" and
+the [shared architecture](../architecture.md#event-and-messaging-platform) now
+point here.
+
+This amendment is direction. It changes no code, schema, message format or
+installation. [#1740](https://github.com/jimmie-potts/agent-device-hub/issues/1740)
+owns the fact log's implementation, including how its read fits this record's
+conventions. [#1728](https://github.com/jimmie-potts/agent-device-hub/issues/1728)
+owns the decision maker,
+[#1722](https://github.com/jimmie-potts/agent-device-hub/issues/1722) the
+delivery orchestrator and #1723 two machines. The trade-off is that history
+becomes something other parts depend on, and that every reader of past facts
+must keep reading apart from acting.
