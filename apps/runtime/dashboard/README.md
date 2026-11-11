@@ -407,10 +407,11 @@ own and sends nothing, and so does a restarted copy; after a failed read,
 participant, and closes both when Audio unmounts or the connection ends.
 
 `tests/music-lighting.browser.ts` runs the real disposable core, gateway and
-Nanoleaf module on a simulated Lines controller with the numeric producer
-fixture. It covers the passive lifecycle, the stopped, source-lost,
+Nanoleaf module on simulated Lines and NL22 Light Panels controllers with the
+numeric producer fixture. It covers the passive lifecycle, the stopped, source-lost,
 refused-outside-Free and light-off endings, the ending explanations, stale reads,
-a lost reply, read-only access and microphone exclusion.
+a lost reply, read-only access and microphone exclusion. It also starts and stops
+the NL22 from its own section while the Lines stay idle (#1272).
 It runs in the Music-card browser entry and hosted smoke. This is source
 evidence only; installed and physical acceptance belong to #725.
 

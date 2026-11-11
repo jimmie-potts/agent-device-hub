@@ -24,8 +24,10 @@ current commands and paths in CI, including Markdown-only changes.
 
 ## Reachy simulator checks
 
-Use Node 24. The runtime/browser harness needs Linux because private-file
-verification uses `/proc/self/fd`. Build first, then run `npm run test:reachy:built`,
+Use Node 24. The runtime and browser harness no longer needs Linux: the runtime
+unit suite, the scenario catalog and the runtime dashboard browser journeys run
+[natively on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos). The
+Reachy suites have not been measured natively on macOS. Build first, then run `npm run test:reachy:built`,
 `npm run test:reachy:browser`, event/SDK/runtime consumers and the shared
 build/type/lint/workflow checks. The modules and browser CI jobs run those
 checks. Module conformance, transport, storage/restart and policy tests use
@@ -104,7 +106,8 @@ unchanged; `gateway.test.ts` and `automation-routes.test.ts` cover
 uses the simulated Tidbyt and reads Recent attempts. The `art-show` runtime
 scenario shows saved art on the simulated Pixoo, Tidbyt and browser; focus it
 with `node --test --test-name-pattern='art-show' apps/runtime/dist/tests/scenarios/catalog.test.js`
-(Linux, as the catalog's private-file check requires). None of these checks
+on Linux, or natively on macOS with
+`node scripts/native-test.mjs test:runtime:scenarios:built -- --test-name-pattern=art-show`. None of these checks
 contacts a provider, an installed runtime or a physical display.
 
 Art-derived decoration (#683) uses `npm run test:art-theme:browser` after the
@@ -182,8 +185,8 @@ the read schemas under a strict standalone compiler and that the root lockfile h
 no Bluetooth binding; the runtime CI group runs it. The edge admission, gateway
 reads, tracked threshold and the absence of usage from core history are `apps/runtime/dist/tests/volcano-gateway.test.js`
 and the `volcano-physical-use` catalog scenario, under
-`npm run test:runtime:built`, which read an edge configuration file and so run in
-Linux. All of these use synthetic values and no radio. They do not qualify the
+`npm run test:runtime:built`, which read an edge configuration file and run on
+Linux or natively on macOS. All of these use synthetic values and no radio. They do not qualify the
 binding, the macOS launch path, or the owner's firmware; that is #617.
 
 The card (#616) adds `modules/volcano/tests/card.test.ts` to the built suite and
@@ -903,6 +906,14 @@ owns coverage, Python targets and direct consumer checks. The Workflow checks jo
 runs both commands on ready PRs and full release qualification; ordinary main
 Integration is separate.
 
+### Heap budget
+
+`npm run lint:js` runs ESLint in path shards, each in its own process under a
+2,048 MB heap, and fails when a shard outgrows it. The largest shard needed
+842 MB after a full collection on 2026-11-10; one `eslint .` process needed
+about 4.3 GB. See [Heap budget](static-analysis.md#heap-budget) for the cause,
+the shard list and how to re-measure.
+
 ### Adoption baseline
 
 See [Adoption baseline](static-analysis.md#adoption-baseline) for the authoritative procedure.
@@ -1295,9 +1306,9 @@ build, run these focused files, `test:runtime:built`,
 `test:sdk:built`, `test:runtime-dashboard:built` and the affected disposable core
 scenario. The tests cover authenticated source binding, exact owner revision,
 replay, later turns, restart and failed commit. Helper tests run its executable
-against the authenticated gateway and are kept to Linux, where CI runs them
-(the private-file reader works off Linux too, Hub #1355). Use a disposable
-container on macOS.
+against the authenticated gateway. They run on Linux, where CI runs them, and
+natively on macOS (see
+[Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos)).
 `node apps/runtime/dashboard/tests/read-receipts.browser.ts` verifies that the
 real helper's session/2.1 output clears the dashboard's unread row, survives a
 page reload and returns to unread on a new turn without a page command. The
@@ -1419,6 +1430,12 @@ pinned Node 24 base and lockfile-selected Chromium, then runs `npm ci --include=
 failure exits nonzero. The container has its own copied source, dependencies and
 synthetic state, `TMPDIR=/tmp`, no networking during checks, no host mounts and
 no published ports. Docker's init process reaps exited descendants. It never attaches to the installed runtime or its volumes.
+The check container is limited to 2 CPUs and 1536 MiB (1.5 GiB) of memory, with
+swap equal to memory so it cannot swap; Node inside then reports 2 CPUs, so
+`node --test` starts fewer workers. On macOS the verification suite's processes
+used at least 1.2 GB (the largest sample, a lower bound), and at a 1250 MiB
+limit the run was killed for memory. The image build is a separate step without
+these limits.
 The temporary Git commit identifies a working-tree snapshot, not a reviewed
 release or independent Acceptance result. Dependency preparation needs network
 access; the checks install from the image's offline npm cache.
@@ -1438,11 +1455,93 @@ manifests and recipe, shared by every run of the same lockfile across tasks and
 sessions; [Cleanup after delivery](sdlc.md#cleanup-after-delivery) keeps them,
 and only the owner removes a cache no live lockfile produces.
 
-The wrapper's fixed-suite, source-isolation and failure-propagation checks are
+The wrapper's fixed-suite, source-isolation, resource-limit and failure-propagation checks are
 `node --test scripts/tests/runtime-container.test.mjs`, included in core CI.
 Hosted runtime suites remain unchanged.
 
+The runtime unit suite, the scenario catalog and the runtime dashboard browser
+journeys also run natively on macOS, without Linux or a container, from the
+session's own worktree and build. `node scripts/native-test.mjs <script>` runs a
+`node --test` package script with a bounded number of test workers, 2 by default.
+[Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos)
+gives the commands and lists the tests that still need Linux.
+
 See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs) for the authoritative procedure.
+
+### One test job in a container
+
+On macOS with Docker Desktop, run one package script in a disposable Linux
+container that starts from installed dependencies:
+
+```bash
+npm run test:container -- --issue <n> --job <name> [--size standard|wide] [--no-build] [--network] -- <package script> [arguments...]
+```
+
+The container is `bunny-gh<n>-<name>`, or `bunny-gh<n>-<name>-wide` at the wide
+size. The job name is free text: lowercase letters, digits and inner hyphens.
+Before the job starts, the command prints the container name, its size and the
+slots it takes.
+
+| Size | Limits | Slots |
+| --- | --- | --- |
+| `standard` (default) | 2 CPUs, 1250 MiB, swap equal to memory | 1 |
+| `wide` | 4 CPUs, 2048 MiB, swap equal to memory | 2 |
+
+Swap equal to memory means the container cannot swap. A small table in
+`scripts/test-container.mjs` refuses known scripts that do not fit a size and
+names their routes:
+
+- `test:runtime:verify:built` needs `--size wide`, or
+  `npm run test:runtime:container -- --suite verify`, which has its own
+  1536 MiB limit.
+- `test:sdk:built` needs `--size wide`.
+
+The command refuses a raw command or an unknown script name, `test:container`
+and `test:runtime:container`. It also refuses `lint:js`, which runs natively,
+one at a time (see [Heap budget](static-analysis.md#heap-budget)).
+Python-dependent suites are not supported: the image has no Python packages.
+
+How a run works:
+
+1. The command copies the current tracked and nonignored source into a private
+   scratch directory (mode 0700) under the snapshot rules of
+   [Runtime verification runs](#runtime-verification-runs): no ignored files,
+   private paths, build output or symlinks.
+2. It mounts that snapshot read-only at `/snapshot`. Unlike
+   `npm run test:runtime:container`, this command mounts a host path, but only
+   this private read-only snapshot, never the worktree.
+3. In the container, the snapshot is copied over the image's `node_modules` and
+   recorded in a temporary Git commit. `npm run build` runs unless `--no-build`
+   is given, then `npm run <package script> [-- arguments]` runs.
+
+The container runs with `--rm`, `--init`, `--network none` (`--network` uses
+Docker's default bridge and prints that it did), all capabilities dropped except
+`CHOWN`, `no-new-privileges` and no published ports. A two-hour deadline in the
+container bounds a job whose host caller has gone. The command returns the
+job's exit status: 2 for its own refusals, and 128 plus the signal number for a
+job ended by a signal. On an interrupt it kills its own container by the ID
+Docker wrote to its cidfile. It never stops or removes a container it did not
+start. A name already in use is refused and left alone.
+
+The dependency image is `bunny-test-deps:<key>`. The key is a hash of
+`package-lock.json` and `scripts/test-container/Dockerfile`, and the image carries
+it as the `org.bunny.test-deps.key` label. The command builds the image only when
+that tag is missing. The build is a host step with network that uses CPU and
+memory outside the job's limits, and the command prints that it is building.
+Every run recomputes the key from its snapshot, runs by image ID, and refuses an
+image whose label does not match, so an image built for another lockfile is
+never used. Each image is about 3.5 GB, and a new one appears for each lockfile
+or recipe change. Two first runs at the same time can each build the image; one
+tag wins and the other build is left untagged. The images are caches shared by
+every run of the same lockfile;
+[Cleanup after delivery](sdlc.md#cleanup-after-delivery) keeps them, and the
+owner removes old `bunny-test-deps` images, including such untagged builds.
+
+Inside a 2-CPU container `node --test` already starts one worker, so the command
+runs package scripts directly, not through `scripts/native-test.mjs`. The
+command's argument, key, refusal, cleanup and exit-status checks are in
+`scripts/tests/test-container.test.mjs`, which `npm run test:workspace-audit`
+runs in core CI.
 
 ### Workspace audit
 
@@ -2083,9 +2182,9 @@ credential and another feed, is the last case of
 `apps/runtime/dist/tests/codex-desktop.test.js`; the edge binding itself is in
 `remote-hooks.test.js`. The container profile's admission of a remote-only section
 is in `deploy/container/tests/entrypoint.test.mjs`. Runtime tests that read an
-edge configuration file are kept to Linux (the procfs check, which CI runs; the
-reader's no-procfs check is exercised there too, Hub #1355); run them in the
-Runtime unit tests CI job or a disposable Linux container. The disposable run `codex-desktop-remote`
+edge configuration file run in the Runtime unit tests CI job, a disposable Linux
+container or [natively on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos),
+except the collector's entry-point test above. The disposable run `codex-desktop-remote`
 ([runtime verification runs](#runtime-verification-runs)) hosts the real collector
 for the acceptance exercise.
 
@@ -2270,9 +2369,9 @@ The Audio Music lighting controls (#722 over #1272) use the existing dashboard
 unit discovery and the hosted smoke entry. After `npm run build`, run
 `npm run typecheck`, `npm run lint:js`, `npm run test:runtime-dashboard:built`
 and `node apps/runtime/dashboard/tests/music-lighting.browser.ts`. The journey
-uses the real disposable core and Nanoleaf module on a simulated Lines controller
-with the numeric producer fixture. It sends no physical device command and
-qualifies no installed or physical behavior.
+uses the real disposable core and Nanoleaf module on simulated Lines and NL22
+Light Panels controllers with the numeric producer fixture. It sends no physical
+device command and qualifies no installed or physical behavior.
 
 The Music playback adapter (#571) uses those same producer/native commands and
 the existing event, SDK, runtime and playback test discovery. Native playback

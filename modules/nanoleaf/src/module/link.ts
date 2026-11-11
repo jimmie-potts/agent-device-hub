@@ -10,7 +10,7 @@
 import type {Clock, DeviceAvailability, Logger, ModuleScheduler, TraceContext, Tracing} from '@jimmie-potts/sdk';
 import {recordLog} from '@jimmie-potts/sdk';
 import {isObject} from '../compat.js';
-import type {LightDatagram} from '../stream.js';
+import {MIN_STREAM_PORT, type LightDatagram} from '../stream.js';
 import {HttpError, LIGHT_TIMEOUT_SECONDS, type LightAddress, type LightRequest} from '../transport.js';
 
 /** How long one request to a device may take: the Python client's light request timeout. */
@@ -164,14 +164,16 @@ export class DeviceLink {
   };
 
   /**
-   * Sends one live Music frame datagram to the device's configured address (#1598). Nothing answers a datagram, so it
+   * Sends one live Music frame datagram to `port` at the device's configured address (#1598, #1272): the address is
+   * never one a reply named, and the port is never a privileged or well-known one. Nothing answers a datagram, so it
    * neither reaches nor fails the device's availability, and it opens no span: the session's ending reports a failure.
    */
-  readonly stream = (packet: Uint8Array): Promise<void> => {
+  readonly stream = (packet: Uint8Array, port: number): Promise<void> => {
     const {address, datagram, signal} = this.#options;
     if (signal.aborted) return Promise.reject(new LinkStopped());
+    if (!Number.isInteger(port) || port < MIN_STREAM_PORT || port > 0xffff) return Promise.reject(new RangeError('Frames go to an unprivileged port only.'));
     try {
-      return datagram({ip: address}, packet);
+      return datagram({ip: address, port}, packet);
     } catch (error) {
       return Promise.reject(error);
     }

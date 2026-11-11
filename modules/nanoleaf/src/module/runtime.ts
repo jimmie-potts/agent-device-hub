@@ -1148,7 +1148,7 @@ const PORT_REFUSALS: Partial<Readonly<Record<ErrorCode, string>>> = {
 const OTHER_REFUSAL = 'the command is not one the device takes';
 /** Fixed text for each refusal of a live Music Start or Stop (`music-session.ts`). */
 const MUSIC_REFUSALS: Partial<Readonly<Record<ErrorCode, string>>> = {
-  'unsupported-capability': 'live Music plays on the Lines with a preset the saved layout renders',
+  'unsupported-capability': 'live Music plays with a preset the light\'s saved layout renders, on zones its stream can address',
   'invalid-state': 'live Music needs a light already in Free and on, and no session already starting or playing',
   unavailable: 'a device hold waits for an explicit choice',
   capacity: 'other content waits on the light',

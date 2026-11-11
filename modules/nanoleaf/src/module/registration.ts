@@ -13,8 +13,8 @@ const ABANDON_MS = 10_000;
 type LightCall = {address: string; token: string; method: string; endpoint: string; payload: unknown};
 /** The controller's reply, or the HTTP error status it answered with, or none when it did not answer. */
 type LightAnswer = {reply: unknown} | {failed: number | null};
-/** One live Music frame datagram as it crosses the link (#1598), base64-encoded. */
-type DatagramCall = {address: string; packet: string};
+/** One live Music frame datagram as it crosses the link (#1598), base64-encoded, with the port it goes to. */
+type DatagramCall = {address: string; port: number; packet: string};
 
 export const nanoleafSimulation: DeviceSimulation<SimulatedNanoleaf, SimulatedNanoleaf> = {
   actions: ['online', 'offline', 'power-on', 'power-off', 'lose-next-answer'] satisfies SimulatedAction[],
@@ -30,8 +30,8 @@ export const nanoleafSimulation: DeviceSimulation<SimulatedNanoleaf, SimulatedNa
     act: (nanoleaf, {action}) => { nanoleaf.act(action as SimulatedAction); },
     async serve(nanoleaf, {method: call, args}): Promise<LightAnswer | null> {
       if (call === 'datagram') {
-        const {address, packet} = args as DatagramCall;
-        await nanoleaf.datagram({ip: address}, Buffer.from(packet, 'base64'));
+        const {address, port, packet} = args as DatagramCall;
+        await nanoleaf.datagram({ip: address, port}, Buffer.from(packet, 'base64'));
         return null;
       }
       const {address, token, method, endpoint, payload} = args as LightCall;
@@ -49,7 +49,7 @@ export const nanoleafSimulation: DeviceSimulation<SimulatedNanoleaf, SimulatedNa
       // A controller that answered with an HTTP error status is reached, as the Nanoleaf HTTP client reports it.
       throw value.failed === null ? new Error('the simulated controller did not answer') : new HttpError(value.failed);
     }, datagram: async (address, packet) => {
-      const call: DatagramCall = {address: address.ip, packet: Buffer.from(packet).toString('base64')};
+      const call: DatagramCall = {address: address.ip, port: address.port, packet: Buffer.from(packet).toString('base64')};
       const answer = await link.call('datagram', call, AbortSignal.timeout(ABANDON_MS));
       if (answer.status !== 'answered') throw new Error('the simulated controller did not take the datagram');
     }}),

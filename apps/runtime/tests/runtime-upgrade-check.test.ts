@@ -94,7 +94,10 @@ void test('changed approval refuses finalization and retains the original intent
   assert.deepEqual((await readdir(directory)).sort(), ['fixture-upgrade.json', 'input.json']);
 });
 
-void test('explicit inspected resolution settles an interrupted receipt while retaining its exact original bytes', async t => {
+// The resolution runs under the documented shell's util-linux flock(1), which macOS does not ship.
+void test('explicit inspected resolution settles an interrupted receipt while retaining its exact original bytes', {
+  skip: process.platform === 'linux' ? false : 'the resolution holds its lock with util-linux /usr/bin/flock, a Linux tool',
+}, async t => {
   const root = await mkdtemp(join(tmpdir(), 'bunny-1037-resolution-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   const receipts = join(root, 'receipts'), provenance = join(root, 'provenance');

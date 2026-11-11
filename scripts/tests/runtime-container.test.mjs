@@ -4,7 +4,7 @@ import {mkdtemp, mkdir, readFile, rm, writeFile, symlink} from 'node:fs/promises
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
-import {parse, snapshot, runSuites} from '../runtime-container.mjs';
+import {parse, snapshot, runSuites, createArgs} from '../runtime-container.mjs';
 
 test('the runner accepts only fixed suites', () => {
   assert.equal(parse([]), 'all');
@@ -39,4 +39,13 @@ test('suite failure is returned and stops subsequent suites', async () => {
   assert.deepEqual(calls[0], ['run','test:runtime:scenarios:built']);
   assert.equal(await runSuites('all', async args => {calls.push(args);return 0;}), 0);
   assert.deepEqual(calls.at(-1), ['run','test:runtime:verify:built']);
+});
+
+test('the check container keeps its protections and has CPU and memory limits and no swap', () => {
+  const image = 'sha256:' + 'a'.repeat(64);
+  assert.deepEqual(createArgs('bunny-runtime-check-test', image, 'verify'), [
+    'create','--init','--name','bunny-runtime-check-test','--network','none',
+    '--cpus','2','--memory','1536m','--memory-swap','1536m',
+    '--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges','--restart','no',
+    '--env','TMPDIR=/tmp','--env','XDG_RUNTIME_DIR=','--env','DBUS_SESSION_BUS_ADDRESS=',image,'verify']);
 });

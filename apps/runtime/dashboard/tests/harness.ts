@@ -21,7 +21,7 @@ import {join} from 'node:path';
 import type {Identity, LifecycleEvent, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {createLifxModule, LIFX_SIMULATED_SECTION, PACKET, SimulatedLifx, lifxSchemas} from '@jimmie-potts/lifx';
 import {createNanoleafModule, SIMULATED_SECTION as NANOLEAF_SECTION, SYNTHETIC_TOKEN as NANOLEAF_TOKEN,
-  LINES_ADDRESS, SimulatedNanoleaf, nanoleafSchemas, type SimulatedState} from '@jimmie-potts/nanoleaf';
+  LINES_ADDRESS, PANELS_ADDRESS, SimulatedNanoleaf, nanoleafSchemas, type SimulatedState} from '@jimmie-potts/nanoleaf';
 import {SIGN_SECTION, SYNTHETIC_TOKEN, SimulatedSigns, createSignModule, signSchemas} from '../../dist/tests/fixtures/sign.js';
 import {connectRemote, type BunnyModule, type RemoteParticipant, type Sdk, type Clock, type Scheduler} from '@jimmie-potts/sdk';
 import type {Page} from 'playwright';
@@ -89,6 +89,8 @@ export type WorldOptions = {
   lighting?: boolean;
   /** Adds the real Nanoleaf module over synthetic Lines for module editor and Automation journeys. */
   nanoleaf?: boolean;
+  /** With `nanoleaf`, also a synthetic NL22 Light Panels controller as the light `nl22` (#1272). */
+  nanoleafPanels?: boolean;
   inbox?: boolean;
   /** Lets a trusted loopback page sign a browser in without a code (Hub #276). On by default. */
   trusted?: boolean;
@@ -165,7 +167,8 @@ export type World = {
   /** Changes only the simulated controller, as its physical switch would. */
   nanoleafPower(on: boolean): void;
   readonlyNanoleafEdit(data: object): Promise<number>;
-  nanoleafWall(): Promise<{id: string; configurationRevision: number; settings: {rotation: number; flipX: number; flipY: number; style: string};
+  /** The light's `nanoleaf-wall` record: the Lines' (`wall`) unless another light is named. */
+  nanoleafWall(id?: string): Promise<{id: string; configurationRevision: number; settings: {rotation: number; flipX: number; flipY: number; style: string};
     tasks: {id: string; title: string; codexUrl?: string}[]; elements: {id: string; number: number; signature: number; project: string | null}[]}>;
   close(): Promise<void>;
 };
@@ -209,7 +212,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const reachyTransport:ReachyTransport=options.reachyTransport??{connect:(...a)=>reachy.connect(...a),cancel:(...a)=>reachy.cancel(...a),move:async(...a)=>{const id=await reachy.move(...a);if(loseReachyReply){loseReachyReply=false;throw new Error('synthetic missing UUID');}return id;}};
   const wemo=new SimulatedWemo();let loseWemoReply=false;
   const bulbs = new SimulatedLifx();
-  const lines = new SimulatedNanoleaf();
+  const lines = new SimulatedNanoleaf(options.nanoleafPanels === true ? {devices: {[LINES_ADDRESS]: 'lines', [PANELS_ADDRESS]: 'panels'}} : {});
   const gadget = new Gadget();
   let releaseWrite: (() => void) | undefined;
   let heldWrite: Promise<void> | undefined;
@@ -240,7 +243,9 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...options.volcano===true?{volcano:VOLCANO_SIMULATED_SECTION}:{},
     ...(wisprConfig === undefined ? {} : {wispr: {...wisprConfig, shareTextAggregates: options.wispr?.shareTextAggregates ?? false}}),
     ...withDevices ? {lifx: options.lighting === true ? {bulbs: [...['a', 'b', 'c'].map((suffix, index) => ({...LIFX_SIMULATED_SECTION.bulbs[0], id: `lamp-${suffix}`, address: `192.0.2.${42 + index}`})), LIFX_SIMULATED_SECTION.bulbs[1]]} : LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
-    ...options.nanoleaf === true ? {nanoleaf: {...NANOLEAF_SECTION, qualifiedSources: [...NANOLEAF_SECTION.qualifiedSources,
+    ...options.nanoleaf === true ? {nanoleaf: {...NANOLEAF_SECTION, devices: [...NANOLEAF_SECTION.devices,
+      ...options.nanoleafPanels === true ? [{id: 'nl22', kind: 'panels', address: PANELS_ADDRESS, secret: 'token'}] : []],
+      qualifiedSources: [...NANOLEAF_SECTION.qualifiedSources,
       {provider: 'codex', client: 'desktop', hostId: 'host-sim', sourceId: 'desktop'}], secrets: {token: nanoleafToken}}} : {},
     ...options.pixooPages === true ? {pixoo: PIXOO_SECTION.config} : {},
     ...(options.pixooPages === true || options.playbackArtwork !== undefined) ? {playback: playbackFactory.simulatedSection.config} : {},
@@ -368,12 +373,12 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     readonlyCompanions: async () => {const result = await fetch(`${runtime.url}/api/v2/commands/companion-fixture-run`, {method: 'POST', headers: {authorization: `Bearer ${readerToken}`, 'content-type': 'application/json'}, body: JSON.stringify({target: 'reachy', data: {scenario: 'arrival', busy: false, media: false}, requestId: 'readonly-companions'})}); await result.arrayBuffer(); return result.status;},
     nanoleafState: () => lines.state(),
     nanoleafPower: on => { lines.setPower(LINES_ADDRESS, on); },
-    nanoleafWall: async () => {
+    nanoleafWall: async (id = 'wall') => {
       const reader = await connectRemote({url: runtime.url, source: 'bunny/parts/reader', token: readerToken});
       try {
         const answer = await reader.sync<Awaited<ReturnType<World['nanoleafWall']>>>(['nanoleaf-wall'], () => {}, {owner: 'bunny/modules/nanoleaf', timeoutMs: 5000});
         assert.equal(answer.status, 'synced');
-        const wall = answer.copy.states().find(message => message.data.id === 'wall')?.data;
+        const wall = answer.copy.states().find(message => message.data.id === id)?.data;
         assert.ok(wall !== undefined); return wall;
       } finally { await reader.close(); }
     },

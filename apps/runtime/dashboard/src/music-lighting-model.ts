@@ -99,17 +99,25 @@ const RESTORATIONS: Record<LightingEnded['restoration'], string> = {
 const RESTORING: ReadonlySet<LightingEnded['reason']> = new Set(['stopped', 'alert', 'source-lost']);
 const CODE_HINTS: Partial<Record<string, string>> = {
   'invalid-state': 'The light must be on, already in Free mode, and free of another session.',
-  'unsupported-capability': 'Only the Lines render live Music, with a preset their renderer accepts.',
+  'unsupported-capability': 'The light cannot render this preset with its saved layout, or its stream cannot address every zone of that layout.',
   unavailable: 'The light was held or could not be read.',
   'not-found': 'The saved preset no longer exists.',
   capacity: 'Other light content was waiting.',
   'revision-conflict': 'The light changed while the start was checked.',
 };
+const UNSTREAMABLE = 'the light accepted the streaming entry but named no usable port to stream to (unsupported-capability), so no Music frame ' +
+  'was sent. The light may keep showing its last presentation in external control until it times out or a scene is chosen on it. Nothing was ' +
+  'put back and nothing more was written. Nothing restarts automatically.';
 /**
  * The last ending as recorded, with its restoration and code; it never implies a restart. `restores` is what the light
  * module says that session's ending puts back, when its record names the same generation.
  */
 export function endingText(last: LightingEnded, restores?: Restores): string {
+  // A light that accepted the streaming entry but named no usable port to stream to (#1272): nothing failed to send, the
+  // light may still be in external control, and nothing was written after the entry.
+  if (last.reason === 'device' && last.code === 'unsupported-capability') {
+    return `Last session ended: ${UNSTREAMABLE}`;
+  }
   const hint = last.code === undefined ? undefined : CODE_HINTS[last.code];
   const restoration = last.restoration === 'restored' && restores === 'color' ? 'The base colour and brightness were restored.'
     : last.restoration === 'none' && restores === 'nothing' && RESTORING.has(last.reason)

@@ -8,6 +8,8 @@ import {promisify} from 'node:util';
 
 const helper = join(process.cwd(), 'apps/runtime/bin/runtime-upgrade-check.mjs');
 const run = promisify(execFile);
+// The documented lock block and a competing holder use util-linux flock(1), which macOS does not ship.
+const needsFlock = process.platform === 'linux' ? false : 'the documented lock block needs util-linux /usr/bin/flock, a Linux tool';
 async function documentedLockBlock(): Promise<string> {
   const guide = await readFile('apps/runtime/UPGRADE.md', 'utf8');
   const block = guide.match(/```bash\n(exec 9<[^]*?)\n```/);
@@ -43,7 +45,7 @@ void test('lock identity check accepts only inherited FD9 for the named persiste
   assert.deepEqual(JSON.parse(result.stdout), {lockIdentityVerified: true});
   assert.equal(result.stderr, '');
 
-  await t.test('the same manual shell retains flock while a competing operation refuses', async () => {
+  await t.test('the same manual shell retains flock while a competing operation refuses', {skip: needsFlock}, async () => {
     const script = `${await documentedLockBlock()}\n/usr/bin/flock -n -E 75 "$BUNNY_INSTALL_ROOT/install.lock" /usr/bin/true`;
     await assert.rejects(run('/bin/bash', ['--noprofile', '--norc', '-c', script],
       {timeout: 3000, maxBuffer: 8192, env: {...process.env, BUNNY_INSTALL_ROOT: root}}), error => {
@@ -53,7 +55,7 @@ void test('lock identity check accepts only inherited FD9 for the named persiste
       return true;
     });
   });
-  await t.test('the exact documented block stops before checking identity when another operation holds the lock', async () => {
+  await t.test('the exact documented block stops before checking identity when another operation holds the lock', {skip: needsFlock}, async () => {
     const holder = spawn('/usr/bin/flock', ['-n', '-E', '75', lock, '/bin/sh', '-c', 'printf ready; cat >/dev/null'],
       {stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000});
     try {

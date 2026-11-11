@@ -41,8 +41,8 @@ function checkLast(context: TestContext, check: () => void): void {
 }
 
 /** A new private state directory outside any checkout, removed after the test. */
-export async function stateDir(context: TestContext): Promise<string> {
-  const dir = await realpath(await mkdtemp(join(tmpdir(), 'bunny-runtime-')));
+export async function stateDir(context: TestContext, prefix = 'bunny-runtime-'): Promise<string> {
+  const dir = await realpath(await mkdtemp(join(tmpdir(), prefix)));
   context.after(() => rm(dir, {recursive: true, force: true}));
   return dir;
 }

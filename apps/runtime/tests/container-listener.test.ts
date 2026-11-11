@@ -15,7 +15,8 @@ function probe(url: string, hostname: string, host: string): Promise<number> {
 }
 
 void test('container socket opt-in preserves loopback origins and existing local browser authentication', {
-  skip: process.platform !== 'linux', timeout: 20_000,
+  skip: process.platform === 'linux' ? false : 'the probe uses loopback address 127.0.0.2, which only Linux answers without an alias',
+  timeout: 20_000,
 }, async context => {
   const files = await edgeConfig(context, [], {browserAccess: 'trusted-loopback'});
   const {runtime} = await run(context, {modules: [createCoreModule()], configFile: files.config,
