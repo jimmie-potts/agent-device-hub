@@ -38,7 +38,7 @@ try {
   await card.getByLabel('Source', {exact: true}).fill('bunny/parts/operator');
   await card.getByRole('button', {name: 'Apply filters'}).click();await expect(card.getByRole('status')).toContainText('history entries.');
 
-  // Add the identical card through the existing editor and persist size/order.
+  // Add the identical card through the existing editor and persist its shape and order.
   await page.getByRole('link', {name: /^Home/}).first().click();
   assert.equal(await card.count(), 0, 'Timeline is opt-in');
   await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
@@ -46,14 +46,14 @@ try {
   await page.getByRole('button', {name: 'Add Timeline', exact: true}).click();
   await page.getByRole('button', {name: 'Close', exact: true}).click();
   await page.getByRole('button', {name: 'Move Timeline earlier', exact: true}).click();
-  await page.getByRole('combobox', {name: 'Size of Timeline', exact: true}).selectOption('large');
+  await page.getByRole('group', {name: 'Shape of Timeline', exact: true}).getByRole('button', {name: 'Large square', exact: true}).click();
   const order = await page.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-home-card')));
   await page.getByRole('button', {name: 'Done', exact: true}).click();
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   assert.equal(sent.length, 1);assert.equal(sent[0]?.endsWith('/home-layout-set'), true);
   await page.reload();await feed(page, 'connected');await expect(card).toBeVisible();
   assert.deepEqual(await page.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-home-card'))), order);
-  await expect(page.locator('[data-home-card="timeline"]')).toHaveClass(/home-size-large/);
+  await expect(page.locator('[data-home-card="timeline"]')).toHaveAttribute('data-home-shape', 'large-square');
   await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
   await page.getByRole('button', {name: 'Hide Timeline', exact: true}).click();
   await page.getByRole('button', {name: 'Done', exact: true}).click();

@@ -26,6 +26,9 @@ export async function duckJourney(world: World, page: Page, context: BrowserCont
   // The draft card is visible but inert until the save completes and returns focus.
   await expect(editHome).toBeEnabled();
   await expect(editHome).toBeFocused();
+  // The wide Home grid (#1672) shows MicroDuck's generic compact face, opening its module page; one column keeps the full card.
+  assert.equal(await page.getByRole('link', {name: 'Open MicroDuck', exact: true}).getAttribute('href'), '#/module/companions/microduck');
+  await page.setViewportSize({width: 560, height: 1000});
   const widget = page.getByRole('article', {name: 'MicroDuck latest meaning', exact: true});
   const legacy = 'SYNTHETIC_LEGACY_'.repeat(64);
   const text = 'Quack: captain of the imaginary pond.';

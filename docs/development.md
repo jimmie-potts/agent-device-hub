@@ -1826,6 +1826,12 @@ After the root build, run `node --test apps/runtime/dist/tests/home-layout.test.
 the owning runtime/dashboard unit, browser and scenario checks, shared type,
 contract, workflow and JavaScript lint checks. Existing runtime and dashboard CI
 discovery selects these paths; layout tests assert that editing sends no device commands.
+Home card shapes (#1672) extend the same checks: `home-layout/2.2` in
+`npm run test:events:built`, the core's shape rule and restart in
+`node --test apps/runtime/dist/tests/home-layout.test.js`, packing and
+conversion in dashboard unit discovery, and
+`node apps/runtime/dashboard/tests/home-shapes.browser.ts` in the Home editor
+chain of hosted smoke; see the owning runtime dashboard checks.
 
 The Wemo card (#1175) adds observed-state/guard projection checks to existing
 dashboard unit discovery and extends the existing `test:wemo:browser` journey

@@ -116,7 +116,7 @@ Cards read their shape from `HomeShapeContext`; off the grid it is undefined and
 | Inbox | — | one row a page | four rows a page | four rows a page | an opened item takes the page |
 | Agent sessions | — | — | one-line summary, filter row, one tile a page | same, wider | — |
 | Timeline | latest two entries, Open Timeline | same, wider | period and refresh, four a page | adds category filters | the Timeline page |
-| Light, room, Nanoleaf | name, state, artwork, On/Off | adds brightness | artwork, tabs | artwork beside tabs | options menu and device pages |
+| Light, room, Nanoleaf | name, state, artwork, On/Off | adds brightness | tabs with every control face (artwork stays mounted, hidden) | artwork beside tabs | options menu and device pages |
 | Art | image cropped, Unpin and Dismiss | cropped | cropped | cropped | Art Gallery |
 | Visualizer | canvas, effect, Open full view | same | same | same | full view |
 | Generic face | name, state, Open | — | — | — | the card's device, Music or module page |
@@ -135,10 +135,11 @@ in step in every mode, so opening, changing shape or width, closing and changing
 
 ### 8. Art and the visualizer
 
-Pinned art is a shaped card cropped (`object-fit: cover`) to its shape, with Unpin and Dismiss above it; Restore stays
+Pinned art is a shaped card cropped (`object-fit: cover`) to its shape, with Unpin and Dismiss over its lower corner; Restore stays
 below Home. Unpinned art takes the largest shape that fits the trailing empty cells after every occupied cell, never
-adds a row, never moves functional cards and never saves; Pin keeps the shape it has. The one-column layouts keep the
-existing art reservation and format choice.
+adds a row, never moves functional cards and never saves; Pin keeps the shape it has. On the grid it depends only on the
+columns and the cards' cells, so image arrival and the viewport's height never move it. The one-column layouts keep the
+existing art reservation, its interaction freeze and the format choice, which also sets the art card's grid shape.
 
 ## Risks / Trade-offs
 

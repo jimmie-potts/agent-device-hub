@@ -4,7 +4,7 @@ import type {RuntimeData} from './runtime-feeds.ts';
 import {useAttempt} from './command-control.tsx';
 import {NavLink} from './navigation.tsx';
 import {addHomeCard, defaultHomeArrangements, homeCardShapes, homeCardState, homeCatalog, savedHomeCard, shapeOf, withShapes, type HomeCardDefinition} from './home-catalog.ts';
-import {HOME_GAP, HOME_UNIT, homeColumns, packShapes, shapeArtFormat, shapeName, shapeSpan, shapeStoredSize, trailingFit, type HomeShape, type ShapePlacement} from './home-shapes.ts';
+import {HOME_GAP, HOME_UNIT, artShape, homeColumns, packShapes, shapeArtFormat, shapeName, shapeSpan, shapeStoredSize, trailingFit, type HomeShape, type ShapePlacement} from './home-shapes.ts';
 import {HomeShapeContext} from './home-shape-context.ts';
 import {HomeArtSlot} from './home-art-slot.tsx';
 import {changeArtPlacement} from './home-art.ts';
@@ -123,7 +123,8 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const artControls = (entry: HomePlacement | undefined, automatic: boolean, gridded: boolean, pinShape?: HomeShape): React.ReactNode => <div className="home-art-controls" role="group" aria-label="Art placement">
     {!gridded && <label>Art shape <select value={entry?.art?.format ?? 'auto'} disabled={artDisabled} onChange={event => {
       const value = event.target.value;
-      if (value === 'auto' || value === 'banner' || value === 'square' || value === 'tall') updateArt(changeArtPlacement(layouts, breakpoint, {art: {format: value, pinned: true}}));
+      // The format also sets the shape the art card has on the grid.
+      if (value === 'auto' || value === 'banner' || value === 'square' || value === 'tall') updateArt(changeArtPlacement(layouts, breakpoint, {art: {format: value, pinned: true}, shape: artShape(value), size: shapeStoredSize[artShape(value)]}));
     }}><option value="auto">Auto</option><option value="banner">Banner</option><option value="square">Square</option><option value="tall">Tall</option></select></label>}
     <button type="button" className="secondary" disabled={artDisabled} onClick={() => {
       // Pinning automatic art on the grid keeps the shape it has now.
@@ -146,7 +147,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const query = search.trim().toLocaleLowerCase();
   const matches = catalog.filter(card => (category === 'All' || card.category === category) && `${card.name} ${card.category}`.toLocaleLowerCase().includes(query));
   const lights = shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];});
-  const artShape = (place: ShapePlacement): HomeShape => place.columns === 2 ? place.rows === 2 ? 'large-square' : 'wide' : place.rows === 2 ? 'tall' : 'square';
+  const fitShape = (place: ShapePlacement): HomeShape => place.columns === 2 ? place.rows === 2 ? 'large-square' : 'wide' : place.rows === 2 ? 'tall' : 'square';
   return <div className={`home-layout${editing ? ' is-editing' : ''}${breakpoint === 'phone' ? ' home-phone' : ''}`} ref={host}>
     <header className="page home-layout-heading"><h1>Home</h1><div className="actions"><NavLink route={{kind: 'timeline'}}>Timeline</NavLink>{!editing && <button type="button" className="secondary" ref={editButton} disabled={!editable} onClick={() => {
       if (record === undefined) return;setSelected(natural);setDraft({base: record.revision, layouts: structuredClone(current)});setMessage('');
@@ -203,8 +204,8 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
       </div>;
     })}
       {editing && packed?.holes.map(hole => <div key={`${String(hole.row)}:${String(hole.column)}`} className="home-hole" aria-hidden="true" style={{gridColumn: String(hole.column), gridRow: String(hole.row)}}><span>Empty</span></div>)}
-      {artFit !== undefined && artCard !== undefined && <div className={`home-layout-card home-shape-${artShape(artFit)}`} data-home-card="art" data-home-shape={artShape(artFit)} data-art-placement="automatic" style={area(artFit)}>
-        <div className="home-card-content"><HomeShapeContext.Provider value={artShape(artFit)}><div className="home-art-shaped">{artControls(artEntry, true, true, artShape(artFit))}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></div></HomeShapeContext.Provider></div>
+      {artFit !== undefined && artCard !== undefined && <div className={`home-layout-card home-shape-${fitShape(artFit)}`} data-home-card="art" data-home-shape={fitShape(artFit)} data-art-placement="automatic" style={area(artFit)}>
+        <div className="home-card-content"><HomeShapeContext.Provider value={fitShape(artFit)}><div className="home-art-shaped">{artControls(artEntry, true, true, fitShape(artFit))}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></div></HomeShapeContext.Provider></div>
       </div>}
     </div>
     {packed === undefined && automaticArt && <HomeArtSlot automatic format={artEntry?.art?.format ?? 'auto'} home={host}>{artControls(artEntry, true, false)}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></HomeArtSlot>}

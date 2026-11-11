@@ -93,7 +93,7 @@ Home SHALL offer Edit Home, a source-aware card picker, the shapes each card off
 - **THEN** its ordinary card stays visible until that evidence clears, with no separate notices section, Your space caption or layout caption
 
 ### Requirement: Bounded art placement preserves functional cards
-Pinned art SHALL be a shaped Home card, cropped to its shape. Optional automatic art SHALL use only empty cells after the functional cards, in the largest shape it offers that fits, and SHALL be omitted when none fits, without changing functional card order or geometry. Automatic placement SHALL NOT overwrite saved arrangements. Changes to automatic geometry SHALL wait while a pointer interaction, focused control or Home edit is active. Attention cards SHALL remain visible and unobscured.
+Pinned art SHALL be a shaped Home card, cropped to its shape. Optional automatic art SHALL use only empty cells after the functional cards, in the largest shape it offers that fits, and SHALL be omitted when none fits, without changing functional card order or geometry. Automatic placement SHALL NOT overwrite saved arrangements. On the grid it SHALL depend only on the columns and the cards' cells, so image arrival and the viewport's height never move it; in one column, art keeps its bounded reservation and changes to automatic geometry SHALL wait while a pointer interaction, focused control or Home edit is active. Attention cards SHALL remain visible and unobscured.
 
 #### Scenario: Art arrives during interaction
 - **WHEN** artwork finishes loading while a functional control has focus or a pointer interaction is active

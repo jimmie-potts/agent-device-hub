@@ -42,7 +42,8 @@ const world = await startWorld({playbackArtwork: {speakers, fetch: fetchArtwork}
 let browser: Browser | undefined;
 try {
   browser = await chromium.launch({headless: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
+  // Home shows the full Music card in one column (#1672); the wide grid shows its generic compact face.
+  const context = await browser.newContext({viewport: {width: 560, height: 900}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
     const page = await context.newPage(); page.setDefaultTimeout(15_000);
@@ -429,7 +430,7 @@ try {
       if (destination === 'Home') await page.getByRole('link', {name: 'Home', exact: true}).click(); else await openAudio(page);
       await frame(await current({title: longTitle, artwork: 'ready'}), [20, 60, 100, 255]);
       assert.equal(acquisitions, beforeNavigation);
-      for (const width of [1440, 390]) {
+      for (const width of destination === 'Home' ? [560, 390] : [1440, 390]) {
         await page.setViewportSize({width, height: 900}); await textAndControls(longTitle, completed);
         await card.getByText(longArtist, {exact: true}).waitFor();
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
