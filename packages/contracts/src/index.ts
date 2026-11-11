@@ -21,8 +21,16 @@ export const MOMENT_MAX_LEAD_MS = 60000;
 export const MOMENT_MEMORY = 64;
 export const MAX_JSON_DEPTH = 32;
 export const schema = JSON.parse(readFileSync(new URL('../schemas/controller-v1.schema.json', import.meta.url), 'utf8'));
-const ajv = new Ajv2020({ strict: true, allErrors: true });
-ajv.addSchema(schema);
+// Created on first use, not at import (Hub #1686).
+let ajv: Ajv2020 | undefined;
+function instance(): Ajv2020 {
+  if (ajv === undefined) {
+    const created = new Ajv2020({ strict: true, allErrors: true });
+    created.addSchema(schema);
+    ajv = created;
+  }
+  return ajv;
+}
 const validators = new Map<string, ValidateFunction>();
 
 /** Strict shape validation. Unknown schema names reject rather than widening the contract. */
@@ -30,7 +38,7 @@ export function validate(definition: string, value: unknown): boolean {
   if (!Object.hasOwn(schema.$defs, definition)) return false;
   let validator = validators.get(definition);
   if (!validator) {
-    validator = ajv.compile({ $ref: `${schema.$id}#/$defs/${definition}` });
+    validator = instance().compile({ $ref: `${schema.$id}#/$defs/${definition}` });
     validators.set(definition, validator);
   }
   return isJson(value) && validator(value);
