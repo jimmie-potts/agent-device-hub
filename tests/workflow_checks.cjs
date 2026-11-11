@@ -321,7 +321,7 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
     'runtime-unit': ['npm ci', 'npm run build', 'npm run test:runtime:built'],
     'runtime-scenarios': ['npm ci', 'npm run build', 'npm run test:runtime:scenarios:built'],
     firmware: ['npm run test:firmware', 'npm run test:firmware:arm'],
-    'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser',
+    'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host',
       'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'node apps/runtime/dashboard/tests/timeline-card.browser.ts', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts',
     'node apps/runtime/dashboard/tests/room-models.browser.ts', 'node apps/runtime/dashboard/tests/music-card.browser.ts', 'node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts', 'node apps/runtime/dashboard/tests/tv.browser.ts', 'npm run test:roborock:browser', 'npm run test:volcano:browser', 'npm run test:companions:browser', 'npm run test:wemo:browser', 'npm run test:reachy:browser', 'npm run test:microduck:browser', 'npm run test:art:browser', 'npm run test:art-theme:browser', 'npm run test:observability:browser'],
     'runtime-verify-captures': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:runtime:verify:captures:built'],
@@ -443,6 +443,33 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
   assert.deepEqual(others, all.filter(file => file !== 'steps.test.ts'));
   // Hub #922: the runtime's dashboard follows the same pattern, a smoke check in CI and its full browser suite locally.
   assert.equal(scripts['test:runtime-dashboard:smoke'], 'node apps/runtime/dashboard/tests/smoke.ts');
+});
+
+// Hub #1714: hosted CI does not run the CHOMPI bridge's verification and browser check for the time being, and #1715
+// restores them; the bridge's unit tests and catalog scenarios keep running in core. Restoring a step means deleting
+// it from `off` here and adding it back to the App verification suite list above. Turning a core step off as well
+// means moving it from `on` to `off` and out of the core suite list.
+test('hosted CI runs the CHOMPI bridge core steps but not its verification or browser check until #1715', () => {
+  const text = fs.readFileSync(path.join(root, '.github/workflows/checks.yml'), 'utf8');
+  const checks = YAML.parse(text);
+  const scripts = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).scripts;
+  const runs = Object.values(checks.jobs).flatMap(job => (job.steps ?? []).map(step => step.run ?? ''));
+  const on = ['test:chompi-bridge:built', 'test:chompi-bridge:scenarios'];
+  const off = ['test:chompi-bridge:verify:built', 'test:chompi-bridge:browser'];
+  for (const name of on) {
+    assert.deepEqual(checks.jobs.core.steps.filter(step => step.run === `npm run ${name}`).map(step => step.if),
+      ["contains(fromJSON(needs.select.outputs.groups), 'chompi')"], `core runs ${name} in the chompi group`);
+  }
+  for (const name of off) {
+    assert.equal(runs.some(run => run.includes(name)), false, `${name} is off in hosted CI until #1715`);
+    assert.ok(scripts[name], `${name} stays a package script, so it runs by hand`);
+  }
+  assert.deepEqual(runs.filter(run => /chompi-bridge/.test(run)).sort(), on.map(name => `npm run ${name}`).sort(),
+    'no other CHOMPI bridge step runs in hosted CI');
+  // The comment that marks the removed steps' place names both scripts, #1714 and #1715.
+  assert.equal(text.split('\n').filter(line => line.includes('#1714') && off.every(name => line.includes(name))).length, 1);
+  assert.equal(text.match(/#1715 restores them/g)?.length, 1, 'the #1714 comment names #1715');
+  assert.deepEqual(checks.jobs.firmware.steps.filter(step => step.run).map(step => step.run), ['npm run test:firmware', 'npm run test:firmware:arm']);
 });
 
 // Hub #861: product suites remain unselected for Markdown-only PRs, so Workflow guards their copied Markdown files.

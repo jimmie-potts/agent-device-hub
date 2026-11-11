@@ -45,7 +45,7 @@ a fake transport and a manual clock: hello gating, epoch and sequence rules,
 synthetic releases on disconnect, stale handling, light frame split and resend,
 and bounded subscriptions. It also covers a simulator roundtrip, the
 single-instance lock across processes, the node-hid adapter against a stand-in
-module, and the CLI. No test loads node-hid or touches USB. The contracts CI job
+module, and the CLI. No test loads node-hid or touches USB. The core CI job
 runs `npm run test:chompi-bridge:built` after the shared build.
 
 Run `npm run test:chompi-bridge:native:built` separately under native Windows
@@ -120,16 +120,18 @@ npm run test:chompi-bridge:browser        # control page browser check
 Tier 1 runs each scenario against the real CLI (`run --simulate --desktop sim`)
 on a manual clock, with the synthetic feed in memory. It takes about a second,
 opens no port and touches no device or desktop. Name scenarios to run only
-those, or pass `--list` or `--json`. The contracts CI job runs it after
+those, or pass `--list` or `--json`. The core CI job runs it after
 `test:chompi-bridge:built`.
 
 `test:chompi-bridge:verify:built` starts runs without a user manager. It starts
 the three negative-control runs and shows that each boundary check fails, and
 judges every capture step through `runCaptureStep`. `test:chompi-bridge:browser`
 drives the control page with the keyboard at
-1440 px and phone width. Both need Playwright Chromium. The App verification
-CI job runs them. Use an outside-checkout `TMPDIR` locally, as for
-the app verification tests.
+1440 px and phone width. Both need Playwright Chromium. Hosted CI does not run
+them since #1714 (the App verification job ran them before), so a change under
+`apps/chompi-bridge/**` or `packages/chompi-protocol/**` merges without them and
+its author runs both by hand. #1715 tracks turning them back on. Use an
+outside-checkout `TMPDIR` locally, as for the app verification tests.
 
 A disposable run (Tier 2) uses the app verification lifecycle:
 `npm run -s verify:chompi -- start`, `capture <run-id> <step>`, `stop <run-id>`.

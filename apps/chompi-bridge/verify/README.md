@@ -197,5 +197,7 @@ npm run test:chompi-bridge:verify:built   # boundary checks and every capture st
 npm run test:chompi-bridge:browser        # control page browser check
 ```
 
-The last two need Playwright Chromium but no user manager. The App verification CI job runs both; the
-contracts job runs the first two.
+The last two need Playwright Chromium but no user manager. Hosted CI runs the first two in its core job. It does
+not run the last two since [#1714](https://github.com/jimmie-potts/agent-device-hub/issues/1714): a change under `apps/chompi-bridge/**` or
+`packages/chompi-protocol/**` merges without them, and its author runs both by hand. [#1715](https://github.com/jimmie-potts/agent-device-hub/issues/1715)
+tracks turning them back on.
