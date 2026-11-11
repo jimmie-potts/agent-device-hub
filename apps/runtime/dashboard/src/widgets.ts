@@ -69,7 +69,7 @@ export const widgetCatalog: readonly WidgetDefinition[] = [
   },
   {
     id: 'wispr', name: 'Wispr', description: 'Numeric dictation totals from the manually selected collector files.',
-    sizes: ['small', 'medium'], shapes: ['square', 'tall', 'large-square'], standard: 'tall', generic: ['square'], open: '#/module/wispr/analytics', source: {kind: 'module', families: [], content: ['wispr/status', 'wispr/summary']}, commands: false,
+    sizes: ['small', 'medium'], shapes: ['square'], standard: 'square', generic: ['square'], open: '#/module/wispr/analytics', source: {kind: 'module', families: [], content: ['wispr/status', 'wispr/summary']}, commands: false,
   },
   {
     id: 'hub-mode', name: 'Hub mode', description: 'The Hub mode and the result of each device\'s mode command.',

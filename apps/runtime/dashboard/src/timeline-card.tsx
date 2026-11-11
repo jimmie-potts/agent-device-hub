@@ -74,6 +74,6 @@ export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, h
     <PagedList keys={rows.map(row => String(row.seq))} pageSize={size} pager={!oneRow} label="Timeline" resetKey={`${category}:${period}`}>{shown =>
       <ol className="timeline-entries" aria-label="Activity entries">{rows.map(row => <HistoryEntry key={row.seq} row={row} hidden={!shown(String(row.seq))}/>)}</ol>}</PagedList>
     {rows.length === 0 && snapshot.phase === 'ready' && <p className="timeline-empty">No matches in these entries</p>}
-    {advanced}
+    {shape === undefined && advanced}
   </div>;
 }

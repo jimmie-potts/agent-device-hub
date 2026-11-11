@@ -43,7 +43,7 @@ export function LightCard({card, devices, capabilities: cap, artwork, modeChoice
   const attention = status.filter(item => item.locked || /Refused|Not sent|failed|uncertain|Conflicting/i.test(item.text));
   const statusText = cap.blocked ?? (observedPower === undefined ? power === undefined ? 'Mixed / unknown' : `Requested ${power ? 'on' : 'off'}` : observedPower ? 'On · observed' : 'Off · observed');
   return <article className="light-card" aria-label={card.name} data-light-card={card.selection.id} onDragOver={event => { if (drop !== undefined) event.preventDefault(); }} onDrop={drop}>
-    <header className="light-card-heading"><div><h3>{card.name}</h3><p>{card.selection.kind === 'device' ? 'Light' : `${card.members.length} lights · ${card.selection.kind}`} · {statusText}</p></div>
+    <header className="light-card-heading"><div><h3>{card.name}</h3><p title={compact || shape !== undefined ? `${card.selection.kind === 'device' ? 'Light' : `${String(card.members.length)} lights · ${card.selection.kind}`} · ${statusText}` : undefined}>{card.selection.kind === 'device' ? 'Light' : `${card.members.length} lights · ${card.selection.kind}`} · {statusText}</p></div>
       {options}
     </header>
     <div className="light-artwork" data-light-artwork={card.selection.id}>{artwork}</div>

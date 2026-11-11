@@ -103,7 +103,7 @@ try {
   const requested = card.locator('[data-history-row="4"]>details>summary');
   await requested.focus();await page.keyboard.press('Enter');
   await expect(card.locator('[data-history-row="4"]')).toContainText('Completion is not established');
-  // On the dedicated page no card height applies, so an opened entry stays beside the others and the pager stays.
+  // The dedicated page is off the Home grid, so an opened entry stays beside the others and the pager stays.
   assert.equal(await shown().count(), 20);await expect(card.getByText('Page 1 of 2', {exact: true})).toBeVisible();
   await card.locator('[data-history-row="4"] .timeline-technical>summary').click();
   await expect(card.locator('[data-history-row="4"] pre')).toContainText('diagnostic');
