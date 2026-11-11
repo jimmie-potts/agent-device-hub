@@ -10,7 +10,7 @@ test('ordinary presentation keeps core consumers and admits without broad catalo
   assert.equal(result.mode, 'focused');
   assert.deepEqual(result.groups, ['runtime']);
   // The runtime's unit and scenario suites keep running for presentation changes, in their own jobs since #1506.
-  assert.deepEqual(result.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: false, 'app-verify': false, 'runtime-verify': false });
+  assert.deepEqual(result.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: false, 'app-verify': false, 'runtime-verify-captures': false, 'runtime-verify': false });
 });
 
 test('safety, backend, shared and unknown changes retain broad coverage', () => {
@@ -23,6 +23,7 @@ test('safety, backend, shared and unknown changes retain broad coverage', () => 
     const result = select([...presentation, path]);
     assert.notEqual(result.mode, 'focused', path);
     assert.equal(result.jobs['app-verify'], true, path);
+    assert.equal(result.jobs['runtime-verify-captures'], true, path);
     assert.equal(result.jobs['runtime-verify'], true, path);
   }
   assert.equal(selectChecks({ event: 'release_qualification', paths: presentation, complete: true }).mode, 'full');
@@ -42,7 +43,8 @@ test('focused gate rejects missing and failed core checks and mismatched job out
     ...Object.fromEntries(Object.entries(selection.jobs).map(([key, value]) => [key, String(value)])) };
   const needs = { select: { result: 'success', outputs }, core: { result: 'success' },
     'runtime-unit': { result: 'success' }, 'runtime-scenarios': { result: 'success' },
-    firmware: { result: 'skipped' }, 'app-verify': { result: 'skipped' }, 'runtime-verify': { result: 'skipped' } };
+    firmware: { result: 'skipped' }, 'app-verify': { result: 'skipped' },
+    'runtime-verify-captures': { result: 'skipped' }, 'runtime-verify': { result: 'skipped' } };
   assert.equal(gateVerdict(needs).ok, true);
   for (const job of ['core', 'runtime-unit', 'runtime-scenarios']) {
     for (const result of ['failure', 'cancelled', 'skipped']) {
@@ -61,6 +63,7 @@ test('existing module presentation assets use their actual src/frontend paths', 
     assert.equal(result.mode, 'focused', path);
     assert.deepEqual(result.groups, ['runtime', 'modules'], path);
     assert.equal(result.jobs['app-verify'], false, path);
+    assert.equal(result.jobs['runtime-verify-captures'], false, path);
     assert.equal(result.jobs['runtime-verify'], false, path);
     assert.equal(result.jobs['runtime-unit'], true, path);
     assert.equal(result.jobs['runtime-scenarios'], true, path);

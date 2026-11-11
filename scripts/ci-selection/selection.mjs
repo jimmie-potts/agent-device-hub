@@ -15,10 +15,12 @@ export const JOBS = Object.freeze({
   'runtime-scenarios': Object.freeze(['runtime']),
   firmware: Object.freeze(['chompi']),
   'app-verify': Object.freeze(['runtime', 'chompi', 'shared']),
+  // The runtime verification suite runs as two jobs with one selection (#1676): capture shard 1/2, and the rest.
+  'runtime-verify-captures': Object.freeze(['runtime']),
   'runtime-verify': Object.freeze(['runtime']),
 });
 /** The broad browser and catalog jobs that focused presentation admission omits; it keeps every other selected job. */
-const BROAD = new Set(['app-verify', 'runtime-verify']);
+const BROAD = new Set(['app-verify', 'runtime-verify-captures', 'runtime-verify']);
 
 const FULL = null;
 // First match wins. `prefix/**` matches everything below prefix, `**/*.ext` every path with that extension, and any
