@@ -859,8 +859,10 @@ jobs; never touch another session's containers.
   usually start with `bunny-gh` or `bunny-runtime-check-`; count a `…-wide` name
   twice. An operator or qualification container has a name Docker chose, without
   the `bunny-` prefix, and the core image (`bunny-core:…` or an image ID); count
-  it three times only when it is one of the two `--memory 4g` commands named in
-  item 2, and other such containers once. Admission in `npm run test:container`
+  it three times only when
+  `docker inspect -f '{{.HostConfig.Memory}}' <name>` prints `4294967296` (the
+  `--memory 4g` of the two commands named in item 2), and other such containers
+  once. Admission in `npm run test:container`
   counts it once, so check for one yourself.
 - Native suites:
   `ps -axo command= | grep -E '^([^ ]*/)?(node|[Pp]ython[0-9.]*)( |$)' | grep -E -- '--test|/tests/|unittest|vitest|scripts/check-' | grep -v -- '--test-isolation=process'`.
