@@ -940,9 +940,17 @@ or four wide ones, make 16 GiB, which leaves about 3.5 GiB of the Docker VM for
 the engine, image builds and the WSL distribution. The Mac's 8 and 12 are 0.67
 and 1.0 times its 12 cores. Eight 2-CPU jobs at once reached a load of about 10.
 With no core to protect, the PC starts under 0.75 times its 32 threads, so the
-eighth 4-CPU job can still start, and stops above 1.0 times them. The first PC
-run of eight standard jobs records each start's load, the highest load and the
-lowest free memory to confirm both.
+eighth 4-CPU job can still start, and stops above 1.0 times them. In the first
+PC runs (Hub #1681), eight standard jobs of the runtime unit suite ran at once
+for about two minutes and all ran to the end, with no job stopped and none
+killed for memory. The 1-minute load peaked at about 24.6 after the last start,
+over the start threshold and under the stop threshold, and available memory
+never fell below 11,169 MiB. One of the eight jobs failed one timing-sensitive
+test (#1695). Such a single failure at full occupancy may come from the load,
+so rerun it before treating it as a regression. The wide size has not been
+measured for the verification suite here: the first wide verification job is
+that measurement, `npm run test:runtime:container -- --suite verify` (1536 MiB)
+is the measured route until then, and #1696 tracks it.
 
 ### Old system checks
 
