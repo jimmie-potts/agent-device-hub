@@ -1,15 +1,16 @@
 import type {DatabaseSync} from 'node:sqlite';
 import {Ajv2020} from 'ajv/dist/2020.js';
+import {compileOnFirstUse} from './compile-on-first-use.js';
 import type {CompletedOutcome} from '@jimmie-potts/event-contracts/v2/devices';
 import type {Family, ReachyState} from './contracts.js';
 import {families} from './contracts.js';
 import {validState, outcomeSchema} from './families.js';
 export type Row = {requestId: string; digest: string; family: Family; traceparent: string; started: boolean; moveId: string | null; recoveryOf?: string; outcome?: CompletedOutcome};
-const validRow = new Ajv2020({strict: false}).compile<Row>({
+const validRow = compileOnFirstUse(() => new Ajv2020({strict: false}).compile<Row>({
   type: 'object', additionalProperties: false, required: ['requestId', 'digest', 'family', 'traceparent', 'started', 'moveId'],
   properties: {requestId: {type: 'string'}, digest: {type: 'string'}, family: {enum: families}, traceparent: {type: 'string'},
     recoveryOf: {type:'string'}, started: {type: 'boolean'}, moveId: {type: ['string', 'null']}, outcome: outcomeSchema},
-});
+}));
 function document(value: unknown): unknown {
   if (typeof value !== 'object' || value === null || !('record' in value) || typeof value.record !== 'string') throw new Error('invalid Reachy stored record');
   return JSON.parse(value.record);

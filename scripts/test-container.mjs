@@ -1,38 +1,46 @@
 // `npm run test:container`: one test job in a disposable, limited Linux container that starts from prebuilt
 // dependencies (Hub #1638). The job's source is a private snapshot of the current tracked and nonignored files,
 // mounted read-only; the container copies it over the image's node_modules, builds unless told not to and runs one
-// package script. Jobs run under the shared test pool and start only with headroom (Hub #1641, ./test-container/pool.mjs).
+// package script. Jobs start only with headroom (Hub #1641, ./test-container/pool.mjs), under the host's profile of
+// limits (Hub #1681, ./test-container/profile.mjs); on the Mac they run under the shared test pool.
 // docs/development.md "One test job in a container" is the procedure.
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
-import {constants, tmpdir} from 'node:os';
+import {constants} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {snapshot} from './runtime-container.mjs';
 import {admission, dockerRead, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, poolSession, reportOverflow} from './test-container/pool.mjs';
+import {profileLine, profiles, redactor, redactorFor, scratchBase, selectProfile} from './test-container/profile.mjs';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const recipePath = 'scripts/test-container/Dockerfile';
 const keyLabel = 'org.bunny.test-deps.key';
 const USAGE = 'usage: npm run test:container -- --issue <n> --job <name> [--size standard|wide] [--no-build] [--network] [--wait-minutes <n>] -- <package script> [arguments...]';
+// The Mac profile's values (./test-container/profile.mjs), under the names other scripts and tests import. Each run
+// takes its own profile's sizes and build memory; the size names, slots and name suffixes are the same on every host.
 // The free pool memory an image build waits for. Its RUN steps run in the pool; the engine's image export does not.
-export const BUILD_BYTES = 2048 * 1024 ** 2;
-
-// The owner's container sizes. Swap equal to memory means the container cannot swap.
-export const sizes = Object.freeze({
-  standard: Object.freeze({cpus:'2', memory:'1250m', slots:1, suffix:''}),
-  wide: Object.freeze({cpus:'4', memory:'2048m', slots:2, suffix:'-wide'}),
-});
+export const BUILD_BYTES = profiles.mac.buildBytes;
+export const sizes = profiles.mac.sizes;
 const order = ['standard', 'wide'];
 
-// Package scripts known not to fit a smaller size, with the measurement behind each row.
+// Package scripts known not to fit a smaller size on the Mac, with the measurement behind each row.
 export const minimums = Object.freeze({
   // Hub #1637: at 1250 MiB the verification suite was killed for memory (oom_kill 2, browser-speech crashed); it
   // passed at 1536 MiB, its largest process-memory sample being 1.18 GB.
   'test:runtime:verify:built': Object.freeze({size:'wide', message:'test:runtime:verify:built needs more than 1250 MiB: use --size wide, or npm run test:runtime:container -- --suite verify, which has its own 1536 MiB limit'}),
   // Hub #1635: the SDK suite failed 8 of 20 runs at 2 CPUs or fewer and 0 of 4 at 4 CPUs.
   'test:sdk:built': Object.freeze({size:'wide', message:'test:sdk:built fails below 4 CPUs: use --size wide'}),
+});
+
+// The same table for each profile. A PC standard job has 4 CPUs, so the SDK suite fits it. The verification suite's
+// memory grows with its workers, and was measured only at 1 worker, so it keeps the wide minimum there.
+const minimumsOf = Object.freeze({
+  mac: minimums,
+  pc: Object.freeze({
+    'test:runtime:verify:built': Object.freeze({size:'wide', message:'test:runtime:verify:built needs more memory than a standard job is measured for: use --size wide, or npm run test:runtime:container -- --suite verify, which has its own 1536 MiB limit'}),
+  }),
 });
 
 // Package scripts that never run in a test container.
@@ -72,8 +80,8 @@ export function parse(args, scripts) {
 }
 
 /** Why the plan must never start, or null. Whether it may start now is ./test-container/pool.mjs `admission`. */
-export function admit(plan, {nameTaken}) {
-  const minimum = minimums[plan.script];
+export function admit(plan, {nameTaken, profile = profiles.mac}) {
+  const minimum = minimumsOf[profile.name][plan.script];
   if (minimum && order.indexOf(plan.size) < order.indexOf(minimum.size)) return minimum.message;
   if (nameTaken) return `a container named ${plan.name} already exists; choose another --job name (this command never stops or removes a container it did not start)`;
   return null;
@@ -95,9 +103,9 @@ const safePath = path => /^\/[A-Za-z0-9._/-]+$/.test(path);
 export const memoryBytes = memory => Number(memory.slice(0, -1)) * 1024 ** 2;
 
 /** Every docker run argument of a job. The one place that builds them; `pool` is the pool's name, or null. */
-export function runArgs(plan, {imageId, source, cidfile, pool = null}) {
+export function runArgs(plan, {imageId, source, cidfile, pool = null, profile = profiles.mac}) {
   if (!safePath(source) || !safePath(cidfile)) throw new Error('scratch-path-refused');
-  const size = sizes[plan.size];
+  const size = profile.sizes[plan.size];
   return ['run','--rm','--init','--name',plan.name,'--cidfile',cidfile,'--network',plan.network ? 'bridge' : 'none',
     '--cpus',size.cpus,'--memory',size.memory,'--memory-swap',size.memory,...(pool ? ['--cgroup-parent',`/${pool}`] : []),
     '--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges','--restart','no',
@@ -134,25 +142,37 @@ export const host = Object.freeze({
 
 /** Runs one job and returns its exit status. `io` is the host, or a fake in tests. */
 export async function runJob(argv, io = host, repository = root) {
+  let profile;
+  try { profile = selectProfile(io.env, io); } catch (error) { io.log(error.message); return 2; }
+  // Under the PC profile every line this run prints names the home and cache directories as ~ and $XDG_CACHE_HOME.
+  if (profile.scratch === 'cache') {
+    const redact = redactor(profile, io.env);
+    const log = io.log;
+    io = Object.create(io, {log:{value: line => log(redact(line))}});
+  }
+  io.log(profileLine(profile));
   let plan;
   try {
     plan = parse(argv, JSON.parse(await readFile(join(repository, 'package.json'), 'utf8')).scripts ?? {});
   } catch (error) { io.log(error.message); return 2; }
-  const refusal = admit(plan, {nameTaken: io.read(['container','inspect','--format','{{.Id}}',plan.name]) !== null});
+  const refusal = admit(plan, {nameTaken: io.read(['container','inspect','--format','{{.Id}}',plan.name]) !== null, profile});
   if (refusal) { io.log(refusal); return 2; }
-  let pool;
+  let pool = null;
   const session = poolSession();
-  try { pool = await ensurePool(io, poolName(io.env), undefined, {session}); } catch (error) { io.log(error.message); return 2; }
-  const state = {interrupted:false, id:null, abort:new AbortController(), release:null, session};
+  if (profile.pool) {
+    try { pool = await ensurePool(io, poolName(io.env), undefined, {session}); } catch (error) { io.log(error.message); return 2; }
+  }
+  const state = {interrupted:false, id:null, abort:new AbortController(), release:null, session, profile};
   io.onInterrupt(() => { state.interrupted = true; state.abort.abort(); if (state.id) kill(io, state.id); });
-  const scratch = await mkdtemp(join(tmpdir(), 'bunny-test-container-')); // Mode 0700; it holds only the snapshot.
-  const work = await mkdtemp(join(tmpdir(), 'bunny-test-container-work-'));
+  const base = await scratchBase(profile, io.env);
+  const scratch = await mkdtemp(join(base, 'bunny-test-container-')); // Mode 0700; it holds only the snapshot.
+  const work = await mkdtemp(join(base, 'bunny-test-container-work-'));
   const source = join(scratch, 'source');
   const cidfile = join(work, 'cid');
   let status = 1;
   try {
     if (!safePath(source) || !safePath(cidfile)) {
-      io.log(`the scratch path ${scratch} cannot be passed to docker unchanged: set TMPDIR to a directory whose path uses only letters, digits, dot, underscore, slash and hyphen`);
+      io.log(`the scratch path ${scratch} cannot be passed to docker unchanged: set ${profile.scratch === 'cache' ? 'XDG_CACHE_HOME' : 'TMPDIR'} to a directory whose path uses only letters, digits, dot, underscore, slash and hyphen`);
       status = 2;
     } else {
       status = await job(plan, io, state, {repository, source, work, cidfile, pool});
@@ -196,7 +216,7 @@ async function containerId(cidfile) {
 
 /** Waits for admission, holding the start lock on success; returns 0, or the status to stop with. */
 async function admitted(io, state, plan, pool, need) {
-  const gate = await admission(io, {pool, need, waitMinutes:plan.waitMinutes, interrupted:() => state.interrupted, signal:state.abort.signal, session:state.session});
+  const gate = await admission(io, {pool, need, waitMinutes:plan.waitMinutes, interrupted:() => state.interrupted, signal:state.abort.signal, session:state.session, profile:state.profile});
   if (gate.status === 0) state.release = gate.release;
   return gate.status;
 }
@@ -210,7 +230,7 @@ async function job(plan, io, state, {repository, source, work, cidfile, pool}) {
   const missing = () => io.read(['image','inspect','--format','{{.Id}}',tag]) === null;
   if (missing()) {
     // Builds take the start lock one at a time; a run that waited for another's build finds the image and skips its own.
-    const waited = await admitted(io, state, plan, pool, {bytes:BUILD_BYTES, slots:1});
+    const waited = await admitted(io, state, plan, pool, {bytes:state.profile.buildBytes, slots:1});
     if (waited !== 0) return waited;
   }
   if (state.release && missing()) {
@@ -233,13 +253,15 @@ async function job(plan, io, state, {repository, source, work, cidfile, pool}) {
     return 2;
   }
   if (state.interrupted) return 130;
-  const size = sizes[plan.size];
+  const {profile} = state;
+  const size = profile.sizes[plan.size];
   const waited = await admitted(io, state, plan, pool, {bytes:memoryBytes(size.memory), slots:size.slots});
   if (waited !== 0) return waited;
   const before = oomKills(io, pool);
-  io.log(`${plan.name}: ${plan.size} size (${size.cpus} CPUs, ${size.memory} memory, no swap), ${String(size.slots)} slot${size.slots === 1 ? '' : 's'}, network ${plan.network ? 'enabled for this job' : 'none'}, ${pool ? `in the /${pool} pool` : 'no pool (count check)'}`);
+  const where = pool ? `in the /${pool} pool` : profile.pool ? 'no pool (count check)' : "no pool (this host's profile has none)";
+  io.log(`${plan.name}: ${plan.size} size (${size.cpus} CPUs, ${size.memory} memory, no swap), ${String(size.slots)} slot${size.slots === 1 ? '' : 's'}, network ${plan.network ? 'enabled for this job' : 'none'}, ${where}`);
   let settled = false;
-  const running = io.run(runArgs(plan, {imageId, source, cidfile, pool})).finally(() => { settled = true; });
+  const running = io.run(runArgs(plan, {imageId, source, cidfile, pool, profile})).finally(() => { settled = true; });
   // docker run writes the container ID once it has created the container. Until then an interrupt reaches the
   // container through docker run's own signal proxy.
   while (!settled && !state.id) {
@@ -257,7 +279,7 @@ async function job(plan, io, state, {repository, source, work, cidfile, pool}) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   runJob(process.argv.slice(2)).then(status => { process.exitCode = status; }, error => {
-    host.log(`stopped: ${error instanceof Error ? error.message : String(error)}`);
+    host.log(redactorFor(host.env, host)(`stopped: ${error instanceof Error ? error.message : String(error)}`));
     process.exitCode = 1;
   });
 }

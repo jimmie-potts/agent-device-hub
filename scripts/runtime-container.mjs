@@ -2,10 +2,10 @@
 import {spawn, spawnSync, execFileSync} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import {chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {admission, DOCKER_TIMEOUT_MS, dockerRead, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, poolSession, reportOverflow} from './test-container/pool.mjs';
+import {profileLine, profiles, redactor, redactorFor, scratchBase, selectProfile} from './test-container/profile.mjs';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const suites = Object.freeze({all: ['test:runtime:scenarios:built', 'test:runtime:verify:built'],
@@ -44,15 +44,18 @@ export async function snapshot(repository, destination) {
   return copied;
 }
 
-// Two CPUs keep node --test at a small worker count; swap equal to memory means no swap.
-export const limits = Object.freeze({cpus:'2', memory:'1536m'});
+// The Mac profile's values (./test-container/profile.mjs), under the names tests import; each run takes its own
+// profile's. Two CPUs keep node --test at a small worker count; swap equal to memory means no swap.
+export const limits = profiles.mac.runtimeCheck;
 
 // The free pool memory this runner waits for before its container (its own limit) and before an image build.
-export const NEED_BYTES = 1536 * 1024 ** 2;
-export const BUILD_BYTES = 2048 * 1024 ** 2;
+const needOf = profile => Number(profile.runtimeCheck.memory.slice(0, -1)) * 1024 ** 2;
+export const NEED_BYTES = needOf(profiles.mac);
+export const BUILD_BYTES = profiles.mac.buildBytes;
 
 /** The container's create arguments; `pool` is the shared test pool's name (Hub #1641), or null. */
-export function createArgs(name, imageId, suite, pool = null) {
+export function createArgs(name, imageId, suite, pool = null, profile = profiles.mac) {
+  const limits = profile.runtimeCheck;
   return ['create','--init','--name',name,'--network','none','--cpus',limits.cpus,'--memory',limits.memory,'--memory-swap',limits.memory,
     ...(pool ? ['--cgroup-parent',`/${pool}`] : []),
     '--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges','--restart','no',
@@ -94,16 +97,26 @@ export const host = Object.freeze({
 
 /** Runs the chosen suites in a disposable container and returns their status. `io` is the host, or a fake in tests. */
 export async function runChecks(argv, io = host, repository = root) {
+  // The profile comes first, so its line is the command's first own line even before a usage error.
+  let profile;
+  try { profile = selectProfile(io.env, io); } catch (error) { io.log(error.message); return 2; }
+  if (profile.scratch === 'cache') {
+    // Under the PC profile every line this run prints names the home and cache directories as ~ and $XDG_CACHE_HOME.
+    const redact = redactor(profile, io.env);
+    const {log, print} = io;
+    io = Object.create(io, {log:{value: line => log(redact(line))}, print:{value: line => print(redact(line))}});
+  }
+  io.log(profileLine(profile));
   const suite = parse(argv);
   const session = poolSession();
-  const pool = await ensurePool(io, poolName(io.env), undefined, {session});
+  const pool = profile.pool ? await ensurePool(io, poolName(io.env), undefined, {session}) : null;
   let release = null;
   const admit = async bytes => {
-    const gate = await admission(io, {pool, need:{bytes, slots:1}, waitMinutes:30, session});
+    const gate = await admission(io, {pool, need:{bytes, slots:1}, waitMinutes:30, session, profile});
     if (gate.status !== 0) throw Object.assign(new Error('admission-gave-up'), {status:gate.status});
     release = gate.release;
   };
-  const scratch = await mkdtemp(join(tmpdir(), 'bunny-runtime-check-'));
+  const scratch = await mkdtemp(join(await scratchBase(profile, io.env), 'bunny-runtime-check-'));
   const name = 'bunny-runtime-check-' + randomUUID();
   let created = false;
   let status;
@@ -123,7 +136,7 @@ export async function runChecks(argv, io = host, repository = root) {
     const image = 'bunny-runtime-check-tools:' + hash.digest('hex').slice(0,24);
     const missing = () => io.read(['image','inspect','--format','{{.Id}}',image]) === null;
     if (missing()) {
-      await admit(BUILD_BYTES);
+      await admit(profile.buildBytes);
       // A run that waited while another built the same image uses that image.
       if (missing()) {
         status = await io.run(['build','--tag',image,...(pool ? ['--cgroup-parent',`/${pool}`] : []),context]);
@@ -133,10 +146,10 @@ export async function runChecks(argv, io = host, repository = root) {
     }
     const imageId = io.read(['image','inspect','--format','{{.Id}}',image]) ?? '';
     if (!/^sha256:[a-f0-9]{64}$/.test(imageId)) throw new Error('tool-image-identity-refused');
-    await admit(NEED_BYTES);
+    await admit(needOf(profile));
     const before = oomKills(io, pool);
-    io.print(pool ? `In the /${pool} pool.` : 'No pool: per-container limits and the count check.');
-    const made = io.capture(createArgs(name, imageId, suite, pool));
+    io.print(pool ? `In the /${pool} pool.` : profile.pool ? 'No pool: per-container limits and the count check.' : "No pool: this host's profile has none.");
+    const made = io.capture(createArgs(name, imageId, suite, pool, profile));
     const id = made.stdout.trim();
     if (!/^[a-f0-9]{64}$/.test(id)) {
       // The engine may have created the container although the CLI failed or timed out. Remove it only by this run's own
@@ -172,5 +185,5 @@ export async function runChecks(argv, io = host, repository = root) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  runChecks(process.argv.slice(2)).then(status => {process.exitCode = status;}).catch(error => {console.error(error.message);process.exitCode = 1;});
+  runChecks(process.argv.slice(2)).then(status => {process.exitCode = status;}).catch(error => {console.error(redactorFor(host.env, host)(error.message));process.exitCode = 1;});
 }

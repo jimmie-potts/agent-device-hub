@@ -799,15 +799,31 @@ remain separate.
 
 The Mac's Docker Desktop VM also runs the installed core, the diagnostics stack
 and the Tronbyt server, and host load limits the test work beside them. Each
-session applies this rule itself; no coordinator grant is needed.
+session applies this rule itself; no coordinator grant is needed. The test
+commands apply it as the Mac profile, which every host gets unless
+[Test work on the PC](#test-work-on-the-pc) selects that host's own. Each
+command's first own line, on stderr after npm's banner, is
+`test-container: profile mac: …` or `runtime-container: profile mac: …`.
 
 1. **Slots.** At most 5 test jobs at once, across all sessions. A job is one
-   container (any except the core, the diagnostics containers and the Tronbyt
-   server) or one native test suite. A container named `…-wide` counts as two.
-2. **Start check.** Start only when the 1-minute load is under 8, the
+   container (any except the core, the diagnostics containers, the Tronbyt
+   server and those in item 2) or one native test suite. A container named
+   `…-wide` counts as two. One native sharded catalog run
+   (`npm run test:runtime:scenarios:shards`) also counts as two, at any shard
+   count up to the default four; a run of more than four shards is not for the
+   Mac. Inside a test container only the container's size counts.
+2. **Operator and qualification containers.** The archive-volume helper in
+   [Back up a stopped instance](bunny-container.md#back-up-a-stopped-instance)
+   and the release image's exercise container in
+   [Source validation](bunny-container.md#source-validation) (each a
+   `docker run --rm … --memory 4g`) are not test jobs. They always run exactly
+   as their procedure says and never wait for, shrink to fit or give way to this
+   rule. While one runs it counts as three slots, so at most two slots remain
+   for test jobs.
+3. **Start check.** Start only when the 1-minute load is under 8, the
    installed core is `healthy` and enough slots are free
    ([Counting test jobs](#counting-test-jobs)). Otherwise wait a minute.
-3. **Containers.** Run each test job in its own container with
+4. **Containers.** Run each test job in its own container with
    `npm run test:container -- --issue <n> --job <name> [--size wide] -- <package script>`
    ([One test job in a container](#one-test-job-in-a-container)), which
    applies the name, `--rm` and the limits without swap. A container started
@@ -817,23 +833,23 @@ session applies this rule itself; no coordinator grant is needed.
    The SDK suite runs wide. The runtime verification suite runs wide or through
    `npm run test:runtime:container -- --suite verify`, one slot with its own
    limits ([Runtime verification runs](#runtime-verification-runs)).
-4. **Lint** (`npm run lint:js`) runs natively only, one at a time across all
+5. **Lint** (`npm run lint:js`) runs natively only, one at a time across all
    sessions; [Counting test jobs](#counting-test-jobs) has the check and
    [Heap budget](static-analysis.md#heap-budget) the reason.
-5. **Native work.** Build, typecheck, lint and `npm ci` take no slot. A native
+6. **Native work.** Build, typecheck, lint and `npm ci` take no slot. A native
    suite takes one. Run a package script that is one bare `node --test` command
    as `node scripts/native-test.mjs <script>` (2 workers); that satisfies a
    check list naming the npm script. Run other scripts, such as the browser
    journeys and the `test:*:package:built` scripts, as their check lists name
    them
    ([Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos)).
-6. **Evidence.** A native macOS run of build, typecheck, lint, the Node suites,
+7. **Evidence.** A native macOS run of build, typecheck, lint, the Node suites,
    the scenario catalog and the browser journeys is accepted local validation
    before a push; hosted Linux CI is the gate. A Linux container is needed only
    for a test that still needs Linux (listed in Native runs on macOS, or so
    marked in its own guide) or to reproduce a hosted failure; it stays allowed
    otherwise.
-7. **Stop.** If the 1-minute load passes 12 or the core is not `healthy`, the
+8. **Stop.** If the 1-minute load passes 12 or the core is not `healthy`, the
    owner of the newest job stops it.
 
 Test work never stops, restarts or reconfigures the installed core, the
@@ -845,17 +861,98 @@ jobs; never touch another session's containers.
 - Load: `uptime`. Core:
   `docker inspect -f '{{.State.Health.Status}}' bunny-mac-personal-core-1`
   prints `healthy`.
-- Containers: `docker ps --format '{{.Names}}'`. Test containers usually start
-  with `bunny-gh` or `bunny-runtime-check-`; count a `…-wide` name twice.
+- Containers: `docker ps --format '{{.Names}} {{.Image}}'`. Test containers
+  usually start with `bunny-gh` or `bunny-runtime-check-`; count a `…-wide` name
+  twice. An operator or qualification container has a name Docker chose, without
+  the `bunny-` prefix, and the core image (`bunny-core:…` or an image ID); count
+  it three times only when
+  `docker inspect -f '{{.HostConfig.Memory}}' <name>` prints `4294967296` (the
+  `--memory 4g` of the two commands named in item 2), and other such containers
+  once. Admission in `npm run test:container`
+  counts it once, so check for one yourself.
 - Native suites:
   `ps -axo command= | grep -E '^([^ ]*/)?(node|[Pp]ython[0-9.]*)( |$)' | grep -E -- '--test|/tests/|unittest|vitest|scripts/check-' | grep -v -- '--test-isolation=process'`.
   The listing is an aid. It hides test workers, and most suites show one line,
   the one naming the test files or the browser entry script; a
-  `scripts/package-*.mjs --test` suite shows two lines. Also count every native
-  suite you started yourself.
+  `scripts/package-*.mjs --test` suite shows two lines. A native sharded catalog
+  run shows up to five
+  `node --test --test-concurrency=1 apps/runtime/dist/tests/scenarios/…` lines,
+  and its `node scripts/scenario-shards.mjs` parent does not match; count those
+  lines as two slots for each run that
+  `ps -axo command= | grep -E '^([^ ]*/)?node scripts/scenario-shards\.mjs'`
+  lists. Also count every native suite you started yourself.
 - Lint: start it only when
   `ps -axo command= | grep -E '^([^ ]*/)?node .*(eslint/bin/eslint\.js|lint-shards\.mjs)'`
   prints nothing. An editor's ESLint language server does not match.
+
+### Test work on the PC
+
+The owner's PC runs test jobs in its WSL checkout, with Docker in WSL and about
+19.5 GiB for the Docker VM. It has no installed core, diagnostics stack or
+Tronbyt server, so it has no shared test pool and no core check. Each session
+applies this rule itself; no coordinator grant is needed. Its numbers are a
+first profile (owner decisions of 2026-11-11 on Hub #1681), to be tuned after a
+week of use.
+
+1. **Profile.** Set `export BUNNY_TEST_HOST=pc` in the WSL shell before
+   `npm run test:container` or `npm run test:runtime:container`. Each command's
+   first own line, on stderr after npm's banner, must be
+   `test-container: profile pc: …` or `runtime-container: profile pc: …`; a
+   refused setting prints its refusal there instead. Under this profile the
+   commands print the home directory as `~` and an absolute
+   `$XDG_CACHE_HOME` by that name; Docker's and the job's own output passes
+   through unchanged, so check it before pasting. Without the
+   setting every host, the PC included, gets the Mac profile. The PC profile is
+   refused outside a WSL kernel, and any value other than `mac` or `pc` is
+   refused, so the Mac never runs with the PC's numbers.
+2. **Slots.** At most 8 test jobs at once, across all sessions. A job is one
+   container or one native test suite; a `…-wide` container and one native
+   sharded catalog run (up to the default four shards) each count as two. A run
+   of more than four shards is unmeasured here. The operator and qualification
+   containers of [Test work on the Mac](#test-work-on-the-mac) item 2 are
+   Mac-only.
+3. **Start check.** Start only when the 1-minute load is under 24 and enough
+   slots are free. Otherwise wait a minute.
+4. **Containers.** Run each test job with
+   `npm run test:container -- --issue <n> --job <name> [--size wide] -- <package script>`.
+   A standard job has 4 CPUs and 2048 MiB, a wide one 8 CPUs and 3584 MiB, both
+   without swap. The SDK suite fits a standard job here. The runtime
+   verification suite runs wide or through
+   `npm run test:runtime:container -- --suite verify`, which keeps its 2 CPUs
+   and 1536 MiB. A container started by hand matches the command:
+   `docker run --rm --name bunny-gh<n>-<name> --cpus 4 --memory 2048m --memory-swap 2048m`,
+   or wide `--cpus 8 --memory 3584m --memory-swap 3584m` with a `-wide` name.
+   The job's private source snapshot goes under `$XDG_CACHE_HOME`, or
+   `~/.cache`, in `bunny-test-container/`, not in the memory-backed WSL `/tmp`.
+5. **Lint and native work.** Items 5 and 6 of
+   [Test work on the Mac](#test-work-on-the-mac) apply unchanged:
+   `npm run lint:js` natively, one at a time, and
+   `node scripts/native-test.mjs <script>` with its default of 2 workers.
+6. **Stop.** If the 1-minute load passes 32, the owner of the newest job stops
+   it. The command checks only the start; sessions apply this stop.
+
+To count, use [Counting test jobs](#counting-test-jobs) without the core check,
+with `ps -eo args=` in place of `ps -axo command=`. Stop and remove only your own
+jobs.
+
+Why these numbers: one `test:runtime:built` job took 276 s and about 1.2 GiB at
+4 CPUs, and 194 s and about 2.2 GiB at 8 CPUs (`node --test` starts a worker per
+CPU of the quota less one, so memory grows with CPUs). Eight standard ceilings,
+or four wide ones, make 16 GiB, which leaves about 3.5 GiB of the Docker VM for
+the engine, image builds and the WSL distribution. The Mac's 8 and 12 are 0.67
+and 1.0 times its 12 cores. Eight 2-CPU jobs at once reached a load of about 10.
+With no core to protect, the PC starts under 0.75 times its 32 threads, so the
+eighth 4-CPU job can still start, and stops above 1.0 times them. In the first
+PC runs (Hub #1681), eight standard jobs of the runtime unit suite ran at once
+for about two minutes and all ran to the end, with no job stopped and none
+killed for memory. The 1-minute load peaked at about 24.6 after the last start,
+over the start threshold and under the stop threshold, and available memory
+never fell below 11,169 MiB. One of the eight jobs failed one timing-sensitive
+test (#1695). Such a single failure at full occupancy may come from the load,
+so rerun it before treating it as a regression. The wide size has not been
+measured for the verification suite here: the first wide verification job is
+that measurement, `npm run test:runtime:container -- --suite verify` (1536 MiB)
+is the measured route until then, and #1696 tracks it.
 
 ### Old system checks
 
@@ -1544,8 +1641,8 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 
 ### One test job in a container
 
-On macOS with Docker Desktop, run one package script in a disposable Linux
-container that starts from installed dependencies:
+On macOS with Docker Desktop, or in the PC's WSL with Docker, run one package
+script in a disposable Linux container that starts from installed dependencies:
 
 ```bash
 npm run test:container -- --issue <n> --job <name> [--size standard|wide] [--no-build] [--network] [--wait-minutes <n>] -- <package script> [arguments...]
@@ -1553,13 +1650,16 @@ npm run test:container -- --issue <n> --job <name> [--size standard|wide] [--no-
 
 The container is `bunny-gh<n>-<name>`, or `bunny-gh<n>-<name>-wide` at the wide
 size. The job name is free text: lowercase letters, digits and inner hyphens.
-Before the job starts, the command prints the container name, its size and the
-slots it takes.
+Its first own line, `test-container: profile <name>: …` on stderr, names the
+host's profile and its limits
+(`scripts/test-container/profile.mjs`; the Mac profile unless
+[Test work on the PC](#test-work-on-the-pc) selects the PC's). Before the job
+starts, the command prints the container name, its size and the slots it takes.
 
-| Size | Limits | Slots |
-| --- | --- | --- |
-| `standard` (default) | 2 CPUs, 1250 MiB, swap equal to memory | 1 |
-| `wide` | 4 CPUs, 2048 MiB, swap equal to memory | 2 |
+| Size | Mac limits | PC limits | Slots |
+| --- | --- | --- | --- |
+| `standard` (default) | 2 CPUs, 1250 MiB, swap equal to memory | 4 CPUs, 2048 MiB, swap equal to memory | 1 |
+| `wide` | 4 CPUs, 2048 MiB, swap equal to memory | 8 CPUs, 3584 MiB, swap equal to memory | 2 |
 
 Swap equal to memory means the container cannot swap. A small table in
 `scripts/test-container.mjs` refuses known scripts that do not fit a size and
@@ -1568,7 +1668,8 @@ names their routes:
 - `test:runtime:verify:built` needs `--size wide`, or
   `npm run test:runtime:container -- --suite verify`, which has its own
   1536 MiB limit.
-- `test:sdk:built` needs `--size wide`.
+- `test:sdk:built` needs `--size wide` on the Mac. A PC standard job has the
+  4 CPUs it needs.
 
 The command refuses a raw command or an unknown script name, `test:container`
 and `test:runtime:container`. It also refuses `lint:js`, which runs natively,
@@ -1624,8 +1725,8 @@ runs both in core CI.
 
 #### Shared test pool
 
-Both `npm run test:container` and `npm run test:runtime:container` start their
-containers under one cgroup in the Docker VM, `/sys/fs/cgroup/bunny-tests`
+On the Mac, both `npm run test:container` and `npm run test:runtime:container`
+start their containers under one cgroup in the Docker VM, `/sys/fs/cgroup/bunny-tests`
 (`--cgroup-parent /bunny-tests`). The pool's limits apply to all those
 containers together:
 
@@ -1665,8 +1766,12 @@ set the limits, the command prints why at start-up and falls back to
 per-container limits. `BUNNY_TEST_POOL_SCRATCH_NAME` names another pool for
 scratch exercises only. It must be one path segment that starts with `bunny-`.
 
+The PC profile has no pool: no helper runs, no cgroup is read or created, and
+jobs keep only their own size limits. Admission there checks the load (under
+24), `docker ps` and the slot count (8), not the core or pool memory.
+
 Admission runs without a daemon. Before an image build and before each job, the
-command waits until all of these hold:
+command waits until all of these hold on the Mac:
 
 - the host's 1-minute load (`os.loadavg()`) is under 8;
 - `docker ps` can be read;
@@ -1677,8 +1782,9 @@ command waits until all of these hold:
 - the rule's five slots have room for the job, with or without the pool. The
   count is every running or paused container except the installed core, the diagnostics
   containers, the Tronbyt server and the pool helpers, with a `-wide` name as
-  two. It covers containers only, so a session still counts its native suites
-  itself under the rule's start check in
+  two. It covers containers only and counts an operator or qualification
+  container once, so a session still counts its native suites and that
+  container's other two slots itself under the rule's start check in
   [Test work on the Mac](#test-work-on-the-mac);
 - with the pool, the pool reads back with exactly its limits and with whole
   numbers for its `anon` and `shmem` memory, and its `memory.max` minus those is
@@ -1693,7 +1799,7 @@ start holding the lock, and prints a line only when the reason changes. Every
 Docker read times out after 60 seconds. After `--wait-minutes` (default 30) it
 stops with exit status 75 and the last reason. A start also takes one lock that
 every session on this machine shares, `/private/tmp/bunny-test-start/lock`
-(owner-only), with a random token in its owner file. It holds the lock from its
+(`/tmp/bunny-test-start/lock` on Linux, owner-only), with a random token in its owner file. It holds the lock from its
 admission check until its container has run for 30 seconds, and through an
 image build. Releasing removes the lock only while the token is still its own.
 A lock is taken over, with a printed line, only when its owner's process is

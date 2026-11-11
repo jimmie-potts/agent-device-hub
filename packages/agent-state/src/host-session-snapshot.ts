@@ -1,12 +1,15 @@
 import {readFileSync} from 'node:fs';
-import {Ajv2020} from 'ajv/dist/2020.js';
+import {Ajv2020,type ValidateFunction} from 'ajv/dist/2020.js';
 import {validateSnapshot as validateEarlierSnapshot} from './validation.js';
 import type {Snapshot} from './types.js';
 
 // Snapshot 1.3 is snapshot 1.2 plus an optional root-session `hostSessionId` held in owner
 // memory. It is content, not durable state: validation.ts and the durable schemas stay frozen.
 const MAX_BYTES=16*1024*1024,MAX_NODES=1000000;
-const check=new Ajv2020({strict:true,allErrors:false}).compile(JSON.parse(readFileSync(new URL('../schemas/snapshot-v1.3.schema.json',import.meta.url),'utf8')));
+const schema:unknown=JSON.parse(readFileSync(new URL('../schemas/snapshot-v1.3.schema.json',import.meta.url),'utf8'));
+// Compiled on first use, not at import (Hub #1686).
+let compiled:ValidateFunction|undefined;
+const check=(value:unknown):boolean=>(compiled??=new Ajv2020({strict:true,allErrors:false}).compile(schema as object))(value);
 type Validation={ok:true;value:Snapshot}|{ok:false;code:'invalid-state'};
 const invalid:Validation=Object.freeze({ok:false,code:'invalid-state'});
 
