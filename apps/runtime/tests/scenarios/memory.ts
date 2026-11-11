@@ -43,6 +43,7 @@ import {
   GatewayClient, Reader, actionAnswerOf, actionCall, admitted, answerOf, follow, partTokens, producerToken, runHookScript, scenarioSchemas, scenarioValidator,
   sourceOf, writeConfiguration, writeProducer,
 } from './parts.js';
+import {realWork, settle} from './real-work.js';
 import {stepThrough} from './stepping.js';
 
 /** The ports of the installed Hub, the local controllers and their services, which a harness never listens on. */
@@ -76,10 +77,8 @@ export interface MemoryHarness extends Harness {
   close(): Promise<void>;
 }
 
-const settle = async (): Promise<void> => {
-  for (let turn = 0; turn < 4; turn += 1) await new Promise(resolve => { setImmediate(resolve); });
-  await new Promise(resolve => { setTimeout(resolve, 1); });
-};
+/** The real work in flight in this process, such as image encoding, a media process or a file write (Hub #1685). */
+const work = realWork();
 
 /** Listens on a free loopback port that `refused` accepts, by default one no installed service uses. */
 export async function listenLoopback(server: Server, refused: (port: number) => boolean = port => INSTALLED_PORTS.includes(port)): Promise<number> {
@@ -328,8 +327,9 @@ class Memory implements MemoryHarness {
   }
 
   async spans(): Promise<readonly string[]> {
-    // The bounded queue hands each finished span to the sink a few turns after it ends.
-    await settle();
+    // The bounded queue hands each finished span to the sink a few turns after it ends. This is no virtual step, so it
+    // keeps its real pause whatever is in flight.
+    await settle(() => true);
     return this.#spans;
   }
 
@@ -386,7 +386,7 @@ class Memory implements MemoryHarness {
     await stepThrough(this.#clock, ms, async () => {
       while (this.#working.size > 0) await Promise.race([...this.#working]);
     }, async () => {
-      await settle();
+      await settle(work.busy);
       await this.#settled();
     });
   }
