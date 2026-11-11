@@ -120,12 +120,13 @@
 .home-layout-card[data-home-shape] :is(.pixoo-compact .pixoo-caption,.pixoo-compact-result,.tidbyt-compact .light-note){margin:0;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .home-layout-card[data-home-shape] .pixoo-compact :is(.light-power,.pixoo-playback){margin:0;flex-wrap:nowrap;gap:var(--space-xs)}
 .home-layout-card[data-home-shape] .pixoo-compact .pixoo-playback>button{padding-inline:0;font-size:1.1rem}
-.home-layout-card[data-home-shape] .pixoo-compact .light-power>button{min-width:0;padding-inline:4px;white-space:nowrap}
+.home-layout-card[data-home-shape] .pixoo-compact .light-power>button{flex:1 1 0;min-width:0;padding-inline:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .home-layout-card[data-home-shape] .pixoo-compact-brightness .light-slider{margin:0}
 .home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-facts{gap:0}
 .home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-facts dd{margin:0 0 var(--space-xs)}
-.home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-links{gap:var(--space-xs);flex-wrap:nowrap}
-.home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-links a{white-space:nowrap}
+/* Links and two-button rows share one line and shorten with an ellipsis rather than leave the card, whatever the font. */
+.home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-links{gap:var(--space-xs);flex-wrap:nowrap;min-width:0}
+.home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-links a{display:block;flex:0 1 auto;min-width:0;padding-inline:var(--space-xs);line-height:calc(var(--card-target-size,44px) - 2 * var(--space-s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 :is(.home-layout-card.home-shape-wide,.home-layout-card.home-shape-large-square) .pixoo-compact .pixoo-artwork{margin:0}
 :is(.home-layout-card.home-shape-wide,.home-layout-card.home-shape-large-square) :is(.pixoo-compact-body,.tidbyt-compact-body){align-self:center}
 .home-layout-card.home-shape-wide .tidbyt-compact .tidbyt-artwork{margin:0}
