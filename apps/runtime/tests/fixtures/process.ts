@@ -3,7 +3,7 @@
 import {EventEmitter, once} from 'node:events';
 import {setTimeout as delay} from 'node:timers/promises';
 import type {BunnyModule} from '@jimmie-potts/sdk';
-import {createCoreModule as createRealCore, runMain, type ModuleFactory} from '../../src/index.js';
+import {createCoreModule as createRealCore, runMain, type ModuleFactory, type TestClock} from '../../src/index.js';
 import {approvalPrompt, observation} from './agents.js';
 import {createCoreModule} from './core.js';
 import {SimulatedLamps, createLampModule, switchLamp} from './lamp.js';
@@ -106,6 +106,16 @@ const burster = module('burster', ({sdk, scheduler}) => {
   });
 });
 
+/** Writes a line when its timer fires, 20 ms after its start on whichever scheduler the runtime gives it. */
+const timer = module('timer', ({scheduler}) => {
+  scheduler.after(20, () => { process.stderr.write(`${JSON.stringify({event_name: 'fixture.timer', attributes: {'bunny.module': 'timer'}})}\n`); });
+});
+
+/** When the `test-clock` scenario's clock stands; process.test.ts checks the runtime's records against it. */
+const TEST_CLOCK_START = '2001-02-03T04:05:06.000Z';
+/** A test clock that stands at its start and never moves, so no timer on its scheduler fires (Hub #1709). */
+const testClock: TestClock = {clock: {now: () => Date.parse(TEST_CLOCK_START)}, scheduler: {after: () => () => {}}, monotonic: () => 0};
+
 const scenarios: Record<string, readonly BunnyModule[]> = {
   // A burst the core's history takes at the default lag limit (Hub #782).
   burst: [createRealCore(), burster],
@@ -148,13 +158,19 @@ const scenarios: Record<string, readonly BunnyModule[]> = {
   busy: [module('spinner', () => { setTimeout(() => { spin(150); }, 100); })],
   // An error carrying a secret a module read escapes every module's flow (Hub #919). Its section names the token's file.
   'secret-escape': [leaker],
+  // A module timer on the runtime's default scheduler, which fires in real time.
+  timer: [timer],
+  // The same module with a test clock, which the runtime takes only in a simulated test run under a supervisor (Hub #1709).
+  'test-clock': [timer],
 };
 
 const [scenario = '', ...args] = process.argv.slice(2);
 const modules = scenarios[scenario];
 if (modules === undefined) throw new Error(`unknown scenario ${scenario}`);
 // Each fixture module is already built with the transport its scenario needs, whether or not the runtime simulates.
-const started = runMain(args, modules.map((module): ModuleFactory => ({name: module.manifest.name, create: () => module, simulate: () => module})));
+const started = runMain(
+  args, modules.map((module): ModuleFactory => ({name: module.manifest.name, create: () => module, simulate: () => module})), scenario === 'test-clock' ? {testClock} : {},
+);
 await started;
 if (scenario === 'secret-escape') setInterval(() => { outside.emit('tick'); }, 50).unref();
 if (scenario === 'runtime-error') {

@@ -249,7 +249,7 @@ with every change.
 | `updated` | An entity's new current record, with its state `message`. |
 | `removed` | An entity is gone, with its removal `message`, or with none when a sync dropped it. |
 | `synced` | `message` is the `sync.completed`. The copy has applied the snapshot and every buffered change above its revision; the handler hears those buffered changes next. |
-| `failed` | A later sync could not be served, with its `error` body. The copy stops following the owner but keeps its last records. |
+| `failed` | A later sync could not be served, with its `error` body. The copy stops following the owner but keeps its last records. Over the remote transport, a later sync refused `unavailable` while the stream is lost does not end the copy; see Reconnects below. |
 
 `sync` resolves with `{status: 'synced', copy, message}` after the first sync,
 or with `{status: 'rejected', requestId, error}` if that sync is refused or does
@@ -1277,6 +1277,19 @@ HTTP status that fits its code.
   the retryable `unavailable`. The client reports the lost stream once, as
   `remote.disconnected`, and its recovery as `remote.reconnected` with the count
   of failed attempts; it does not report each failed attempt to `onError`.
+- **A resync during a reconnect.** A copy's later sync refused `unavailable`
+  while the stream it went out under is lost, as when the runtime restarts
+  again while a reconnect reaches it, does not end the copy (Hub #1700). The
+  copy stays syncing with its last records, as during any reconnect, and the
+  gap notice of the next reconnect starts its next request, so the reconnect's
+  backoff paces the repeat and nothing else asks again. A request that could
+  not reach the edge waits, within its own deadline, to hear whether its stream
+  was lost; if the stream stays open, it ends the copy at that deadline with the
+  refusal the client first heard, `unavailable` with its own detail. A first
+  sync does not wait and is refused at once, as before. Any other refusal is
+  unchanged. An edge's own `unavailable` answer heard before the stream's loss
+  is not waited for and still ends the copy. The copy ends only when
+  the participant closes or a refusal ends it.
 - **A dropped stream and forwarded calls.** A command already written to a
   remote responder's stream is never answered as a refusal: its handler may be
   running it. Its reply still counts when it comes on the reconnected stream,

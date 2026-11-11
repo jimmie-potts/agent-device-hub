@@ -95,6 +95,63 @@ configured Art requires its primary store and ordinary healthy running state, an
 retained store stays when its section is gone. A restart leaves every in-flight call
 uncertain with its reservation kept, and resends nothing.
 
+## Core history fact log
+
+The #1740 release changes the core store's `core_history` (`modules/core.sqlite`).
+This section applies to every core store, including the Mac container's state
+volume, whose operator [docs/bunny-container.md](../../docs/bunny-container.md)
+points here. At its first open, in one transaction, the core creates the one-row table
+`core_origin` holding a random UUID, the installation's origin, adds the
+nullable columns `origin` and `origin_seq`, and gives every existing row that
+origin and a sequence from 1 in `seq` order. It replaces the unique index on
+`(source, message_id)` with unique indexes on `(origin, origin_seq)` and
+`(origin, source, message_id)`. No other column, row or table changes. A failure
+rolls the whole step back and leaves the core unavailable, as a full disk does,
+until the cause is fixed; nothing is half-migrated. Opening a migrated store
+again changes nothing.
+
+The step rewrites every history row once, all in one transaction, so the
+write-ahead log `core.sqlite-wal` holds a new copy of every history page and both
+new indexes. The extra space measured about the store's size plus 90 to 260 bytes
+per history row, across this change's measurements and the independent review's,
+so it is largest, as a multiple of the store, for small rows. On
+synthetic stores with the runtime's database settings, the extra space at the
+peak was:
+
+| Average row (store size / rows) | Rows | Extra space, times the store | Time |
+|---|---|---|---|
+| 159 bytes | 200,000 | 2.14 | 0.3 s |
+| 203 bytes | 200,000 | 1.96 | 0.4 s |
+| 390 bytes | 400,000 | 1.58 | 1.0 s |
+| 868 bytes | 100,000 | 1.13 | 0.4 s |
+| 4,130 bytes | 50,000 | 1.02 | 0.6 s |
+
+Before the first start of this release, check that free space is at least 2.5
+times the size of the core store, in addition to the space the backup step needs.
+A history row is rarely under 200 bytes. With less, the first start can fail as
+full: the store rolls back unchanged, but the upgrade window is spent, and the log
+keeps its grown size until the core stops. The core retries with backoff while it
+runs, and a later attempt reuses that space.
+
+The new indexes are built with a sort that SQLite may spill to temporary files.
+In the Mac container these go to `/tmp`, a 256 MB tmpfs
+(`deploy/container/compose.yaml`). That was not measured; at about 100 bytes per
+index entry it would cover roughly two million history rows.
+
+The log keeps its size for as long as the core runs.
+SQLite's automatic checkpoints copy its pages into the store but never shrink the
+file, and the runtime runs no checkpoint of its own. A clean stop of the core
+checkpoints the log into the store and removes it, which gives the space back.
+After a crash or kill the log stays at its size through the next start, until
+that run's clean stop. No other operator step is needed.
+
+The change is forward-only. An older release run on a migrated store ignores the
+new columns, recreates its own message index and writes rows without an origin;
+the next start of this release gives those rows the origin and the next
+sequences. This follows from the code and focused tests, not from a qualified
+recovery, so recovery stays unknown unless separately qualified; prefer fixing
+forward.
+
 ## Routine operation checklist
 
 1. Verify reviewed merged source, applicable CI and release integrity. Assess
