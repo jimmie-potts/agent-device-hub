@@ -284,7 +284,7 @@ test('ready PRs run admission while main uses separate integration and qualifica
   }
 });
 
-test('CI runs ten GitHub-hosted Linux jobs and retains every suite once', () => {
+test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () => {
   const read = file => YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
   const checks = read('checks.yml'), workflowChecks = read('workflow.yml');
   // Hub #870: GitHub-hosted runners replaced Depot. The workflows use new paths, because GitHub keeps the
@@ -301,7 +301,8 @@ test('CI runs ten GitHub-hosted Linux jobs and retains every suite once', () => 
   // firmware and App verification run only when selected, and the gate fails unless every selected job succeeded.
   // tests/ci_selection.test.mjs checks the selection conditions themselves.
   // Hub #1506: the runtime's unit and scenario suites left core for two jobs of their own.
-  assert.equal(coreJobs + 1, 10, 'normal CI must run exactly ten jobs');
+  // Hub #1676: runtime verification runs as two jobs, the first capture shard in one and everything else in the other.
+  assert.equal(coreJobs + 1, 11, 'normal CI must run exactly eleven jobs');
   assert.deepEqual(checks.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: 'checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
@@ -323,7 +324,8 @@ test('CI runs ten GitHub-hosted Linux jobs and retains every suite once', () => 
     'app-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built', 'npm run test:verify-host', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser',
       'npm run test:dashboard:smoke', 'npm run test:runtime-dashboard:smoke', 'node apps/runtime/dashboard/tests/timeline-card.browser.ts', 'node apps/runtime/dashboard/tests/playback-artwork.browser.ts',
     'node apps/runtime/dashboard/tests/room-models.browser.ts', 'node apps/runtime/dashboard/tests/music-card.browser.ts', 'node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts', 'node apps/runtime/dashboard/tests/tv.browser.ts', 'npm run test:roborock:browser', 'npm run test:volcano:browser', 'npm run test:companions:browser', 'npm run test:wemo:browser', 'npm run test:reachy:browser', 'npm run test:microduck:browser', 'npm run test:art:browser', 'npm run test:art-theme:browser', 'npm run test:observability:browser'],
-    'runtime-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:runtime:verify:built'],
+    'runtime-verify-captures': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:runtime:verify:captures:built'],
+    'runtime-verify': ['npm ci', playwrightInstall, 'npm run build', 'npm run test:runtime:verify:rest:built'],
   };
   const names = {
     select: 'Select affected checks',
@@ -335,11 +337,12 @@ test('CI runs ten GitHub-hosted Linux jobs and retains every suite once', () => 
     'runtime-scenarios': 'Runtime scenario tests on ubuntu-latest',
     firmware: 'Firmware host tests and ARM build on ubuntu-latest',
     'app-verify': 'App verification on ubuntu-latest',
+    'runtime-verify-captures': 'Runtime verification captures on ubuntu-latest',
     'runtime-verify': 'Runtime verification on ubuntu-latest',
   };
   const matrixJobs = ['workflow', 'core'];
   const ready = "github.event_name != 'pull_request' || !github.event.pull_request.draft";
-  const conditions = {select: ready, workflow: ready, 'runtime-unit': "needs.select.outputs.runtime-unit == 'true'", 'runtime-scenarios': "needs.select.outputs.runtime-scenarios == 'true'", firmware: "needs.select.outputs.firmware == 'true'", 'app-verify': "needs.select.outputs.app-verify == 'true'", 'runtime-verify': "needs.select.outputs.runtime-verify == 'true'", gate: 'always() && ('+ready+')' };
+  const conditions = {select: ready, workflow: ready, 'runtime-unit': "needs.select.outputs.runtime-unit == 'true'", 'runtime-scenarios': "needs.select.outputs.runtime-scenarios == 'true'", firmware: "needs.select.outputs.firmware == 'true'", 'app-verify': "needs.select.outputs.app-verify == 'true'", 'runtime-verify-captures': "needs.select.outputs.runtime-verify-captures == 'true'", 'runtime-verify': "needs.select.outputs.runtime-verify == 'true'", gate: 'always() && ('+ready+')' };
   assert.deepEqual(checks.permissions, { contents: 'read' });
   assert.deepEqual(Object.keys(ci.jobs).sort(), Object.keys(suites).sort());
   // Each suite runs in exactly one job.
@@ -371,18 +374,18 @@ test('CI runs ten GitHub-hosted Linux jobs and retains every suite once', () => 
     // Core keeps a finite 40-minute aggregate budget after full runs exhausted 30 minutes (#1388).
     // The runtime unit and scenario jobs keep the 40 minutes their suites ran under in core (#1506).
     // Preserve App verification's 40-minute budget from #366 for browser journeys and setup/retry headroom.
-    // The full serial runtime catalog has its own 45-minute job (#1497).
+    // The full serial runtime catalog has its own 45-minute job (#1497); each of its two jobs keeps that limit (#1676).
     // The Workflow job takes about 1 minute; its 15 leave room for two stalled attempts of the hook step's apt commands.
     // The select and gate jobs read one comparison or the needs context and take seconds.
     if (id === 'core') assert.equal(job['timeout-minutes'], 40, 'Core retains a finite 40-minute aggregate budget');
     else if (['runtime-unit', 'runtime-scenarios'].includes(id)) assert.equal(job['timeout-minutes'], 40, `${id} keeps the core budget its suite ran under`);
-    else if (id === 'runtime-verify') assert.equal(job['timeout-minutes'], 45, 'Runtime verification has a 45-minute budget');
+    else if (['runtime-verify-captures', 'runtime-verify'].includes(id)) assert.equal(job['timeout-minutes'], 45, `${id} keeps Runtime verification's 45-minute budget`);
     else assert.equal(job['timeout-minutes'], id === 'app-verify' ? 40 : id === 'workflow' ? 15 : ['select', 'gate'].includes(id) ? 5 : 10);
     for (const line of job.steps.flatMap(step => (step.run ?? '').split('\n')).filter(line => /apt-get|--with-deps/.test(line))) {
       assert.match(line, /^bash scripts\/apt-retry\.sh \d+ /, `${id}: every apt command runs through the retry wrapper`);
     }
     const installs = job.steps.filter(step => /playwright(\/cli\.js)? install/.test(step.run ?? ''));
-    assert.deepEqual(installs, ['core','app-verify', 'runtime-verify'].includes(id) ? [{ name: 'Install Chromium with its system dependencies',
+    assert.deepEqual(installs, ['core','app-verify', 'runtime-verify-captures', 'runtime-verify'].includes(id) ? [{ name: 'Install Chromium with its system dependencies',
       'timeout-minutes': browserInstallMinutes, run: playwrightInstall,...(id==='core'?{if:"contains(fromJSON(needs.select.outputs.owners), 'microduck-browser')"}:{}) }] : [], 'every browser install retries under a step limit');
     if (matrixJobs.includes(id)) {
       assert.equal(job.strategy['fail-fast'], false);
@@ -401,7 +404,7 @@ test('CI runs ten GitHub-hosted Linux jobs and retains every suite once', () => 
     }] : []);
     // Hub #494: no job may provide or require a systemd user manager. App verification hides the runner's manager
     // until app-verify works under its systemd 255 (#873), so lifecycle tests skip as they did on Depot.
-    assert.deepEqual(job.env, ['app-verify', 'runtime-verify'].includes(id) ? { XDG_RUNTIME_DIR: '', DBUS_SESSION_BUS_ADDRESS: '' } : undefined);
+    assert.deepEqual(job.env, ['app-verify', 'runtime-verify-captures', 'runtime-verify'].includes(id) ? { XDG_RUNTIME_DIR: '', DBUS_SESSION_BUS_ADDRESS: '' } : undefined);
     assert.equal(job.steps.some(step => /loginctl|APP_VERIFY_REQUIRE_SYSTEMD/.test(step.run ?? '')), false);
     const originalSteps = job.steps.filter(step => !linuxSteps.includes(step));
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
@@ -410,7 +413,7 @@ test('CI runs ten GitHub-hosted Linux jobs and retains every suite once', () => 
     assert(originalSteps.every(step => step.if === undefined || (['core', 'app-verify'].includes(id)
       && (/^contains\(fromJSON\(needs\.select\.outputs\.groups\), '[a-z-]+'\)$/.test(step.if) || (id==='core' && step.if==="contains(fromJSON(needs.select.outputs.owners), 'microduck-browser')")))), id);
   }
-  assert.equal(builds, 6);
+  assert.equal(builds, 7);
   // Hub #827: the old system's checks and the full dashboard browser suite leave CI but keep their scripts, which run
   // locally until #839 deletes that code. CI runs the dashboard's smoke check instead. The runtime's dashboard (#922)
   // keeps its full browser suite local too.
@@ -422,6 +425,22 @@ test('CI runs ten GitHub-hosted Linux jobs and retains every suite once', () => 
     assert.equal(runs.includes(`npm run ${name}`), false, `${name} runs locally, not in CI`);
   }
   assert.equal(scripts['test:dashboard:smoke'], 'node apps/dashboard/tests/smoke.mjs');
+  // Hub #1676: the two Runtime verification jobs split the suite as packaged qualification's lanes do
+  // (scripts/release/packaged.mjs lanePlan). Capture shard 1/2 runs alone; the other job runs every other file
+  // serially, then capture shard 2/2. The unsharded suite stays available for local runs.
+  const verify = 'apps/runtime/dist/verify/tests';
+  const serial = 'node --test --test-concurrency=1';
+  assert.equal(scripts['test:runtime:verify:built'], `${serial} ${verify}/*.test.js`);
+  assert.equal(scripts['test:runtime:verify:captures:built'], `BUNNY_CAPTURE_SHARD=1/2 ${serial} ${verify}/steps.test.js`);
+  assert.equal(scripts['test:runtime:verify:rest:built'],
+    `${serial} '${verify}/!(steps).test.js' && BUNNY_CAPTURE_SHARD=2/2 ${serial} ${verify}/steps.test.js`);
+  assert.equal(runs.includes('npm run test:runtime:verify:built'), false, 'the unsharded suite runs locally, not in CI');
+  // The other-files pattern takes every verification test file except the capture file, so each file runs in one job.
+  const sources = 'apps/runtime/verify/tests';
+  const all = fs.globSync(`${sources}/*.test.ts`, { cwd: root }).map(file => path.basename(file)).sort();
+  const others = fs.globSync(`${sources}/!(steps).test.ts`, { cwd: root }).map(file => path.basename(file)).sort();
+  assert.ok(all.includes('steps.test.ts') && all.length > 1, 'the verification suite has its capture file and others');
+  assert.deepEqual(others, all.filter(file => file !== 'steps.test.ts'));
   // Hub #922: the runtime's dashboard follows the same pattern, a smoke check in CI and its full browser suite locally.
   assert.equal(scripts['test:runtime-dashboard:smoke'], 'node apps/runtime/dashboard/tests/smoke.ts');
 });

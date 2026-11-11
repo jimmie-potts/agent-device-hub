@@ -18,23 +18,52 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const checks = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/checks.yml'), 'utf8'));
 const pr = paths => selectChecks({ event: 'pull_request', paths, complete: true });
 
+// Hub #1676: the suite runs as two jobs, capture shard 1/2 in one and every other file then shard 2/2 in the other.
+const verifyJobs = { 'runtime-verify-captures': 'npm run test:runtime:verify:captures:built', 'runtime-verify': 'npm run test:runtime:verify:rest:built' };
+
 test('full runtime verification is independently required without dropping App checks', () => {
-  const runtime = checks.jobs['runtime-verify'];
-  assert.ok(runtime, 'the full serial runtime suite needs its own finite job budget');
-  assert.equal(runtime['timeout-minutes'], 45);
-  assert.deepEqual(runtime.env, checks.jobs['app-verify'].env);
-  assert.ok(runtime.steps.some(step => step.run === 'npm run test:runtime:verify:built'));
-  assert.equal(checks.jobs['app-verify'].steps.some(step => step.run === 'npm run test:runtime:verify:built'), false);
-  assert.ok(checks.jobs.gate.needs.includes('runtime-verify'));
-  const selected = pr(['apps/runtime/src/main.ts']);
-  assert.equal(selected.jobs['runtime-verify'], true);
-  assert.equal(pr(['apps/chompi-bridge/src/bridge.ts']).jobs['runtime-verify'], false);
-  for (const result of ['failure', 'cancelled', 'skipped']) {
-    assert.equal(gateVerdict(needs(selected, {'runtime-verify': {result, outputs: {}}})).ok, false, result);
+  for (const [id, suite] of Object.entries(verifyJobs)) {
+    const runtime = checks.jobs[id];
+    assert.ok(runtime, `${id}: each share of the serial runtime suite needs its own finite job budget`);
+    assert.equal(runtime['timeout-minutes'], 45, id);
+    assert.deepEqual(runtime.env, checks.jobs['app-verify'].env, id);
+    assert.deepEqual(runtime.steps.filter(step => /test:runtime:verify/.test(step.run ?? '')).map(step => step.run), [suite], id);
+    assert.equal(checks.jobs['app-verify'].steps.some(step => step.run === suite), false, id);
+    assert.ok(checks.jobs.gate.needs.includes(id), id);
   }
-  const missing = needs(selected);
-  delete missing['runtime-verify'];
-  assert.match(gateVerdict(missing).problems.join(), /runtime-verify: missing/);
+  assert.equal(Object.values(checks.jobs).some(job => job.steps.some(step => step.run === 'npm run test:runtime:verify:built')), false,
+    'CI runs the suite only through its two shares');
+  const selected = pr(['apps/runtime/src/main.ts']);
+  const narrow = pr(['apps/chompi-bridge/src/bridge.ts']);
+  for (const id of Object.keys(verifyJobs)) {
+    assert.equal(selected.jobs[id], true, id);
+    assert.equal(narrow.jobs[id], false, id);
+    for (const result of ['failure', 'cancelled', 'skipped']) {
+      const verdict = gateVerdict(needs(selected, {[id]: {result, outputs: {}}}));
+      assert.equal(verdict.ok, false, `${id}: ${result}`);
+      assert.match(verdict.problems.join(), new RegExp(`${id}: ${result}`), `${id}: ${result}`);
+    }
+    const missing = needs(selected);
+    delete missing[id];
+    const verdict = gateVerdict(missing);
+    assert.equal(verdict.ok, false, `${id}: missing`);
+    assert.match(verdict.problems.join(), new RegExp(`${id}: missing`));
+  }
+  assert.equal(gateVerdict(needs(selected)).ok, true, 'both jobs succeeding passes the gate');
+});
+
+test('the two runtime verification jobs are selected together wherever either is (#1676)', () => {
+  const samples = [['apps/runtime/src/main.ts'], ['modules/pixoo/src/module.ts'], ['apps/chompi-bridge/src/bridge.ts'], ['README.md'],
+    ['apps/runtime/dashboard/src/music.css'], ['scripts/a.mjs'], ['an/unmapped/path.txt']];
+  for (const paths of samples) {
+    const selection = pr(paths);
+    assert.equal(selection.jobs['runtime-verify-captures'], selection.jobs['runtime-verify'], paths.join());
+  }
+  for (const event of ['push', 'workflow_dispatch']) {
+    const full = selectChecks({ event, paths: [], complete: true });
+    assert.equal(full.jobs['runtime-verify-captures'], true, event);
+    assert.equal(full.jobs['runtime-verify'], true, event);
+  }
 });
 
 test('the runtime unit and scenario suites run in their own selected jobs, outside core (#1506)', () => {
@@ -71,7 +100,7 @@ test('a narrow module change selects its suites and known consumers, and omits u
   // The runtime composes every module.
   assert.deepEqual(result.groups, ['runtime', 'modules']);
   assert.deepEqual(result.omitted, ['chompi', 'shared']);
-  assert.deepEqual(result.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: false, 'app-verify': true, 'runtime-verify': true });
+  assert.deepEqual(result.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: false, 'app-verify': true, 'runtime-verify-captures': true, 'runtime-verify': true });
   assert.deepEqual(result.reasons.find(item => item.path === 'modules/pixoo/src/module.ts').groups, ['modules', 'runtime']);
   assert.deepEqual(pr(['apps/bb8-windows/src/link.ts']).groups, []);
 });
@@ -88,7 +117,7 @@ test('a runtime dashboard change selects the runtime only', () => {
   const result = pr(['apps/runtime/dashboard/src/music.css', 'apps/runtime/dashboard/src/card-chrome.css']);
   assert.deepEqual(result.groups, ['runtime']);
   assert.equal(result.mode, 'focused');
-  assert.deepEqual(result.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: false, 'app-verify': false, 'runtime-verify': false });
+  assert.deepEqual(result.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: false, 'app-verify': false, 'runtime-verify-captures': false, 'runtime-verify': false });
   // The old dashboard is shared with the old Hub and the runtime's dashboard copy, so it keeps the full gate.
   assert.equal(pr(['apps/dashboard/src/main.tsx']).mode, 'full');
 });
@@ -97,7 +126,7 @@ test('CHOMPI changes run the bridge suites and the firmware job', () => {
   for (const file of ['apps/chompi-bridge/src/bridge.ts', 'packages/chompi-protocol/fixtures/frames.json', 'firmware/chompi-controller/src/main.cpp']) {
     const result = pr([file]);
     assert.deepEqual(result.groups, ['chompi'], file);
-    assert.deepEqual(result.jobs, { 'runtime-unit': false, 'runtime-scenarios': false, firmware: true, 'app-verify': true, 'runtime-verify': false }, file);
+    assert.deepEqual(result.jobs, { 'runtime-unit': false, 'runtime-scenarios': false, firmware: true, 'app-verify': true, 'runtime-verify-captures': false, 'runtime-verify': false }, file);
   }
 });
 
@@ -125,7 +154,7 @@ test('shared, toolchain, CI, selector and unknown paths select full coverage wit
     assert.equal(result.mode, 'full', file);
     assert.deepEqual(result.groups, GROUPS, file);
     assert.deepEqual(result.omitted, [], file);
-    assert.deepEqual(result.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: true, 'app-verify': true, 'runtime-verify': true }, file);
+    assert.deepEqual(result.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: true, 'app-verify': true, 'runtime-verify-captures': true, 'runtime-verify': true }, file);
     assert.ok(result.full.some(item => item.path === file && reason.test(item.reason)), `${file}: ${JSON.stringify(result.full)}`);
   }
 });
@@ -135,7 +164,7 @@ test('Markdown, documentation tooling and OpenSpec change no Checks suite, and t
     const result = pr([file]);
     assert.equal(result.mode, 'selected', file);
     assert.deepEqual(result.groups, [], file);
-    assert.deepEqual(result.jobs, { 'runtime-unit': false, 'runtime-scenarios': false, firmware: false, 'app-verify': false, 'runtime-verify': false }, file);
+    assert.deepEqual(result.jobs, { 'runtime-unit': false, 'runtime-scenarios': false, firmware: false, 'app-verify': false, 'runtime-verify-captures': false, 'runtime-verify': false }, file);
   }
   assert.deepEqual(pr(['tests/roborock_consumer.test.mjs']).groups, ['runtime']);
   // A Markdown file never widens a mixed change.
@@ -264,7 +293,7 @@ test('select reads the exact PR comparison, counts renamed paths and writes outp
   assert.equal(requests[0].url, `https://api.github.com/repos/jimmie-potts/agent-device-hub/compare/${'a'.repeat(40)}...${'b'.repeat(40)}`);
   assert.equal(requests[0].init.method, 'GET');
   assert.equal(requests[0].init.headers.authorization, 'Bearer token-value');
-  assert.deepEqual(readOutputs(env.GITHUB_OUTPUT), { mode: 'selected', groups: '["runtime","modules","chompi"]', owners:'[]',head:'b'.repeat(40),'runtime-unit': 'true', 'runtime-scenarios': 'true', firmware: 'true', 'app-verify': 'true', 'runtime-verify': 'true' });
+  assert.deepEqual(readOutputs(env.GITHUB_OUTPUT), { mode: 'selected', groups: '["runtime","modules","chompi"]', owners:'[]',head:'b'.repeat(40),'runtime-unit': 'true', 'runtime-scenarios': 'true', firmware: 'true', 'app-verify': 'true', 'runtime-verify-captures': 'true', 'runtime-verify': 'true' });
   const summary = fs.readFileSync(env.GITHUB_STEP_SUMMARY, 'utf8');
   assert.match(summary, /Selected: runtime, modules, chompi/);
   assert.match(summary, /Omitted \(no changed path selects them\): shared/);
@@ -367,6 +396,7 @@ test('local Git paths preserve whitespace identities before choosing focused com
     const selection = pr(paths);
     assert.notEqual(selection.mode, 'focused', unknown);
     assert.equal(selection.jobs['app-verify'], true, unknown);
+    assert.equal(selection.jobs['runtime-verify-captures'], true, unknown);
     assert.equal(selection.jobs['runtime-verify'], true, unknown);
   }
   assert.equal(pr(['apps/runtime/dashboard/src/music.css']).mode, 'focused');
@@ -424,16 +454,16 @@ test('a narrow change runs the suites its paths can break', () => {
   const runs = files => selectedCommands(checks, pr(files)).flatMap(job => job.commands);
   const expectations = [
     [['apps/runtime/src/main.ts'], ['npm run test:runtime:built', 'npm run test:runtime:scenarios:built', 'npm run test:runtime-dashboard:built',
-      'npm run test:runtime:verify:built', 'npm run test:runtime-dashboard:smoke', 'npm run test:roborock:browser', 'npm run test:volcano:browser',
+      'npm run test:runtime:verify:captures:built', 'npm run test:runtime:verify:rest:built', 'npm run test:runtime-dashboard:smoke', 'npm run test:roborock:browser', 'npm run test:volcano:browser',
       'npm run test:roborock:consumer:built', 'npm run test:roborock-transport:consumer:built'],
     ['npm run test:pixoo:built', 'npm run test:chompi-bridge:built', 'npm run test:sdk:built', 'npm run test:firmware']],
     [['modules/pixoo/src/module.ts'], ['npm run test:pixoo:built', 'npm run test:nanoleaf:built', 'npm run test:runtime:built',
-      'npm run test:runtime:verify:built'], ['npm run test:chompi-bridge:built', 'npm run test:events:built']],
+      'npm run test:runtime:verify:captures:built', 'npm run test:runtime:verify:rest:built'], ['npm run test:chompi-bridge:built', 'npm run test:events:built']],
     [['modules/roborock/transport/src/transport/codec.ts'], ['npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built',
       'npm run test:roborock:browser', 'npm run test:volcano:browser'], ['npm run test:firmware']],
     [['apps/chompi-bridge/src/bridge.ts'], ['npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
       'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser', 'npm run test:firmware', 'npm run test:firmware:arm'],
-    ['npm run test:runtime:built', 'npm run test:runtime:verify:built', 'npm run test:app-verify:built']],
+    ['npm run test:runtime:built', 'npm run test:runtime:verify:captures:built', 'npm run test:runtime:verify:rest:built', 'npm run test:app-verify:built']],
   ];
   for (const [files, included, excluded] of expectations) {
     const commands = runs(files);
@@ -443,7 +473,7 @@ test('a narrow change runs the suites its paths can break', () => {
 });
 
 test('Checks selects jobs and steps only through the selection outputs, and the gate covers every job', () => {
-  assert.deepEqual(Object.keys(checks.jobs), ['select', 'core', 'runtime-unit', 'runtime-scenarios', 'firmware', 'app-verify', 'runtime-verify', 'gate']);
+  assert.deepEqual(Object.keys(checks.jobs), ['select', 'core', 'runtime-unit', 'runtime-scenarios', 'firmware', 'app-verify', 'runtime-verify-captures', 'runtime-verify', 'gate']);
   const select = checks.jobs.select;
   assert.equal(select.name, 'Select affected checks');
   assert.equal(select.needs, undefined);

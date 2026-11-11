@@ -107,6 +107,7 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
     'Retained documentation checks',
     'Runtime scenario tests on ubuntu-latest',
     'Runtime unit tests on ubuntu-latest',
+    'Runtime verification captures on ubuntu-latest',
     'Runtime verification on ubuntu-latest',
     'Select affected checks',
     'Selected checks gate',
@@ -119,6 +120,7 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
     'Checks / Firmware host tests and ARM build on ubuntu-latest',
     'Checks / Runtime scenario tests on ubuntu-latest',
     'Checks / Runtime unit tests on ubuntu-latest',
+    'Checks / Runtime verification captures on ubuntu-latest',
     'Checks / Runtime verification on ubuntu-latest',
     'Checks / Select affected checks',
     'Checks / Selected checks gate',
@@ -134,14 +136,14 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
   // Main security analysis is separate from cheap Integration and full qualification.
   assert.deepEqual(push.jobs.map(item => item.name).sort(), ['CodeQL analysis (javascript-typescript)', 'CodeQL analysis (python)', 'Integrated source checks']);
   const mixed = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/sdlc.md', 'apps/hub/src/server.ts'], filesComplete: true }, ACTIONS);
-  assert.equal(mixed.jobs.length, 12, 'one non-Markdown path keeps every job expected');
+  assert.equal(mixed.jobs.length, 13, 'one non-Markdown path keeps every job expected');
   assert.ok(mixed.jobs.every(item => item.selected), 'an old-system path selects every job');
   const incomplete = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/a.md'], filesComplete: false }, ACTIONS);
-  assert.equal(incomplete.jobs.length, 13, 'an incomplete file list keeps every job expected');
+  assert.equal(incomplete.jobs.length, 14, 'an incomplete file list keeps every job expected');
   assert.ok(incomplete.jobs.every(item => item.selected), 'an incomplete file list selects every job');
   // Hub #1080: a narrow change still expects every job, but the jobs it leaves out are expected to be skipped.
   const narrow = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['apps/runtime/src/main.ts'], filesComplete: true }, ACTIONS);
-  assert.equal(narrow.jobs.length, 12);
+  assert.equal(narrow.jobs.length, 13);
   assert.deepEqual(narrow.jobs.filter(item => !item.selected).map(item => item.name).sort(), [
     'Firmware host tests and ARM build on ubuntu-latest',
   ]);
@@ -345,7 +347,7 @@ test('CI: a Markdown-only PR requires the core and gate while product jobs remai
   assert.deepEqual(ci.evidence.jobs.filter(item => item.selected === false).map(item => [item.name, item.result]).sort(), [
     ['App verification on ubuntu-latest', 'skipped'], ['Firmware host tests and ARM build on ubuntu-latest', 'skipped'],
     ['Runtime scenario tests on ubuntu-latest', 'skipped'], ['Runtime unit tests on ubuntu-latest', 'skipped'],
-    ['Runtime verification on ubuntu-latest', 'skipped'],
+    ['Runtime verification captures on ubuntu-latest', 'skipped'], ['Runtime verification on ubuntu-latest', 'skipped'],
   ]);
   world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => !/^Build, lint/.test(run.name));
   assertUnresolved(await preflight(world), 'ci-pr', /Build, lint and core tests on ubuntu-latest: missing/);
@@ -362,7 +364,7 @@ test('CI: a Markdown-only PR requires the core and gate while product jobs remai
 const selectableJobs = {
   'runtime-unit': 'Runtime unit tests on ubuntu-latest', 'runtime-scenarios': 'Runtime scenario tests on ubuntu-latest',
   firmware: 'Firmware host tests and ARM build on ubuntu-latest', 'app-verify': 'App verification on ubuntu-latest',
-  'runtime-verify': 'Runtime verification on ubuntu-latest',
+  'runtime-verify-captures': 'Runtime verification captures on ubuntu-latest', 'runtime-verify': 'Runtime verification on ubuntu-latest',
 };
 function narrowWorld(files = ['apps/runtime/src/main.ts']) {
   const world = cleanWorld();
@@ -536,15 +538,18 @@ test('CI: a narrow change accepts deliberately unselected jobs as skipped and ne
   assert.equal(executed.evidence.jobs.find(item => /^Firmware/.test(item.name)).result, 'success');
 });
 
-test('CI: the separate runtime verification remains mandatory in the original preflight', async () => {
-  for (const conclusion of ['failure', 'cancelled', 'skipped']) {
-    const world = cleanWorld();
-    runNamed(world, /^Runtime verification/).conclusion = conclusion;
-    assertUnresolved(await preflight(world), 'ci-pr', /Runtime verification on ubuntu-latest:/);
+test('CI: both runtime verification jobs remain mandatory in the original preflight (#1676)', async () => {
+  for (const name of ['Runtime verification captures on ubuntu-latest', 'Runtime verification on ubuntu-latest']) {
+    const quoted = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (const conclusion of ['failure', 'cancelled', 'skipped']) {
+      const world = cleanWorld();
+      world.checkRuns[HEAD].find(run => run.name === name).conclusion = conclusion;
+      assertUnresolved(await preflight(world), 'ci-pr', new RegExp(`${quoted}:`));
+    }
+    const missing = cleanWorld();
+    missing.checkRuns[HEAD] = missing.checkRuns[HEAD].filter(run => run.name !== name);
+    assertUnresolved(await preflight(missing), 'ci-pr', new RegExp(`${quoted}: missing`));
   }
-  const missing = cleanWorld();
-  missing.checkRuns[HEAD] = missing.checkRuns[HEAD].filter(run => !/^Runtime verification/.test(run.name));
-  assertUnresolved(await preflight(missing), 'ci-pr', /Runtime verification on ubuntu-latest: missing/);
 });
 
 const selectionCases = [
@@ -1289,7 +1294,7 @@ test('a live finish line cannot be satisfied by source, CI or simulator evidence
 test('workflow filters treat ** as GitHub does, including dot-files', () => {
   const workflows = Object.entries(WORKFLOW_FILES).map(([file, text]) => parseWorkflow(file, text));
   const dotfile = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/.gitignore'], filesComplete: true }, ACTIONS);
-  assert.equal(dotfile.jobs.length, 12, 'a dot-file is not Markdown, so admission and security workflows apply');
+  assert.equal(dotfile.jobs.length, 13, 'a dot-file is not Markdown, so admission and security workflows apply');
   for (const [pattern, file, expected] of [
     ['docs/work-guide/**', 'docs/work-guide/.gitignore', true], ['docs/work-guide/**', 'docs/work-guides/a.md', false],
     ['**/README.md', 'README.md', true], ['**/README.md', 'a/.b/README.md', true], ['docs/*.md', 'docs/a/b.md', false], ['a.b', 'axb', false],
@@ -1677,7 +1682,7 @@ test('CI: focused admission accepts presentation checks and rejects a concealed 
   const ci = gate(await preflight(focused), 'ci-pr');
   assert.equal(ci.status, 'satisfied', ci.reasons.join('; '));
   assert.equal(ci.evidence.selection.mode, 'focused');
-  assert.deepEqual(ci.evidence.hostedSelection.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: false, 'app-verify': false, 'runtime-verify': false });
+  assert.deepEqual(ci.evidence.hostedSelection.jobs, { 'runtime-unit': true, 'runtime-scenarios': true, firmware: false, 'app-verify': false, 'runtime-verify-captures': false, 'runtime-verify': false });
   const unsafe = cleanWorld();
   publishSelection(unsafe, HEAD, selectChecks({ event: 'pull_request', paths, complete: true }));
   assertUnresolved(await preflight(unsafe), 'ci-pr', /focused hosted selection cannot satisfy/);

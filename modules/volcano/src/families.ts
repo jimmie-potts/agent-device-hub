@@ -2,7 +2,7 @@
 // record, `volcano-session-gap/2.0` the one command it takes, which never reaches a device. Every read document is closed
 // and checked before it leaves, and none of them has a field for consumption, dose or inhalation, or for any identifier
 // of the device.
-import {Ajv2020} from 'ajv/dist/2020.js';
+import {Ajv2020, type ValidateFunction} from 'ajv/dist/2020.js';
 import {MessageValidator, SCHEMA_BASE, schemas} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
@@ -102,6 +102,11 @@ export function volcanoValidator(): MessageValidator {
   return validator;
 }
 
-const ajv = new Ajv2020({strict: true});
-export const validateStatus = ajv.compile(statusSchema), validateTimeline = ajv.compile(timelineSchema), validateSessions = ajv.compile(sessionsSchema),
-  validateTotals = ajv.compile(totalsSchema), validateGaps = ajv.compile(gapsSchema);
+let ajv: Ajv2020 | undefined;
+// Each document validator compiles on its first call, not at import (Hub #1686).
+const onFirstUse = (schema: object): ((value: unknown) => boolean) => {
+  let compiled: ValidateFunction | undefined;
+  return value => (compiled ??= (ajv ??= new Ajv2020({strict: true})).compile(schema))(value);
+};
+export const validateStatus = onFirstUse(statusSchema), validateTimeline = onFirstUse(timelineSchema), validateSessions = onFirstUse(sessionsSchema),
+  validateTotals = onFirstUse(totalsSchema), validateGaps = onFirstUse(gapsSchema);

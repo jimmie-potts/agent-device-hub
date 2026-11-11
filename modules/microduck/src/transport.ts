@@ -1,5 +1,6 @@
 import {createConnection, type Socket} from 'node:net';
 import {Ajv2020} from 'ajv/dist/2020.js';
+import {compileOnFirstUse} from './compile-on-first-use.js';
 import type {Observation} from './contracts.js';
 import {parseState, parseWire} from './protocol.js';
 import {FixtureWitness, VENDOR} from './witness.js';
@@ -14,8 +15,8 @@ export class BeforeSendError extends Error {}
 export class VendorRefusal extends Error {}
 type Pending={resolve:(value:unknown)=>void;reject:(error:Error)=>void;clear:()=>void};
 const record=(v:unknown):v is Record<string,unknown>=>typeof v==='object'&&v!==null&&!Array.isArray(v);
-const hello=new Ajv2020().compile({type:'object',required:['api_version','daemon_version','revision'],properties:{api_version:{const:VENDOR.api},daemon_version:{const:VENDOR.version},revision:{const:VENDOR.revision}}});
-const policyCheck=new Ajv2020().compile<{slots:{slot:string;path:string|null;error:unknown;overridden:boolean}[]}>({type:'object',required:['slots'],properties:{slots:{type:'array',minItems:7,maxItems:7,items:{type:'object',required:['slot','path','error','overridden'],properties:{slot:{enum:['walk','stand','sitstand','ground_pick','kick_left','kick_right','roulade']},path:{type:['string','null']},error:{type:'null'},overridden:{const:true}}}}}});
+const hello=compileOnFirstUse(() => new Ajv2020().compile({type:'object',required:['api_version','daemon_version','revision'],properties:{api_version:{const:VENDOR.api},daemon_version:{const:VENDOR.version},revision:{const:VENDOR.revision}}}));
+const policyCheck=compileOnFirstUse(() => new Ajv2020().compile<{slots:{slot:string;path:string|null;error:unknown;overridden:boolean}[]}>({type:'object',required:['slots'],properties:{slots:{type:'array',minItems:7,maxItems:7,items:{type:'object',required:['slot','path','error','overridden'],properties:{slot:{enum:['walk','stand','sitstand','ground_pick','kick_left','kick_right','roulade']},path:{type:['string','null']},error:{type:'null'},overridden:{const:true}}}}}}));
 function policyValid(value:unknown):boolean {
   return policyCheck(value)&&new Set(value.slots.map(x=>x.slot)).size===7&&value.slots.every(x=>x.path===(x.slot==='walk'?VENDOR.policy:null));
 }

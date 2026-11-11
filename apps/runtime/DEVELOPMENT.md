@@ -572,10 +572,10 @@ averaged about 1.2 cores and peaked at about 2.75 GiB across the shard processes
 (Hub #1674). Inside a test container its
 processes share that container's memory, and each catalog process holds several
 hundred MiB: at the standard size even two shards were killed for memory, and the
-wide size ran two (Hub #1674). On the Mac each of its processes counts
-as one native suite under
-[Test work on the Mac](../../docs/development.md#test-work-on-the-mac), so the
-default run takes five slots.
+wide size ran two (Hub #1674). On the Mac a native run of up to four shards
+takes two slots under
+[Test work on the Mac](../../docs/development.md#test-work-on-the-mac); that
+rule says more than four shards is not for the Mac.
 `node --test scripts/tests/scenario-shards.test.mjs` checks the runner, and
 `tests/scenario-shard.test.ts` in the unit suite checks the split and the refusal.
 Hosted CI keeps running `npm run test:runtime:scenarios:built`.
@@ -624,9 +624,9 @@ All runs keep the existing leases, synthetic data, simulated devices and an
 outside-checkout `TMPDIR`; they grant no installed-system or physical-device
 authority. Reset and stop only owned runs.
 
-The Runtime verification CI job runs the full `test:runtime:verify:built` suite
-on each pinned release qualification and conservative PR selection. Focused
-presentation admission can omit the broad job while retaining affected disposable
+The two Runtime verification CI jobs together run the full `test:runtime:verify:built` suite,
+split as in [Checks](verify/README.md#checks), on each pinned release qualification and
+conservative PR selection. Focused presentation admission can omit both broad jobs while retaining affected disposable
 acceptance. Focused local verification does not waive an applicable failed or
 missing CI job, contract check, browser check or independent review.
 

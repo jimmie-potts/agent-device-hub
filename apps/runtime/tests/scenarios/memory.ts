@@ -43,13 +43,13 @@ import {
   GatewayClient, Reader, actionAnswerOf, actionCall, admitted, answerOf, follow, partTokens, producerToken, runHookScript, scenarioSchemas, scenarioValidator,
   sourceOf, writeConfiguration, writeProducer,
 } from './parts.js';
+import {realWork, settle} from './real-work.js';
+import {stepThrough} from './stepping.js';
 
 /** The ports of the installed Hub, the local controllers and their services, which a harness never listens on. */
 export const INSTALLED_PORTS: readonly number[] = [8765, 8787, 8788, 8791, 41231];
 /** How long a dropped part waits before it connects again, as the remote client's backoff does. */
 const RECONNECT_MS = 20;
-/** How far virtual time moves before real I/O, such as the edge's HTTP, gets to run. */
-const STEP_MS = 10;
 /**
  * How long, in real time, virtual time waits for one module's worker call. A worker runs in real time but its deadline
  * is on virtual time, which runs several times faster, so a stalled runner could time out a worker that had done nothing
@@ -77,10 +77,8 @@ export interface MemoryHarness extends Harness {
   close(): Promise<void>;
 }
 
-const settle = async (): Promise<void> => {
-  for (let turn = 0; turn < 4; turn += 1) await new Promise(resolve => { setImmediate(resolve); });
-  await new Promise(resolve => { setTimeout(resolve, 1); });
-};
+/** The real work in flight in this process, such as image encoding, a media process or a file write (Hub #1685). */
+const work = realWork();
 
 /** Listens on a free loopback port that `refused` accepts, by default one no installed service uses. */
 export async function listenLoopback(server: Server, refused: (port: number) => boolean = port => INSTALLED_PORTS.includes(port)): Promise<number> {
@@ -329,8 +327,9 @@ class Memory implements MemoryHarness {
   }
 
   async spans(): Promise<readonly string[]> {
-    // The bounded queue hands each finished span to the sink a few turns after it ends.
-    await settle();
+    // The bounded queue hands each finished span to the sink a few turns after it ends. This is no virtual step, so it
+    // keeps its real pause whatever is in flight.
+    await settle(() => true);
     return this.#spans;
   }
 
@@ -384,12 +383,12 @@ class Memory implements MemoryHarness {
 
   async wait(ms: number): Promise<void> {
     await this.#settled();
-    for (let elapsed = 0; elapsed < ms; elapsed += STEP_MS) {
+    await stepThrough(this.#clock, ms, async () => {
       while (this.#working.size > 0) await Promise.race([...this.#working]);
-      this.#clock.advance(Math.min(STEP_MS, ms - elapsed));
-      await settle();
+    }, async () => {
+      await settle(work.busy);
       await this.#settled();
-    }
+    });
   }
 
   async disconnect(role: Role): Promise<void> {

@@ -7,8 +7,12 @@ import {join} from 'node:path';
 import {admit, imageKey, parse, runArgs, runJob, sizes} from '../test-container.mjs';
 import {LIMITS} from '../test-container/pool.mjs';
 import {statusOf, steps} from '../test-container/inside.mjs';
+import {profileLine, profiles} from '../test-container/profile.mjs';
 
-const scripts = {'test:runtime:built':'node --test x', 'test:runtime:verify:built':'node --test y', 'test:sdk:built':'node --test z', 'lint:js':'eslint .'};
+const scripts = {'test:runtime:built':'node --test x', 'test:runtime:verify:built':'node --test y', 'test:sdk:built':'node --test z', 'lint:js':'eslint .',
+  'test:runtime:verify:captures:built':'node --test c', 'test:runtime:verify:rest:built':'node --test r'};
+// Hub #1676: CI's two shares of the verification suite, each with capture cases.
+const verifyShares = ['test:runtime:verify:captures:built', 'test:runtime:verify:rest:built'];
 const image = 'sha256:' + 'b'.repeat(64);
 const id = 'c'.repeat(64);
 const nameOf = args => args[args.indexOf('--name') + 1] ?? '';
@@ -45,6 +49,10 @@ test('a job known not to fit is refused at a smaller size with its routes, and a
   const plan = (size, script) => parse(['--issue','1','--job','a','--size',size,'--',script], scripts);
   assert.equal(admit(plan('standard','test:runtime:verify:built'), {nameTaken:false}), 'test:runtime:verify:built needs more than 1250 MiB: use --size wide, or npm run test:runtime:container -- --suite verify, which has its own 1536 MiB limit');
   assert.equal(admit(plan('wide','test:runtime:verify:built'), {nameTaken:false}), null);
+  for (const script of verifyShares) {
+    assert.equal(admit(plan('standard', script), {nameTaken:false}), `${script} runs runtime verification captures, and the full suite needed more than 1250 MiB: use --size wide`);
+    assert.equal(admit(plan('wide', script), {nameTaken:false}), null, script);
+  }
   assert.equal(admit(plan('standard','test:sdk:built'), {nameTaken:false}), 'test:sdk:built fails below 4 CPUs: use --size wide');
   assert.equal(admit(plan('standard','test:runtime:built'), {nameTaken:false}), null);
   assert.match(admit(plan('standard','test:runtime:built'), {nameTaken:true}), /^a container named bunny-gh1-a already exists; .*never stops or removes a container it did not start/);
@@ -405,4 +413,86 @@ test('an interrupt during an admission wait stops the wait with 130 and starts n
     assert.equal(io.calls.some(call => call[0] === 'build' || (call[0] === 'run' && nameOf(call).startsWith('bunny-gh'))), false);
     assert.ok(io.lines.includes("waiting: the host's 1-minute load is 9.5, at or above 8"));
   } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+const wsl = {platform:'linux', osRelease:'5.15.167.4-microsoft-standard-WSL2'};
+
+test('the first line of a job names the profile, and with no setting it is the Mac profile', async () => {
+  const repo = await repository();
+  try {
+    const io = fakeHost();
+    assert.equal(await runJob(argv, io, repo), 0);
+    assert.equal(io.lines[0], profileLine(profiles.mac));
+    const refused = fakeHost();
+    assert.equal(await runJob(['--issue','1','--job','a','--','lint:js'], refused, repo), 2);
+    assert.equal(refused.lines[0], profileLine(profiles.mac), 'a refusal still names the profile first');
+    const misnamed = fakeHost();
+    misnamed.env = {BUNNY_TEST_HOST:'pc'};
+    Object.assign(misnamed, {platform:'darwin', osRelease:'27.0.0'});
+    assert.equal(await runJob(argv, misnamed, repo), 2, 'the PC profile is refused on the Mac');
+    assert.match(misnamed.lines[0], /BUNNY_TEST_HOST=pc is for the PC's WSL Linux only/);
+    assert.equal(misnamed.calls.some(call => call[0] === 'run' || call[0] === 'build' || call[1] === 'run'), false);
+  } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+test('under the PC profile a job runs at the PC size with no pool, no helper and no core check, scratch outside /tmp', async () => {
+  const repo = await repository();
+  const cache = await mkdtemp(join(tmpdir(), 'test-container-cache-'));
+  try {
+    const io = Object.assign(fakeHost(), wsl);
+    io.env = {BUNNY_TEST_HOST:'pc', XDG_CACHE_HOME:cache};
+    let snapshotAt;
+    const snapshot = io.snapshot;
+    io.snapshot = async (repository, destination) => { snapshotAt = destination; return snapshot(repository, destination); };
+    assert.equal(await runJob(argv, io, repo), 0);
+    assert.equal(io.lines[0], profileLine(profiles.pc));
+    const run = jobRun(io);
+    assert.deepEqual(run.slice(run.indexOf('--cpus'), run.indexOf('--cpus') + 6), ['--cpus','4','--memory','2048m','--memory-swap','2048m']);
+    assert.equal(run.includes('--cgroup-parent'), false);
+    assert.equal(io.calls.find(call => call[0] === 'build').includes('--cgroup-parent'), false);
+    assert.equal(io.calls.some(call => call[1] === 'run' || call[1] === 'inspect'), false, 'no pool reader, helper or core health read');
+    assert.equal(io.calls.some(call => call[0] === 'run' && nameOf(call).startsWith('bunny-tests-pool-')), false);
+    assert.ok(snapshotAt.startsWith(join(cache, 'bunny-test-container') + '/'), snapshotAt);
+    assert.ok(io.lines.some(line => line === 'bunny-gh1638-unit: standard size (4 CPUs, 2048m memory, no swap), 1 slot, network none, no pool (this host\'s profile has none)'));
+    assert.equal(existsSync(snapshotAt), false, 'the snapshot is removed');
+    const wide = Object.assign(fakeHost({images:io.images}), wsl);
+    wide.env = {BUNNY_TEST_HOST:'pc', XDG_CACHE_HOME:cache};
+    assert.equal(await runJob(['--issue','1638','--job','sdk','--size','wide','--','test:sdk:built'], wide, repo), 0);
+    const wideRun = jobRun(wide);
+    assert.deepEqual(wideRun.slice(wideRun.indexOf('--cpus'), wideRun.indexOf('--cpus') + 6), ['--cpus','8','--memory','3584m','--memory-swap','3584m']);
+  } finally {
+    await rm(repo, {recursive:true, force:true});
+    await rm(cache, {recursive:true, force:true});
+  }
+});
+
+test('under the PC profile a refused scratch path names $XDG_CACHE_HOME, never the real cache or home path', async () => {
+  const repo = await repository();
+  const cache = await mkdtemp(join(tmpdir(), 'test container cache '));
+  try {
+    const io = Object.assign(fakeHost(), wsl);
+    io.env = {BUNNY_TEST_HOST:'pc', XDG_CACHE_HOME:cache};
+    assert.equal(await runJob(argv, io, repo), 2);
+    const line = io.lines.find(text => text.startsWith('the scratch path '));
+    assert.match(line, /^the scratch path \$XDG_CACHE_HOME\/bunny-test-container\/bunny-test-container-[A-Za-z0-9]{6} cannot be passed to docker unchanged: set XDG_CACHE_HOME to a directory whose path uses only letters, digits, dot, underscore, slash and hyphen$/);
+    assert.equal(io.lines.some(text => text.includes(cache)), false);
+    assert.equal(io.calls.some(call => ['build','run'].includes(call[0])), false);
+  } finally {
+    await rm(repo, {recursive:true, force:true});
+    await rm(cache, {recursive:true, force:true});
+  }
+});
+
+test('size minimums follow the profile: the SDK fits a PC standard job, verification still needs wide', () => {
+  const plan = (size, script) => parse(['--issue','1','--job','a','--size',size,'--',script], scripts);
+  assert.equal(admit(plan('standard','test:sdk:built'), {nameTaken:false, profile:profiles.pc}), null, 'a PC standard job has 4 CPUs');
+  assert.equal(admit(plan('standard','test:runtime:verify:built'), {nameTaken:false, profile:profiles.pc}), 'test:runtime:verify:built needs more memory than a standard job is measured for: use --size wide, or npm run test:runtime:container -- --suite verify, which has its own 1536 MiB limit');
+  for (const script of verifyShares) {
+    assert.equal(admit(plan('standard', script), {nameTaken:false, profile:profiles.pc}), `${script} runs runtime verification captures, which need more memory than a standard job is measured for: use --size wide`);
+    assert.equal(admit(plan('wide', script), {nameTaken:false, profile:profiles.pc}), null, script);
+  }
+  assert.equal(admit(plan('standard','test:sdk:built'), {nameTaken:false, profile:profiles.mac}), 'test:sdk:built fails below 4 CPUs: use --size wide');
+  const where = {imageId:image, source:'/tmp/s/source', cidfile:'/tmp/w/cid'};
+  const standard = parse(['--issue','1','--job','a','--','test:runtime:built'], scripts);
+  assert.deepEqual(runArgs(standard, {...where, profile:profiles.mac}), runArgs(standard, where), 'the Mac profile is the default');
 });

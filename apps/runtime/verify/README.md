@@ -130,7 +130,11 @@ call reaches the runtime's gateway over HTTP, as a part with its token, a browse
 a stranger or a caller with neither, and its `dispatch` sends a device's command through the core's dispatcher on the
 gateway's action route (#782). Its
 `disconnect` has the runtime's edge end the part's stream, and the same remote part reconnects and hears of the gap,
-as in the in-memory harness. The part's timers wait until the next `wait`, so it stays away for the steps in between. A
+as in the in-memory harness. The part's timers wait until the next `wait`, so it stays away for the steps in between.
+Its `restart` resolves only once the reader is back in sync with the new runtime: its stream open again, every
+subscription's re-registration attempted (a refused one is reported as a problem) and each copy synced again (#1697). Otherwise a next restart could stop the runtime while
+the reader's reconnect reached it, and a copy whose resync that refused would stop for good. Past 15 s the restart fails,
+naming what did not come back. A reader that the scenario disconnected or closed is not waited for. A
 step's page shows the runtime's health document. The step loads it at its start and again at its end, so `after.png`
 shows health as the step left it. The run's origin also serves the [dashboard](../dashboard/README.md) (#922); the steps'
 page moves to it in #922's third slice.
@@ -591,14 +595,21 @@ sign's page and its preview. Without the cookie the page answers 401.
 
 `npm run test:runtime:verify:built` judges every capture step through `runCaptureStep` on runs it starts without a user
 manager, and starts each negative control. Each catalog capture and negative control has a separate named test with
-a five-minute limit and a newly seeded run. Tests remain serial; the capture step's own limits and CI's thirty-minute
-Runtime verification job limit also apply. Adding a scenario does not consume another scenario's test budget, and a
+a five-minute limit and a newly seeded run. Tests remain serial; the capture step's own limits and the 45-minute limit
+of each CI job below also apply. Adding a scenario does not consume another scenario's test budget, and a
 failed or cancelled case is reported by name. `BUNNY_CAPTURE_SHARD=<index>/<count>` runs one share of the capture cases;
-packaged release qualification splits them between two parallel jobs this way. Unset, every case runs. It tests the supervisor's stop, crash restart, restart serialization, orphan
-handling and harness API, and the follow query: the supervisor's route, a clean restart and a killed runtime, and the
+packaged release qualification splits them between two parallel jobs this way. Unset, every case runs. The suite tests
+the supervisor's stop, crash restart, restart serialization, orphan handling and harness API, and the follow query: the
+supervisor's route, a clean restart and a killed runtime, and the
 pure query's cases with their negative controls. It also tests the guard's reach in every thread and child process,
 that `build-current` watches every source the run loads, that health fails once a module fails in a run and passes an
 expected refusal, that the harness's refusals come from the registry, a malformed or oversized body included, and that
 neither the run adapter nor a failed step's detail in a capture's proof quotes an exception's text.
 Its lifecycle tests drive real transient units through the wrapper and skip with a printed reason where there is no
 user manager (#873). See [Runtime verification runs](../../../docs/development.md#runtime-verification-runs).
+
+Hosted CI splits the suite the same way, into two jobs on separate runners that the selected checks gate both requires
+(#1676). Runtime verification captures runs `npm run test:runtime:verify:captures:built`: capture shard `1/2` of
+`steps.test.js`, which also holds that file's tests outside the capture loop. Runtime verification runs
+`npm run test:runtime:verify:rest:built`: the other verification files serially, then capture shard `2/2`. Together they
+run each test once. `npm run test:runtime:verify:built` still runs the whole suite in one process for local use.

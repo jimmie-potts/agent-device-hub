@@ -1,4 +1,5 @@
 import {Ajv2020} from 'ajv/dist/2020.js';
+import {compileOnFirstUse} from './compile-on-first-use.js';
 import type {Observation} from './contracts.js';
 export class BeforeSendError extends Error {}
 export type MoveEvent = {uuid: string; type: 'move_started' | 'move_completed' | 'move_cancelled' | 'move_failed'};
@@ -8,16 +9,17 @@ export interface ReachyTransport {
   move(target: readonly [number, number], signal: AbortSignal, beforeEffect?: () => void): Promise<string>;
   cancel(uuid: string, signal: AbortSignal, beforeEffect?:()=>void): Promise<void>;
 }
-const ajv = new Ajv2020({strict: false});
-const isStatus = ajv.compile<{state: string; simulation_enabled: boolean; mockup_sim_enabled: boolean; no_media: boolean; backend_status: null | {error: unknown;motor_control_mode:string}}>({
+let ajv: Ajv2020 | undefined;
+const shared = (): Ajv2020 => ajv ??= new Ajv2020({strict: false});
+const isStatus = compileOnFirstUse(() => shared().compile<{state: string; simulation_enabled: boolean; mockup_sim_enabled: boolean; no_media: boolean; backend_status: null | {error: unknown;motor_control_mode:string}}>({
   type: 'object', required: ['state', 'simulation_enabled', 'mockup_sim_enabled', 'no_media', 'backend_status'],
   properties: {state: {type: 'string'}, simulation_enabled: {type: 'boolean'}, mockup_sim_enabled: {type: 'boolean'}, no_media: {type: 'boolean'},
     backend_status: {anyOf: [{type: 'null'}, {type: 'object', required: ['error','motor_control_mode'], properties: {error: {},motor_control_mode:{type:'string'}}}]}},
-});
-const isState = ajv.compile<{antennas_position: [number, number]}>({type: 'object', required: ['antennas_position'],
-  properties: {antennas_position: {type: 'array', minItems: 2, maxItems: 2, items: {type: 'number'}}}});
-const isMove = ajv.compile<{uuid: string}>({type: 'object', required: ['uuid'], properties: {uuid: {type: 'string', pattern: '^[0-9a-f-]{36}$'}}});
-const isEvent = ajv.compile<MoveEvent>({type: 'object', required: ['uuid', 'type'], properties: {uuid: {type: 'string', pattern: '^[0-9a-f-]{36}$'}, type: {enum: ['move_started', 'move_completed', 'move_cancelled', 'move_failed']}}});
+}));
+const isState = compileOnFirstUse(() => shared().compile<{antennas_position: [number, number]}>({type: 'object', required: ['antennas_position'],
+  properties: {antennas_position: {type: 'array', minItems: 2, maxItems: 2, items: {type: 'number'}}}}));
+const isMove = compileOnFirstUse(() => shared().compile<{uuid: string}>({type: 'object', required: ['uuid'], properties: {uuid: {type: 'string', pattern: '^[0-9a-f-]{36}$'}}}));
+const isEvent = compileOnFirstUse(() => shared().compile<MoveEvent>({type: 'object', required: ['uuid', 'type'], properties: {uuid: {type: 'string', pattern: '^[0-9a-f-]{36}$'}, type: {enum: ['move_started', 'move_completed', 'move_cancelled', 'move_failed']}}}));
 function parse(value: unknown): unknown {
   if (typeof value !== 'string' || Buffer.byteLength(value) > 32768) return undefined;
   try {return JSON.parse(value);} catch {return undefined;}

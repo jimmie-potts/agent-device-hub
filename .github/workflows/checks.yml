@@ -32,6 +32,7 @@ jobs:
       runtime-scenarios: ${{ steps.select.outputs.runtime-scenarios }}
       firmware: ${{ steps.select.outputs.firmware }}
       app-verify: ${{ steps.select.outputs.app-verify }}
+      runtime-verify-captures: ${{ steps.select.outputs.runtime-verify-captures }}
       runtime-verify: ${{ steps.select.outputs.runtime-verify }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -322,13 +323,16 @@ jobs:
         run: npm run test:art-theme:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:browser
-  runtime-verify:
-    name: Runtime verification on ubuntu-latest
+  # The runtime verification suite runs as two jobs on separate runners, split as packaged qualification's lanes are
+  # (scripts/release/packaged.mjs lanePlan, #1676): this one runs capture shard 1/2 of steps.test.js, and Runtime
+  # verification runs every other verification file serially, then shard 2/2. Together they run each test once.
+  runtime-verify-captures:
+    name: Runtime verification captures on ubuntu-latest
     needs: select
-    if: needs.select.outputs.runtime-verify == 'true'
+    if: needs.select.outputs.runtime-verify-captures == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # Allow setup and the full serial catalog to finish and report failing cases (#1497).
+    # Each share keeps the full suite's 45-minute limit (#1497), so a slow share still reports its failing cases.
     env:
       XDG_RUNTIME_DIR: ''
       DBUS_SESSION_BUS_ADDRESS: ''
@@ -343,11 +347,34 @@ jobs:
         timeout-minutes: 20
         run: bash scripts/apt-retry.sh 300 npx playwright install --with-deps chromium
       - run: npm run build
-      # Active catalog, including shared keyboard and phone checks.
-      - run: npm run test:runtime:verify:built
+      # Capture shard 1/2 of the active catalog, with the capture file's tests outside the capture loop.
+      - run: npm run test:runtime:verify:captures:built
+  runtime-verify:
+    name: Runtime verification on ubuntu-latest
+    needs: select
+    if: needs.select.outputs.runtime-verify == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Allow setup and this share of the serial catalog to finish and report failing cases (#1497).
+    env:
+      XDG_RUNTIME_DIR: ''
+      DBUS_SESSION_BUS_ADDRESS: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium with its system dependencies
+        timeout-minutes: 20
+        run: bash scripts/apt-retry.sh 300 npx playwright install --with-deps chromium
+      - run: npm run build
+      # Every other verification file, then capture shard 2/2 of the active catalog, including shared keyboard and phone checks.
+      - run: npm run test:runtime:verify:rest:built
   gate:
     name: Selected checks gate
-    needs: [select, core, runtime-unit, runtime-scenarios, firmware, app-verify, runtime-verify]
+    needs: [select, core, runtime-unit, runtime-scenarios, firmware, app-verify, runtime-verify-captures, runtime-verify]
     # Runs even when the selection or a job failed, so a failure, cancellation or unexpected skip fails this check.
     if: always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ubuntu-latest

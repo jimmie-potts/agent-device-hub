@@ -742,7 +742,7 @@ The selector in `scripts/ci-selection/selection.mjs` owns the explicit admission
 mapping and the preflight recomputes it. Every ready candidate runs build,
 typecheck, lint, workflow checks and the affected core unit/consumer suites.
 Explicitly allowlisted runtime dashboard and module frontend style assets can use focused
-admission, omitting the broad App verification and Runtime verification jobs.
+admission, omitting the broad App verification and both Runtime verification jobs.
 The affected independent disposable acceptance exercise remains required.
 
 Two existing standalone test entries have a narrower owning-command route:

@@ -13,8 +13,16 @@ type Row = {composition_id: string; sha256: string; expires_at_ms: number; forma
 const digest = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 const entity = (family: Family): string => family === 'art-stage' ? 'org.bunny.art.stage' : 'org.bunny.art-ambient.set';
 const canonical = (data: Record<string, unknown>): string => JSON.stringify(Object.fromEntries(Object.keys(data).sort().map(key => [key, data[key]])));
-const validator = new MessageValidator();
-registerArtFamilies(validator);
+let shared: MessageValidator | undefined;
+// Compiled on first use, not at import (Hub #1686).
+function validator(): MessageValidator {
+  if (shared === undefined) {
+    const created = new MessageValidator();
+    registerArtFamilies(created);
+    shared = created;
+  }
+  return shared;
+}
 
 type Options = {
   db: DatabaseSync; now: () => number; available: () => boolean;
@@ -75,7 +83,7 @@ export class TidbytArt {
   handle(family: Family, command: Command<Record<string, unknown>>): Promise<Reply> | Reply {
     const refusal = artCommandRefusal(command.source);
     if (refusal !== undefined) return refusal;
-    if (command.dataschema !== `${SCHEMA_BASE}${family}/2.0` || command.type !== `${entity(family)}.requested` || !validator.validate(command).ok) return errorBody('invalid-request', {detail: 'the command does not match its art family'});
+    if (command.dataschema !== `${SCHEMA_BASE}${family}/2.0` || command.type !== `${entity(family)}.requested` || !validator().validate(command).ok) return errorBody('invalid-request', {detail: 'the command does not match its art family'});
     if (!this.#options.available()) return errorBody('unavailable', {detail: 'the Tidbyt art owner is not available'});
     if (this.#pending === 8) return errorBody('capacity', {detail: 'too many art commands wait for the Tidbyt'});
     this.#pending += 1;

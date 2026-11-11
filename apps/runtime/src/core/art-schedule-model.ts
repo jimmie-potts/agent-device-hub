@@ -7,12 +7,20 @@ import type {ArtRecord, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/a
 import {rainNoticeIssue, rainNoticeRefusal, type RainNotice} from '@jimmie-potts/event-contracts/v2/art-notice';
 import type {WeatherState} from '@jimmie-potts/weather';
 import {AutomationError, inQuietHours, type AutomationSettings} from './automation.js';
+import {compileOnFirstUse} from './compile-on-first-use.js';
 
-const validator = new Ajv2020({strict: false});
-validator.addSchema(schemas.blocks as object);
-for (const family of coreFamilies) validator.addSchema(family.schema);
-const writeValid = validator.compile<ArtScheduleWrite>({$ref: `${ART_SCHEDULE_SCHEMA}#/$defs/write`});
-export const recordValid = validator.compile<ArtScheduleRecord>({$ref: ART_SCHEDULE_SCHEMA});
+let validator: Ajv2020 | undefined;
+function shared(): Ajv2020 {
+  if (validator === undefined) {
+    const created = new Ajv2020({strict: false});
+    created.addSchema(schemas.blocks as object);
+    for (const family of coreFamilies) created.addSchema(family.schema);
+    validator = created;
+  }
+  return validator;
+}
+const writeValid = compileOnFirstUse(() => shared().compile<ArtScheduleWrite>({$ref: `${ART_SCHEDULE_SCHEMA}#/$defs/write`}));
+export const recordValid = compileOnFirstUse(() => shared().compile<ArtScheduleRecord>({$ref: ART_SCHEDULE_SCHEMA}));
 export const DEFAULT_ART_POLICY: Readonly<ArtSchedulePolicy> = Object.freeze({enabled:false,wakingStartMinute:480,wakingEndMinute:1320,
   appearances:7,targets:[],browser:true,ambient:true,generation:false,weather:false,coversStatus:false});
 export const APPEARANCE_GAP_MS = 45 * 60_000;
