@@ -621,7 +621,8 @@ class RemoteClient {
    * Sends one sync request. A request refused `unavailable` while the stream it went out under was lost is
    * `interrupted` (Hub #1700): the reconnect tells every subscription of the gap once the stream is back, and the copy
    * asks again then, so the reconnect's own backoff paces the repeat and its close ends it. Any other refusal, and one
-   * refused while that stream stayed up, is passed on as it came.
+   * refused while that stream stayed up, is passed on as it came; a resync that could not reach the edge passes its own
+   * refusal on at the latest at its deadline.
    */
   async #syncRequest(outgoing: OutgoingSync): Promise<SyncAnswer | SyncInterrupted> {
     const under = this.#current;
@@ -630,7 +631,7 @@ class RemoteClient {
     return under === undefined || this.#current !== under ? {status: 'interrupted', requestId: answer.requestId, error: answer.error} : answer;
   }
 
-  #sync({families, requestId, timeoutMs, trace, signal, owner}: OutgoingSync, under: Stream | undefined): Promise<SyncAnswer> {
+  async #sync({families, requestId, timeoutMs, trace, signal, owner, resync}: OutgoingSync, under: Stream | undefined): Promise<SyncAnswer> {
     const sentAtMs = this.#now();
     const request = buildMessage(this.#source, 'sync-request', {
       type: 'org.bunny.sync.requested', subject: families.join(','), dataschema: SYNC_REQUEST, data: {requestId, families: [...families]},
@@ -642,7 +643,9 @@ class RemoteClient {
     const silent: SyncAnswer = {status: 'rejected', requestId, error: body('unavailable', `the edge did not answer within ${waitMs} ms`, ids)};
     // A copy that closes withdraws its request: the call is dropped, and the edge takes it out of the owner's queue.
     const withdrawn: SyncAnswer = {status: 'rejected', requestId, error: body('cancelled', 'the requester closed', ids)};
-    return this.#within(waitMs, silent, async dropped => {
+    // A resync's refusal for an edge it could not reach, while it waits to hear whether its stream was lost.
+    let unreached: SyncAnswer | undefined;
+    const answer = await this.#within<SyncAnswer>(waitMs, silent, async dropped => {
       try {
         // The owner travels with the call, as a command's routing key does, so the request message stays as it was.
         return fields(await this.#post('sync', {request, ...(owner === undefined ? {} : {owner})}, dropped)).answer as SyncAnswer;
@@ -652,12 +655,19 @@ class RemoteClient {
         if (refused.error.code === 'expired') {
           return {status: 'rejected', requestId, error: body('unavailable', 'the edge found the sync request expired; the clocks may differ', ids)};
         }
+        const refusal: SyncAnswer = {status: 'rejected', requestId, error: named(refused, ids)};
         // The edge could not be reached. The stream may be lost with it, as when the runtime stopped with both open,
-        // and the client may hear so only a moment later: wait for that, within the request's deadline.
-        if (!(error instanceof SdkError)) await this.#streamLost(under, dropped);
-        return {status: 'rejected', requestId, error: named(refused, ids)};
+        // and the client may hear so only a moment later: a resync waits for that, within the request's deadline. A
+        // first sync is refused at once, as a lost stream would gain it nothing.
+        if (resync === true && !(error instanceof SdkError)) {
+          unreached = refusal;
+          await this.#streamLost(under, dropped);
+        }
+        return refusal;
       }
     }, {signal, answer: withdrawn});
+    // A deadline that ends the wait with the stream still open passes on the refusal the client first heard.
+    return answer === silent && unreached !== undefined ? unreached : answer;
   }
 
   /** Resolves once `under` is no longer the current stream, or when `dropped` aborts at the deadline or a withdrawal. */

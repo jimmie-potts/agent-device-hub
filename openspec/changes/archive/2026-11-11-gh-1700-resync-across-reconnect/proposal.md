@@ -4,7 +4,7 @@
 
 ## What Changes
 
-- The remote client answers a copy's sync request as `interrupted` when it was refused `unavailable` while the stream it went out under was lost. A request that could not reach the edge while its stream still looks open waits, within its own deadline, to hear whether the stream was lost.
+- The remote client answers a copy's sync request as `interrupted` when it was refused `unavailable` while the stream it went out under was lost. A resync that could not reach the edge while its stream still looks open waits, within its own deadline, to hear whether the stream was lost, and passes on its own refusal if the stream stays open. A first sync does not wait.
 - A copy whose later sync is `interrupted` stays syncing with its last records and asks again on the next reconnect's gap notice. A first sync answered `interrupted` is refused as before.
 - Unchanged: any other refusal, and one while the stream stays open, ends the copy with `failed`. No new timer, retry loop, message format or error shape. Reconnect pacing is unchanged and is the only pace of the repeat.
 

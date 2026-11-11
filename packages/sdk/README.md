@@ -1284,8 +1284,11 @@ HTTP status that fits its code.
   gap notice of the next reconnect starts its next request, so the reconnect's
   backoff paces the repeat and nothing else asks again. A request that could
   not reach the edge waits, within its own deadline, to hear whether its stream
-  was lost; if the stream stays open it ends the copy `unavailable` as before.
-  Any other refusal, and a first sync, are unchanged. The copy ends only when
+  was lost; if the stream stays open, it ends the copy at that deadline with the
+  refusal the client first heard, `unavailable` with its own detail. A first
+  sync does not wait and is refused at once, as before. Any other refusal is
+  unchanged. An edge's own `unavailable` answer heard before the stream's loss
+  is not waited for and still ends the copy. The copy ends only when
   the participant closes or a refusal ends it.
 - **A dropped stream and forwarded calls.** A command already written to a
   remote responder's stream is never answered as a refusal: its handler may be

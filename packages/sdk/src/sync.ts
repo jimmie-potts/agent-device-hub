@@ -81,7 +81,11 @@ export type SyncInterrupted = {status: 'interrupted'; requestId: string; error: 
  * when the copy closes, and the transport then withdraws the request. `owner`, when the copy names one, addresses the
  * request, as a routing key addresses a command; the message itself does not carry it.
  */
-export type OutgoingSync = {families: readonly string[]; requestId: string; timeoutMs: number; trace: TraceContext; signal: AbortSignal; owner?: string};
+export type OutgoingSync = {
+  families: readonly string[]; requestId: string; timeoutMs: number; trace: TraceContext; signal: AbortSignal; owner?: string;
+  /** True for a later sync of a copy that has synced, which a transport may answer `interrupted`; false for its first. */
+  resync?: boolean;
+};
 
 /** What sync needs from a transport. */
 export type SyncTransport = {
@@ -374,7 +378,7 @@ class Copy<T extends object> implements SyncedCopy<T> {
     let sent: Promise<SyncAnswer | SyncInterrupted>;
     try {
       const owner = this.#owner === undefined ? {} : {owner: this.#owner};
-      sent = this.#transport.request({families: [...this.#families], requestId, timeoutMs, trace, signal: inflight.signal, ...owner});
+      sent = this.#transport.request({families: [...this.#families], requestId, timeoutMs, trace, signal: inflight.signal, ...owner, resync: this.#settle === undefined});
     } catch (error) {
       // A transport that throws instead of rejecting takes the same path.
       sent = Promise.reject(error);

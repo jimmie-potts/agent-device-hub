@@ -741,7 +741,7 @@ it('after a reconnect, a sync copy asks for no sync until every family is regist
 
 type Step = {delayMs: number; run: () => void};
 /** A scheduler that holds every callback until the test runs it; `next` gives the first held one that `matches`, once there is one. */
-function stepped(): Scheduler & {next: (matches: (delayMs: number) => boolean) => Promise<Step>} {
+function stepped(): Scheduler & {next: (matches: (delayMs: number) => boolean) => Promise<Step>; holds: (matches: (delayMs: number) => boolean) => boolean} {
   const held = new Set<Step>();
   const waiting = new Set<{matches: (delayMs: number) => boolean; take: (step: Step) => void}>();
   return {
@@ -760,6 +760,7 @@ function stepped(): Scheduler & {next: (matches: (delayMs: number) => boolean) =
       for (const step of held) if (matches(step.delayMs)) return Promise.resolve(step);
       return new Promise(take => { waiting.add({matches, take}); });
     },
+    holds: matches => [...held].some(step => matches(step.delayMs)),
   };
 }
 /** The reconnect's backoff, which starts at the test edge's 20 ms, as against a sync's deadline. */
@@ -783,12 +784,16 @@ function unreachable(context: TestContext, route: string): Promise<void> {
 }
 
 /** A copy's handler that keeps each change; `next` resolves with the next `synced` or `failed` after it is called. */
-function watched(): {changes: string[]; handler: (change: SyncChange<Session>) => void; next: () => Promise<string>} {
+function watched(): {changes: string[]; details: string[]; handler: (change: SyncChange<Session>) => void; next: () => Promise<string>} {
   const changes: string[] = [];
+  /** The detail of each `failed` change. */
+  const details: string[] = [];
   let settle: ((shown: string) => void) | undefined;
   return {
     changes,
+    details,
     handler: change => {
+      if (change.type === 'failed') details.push(change.error.error.detail ?? '');
       const shown = change.type === 'failed' ? `failed ${change.error.error.code}` : change.type === 'synced' ? `synced @${change.message.data.revision}`
         : change.type === 'updated' ? `updated ${change.entity.id}@${change.message.data.revision}` : `removed ${change.entity.id}`;
       changes.push(shown);
@@ -902,6 +907,21 @@ it('a resync that cannot reach the edge while its stream stays open ends the cop
   assert.deepEqual(copy.changes, ['updated s1@1', 'synced @1']);
   (await clock.next(syncDeadline)).run();
   assert.equal(await ended, 'failed unavailable');
+  assert.deepEqual(copy.details, ['the edge could not be reached'], 'the copy hears the refusal the client first heard, not the deadline\'s');
+}));
+
+it('a first sync that cannot reach the edge while its stream is open is refused at once, without waiting for its deadline', context => withEdge({}, async edge => {
+  await checked(edge.bus.connect('bunny/core')).serveSync([FAMILY], () => ({revision: 1, states: [session('s1', 1)]}));
+  const clock = stepped();
+  const consumer = await edge.connect('bunny/wall', {scheduler: clock});
+  const refused = unreachable(context, 'sync');
+  const first = consumer.sync<Session>([FAMILY], () => {}, {timeoutMs: 5000});
+  await refused;
+  await flush();
+  // The request has its answer, so its deadline is cancelled; a request still waiting would hold it.
+  assert.equal(clock.holds(syncDeadline), false, 'the first sync waits for nothing');
+  const result = await first;
+  assert.equal(result.status === 'rejected' ? `${result.error.error.code}: ${result.error.error.detail ?? ''}` : result.status, 'unavailable: the edge could not be reached');
 }));
 
 it('a command sent again while its first forward still waits never reaches the responder: the edge refuses it as duplicate-conflict', () => withEdge({}, async edge => {

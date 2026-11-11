@@ -148,7 +148,7 @@ A buffer overflow, or a message dropped on one of the copy's subscriptions, SHAL
 
 ### Requirement: A remote resync survives a reconnect
 
-The remote client SHALL answer a copy's sync request as `interrupted`, with the refusal's error body, when the request is refused `unavailable`, by the edge, by its deadline or because the edge could not be reached, while the stream it went out under is lost: that stream was lost or replaced before the answer, or no stream was open when it went out (Hub #1700). A request that could not reach the edge while its stream still looks open SHALL wait, within the request's own deadline, to hear whether that stream is lost; if the stream stays open, the refusal SHALL be passed on unchanged and end the copy as before. Any refusal with another code, and any refusal while the stream it went out under stays open, SHALL be passed on unchanged. The repeat SHALL be paced by the reconnect alone: the client SHALL send no request of its own and SHALL add no timer, retry loop, message format or error shape, so a copy ends only when its participant closes or a refusal ends it. A sync only reads, so this repeat is a resync after reconnection under ADR 0012's retry rule and never resends a command.
+The remote client SHALL answer a copy's sync request as `interrupted`, with the refusal's error body, when the request is refused `unavailable`, by the edge, by its deadline or because the edge could not be reached, while the stream it went out under is lost: that stream was lost or replaced before the answer, or no stream was open when it went out (Hub #1700). A later sync that could not reach the edge while its stream still looks open SHALL wait, within the request's own deadline, to hear whether that stream is lost; if the stream stays open until that deadline, the refusal the client first heard, with its code and detail, SHALL be passed on unchanged and end the copy as before, at that deadline. A first sync SHALL NOT wait: one that could not reach the edge SHALL be refused at once, as before. Any refusal with another code, and any refusal while the stream it went out under stays open, SHALL be passed on unchanged. The repeat SHALL be paced by the reconnect alone: the client SHALL send no request of its own and SHALL add no timer, retry loop, message format or error shape, so a copy ends only when its participant closes or a refusal ends it. A sync only reads, so this repeat is a resync after reconnection under ADR 0012's retry rule and never resends a command.
 
 #### Scenario: A reconnect that straddles a second restart
 - **WHEN** the runtime restarts again while the reconnect from a first restart registers a copy's family, and the resync that the reconnect's gap notice starts cannot reach the edge
@@ -160,7 +160,11 @@ The remote client SHALL answer a copy's sync request as `interrupted`, with the 
 
 #### Scenario: A refused resync while the stream stays open
 - **WHEN** a resync cannot reach the edge and its stream stays open until the request's deadline
-- **THEN** the handler hears `failed` with `unavailable` at that deadline
+- **THEN** the handler hears `failed` at that deadline with `unavailable` and the detail of the refusal the client first heard, `the edge could not be reached`
+
+#### Scenario: A first sync that cannot reach the edge
+- **WHEN** a first sync cannot reach the edge while its stream is open
+- **THEN** `sync` resolves `rejected` with `unavailable` at once, without waiting for its deadline
 
 #### Scenario: Another refusal during a reconnect
 - **WHEN** a resync is refused `forbidden` while the stream is lost
