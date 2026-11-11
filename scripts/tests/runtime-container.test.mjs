@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {parse, snapshot, runSuites, createArgs, runChecks} from '../runtime-container.mjs';
 import {LIMITS} from '../test-container/pool.mjs';
+import {profileLine, profiles} from '../test-container/profile.mjs';
 
 test('the runner accepts only fixed suites', () => {
   assert.equal(parse([]), 'all');
@@ -135,6 +136,31 @@ test('the runtime runner returns 75 and creates nothing when admission gives up'
     assert.equal(await runChecks(['--suite','browser'], io), 75);
     assert.equal(io.calls.some(call => call[1] === 'create' || call[0] === 'start'), false);
     assert.equal(io.lines.at(-1), "gave up after 30 min: the host's 1-minute load is 9.1, at or above 8");
+  } finally { await done(); }
+});
+
+test('the runtime runner names its profile first, and under the PC profile reads no pool or core and keeps its own limits', async () => {
+  const mac = await runner({imagePresent:true});
+  try {
+    assert.equal(await runChecks(['--suite','browser'], mac.io), 0);
+    assert.equal(mac.io.lines[0], profileLine(profiles.mac));
+  } finally { await mac.done(); }
+  const usage = await runner({imagePresent:true});
+  try {
+    await assert.rejects(runChecks(['--suite','nope'], usage.io), /^Error: usage: npm run test:runtime:container/);
+    assert.deepEqual(usage.io.lines, [profileLine(profiles.mac)], 'the profile line comes before a usage error');
+  } finally { await usage.done(); }
+  const {io, done} = await runner({imagePresent:true, loads:[25, 3]});
+  Object.assign(io, {platform:'linux', osRelease:'5.15.167.4-microsoft-standard-WSL2', env:{BUNNY_TEST_HOST:'pc', XDG_CACHE_HOME:io.lockDir}});
+  try {
+    assert.equal(await runChecks(['--suite','browser'], io), 0);
+    assert.equal(io.lines[0], profileLine(profiles.pc));
+    assert.ok(io.lines.includes("waiting: the host's 1-minute load is 25.0, at or above 24"));
+    assert.ok(io.lines.includes("No pool: this host's profile has none."));
+    const create = io.calls.find(call => call[0] === 'capture' && call[1] === 'create').slice(1);
+    assert.deepEqual(create, createArgs(create[create.indexOf('--name') + 1], imageId, 'browser', null, profiles.pc));
+    assert.deepEqual(create.slice(create.indexOf('--cpus'), create.indexOf('--cpus') + 6), ['--cpus','2','--memory','1536m','--memory-swap','1536m']);
+    assert.equal(io.calls.some(call => call[0] === 'read' && (call[1] === 'run' || call.at(-1) === 'bunny-mac-personal-core-1')), false, 'no pool reader and no core health read');
   } finally { await done(); }
 });
 
