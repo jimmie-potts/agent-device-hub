@@ -805,12 +805,14 @@ session applies this rule itself; no coordinator grant is needed.
 2. **Start check.** Start only when the 1-minute load is under 8, the
    installed core is `healthy` and enough slots are free
    ([Counting test jobs](#counting-test-jobs)). Otherwise wait a minute.
-3. **Containers.** One job per container, exiting when it ends; no
-   `sleep infinity` holders, no container without limits, no swap:
-   `docker run --rm --name bunny-gh<issue>-<job> --cpus 2 --memory 1250m --memory-swap 1250m`.
-   The SDK suite runs wide:
-   `docker run --rm --name bunny-gh<issue>-<job>-wide --cpus 4 --memory 2g --memory-swap 2g`.
-   The runtime verification suite runs wide or through
+3. **Containers.** Run each test job in its own container with
+   `npm run test:container -- --issue <n> --job <name> [--size wide] -- <package script>`
+   ([One test job in a container](#one-test-job-in-a-container)), which
+   applies the name, `--rm` and the limits without swap. A container started
+   by hand matches it, runs one job and exits, never as a `sleep infinity`
+   holder: `docker run --rm --name bunny-gh<n>-<name> --cpus 2 --memory 1250m --memory-swap 1250m`,
+   or wide `--name bunny-gh<n>-<name>-wide --cpus 4 --memory 2g --memory-swap 2g`.
+   The SDK suite runs wide. The runtime verification suite runs wide or through
    `npm run test:runtime:container -- --suite verify`, one slot with its own
    limits ([Runtime verification runs](#runtime-verification-runs)).
 4. **Lint** (`npm run lint:js`) runs natively only, one at a time across all
