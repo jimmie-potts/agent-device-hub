@@ -61,8 +61,9 @@ export type RemoteOptions = RemoteAuth & {
   scheduler?: Scheduler;
   /**
    * How long the stream may stay silent before the client takes it as lost and reconnects, so that its copies sync
-   * again (Hub #835). The edge writes a heartbeat every 15 s, so a live stream is never silent that long. Defaults to
-   * 45 s.
+   * again (Hub #835). The edge writes a heartbeat every 15 s, so a live stream is never silent that long. It also bounds
+   * the wait for a stream's response once it is requested, so an open that gets no answer fails and is retried as any
+   * failed open is (Hub #1690). Defaults to 45 s.
    */
   idleMs?: number;
   /** Runs the idle limit. It concerns a real socket, so it defaults to the global `setTimeout`, whatever `scheduler` is. */
@@ -95,7 +96,10 @@ const realTimers: Scheduler = {after: (delayMs, callback) => {
 
 const ID = /^[A-Za-z0-9_.-]{1,128}$/;
 const MAX_RECONNECT_DELAY_MS = 5000;
-/** How long a stream may stay silent before the client reconnects: three of the edge's heartbeats (Hub #835). */
+/**
+ * How long a stream may stay silent before the client reconnects: three of the edge's heartbeats (Hub #835). It also
+ * bounds the wait from requesting a stream to its response (Hub #1690).
+ */
 export const IDLE_MS = 45_000;
 /**
  * How long past its deadline a remote requester waits for the edge's answer. The edge answers when its bus settles,
@@ -220,7 +224,12 @@ class RemoteClient {
       };
       void (async () => {
         try {
+          // The limit runs from the request, so an edge, or a proxy before it, that takes the request and never answers
+          // fails the open, which the reconnect retries with its backoff (Hub #1690). Once the response starts, it
+          // counts silence from there.
+          watch();
           const response = await fetch(`${this.#base}/stream`, {headers: this.#headers(), credentials: 'same-origin', signal: controller.signal});
+          watch();
           if (!response.ok || response.body === null) {
             reject(new SdkError(await this.#refusal(response)));
             return;

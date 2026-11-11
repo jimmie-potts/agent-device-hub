@@ -448,3 +448,104 @@ it('a client whose stream stays silent past its idle limit reconnects, and its c
   });
 });
 
+it('a first stream open that gets no response within the idle limit is abandoned and refused unavailable, as an unreachable edge is', async () => {
+  const clock = manualClock();
+  let arrived = 0;
+  // The edge accepts every stream request and never answers it, as a proxy that holds the connection would.
+  await withEdge({before: route => {
+    if (route !== 'stream') return undefined;
+    arrived += 1;
+    return new Promise<void>(() => {});
+  }}, async edge => {
+    const outcome: {settled?: unknown} = {};
+    void edge.connect('bunny/wall', {liveness: clock.scheduler, idleMs: 2000}).then(() => { outcome.settled = 'connected'; }, (error: unknown) => { outcome.settled = error; });
+    await until(() => arrived === 1, 'the stream request at the edge');
+    clock.advance(1999);
+    await flush();
+    assert.equal('settled' in outcome, false, 'the open waits until its bound');
+    clock.advance(1);
+    await until(() => 'settled' in outcome, 'the abandoned open');
+    const {settled} = outcome;
+    assert.ok(settled instanceof SdkError, `refused, not ${String(settled)}`);
+    assert.deepEqual(settled.body, errorBody('unavailable', {detail: 'the edge could not be reached'}), 'the same refusal as an edge that cannot be reached');
+    await until(() => edge.dropped('stream') === 1, 'the edge sees the abandoned request dropped');
+    assert.equal(arrived, 1, 'a first open is not retried: its caller decides');
+    assert.equal(clock.pending(), 0, 'nothing is left on the liveness clock');
+  });
+});
+
+it('a reconnect whose stream open gets no response is abandoned at the idle limit and retried until it connects, and the late answer is never adopted', async () => {
+  const clock = manualClock();
+  const streams: number[] = [];
+  let release = (): void => {};
+  // The reconnect's first stream request is held unanswered; every other one goes through.
+  await withEdge({before: (route, nth) => {
+    if (route !== 'stream') return undefined;
+    streams.push(nth);
+    return nth === 2 ? new Promise<void>(resolve => { release = resolve; }) : undefined;
+  }}, async edge => {
+    const owner = checked(edge.bus.connect('bunny/core'));
+    let revision = 1;
+    await owner.serveSync([SESSION_FAMILY], () => ({revision, states: [session('s1', revision)]}));
+    const remote = checked(await edge.connect('bunny/wall', {liveness: clock.scheduler, idleMs: 2000}));
+    const synced = await remote.sync<Session>([SESSION_FAMILY], () => {}, {timeoutMs: 5000});
+    assert.equal(synced.status, 'synced');
+    if (synced.status !== 'synced') return;
+    revision = 2;
+    edge.edge.disconnect('bunny/wall');
+    await until(() => streams.length === 2, 'the reconnect\'s stream request');
+    clock.advance(1999);
+    await flush();
+    assert.equal(streams.length, 2, 'the held open is not abandoned before its bound');
+    assert.equal(edge.diagnostics.some(record => record.event === 'remote.reconnected'), false);
+    clock.advance(1);
+    // The client drops the held request, waits its backoff and opens again, and this time the edge answers.
+    await until(() => edge.diagnostics.some(record => record.event === 'remote.reconnected'), 'the reconnect');
+    assert.deepEqual(streams, [1, 2, 3]);
+    assert.deepEqual(edge.diagnostics.filter(record => record.event.startsWith('remote.')), [
+      {event: 'remote.disconnected', level: 'warn', source: 'bunny/wall'},
+      {event: 'remote.reconnected', level: 'info', source: 'bunny/wall', attempts: 1},
+    ], 'the timed-out open is counted and reported as any failed attempt is');
+    await until(() => synced.copy.states()[0]?.data.revision === 2, 'the resync on the new stream');
+    // The edge answers the abandoned request at last. Nothing reads it, so the client keeps its new stream.
+    release();
+    await flush();
+    await owner.publish(`bunny.state.${SESSION_FAMILY}.s1`, session('s1', 3));
+    await until(() => synced.copy.states()[0]?.data.revision === 3, 'a live update on the new stream');
+    assert.equal(edge.diagnostics.filter(record => record.event === 'remote.disconnected').length, 1, 'the late answer ended nothing');
+    assert.deepEqual(streams, [1, 2, 3], 'the client opened no other stream');
+    await synced.copy.close();
+  });
+});
+
+it('a stream whose response starts within the idle limit is not cut off for the time its open took', async () => {
+  const clock = manualClock();
+  let arrived = 0;
+  let release = (): void => {};
+  await withEdge({heartbeatMs: 3_600_000, before: (route, nth) => {
+    if (route !== 'stream') return undefined;
+    arrived += 1;
+    return nth === 1 ? new Promise<void>(resolve => { release = resolve; }) : undefined;
+  }}, async edge => {
+    const owner = checked(edge.bus.connect('bunny/core'));
+    await owner.serveSync([SESSION_FAMILY], () => ({revision: 1, states: [session('s1', 1)]}));
+    const connecting = edge.connect('bunny/wall', {liveness: clock.scheduler, idleMs: 2000});
+    await until(() => arrived === 1, 'the held stream request');
+    // The edge answers just inside the bound.
+    clock.advance(1999);
+    release();
+    const remote = checked(await connecting);
+    const synced = await remote.sync<Session>([SESSION_FAMILY], () => {}, {timeoutMs: 5000});
+    assert.equal(synced.status, 'synced');
+    if (synced.status !== 'synced') return;
+    // Almost twice the bound since the request was sent, but less than the idle limit since the response started.
+    clock.advance(1999);
+    await flush();
+    await owner.publish(`bunny.state.${SESSION_FAMILY}.s1`, session('s1', 2));
+    await until(() => synced.copy.states()[0]?.data.revision === 2, 'a live update on the slow-started stream');
+    assert.equal(edge.diagnostics.some(record => record.event === 'remote.disconnected'), false, 'the stream was not cut off');
+    assert.equal(arrived, 1, 'the client never opened another stream');
+    await synced.copy.close();
+  });
+});
+
