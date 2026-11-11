@@ -1,11 +1,11 @@
 // Disposable Linux checks for the current working tree, never the installed runtime.
-import {spawn, execFileSync} from 'node:child_process';
+import {spawn, spawnSync, execFileSync} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import {chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {admission, dockerRead, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, reportOverflow} from './test-container/pool.mjs';
+import {admission, DOCKER_TIMEOUT_MS, dockerRead, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, poolSession, reportOverflow} from './test-container/pool.mjs';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const suites = Object.freeze({all: ['test:runtime:scenarios:built', 'test:runtime:verify:built'],
@@ -78,7 +78,14 @@ function command(program, args, options = {}) {
 export const host = Object.freeze({
   ...hostFacts,
   env: process.env,
-  run: args => command('docker', args),
+  run: (args, {timeout} = {}) => command('docker', args, timeout ? {timeout} : {}),
+  // A Docker command whose output is needed and whose error text the person should see.
+  capture: args => {
+    const result = spawnSync('docker', args, {encoding:'utf8', stdio:['ignore','pipe','pipe'], timeout:DOCKER_TIMEOUT_MS});
+    const stderr = result.stderr || (result.error ? result.error.message : '');
+    if (stderr) process.stderr.write(stderr.endsWith('\n') ? stderr : stderr + '\n');
+    return {status: result.status ?? 1, stdout: result.stdout ?? '', stderr};
+  },
   read: dockerRead,
   snapshot,
   print: line => console.log(line),
@@ -88,10 +95,11 @@ export const host = Object.freeze({
 /** Runs the chosen suites in a disposable container and returns their status. `io` is the host, or a fake in tests. */
 export async function runChecks(argv, io = host, repository = root) {
   const suite = parse(argv);
-  const pool = await ensurePool(io, poolName(io.env));
+  const session = poolSession();
+  const pool = await ensurePool(io, poolName(io.env), undefined, {session});
   let release = null;
   const admit = async bytes => {
-    const gate = await admission(io, {pool, need:{bytes, slots:1}, waitMinutes:30});
+    const gate = await admission(io, {pool, need:{bytes, slots:1}, waitMinutes:30, session});
     if (gate.status !== 0) throw Object.assign(new Error('admission-gave-up'), {status:gate.status});
     release = gate.release;
   };
@@ -128,8 +136,14 @@ export async function runChecks(argv, io = host, repository = root) {
     await admit(NEED_BYTES);
     const before = oomKills(io, pool);
     io.print(pool ? `In the /${pool} pool.` : 'No pool: per-container limits and the count check.');
-    const id = io.read(createArgs(name, imageId, suite, pool)) ?? '';
-    if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('container-identity-refused');
+    const made = io.capture(createArgs(name, imageId, suite, pool));
+    const id = made.stdout.trim();
+    if (!/^[a-f0-9]{64}$/.test(id)) {
+      // The engine may have created the container although the CLI failed or timed out. Remove it only by this run's own
+      // unique name, and only if it exists.
+      if (io.read(['container','inspect','--format','{{.Id}}',name]) !== null) await io.run(['rm','--force',name]);
+      throw new Error(`container-create-failed: ${made.stderr.trim() || 'docker create returned no container ID'}`);
+    }
     created = id;
     io.print('Disposable runtime checks: ' + name + ' ' + id);
     status = await io.run(['cp',source + '/.',id + ':/work/source']);

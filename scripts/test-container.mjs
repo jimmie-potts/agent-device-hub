@@ -10,7 +10,7 @@ import {constants, tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {snapshot} from './runtime-container.mjs';
-import {admission, dockerRead, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, reportOverflow} from './test-container/pool.mjs';
+import {admission, dockerRead, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, poolSession, reportOverflow} from './test-container/pool.mjs';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const recipePath = 'scripts/test-container/Dockerfile';
@@ -113,9 +113,9 @@ export function exitStatus(code, signal) {
   return number === undefined ? 1 : 128 + number;
 }
 
-function spawned(program, args) {
+function spawned(program, args, {timeout} = {}) {
   return new Promise((done, fail) => {
-    const child = spawn(program, args, {stdio:'inherit'});
+    const child = spawn(program, args, {stdio:'inherit', ...(timeout ? {timeout} : {})});
     child.once('error', fail);
     child.once('exit', (code, signal) => done(exitStatus(code, signal)));
   });
@@ -125,7 +125,7 @@ function spawned(program, args) {
 export const host = Object.freeze({
   ...hostFacts,
   env: process.env,
-  run: args => spawned('docker', args),
+  run: (args, options) => spawned('docker', args, options),
   read: dockerRead,
   snapshot,
   log: line => process.stderr.write(`test-container: ${line}\n`),
@@ -141,8 +141,9 @@ export async function runJob(argv, io = host, repository = root) {
   const refusal = admit(plan, {nameTaken: io.read(['container','inspect','--format','{{.Id}}',plan.name]) !== null});
   if (refusal) { io.log(refusal); return 2; }
   let pool;
-  try { pool = await ensurePool(io, poolName(io.env)); } catch (error) { io.log(error.message); return 2; }
-  const state = {interrupted:false, id:null, abort:new AbortController(), release:null};
+  const session = poolSession();
+  try { pool = await ensurePool(io, poolName(io.env), undefined, {session}); } catch (error) { io.log(error.message); return 2; }
+  const state = {interrupted:false, id:null, abort:new AbortController(), release:null, session};
   io.onInterrupt(() => { state.interrupted = true; state.abort.abort(); if (state.id) kill(io, state.id); });
   const scratch = await mkdtemp(join(tmpdir(), 'bunny-test-container-')); // Mode 0700; it holds only the snapshot.
   const work = await mkdtemp(join(tmpdir(), 'bunny-test-container-work-'));
@@ -195,7 +196,7 @@ async function containerId(cidfile) {
 
 /** Waits for admission, holding the start lock on success; returns 0, or the status to stop with. */
 async function admitted(io, state, plan, pool, need) {
-  const gate = await admission(io, {pool, need, waitMinutes:plan.waitMinutes, interrupted:() => state.interrupted, signal:state.abort.signal});
+  const gate = await admission(io, {pool, need, waitMinutes:plan.waitMinutes, interrupted:() => state.interrupted, signal:state.abort.signal, session:state.session});
   if (gate.status === 0) state.release = gate.release;
   return gate.status;
 }

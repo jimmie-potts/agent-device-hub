@@ -29,6 +29,10 @@ export const LOCK_RECHECK_MS = 3_000; // When the only reason to wait is another
 export const HOLD_MS = 30_000; // A start keeps the lock this long after its container exists.
 export const OWNER_GRACE_MS = 10_000; // A lock without an owner file is stale only after this long.
 export const DOCKER_TIMEOUT_MS = 60_000; // No Docker read may hang past the wait.
+export const HELPER_TIMEOUT_MS = 60_000; // A pool helper that runs longer has failed.
+// A lock older than this is taken over even if a process with its owner's number is alive (the number may have been
+// reused). It is longer than the longest legitimate hold: the 240-minute maximum wait plus a cold image build.
+export const MAX_HOLD_MS = 6 * 3_600_000;
 export const GAVE_UP = 75;
 
 /** The pool directory name: the default, or the scratch override after validation. */
@@ -66,7 +70,8 @@ export const privilegedSetterArgs = (name, id) => [...helper(id), '--privileged'
 /** The reader's key=value output as an object. */
 export function parseReading(text) {
   const fields = Object.fromEntries(text.split('\n').map(line => line.split('=')).filter(parts => parts.length >= 2).map(([key, ...rest]) => [key.trim(), rest.join('=').trim()]));
-  const number = key => (fields[key] === undefined ? 0 : Number(fields[key]));
+  // A counter that is missing or not a whole number reads as NaN, which never admits (see decide) or reports.
+  const number = key => (/^\d+$/.test(fields[key] ?? '') ? Number(fields[key]) : NaN);
   return {
     controllers: (fields.controllers ?? '').split(/\s+/).filter(Boolean),
     exists: fields.exists === '1',
@@ -95,16 +100,24 @@ export function readPool(io, name, id = randomUUID) {
 }
 
 /**
+ * One command invocation's pool state: the privileged helper is attempted at most once per invocation, and each pool
+ * line is printed only when it differs from the last one printed.
+ */
+export const poolSession = () => ({privilegedTried:false, lastLine:null, repaired:new Set()});
+
+/**
  * Makes sure the pool exists with its limits, creating it after a VM restart, and returns its name; or null after
  * printing why it is unavailable. At start-up the caller then uses per-container limits and the count check; during an
  * admission wait (`waiting`) the start keeps waiting instead.
  */
-export async function ensurePool(io, name, id = randomUUID, {waiting = false} = {}) {
+export async function ensurePool(io, name, id = randomUUID, {waiting = false, session = poolSession()} = {}) {
+  const say = line => { if (line !== session.lastLine) { session.lastLine = line; io.log(line); } };
   const unavailable = reason => {
-    io.log(waiting ? `pool not ready: ${reason}; still waiting` : `pool unavailable: ${reason}; using per-container limits and the count check`);
+    say(waiting ? `pool not ready: ${reason}; still waiting` : `pool unavailable: ${reason}; using per-container limits and the count check`);
     return null;
   };
-  const attempt = async args => io.run(args).catch(() => 1);
+  // A helper that fails, cannot start or outlasts HELPER_TIMEOUT_MS has failed.
+  const attempt = async args => io.run(args, {timeout:HELPER_TIMEOUT_MS}).catch(() => 1);
   let reading = readPool(io, name, id);
   if (!reading) return unavailable('the read-only pool reader could not run');
   const missing = ['memory', 'cpu'].filter(controller => !reading.controllers.includes(controller));
@@ -118,14 +131,16 @@ export async function ensurePool(io, name, id = randomUUID, {waiting = false} = 
     const status = await attempt(setterArgs(name, id()));
     if (status !== 0 || !matches(reading = readPool(io, name, id))) {
       const why = status !== 0 ? `exit status ${String(status)}` : `its readback was ${reading ? describe(reading) : 'unreadable'}`;
-      io.log(`the unprivileged helper could not set the /${name} limits (${why}); trying the owner-approved privileged helper`);
+      if (session.privilegedTried) return unavailable(`the unprivileged helper could not set the /${name} limits (${why}), and the privileged helper already ran once in this run`);
+      say(`the unprivileged helper could not set the /${name} limits (${why}); trying the owner-approved privileged helper`);
+      session.privilegedTried = true;
       setBy = 'the privileged helper';
       if (await attempt(privilegedSetterArgs(name, id())) !== 0 || !matches(reading = readPool(io, name, id))) {
         return unavailable(`neither helper could set the /${name} limits`);
       }
     }
   }
-  io.log(`pool /${name}: ${describe(reading)} (read back; set by ${setBy})`);
+  say(`pool /${name}: ${describe(reading)} (read back; set by ${setBy})`);
   return name;
 }
 
@@ -140,10 +155,14 @@ export function coreHealth(text) {
   } catch { return {status:'unreadable', lastMs:null}; }
 }
 
-/** Running containers from `docker ps -a --format '{{.Names}}\t{{.State}}'`: {names, running}. */
+/** Containers from `docker ps -a --format '{{.Names}}\t{{.State}}'`: {names, states, running}. A paused one counts as running. */
 export function parseContainers(text) {
   const rows = text.split('\n').map(line => line.split('\t').map(part => part.trim())).filter(([name]) => name);
-  return {names: rows.map(([name]) => name), running: rows.filter(([, state]) => state === 'running').map(([name]) => name)};
+  return {
+    names: rows.map(([name]) => name),
+    states: Object.fromEntries(rows.map(([name, state]) => [name, state ?? ''])),
+    running: rows.filter(([, state]) => state === 'running' || state === 'paused').map(([name]) => name),
+  };
 }
 
 /** Slots taken by running containers under the rule: all but the core, diagnostics, Tronbyt and pool helpers. */
@@ -161,28 +180,35 @@ export function readings(io, pool) {
   if (listing === null) return {load, error:'docker ps failed, so the running test jobs cannot be counted'};
   const containers = parseContainers(listing);
   // Only a machine with no container of that name has no installed core; any failure to read its health is a wait.
-  const core = containers.names.includes(CORE) ? coreHealth(io.read(['inspect','--format','{{json .State.Health}}',CORE])) : null;
+  const core = containers.names.includes(CORE)
+    ? {...coreHealth(io.read(['inspect','--format','{{json .State.Health}}',CORE])), state: containers.states[CORE]}
+    : null;
   const reading = {load, core, used: countSlots(containers.running)};
   if (pool) reading.pool = readPool(io, pool);
   return reading;
 }
 
 export const NOT_READY = 'the pool is missing, unreadable or without its limits';
+// What a pool repair depends on: existence, controllers and limits, not the memory counters that change all the time.
+const poolKey = pool => JSON.stringify(pool ? {exists:pool.exists, controllers:pool.controllers, limits:pool.limits} : null);
 export const LOCK_BUSY = 'another test job is starting';
 
 /** Why a start must wait, or null. `need` is {bytes, slots}. */
 export function decide(reading, need) {
   if (reading.error) return reading.error;
+  if (!Number.isFinite(reading.load)) return "the host's 1-minute load cannot be read";
   if (reading.load >= MAX_LOAD) return `the host's 1-minute load is ${reading.load.toFixed(1)}, at or above ${String(MAX_LOAD)}`;
   if (reading.core) {
+    if (reading.core.state !== 'running') return `the installed core is ${reading.core.state || 'in an unknown state'}, not running`;
     if (reading.core.status === 'unreadable') return "the installed core's health cannot be read";
     if (reading.core.status !== 'healthy') return `the installed core is ${reading.core.status}, not healthy`;
-    if (reading.core.lastMs !== null && reading.core.lastMs >= MAX_CHECK_MS) return `the installed core's last health check took ${String(reading.core.lastMs)} ms, ${String(MAX_CHECK_MS)} or more`;
+    if (!Number.isFinite(reading.core.lastMs)) return "the installed core's last health check time cannot be read";
+    if (reading.core.lastMs >= MAX_CHECK_MS) return `the installed core's last health check took ${String(reading.core.lastMs)} ms, ${String(MAX_CHECK_MS)} or more`;
   }
   if (reading.used + need.slots > SLOTS) return `${String(reading.used)} of ${String(SLOTS)} test-job slots are taken and this job needs ${String(need.slots)}`;
   if ('pool' in reading) {
     // Fail closed: only a pool that reads back with exactly its intended limits is a ceiling to admit against.
-    if (!matches(reading.pool)) return NOT_READY;
+    if (!matches(reading.pool) || !Number.isFinite(reading.pool.anon) || !Number.isFinite(reading.pool.shmem)) return NOT_READY;
     const max = Number(LIMITS['memory.max']);
     const used = reading.pool.anon + reading.pool.shmem;
     if (max - used < need.bytes) return `the pool holds ${gib(used)} of ${gib(max)} GiB and this job needs ${gib(need.bytes)} GiB free`;
@@ -194,13 +220,23 @@ export function decide(reading, need) {
 export const lockDirectory = () => (platform() === 'darwin' ? '/private/tmp/bunny-test-start' : '/tmp/bunny-test-start');
 
 const ownerOf = lock => readFile(join(lock, 'owner'), 'utf8').then(JSON.parse).catch(() => null);
-const ageOf = path => lstat(path).then(stat => Date.now() - stat.mtimeMs).catch(() => 0);
+// Stale: the owner's process is gone, or the lock is older than MAX_HOLD_MS, or it has had no owner file for the grace.
+const isStale = async (io, lock, owner) => {
+  if (!owner) return await ageOf(io, lock) > OWNER_GRACE_MS;
+  if (!io.alive(owner.pid)) return true;
+  // A live owner's lock is taken over only when its recorded age is a number past the bound; an unreadable age waits.
+  const age = io.now() - owner.at;
+  return Number.isFinite(age) && age > MAX_HOLD_MS;
+};
+// How long ago a path last changed; a path that cannot be read counts as new. `io.ageOf` replaces it in tests.
+const ageOf = (io, path) => (io.ageOf ? io.ageOf(path) : lstat(path).then(stat => Date.now() - stat.mtimeMs).catch(() => 0));
 
 /**
  * Takes the start lock, or reports that another start holds it. The lock carries a random token, and release removes it
- * only while the token is still this holder's. A lock is taken over only when its owner's process is gone, or when it
- * has had no owner file for OWNER_GRACE_MS; age alone never takes over a live owner, whose image build may be long. One
- * taker at a time removes a stale lock, under a second directory that `mkdir` creates atomically.
+ * only while the token is still this holder's. A lock is taken over only when its owner's process is gone, when it is
+ * older than MAX_HOLD_MS (longer than any legitimate hold, so a reused process number cannot keep it forever), or when it
+ * has had no owner file for OWNER_GRACE_MS. One taker at a time removes a stale lock, under a second directory that
+ * `mkdir` creates atomically, and re-tests the lock there first.
  */
 export async function tryLock(io, directory) {
   await mkdir(directory, {mode:0o700}).catch(error => { if (error.code !== 'EEXIST') throw error; });
@@ -216,19 +252,20 @@ export async function tryLock(io, directory) {
     } catch (error) {
       if (error.code !== 'EEXIST') throw error;
       const owner = await ownerOf(lock);
-      const stale = owner ? !io.alive(owner.pid) : await ageOf(lock) > OWNER_GRACE_MS;
-      if (!stale || attempt > 0) return {held:false};
+      const stale = await isStale(io, lock, owner);
+      if (!stale || attempt > 0) return {held:false, owner};
       try { await mkdir(takeover, {mode:0o700}); } catch (taken) {
         if (taken.code !== 'EEXIST') throw taken;
-        if (await ageOf(takeover) > OWNER_GRACE_MS) await rm(takeover, {recursive:true, force:true});
-        return {held:false};
+        if (await ageOf(io, takeover) > OWNER_GRACE_MS) await rm(takeover, {recursive:true, force:true});
+        return {held:false, owner};
       }
       try {
-        // Recheck under the takeover directory: another taker may have replaced the stale lock already.
+        // Re-test under the takeover directory: another taker may have replaced the stale lock already, perhaps with a
+        // fresh lock that has no owner file yet, so the token must be unchanged and the lock must still be stale.
         const again = await ownerOf(lock);
-        if ((again?.token ?? null) !== (owner?.token ?? null)) return {held:false};
+        if ((again?.token ?? null) !== (owner?.token ?? null) || !await isStale(io, lock, again)) return {held:false, owner:again};
         await rm(lock, {recursive:true, force:true});
-        io.log('took over a start lock whose owner is gone');
+        io.log(`took over the start lock ${lock}, whose owner process ${String(owner?.pid ?? 'unknown')} is gone or whose lock is too old`);
       } finally { await rm(takeover, {recursive:true, force:true}); }
       continue;
     }
@@ -247,34 +284,42 @@ export async function tryLock(io, directory) {
 /**
  * Waits until a start may go ahead and returns {status: 0, release} holding the start lock, or {status: 75} after
  * `waitMinutes`, or {status: 130} when interrupted. Prints a line only when the reason for waiting changes. A pool that
- * is missing or without its limits is set up again with `ensurePool` before the next check.
+ * is missing or without its limits is set up again with `ensurePool`, once for each distinct reading of it. The only
+ * repeated side effect is the read-only pool reader, once per recheck.
  */
-export async function admission(io, {pool, need, waitMinutes, directory = io.lockDir, interrupted = () => false, signal}) {
+export async function admission(io, {pool, need, waitMinutes, directory = io.lockDir, interrupted = () => false, signal, session = poolSession()}) {
   const deadline = io.now() + waitMinutes * 60_000;
   let last = null;
   for (;;) {
     if (interrupted()) return {status:130};
     let reason;
+    let reading = null;
     const lock = await tryLock(io, directory);
-    if (!lock.held) reason = LOCK_BUSY;
+    const busy = !lock.held;
+    if (busy) reason = `${LOCK_BUSY} (lock ${join(directory, 'lock')}, held by process ${String(lock.owner?.pid ?? 'unknown')})`;
     else {
-      reason = decide(readings(io, pool), need);
+      reading = readings(io, pool);
+      reason = decide(reading, need);
       if (reason === null) return {status:0, release: lock.release};
       await lock.release();
     }
     if (reason !== last) { io.log(`waiting: ${reason}`); last = reason; }
-    if (reason === NOT_READY) await ensurePool(io, pool, randomUUID, {waiting:true});
+    // Repair the pool at most once for each distinct reading of it in this run, never on a timer.
+    if (reason === NOT_READY) {
+      const key = poolKey(reading?.pool);
+      if (!session.repaired.has(key)) { session.repaired.add(key); await ensurePool(io, pool, randomUUID, {waiting:true, session}); }
+    }
     if (io.now() >= deadline) { io.log(`gave up after ${String(waitMinutes)} min: ${reason}`); return {status:GAVE_UP}; }
-    await io.sleep(reason === LOCK_BUSY ? LOCK_RECHECK_MS : RECHECK_MS, signal);
+    await io.sleep(busy ? LOCK_RECHECK_MS : RECHECK_MS, signal);
   }
 }
 
 /** The pool's oom_kill count, or null. */
-export const oomKills = (io, pool) => (pool ? readPool(io, pool)?.oomKill ?? null : null);
+export const oomKills = (io, pool) => { const count = pool ? readPool(io, pool)?.oomKill : null; return Number.isFinite(count) ? count : null; };
 
 /** Says once that a job in the pool was killed for memory, so nobody raises the ceiling by reflex. */
 export function reportOverflow(io, pool, before, after) {
-  if (before === null || after === null || after <= before) return;
+  if (!Number.isFinite(before) || !Number.isFinite(after) || after <= before) return;
   io.log(`the pool killed ${String(after - before)} process(es) for memory while this job ran: treat that as a failed run to retry, not a reason to raise the /${pool} ceiling`);
 }
 

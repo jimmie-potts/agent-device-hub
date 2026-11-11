@@ -61,12 +61,13 @@ const imageId = 'sha256:' + 'e'.repeat(64);
 const poolText = ['controllers=cpu io memory pids', 'exists=1', ...Object.entries(LIMITS).map(([key, value]) => `${key}=${value}`), 'anon=0', 'shmem=0', 'oom_kill=0'].join('\n');
 
 /** A fake host for runChecks: one tool image that may or may not exist yet, and a container that exits 0. */
-async function runner({imagePresent = false, loads = [1], appearsWhileWaiting = false} = {}) {
+async function runner({imagePresent = false, loads = [1], appearsWhileWaiting = false, createFails = null} = {}) {
   const lockDir = await mkdtemp(join(tmpdir(), 'runtime-container-lock-'));
   const calls = [];
   const lines = [];
   let clock = 0;
   let present = imagePresent;
+  const created = new Set();
   const io = {
     calls, lines, lockDir, env:{},
     log: line => lines.push(line), print: line => lines.push(line),
@@ -86,11 +87,18 @@ async function runner({imagePresent = false, loads = [1], appearsWhileWaiting = 
       if (args[0] === 'run') return poolText;
       if (args[0] === 'ps') return '';
       if (args[0] === 'image') return present ? imageId : null;
-      if (args[0] === 'create') return id;
+      if (args[0] === 'container') return created.has(args.at(-1)) ? id : null;
       if (args[0] === 'inspect') return JSON.stringify({Running:false, Pid:0, ExitCode:0});
       return null;
     },
-    run: async args => { calls.push(args); if (args[0] === 'build') present = true; return 0; },
+    capture: args => {
+      calls.push(['capture', ...args]);
+      const name = args[args.indexOf('--name') + 1];
+      if (!createFails) return {status:0, stdout:id + '\n', stderr:''};
+      if (createFails.leftBehind) created.add(name);
+      return {status:1, stdout:'', stderr:createFails.stderr};
+    },
+    run: async args => { calls.push(args); if (args[0] === 'build') present = true; if (args[0] === 'rm') created.delete(args.at(-1)); return 0; },
   };
   return {io, done: () => rm(lockDir, {recursive:true, force:true})};
 }
@@ -101,7 +109,7 @@ test('the runtime runner skips the build for an existing image, waits for admiss
     assert.equal(await runChecks(['--suite','browser'], io), 0);
     assert.equal(io.calls.some(call => call[0] === 'build'), false);
     assert.ok(io.lines.includes("waiting: the host's 1-minute load is 9.1, at or above 8"));
-    const create = io.calls.find(call => call[0] === 'read' && call[1] === 'create').slice(1);
+    const create = io.calls.find(call => call[0] === 'capture' && call[1] === 'create').slice(1);
     assert.deepEqual(create.slice(create.indexOf('--cgroup-parent'), create.indexOf('--cgroup-parent') + 2), ['--cgroup-parent','/bunny-tests']);
     assert.ok(io.lines.includes('In the /bunny-tests pool.'));
   } finally { await done(); }
@@ -128,4 +136,21 @@ test('the runtime runner returns 75 and creates nothing when admission gives up'
     assert.equal(io.calls.some(call => call[1] === 'create' || call[0] === 'start'), false);
     assert.equal(io.lines.at(-1), "gave up after 30 min: the host's 1-minute load is 9.1, at or above 8");
   } finally { await done(); }
+});
+
+test('a failed docker create shows the engine reason and removes a container left behind only by its own name', async () => {
+  const {io, done} = await runner({imagePresent:true, createFails:{stderr:'Error response from daemon: no space left on device\n', leftBehind:true}});
+  try {
+    await assert.rejects(runChecks(['--suite','browser'], io), /^Error: container-create-failed: Error response from daemon: no space left on device$/);
+    const create = io.calls.find(call => call[0] === 'capture');
+    const name = create[create.indexOf('--name') + 1];
+    assert.match(name, /^bunny-runtime-check-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    assert.deepEqual(io.calls.filter(call => call[0] === 'read' && call[1] === 'container'), [['read','container','inspect','--format','{{.Id}}',name]]);
+    assert.deepEqual(io.calls.filter(call => call[0] === 'rm'), [['rm','--force',name]], 'removed by its exact name only');
+  } finally { await done(); }
+  const clean = await runner({imagePresent:true, createFails:{stderr:'', leftBehind:false}});
+  try {
+    await assert.rejects(runChecks(['--suite','browser'], clean.io), /container-create-failed: docker create returned no container ID/);
+    assert.equal(clean.io.calls.some(call => call[0] === 'rm'), false, 'nothing to remove when no container exists');
+  } finally { await clean.done(); }
 });

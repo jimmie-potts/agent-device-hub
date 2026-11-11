@@ -1651,7 +1651,9 @@ image with `--network none`, and is removed when it exits:
 - Only if that helper cannot write them does the owner-approved privileged helper
   (`--privileged --cgroupns=host`) write them, and only inside that directory.
   The command first prints why the unprivileged helper did not: its exit status,
-  or the limits it read back.
+  or the limits it read back. Within one command run the privileged helper is
+  attempted at most once, whatever happens afterwards. Each helper run times out
+  after 60 seconds, and a helper that times out has failed.
 
 Nothing in this change writes `cgroup.subtree_control` or anything under
 `docker/`. The container runtime enables the pool's memory and CPU controllers
@@ -1666,20 +1668,23 @@ command waits until all of these hold:
 
 - the host's 1-minute load (`os.loadavg()`) is under 8;
 - `docker ps` can be read;
-- the installed core is `healthy` and its last health check took under 500 ms.
-  The core is skipped only when `docker ps -a` lists no container named
-  `bunny-mac-personal-core-1`. Any failure to read its health is a wait;
+- the installed core is listed as `running`, is `healthy`, and its last health
+  check took under 500 ms. The core is skipped only when `docker ps -a` lists no
+  container named `bunny-mac-personal-core-1`. Any failure to read its health,
+  or a health with no readable check time, is a wait;
 - the rule's five slots have room for the job, with or without the pool. The
-  count is every running container except the installed core, the diagnostics
+  count is every running or paused container except the installed core, the diagnostics
   containers, the Tronbyt server and the pool helpers, with a `-wide` name as
   two. It covers containers only, so a session still counts its native suites
   itself under the rule's start check in
   [Test work on the Mac](#test-work-on-the-mac);
-- with the pool, the pool reads back with exactly its limits, and its
-  `memory.max` minus its `anon` and `shmem` memory is at least the job's memory
-  size (2 GiB for an image build). A pool that is missing, unreadable or without
-  its limits, as after a VM restart, is a wait: the command sets it up again
-  before the next check.
+- with the pool, the pool reads back with exactly its limits and with whole
+  numbers for its `anon` and `shmem` memory, and its `memory.max` minus those is
+  at least the job's memory size (2 GiB for an image build). A pool that is
+  missing, unreadable or without its limits, as after a VM restart, is a wait.
+  The command sets it up again at most once for each distinct reading of it in a
+  run, never on a timer, and prints each of those lines only when it differs
+  from the last.
 
 It rechecks every 30 seconds, or every 3 seconds when the only reason is another
 start holding the lock, and prints a line only when the reason changes. Every
@@ -1690,9 +1695,17 @@ every session on this machine shares, `/private/tmp/bunny-test-start/lock`
 admission check until its container has run for 30 seconds, and through an
 image build. Releasing removes the lock only while the token is still its own.
 A lock is taken over, with a printed line, only when its owner's process is
-gone, or when it has had no owner file for 10 seconds. Age alone never takes
-over a live owner, whose image build may be long. One taker at a time removes a
-stale lock. Both runners recheck the image tag after waiting to build.
+gone, when it has had no owner file for 10 seconds, or when it is older than
+6 hours. Six hours is longer than any legitimate hold, a 240-minute wait plus a
+cold image build, so a reused process number cannot keep a dead holder's lock
+forever. One taker at a time removes a stale lock and re-tests it first. The
+waiting line names the lock and its owner's process number. To clear a stuck
+lock by hand, check that no test command with that process number is running
+(`ps -p <number>`), then remove it with
+`rm -r /private/tmp/bunny-test-start/lock`. Both runners recheck the image tag
+after waiting to build. If `docker create` gives the runtime check runner no
+container ID, it shows the engine's error, removes a container left under its
+own generated name if one exists, and fails.
 
 When the pool kills a process for memory while a job runs, the command says so
 in one line. That is a failed run to retry, not a reason to raise the ceiling.
