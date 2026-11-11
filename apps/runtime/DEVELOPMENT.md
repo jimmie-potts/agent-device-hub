@@ -675,7 +675,9 @@ editor chain, so hosted smoke and the full browser suite run them. After the roo
 build, `node apps/runtime/dashboard/tests/home-card-heights.browser.ts` checks
 that a long card is two short heights plus the gap, cards in a track line up, and
 two short cards stack beside a long one at Small, Standard and Wide with an Inbox
-of 0, 1 and 13 items, and beside a Pixoo and a light card. It also checks Inbox paging with the total count, expanded-item reach,
+of 0, 1 and 13 items, and beside a Pixoo and a light card. At 700, 820, 900 and
+1100 px it checks that a card alone in its row takes its content height. It also
+checks attention-first Agent status paging, focus that has left a list, and Inbox paging with the total count, expanded-item reach,
 dismissal of a page's last item, focus after paging and dismissal, Agent status
 and Timeline paging through the shared component, saved layouts and narrow
 content height. `node --test apps/runtime/dashboard/tests/paging.test.ts apps/runtime/dashboard/tests/home-packing.test.ts`

@@ -6,12 +6,12 @@ import {join} from 'node:path';
 import {chromium, expect, type Locator, type Page} from 'playwright/test';
 import type {HomeLayoutRecord, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
 import {changes, feed, startWorld} from './harness.ts';
-import {IDENTITY} from '../../dist/tests/fixtures/agents.js';
+import {approvalPrompt, IDENTITY} from '../../dist/tests/fixtures/agents.js';
 
 const receipts = process.env.DASHBOARD_RECEIPTS;
 const world = await startWorld({inbox: true, lighting: true, pixooPages: true, wispr: {exposeToDashboard: true}});
 const browser = await chromium.launch({headless: true});
-type Box = {id: string; top: number; bottom: number; left: number; height: number; inner: number; tall: boolean; kind: string; track: number; rows: number};
+type Box = {id: string; size: string; top: number; bottom: number; left: number; width: number; height: number; inner: number; tall: boolean; free: boolean; wide: boolean; minimum: string; kind: string; track: number; rows: number};
 async function settle(page: Page): Promise<void> {
   await page.evaluate(async () => {await document.fonts.ready;await new Promise<void>(resolve => {requestAnimationFrame(() => {requestAnimationFrame(() => {resolve();});});});});
 }
@@ -24,7 +24,8 @@ async function boxes(page: Page): Promise<Box[]> {
     while (card !== null && Number.parseFloat(getComputedStyle(card).borderTopWidth) === 0) card = card.firstElementChild;
     const data = (node as HTMLElement).dataset;
     return {id: data.homeCard ?? '', top: slot.top, bottom: slot.bottom, left: Math.round(slot.left), height: slot.height, inner: card?.getBoundingClientRect().height ?? 0,
-      tall: node.classList.contains('home-tall'), kind: data.homeHeight ?? '', track: Number(data.homeTrack), rows: Number(data.homeRows)};
+      size: [...node.classList].find(name => name.startsWith('home-size-')) ?? '', tall: node.classList.contains('home-tall'), free: node.classList.contains('home-free'), wide: node.classList.contains('home-size-large'), width: slot.width,
+      minimum: getComputedStyle(node.querySelector('.home-card-content') ?? node).minHeight, kind: data.homeHeight ?? '', track: Number(data.homeTrack), rows: Number(data.homeRows)};
   }));
 }
 /** A private PNG of the Home grid, cropped to stay under 8,000 pixels tall at twice the scale. */
@@ -34,7 +35,7 @@ async function shot(page: Page, name: string): Promise<void> {
   await page.evaluate(() => {if (document.activeElement instanceof HTMLElement) document.activeElement.blur();});await settle(page);
   const box = await page.locator('.home-layout').boundingBox();if (box === null) throw new Error('home-box');
   const top = Math.max(0, box.y - 8);
-  await page.screenshot({path: join(receipts, `${name}.png`), fullPage: true, clip: {x: 0, y: top, width: page.viewportSize()?.width ?? 1440, height: Math.min(box.height + 16, 3_990)}});
+  await page.screenshot({path: join(receipts, `round3-${name}.png`), fullPage: true, clip: {x: 0, y: top, width: page.viewportSize()?.width ?? 1440, height: Math.min(box.height + 16, 3_990)}});
 }
 const visibleRows = (list: Locator): Locator => list.locator('[data-paged-key]:not([hidden])');
 const focusInside = async (page: Page, selector: string): Promise<string> => page.evaluate(value => {
@@ -92,16 +93,7 @@ try {
       assert.deepEqual(record.layouts?.desktop, placements, 'the saved layout is unchanged');
       for (const entry of placements) await expect(page.locator(`[data-home-card="${entry.widget}"]`)).toHaveClass(new RegExp(`home-size-${entry.size}`));
       const cards = await boxes(page);
-      for (const card of cards) {
-        const expected = card.rows === 2 ? height : short;
-        assert.ok(Math.abs(card.height - expected) <= 1, `${label} ${size}: ${card.id} (${card.kind}, ${String(card.rows)} tracks) is ${String(expected)}px, not ${String(card.height)}`);
-        assert.ok(Math.abs(card.inner - card.height) <= 1, `${label} ${size}: ${card.id}'s visible card fills its slot`);
-        assert.ok(card.kind === 'short' || card.rows === 2, `${label} ${size}: long ${card.id} spans two tracks`);
-        for (const other of cards) {
-          if (other.track === card.track) assert.ok(Math.abs(other.top - card.top) <= 1, `${label} ${size}: ${card.id} and ${other.id} start their track together`);
-          if (other.track + other.rows === card.track + card.rows) assert.ok(Math.abs(other.bottom - card.bottom) <= 1, `${label} ${size}: ${card.id} and ${other.id} end their track together`);
-        }
-      }
+      standard(cards, `${label} ${size}`);
       const hub = cards.find(card => card.id === 'hub-mode'), wispr = cards.find(card => card.id === 'wispr'), list = cards.find(card => card.id === 'inbox');
       assert.ok(hub !== undefined && wispr !== undefined && list !== undefined);
       if (size !== 'large') {
@@ -110,6 +102,32 @@ try {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     }
   };
+  /**
+   * Cards sharing a row keep their standard heights and line up; a card alone in its row that is not Wide by choice
+   * takes its content height (F1, D3); Wide cards and stacks keep the standard height.
+   */
+  function standard(cards: readonly Box[], label: string): void {
+      for (const card of cards) {
+        const alone = !cards.some(other => other !== card && other.track < card.track + card.rows && card.track < other.track + other.rows) && !card.wide;
+        if (alone || card.tall) {
+          assert.ok(card.free && card.minimum === '0px', `${label}: ${card.id} alone in its row takes its content height`);
+          continue;
+        }
+        assert.ok(!card.free, `${label}: ${card.id} shares its row and keeps a standard height`);
+        const expected = card.rows === 2 ? height : short;
+        assert.ok(Math.abs(card.height - expected) <= 1, `${label}: ${card.id} (${card.kind}, ${String(card.rows)} tracks) is ${String(expected)}px, not ${String(card.height)}`);
+        assert.ok(Math.abs(card.inner - card.height) <= 1, `${label}: ${card.id}'s visible card fills its slot`);
+        assert.ok(card.kind === 'short' || card.rows === 2, `${label}: long ${card.id} spans two tracks`);
+        for (const other of cards) {
+          if (other.track === card.track) assert.ok(Math.abs(other.top - card.top) <= 1, `${label}: ${card.id} and ${other.id} start their track together`);
+          if (other.track + other.rows === card.track + card.rows) assert.ok(Math.abs(other.bottom - card.bottom) <= 1, `${label}: ${card.id} and ${other.id} end their track together`);
+        }
+      }
+      // Same-size cards sharing a track are equally wide (F6).
+      for (const card of cards) for (const other of cards) {
+        if (other.track === card.track && other.kind === card.kind && !card.wide && !other.wide && Math.abs(other.width - card.width) > 1 && card.size === other.size) assert.fail(`${label}: ${card.id} (${String(card.width)}) and ${other.id} (${String(other.width)}) differ`);
+      }
+  }
   await lineUp('empty Inbox');
   await expect(inbox.getByText('No commands need handling.', {exact: true})).toBeVisible();
   await world.failCommand();
@@ -181,6 +199,35 @@ try {
     await list.getByRole('button', {name: 'Previous', exact: true}).click();
     await expect(list).toHaveAttribute('data-page', '1');
   }
+  // F3: sessions that need the owner come first, so the last one in record order is on page 1; when they fill more than
+  // a page, the page label says so.
+  const sessionsList = page.locator('[data-home-card="sessions"] [data-paged-list="Agent sessions"]');
+  await world.observe(approvalPrompt('heights-wait-5'), {identity: {...IDENTITY, sessionId: 'heights-5'}});
+  await expect(page.locator('.agent-summary')).toContainText('1Needs you');
+  await expect(sessionsList).toHaveAttribute('data-page', '1');
+  await expect(sessionsList.locator('.agent-status-card[data-attention=true]')).toBeVisible();
+  await expect(visibleRows(sessionsList).first().locator('.agent-status-card')).toHaveAttribute('data-attention', 'true');
+  for (const index of [3, 4]) await world.observe(approvalPrompt(`heights-wait-${String(index)}`), {identity: {...IDENTITY, sessionId: `heights-${String(index)}`}});
+  await expect(sessionsList.locator('.paged-list-position')).toContainText('3 need you, on the first 2 pages');
+  await expect(visibleRows(sessionsList).locator('.agent-status-card[data-attention=true]')).toHaveCount(2);
+
+  // F2: a row removed after focus has left the list leaves focus and scroll where they are.
+  const edit = page.getByRole('button', {name: 'Edit Home', exact: true});
+  await visibleRows(inboxList).first().locator('summary').first().focus();
+  await edit.focus();
+  const scrolled = await page.evaluate(() => scrollY), gone = await visibleRows(inboxList).first().getAttribute('data-paged-key');
+  const count = Number(await inbox.locator('.inbox-count').innerText());
+  assert.equal(await page.evaluate(async id => {
+    const data = await (await fetch('/api/v2/snapshot?families=inbox-item&owner=bunny/core')).json() as {records: {'inbox-item': {id: string; revision: number}[]}};
+    const item = data.records['inbox-item'].find(value => value.id === id);if (item === undefined) return 0;
+    return (await fetch('/api/v2/commands/inbox-handle', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
+      body: JSON.stringify({target: id, requestId: crypto.randomUUID(), data: {action: 'dismiss', expectedRevision: item.revision}})})).status;
+  }, gone), 200);
+  await expect(inbox.locator('.inbox-count')).toHaveText(String(count - 1));
+  await settle(page);
+  await expect(edit).toBeFocused();
+  assert.equal(await page.evaluate(() => scrollY), scrolled, 'removing a row elsewhere does not scroll the page');
+
   // Large Agent status pages whole rows of tiles.
   await save(layoutAt('large'));
   const sessions = page.locator('[data-paged-list="Agent sessions"]');
@@ -191,18 +238,33 @@ try {
   // A Pixoo and a light beside short cards: the long cards take two tracks and the short cards stack between them.
   const pixoo = initial.find(id => id.startsWith('device:bunny/modules/pixoo:'));assert.ok(pixoo !== undefined);
   const lamp = lights[0];assert.ok(lamp !== undefined);
-  await save([{widget: pixoo, size: 'medium', hidden: false}, {widget: 'hub-mode', size: 'medium', hidden: false}, {widget: 'wispr', size: 'small', hidden: false}, {widget: lamp, size: 'medium', hidden: false}, {widget: 'inbox', size: 'medium', hidden: false}]);
+  await save([{widget: pixoo, size: 'medium', hidden: false}, {widget: 'hub-mode', size: 'medium', hidden: false}, {widget: 'wispr', size: 'small', hidden: false}, {widget: lamp, size: 'medium', hidden: false}, {widget: 'inbox', size: 'medium', hidden: false}, {widget: 'sessions', size: 'medium', hidden: false}]);
   await expect(page.locator('.pixoo-card')).toBeVisible();
   const mixed = await boxes(page);
-  for (const card of mixed) assert.ok(Math.abs(card.height - (card.rows === 2 ? height : short)) <= 1, `mixed: ${card.id} keeps its standard height (${String(card.height)})`);
+  standard(mixed, 'mixed');
   assert.equal(new Set(mixed.slice(0, 4).map(card => Math.round(card.top))).size, 2, 'mixed: Pixoo, two short cards and a light share one row of two tracks');
   await shot(page, 'c-wide-pixoo-light-beside-short');
 
-  // D3: stacked on a narrow screen, lists still page and each card is as tall as its content.
-  // Back to 13 items for the narrow check.
+  // Back to 13 items for the remaining checks.
   const remaining = Number(await inbox.locator('.inbox-count').innerText());
   for (let index = remaining; index < 13; index += 1) await world.failCommand();
   await expect(inbox.locator('.inbox-count')).toHaveText('13');
+  // F1: between the phone rule and the wide layout, a card alone in its row takes its content height; cards that share
+  // a row keep their standard heights.
+  for (const width of [700, 820, 900, 1100]) {
+    await page.setViewportSize({width, height: 1000});
+    await expect.poll(() => page.locator('.home-layout-grid').evaluate(node => node.clientWidth)).toBeLessThan(width);
+    await save(layoutAt('medium'));
+    const cards = await boxes(page);
+    standard(cards, `width ${String(width)}`);
+    if (width <= 900) assert.ok(cards.some(card => card.free && card.kind === 'long' && card.height < height - 1), `width ${String(width)}: a long card alone in its row is not held to the long height`);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await expect(inboxList.locator('.paged-list-pager')).toBeVisible();
+    if (width === 820) await shot(page, 'e-820-content-height');
+  }
+  await page.setViewportSize({width: 1440, height: 1000});
+
+  // D3: stacked on a narrow screen, lists still page and each card is as tall as its content.
   await page.setViewportSize({width: 375, height: 812});
   await save(layoutAt('medium'), layoutAt('medium'));
   await expect(inbox.locator('.paged-list-pager')).toBeVisible();

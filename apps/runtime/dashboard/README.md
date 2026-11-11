@@ -133,7 +133,7 @@ own row. Incomplete rows fill the available space without empty grid slots;
 phone layouts and the Phone editor preview stack cards in one column.
 
 At the wide layout every card has one of two standard heights (#1658), set once
-in `src/home-layout.css`: long (912 px), the list size, and short (448 px), so two
+in `src/home-layout.css`: long (944 px), the list size, and short (464 px), so two
 short cards stacked with the 16 px gap are exactly one long card. Each widget
 declares its height in `src/widgets.ts`. Hub mode and Wispr are short. Inbox,
 Agent status, Timeline, MicroDuck, Reachy, Roborock, Volcano, the music
@@ -143,26 +143,35 @@ may exceed the long height.
 
 Home is one 24-column grid. `src/home-packing.ts` fills rows in saved order by
 the preferred widths above, shares each row's spare width, and stacks two short
-cards in one column beside a long card. A short card goes under the first
+cards in one column beside a long card. Cards of the same size in a row get the
+same width when the 24 columns allow it. A short card goes under the first
 earlier short card left alone in the same row, so it can appear ahead of a long
 card saved before it; that is the only time visual order differs from saved
-order. A short card left alone beside long cards fills both tracks. Cards stay
+order. A short card left alone beside long cards fills both tracks. A card alone
+in a row it does not fill by choice, as when a narrow window packs one card per
+row, is as tall as its content; a Wide card keeps its standard height. Cards stay
 in saved order in the page, so Tab follows saved order. A card whose content
-outgrows its height makes its tracks taller instead of clipping. Stacked in one
-column, each card is as tall as its content.
+outgrows its height makes its tracks taller instead of clipping. In **Edit Home**
+each card's edit bar sits above its content, so a stack of two short cards
+carries two bars and its row grows. Stacked in one column, each card is as tall
+as its content.
 
 Inbox, Agent status and Timeline page their lists through one shared pager
 (`src/paged-list.tsx`) instead of growing. **Previous**, **Next** and
 "Page x of y" appear once a list needs a second page. Rows per page are fixed in
 `src/paging.ts` so a full page fits the long height; the `#/timeline` page
-shows 20 entries a page. Agent status pages whole
-rows of tiles at the card's current column count. Paging covers only the records
-the page already holds and sends no request. The Inbox heading shows the total on
-every page. Opening an Inbox item or a Timeline entry gives it the whole page, so
-its controls stay inside the card; closing it returns the page. An agent tile
-opens in place beside the others, so attention on another session stays in view. Dismissing the only item on the last page
-moves back a page. When paging or a removed row would leave focus on the page
-body, focus moves to a control in the list. Narrow screens page the same way.
+shows 20 entries a page. Agent status pages whole rows of tiles at the card's
+current column count and lists sessions that need you first; when they fill more
+than a page, the page label says so. A new Timeline category or period returns
+to the first page. Paging covers only the records the page already holds and
+sends no request. The Inbox heading shows the total on every page. In a Home card
+held to a standard height, opening an Inbox item or a Timeline entry gives it the
+whole page, so its controls stay inside the card; closing it returns the page.
+Elsewhere, and for agent tiles, an opened entry stays beside the others.
+Dismissing the only item on the last page moves back a page. When focus is in the
+list and paging or a removed row would leave it on the page body, focus moves to
+a control in the list; focus that has left the list stays where it is. Narrow
+screens page the same way.
 
 Art is an optional module card. **Add Art** reserves its own row; choose Auto,
 Banner, Square or Tall and pin it separately from a gallery favorite. **Unpin art**

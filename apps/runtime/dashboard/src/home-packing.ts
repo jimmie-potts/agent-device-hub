@@ -68,30 +68,54 @@ export function packHomeRows(cards: readonly PackCard[], width: number, gap: num
 
 /** Columns of the one Home grid; a packed column spans a whole number of them, so every row fills the width. */
 export const GRID_COLUMNS = 24;
-export type GridPlacement = {column: number; columns: number; row: number; rows: 1 | 2};
+/** `free` marks a card that takes its content height: a row of tall cards, or one card alone in a row it does not fill by choice. */
+export type GridPlacement = {column: number; columns: number; row: number; rows: 1 | 2; free: boolean};
 
 /**
- * Places packed rows on one grid of GRID_COLUMNS equal columns, so cards stay flat children in saved order. A column's
- * span follows its preferred width plus its share of the spare width, as flex grew it; `tracks` lists each grid row,
- * `free` for a row that only holds a tall card and so takes its content height.
+ * Whole-column spans for a row's columns that fill GRID_COLUMNS. Columns of the same size get the same span whenever an
+ * equal split exists, Standard is never narrower than Small, and a split that keeps every column at its preferred width
+ * wins over one that does not; among the rest, the split closest to the widths flex would give wins.
+ */
+export function rowSpans(columns: readonly PackedColumn[], width: number, gap: number): number[] {
+  const unit = (width - gap * (GRID_COLUMNS - 1)) / GRID_COLUMNS, pixels = (span: number): number => span * unit + (span - 1) * gap;
+  const fixed = columns.reduce((total, column) => total + column.basis, 0) + gap * Math.max(0, columns.length - 1);
+  const grow = columns.reduce((total, column) => total + column.grow, 0), spare = Math.max(0, width - fixed);
+  const ideal = columns.map(column => column.basis + spare * column.grow / grow);
+  const score = (spans: readonly number[]): number => spans.reduce((total, span, index) => {
+    const column = columns[index], wanted = ideal[index] ?? 0, actual = pixels(span);
+    return total + Math.abs(actual - wanted) + (column !== undefined && actual < column.basis ? 1_000 * (column.basis - actual) : 0);
+  }, 0);
+  const smalls = columns.filter(column => column.grow === 1).length, standards = columns.length - smalls;
+  let best: number[] | undefined;
+  for (let small = smalls === 0 ? 0 : 1; small <= GRID_COLUMNS; small += 1) {
+    for (let standard = standards === 0 ? 0 : Math.max(1, small); standard <= GRID_COLUMNS; standard += 1) {
+      if (smalls * small + standards * standard !== GRID_COLUMNS) continue;
+      const spans = columns.map(column => column.grow === 1 ? small : standard);
+      if (best === undefined || score(spans) < score(best)) best = spans;
+      if (standards === 0) break;
+    }
+    if (smalls === 0) break;
+  }
+  if (best !== undefined) return best;
+  // No equal split fills the row (for example five Standard columns): spread the remainder one column at a time.
+  const spans = ideal.map(value => Math.max(1, Math.floor(value / ideal.reduce((sum, item) => sum + item, 0) * GRID_COLUMNS)));
+  for (let index = 0; spans.reduce((sum, value) => sum + value, 0) < GRID_COLUMNS; index = (index + 1) % spans.length) spans[index] = (spans[index] ?? 0) + 1;
+  return spans;
+}
+
+/**
+ * Places packed rows on one grid of GRID_COLUMNS equal columns, so cards stay flat children in saved order. `tracks`
+ * lists each grid row: `free` rows take their content height. A row is free when it holds only tall cards, or when one
+ * column of cards stands alone in a row it does not fill by choice, as when a narrow window packs one card per row.
  */
 export function gridPlacements(rows: readonly PackedRow[], width: number, gap: number, tall: (id: string) => boolean): {cards: Map<string, GridPlacement>; tracks: ('standard' | 'free')[]} {
   const cards = new Map<string, GridPlacement>(), tracks: ('standard' | 'free')[] = [];
   for (const row of rows) {
-    const first = tracks.length + 1, free = row.cards.every(card => tall(card.id));
+    const first = tracks.length + 1, free = row.cards.every(card => tall(card.id)) || !row.wide && row.columns.length === 1;
     for (let index = 0; index < row.tracks; index += 1) tracks.push(free ? 'free' : 'standard');
-    let spans = [GRID_COLUMNS];
-    if (!row.wide) {
-      const fixed = row.columns.reduce((total, column) => total + column.basis, 0) + gap * Math.max(0, row.columns.length - 1);
-      const grow = row.columns.reduce((total, column) => total + column.grow, 0), spare = Math.max(0, width - fixed);
-      const widths = row.columns.map(column => column.basis + spare * column.grow / grow), total = widths.reduce((sum, value) => sum + value, 0);
-      spans = widths.map(value => Math.max(1, Math.round(value / total * GRID_COLUMNS)));
-      // Rounding can miss the row's width by a column or two; the widest column absorbs the difference.
-      const widest = spans.indexOf(Math.max(...spans));
-      spans[widest] = (spans[widest] ?? 1) + GRID_COLUMNS - spans.reduce((sum, value) => sum + value, 0);
-    }
+    const spans = row.wide ? [GRID_COLUMNS] : rowSpans(row.columns, width, gap);
     const starts = spans.map((_, index) => 1 + spans.slice(0, index).reduce((sum, value) => sum + value, 0));
-    for (const card of row.cards) cards.set(card.id, {column: starts[card.column - 1] ?? 1, columns: spans[card.column - 1] ?? GRID_COLUMNS, row: first + card.row - 1, rows: card.rows});
+    for (const card of row.cards) cards.set(card.id, {column: starts[card.column - 1] ?? 1, columns: spans[card.column - 1] ?? GRID_COLUMNS, row: first + card.row - 1, rows: card.rows, free});
   }
   return {cards, tracks};
 }

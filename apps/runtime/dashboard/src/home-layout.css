@@ -1,16 +1,19 @@
 .home-layout-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
 /* Two standard heights at the wide layout (#1658), defined once here beside the widths. Long is the list size; short
-   is half of it, so two short cards stacked with the gap are exactly one long card. Short fits Wispr (446px) and Hub
-   mode (296px); long fits Pixoo (811px), the tallest card without a list, measured 2026-11-10. home-packing.ts packs
-   saved cards into rows by their preferred widths (Small 260px, Standard 340px, Wide a whole row), shares each row's
-   spare width as flex did, and stacks short cards beside long ones. Grid tracks grow rather than clip a card whose
-   content outgrows its height; art, which the catalog marks tall, takes its own content height. */
-.home-layout-grid{--home-short-height:448px;--home-long-height:calc(2 * var(--home-short-height) + var(--space-m,16px));display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:var(--space-m,16px);align-items:stretch}
+   is half of it, so two short cards stacked with the gap are exactly one long card. Short (464px) fits Wispr (446px)
+   with room for its status line, and Hub mode (296px); long (944px) fits Pixoo (811px), the tallest card without a
+   list, measured 2026-11-10. home-packing.ts packs saved cards into rows by their preferred widths (Small 260px,
+   Standard 340px, Wide a whole row), shares each row's spare width, and stacks short cards beside long ones. Grid
+   tracks grow rather than clip a card whose content outgrows its height; art, which the catalog marks tall, takes its
+   own content height. */
+.home-layout-grid{--home-short-height:464px;--home-long-height:calc(2 * var(--home-short-height) + var(--space-m,16px));display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:var(--space-m,16px);align-items:stretch}
 .home-layout-card{min-width:0;display:flex;flex-direction:column}
 .home-card-content{min-width:0;flex:1 0 auto;display:flex;flex-direction:column;min-height:var(--home-short-height)}
 .home-height-long>.home-card-content{min-height:var(--home-long-height)}
-/* The edit bar sits above the content, so editing keeps every card's content at its standard height. */
-.home-tall>.home-card-content{min-height:0}
+/* A card alone in a column of one (a narrow window packs one card per row) or a tall card takes its content height.
+   In Edit Home each card's edit bar sits above its content, so a stack of two short cards carries two bars and the
+   tracks grow; the cards in a row still line up. */
+.home-free>.home-card-content,.home-height-long.home-free>.home-card-content{min-height:0}
 /* The visible card fills the height; wrappers between it and the Home slot pass the height down. */
 .home-card-content>*,.home-card-content>:is(.lighting-workspace,.music-workspace,.companion-page,.wemo-module)>:first-child,.home-card-content :is(.lighting-grid,.music-grid)>:first-child{flex:1 0 auto}
 .home-card-content>:is(.lighting-workspace,.music-workspace,.companion-page,.wemo-module),.home-card-content :is(.lighting-grid,.music-grid){display:flex;flex-direction:column}

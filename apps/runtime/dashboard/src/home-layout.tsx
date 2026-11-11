@@ -5,6 +5,7 @@ import {useAttempt} from './command-control.tsx';
 import {NavLink} from './navigation.tsx';
 import {addHomeCard, defaultHomeArrangements, homeCardHeight, homeCatalog, savedHomeCard, type HomeCardDefinition} from './home-catalog.ts';
 import {gridPlacements, packHomeRows} from './home-packing.ts';
+import {StandardHeight} from './paged-list.tsx';
 import {HomeArtSlot} from './home-art-slot.tsx';
 import {changeArtPlacement} from './home-art.ts';
 import {HomeCardIcon} from './home-card-icon.tsx';
@@ -147,7 +148,9 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
       const placed = entries.some(value => value.widget === entry.widget);
       const required = protectedCard(entry.widget), reason = required ? 'This card stays visible while it needs attention.' : undefined;
       const place = packed?.cards.get(entry.widget), height = homeCardHeight(definition);
-      return <div key={entry.widget} className={`home-layout-card home-size-${size} home-height-${height}${entry.widget === 'art' ? ' home-art-row' : ''}${definition.tall === true ? ' home-tall' : ''}`} data-home-card={entry.widget} data-home-height={height} data-home-track={place?.row} data-home-rows={place?.rows}
+      // Held to a standard height: packed on the wide grid, not alone in a column of one and not tall.
+      const held = place !== undefined && !place.free && definition.tall !== true;
+      return <div key={entry.widget} className={`home-layout-card home-size-${size} home-height-${height}${entry.widget === 'art' ? ' home-art-row' : ''}${definition.tall === true ? ' home-tall' : ''}${held ? '' : ' home-free'}`} data-home-card={entry.widget} data-home-height={height} data-home-track={place?.row} data-home-rows={place?.rows}
         style={place === undefined ? undefined : {gridColumn: `${String(place.column)} / span ${String(place.columns)}`, gridRow: `${String(place.row)} / span ${String(place.rows)}`}} onDragOver={event => {if (editing && drag.current !== undefined) event.preventDefault();}} onDrop={event => {
         if (!editing || drag.current === undefined) return;event.preventDefault();event.stopPropagation();const source = drag.current;drag.current = undefined;move(source, entry.widget);
       }}>
@@ -164,7 +167,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
           <button type="button" className="secondary" aria-label={entry.widget === 'art' ? 'Remove Art reservation and allow automatic placement' : `Remove ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts);next[breakpoint] = next[breakpoint].filter(value => value.widget !== entry.widget);change(next);focusAfterRemoval(index);}}>{entry.widget === 'art' ? 'Auto' : '×'}</button>
           {required && <small>{reason}</small>}
         </div>}
-        <div className="home-card-content" inert={editing && entry.widget !== 'art'}>{entry.widget === 'art' ? <HomeArtSlot automatic={false} format={entry.art?.format ?? 'auto'} home={host}>{artControls(entry, entry.art?.pinned === false)}<div className="home-art-content" inert={editing}>{renderCard(definition, entry, [])}</div></HomeArtSlot> : definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, {...entry, size}, shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];}))}</div>
+        <div className="home-card-content" inert={editing && entry.widget !== 'art'}><StandardHeight.Provider value={held}>{entry.widget === 'art' ? <HomeArtSlot automatic={false} format={entry.art?.format ?? 'auto'} home={host}>{artControls(entry, entry.art?.pinned === false)}<div className="home-art-content" inert={editing}>{renderCard(definition, entry, [])}</div></HomeArtSlot> : definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, {...entry, size}, shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];}))}</StandardHeight.Provider></div>
       </div>;
     })}</div>
     {automaticArt && <HomeArtSlot automatic format={artEntry?.art?.format ?? 'auto'} home={host}>{artControls(artEntry, true)}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></HomeArtSlot>}

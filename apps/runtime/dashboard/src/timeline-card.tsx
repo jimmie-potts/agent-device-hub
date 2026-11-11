@@ -65,7 +65,7 @@ export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, h
     <p className="vh" id={`${uid}-window`}>Categories filter only the latest {snapshot.rows.length} loaded entries, up to 200 matching records.</p>
     <p className={status === '' ? 'vh' : 'timeline-status'} role="status">{status !== '' ? status : `${rows.length} history entries.`}</p>
     {snapshot.readAt !== undefined && status === '' && <p className="timeline-read-at">Latest {snapshot.rows.length} · Read {new Date(snapshot.readAt).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}</p>}
-    <PagedList keys={rows.map(row => String(row.seq))} pageSize={pageSize} label="Timeline">{shown =>
+    <PagedList keys={rows.map(row => String(row.seq))} pageSize={pageSize} label="Timeline" resetKey={`${category}:${period}`}>{shown =>
       <ol className="timeline-entries" aria-label="Activity entries">{rows.map(row => <HistoryEntry key={row.seq} row={row} hidden={!shown(String(row.seq))}/>)}</ol>}</PagedList>
     {rows.length === 0 && snapshot.phase === 'ready' && <p className="timeline-empty">No matches in these entries</p>}
     {advanced}

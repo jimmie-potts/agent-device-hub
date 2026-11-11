@@ -85,6 +85,14 @@ try {
   await card.getByRole('button', {name: 'Previous', exact: true}).press('Enter');assert.equal(await shown().count(), 20);
   await expect(card.getByRole('button', {name: 'Next', exact: true})).toBeFocused();
   assert.equal(reads, beforeMore, 'paging reveals only the loaded window');
+  // A new category or period starts again at the first page.
+  await card.getByRole('button', {name: 'Next', exact: true}).click();await expect(card.getByText('Page 2 of 2', {exact: true})).toBeVisible();
+  await card.getByRole('button', {name: 'Devices', exact: true}).click();await expect(card.getByText('Page 1 of 2', {exact: true})).toBeVisible();
+  await card.getByRole('button', {name: 'All', exact: true}).click();
+  await card.getByRole('button', {name: 'Next', exact: true}).click();await expect(card.getByText('Page 2 of 2', {exact: true})).toBeVisible();
+  await card.getByRole('combobox', {name: 'Activity period'}).selectOption('yesterday');
+  await card.getByRole('combobox', {name: 'Activity period'}).selectOption('today');
+  await expect(card.getByRole('status')).toContainText('35 history entries.');await expect(card.getByText('Page 1 of 2', {exact: true})).toBeVisible();
   const readCount = reads;
   for (const [category, expected] of [['Agents', 1], ['Automation', 1], ['Devices', 33]] as const) {
     await card.getByRole('button', {name: category, exact: true}).click();
@@ -95,6 +103,8 @@ try {
   const requested = card.locator('[data-history-row="4"]>details>summary');
   await requested.focus();await page.keyboard.press('Enter');
   await expect(card.locator('[data-history-row="4"]')).toContainText('Completion is not established');
+  // On the dedicated page no card height applies, so an opened entry stays beside the others and the pager stays.
+  assert.equal(await shown().count(), 20);await expect(card.getByText('Page 1 of 2', {exact: true})).toBeVisible();
   await card.locator('[data-history-row="4"] .timeline-technical>summary').click();
   await expect(card.locator('[data-history-row="4"] pre')).toContainText('diagnostic');
   await page.keyboard.press('Escape');await expect(requested).toBeFocused();

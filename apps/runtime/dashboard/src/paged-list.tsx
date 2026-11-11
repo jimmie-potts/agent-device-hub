@@ -1,9 +1,15 @@
-import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
+import React, {createContext, useContext, useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {clampPage, pageCount, pageKeys, pageOf} from './paging.ts';
 import './paged-list.css';
 
 /** Asks the list to show one row, as the Hub mode card's "check Inbox" does; a new serial asks again. */
 export type PageReveal = {key: string; serial: number};
+
+/**
+ * true inside a Home card held to a standard height. Only there does an opened row take the whole page; on the
+ * dedicated Timeline page, on narrow screens and in a card that takes its content height, rows open in place.
+ */
+export const StandardHeight = createContext(false);
 
 const CONTROLS = 'summary, button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled)';
 const shownOnScreen = (element: Element): boolean => element.isConnected && element.getClientRects().length > 0;
@@ -11,19 +17,24 @@ const shownOnScreen = (element: Element): boolean => element.isConnected && elem
 /**
  * The shared pager for list cards (#1658): Inbox, Agent status and Timeline. It pages rows the dashboard already holds,
  * in the browser, and sends no request. Every row stays mounted so open evidence and unsent drafts survive a page change;
- * the caller hides a row when `shown(key)` is false and marks it with `data-paged-key`. With `expandAlone`, opening a
- * row's first disclosure gives that row the whole page, so its controls stay inside the card's standard height; closing
- * it brings the page back. Without it, an opened row stays beside the others on its page.
- * When a page change or a removed row would leave focus on the document body, focus moves to a control in the list.
+ * the caller hides a row when `shown(key)` is false and marks it with `data-paged-key`. With `expandAlone`, inside a card
+ * held to a standard height, opening a row's first disclosure gives that row the whole page, so its controls stay inside
+ * the card; closing it brings the page back. Otherwise an opened row stays beside the others on its page. A new
+ * `resetKey`, such as a changed filter, returns to the first page. `note` adds to the page label.
+ * When focus is inside the list and a page change or a removed row would leave it on the document body, focus moves to a
+ * control in the list. Focus that has already left the list is never pulled back.
  */
-export function PagedList({keys, pageSize, label, reveal, expandAlone = true, children}: {
+export function PagedList({keys, pageSize, label, reveal, expandAlone: expandable = true, resetKey, note, children}: {
   keys: readonly string[]; pageSize: number; label: string; reveal?: PageReveal | undefined; expandAlone?: boolean;
-  children: (shown: (key: string) => boolean) => React.ReactNode;
+  resetKey?: string; note?: string | undefined; children: (shown: (key: string) => boolean) => React.ReactNode;
 }): React.JSX.Element {
+  const expandAlone = useContext(StandardHeight) && expandable;
   const host = useRef<HTMLDivElement>(null), last = useRef<Element | null>(null);
   const previous = useRef<HTMLButtonElement>(null), next = useRef<HTMLButtonElement>(null);
   const [page, setPage] = useState(0), [expanded, setExpanded] = useState<string>();
   const [revealed, setRevealed] = useState<number>(), pagerFocus = useRef<HTMLButtonElement | null>(null);
+  const [reset, setReset] = useState(resetKey);
+  if (resetKey !== reset) {setReset(resetKey);setPage(0);setExpanded(undefined);}
   if (reveal !== undefined && reveal.serial !== revealed) {
     setRevealed(reveal.serial);
     const index = keys.indexOf(reveal.key);
@@ -37,6 +48,16 @@ export function PagedList({keys, pageSize, label, reveal, expandAlone = true, ch
   useEffect(() => {
     const node = host.current;if (node === null) return;
     const focused = (event: FocusEvent): void => {last.current = event.target instanceof Element ? event.target : null;};
+    // Forget focus that leaves the list. Focus can also drop to nothing because its control was disabled, removed or
+    // hidden, as when Dismiss waits for its reply; those keep their claim, and a click elsewhere does not.
+    const left = (event: FocusEvent): void => {
+      const target = event.target, related = event.relatedTarget;
+      if (related instanceof Node && node.contains(related)) return;
+      if (related instanceof Node) {last.current = null;return;}
+      setTimeout(() => {
+        if (last.current === target && target instanceof Element && shownOnScreen(target) && !target.matches(':disabled') && document.activeElement !== target) last.current = null;
+      }, 0);
+    };
     // A row's disclosure toggles without bubbling; the capture phase still passes through this list.
     const toggled = (event: Event): void => {
       const details = event.target;if (!(details instanceof HTMLDetailsElement)) return;
@@ -48,8 +69,8 @@ export function PagedList({keys, pageSize, label, reveal, expandAlone = true, ch
         const disclosure = other.querySelector('details');if (other !== row && disclosure?.open === true) disclosure.open = false;
       }
     };
-    node.addEventListener('focusin', focused);node.addEventListener('toggle', toggled, true);
-    return () => {node.removeEventListener('focusin', focused);node.removeEventListener('toggle', toggled, true);};
+    node.addEventListener('focusin', focused);node.addEventListener('focusout', left);node.addEventListener('toggle', toggled, true);
+    return () => {node.removeEventListener('focusin', focused);node.removeEventListener('focusout', left);node.removeEventListener('toggle', toggled, true);};
   }, [expandAlone]);
   useLayoutEffect(() => {
     const node = host.current;if (node === null) return;
@@ -72,7 +93,7 @@ export function PagedList({keys, pageSize, label, reveal, expandAlone = true, ch
     {children(key => visible.has(key))}
     {pages > 1 && open === undefined && <div className="paged-list-pager" role="group" aria-label={`${label} pages`}>
       <button type="button" className="secondary" ref={previous} disabled={current === 0} onClick={() => {go(current - 1);}}>Previous</button>
-      <span className="paged-list-position" aria-live="polite">Page {current + 1} of {pages}</span>
+      <span className="paged-list-position" aria-live="polite">Page {current + 1} of {pages}{note === undefined ? '' : ` · ${note}`}</span>
       <button type="button" className="secondary" ref={next} disabled={current === pages - 1} onClick={() => {go(current + 1);}}>Next</button>
     </div>}
   </div>;

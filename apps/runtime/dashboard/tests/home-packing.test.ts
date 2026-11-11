@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {GRID_COLUMNS, gridPlacements, packHomeRows, type PackCard} from '../src/home-packing.ts';
+import {GRID_COLUMNS, gridPlacements, packHomeRows, rowSpans, type PackCard} from '../src/home-packing.ts';
 
 const long = (id: string, size: PackCard['size'] = 'medium'): PackCard => ({id, size, height: 'long'});
 const short = (id: string, size: PackCard['size'] = 'medium'): PackCard => ({id, size, height: 'short'});
@@ -36,6 +36,26 @@ void test('grid placements fill each row and number tracks across rows', () => {
   assert.deepEqual(tracks, ['standard', 'standard', 'standard', 'standard', 'free', 'free']);
   const first = ['a', 'b', 'd'].map(id => cards.get(id)?.columns ?? 0);
   assert.equal(first.reduce((sum, value) => sum + value, 0), GRID_COLUMNS, 'a row spans the whole grid');
-  assert.deepEqual(cards.get('c'), {column: cards.get('b')?.column, columns: cards.get('b')?.columns, row: 2, rows: 1});
-  assert.deepEqual(cards.get('e'), {column: 1, columns: GRID_COLUMNS, row: 3, rows: 2});
+  assert.deepEqual(cards.get('c'), {column: cards.get('b')?.column, columns: cards.get('b')?.columns, row: 2, rows: 1, free: false});
+  assert.deepEqual(cards.get('e'), {column: 1, columns: GRID_COLUMNS, row: 3, rows: 2, free: false});
+});
+
+void test('same-size columns in a row get the same span, and Standard keeps its preferred width when a split allows', () => {
+  const standard = {basis: 340, grow: 2}, small = {basis: 260, grow: 1};
+  assert.deepEqual(rowSpans([standard, standard, standard], 1032, 16), [8, 8, 8]);
+  assert.deepEqual(rowSpans([standard, standard, standard, standard], 1652, 16), [6, 6, 6, 6]);
+  const mixed = rowSpans([small, standard, standard], 1192, 16);
+  assert.equal(mixed[1], mixed[2]);
+  assert.ok((mixed[0] ?? 0) <= (mixed[1] ?? 0));
+  assert.equal(mixed.reduce((sum, value) => sum + value, 0), GRID_COLUMNS);
+  const five = rowSpans([standard, standard, standard, standard, standard], 1876, 16);
+  assert.equal(five.reduce((sum, value) => sum + value, 0), GRID_COLUMNS);
+  assert.ok(Math.max(...five) - Math.min(...five) <= 1, 'with no equal split, spans differ by at most one column');
+});
+
+void test('a column alone in a row it does not fill by choice takes its content height', () => {
+  const {cards, tracks} = gridPlacements(packHomeRows([long('a'), long('b'), long('c', 'large')], 400, 16), 400, 16, () => false);
+  assert.equal(cards.get('a')?.free, true);
+  assert.equal(cards.get('c')?.free, false, 'a Wide card fills its row by choice');
+  assert.deepEqual(tracks, ['free', 'free', 'free', 'free', 'standard', 'standard']);
 });
