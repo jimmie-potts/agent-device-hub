@@ -1,16 +1,37 @@
-import React, {useEffect, useMemo, useRef, useState} from 'react';
+import React, {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
 import type {HomeArrangements, HomeLayoutRecord, HomePlacement, LightingSelection, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {RuntimeData} from './runtime-feeds.ts';
 import {useAttempt} from './command-control.tsx';
 import {NavLink} from './navigation.tsx';
-import {addHomeCard, defaultHomeArrangements, homeCatalog, savedHomeCard, type HomeCardDefinition} from './home-catalog.ts';
+import {addHomeCard, defaultHomeArrangements, homeCardShapes, homeCardState, homeCatalog, savedHomeCard, shapeOf, withShapes, type HomeCardDefinition} from './home-catalog.ts';
+import {HOME_GAP, HOME_UNIT, artShape, homeColumns, packShapes, shapeArtFormat, shapeName, shapeSpan, shapeStoredSize, trailingFit, type HomeShape, type ShapePlacement} from './home-shapes.ts';
+import {HomeShapeContext, type HomeCardBox} from './home-shape-context.ts';
 import {HomeArtSlot} from './home-art-slot.tsx';
 import {changeArtPlacement} from './home-art.ts';
 import {HomeCardIcon} from './home-card-icon.tsx';
 import './home-layout.css';
+import './home-shapes.css';
 
-const sizes = {small: 'Small', medium: 'Standard', large: 'Wide'};
 type Draft = {base: number; layouts: HomeArrangements};
+
+/** One small drawing per shape, for the Edit Home shape choice. */
+function ShapeIcon({shape}: {shape: HomeShape}): React.JSX.Element {
+  const span = shapeSpan[shape], w = span.columns === 2 ? 20 : 9, h = span.rows === 2 ? 20 : 9;
+  return <svg viewBox="0 0 22 22" width="18" height="18" aria-hidden="true"><rect x="1" y="1" width="20" height="20" rx="3" fill="none" stroke="currentColor" strokeOpacity=".35"/><rect x="1" y="1" width={w} height={h} rx="2" fill="currentColor"/></svg>;
+}
+
+/**
+ * The generic compact face (#1672): the card's name, its current state and an Open link to the existing page that
+ * holds its full content and controls. It mounts no control adapter and reads nothing beyond the shell's records.
+ */
+function CompactFace({card, state, open}: {card: HomeCardDefinition; state: string; open: string | undefined}): React.JSX.Element {
+  return <article className="card home-compact-face" data-home-compact={card.id}>
+    <div className="home-compact-art"><HomeCardIcon card={card}/></div>
+    <header><h2 title={card.name}>{card.name}</h2><p className="home-compact-state" title={state}>{state}</p></header>
+    {open !== undefined && <a className="home-compact-open" href={open} aria-label={`Open ${card.name}`}>Open</a>}
+  </article>;
+}
+
 export function HomeLayout({runtime, connected, operations, operationsLive, attention, inbox, renderCard}: {
   runtime: RuntimeData; connected: boolean; operations: readonly OperationRecord[]; operationsLive: boolean;
   attention: boolean; inbox: boolean; renderCard: (card: HomeCardDefinition, placement: HomePlacement, selections: LightingSelection[]) => React.ReactNode;
@@ -28,7 +49,15 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const [search, setSearch] = useState(''), searchInput = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<{id: string; base: number; layouts: HomeArrangements}>();
   const drag = useRef<string | undefined>(undefined), host = useRef<HTMLDivElement>(null), editButton = useRef<HTMLButtonElement>(null);
-  const [focusId, setFocusId] = useState<string>();
+  const [focusId, setFocusId] = useState<string>(), [optionsFor, setOptionsFor] = useState<string>();
+  // The grid's width decides its columns (#1672); measured before paint and on every resize.
+  const grid = useRef<HTMLDivElement>(null), [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const node = grid.current;if (node === null) return;
+    const measure = (): void => {setWidth(node.clientWidth);};
+    measure();const observer = new ResizeObserver(measure);observer.observe(node);
+    return () => {observer.disconnect();};
+  }, []);
   const editing = draft !== undefined, breakpoint = editing ? selected : natural;
   const previousEditing = useRef(false), previousPicker = useRef(false), returnFocus = useRef(false);
   const layouts = draft?.layouts ?? current, entries = layouts[breakpoint];
@@ -75,34 +104,57 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const focusAfterRemoval = (index: number): void => {setFocusId(shown[index + 1]?.widget ?? shown[index - 1]?.widget ?? '');};
   const step = (id: string, delta: number): void => {const index = shown.findIndex(entry => entry.widget === id), target = shown[index + delta];if (target !== undefined) move(id, target.widget);};
   const reload = (): void => {if (!editable || record === undefined) return;setPending(undefined);setDraft({base: record.revision, layouts: structuredClone(current)});setMessage('Current saved layout loaded. Review before saving.');};
+  // Every explicit save stores each placement's shape and the width that agrees with it; loading never writes.
   const save = (): void => {
     if (!editable || draft === undefined || conflict || pending !== undefined) return;
     const value = structuredClone(draft.layouts);
     for (const key of ['desktop', 'phone'] as const) value[key] = value[key].filter(entry => savedHomeCard(entry.widget, catalog) !== undefined);
-    const id = crypto.randomUUID();setPending({id, base: draft.base, layouts: value});setMessage('Saving Home layout…');
-    void command.run({family: 'home-layout-set', target: 'home', requestId: id, data: {expectedRevision: draft.base, layouts: value}});
+    const layouts = withShapes(value, catalog), id = crypto.randomUUID();setPending({id, base: draft.base, layouts});setMessage('Saving Home layout…');
+    void command.run({family: 'home-layout-set', target: 'home', requestId: id, data: {expectedRevision: draft.base, layouts}});
   };
   const updateArt = (next: HomeArrangements): void => {
     if (draft !== undefined) {change(next);return;}
     if (!editable || record === undefined || pending !== undefined) return;
-    const id = crypto.randomUUID();setPending({id, base: record.revision, layouts: next});setMessage('Saving Art placement…');
-    void command.run({family: 'home-layout-set', target: 'home', requestId: id, data: {expectedRevision: record.revision, layouts: next}});
+    const layouts = withShapes(next, catalog), id = crypto.randomUUID();setPending({id, base: record.revision, layouts});setMessage('Saving Art placement…');
+    void command.run({family: 'home-layout-set', target: 'home', requestId: id, data: {expectedRevision: record.revision, layouts}});
   };
-  const artControls = (entry: HomePlacement | undefined, automatic: boolean): React.ReactNode => <div className="home-art-controls" role="group" aria-label="Art placement">
-    <label>Art shape <select value={entry?.art?.format ?? 'auto'} disabled={!editable || pending !== undefined || conflict} onChange={event => {
+  const artDisabled = !editable || pending !== undefined || conflict;
+  // On the unit grid the art card's shape is chosen in Edit Home; the format choice stays for one-column layouts.
+  const artControls = (entry: HomePlacement | undefined, automatic: boolean, gridded: boolean, pinShape?: HomeShape): React.ReactNode => <div className="home-art-controls" role="group" aria-label="Art placement">
+    {!gridded && <label>Art shape <select value={entry?.art?.format ?? 'auto'} disabled={artDisabled} onChange={event => {
       const value = event.target.value;
-      if (value === 'auto' || value === 'banner' || value === 'square' || value === 'tall') updateArt(changeArtPlacement(layouts, breakpoint, {art: {format: value, pinned: true}}));
-    }}><option value="auto">Auto</option><option value="banner">Banner</option><option value="square">Square</option><option value="tall">Tall</option></select></label>
-    <button type="button" className="secondary" disabled={!editable || pending !== undefined || conflict} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {art: {format: entry?.art?.format ?? 'auto', pinned: automatic}}));}}>{automatic ? 'Pin art' : 'Unpin art'}</button>
-    <button type="button" className="secondary" disabled={!editable || pending !== undefined || conflict} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: true}));}}>Dismiss art widget</button>
+      // The format also sets the shape the art card has on the grid.
+      if (value === 'auto' || value === 'banner' || value === 'square' || value === 'tall') updateArt(changeArtPlacement(layouts, breakpoint, {art: {format: value, pinned: true}, shape: artShape(value), size: shapeStoredSize[artShape(value)]}));
+    }}><option value="auto">Auto</option><option value="banner">Banner</option><option value="square">Square</option><option value="tall">Tall</option></select></label>}
+    <button type="button" className="secondary" disabled={artDisabled} onClick={() => {
+      // Pinning automatic art on the grid keeps the shape it has now.
+      updateArt(changeArtPlacement(layouts, breakpoint, {art: {format: pinShape === undefined ? entry?.art?.format ?? 'auto' : shapeArtFormat[pinShape], pinned: automatic}, ...(pinShape === undefined ? {} : {shape: pinShape, size: shapeStoredSize[pinShape]})}));
+    }}>{automatic ? 'Pin art' : 'Unpin art'}</button>
+    <button type="button" className="secondary" disabled={artDisabled} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: true}));}}>{gridded ? 'Dismiss' : 'Dismiss art widget'}</button>
   </div>;
   const locked = !editable || conflict || pending !== undefined;
+  // Wide layouts place every card on one unit grid in one of four shapes (#1672). Cards stay flat grid children in saved
+  // order; the Phone arrangement and narrow screens stack every card at its content height with its full content.
+  const narrow = breakpoint === 'phone' || width > 0 && width < 2 * HOME_UNIT + HOME_GAP;
+  const columns = homeColumns(width), cell = (width - HOME_GAP * (columns - 1)) / columns;
+  const shapes = new Map(shown.flatMap(entry => {const definition = savedHomeCard(entry.widget, catalog);return definition === undefined ? [] : [[entry.widget, shapeOf(entry, definition)] as const];}));
+  const packed = narrow || width === 0 ? undefined : packShapes(shown.flatMap(entry => {const shape = shapes.get(entry.widget);return shape === undefined ? [] : [{id: entry.widget, shape}];}), columns);
+  // Automatic art on the grid takes the largest shape that fits the empty cells after the last card, or else a Wide row
+  // of its own after it, so a layout change never pushes it out of view. It depends only on the grid's columns and the
+  // cards' cells, never on image arrival or the viewport's height, and it is never saved.
+  const artFit = packed !== undefined && automaticArt ? trailingFit(packed, columns, homeCardShapes({id: 'art', source: {kind: 'core'}}).shapes)
+    ?? {column: 1, row: packed.rows + 1, columns: 2, rows: 1} : undefined;
+  const area = (place: ShapePlacement): React.CSSProperties => ({gridColumn: `${String(place.column)} / span ${String(place.columns)}`, gridRow: `${String(place.row)} / span ${String(place.rows)}`});
   const categories = ['All', ...new Set(catalog.map(card => card.category))];
   const query = search.trim().toLocaleLowerCase();
   const matches = catalog.filter(card => (category === 'All' || card.category === category) && `${card.name} ${card.category}`.toLocaleLowerCase().includes(query));
+  const lights = shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];});
+  // A placed card's outer size follows from the grid alone: its cells plus the gaps between them (#1672).
+  const boxOf = (place: ShapePlacement, shape: HomeShape): HomeCardBox => ({shape, width: place.columns * cell + (place.columns - 1) * HOME_GAP, height: place.rows * cell + (place.rows - 1) * HOME_GAP});
+  const fitShape = (place: ShapePlacement): HomeShape => place.columns === 2 ? place.rows === 2 ? 'large-square' : 'wide' : place.rows === 2 ? 'tall' : 'square';
   return <div className={`home-layout${editing ? ' is-editing' : ''}${breakpoint === 'phone' ? ' home-phone' : ''}`} ref={host}>
     <header className="page home-layout-heading"><h1>Home</h1><div className="actions"><NavLink route={{kind: 'timeline'}}>Timeline</NavLink>{!editing && <button type="button" className="secondary" ref={editButton} disabled={!editable} onClick={() => {
-      if (record === undefined) return;setSelected(natural);setDraft({base: record.revision, layouts: structuredClone(current)});setMessage('');
+      if (record === undefined) return;setSelected(natural);setOptionsFor(undefined);setDraft({base: record.revision, layouts: structuredClone(current)});setMessage('');
     }}>Edit Home</button>}</div></header>
     {!live && <p role="status" className="hint">Home layout is unavailable or stale. Editing is read-only.</p>}
     {editing && <div className="home-edit-toolbar"><div className="actions"><button type="button" data-home-add disabled={locked} onClick={() => {setPicker(value => !value);}}>Add card</button>
@@ -120,31 +172,53 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
         const existing = entries.find(entry => entry.widget === card.id);
         return <div key={card.id} role="listitem"><HomeCardIcon card={card}/><span><strong>{card.name}</strong><small>{card.reason ?? card.category}</small></span><button type="button" className="secondary" aria-label={`${existing?.hidden === false ? 'Added' : existing?.hidden === true ? 'Show' : 'Add'} ${card.name}`} disabled={locked || card.reason !== undefined || existing?.hidden === false || (['desktop', 'phone'] as const).some(key => layouts[key].length >= 128 && !layouts[key].some(entry => entry.widget === card.id))} onClick={() => {change(addHomeCard(layouts, breakpoint, card));setMessage(`${card.name} added.`);}}>{existing?.hidden === false ? 'Added' : existing?.hidden === true ? 'Show' : 'Add'}</button></div>;
       })}</div></section>}
-    <div className="home-layout-grid">{shown.map((entry, index) => {
+    <div className="home-layout-grid" ref={grid} data-packed={packed !== undefined} data-columns={packed === undefined ? 1 : columns}
+      style={packed === undefined ? undefined : {gridTemplateColumns: `repeat(${String(columns)}, minmax(0, 1fr))`, gridAutoRows: `${String(cell)}px`}}>{shown.map((entry, index) => {
       const definition = savedHomeCard(entry.widget, catalog);if (definition === undefined) return null;
-      const size = definition.sizes.includes(entry.size) ? entry.size : definition.sizes[0] ?? 'medium';
       const placed = entries.some(value => value.widget === entry.widget);
       const required = protectedCard(entry.widget), reason = required ? 'This card stays visible while it needs attention.' : undefined;
-      return <div key={entry.widget} className={`home-layout-card home-size-${size}${entry.widget === 'art' ? ' home-art-row' : ''}`} data-home-card={entry.widget} onDragOver={event => {if (editing && drag.current !== undefined) event.preventDefault();}} onDrop={event => {
+      const place = packed?.cards.get(entry.widget), shape = place === undefined ? undefined : shapes.get(entry.widget);
+      const offered = homeCardShapes(definition), generic = shape !== undefined && offered.generic.includes(shape);
+      const content = generic ? <CompactFace card={definition} state={homeCardState(definition, runtime, connected)} open={offered.open}/>
+        : entry.widget === 'art' ? <HomeArtSlot automatic={false} shaped={place !== undefined} format={entry.art?.format ?? 'auto'} home={host}>{artControls(entry, entry.art?.pinned === false, place !== undefined)}<div className="home-art-content" inert={editing}>{renderCard(definition, entry, [])}</div></HomeArtSlot>
+          : definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, entry, lights);
+      return <div key={entry.widget} className={`home-layout-card${entry.widget === 'art' && place === undefined ? ' home-art-row' : ''}${shape === undefined ? '' : ` home-shape-${shape}`}`} data-home-card={entry.widget} data-home-shape={shape} data-home-offers={offered.shapes.join(' ')}
+        style={place === undefined ? undefined : area(place)} onDragOver={event => {if (editing && drag.current !== undefined) event.preventDefault();}} onDrop={event => {
         if (!editing || drag.current === undefined) return;event.preventDefault();event.stopPropagation();const source = drag.current;drag.current = undefined;move(source, entry.widget);
       }}>
         {editing && <div className="home-card-editor" role="group" aria-label={`Edit ${definition.name}`}>
           <button type="button" className="secondary home-move" data-home-move={entry.widget} disabled={locked || !placed} draggable={!locked && placed} aria-label={`Move ${definition.name}; use arrow keys`} onDragStart={event => {drag.current = entry.widget;event.dataTransfer.setData('application/x-bunny-home-card', entry.widget);event.dataTransfer.effectAllowed = 'move';}} onDragEnd={() => {drag.current = undefined;}} onKeyDown={event => {
             if (['ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'].includes(event.key)) {event.preventDefault();step(entry.widget, event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 1);}
           }}>↕</button>
+          {packed !== undefined && <><span className="home-card-editor-name">{definition.name}</span>
+            <button type="button" className="secondary home-card-options-toggle" data-home-options={entry.widget} aria-expanded={optionsFor === entry.widget} aria-label={`Options for ${definition.name}`} onClick={() => {setOptionsFor(value => value === entry.widget ? undefined : entry.widget);}}>⋯</button></>}
+          {/* On the grid (#1672) the bar is one row with the card's name; its other controls open below it, one card at a time. */}
+          {(packed === undefined || optionsFor === entry.widget) && <div className={packed === undefined ? 'home-card-editor-controls' : 'home-card-options'} role="group" aria-label={`Options for ${definition.name}`} onKeyDown={event => {
+            if (event.key !== 'Escape' || packed === undefined) return;event.preventDefault();setOptionsFor(undefined);host.current?.querySelector<HTMLButtonElement>(`[data-home-options="${CSS.escape(entry.widget)}"]`)?.focus();
+          }}>
           <button type="button" className="secondary" aria-label={`Move ${definition.name} earlier`} disabled={locked || !placed || index === 0} onClick={() => {step(entry.widget, -1);}}>↑</button>
           <button type="button" className="secondary" aria-label={`Move ${definition.name} later`} disabled={locked || !placed || index === shown.length - 1} onClick={() => {step(entry.widget, 1);}}>↓</button>
-          {entry.widget !== 'art' && <select aria-label={`Size of ${definition.name}`} value={size} disabled={locked || !placed} onChange={event => {
-            const next = structuredClone(layouts), found = next[breakpoint].find(value => value.widget === entry.widget);if (found !== undefined) found.size = event.target.value as HomePlacement['size'];change(next);
-          }}>{definition.sizes.map(value => <option key={value} value={value}>{sizes[value]}</option>)}</select>}
+          {breakpoint === 'desktop' && offered.shapes.length > 1 && <span className="home-shape-choice" role="group" aria-label={`Shape of ${definition.name}`}>{offered.shapes.map(value => {
+            const current = shapes.get(entry.widget) ?? offered.standard;
+            return <button key={value} type="button" className="secondary" aria-pressed={current === value} aria-label={shapeName[value]} title={shapeName[value]} disabled={locked || !placed} onClick={() => {
+              const next = structuredClone(layouts), found = next[breakpoint].find(item => item.widget === entry.widget);
+              if (found !== undefined) {found.shape = value;change(next);setMessage(`${definition.name}: ${shapeName[value]}.`);}
+            }}><ShapeIcon shape={value}/></button>;
+          })}</span>}
           <button type="button" className="secondary" aria-label={`Hide ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts), found = next[breakpoint].find(value => value.widget === entry.widget);if (found !== undefined) found.hidden = true;change(next);focusAfterRemoval(index);}}>Hide</button>
           <button type="button" className="secondary" aria-label={entry.widget === 'art' ? 'Remove Art reservation and allow automatic placement' : `Remove ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts);next[breakpoint] = next[breakpoint].filter(value => value.widget !== entry.widget);change(next);focusAfterRemoval(index);}}>{entry.widget === 'art' ? 'Auto' : '×'}</button>
           {required && <small>{reason}</small>}
+          </div>}
         </div>}
-        <div className="home-card-content" inert={editing && entry.widget !== 'art'}>{entry.widget === 'art' ? <HomeArtSlot automatic={false} format={entry.art?.format ?? 'auto'} home={host}>{artControls(entry, entry.art?.pinned === false)}<div className="home-art-content" inert={editing}>{renderCard(definition, entry, [])}</div></HomeArtSlot> : definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, {...entry, size}, shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];}))}</div>
+        <div className="home-card-content" inert={editing && entry.widget !== 'art'}><HomeShapeContext.Provider value={generic || shape === undefined || place === undefined ? undefined : boxOf(place, shape)}>{content}</HomeShapeContext.Provider></div>
       </div>;
-    })}</div>
-    {automaticArt && <HomeArtSlot automatic format={artEntry?.art?.format ?? 'auto'} home={host}>{artControls(artEntry, true)}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></HomeArtSlot>}
+    })}
+      {editing && packed?.holes.map(hole => <div key={`${String(hole.row)}:${String(hole.column)}`} className="home-hole" aria-hidden="true" style={{gridColumn: String(hole.column), gridRow: String(hole.row)}}><span>Empty</span></div>)}
+      {/* Automatic art is the grid's last child in both layouts, so it stays mounted across the one-column threshold. */}
+      {automaticArt && (packed === undefined || artFit !== undefined) && <div key="automatic-art" className={`home-layout-card${artFit === undefined ? ' home-art-row' : ` home-shape-${fitShape(artFit)}`}`} data-home-card="art" data-home-shape={artFit === undefined ? undefined : fitShape(artFit)} data-art-placement="automatic" style={artFit === undefined ? undefined : area(artFit)}>
+        <div className="home-card-content"><HomeShapeContext.Provider value={artFit === undefined ? undefined : boxOf(artFit, fitShape(artFit))}><HomeArtSlot automatic shaped={artFit !== undefined} format={artEntry?.art?.format ?? 'auto'} home={host}>{artControls(artEntry, true, artFit !== undefined, artFit === undefined ? undefined : fitShape(artFit))}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></HomeArtSlot></HomeShapeContext.Provider></div>
+      </div>}
+    </div>
     {!editing && artEntry?.hidden === true && <button type="button" className="secondary home-art-restore" disabled={locked} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: false}));}}>Restore art widget</button>}
     {shown.length === 0 && <p>No cards here. Choose Edit Home to add one.</p>}
     {editing && entries.some(entry => entry.hidden) && <div className="home-hidden"><span>Hidden</span>{entries.filter(entry => entry.hidden).map(entry => {

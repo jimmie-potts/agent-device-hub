@@ -986,3 +986,13 @@ placements within their own metadata transaction; combined-family subscribers
 receive those changes in revision order. The consistent core backup preserves
 this table. No device settings, media or private source contents are added to
 it. Forward persistence evidence does not qualify older-reader recovery.
+
+Since #1672 a placement may also carry an optional card `shape` beside its
+`size`, published as `home-layout/2.2`; the row stays `version: 1` and no store
+migration runs. A release from before #1672 reads and syncs a stored row that
+carries shapes, but its `home-layout-set` schema has no `shape`, and its
+dashboard copies the saved placements into every save, so every Home save from
+it is refused `invalid-request` and changes nothing; no device command is
+involved. A width-only save is accepted and removes the shapes. To edit Home
+again after returning to such a release, in its dashboard choose Edit Home,
+Reset with Desktop selected, Reset with Phone selected, then Done.

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, expect} from 'playwright/test';
 import {changes, feed, startWorld} from './harness.ts';
+import {cardOptions} from './home-editor.ts';
 import type {HistoryRow} from '../src/timeline-model.ts';
 
 const world = await startWorld({inbox: true}), browser = await chromium.launch({headless: true});
@@ -38,24 +39,24 @@ try {
   await card.getByLabel('Source', {exact: true}).fill('bunny/parts/operator');
   await card.getByRole('button', {name: 'Apply filters'}).click();await expect(card.getByRole('status')).toContainText('history entries.');
 
-  // Add the identical card through the existing editor and persist size/order.
+  // Add the identical card through the existing editor and persist its shape and order.
   await page.getByRole('link', {name: /^Home/}).first().click();
   assert.equal(await card.count(), 0, 'Timeline is opt-in');
   await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
   await page.getByRole('button', {name: 'Add card', exact: true}).click();
   await page.getByRole('button', {name: 'Add Timeline', exact: true}).click();
   await page.getByRole('button', {name: 'Close', exact: true}).click();
-  await page.getByRole('button', {name: 'Move Timeline earlier', exact: true}).click();
-  await page.getByRole('combobox', {name: 'Size of Timeline', exact: true}).selectOption('large');
+  await cardOptions(page, 'Timeline');await page.getByRole('button', {name: 'Move Timeline earlier', exact: true}).click();
+  await page.getByRole('group', {name: 'Shape of Timeline', exact: true}).getByRole('button', {name: 'Large square', exact: true}).click();
   const order = await page.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-home-card')));
   await page.getByRole('button', {name: 'Done', exact: true}).click();
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   assert.equal(sent.length, 1);assert.equal(sent[0]?.endsWith('/home-layout-set'), true);
   await page.reload();await feed(page, 'connected');await expect(card).toBeVisible();
   assert.deepEqual(await page.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-home-card'))), order);
-  await expect(page.locator('[data-home-card="timeline"]')).toHaveClass(/home-size-large/);
+  await expect(page.locator('[data-home-card="timeline"]')).toHaveAttribute('data-home-shape', 'large-square');
   await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
-  await page.getByRole('button', {name: 'Hide Timeline', exact: true}).click();
+  await cardOptions(page, 'Timeline');await page.getByRole('button', {name: 'Hide Timeline', exact: true}).click();
   await page.getByRole('button', {name: 'Done', exact: true}).click();
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   await expect(card).toHaveCount(0);await page.reload();await feed(page, 'connected');await expect(card).toHaveCount(0);
@@ -103,7 +104,7 @@ try {
   const requested = card.locator('[data-history-row="4"]>details>summary');
   await requested.focus();await page.keyboard.press('Enter');
   await expect(card.locator('[data-history-row="4"]')).toContainText('Completion is not established');
-  // On the dedicated page no card height applies, so an opened entry stays beside the others and the pager stays.
+  // The dedicated page is off the Home grid, so an opened entry stays beside the others and the pager stays.
   assert.equal(await shown().count(), 20);await expect(card.getByText('Page 1 of 2', {exact: true})).toBeVisible();
   await card.locator('[data-history-row="4"] .timeline-technical>summary').click();
   await expect(card.locator('[data-history-row="4"] pre')).toContainText('diagnostic');

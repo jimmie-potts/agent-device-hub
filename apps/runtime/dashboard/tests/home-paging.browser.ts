@@ -30,7 +30,9 @@ const focusInside = async (page: Page, selector: string): Promise<string> => pag
 
 try {
   for (let index = 0; index < 6; index += 1) await world.observe({kind: 'session-started'}, {identity: {...IDENTITY, sessionId: `paging-${String(index)}`}, title: {value: `Synthetic agent ${String(index)}`, source: 'provider'}});
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
+  // One column (#1672): off the unit grid the lists keep their fixed page sizes and open entries in place, which this
+  // journey checks; home-shapes.browser.ts checks rows per shape and an opened entry taking the page on the grid.
+  const context = await browser.newContext({viewport: {width: 560, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
   const page = await context.newPage();page.setDefaultTimeout(15_000);
   const errors: string[] = [];context.on('weberror', error => {errors.push(error.error().message);});
   await page.goto(world.url);await feed(page, 'connected');
@@ -124,6 +126,74 @@ try {
   await expect(wall).toBeVisible();await expect(wall.locator('details.inbox-entry')).toHaveAttribute('open', '');
   await expect(wall.locator('summary').first()).toBeFocused();
   await wall.locator('summary').first().click();
+
+  // On the unit grid (#1672) the Inbox calculates its rows from its shape; Check Inbox still shows its item's page, and
+  // the opened item keeps the page through a resize from 1440 to 1100 px and back.
+  await page.setViewportSize({width: 1440, height: 1000});
+  await expect(page.locator('.home-layout-grid')).toHaveAttribute('data-packed', 'true');await expect(inboxCard).toHaveAttribute('data-home-shape', /.+/);
+  await expect(inboxList).toHaveAttribute('data-pages', /^[2-9]|\d\d/);
+  const perGridPage = await visibleRows(inboxList).count(), gridOrder = await inboxList.locator('[data-paged-key]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.pagedKey));
+  const gridPage = Math.floor(gridOrder.indexOf(wallKey ?? '') / perGridPage) + 1;
+  const gridAway = gridPage === 1 ? 2 : 1;
+  while (await inboxList.getAttribute('data-page') !== String(gridAway)) await inbox.getByRole('button', {name: gridAway > gridPage ? 'Next' : 'Previous', exact: true}).click();
+  await expect(wall).toBeHidden();
+  await warning.click();
+  await expect(wall).toBeVisible();await expect(wall.locator('details.inbox-entry')).toHaveAttribute('open', '');
+  await expect(visibleRows(inboxList)).toHaveCount(1);await expect(wall.locator('summary').first()).toBeFocused();
+  for (const width of [1100, 1440]) {
+    await page.setViewportSize({width, height: 1000});await settle(page);
+    await expect(visibleRows(inboxList)).toHaveCount(1);await expect(wall).toBeVisible();
+    const card = await inboxCard.boundingBox(), dismiss = await wall.getByRole('button', {name: 'Dismiss', exact: true}).boundingBox();
+    assert.ok(card !== null && dismiss !== null && dismiss.y + dismiss.height <= card.y + card.height + 1, `the opened item's Dismiss stays inside the card at ${String(width)}`);
+  }
+  await wall.locator('summary').first().click();
+  await expect(inboxList).toHaveAttribute('data-page', String(gridPage));await expect(visibleRows(inboxList)).toHaveCount(perGridPage);
+  // F24: a round trip through another width returns to the page the owner chose. The Wide Inbox shows one item a page at
+  // 1440 px and two at 1100 px; from page 4 the narrower page holds items 3 and 4, and back at 1440 page 4 shows again.
+  const chosenPage = Math.min(4, Number(await inboxList.getAttribute('data-pages')));
+  while (await inboxList.getAttribute('data-page') !== String(chosenPage)) await inbox.getByRole('button', {name: Number(await inboxList.getAttribute('data-page')) < chosenPage ? 'Next' : 'Previous', exact: true}).click();
+  const chosenKey = await visibleRows(inboxList).first().getAttribute('data-paged-key');
+  for (const width of [1100, 1440]) {
+    await page.setViewportSize({width, height: 1000});await settle(page);
+    await expect(inboxList.locator(`[data-paged-key="${chosenKey ?? ''}"]`)).toBeVisible();
+  }
+  await expect(inboxList).toHaveAttribute('data-page', String(chosenPage));
+  // F24: a reshape round trip, including to fewer pages, returns to the row the owner chose. Tall and Large square show
+  // five items a page at 1440 px and Wide one. Then again after paging back two items in Wide.
+  const reshape = async (shape: 'tall' | 'wide' | 'large-square'): Promise<void> => {
+    await page.evaluate(async shape => {
+      const data = await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': HomeLayoutRecord[]}};
+      const value = data.records['home-layout'][0];if (value === undefined) throw new Error('home-record');
+      const desktop = [{widget: 'inbox', size: shape === 'tall' ? 'small' : 'medium', hidden: false, shape}, {widget: 'hub-mode', size: 'medium', hidden: false, shape: 'wide'}];
+      const saved = await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
+        body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: value.revision, layouts: {desktop, phone: desktop}}})});
+      if (saved.status !== 200) throw new Error(`save ${String(saved.status)}`);
+    }, shape);
+    await expect(inboxCard).toHaveAttribute('data-home-shape', shape);await settle(page);
+  };
+  const listOrder = async (): Promise<string[]> => inboxList.locator('[data-paged-key]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.pagedKey ?? ''));
+  const showsRow = async (index: number, perPage: number, shape: string): Promise<void> => {
+    const key = (await listOrder())[index] ?? '';
+    await expect(inboxList.locator(`[data-paged-key="${key}"]`), `row ${String(index + 1)} shows in ${shape}`).toBeVisible();
+    await expect(inboxList).toHaveAttribute('data-page', String(Math.floor(index / perPage) + 1));
+  };
+  // From Wide page 4 (the fourth item, chosen above), Tall has fewer pages: it shows page 1, which holds that item.
+  await reshape('tall');await showsRow(chosenPage - 1, 5, 'tall from wide');
+  assert.ok((await listOrder()).length >= 10, 'ten or more items for a second Tall page');
+  await inbox.getByRole('button', {name: 'Next', exact: true}).click();await showsRow(5, 5, 'tall');
+  for (const [shape, perPage] of [['wide', 1], ['tall', 5], ['large-square', 5], ['wide', 1], ['tall', 5]] as const) {await reshape(shape);await showsRow(5, perPage, shape);}
+  await reshape('wide');await showsRow(5, 1, 'wide');
+  for (let step = 0; step < 2; step += 1) await inbox.getByRole('button', {name: 'Previous', exact: true}).click();
+  await showsRow(3, 1, 'wide after paging');
+  for (const [shape, perPage] of [['tall', 5], ['large-square', 5], ['wide', 1], ['tall', 5]] as const) {await reshape(shape);await showsRow(3, perPage, shape);}
+  // An empty save, so the core carries no shape from these saves onto the width-only layout saved below.
+  await page.evaluate(async () => {
+    const data = await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': HomeLayoutRecord[]}};
+    const value = data.records['home-layout'][0];if (value === undefined) throw new Error('home-record');
+    await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
+      body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: value.revision, layouts: {desktop: [], phone: []}}})});
+  });
+  await page.setViewportSize({width: 560, height: 1000});await expect(page.locator('.home-layout-grid')).toHaveAttribute('data-packed', 'false');
 
   // Agent sessions: a session that needs the owner, last in record order, is on page 1; several say so on the pager.
   const sessions = page.locator('[data-paged-list="Agent sessions"]');

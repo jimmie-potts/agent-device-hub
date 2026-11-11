@@ -663,7 +663,8 @@ These synthetic checks change no installed routines or devices.
 
 Paged Home lists (#1658) extend the same Home editor chain, so hosted smoke and
 the full browser suite run them. After the root build,
-`node apps/runtime/dashboard/tests/home-paging.browser.ts` checks Inbox paging
+`node apps/runtime/dashboard/tests/home-paging.browser.ts` checks, in one
+column at 560 px where the fixed page sizes apply, Inbox paging
 with the total count and card height, keyboard paging, items opened in place on a
 later page, last-item dismissal, the Check Inbox landing page, focus after a
 background removal, attention-first Agent status, Timeline reset, saved layouts
@@ -671,14 +672,37 @@ and 375 px width. `node --test apps/runtime/dashboard/tests/paging.test.ts`
 covers the page arithmetic. Synthetic records only; with `DASHBOARD_RECEIPTS` set
 it saves private 2x screenshots.
 
-Home row balance (#1311) extends the existing Home editor browser journey,
-already included in hosted smoke and the full browser suite. After the root
-build, `node apps/runtime/dashboard/tests/home-balance.browser.ts` checks one,
-two, three, five and eight real cards at desktop, tablet and phone widths,
-mixed sizes, hidden cards, independent phone order and editor preview.
-It uses synthetic saved-layout metadata only; no device command or installed
-state is selected. Use an outside-checkout `TMPDIR` and optional private
-`DASHBOARD_RECEIPTS` screenshots. Keep the shared and full browser checks below.
+Home card shapes (#1672) replace the Home row balance journey (#1311) in the same
+Home editor chain, so hosted smoke and the full browser suite run them. After the
+root build, `node apps/runtime/dashboard/tests/home-shapes.browser.ts` checks the
+built-in layout and three mixed layouts tiling on the 220px unit grid at 1100,
+1440 and 1920 px (whole units, equal gaps, no overlap, all four shapes, saved
+DOM order), a later card filling an earlier hole, one column at 375 px, the Edit
+Home shape picker with holes, save, reload and Cancel, an old width-only layout
+loading in its stated shapes with no write, Inbox and Timeline rows per shape
+with an opened entry taking the page (including the open, change shape or
+width, close, change back case), and every card in every shape it offers, each
+tab face included, with no overflow, clipped control or scroll container. List
+cards calculate their rows (owner decision 2026-11-11): the same journey checks
+each fixed size in `listFit` (`src/paging.ts`) against the rendered card, a
+full list leaving less than one row above its pager, one and zero Inbox items
+in each shape, and no change inside a list card for two idle seconds at six
+widths. `HOME_SHAPES_ONLY=tiles,picker,convert,paging,fit,results,short,idle,shots`
+selects parts. `node apps/runtime/dashboard/tests/home-idle.browser.ts`, in the
+full browser suite only, sweeps every width from 1100 to 2560 px in 20 px steps
+on the built-in and two mixed layouts with 0, 1, 5, 6 and 13 Inbox items and
+asserts no change inside a list card for two idle seconds (about ten minutes;
+`HOME_IDLE_WIDTHS` or `HOME_IDLE_STEP` narrows a local run).
+`node --test apps/runtime/dashboard/tests/home-shapes.test.ts
+apps/runtime/dashboard/tests/home-catalog.test.ts` cover packing, columns,
+trailing art cells, the conversion table and offered shapes. The core's shape
+rule and restart are in `apps/runtime/tests/home-layout.test.ts`; the
+`home-layout/2.2` schema is in `packages/event-contracts/tests/home-layout.test.mjs`.
+Synthetic records only; with `DASHBOARD_RECEIPTS` set it saves private 2x
+screenshots. Journeys that inspect a module card's full content on Home
+(companions, speech, mode overrides, Music artwork, Roborock, Volcano, Wemo,
+Tidbyt, card consistency) do so in one column, where Home keeps full cards, and
+check the generic compact face and its Open link on the wide grid.
 
 The television journey (#1112) runs the existing shell at a 1,920 × 1,080
 viewport from the keyboard only, as a TV browser presents the D-pad. After the

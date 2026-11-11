@@ -77,7 +77,11 @@ try{
   await shelf.getByRole('button',{name:'Release Wemo hold',exact:true}).click();await shelf.getByRole('status').filter({hasText:'Completed: succeeded.'}).waitFor();
   assert.equal(world.wemo.state()['shelf-lamp']?.writes,1,'hold release reads fresh state but sends no power');
   await shelf.getByRole('button',{name:'Turn off',exact:true}).click();await shelf.getByRole('status').filter({hasText:'Completed: succeeded.'}).waitFor();assert.equal(world.wemo.state()['shelf-lamp']?.writes,2);
-  await reopened.getByRole('link',{name:'Home',exact:true}).click();await shelf.getByRole('tab',{name:'Power',exact:true}).waitFor();
+  // The wide Home grid (#1672) shows each plug as the generic compact face, whose Open leads to its device page;
+  // Home in one column keeps the full card.
+  await reopened.getByRole('link',{name:'Home',exact:true}).click();
+  assert.equal(await reopened.getByRole('link',{name:'Open Shelf lamp',exact:true}).getAttribute('href'),'#/component/shelf-lamp');
+  await reopened.setViewportSize({width:560,height:1000});await shelf.getByRole('tab',{name:'Power',exact:true}).waitFor();
   assert.equal(await reopened.locator('.wemo-card').count(),2,'Home reuses the same card for both plugs');
   await shelf.getByRole('tab',{name:'Power',exact:true}).focus();await reopened.keyboard.press('End');
   assert.equal(await shelf.getByRole('tab',{name:'Auto-off',exact:true}).getAttribute('aria-selected'),'true','keyboard switches tabs');

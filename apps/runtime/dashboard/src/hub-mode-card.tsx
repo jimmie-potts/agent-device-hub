@@ -2,6 +2,7 @@ import React, {useId} from 'react';
 import type {Mode} from '@jimmie-potts/event-contracts/v2/families';
 import {modeName} from './hub-mode.ts';
 import {InfoTip} from './ui.tsx';
+import {useHomeShape} from './home-shape-context.ts';
 import './hub-control-cards.css';
 
 /** Shared artwork keeps the selected mode and its choice button visually identical. */
@@ -22,7 +23,7 @@ export type HubModeCardProps = {
 
 /** Presentation only; selection, evidence, transport and authority belong to the adapter. */
 export function HubModeCard({mode, disabled, status, feedback, issue, onCheckInbox, onSelect, headingId, exceptions}: HubModeCardProps): React.JSX.Element {
-  const uid = useId();
+  const uid = useId(), shape = useHomeShape(), compact = shape === 'square' || shape === 'wide';
   return <div className="hub-mode hub-mode-card">
     <header className="hub-control-heading"><h2 id={headingId ?? uid}>Hub mode</h2><div className="hub-mode-meta">
       {status !== '' && <span className="hub-control-status">{status}</span>}
@@ -35,5 +36,7 @@ export function HubModeCard({mode, disabled, status, feedback, issue, onCheckInb
       <button key={choice} type="button" className="secondary" aria-pressed={mode === choice} disabled={disabled} onClick={() => {onSelect(choice);}}><ModeIcon mode={choice}/><span>{modeName(choice)}</span></button>)}</div>
     <p className="hub-control-sr" role="status">{feedback}</p>
     {exceptions !== undefined && <details className="hub-mode-exceptions inbox-evidence"><summary>{exceptions.label}</summary>{exceptions.details}</details>}
+    {/* One-row Home shapes (#1672) list the exceptions on the Devices page, where each device card shows its own. */}
+    {exceptions !== undefined && compact && <a className="home-hub-exceptions" href="#/devices">{exceptions.label} · Devices</a>}
   </div>;
 }

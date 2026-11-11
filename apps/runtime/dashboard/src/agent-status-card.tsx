@@ -20,8 +20,8 @@ export function AgentStatusCard({row, live, now, actions}: {
     data-attention={needsAttention(row)} data-stale={stale}>
     <details className="agent-disclosure">
       <summary className="agent-face">
-        <span className="agent-client">{row.where}</span>
-        <div className="session-id"><h3>{row.name}</h3></div>
+        <span className="agent-client" title={row.where}>{row.where}</span>
+        <div className="session-id"><h3 title={row.name}>{row.name}</h3></div>
         <span className="agent-state"><span className="session-dot" data-chip={row.chip} aria-hidden="true"/>
           <span className="chip" data-chip={row.chip}>{stale ? 'Stale' : row.chipText}</span>
           {stale && needsAttention(row) && <span className="agent-last-attention">{row.chipText}</span>}

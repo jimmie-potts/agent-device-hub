@@ -1,7 +1,7 @@
 // Private presentation metadata; this part has no device dispatch path (Hub #366).
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {coreValidator, type HomeLayoutRecord, type HomeLayoutSetRequest, type LightingLayout, type LightingLayoutSetRequest} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator, homeArtShapes, homeShapeSize, type HomeLayoutRecord, type HomeLayoutSetRequest, type HomePlacement, type HomeShape, type LightingLayout, type LightingLayoutSetRequest} from '@jimmie-potts/event-contracts/v2/families';
 import {Outcome, fullDisk, type Command, type Reply, type StateDraft} from '@jimmie-potts/sdk';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreTransaction} from './store.js';
@@ -9,7 +9,23 @@ import type {CompletedOutcome} from './tracker.js';
 
 const ID = 'home';
 const stateDraft = (record: HomeLayoutRecord): StateDraft => ({type: 'org.bunny.home-layout.updated', subject: ID,
-  dataschema: 'https://bunny.invalid/events/home-layout/2.1', data: record});
+  dataschema: 'https://bunny.invalid/events/home-layout/2.2', data: record});
+/**
+ * A saved shape stays only while the placement's width agrees with it, and for art while its format agrees too, so an
+ * older dashboard that changes a width or an art format and copies the old shape loses the shape (#1672). A placement
+ * that omits its shape while keeping its width (and art format) keeps the previous shape, as older clients keep art options.
+ */
+function agrees(entry: HomePlacement, shape: HomeShape): boolean {
+  return homeShapeSize[shape] === entry.size && (entry.art === undefined || homeArtShapes[entry.art.format].includes(shape));
+}
+function settleShapes(entries: HomePlacement[], previous: readonly HomePlacement[] | undefined): void {
+  for (const entry of entries) {
+    if (entry.shape === undefined) {
+      const earlier = previous?.find(value => value.widget === entry.widget);
+      if (earlier?.shape !== undefined && earlier.size === entry.size && agrees(entry, earlier.shape)) entry.shape = earlier.shape;
+    } else if (!agrees(entry, entry.shape)) delete entry.shape;
+  }
+}
 export type HomeLayoutAdmission = {
   admit(command: Command<HomeLayoutSetRequest>): boolean;
   complete(tx: CoreTransaction, command: Command<HomeLayoutSetRequest>, result: Omit<CompletedOutcome, 'requestId'>): () => void;
@@ -66,7 +82,7 @@ export class HomeLayoutPart implements CorePart {
         const old = new Set(before.home?.map(key) ?? []), next = new Set(after.home.map(key));
         // A group action's visible selection is not a removal instruction for unrelated placements.
         if (!regrouping) entries = entries.filter(entry => !old.has(entry.widget) || next.has(entry.widget));
-        for (const selection of after.home) if ((before.home !== null || selection.kind !== 'device') && !old.has(key(selection)) && !entries.some(entry => entry.widget === key(selection))) entries.push({widget: key(selection), size: 'medium', hidden: false});
+        for (const selection of after.home) if ((before.home !== null || selection.kind !== 'device') && !old.has(key(selection)) && !entries.some(entry => entry.widget === key(selection))) entries.push({widget: key(selection), size: 'small', hidden: false, shape: 'tall'});
       }
       const seen = new Set<string>();entries = entries.filter(entry => {if (seen.has(entry.widget)) return false;seen.add(entry.widget);return true;});
       if (entries.length > 128) throw new Error('home-layout-capacity');layouts[breakpoint] = entries;
@@ -96,6 +112,7 @@ export class HomeLayoutPart implements CorePart {
           const art = layouts[breakpoint].find(entry => entry.widget === 'art');
           const previous = current.layouts?.[breakpoint].find(entry => entry.widget === 'art')?.art;
           if (art !== undefined && art.art === undefined && previous !== undefined) art.art = structuredClone(previous);
+          settleShapes(layouts[breakpoint], current.layouts?.[breakpoint]);
         }
         const record: HomeLayoutRecord = {id: ID, revision: tx.revision(), version: 1, layouts};
         this.#save.run(JSON.stringify(record), ID);

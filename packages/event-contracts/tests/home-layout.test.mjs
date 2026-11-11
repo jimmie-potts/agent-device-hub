@@ -54,3 +54,28 @@ test('Home art options are bounded, art-only and additive to legacy arrangements
     assert.equal(validator.validate(value).ok, false, String(mutate));
   }
 });
+
+test('Home card shapes are optional, bounded and additive to width-only arrangements (#1672)', () => {
+  const validator = new MessageValidator(); registerCoreFamilies(validator);
+  const state = envelope(); state.dataschema = 'https://bunny.invalid/events/home-layout/2.2';
+  assert.equal(validator.validate(state).ok, true, 'a width-only arrangement stays valid in 2.2');
+  for (const shape of ['square', 'wide', 'tall', 'large-square']) {
+    const value = structuredClone(state); value.data.layouts.desktop[0].shape = shape;
+    assert.equal(validator.validate(value).ok, true, shape);
+    const command = envelope(true); command.data.layouts.desktop[0].shape = shape;
+    assert.equal(validator.validate(command).ok, true, `the existing save accepts ${shape}`);
+  }
+  const withArt = structuredClone(state);
+  withArt.data.layouts.desktop.push({widget: 'art', size: 'medium', hidden: false, shape: 'wide', art: {format: 'banner', pinned: true}});
+  assert.equal(validator.validate(withArt).ok, true, 'art keeps its options beside a shape');
+  for (const mutate of [entry => {entry.shape = 'giant';}, entry => {entry.shape = 'Square';}, entry => {entry.shape = 1;}, entry => {entry.columns = 2;}]) {
+    const value = envelope(true); mutate(value.data.layouts.desktop[0]);
+    assert.equal(validator.validate(value).ok, false, String(mutate));
+  }
+  for (const version of ['2.0', '2.1']) {
+    const older = structuredClone(state); older.dataschema = `https://bunny.invalid/events/home-layout/${version}`; older.data.layouts.desktop[0].shape = 'tall';
+    assert.equal(validator.validate(older).ok, false, `home-layout/${version} has no shape`);
+    delete older.data.layouts.desktop[0].shape;
+    assert.equal(validator.validate(older).ok, true, `home-layout/${version} width-only state stays valid`);
+  }
+});

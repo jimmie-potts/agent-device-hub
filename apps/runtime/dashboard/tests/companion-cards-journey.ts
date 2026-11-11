@@ -86,7 +86,13 @@ export async function companionCardsJourney(world: World, page: Page, context: B
   const effects: string[] = [];
   const observe = (request: import('playwright').Request): void => {if (request.method() === 'POST' && /\/commands\/|\/upload\?/.test(request.url())) effects.push(request.url());};
   page.on('request', observe);
-  for (const width of [1280, 390, 320]) for (const colorScheme of ['light', 'dark'] as const) {
+  // On the wide Home grid (#1672) Reachy and MicroDuck show the generic compact face, whose Open leads to their
+  // module pages checked above; Home shows their full cards in one column.
+  for (const [name, href] of [['Reachy', '#/module/companions/reachy'], ['MicroDuck', '#/module/companions/microduck']] as const) {
+    await page.getByRole('link', {name: `Open ${name}`, exact: true}).waitFor();
+    assert.equal(await page.getByRole('link', {name: `Open ${name}`, exact: true}).getAttribute('href'), href);
+  }
+  for (const width of [390, 320]) for (const colorScheme of ['light', 'dark'] as const) {
     await page.setViewportSize({width, height: 1000}); await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
     await stableTabs(reachy); await stableTabs(duck);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);

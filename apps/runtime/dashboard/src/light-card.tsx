@@ -1,5 +1,6 @@
 import React, {useEffect, useId, useRef, useState} from 'react';
 import type {LightingCard, LightingDevice, LightingIntent, lightCapabilities} from './lighting.ts';
+import {useHomeShape} from './home-shape-context.ts';
 type Tab = 'Power' | 'Color' | 'Scenes' | 'Timer';
 const tabs: Tab[] = ['Power', 'Color', 'Scenes', 'Timer'];
 export type LightCardProps = {
@@ -22,7 +23,10 @@ function Slider({label, value, min = 0, max = 100, unit = '%', disabled, commit}
 function common<T>(values: readonly (T | undefined)[]): T | undefined { return values.length > 0 && values.every(value => value !== undefined && value === values[0]) ? values[0] : undefined; }
 /** Artwork and the menu remain mounted. Only the labelled control face changes on a tab switch. */
 export function LightCard({card, devices, capabilities: cap, artwork, modeChoice, options, status, act, drag, drop}: LightCardProps): React.JSX.Element {
-  const id = useId();
+  const id = useId(), shape = useHomeShape();
+  // In a one-row Home shape (#1672) the card keeps its artwork, state and power; color, scenes and the rest stay one
+  // step away in the card's options menu and on its own page.
+  const compact = shape === 'square' || shape === 'wide';
   const [tab, setTab] = useState<Tab>('Power');
   const [hue, setHue] = useState(210), [saturation, setSaturation] = useState(75);
   const [paletteDirty, setPaletteDirty] = useState(false);
@@ -39,11 +43,20 @@ export function LightCard({card, devices, capabilities: cap, artwork, modeChoice
   const attention = status.filter(item => item.locked || /Refused|Not sent|failed|uncertain|Conflicting/i.test(item.text));
   const statusText = cap.blocked ?? (observedPower === undefined ? power === undefined ? 'Mixed / unknown' : `Requested ${power ? 'on' : 'off'}` : observedPower ? 'On · observed' : 'Off · observed');
   return <article className="light-card" aria-label={card.name} data-light-card={card.selection.id} onDragOver={event => { if (drop !== undefined) event.preventDefault(); }} onDrop={drop}>
-    <header className="light-card-heading"><div><h3>{card.name}</h3><p>{card.selection.kind === 'device' ? 'Light' : `${card.members.length} lights · ${card.selection.kind}`} · {statusText}</p></div>
+    <header className="light-card-heading"><div><h3>{card.name}</h3><p title={compact || shape !== undefined ? `${card.selection.kind === 'device' ? 'Light' : `${String(card.members.length)} lights · ${card.selection.kind}`} · ${statusText}` : undefined}>{card.selection.kind === 'device' ? 'Light' : `${card.members.length} lights · ${card.selection.kind}`} · {statusText}</p></div>
       {options}
     </header>
-    <div className="light-artwork" data-light-artwork={card.selection.id}>{artwork}</div>
-    <div className="light-tabs" role="tablist" aria-label={`${card.name} controls`}>{tabs.map((name, index) => <button key={name} type="button" role="tab" id={`${id}-${name}`} aria-controls={`${id}-face`} aria-selected={tab === name} tabIndex={tab === name ? 0 : -1}
+    {/* A room or group with no lights says so where its artwork would be, instead of a blank panel (#1672). */}
+    <div className="light-artwork" data-light-artwork={card.selection.id}>{card.members.length === 0 ? <p className="light-empty">No lights in this {card.selection.kind} yet. Assign lights on the Rooms page.</p> : artwork}</div>
+    {compact && <div className="light-compact">
+      <div className="light-power"><button type="button" disabled={!cap.power} aria-pressed={power === true} onClick={() => { act({family: 'power-set', data: {on: true}}); }}>On</button>
+        <button type="button" disabled={!cap.power} aria-pressed={power === false} onClick={() => { act({family: 'power-set', data: {on: false}}); }}>Off</button></div>
+      {shape === 'wide' && <Slider label={observedBrightness === undefined ? 'Brightness · requested' : 'Brightness · observed'} value={brightness} disabled={!cap.brightness} commit={percent => { act({family: 'brightness-set', data: {percent}}); }}/>}
+      {/* The result of a command sent from this card stays on its face: one line here, each member's detail in its options. */}
+      {attention.length > 0 && <p className="light-attention light-attention-line" role="status" title={attention.map(item => `${card.members.length > 1 ? `${item.name}: ` : ''}${item.text}`).join(' ')}>
+        {card.members.length > 1 ? `${attention[0]?.name ?? ''}: ` : ''}{attention[0]?.text}{attention.length > 1 ? ` (+${String(attention.length - 1)})` : ''}</p>}
+    </div>}
+    {!compact && <><div className="light-tabs" role="tablist" aria-label={`${card.name} controls`}>{tabs.map((name, index) => <button key={name} type="button" role="tab" id={`${id}-${name}`} aria-controls={`${id}-face`} aria-selected={tab === name} tabIndex={tab === name ? 0 : -1}
       onClick={() => { setTab(name); }} onKeyDown={event => {
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : undefined;
         if (next === undefined) return;
@@ -71,7 +84,7 @@ export function LightCard({card, devices, capabilities: cap, artwork, modeChoice
       {tab === 'Scenes' && (cap.scenes.length === 0 ? <p className="light-note">{cap.blocked ?? 'No shared native scenes are available in the current modes. Advanced controls show each light’s modes.'}</p>
         : <div className="light-scenes">{cap.scenes.map(scene => <button key={scene} type="button" onClick={() => { act({family: 'scene-activate', data: {sceneId: scene}}); }}>{scene}</button>)}</div>)}
       {tab === 'Timer' && <p className="light-note">Off timers aren’t available in the runtime yet.</p>}
-    </div></div>
+    </div></div></>}
     {attention.length > 0 && <div className="light-attention" role="status">{attention.map(item => <p key={item.name}>{card.members.length > 1 ? `${item.name}: ` : ''}{item.text}</p>)}</div>}
     {drag !== undefined && <button type="button" className="light-drag" draggable onDragStart={drag} aria-label={`Drag ${card.name} to group`}>⠿ <span>Drag to group</span></button>}
   </article>;

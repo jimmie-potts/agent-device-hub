@@ -3,10 +3,12 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {HomeArrangements, HomePlacement, LightingLayoutRecord, LightingSelection, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import type {RuntimeData} from './runtime-feeds.ts';
 import {cardsFor, emptyLightingLayout, lightingDevices, selectionKey} from './lighting.ts';
-import {homeLayout, widgetCatalog, widgetDefinition, type WidgetSize} from './widgets.ts';
+import {widgetCatalog, widgetDefinition, type WidgetSize} from './widgets.ts';
+import {artFormatShapes, placementShape, shapeArtFormat, shapeStoredSize, type HomeShape} from './home-shapes.ts';
 
 type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; instance: string} | {kind: 'light'; selection: LightingSelection} | {kind: 'unavailable'};
-export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean};
+/** `empty` marks a room or group card with no lights, which offers only one-row shapes (#1672). */
+export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean; empty?: boolean};
 const ordinarySizes: readonly WidgetSize[] = ['medium', 'large'];
 export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardDefinition[] {
   // Roborock and Volcano metadata describe each existing device placement, not a second default card.
@@ -39,14 +41,14 @@ export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardD
   const layoutCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'lighting-layout');
   const lighting = (layoutCopy?.records as readonly LightingLayoutRecord[] | undefined)?.find(record => record.id === 'lighting')?.layout ?? emptyLightingLayout();
   const selected = new Set(cardsFor('home', lighting, devices).map(card => selectionKey(card.selection)));
-  const lightCards: {selection: LightingSelection; name: string}[] = [...lighting.rooms.map(room => ({selection: {kind: 'room' as const, id: room.id}, name: room.name})),
-    ...devices.map(device => ({selection: {kind: 'device' as const, id: device.record.id}, name: device.record.label ?? device.record.id})),
-    ...lighting.groups.filter(group => group.scope === 'home').map(group => ({selection: {kind: 'group' as const, id: group.id}, name: group.name}))];
+  const lightCards: {selection: LightingSelection; name: string; empty: boolean}[] = [...lighting.rooms.map(room => ({selection: {kind: 'room' as const, id: room.id}, name: room.name, empty: !lighting.assignments.some(item => item.room === room.id)})),
+    ...devices.map(device => ({selection: {kind: 'device' as const, id: device.record.id}, name: device.record.label ?? device.record.id, empty: false})),
+    ...lighting.groups.filter(group => group.scope === 'home').map(group => ({selection: {kind: 'group' as const, id: group.id}, name: group.name, empty: group.devices.length === 0}))];
   for (const card of lightCards) {
     const id = `light:${selectionKey(card.selection)}`;
     if (result.some(value => value.id === id)) continue;
     result.push({id, name: card.name, category: card.selection.kind === 'room' ? 'Rooms' : 'Lights', sizes: ordinarySizes,
-      source: {kind: 'light', selection: card.selection}, defaultSelected: selected.has(selectionKey(card.selection)),
+      source: {kind: 'light', selection: card.selection}, defaultSelected: selected.has(selectionKey(card.selection)), ...(card.empty ? {empty: true} : {}),
       ...(layoutCopy?.synced !== true ? {reason: 'Lighting composition is unavailable or stale.'} : {})});
   }
   for (const copy of runtime.copies) {
@@ -81,8 +83,8 @@ export function savedHomeCard(id: string, catalog: readonly HomeCardDefinition[]
   return undefined;
 }
 export function defaultHomeArrangements(catalog: readonly HomeCardDefinition[]): HomeArrangements {
-  const base = homeLayout(), coreSizes = new Map([...base.wide, ...base.narrow].map(value => [value.widget, value.size]));
-  const entry = (card: HomeCardDefinition): HomePlacement => ({widget: card.id, size: coreSizes.get(card.id) ?? 'medium', hidden: false});
+  // The built-in layout shows each card in its Standard shape (#1672).
+  const entry = (card: HomeCardDefinition): HomePlacement => {const shape = homeCardShapes(card).standard;return {widget: card.id, size: shapeStoredSize[shape], hidden: false, shape};};
   const selected = catalog.filter(card => card.defaultSelected && card.id !== 'sessions' && card.id !== 'inbox' && card.id !== 'wispr');
   const tail = ['sessions', 'inbox', 'wispr'].flatMap(id => catalog.filter(card => card.id === id && card.defaultSelected));
   return {desktop: [...selected, ...tail].map(entry), phone: [...selected, ...tail].map(entry)};
@@ -91,9 +93,89 @@ export function addHomeCard(layouts: HomeArrangements, breakpoint: keyof HomeArr
   const next = structuredClone(layouts);
   for (const key of ['desktop', 'phone'] as const) {
     const found = next[key].find(entry => entry.widget === card.id);
-    if (found === undefined) next[key].push({widget: card.id, size: card.sizes.includes('medium') ? 'medium' : card.sizes[0] ?? 'small', hidden: false,
-      ...(card.id === 'art' ? {art: {format: 'auto', pinned: true}} : {})});
+    if (found === undefined) {
+      const shape = homeCardShapes(card).standard;
+      next[key].push({widget: card.id, size: shapeStoredSize[shape], hidden: false, shape, ...(card.id === 'art' ? {art: {format: shapeArtFormat[shape], pinned: true}} : {})});
+    }
     else if (key === breakpoint) found.hidden = false;
   }
   return next;
+}
+
+const allShapes: readonly HomeShape[] = ['square', 'wide', 'tall', 'large-square'];
+export type HomeCardShapes = {
+  /** The shapes the card offers, each fitting the 220px unit with nothing clipped and no scrolling inside the card. */
+  shapes: readonly HomeShape[];
+  /** The shape a placement saved as Standard shows. */
+  standard: HomeShape;
+  /** Offered shapes that show the generic compact face: name, current state and Open. */
+  generic: readonly HomeShape[];
+  /** The existing page that holds the card's full content and controls. */
+  open?: string;
+};
+/**
+ * The shapes a Home card offers (#1672). Core widgets declare theirs in the widget catalog. Light, room and Nanoleaf
+ * cards have compact content in every shape. Device and Music cards without compact content of their own (Pixoo,
+ * Tidbyt, Wemo, Roborock, Volcano, the sign, Music) show the generic compact face in one unit, since their full content
+ * fits no shape at the 220px unit; Open leads to their existing device or Music page.
+ */
+export function homeCardShapes(card: Pick<HomeCardDefinition, 'id' | 'source' | 'empty'>): HomeCardShapes {
+  const widget = widgetDefinition(card.id === 'module:roborock' ? 'roborock' : card.id);
+  if (widget !== undefined) return {shapes: widget.shapes, standard: widget.standard, generic: widget.generic ?? [], ...(widget.open === undefined ? {} : {open: widget.open})};
+  // A room or group with no lights has only its name, state and a short note to show, so it offers one-row shapes.
+  if (card.source.kind === 'light') return card.empty === true ? {shapes: ['square', 'wide'], standard: 'wide', generic: []} : {shapes: allShapes, standard: 'tall', generic: []};
+  const generic = {shapes: ['square'], standard: 'square', generic: ['square']} as const;
+  if (card.source.kind === 'device') return {...generic, open: `#/component/${encodeURIComponent(card.source.instance)}`};
+  if (card.source.kind === 'music') return {...generic, open: `#/music/${encodeURIComponent(card.source.instance)}`};
+  return generic;
+}
+
+/**
+ * The shape a saved placement shows now: its saved shape, or the conversion of a width-only placement. A room or group
+ * with no lights shows a saved two-row shape as Wide, and keeps the saved shape for when it has lights again.
+ */
+export function shapeOf(entry: HomePlacement, card: Pick<HomeCardDefinition, 'id' | 'source' | 'empty'>): HomeShape {
+  if (card.empty === true) {const shape = storedShapeOf(entry, card);return shape === 'tall' || shape === 'large-square' ? 'wide' : shape;}
+  const {shapes, standard} = homeCardShapes(card);return placementShape(entry, shapes, standard);
+}
+/** The shape a save stores: as shapeOf, but a card with no lights keeps the shape it offers once it has some. */
+function storedShapeOf(entry: HomePlacement, card: Pick<HomeCardDefinition, 'id' | 'source' | 'empty'>): HomeShape {
+  const {shapes, standard} = homeCardShapes({id: card.id, source: card.source});return placementShape(entry, shapes, standard);
+}
+/**
+ * The layout an explicit save writes: every known placement in both arrangements carries the shape it shows and the
+ * width that agrees with it, and art keeps a format an older dashboard understands. Loading never calls this.
+ */
+export function withShapes(layouts: HomeArrangements, catalog: readonly HomeCardDefinition[]): HomeArrangements {
+  const next = structuredClone(layouts);
+  for (const key of ['desktop', 'phone'] as const) for (const entry of next[key]) {
+    const card = savedHomeCard(entry.widget, catalog);if (card === undefined) continue;
+    const shape = storedShapeOf(entry, card);entry.shape = shape;entry.size = shapeStoredSize[shape];
+    // Art keeps its format while it agrees with the shape (auto stays auto), so a one-column format choice survives.
+    if (entry.art !== undefined && !artFormatShapes[entry.art.format].includes(shape)) entry.art = {...entry.art, format: shapeArtFormat[shape]};
+  }
+  return next;
+}
+
+/** The current state the generic compact face shows, from records the dashboard already holds. */
+export function homeCardState(card: HomeCardDefinition, runtime: RuntimeData, connected: boolean): string {
+  if (card.reason !== undefined) return card.reason;
+  if (!connected) return 'Offline';
+  const source = card.source;
+  if (source.kind === 'device') {
+    const copy = runtime.copies.find(value => value.owner === source.owner && value.family === 'device');
+    const record = (copy?.records as readonly DeviceRecord[] | undefined)?.find(value => value.id === source.instance);
+    if (record === undefined || copy?.synced !== true) return 'Unavailable';
+    const power = record.observed.status === 'known' && record.observed.power.status === 'known' ? record.observed.power.value ? ' · On' : ' · Off' : '';
+    return `${record.availability === 'available' ? 'Available' : record.availability === 'unavailable' ? 'Unavailable' : 'Stale'}${power}`;
+  }
+  if (source.kind === 'music') {
+    const copy = runtime.copies.find(value => value.owner === source.owner && value.family === 'playback');
+    const record = (copy?.records as readonly PlaybackState[] | undefined)?.find(value => value.id === source.instance);
+    if (record === undefined || copy?.synced !== true || record.availability !== 'available') return 'Unavailable';
+    return record.playback.status === 'known' ? `${record.playback.player[0]?.toUpperCase() ?? ''}${record.playback.player.slice(1)}${record.playback.title === undefined ? '' : ` · ${record.playback.title}`}` : 'Unknown';
+  }
+  const module = card.id === 'module:roborock' ? 'roborock' : card.id === 'reachy' || card.id === 'duck-latest' ? 'companions' : card.id;
+  const state = runtime.modules?.find(value => value.name === module)?.state;
+  return state === 'running' ? 'Available' : state === undefined ? 'Unavailable' : `Module ${state}`;
 }

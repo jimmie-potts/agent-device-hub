@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, expect} from 'playwright/test';
 import {changes, feed, startWorld} from './harness.ts';
+import {cardOptions} from './home-editor.ts';
 import {approvalPrompt, approvalResolved} from '../../dist/tests/fixtures/agents.js';
 
 const world = await startWorld({lighting: true, pixooPages: true});
@@ -70,9 +71,10 @@ try {
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();assert.deepEqual(await order(), original);assert.equal(sent.length, 0);
   await edit();await page.getByRole('button', {name: 'Add card', exact: true}).click();await page.getByRole('button', {name: 'Rooms', exact: true}).click();
   await page.getByRole('button', {name: 'Add Studio', exact: true}).click();await page.getByRole('button', {name: 'Close', exact: true}).click();
-  await page.getByRole('button', {name: 'Move Studio earlier', exact: true}).click();
+  await cardOptions(page, 'Studio');await page.getByRole('button', {name: 'Move Studio earlier', exact: true}).click();
   await page.getByRole('button', {name: 'Move Studio; use arrow keys', exact: true}).press('ArrowUp');
-  await page.getByRole('combobox', {name: 'Size of Studio', exact: true}).selectOption('large');
+  // The shape choice replaced Small / Standard / Wide (#1672); Studio has no lights, so it offers Small square and Wide.
+  await page.getByRole('group', {name: 'Shape of Studio', exact: true}).getByRole('button', {name: 'Small square', exact: true}).click();
   const roomId = (await order()).find(id => id.startsWith('light:room:'));assert.ok(roomId !== undefined && roomId !== '');
   const room = page.locator('[data-home-card]').filter({has: page.getByRole('heading', {name: 'Studio', exact: true})});
   await page.getByRole('button', {name: 'Phone', exact: true}).click();assert.equal((await order()).at(-1), roomId, 'adding appends to independent phone order');
@@ -87,16 +89,16 @@ try {
     assert.equal(await second.locator('[data-home-card]').last().getAttribute('data-home-card'), roomId);
   } finally {await secondContext.close();}
   await world.restart();await page.reload();await feed(page, 'connected');await room.waitFor();assert.deepEqual(await order(), before);
-  await edit();await page.getByRole('button', {name: 'Remove Hub mode', exact: true}).press('Enter');assert(!(await order()).includes('hub-mode'));
+  await edit();await cardOptions(page, 'Hub mode');await page.getByRole('button', {name: 'Remove Hub mode', exact: true}).press('Enter');assert(!(await order()).includes('hub-mode'));
   assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-home-move], [data-home-add]')), true);
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();await expect(page.locator('[data-home-card="hub-mode"]')).toBeVisible();
   assert.equal(sent.length, 1, 'Cancel sends nothing');
-  await edit();await page.getByRole('button', {name: 'Hide Agent status', exact: true}).press('Enter');
+  await edit();await cardOptions(page, 'Agent status');await page.getByRole('button', {name: 'Hide Agent status', exact: true}).press('Enter');
   assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-home-move], [data-home-add]')), true);await done();
   assert.equal(await page.locator('[data-home-card="sessions"]').count(), 0);
   await world.observe({kind: 'session-started'});await world.observe(approvalPrompt('layout-attention'));
   await page.locator('[data-home-card="sessions"]').waitFor();
-  await edit();assert.equal(await page.getByRole('button', {name: 'Hide Agent status', exact: true}).isDisabled(), true);
+  await edit();await cardOptions(page, 'Agent status');assert.equal(await page.getByRole('button', {name: 'Hide Agent status', exact: true}).isDisabled(), true);
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();await world.observe(approvalResolved('layout-attention'));
   await expect(page.locator('[data-home-card="sessions"]')).toHaveCount(0);
   const beforeShow = sent.length;
@@ -115,7 +117,7 @@ try {
   try {
     const other = await otherContext.newPage();await other.goto(world.url);await feed(other, 'connected');
     await edit();await other.getByRole('button', {name: 'Edit Home', exact: true}).click();
-    await other.getByRole('button', {name: 'Remove Hub mode', exact: true}).click();await other.getByRole('button', {name: 'Done', exact: true}).click();
+    await cardOptions(other, 'Hub mode');await other.getByRole('button', {name: 'Remove Hub mode', exact: true}).click();await other.getByRole('button', {name: 'Done', exact: true}).click();
     await expect(other.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
     await page.getByText('Home changed in another browser.', {exact: false}).waitFor();assert.equal(await page.getByRole('button', {name: 'Done', exact: true}).isDisabled(), true);
     await page.getByRole('button', {name: 'Load saved layout', exact: true}).click();assert(!(await order()).includes('hub-mode'));
@@ -175,7 +177,7 @@ try {
   await expect(page.locator('[data-home-card="hub-mode"]')).toBeVisible();
   await world.observe(approvalPrompt('layout-forced-focus'));await page.locator('[data-home-card="sessions"]').waitFor();
   await edit();await expect(page.locator('[data-home-move="sessions"]')).toBeDisabled();
-  await page.getByRole('button', {name: 'Remove Hub mode', exact: true}).press('Enter');
+  await cardOptions(page, 'Hub mode');await page.getByRole('button', {name: 'Remove Hub mode', exact: true}).press('Enter');
   await expect(page.getByRole('button', {name: 'Add card', exact: true})).toBeFocused();
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   await world.observe(approvalResolved('layout-forced-focus'));
@@ -184,5 +186,6 @@ try {
   await context.close();
 } finally {await browser.close();await world.close();}
 
-await import('./home-balance.browser.ts');
+// The unit grid (#1672) replaced the flex rows home-balance checked; home-shapes checks tiling, shapes and paging by shape.
+await import('./home-shapes.browser.ts');
 await import('./home-paging.browser.ts');

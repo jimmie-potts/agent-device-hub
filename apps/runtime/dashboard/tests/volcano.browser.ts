@@ -37,6 +37,9 @@ async function journey(): Promise<void> {
 
     await page.goto(`${world.url}/#/`); await feed(page, 'connected');
     const card = page.locator('[data-volcano-card]');
+    // The wide Home grid (#1672) shows the generic compact face; Home in one column keeps the full card.
+    assert.equal(await page.locator('[data-home-card="device:bunny/modules/volcano:volcano"] a.home-compact-open').getAttribute('href'), '#/component/volcano');
+    await page.setViewportSize({width: 560, height: 1000});
     await card.waitFor();
     assert.equal(await card.count(), 1, 'Home shows one Volcano card');
     assert.equal(await page.locator('[data-home-card="device:bunny/modules/volcano:volcano"]').count(), 1);
@@ -52,10 +55,10 @@ async function journey(): Promise<void> {
     assert.equal(await card.count(), 1, 'the selected device uses the same card');
     assert.match(new URL(page.url()).hash, /component\/volcano/u);
 
-    // The Home editor's sizes. Each is the saved placement, through the same command the editor sends.
-    await page.goto(`${world.url}/#/`); await feed(page, 'connected'); await card.waitFor();
+    // On the wide Home grid (#1672) every saved width shows the Volcano as a Small square with the generic face.
+    await page.setViewportSize({width: 1280, height: 1000});
+    await page.goto(`${world.url}/#/`); await feed(page, 'connected');
     const placement = page.locator('[data-home-card="device:bunny/modules/volcano:volcano"]');
-    const widths: number[] = [];
     for (const size of ['small', 'medium', 'large'] as const) {
       assert.equal(await page.evaluate(async size => {
         const data = await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': {revision: number}[]}};
@@ -64,16 +67,9 @@ async function journey(): Promise<void> {
         return (await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'}, body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: record.revision, layouts: {desktop: placed, phone: placed}}})})).status;
       }, size), 200, `saving ${size}`);
       await sleep(500);
-      const before = await card.boundingBox(); assert.ok(before !== null);
-      widths.push(before.width);
-      for (const tab of TABS) {
-        await card.getByRole('tab', {name: tab, exact: true}).click();
-        assert.equal((await card.boundingBox())?.height, before.height, `${size} ${tab}: the card keeps its height`);
-        assert.equal(await card.getByRole('tab', {name: tab, exact: true}).evaluate(node => node.scrollWidth > node.clientWidth + 1), false, `${size} ${tab}: the label fits`);
-      }
-      assert.equal(await placement.count(), 1);
+      assert.equal(await placement.getAttribute('data-home-shape'), 'square', `${size} shows a Small square`);
+      assert.equal(await card.count(), 0, 'the compact face mounts no Volcano reader');
     }
-    assert.ok((widths[0] ?? 0) <= (widths[2] ?? 0), `Home sizes: ${widths.join(', ')}`);
     await page.goto(`${world.url}/#/component/volcano`); await feed(page, 'connected'); await card.waitFor();
     sent.length = 0;
 

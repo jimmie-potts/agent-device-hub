@@ -14,6 +14,11 @@ try {
   const page = await context.newPage(); page.setDefaultTimeout(10_000);
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message)); const sent = changes(page);
   await page.goto(world.url); await feed(page, 'connected');
+  // The wide Home grid (#1672) shows Music as the generic compact face; Open leads to its Music page with the full card.
+  const face = page.locator('[data-home-compact="music:bunny/modules/playback:living-room"]');
+  await face.getByText('Playing · Synthetic song', {exact: true}).waitFor();
+  assert.equal(await face.getByRole('link', {name: 'Open Music · living-room', exact: true}).getAttribute('href'), '#/music/living-room');
+  await openAudio(page);
   const card = page.getByRole('article', {name: 'Music living-room', exact: true});
   await card.getByText('Synthetic song', {exact: true}).waitFor();
   await card.getByText('Synthetic album', {exact: true}).waitFor();

@@ -19,10 +19,15 @@ try {
     assert.ok(owner);
     assert.equal(owner.state, 'running', 'the actual Tidbyt owner must be running before testing its card');
     assert.equal(owner.serves?.includes('device'), true);
-    // This assertion is the feature's negative control on the unmodified Home composition.
+    // The wide Home grid (#1672) shows Tidbyt as the generic compact face, whose Open leads to its device page.
+    const open = page.getByRole('link', {name: 'Open tidbyt', exact: true});await open.waitFor();
+    assert.equal(await open.getAttribute('href'), '#/component/tidbyt');
+    // Home in one column keeps the full card. This assertion is the feature's negative control on the unmodified Home composition.
+    await page.setViewportSize({width: 560, height: 900});
     await card.getByRole('tab', {name: 'Status', exact: true}).waitFor().catch(async error => { console.error(await page.locator('main').innerText()); console.error(JSON.stringify(await page.evaluate(async () => { const value: unknown = await (await fetch('/api/v2/modules')).json(); return value; }))); throw error; });
     const surfaces = ['#/home', '#/component/tidbyt', '#/module/tidbyt/display'];
     for (const route of surfaces) {
+      await page.setViewportSize({width: route === '#/home' ? 560 : 1280, height: 900});
       await page.goto(`${world.url}/${route}`);
       // Home/device reuse preserves the selected tab; choose the face being inspected.
       await card.getByRole('tab', {name: 'Status', exact: true}).click();

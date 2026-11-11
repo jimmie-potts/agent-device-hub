@@ -120,17 +120,47 @@ Neutral icons identify cards without loading private media or mounting control
 adapters in the picker. Unavailable sources keep their reason; Add/Show changes
 only the draft. Closing the picker returns focus to Add card. Move cards with the
 handle or the earlier/later buttons; arrow keys on the handle provide the same
-ordering. Choose a supported Small, Standard or Wide size, Hide or Remove. Hidden
-cards remain in the saved arrangement and can be shown again; removal affects
-only that arrangement. Desktop and Phone have independent orders and sizes.
-Adding a card appends it to the other arrangement if absent. **Cancel** discards
-the draft, **Reset** restores that breakpoint's built-in defaults, and **Done**
-saves both through the core's revision-guarded `home-layout-set` command.
+ordering. On Desktop, choose the card's shape from the ones it offers, Hide or
+Remove. Hidden cards remain in the saved arrangement and can be shown again;
+removal affects only that arrangement. Desktop and Phone have independent
+orders. Adding a card appends it to the other arrangement if absent.
+**Cancel** discards the draft, **Reset** restores that breakpoint's built-in
+defaults, and **Done** saves both through the core's revision-guarded
+`home-layout-set` command.
 
-Visible cards wrap in saved order and share each row's remaining width. Small
-keeps a compact preferred width, Standard has more room, and Wide occupies its
-own row. Incomplete rows fill the available space without empty grid slots;
-phone layouts and the Phone editor preview stack cards in one column.
+Wide layouts place cards on one unit grid (#1672): columns of at least 220px
+with 16px gaps share the width, each row is one column tall, and every card is a
+Small square (1×1), Wide (2×1), Tall (1×2) or Large square (2×2). That gives 3
+columns at a 1100px window, 5 at 1440px and 7 at 1920px. `src/home-shapes.ts`
+places cards in saved order, each at the first free position where it fits, so
+a later card can fill an earlier hole; the page and Tab order stay the saved
+order. Edit Home shows the real placement and marks empty cells. Phone layouts,
+the Phone editor preview and windows narrower than two units stack cards in one
+column at content height with full content.
+
+In Edit Home on the grid, each card's bar shows its name and move handle; its
+Options button opens Earlier, Later, the shape choice, Hide and Remove below it.
+Lists calculate how many rows their card holds from its shape and the grid's cell size, with fixed row heights (`listFit` in `src/paging.ts`); rows sit at the top and the pager at the bottom, a short list leaves the rest of the card plain and an empty Inbox centres its message. No list measures itself. Hub mode's artwork and choices grow with its card. The built-in layout shows each card in its Standard shape; the Inbox's is Wide. A room or group with no lights says so where its artwork would be and offers Small square and Wide; a saved Tall or Large square shows as Wide until it has lights.
+Automatic art takes the empty cells after the last card, or a Wide row of its own.
+
+Each card offers only shapes its content fits at the 220px unit (`widgets.ts`
+and `homeCardShapes` in `home-catalog.ts`); `tests/home-shapes.browser.ts`
+measures every card in every offered shape. Hub mode, Inbox, Agent sessions,
+Timeline, light, room and Nanoleaf cards show compact content for their shape.
+Other cards, including Pixoo, Tidbyt and Wispr until their modules provide
+compact content, show a generic face in one unit: the name, the current state
+and **Open**, which leads to the card's existing device, Music or module page.
+A placement saved before shapes shows Small as Small square or Tall, Standard as
+the card's Standard shape and Wide as Large square or Wide; art follows its
+saved format. Loading never writes; the next Done or art action stores a shape
+and an agreeing width for every placement.
+
+A release from before #1672 reads a stored layout with shapes but refuses every
+Home save from its dashboard (`invalid-request`, nothing changes), because its
+save schema has no `shape` and its dashboard copies the saved placements. A
+width-only save is accepted and removes the shapes: in that release's dashboard
+choose Edit Home, Reset with Desktop selected, Reset with Phone selected, then
+Done. The runtime upgrade guide records the same under Home arrangement state.
 
 Inbox, Agent status and Timeline page their lists through one shared pager
 (`src/paged-list.tsx`, #1658), so a long list never makes its card taller than
@@ -140,17 +170,22 @@ one page of rows plus its heading and pager. **Previous**, **Next** and
 status two rows of tiles at the card's current column count. Paging covers only
 the records the page already holds and sends no request. The Inbox heading shows
 the total on every page, and **Check Inbox** on the Hub mode card shows the page
-holding its item. Entries open in place. Dismissing the only item on the last
+holding its item. On the unit grid, rows per page are calculated from the card's
+size and the fixed sizes in `src/paging.ts`, and an opened entry takes the page, with the pager hidden
+until it closes; elsewhere entries open in place. Dismissing the only item on the last
 page moves back a page. Agent status lists sessions that need you first; when
 they fill more than a page, the page label says so. A new Timeline category or
 period returns to the first page. When focus is in a list and paging or a
 removed row would leave it on the page body, focus moves to a control in the
 list; focus that has left the list stays where it is.
 
-Art is an optional module card. **Add Art** reserves its own row; choose Auto,
-Banner, Square or Tall and pin it separately from a gallery favorite. **Unpin art**
-allows bounded placement in unused space after the functional cards. Automatic
-art does not repack those cards or save its chosen geometry. Active pointer and
+Art is an optional module card. On the unit grid, pinned art is a shaped card
+cropped to its shape, with **Unpin art** and **Dismiss** above it; unpinned art
+takes the largest shape that fits the empty cells after the last card, or is left
+out. In one column, **Add Art** reserves its own row; choose Auto, Banner, Square
+or Tall and pin it separately from a gallery favorite. **Unpin art** allows
+bounded placement in unused space after the functional cards. Automatic art does
+not repack those cards or save its chosen geometry. Active pointer and
 keyboard controls freeze automatic fitting. **Dismiss art widget** and
 **Restore art widget** persist placement without sending art feedback. Reset
 returns the selected breakpoint to its defaults, including automatic art. The art
@@ -165,7 +200,7 @@ The browser uses a completely decoded rich still before changing the canvas;
 failed/stale images remain labelled and controls lock without fresh authority.
 
 The versioned `home-layout` record lives in `modules/core.sqlite`, with IDs,
-sizes and flags only. Reload, another browser and restart read the same state;
+sizes, shapes and flags only. Reload, another browser and restart read the same state;
 no layout is stored in localStorage. A concurrent change requires loading and
 reviewing the current layout. An accepted reply is not a saved result: the page
 waits for synced metadata and successful completion, and an uncertain save is

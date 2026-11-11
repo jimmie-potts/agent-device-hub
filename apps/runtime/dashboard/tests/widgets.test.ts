@@ -2,7 +2,7 @@
 // sync or the private content they read, and the home follows the owner-approved mockup, with the Hub mode (#924) and the inbox (#923) as slots.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {homeLayout, invalidPlacements, widgetCatalog, widgetDefinition} from '../src/widgets.ts';
+import {invalidPlacements, widgetCatalog, widgetDefinition} from '../src/widgets.ts';
 
 void test('every catalog widget declares its source, read surface, sizes and command behavior', () => {
   const ids = widgetCatalog.map(widget => widget.id);
@@ -26,11 +26,9 @@ void test('every catalog widget declares its source, read surface, sizes and com
   assert.equal(widgetDefinition('missing'), undefined);
 });
 
-void test('the home keeps mode and sessions wide, with inbox and optional Wispr narrow', () => {
-  const {wide, narrow} = homeLayout();
-  assert.deepEqual(wide.map(placement => placement.widget), ['hub-mode', 'sessions']);
-  assert.deepEqual(narrow.map(placement => placement.widget), ['inbox', 'wispr']);
-  assert.deepEqual(invalidPlacements([...wide, ...narrow]), []);
+// The built-in Home layout and its shapes are checked in home-catalog.test.ts (#1672).
+void test('the Hub widgets name their commands, families and slots', () => {
+  assert.deepEqual(invalidPlacements([{widget: 'hub-mode', size: 'medium'}, {widget: 'sessions', size: 'medium'}, {widget: 'inbox', size: 'small'}, {widget: 'wispr', size: 'small'}]), []);
   assert.equal(widgetDefinition('hub-mode')?.commands, true);
   assert.deepEqual(widgetDefinition('hub-mode')?.source.families, ['mode', 'operation']);
   assert.deepEqual(widgetCatalog.filter(widget => widget.slot !== undefined).map(widget => [widget.id, widget.slot?.story]), [['inbox', '#923']]);
