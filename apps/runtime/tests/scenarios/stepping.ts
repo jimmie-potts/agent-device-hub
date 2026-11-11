@@ -1,5 +1,5 @@
 // How the in-memory harness moves virtual time through a wait (Hub #1684). Each step gives real I/O a turn, which costs
-// real time, so a long wait skips the steps at which no timer is due, while every timer still fires at the virtual
+// real time (a pause while real work is in flight, Hub #1685), so a long wait skips the steps at which no timer is due, while every timer still fires at the virtual
 // instant, and in the order, that one fine step at a time gives.
 
 /** How far virtual time moves before real I/O, such as the edge's HTTP, gets to run. */
