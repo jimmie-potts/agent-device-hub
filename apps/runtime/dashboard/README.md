@@ -138,6 +138,11 @@ order. Edit Home shows the real placement and marks empty cells. Phone layouts,
 the Phone editor preview and windows narrower than two units stack cards in one
 column at content height with full content.
 
+In Edit Home on the grid, each card's bar shows its name and move handle; its
+Options button opens Earlier, Later, the shape choice, Hide and Remove below it.
+Lists show as many rows as their card holds, with the pager at the bottom.
+Automatic art takes the empty cells after the last card, or a Wide row of its own.
+
 Each card offers only shapes its content fits at the 220px unit (`widgets.ts`
 and `homeCardShapes` in `home-catalog.ts`); `tests/home-shapes.browser.ts`
 measures every card in every offered shape. Hub mode, Inbox, Agent sessions,

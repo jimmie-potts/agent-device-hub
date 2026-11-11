@@ -56,8 +56,8 @@
 /* One row groups through the options menu's Group with; two rows keep the drag handle. */
 :is(.home-layout-card.home-shape-square,.home-layout-card.home-shape-wide) .light-card .light-drag{display:none}
 .home-layout-card[data-home-shape] .light-card .light-drag{min-height:36px;margin-top:var(--space-xs)}
-/* Tall shows the drag handle with the Power face, the shortest; taller faces use the whole card. */
-.home-layout-card.home-shape-tall .light-card:has(.light-tabs [role=tab][aria-selected=true]:not(:first-child)) .light-drag{display:none}
+/* Tall hides the drag handle only with the Color face, the tallest, which uses the whole card. */
+.home-layout-card.home-shape-tall .light-card:has(.light-tabs [role=tab][aria-selected=true]:nth-child(2)) .light-drag{display:none}
 /* One row shows a command's result on one line under On and Off; the full lines stay in the options menu's details. */
 :is(.home-layout-card.home-shape-square,.home-layout-card.home-shape-wide) .light-card>.light-attention{display:none}
 .light-attention-line{margin:var(--space-xs) 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -129,7 +129,8 @@
 
 /* Art fills its shape and is cropped to it; its placement controls stay in one row above it. */
 .home-art-shaped{position:relative;display:flex;flex-direction:column;height:100%;min-height:0}
-.home-art-shaped>.home-art-controls{position:absolute;right:var(--space-s);bottom:var(--space-s);z-index:1;flex-wrap:nowrap;gap:var(--space-xs)}
+/* Over the image's top corner, below the card's heading, so they never cover the caption. */
+.home-art-shaped>.home-art-controls{position:absolute;right:var(--space-m);top:64px;z-index:1;flex-wrap:nowrap;gap:var(--space-xs)}
 .home-art-shaped>.home-art-controls button{min-height:36px;padding:4px 8px}
 .home-art-shaped .art-widget>header{margin-bottom:var(--space-xs)}
 .home-art-shaped>.home-art-content{flex:1 1 auto;min-height:0}

@@ -141,6 +141,19 @@ adds a row, never moves functional cards and never saves; Pin keeps the shape it
 columns and the cards' cells, so image arrival and the viewport's height never move it. The one-column layouts keep the
 existing art reservation, its interaction freeze and the format choice, which also sets the art card's grid shape.
 
+### 9. Review round 1 (PR #1673)
+
+- The edit bar on the grid is one row with the card's name, its move handle and an Options button; Earlier, Later,
+  the shape choice, Hide and Remove open in a panel below it, one card at a time, and Escape closes it.
+- List cards measure how many rows their card holds (pager at the bottom, one-line "1 / 3" label); Hub mode spreads
+  over its card; a Tall light shows its artwork in the room its face leaves. A browser test keeps the space below
+  each card's last content under 48px or 15% of the card, whichever is larger.
+- Automatic art with no trailing empty cell takes a Wide row of its own after the last card.
+- Small square and Wide light cards show a command's result on one line under On and Off.
+- The core also drops an art shape that disagrees with the art format (`homeArtShapes`), so an older dashboard's
+  format change decides; ordinary cards keep the omitted-shape rule.
+- A category chosen in Large square resets to All in shapes without the category buttons.
+
 ## Risks / Trade-offs
 
 - Visual order can differ from Tab order when a later card fills an earlier hole; Edit Home shows the real placement.
