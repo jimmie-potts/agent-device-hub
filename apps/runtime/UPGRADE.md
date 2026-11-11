@@ -108,12 +108,22 @@ rolls the whole step back and leaves the core unavailable, as a full disk does,
 until the cause is fixed; nothing is half-migrated. Opening a migrated store
 again changes nothing.
 
-The step rewrites every history row once. On a synthetic store of 100,000 rows
-with the runtime's database settings it took about 0.4 s, the files grew from
-86.1 MB to 93.9 MB after a checkpoint, and they peaked at 187.3 MB while the
-write-ahead log held the rewritten pages. Before the first start of this
-release, check that free space is at least the size of the core store. No other
-operator step is needed.
+The step rewrites every history row once, all in one transaction. On a synthetic
+store of 100,000 rows with the runtime's database settings it took about 0.4 s.
+The store and its write-ahead log `core.sqlite-wal` together grew from 86.1 MB to
+187.3 MB, most of it the log, which holds every rewritten page. After a
+checkpoint the store alone is 93.9 MB. The extra space is about 1.18 times the
+store, and an independent run needed about 1.14 times (108.2 MB to 231.8 MB).
+
+Before the first start of this release, check that free space is at least 1.5
+times the size of the core store, in addition to the space the backup step needs.
+With less, the first start can fail as full: the store rolls back unchanged, but
+the upgrade window is spent. The log keeps its size for as long as the core runs.
+SQLite's automatic checkpoints copy its pages into the store but never shrink the
+file, and the runtime runs no checkpoint of its own. A clean stop of the core
+checkpoints the log into the store and removes it, which gives the space back.
+After a crash or kill the log stays at its size through the next start, until
+that run's clean stop. No other operator step is needed.
 
 The change is forward-only. An older release run on a migrated store ignores the
 new columns, recreates its own message index and writes rows without an origin;

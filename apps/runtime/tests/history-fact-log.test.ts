@@ -101,6 +101,29 @@ void it('a store written by the release before #1740 migrates every row to this 
   database.close();
 });
 
+void it('a migration that fails at its last step leaves the store exactly as it was', async context => {
+  const file = join(await stateDir(context), 'core.sqlite');
+  const database = new DatabaseSync(file);
+  context.after(() => { if (database.isOpen) database.close(); });
+  database.exec(RELEASED_SCHEMA);
+  const insert = database.prepare(`INSERT INTO core_history (at_ms, revision, kind, source, message_id, type, subject, request_id, record)
+    VALUES (?, 1, 'operation', 'bunny/parts/dashboard', NULL, 'power-set', 'lamp', ?, ?)`);
+  for (let index = 1; index <= 3; index++) insert.run(1000 * index, `request-${index}`, JSON.stringify(step(index)));
+  database.prepare('INSERT INTO core_refused (at_ms, source, message_id, message) VALUES (?, ?, ?, ?)').run(6500, 'bunny/modules/lamp', 'outcome-1', '{}');
+  // A table under the name of the index the migration creates last, so that step throws after every other step ran.
+  database.exec('CREATE TABLE core_history_origin (x INTEGER)');
+  const before = dump(database);
+
+  assert.throws(() => new History(database), /core_history_origin/);
+
+  assert.equal(database.isTransaction, false, 'the transaction ended');
+  assert.deepEqual(dump(database), before, 'every table, schema entry and sqlite_sequence is as it was');
+  assert.equal(database.prepare('SELECT 1 FROM sqlite_master WHERE name = \'core_origin\'').get(), undefined, 'no origin is left behind');
+  assert.deepEqual((database.prepare('PRAGMA table_info(core_history)').all() as {name: string}[]).map(column => column.name),
+    OLD_COLUMNS.split(', '), 'no new column is left behind');
+  database.close();
+});
+
 void it('rows a release before #1740 adds to a migrated store join this origin\'s order at the next start', context => {
   const database = new DatabaseSync(':memory:');context.after(() => database.close());
   const history = new History(database);
