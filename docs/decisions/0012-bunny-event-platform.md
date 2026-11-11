@@ -1,8 +1,8 @@
 # ADR 0012: One event and messaging platform for every component
 
-Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-17,
-2026-10-30, 2026-11-03, 2026-11-10 and 2026-11-11 (see [Amendments](#amendments); the
-[2026-11-11 amendment](#amendment-2026-11-11) adopts no event sourcing, makes
+Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-10,
+2026-10-11, 2026-10-17, 2026-10-30, 2026-11-03, 2026-11-10 and 2026-11-11 (see
+[Amendments](#amendments); the [2026-11-11 amendment](#amendment-2026-11-11) adopts no event sourcing, makes
 history a fact log and says what a past fact may do).
 Supersedes [ADR 0010](0010-shared-event-contracts.md).
 This decision implements and installs nothing by itself. The children of
@@ -155,19 +155,19 @@ Existing formats move in one offline cutover:
 - A consumer then follows live events. It drops duplicates and stale revisions,
   and ignores commands and sync requests past their expiry.
 - This delivery has no replay. Here, replay means redelivering past
-  occurrences or effects to views or devices so that they happen again. That
-  rules out:
+  occurrences or effects so that they happen again. That rules out:
   - rebuilding current state from the log instead of syncing it;
-  - replaying history into views as if it were live;
+  - a consumer treating a past occurrence as new and reacting to it again;
   - catch-up that plays past moments or effects on displays again.
 
   Syncing current state is not replay. Neither is reporting a module's
   unreported outcome again after a restart. Since the
   [2026-11-11 amendment](#amendment-2026-11-11), neither is reading past facts:
-  any view, display or device may read and show them, and a named reader, such
-  as the decision maker or a peer installation, may read the facts from an
+  any view, display or device may read and show them, and any reader, the
+  decision maker and a peer installation among them, may read the facts from an
   origin after a cursor it keeps. A past fact never triggers a command by
-  itself.
+  itself. A decision made now may use past facts as input, as the amendment
+  describes.
 - History and the tracker live in the core and record durably. A slow consumer
   lags only itself and cannot block the bus.
 
@@ -506,7 +506,9 @@ The consequences:
   occurrences it receives. Since the
   [2026-11-11 amendment](#amendment-2026-11-11), the consumer may then read the
   facts it missed from history, to use or show them. Reading them does not make
-  them happen again, and none of them triggers a command by itself.
+  them happen again, and none of them triggers a command by itself. A decision
+  it makes now may use them as input, under the rules that apply now, but it
+  must not act as if they had just happened.
 - Live-only commands: a command to an offline module is lost, not queued. The
   owner sees it as failed or uncertain and can resend it.
 - Tracking: each tracked kind needs a deadline. Uncertain items need a person to
@@ -813,10 +815,22 @@ The decisions:
      command by itself.** (The owner at 17:38:20Z.)
 
    The first part is about reading and the second about acting. A dashboard
-   page or a display showing yesterday's agent output is reading, and any view
-   may do it. A device running yesterday's "turn on" again, or a moment playing
-   again as if it had just happened, is a command sent again, and no past fact
-   causes one.
+   page or a display showing yesterday's agent output is reading, and any view,
+   display or device may do it. A device running yesterday's "turn on" again, or
+   a moment playing again as if it had just happened, is a command sent again,
+   and no past fact causes one.
+
+   Deciding now is not a past fact triggering a command. A component may make
+   a new decision now, under its own rules, with past facts as input. Any
+   command it issues belongs to that new decision and is made under the rules
+   and limits that apply now. A consumer must never act as if a past occurrence
+   had just happened. For example, raising now an agent's request that has
+   gone unanswered for two hours is a new decision. Turning a lamp on because a
+   record says it was turned on yesterday is not allowed. The component that
+   decides sets how fresh a fact must be for its decision. For the decision
+   maker that is [#1728](https://github.com/jimmie-potts/agent-device-hub/issues/1728),
+   whose recorded decisions already have plain rules raise the passing of time
+   as its own event and feed what was raised and dismissed back in as facts.
 4. **The fact log is kept as long as history**, with no time limit, under
    [ADR 0011](0011-private-personal-data-retention.md). Whether history also
    keeps raw agent-hook observations is decided after their size is measured.
@@ -837,9 +851,11 @@ belongs to [#1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723)
 and is not recorded here.
 
 **"No replay" is narrowed, not removed.** After this amendment:
-- A named reader, such as the decision maker or a peer installation, may read
-  the facts from an origin after a cursor it keeps. Such a read is not replay.
-- Any view may read and show past facts.
+- Any reader, such as the decision maker or a peer installation, may read the
+  facts from an origin after a cursor it keeps. Such a read is not replay.
+- Any view, display or device may read and show past facts.
+- A decision made now may use past facts as input. A past fact never triggers
+  a command by itself.
 - Commands stay live-only. They carry an expiry, are never stored and are never
   sent again.
 - A consumer that catches up on facts does not make past moments or device
@@ -858,5 +874,5 @@ conventions. [#1728](https://github.com/jimmie-potts/agent-device-hub/issues/172
 owns the decision maker,
 [#1722](https://github.com/jimmie-potts/agent-device-hub/issues/1722) the
 delivery orchestrator and #1723 two machines. The trade-off is that history
-becomes something other parts depend on, and that every reader of past facts
-must keep reading apart from acting.
+becomes something other parts depend on, and that every component that acts
+must tell a decision it makes now apart from a past occurrence treated as new.
