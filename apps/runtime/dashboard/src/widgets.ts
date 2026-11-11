@@ -5,6 +5,7 @@
  * room and Music instances in home-catalog.ts. On the runtime (Hub #922) widgets read named families through sync.
  * Wispr (#927) reads private numeric content on demand; it never joins the broadcast families.
  */
+import type {HomeShape} from './home-shapes.ts';
 export type SourceKind = 'core' | 'module' | 'external';
 /** Small prefers a compact width, medium a wider card and large a whole row; narrow screens stack every size. */
 export type WidgetSize = 'small' | 'medium' | 'large';
@@ -15,6 +16,11 @@ export type WidgetDefinition = {
   description: string;
   /** The sizes the widget renders well at. */
   sizes: readonly WidgetSize[];
+  /**
+   * The Home shapes the widget offers (#1672): those its compact content fills, or, for a card without compact content
+   * yet, those its full content fits. `standard` is the shape a placement saved as Standard shows until it is changed.
+   */
+  shapes: readonly HomeShape[]; standard: HomeShape;
   /** The source kind and its synced families or explicit private content reads. */
   source: {kind: SourceKind; families: readonly string[]; content?: readonly string[]};
   /** true when the widget offers explicit command actions; a read-only widget has none. */
@@ -29,49 +35,50 @@ export type WidgetDefinition = {
 export const widgetCatalog: readonly WidgetDefinition[] = [
   {
     id: 'art', name: 'Art', description: 'A rich generated composition, private gallery and explicit owner requests.',
-    sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['art'], content: ['art/catalog', 'art/rendition']}, commands: true,
+    sizes: ['small', 'medium', 'large'], shapes: ['square', 'wide', 'tall', 'large-square'], standard: 'large-square', source: {kind: 'module', families: ['art'], content: ['art/catalog', 'art/rendition']}, commands: true,
   },
   {
     id: 'reachy', name: 'Reachy', description: 'Latest fixed-text reaction, guarded text controls and separately enabled browser speech.',
-    sizes: ['medium', 'large'], source: {kind: 'module', families: ['companion-state', 'companion-speech-state']}, commands: true,
+    sizes: ['medium', 'large'], shapes: ['tall', 'large-square'], standard: 'large-square', source: {kind: 'module', families: ['companion-state', 'companion-speech-state']}, commands: true,
   },
   {
     id: 'roborock', name: 'Roborock', description: 'Observed vacuum state, battery, recorded run and care usage.',
-    sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['roborock-vacuum'], content: ['roborock/status', 'roborock/latest-run']}, commands: false,
+    sizes: ['small', 'medium', 'large'], shapes: ['tall', 'large-square'], standard: 'tall', source: {kind: 'module', families: ['roborock-vacuum'], content: ['roborock/status', 'roborock/latest-run']}, commands: false,
   },
   {
     id: 'volcano', name: 'Volcano', description: 'Observed heater state, heating timeline, sessions, daily totals and the session threshold.',
-    sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['volcano-status'], content: ['volcano/timeline', 'volcano/sessions', 'volcano/totals', 'volcano/gaps']}, commands: true,
+    sizes: ['small', 'medium', 'large'], shapes: ['tall', 'large-square'], standard: 'tall', source: {kind: 'module', families: ['volcano-status'], content: ['volcano/timeline', 'volcano/sessions', 'volcano/totals', 'volcano/gaps']}, commands: true,
   },
   {
     id: 'duck-latest', name: 'MicroDuck', description: 'Latest intended meaning from one explicitly selected Reachy–Duck conversation.',
-    sizes: ['medium', 'large'], source: {kind: 'module', families: ['assistant-state'], content: ['companions/duck-widget', 'companions/companion-history']}, commands: true,
+    sizes: ['medium', 'large'], shapes: ['tall', 'large-square'], standard: 'large-square', source: {kind: 'module', families: ['assistant-state'], content: ['companions/duck-widget', 'companions/companion-history']}, commands: true,
   },
   {
     id: 'timeline', name: 'Timeline', description: 'Retained Hub activity with read-only filters and evidence.',
-    sizes: ['medium', 'large'], source: {kind: 'core', families: [], content: ['/api/v2/history']}, commands: false,
+    sizes: ['medium', 'large'], shapes: ['square', 'wide', 'tall', 'large-square'], standard: 'tall', source: {kind: 'core', families: [], content: ['/api/v2/history']}, commands: false,
   },
   {
     // Reads the capture state and the existing derived feature stream in the browser (#1619); it starts no capture.
     id: 'music-visualizer', name: 'Music visualizer', description: 'A live visualizer of the measured Music audio, in the effect chosen in this browser.',
-    sizes: ['medium', 'large'], source: {kind: 'core', families: ['music-capture-state']}, commands: false,
+    sizes: ['medium', 'large'], shapes: ['square', 'wide', 'tall', 'large-square'], standard: 'wide', source: {kind: 'core', families: ['music-capture-state']}, commands: false,
   },
   {
     id: 'wispr', name: 'Wispr', description: 'Numeric dictation totals from the manually selected collector files.',
-    sizes: ['small', 'medium'], source: {kind: 'module', families: [], content: ['wispr/status', 'wispr/summary']}, commands: false,
+    sizes: ['small', 'medium'], shapes: ['square', 'wide', 'tall'], standard: 'wide', source: {kind: 'module', families: [], content: ['wispr/status', 'wispr/summary']}, commands: false,
   },
   {
     id: 'hub-mode', name: 'Hub mode', description: 'The Hub mode and the result of each device\'s mode command.',
-    sizes: ['medium', 'large'], source: {kind: 'core', families: ['mode', 'operation']}, commands: true,
+    sizes: ['medium', 'large'], shapes: ['square', 'wide', 'tall', 'large-square'], standard: 'wide', source: {kind: 'core', families: ['mode', 'operation']}, commands: true,
   },
   {
     id: 'sessions', name: 'Agent sessions',
     description: 'Agent sessions as compact rows with their names, activity, attention, finished turns and read evidence, synced from the core.',
-    sizes: ['medium', 'large'], source: {kind: 'core', families: ['session']}, commands: true,
+    sizes: ['medium', 'large'], shapes: ['square', 'wide', 'tall', 'large-square'], standard: 'large-square', source: {kind: 'core', families: ['session']}, commands: true,
   },
   {
     id: 'inbox', name: 'Inbox', description: 'Device commands that failed or whose result is unknown, for a person to decide on.',
-    sizes: ['small', 'medium'], source: {kind: 'core', families: ['inbox-item']}, commands: false, slot: {story: '#923'},
+    // No Small square: Inbox has no page of its own to hold the rest of the list (#1672 open question).
+    sizes: ['small', 'medium'], shapes: ['wide', 'tall', 'large-square'], standard: 'tall', source: {kind: 'core', families: ['inbox-item']}, commands: false, slot: {story: '#923'},
   },
 ];
 

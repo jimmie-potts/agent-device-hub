@@ -4,6 +4,7 @@ import type {HomeArrangements, HomePlacement, LightingLayoutRecord, LightingSele
 import type {RuntimeData} from './runtime-feeds.ts';
 import {cardsFor, emptyLightingLayout, lightingDevices, selectionKey} from './lighting.ts';
 import {homeLayout, widgetCatalog, widgetDefinition, type WidgetSize} from './widgets.ts';
+import type {HomeShape} from './home-shapes.ts';
 
 type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; instance: string} | {kind: 'light'; selection: LightingSelection} | {kind: 'unavailable'};
 export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean};
@@ -96,4 +97,24 @@ export function addHomeCard(layouts: HomeArrangements, breakpoint: keyof HomeArr
     else if (key === breakpoint) found.hidden = false;
   }
   return next;
+}
+
+const allShapes: readonly HomeShape[] = ['square', 'wide', 'tall', 'large-square'];
+/**
+ * The shapes a Home card offers and the one a Standard placement shows (#1672). Core widgets declare theirs in the
+ * widget catalog; light, room and display cards have compact content in every shape; other device and Music cards offer
+ * the shapes their full content fits until they get compact content.
+ */
+export function homeCardShapes(card: Pick<HomeCardDefinition, 'id' | 'source'>): {shapes: readonly HomeShape[]; standard: HomeShape} {
+  const widget = widgetDefinition(card.id === 'module:roborock' ? 'roborock' : card.id);
+  if (widget !== undefined) return {shapes: widget.shapes, standard: widget.standard};
+  if (card.source.kind === 'unavailable') return {shapes: allShapes, standard: 'square'};
+  if (card.source.kind === 'light') return {shapes: allShapes, standard: 'tall'};
+  if (card.source.kind === 'device') {
+    const module = card.source.owner.slice('bunny/modules/'.length);
+    if (module === 'pixoo' || module === 'tidbyt') return {shapes: allShapes, standard: 'tall'};
+    const owned = widgetDefinition(module);
+    if (owned !== undefined) return {shapes: owned.shapes, standard: owned.standard};
+  }
+  return {shapes: ['tall', 'large-square'], standard: 'tall'};
 }

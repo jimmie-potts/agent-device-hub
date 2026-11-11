@@ -4,7 +4,8 @@ import type {InboxItem} from '@jimmie-potts/event-contracts/v2/families';
 import {sendAction} from './actions.ts';
 import {InboxCard, InboxItemCard} from './inbox-card.tsx';
 import {PagedList} from './paged-list.tsx';
-import {listPageSize} from './paging.ts';
+import {inboxShapePageSize, listPageSize} from './paging.ts';
+import {useHomeShape} from './home-shape-context.ts';
 
 function InboxRow({item, label, live, control, hidden}: {item: InboxItem; label: string; live: boolean; control: boolean; hidden: boolean}): React.JSX.Element {
   const [attempt, setAttempt] = useState<{revision: number; locked: boolean}>();
@@ -32,7 +33,8 @@ export type InboxFocus = {id: string; serial: number};
 export function InboxPanel({items, live, control, devices = [], focus, headingId}: {
   items: readonly InboxItem[]; live: boolean; control: boolean; devices?: readonly DeviceRecord[]; focus?: InboxFocus | undefined; headingId?: string;
 }): React.JSX.Element {
-  const host = useRef<HTMLDivElement>(null);
+  const host = useRef<HTMLDivElement>(null), shape = useHomeShape();
+  const pageSize = (shape === undefined ? undefined : inboxShapePageSize[shape]) ?? listPageSize.inbox;
   useEffect(() => {
     if (focus === undefined) return;
     const row = [...(host.current?.querySelectorAll<HTMLElement>('[data-inbox]') ?? [])].find(item => item.dataset.inbox === focus.id);
@@ -44,7 +46,7 @@ export function InboxPanel({items, live, control, devices = [], focus, headingId
   }, [focus]);
   // The heading keeps the total count on every page; the item to check is first given its page.
   return <div ref={host}><InboxCard count={items.length} live={live} control={control} headingId={headingId}>
-    <PagedList keys={items.map(item => item.id)} pageSize={listPageSize.inbox} label="Inbox" reveal={focus === undefined ? undefined : {key: focus.id, serial: focus.serial}}>
+    <PagedList keys={items.map(item => item.id)} pageSize={pageSize} label="Inbox" reveal={focus === undefined ? undefined : {key: focus.id, serial: focus.serial}}>
       {shown => items.map(item => <InboxRow key={item.id} item={item} label={devices.find(device => device.id === item.item.target)?.label ?? item.item.target} live={live} control={control} hidden={!shown(item.id)}/>)}
     </PagedList></InboxCard></div>;
 }

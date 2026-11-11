@@ -1,6 +1,20 @@
 .home-layout-heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
 /* Wrap in saved order and share each row's spare width instead of reserving empty grid slots. */
 .home-layout-grid{display:flex;flex-wrap:wrap;gap:var(--space-m,16px);align-items:flex-start}
+/* The unit grid (#1672): columns of at least --home-unit share the width, and every row is one column wide, so each
+   unit is a square. home-layout.tsx sets the column count and row height and places each card by its shape. */
+.home-layout-grid{--home-unit:240px}
+.home-layout-grid[data-packed=true]{display:grid;align-items:stretch}
+.home-layout-grid[data-packed=true]>.home-layout-card{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.home-layout-grid[data-packed=true]>.home-layout-card>.home-card-content{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.home-layout-grid[data-packed=true] .home-card-content>*{flex:1 1 auto;min-height:0}
+.home-layout-grid[data-packed=true] .home-card-content>:is(.lighting-workspace,.music-workspace,.companion-page,.wemo-module),.home-layout-grid[data-packed=true] .home-card-content :is(.lighting-grid,.music-grid){display:flex;flex-direction:column}
+.home-layout-grid[data-packed=true] .home-card-content :is(.lighting-workspace,.music-workspace,.companion-page,.wemo-module)>:first-child,.home-layout-grid[data-packed=true] .home-card-content :is(.lighting-grid,.music-grid)>:first-child{flex:1 1 auto;min-height:0}
+.home-layout-grid[data-packed=true] .home-card-content .widget,.home-layout-grid[data-packed=true] .home-card-content .light-card,.home-layout-grid[data-packed=true] .home-card-content .card{box-sizing:border-box;height:100%;margin:0}
+/* Art fills its shape and is cropped to it. */
+.home-art-shaped{height:100%}
+.home-art-shaped .art-image-frame{flex:1;min-height:0}
+.home-art-shaped .art-image canvas,.home-art-shaped .art-image img{width:100%;height:100%;object-fit:cover}
 .home-layout-card{min-width:0;flex:2 1 340px}
 .home-layout-card.home-size-small{flex:1 1 260px}
 .home-layout-card.home-size-large{flex:1 0 100%}

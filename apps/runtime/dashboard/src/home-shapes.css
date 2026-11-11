@@ -1,0 +1,49 @@
+/* Compact content for Home card shapes (#1672), keyed on the shape of the Home card that holds it. Off the unit grid
+   (narrow screens, the Phone arrangement, other pages) no rule here applies and every card keeps its full content. */
+
+/* Hub mode: the chosen mode and its three choices fit one unit; Wide puts the choices beside it. */
+.home-shape-square .hub-mode-card .hub-mode-hero,.home-shape-wide .hub-mode-card .hub-mode-hero{margin:var(--space-s) 0;gap:var(--space-s)}
+.home-shape-square .hub-mode-card .hub-mode-art,.home-shape-wide .hub-mode-card .hub-mode-art{width:52px;height:52px;border-radius:18px;box-shadow:inset 0 0 0 4px var(--panel)}
+.home-shape-square .hub-mode-card .hub-mode-art svg{width:24px;height:24px}
+.home-shape-square .hub-mode-card .hub-mode-choice,.home-shape-wide .hub-mode-card .hub-mode-choice{font-size:1.3rem}
+.home-shape-square .hub-mode-card .hub-mode-choices button{padding:var(--space-s) var(--space-xs);min-height:44px}
+.home-shape-square .hub-mode-card .hub-mode-choices button>span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.home-shape-wide .hub-mode-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);grid-template-rows:auto 1fr;column-gap:var(--space-m);align-items:center}
+.home-shape-wide .hub-mode-card>header{grid-column:1/-1}
+.home-shape-wide .hub-mode-card .hub-mode-choices button{padding:var(--space-s) var(--space-xs)}
+.home-shape-square .hub-mode-card .hub-mode-exceptions,.home-shape-wide .hub-mode-card .hub-mode-exceptions{display:none}
+
+/* Light, room, Pixoo and Tidbyt cards fill their shape; the artwork takes the space the controls leave. */
+.home-layout-card[data-home-shape] .light-card{display:flex;flex-direction:column;padding:var(--space-m);overflow:hidden}
+.home-layout-card[data-home-shape] .light-card .light-artwork{flex:1 1 auto;min-height:56px;height:auto;margin-block:var(--space-xs)}
+.home-layout-card[data-home-shape] .light-card .lighting-image-group svg{max-height:100%}
+.home-layout-card[data-home-shape] .light-card .light-power{margin-block:var(--space-xs)}
+.home-layout-card[data-home-shape] .light-card .light-drag{display:none}
+.home-shape-tall .light-card .light-artwork,.home-shape-large-square .light-card .light-artwork{flex:0 1 140px}
+.home-shape-tall .light-card .light-face-space,.home-shape-large-square .light-card .light-face-space{flex:1 1 auto;height:auto;min-height:0}
+.home-shape-tall .light-card .light-face,.home-shape-large-square .light-card .light-face{padding-top:var(--space-s)}
+.home-shape-wide .light-card:not(.pixoo-card):not(.tidbyt-card){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);grid-template-rows:auto 1fr;column-gap:var(--space-m)}
+.home-shape-wide .light-card>header{grid-column:1/-1}
+.home-shape-wide .light-card .light-compact{align-self:center}
+.home-shape-square .light-card .light-attention,.home-shape-wide .light-card .light-attention{display:none}
+
+/* Pixoo and Tidbyt: one row shows the display and what plays; two rows add their control tabs. */
+.home-shape-square :is(.pixoo-card,.tidbyt-card) :is(.pixoo-tabs,.pixoo-face-space,.tidbyt-tabs,.tidbyt-face-space),
+.home-shape-wide :is(.pixoo-card,.tidbyt-card) :is(.pixoo-tabs,.pixoo-face-space,.tidbyt-tabs,.tidbyt-face-space){display:none}
+.home-layout-card[data-home-shape] :is(.pixoo-artwork,.tidbyt-artwork){flex:1 1 auto;min-height:56px;height:auto;margin-block:var(--space-xs);display:grid;place-items:center;overflow:hidden}
+.home-layout-card[data-home-shape] :is(.pixoo-device,.tidbyt-device){height:100%;max-height:100%;width:auto;aspect-ratio:1}
+.home-layout-card[data-home-shape] .tidbyt-device{aspect-ratio:2}
+.home-layout-card[data-home-shape] :is(.pixoo-caption,.tidbyt-caption){margin:var(--space-xs) 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-shape-wide :is(.pixoo-card,.tidbyt-card){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto 1fr;column-gap:var(--space-m)}
+.home-shape-wide :is(.pixoo-card,.tidbyt-card)>header{grid-column:1/-1}
+.home-shape-wide :is(.pixoo-card,.tidbyt-card) :is(.pixoo-caption,.tidbyt-caption){align-self:center;white-space:normal}
+.home-shape-tall :is(.pixoo-card,.tidbyt-card) :is(.pixoo-artwork,.tidbyt-artwork){flex:0 1 160px}
+.home-shape-tall :is(.pixoo-face-space,.tidbyt-face-space),.home-shape-large-square :is(.pixoo-face-space,.tidbyt-face-space){min-height:0;flex:1 1 auto}
+.home-shape-tall :is(.pixoo-face-space,.tidbyt-face-space)>.light-face,.home-shape-large-square :is(.pixoo-face-space,.tidbyt-face-space)>.light-face{min-height:0;padding-block:var(--space-s)}
+.home-shape-large-square :is(.pixoo-card,.tidbyt-card){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto auto auto 1fr;column-gap:var(--space-m)}
+.home-shape-large-square :is(.pixoo-card,.tidbyt-card)>header{grid-column:1/-1}
+.home-shape-large-square :is(.pixoo-card,.tidbyt-card) :is(.pixoo-artwork,.tidbyt-artwork){grid-column:1;grid-row:2/5}
+.home-shape-large-square :is(.pixoo-card,.tidbyt-card)>:not(header):not(.pixoo-artwork):not(.tidbyt-artwork){grid-column:2}
+
+/* Inbox rows are shorter on the unit grid so a page and its pager fit the shape. */
+.home-layout-card[data-home-shape] .inbox-entry>summary{min-height:56px}
