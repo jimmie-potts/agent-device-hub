@@ -95,6 +95,33 @@ configured Art requires its primary store and ordinary healthy running state, an
 retained store stays when its section is gone. A restart leaves every in-flight call
 uncertain with its reservation kept, and resends nothing.
 
+## Core history fact log
+
+The #1740 release changes the core store's `core_history` (`modules/core.sqlite`).
+At its first open, in one transaction, the core creates the one-row table
+`core_origin` holding a random UUID, the installation's origin, adds the
+nullable columns `origin` and `origin_seq`, and gives every existing row that
+origin and a sequence from 1 in `seq` order. It replaces the unique index on
+`(source, message_id)` with unique indexes on `(origin, origin_seq)` and
+`(origin, source, message_id)`. No other column, row or table changes. A failure
+rolls the whole step back and leaves the core unavailable, as a full disk does,
+until the cause is fixed; nothing is half-migrated. Opening a migrated store
+again changes nothing.
+
+The step rewrites every history row once. On a synthetic store of 100,000 rows
+with the runtime's database settings it took about 0.4 s, the files grew from
+86.1 MB to 93.9 MB after a checkpoint, and they peaked at 187.3 MB while the
+write-ahead log held the rewritten pages. Before the first start of this
+release, check that free space is at least the size of the core store. No other
+operator step is needed.
+
+The change is forward-only. An older release run on a migrated store ignores the
+new columns, recreates its own message index and writes rows without an origin;
+the next start of this release gives those rows the origin and the next
+sequences. This follows from the code and focused tests, not from a qualified
+recovery, so recovery stays unknown unless separately qualified; prefer fixing
+forward.
+
 ## Routine operation checklist
 
 1. Verify reviewed merged source, applicable CI and release integrity. Assess
