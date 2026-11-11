@@ -1,17 +1,64 @@
 // Real disposable core/gateway with numeric-only source data. No native helper or physical device.
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
+import {monitorEventLoopDelay} from 'node:perf_hooks';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
 import {expect} from 'playwright/test';
+import {connectRemote} from '@jimmie-potts/sdk';
+import type {CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture-data';
 import {startWorld, changes, feed} from './harness.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
+
+type Shown = {feed: string | null; card: string[] | null; level: string | null; response: string[] | null; suggestion: string; waitingForInput: boolean | null};
+/**
+ * Runs in each microphone page before its own scripts (#1698): keeps every change in what the capture card shows, with
+ * its wall time, so a failure can tell a measurement the core retired from a page that stopped counting its frames
+ * fresh or lost its feed. It only observes; nothing waits on it, and a passing run never reads it.
+ */
+function recordCaptureCard(): void {
+  const text = (element: Element): string => (element.textContent ?? '').replace(/\s+/g, ' ').trim();
+  const statuses = (root: Element | null, skip: Element | null): string[] | null => root === null ? null
+    : [...root.querySelectorAll('[role=status]')].filter(item => skip === null || !skip.contains(item)).map(text);
+  const show = (): Shown => {
+    const card = document.querySelector('article[aria-label="Music input measurement"]');
+    const region = card?.querySelector('section[aria-label="Microphone response settings"]') ?? null;
+    const use = region === null ? undefined : [...region.querySelectorAll('button')].find(button => text(button) === 'Use suggested gate in draft');
+    return {feed: document.querySelector('main#main')?.getAttribute('data-feed') ?? null, card: statuses(card, region),
+      level: card?.querySelector('.music-input-level meter')?.getAttribute('value') ?? null, response: statuses(region, null),
+      suggestion: use === undefined ? 'absent' : use.disabled ? 'disabled' : 'enabled',
+      waitingForInput: region === null ? null : [...region.querySelectorAll('.music-note')].some(item => text(item).startsWith('Start the selected microphone'))};
+  };
+  const timeline: (Shown & {at: number})[] = [];
+  let last = '';
+  const note = (): void => {
+    const shown = show(), key = JSON.stringify(shown);
+    if (key === last) return;
+    last = key; timeline.push({at: Date.now(), ...shown});
+    if (timeline.length > 60) timeline.shift();
+  };
+  (globalThis as unknown as {captureJourney: unknown}).captureJourney = {show, timeline};
+  new MutationObserver(note).observe(document, {subtree: true, childList: true, attributes: true, characterData: true});
+}
 
 const world = await startWorld({musicCapture: true});
 let producer: Awaited<ReturnType<typeof musicCaptureProducer>> | undefined;
 const browser = await chromium.launch({headless: true});
 const artifacts = await browserArtifactDirectory();
+// Failure-only facts for #1698, all recorded passively: the wall time of each step around the suggested gate, and this
+// process's event-loop delay. The producer fixture and the core run in this process, so a long stall here stops frames.
+// Each stall of 200 ms or more is kept with the wall time it began.
+const marks: Record<string, number> = {};
+const loopDelay = monitorEventLoopDelay({resolution: 10}); loopDelay.enable();
+const stalls: {at: number; blockedMs: number}[] = [];
+let lastTick = performance.now();
+const stallWatch = setInterval(() => {
+  const now = performance.now();
+  if (now - lastTick >= 250) {stalls.push({at: Math.round(Date.now() - (now - lastTick)), blockedMs: Math.round(now - lastTick - 50)}); if (stalls.length > 20) stalls.shift();}
+  lastTick = now;
+}, 50);
+stallWatch.unref();
 try {
   const context = await browser.newContext({viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
   const page = await context.newPage(); page.setDefaultTimeout(10_000);
@@ -107,6 +154,7 @@ try {
   await replacement.close();
   producer = await musicCaptureProducer(world.url, world.musicCaptureToken, 'studio-mic');
   const micContext = await browser.newContext({viewport: {width: 390, height: 900}, reducedMotion: 'reduce'});
+  await micContext.addInitScript(recordCaptureCard);
   const micPage = await micContext.newPage();micPage.setDefaultTimeout(10_000);
   micPage.on('pageerror', error => errors.push(error.message));
   await micPage.goto(world.url + '/#/audio');await feed(micPage, 'connected');
@@ -138,24 +186,26 @@ try {
   await responseControls.getByText(/Quiet measurement is inactive: cancelled/).waitFor();
   assert.equal(producer.commands.length, 2, 'calibration cancellation changes no source work');
   await measureQuiet.click();await responseControls.getByText(/Suggested gate: 0.0200 RMS/).waitFor({timeout: 15000});
+  marks.measured = Date.now(); loopDelay.reset();
   await expect(responseControls.getByRole('combobox', {name: 'Noise gate', exact: true})).toHaveValue('off');
   await responseControls.getByRole('button', {name: 'Use suggested gate in draft', exact: true}).click();
   await responseControls.getByRole('spinbutton', {name: 'Sensitivity', exact: true}).fill('2');
   await responseControls.getByRole('spinbutton', {name: 'Smoothing (ms)', exact: true}).fill('0');
-  await applyResponse.click();await responseControls.getByText(/Apply: Completed: succeeded/).waitFor();
+  await applyResponse.click();await responseControls.getByText(/Apply: Completed: succeeded/).waitFor();marks.applied = Date.now();
   await expect(preview).toHaveAttribute('value', '0');
   await expect(micCard.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.01');
   producer.level(0.25);await expect(preview).toHaveAttribute('value', '0.5');
   assert.equal(producer.commands.length, 2, 'response settings do not dispatch source or light work');
 
-  const otherPage = await micContext.newPage();await otherPage.goto(world.url + '/#/audio');await feed(otherPage, 'connected');
+  const otherPage = await micContext.newPage();await otherPage.goto(world.url + '/#/audio');await feed(otherPage, 'connected');marks.otherOpened = Date.now();
   const otherResponse = otherPage.getByRole('region', {name: 'Microphone response settings'});
   await micPage.getByRole('spinbutton', {name: 'Sensitivity', exact: true}).fill('3');
   await otherResponse.getByRole('spinbutton', {name: 'Sensitivity', exact: true}).fill('4');
   await otherResponse.getByRole('button', {name: 'Apply response settings', exact: true}).click();
-  await otherResponse.getByText(/Apply: Completed: succeeded/).waitFor();
+  await otherResponse.getByText(/Apply: Completed: succeeded/).waitFor();marks.otherApplied = Date.now();
   await responseControls.getByText(/Saved settings changed/).waitFor();
   await expect(micPage.getByRole('spinbutton', {name: 'Sensitivity', exact: true})).toHaveValue('3');
+  marks.useSuggested = Date.now();
   await responseControls.getByRole('button', {name: 'Use suggested gate in draft', exact: true}).click();
   await responseControls.getByText(/Saved settings changed/).waitFor();
   await expect(applyResponse).toBeDisabled();await responseControls.getByRole('button', {name: 'Keep my draft', exact: true}).click();
@@ -219,4 +269,54 @@ try {
   await boundedPage.screenshot({path: join(artifacts, 'selected-microphone-max-alias-320.png'), fullPage: true});
   await boundedContext.close();assert.deepEqual(errors, []);
   await context.close();
-} finally {await browser.close(); await producer?.close(); await world.close();}
+} catch (error) {
+  // Hosted runs keep no screenshot, so a failure prints, before the browser closes, what each page showed and how its
+  // capture card changed, the core's capture state and this process's stalls (#1698), as the Music lighting journey
+  // prints its pages (#1664). Times are milliseconds from the completed quiet measurement, or from this dump without one.
+  // Each read has its own limit, since `evaluate` ignores the default timeout, and the original error always follows.
+  const journey = 'music-capture', dumped = Date.now(), origin = marks.measured ?? dumped, since = (at: number): number => at - origin;
+  const bounded = async <T>(read: Promise<T>, ms: number): Promise<T | string> => {
+    const limit = new AbortController();
+    try {return await Promise.race([read.catch((failure: unknown) => String(failure)), delay(ms, 'timed out', {signal: limit.signal})]);} finally {limit.abort();}
+  };
+  try {
+    console.error(JSON.stringify({journey, from: marks.measured === undefined ? 'dump' : 'measured', dumpedAt: since(dumped),
+      marks: Object.fromEntries(Object.entries(marks).map(([name, at]) => [name, since(at)]))}));
+    for (const [contextIndex, context] of browser.contexts().entries()) for (const [pageIndex, open] of context.pages().entries()) {
+      const page = `${contextIndex}.${pageIndex} ${new URL(open.url()).hash}`;
+      const read = await bounded(open.evaluate(() => {
+        const recorder = (globalThis as unknown as {captureJourney?: {show: () => unknown; timeline: unknown[]}}).captureJourney;
+        return recorder === undefined ? {statuses: [...document.querySelectorAll('main [role=status]')].map(item => (item.textContent ?? '').replace(/\s+/g, ' ').trim())}
+          : {shown: recorder.show(), timeline: recorder.timeline};
+      }), 2000);
+      // Each timeline entry lists only what changed from the entry before it.
+      const timeline = typeof read === 'string' || !('timeline' in read) ? undefined : (read.timeline as (Record<string, unknown> & {at: number})[])
+        .map(({at, ...shown}, index, all) => ({t: since(at), ...Object.fromEntries(Object.entries(shown)
+          .filter(([key, value]) => index === 0 || JSON.stringify(value) !== JSON.stringify((all[index - 1] as Record<string, unknown>)[key])))}));
+      console.error(JSON.stringify({journey, page, ...(typeof read === 'string' ? {unread: read} : 'shown' in read ? {shown: read.shown} : read)}));
+      if (timeline !== undefined) console.error(JSON.stringify({journey, page, timeline}));
+    }
+    const core = await bounded((async () => {
+      const reader = await connectRemote({url: world.url, source: 'bunny/parts/reader', token: world.readerToken});
+      try {
+        const answer = await reader.sync<CaptureState>(['music-capture-state'], () => {}, {owner: 'bunny/core', timeoutMs: 3000});
+        const state = answer.status === 'synced' ? answer.copy.states()[0]?.data : undefined;
+        if (state === undefined) return answer.status;
+        const response = state.response, session = state.session;
+        return {revision: state.revision, availability: state.availability, session: session.status, response: response === undefined ? null : {
+          settingsRevision: response.settingsRevision, gate: response.settings.gate.mode,
+          calibration: response.calibration.status === 'ended' ? `ended: ${response.calibration.reason}` : response.calibration.status,
+          evidenceMatches: response.calibration.status !== 'idle' && response.evidence?.id === response.calibration.operationId,
+          appliedTo: response.appliedTo === null ? null : 'generation' in session && response.appliedTo.generation === session.generation ? 'this capture' : 'another capture'}};
+      } finally {await reader.close();}
+    })(), 5000);
+    console.error(JSON.stringify({journey, core}));
+    console.error(JSON.stringify({journey, maxLoopDelayMs: Math.round(loopDelay.max / 1e6), p99LoopDelayMs: Math.round(loopDelay.percentile(99) / 1e6),
+      stalls: stalls.map(stall => ({t: since(stall.at), blockedMs: stall.blockedMs})), producerCommands: producer?.commands.length ?? null}));
+    // Refused syncs of other families recur through the whole journey and would push out the records that matter here.
+    console.error(JSON.stringify({journey, warnings: world.logs.filter(record => record.severity_text !== 'INFO' &&
+      (record.event_name !== 'runtime.sync.refused' || String(record.attributes['bunny.pattern']).includes('music-capture'))).slice(-20)
+      .map(record => [record.timestamp === undefined ? null : since(Date.parse(record.timestamp)), record.event_name, record.attributes])}));
+  } catch (failure) {console.error(JSON.stringify({journey, dumpFailed: String(failure)}));}
+  throw error;
+} finally {clearInterval(stallWatch); loopDelay.disable(); await browser.close(); await producer?.close(); await world.close();}
