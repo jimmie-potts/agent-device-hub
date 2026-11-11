@@ -1,7 +1,8 @@
 # ADR 0011: Retain personal data privately and keep it out of GitHub
 
 Status: accepted direction on 2026-10-03; amended on 2026-10-05 (see the
-[amendment](#amendment-2026-10-05)). Runtime adoption requires scoped,
+[amendment](#amendment-2026-10-05)) and on 2026-11-11 (see the
+[amendment](#amendment-2026-11-11)). Runtime adoption requires scoped,
 versioned implementation and its own source and installed evidence.
 Policy delivery: [Hub #775](https://github.com/jimmie-potts/agent-device-hub/issues/775).
 
@@ -157,3 +158,58 @@ The owner decided the following on 2026-10-05:
 [ADR 0012](0012-bunny-event-platform.md) applies this policy to the B.U.N.N.Y.
 message platform. Its event profile 2.0 carries personal fields that profile 1.0
 excluded.
+
+## Amendment, 2026-11-11
+
+The owner decided the following on 2026-11-11, in chat to the coordinating
+session, while answering the questions recorded in the design record
+[#1728](https://github.com/jimmie-potts/agent-device-hub/issues/1728):
+
+- At 17:13:47Z the owner answered question 3 of a numbered round, which
+  recommended the lists below without their email and calendar lines, with
+  "Let's stick with your recommendation as well."
+- At 17:34:59Z the owner accepted the recommendation on question 15, email and
+  the calendar as counts and flags only, in the words "The recommendations for
+  the rest of round 3."
+
+The decision:
+
+- **Destination and purpose.** The classes below may be sent to OpenAI's
+  Decisions endpoint as input to a decision by B.U.N.N.Y.'s decision maker.
+  For that endpoint and purpose, this replaces the statement above that this
+  direction does not approve transmission to a model. Nothing else about OpenAI
+  changes: the art module's use of OpenAI's Image API to draw stays as it was,
+  and no other OpenAI endpoint or product is covered.
+- **May be sent:**
+  - agent session states, without prompts or transcripts;
+  - device states;
+  - the mode;
+  - the time and what is scheduled;
+  - weather;
+  - art catalog details and the owner's art feedback;
+  - room-level presence, once it exists;
+  - email and the calendar as counts and flags only, for example "3 unread,
+    1 from a starred sender" or "a meeting in 10 minutes".
+- **Not for now:**
+  - Wispr speech data;
+  - Volcano sessions;
+  - any prompt, response or transcript;
+  - anything recorded;
+  - senders, subjects, event titles or content from email and the calendar.
+
+To decide whether a given fact may be sent, check all three: it is in the
+"may be sent" list; it is going to the Decisions endpoint as input to a
+decision; and it does not fall under "not for now". Anything else needs the
+owner's own decision.
+
+What does not change:
+
+- Existing collection and sharing choices still apply. This amendment selects
+  no new source and starts no collection; email, the calendar and presence are
+  not collected today.
+- The GitHub boundary is unchanged: nothing personal goes to GitHub.
+- The hold on ambient recording and passive transcription
+  ([#642](https://github.com/jimmie-potts/agent-device-hub/issues/642)) stands.
+- Prompt, response and transcript capture stays under
+  [Hub #425](https://github.com/jimmie-potts/agent-device-hub/issues/425).
+- Claude and Codex remain as the 2026-10-05 amendment left them.
