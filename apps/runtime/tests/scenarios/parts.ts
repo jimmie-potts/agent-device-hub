@@ -329,9 +329,10 @@ export class Reader implements ReaderView {
 
   /**
    * What has not come back since `mark`, for a reader whose stream was lost after it: empty once it is back in sync. Its
-   * subscription hears a gap notice only once the stream is open again and every subscription is registered again, and
-   * each copy counts a sync only once it has caught up with its owner. A copy that stopped never syncs again, so it stays
-   * listed. It reads the reader's own counts, never `syncs` or `gaps`, which a test may replace.
+   * subscription hears a gap notice only once the stream is open again and every subscription's re-registration has been
+   * attempted; a refused one is reported as a problem. Each copy counts a sync only once it has caught up with its owner.
+   * A copy that stopped never syncs again, so it stays listed. It reads the reader's own counts, never `syncs` or `gaps`,
+   * which a test may replace.
    */
   behind(mark: ReaderMark): string[] {
     const missing = this.gapNotices > mark.gaps ? [] : ['its stream did not come back'];

@@ -9,7 +9,7 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError} from '@jimmie-potts/sdk';
 import {RunFailure, connectRun, failureOf} from '../adapter.js';
 import {scenarioProof} from '../plugin.js';
-import {sourceOf} from '../../tests/scenarios/parts.js';
+import {Reader, sourceOf} from '../../tests/scenarios/parts.js';
 import {base, startRun} from './support.js';
 
 void test('a dropped part stays away until the next wait, then the same part reconnects and resyncs', {timeout: 60_000}, async context => {
@@ -68,11 +68,15 @@ void test('a restart resolves only once the reader has resynced with the new run
   assert.deepEqual(h.problems(), []);
 });
 
+// The bound is above the reader's longest reconnect backoff (5 s), so its stream is back before the bound however long the
+// restart took, and only the refused copies are named: the message stays exact on a slow host too.
+const NEVER_RESYNCS_WITHIN_MS = 8000;
+
 void test('a restart fails within its bound, naming what did not come back, when the reader never resyncs', {timeout: 60_000}, async context => {
   const seed = scenario('reconnect-and-sync')?.seed;
   assert.ok(seed);
   const run = await startRun(context, await base(context), 'reconnect-and-sync');
-  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed, resyncWithinMs: 1000});
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed, resyncWithinMs: NEVER_RESYNCS_WITHIN_MS});
   context.after(() => h.close());
   // Each resync is refused at the connection, as when the runtime is gone, so each copy stops for good.
   const refused = readerCalls(context, 'sync', () => Promise.reject(new TypeError('fetch failed')));
@@ -80,14 +84,38 @@ void test('a restart fails within its bound, naming what did not come back, when
   const started = Date.now();
   await assert.rejects(h.restart(), (error: unknown) => {
     assert.ok(error instanceof RunFailure);
-    assert.equal(error.message, 'the reader did not resync within 1000 ms of the restart: its copy of session,inbox-item did not sync again; its copy of lamp did not sync again');
+    assert.equal(error.message, `the reader did not resync within ${NEVER_RESYNCS_WITHIN_MS} ms of the restart: its copy of session,inbox-item did not sync again; its copy of lamp did not sync again`);
     return true;
   });
   const elapsed = Date.now() - started;
-  assert.ok(elapsed >= 1000 && elapsed < 10_000, `the restart gave up at its bound, after ${elapsed} ms`);
+  // The upper limit only catches a wait that never ends: it leaves room for the restart itself, however slow the host.
+  assert.ok(elapsed >= NEVER_RESYNCS_WITHIN_MS && elapsed < NEVER_RESYNCS_WITHIN_MS + 20_000, `the restart gave up at its bound, after ${elapsed} ms`);
+  assert.equal(h.reader.gaps(), 1, 'the stream came back');
   assert.deepEqual(h.problems().filter(problem => problem.includes('stopped')), [
     'the reader\'s copy of session,inbox-item stopped: unavailable', 'the reader\'s copy of lamp stopped: unavailable',
   ], 'the stopped copies are still reported as problems');
+});
+
+// What the reader still lacks after a restart: its stream (its subscription's gap notice) and each copy's sync again,
+// each needed on its own, and the stream also for a reader that keeps no copy (Hub #1697).
+void test('a reader is behind until its stream is back and every copy has synced again', () => {
+  const reader = new Reader([['session', 'inbox-item'], ['lamp']]);
+  reader.counts[0] = 1;
+  reader.counts[1] = 1;
+  const mark = reader.mark();
+  assert.deepEqual(reader.behind(mark), ['its stream did not come back', 'its copy of session,inbox-item did not sync again', 'its copy of lamp did not sync again']);
+  reader.counts[0] = 2;
+  reader.counts[1] = 2;
+  assert.deepEqual(reader.behind(mark), ['its stream did not come back'], 'copies that synced again without a gap notice are not enough');
+  reader.gapNotices = 1;
+  reader.counts[1] = 1;
+  assert.deepEqual(reader.behind(mark), ['its copy of lamp did not sync again'], 'a gap notice without every copy is not enough');
+  reader.counts[1] = 2;
+  assert.deepEqual(reader.behind(mark), []);
+  const bare = new Reader([]), bareMark = bare.mark();
+  assert.deepEqual(bare.behind(bareMark), ['its stream did not come back'], 'a reader with no copy still waits for its stream');
+  bare.gapNotices = 1;
+  assert.deepEqual(bare.behind(bareMark), []);
 });
 
 // What the adapter reports goes into a capture's proof, so it names a failure by its own fixed text, a refusal's registry

@@ -369,6 +369,12 @@ class Run implements RunHarness {
   /**
    * Where the reader stands before a restart, or undefined when a restart has no reader to wait for: one that the
    * scenario disconnected comes back at its next wait, as `disconnect` says, and a closed one never does.
+   *
+   * Precondition: the reader is in sync when the restart is asked for. A reader still coming back from an earlier loss,
+   * such as a crash or a disconnect that a wait released, would hear that loss's gap notice and resync after this mark,
+   * and they would end the wait although it lost its stream again. Every scenario checks the reader's resync after such
+   * a loss before it restarts, and each restart here waits for its own. Telling the two apart needs the remote client's
+   * connection events, a wider change than #1697 needs.
    */
   #readerMark(): ReaderMark | undefined {
     const part = this.#part('reader');

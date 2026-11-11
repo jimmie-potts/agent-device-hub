@@ -131,8 +131,8 @@ a stranger or a caller with neither, and its `dispatch` sends a device's command
 gateway's action route (#782). Its
 `disconnect` has the runtime's edge end the part's stream, and the same remote part reconnects and hears of the gap,
 as in the in-memory harness. The part's timers wait until the next `wait`, so it stays away for the steps in between.
-Its `restart` resolves only once the reader is back in sync with the new runtime: its stream open again, its
-subscriptions registered again and each copy synced again (#1697). Otherwise a next restart could stop the runtime while
+Its `restart` resolves only once the reader is back in sync with the new runtime: its stream open again, every
+subscription's re-registration attempted (a refused one is reported as a problem) and each copy synced again (#1697). Otherwise a next restart could stop the runtime while
 the reader's reconnect reached it, and a copy whose resync that refused would stop for good. Past 15 s the restart fails,
 naming what did not come back. A reader that the scenario disconnected or closed is not waited for. A
 step's page shows the runtime's health document. The step loads it at its start and again at its end, so `after.png`
