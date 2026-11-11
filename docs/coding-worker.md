@@ -48,45 +48,111 @@ final result (Hub #1743). Two outcomes come from that:
   `usage_limit_reached`, and the run did not end with a structured result.
   The task ends failed with reason `usage-limit` and the limit's window and
   reset time, or `unknown` where the tool gave none. A generic rate-limit error
-  is an ordinary failure. Nothing is retried at the reset.
+  is an ordinary failure. The run's own later stop wins: a budget stop after a
+  limit event is `budget`, and a turn-cap stop is an ordinary failure, not a
+  limit. Nothing is retried at the reset.
 - `waiting-for-owner`: the run stopped at a choice the brief left open. It
   completes with that outcome and the question first among the findings.
 
-The harness and the readiness probes below start without provider
-credentials or provider switches: every `ANTHROPIC_` variable (including
-`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL`), the
-`CLAUDE_CODE_USE_` switches (Bedrock, Vertex, Foundry and the others),
-`CLAUDE_CODE_OAUTH_` tokens, `CLAUDE_CODE_API_KEY_` helpers and
-`AWS_BEARER_TOKEN_BEDROCK`, besides the worker's own `BUNNY_` variables. The
-owner's subscription sign-in is what the tool then uses. A repository setting
-can still name an API key helper; if the tool reports an API key source, the
-result says so under limitations.
+The `usage-limit` path is tested against streams constructed from the event
+shapes the tool documents, not against a recording of a real limit, which
+cannot be provoked on purpose. When a real limit stream first occurs, record
+it privately, scrub it as the other recordings were, and replace the
+constructed fixture with it.
+
+### Subscription sign-in only
+
+Workers use the owner's subscription sign-in; provider API keys are for the
+supervisor only. Three checks hold that line.
+
+**The harness environment is an allowlist.** The harness and its readiness
+probes inherit only `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`,
+`LANG`, `LANGUAGE`, `LC_*`, `TERM`, `TZ` and `CLAUDE_CODE_OAUTH_TOKEN`, plus
+any names the private configuration lists in `claude.environment`.
+`CLAUDE_CODE_OAUTH_TOKEN` is kept because it is a subscription sign-in (the
+long-lived token `claude setup-token` makes, for a host without a keychain
+sign-in), not an API key. A denylist then removes, even from configured names:
+
+- every `ANTHROPIC_` variable: API keys, auth tokens, base URLs, custom
+  headers and provider settings, and also the model names such as
+  `ANTHROPIC_MODEL`, which are not credentials but which the worker
+  configuration's `claude.model` sets instead;
+- the `CLAUDE_CODE_USE_` provider switches (Bedrock, Vertex, Foundry and the
+  others);
+- `CLAUDE_CODE_OAUTH_REFRESH_TOKEN` and `CLAUDE_CODE_OAUTH_SCOPES`, which only
+  an interactive login reads;
+- `CLAUDE_CODE_API_KEY_*`, `CLAUDE_CODE_CLIENT_*`, `CLAUDE_CODE_CERT_STORE`,
+  `CLAUDE_CODE_SKIP_*` and `CLAUDE_CONFIG_DIR`, which selects another account's
+  configuration;
+- cloud credentials (`AWS_*`, `GOOGLE_*`, `GCLOUD_*`, `CLOUDSDK_*`,
+  `CLOUD_ML_REGION`, `VERTEX_REGION_*`, `AZURE_*`);
+- proxies and certificates (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`,
+  `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, `NODE_TLS_*`, `SSL_CERT_*`) and
+  `NODE_OPTIONS`;
+- the worker's own `BUNNY_` variables.
+
+A configuration that lists a denied name in `claude.environment` refuses to
+load.
+
+**Project settings are checked before the tool starts.** The run loads the
+worktree's project settings (`.claude/settings.json`, and
+`.claude/settings.local.json` if one is present). Their `env` block or a
+credential helper could undo the environment above. The worker reads them as
+data and executes nothing in them. It refuses the run, as failed with reason
+`refused` and the setting's name in the summary, before the tool starts and
+before anything is spent, when they:
+
+- set a credential helper (`apiKeyHelper`, `awsAuthRefresh`,
+  `awsCredentialExport` or `gcpAuthRefresh`);
+- set in `env` a denied variable or one named like a key, token, secret,
+  password, credential or base URL;
+- are not a JSON object.
+
+The run also passes `--settings`, which the tool ranks above project
+settings, with the `CLAUDE_CODE_USE_` provider switches set empty. The tool's
+documentation counts an empty value as unset for provider selection.
+
+**The first event names the credential.** The stream's first event reports
+the tool's API key source. Anything but `none` stops the run there, before
+its first model request, as failed with reason `refused`. A result whose
+per-model usage names a provider other than `firstParty` gets a limitation
+saying so.
 
 ## Readiness
 
 Before it connects, the worker asks its tool what it is, without starting a
 task or a session and without spending: `claude --version` and
-`claude auth status --json`, each with no input, the harness's environment and
-a ten-second deadline. Its declaration (`coding-endpoint/2.1`) carries the
-record, and the companions module publishes it in the coding state
-(`coding-state/2.1`):
+`claude auth status --json`. Each runs with no input, the harness's
+environment, the first allowlisted repository as its working directory and a
+ten-second deadline, after which the probe is killed outright. Its
+declaration (`coding-endpoint/2.1`) carries the record, and the companions
+module publishes it in the coding state (`coding-state/2.1`):
 
 | Field | Value |
 | --- | --- |
 | `installed` | `yes`, `no` when the executable is missing, `unknown` otherwise |
 | `version` | the version the tool printed, or null |
-| `signedIn` | `yes` or `no` from the tool's status, `unknown` when it did not say |
-| `plan` | the tool's subscription type while signed in, or null |
+| `signedIn` | `yes` only for the subscription sign-in (`authMethod` `claude.ai` and `apiProvider` `firstParty`); `no` when the tool says it is signed out; `unknown` for any other sign-in or no answer |
+| `plan` | the tool's subscription type when `signedIn` is `yes`, or null |
 | `limits` | the windows (such as `five-hour`, `seven-day`) the latest run reported, with status, reset time and use, or null before any run |
 
-Only the sign-in state and plan are read from the status; the account,
-organization, e-mail address and directories are not. The tool reports limit
+Only the sign-in state, the sign-in method, the provider and the plan are read
+from the status; the account, organization, e-mail address and directories
+are not. One difference from the run remains: the status command takes no
+setting-source option, so it loads the owner's user settings, while the run
+loads only the worktree's project settings. A provider chosen in user settings
+therefore shows as `unknown`, and the run itself is still held to the checks
+above. The tool reports limit
 windows only during a run, so after a run that reported them the worker
 probes again and sends one more enable from its endpoint with the new record.
 That enable is a report: if it is refused or lost, nothing is sent again. A
 disabled or lost endpoint clears the record.
 
 ## Install once
+
+Upgrade the core before the worker. A worker from Hub #1743 on declares with
+`coding-endpoint/2.1` and reports `coding-progress/2.1`, and an older core
+refuses both, so such a worker cannot declare until the core knows them.
 
 1. Grant the credential. Add one entry with the `coding-worker` role to the
    installation's private `edge-credentials/1.0` file, bound to the source
@@ -120,7 +186,10 @@ disabled or lost endpoint clears the record.
    and `Bash` limited to `npm run`, `npm test`, `npx tsc`, `node --test`,
    `git status`, `git diff` and `git log`; a list that names push, network or
    destructive tools refuses. `claude.model` and `claude.maxTurns` are
-   optional. Repository names are lowercase words joined by hyphens, dots or
+   optional. `claude.environment` optionally lists up to 32 more variable
+   names the harness may inherit, for a launch setup that needs one; a name
+   the denylist in [Subscription sign-in only](#subscription-sign-in-only)
+   covers refuses the configuration. Repository names are lowercase words joined by hyphens, dots or
    underscores and must match what the owner says to B.U.N.N.Y.
 4. Start it after sign-in from the reviewed release:
 
@@ -188,8 +257,13 @@ Source tests cover the worker over a fake harness and a fake edge, and its real
 entry point as a child process over the SDK's edge with a fake core. They also
 replay recordings of real headless runs and status commands through the real
 parsing code (`apps/runtime/tests/fixtures/claude-stream/recorded-*`), recorded
-with synthetic prompts in an empty directory and scrubbed of identifiers,
-paths and account values. A real usage limit cannot be provoked, so the
+with synthetic prompts in an empty directory. Session, event, tool-use,
+message and request identifiers, paths, account values, the plan, the limit
+windows' figures, the timing origin and the overage reason were replaced with
+synthetic values; the token counts and costs of those synthetic runs were
+kept. A guard test fails on a home or temporary path, an e-mail address, a
+token-like string, an account or organization member, or an identifier that
+is not synthetic. A real usage limit cannot be provoked, so the
 `constructed-*` limit fixtures follow the event shapes the tool documents and
 are not recordings. Running it
 against the installed core with a real `claude` is the installed check the

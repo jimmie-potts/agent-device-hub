@@ -12,6 +12,7 @@ These tasks cover the source delivery. Issue #1743 keeps review, hosted CI, merg
 
 - [x] 3.1 Read the harness output as a stream and add the `usage-limit` and `waiting-for-owner` outcomes. Evidence: `coding-worker-stream.test.js` replays the recorded and constructed fixtures.
 - [x] 3.2 Start the harness and its probes without provider credentials. Evidence: the environment tests fail with the filter weakened and pass with it.
+- [x] 3.4 Review round 1: allowlisted environment keeping the subscription token, project-settings refusal, first-event key-source stop, subscription-only `signedIn`, probe kill at deadline, budget precedence, line-splitting and fixture-guard regressions. Evidence: `coding-worker-stream.test.js`, with a negative control for each.
 - [x] 3.3 Probe readiness before connecting, send it with the declaration and after a run that reported limit windows. Evidence: `coding-worker-stream.test.js`; `coding-worker-process.test.js` shows `installed: no` for a missing tool.
 
 ## 4. Coordinator

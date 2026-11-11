@@ -75,6 +75,13 @@ export class ClaudeStream {
   /** Where the harness said its API credential came from (`none` for a subscription sign-in), when it said. */
   get apiKeySource(): string | undefined {return this.#apiKeySource;}
   get unreadable(): number {return this.#unreadable;}
+  /** The providers the final result's per-model usage names (`firstParty` for the subscription), as bounded names. */
+  get providers(): string[] {
+    const usage = this.#result?.modelUsage;
+    if (!isRecord(usage)) return [];
+    return [...new Set(Object.values(usage).flatMap(model => isRecord(model) && typeof model.provider === 'string'
+      ? [/^[A-Za-z0-9_-]{1,32}$/.test(model.provider) ? model.provider : 'unnamed'] : []))];
+  }
 }
 
 /** What the harness reports about itself without starting a task. */
@@ -88,27 +95,69 @@ export function parseVersion(output: string): string | null {
 }
 
 /**
- * Sign-in and plan from `claude auth status --json`: `loggedIn` true or false is yes or no, anything else unknown. The plan
- * is the tool's subscription type while signed in, else null. Account, organization, e-mail and directories are not read.
+ * Sign-in and plan from `claude auth status --json`. Signed in is `yes` only for the subscription sign-in: `loggedIn` true
+ * with `authMethod` `claude.ai` and `apiProvider` `firstParty`. A sign-in by API key, helper or cloud provider is
+ * `unknown`, never read as the subscription; `loggedIn` false is `no`. The plan is the subscription type, only with
+ * `yes`. Account, organization, e-mail and directories are not read.
  */
 export function parseAuthStatus(output: string): Pick<HarnessReadiness, 'signedIn' | 'plan'> {
   let parsed: unknown;
   try {parsed = JSON.parse(output);} catch {return {signedIn: 'unknown', plan: null};}
   if (!isRecord(parsed) || typeof parsed.loggedIn !== 'boolean') return {signedIn: 'unknown', plan: null};
   if (!parsed.loggedIn) return {signedIn: 'no', plan: null};
+  if (parsed.authMethod !== 'claude.ai' || parsed.apiProvider !== 'firstParty') return {signedIn: 'unknown', plan: null};
   const plan = enumValue(parsed.subscriptionType);
   return {signedIn: 'yes', plan: plan !== undefined && /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(plan) ? plan : null};
 }
 
 /**
- * Variables that would make the harness use a credential, provider or endpoint other than the owner's subscription
- * sign-in, as the installed Claude Code reads them: every `ANTHROPIC_` variable (API key, auth token, base URLs, custom
- * headers, the Foundry and cloud keys), the `CLAUDE_CODE_USE_` provider switches (Bedrock, Vertex, Foundry and the
- * others), `CLAUDE_CODE_OAUTH_` tokens and `CLAUDE_CODE_API_KEY_` helpers, and the Bedrock bearer token. `BUNNY_`
- * variables are the worker's own and never reach the harness either.
+ * What the harness may inherit: what a command-line tool needs to run (search path, home, user, shell, locale, temporary
+ * directory, terminal, time zone) and `CLAUDE_CODE_OAUTH_TOKEN`, the subscription sign-in token `claude setup-token`
+ * makes, which a host without a keychain sign-in uses. Anything else reaches the harness only when the private worker
+ * configuration names it (`claude.environment`), and never when the denylist below matches it.
  */
-const STRIPPED = /^(?:ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_OAUTH_|CLAUDE_CODE_API_KEY|AWS_BEARER_TOKEN_BEDROCK$|BUNNY_)/;
-/** The environment the harness starts with: the worker's own, without provider credentials or switches. */
-export function harnessEnvironment(environment: NodeJS.ProcessEnv): Record<string, string> {
-  return Object.fromEntries(Object.entries(environment).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && !STRIPPED.test(entry[0].toUpperCase())));
+const ALLOWED = /^(?:PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|LANG|LANGUAGE|LC_[A-Z_]+|TERM|TZ|CLAUDE_CODE_OAUTH_TOKEN)$/;
+/**
+ * The second pass, which also bounds what the configuration may add: every `ANTHROPIC_` variable (API keys, auth tokens,
+ * base URLs, custom headers, provider settings and the model names, which the worker configuration sets instead), the
+ * `CLAUDE_CODE_USE_` provider switches, the OAuth refresh token and scopes (read only by an interactive login), the
+ * API-key descriptors and helpers, client certificates, skipped-auth switches, the configuration-directory selector, cloud
+ * credentials (`AWS_`, `GOOGLE_`, `GCLOUD_`, `CLOUD_ML_REGION`, `VERTEX_REGION_`, `AZURE_`), proxies, extra CA
+ * certificates, `NODE_OPTIONS`, and the worker's own `BUNNY_` variables.
+ */
+const DENIED = /^(?:ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_OAUTH_(?!TOKEN$)|CLAUDE_CODE_API_KEY|CLAUDE_CODE_CLIENT_|CLAUDE_CODE_CERT_STORE$|CLAUDE_CODE_SKIP_|CLAUDE_CONFIG_DIR$|AWS_|GOOGLE_|GCLOUD_|CLOUDSDK_|CLOUD_ML_REGION$|VERTEX_REGION_|AZURE_|HTTPS?_PROXY$|ALL_PROXY$|NO_PROXY$|NODE_EXTRA_CA_CERTS$|NODE_OPTIONS$|NODE_TLS_|SSL_CERT_|BUNNY_)/;
+/** Whether a variable name may never reach the harness, whatever the configuration says. */
+export const deniedVariable = (name: string): boolean => DENIED.test(name.toUpperCase());
+/** The environment the harness and its probes start with: the allowlist plus configured names, minus the denylist. */
+export function harnessEnvironment(environment: NodeJS.ProcessEnv, configured: readonly string[] = []): Record<string, string> {
+  return Object.fromEntries(Object.entries(environment).filter((entry): entry is [string, string] =>
+    typeof entry[1] === 'string' && (ALLOWED.test(entry[0]) || configured.includes(entry[0])) && !deniedVariable(entry[0])));
 }
+
+/** Settings keys that run a command to obtain a credential; the worker never executes them, it refuses the run. */
+const CREDENTIAL_HELPERS = ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'gcpAuthRefresh'];
+/** A settings `env` name that carries a key, token, secret or endpoint (whole words, so `MAX_THINKING_TOKENS` is not one). */
+const CREDENTIAL_NAME = /(?:^|_)(?:API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?|BASE_URL)(?:_|$)/i;
+/**
+ * Why project settings would undo the harness environment, or undefined when they would not. `text` is one settings file
+ * the run loads, or undefined when it is absent. Settings are data here: nothing in them is executed. A file that is not a
+ * JSON object is a refusal, because the tool might read it differently. Only setting names enter the reason, never values.
+ */
+export function settingsRefusal(file: string, text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  let parsed: unknown;
+  try {parsed = JSON.parse(text);} catch {return `${file} is not valid JSON`;}
+  if (!isRecord(parsed)) return `${file} is not a JSON object`;
+  const helpers = CREDENTIAL_HELPERS.filter(key => key in parsed);
+  if (helpers.length > 0) return `${file} sets the credential helper ${helpers.join(', ')}`;
+  if (parsed.env === undefined) return undefined;
+  if (!isRecord(parsed.env)) return `${file} has an env member that is not an object`;
+  const names = Object.keys(parsed.env).filter(name => deniedVariable(name) || CREDENTIAL_NAME.test(name)).map(name => /^[A-Za-z0-9_]{1,64}$/.test(name) ? name : 'an unnamed variable');
+  return names.length === 0 ? undefined : `${file} sets the provider or credential variable ${names.slice(0, 8).join(', ')}`;
+}
+/**
+ * The provider switches the run blanks through `--settings`, which the tool ranks above project settings; its
+ * documentation counts an empty value as unset for provider selection. Keys, tokens and base URLs are refused instead.
+ */
+export const BLANKED_SWITCHES = ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'CLAUDE_CODE_USE_MANTLE', 'CLAUDE_CODE_USE_ANTHROPIC_AWS',
+  'CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD', 'CLAUDE_CODE_USE_GATEWAY'] as const;

@@ -17,7 +17,9 @@ workers use the subscriptions; and the tests use only a hand-written fake harnes
   envelope, and keeps the structured result contract.
 - Two more outcomes: `usage-limit`, with the window and reset time the tool gave or null where it gave none, ending
   `failed` with reason `usage-limit`; and `waiting-for-owner`, a completed run whose first finding is the question.
-- The harness and its readiness probes start without provider credentials or provider switches.
+- The harness and its readiness probes start with an allowlisted environment that keeps the subscription token and
+  drops provider credentials, switches, cloud credentials, proxies and certificate settings. Project settings that
+  would undo that refuse the run before the tool starts, and an API key source at the stream's first event stops it.
 - Recorded runs of the real tool, scrubbed and synthetic, are replayed through the real parsing code in tests.
 - Contracts: additive `coding-endpoint/2.1`, `coding-progress/2.1` and `coding-state/2.1`, registered beside 2.0.
 
