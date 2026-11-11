@@ -184,7 +184,9 @@ export function deferred<T>(): {promise: Promise<T>; resolve: (value: T) => void
 export const START = Date.parse('2026-10-06T12:00:00.000Z');
 
 /** A clock and scheduler that move only when the test advances them. */
-export function manualClock(start = START): {now: () => number; scheduler: Scheduler; advance: (ms: number) => void; pending: () => number} {
+export function manualClock(start = START): {
+  now: () => number; scheduler: Scheduler; advance: (ms: number) => void; pending: () => number; next: () => number | undefined;
+} {
   let now = start;
   const timers = new Set<{at: number; callback: () => void}>();
   return {
@@ -202,6 +204,12 @@ export function manualClock(start = START): {now: () => number; scheduler: Sched
       }
     },
     pending: () => timers.size,
+    /** When the earliest pending timer is due, or undefined with none pending. */
+    next: () => {
+      let earliest: number | undefined;
+      for (const {at} of timers) if (earliest === undefined || at < earliest) earliest = at;
+      return earliest;
+    },
   };
 }
 
