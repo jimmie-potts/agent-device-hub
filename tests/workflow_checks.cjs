@@ -451,8 +451,16 @@ test('hosted CI runs no CHOMPI bridge step until #1715, and each step still runs
   const text = fs.readFileSync(path.join(root, '.github/workflows/checks.yml'), 'utf8');
   const checks = YAML.parse(text);
   const scripts = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).scripts;
-  const runs = Object.values(checks.jobs).flatMap(job => (job.steps ?? []).map(step => step.run ?? ''));
-  assert.equal(runs.some(run => /chompi-bridge/.test(run)), false, 'no CHOMPI bridge step runs in hosted CI until #1715');
+  // Every parsed value of every workflow file (each job, step, `run`, `with` and reusable-workflow caller), so a CHOMPI
+  // bridge script cannot come back in any workflow. Comments are not values, so the markers below do not count.
+  const values = node => (typeof node === 'string' ? [node] : node && typeof node === 'object' ? Object.values(node).flatMap(values) : []);
+  const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter(file => /\.ya?ml$/.test(file));
+  assert.ok(workflows.includes('checks.yml') && workflows.includes('integration.yml'), workflows.join(', '));
+  for (const file of workflows) {
+    const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
+    const found = values(workflow).filter(value => /chompi-bridge/.test(value));
+    assert.deepEqual(found, [], `${file}: no CHOMPI bridge script runs in hosted CI until #1715`);
+  }
   const off = {
     core: ['test:chompi-bridge:built', 'test:chompi-bridge:scenarios'],
     'app-verify': ['test:chompi-bridge:verify:built', 'test:chompi-bridge:browser'],
