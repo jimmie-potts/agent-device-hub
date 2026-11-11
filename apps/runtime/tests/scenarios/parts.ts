@@ -321,7 +321,30 @@ export class Reader implements ReaderView {
   gaps(): number {
     return this.gapNotices;
   }
+
+  /** Where the reader stands now: the gap notices it heard and how often each copy synced (Hub #1697). */
+  mark(): ReaderMark {
+    return {gaps: this.gapNotices, syncs: [...this.counts]};
+  }
+
+  /**
+   * What has not come back since `mark`, for a reader whose stream was lost after it: empty once it is back in sync. Its
+   * subscription hears a gap notice only once the stream is open again and every subscription's re-registration has been
+   * attempted; a refused one is reported as a problem. Each copy counts a sync only once it has caught up with its owner.
+   * A copy that stopped never syncs again, so it stays listed. It reads the reader's own counts, never `syncs` or `gaps`,
+   * which a test may replace.
+   */
+  behind(mark: ReaderMark): string[] {
+    const missing = this.gapNotices > mark.gaps ? [] : ['its stream did not come back'];
+    for (const [index, group] of this.groups.entries()) {
+      if ((this.counts[index] ?? 0) <= (mark.syncs[index] ?? 0)) missing.push(`its copy of ${named(group)} did not sync again`);
+    }
+    return missing;
+  }
 }
+
+/** The reader's gap notices and each copy's sync count at one moment, which `Reader.behind` compares with. */
+export type ReaderMark = {readonly gaps: number; readonly syncs: readonly number[]};
 
 /** Where a harness sends what it saw: each message to check against profile 2.0, and each problem. */
 export type Observer = {check: (message: unknown, where: string) => void; problem: (text: string) => void};
