@@ -602,7 +602,7 @@ artifact checks. Its evidence remains separate from the cheap Integration job:
 | --- | --- |
 | Select affected checks | Node 24 with only `scripts/ci-selection` checked out: maps the PR's changed paths to check groups |
 | Workflow checks (Workflow workflow) | Node 24 workflow validation, the affected-check selection fixtures, delivery preflight fixtures and isolated Linux hook qualification. It also runs for Markdown-only changes. |
-| Build, lint and core tests | Node 24, and Python 3.14 when the shared group is selected, in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
+| Build, lint and core tests | Node 24, and Python 3.14 when the shared group is selected, in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr and observability; the CHOMPI bridge's suites are [off since #1714](#affected-pr-checks)), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
 | Runtime unit tests | Node 24 build, then `npm run test:runtime:built`, when the runtime group is selected |
 | Runtime scenario tests | Node 24 build, then `npm run test:runtime:scenarios:built`, the scenario catalog over both transports, when the runtime group is selected |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
@@ -645,21 +645,21 @@ rename) and maps it to check groups with the small explicit table in
 | --- | --- | --- |
 | runtime | `apps/runtime/**`, active modules and the two Roborock consumer tests | The runtime's unit, scenario, dashboard and verification suites, its dashboard's browser checks and the Roborock consumer tests |
 | modules | active `modules/**` | Active modules' suites |
-| chompi | The CHOMPI bridge, `packages/chompi-protocol/**` and `firmware/**` | The bridge's unit tests and catalog scenarios in the core job, and the Firmware job; its verification and browser check are off, as stated below this table |
+| chompi | The CHOMPI bridge, `packages/chompi-protocol/**` and `firmware/**` | The Firmware job; none of the bridge's own steps, which are off as stated below this table |
 | shared | Only full coverage | The shared packages' and contracts' suites, the Python consumers, the old dashboard's tests, the app-verify core and the observability browser check |
 
-Since [#1714](https://github.com/jimmie-potts/agent-device-hub/issues/1714), hosted CI does not run
-the CHOMPI bridge's verification (`test:chompi-bridge:verify:built`) or its
-control page's browser check (`test:chompi-bridge:browser`), which App
-verification ran before. It still runs the bridge's unit tests
-(`test:chompi-bridge:built`) and catalog scenarios
-(`test:chompi-bridge:scenarios`) in the core job. A change under
-`apps/chompi-bridge/**` or `packages/chompi-protocol/**` selects those core steps
-and the Firmware job, and no longer starts App verification; its author runs the
-verification and the browser check by hand, as in the bridge's
-[verification checks](../apps/chompi-bridge/verify/README.md#checks).
-[#1715](https://github.com/jimmie-potts/agent-device-hub/issues/1715) tracks turning
-them back on.
+Since [#1714](https://github.com/jimmie-potts/agent-device-hub/issues/1714), hosted CI runs no CHOMPI
+bridge test: not its unit tests (`test:chompi-bridge:built`) or catalog
+scenarios (`test:chompi-bridge:scenarios`), formerly in the core job, and not
+its verification (`test:chompi-bridge:verify:built`) or control page browser
+check (`test:chompi-bridge:browser`), formerly in App verification. A change
+under `apps/chompi-bridge/**` or `packages/chompi-protocol/**` selects the
+Firmware job beside the build, typecheck and lint that always run, so it merges with no hosted test of the bridge, and its author
+runs all four scripts by hand, as in the bridge's
+[Checks](../apps/chompi-bridge/README.md#checks). On macOS the unit suite needs a
+short `TMPDIR`, because its lock test's socket path is otherwise too long
+([#1719](https://github.com/jimmie-potts/agent-device-hub/issues/1719)). [#1715](https://github.com/jimmie-potts/agent-device-hub/issues/1715) tracks
+turning them back on.
 
 Build, typecheck, lint and the workspace-audit and tracker-audit tests always
 run for ready candidates. Ordinary Markdown, `openspec/**` and documentation

@@ -314,7 +314,7 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
     workflow: ['npm ci', 'npm run typecheck:python', 'npm run test:python-types', 'npm run check:workflow', 'npm run test:workflow',
       'npm run build', 'node --test apps/runtime/dist/tests/upgrade-procedure.workflow.js',
       'npm run test:preflight'],
-    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'node --test scripts/release/tests/*.test.mjs', 'npm run lint:js', 'npm run test:workspace-audit', 'npm run test:tracker-audit', playwrightInstall, 'node scripts/ci-selection/run-standalone.mjs', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:music-producer:built', 'npm run test:music-producer:native', 'npm run test:events:python', 'npm run test:sdk:built', 'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs scripts/tests/mac-host.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built', 'npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios',
+    core: ['npm ci', 'python -m pip install -r requirements-contracts.txt -r packages/observability/requirements-host.txt', 'npm run build', 'npm run typecheck', 'node --test scripts/release/tests/*.test.mjs', 'npm run lint:js', 'npm run test:workspace-audit', 'npm run test:tracker-audit', playwrightInstall, 'node scripts/ci-selection/run-standalone.mjs', 'npm run test:observability:built', 'npm run test:observability:pilot', 'npm run test:observability:python', 'npm run test:observability:query', 'npm run test:observability:package:built', 'npm run test:contracts:built', 'npm run test:events:built', 'npm run test:music-producer:built', 'npm run test:music-producer:native', 'npm run test:events:python', 'npm run test:sdk:built', 'node --test scripts/tests/runtime-container.test.mjs scripts/tests/bunny.test.mjs scripts/tests/bunny-backup.test.mjs scripts/tests/bunny-operations.test.mjs scripts/tests/bunny-deployment.test.mjs scripts/tests/mac-host.test.mjs deploy/container/tests/context.test.mjs deploy/container/tests/entrypoint.test.mjs deploy/container/tests/runtime.test.mjs deploy/container/tests/provision-local.test.mjs deploy/container/tests/production-acceptance.test.mjs apps/runtime/tests/mac-codex-hook.test.mjs', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:wispr:built', 'npm run test:wispr:package:built',
       'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:pixoo:built',
       'npm run test:nanoleaf:built', 'npm run test:playback:built', 'npm run test:lifx-module:built', 'npm run test:tidbyt-module:built',
       'npm run test:codex-desktop:built', 'npm run test:wispr-module:built', 'npm run test:companions:built', 'npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built', 'npm run test:roborock:built', 'npm run test:wemo:built', 'npm run test:art:built', 'npm run test:volcano:built', 'npm run test:weather:built', 'npm run test:reachy:built', 'npm run test:microduck:built', 'npm run test:roborock:consumer:built', 'npm run test:volcano:consumer:built', 'npm run test:dashboard', 'npm run test:runtime-dashboard:built'],
@@ -445,30 +445,26 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
   assert.equal(scripts['test:runtime-dashboard:smoke'], 'node apps/runtime/dashboard/tests/smoke.ts');
 });
 
-// Hub #1714: hosted CI does not run the CHOMPI bridge's verification and browser check for the time being, and #1715
-// restores them; the bridge's unit tests and catalog scenarios keep running in core. Restoring a step means deleting
-// it from `off` here and adding it back to the App verification suite list above. Turning a core step off as well
-// means moving it from `on` to `off` and out of the core suite list.
-test('hosted CI runs the CHOMPI bridge core steps but not its verification or browser check until #1715', () => {
+// Hub #1714: hosted CI runs none of the CHOMPI bridge's four steps for the time being, and #1715 restores them.
+// Restoring a step means deleting it from `off` here and adding it back to its job's suite list above.
+test('hosted CI runs no CHOMPI bridge step until #1715, and each step still runs by hand', () => {
   const text = fs.readFileSync(path.join(root, '.github/workflows/checks.yml'), 'utf8');
   const checks = YAML.parse(text);
   const scripts = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).scripts;
   const runs = Object.values(checks.jobs).flatMap(job => (job.steps ?? []).map(step => step.run ?? ''));
-  const on = ['test:chompi-bridge:built', 'test:chompi-bridge:scenarios'];
-  const off = ['test:chompi-bridge:verify:built', 'test:chompi-bridge:browser'];
-  for (const name of on) {
-    assert.deepEqual(checks.jobs.core.steps.filter(step => step.run === `npm run ${name}`).map(step => step.if),
-      ["contains(fromJSON(needs.select.outputs.groups), 'chompi')"], `core runs ${name} in the chompi group`);
+  assert.equal(runs.some(run => /chompi-bridge/.test(run)), false, 'no CHOMPI bridge step runs in hosted CI until #1715');
+  const off = {
+    core: ['test:chompi-bridge:built', 'test:chompi-bridge:scenarios'],
+    'app-verify': ['test:chompi-bridge:verify:built', 'test:chompi-bridge:browser'],
+  };
+  for (const [id, names] of Object.entries(off)) {
+    for (const name of names) assert.ok(scripts[name], `${name} stays a package script, so it runs by hand`);
+    // The comment that marks the removed pair's place names both scripts and #1714.
+    assert.equal(text.split('\n').filter(line => line.includes('#1714') && names.every(name => line.includes(name))).length, 1,
+      `${id}: one #1714 comment names ${names.join(' and ')}`);
   }
-  for (const name of off) {
-    assert.equal(runs.some(run => run.includes(name)), false, `${name} is off in hosted CI until #1715`);
-    assert.ok(scripts[name], `${name} stays a package script, so it runs by hand`);
-  }
-  assert.deepEqual(runs.filter(run => /chompi-bridge/.test(run)).sort(), on.map(name => `npm run ${name}`).sort(),
-    'no other CHOMPI bridge step runs in hosted CI');
-  // The comment that marks the removed steps' place names both scripts, #1714 and #1715.
-  assert.equal(text.split('\n').filter(line => line.includes('#1714') && off.every(name => line.includes(name))).length, 1);
-  assert.equal(text.match(/#1715 restores them/g)?.length, 1, 'the #1714 comment names #1715');
+  assert.equal(text.match(/#1715 restores them/g)?.length, 2, 'each #1714 comment names #1715');
+  // The Firmware job stays in the chompi group.
   assert.deepEqual(checks.jobs.firmware.steps.filter(step => step.run).map(step => step.run), ['npm run test:firmware', 'npm run test:firmware:arm']);
 });
 

@@ -122,8 +122,8 @@ test('a runtime dashboard change selects the runtime only', () => {
   assert.equal(pr(['apps/dashboard/src/main.tsx']).mode, 'full');
 });
 
-// #1714: App verification runs no CHOMPI bridge step until #1715, so a CHOMPI change does not start it.
-test('CHOMPI changes run the bridge suites and the firmware job, not App verification', () => {
+// #1714: hosted CI runs no CHOMPI bridge step until #1715, so a CHOMPI change runs the Firmware job only.
+test('CHOMPI changes select the chompi group and the firmware job, not App verification', () => {
   for (const file of ['apps/chompi-bridge/src/bridge.ts', 'packages/chompi-protocol/fixtures/frames.json', 'firmware/chompi-controller/src/main.cpp']) {
     const result = pr([file]);
     assert.deepEqual(result.groups, ['chompi'], file);
@@ -423,7 +423,7 @@ const STEP_GROUPS = {
     'npm run test:lifecycle:built': 'shared', 'npm run test:lifecycle:python': 'shared', 'npm run test:lifecycle:package:built': 'shared',
     'npm run test:agent-state:built': 'shared', 'npm run test:agent-state:python': 'shared', 'npm run test:agent-state:package:built': 'shared',
     'npm run test:wispr:built': 'shared', 'npm run test:wispr:package:built': 'shared',
-    'npm run test:chompi-bridge:built': 'chompi', 'npm run test:chompi-bridge:scenarios': 'chompi',
+    // #1714: the CHOMPI bridge's core steps are off in hosted CI until #1715 restores them.
     'npm run test:mcp:built': 'shared', 'npm run test:mcp:protocol:built': 'shared', 'npm run test:mcp:package:built': 'shared',
     'npm run test:pixoo:built': 'modules', 'npm run test:nanoleaf:built': 'modules', 'npm run test:playback:built': 'modules',
     'npm run test:lifx-module:built': 'modules', 'npm run test:tidbyt-module:built': 'modules', 'npm run test:codex-desktop:built': 'modules',
@@ -462,10 +462,9 @@ test('a narrow change runs the suites its paths can break', () => {
       'npm run test:runtime:verify:captures:built', 'npm run test:runtime:verify:rest:built'], ['npm run test:chompi-bridge:built', 'npm run test:events:built']],
     [['modules/roborock/transport/src/transport/codec.ts'], ['npm run test:roborock-transport:built', 'npm run test:roborock-transport:consumer:built',
       'npm run test:roborock:browser', 'npm run test:volcano:browser'], ['npm run test:firmware']],
-    // #1714: a CHOMPI change runs the bridge's core steps and the Firmware job, but not its verification or browser
-    // check until #1715 restores them.
-    [['apps/chompi-bridge/src/bridge.ts'], ['npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios', 'npm run test:firmware', 'npm run test:firmware:arm'],
-    ['npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser',
+    // #1714: a CHOMPI change runs the Firmware job but none of the bridge's own steps until #1715 restores them.
+    [['apps/chompi-bridge/src/bridge.ts'], ['npm run test:firmware', 'npm run test:firmware:arm'],
+    ['npm run test:chompi-bridge:built', 'npm run test:chompi-bridge:scenarios', 'npm run test:chompi-bridge:verify:built', 'npm run test:chompi-bridge:browser',
       'npm run test:runtime:built', 'npm run test:runtime:verify:captures:built', 'npm run test:runtime:verify:rest:built', 'npm run test:app-verify:built']],
   ];
   for (const [files, included, excluded] of expectations) {
