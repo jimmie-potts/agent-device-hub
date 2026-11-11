@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { Ajv2020 } from 'ajv/dist/2020.js';
+import { Ajv2020, type ValidateFunction } from 'ajv/dist/2020.js';
 
 export const INSTALL_RECEIPT_VERSION = 'install-receipt/1.0';
 export const installReceiptSchema = JSON.parse(readFileSync(new URL('../schemas/install-receipt-v1.schema.json', import.meta.url), 'utf8'));
-const shape = new Ajv2020({ strict: true, allErrors: true }).compile(installReceiptSchema);
+// Compiled on first use, not at import (Hub #1686).
+let compiled: ValidateFunction | undefined;
+const shape = (value: unknown): boolean => (compiled ??= new Ajv2020({ strict: true, allErrors: true }).compile(installReceiptSchema))(value);
 
 /** Validates receipt shape and cross-field evidence consistency, without inspecting a host. */
 export function validateInstallReceipt(value: unknown): boolean {

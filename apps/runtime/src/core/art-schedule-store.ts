@@ -1,5 +1,6 @@
 import type {DatabaseSync} from 'node:sqlite';
 import {Ajv2020} from 'ajv/dist/2020.js';
+import {compileOnFirstUse} from './compile-on-first-use.js';
 import {childOf, type TraceContext} from '@jimmie-potts/sdk';
 import {ART_SCHEDULE_SCHEMA, type ArtScheduleRecord, type ArtOpportunity} from '@jimmie-potts/event-contracts/v2/art-schedule';
 import {initialArtRecord, recordValid, type WakingDay} from './art-schedule-model.js';
@@ -9,12 +10,12 @@ export type ArtDay = WakingDay & {settingsRevision:number; starts:number[]; clai
 export type ArtScheduleData = {record:ArtScheduleRecord;day:ArtDay|null; latestStartMs:number|null;
   dayWatermarkMs:number; ambientAtMs:number; weatherRevision:number};
 const integer={type:'integer',minimum:0,maximum:Number.MAX_SAFE_INTEGER};
-const valid=new Ajv2020().compile<Omit<ArtScheduleData,'record'>>({type:'object',additionalProperties:false,
+const valid=compileOnFirstUse(() => new Ajv2020().compile<Omit<ArtScheduleData,'record'>>({type:'object',additionalProperties:false,
   required:['day','latestStartMs','dayWatermarkMs','ambientAtMs','weatherRevision'],properties:{
     latestStartMs:{anyOf:[integer,{type:'null'}]},dayWatermarkMs:integer,ambientAtMs:integer,weatherRevision:integer,
     day:{anyOf:[{type:'null'},{type:'object',additionalProperties:false,required:['key','startAtMs','endAtMs','settingsRevision','starts','claimed'],properties:{
       key:{type:'string',pattern:'^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$'},startAtMs:integer,endAtMs:integer,settingsRevision:integer,
-      starts:{type:'array',maxItems:8,uniqueItems:true,items:integer},claimed:{type:'integer',minimum:0,maximum:8}}}]}}});
+      starts:{type:'array',maxItems:8,uniqueItems:true,items:integer},claimed:{type:'integer',minimum:0,maximum:8}}}]}}}));
 const validDay=(day:ArtDay):boolean=>day.startAtMs<day.endAtMs&&day.starts.every((at,index)=>at>=day.startAtMs&&at<day.endAtMs&&(index===0||at>(day.starts[index-1]??0)));
 /** Only this owner's bounded plan is mutable. Every attempt identity remains spent, like core_operations. */
 export class ArtScheduleStore {

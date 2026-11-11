@@ -1,4 +1,5 @@
 import {Ajv2020} from 'ajv/dist/2020.js';
+import {compileOnFirstUse} from './compile-on-first-use.js';
 import {MessageValidator, RETRYABLE, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
@@ -48,4 +49,4 @@ export function registerMicroDuckFamilies(validator: MessageValidator): void {
 export function microduckValidator(): MessageValidator {
   const validator = new MessageValidator(); registerCoreFamilies(validator); registerDeviceFamilies(validator); registerMicroDuckFamilies(validator); return validator;
 }
-export const validState = new Ajv2020({strict: false}).compile<MicroDuckState>(stateSchema);
+export const validState = compileOnFirstUse(() => new Ajv2020({strict: false}).compile<MicroDuckState>(stateSchema));

@@ -1,4 +1,4 @@
-import { Ajv2020 } from 'ajv/dist/2020.js';
+import { Ajv2020, type ValidateFunction } from 'ajv/dist/2020.js';
 import { MessageValidator, schemas } from '@jimmie-potts/event-contracts/v2';
 import { registerCoreFamilies } from '@jimmie-potts/event-contracts/v2/families';
 import { registerDeviceFamilies } from '@jimmie-potts/event-contracts/v2/devices';
@@ -52,5 +52,10 @@ export function roborockValidator(): MessageValidator {
     }
     return validator;
 }
-const ajv = new Ajv2020({ strict: true });
-export const validateStatus = ajv.compile(statusSchema), validateRuns = ajv.compile(runsSchema), validateRun = ajv.compile(runDocumentSchema), validateSamples = ajv.compile(samplesSchema);
+let ajv: Ajv2020 | undefined;
+// Each document validator compiles on its first call, not at import (Hub #1686).
+const onFirstUse = (schema: object): ((value: unknown) => boolean) => {
+    let compiled: ValidateFunction | undefined;
+    return value => (compiled ??= (ajv ??= new Ajv2020({ strict: true })).compile(schema))(value);
+};
+export const validateStatus = onFirstUse(statusSchema), validateRuns = onFirstUse(runsSchema), validateRun = onFirstUse(runDocumentSchema), validateSamples = onFirstUse(samplesSchema);

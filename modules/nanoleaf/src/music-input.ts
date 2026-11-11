@@ -11,8 +11,16 @@ export type MusicFeature = Readonly<Omit<CaptureFeatures, 'bands' | 'onset'>> & 
 export type MusicSample = Readonly<{endpointId: string; feature: MusicFeature; elapsedMs: number}>;
 export type MusicAdmission = 'accepted' | 'duplicate' | 'wrong-binding' | 'invalid' | 'stale' | 'discontinuity' | 'retired';
 
-const validator = new MessageValidator();
-registerMusicCaptureFamilies(validator);
+let shared: MessageValidator | undefined;
+// Compiled on first use, not at import (Hub #1686).
+function validator(): MessageValidator {
+  if (shared === undefined) {
+    const created = new MessageValidator();
+    registerMusicCaptureFamilies(created);
+    shared = created;
+  }
+  return shared;
+}
 const FEATURES_SCHEMA = `${SCHEMA_BASE}music-capture-features/2.0`;
 const clockValid = (clock: MusicClock): boolean => Number.isFinite(clock.wallMs) && clock.wallMs >= 0
   && Number.isFinite(clock.monotonicMs) && clock.monotonicMs >= 0;
@@ -66,7 +74,7 @@ export class MusicInput {
   accept(input: unknown, clock: MusicClock): MusicAdmission {
     this.current(clock);
     if (this.#retired) return 'retired';
-    const checked = validator.validate<CaptureFeatures>(input);
+    const checked = validator().validate<CaptureFeatures>(input);
     if (!checked.ok || checked.value.dataschema !== FEATURES_SCHEMA) return 'invalid';
     const message = checked.value;
     const frame = message.data;

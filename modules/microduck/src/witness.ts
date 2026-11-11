@@ -3,6 +3,7 @@ import {lstatSync, readFileSync, readlinkSync, readdirSync, statSync} from 'node
 import {join} from 'node:path';
 import {VENDOR_IDENTITY} from './contracts.js';
 import {Ajv2020} from 'ajv/dist/2020.js';
+import {compileOnFirstUse} from './compile-on-first-use.js';
 export const VENDOR = {
   revision:VENDOR_IDENTITY.revision,api:VENDOR_IDENTITY.apiVersion,version:VENDOR_IDENTITY.daemonVersion,
   binary:'/work/microduck/target/release/robotd',binaryHash:'4a69d80b1d9f25972fa54abba8527a4727407ff9f5aac07fd394b45447800697',
@@ -15,10 +16,10 @@ export type Witness = {schema:'microduck-fixture/1';session:string;namespace:str
   body:ProcessIdentity;daemon:ProcessIdentity;supervisor:ProcessIdentity;bodyListenerInode:number;socketInode:number;files:{path:string;sha256:string;size:number;mtimeMs:number;ctimeMs:number;ino:number}[]};
 const id={type:'string',pattern:'^[a-f0-9-]{36}$'},integer={type:'integer',minimum:1,maximum:Number.MAX_SAFE_INTEGER};
 const proc={type:'object',additionalProperties:false,required:['pid','start','argv'],properties:{pid:integer,start:{type:'string',pattern:'^[0-9]+$'},argv:{type:'array',minItems:1,maxItems:32,items:{type:'string',maxLength:1024}}}};
-const check=new Ajv2020().compile<Witness>({type:'object',additionalProperties:false,required:['schema','session','namespace','networkNamespace','pidNamespace','body','daemon','supervisor','bodyListenerInode','socketInode','files'],properties:{
+const check=compileOnFirstUse(() => new Ajv2020().compile<Witness>({type:'object',additionalProperties:false,required:['schema','session','namespace','networkNamespace','pidNamespace','body','daemon','supervisor','bodyListenerInode','socketInode','files'],properties:{
   schema:{const:'microduck-fixture/1'},session:id,namespace:{type:'string'},networkNamespace:{type:'string'},pidNamespace:{type:'string'},body:proc,daemon:proc,supervisor:proc,bodyListenerInode:integer,socketInode:integer,
   files:{type:'array',minItems:128,maxItems:160,items:{type:'object',additionalProperties:false,required:['path','sha256','size','mtimeMs','ctimeMs','ino'],properties:{path:{type:'string',maxLength:1024},sha256:{type:'string',pattern:'^[0-9a-f]{64}$'},size:{type:'integer',minimum:0,maximum:67108864},mtimeMs:{type:'number'},ctimeMs:{type:'number'},ino:integer}}},
-}});
+}}));
 type Input={path:string;sha256:string;bytes:number};
 const inputCheck=new Ajv2020().compile<Input[]>({type:'array',minItems:125,maxItems:125,items:{type:'object',additionalProperties:false,required:['path','sha256','bytes'],properties:{path:{type:'string',pattern:'^[a-zA-Z0-9_./-]+$'},sha256:{type:'string',pattern:'^[a-f0-9]{64}$'},bytes:{type:'integer',minimum:0}}}});
 const document:unknown=JSON.parse(readFileSync(new URL('../../fixture/rl-inputs.json',import.meta.url),'utf8'));
