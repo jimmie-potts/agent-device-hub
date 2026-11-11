@@ -4,7 +4,8 @@ import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {AgentStatusCard, AgentStatusSummary} from './agent-status-card.tsx';
 import {LabelEditor} from './label-editor.tsx';
 import {PagedList} from './paged-list.tsx';
-import {listPageSize} from './paging.ts';
+import {listPageSize, sessionShapeRows} from './paging.ts';
+import {useHomeShape} from './home-shape-context.ts';
 import {matches, needsAttention, sessionRows} from './sessions.ts';
 import {Select} from './ui.tsx';
 
@@ -33,7 +34,8 @@ export function AgentSessions({records, synced, live, control, now}: {
   const providers = [...new Set(['codex', 'claude', ...records.map(record => record.identity.provider)])];
   const [grid, columns] = useColumns();
   const keys = rows.filter(row => shown.has(row.id)).map(row => `${row.id}:${String(row.generation)}`);
-  const pageSize = listPageSize.sessionRows * columns, waiting = rows.filter(row => shown.has(row.id) && needsAttention(row)).length;
+  // In a Home shape (#1672) a page holds one row of tiles, so the summary, filters, tiles and pager fit the shape.
+  const shape = useHomeShape(), pageSize = (shape === undefined ? listPageSize.sessionRows : sessionShapeRows) * columns, waiting = rows.filter(row => shown.has(row.id) && needsAttention(row)).length;
   return <div className="agent-sessions">
     <AgentStatusSummary rows={rows} live={live}/>
     <div className="filters">

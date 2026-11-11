@@ -15,7 +15,7 @@ export function fitArt(width: number, height: number, format: HomeArtFormat = 'a
 }
 
 /** Explicit changes affect one breakpoint; automatic fit is never passed to the owner. */
-export function changeArtPlacement(layouts: HomeArrangements, breakpoint: keyof HomeArrangements, change: Partial<Pick<HomePlacement, 'hidden' | 'art'>>): HomeArrangements {
+export function changeArtPlacement(layouts: HomeArrangements, breakpoint: keyof HomeArrangements, change: Partial<Pick<HomePlacement, 'hidden' | 'art' | 'shape' | 'size'>>): HomeArrangements {
   const next = structuredClone(layouts), list = next[breakpoint];
   let entry = list.find(value => value.widget === 'art');
   if (entry === undefined) {

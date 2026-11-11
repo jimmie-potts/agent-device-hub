@@ -1,7 +1,32 @@
-/* Compact content for Home card shapes (#1672), keyed on the shape of the Home card that holds it. Off the unit grid
-   (narrow screens, the Phone arrangement, other pages) no rule here applies and every card keeps its full content. */
+/* Home card shapes on the unit grid (#1672). home-layout.tsx sets the columns and the row height (one column wide, so
+   each unit is square) and places each card by its shape. Compact content is keyed on the shape of the Home card that
+   holds it; off the grid (narrow screens, the Phone arrangement, other pages) no rule here applies and every card keeps
+   its full content. Every offered shape fits the 220px unit with nothing clipped and no scrolling inside the card;
+   tests/home-shapes.browser.ts measures each one. */
+.home-layout-grid[data-packed=true]{display:grid;align-items:stretch}
+.home-layout-grid[data-packed=true]>.home-layout-card{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0}
+.home-layout-grid[data-packed=true]>.home-layout-card>.home-card-content{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.home-layout-grid[data-packed=true] .home-card-content>*{flex:1 1 auto;min-height:0}
+.home-layout-grid[data-packed=true] .home-card-content>:is(.lighting-workspace,.music-workspace),.home-layout-grid[data-packed=true] .home-card-content :is(.lighting-grid,.music-grid){display:flex;flex-direction:column}
+.home-layout-grid[data-packed=true] .home-card-content :is(.lighting-workspace,.music-workspace)>:first-child,.home-layout-grid[data-packed=true] .home-card-content :is(.lighting-grid,.music-grid)>:first-child{flex:1 1 auto;min-height:0}
+.home-layout-grid[data-packed=true] .home-card-content :is(.widget,.light-card,.card){box-sizing:border-box;height:100%;margin:0}
+.home-layout-card[data-home-shape] .widget{display:flex;flex-direction:column;overflow:hidden}
 
-/* Hub mode: the chosen mode and its three choices fit one unit; Wide puts the choices beside it. */
+/* Edit Home keeps the real placement: the edit bar lies over the top of the card, whose content is inert while editing. */
+.home-layout-grid[data-packed=true] .home-card-editor{position:absolute;inset:0 0 auto 0;z-index:3;border-radius:var(--radius) var(--radius) 0 0;box-shadow:0 2px 8px rgb(0 0 0 / .12)}
+.home-shape-choice{display:inline-flex;gap:2px}
+.home-shape-choice button{min-width:36px;padding:6px}
+.home-shape-choice button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.home-hole{display:grid;place-items:center;border:2px dashed var(--edge-dense);border-radius:var(--radius);color:var(--muted-dense);font-size:var(--type-small)}
+
+/* The generic compact face: name, current state and Open to the card's own page. */
+.home-compact-face{display:flex;flex-direction:column;gap:var(--space-s)}
+.home-compact-face>header{display:flex;align-items:center;gap:var(--space-s);min-width:0}
+.home-compact-face h2{margin:0;font-size:var(--type-heading);overflow-wrap:anywhere}
+.home-compact-state{margin:0;flex:1;color:var(--muted-dense);overflow-wrap:anywhere}
+.home-compact-open{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border-radius:var(--light-control-radius,12px);background:var(--inset);font-weight:500}
+
+/* Hub mode: one unit keeps the chosen mode and its three choices as icons; Wide puts labelled choices beside it. */
 .home-shape-square .hub-mode-card .hub-mode-hero,.home-shape-wide .hub-mode-card .hub-mode-hero{margin:var(--space-s) 0;gap:var(--space-s)}
 .home-shape-square .hub-mode-card .hub-mode-art,.home-shape-wide .hub-mode-card .hub-mode-art{width:52px;height:52px;border-radius:18px;box-shadow:inset 0 0 0 4px var(--panel)}
 .home-shape-square .hub-mode-card .hub-mode-art svg{width:24px;height:24px}
@@ -11,39 +36,79 @@
 .home-shape-wide .hub-mode-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);grid-template-rows:auto 1fr;column-gap:var(--space-m);align-items:center}
 .home-shape-wide .hub-mode-card>header{grid-column:1/-1}
 .home-shape-wide .hub-mode-card .hub-mode-choices button{padding:var(--space-s) var(--space-xs)}
+.home-shape-wide .hub-mode-card>.hub-control-sr{position:absolute}
 .home-shape-square .hub-mode-card .hub-mode-exceptions,.home-shape-wide .hub-mode-card .hub-mode-exceptions{display:none}
+.home-hub-exceptions{font-size:var(--type-small)}
 
-/* Light, room, Pixoo and Tidbyt cards fill their shape; the artwork takes the space the controls leave. */
-.home-layout-card[data-home-shape] .light-card{display:flex;flex-direction:column;padding:var(--space-m);overflow:hidden}
-.home-layout-card[data-home-shape] .light-card .light-artwork{flex:1 1 auto;min-height:56px;height:auto;margin-block:var(--space-xs)}
+/* Light, room and Nanoleaf cards fill their shape; the artwork takes the room the controls leave. */
+.home-layout-card[data-home-shape] .light-card{display:flex;flex-direction:column;padding:var(--space-m)}
+.home-layout-card[data-home-shape] .light-card .light-artwork{flex:1 1 auto;min-height:48px;height:auto;margin-block:var(--space-xs)}
 .home-layout-card[data-home-shape] .light-card .lighting-image-group svg{max-height:100%}
 .home-layout-card[data-home-shape] .light-card .light-power{margin-block:var(--space-xs)}
 .home-layout-card[data-home-shape] .light-card .light-drag{display:none}
-.home-shape-tall .light-card .light-artwork,.home-shape-large-square .light-card .light-artwork{flex:0 1 140px}
+/* One row shows command results in the options menu's details instead of below the controls. */
+:is(.home-shape-square,.home-shape-wide) .light-card .light-attention{display:none}
+.home-layout-card[data-home-shape] .light-card-heading p{margin-top:2px}
+.home-shape-tall .light-card .light-artwork,.home-shape-large-square .light-card .light-artwork{flex:0 1 96px}
 .home-shape-tall .light-card .light-face-space,.home-shape-large-square .light-card .light-face-space{flex:1 1 auto;height:auto;min-height:0}
-.home-shape-tall .light-card .light-face,.home-shape-large-square .light-card .light-face{padding-top:var(--space-s)}
-.home-shape-wide .light-card:not(.pixoo-card):not(.tidbyt-card){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);grid-template-rows:auto 1fr;column-gap:var(--space-m)}
+.home-shape-tall .light-card .light-face,.home-shape-large-square .light-card .light-face{padding-top:var(--space-s);height:auto;min-height:0;overflow:visible}
+.home-shape-tall .light-card .light-tabs button{font-size:var(--type-label)}
+.home-shape-wide .light-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);grid-template-rows:auto minmax(0,1fr);column-gap:var(--space-m)}
 .home-shape-wide .light-card>header{grid-column:1/-1}
-.home-shape-wide .light-card .light-compact{align-self:center}
-.home-shape-square .light-card .light-attention,.home-shape-wide .light-card .light-attention{display:none}
+.home-shape-wide .light-card .light-artwork{height:auto;min-height:0;margin:0}
+.home-shape-wide .light-card .light-compact{align-self:center;min-width:0}
+.home-shape-wide .light-card .light-compact .light-power{margin-block:0 var(--space-xs)}
+.home-shape-wide .light-card .light-card-heading p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:none}
+.home-shape-large-square .light-card{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);grid-template-rows:auto auto minmax(0,1fr);column-gap:var(--space-m)}
+.home-shape-large-square .light-card>header{grid-column:1/-1}
+.home-shape-large-square .light-card .light-artwork{grid-column:1;grid-row:2/4;height:auto;min-height:0}
+.home-shape-large-square .light-card :is(.light-tabs,.light-face-space){grid-column:2}
+.home-shape-large-square .light-card .light-tabs button{font-size:var(--type-label);padding-inline:2px}
+.home-layout-card[data-home-shape] .light-compact .light-slider{margin:0}
 
-/* Pixoo and Tidbyt: one row shows the display and what plays; two rows add their control tabs. */
-.home-shape-square :is(.pixoo-card,.tidbyt-card) :is(.pixoo-tabs,.pixoo-face-space,.tidbyt-tabs,.tidbyt-face-space),
-.home-shape-wide :is(.pixoo-card,.tidbyt-card) :is(.pixoo-tabs,.pixoo-face-space,.tidbyt-tabs,.tidbyt-face-space){display:none}
-.home-layout-card[data-home-shape] :is(.pixoo-artwork,.tidbyt-artwork){flex:1 1 auto;min-height:56px;height:auto;margin-block:var(--space-xs);display:grid;place-items:center;overflow:hidden}
-.home-layout-card[data-home-shape] :is(.pixoo-device,.tidbyt-device){height:100%;max-height:100%;width:auto;aspect-ratio:1}
-.home-layout-card[data-home-shape] .tidbyt-device{aspect-ratio:2}
-.home-layout-card[data-home-shape] :is(.pixoo-caption,.tidbyt-caption){margin:var(--space-xs) 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.home-shape-wide :is(.pixoo-card,.tidbyt-card){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto 1fr;column-gap:var(--space-m)}
-.home-shape-wide :is(.pixoo-card,.tidbyt-card)>header{grid-column:1/-1}
-.home-shape-wide :is(.pixoo-card,.tidbyt-card) :is(.pixoo-caption,.tidbyt-caption){align-self:center;white-space:normal}
-.home-shape-tall :is(.pixoo-card,.tidbyt-card) :is(.pixoo-artwork,.tidbyt-artwork){flex:0 1 160px}
-.home-shape-tall :is(.pixoo-face-space,.tidbyt-face-space),.home-shape-large-square :is(.pixoo-face-space,.tidbyt-face-space){min-height:0;flex:1 1 auto}
-.home-shape-tall :is(.pixoo-face-space,.tidbyt-face-space)>.light-face,.home-shape-large-square :is(.pixoo-face-space,.tidbyt-face-space)>.light-face{min-height:0;padding-block:var(--space-s)}
-.home-shape-large-square :is(.pixoo-card,.tidbyt-card){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto auto auto 1fr;column-gap:var(--space-m)}
-.home-shape-large-square :is(.pixoo-card,.tidbyt-card)>header{grid-column:1/-1}
-.home-shape-large-square :is(.pixoo-card,.tidbyt-card) :is(.pixoo-artwork,.tidbyt-artwork){grid-column:1;grid-row:2/5}
-.home-shape-large-square :is(.pixoo-card,.tidbyt-card)>:not(header):not(.pixoo-artwork):not(.tidbyt-artwork){grid-column:2}
+/* Inbox: shorter rows on one line each, so a page and its pager fit; an opened item takes the page. */
+.home-layout-card[data-home-shape] .inbox-entry>summary{min-height:52px;padding:var(--space-xs) 0}
+.home-layout-card[data-home-shape] .inbox-entry:not([open]) :is(.inbox-item-name,.inbox-item-sub){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-layout-card[data-home-shape] .inbox-item-face{overflow-wrap:normal}
+.home-layout-card[data-home-shape] .inbox-item-detail{padding-bottom:var(--space-xs)}
+.home-layout-card[data-home-shape] .inbox-item-detail .actions{margin:var(--space-s) 0}
+.home-layout-card[data-home-shape] .inbox-item-detail p{margin:0}
+.home-shape-wide .inbox-card:has([data-held=true])>header{display:none}
+.home-layout-card[data-home-shape] .paged-list-pager{gap:var(--space-xs)}
+.home-layout-card[data-home-shape] .paged-list-pager button{padding-inline:var(--space-s)}
+.home-layout-card[data-home-shape] .paged-list-position{font-size:var(--type-label);text-align:center}
 
-/* Inbox rows are shorter on the unit grid so a page and its pager fit the shape. */
-.home-layout-card[data-home-shape] .inbox-entry>summary{min-height:56px}
+/* Timeline: entries on one line each; Open Timeline holds the rest. */
+.home-layout-card[data-home-shape] .timeline-entry>summary{min-height:48px;padding:var(--space-xs) 0}
+.home-layout-card[data-home-shape] .timeline-entry:not([open]) :is(.timeline-title,.timeline-context){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-layout-card[data-home-shape] .timeline-face{overflow-wrap:normal}
+.home-layout-card[data-home-shape] .timeline-heading{margin-bottom:var(--space-s)}
+.home-layout-card[data-home-shape] .timeline-entry time span{display:none}
+.home-layout-card[data-home-shape] .timeline-mark{display:none}
+.home-layout-card[data-home-shape] .timeline-filters{margin-bottom:var(--space-s)}
+.timeline-open{display:inline-flex;align-items:center;min-height:44px;font-size:var(--type-small)}
+
+/* Agent sessions: the summary on one line and the filters on one row, above one row of tiles a page. */
+.home-layout-card[data-home-shape] .agent-summary{padding:var(--space-xs) var(--space-s);margin-bottom:var(--space-s);border-radius:12px}
+.home-layout-card[data-home-shape] .agent-summary>div{display:flex;gap:var(--space-xs);align-items:baseline;justify-content:center}
+.home-layout-card[data-home-shape] .agent-summary strong{font-size:var(--type-heading)}
+.home-layout-card[data-home-shape] .agent-sessions .filters{grid-template-columns:minmax(0,1fr) minmax(0,8rem);gap:var(--space-s);margin-bottom:var(--space-s)}
+.home-layout-card[data-home-shape] .agent-sessions .filters label{font-size:0}
+.home-layout-card[data-home-shape] .agent-sessions .filters :is(input,select){font-size:var(--type-small)}
+.home-shape-tall .agent-summary span{font-size:var(--type-label)}
+
+/* Music visualizer: the canvas fills the shape above one status line. */
+.home-layout-card[data-home-shape] .music-visualizer-card{display:flex;flex-direction:column;gap:var(--space-xs);flex:1 1 auto;min-height:0}
+.home-layout-card[data-home-shape] .music-visualizer-canvas{flex:1 1 auto;min-height:0;aspect-ratio:auto;max-height:none;height:auto}
+.home-layout-card[data-home-shape] .music-visualizer-card .music-note{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--type-small)}
+.home-layout-card[data-home-shape] .music-visualizer-card a{min-height:32px}
+
+/* Art fills its shape and is cropped to it; its placement controls stay in one row above it. */
+.home-art-shaped{display:flex;flex-direction:column;gap:var(--space-xs);height:100%;min-height:0}
+.home-art-shaped>.home-art-controls{flex-wrap:nowrap}
+.home-art-shaped>.home-art-controls button{min-height:36px;padding:4px 8px}
+.home-art-shaped>.home-art-content{flex:1 1 auto;min-height:0}
+.home-art-shaped .art-widget{height:100%;margin:0;padding:var(--space-s)}
+.home-art-shaped .art-image-frame{flex:1;min-height:0;aspect-ratio:auto}
+.home-art-shaped .art-image canvas,.home-art-shaped .art-image img{width:100%;height:100%;object-fit:cover}
+.home-art-shaped .art-image figcaption{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

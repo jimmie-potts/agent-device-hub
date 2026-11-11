@@ -7,6 +7,6 @@
   "properties": {
     "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
     "expectedRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
-    "layouts": {"$ref": "https://bunny.invalid/events/home-layout/2.1#/$defs/layouts"}
+    "layouts": {"$ref": "https://bunny.invalid/events/home-layout/2.2#/$defs/layouts"}
   }
 }

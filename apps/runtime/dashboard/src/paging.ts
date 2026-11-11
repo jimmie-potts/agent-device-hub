@@ -8,11 +8,14 @@ import type {HomeShape} from './home-shapes.ts';
 export const listPageSize = {inbox: 5, timeline: 5, sessionRows: 2} as const;
 
 /**
- * Inbox rows per page in each Home shape (#1672), so a page and its pager fit the shape at the smallest unit. Stage A
- * prototype values for a 220px unit; Stage B derives them from the unit the owner chooses. Off the unit grid, and for
- * a shape the Inbox does not offer, the list keeps listPageSize.
+ * Rows per page in each Home shape (#1672), so a page and its pager fit the shape at the 220px unit, the smallest a
+ * column gets; a browser test measures every offered shape. Off the unit grid the lists keep listPageSize. Timeline in
+ * one row shows its latest entries with no pager; the rest is on the Timeline page.
  */
 export const inboxShapePageSize: Readonly<Partial<Record<HomeShape, number>>> = {wide: 1, tall: 4, 'large-square': 4};
+export const timelineShapePageSize: Readonly<Record<HomeShape, number>> = {square: 2, wide: 2, tall: 4, 'large-square': 4};
+/** Agent status shows one row of tiles a page in a shape. */
+export const sessionShapeRows = 1;
 
 /** How many pages `count` rows fill; an empty list still has one (empty) page. */
 export function pageCount(count: number, size: number): number {

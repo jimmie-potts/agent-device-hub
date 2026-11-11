@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import type {HomeArrangements, HomeLayoutRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {HomeArrangements, HomeLayoutRecord, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
 import {createCoreModule} from '../src/core/core.js';
 import type {Action} from '../src/core/tracker.js';
 import {contextOf, edgeConfig, fixture, it, run, stateDir, waitFor} from './support.js';
@@ -165,10 +165,78 @@ it('older Home saves preserve art options and original command identity while ex
     assert.deepEqual(saved().layouts?.desktop.find(entry => entry.widget === 'art')?.art, {format: 'banner', pinned: true});
     assert.deepEqual(saved().layouts?.phone.find(entry => entry.widget === 'art')?.art, {format: 'square', pinned: false});
     assert.equal(saved().layouts?.desktop[0]?.size, 'large');
-    assert.equal(part.states(['home-layout'])[0]?.dataschema, 'https://bunny.invalid/events/home-layout/2.1');
+    assert.equal(part.states(['home-layout'])[0]?.dataschema, 'https://bunny.invalid/events/home-layout/2.2');
     const explicit = arrangements(), art = explicit.desktop.find(entry => entry.widget === 'art');assert.ok(art !== undefined);art.art = {format: 'tall', pinned: false};
     await save(explicit);assert.deepEqual(saved().layouts?.desktop.find(entry => entry.widget === 'art')?.art, art.art);
     await save({desktop: [], phone: explicit.phone});assert.deepEqual(saved().layouts?.desktop, []);
     await save({desktop: [], phone: []});assert.deepEqual(saved().layouts, {desktop: [], phone: []});
   } finally {await world.store.drain();}
+});
+
+// #1672 acceptance examples 1 and 4 to 9: card shapes are optional, kept only while the width agrees, and need no store migration.
+it('Home card shapes load old records unchanged, keep a shape only while its width agrees and survive restart', async context => {
+  const world = await World.open(context);let responder: Responder<HomeLayoutSetRequest> | undefined, sequence = 0;
+  const now = world.clock.now(), trace = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+  // Example 1: a record saved before shapes existed, exactly as an older core stored it.
+  const old = {id: 'home', revision: 3, version: 1, layouts: {desktop: [{widget: 'hub-mode', size: 'medium', hidden: false}, {widget: 'inbox', size: 'small', hidden: false}], phone: []}};
+  world.db.exec("CREATE TABLE IF NOT EXISTS home_layout (id TEXT PRIMARY KEY CHECK (id = 'home'), record TEXT NOT NULL) STRICT");
+  world.db.prepare('INSERT INTO home_layout VALUES (?, ?)').run('home', JSON.stringify(old));
+  const open = (): HomeLayoutPart => {const value = new HomeLayoutPart({admit: () => true, complete: () => () => {}, end: () => {}});value.open(world.db);return value;};
+  let part = open();
+  const stored = (): string => (world.db.prepare('SELECT record FROM home_layout WHERE id = ?').get('home') as {record: string}).record;
+  const saved = (): HomeLayoutRecord => part.states(['home-layout'])[0]?.data as HomeLayoutRecord;
+  const entry = (widget: string): HomePlacement | undefined => saved().layouts?.desktop.find(value => value.widget === widget);
+  const sdk = {respond: (_pattern: string, receive: Responder<HomeLayoutSetRequest>) => {responder = receive;return Promise.resolve();}} as unknown as Sdk;
+  const core = {sdk, ready: Promise.resolve(), transaction: world.store.transaction.bind(world.store)} as CoreHandle;
+  const command = (desktop: HomePlacement[], expectedRevision = saved().revision): Command<HomeLayoutSetRequest> => {
+    const requestId = `shape-${String(sequence++)}`;
+    return {specversion: '1.0', bunnyprofile: '2.0', id: requestId, source: 'bunny/core', type: 'org.bunny.home-layout.set.requested', subject: 'home',
+      time: new Date(now).toISOString(), expiresat: new Date(now + 1000).toISOString(), kind: 'command', datacontenttype: 'application/json',
+      dataschema: 'https://bunny.invalid/events/home-layout-set/2.0', traceparent: trace, data: {requestId, expectedRevision, layouts: {desktop, phone: []}}};
+  };
+  const save = async (desktop: HomePlacement[]): Promise<void> => {assert.ok(responder !== undefined);assert.deepEqual(await responder(command(desktop)), {status: 'accepted'});};
+  try {
+    assert.equal(part.states(['home-layout'])[0]?.dataschema, 'https://bunny.invalid/events/home-layout/2.2');
+    assert.deepEqual(saved(), old, 'an old record publishes unchanged');
+    part = open();assert.equal(stored(), JSON.stringify(old), 'opening again rewrites nothing: no store migration');
+    await part.start(core);
+    // Example 4: a new dashboard stores a shape with the width that agrees with it.
+    await save([{widget: 'hub-mode', size: 'medium', hidden: false, shape: 'wide'}, {widget: 'inbox', size: 'small', hidden: false, shape: 'tall'}]);
+    assert.equal(entry('inbox')?.shape, 'tall');assert.equal(entry('hub-mode')?.shape, 'wide');
+    // Example 5: an older dashboard changes the width and copies the old shape; the shape is dropped.
+    await save([{widget: 'hub-mode', size: 'medium', hidden: false, shape: 'wide'}, {widget: 'inbox', size: 'medium', hidden: false, shape: 'tall'}]);
+    assert.deepEqual(entry('inbox'), {widget: 'inbox', size: 'medium', hidden: false});
+    // Example 6: a client that omits the shape keeps the previous one while the width is unchanged, and loses it with a new width.
+    await save([{widget: 'hub-mode', size: 'medium', hidden: false}, {widget: 'inbox', size: 'medium', hidden: false}]);
+    assert.equal(entry('hub-mode')?.shape, 'wide');
+    await save([{widget: 'hub-mode', size: 'large', hidden: false}, {widget: 'inbox', size: 'medium', hidden: false}]);
+    assert.deepEqual(entry('hub-mode'), {widget: 'hub-mode', size: 'large', hidden: false});
+    // Example 7: a duplicate delivery is not saved again; a stale revision is refused and changes nothing.
+    const before = stored(), revision = saved().revision, again = command([{widget: 'inbox', size: 'small', hidden: false, shape: 'square'}], revision);
+    assert.deepEqual(await responder?.(again), {status: 'accepted'});const after = stored();
+    assert.equal(world.store.received(again), 'duplicate');
+    const stale = await responder?.(command([{widget: 'inbox', size: 'small', hidden: false, shape: 'tall'}], revision));
+    assert.ok(stale !== undefined && 'error' in stale);assert.equal(stale.error.code, 'revision-conflict');
+    assert.equal(stored(), after);assert.notEqual(before, after);
+    // Restart reads the shapes back byte for byte.
+    part = open();assert.equal(JSON.stringify(saved()), after);assert.equal(entry('inbox')?.shape, 'square');
+  } finally {await world.store.drain();}
+});
+
+it('lighting reconcile keeps the merged card shape and leaves new light cards to their Standard shape', async context => {
+  const core = createCoreModule(), watcher = fixture('home-shape-light-watcher'), files = await edgeConfig(context, []);
+  await run(context, {modules: [core, watcher], configFile: files.config});
+  const entries = [{widget: 'light:device:lamp-a', size: 'small', hidden: false, shape: 'tall'}, {widget: 'light:device:lamp-b', size: 'medium', hidden: false, shape: 'wide'}];
+  await core.operatorActions.dispatch(action('shape-light-setup', 0, {desktop: entries, phone: entries}));
+  const layout = {rooms: [{id: 'studio', name: 'Studio'}], assignments: [], groups: [{id: 'pendants', name: 'Pendants', scope: 'home', devices: ['lamp-a', 'lamp-b']}], home: [{kind: 'group', id: 'pendants'}, {kind: 'room', id: 'studio'}]};
+  const group: Action = {key: 'bunny.cmd.lighting-layout-set.lighting', requestedBy: 'bunny/parts/operator', requestId: 'shape-group-lights',
+    draft: {type: 'org.bunny.lighting-layout.set.requested', subject: 'lighting', dataschema: 'https://bunny.invalid/events/lighting-layout-set/2.0', data: {expectedRevision: 0, layout}}};
+  assert.deepEqual(await core.operatorActions.dispatch(group), {status: 'accepted', requestId: 'shape-group-lights'});
+  const result = await contextOf(watcher).sdk.sync<HomeLayoutRecord>(['home-layout'], () => {}, {timeoutMs: 2000, owner: 'bunny/core'});
+  assert.equal(result.status, 'synced');if (result.status !== 'synced') throw new Error('shape-light-sync');
+  await waitFor(() => result.copy.states()[0]?.data.layouts?.desktop[0]?.widget === 'light:group:pendants');
+  const desktop = result.copy.states()[0]?.data.layouts?.desktop;await result.copy.close();
+  // Example 9: the group takes the first member's placement, shape included; a newly placed light or room card is Tall.
+  assert.deepEqual(desktop?.[0], {widget: 'light:group:pendants', size: 'small', hidden: false, shape: 'tall'});
+  assert.deepEqual(desktop?.find(value => value.widget === 'light:room:studio'), {widget: 'light:room:studio', size: 'small', hidden: false, shape: 'tall'});
 });

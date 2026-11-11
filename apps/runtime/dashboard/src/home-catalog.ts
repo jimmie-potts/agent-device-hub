@@ -4,7 +4,7 @@ import type {HomeArrangements, HomePlacement, LightingLayoutRecord, LightingSele
 import type {RuntimeData} from './runtime-feeds.ts';
 import {cardsFor, emptyLightingLayout, lightingDevices, selectionKey} from './lighting.ts';
 import {homeLayout, widgetCatalog, widgetDefinition, type WidgetSize} from './widgets.ts';
-import type {HomeShape} from './home-shapes.ts';
+import {placementShape, shapeArtFormat, shapeStoredSize, type HomeShape} from './home-shapes.ts';
 
 type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; instance: string} | {kind: 'light'; selection: LightingSelection} | {kind: 'unavailable'};
 export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean};
@@ -92,29 +92,79 @@ export function addHomeCard(layouts: HomeArrangements, breakpoint: keyof HomeArr
   const next = structuredClone(layouts);
   for (const key of ['desktop', 'phone'] as const) {
     const found = next[key].find(entry => entry.widget === card.id);
-    if (found === undefined) next[key].push({widget: card.id, size: card.sizes.includes('medium') ? 'medium' : card.sizes[0] ?? 'small', hidden: false,
-      ...(card.id === 'art' ? {art: {format: 'auto', pinned: true}} : {})});
+    if (found === undefined) {
+      const shape = homeCardShapes(card).standard;
+      next[key].push({widget: card.id, size: shapeStoredSize[shape], hidden: false, shape, ...(card.id === 'art' ? {art: {format: shapeArtFormat[shape], pinned: true}} : {})});
+    }
     else if (key === breakpoint) found.hidden = false;
   }
   return next;
 }
 
 const allShapes: readonly HomeShape[] = ['square', 'wide', 'tall', 'large-square'];
+export type HomeCardShapes = {
+  /** The shapes the card offers, each fitting the 220px unit with nothing clipped and no scrolling inside the card. */
+  shapes: readonly HomeShape[];
+  /** The shape a placement saved as Standard shows. */
+  standard: HomeShape;
+  /** Offered shapes that show the generic compact face: name, current state and Open. */
+  generic: readonly HomeShape[];
+  /** The existing page that holds the card's full content and controls. */
+  open?: string;
+};
 /**
- * The shapes a Home card offers and the one a Standard placement shows (#1672). Core widgets declare theirs in the
- * widget catalog; light, room and display cards have compact content in every shape; other device and Music cards offer
- * the shapes their full content fits until they get compact content.
+ * The shapes a Home card offers (#1672). Core widgets declare theirs in the widget catalog. Light, room and Nanoleaf
+ * cards have compact content in every shape. Device and Music cards without compact content of their own (Pixoo,
+ * Tidbyt, Wemo, Roborock, Volcano, the sign, Music) show the generic compact face in one unit, since their full content
+ * fits no shape at the 220px unit; Open leads to their existing device or Music page.
  */
-export function homeCardShapes(card: Pick<HomeCardDefinition, 'id' | 'source'>): {shapes: readonly HomeShape[]; standard: HomeShape} {
+export function homeCardShapes(card: Pick<HomeCardDefinition, 'id' | 'source'>): HomeCardShapes {
   const widget = widgetDefinition(card.id === 'module:roborock' ? 'roborock' : card.id);
-  if (widget !== undefined) return {shapes: widget.shapes, standard: widget.standard};
-  if (card.source.kind === 'unavailable') return {shapes: allShapes, standard: 'square'};
-  if (card.source.kind === 'light') return {shapes: allShapes, standard: 'tall'};
-  if (card.source.kind === 'device') {
-    const module = card.source.owner.slice('bunny/modules/'.length);
-    if (module === 'pixoo' || module === 'tidbyt') return {shapes: allShapes, standard: 'tall'};
-    const owned = widgetDefinition(module);
-    if (owned !== undefined) return {shapes: owned.shapes, standard: owned.standard};
+  if (widget !== undefined) return {shapes: widget.shapes, standard: widget.standard, generic: widget.generic ?? [], ...(widget.open === undefined ? {} : {open: widget.open})};
+  if (card.source.kind === 'light') return {shapes: allShapes, standard: 'tall', generic: []};
+  const generic = {shapes: ['square'], standard: 'square', generic: ['square']} as const;
+  if (card.source.kind === 'device') return {...generic, open: `#/component/${encodeURIComponent(card.source.instance)}`};
+  if (card.source.kind === 'music') return {...generic, open: `#/music/${encodeURIComponent(card.source.instance)}`};
+  return generic;
+}
+
+/** The shape a saved placement shows now: its saved shape, or the conversion of a width-only placement. */
+export function shapeOf(entry: HomePlacement, card: Pick<HomeCardDefinition, 'id' | 'source'>): HomeShape {
+  const {shapes, standard} = homeCardShapes(card);return placementShape(entry, shapes, standard);
+}
+/**
+ * The layout an explicit save writes: every known placement in both arrangements carries the shape it shows and the
+ * width that agrees with it, and art keeps a format an older dashboard understands. Loading never calls this.
+ */
+export function withShapes(layouts: HomeArrangements, catalog: readonly HomeCardDefinition[]): HomeArrangements {
+  const next = structuredClone(layouts);
+  for (const key of ['desktop', 'phone'] as const) for (const entry of next[key]) {
+    const card = savedHomeCard(entry.widget, catalog);if (card === undefined) continue;
+    const shape = shapeOf(entry, card);entry.shape = shape;entry.size = shapeStoredSize[shape];
+    if (entry.art !== undefined) entry.art = {...entry.art, format: shapeArtFormat[shape]};
   }
-  return {shapes: ['tall', 'large-square'], standard: 'tall'};
+  return next;
+}
+
+/** The current state the generic compact face shows, from records the dashboard already holds. */
+export function homeCardState(card: HomeCardDefinition, runtime: RuntimeData, connected: boolean): string {
+  if (card.reason !== undefined) return card.reason;
+  if (!connected) return 'Offline';
+  const source = card.source;
+  if (source.kind === 'device') {
+    const copy = runtime.copies.find(value => value.owner === source.owner && value.family === 'device');
+    const record = (copy?.records as readonly DeviceRecord[] | undefined)?.find(value => value.id === source.instance);
+    if (record === undefined || copy?.synced !== true) return 'Unavailable';
+    const power = record.observed.status === 'known' && record.observed.power.status === 'known' ? record.observed.power.value ? ' · On' : ' · Off' : '';
+    return `${record.availability === 'available' ? 'Available' : record.availability === 'unavailable' ? 'Unavailable' : 'Stale'}${power}`;
+  }
+  if (source.kind === 'music') {
+    const copy = runtime.copies.find(value => value.owner === source.owner && value.family === 'playback');
+    const record = (copy?.records as readonly PlaybackState[] | undefined)?.find(value => value.id === source.instance);
+    if (record === undefined || copy?.synced !== true || record.availability !== 'available') return 'Unavailable';
+    return record.playback.status === 'known' ? `${record.playback.player[0]?.toUpperCase() ?? ''}${record.playback.player.slice(1)}${record.playback.title === undefined ? '' : ` · ${record.playback.title}`}` : 'Unknown';
+  }
+  const module = card.id === 'module:roborock' ? 'roborock' : card.id === 'reachy' || card.id === 'duck-latest' ? 'companions' : card.id;
+  const state = runtime.modules?.find(value => value.name === module)?.state;
+  return state === 'running' ? 'Available' : state === undefined ? 'Unavailable' : `Module ${state}`;
 }

@@ -3,7 +3,15 @@ import {defineFamily} from './registry.js';
 
 export type HomeArtFormat = 'auto' | 'banner' | 'square' | 'tall';
 export type HomeArtPlacement = {format: HomeArtFormat; pinned: boolean};
-export type HomePlacement = {widget: string; size: 'small' | 'medium' | 'large'; hidden: boolean; art?: HomeArtPlacement};
+/** A Home card's shape on the unit grid (#1672): 1×1, 2 wide × 1 tall, 1 wide × 2 tall and 2×2. */
+export type HomeShape = 'square' | 'wide' | 'tall' | 'large-square';
+export type HomeSize = 'small' | 'medium' | 'large';
+/**
+ * The width a placement with a shape stores beside it, so a dashboard that knows only widths shows a close one. The core
+ * keeps a saved shape only while the placement's size agrees with it (home-layout/2.2).
+ */
+export const homeShapeSize: Readonly<Record<HomeShape, HomeSize>> = {square: 'small', tall: 'small', wide: 'medium', 'large-square': 'medium'};
+export type HomePlacement = {widget: string; size: HomeSize; hidden: boolean; shape?: HomeShape; art?: HomeArtPlacement};
 export type HomeArrangements = {desktop: HomePlacement[]; phone: HomePlacement[]};
 export type HomeLayoutRecord = {id: 'home'; revision: number; version: 1; layouts: HomeArrangements | null};
 export type HomeLayoutSetRequest = {requestId: string; expectedRevision: number; layouts: HomeArrangements};
@@ -17,5 +25,6 @@ function checkHome(message: Message): string | undefined {
 export const homeLayoutFamilies = [
   defineFamily('home-layout', 'state', 'org.bunny.home-layout.updated', checkHome),
   defineFamily('home-layout', 'state', 'org.bunny.home-layout.updated', checkHome, '2.1'),
+  defineFamily('home-layout', 'state', 'org.bunny.home-layout.updated', checkHome, '2.2'),
   defineFamily('home-layout-set', 'command', 'org.bunny.home-layout.set.requested', checkHome),
 ] as const;
