@@ -574,8 +574,8 @@ processes share that container's memory, and each catalog process holds several
 hundred MiB: at the standard size even two shards were killed for memory, and the
 wide size ran two (Hub #1674). On the Mac a native run of up to four shards
 takes two slots under
-[Test work on the Mac](../../docs/development.md#test-work-on-the-mac), which
-also covers larger runs.
+[Test work on the Mac](../../docs/development.md#test-work-on-the-mac); that
+rule says more than four shards is not for the Mac.
 `node --test scripts/tests/scenario-shards.test.mjs` checks the runner, and
 `tests/scenario-shard.test.ts` in the unit suite checks the split and the refusal.
 Hosted CI keeps running `npm run test:runtime:scenarios:built`.

@@ -812,8 +812,8 @@ session applies this rule itself; no coordinator grant is needed.
    [Source validation](bunny-container.md#source-validation) (each a
    `docker run --rm … --memory 4g`) are not test jobs. They always run exactly
    as their procedure says and never wait for, shrink to fit or give way to this
-   rule. While one runs it counts as three slots, so at most two test jobs run
-   beside it.
+   rule. While one runs it counts as three slots, so at most two slots remain
+   for test jobs.
 3. **Start check.** Start only when the 1-minute load is under 8, the
    installed core is `healthy` and enough slots are free
    ([Counting test jobs](#counting-test-jobs)). Otherwise wait a minute.
@@ -859,14 +859,20 @@ jobs; never touch another session's containers.
   usually start with `bunny-gh` or `bunny-runtime-check-`; count a `…-wide` name
   twice. An operator or qualification container has a name Docker chose, without
   the `bunny-` prefix, and the core image (`bunny-core:…` or an image ID); count
-  it three times. Admission in `npm run test:container` counts it once, so check
-  for one yourself.
+  it three times only when it is one of the two `--memory 4g` commands named in
+  item 2, and other such containers once. Admission in `npm run test:container`
+  counts it once, so check for one yourself.
 - Native suites:
   `ps -axo command= | grep -E '^([^ ]*/)?(node|[Pp]ython[0-9.]*)( |$)' | grep -E -- '--test|/tests/|unittest|vitest|scripts/check-' | grep -v -- '--test-isolation=process'`.
   The listing is an aid. It hides test workers, and most suites show one line,
   the one naming the test files or the browser entry script; a
-  `scripts/package-*.mjs --test` suite shows two lines. Also count every native
-  suite you started yourself.
+  `scripts/package-*.mjs --test` suite shows two lines. A native sharded catalog
+  run shows up to five
+  `node --test --test-concurrency=1 apps/runtime/dist/tests/scenarios/…` lines,
+  and its `node scripts/scenario-shards.mjs` parent does not match; count those
+  lines as two slots for each run that
+  `ps -axo command= | grep -E '^([^ ]*/)?node scripts/scenario-shards\.mjs'`
+  lists. Also count every native suite you started yourself.
 - Lint: start it only when
   `ps -axo command= | grep -E '^([^ ]*/)?node .*(eslint/bin/eslint\.js|lint-shards\.mjs)'`
   prints nothing. An editor's ESLint language server does not match.
