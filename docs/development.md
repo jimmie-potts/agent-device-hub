@@ -3147,8 +3147,12 @@ and missing starts, a lost endpoint, restart without resend and cancel;
 fake worker on the bus. Runtime's `coding-access.test.js`, `coding-dispatch.test.js`
 and `coding-worker.test.js` check the credential role's endpoint-only grant, the
 core's forwarding of `coding-dispatch`, and the worker over a fake harness and a
-temporary repository; `test:events:built` discovers `coding.test.mjs` for the
-seven families. The companions browser entry calls `coding-delegation.browser.ts`,
+temporary repository; `coding-worker-stream.test.js` replays the recorded and
+constructed harness streams under `apps/runtime/tests/fixtures/claude-stream`
+through the real parsing code, checks the harness environment and readiness,
+and fails on a home path or e-mail address in any fixture (Hub #1743);
+`test:events:built` discovers `coding.test.mjs` for the seven families and
+their 2.1 versions. The companions browser entry calls `coding-delegation.browser.ts`,
 which connects a fake worker through the real gateway with the coding-worker
 credential and drives a proposal, approval, wait and result on the Conversation
 page. Installing the worker on the Mac is the [worker guide](coding-worker.md);

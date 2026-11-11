@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/coding-state/2.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "endpointId",
+    "availability",
+    "active",
+    "readiness"
+  ],
+  "properties": {
+    "id": {
+      "const": "coding"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "endpointId": {
+      "anyOf": [
+        {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "availability": {
+      "enum": [
+        "off",
+        "available",
+        "unavailable"
+      ]
+    },
+    "active": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operationId",
+            "taskId",
+            "status"
+          ],
+          "properties": {
+            "operationId": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+            },
+            "taskId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z0-9-]+$"
+            },
+            "status": {
+              "enum": [
+                "dispatching",
+                "started",
+                "cancelling",
+                "uncertain"
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "readiness": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tool",
+            "installed",
+            "version",
+            "signedIn",
+            "plan",
+            "limits",
+            "limitsObservedAtMs",
+            "checkedAtMs"
+          ],
+          "properties": {
+            "tool": {
+              "const": "claude-code"
+            },
+            "installed": {
+              "enum": [
+                "yes",
+                "no",
+                "unknown"
+              ]
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[0-9A-Za-z][0-9A-Za-z.+-]*$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "signedIn": {
+              "enum": [
+                "yes",
+                "no",
+                "unknown"
+              ]
+            },
+            "plan": {
+              "anyOf": [
+                {
+                  "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "limits": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "maxItems": 8,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "window",
+                      "status",
+                      "resetsAtMs",
+                      "utilization"
+                    ],
+                    "properties": {
+                      "window": {
+                        "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"
+                      },
+                      "status": {
+                        "enum": [
+                          "allowed",
+                          "allowed-warning",
+                          "rejected",
+                          "unknown"
+                        ]
+                      },
+                      "resetsAtMs": {
+                        "anyOf": [
+                          {
+                            "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "utilization": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 100
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "limitsObservedAtMs": {
+              "anyOf": [
+                {
+                  "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "checkedAtMs": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

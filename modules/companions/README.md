@@ -307,7 +307,13 @@ since the call's own result was the hand-off acceptance and the Messages API
 takes one result per call, Hub #1360); nothing is resent, and a restart or a lost
 worker leaves the operation uncertain. One task runs at a time; the dispatch
 carries twenty minutes, sixty turns and five dollars as bounds. The page shows
-the worker's availability beside the provider.
+the worker's availability beside the provider. The worker's readiness (Hub
+#1743: tool version, signed in or not, plan and the latest limit windows, each
+unknown where the tool did not say) arrives on its enable and is published in
+`coding-state/2.1`; a readiness report from the selected worker does not move
+the revision a proposal is bound to. A result may also end `usage-limit`, with
+the limit's window and reset time or unknown, or `waiting-for-owner`, with the
+worker's question among the findings; neither is retried.
 
 ### Turns, tools and approval
 

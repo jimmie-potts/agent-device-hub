@@ -10,8 +10,9 @@ import {Outcome, fullDisk, recordLog, type AddMessage, type Cancel, type Command
 import {advanceRevision} from '../revision.js';
 import {CodingStore, type CodingResponsibility} from './store.js';
 
+/** The module publishes `coding-state/2.1`, which adds the selected worker's readiness (Hub #1743). */
 export const codingStateDraft = (data: CodingState) => ({kind: 'state' as const, type: 'org.bunny.coding-state.updated', subject: 'coding',
-  dataschema: 'https://bunny.invalid/events/coding-state/2.0', data});
+  dataschema: 'https://bunny.invalid/events/coding-state/2.1', data: {...data, readiness: data.readiness ?? null}});
 /** Delivers the worker's final word to the task that waits for it; the engine turns it into the delegation tool's result. */
 export type Delivery = (taskId: string, text: string, parent: TraceContext) => Promise<void>;
 type Active = CodingResponsibility & {wallClockMs: number; cancel: Cancel; settling: boolean};
@@ -35,6 +36,8 @@ export function describeResult(status: 'completed' | 'failed' | 'cancelled' | 'u
     `findings: ${result.findings.length === 0 ? 'none' : result.findings.join('; ')}`,
     `limitations: ${result.limitations.length === 0 ? 'none stated' : result.limitations.join('; ')}`,
     `usage: ${result.usage === null ? 'unknown' : `${result.usage.turns === null ? 'unknown' : String(result.usage.turns)} turns, ${result.usage.costUsd === null ? 'unknown cost' : `$${result.usage.costUsd.toFixed(2)}`}, ${result.usage.durationMs === null ? 'unknown duration' : `${String(Math.round(result.usage.durationMs / 1000))} s`}`}`];
+  // A usage limit says which window and when it resets, or that the tool did not say; nothing is retried at the reset.
+  if (result.limit !== undefined) lines.push(`usage limit: ${result.limit.window ?? 'window unknown'}, resets ${result.limit.resetsAtMs === null ? 'at an unknown time' : new Date(result.limit.resetsAtMs).toISOString()}`);
   let text = lines.join('\n');
   // The task's serialized state is bounded at 32 KiB; a result that fits in 3,500 characters leaves room for the turn that reports it.
   if (text.length > 3500) text = `${text.slice(0, 3500)}\n(result text truncated)`;
@@ -45,16 +48,20 @@ export class CodingCoordinator {
   readonly #store: CodingStore;
   readonly #validator = coreValidator();
   readonly #subscriptions: Subscription[] = [];
-  #state: CodingState = {id: 'coding', revision: 0, endpointId: null, availability: 'off', active: null};
+  #state: CodingState = {id: 'coding', revision: 0, endpointId: null, availability: 'off', active: null, readiness: null};
+  #bound = 0;
   #active: Active | undefined;
   #closed = false;
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly deliver: Delivery) {
     this.#store = new CodingStore(context.database());
   }
   inspect(): CodingState {return structuredClone(this.#state);}
-  /** What a proposal binds to: whether a worker is available now and the revision that changes when that changes. */
+  /**
+   * What a proposal binds to: whether a worker is available now and the state revision of the last change to the
+   * endpoint, its availability or its work. A readiness report alone leaves it, so a refreshed report never refuses an approval.
+   */
   endpoint(): {available: boolean; endpointId: string | null; revision: number} {
-    return {available: this.#state.availability === 'available' && this.#active === undefined && !this.#closed && !this.context.signal.aborted, endpointId: this.#state.endpointId, revision: this.#state.revision};
+    return {available: this.#state.availability === 'available' && this.#active === undefined && !this.#closed && !this.context.signal.aborted, endpointId: this.#state.endpointId, revision: this.#bound};
   }
   async start(): Promise<void> {
     // Responsibility that was pending at the last stop is uncertain now: the worker may have run, nothing is resent, and the task hears so.
@@ -90,11 +97,18 @@ export class CodingCoordinator {
     if (!checked.ok) return {error: checked.error};
     if (command.data.action === 'enable') {
       if (this.#state.endpointId !== null && this.#state.endpointId !== command.subject) return errorBody('invalid-state', {detail: 'another coding worker endpoint is selected'});
-      if (this.#state.availability !== 'available' || this.#state.endpointId !== command.subject) {this.#state.endpointId = command.subject; this.#state.availability = 'available'; this.#changed();}
+      // An enable from the selected endpoint is accepted again; one that carries readiness (2.1) replaces the recorded one.
+      const readiness = command.data.readiness ?? null;
+      const selected = this.#state.availability === 'available' && this.#state.endpointId === command.subject;
+      if (!selected || JSON.stringify(readiness) !== JSON.stringify(this.#state.readiness ?? null)) {
+        this.#state.endpointId = command.subject; this.#state.availability = 'available'; this.#state.readiness = readiness;
+        // A readiness report from the selected worker is published but does not move what a pending proposal is bound to.
+        this.#changed(!selected);
+      }
       return {status: 'accepted'};
     }
     if (this.#state.endpointId !== command.subject) return errorBody('forbidden');
-    this.#state.availability = 'off'; this.#state.endpointId = null;
+    this.#state.availability = 'off'; this.#state.endpointId = null; this.#state.readiness = null;
     const active = this.#active;
     if (active !== undefined && !active.settling) void this.#settle(active, 'uncertain', undefined, 'lost');
     this.#changed();
@@ -151,7 +165,7 @@ export class CodingCoordinator {
   }
   #lost(): void {
     if (this.#closed) return;
-    this.#state.availability = 'unavailable'; this.#state.endpointId = null;
+    this.#state.availability = 'unavailable'; this.#state.endpointId = null; this.#state.readiness = null;
     const active = this.#active;
     if (active !== undefined && !active.settling) void this.#settle(active, 'uncertain', undefined, 'lost', active.started ? undefined : {result: Outcome.uncertain});
     this.#changed();
@@ -186,10 +200,11 @@ export class CodingCoordinator {
   #storageFailure(error: unknown, parent?: TraceContext): void {
     recordLog(this.context.log, 'message.received', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.uncertain, 'bunny.code': fullDisk(error) ? 'capacity' : 'internal'}, parent);
   }
-  #changed(): void {
+  #changed(binding = true): void {
     if (this.#closed || this.context.signal.aborted) return;
     try {this.#state.revision = advanceRevision(this.context.database());}
     catch (error) {this.#storageFailure(error, this.#active); return;}
+    if (binding) this.#bound = this.#state.revision;
     void this.context.sdk.publish('bunny.state.coding-state.coding', codingStateDraft(this.inspect())).catch(() => {
       recordLog(this.context.log, 'message.received', {'bunny.operation': 'status', 'bunny.outcome': Outcome.rejected, 'bunny.code': 'unavailable'});
     });

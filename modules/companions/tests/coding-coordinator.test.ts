@@ -3,7 +3,7 @@ import {test, type TestContext} from 'node:test';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingDispatch, type CodingProgress, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
+import {CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingDispatch, type CodingProgress, type CodingReadiness, type CodingResult, type CodingState, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, Outbox, type Command, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
@@ -31,6 +31,8 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
     return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
   });
   await core.subscribe<{requestId: string; result: string; evidence: string}>('bunny.event.coding-run.assistant', message => {outcomes.push(message.data);});
+  const published: {dataschema: string; data: CodingState}[] = [];
+  await core.subscribe<CodingState>('bunny.state.coding-state.coding', message => {published.push({dataschema: message.dataschema, data: message.data});});
   const dir = await mkdtemp(join(tmpdir(), 'coding-coordinator-'));
   let engine: CodingCoordinator | undefined;
   const make = () => new ModuleHarness({manifest: {name: 'companions', apiVersion: '1.3'}, start: async supplied => {
@@ -45,8 +47,11 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
   let n = 0;
   return {owner: () => engine ?? assert.fail('started'), work, deliveries, outcomes, refuseWork: () => {workReply = 'capacity';},
     advance: async (ms = 0) => {now += ms; for (const timer of [...timers]) if (timer.at <= now) {timers.delete(timer); timer.run();} await new Promise(resolve => setImmediate(resolve));},
-    control: (action: 'enable' | 'disable', endpoint = 'worker-1') => worker.request(`bunny.cmd.coding-endpoint.${endpoint}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpoint,
-      dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0', data: {requestId: `control-${String(++n)}`, action}}, {timeoutMs: 5000}),
+    control: (action: 'enable' | 'disable', endpoint = 'worker-1', readiness?: CodingReadiness) => worker.request(`bunny.cmd.coding-endpoint.${endpoint}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpoint,
+      dataschema: `https://bunny.invalid/events/coding-endpoint/${readiness === undefined ? '2.0' : '2.1'}`, data: {requestId: `control-${String(++n)}`, action, ...(readiness === undefined ? {} : {readiness})}}, {timeoutMs: 5000}),
+    progress21: (data: CodingProgress, endpoint = 'worker-1') => worker.publish(`bunny.event.coding-progress.${endpoint}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpoint,
+      dataschema: 'https://bunny.invalid/events/coding-progress/2.1', data}, {parent}),
+    published: published as {dataschema: string; data: CodingState}[],
     dispatch: (taskId = 'task-1', endpointId = 'worker-1') => module.request('bunny.cmd.coding-dispatch.assistant', {type: 'org.bunny.coding.dispatch.requested', subject: 'assistant',
       dataschema: 'https://bunny.invalid/events/coding-dispatch/2.0', data: {requestId: `${taskId}-step-1`, endpointId, taskId, repository: 'agent-device-hub', brief: 'Add a test.', bounds: DEFAULT_CODING_BOUNDS}},
     {timeoutMs: 5000, requestId: `${taskId}-step-1`, parent}),
@@ -131,4 +136,49 @@ void test('the result text names outcome, git facts, checks, findings, limitatio
   const long = describeResult('completed', {...result(), summary: 'x'.repeat(5000)});
   assert.ok(long.length <= 3600 && long.endsWith('(result text truncated)'));
   assert.equal(describeResult('failed', undefined, 'timeout'), 'failed (timeout): the worker returned no structured result.');
+});
+
+// Hub #1743: the worker's readiness travels on its enable (2.1) and the state publishes it (2.1); progress 2.1 adds the
+// usage-limit and waiting-for-owner outcomes. Waits here yield to the event loop only; no test waits on the clock.
+const readiness = (signedIn: CodingReadiness['signedIn']): CodingReadiness => ({tool: 'claude-code', installed: 'yes', version: '2.1.292', signedIn, plan: signedIn === 'yes' ? 'pro' : null,
+  limits: null, limitsObservedAtMs: null, checkedAtMs: 1767225600000});
+async function settled(w: {advance: () => Promise<void>}, check: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !check(); i += 1) await w.advance();
+  assert.ok(check(), 'the bus delivered it');
+}
+
+void test('the selected worker\'s readiness is recorded and published, refreshed by its next enable, and cleared when it goes', async t => {
+  const w = await world(t);
+  assert.equal((await w.control('enable', 'worker-1', readiness('unknown'))).status, 'accepted');
+  assert.deepEqual(w.owner().inspect().readiness, readiness('unknown'));
+  const revision = w.owner().inspect().revision, bound = w.owner().endpoint().revision;
+  assert.equal((await w.control('enable', 'worker-1', readiness('yes'))).status, 'accepted');
+  assert.equal(w.owner().inspect().readiness?.signedIn, 'yes'); assert.ok(w.owner().inspect().revision > revision);
+  assert.equal(w.owner().endpoint().endpointId, 'worker-1', 'a refreshing enable keeps the selection');
+  // A proposal bound before the report is still approvable: the report is not a change of worker or work.
+  assert.equal(w.owner().endpoint().revision, bound);
+  // Another endpoint cannot replace it, and an identical report changes nothing.
+  const refused = await w.control('enable', 'worker-2', readiness('no')); assert.equal(refused.status === 'rejected' && refused.error.error.code, 'invalid-state');
+  const same = w.owner().inspect().revision; await w.control('enable', 'worker-1', readiness('yes')); assert.equal(w.owner().inspect().revision, same);
+  await settled(w, () => w.published.at(-1)?.data.readiness?.signedIn === 'yes');
+  assert.equal(w.published.at(-1)?.dataschema, 'https://bunny.invalid/events/coding-state/2.1');
+  assert.equal((await w.control('disable')).status, 'accepted'); assert.equal(w.owner().inspect().readiness, null);
+  await w.control('enable', 'worker-1', readiness('yes')); await w.lost(); await settled(w, () => w.owner().inspect().endpointId === null);
+  assert.equal(w.owner().inspect().readiness, null);
+});
+
+void test('a usage limit and a question reach the task with their outcome, the limit window and its reset or unknown', async t => {
+  const w = await world(t); await w.control('enable');
+  assert.equal((await w.dispatch('task-u')).status, 'accepted'); await settled(w, () => w.work.length === 1);
+  await w.progress21({operationId: 'task-u-step-1', status: 'started'}); await settled(w, () => w.outcomes.length === 1);
+  await w.progress21({operationId: 'task-u-step-1', status: 'failed', reason: 'usage-limit', result: {...result(), outcome: 'usage-limit', summary: 'The harness stopped at a usage limit.', limit: {window: 'five-hour', resetsAtMs: 1767286800000}}});
+  await settled(w, () => w.deliveries.length === 1);
+  assert.match(w.deliveries[0]?.text ?? '', /^failed \(usage-limit\): The harness stopped at a usage limit\./);
+  assert.match(w.deliveries[0]?.text ?? '', /usage limit: five-hour, resets 2026-01-01T17:00:00\.000Z/); assert.equal(w.outcomes.length, 1);
+  assert.match(describeResult('failed', {...result(), outcome: 'usage-limit', limit: {window: null, resetsAtMs: null}}, 'usage-limit'), /usage limit: window unknown, resets at an unknown time/);
+  assert.equal((await w.dispatch('task-q')).status, 'accepted'); await settled(w, () => w.work.length === 2);
+  await w.progress21({operationId: 'task-q-step-1', status: 'started'}); await settled(w, () => w.outcomes.length === 2);
+  await w.progress21({operationId: 'task-q-step-1', status: 'completed', result: {...result(), outcome: 'waiting-for-owner', findings: ['Question: which file?']}});
+  await settled(w, () => w.deliveries.length === 2);
+  assert.match(w.deliveries[1]?.text ?? '', /^completed \(waiting-for-owner\): .*\n[\s\S]*findings: Question: which file\?/);
 });

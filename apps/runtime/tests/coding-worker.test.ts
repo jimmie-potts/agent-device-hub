@@ -15,7 +15,8 @@ import {CodingWorker, DEFAULT_ALLOWED_TOOLS, DENIED_TOOLS, assembleResult, parse
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-C', cwd, ...args], {encoding: 'utf8', env: {...process.env, GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 't@example', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 't@example'}}).trim();
 const configuration = (repository: string) => ({schema: 'coding-worker/1.0', edge: 'http://127.0.0.1:18788', tokenFile: '/private/token', repositories: [{name: 'agent-device-hub', path: repository}],
-  claude: {executable: '/opt/homebrew/bin/claude', permissionMode: 'acceptEdits', allowedTools: DEFAULT_ALLOWED_TOOLS}});
+  // No real `claude`: a worker started without a fake harness probes this path for readiness and finds nothing (Hub #1743).
+  claude: {executable: '/nonexistent/claude', permissionMode: 'acceptEdits', allowedTools: DEFAULT_ALLOWED_TOOLS}});
 const command = (data: CodingWork, source = 'bunny/modules/companions'): Command<CodingWork> => ({specversion: '1.0', bunnyprofile: '2.0', id: `cmd-${data.requestId}`, source, kind: 'command',
   type: 'org.bunny.coding.work.requested', subject: 'worker-endpoint-1', time: new Date().toISOString(), datacontenttype: 'application/json', dataschema: 'https://bunny.invalid/events/coding-work/2.0',
   traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', expiresat: new Date(Date.now() + 5000).toISOString(), data});
@@ -75,7 +76,7 @@ void test('a result is assembled from the harness envelope and the observed git 
   assert.deepEqual(result.findings, ['one']); assert.equal(result.sessionId, 'session-1'); assert.deepEqual(result.usage, {turns: 4, costUsd: 0.12, durationMs: 3000});
   const plain = assembleResult('agent-device-hub', null, null, [], 'not json');
   assert.equal(plain.result.outcome, 'incomplete'); assert.equal(plain.result.usage, null); assert.match(plain.result.limitations[0] ?? '', /No structured result/);
-  const failed = assembleResult('agent-device-hub', null, null, [], JSON.stringify({result: 'x'}), 'timeout');
+  const failed = assembleResult('agent-device-hub', null, null, [], JSON.stringify({type: 'result', result: 'x'}), 'timeout');
   assert.equal(failed.result.outcome, 'failed'); assert.equal(failed.reason, 'timeout'); assert.deepEqual(failed.result.usage, {turns: null, costUsd: null, durationMs: null});
   const budget = assembleResult('agent-device-hub', null, null, [], JSON.stringify({type: 'result', subtype: 'error_max_budget_usd', result: 'stopped', num_turns: 9, total_cost_usd: 5, duration_ms: 100}));
   assert.equal(budget.result.outcome, 'failed'); assert.equal(budget.reason, 'budget'); assert.equal(budget.result.usage?.costUsd, 5);

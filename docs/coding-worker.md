@@ -39,6 +39,53 @@ its reason. The worktree stays for the owner's inspection; its path never
 enters a message. Pushing or opening a PR is a later explicit approval, not
 part of this slice.
 
+The worker reads the run as a stream (`--output-format stream-json
+--verbose`) as it arrives, so it sees the tool's limit events as well as the
+final result (Hub #1743). Two outcomes come from that:
+
+- `usage-limit`: the tool reported that a usage limit stopped the run, either
+  as a `rate_limit_event` with status `rejected` or as a message typed
+  `usage_limit_reached`, and the run did not end with a structured result.
+  The task ends failed with reason `usage-limit` and the limit's window and
+  reset time, or `unknown` where the tool gave none. A generic rate-limit error
+  is an ordinary failure. Nothing is retried at the reset.
+- `waiting-for-owner`: the run stopped at a choice the brief left open. It
+  completes with that outcome and the question first among the findings.
+
+The harness and the readiness probes below start without provider
+credentials or provider switches: every `ANTHROPIC_` variable (including
+`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL`), the
+`CLAUDE_CODE_USE_` switches (Bedrock, Vertex, Foundry and the others),
+`CLAUDE_CODE_OAUTH_` tokens, `CLAUDE_CODE_API_KEY_` helpers and
+`AWS_BEARER_TOKEN_BEDROCK`, besides the worker's own `BUNNY_` variables. The
+owner's subscription sign-in is what the tool then uses. A repository setting
+can still name an API key helper; if the tool reports an API key source, the
+result says so under limitations.
+
+## Readiness
+
+Before it connects, the worker asks its tool what it is, without starting a
+task or a session and without spending: `claude --version` and
+`claude auth status --json`, each with no input, the harness's environment and
+a ten-second deadline. Its declaration (`coding-endpoint/2.1`) carries the
+record, and the companions module publishes it in the coding state
+(`coding-state/2.1`):
+
+| Field | Value |
+| --- | --- |
+| `installed` | `yes`, `no` when the executable is missing, `unknown` otherwise |
+| `version` | the version the tool printed, or null |
+| `signedIn` | `yes` or `no` from the tool's status, `unknown` when it did not say |
+| `plan` | the tool's subscription type while signed in, or null |
+| `limits` | the windows (such as `five-hour`, `seven-day`) the latest run reported, with status, reset time and use, or null before any run |
+
+Only the sign-in state and plan are read from the status; the account,
+organization, e-mail address and directories are not. The tool reports limit
+windows only during a run, so after a run that reported them the worker
+probes again and sends one more enable from its endpoint with the new record.
+That enable is a report: if it is refused or lost, nothing is sent again. A
+disabled or lost endpoint clears the record.
+
 ## Install once
 
 1. Grant the credential. Add one entry with the `coding-worker` role to the
@@ -138,7 +185,13 @@ one task runs at a time; a second proposal is refused
 until the first ends.
 
 Source tests cover the worker over a fake harness and a fake edge, and its real
-entry point as a child process over the SDK's edge with a fake core. Running it
+entry point as a child process over the SDK's edge with a fake core. They also
+replay recordings of real headless runs and status commands through the real
+parsing code (`apps/runtime/tests/fixtures/claude-stream/recorded-*`), recorded
+with synthetic prompts in an empty directory and scrubbed of identifiers,
+paths and account values. A real usage limit cannot be provoked, so the
+`constructed-*` limit fixtures follow the event shapes the tool documents and
+are not recordings. Running it
 against the installed core with a real `claude` is the installed check the
 owner records under the running checklist. The handoff between two supervised
 workers, and the interval launchd actually takes, is an installed check on
