@@ -36,8 +36,8 @@ export const profiles = freeze({
   pc: {
     name: 'pc',
     // Eight slots of 4 CPUs fill its 32 threads. The Mac's thresholds are 0.67 and 1.0 per core; with no core to
-    // protect the PC starts under 0.75 per thread (24), and stops above 1.0 per thread (32). In the first PC run
-    // (#1681), eight jobs at once peaked at a load of 24.59 with no kills; one timing-sensitive test failed (#1695).
+    // protect the PC starts under 0.75 per thread (24), and stops above 1.0 per thread (32). In the PC runs on
+    // #1681, eight jobs at once peaked at a load of 24.59 with no kills; one timing-sensitive test failed (#1695).
     slots: 8, startLoad: 24, stopLoad: 32,
     pool: null,
     core: null,
