@@ -15,12 +15,17 @@ import {
   ROLES, StepFailure, failureOf, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
   type Simulation,
 } from '../tests/scenarios/framework.js';
-import {GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, follow, runHookScript, scenarioValidator, sourceOf} from '../tests/scenarios/parts.js';
+import {
+  GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, follow, runHookScript, scenarioValidator, sourceOf, type ReaderMark,
+} from '../tests/scenarios/parts.js';
 import {HARNESS_PATH, type HarnessState} from './protocol.js';
 import {partTokensOf, producerOf} from './seed.js';
 
-/** Where a run adapter finds the run: its runtime's URL, its harness endpoint and its data directory. */
-export type RunTarget = {url: string; harness: string; dataDir: string; seed: Seed};
+/**
+ * Where a run adapter finds the run: its runtime's URL, its harness endpoint and its data directory. `resyncWithinMs`
+ * bounds how long a restart waits for the reader to come back (`RESYNC_WITHIN_MS` unless given).
+ */
+export type RunTarget = {url: string; harness: string; dataDir: string; seed: Seed; resyncWithinMs?: number};
 export interface RunHarness extends Harness {
   /** What went wrong outside the steps: messages that break profile 2.0, and errors a part reported. */
   problems(): readonly string[];
@@ -40,6 +45,13 @@ export {failureOf};
 const RECONNECT_MS = 50;
 /** How long the supervisor holds the runtime stopped while a hook runs against it (Hub #926). */
 const STOPPED_HOLD_MS = 4000;
+/**
+ * How long a restart waits for the reader to be back in sync (Hub #1697). The reader's reconnect backoff is at most 5 s
+ * between attempts, so this leaves room for a slow start and the resync after it.
+ */
+export const RESYNC_WITHIN_MS = 15_000;
+/** How often a restart looks again whether the reader is back in sync. */
+const RESYNC_POLL_MS = 25;
 const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
 
 /**
@@ -230,11 +242,21 @@ class Run implements RunHarness {
     void this.#act(() => this.#post('lose-acknowledgment'));
   }
 
+  /**
+   * Restarts the runtime and resolves once the reader is back in sync with the new one (Hub #1697): its stream open
+   * again, its subscriptions registered again and each copy caught up. Otherwise a next restart could stop the runtime
+   * while the reader is still coming back, and a copy whose resync that refuses stops for good.
+   */
   async restart(): Promise<void> {
-    await this.#act(() => this.#post('restart'));
+    const mark = await this.#act(async () => {
+      const before = this.#readerMark();
+      await this.#post('restart');
+      return before;
+    });
     // The restart ended the browser's session with the runtime that opened it.
     this.#client.forget();
     await this.#refresh();
+    await this.#resynced(mark);
   }
 
   async gateway(call: GatewayCall): Promise<GatewayAnswer> {
@@ -342,6 +364,29 @@ class Run implements RunHarness {
     part.participant = undefined;
     if (part.role === 'reader') this.reader.copies = [];
     await participant?.close();
+  }
+
+  /**
+   * Where the reader stands before a restart, or undefined when a restart has no reader to wait for: one that the
+   * scenario disconnected comes back at its next wait, as `disconnect` says, and a closed one never does.
+   */
+  #readerMark(): ReaderMark | undefined {
+    const part = this.#part('reader');
+    if (part.closed || part.participant === undefined || this.#held.includes(part)) return undefined;
+    return this.reader.mark();
+  }
+
+  /** Waits until the reader has resynced since `mark`, within the run's bound; past it, names what did not come back. */
+  async #resynced(mark: ReaderMark | undefined): Promise<void> {
+    if (mark === undefined) return;
+    const withinMs = this.#target.resyncWithinMs ?? RESYNC_WITHIN_MS;
+    const deadline = Date.now() + withinMs;
+    for (;;) {
+      const missing = this.reader.behind(mark);
+      if (missing.length === 0) return;
+      if (Date.now() >= deadline) throw new RunFailure(`the reader did not resync within ${withinMs} ms of the restart: ${missing.join('; ')}`);
+      await sleep(RESYNC_POLL_MS);
+    }
   }
 
   #part(role: Role): Part {
