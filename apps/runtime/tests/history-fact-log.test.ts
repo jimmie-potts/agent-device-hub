@@ -2,11 +2,13 @@
 // before it, read after a sequence, and the duplicate check limited to the local origin. Synthetic stores only, each in
 // a temporary directory or in memory; the clock is the store's manual clock and nothing waits on real time.
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
 import {hostname, userInfo} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {it} from 'node:test';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {openModuleDatabaseFile} from '@jimmie-potts/sdk';
 import {History, MAX_FACTS, type OperationStep} from '../src/core/history.js';
 import {World} from './fixtures/store-world.js';
 import {stateDir} from './support.js';
@@ -49,7 +51,7 @@ const outcome = (id: string, result = 'succeeded'): Message<unknown> => ({
 
 void it('a store written by the release before #1740 migrates every row to this origin in write order, exactly and once', async context => {
   const file = join(await stateDir(context), 'core.sqlite');
-  const database = new DatabaseSync(file);
+  const database = openModuleDatabaseFile(file);
   context.after(() => { if (database.isOpen) database.close(); });
   database.exec(RELEASED_SCHEMA);
   // Rows as the release writes them: every kind, an operation step without a message ID, a removal and its tombstone,
@@ -103,7 +105,7 @@ void it('a store written by the release before #1740 migrates every row to this 
 
 void it('a migration that fails at its last step leaves the store exactly as it was', async context => {
   const file = join(await stateDir(context), 'core.sqlite');
-  const database = new DatabaseSync(file);
+  const database = openModuleDatabaseFile(file);
   context.after(() => { if (database.isOpen) database.close(); });
   database.exec(RELEASED_SCHEMA);
   const insert = database.prepare(`INSERT INTO core_history (at_ms, revision, kind, source, message_id, type, subject, request_id, record)
@@ -121,6 +123,43 @@ void it('a migration that fails at its last step leaves the store exactly as it 
   assert.equal(database.prepare('SELECT 1 FROM sqlite_master WHERE name = \'core_origin\'').get(), undefined, 'no origin is left behind');
   assert.deepEqual((database.prepare('PRAGMA table_info(core_history)').all() as {name: string}[]).map(column => column.name),
     OLD_COLUMNS.split(', '), 'no new column is left behind');
+  database.close();
+});
+
+void it('a process killed partway through the backfill leaves the store as the previous release wrote it', async context => {
+  const file = join(await stateDir(context), 'core.sqlite');
+  let database = openModuleDatabaseFile(file);
+  context.after(() => { if (database.isOpen) database.close(); });
+  database.exec(RELEASED_SCHEMA);
+  const insert = database.prepare(`INSERT INTO core_history (at_ms, revision, kind, source, message_id, type, subject, request_id, record)
+    VALUES (?, 1, 'operation', 'bunny/parts/dashboard', NULL, 'power-set', 'lamp', ?, ?)`);
+  database.exec('BEGIN');
+  for (let index = 1; index <= 2000; index++) insert.run(index, `request-${index}`, JSON.stringify(step(index)));
+  database.exec('COMMIT');
+  const before = dump(database);
+  database.close();
+
+  // The child migrates the store with the runtime's opener and kills itself with SIGKILL from a trigger when the backfill
+  // reaches row 1000: a fixed point in the work, so nothing depends on timing.
+  const child = `
+    const [historyUrl, sdkUrl, file] = process.argv.slice(1);
+    const {History} = await import(historyUrl);
+    const {openModuleDatabaseFile} = await import(sdkUrl);
+    const database = openModuleDatabaseFile(file);
+    database.function('die', () => { process.kill(process.pid, 'SIGKILL'); return 0; });
+    database.exec('CREATE TEMP TRIGGER die_midway AFTER UPDATE ON core_history WHEN NEW.seq = 1000 BEGIN SELECT die(); END');
+    new History(database);
+    process.exit(3);`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', child, '--',
+    new URL('../src/core/history.js', import.meta.url).href, import.meta.resolve('@jimmie-potts/sdk'), file], {encoding: 'utf8'});
+  assert.equal(result.signal, 'SIGKILL', `the child was killed partway: ${result.stderr}`);
+
+  database = openModuleDatabaseFile(file);
+  assert.deepEqual(dump(database), before, 'the store reopens exactly as the previous release wrote it');
+  assert.deepEqual(database.prepare('PRAGMA integrity_check').all().map(row => ({...row})), [{integrity_check: 'ok'}]);
+  const history = new History(database);
+  assert.deepEqual({...database.prepare('SELECT COUNT(*) AS rows, MIN(origin_seq) AS low, MAX(origin_seq) AS high FROM core_history WHERE origin = ?').get(history.origin)},
+    {rows: 2000, low: 1, high: 2000}, 'the next start migrates it whole');
   database.close();
 });
 
