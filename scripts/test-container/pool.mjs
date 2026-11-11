@@ -31,7 +31,7 @@ export const OWNER_GRACE_MS = 10_000; // A lock without an owner file is stale o
 export const DOCKER_TIMEOUT_MS = 60_000; // No Docker read may hang past the wait.
 export const HELPER_TIMEOUT_MS = 60_000; // A pool helper that runs longer has failed.
 // A lock older than this is taken over even if a process with its owner's number is alive (the number may have been
-// reused). It is longer than the longest legitimate hold: the 240-minute maximum wait plus a cold image build.
+// reused). It is far longer than the longest legitimate hold, which is a cold image build: a wait does not hold the lock.
 export const MAX_HOLD_MS = 6 * 3_600_000;
 export const GAVE_UP = 75;
 
@@ -202,9 +202,10 @@ export function decide(reading, need) {
     if (reading.core.state !== 'running') return `the installed core is ${reading.core.state || 'in an unknown state'}, not running`;
     if (reading.core.status === 'unreadable') return "the installed core's health cannot be read";
     if (reading.core.status !== 'healthy') return `the installed core is ${reading.core.status}, not healthy`;
-    if (!Number.isFinite(reading.core.lastMs)) return "the installed core's last health check time cannot be read";
+    if (!Number.isFinite(reading.core.lastMs) || reading.core.lastMs < 0) return "the installed core's last health check time cannot be read";
     if (reading.core.lastMs >= MAX_CHECK_MS) return `the installed core's last health check took ${String(reading.core.lastMs)} ms, ${String(MAX_CHECK_MS)} or more`;
   }
+  if (!Number.isInteger(reading.used) || reading.used < 0) return 'the running test jobs cannot be counted';
   if (reading.used + need.slots > SLOTS) return `${String(reading.used)} of ${String(SLOTS)} test-job slots are taken and this job needs ${String(need.slots)}`;
   if ('pool' in reading) {
     // Fail closed: only a pool that reads back with exactly its intended limits is a ceiling to admit against.

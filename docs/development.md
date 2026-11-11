@@ -1696,9 +1696,9 @@ admission check until its container has run for 30 seconds, and through an
 image build. Releasing removes the lock only while the token is still its own.
 A lock is taken over, with a printed line, only when its owner's process is
 gone, when it has had no owner file for 10 seconds, or when it is older than
-6 hours. Six hours is longer than any legitimate hold, a 240-minute wait plus a
-cold image build, so a reused process number cannot keep a dead holder's lock
-forever. One taker at a time removes a stale lock and re-tests it first. The
+6 hours. Six hours is far longer than the longest legitimate hold, which is a
+cold image build (a wait does not hold the lock), so a reused process number
+cannot keep a dead holder's lock forever. One taker at a time removes a stale lock and re-tests it first. The
 waiting line names the lock and its owner's process number. To clear a stuck
 lock by hand, check that no test command with that process number is running
 (`ps -p <number>`), then remove it with

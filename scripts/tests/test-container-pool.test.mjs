@@ -131,6 +131,8 @@ test('a start waits for load, the core, the slot count and pool memory, and fail
   const ok = {load:3, core:{status:'healthy', lastMs:80, state:'running'}, used:0, pool};
   assert.equal(decide(ok, need), null);
   assert.equal(decide({...ok, load:NaN}, need), "the host's 1-minute load cannot be read");
+  for (const used of [-1, 1.5, NaN]) assert.equal(decide({...ok, used}, need), 'the running test jobs cannot be counted', String(used));
+  assert.equal(decide({...ok, core:{status:'healthy', lastMs:-5, state:'running'}}, need), "the installed core's last health check time cannot be read");
   assert.equal(decide({...ok, core:{status:'healthy', lastMs:80}}, need), 'the installed core is in an unknown state, not running', 'a core without a state never admits');
   assert.equal(decide({...ok, load:8}, need), "the host's 1-minute load is 8.0, at or above 8");
   assert.equal(decide({...ok, core:{status:'starting', lastMs:80, state:'running'}}, need), 'the installed core is starting, not healthy');
