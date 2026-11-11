@@ -714,6 +714,14 @@ adapter contract, reads the synthetic Hub feed with the real feed client, checks
 way the CLI loads `src/sim`, and tests the scenario runner. `test:chompi-bridge:scenarios` runs the catalog (Tier 1).
 The verification run's own checks are in [`verify/README.md`](verify/README.md#checks).
 
+Since [#1714](https://github.com/jimmie-potts/agent-device-hub/issues/1714), hosted CI runs none of the bridge's tests:
+not `test:chompi-bridge:built`, `test:chompi-bridge:scenarios`, `test:chompi-bridge:verify:built` or
+`test:chompi-bridge:browser`. The scripts are unchanged and run by hand after `npm run build`. A change under
+`apps/chompi-bridge/**` or `packages/chompi-protocol/**` therefore merges with no hosted test of the bridge, and its
+author runs all four by hand. On macOS `test:chompi-bridge:built` needs a short `TMPDIR`, because its lock test's
+socket path is otherwise too long ([#1719](https://github.com/jimmie-potts/agent-device-hub/issues/1719)).
+[#1715](https://github.com/jimmie-potts/agent-device-hub/issues/1715) tracks turning them back on.
+
 `npm run test:chompi-bridge:native:built` must run under native Windows Node 24 after a build; it fails on other
 platforms. Before running it, have Codex show one ordinary task with the sidebar expanded and the selected row
 visible: Codex exposes only on-screen rows, and the selected-thread probe otherwise fails with `selected-row-count`

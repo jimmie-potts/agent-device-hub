@@ -602,12 +602,12 @@ artifact checks. Its evidence remains separate from the cheap Integration job:
 | --- | --- |
 | Select affected checks | Node 24 with only `scripts/ci-selection` checked out: maps the PR's changed paths to check groups |
 | Workflow checks (Workflow workflow) | Node 24 workflow validation, the affected-check selection fixtures, delivery preflight fixtures and isolated Linux hook qualification. It also runs for Markdown-only changes. |
-| Build, lint and core tests | Node 24, and Python 3.14 when the shared group is selected, in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr, observability and CHOMPI bridge), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
+| Build, lint and core tests | Node 24, and Python 3.14 when the shared group is selected, in one job: one build, then typecheck, [static analysis](#static-analysis), every kept Node `:built` suite and package consumer (SDK, events, lifecycle, agent state, the Pixoo module with Vitest and node:test, the Nanoleaf port, the playback, LIFX and Tidbyt modules, MCP, Wispr and observability; the CHOMPI bridge's suites are [off since #1714](#affected-pr-checks)), the 1.x controller contracts' Node tests, the unit tests of the old dashboard and the runtime's dashboard, and the Python observability, event, lifecycle and agent-state consumers |
 | Runtime unit tests | Node 24 build, then `npm run test:runtime:built`, when the runtime group is selected |
 | Runtime scenario tests | Node 24 build, then `npm run test:runtime:scenarios:built`, the scenario catalog over both transports, when the runtime group is selected |
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Retained documentation checks (Workflow workflow) | Python 3.12 diagram/atlas/navigation and maintenance-parser checks, plus Node 24 browser checks with review artifacts |
-| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge adapter's steps, the bridge control page's browser check, the smoke checks of the old dashboard and the runtime's dashboard, and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
+| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the smoke checks of the old dashboard and the runtime's dashboard, and the observability contract's browser check (the CHOMPI bridge's verification and browser check are [off since #1714](#affected-pr-checks)); lifecycle tests skip with a printed reason when the runner has no systemd user manager |
 | Runtime verification captures | Node 24 build and Chromium, then `npm run test:runtime:verify:captures:built`: capture shard 1/2 of the serial runtime catalog, including its browser journeys, when the runtime group is selected; the same user-manager isolation applies |
 | Runtime verification | Node 24 build and Chromium, then `npm run test:runtime:verify:rest:built`: every other runtime verification file serially, then capture shard 2/2, when the runtime group is selected. With the captures job it runs the whole suite once; the same user-manager isolation applies |
 | Selected checks gate | Node 24 with only `scripts/ci-selection` checked out: fails unless every selected Checks job succeeded |
@@ -645,8 +645,21 @@ rename) and maps it to check groups with the small explicit table in
 | --- | --- | --- |
 | runtime | `apps/runtime/**`, active modules and the two Roborock consumer tests | The runtime's unit, scenario, dashboard and verification suites, its dashboard's browser checks and the Roborock consumer tests |
 | modules | active `modules/**` | Active modules' suites |
-| chompi | The CHOMPI bridge, `packages/chompi-protocol/**` and `firmware/**` | The bridge's suites, verification steps and browser check, and the Firmware job |
+| chompi | The CHOMPI bridge, `packages/chompi-protocol/**` and `firmware/**` | The Firmware job; none of the bridge's own steps, which are off as stated below this table |
 | shared | Only full coverage | The shared packages' and contracts' suites, the Python consumers, the old dashboard's tests, the app-verify core and the observability browser check |
+
+Since [#1714](https://github.com/jimmie-potts/agent-device-hub/issues/1714), hosted CI runs no CHOMPI
+bridge test: not its unit tests (`test:chompi-bridge:built`) or catalog
+scenarios (`test:chompi-bridge:scenarios`), formerly in the core job, and not
+its verification (`test:chompi-bridge:verify:built`) or control page browser
+check (`test:chompi-bridge:browser`), formerly in App verification. A change
+under `apps/chompi-bridge/**` or `packages/chompi-protocol/**` selects the
+Firmware job beside the build, typecheck and lint that always run, so it merges with no hosted test of the bridge, and its author
+runs all four scripts by hand, as in the bridge's
+[Checks](../apps/chompi-bridge/README.md#checks). On macOS the unit suite needs a
+short `TMPDIR`, because its lock test's socket path is otherwise too long
+([#1719](https://github.com/jimmie-potts/agent-device-hub/issues/1719)). [#1715](https://github.com/jimmie-potts/agent-device-hub/issues/1715) tracks
+turning them back on.
 
 Build, typecheck, lint and the workspace-audit and tracker-audit tests always
 run for ready candidates. Ordinary Markdown, `openspec/**` and documentation
@@ -1028,7 +1041,7 @@ checks to local runs.
 | Core: `test:runtime:built` | 61 |
 | Core: `test:runtime:scenarios:built` | 33 |
 | Core: `test:observability:pilot` | 28 |
-| App verification: `test:chompi-bridge:verify:built` | 207 |
+| App verification: `test:chompi-bridge:verify:built` (off in hosted CI since #1714) | 207 |
 | App verification: `test:runtime:verify:built` | 199 |
 | App verification: Playwright install with system dependencies | 25 (22 to 227 across runs) |
 | Left CI in #827: the Dashboard job, with `test:dashboard:browser` at 500 | 591 |

@@ -14,7 +14,9 @@ export const JOBS = Object.freeze({
   'runtime-unit': Object.freeze(['runtime']),
   'runtime-scenarios': Object.freeze(['runtime']),
   firmware: Object.freeze(['chompi']),
-  'app-verify': Object.freeze(['runtime', 'chompi', 'shared']),
+  // #1714: App verification runs no CHOMPI bridge step for the time being, so a CHOMPI change does not start it;
+  // #1715 restores the bridge's verification and browser steps and `chompi` here.
+  'app-verify': Object.freeze(['runtime', 'shared']),
   // The runtime verification suite runs as two jobs with one selection (#1676): capture shard 1/2, and the rest.
   'runtime-verify-captures': Object.freeze(['runtime']),
   'runtime-verify': Object.freeze(['runtime']),

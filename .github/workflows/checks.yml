@@ -134,10 +134,8 @@ jobs:
         run: npm run test:wispr:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:wispr:package:built
-      - if: contains(fromJSON(needs.select.outputs.groups), 'chompi')
-        run: npm run test:chompi-bridge:built
-      - if: contains(fromJSON(needs.select.outputs.groups), 'chompi')
-        run: npm run test:chompi-bridge:scenarios
+      # #1714: the CHOMPI bridge's `test:chompi-bridge:built` and `test:chompi-bridge:scenarios` steps stood here, in the
+      # chompi group. Hosted CI does not run them for the time being; they run by hand, and #1715 restores them.
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:mcp:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
@@ -276,11 +274,9 @@ jobs:
         run: npm run test:app-verify:package:built
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:verify-host
-      # Hub #853: CHOMPI bridge boundary checks with real crossing runs, every capture step through runCaptureStep, and the control page's browser check.
-      - if: contains(fromJSON(needs.select.outputs.groups), 'chompi')
-        run: npm run test:chompi-bridge:verify:built
-      - if: contains(fromJSON(needs.select.outputs.groups), 'chompi')
-        run: npm run test:chompi-bridge:browser
+      # #1714: the CHOMPI bridge's `test:chompi-bridge:verify:built` and `test:chompi-bridge:browser` steps (Hub #853)
+      # stood here, in the chompi group. Hosted CI does not run them for the time being; they run by hand,
+      # and #1715 restores them.
       # The old dashboard's browser smoke check (#827); the full `test:dashboard:browser` suite runs locally.
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:dashboard:smoke
