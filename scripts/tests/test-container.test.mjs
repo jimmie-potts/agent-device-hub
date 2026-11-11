@@ -9,7 +9,10 @@ import {LIMITS} from '../test-container/pool.mjs';
 import {statusOf, steps} from '../test-container/inside.mjs';
 import {profileLine, profiles} from '../test-container/profile.mjs';
 
-const scripts = {'test:runtime:built':'node --test x', 'test:runtime:verify:built':'node --test y', 'test:sdk:built':'node --test z', 'lint:js':'eslint .'};
+const scripts = {'test:runtime:built':'node --test x', 'test:runtime:verify:built':'node --test y', 'test:sdk:built':'node --test z', 'lint:js':'eslint .',
+  'test:runtime:verify:captures:built':'node --test c', 'test:runtime:verify:rest:built':'node --test r'};
+// Hub #1676: CI's two shares of the verification suite, each with capture cases.
+const verifyShares = ['test:runtime:verify:captures:built', 'test:runtime:verify:rest:built'];
 const image = 'sha256:' + 'b'.repeat(64);
 const id = 'c'.repeat(64);
 const nameOf = args => args[args.indexOf('--name') + 1] ?? '';
@@ -46,6 +49,10 @@ test('a job known not to fit is refused at a smaller size with its routes, and a
   const plan = (size, script) => parse(['--issue','1','--job','a','--size',size,'--',script], scripts);
   assert.equal(admit(plan('standard','test:runtime:verify:built'), {nameTaken:false}), 'test:runtime:verify:built needs more than 1250 MiB: use --size wide, or npm run test:runtime:container -- --suite verify, which has its own 1536 MiB limit');
   assert.equal(admit(plan('wide','test:runtime:verify:built'), {nameTaken:false}), null);
+  for (const script of verifyShares) {
+    assert.equal(admit(plan('standard', script), {nameTaken:false}), `${script} runs runtime verification captures, and the full suite needed more than 1250 MiB: use --size wide`);
+    assert.equal(admit(plan('wide', script), {nameTaken:false}), null, script);
+  }
   assert.equal(admit(plan('standard','test:sdk:built'), {nameTaken:false}), 'test:sdk:built fails below 4 CPUs: use --size wide');
   assert.equal(admit(plan('standard','test:runtime:built'), {nameTaken:false}), null);
   assert.match(admit(plan('standard','test:runtime:built'), {nameTaken:true}), /^a container named bunny-gh1-a already exists; .*never stops or removes a container it did not start/);
@@ -480,6 +487,10 @@ test('size minimums follow the profile: the SDK fits a PC standard job, verifica
   const plan = (size, script) => parse(['--issue','1','--job','a','--size',size,'--',script], scripts);
   assert.equal(admit(plan('standard','test:sdk:built'), {nameTaken:false, profile:profiles.pc}), null, 'a PC standard job has 4 CPUs');
   assert.equal(admit(plan('standard','test:runtime:verify:built'), {nameTaken:false, profile:profiles.pc}), 'test:runtime:verify:built needs more memory than a standard job is measured for: use --size wide, or npm run test:runtime:container -- --suite verify, which has its own 1536 MiB limit');
+  for (const script of verifyShares) {
+    assert.equal(admit(plan('standard', script), {nameTaken:false, profile:profiles.pc}), `${script} runs runtime verification captures, which need more memory than a standard job is measured for: use --size wide`);
+    assert.equal(admit(plan('wide', script), {nameTaken:false, profile:profiles.pc}), null, script);
+  }
   assert.equal(admit(plan('standard','test:sdk:built'), {nameTaken:false, profile:profiles.mac}), 'test:sdk:built fails below 4 CPUs: use --size wide');
   const where = {imageId:image, source:'/tmp/s/source', cidfile:'/tmp/w/cid'};
   const standard = parse(['--issue','1','--job','a','--','test:runtime:built'], scripts);

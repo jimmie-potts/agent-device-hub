@@ -30,6 +30,10 @@ export const minimums = Object.freeze({
   // Hub #1637: at 1250 MiB the verification suite was killed for memory (oom_kill 2, browser-speech crashed); it
   // passed at 1536 MiB, its largest process-memory sample being 1.18 GB.
   'test:runtime:verify:built': Object.freeze({size:'wide', message:'test:runtime:verify:built needs more than 1250 MiB: use --size wide, or npm run test:runtime:container -- --suite verify, which has its own 1536 MiB limit'}),
+  // Hub #1676: CI's two shares of that suite. Each runs capture cases in Chromium, and neither share was measured at
+  // the standard size, so both keep the full suite's minimum.
+  'test:runtime:verify:captures:built': Object.freeze({size:'wide', message:'test:runtime:verify:captures:built runs runtime verification captures, and the full suite needed more than 1250 MiB: use --size wide'}),
+  'test:runtime:verify:rest:built': Object.freeze({size:'wide', message:'test:runtime:verify:rest:built runs runtime verification captures, and the full suite needed more than 1250 MiB: use --size wide'}),
   // Hub #1635: the SDK suite failed 8 of 20 runs at 2 CPUs or fewer and 0 of 4 at 4 CPUs.
   'test:sdk:built': Object.freeze({size:'wide', message:'test:sdk:built fails below 4 CPUs: use --size wide'}),
 });
@@ -40,6 +44,8 @@ const minimumsOf = Object.freeze({
   mac: minimums,
   pc: Object.freeze({
     'test:runtime:verify:built': Object.freeze({size:'wide', message:'test:runtime:verify:built needs more memory than a standard job is measured for: use --size wide, or npm run test:runtime:container -- --suite verify, which has its own 1536 MiB limit'}),
+    'test:runtime:verify:captures:built': Object.freeze({size:'wide', message:'test:runtime:verify:captures:built runs runtime verification captures, which need more memory than a standard job is measured for: use --size wide'}),
+    'test:runtime:verify:rest:built': Object.freeze({size:'wide', message:'test:runtime:verify:rest:built runs runtime verification captures, which need more memory than a standard job is measured for: use --size wide'}),
   }),
 });
 

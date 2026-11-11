@@ -832,7 +832,9 @@ command's first own line, on stderr after npm's banner, is
    or wide `docker run --rm --name bunny-gh<n>-<name>-wide --cpus 4 --memory 2g --memory-swap 2g`.
    The SDK suite runs wide. The runtime verification suite runs wide or through
    `npm run test:runtime:container -- --suite verify`, one slot with its own
-   limits ([Runtime verification runs](#runtime-verification-runs)).
+   limits ([Runtime verification runs](#runtime-verification-runs)). Its two CI
+   shares, `test:runtime:verify:captures:built` and
+   `test:runtime:verify:rest:built`, also run wide.
 5. **Lint** (`npm run lint:js`) runs natively only, one at a time across all
    sessions; [Counting test jobs](#counting-test-jobs) has the check and
    [Heap budget](static-analysis.md#heap-budget) the reason.
@@ -919,7 +921,8 @@ week of use.
    without swap. The SDK suite fits a standard job here. The runtime
    verification suite runs wide or through
    `npm run test:runtime:container -- --suite verify`, which keeps its 2 CPUs
-   and 1536 MiB. A container started by hand matches the command:
+   and 1536 MiB. Its two CI shares, `test:runtime:verify:captures:built` and
+   `test:runtime:verify:rest:built`, also run wide. A container started by hand matches the command:
    `docker run --rm --name bunny-gh<n>-<name> --cpus 4 --memory 2048m --memory-swap 2048m`,
    or wide `--cpus 8 --memory 3584m --memory-swap 3584m` with a `-wide` name.
    The job's private source snapshot goes under `$XDG_CACHE_HOME`, or
@@ -1668,6 +1671,10 @@ names their routes:
 - `test:runtime:verify:built` needs `--size wide`, or
   `npm run test:runtime:container -- --suite verify`, which has its own
   1536 MiB limit.
+- `test:runtime:verify:captures:built` and `test:runtime:verify:rest:built`,
+  the two shares the Runtime verification CI jobs run, need `--size wide`.
+  Each runs capture cases in Chromium, and neither share has been measured at
+  the standard size.
 - `test:sdk:built` needs `--size wide` on the Mac. A PC standard job has the
   4 CPUs it needs.
 
