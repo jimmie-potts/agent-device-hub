@@ -31,19 +31,24 @@ export function PagedList({keys, pageSize, label, reveal, expandAlone: expandabl
   const expandAlone = useContext(StandardHeight) && expandable;
   const host = useRef<HTMLDivElement>(null), last = useRef<Element | null>(null);
   const previous = useRef<HTMLButtonElement>(null), next = useRef<HTMLButtonElement>(null);
-  const [page, setPage] = useState(0), [expanded, setExpanded] = useState<string>();
+  // The rows whose disclosure is open, oldest first, kept in step with the rows themselves in every mode, so a card
+  // moving between a standard height and its content height always renders the open row it actually has.
+  const [page, setPage] = useState(0), [opened, setOpened] = useState<readonly string[]>([]);
+  const alone = useRef(expandAlone);alone.current = expandAlone;
   const [revealed, setRevealed] = useState<number>(), pagerFocus = useRef<HTMLButtonElement | null>(null);
   const [reset, setReset] = useState(resetKey);
-  if (resetKey !== reset) {setReset(resetKey);setPage(0);setExpanded(undefined);}
+  if (resetKey !== reset) {setReset(resetKey);setPage(0);}
+  // Check Inbox: show the item's page, with no other row holding it; the caller then opens the item, and its toggle
+  // records it like any other.
   if (reveal !== undefined && reveal.serial !== revealed) {
     setRevealed(reveal.serial);
     const index = keys.indexOf(reveal.key);
-    if (index >= 0) {setPage(pageOf(index, pageSize));setExpanded(reveal.key);}
+    if (index >= 0) {setPage(pageOf(index, pageSize));setOpened(previous => previous.filter(key => key === reveal.key));}
   }
   const pages = pageCount(keys.length, pageSize), current = clampPage(page, keys.length, pageSize);
   // Removing the last row of the last page moves back to the page before it.
   if (current !== page) setPage(current);
-  const open = expandAlone && expanded !== undefined && keys.includes(expanded) ? expanded : undefined;
+  const open = expandAlone ? opened.filter(key => keys.includes(key)).at(-1) : undefined;
   const visible = new Set(open === undefined ? pageKeys(keys, current, pageSize) : [open]);
   useEffect(() => {
     const node = host.current;if (node === null) return;
@@ -58,20 +63,21 @@ export function PagedList({keys, pageSize, label, reveal, expandAlone: expandabl
         if (last.current === target && target instanceof Element && shownOnScreen(target) && !target.matches(':disabled') && document.activeElement !== target) last.current = null;
       }, 0);
     };
-    // A row's disclosure toggles without bubbling; the capture phase still passes through this list.
+    // A row's disclosure toggles without bubbling; the capture phase still passes through this list. Every toggle
+    // re-reads which rows are open, whether or not this card is held to a standard height now.
     const toggled = (event: Event): void => {
       const details = event.target;if (!(details instanceof HTMLDetailsElement)) return;
       const row = details.closest<HTMLElement>('[data-paged-key]'), key = row?.dataset.pagedKey;
-      if (!expandAlone || row === null || key === undefined || !node.contains(row) || row.querySelector('details') !== details) return;
-      if (details.open) {setExpanded(key);return;}
-      setExpanded(value => value === key ? undefined : value);
-      for (const other of node.querySelectorAll<HTMLElement>('[data-paged-key]')) {
-        const disclosure = other.querySelector('details');if (other !== row && disclosure?.open === true) disclosure.open = false;
-      }
+      if (row === null || key === undefined || !node.contains(row) || row.querySelector('details') !== details) return;
+      const rows = [...node.querySelectorAll<HTMLElement>('[data-paged-key]')];
+      // Closing the row that held the page restores the page, so no hidden open row takes its place.
+      if (!details.open && alone.current) for (const other of rows) {const disclosure = other.querySelector('details');if (other !== row && disclosure?.open === true) disclosure.open = false;}
+      const now = rows.filter(value => value.querySelector('details')?.open === true).flatMap(value => value.dataset.pagedKey ?? []);
+      setOpened(previous => [...previous.filter(value => value !== key && now.includes(value)), ...now.filter(value => value !== key && !previous.includes(value)), ...(details.open ? [key] : [])]);
     };
     node.addEventListener('focusin', focused);node.addEventListener('focusout', left);node.addEventListener('toggle', toggled, true);
     return () => {node.removeEventListener('focusin', focused);node.removeEventListener('focusout', left);node.removeEventListener('toggle', toggled, true);};
-  }, [expandAlone]);
+  }, []);
   useLayoutEffect(() => {
     const node = host.current;if (node === null) return;
     if (pagerFocus.current !== null) {pagerFocus.current.focus();pagerFocus.current = null;return;}

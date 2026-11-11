@@ -264,6 +264,58 @@ try {
   }
   await page.setViewportSize({width: 1440, height: 1000});
 
+  // F11: a card moving between a standard height and its content height, by window width or by a layout saved
+  // elsewhere, always shows the rows it actually has open, and the pager whenever none takes the page.
+  await save(layoutAt('medium'));
+  const inboxCard = page.locator('[data-home-card="inbox"]'), timelineCard = page.locator('[data-home-card="timeline"]');
+  const held = async (card: Locator, value: boolean): Promise<void> => {
+    if (value) await expect(card).not.toHaveClass(/home-free/);else await expect(card).toHaveClass(/home-free/);
+  };
+  const fullPage = async (list: Locator, label: string): Promise<void> => {
+    await expect(list.locator('.paged-list-pager')).toBeVisible();
+    assert.ok(await visibleRows(list).count() > 1, `${label}: the page is shown`);
+    assert.equal(await list.locator('[data-paged-key] details[open]').count(), 0, `${label}: no row is open`);
+  };
+  const openRow = async (list: Locator, index: number): Promise<Locator> => {
+    const row = visibleRows(list).nth(index), key = await row.getAttribute('data-paged-key');
+    await row.locator('summary').first().click();
+    return list.locator(`[data-paged-key="${key ?? ''}"]`);
+  };
+  const takesPage = async (list: Locator, row: Locator, label: string): Promise<void> => {
+    await expect(visibleRows(list)).toHaveCount(1);await expect(row).toBeVisible();
+    await expect(list.locator('.paged-list-pager')).toHaveCount(0);
+    assert.equal(await row.locator('details').first().getAttribute('open'), '', `${label}: the row that takes the page is open`);
+  };
+  // Case 1: open while held, narrow so the card takes its content height, close, widen.
+  await held(inboxCard, true);
+  let item = await openRow(inboxList, 0);await takesPage(inboxList, item, 'case 1 held');
+  await page.setViewportSize({width: 700, height: 1000});await held(inboxCard, false);
+  await expect(inboxList.locator('.paged-list-pager')).toBeVisible();assert.ok(await visibleRows(inboxList).count() > 1, 'case 1: the open item stays in place among the page');
+  await item.locator('summary').first().click();
+  await page.setViewportSize({width: 1440, height: 1000});await held(inboxCard, true);await fullPage(inboxList, 'case 1 widened');
+  // Case 2: open while the card takes its content height, widen with it still open, then close.
+  await page.setViewportSize({width: 700, height: 1000});await held(inboxCard, false);
+  item = await openRow(inboxList, 1);await expect(inboxList.locator('.paged-list-pager')).toBeVisible();
+  await page.setViewportSize({width: 1440, height: 1000});await held(inboxCard, true);await takesPage(inboxList, item, 'case 2 widened');
+  await item.locator('summary').first().click();await fullPage(inboxList, 'case 2 closed');
+  // The same transition from a layout saved elsewhere: the Inbox alone in the last row, then sharing a row again.
+  const lone: HomePlacement[] = [{widget: 'hub-mode', size: 'medium', hidden: false}, {widget: 'sessions', size: 'medium', hidden: false}, {widget: 'timeline', size: 'medium', hidden: false}, {widget: 'inbox', size: 'medium', hidden: false}];
+  item = await openRow(inboxList, 0);await takesPage(inboxList, item, 'saved layout held');
+  await save(lone);await held(inboxCard, false);
+  await expect(inboxList.locator('.paged-list-pager')).toBeVisible();assert.ok(await visibleRows(inboxList).count() > 1, 'saved layout: the open item stays in place');
+  await item.locator('summary').first().click();await fullPage(inboxList, 'saved layout closed');
+  item = await openRow(inboxList, 2);
+  await save(layoutAt('medium'));await held(inboxCard, true);await takesPage(inboxList, item, 'saved layout shared again');
+  await item.locator('summary').first().click();await fullPage(inboxList, 'saved layout shared and closed');
+  // Case 4: two Timeline entries open in place in a content-height card, then the card becomes held.
+  const timelineList = timelineCard.locator('[data-paged-list="Timeline"]');
+  await page.setViewportSize({width: 820, height: 1000});await held(timelineCard, false);
+  await openRow(timelineList, 0);const second = await openRow(timelineList, 2);
+  assert.equal(await timelineList.locator('[data-paged-key] details[open]').count() >= 2, true, 'case 4: two entries open in place');
+  await expect(timelineList.locator('.paged-list-pager')).toBeVisible();
+  await page.setViewportSize({width: 1440, height: 1000});await held(timelineCard, true);await takesPage(timelineList, second, 'case 4 held');
+  await second.locator('summary').first().click();await fullPage(timelineList, 'case 4 closed');
+
   // D3: stacked on a narrow screen, lists still page and each card is as tall as its content.
   await page.setViewportSize({width: 375, height: 812});
   await save(layoutAt('medium'), layoutAt('medium'));
