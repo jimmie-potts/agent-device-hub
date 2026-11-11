@@ -85,8 +85,9 @@ narrower than two units) and the Phone arrangement keep one column at content he
 
 ### 4. Offered shapes
 
-Each shape a card offers fits at the 220px unit with no overflow, clipped control or scrolling inside the card; a
-browser test measures every card in every offered shape at 1100, 1440 and 1920px.
+Each shape a card offers fits at the 220px unit with no overflow, clipped control or scrolling inside the closed card;
+a browser test measures every card in every offered shape at 1100, 1440 and 1920px. An opened list row is the one
+exception: its list scrolls inside the card (owner decision 2026-11-11, "Scroll when open"; see section 12).
 
 | Card | Offers | Standard |
 | --- | --- | --- |
@@ -198,7 +199,8 @@ rule that short lists could not meet, so the owner chose to calculate rather tha
 
 ### 12. Review round 1 of the changed approach (PR #1673)
 
-- An opened row takes the page and the list becomes the card's only scroll area (`overflow-y: auto`); the heading,
+- An opened row takes the page and the list becomes the card's only scroll area (`overflow-y: auto`), an exception the
+  owner accepted on 2026-11-11 ("Scroll when open") to the earlier decision of no scrolling inside a card; the heading,
   counts, filters and pager never shrink. Every control in an opened session or Inbox item scrolls into view inside
   the card. This is CSS only; nothing measures.
 - A closed session tile shows its name and where it runs on one line each with an ellipsis (the full name is the
