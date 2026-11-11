@@ -72,6 +72,16 @@ void test('every Home card offers only shapes from the catalog, with an existing
   assert.deepEqual(homeCardShapes({id: 'music:bunny/modules/playback:room', source: {kind: 'music', owner: 'bunny/modules/playback', instance: 'room'}}).open, '#/music/room');
   assert.deepEqual(homeCardShapes({id: 'light:room:office', source: {kind: 'light', selection: {kind: 'room', id: 'office'}}}).shapes, ['square', 'wide', 'tall', 'large-square']);
 });
+void test('a room or group with no lights offers one-row shapes and shows a saved two-row shape as Wide without rewriting it', () => {
+  const empty: Pick<HomeCardDefinition, 'id' | 'source' | 'empty'> = {id: 'light:room:office', source: {kind: 'light', selection: {kind: 'room', id: 'office'}}, empty: true};
+  assert.deepEqual(homeCardShapes(empty), {shapes: ['square', 'wide'], standard: 'wide', generic: []});
+  for (const [shape, shown] of [['square', 'square'], ['wide', 'wide'], ['tall', 'wide'], ['large-square', 'wide']] as const) {
+    const entry: HomePlacement = {widget: empty.id, size: shapeStoredSize[shape], hidden: false, shape};
+    assert.equal(shapeOf(entry, empty), shown, shape);
+    const card: HomeCardDefinition = {...empty, name: 'Office', category: 'Rooms', sizes: ['medium', 'large'], defaultSelected: false};
+    assert.equal(withShapes({desktop: [entry], phone: []}, [card]).desktop[0]?.shape, shape, `a save keeps ${shape}`);
+  }
+});
 void test('Roborock keeps existing device placements and offers an unavailable source without a duplicate', () => {
   const catalog = homeCatalog(runtime, true), missing = catalog.find(value => value.id === 'module:roborock');
   assert.ok(missing !== undefined); assert.equal(missing.source.kind, 'core'); assert.equal(missing.defaultSelected, false);

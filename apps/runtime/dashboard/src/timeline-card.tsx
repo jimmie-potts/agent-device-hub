@@ -2,8 +2,8 @@ import React, {useId, useState} from 'react';
 import {historyFace, selectedHistory, type HistoryCategory, type HistoryPeriod, type HistoryRow} from './timeline-model.ts';
 import type {HistorySnapshot} from './timeline-read.ts';
 import {PagedList} from './paged-list.tsx';
-import {listPageSize, timelineShapePageSize} from './paging.ts';
-import {useHomeShape} from './home-shape-context.ts';
+import {fitRows, listFit, listPageSize} from './paging.ts';
+import {useHomeCardBox} from './home-shape-context.ts';
 import './timeline-card.css';
 
 function HistoryIcon({category, warning = false}: {category: ReturnType<typeof historyFace>['category']; warning?: boolean}): React.JSX.Element {
@@ -58,8 +58,12 @@ export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, h
       : !connected ? 'Offline · saved history' : '';
   // In a Home shape (#1672) one row shows the latest entries and Open Timeline; Tall adds the period and paging; the
   // category filters stay in Large square and on the Timeline page.
-  const shape = useHomeShape(), oneRow = shape === 'square' || shape === 'wide', filters = shape === undefined || shape === 'large-square';
-  const size = shape === undefined ? pageSize : timelineShapePageSize[shape];
+  const box = useHomeCardBox(), shape = box?.shape, oneRow = shape === 'square' || shape === 'wide', filters = shape === undefined || shape === 'large-square';
+  // In a Home shape (#1672) a page holds the closed entries that fit below the heading, the Tall link or the Large
+  // square filters, and a status line while one shows.
+  const fit = listFit.timeline;
+  const chrome = shape === 'tall' ? fit.tallHeading + fit.tallLink : shape === 'large-square' ? fit.heading + fit.filters : fit.heading;
+  const size = box === undefined ? pageSize : fitRows(box.height - listFit.frame - chrome - (status === '' ? 0 : fit.status), fit.row, rows.length, 0, !oneRow);
   // A shape without the category buttons shows every category, so no hidden filter narrows its list.
   if (!filters && category !== 'All') setCategory('All');
   return <div className="timeline-card" data-timeline-card data-history-error={snapshot.errorCode} aria-labelledby={headingId ?? uid}>

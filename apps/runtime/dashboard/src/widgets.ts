@@ -91,18 +91,6 @@ export const widgetCatalog: readonly WidgetDefinition[] = [
 export type Placement = {widget: string; size: WidgetSize; /** The source instance, such as a device; absent for a core-wide widget. */ instance?: string};
 export const widgetDefinition = (id: string): WidgetDefinition | undefined => widgetCatalog.find(widget => widget.id === id);
 
-/**
- * The built-in core placements ("Recommended (d)", owner decision 7, 2026-10-06): the Hub mode and
- * the agent sessions in the wide column, the inbox in the narrow one. Attention is highlighted on each session card. The Wispr port adds its numeric widget there when exposed. Every placement names a
- * catalog widget at one of its declared sizes. The Home editor uses these default sizes until explicitly saved.
- */
-export function homeLayout(): {wide: Placement[]; narrow: Placement[]} {
-  return {
-    wide: [{widget: 'hub-mode', size: 'medium'}, {widget: 'sessions', size: 'medium'}],
-    narrow: [{widget: 'inbox', size: 'small'}, {widget: 'wispr', size: 'small'}],
-  };
-}
-
 /** Placements whose widget is not in the catalog or whose size it does not declare. */
 export function invalidPlacements(placements: readonly Placement[]): Placement[] {
   return placements.filter(placement => {

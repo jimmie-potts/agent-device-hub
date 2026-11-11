@@ -295,4 +295,6 @@ await import('./tidbyt-card.browser.ts');
 await import('./shell.browser.ts');
 
 await import('./home-layout.browser.ts');
+// Idle stability of Home's list cards at every width (#1672 F18); long, so in the full suite only, not hosted smoke.
+await import('./home-idle.browser.ts');
 await import('./card-consistency.browser.ts');

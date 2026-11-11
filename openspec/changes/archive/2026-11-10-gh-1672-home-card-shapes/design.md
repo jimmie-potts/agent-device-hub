@@ -170,10 +170,35 @@ existing art reservation, its interaction freeze and the format choice, which al
 - The Inbox's Standard shape is Wide, and the built-in layout uses each card's Standard shape.
 - In Edit Home the card's own heading is hidden under its edit bar.
 
+### 11. Changed approach after round 3 (PR #1673, owner decision 2026-11-11)
+
+Three review rounds left a list that re-measured and re-rendered every animation frame at some widths and a blank-space
+rule that short lists could not meet, so the owner chose to calculate rather than measure:
+
+- Rows per page come from the card's shape and the grid's known cell size. The layout passes each card's outer size
+  (its cells plus the gaps between them) through the shape context, and Inbox, Timeline and Agent sessions compute
+  `floor((card height - frame - chrome) / row)`, less the pager's reserve when the list needs a second page.
+  `listFit` in `src/paging.ts` names every fixed size (frame, pager, each card's chrome per shape, row and tile
+  heights, tile width and gap); `home-shapes.css` sets them on the elements, and the browser test checks each one
+  against the rendered card. Agent sessions computes its tile columns from the card's width the same way.
+- PagedList has no ResizeObserver, measured count, settle logic or `data-measuring`, and rows no longer stretch. The
+  grid's one width observer is the only thing that observes size on Home; Agent sessions keeps its column observer off
+  the grid only.
+- Rows keep their height and sit at the top with the pager at the bottom. A full list leaves less than one row above
+  the pager; a short list leaves the rest of the card plain; an empty Inbox or Timeline centres its message. The
+  blank-band rule now covers every card except these lists.
+- A room or group with no lights offers Small square and Wide, and shows a saved Tall or Large square as Wide; a save
+  keeps the stored shape for when it has lights again.
+- In Edit Home only the card's own heading (in the header that opens its root element) is hidden; the generic face
+  starts below the bar so its icon is not covered.
+- An idle test records every change inside the list cards for two seconds after Home settles, at every width from
+  1100 to 2560px in 20px steps with 0, 1, 5, 6 and 13 Inbox items, on the built-in and two mixed layouts.
+
 ## Risks / Trade-offs
 
 - Visual order can differ from Tab order when a later card fills an earlier hole; Edit Home shows the real placement.
-- Fixed rows per page depend on the 220px unit; the fit test fails if a change makes a shape overflow.
+- Rows per page depend on the fixed sizes in `listFit`; a style change that alters one fails the browser test until
+  the constant and the style agree again.
 - Pixoo, Tidbyt and Wispr lose their full content on Home until PR B; Open reaches it in one step.
 - The art crop reuses the existing dashboard rules for the art module's classes, as the reservation did.
 

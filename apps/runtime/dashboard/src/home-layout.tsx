@@ -5,7 +5,7 @@ import {useAttempt} from './command-control.tsx';
 import {NavLink} from './navigation.tsx';
 import {addHomeCard, defaultHomeArrangements, homeCardShapes, homeCardState, homeCatalog, savedHomeCard, shapeOf, withShapes, type HomeCardDefinition} from './home-catalog.ts';
 import {HOME_GAP, HOME_UNIT, artShape, homeColumns, packShapes, shapeArtFormat, shapeName, shapeSpan, shapeStoredSize, trailingFit, type HomeShape, type ShapePlacement} from './home-shapes.ts';
-import {HomeShapeContext} from './home-shape-context.ts';
+import {HomeShapeContext, type HomeCardBox} from './home-shape-context.ts';
 import {HomeArtSlot} from './home-art-slot.tsx';
 import {changeArtPlacement} from './home-art.ts';
 import {HomeCardIcon} from './home-card-icon.tsx';
@@ -149,6 +149,8 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const query = search.trim().toLocaleLowerCase();
   const matches = catalog.filter(card => (category === 'All' || card.category === category) && `${card.name} ${card.category}`.toLocaleLowerCase().includes(query));
   const lights = shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];});
+  // A placed card's outer size follows from the grid alone: its cells plus the gaps between them (#1672).
+  const boxOf = (place: ShapePlacement, shape: HomeShape): HomeCardBox => ({shape, width: place.columns * cell + (place.columns - 1) * HOME_GAP, height: place.rows * cell + (place.rows - 1) * HOME_GAP});
   const fitShape = (place: ShapePlacement): HomeShape => place.columns === 2 ? place.rows === 2 ? 'large-square' : 'wide' : place.rows === 2 ? 'tall' : 'square';
   return <div className={`home-layout${editing ? ' is-editing' : ''}${breakpoint === 'phone' ? ' home-phone' : ''}`} ref={host}>
     <header className="page home-layout-heading"><h1>Home</h1><div className="actions"><NavLink route={{kind: 'timeline'}}>Timeline</NavLink>{!editing && <button type="button" className="secondary" ref={editButton} disabled={!editable} onClick={() => {
@@ -208,13 +210,13 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
           {required && <small>{reason}</small>}
           </div>}
         </div>}
-        <div className="home-card-content" inert={editing && entry.widget !== 'art'}><HomeShapeContext.Provider value={generic ? undefined : shape}>{content}</HomeShapeContext.Provider></div>
+        <div className="home-card-content" inert={editing && entry.widget !== 'art'}><HomeShapeContext.Provider value={generic || shape === undefined || place === undefined ? undefined : boxOf(place, shape)}>{content}</HomeShapeContext.Provider></div>
       </div>;
     })}
       {editing && packed?.holes.map(hole => <div key={`${String(hole.row)}:${String(hole.column)}`} className="home-hole" aria-hidden="true" style={{gridColumn: String(hole.column), gridRow: String(hole.row)}}><span>Empty</span></div>)}
       {/* Automatic art is the grid's last child in both layouts, so it stays mounted across the one-column threshold. */}
       {automaticArt && (packed === undefined || artFit !== undefined) && <div key="automatic-art" className={`home-layout-card${artFit === undefined ? ' home-art-row' : ` home-shape-${fitShape(artFit)}`}`} data-home-card="art" data-home-shape={artFit === undefined ? undefined : fitShape(artFit)} data-art-placement="automatic" style={artFit === undefined ? undefined : area(artFit)}>
-        <div className="home-card-content"><HomeShapeContext.Provider value={artFit === undefined ? undefined : fitShape(artFit)}><HomeArtSlot automatic shaped={artFit !== undefined} format={artEntry?.art?.format ?? 'auto'} home={host}>{artControls(artEntry, true, artFit !== undefined, artFit === undefined ? undefined : fitShape(artFit))}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></HomeArtSlot></HomeShapeContext.Provider></div>
+        <div className="home-card-content"><HomeShapeContext.Provider value={artFit === undefined ? undefined : boxOf(artFit, fitShape(artFit))}><HomeArtSlot automatic shaped={artFit !== undefined} format={artEntry?.art?.format ?? 'auto'} home={host}>{artControls(artEntry, true, artFit !== undefined, artFit === undefined ? undefined : fitShape(artFit))}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></HomeArtSlot></HomeShapeContext.Provider></div>
       </div>}
     </div>
     {!editing && artEntry?.hidden === true && <button type="button" className="secondary home-art-restore" disabled={locked} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: false}));}}>Restore art widget</button>}

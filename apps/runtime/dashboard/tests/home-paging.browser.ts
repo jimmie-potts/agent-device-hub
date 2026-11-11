@@ -127,6 +127,28 @@ try {
   await expect(wall.locator('summary').first()).toBeFocused();
   await wall.locator('summary').first().click();
 
+  // On the unit grid (#1672) the Inbox calculates its rows from its shape; Check Inbox still shows its item's page, and
+  // the opened item keeps the page through a resize from 1440 to 1100 px and back.
+  await page.setViewportSize({width: 1440, height: 1000});
+  await expect(page.locator('.home-layout-grid')).toHaveAttribute('data-packed', 'true');await expect(inboxCard).toHaveAttribute('data-home-shape', /.+/);
+  await expect(inboxList).toHaveAttribute('data-pages', /^[2-9]|\d\d/);
+  const perGridPage = await visibleRows(inboxList).count(), gridPage = Math.floor(order.indexOf(wallKey ?? '') / perGridPage) + 1;
+  const gridAway = gridPage === 1 ? 2 : 1;
+  while (await inboxList.getAttribute('data-page') !== String(gridAway)) await inbox.getByRole('button', {name: gridAway > gridPage ? 'Next' : 'Previous', exact: true}).click();
+  await expect(wall).toBeHidden();
+  await warning.click();
+  await expect(wall).toBeVisible();await expect(wall.locator('details.inbox-entry')).toHaveAttribute('open', '');
+  await expect(visibleRows(inboxList)).toHaveCount(1);await expect(wall.locator('summary').first()).toBeFocused();
+  for (const width of [1100, 1440]) {
+    await page.setViewportSize({width, height: 1000});await settle(page);
+    await expect(visibleRows(inboxList)).toHaveCount(1);await expect(wall).toBeVisible();
+    const card = await inboxCard.boundingBox(), dismiss = await wall.getByRole('button', {name: 'Dismiss', exact: true}).boundingBox();
+    assert.ok(card !== null && dismiss !== null && dismiss.y + dismiss.height <= card.y + card.height + 1, `the opened item's Dismiss stays inside the card at ${String(width)}`);
+  }
+  await wall.locator('summary').first().click();
+  await expect(inboxList).toHaveAttribute('data-page', String(gridPage));await expect(visibleRows(inboxList)).toHaveCount(perGridPage);
+  await page.setViewportSize({width: 560, height: 1000});await expect(page.locator('.home-layout-grid')).toHaveAttribute('data-packed', 'false');
+
   // Agent sessions: a session that needs the owner, last in record order, is on page 1; several say so on the pager.
   const sessions = page.locator('[data-paged-list="Agent sessions"]');
   await world.observe(approvalPrompt('paging-wait-5'), {identity: {...IDENTITY, sessionId: 'paging-5'}});

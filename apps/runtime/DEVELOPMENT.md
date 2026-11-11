@@ -727,8 +727,17 @@ Home shape picker with holes, save, reload and Cancel, an old width-only layout
 loading in its stated shapes with no write, Inbox and Timeline rows per shape
 with an opened entry taking the page (including the open, change shape or
 width, close, change back case), and every card in every shape it offers, each
-tab face included, with no overflow, clipped control or scroll container.
-`HOME_SHAPES_ONLY=tiles,picker,convert,paging,fit,shots` selects parts.
+tab face included, with no overflow, clipped control or scroll container. List
+cards calculate their rows (owner decision 2026-11-11): the same journey checks
+each fixed size in `listFit` (`src/paging.ts`) against the rendered card, a
+full list leaving less than one row above its pager, one and zero Inbox items
+in each shape, and no change inside a list card for two idle seconds at six
+widths. `HOME_SHAPES_ONLY=tiles,picker,convert,paging,fit,results,short,idle,shots`
+selects parts. `node apps/runtime/dashboard/tests/home-idle.browser.ts`, in the
+full browser suite only, sweeps every width from 1100 to 2560 px in 20 px steps
+on the built-in and two mixed layouts with 0, 1, 5, 6 and 13 Inbox items and
+asserts no change inside a list card for two idle seconds (about ten minutes;
+`HOME_IDLE_WIDTHS` or `HOME_IDLE_STEP` narrows a local run).
 `node --test apps/runtime/dashboard/tests/home-shapes.test.ts
 apps/runtime/dashboard/tests/home-catalog.test.ts` cover packing, columns,
 trailing art cells, the conversion table and offered shapes. The core's shape

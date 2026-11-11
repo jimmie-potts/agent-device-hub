@@ -140,7 +140,7 @@ column at content height with full content.
 
 In Edit Home on the grid, each card's bar shows its name and move handle; its
 Options button opens Earlier, Later, the shape choice, Hide and Remove below it.
-Lists show as many rows as their card holds, with the pager at the bottom and the rows sharing any spare height. Hub mode's artwork and choices grow with its card. The built-in layout shows each card in its Standard shape; the Inbox's is Wide. A room or group with no lights says so where its artwork would be.
+Lists calculate how many rows their card holds from its shape and the grid's cell size, with fixed row heights (`listFit` in `src/paging.ts`); rows sit at the top and the pager at the bottom, a short list leaves the rest of the card plain and an empty Inbox centres its message. No list measures itself. Hub mode's artwork and choices grow with its card. The built-in layout shows each card in its Standard shape; the Inbox's is Wide. A room or group with no lights says so where its artwork would be and offers Small square and Wide; a saved Tall or Large square shows as Wide until it has lights.
 Automatic art takes the empty cells after the last card, or a Wide row of its own.
 
 Each card offers only shapes its content fits at the 220px unit (`widgets.ts`
@@ -170,8 +170,8 @@ one page of rows plus its heading and pager. **Previous**, **Next** and
 status two rows of tiles at the card's current column count. Paging covers only
 the records the page already holds and sends no request. The Inbox heading shows
 the total on every page, and **Check Inbox** on the Hub mode card shows the page
-holding its item. On the unit grid, rows per page follow the card's shape
-(`src/paging.ts`) and an opened entry takes the page, with the pager hidden
+holding its item. On the unit grid, rows per page are calculated from the card's
+size and the fixed sizes in `src/paging.ts`, and an opened entry takes the page, with the pager hidden
 until it closes; elsewhere entries open in place. Dismissing the only item on the last
 page moves back a page. Agent status lists sessions that need you first; when
 they fill more than a page, the page label says so. A new Timeline category or

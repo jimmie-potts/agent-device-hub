@@ -122,10 +122,8 @@
 .home-layout-card[data-home-shape] .timeline-entry>summary{min-height:48px;padding:var(--space-xs) 0}
 .home-layout-card[data-home-shape] .timeline-entry:not([open]) :is(.timeline-title,.timeline-context){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .home-layout-card[data-home-shape] .timeline-face{overflow-wrap:normal}
-.home-layout-card[data-home-shape] .timeline-heading{margin-bottom:var(--space-s)}
 .home-layout-card[data-home-shape] .timeline-entry time span{display:none}
 .home-layout-card[data-home-shape] .timeline-mark{display:none}
-.home-layout-card[data-home-shape] .timeline-filters{margin-bottom:var(--space-s)}
 .timeline-open{display:inline-flex;align-items:center;min-height:44px;font-size:var(--type-small)}
 
 /* Agent sessions: the summary on one line and the filters on one row, above one row of tiles a page. */
@@ -141,8 +139,6 @@
 .home-layout-card.home-shape-tall .agent-sessions .filters{grid-template-columns:minmax(0,1fr);gap:var(--space-xs)}
 .home-layout-card.home-shape-tall .agent-sessions .filters :is(input,select){min-height:40px;padding-block:4px}
 .home-layout-card.home-shape-tall .agent-summary{padding:2px var(--space-xs)}
-.home-layout-card[data-home-shape] .widget[data-widget=sessions]>.widget-head{margin-bottom:var(--space-xs)}
-.home-layout-card[data-home-shape] .agent-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:var(--space-s)}
 
 /* Music visualizer: the canvas fills the shape above one status line. */
 .home-layout-card[data-home-shape] .music-visualizer-card{display:flex;flex-direction:column;gap:var(--space-xs);flex:1 1 auto;min-height:0}
@@ -162,24 +158,54 @@
 .home-art-shaped .art-image canvas,.home-art-shaped .art-image img{width:100%;height:100%;object-fit:cover}
 .home-art-shaped .art-image figcaption{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-/* Cards use their whole shape (#1672): Hub mode spreads its content over the card, and list cards keep their pager at
-   the bottom with as many rows above it as the card fits (paged-list.tsx measures them). */
+/* List cards calculate their rows (#1672): each size below is a constant in paging.ts listFit, the cards compute rows
+   per page from it and the card's size on the grid, and tests/home-shapes.browser.ts checks each one against the
+   rendered card. Rows keep their height and sit at the top; the pager sits at the card's bottom; a short or empty list
+   leaves the rest of the card plain. An opened row takes the page ([data-held]) at its own height. */
 .home-layout-card[data-home-shape] .widget>:is(div:has(>.inbox-card),.timeline-card,.agent-sessions),.home-layout-card[data-home-shape] .inbox-card,.home-layout-card[data-home-shape] .inbox-entries{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
 .home-layout-card[data-home-shape] .paged-list{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
-.home-layout-card[data-home-shape] .paged-list-pager{margin-top:auto;padding-top:var(--space-xs)}
+.home-layout-card[data-home-shape] .paged-list-pager{box-sizing:border-box;flex:0 0 auto;height:52px;margin-top:auto;padding-top:8px}
+.home-layout-card[data-home-shape] .paged-list-pager button{height:44px;min-height:0}
 .home-layout-card[data-home-shape] .paged-list-position{white-space:nowrap}
-
-/* Rows share the list's spare height, so no blank band opens between the last row and the pager; each row keeps its
-   content centred. PagedList measures rows with this off ([data-measuring]). */
-.home-layout-card[data-home-shape] .paged-list:not([data-measuring])>.inbox-item:not([hidden]){flex:1 1 auto;display:flex;flex-direction:column;justify-content:center}
-.home-layout-card[data-home-shape] .paged-list>ol.timeline-entries{display:flex;flex-direction:column;margin-block:0}
-.home-layout-card[data-home-shape] .paged-list:not([data-measuring])>ol.timeline-entries{flex:1 1 auto}
-.home-layout-card[data-home-shape] .paged-list:not([data-measuring])>ol.timeline-entries>li:not([hidden]){flex:1 1 auto;display:flex;flex-direction:column;justify-content:center}
-.home-layout-card[data-home-shape] .paged-list:not([data-measuring])>.agent-grid{flex:1 1 auto;grid-auto-rows:1fr;align-items:stretch}
-.home-layout-card[data-home-shape] .paged-list:not([data-measuring])>.agent-grid>div:not([hidden]){display:flex}
-.home-layout-card[data-home-shape] .paged-list:not([data-measuring])>.agent-grid>div:not([hidden])>*{flex:1 1 auto}
-.light-empty{margin:0;padding:var(--space-m);text-align:center;color:var(--muted-dense);font-size:var(--type-small)}
+/* Inbox: heading 44 + 8; each notice 4 + 20; closed item 55 + its 1px rule. */
+.home-layout-card[data-home-shape] .inbox-card>header{box-sizing:border-box;height:44px;min-height:0;margin:0}
+.home-layout-card[data-home-shape] .inbox-card>.hub-control-status{box-sizing:border-box;height:20px;line-height:20px;margin:4px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-layout-card[data-home-shape] .inbox-entries{margin-top:8px}
+.home-layout-card[data-home-shape] .paged-list:not([data-held=true]) .inbox-entry:not([open])>summary{box-sizing:border-box;height:55px;min-height:0}
+.home-layout-card[data-home-shape] .inbox-card[data-attention=false] .inbox-entries{flex:0 0 auto}
+.home-layout-card[data-home-shape] .inbox-card[data-attention=false]>.inbox-empty{flex:1 1 auto;display:grid;place-items:center;margin:0;padding:0}
+/* Timeline: heading 44 + 8 (Tall 76 + 8, then the 44px filters link); filters 44 + 8; status 20 + 8; entry 51 + 1. */
+.home-layout-card[data-home-shape] .timeline-heading{box-sizing:border-box;height:44px;min-height:0;margin:0 0 8px;flex-wrap:nowrap}
+.home-layout-card.home-shape-tall .timeline-heading{height:76px;flex-wrap:wrap;align-content:space-between}
+.home-layout-card.home-shape-tall .timeline-card>.timeline-open{box-sizing:border-box;height:44px;min-height:0}
+.home-layout-card[data-home-shape] .timeline-filters{box-sizing:border-box;height:44px;margin:0 0 8px;flex-wrap:nowrap}
+.home-layout-card[data-home-shape] .timeline-status{box-sizing:border-box;height:20px;line-height:20px;margin:0 0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-layout-card[data-home-shape] .paged-list>ol.timeline-entries{margin:0}
+.home-layout-card[data-home-shape] .paged-list:not([data-held=true]) .timeline-entry:not([open])>summary{box-sizing:border-box;height:51px;min-height:0}
+.home-layout-card[data-home-shape] .timeline-card:has(>.timeline-empty) .paged-list{flex:0 0 auto}
+.home-layout-card[data-home-shape] .timeline-card>.timeline-empty{flex:1 1 auto;display:grid;place-items:center;margin:0;padding:0}
+/* Agent sessions: heading 44 + 4; counts 30 + 8 (Tall 56 + 8); filters 48 + 8 (Tall 92 + 8); tiles 124 with 8 between. */
+.home-layout-card[data-home-shape] .widget[data-widget=sessions]>.widget-head{box-sizing:border-box;height:44px;min-height:0;margin:0 0 4px}
+.home-layout-card[data-home-shape] .agent-summary{box-sizing:border-box;height:30px;margin:0 0 8px;overflow:hidden}
+.home-layout-card.home-shape-tall .agent-summary{height:56px}
+.home-layout-card[data-home-shape] .agent-sessions .filters{box-sizing:border-box;height:48px;margin:0 0 8px}
+.home-layout-card.home-shape-tall .agent-sessions .filters{height:92px}
+.home-layout-card[data-home-shape] .agent-grid{gap:8px}
+.home-layout-card[data-home-shape] .paged-list:not([data-held=true])>.agent-grid{grid-auto-rows:124px;align-items:stretch}
+.home-layout-card[data-home-shape] .paged-list:not([data-held=true])>.agent-grid>div>.agent-status-card{box-sizing:border-box;height:100%}
+.home-layout-card[data-home-shape] .paged-list:not([data-held=true])>.agent-grid .agent-face{box-sizing:border-box;height:122px;min-height:0;gap:12px;padding:16px}
+.home-layout-card[data-home-shape] .paged-list:not([data-held=true])>.agent-grid .agent-state{flex-wrap:nowrap;min-width:0}
+.home-layout-card[data-home-shape] .paged-list:not([data-held=true])>.agent-grid .agent-state .chip{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .home-layout-card[data-home-shape] .agent-face{min-height:0}
+.home-layout-card[data-home-shape] .agent-grid .agent-disclosure{min-width:0}
+
+.light-empty{margin:0;padding:var(--space-m);text-align:center;color:var(--muted-dense);font-size:var(--type-small)}
 .home-art-slot-shaped{height:100%}
-/* In Edit Home the bar shows the card's name, so the card's own heading under it is hidden rather than cut in half. */
-.is-editing .home-layout-grid[data-packed=true] .home-card-content :is(header,h2,h3){visibility:hidden}
+/* In Edit Home the bar shows the card's name, so the card's own heading is hidden rather than cut in half: the heading
+   in the header that opens the card's root element (directly, or inside its first wrapper or two). Headings inside the
+   card, its tools and its rows stay. The generic face starts below the bar, so the bar never covers its icon. */
+.is-editing .home-layout-grid[data-packed=true] .home-card-content>*>header:first-child :is(h2,h3),
+.is-editing .home-layout-grid[data-packed=true] .home-card-content>*>:first-child>header:first-child :is(h2,h3),
+.is-editing .home-layout-grid[data-packed=true] .home-card-content>*>:first-child>:first-child>header:first-child :is(h2,h3){visibility:hidden}
+.is-editing .home-layout-grid[data-packed=true] .home-compact-face{padding-top:56px}
+

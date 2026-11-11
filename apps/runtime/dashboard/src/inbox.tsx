@@ -4,8 +4,8 @@ import type {InboxItem} from '@jimmie-potts/event-contracts/v2/families';
 import {sendAction} from './actions.ts';
 import {InboxCard, InboxItemCard} from './inbox-card.tsx';
 import {PagedList} from './paged-list.tsx';
-import {inboxShapePageSize, listPageSize} from './paging.ts';
-import {useHomeShape} from './home-shape-context.ts';
+import {fitRows, listFit, listPageSize} from './paging.ts';
+import {useHomeCardBox} from './home-shape-context.ts';
 
 function InboxRow({item, label, live, control, hidden}: {item: InboxItem; label: string; live: boolean; control: boolean; hidden: boolean}): React.JSX.Element {
   const [attempt, setAttempt] = useState<{revision: number; locked: boolean}>();
@@ -33,8 +33,10 @@ export type InboxFocus = {id: string; serial: number};
 export function InboxPanel({items, live, control, devices = [], focus, headingId}: {
   items: readonly InboxItem[]; live: boolean; control: boolean; devices?: readonly DeviceRecord[]; focus?: InboxFocus | undefined; headingId?: string;
 }): React.JSX.Element {
-  const host = useRef<HTMLDivElement>(null), shape = useHomeShape();
-  const pageSize = (shape === undefined ? undefined : inboxShapePageSize[shape]) ?? listPageSize.inbox;
+  const host = useRef<HTMLDivElement>(null), box = useHomeCardBox();
+  // In a Home shape (#1672) a page holds the closed items that fit below the heading and any notice lines.
+  const {frame, inbox: fit} = listFit, notices = (live ? 0 : 1) + (control ? 0 : 1);
+  const pageSize = box === undefined ? listPageSize.inbox : fitRows(box.height - frame - fit.heading - notices * fit.notice, fit.row, items.length);
   useEffect(() => {
     if (focus === undefined) return;
     const row = [...(host.current?.querySelectorAll<HTMLElement>('[data-inbox]') ?? [])].find(item => item.dataset.inbox === focus.id);

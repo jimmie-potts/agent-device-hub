@@ -8,6 +8,8 @@ import {chromium, expect, type Locator, type Page} from 'playwright/test';
 import type {HomeLayoutRecord, HomePlacement, HomeShape} from '@jimmie-potts/event-contracts/v2/families';
 import {changes, feed, startWorld} from './harness.ts';
 import {approvalPrompt, IDENTITY} from '../../dist/tests/fixtures/agents.js';
+import {listFit} from '../src/paging.ts';
+import {idleChanges} from './list-idle.ts';
 
 const receipts = process.env.DASHBOARD_RECEIPTS;
 const only = process.env.HOME_SHAPES_ONLY?.split(',');
@@ -139,7 +141,46 @@ const misfits = (cards: readonly Box[]): string[] => cards.flatMap(card => card.
  * larger, so no shape leaves an empty band where content could be, and moving space around cannot satisfy it.
  */
 const emptyLimit = (card: Box): number => Math.max(48, 0.15 * (card.bottom - card.top));
-const halfEmpty = (cards: readonly Box[]): string[] => cards.flatMap(card => card.empty > emptyLimit(card) ? [`${card.id}@${String(card.shape)}: ${String(card.empty)}px blank band of ${String(Math.round(card.bottom - card.top))}`] : []);
+/** List cards follow listFits instead: their rows keep a fixed height and a short list leaves the rest plain. */
+const listCards: readonly string[] = ['inbox', 'timeline', 'sessions'];
+const halfEmpty = (cards: readonly Box[]): string[] => cards.flatMap(card => !listCards.includes(card.id) && card.empty > emptyLimit(card) ? [`${card.id}@${String(card.shape)}: ${String(card.empty)}px blank band of ${String(Math.round(card.bottom - card.top))}`] : []);
+/**
+ * Calculated rows match the rendered card (#1672 owner decision 2026-11-11): every fixed size in paging.ts listFit
+ * equals the rendered one (frame, chrome above the rows, row height and pitch, pager), no row overlaps the pager or
+ * leaves the card, and a full list (more items than one page shows) leaves less than one row of space above its pager.
+ */
+async function listFits(page: Page): Promise<string[]> {
+  return page.locator('.home-layout-grid').evaluate((host, fit) => {
+    const out: string[] = [], near = (a: number, b: number): boolean => Math.abs(a - b) <= 1;
+    for (const card of host.querySelectorAll<HTMLElement>(':scope > .home-layout-card[data-home-shape]')) {
+      const id = card.dataset.homeCard ?? '', shape = card.dataset.homeShape ?? '', list = card.querySelector<HTMLElement>('[data-paged-list]');
+      if (list === null || list.dataset.held === 'true' || !['inbox', 'timeline', 'sessions'].includes(id)) continue;
+      const name = `${id}@${shape}`, box = card.getBoundingClientRect(), widget = card.querySelector<HTMLElement>('.widget');if (widget === null) {out.push(`${name}: no frame`);continue;}
+      const style = getComputedStyle(widget), px = (value: string): number => Number.parseFloat(value);
+      const top = px(style.paddingTop) + px(style.borderTopWidth), bottom = px(style.paddingBottom) + px(style.borderBottomWidth);
+      if (!near(top + bottom, fit.frame)) out.push(`${name}: frame ${String(top + bottom)}px, listFit.frame ${String(fit.frame)}`);
+      const inner = {top: box.top + top, bottom: box.bottom - bottom};
+      const notices = card.querySelectorAll('.inbox-card>.hub-control-status').length, status = card.querySelector('.timeline-status') === null ? 0 : 1;
+      const chrome = id === 'inbox' ? fit.inbox.heading + notices * fit.inbox.notice
+        : id === 'timeline' ? (shape === 'tall' ? fit.timeline.tallHeading + fit.timeline.tallLink : shape === 'large-square' ? fit.timeline.heading + fit.timeline.filters : fit.timeline.heading) + status * fit.timeline.status
+          : fit.sessions.heading + (shape === 'tall' ? fit.sessions.tallSummary + fit.sessions.tallFilters : fit.sessions.summary + fit.sessions.filters);
+      const height = id === 'inbox' ? fit.inbox.row : id === 'timeline' ? fit.timeline.row : fit.sessions.tile, pitch = id === 'sessions' ? fit.sessions.tile + fit.sessions.gap : height;
+      const all = [...list.querySelectorAll<HTMLElement>('[data-paged-key]')], rows = all.filter(row => !row.hidden).map(row => row.getBoundingClientRect());
+      const pager = list.querySelector('.paged-list-pager')?.getBoundingClientRect(), limit = pager?.top ?? inner.bottom;
+      if (pager !== undefined && (!near(pager.height, fit.pager) || !near(pager.bottom, inner.bottom))) out.push(`${name}: pager ${pager.height.toFixed(1)}px ending ${(inner.bottom - pager.bottom).toFixed(1)}px above the frame, listFit.pager ${String(fit.pager)}`);
+      const first = rows[0];if (first === undefined) continue;
+      if (!near(first.top - inner.top, chrome)) out.push(`${name}: rows start ${(first.top - inner.top).toFixed(1)}px below the frame, listFit chrome ${String(chrome)}`);
+      const tops = [...new Set(rows.map(row => Math.round(row.top)))].sort((a, b) => a - b);
+      for (const [index, value] of tops.slice(1).entries()) if (!near(value - (tops[index] ?? 0), pitch)) out.push(`${name}: row pitch ${String(value - (tops[index] ?? 0))}px, listFit ${String(pitch)}`);
+      // A list row's last entry has no rule below it, so it is one pixel shorter.
+      for (const row of rows) if (row.height > height + 0.5 || row.height < height - 1.5) out.push(`${name}: row ${row.height.toFixed(1)}px, listFit ${String(height)}`);
+      const end = Math.max(...rows.map(row => row.bottom));
+      if (end > limit + 0.5) out.push(`${name}: rows end ${(end - limit).toFixed(1)}px past ${pager === undefined ? 'the card' : 'the pager'}`);
+      if (all.length > rows.length && limit - end >= pitch) out.push(`${name}: a full list leaves ${(limit - end).toFixed(1)}px, one row is ${String(pitch)}`);
+    }
+    return out;
+  }, listFit);
+}
 /** Equal gaps, whole units and no overlap: every card's edges sit on the unit grid. */
 function tiles(value: Awaited<ReturnType<typeof measure>>): void {
   const unit = value.cell + value.gap, span = {square: [1, 1], wide: [2, 1], tall: [1, 2], 'large-square': [2, 2]} as const;
@@ -180,8 +221,8 @@ try {
   if (part('tiles')) {
     // AC1: the built-in layout, before any save, tiles on the unit grid; so do three mixed layouts with all four shapes.
     const value = await measure(page);assert.equal(value.columns, 5);assert.ok(Math.abs(value.cell - 225.6) < 1, String(value.cell));tiles(value);
-    assert.deepEqual(misfits(value.cards), []);assert.deepEqual(halfEmpty(value.cards), []);
-    await shot(page, 'final3-default-1440');
+    assert.deepEqual(misfits(value.cards), []);assert.deepEqual(halfEmpty(value.cards), []);assert.deepEqual(await listFits(page), []);
+    await shot(page, 'final4-default-1440');
     // F3: automatic art stays in view at every width: trailing empty cells, or a Wide row of its own after the last card.
     // The sweep runs at 1x scale in its own page: 2x screenshots at 2560px exhaust the renderer.
     const sweepContext = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'}), sweep = await sweepContext.newPage();
@@ -193,7 +234,7 @@ try {
       // Art appears once the grid has repacked for the new width.
       try {await expect(automatic).toHaveCount(1, {timeout: 3000});await expect(automatic).toBeVisible({timeout: 3000});} catch {missing.push(width);}
     }
-    // A list that re-measures itself must settle: a render loop would blank the page (React error 185).
+    // No render loop blanks the page while resizing (React error 185 came from lists that measured themselves).
     assert.deepEqual(sweepErrors, [], 'no page errors while resizing');
     await sweepContext.close();
     assert.deepEqual(missing, [], 'automatic art is present at every width on the built-in layout');
@@ -214,6 +255,7 @@ try {
         await page.setViewportSize({width, height: 1000});const result = await measure(page);tiles(result);
         for (const card of result.cards) seen.add(card.shape ?? '');
         assert.deepEqual(misfits(result.cards), [], `layout at ${String(width)}`);
+        assert.deepEqual(await listFits(page), [], `list rows at ${String(width)}`);
       }
       await page.setViewportSize({width: 1440, height: 1000});
       // Keyboard and DOM order stay the saved order even where a later card fills an earlier hole.
@@ -264,7 +306,7 @@ try {
     await expect(choice.getByRole('button', {name: 'Large square', exact: true})).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.locator('[data-home-card="hub-mode"]')).toHaveAttribute('data-home-shape', 'large-square');
-    await shot(page, 'final3-edit-home-1440');
+    await shot(page, 'final4-edit-home-1440');
     // The screenshot clears focus; Escape from a control in the panel closes it and returns focus to its button.
     await choice.getByRole('button', {name: 'Large square', exact: true}).focus();await page.keyboard.press('Escape');await expect(toggle).toBeFocused();await expect(choice).toHaveCount(0);
     await page.getByRole('button', {name: 'Options for Inbox', exact: true}).click();
@@ -307,7 +349,7 @@ try {
     await expect.poll(order).toEqual(old.map(entry => entry.widget));
     await expect.poll(async () => Object.fromEntries((await measure(page)).cards.map(card => [card.id, card.shape]))).toEqual({'hub-mode': 'wide', inbox: 'tall', sessions: 'large-square', [lamps[0] ?? '']: 'tall', [lamps[1] ?? '']: 'large-square', [pixoo]: 'square', timeline: 'large-square', art: 'wide'});
     tiles(await measure(page));
-    await shot(page, 'final3-converted-old-layout-1440');
+    await shot(page, 'final4-converted-old-layout-1440');
     await page.waitForTimeout(500);assert.deepEqual(sent, [], 'loading an old-format layout writes nothing');
   }
 
@@ -315,7 +357,7 @@ try {
     // AC5: Inbox rows per page follow its shape; an opened item takes the page and stays reachable; F11 stuck-row case.
     await save(page, [placement('inbox', 'tall'), placement('hub-mode', 'wide')]);
     const inbox = page.locator('[data-home-card="inbox"]'), list = inbox.locator('[data-paged-list="Inbox"]'), rows = list.locator('[data-paged-key]:not([hidden])');
-    // F2: rows per page come from the card's measured space: a Tall Inbox at 1440 holds five rows and its pager.
+    // Rows per page are calculated from the card's shape and the grid: a Tall Inbox at 1440 holds five rows and its pager.
     await expect(rows).toHaveCount(5);const perPage = 5, pages = Math.ceil(13 / perPage);
     await expect(inbox.getByText(`Page 1 of ${String(pages)}`, {exact: true})).toBeAttached();
     await expect(inbox.locator('.paged-list-position [aria-hidden=true]')).toHaveText(`1 / ${String(pages)}`);
@@ -330,7 +372,7 @@ try {
       assert.ok(card !== null && dismiss !== null && dismiss.y + dismiss.height <= card.y + card.height + 1, 'Dismiss is inside the card');
     };
     await reachable();assert.deepEqual(misfits((await measure(page)).cards), []);
-    await shot(page, 'final3-inbox-opened-item-1440');
+    await shot(page, 'final4-inbox-opened-item-1440');
     for (const shape of ['wide', 'large-square'] as const) {
       await save(page, [placement('inbox', shape), placement('hub-mode', 'wide')]);await expect(rows).toHaveCount(1);await reachable();
       assert.deepEqual(misfits((await measure(page)).cards), [], `opened item in ${shape}`);
@@ -375,6 +417,7 @@ try {
         assert.ok(placed.length === cards.length && placed.every(card => card.shape === shape), `${shape} at ${String(width)}: ${placed.map(card => `${card.id}=${String(card.shape)}`).join(', ')}`);
         failures.push(...misfits(value.cards).map(text => `${String(width)}: ${text}`));
         failures.push(...halfEmpty(value.cards).map(text => `${String(width)} half empty: ${text}`));
+        failures.push(...(await listFits(page)).map(text => `${String(width)} list: ${text}`));
         const hub = value.cards.find(card => card.id === 'hub-mode');if (hub !== undefined) console.log(`hub-mode ${String(hub.shape)} at ${String(width)}: largest blank band ${String(hub.empty)}px of ${String(Math.round(hub.bottom - hub.top))}`);
         // F1: in Edit Home every card's name stays visible in a one-row edit bar.
         await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
@@ -396,7 +439,7 @@ try {
           }
           await tabs.first().click();
         }
-        if (width === 1440 || process.env.HOME_SHAPES_DEBUG !== undefined) await shot(page, `final3-every-card-${shape}-${String(width)}`);
+        if (width === 1440 || process.env.HOME_SHAPES_DEBUG !== undefined) await shot(page, `final4-every-card-${shape}-${String(width)}`);
       }
     }
     await page.setViewportSize({width: 1440, height: 1000});
@@ -420,7 +463,7 @@ try {
     await wide.getByRole('button', {name: 'Off', exact: true}).click();await inside(wide, /Refused/);
     await page.unroute('**/api/v2/commands/power-set');
     assert.deepEqual(misfits((await measure(page)).cards), []);
-    await shot(page, 'final3-light-results-1440');
+    await shot(page, 'final4-light-results-1440');
     // F15: the art card keeps its element, image and focused control across the one-column threshold and back.
     await save(page, representative);
     const unpin = page.locator('[data-home-card="art"]').getByRole('button', {name: 'Unpin art', exact: true});
@@ -433,7 +476,7 @@ try {
       assert.equal(await unpin.evaluate(node => node === document.activeElement), true, `focus stays on Unpin art at ${String(width)}`);
     }
     await artNode.dispose();
-    // F17: Agent sessions measures tile columns and rows together, so a resize shows no intermediate page count.
+    // F17: Agent sessions calculates tile columns and rows together, so a resize shows no intermediate page count.
     await save(page, [placement('sessions', 'large-square'), placement('hub-mode', 'wide')]);
     const sessionsList = page.locator('[data-home-card="sessions"] [data-paged-list="Agent sessions"]');
     const settled = async (): Promise<string | null> => {await settle(page);return sessionsList.getAttribute('data-pages');};
@@ -454,33 +497,87 @@ try {
     await save(page, [placement('timeline', 'large-square')]);await expect(timeline.getByRole('button', {name: 'All', exact: true})).toHaveAttribute('aria-pressed', 'true');
   }
 
+  /** Card pictures side by side in one private PNG, at half their 2x size. */
+  const sheet = async (name: string, pictures: readonly string[]): Promise<void> => {
+    if (receipts === undefined) return;
+    const view = await context.newPage();await view.setViewportSize({width: 1440, height: 1000});
+    await view.setContent(`<body style="margin:16px;background:#eef1f6;display:flex;gap:16px;align-items:flex-start">${pictures.map(data => `<img src="data:image/png;base64,${data}" style="width:auto;height:auto;max-width:none;zoom:0.5">`).join('')}</body>`);
+    await view.screenshot({path: join(receipts, `${name}.png`), fullPage: true});await view.close();
+  };
+  const picture = async (target: Page, id: string): Promise<string> => {
+    if (receipts === undefined) return '';
+    await target.evaluate(() => {if (document.activeElement instanceof HTMLElement) document.activeElement.blur();});await settle(target);
+    return (await target.locator(`[data-home-card="${id}"]`).screenshot()).toString('base64');
+  };
+
+  if (part('short')) {
+    // A short or empty Inbox in each shape (#1672 owner decision 2026-11-11): one item sits at the top at its normal
+    // height with no pager and the rest of the card plain; an empty Inbox centres its short message. Fresh synthetic
+    // world and browser context, since browser sessions are cookies on the shared loopback host.
+    const quiet = await startWorld({inbox: true}), quietContext = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
+    try {
+      const fresh = await quietContext.newPage();fresh.setDefaultTimeout(20_000);await fresh.goto(quiet.url);await feed(fresh, 'connected');
+      await expect(fresh.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
+      const inbox = fresh.locator('[data-home-card="inbox"]'), pictures: string[] = [];
+      for (const count of [0, 1]) {
+        if (count === 1) {await quiet.failCommand();await expect(inbox.locator('[data-inbox]')).toHaveCount(1);}
+        for (const shape of ['wide', 'tall', 'large-square'] as const) {
+          await save(fresh, [placement('inbox', shape)]);await expect(inbox).toHaveAttribute('data-home-shape', shape);
+          for (const width of [1100, 1440, 1920]) {
+            await fresh.setViewportSize({width, height: 1000});await measure(fresh);
+            assert.deepEqual(await listFits(fresh), [], `${String(count)} items in ${shape} at ${String(width)}`);
+            await expect(inbox.locator('.paged-list-pager')).toHaveCount(0);
+            if (count === 0) {
+              const centre = await inbox.evaluate(card => {
+                const message = card.querySelector('.inbox-empty'), entries = card.querySelector('.inbox-entries'), frame = card.querySelector('.inbox-card');
+                if (message === null || entries === null || frame === null) return undefined;
+                const range = document.createRange();range.selectNodeContents(message);
+                const text = range.getBoundingClientRect(), room = {top: entries.getBoundingClientRect().bottom, bottom: frame.getBoundingClientRect().bottom, left: frame.getBoundingClientRect().left, right: frame.getBoundingClientRect().right};
+                return {vertical: (text.top + text.bottom) / 2 - (room.top + room.bottom) / 2, horizontal: (text.left + text.right) / 2 - (room.left + room.right) / 2};
+              });
+              assert.ok(centre !== undefined && Math.abs(centre.vertical) <= 2 && Math.abs(centre.horizontal) <= 2, `the empty message is centred in ${shape} at ${String(width)}: ${JSON.stringify(centre)}`);
+            } else {
+              const row = await inbox.locator('[data-paged-key]').first().boundingBox(), card = await inbox.boundingBox();
+              assert.ok(row !== null && card !== null && row.height <= listFit.inbox.row && Math.abs(row.y - card.y - listFit.frame / 2 - listFit.inbox.heading) <= 1, `one item sits at the top at its own height in ${shape} at ${String(width)}`);
+            }
+          }
+          await fresh.setViewportSize({width: 1440, height: 1000});await measure(fresh);
+          pictures.push(await picture(fresh, 'inbox'));
+        }
+      }
+      await sheet('final4-inbox-one-item-and-empty-1440', pictures);
+    } finally {await quietContext.close();await quiet.close();}
+  }
+
+  if (part('idle')) {
+    // F18: once Home has settled, nothing inside a list card changes while nobody acts, at widths where measured rows
+    // used to re-render every frame. home-idle.browser.ts sweeps every 20 px with 0 to 13 Inbox items.
+    await save(page, representative);
+    const busy: string[] = [];
+    for (const width of [1100, 1380, 1520, 1780, 2060, 2560]) {
+      await page.setViewportSize({width, height: 1000});await measure(page);await page.waitForTimeout(250);
+      const changes = await idleChanges(page);if (changes.length > 0) busy.push(`${String(width)}: ${String(changes.length)} changes, first ${changes.slice(0, 3).join(' | ')}`);
+    }
+    await page.setViewportSize({width: 1440, height: 1000});
+    assert.deepEqual(busy, [], 'list cards stay still while nobody acts');
+  }
+
   if (receipts !== undefined && part('shots')) {
     await save(page, [placement(lamps[0] ?? '', 'square'), placement(lamps[1] ?? '', 'wide'), placement(lamps[2] ?? '', 'tall'), placement('light:room:studio', 'large-square')]);
-    await shot(page, 'final3-lights-four-shapes-1440');
-    // Hub mode in its four shapes, side by side in one picture, and Agent sessions in Tall.
+    await shot(page, 'final4-lights-four-shapes-1440');
+    // Hub mode in its four shapes, the Inbox's three shapes with a full list, and Agent sessions in its two.
     const hubShots: string[] = [];
-    for (const shape of shapes) {
-      await save(page, [placement('hub-mode', shape)]);await settle(page);
-      hubShots.push((await page.locator('[data-home-card="hub-mode"]').screenshot()).toString('base64'));
-    }
-    const sheet = await context.newPage();
-    await sheet.setViewportSize({width: 1440, height: 1000});
-    await sheet.setContent(`<body style="margin:16px;background:#eef1f6;display:flex;gap:16px;align-items:flex-start">${hubShots.map(data => `<img src="data:image/png;base64,${data}" style="width:auto;height:auto;max-width:none;zoom:0.5">`).join('')}</body>`);
-    await sheet.screenshot({path: join(receipts, 'final3-hub-mode-four-shapes-1440.png'), fullPage: true});await sheet.close();
-    await save(page, [placement('sessions', 'tall'), placement('hub-mode', 'wide')]);await shot(page, 'final3-agent-sessions-tall-1440');
-    for (const shape of ['wide', 'tall', 'large-square'] as const) {await save(page, [placement('inbox', shape)]);await shot(page, `final3-inbox-${shape}-1440`);}
+    for (const shape of shapes) {await save(page, [placement('hub-mode', shape)]);hubShots.push(await picture(page, 'hub-mode'));}
+    await sheet('final4-hub-mode-four-shapes-1440', hubShots);
+    const inboxShots: string[] = [];
+    for (const shape of ['wide', 'tall', 'large-square'] as const) {await save(page, [placement('inbox', shape)]);await expect(page.locator('[data-home-card="inbox"]')).toHaveAttribute('data-home-shape', shape);inboxShots.push(await picture(page, 'inbox'));}
+    await sheet('final4-inbox-three-shapes-full-1440', inboxShots);
+    const sessionShots: string[] = [];
+    for (const shape of ['tall', 'large-square'] as const) {await save(page, [placement('sessions', shape)]);await expect(page.locator('[data-home-card="sessions"]')).toHaveAttribute('data-home-shape', shape);sessionShots.push(await picture(page, 'sessions'));}
+    await sheet('final4-agent-sessions-1440', sessionShots);
     await save(page, representative);
-    for (const width of [1100, 1440, 1920]) {await page.setViewportSize({width, height: 1000});await settle(page);await shot(page, `final3-home-${String(width)}`);}
-    await page.setViewportSize({width: 375, height: 812});await settle(page);await shot(page, 'final3-home-375');
-    // The built-in layout with an empty Inbox, in a fresh synthetic world and its own browser context, since browser
-    // sessions are cookies on the shared loopback host.
-    const quiet = await startWorld({lighting: true}), quietContext = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: 2});
-    try {
-      const fresh = await quietContext.newPage();await fresh.goto(quiet.url);await feed(fresh, 'connected');
-      await expect(fresh.locator('[data-home-card="inbox"]')).toHaveAttribute('data-home-shape', 'wide');
-      await expect(fresh.getByText('No commands need handling.', {exact: true})).toBeVisible();
-      await shot(fresh, 'final3-default-empty-inbox-1440');
-    } finally {await quietContext.close();await quiet.close();}
+    for (const width of [1100, 1440, 1920]) {await page.setViewportSize({width, height: 1000});await settle(page);await shot(page, `final4-home-${String(width)}`);}
+    await page.setViewportSize({width: 375, height: 812});await settle(page);await shot(page, 'final4-home-375');
     await page.setViewportSize({width: 1440, height: 1000});
   }
   assert.deepEqual(errors, []);
