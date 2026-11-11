@@ -176,7 +176,9 @@ async function listFits(page: Page): Promise<string[]> {
       for (const row of rows) if (row.height > height + 0.5 || row.height < height - 1.5) out.push(`${name}: row ${row.height.toFixed(1)}px, listFit ${String(height)}`);
       const end = Math.max(...rows.map(row => row.bottom));
       if (end > limit + 0.5) out.push(`${name}: rows end ${(end - limit).toFixed(1)}px past ${pager === undefined ? 'the card' : 'the pager'}`);
-      if (all.length > rows.length && limit - end >= pitch) out.push(`${name}: a full list leaves ${(limit - end).toFixed(1)}px, one row is ${String(pitch)}`);
+      // A full page: more rows than it shows, and not the last page, which may hold fewer.
+      const full = all.length > rows.length && (pager === undefined || Number(list.dataset.page) < Number(list.dataset.pages));
+      if (full && limit - end >= pitch) out.push(`${name}: a full list leaves ${(limit - end).toFixed(1)}px, one row is ${String(pitch)}`);
     }
     return out;
   }, listFit);
@@ -556,14 +558,16 @@ try {
     const busy: string[] = [];
     for (const width of [1100, 1380, 1520, 1780, 2060, 2560]) {
       await page.setViewportSize({width, height: 1000});await measure(page);await page.waitForTimeout(250);
-      const changes = await idleChanges(page);if (changes.length > 0) busy.push(`${String(width)}: ${String(changes.length)} changes, first ${changes.slice(0, 3).join(' | ')}`);
+      // A second window tells a one-off record change (such as session evidence turning stale) from a render loop.
+      let changes = await idleChanges(page);if (changes.length > 0) changes = await idleChanges(page);
+      if (changes.length > 0) busy.push(`${String(width)}: ${String(changes.length)} changes, first ${changes.slice(0, 3).join(' | ')}`);
     }
     await page.setViewportSize({width: 1440, height: 1000});
     assert.deepEqual(busy, [], 'list cards stay still while nobody acts');
   }
 
   if (receipts !== undefined && part('shots')) {
-    await save(page, [placement(lamps[0] ?? '', 'square'), placement(lamps[1] ?? '', 'wide'), placement(lamps[2] ?? '', 'tall'), placement('light:room:studio', 'large-square')]);
+    await save(page, [placement(lamps[0] ?? '', 'large-square'), placement(lamps[1] ?? '', 'wide'), placement(lamps[2] ?? '', 'tall'), placement('light:room:studio', 'square')]);
     await shot(page, 'final4-lights-four-shapes-1440');
     // Hub mode in its four shapes, the Inbox's three shapes with a full list, and Agent sessions in its two.
     const hubShots: string[] = [];

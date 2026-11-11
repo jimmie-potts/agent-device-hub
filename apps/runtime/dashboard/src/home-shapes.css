@@ -201,11 +201,14 @@
 
 .light-empty{margin:0;padding:var(--space-m);text-align:center;color:var(--muted-dense);font-size:var(--type-small)}
 .home-art-slot-shaped{height:100%}
-/* In Edit Home the bar shows the card's name, so the card's own heading is hidden rather than cut in half: the heading
-   in the header that opens the card's root element (directly, or inside its first wrapper or two). Headings inside the
-   card, its tools and its rows stay. The generic face starts below the bar, so the bar never covers its icon. */
-.is-editing .home-layout-grid[data-packed=true] .home-card-content>*>header:first-child :is(h2,h3),
-.is-editing .home-layout-grid[data-packed=true] .home-card-content>*>:first-child>header:first-child :is(h2,h3),
-.is-editing .home-layout-grid[data-packed=true] .home-card-content>*>:first-child>:first-child>header:first-child :is(h2,h3){visibility:hidden}
+/* In Edit Home the bar shows the card's name, so the card's own heading is hidden rather than cut in half: the header
+   that opens the card's root element (directly, or inside its first wrapper or two), with its name, state line and
+   badge. Headings inside the card and its rows stay, and so do the Timeline's period and refresh tools, which Tall
+   shows below the bar. The generic face starts below the bar, so the bar never covers its icon. */
+.is-editing .home-layout-grid[data-packed=true] .home-card-content>*>header:first-child,
+.is-editing .home-layout-grid[data-packed=true] .home-card-content>*>:first-child>header:first-child,
+.is-editing .home-layout-grid[data-packed=true] .home-card-content>*>:first-child>:first-child>header:first-child,
+.is-editing .home-layout-grid[data-packed=true] .home-art-shaped .art-widget>header{visibility:hidden}
+.is-editing .home-layout-grid[data-packed=true] .home-card-content header .timeline-tools{visibility:visible}
 .is-editing .home-layout-grid[data-packed=true] .home-compact-face{padding-top:56px}
 

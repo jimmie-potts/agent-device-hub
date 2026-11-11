@@ -58,7 +58,10 @@ try {
     for (const width of widths) {
       const results = await Promise.all(pages.map(async ({count, page}) => {
         await page.setViewportSize({width, height: 1000});await settle(page);
-        return {count, changes: await idleChanges(page)};
+        // A record that changes once on its own (a session's evidence turning stale minutes into the run) is not a
+        // render loop; a second idle window at the same width tells them apart, since a loop changes in both.
+        const first = await idleChanges(page);
+        return {count, changes: first.length === 0 ? first : await idleChanges(page)};
       }));
       for (const {count, changes} of results) if (changes.length > 0) busy.push(`${layout.name} at ${String(width)} with ${String(count)} items: ${String(changes.length)} changes, first ${changes.slice(0, 3).join(' | ')}`);
     }
