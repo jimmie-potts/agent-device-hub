@@ -2449,6 +2449,19 @@ notices. Gateway-only session-label-set and notice-clear metadata operations kee
 tracker/history evidence and never enter this device-operation inbox. Items and handling actors survive restart; display `dismissedBy` and
 device holds stay separate.
 
+Results whose only possible handling is Dismiss open no item (#1657, owner
+decisions of 2026-11-10). A rejected reply opens none while no later outcome
+contradicts it and Send again by the dashboard would be refused for it: scheduled art moments, core-dispatched Music
+lighting work, companion speech, MicroDuck commands, omitted payloads and a Hub
+mode change refused `revision-conflict` for its saved expected revision. An
+uncertain companion speech line opens none either. `resendRefusal` in
+`src/core/inbox.ts` holds the rule, and both Send again and the open rule read
+it. These results keep their code and detail in the tracker row and history.
+Every other failed, uncertain or conflicting result opens an item. That
+includes uncertain writes that may set a hold, failures after acceptance,
+expired commands and refusals the dashboard can send again. Items still have no
+time limit, and a later success clears nothing.
+
 `GET /api/v2/history` reads committed `core_history`, oldest first, with optional
 inclusive `fromAtMs`, `toAtMs`, `kind`, `source` and qualified `session` filters.
 Optional `limit` is an integer from 1 to 500: filters combine first, then the
@@ -2465,7 +2478,9 @@ and `core_history` read the same owner without triggering actions.
 the authenticated source supplies the handling actor. Dismiss commits the actor
 and a `deleted` removal atomically. Send-again commits handling with a new
 tracked sent operation using saved data and a fresh request ID, then sends once.
-A failed initial commit leaves the original open. A crash after commit never
+A failed initial commit leaves the original open. Send-again is refused before
+handling for what the shared rule names, and a stale mode revision is refused
+`revision-conflict`; the item stays for Dismiss. A crash after commit never
 resends; the new tracked operation can become uncertain. Accepted handling is
 separate from device completion: a later device refusal or uncertainty stays on
 the new operation and does not reject committed handling. There is no automatic

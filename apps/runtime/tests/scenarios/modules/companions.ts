@@ -79,7 +79,7 @@ export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowle
   ],
 }, {
   id: 'assistant-mode-approval', title: 'an approved assistant proposal changes the Hub mode once through the tracked dispatcher; a stale approval is refused',
-  seed: {modules: ['core', 'companions'], sections: {companions: {assistant: {tools: ['read_sessions', 'set_mode']}}}, follows: [{owner: 'bunny/core', families: ['session', 'mode', 'operation']},
+  seed: {modules: ['core', 'companions'], sections: {companions: {assistant: {tools: ['read_sessions', 'set_mode']}}}, follows: [{owner: 'bunny/core', families: ['session', 'mode', 'operation', 'inbox-item']},
     {owner: 'bunny/modules/companions', families: ['assistant-state']}]},
   steps: [
     expect('the synthetic provider and both permitted tools are public, the Hub starts in Free', h => {
@@ -121,6 +121,13 @@ export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowle
       return task?.status === 'succeeded' && operations.length === 2 && operations.some(record => record.status === 'rejected') && hubMode(h)?.mode === 'work' || `status ${task?.status ?? 'none'}, operations ${String(operations.length)}`;
     }, 10_000),
     expect('the conversation names the refusal', answers(CONVERSATION, response => response.status === 200 && JSON.stringify(bodyOf(response)).includes('refused: revision-conflict') || 'refusal text missing')),
+    expect('the reply explains that the mode changed since the proposal', answers(CONVERSATION, response =>
+      JSON.stringify(bodyOf(response)).includes('the Hub mode changed since this was proposed; nothing was changed') || 'explanation missing')),
+    // #1657 (AC3): Send again could never repeat a stale revision, so the refusal stays in history and opens no item.
+    holds('the stale refusal opens no inbox item', h => {
+      const rejected = modeOperations(h).find(record => record.status === 'rejected');
+      return rejected !== undefined && h.reader.states('inbox-item').length === 0 || `rejected ${String(rejected?.requestId)}, inbox ${String(h.reader.states('inbox-item').length)}`;
+    }, 300),
   ],
 }];
 

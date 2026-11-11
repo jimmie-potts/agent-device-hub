@@ -504,7 +504,11 @@ export class AssistantEngine {
     const settle = (answer: RequestResult, accepted: string): {text: string; units: number} => {
       // The dispatcher's own uncertainty reaches the module as a rejection carrying `uncertain-result`; the fate is unknown either way.
       if (answer.status === 'uncertain' || (answer.status === 'rejected' && answer.error.error.code === 'uncertain-result')) throw new Fault('uncertain-result');
-      return {text: answer.status === 'accepted' ? accepted : `refused: ${answer.error.error.code}`, units: 0};
+      if (answer.status === 'accepted') return {text: accepted, units: 0};
+      const code = answer.error.error.code;
+      return {text: proposal.family === 'mode-set' && code === 'revision-conflict'
+        ? 'refused: revision-conflict: the Hub mode changed since this was proposed; nothing was changed. Read the mode again before proposing another change.'
+        : `refused: ${code}`, units: 0};
     };
     let result: string, delegation: Question | undefined;
     if (proposal.family === 'mode-set') {

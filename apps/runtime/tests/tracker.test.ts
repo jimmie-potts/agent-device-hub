@@ -640,6 +640,20 @@ it('an explicit resend atomically handles the item with one fresh tracked comman
   await waitFor(() => copy.copy.states().length === 0); await copy.copy.close();
 });
 
+it('a resend the device refuses again accepts the committed handling and opens a separate item for the fresh request', async context => {
+  const t = await trackerRun(context);
+  t.gadget.script({reply: 'unavailable'}, {reply: 'unavailable'});
+  await t.dispatch('inbox-refused-twice', 42);
+  const original = inboxRecords(t)[0]; assert.ok(original);
+  const answer = await handleInbox(t, original.id, original.revision, 'send-again');
+  assert.equal(answer.status, 'accepted', 'the sent operation and original handling committed before the fresh refusal');
+  await waitFor(() => t.gadget.commands.length === 2);
+  const resent = t.gadget.commands[1]; assert.ok(resent);
+  await waitFor(() => t.operation(resent.data.requestId)?.status === 'rejected');
+  const current = inboxRecords(t);
+  assert.deepEqual(current.map(item => [item.item.requestId, item.item.result]), [[resent.data.requestId, 'failed']], 'the original is handled, and the fresh refusal has its own item');
+});
+
 it('a failed resend commit preserves the original item and sends nothing', async context => {
   const t = await trackerRun(context);
   t.gadget.script({reply: 'unavailable'}); await t.dispatch('inbox-full');

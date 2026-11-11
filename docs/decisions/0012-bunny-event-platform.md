@@ -171,7 +171,9 @@ Device commands, moments and mode changes are tracked:
 - If its deadline passes first, the core records it as uncertain. A command
   still queued at its deadline never reached the owner, so the SDK answers it
   `expired` instead; the core records only an unknown fate as uncertain. Failed
-  and uncertain results go to the shared inbox. A later outcome is handled as
+  and uncertain results go to the shared inbox, except routine background art
+  and results whose only possible handling is Dismiss (amendments of 2026-11-03
+  and 2026-11-10). A later outcome is handled as
   [Errors, effects and outcomes](#errors-effects-and-outcomes) describes.
 - Every step is logged.
 - A timed-out command is never retried automatically.
@@ -185,7 +187,9 @@ State events and telemetry are not tracked.
   operations with conflicting outcomes: the results a person must decide on.
   Items survive restarts until handled, with no expiry and no automatic
   clearing. Handling an item once clears it everywhere; dismissing it on a
-  display is a separate fact.
+  display is a separate fact. Routine background art and results whose only
+  possible handling is Dismiss raise no item (amendments of 2026-11-03 and
+  2026-11-10).
 - A finished turn is not an inbox item. Its unread state stays on the session
   record, which consumers sync and derive what they show from. Evidence clears
   it: read evidence for a consumer that uses it, the session's end, or a new
@@ -720,3 +724,21 @@ work. `moment-play`, with or without `art`, is also unchanged. The trade-off is 
 failed or uncertain automatic job, including one that may have spent money, appears only on
 the dashboard's art surfaces and in the logs, so nothing holds it until someone handles it.
 A stale or uncertain ambient tile is not raised either; saved art keeps playing.
+
+**2026-11-10, dismiss-only results leave the inbox.** On 2026-11-10 the owner's inbox
+held 13 items that needed no decision, and Dismiss was the only handling for 10 of them
+([#1657](https://github.com/jimmie-potts/agent-device-hub/issues/1657)). The owner
+decided that an operation whose only possible handling is Dismiss raises no inbox item,
+whoever asked for it. This covers two cases. The first is a refusal the dashboard could
+never send again: the owner refused the command before acting, so it left no effect and
+holds no device, and Send again would be refused for it. Examples are a scheduled art
+moment, core-dispatched Music lighting work, companion speech, MicroDuck commands, a
+command whose payload was not kept, and a Hub mode change refused for a saved revision
+that can never match again. The second is an unconfirmed companion speech line, which
+holds no device. The open rule and Send again read one rule. Every such result keeps its
+code and detail in its tracker row and history. Expiry and clearing on a later success
+stay out: items still have no time limit. Every other failed, uncertain or conflicting
+result still raises an item. That includes an uncertain write that may set a device
+hold, a failure after acceptance, an expired command and a refusal the dashboard can
+send again. The trade-off is that a refusal like this is seen only when it happens, in
+its caller's reply, and in history.

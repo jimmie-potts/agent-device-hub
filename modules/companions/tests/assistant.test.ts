@@ -123,6 +123,23 @@ void test('an approved proposal dispatches one mode-set bound to the proposal an
   await w.restart(); assert.equal(dispatched.length, 1);
 });
 
+void test('an approval stays bound to the revision it was proposed against after an owner mode change, and the reply explains the refusal', async context => {
+  // #1657 (AC3): the owner changed the mode by hand after the proposal and before approving it. The approval must not
+  // override that choice, so it still carries the proposed revision, and the core's refusal is explained in the reply.
+  let revision = 3;
+  const dispatched: {mode: string; expectedRevision?: number}[] = [];
+  const w = await world(context, {provider: counted(), tools: ['set_mode'], core: () => ({sessions: [], mode: hub(revision), synced: true}),
+    dispatch: data => {dispatched.push(data.data); return Promise.resolve({status: 'rejected', requestId: data.requestId, error: errorBody('revision-conflict')});}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'quiet mode now'); await until(() => status(w) === 'waiting');
+  assert.equal((await page(w)).currentTask?.question?.proposal?.expectedRevision, 3);
+  revision = 9;
+  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.deepEqual(dispatched, [{mode: 'quiet', expectedRevision: 3}], 'the proposed revision, never the newer one');
+  assert.match((await page(w)).messages.at(-1)?.text ?? '', /not applied: refused: revision-conflict: the Hub mode changed since this was proposed; nothing was changed/);
+});
+
 void test('a declined proposal sends nothing and a stale approval is reported as refused', async context => {
   let answer: RequestResult = {status: 'rejected', requestId: 'r', error: errorBody('revision-conflict')}; let sends = 0;
   const w = await world(context, {provider: counted(), tools: ['set_mode'], core: () => ({sessions: [], mode: hub(3), synced: true}), dispatch: () => {sends += 1; return Promise.resolve(answer);}});
