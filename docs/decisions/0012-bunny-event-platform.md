@@ -826,7 +826,12 @@ The decisions:
    and limits that apply now. A consumer must never act as if a past occurrence
    had just happened. For example, raising now an agent's request that has
    gone unanswered for two hours is a new decision. Turning a lamp on because a
-   record says it was turned on yesterday is not allowed. The component that
+   record says it was turned on yesterday is not allowed. Nor does a new
+   decision ever issue a past command again because its outcome failed or is
+   uncertain: decision 5 and "Retries" under
+   [Errors, effects and outcomes](#errors-effects-and-outcomes) still apply, so
+   that outcome stays as recorded and only the owner may send the command
+   again. The component that
    decides sets how fresh a fact must be for its decision. For the decision
    maker that is [#1728](https://github.com/jimmie-potts/agent-device-hub/issues/1728),
    whose recorded decisions already have plain rules raise the passing of time
