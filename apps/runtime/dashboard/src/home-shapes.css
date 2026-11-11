@@ -13,7 +13,7 @@
 .home-layout-card[data-home-shape] .widget{display:flex;flex-direction:column;overflow:hidden}
 
 /* Edit Home keeps the real placement: the edit bar lies over the top of the card, whose content is inert while editing. */
-.home-layout-grid[data-packed=true] .home-card-editor{position:absolute;inset:0 0 auto 0;z-index:3;border-radius:var(--radius) var(--radius) 0 0;box-shadow:0 2px 8px rgb(0 0 0 / .12)}
+.home-layout-grid[data-packed=true] .home-card-editor{position:absolute;inset:0 0 auto 0;z-index:3;border-radius:var(--radius) var(--radius) 0 0;box-shadow:var(--shell-shadow)}
 .home-shape-choice{display:inline-flex;gap:2px}
 .home-shape-choice button{min-width:36px;padding:6px}
 .home-shape-choice button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -45,16 +45,22 @@
 .home-layout-card[data-home-shape] .light-card .light-artwork{flex:1 1 auto;min-height:48px;height:auto;margin-block:var(--space-xs)}
 .home-layout-card[data-home-shape] .light-card .lighting-image-group svg{max-height:100%}
 .home-layout-card[data-home-shape] .light-card .light-power{margin-block:var(--space-xs)}
-.home-layout-card[data-home-shape] .light-card .light-drag{display:none}
+/* One row groups through the options menu's Group with; two rows keep the drag handle. */
+:is(.home-layout-card.home-shape-square,.home-layout-card.home-shape-wide) .light-card .light-drag{display:none}
+.home-layout-card[data-home-shape] .light-card .light-drag{min-height:36px;margin-top:var(--space-xs)}
 /* One row shows command results in the options menu's details instead of below the controls. */
 :is(.home-layout-card.home-shape-square,.home-layout-card.home-shape-wide) .light-card .light-attention{display:none}
 .home-layout-card[data-home-shape] .light-card-heading p{margin-top:2px}
 .home-layout-card[data-home-shape] .light-card-heading{min-width:0}
 .home-layout-card[data-home-shape] .light-card-heading>div{min-width:0}
 .home-layout-card[data-home-shape] .light-card-heading p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:none}
-.home-layout-card.home-shape-tall .light-card .light-artwork,.home-layout-card.home-shape-large-square .light-card .light-artwork{flex:0 1 96px}
+/* Tall keeps every control face in full, so its artwork stays mounted but hidden; Large square shows it beside the tabs. */
+.home-layout-card.home-shape-tall .light-card .light-artwork{display:none}
+.home-layout-card[data-home-shape] .light-card .light-face .light-slider{margin-block:var(--space-xs)}
+.home-layout-card.home-shape-tall .light-card{padding-block:var(--space-s)}
+.home-layout-card[data-home-shape] .light-card .light-face .light-note{margin-block:var(--space-xs)}
 .home-layout-card.home-shape-tall .light-card .light-face-space,.home-layout-card.home-shape-large-square .light-card .light-face-space{flex:1 1 auto;height:auto;min-height:0}
-.home-layout-card.home-shape-tall .light-card .light-face,.home-layout-card.home-shape-large-square .light-card .light-face{padding-top:var(--space-s);height:auto;min-height:0;overflow:visible}
+.home-layout-card.home-shape-tall .light-card .light-face,.home-layout-card.home-shape-large-square .light-card .light-face{padding-top:var(--space-xs);height:auto;min-height:0;overflow:visible}
 .home-layout-card.home-shape-tall .light-card .light-tabs button{font-size:var(--type-label)}
 .home-layout-card.home-shape-wide .light-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);grid-template-rows:auto minmax(0,1fr);column-gap:var(--space-m)}
 .home-layout-card.home-shape-wide .light-card>header{grid-column:1/-1}
@@ -99,6 +105,7 @@
 .home-layout-card[data-home-shape] .agent-sessions .filters label{font-size:0}
 .home-layout-card[data-home-shape] .agent-sessions .filters :is(input,select){font-size:var(--type-small)}
 .home-layout-card.home-shape-tall .agent-summary span{font-size:var(--type-label)}
+.home-layout-card[data-home-shape] .agent-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:var(--space-s)}
 
 /* Music visualizer: the canvas fills the shape above one status line. */
 .home-layout-card[data-home-shape] .music-visualizer-card{display:flex;flex-direction:column;gap:var(--space-xs);flex:1 1 auto;min-height:0}
@@ -107,9 +114,10 @@
 .home-layout-card[data-home-shape] .music-visualizer-card a{min-height:32px}
 
 /* Art fills its shape and is cropped to it; its placement controls stay in one row above it. */
-.home-art-shaped{display:flex;flex-direction:column;gap:var(--space-xs);height:100%;min-height:0}
-.home-art-shaped>.home-art-controls{flex-wrap:nowrap}
+.home-art-shaped{position:relative;display:flex;flex-direction:column;height:100%;min-height:0}
+.home-art-shaped>.home-art-controls{position:absolute;right:var(--space-s);bottom:var(--space-s);z-index:1;flex-wrap:nowrap;gap:var(--space-xs)}
 .home-art-shaped>.home-art-controls button{min-height:36px;padding:4px 8px}
+.home-art-shaped .art-widget>header{margin-bottom:var(--space-xs)}
 .home-art-shaped>.home-art-content{flex:1 1 auto;min-height:0}
 .home-art-shaped .art-widget{height:100%;margin:0;padding:var(--space-s)}
 .home-art-shaped .art-image-frame{flex:1;min-height:0;aspect-ratio:auto}

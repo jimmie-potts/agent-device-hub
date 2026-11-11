@@ -138,6 +138,8 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const columns = homeColumns(width), cell = (width - HOME_GAP * (columns - 1)) / columns;
   const shapes = new Map(shown.flatMap(entry => {const definition = savedHomeCard(entry.widget, catalog);return definition === undefined ? [] : [[entry.widget, shapeOf(entry, definition)] as const];}));
   const packed = narrow || width === 0 ? undefined : packShapes(shown.flatMap(entry => {const shape = shapes.get(entry.widget);return shape === undefined ? [] : [{id: entry.widget, shape}];}), columns);
+  // Automatic art on the grid depends only on the grid's columns and the cards' cells, never on image arrival or the
+  // viewport's height, so it changes only when the owner's layout or the window width does.
   const artFit = packed !== undefined && automaticArt ? trailingFit(packed, columns, homeCardShapes({id: 'art', source: {kind: 'core'}}).shapes) : undefined;
   const area = (place: ShapePlacement): React.CSSProperties => ({gridColumn: `${String(place.column)} / span ${String(place.columns)}`, gridRow: `${String(place.row)} / span ${String(place.rows)}`});
   const categories = ['All', ...new Set(catalog.map(card => card.category))];

@@ -72,7 +72,8 @@ try {
   await page.getByRole('button', {name: 'Add Studio', exact: true}).click();await page.getByRole('button', {name: 'Close', exact: true}).click();
   await page.getByRole('button', {name: 'Move Studio earlier', exact: true}).click();
   await page.getByRole('button', {name: 'Move Studio; use arrow keys', exact: true}).press('ArrowUp');
-  await page.getByRole('combobox', {name: 'Size of Studio', exact: true}).selectOption('large');
+  // The shape choice replaced Small / Standard / Wide (#1672).
+  await page.getByRole('group', {name: 'Shape of Studio', exact: true}).getByRole('button', {name: 'Large square', exact: true}).click();
   const roomId = (await order()).find(id => id.startsWith('light:room:'));assert.ok(roomId !== undefined && roomId !== '');
   const room = page.locator('[data-home-card]').filter({has: page.getByRole('heading', {name: 'Studio', exact: true})});
   await page.getByRole('button', {name: 'Phone', exact: true}).click();assert.equal((await order()).at(-1), roomId, 'adding appends to independent phone order');
@@ -184,5 +185,6 @@ try {
   await context.close();
 } finally {await browser.close();await world.close();}
 
-await import('./home-balance.browser.ts');
+// The unit grid (#1672) replaced the flex rows home-balance checked; home-shapes checks tiling, shapes and paging by shape.
+await import('./home-shapes.browser.ts');
 await import('./home-paging.browser.ts');

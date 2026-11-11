@@ -43,9 +43,14 @@ try {
         const card = page.locator('[data-roborock-card]');
         assert.equal(await page.getByRole('region', {name: 'Roborock observations'}).count(), 0, 'technical evidence is closed initially');
         await page.goto(`${world.url}/#/`); await feed(page, 'connected');
+        // The wide Home grid (#1672) shows the generic compact face; its Open leads to the device page below.
+        assert.equal(await page.locator('[data-home-card="device:bunny/modules/roborock:vacuum"] a.home-compact-open').getAttribute('href'), '#/component/vacuum');
+        assert.equal(await card.count(), 0, 'the compact face mounts no Roborock reader');
+        await page.setViewportSize({width: 560, height: 1000});
         await card.waitFor();
-        assert.equal(await card.count(), 1, 'Home reuses one Roborock card without a second placement');
+        assert.equal(await card.count(), 1, 'Home in one column reuses one Roborock card without a second placement');
         assert.equal(await page.locator('[data-home-card="device:bunny/modules/roborock:vacuum"]').count(), 1, 'existing device placement ID is preserved');
+        await page.setViewportSize({width: 1280, height: 1000});
         await page.goto(`${world.url}/#/component/vacuum`); await feed(page, 'connected');
         await card.waitFor(); assert.equal(await card.count(), 1, 'the selected device uses the same component');
         await page.goto(`${world.url}/#/component/not-configured`); await feed(page, 'connected'); await frame(page);

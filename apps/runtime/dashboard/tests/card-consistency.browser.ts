@@ -31,7 +31,9 @@ try {
   if (receipts !== undefined) await mkdir(receipts, {recursive: true});
   await world.observe({kind: 'session-started'}, {title: {value: 'Synthetic card comparison', source: 'provider'}});
   await world.observe(approvalPrompt('card-comparison-attention'));
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+  // Home shows full cards in one column (#1672); on the unit grid most of these cards are compact or generic faces,
+  // so Home is compared at phone widths and each full card again on its own page at 1440 and 390 px below.
+  const context = await browser.newContext({viewport: {width: 390, height: 1000}, reducedMotion: 'reduce'});
   const page = await context.newPage(); page.setDefaultTimeout(15_000);
   const errors: string[] = []; context.on('weberror', event => errors.push(event.error().name));
   await page.goto(world.url); await feed(page, 'connected');
@@ -68,7 +70,7 @@ try {
   assert.equal(await emptyRoom.getByRole('slider', {name: 'Brightness · requested', exact: true}).isDisabled(), true, 'unknown and disabled values keep their label');
   assert.equal(await emptyRoom.locator('output').innerText(), 'Mixed / unknown');
   assert.deepEqual(sent, [], 'inspecting slider names and tabs sends no command');
-  for (const width of [1440, 680, 390, 320]) for (const colorScheme of ['light', 'dark'] as const) {
+  for (const width of [390, 320]) for (const colorScheme of ['light', 'dark'] as const) {
     await page.setViewportSize({width, height: 1000}); await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
     await settle(page);
     const values = await Promise.all(frames.map(async ([name, selector]) => ({name, ...await page.locator(selector).first().evaluate(node => {
@@ -160,6 +162,6 @@ try {
   }
   assert.deepEqual(sent, [], 'browsing, focus and tabs send no product command'); assert.deepEqual(errors, []);
   await context.close();
-  console.log(JSON.stringify({journey: 'card-consistency', cards: frames.length, themesAndWidths: 8, featureViews: featureViews.length,
+  console.log(JSON.stringify({journey: 'card-consistency', cards: frames.length, themesAndWidths: 4, featureViews: featureViews.length,
     attention: true, stableArt: true, keyboard: true, fixtureMetadataSaves: 2, inspectionCommands: 0, physical: false}));
 } finally {await browser.close(); await world.close();}

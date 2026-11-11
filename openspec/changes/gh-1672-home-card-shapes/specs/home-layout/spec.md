@@ -27,11 +27,15 @@ Each Home card SHALL declare the shapes it offers and the shape a Standard place
 - **THEN** it offers Wide, Tall and Large square
 
 ### Requirement: Compact content for a shape
-A card in the first compact set (Hub mode, Inbox, Agent sessions, Timeline, Wispr, light, room and Nanoleaf cards, Pixoo and Tidbyt) SHALL show content that fits each shape it offers, with nothing clipped, no scrolling inside the card and no stretched card. Controls that act on devices SHALL stay reachable on Home or one step away on the card's own page. Art SHALL be cropped to its shape and the music visualizer SHALL fill its shape.
+Every Home card SHALL offer only shapes whose content fits at the 220px unit, with nothing clipped, no scrolling inside the card and no stretched card. Hub mode, Inbox, Agent sessions, Timeline, light, room and Nanoleaf cards SHALL show their own compact content. A card without compact content of its own SHALL show a generic compact face with its name, current state and an Open link to the existing page that holds its full content and controls; Pixoo, Tidbyt and Wispr SHALL use it until their modules provide compact content. A control hidden by a shape SHALL be reachable one step away. Device-acting controls shown in a shape SHALL behave as in the full card. Art SHALL be cropped to its shape and the music visualizer SHALL fill its shape.
 
-#### Scenario: Smallest offered shape
-- **WHEN** each card of the first compact set is placed in its smallest offered shape
+#### Scenario: Every offered shape fits
+- **WHEN** each card is placed in each shape it offers at 1100, 1440 and 1920 px
 - **THEN** its content height does not exceed the card, no control is cut off and the card has no scroll container
+
+#### Scenario: Generic compact face
+- **WHEN** a Pixoo card is a Small square on Home
+- **THEN** it shows its name, its current state and Open, which leads to its existing device page with its full controls
 
 #### Scenario: A light in one unit
 - **WHEN** a light card is a Small square

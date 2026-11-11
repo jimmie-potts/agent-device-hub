@@ -56,7 +56,7 @@ export const widgetCatalog: readonly WidgetDefinition[] = [
   },
   {
     id: 'duck-latest', name: 'MicroDuck', description: 'Latest intended meaning from one explicitly selected Reachy–Duck conversation.',
-    sizes: ['medium', 'large'], shapes: ['square'], standard: 'square', generic: ['square'], open: '#/module/companions/duck-conversation', source: {kind: 'module', families: ['assistant-state'], content: ['companions/duck-widget', 'companions/companion-history']}, commands: true,
+    sizes: ['medium', 'large'], shapes: ['square'], standard: 'square', generic: ['square'], open: '#/module/companions/microduck', source: {kind: 'module', families: ['assistant-state'], content: ['companions/duck-widget', 'companions/companion-history']}, commands: true,
   },
   {
     id: 'timeline', name: 'Timeline', description: 'Retained Hub activity with read-only filters and evidence.',

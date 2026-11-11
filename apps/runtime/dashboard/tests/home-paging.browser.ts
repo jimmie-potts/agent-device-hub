@@ -30,7 +30,9 @@ const focusInside = async (page: Page, selector: string): Promise<string> => pag
 
 try {
   for (let index = 0; index < 6; index += 1) await world.observe({kind: 'session-started'}, {identity: {...IDENTITY, sessionId: `paging-${String(index)}`}, title: {value: `Synthetic agent ${String(index)}`, source: 'provider'}});
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
+  // One column (#1672): off the unit grid the lists keep their fixed page sizes and open entries in place, which this
+  // journey checks; home-shapes.browser.ts checks rows per shape and an opened entry taking the page on the grid.
+  const context = await browser.newContext({viewport: {width: 560, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
   const page = await context.newPage();page.setDefaultTimeout(15_000);
   const errors: string[] = [];context.on('weberror', error => {errors.push(error.error().message);});
   await page.goto(world.url);await feed(page, 'connected');

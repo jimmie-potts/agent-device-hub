@@ -1,39 +1,40 @@
 ## Context
 
-Home today wraps cards in saved order with flex widths (`small` 260px, `medium` 340px, `large` a full row) and each card
-takes its content height. Content heights at 1440px on synthetic data range from 296px (Hub mode) to 811px (Pixoo), so
-mixed rows leave large empty areas. The owner chose four shapes from one unit square (#1672, 2026-11-10). List paging
-from #1658 (PR #1665) is the base: `PagedList` pages Inbox, Agent sessions and Timeline in the browser.
+Home wrapped cards in saved order with flex widths (`small` 260px, `medium` 340px, `large` a full row) and each card
+took its content height, from 296px (Hub mode) to 811px (Pixoo), so mixed rows left large empty areas. The owner chose
+four shapes from one unit square (#1672, 2026-11-10) and, from the Stage A screenshots on draft PR #1673, a 220px unit
+with a 16px gap (D1, 2026-11-11). List paging from #1658 (PR #1665) is the base.
 
-Decided by the owner: the four shapes; the owner picks each card's shape in Edit Home; compact content instead of
+Owner decisions: the four shapes; the owner picks each card's shape in Edit Home; compact content instead of
 scrolling, stretching or clipping; the first compact set; art and the visualizer take shapes; narrow screens keep one
-column. Open: D1, the unit size and columns at common widths, chosen from the Stage A screenshots.
+column; the 220px unit; Inbox offers no Small square; cards outside the first compact set get a generic compact face so
+every card is one of the four shapes. Coordinator choices: the conversion is stored at the owner's next explicit save;
+automatic art fills only trailing empty cells. The delivery is split: this change (PR A) is the model, the grid, the
+picker, the conversion, the generic face and bespoke compact content for the dashboard-owned cards. PR B adds an SDK
+presentation hint and bespoke compact markup inside the Pixoo, Tidbyt and Wispr module frontends; until then those
+three show the generic face.
 
-### Where the Home layout lives today
+### Where the Home layout lives
 
 | Layer | Place | What it holds or does |
 | --- | --- | --- |
-| Owner and store | `apps/runtime/src/core/home-layout.ts` (`HomeLayoutPart`), table `home_layout` in `modules/core.sqlite` | One row `id = 'home'` with a JSON record `{id, revision, version: 1, layouts: {desktop, phone} \| null}`. Entries are `{widget, size, hidden, art?}`. |
-| Writes | same file | `#replace`: the owner's save through `home-layout-set` with operator admission, revision and expiry guards, art-option preservation for older clients. `reconcileLighting`: grouping and room Home actions rewrite placements in their own core transaction and append new light cards as `size: 'medium'`. |
-| Contract | `packages/event-contracts`: `schemas/v2/families/home-layout.schema.json` (2.0), `home-layout.2.1.schema.json` (published), `home-layout-set.schema.json` (2.0, references the 2.1 `$defs/layouts`), `src/v2/home-layout.ts` (types, duplicate-widget check), fixtures and tests | `size` is `small \| medium \| large`, required; entries allow no other fields. |
-| Transport | existing core sync of `home-layout` and the gateway's command route (`apps/runtime/src/gateway/gateway.ts` passes the trace) | No Home-specific route, MCP tool or module. |
-| Dashboard | `home-layout.tsx` (read, edit, save), `home-catalog.ts` (catalog, defaults, add), `home-art.ts` (art placement, creates `size: 'medium'`), `widgets.ts` (declared sizes), `main.tsx` (`Widget size`) | Renders by `size`; never writes on load. |
-| Tests | `apps/runtime/tests/home-layout.test.ts`, `tests/scenarios/home-layout.ts`, event-contract tests, dashboard unit and browser tests | |
+| Owner and store | `apps/runtime/src/core/home-layout.ts` (`HomeLayoutPart`), table `home_layout` in `modules/core.sqlite` | One row `id = 'home'` with a JSON record `{id, revision, version: 1, layouts: {desktop, phone} \| null}`. |
+| Writes | same file | The owner's save through `home-layout-set` (operator admission, revision and expiry guards, art-option and shape preservation for older clients) and `reconcileLighting` for grouping and room Home actions. |
+| Contract | `packages/event-contracts` `home-layout` 2.0, 2.1 and 2.2 schemas, `home-layout-set` 2.0, `src/v2/home-layout.ts` | `size` is required; 2.2 adds optional `shape`. |
+| Transport | existing core sync and the gateway command route | No Home-specific route, MCP tool or module. |
+| Dashboard | `home-layout.tsx`, `home-catalog.ts`, `home-shapes.ts`, `home-art.ts`, `widgets.ts` | Catalog, offered shapes, conversion, packing, picker, rendering. Never writes on load. |
 
-The core owns the state; the dashboard owns the catalog, which shapes a card offers and how it renders. The change
-crosses the dashboard–core boundary through the shared contract package. It is additive.
-
-Card UIs that live in module packages and would render compact content themselves: Pixoo (`modules/pixoo/src/frontend`),
-Tidbyt (`modules/tidbyt` frontend), Art, Wispr, Roborock, Volcano and the companions widgets. Their Home cards are
-styled partly by the dashboard (`lighting.css` styles `.pixoo-card` and `.tidbyt-card`).
+The core owns the state; the dashboard owns the catalog and rendering. The change crosses the dashboard–core boundary
+through the shared contract package, additively. Card UIs in module packages (Pixoo, Tidbyt, Art, Wispr, Roborock,
+Volcano, companions) are not changed in PR A.
 
 ## Goals / Non-Goals
 
 **Goals:** every wide-layout Home card is one of four shapes on one grid; the owner picks shapes; compact content per
-shape for the first set; old layouts load unchanged in widgets and order; older dashboards keep working.
+shape; old layouts load unchanged in widgets and order; older dashboards keep working.
 
-**Non-Goals:** compact content for cards outside the first set; shapes on other pages; a new Inbox page; changes to
-device controls, their queues or command paths.
+**Non-Goals:** bespoke compact content inside module frontends (PR B); shapes on other pages; a new Inbox page; changes
+to device controls, their queues or command paths.
 
 ## Decisions
 
@@ -41,157 +42,120 @@ device controls, their queues or command paths.
 
 Entries gain optional `shape: 'square' | 'wide' | 'tall' | 'large-square'` (kebab-case, ADR 0012). `size` stays
 required. The core publishes `home-layout/2.2` (2.1 plus `shape`); `home-layout-set/2.0` references the 2.2 layouts, the
-same additive optional-command-field convention #682 used for art. The record stays `version: 1`; the core store needs
-no migration.
-
-A new dashboard writes both fields, with `size` set from the shape so an older dashboard shows a close width:
-
-| shape | stored `size` |
-| --- | --- |
-| square, tall | small |
-| wide, large-square | medium |
-
-If the card does not declare that size, the older dashboard already falls back to the card's first declared size.
-
-Alternatives: replacing `size` with `shape` breaks older dashboards and the published schema; a core migration that
-rewrites stored records at startup would need the dashboard's catalog in the core and would write without an owner
-action.
+additive optional-command-field convention #682 used for art. The record stays `version: 1`; the core store needs no
+migration. A new dashboard writes both, with `size` from `homeShapeSize` in the contracts package: square and tall
+store `small`, wide and large-square store `medium`.
 
 ### 2. Convert on load, store at the next explicit save
 
-A placement without `shape` shows `shapeForSize(size, offered, standard)`:
+A placement without `shape` (or with one its card no longer offers) shows: Small → Small square, else Tall; Standard →
+the card's Standard shape; Wide → Large square, else Wide; art → its format (banner Wide, tall Tall, square and auto
+Large square). Loading writes nothing. Done, Reset-then-Done and the art Pin, Unpin, Dismiss and Restore actions store a
+shape and agreeing width for every known placement in both arrangements.
 
-- `small`: Small square, else Tall, else the first offered.
-- `medium`: the card's declared Standard shape.
-- `large`: Large square, else Wide.
+The core keeps a shape only while it agrees with `size`; an incoming placement without `shape` that keeps its previous
+`size` keeps the previous shape. `reconcileLighting` keeps the base entry's shape when members merge into a group and
+places a newly selected light or room card as `{size: 'small', shape: 'tall'}`.
 
-Standard shapes: Hub mode Wide; Inbox Tall; Agent sessions Large square; Timeline Tall; Wispr Wide; the visualizer Wide;
-Reachy and MicroDuck Large square; Roborock and Volcano Tall; light, room, Nanoleaf, Pixoo, Tidbyt and other device and
-Music cards Tall; unavailable placeholders Small square. Art takes its saved format: banner Wide, tall Tall, square and
-auto Large square.
+Acceptance examples, written as tests before the implementation:
 
-The conversion is a pure function of the stored record and the catalog, so every browser and reload shows the same
-shapes. Nothing is written on load (the existing rule against silent layout writes stands). The owner's next Done, Reset
-or art action writes `shape` for every entry in both arrangements. Restart reads the stored JSON unchanged. A repeated
-save with the same request ID is answered from the existing operation record without a second write; a stale revision
-is refused with `revision-conflict` as today.
-
-The core keeps a stored `shape` only while it agrees with `size`. On save, for each incoming entry:
-
-- with `shape` and `size` equal to that shape's stored size: keep it;
-- with `shape` and a different `size` (an older dashboard changed the width and copied the old shape): drop `shape`, so
-  the card converts from its new size;
-- without `shape`, for a widget whose previous entry had a shape and the same `size` (a client that rebuilt the entry
-  without the field): keep the previous shape, as the art options are kept today.
-
-`reconcileLighting` keeps the base entry's shape when it merges devices into a group and adds new light cards without a
-shape, so they convert to Tall.
-
-Acceptance examples, written as tests before the conversion is implemented:
-
-1. Core, older record: a stored 2.1 record `{widget: 'hub-mode', size: 'medium'}` loads, publishes as 2.2 unchanged and
-   survives restart byte-equal.
-2. Dashboard, conversion table: `hub-mode` medium shows Wide; `inbox` small shows Tall; `sessions` medium shows Large
-   square; a light medium shows Tall; a light large shows Large square; a Roborock small shows Tall; art with format
-   banner shows Wide. Widgets and order are unchanged.
-3. Dashboard, no write on load: loading an old-format layout sends no `home-layout-set` command.
-4. Core, new save: a save with `{widget: 'inbox', size: 'small', shape: 'tall'}` stores and publishes it; restart reads
-   it back.
-5. Core, older dashboard changes width: stored `{size: 'small', shape: 'tall'}`, incoming `{size: 'medium', shape:
-   'tall'}` stores `{size: 'medium'}` without shape.
-6. Core, older client omits shape: stored `{size: 'medium', shape: 'large-square'}`, incoming `{size: 'medium'}` keeps
-   `shape: 'large-square'`; incoming `{size: 'large'}` stores no shape.
-7. Core, duplicate save: the same request ID twice yields one revision and one state; a stale revision is refused and
-   nothing changes.
-8. Contract: 2.2 accepts each shape and rejects an unknown shape; 2.1 and 2.0 fixtures still validate; the set command
-   accepts entries with and without `shape`.
-9. Core, lighting reconcile: grouping two placed lights keeps the first light's shape on the group card.
-10. Dashboard, older dashboard view: a 2.2 record whose entries carry `shape` renders by `size` in the current release's
-    code path (checked by rendering the record with shapes ignored).
+1. Core: an old record publishes as 2.2 unchanged and is not rewritten on open (`home-layout.test.ts`).
+2. Dashboard: the conversion table above (`home-catalog.test.ts`).
+3. Dashboard: loading an old-format layout sends no command (`home-shapes.browser.ts`, convert).
+4. Core: a shape with an agreeing width is stored and published.
+5. Core: an older dashboard's width change drops the copied shape.
+6. Core: a save without the shape keeps it while the width is unchanged and drops it with a new width.
+7. Core: a duplicate delivery is not saved again and a stale revision is refused with nothing changed.
+8. Contract: 2.2 accepts each shape and rejects others; 2.0 and 2.1 reject `shape` and keep accepting width-only data.
+9. Core: grouping keeps the first member's shape; a new room card is Tall.
+10. Older dashboards: they read `size` and ignore `shape` (covered by examples 5 and 6 at the core, and by the
+    compatibility matrix in the PR walkthrough).
 
 ### 3. The unit grid and packing rule
 
-Columns: `C = max(2, floor((W + g) / (U + g)))` for grid width `W`, minimum unit `U` (D1) and gap `g` (16px). Columns
-share the width equally; each row is one column wide, so units are square. Measured grid widths: 852px at a 1100px
-window, 1192px at 1440px, 1672px at 1920px.
+`C = max(2, floor((W + 16) / (220 + 16)))` columns for grid width `W`; columns share the width and each row is one
+column tall, so units are square and never smaller than 220px. Measured grid widths give 3 columns at a 1100px window
+(273px cells), 5 at 1440px (226px) and 7 at 1920px (225px).
 
-Packing (`packShapes`): cards in saved order, each at the first free position, row by row, where its shape fits. A
-later card fills an earlier hole when it fits; this is the only case where a card appears before one saved ahead of it.
-DOM order and Tab order stay the saved order. A two-wide card that does not fit the rest of a row goes to the next row
-with two free adjacent columns; the cell it skipped is filled by a later one-wide card or stays empty. With an odd column
-count, two-wide cards can leave one column; Edit Home shows remaining holes and which shapes fit them. Holes are never
-filled by stretching a card. The trailing cells of the last row stay empty unless automatic art takes them.
+`packShapes` places cards in saved order, each at the first free position, row by row, where its shape fits. A later
+card fills an earlier hole when it fits; this is the only case where a card appears before one saved ahead of it. DOM
+and Tab order stay the saved order. A two-wide card that does not fit the rest of a row goes to the next position with
+two free columns. No card is stretched. Edit Home marks remaining holes. Narrow screens (600px and below, or a grid
+narrower than two units) and the Phone arrangement keep one column at content height with full content.
 
-Narrow screens (the existing 600px breakpoint, or a grid narrower than two units) and the Phone arrangement keep one
-column at content height and full content.
+### 4. Offered shapes
 
-### 4. Catalog declaration
+Each shape a card offers fits at the 220px unit with no overflow, clipped control or scrolling inside the card; a
+browser test measures every card in every offered shape at 1100, 1440 and 1920px.
 
-`WidgetDefinition` gains `shapes` and `standard`. Light, room, Nanoleaf, Pixoo and Tidbyt cards offer all four. Inbox
-offers Wide, Tall and Large square (open question Q2). Cards outside the first set offer the shapes their full content
-fits at the chosen unit; with any candidate unit that is only Tall and Large square, and for some only Large square or
-none (Q3). The final per-card list is fixed after D1 and checked by a test that measures each card in each offered shape.
+| Card | Offers | Standard |
+| --- | --- | --- |
+| Hub mode, Timeline, Music visualizer, Art | all four | Wide, Tall, Wide, Large square |
+| Light, room, group and Nanoleaf light cards | all four | Tall |
+| Inbox | Wide, Tall, Large square | Tall |
+| Agent sessions | Tall, Large square | Large square |
+| Pixoo, Tidbyt, Wemo, Roborock, Volcano, sign, Music, Wispr, Reachy, MicroDuck | Small square (generic face) | Small square |
+| Unavailable placeholders | Small square | Small square |
+
+Pixoo, Tidbyt and Wispr full content is taller than 456px (a two-unit height), so in PR A they offer only the generic
+face; PR B adds bespoke compact content in their modules and the larger shapes it fits.
 
 ### 5. Edit Home picker
 
-The size select becomes a labelled group of shape buttons (icon and name, `aria-pressed`), showing only offered shapes,
-in the card's edit bar. The edit bar overlays the top of the card so the edit preview keeps the real tiling. Changing a
-shape changes only the draft; Done saves. Desktop and Phone keep separate choices; the Phone arrangement keeps no shape
-picker because it has one column.
+The size select becomes a labelled group of shape buttons (icon, name, `aria-pressed`) in each card's edit bar, showing
+only offered shapes, on the Desktop arrangement only. The edit bar overlays the top of the card so the editor shows the
+real placement; holes are drawn as dashed empty cells. Changing a shape changes only the draft until Done.
 
-### 6. Compact content per shape
+### 6. Compact content
 
-Cards read their shape from a dashboard context (`HomeShapeContext`); off the grid it is undefined and cards render in
-full. Module frontends receive it through an additive optional `presentation: {shape}` on `FrontendContext`.
+Cards read their shape from `HomeShapeContext`; off the grid it is undefined and cards render in full.
 
 | Card | Small square | Wide | Tall | Large square | Rest lives |
 | --- | --- | --- | --- | --- | --- |
-| Hub mode | mode art and name, three icon choices | mode beside labelled choices | full | full | exceptions: Check Inbox and mode exceptions on Devices |
-| Inbox | not offered | one row a page | rows a page from the unit | same as Tall, wider rows | an opened item takes the page |
-| Agent sessions | counts (working, need you, unread) and the first waiting session | one row of tiles | two rows of tiles, filters folded | two rows, filters shown | Habitat and session page |
-| Timeline | latest two entries, Open Timeline | latest entries one line each | paged entries, filters folded | paged with filters | the Timeline page |
-| Wispr | today's words | today and speaking minutes | full | — | Wispr analytics page |
-| Light, room, Nanoleaf | name, state, artwork, On/Off | adds brightness | tabs with a smaller artwork | artwork beside tabs | options menu, brand and room pages |
-| Pixoo, Tidbyt | name, state, display preview, caption | preview beside caption | preview, caption, tabs | preview beside tabs | options menu and module pages |
-| Art | image cropped to the square | cropped banner | cropped tall | cropped square | Art Gallery |
-| Visualizer | canvas, effect name | canvas | canvas | canvas | Audio visualizer page |
+| Hub mode | mode art and name, three icon choices, Check Inbox | mode beside labelled choices | full | full | exceptions: a link to Devices in one row |
+| Inbox | — | one row a page | four rows a page | four rows a page | an opened item takes the page |
+| Agent sessions | — | — | one-line summary, filter row, one tile a page | same, wider | — |
+| Timeline | latest two entries, Open Timeline | same, wider | period and refresh, four a page | adds category filters | the Timeline page |
+| Light, room, Nanoleaf | name, state, artwork, On/Off | adds brightness | artwork, tabs | artwork beside tabs | options menu and device pages |
+| Art | image cropped, Unpin and Dismiss | cropped | cropped | cropped | Art Gallery |
+| Visualizer | canvas, effect, Open full view | same | same | same | full view |
+| Generic face | name, state, Open | — | — | — | the card's device, Music or module page |
 
-No shape scrolls inside the card. Device controls stay reachable from Home or one step away on the card's page.
+The generic face's Open link leads to an existing page holding the card's full controls: `#/component/<id>` for device
+cards (Pixoo, Tidbyt, Wemo, Roborock, Volcano, sign), `#/music/<id>` for Music, `#/module/wispr/analytics`,
+`#/module/companions/reachy`, `#/module/companions/microduck`, `#/module/roborock/status`. A Volcano card
+without a device and unavailable placeholders show their reason with no Open link.
 
 ### 7. Paged lists in a shape
 
-Rows per page come from the shape at the minimum unit, so a page and its pager fit at every width. The values are set
-after D1 (prototype at 220px: Inbox Wide 1, Tall 4, Large square 4). Inside a shaped card an opened row takes the page
-and the pager hides until it closes; this reuses the `expandAlone` behavior from PR #1665's history (`17e8dd63`). Check
-Inbox still shows the item's page and opens it.
+Rows per page come from the shape (Inbox Wide 1, Tall 4, Large square 4; Timeline 2, 2, 4, 4; Agent sessions one row
+of tiles). Inside a shaped card an opened row takes the page and the pager hides until it closes; the open rows are kept
+in step in every mode, so opening, changing shape or width, closing and changing back never leaves a row stuck
+(#1665 F11). Check Inbox still shows the item's page and opens it.
 
 ### 8. Art and the visualizer
 
-Pinned art is an ordinary shaped card, cropped (`object-fit: cover`) to its shape; its Pin, Dismiss and Restore controls
-stay. Unpinned (automatic) art takes the largest offered shape that fits the trailing empty cells, or is omitted; it
-never moves functional cards and never saves. Art reacts only while visible, as now. The visualizer fills its shape
-with its existing canvas; only its card layout and CSS change.
+Pinned art is a shaped card cropped (`object-fit: cover`) to its shape, with Unpin and Dismiss above it; Restore stays
+below Home. Unpinned art takes the largest shape that fits the trailing empty cells after every occupied cell, never
+adds a row, never moves functional cards and never saves; Pin keeps the shape it has. The one-column layouts keep the
+existing art reservation and format choice.
 
 ## Risks / Trade-offs
 
-- Visual order can differ from Tab order when a later card fills an earlier hole. Mitigation: Edit Home shows the real
-  placement while reordering.
-- Cards without compact content may fit no shape at a small unit (Q3).
-- Fixed rows per page depend on D1; a later unit change must update them and the measuring test.
-- Stage A prototype uses dashboard CSS against module class names for Pixoo and Tidbyt; Stage B moves compact markup
-  into the module frontends.
+- Visual order can differ from Tab order when a later card fills an earlier hole; Edit Home shows the real placement.
+- Fixed rows per page depend on the 220px unit; the fit test fails if a change makes a shape overflow.
+- Pixoo, Tidbyt and Wispr lose their full content on Home until PR B; Open reaches it in one step.
+- The art crop reuses the existing dashboard rules for the art module's classes, as the reservation did.
 
 ## Migration Plan
 
-Contract 2.2 and the core keep/drop rule ship with the dashboard in one release. Old records need nothing. Rollback to
-an older release reads shape-bearing records through 2.2-unaware code that ignores `shape` only if the older core's
-validator accepts the state; the older core validates commands, not its own stored record, and an older dashboard
-ignores the field. A rollback save from an older dashboard sends entries with `shape`, which the older core's 2.1
-command schema rejects; after rollback the owner resets the layout or the rollback build includes the 2.2 schema.
+No store migration. New core with an older dashboard: the older dashboard renders by `size` and copies `shape` when it
+saves; the core drops a copied shape whose width changed. Older core with a shaped record (rollback): the older core
+reads, syncs and reconciles the record unchanged (it does not validate its own stored record), but its 2.1 command
+schema refuses any save whose entries carry `shape`. Because every dashboard copies saved entries, every save then
+fails with `invalid-request` and nothing changes. Recovery after a rollback: in Edit Home, Reset Desktop and Reset
+Phone, then Done, which sends width-only defaults the older core accepts.
 
 ## Open Questions
 
-- D1: unit size and columns (screenshots in the Stage A hand-back).
-- Q2: Inbox has no page of its own, so it offers no Small square.
-- Q3: cards whose full content fits no shape at the chosen unit.
-- Q4: conversion stored at the next explicit save, not automatically.
+None for PR A. PR B: the SDK presentation field and the module frontends' compact layouts.

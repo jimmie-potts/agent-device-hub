@@ -118,7 +118,8 @@ export async function speechJourney(browser: Browser): Promise<void> {
 /** Removing an opted-in Home card withdraws its endpoint without enabling another tab. */
 export async function homeSpeechLifetimeJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true, speech: true});
-  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+  // Reachy's full card on Home is in one column (#1672); the wide grid shows its generic compact face.
+  const context = await browser.newContext({viewport: {width: 560, height: 1000}, reducedMotion: 'reduce'});
   try {
     await context.addInitScript(installSyntheticSpeech);
     const page = await context.newPage(), other = await context.newPage();

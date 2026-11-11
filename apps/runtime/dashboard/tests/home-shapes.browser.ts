@@ -260,6 +260,16 @@ try {
         const placed = value.cards.filter(card => cards.includes(card.id));
         assert.ok(placed.length === cards.length && placed.every(card => card.shape === shape), `${shape} at ${String(width)}: ${placed.map(card => `${card.id}=${String(card.shape)}`).join(', ')}`);
         failures.push(...misfits(value.cards).map(text => `${String(width)}: ${text}`));
+        // Every control face fits too: switch each tab of each card and measure again.
+        const tabbed = page.locator('.home-layout-grid > [data-home-card]').filter({has: page.getByRole('tab')});
+        for (let index = 0; index < await tabbed.count(); index += 1) {
+          const tabs = tabbed.nth(index).getByRole('tab');
+          for (let tab = 1; tab < await tabs.count(); tab += 1) {
+            await tabs.nth(tab).click();const label = await tabs.nth(tab).innerText();
+            failures.push(...misfits((await measure(page)).cards).map(text => `${String(width)} tab ${label}: ${text}`));
+          }
+          await tabs.first().click();
+        }
         if (width === 1440) await shot(page, `final-every-card-${shape}-1440`);
       }
     }

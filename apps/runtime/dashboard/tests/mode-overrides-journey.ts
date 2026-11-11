@@ -8,7 +8,8 @@ import {changes, feed, startWorld} from './harness.ts';
 
 export async function checkModeOverrides(browser: Browser, evidence?: string): Promise<void> {
   const world = await startWorld({nanoleaf: true, pixooPages: true});
-  const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
+  // Hub mode, a light and the full Pixoo card side by side: Home in one column (#1672), where every card keeps its full content.
+  const context = await browser.newContext({viewport: {width: 560, height: 1000}, reducedMotion: 'reduce'});
   try {
     const page = await context.newPage(); page.setDefaultTimeout(15_000);
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().message);});
@@ -66,7 +67,10 @@ export async function checkModeOverrides(browser: Browser, evidence?: string): P
     await wallChoice.getByText('Quiet · individual exception', {exact: true}).waitFor(); assert.equal(commands(), beforeReload);
     await world.restart(); await page.reload(); await feed(page, 'connected'); await settled(6);
     await wallChoice.getByText('Quiet · individual exception', {exact: true}).waitFor(); assert.equal(commands(), beforeReload, 'restart/read never replay');
-    for (const width of [1440, 390, 320]) for (const colorScheme of ['light', 'dark'] as const) {
+    // On the wide grid a one-row Hub mode lists its exceptions on the Devices page (#1672).
+    await page.setViewportSize({width: 1440, height: 1000});
+    await page.locator('[data-home-card="hub-mode"] a.home-hub-exceptions').filter({hasText: /exception.*· Devices$/}).waitFor();
+    for (const width of [560, 390, 320]) for (const colorScheme of ['light', 'dark'] as const) {
       await page.setViewportSize({width, height: 1000}); await page.emulateMedia({colorScheme});
       await details.locator('summary').click();
       await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);

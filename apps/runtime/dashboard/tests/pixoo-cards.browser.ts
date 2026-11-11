@@ -41,6 +41,10 @@ try {
   }
   const setupRequests = sent.length;
   await page.getByRole('link', {name: /^Home/}).click();
+  // The wide Home grid (#1672) shows Pixoo as the generic compact face; its Open link leads to the full card on the device page.
+  const open = page.locator('[data-home-compact^="device:bunny/modules/pixoo:"] a.home-compact-open');
+  const devicePage = await open.getAttribute('href');assert.match(devicePage ?? '', /^#\/component\//);
+  await open.click();
   const card = page.getByRole('article', {name: 'Pixoo display', exact: true});
   await card.getByRole('tab', {name: 'Display', exact: true}).waitFor();
   const artwork = await card.locator('[data-pixoo-artwork]').elementHandle(); assert.notEqual(artwork, null);
@@ -117,7 +121,7 @@ try {
   await page.getByRole('checkbox', {name: 'Repeat playlist', exact: true}).uncheck();
   await page.getByRole('button', {name: 'Save options', exact: true}).click();
   for (let attempt = 0; (await world.pixooPlaylists())[0]?.repeat !== false && attempt < 100; attempt++) await delay(20);
-  await page.goto(`${world.url}/#/home`);
+  await page.goto(`${world.url}/${devicePage ?? ""}`);
   await card.getByRole('tab', {name: 'Content', exact: true}).click();
   await card.getByRole('combobox', {name: 'Saved playlist', exact: true}).selectOption(saved.id);
   assert.equal(await card.getByRole('button', {name: 'Play playlist', exact: true}).isDisabled(), true);

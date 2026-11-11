@@ -83,9 +83,9 @@ export function packShapes(cards: readonly {id: string; shape: HomeShape}[], col
 /** The largest offered shape that fits wholly in the trailing empty cells of a packing (automatic art), if any. */
 export function trailingFit(packing: ShapePacking, columns: number, offered: readonly HomeShape[]): ShapePlacement | undefined {
   const empty = new Set(packing.holes.map(hole => `${String(hole.row)}:${String(hole.column)}`));
-  // Only cells after every placed card count as trailing: the last row's free run to the right and any rows below.
+  // Only cells after every occupied cell, in reading order, count as trailing: the free run at the end of the last row.
   let lastEnd = 0;
-  for (const place of packing.cards.values()) lastEnd = Math.max(lastEnd, (place.row - 1) * columns + place.column + place.columns - 1);
+  for (const place of packing.cards.values()) lastEnd = Math.max(lastEnd, (place.row + place.rows - 2) * columns + place.column + place.columns - 1);
   const trailing = (row: number, column: number): boolean => (row - 1) * columns + column > lastEnd && (row > packing.rows || empty.has(`${String(row)}:${String(column)}`));
   for (const shape of ['large-square', 'wide', 'tall', 'square'] as const) {
     if (!offered.includes(shape)) continue;
