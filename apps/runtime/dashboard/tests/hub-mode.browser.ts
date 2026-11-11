@@ -44,28 +44,8 @@ try {
     await failed.getByText(/evidence: none/i).waitFor();
     assert.equal(requests(), 1); assert.equal(nativeCalls(), 2);
     await world.failCommand();
-    // Check Inbox in a card that takes its content height opens the item in place; once the card is held to a standard
-    // height again the open item takes the page, and closing it restores the page (#1658).
-    const inboxCard = page.locator('[data-home-card="inbox"]'), rows = inbox.locator('[data-paged-key]:not([hidden])');
-    await inbox.locator('[data-inbox]').filter({hasText: 'g1'}).waitFor({state: 'attached'});
-    await failed.locator('summary').first().click();
-    await page.setViewportSize({width: 700, height: 1000}); await page.waitForFunction(() => document.querySelector('[data-home-card="inbox"]')?.classList.contains('home-free') === true);
-    await warning.click();
-    assert.equal(await failed.locator('details.inbox-entry').getAttribute('open'), '');
-    assert.equal(await failed.locator('summary').first().evaluate(el => el === document.activeElement), true);
-    await page.waitForFunction(() => document.querySelectorAll('[data-inbox-panel] [data-paged-key]:not([hidden])').length === 2);
-    await page.setViewportSize({width: 1440, height: 1000}); await page.waitForFunction(() => document.querySelector('[data-home-card="inbox"]')?.classList.contains('home-free') === false);
-    await page.waitForFunction(() => document.querySelectorAll('[data-inbox-panel] [data-paged-key]:not([hidden])').length === 1);
-    assert.equal(await rows.first().getAttribute('data-inbox'), await failed.getAttribute('data-inbox'), 'the checked item takes the page');
-    await failed.locator('summary').first().click();
-    await page.waitForFunction(() => document.querySelectorAll('[data-inbox-panel] [data-paged-key]:not([hidden])').length === 2);
-    assert.equal(await inboxCard.locator('details.inbox-entry[open]').count(), 0);
-    await failed.locator('summary').first().click();
-    // An open Inbox item takes the card's page (#1658); close it to reach the other item, then open it again.
-    await failed.locator('summary').first().click();
     const unrelated = inbox.locator('[data-inbox]').filter({hasText: 'g1'}); await unrelated.locator('summary').first().click();
     await unrelated.getByRole('button', {name: 'Dismiss'}).click(); await unrelated.waitFor({state: 'detached'}); assert.equal(await warning.count(), 1);
-    await failed.locator('summary').first().click();
     await failed.getByRole('button', {name: 'Dismiss'}).click(); await failed.waitFor({state: 'detached'}); await warning.waitFor({state: 'detached'});
     await work.click(); await warning.waitFor(); assert.equal(requests(), 2, 'selected Work explicitly reapplies');
     world.modeResult('none'); await work.click();

@@ -1,10 +1,10 @@
 // Browser-only paging over records the dashboard already holds (#1658): no request, no polling.
 
 /**
- * Rows per page for each list card, chosen so a full page fits the long Home card height (home-layout.css) at every
- * wide-layout size. Agent status counts rows of tiles; its tiles per page are these rows times the grid's columns.
+ * Rows per page for each list card, fixed so a list never makes its card taller than one page of rows. Agent status
+ * counts rows of tiles; its tiles per page are these rows times the grid's current columns.
  */
-export const listPageSize = {inbox: 8, timeline: 6, sessionRows: 2} as const;
+export const listPageSize = {inbox: 5, timeline: 5, sessionRows: 2} as const;
 
 /** How many pages `count` rows fill; an empty list still has one (empty) page. */
 export function pageCount(count: number, size: number): number {

@@ -1,11 +1,9 @@
-import React, {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import type {HomeArrangements, HomeLayoutRecord, HomePlacement, LightingSelection, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {RuntimeData} from './runtime-feeds.ts';
 import {useAttempt} from './command-control.tsx';
 import {NavLink} from './navigation.tsx';
-import {addHomeCard, defaultHomeArrangements, homeCardHeight, homeCatalog, savedHomeCard, type HomeCardDefinition} from './home-catalog.ts';
-import {gridPlacements, packHomeRows} from './home-packing.ts';
-import {StandardHeight} from './paged-list.tsx';
+import {addHomeCard, defaultHomeArrangements, homeCatalog, savedHomeCard, type HomeCardDefinition} from './home-catalog.ts';
 import {HomeArtSlot} from './home-art-slot.tsx';
 import {changeArtPlacement} from './home-art.ts';
 import {HomeCardIcon} from './home-card-icon.tsx';
@@ -31,17 +29,6 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const [pending, setPending] = useState<{id: string; base: number; layouts: HomeArrangements}>();
   const drag = useRef<string | undefined>(undefined), host = useRef<HTMLDivElement>(null), editButton = useRef<HTMLButtonElement>(null);
   const [focusId, setFocusId] = useState<string>();
-  // The grid's width and gap decide which saved cards share a row (#1658); measured before paint and on every resize.
-  const grid = useRef<HTMLDivElement>(null), [space, setSpace] = useState({width: 0, gap: 16});
-  useLayoutEffect(() => {
-    const node = grid.current;if (node === null) return;
-    const measure = (): void => {
-      const width = node.clientWidth, measured = Number.parseFloat(getComputedStyle(node).rowGap), gap = Number.isNaN(measured) ? 16 : measured;
-      setSpace(previous => previous.width === width && previous.gap === gap ? previous : {width, gap});
-    };
-    measure();const observer = new ResizeObserver(measure);observer.observe(node);
-    return () => {observer.disconnect();};
-  }, []);
   const editing = draft !== undefined, breakpoint = editing ? selected : natural;
   const previousEditing = useRef(false), previousPicker = useRef(false), returnFocus = useRef(false);
   const layouts = draft?.layouts ?? current, entries = layouts[breakpoint];
@@ -110,15 +97,6 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
     <button type="button" className="secondary" disabled={!editable || pending !== undefined || conflict} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: true}));}}>Dismiss art widget</button>
   </div>;
   const locked = !editable || conflict || pending !== undefined;
-  // Wide layouts pack saved cards into rows by width and stack short cards beside long ones (#1658). Cards stay flat
-  // grid children in saved order; the Phone arrangement and narrow screens stack every card at its content height.
-  const packable = shown.flatMap(entry => {
-    const definition = savedHomeCard(entry.widget, catalog);if (definition === undefined) return [];
-    const size = entry.widget === 'art' ? 'large' as const : definition.sizes.includes(entry.size) ? entry.size : definition.sizes[0] ?? 'medium';
-    return [{id: entry.widget, size, height: homeCardHeight(definition), tall: definition.tall === true}];
-  });
-  const packed = breakpoint === 'phone' ? undefined
-    : gridPlacements(packHomeRows(packable, space.width, space.gap), space.width, space.gap, id => packable.find(card => card.id === id)?.tall === true);
   const categories = ['All', ...new Set(catalog.map(card => card.category))];
   const query = search.trim().toLocaleLowerCase();
   const matches = catalog.filter(card => (category === 'All' || card.category === category) && `${card.name} ${card.category}`.toLocaleLowerCase().includes(query));
@@ -142,16 +120,12 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
         const existing = entries.find(entry => entry.widget === card.id);
         return <div key={card.id} role="listitem"><HomeCardIcon card={card}/><span><strong>{card.name}</strong><small>{card.reason ?? card.category}</small></span><button type="button" className="secondary" aria-label={`${existing?.hidden === false ? 'Added' : existing?.hidden === true ? 'Show' : 'Add'} ${card.name}`} disabled={locked || card.reason !== undefined || existing?.hidden === false || (['desktop', 'phone'] as const).some(key => layouts[key].length >= 128 && !layouts[key].some(entry => entry.widget === card.id))} onClick={() => {change(addHomeCard(layouts, breakpoint, card));setMessage(`${card.name} added.`);}}>{existing?.hidden === false ? 'Added' : existing?.hidden === true ? 'Show' : 'Add'}</button></div>;
       })}</div></section>}
-    <div className="home-layout-grid" ref={grid} data-packed={packed !== undefined} style={packed === undefined ? undefined : {gridTemplateRows: packed.tracks.map(track => track === 'free' ? 'auto' : 'minmax(var(--home-short-height), auto)').join(' ')}}>{shown.map((entry, index) => {
+    <div className="home-layout-grid">{shown.map((entry, index) => {
       const definition = savedHomeCard(entry.widget, catalog);if (definition === undefined) return null;
       const size = definition.sizes.includes(entry.size) ? entry.size : definition.sizes[0] ?? 'medium';
       const placed = entries.some(value => value.widget === entry.widget);
       const required = protectedCard(entry.widget), reason = required ? 'This card stays visible while it needs attention.' : undefined;
-      const place = packed?.cards.get(entry.widget), height = homeCardHeight(definition);
-      // Held to a standard height: packed on the wide grid, not alone in a column of one and not tall.
-      const held = place !== undefined && !place.free && definition.tall !== true;
-      return <div key={entry.widget} className={`home-layout-card home-size-${size} home-height-${height}${entry.widget === 'art' ? ' home-art-row' : ''}${definition.tall === true ? ' home-tall' : ''}${held ? '' : ' home-free'}`} data-home-card={entry.widget} data-home-height={height} data-home-track={place?.row} data-home-rows={place?.rows}
-        style={place === undefined ? undefined : {gridColumn: `${String(place.column)} / span ${String(place.columns)}`, gridRow: `${String(place.row)} / span ${String(place.rows)}`}} onDragOver={event => {if (editing && drag.current !== undefined) event.preventDefault();}} onDrop={event => {
+      return <div key={entry.widget} className={`home-layout-card home-size-${size}${entry.widget === 'art' ? ' home-art-row' : ''}`} data-home-card={entry.widget} onDragOver={event => {if (editing && drag.current !== undefined) event.preventDefault();}} onDrop={event => {
         if (!editing || drag.current === undefined) return;event.preventDefault();event.stopPropagation();const source = drag.current;drag.current = undefined;move(source, entry.widget);
       }}>
         {editing && <div className="home-card-editor" role="group" aria-label={`Edit ${definition.name}`}>
@@ -167,7 +141,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
           <button type="button" className="secondary" aria-label={entry.widget === 'art' ? 'Remove Art reservation and allow automatic placement' : `Remove ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts);next[breakpoint] = next[breakpoint].filter(value => value.widget !== entry.widget);change(next);focusAfterRemoval(index);}}>{entry.widget === 'art' ? 'Auto' : '×'}</button>
           {required && <small>{reason}</small>}
         </div>}
-        <div className="home-card-content" inert={editing && entry.widget !== 'art'}><StandardHeight.Provider value={held}>{entry.widget === 'art' ? <HomeArtSlot automatic={false} format={entry.art?.format ?? 'auto'} home={host}>{artControls(entry, entry.art?.pinned === false)}<div className="home-art-content" inert={editing}>{renderCard(definition, entry, [])}</div></HomeArtSlot> : definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, {...entry, size}, shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];}))}</StandardHeight.Provider></div>
+        <div className="home-card-content" inert={editing && entry.widget !== 'art'}>{entry.widget === 'art' ? <HomeArtSlot automatic={false} format={entry.art?.format ?? 'auto'} home={host}>{artControls(entry, entry.art?.pinned === false)}<div className="home-art-content" inert={editing}>{renderCard(definition, entry, [])}</div></HomeArtSlot> : definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, {...entry, size}, shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];}))}</div>
       </div>;
     })}</div>
     {automaticArt && <HomeArtSlot automatic format={artEntry?.art?.format ?? 'auto'} home={host}>{artControls(artEntry, true)}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></HomeArtSlot>}

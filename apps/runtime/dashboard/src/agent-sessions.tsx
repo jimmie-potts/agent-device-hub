@@ -42,7 +42,7 @@ export function AgentSessions({records, synced, live, control, now}: {
     </div>
     {shown.size === 0 && <div className="empty"><h3>{filtering ? 'No matching sessions' : synced ? 'No sessions observed' : 'Sessions not synced yet'}</h3>
       <p>{filtering ? 'Change the filters to see other sessions.' : 'Sessions appear when the core reports them.'}</p></div>}
-    <PagedList keys={keys} pageSize={pageSize} label="Agent sessions" expandAlone={false}
+    <PagedList keys={keys} pageSize={pageSize} label="Agent sessions"
       note={waiting > pageSize ? `${String(waiting)} need you, on the first ${String(Math.ceil(waiting / pageSize))} pages` : undefined}>{visible =>
       <div className="sessions agent-grid" ref={grid}>{rows.map(row => {
         const key = `${row.id}:${String(row.generation)}`;

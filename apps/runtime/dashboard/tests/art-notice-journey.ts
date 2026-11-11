@@ -9,8 +9,7 @@ import {feed, startWorld} from './harness.ts';
 export async function artNoticeJourney(): Promise<void> {
   const clock = manualClock(new Date(2026, 10, 5, 8, 0).getTime());
   const world = await startWorld({art: true, artSchedule: {clock, scheduler: clock.scheduler, choice: () => 0}});
-  // Art reacts only while visible; standard-height Home rows (#1658) need a taller viewport to keep it in view.
-  const browser = await chromium.launch({headless: true}), context = await browser.newContext({viewport: {width: 1440, height: 2000}});
+  const browser = await chromium.launch({headless: true}), context = await browser.newContext({viewport: {width: 1440, height: 1100}});
   const page = await context.newPage(), artifacts = await browserArtifactDirectory(), errors: string[] = [];
   page.setDefaultTimeout(12_000);page.on('pageerror', error => {errors.push(error.message);});
   const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;

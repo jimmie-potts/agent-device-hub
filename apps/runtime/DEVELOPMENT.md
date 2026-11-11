@@ -661,6 +661,16 @@ layout at 320, 390 and 1440 px. Run it after the root build with an
 outside-checkout `TMPDIR`; optional `DASHBOARD_RECEIPTS` keeps screenshots private.
 These synthetic checks change no installed routines or devices.
 
+Paged Home lists (#1658) extend the same Home editor chain, so hosted smoke and
+the full browser suite run them. After the root build,
+`node apps/runtime/dashboard/tests/home-paging.browser.ts` checks Inbox paging
+with the total count and card height, keyboard paging, items opened in place on a
+later page, last-item dismissal, the Check Inbox landing page, focus after a
+background removal, attention-first Agent status, Timeline reset, saved layouts
+and 375 px width. `node --test apps/runtime/dashboard/tests/paging.test.ts`
+covers the page arithmetic. Synthetic records only; with `DASHBOARD_RECEIPTS` set
+it saves private 2x screenshots.
+
 Home row balance (#1311) extends the existing Home editor browser journey,
 already included in hosted smoke and the full browser suite. After the root
 build, `node apps/runtime/dashboard/tests/home-balance.browser.ts` checks one,
@@ -669,20 +679,6 @@ mixed sizes, hidden cards, independent phone order and editor preview.
 It uses synthetic saved-layout metadata only; no device command or installed
 state is selected. Use an outside-checkout `TMPDIR` and optional private
 `DASHBOARD_RECEIPTS` screenshots. Keep the shared and full browser checks below.
-
-Two standard Home card heights and list paging (#1658) extend the same Home
-editor chain, so hosted smoke and the full browser suite run them. After the root
-build, `node apps/runtime/dashboard/tests/home-card-heights.browser.ts` checks
-that a long card is two short heights plus the gap, cards in a track line up, and
-two short cards stack beside a long one at Small, Standard and Wide with an Inbox
-of 0, 1 and 13 items, and beside a Pixoo and a light card. At 700, 820, 900 and
-1100 px it checks that a card alone in its row takes its content height. It also
-checks attention-first Agent status paging, focus that has left a list, and Inbox paging with the total count, expanded-item reach,
-dismissal of a page's last item, focus after paging and dismissal, Agent status
-and Timeline paging through the shared component, saved layouts and narrow
-content height. `node --test apps/runtime/dashboard/tests/paging.test.ts apps/runtime/dashboard/tests/home-packing.test.ts`
-covers the page arithmetic, catalog heights, the art opt-out and row packing. Synthetic records only;
-with `DASHBOARD_RECEIPTS` set it saves private 2x screenshots.
 
 The television journey (#1112) runs the existing shell at a 1,920 × 1,080
 viewport from the keyboard only, as a TV browser presents the D-pad. After the

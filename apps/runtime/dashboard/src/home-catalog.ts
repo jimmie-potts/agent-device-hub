@@ -3,20 +3,14 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {HomeArrangements, HomePlacement, LightingLayoutRecord, LightingSelection, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import type {RuntimeData} from './runtime-feeds.ts';
 import {cardsFor, emptyLightingLayout, lightingDevices, selectionKey} from './lighting.ts';
-import {homeLayout, widgetCatalog, widgetDefinition, type WidgetHeight, type WidgetSize} from './widgets.ts';
+import {homeLayout, widgetCatalog, widgetDefinition, type WidgetSize} from './widgets.ts';
 
 type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; instance: string} | {kind: 'light'; selection: LightingSelection} | {kind: 'unavailable'};
-/**
- * `height` is the card's standard Home height (#1658): widget cards carry their catalog height, and device, light, room
- * and Music cards are long. `tall` marks a card the widget catalog lets exceed the long height (art).
- */
-export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; height: WidgetHeight; source: CardSource; reason?: string; defaultSelected: boolean; tall?: true};
-/** A card whose source is unavailable shows only its name and reason, which fits the short height. */
-export const homeCardHeight = (card: HomeCardDefinition): WidgetHeight => card.source.kind === 'unavailable' ? 'short' : card.height;
+export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean};
 const ordinarySizes: readonly WidgetSize[] = ['medium', 'large'];
 export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardDefinition[] {
   // Roborock and Volcano metadata describe each existing device placement, not a second default card.
-  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock' && widget.id !== 'volcano').map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, height: widget.height, source: {kind: 'core'}, defaultSelected: !['art', 'wispr', 'duck-latest', 'reachy', 'timeline', 'music-visualizer'].includes(widget.id), ...(widget.tall === true ? {tall: true as const} : {})}));
+  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock' && widget.id !== 'volcano').map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: !['art', 'wispr', 'duck-latest', 'reachy', 'timeline', 'music-visualizer'].includes(widget.id)}));
   // The visualizer stays addable while measurement is off; the placed card rests and says why.
   const visualizer = result.find(card => card.id === 'music-visualizer');
   if (visualizer !== undefined) visualizer.category = 'Audio';
@@ -51,7 +45,7 @@ export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardD
   for (const card of lightCards) {
     const id = `light:${selectionKey(card.selection)}`;
     if (result.some(value => value.id === id)) continue;
-    result.push({id, name: card.name, category: card.selection.kind === 'room' ? 'Rooms' : 'Lights', sizes: ordinarySizes, height: 'long',
+    result.push({id, name: card.name, category: card.selection.kind === 'room' ? 'Rooms' : 'Lights', sizes: ordinarySizes,
       source: {kind: 'light', selection: card.selection}, defaultSelected: selected.has(selectionKey(card.selection)),
       ...(layoutCopy?.synced !== true ? {reason: 'Lighting composition is unavailable or stale.'} : {})});
   }
@@ -61,15 +55,15 @@ export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardD
       result.push({id: `device:${copy.owner}:${device.id}`, name: device.label ?? device.id,
         category: device.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' ? 'Cleaning' : device.kind === 'wemo' ? 'Plugs' : device.kind === 'pixoo' || device.kind === 'tidbyt' ? 'Displays' : 'Devices',
         sizes: device.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' ? widgetDefinition('roborock')?.sizes ?? ordinarySizes : device.kind === 'volcano' && copy.owner === 'bunny/modules/volcano' ? widgetDefinition('volcano')?.sizes ?? ordinarySizes : ordinarySizes,
-        height: 'long', source: {kind: 'device', owner: copy.owner, instance: device.id}, defaultSelected: true, ...(!connected || !copy.synced ? {reason: 'Device records are unavailable or stale.'} : {})});
+        source: {kind: 'device', owner: copy.owner, instance: device.id}, defaultSelected: true, ...(!connected || !copy.synced ? {reason: 'Device records are unavailable or stale.'} : {})});
     }
-    if (copy.family === 'playback') for (const playback of copy.records as readonly PlaybackState[]) result.push({id: `music:${copy.owner}:${playback.id}`, name: `Music · ${playback.id}`, category: 'Audio', sizes: ordinarySizes, height: 'long',
+    if (copy.family === 'playback') for (const playback of copy.records as readonly PlaybackState[]) result.push({id: `music:${copy.owner}:${playback.id}`, name: `Music · ${playback.id}`, category: 'Audio', sizes: ordinarySizes,
       source: {kind: 'music', owner: copy.owner, instance: playback.id}, defaultSelected: true, ...(!connected || !copy.synced ? {reason: 'Playback records are unavailable or stale.'} : {})});
   }
-  if (lighting.rooms.length === 0) result.push({id: 'rooms-setup', name: 'Rooms', category: 'Rooms', sizes: ordinarySizes, height: 'short', source: {kind: 'unavailable'}, defaultSelected: false, reason: 'Create rooms on the Rooms page first.'});
-  if (!result.some(card => card.source.kind === 'device' && card.source.owner === 'bunny/modules/roborock')) result.push({id: 'module:roborock', name: 'Roborock', category: 'Cleaning', sizes: widgetDefinition('roborock')?.sizes ?? ordinarySizes, height: 'long', source: {kind: 'core'}, defaultSelected: false});
+  if (lighting.rooms.length === 0) result.push({id: 'rooms-setup', name: 'Rooms', category: 'Rooms', sizes: ordinarySizes, source: {kind: 'unavailable'}, defaultSelected: false, reason: 'Create rooms on the Rooms page first.'});
+  if (!result.some(card => card.source.kind === 'device' && card.source.owner === 'bunny/modules/roborock')) result.push({id: 'module:roborock', name: 'Roborock', category: 'Cleaning', sizes: widgetDefinition('roborock')?.sizes ?? ordinarySizes, source: {kind: 'core'}, defaultSelected: false});
   for (const [module, name, category] of [['pixoo', 'Pixoo', 'Displays'], ['tidbyt', 'Tidbyt', 'Displays'], ['wemo', 'Wemo', 'Plugs'], ['lifx', 'LIFX', 'Lights'], ['nanoleaf', 'Nanoleaf', 'Lights'], ['playback', 'Music', 'Audio']] as const) {
-    if (!result.some(card => ('owner' in card.source && card.source.owner === `bunny/modules/${module}`) || (card.source.kind === 'light' && devices.some(device => device.owner === `bunny/modules/${module}`)))) result.push({id: `module:${module}`, name, category, sizes: ordinarySizes, height: 'short', source: {kind: 'unavailable'}, defaultSelected: false, reason: 'No configured source is available.'});
+    if (!result.some(card => ('owner' in card.source && card.source.owner === `bunny/modules/${module}`) || (card.source.kind === 'light' && devices.some(device => device.owner === `bunny/modules/${module}`)))) result.push({id: `module:${module}`, name, category, sizes: ordinarySizes, source: {kind: 'unavailable'}, defaultSelected: false, reason: 'No configured source is available.'});
   }
   const seen = new Set<string>();
   return result.filter(card => {if (seen.has(card.id)) return false;seen.add(card.id);return true;});
@@ -78,12 +72,12 @@ export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardD
 /** Missing configured instances remain distinguishable from removed widget definitions. */
 export function savedHomeCard(id: string, catalog: readonly HomeCardDefinition[]): HomeCardDefinition | undefined {
   const current = catalog.find(card => card.id === id);if (current !== undefined) return current;
-  if (id === 'module:roborock') return {id, name: 'Roborock', category: 'Cleaning', sizes: widgetDefinition('roborock')?.sizes ?? ordinarySizes, height: 'long', source: {kind: 'core'}, defaultSelected: false};
+  if (id === 'module:roborock') return {id, name: 'Roborock', category: 'Cleaning', sizes: widgetDefinition('roborock')?.sizes ?? ordinarySizes, source: {kind: 'core'}, defaultSelected: false};
   const vacuum = /^device:bunny\/modules\/roborock:([a-z0-9-]+)$/.exec(id)?.[1];
-  if (vacuum !== undefined) return {id, name: 'Roborock', category: 'Cleaning', sizes: widgetDefinition('roborock')?.sizes ?? ordinarySizes, height: 'long', source: {kind: 'device', owner: 'bunny/modules/roborock', instance: vacuum}, defaultSelected: false};
+  if (vacuum !== undefined) return {id, name: 'Roborock', category: 'Cleaning', sizes: widgetDefinition('roborock')?.sizes ?? ordinarySizes, source: {kind: 'device', owner: 'bunny/modules/roborock', instance: vacuum}, defaultSelected: false};
   const volcano = /^device:bunny\/modules\/volcano:([a-z0-9-]+)$/.exec(id)?.[1];
-  if (volcano !== undefined) return {id, name: 'Volcano', category: 'Devices', sizes: widgetDefinition('volcano')?.sizes ?? ordinarySizes, height: 'long', source: {kind: 'device', owner: 'bunny/modules/volcano', instance: volcano}, defaultSelected: false};
-  if (/^(device|music):bunny\/modules\/[a-z0-9-]+:[a-z0-9-]+$/.test(id) || /^light:(device|room|group):[a-z0-9-]+$/.test(id)) return {id, name: id.split(':').at(-1) ?? id, category: 'Unavailable', sizes: ordinarySizes, height: 'short', source: {kind: 'unavailable'}, reason: 'This saved source is unavailable.', defaultSelected: false};
+  if (volcano !== undefined) return {id, name: 'Volcano', category: 'Devices', sizes: widgetDefinition('volcano')?.sizes ?? ordinarySizes, source: {kind: 'device', owner: 'bunny/modules/volcano', instance: volcano}, defaultSelected: false};
+  if (/^(device|music):bunny\/modules\/[a-z0-9-]+:[a-z0-9-]+$/.test(id) || /^light:(device|room|group):[a-z0-9-]+$/.test(id)) return {id, name: id.split(':').at(-1) ?? id, category: 'Unavailable', sizes: ordinarySizes, source: {kind: 'unavailable'}, reason: 'This saved source is unavailable.', defaultSelected: false};
   return undefined;
 }
 export function defaultHomeArrangements(catalog: readonly HomeCardDefinition[]): HomeArrangements {
