@@ -69,19 +69,34 @@ export type SyncAnswer =
   | {status: 'rejected'; requestId: string; error: ErrorBody};
 
 /**
+ * A transport's word that a sync request met a lost stream: it was refused `unavailable` while the stream it went out
+ * under was lost (Hub #1700). The transport tells every subscription of the gap once its stream is back, and that notice
+ * starts the copy's next request, so a later sync waits for it instead of ending the copy. A first sync is refused with
+ * `error`. It is the transport's own answer to the copy, never a message or an edge's answer.
+ */
+export type SyncInterrupted = {status: 'interrupted'; requestId: string; error: ErrorBody};
+
+/**
  * One sync request as the copy sends it. The request message carries `trace` as its own trace context. `signal` aborts
  * when the copy closes, and the transport then withdraws the request. `owner`, when the copy names one, addresses the
  * request, as a routing key addresses a command; the message itself does not carry it.
  */
-export type OutgoingSync = {families: readonly string[]; requestId: string; timeoutMs: number; trace: TraceContext; signal: AbortSignal; owner?: string};
+export type OutgoingSync = {
+  families: readonly string[]; requestId: string; timeoutMs: number; trace: TraceContext; signal: AbortSignal; owner?: string;
+  /** True for a later sync of a copy that has synced, which a transport may answer `interrupted`; false for its first. */
+  resync?: boolean;
+};
 
 /** What sync needs from a transport. */
 export type SyncTransport = {
   /** The clock, in epoch milliseconds. */
   now: () => number;
   subscribe: (pattern: string, handler: Handler<Record<string, unknown>>, options: SubscribeOptions) => Promise<Subscription>;
-  /** Sends one sync request and resolves with its answer, or a refusal at its deadline. */
-  request: (request: OutgoingSync) => Promise<SyncAnswer>;
+  /**
+   * Sends one sync request and resolves with its answer, or a refusal at its deadline. Only a transport whose stream
+   * reconnects, and then tells every subscription of the gap, may resolve with `interrupted`.
+   */
+  request: (request: OutgoingSync) => Promise<SyncAnswer | SyncInterrupted>;
   /** Reports an error that no caller hears about, such as a handler that threw. */
   report: (error: unknown) => void;
   /** Hears of each overflow that restarts the copy's sync. */
@@ -185,7 +200,7 @@ export async function startSync<T extends object>(
 
 type Held<T> = {entity: EntityRef; revision: number; message: Message<T>};
 /** An answer and the copy's generation when its request was sent. */
-type Answered = {answer: SyncAnswer; generation: number};
+type Answered = {answer: SyncAnswer | SyncInterrupted; generation: number};
 
 class Copy<T extends object> implements SyncedCopy<T> {
   readonly #transport: SyncTransport;
@@ -360,10 +375,10 @@ class Copy<T extends object> implements SyncedCopy<T> {
     this.#lastSent = ids;
     const inflight = new AbortController();
     this.#inflight = inflight;
-    let sent: Promise<SyncAnswer>;
+    let sent: Promise<SyncAnswer | SyncInterrupted>;
     try {
       const owner = this.#owner === undefined ? {} : {owner: this.#owner};
-      sent = this.#transport.request({families: [...this.#families], requestId, timeoutMs, trace, signal: inflight.signal, ...owner});
+      sent = this.#transport.request({families: [...this.#families], requestId, timeoutMs, trace, signal: inflight.signal, ...owner, resync: this.#settle === undefined});
     } catch (error) {
       // A transport that throws instead of rejecting takes the same path.
       sent = Promise.reject(error);
@@ -428,7 +443,15 @@ class Copy<T extends object> implements SyncedCopy<T> {
     return {status: 'rejected', requestId, error: errorBody('unavailable', {requestId, traceId: traceIdOf(answer.completed.traceparent), detail})};
   }
 
-  async #complete({answer: given, generation}: Answered): Promise<void> {
+  async #complete({answer: reply, generation}: Answered): Promise<void> {
+    if (reply.status === 'interrupted' && this.#settle === undefined) {
+      // A later sync that met a lost stream leaves the copy syncing, as the reconnect left it, with its last records. The
+      // transport tells every subscription of the gap once the stream is back, so the reconnect, under its own backoff,
+      // starts the next request; one that an overflow already wants goes out now (Hub #1700).
+      return;
+    }
+    // A first sync keeps its deadline: a request that met a lost stream is refused, as before.
+    const given: SyncAnswer = reply.status === 'interrupted' ? {status: 'rejected', requestId: reply.requestId, error: reply.error} : reply;
     // An overflow since this request was sent left a gap that its state may not cover; the next request replaces it.
     if (given.status === 'served' && generation !== this.#generation) return;
     const answer = this.#fromOwner(given);

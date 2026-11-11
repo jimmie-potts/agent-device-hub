@@ -1,7 +1,7 @@
 // The two transports the conformance suite runs against (Hub #883): the in-process bus, and remote participants that
 // reach the same bus through a RemoteEdge over SSE and HTTP on 127.0.0.1. Every participant comes wrapped by `checked`.
 import {randomBytes} from 'node:crypto';
-import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {once} from 'node:events';
 import {createServer, type Server, type ServerResponse} from 'node:http';
 import type {AddressInfo} from 'node:net';
@@ -103,8 +103,11 @@ export type EdgeSetup = {
   bus?: (options: BusOptions) => InProcessBus;
   /** Holds the `nth` call of a route, counted from 1, until the returned promise settles, before the edge sees it. */
   before?: (route: string, nth: number) => Promise<void> | undefined;
-  /** Answers the `nth` call of a route, counted from 1, with 503 before the edge sees it, as a runtime that is starting would. */
-  refuse?: (route: string, nth: number) => boolean;
+  /**
+   * Answers the `nth` call of a route, counted from 1, before the edge sees it: `true` with 503 and `unavailable`, as a
+   * runtime that is starting would, or an error body with 403 and that body.
+   */
+  refuse?: (route: string, nth: number) => boolean | ErrorBody;
   /** Every `onDiagnostic`, the bus's, the edge's and each remote client's, keeps its record and then throws. */
   failingDiagnostics?: boolean;
   /** Each source's permissions; a source left out may do anything (Hub #835). */
@@ -152,8 +155,11 @@ export async function startEdge({
     if (route === 'stream') onStream?.(response);
     const nth = (arrivals.get(route) ?? 0) + 1;
     arrivals.set(route, nth);
-    if (refuse?.(route, nth) === true) {
-      response.writeHead(503, {'content-type': 'application/json'}).end(JSON.stringify(errorBody('unavailable', {detail: 'the runtime is starting'})));
+    const refusal = refuse?.(route, nth) ?? false;
+    if (refusal !== false) {
+      request.resume();
+      const answer = refusal === true ? errorBody('unavailable', {detail: 'the runtime is starting'}) : refusal;
+      response.writeHead(refusal === true ? 503 : 403, {'content-type': 'application/json'}).end(JSON.stringify(answer));
       return;
     }
     request.once('end', () => { received.set(route, (received.get(route) ?? 0) + 1); });

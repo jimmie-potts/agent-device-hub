@@ -736,6 +736,194 @@ it('after a reconnect, a sync copy asks for no sync until every family is regist
   });
 });
 
+// A resync that meets a lost stream (Hub #1700). Each step waits for the call, change or backoff it names: the client's
+// backoff and deadlines run on a scheduler the test steps, and nothing waits on the clock.
+
+type Step = {delayMs: number; run: () => void};
+/** A scheduler that holds every callback until the test runs it; `next` gives the first held one that `matches`, once there is one. */
+function stepped(): Scheduler & {next: (matches: (delayMs: number) => boolean) => Promise<Step>; holds: (matches: (delayMs: number) => boolean) => boolean} {
+  const held = new Set<Step>();
+  const waiting = new Set<{matches: (delayMs: number) => boolean; take: (step: Step) => void}>();
+  return {
+    after: (delayMs, callback) => {
+      const step: Step = {delayMs, run: () => { if (held.delete(step)) callback(); }};
+      held.add(step);
+      for (const waiter of waiting) {
+        if (!waiter.matches(delayMs)) continue;
+        waiting.delete(waiter);
+        waiter.take(step);
+        break;
+      }
+      return () => { held.delete(step); };
+    },
+    next: matches => {
+      for (const step of held) if (matches(step.delayMs)) return Promise.resolve(step);
+      return new Promise(take => { waiting.add({matches, take}); });
+    },
+    holds: matches => [...held].some(step => matches(step.delayMs)),
+  };
+}
+/** The reconnect's backoff, which starts at the test edge's 20 ms, as against a sync's deadline. */
+const backoff = (delayMs: number): boolean => delayMs < 1000;
+/** A 5 s sync request's deadline: its `timeoutMs` and the requester's grace. */
+const syncDeadline = (delayMs: number): boolean => delayMs === 5000 + 1000;
+
+/** Makes the client's next call of `route` fail before it leaves, as a call to an edge that stopped does; resolves once it has. */
+function unreachable(context: TestContext, route: string): Promise<void> {
+  const reach = globalThis.fetch.bind(globalThis);
+  const failed = deferred<undefined>();
+  let spent = false;
+  context.mock.method(globalThis, 'fetch', (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (spent || !url.endsWith(`/${route}`)) return reach(input, init);
+    spent = true;
+    failed.resolve(undefined);
+    return Promise.reject(new TypeError('fetch failed'));
+  });
+  return failed.promise;
+}
+
+/** A copy's handler that keeps each change; `next` resolves with the next `synced` or `failed` after it is called. */
+function watched(): {changes: string[]; details: string[]; handler: (change: SyncChange<Session>) => void; next: () => Promise<string>} {
+  const changes: string[] = [];
+  /** The detail of each `failed` change. */
+  const details: string[] = [];
+  let settle: ((shown: string) => void) | undefined;
+  return {
+    changes,
+    details,
+    handler: change => {
+      if (change.type === 'failed') details.push(change.error.error.detail ?? '');
+      const shown = change.type === 'failed' ? `failed ${change.error.error.code}` : change.type === 'synced' ? `synced @${change.message.data.revision}`
+        : change.type === 'updated' ? `updated ${change.entity.id}@${change.message.data.revision}` : `removed ${change.entity.id}`;
+      changes.push(shown);
+      if (change.type !== 'synced' && change.type !== 'failed') return;
+      const waiting = settle;
+      settle = undefined;
+      waiting?.(shown);
+    },
+    next: () => new Promise(resolve => { settle = resolve; }),
+  };
+}
+
+/**
+ * The owner's state at a revision the test sets, a remote copy of it on a stepped scheduler, and the next `synced` or
+ * `failed` the copy hears after its first sync.
+ */
+async function followed(edge: Edge): Promise<{clock: ReturnType<typeof stepped>; copy: ReturnType<typeof watched>; ended: Promise<string>; at: (revision: number) => void}> {
+  let revision = 1;
+  await checked(edge.bus.connect('bunny/core')).serveSync([FAMILY], () => ({revision, states: [session('s1', revision)]}));
+  const clock = stepped();
+  const copy = watched();
+  const consumer = await edge.connect('bunny/wall', {scheduler: clock});
+  assert.equal((await consumer.sync<Session>([FAMILY], copy.handler, {timeoutMs: 5000})).status, 'synced');
+  return {clock, copy, ended: copy.next(), at: next => { revision = next; }};
+}
+
+/**
+ * Two restarts in quick succession, the second while the reconnect from the first registers the copy's family again
+ * (its second subscribe call), as in #1697. Resolves once the client has heard of the second loss and the resync that
+ * the first reconnect's gap notice starts has its answer; gives the second reconnect's backoff.
+ */
+async function straddled(edge: Edge, clock: ReturnType<typeof stepped>, registering: Promise<undefined>, release: () => void, answered: Promise<void>): Promise<Step> {
+  edge.edge.disconnect('bunny/wall');
+  (await clock.next(backoff)).run();
+  await registering;
+  edge.edge.disconnect('bunny/wall');
+  const second = await clock.next(backoff);
+  release();
+  await answered;
+  await flush();
+  return second;
+}
+
+it('a reconnect that straddles a second restart keeps the copy: its resync that meets the lost stream waits for the next reconnect', context => {
+  const registering = deferred<undefined>();
+  const release = deferred<undefined>();
+  return withEdge({before: (route, nth) => {
+    if (route !== 'subscribe' || nth !== 2) return undefined;
+    registering.resolve(undefined);
+    return release.promise;
+  }}, async edge => {
+    const {clock, copy, ended, at} = await followed(edge);
+    // The runtime is down for the second restart, so the resync cannot reach it.
+    const second = await straddled(edge, clock, registering.promise, () => { release.resolve(undefined); }, unreachable(context, 'sync'));
+    assert.deepEqual(copy.changes, ['updated s1@1', 'synced @1'], 'the copy neither fails nor takes anything while its stream is away');
+    // The runtime is back with a newer state; the next reconnect's gap notice starts the copy's next resync.
+    at(2);
+    second.run();
+    assert.equal(await ended, 'synced @2');
+    assert.deepEqual(copy.changes, ['updated s1@1', 'synced @1', 'updated s1@2', 'synced @2']);
+  });
+});
+
+it('a resync refused with any code but unavailable during a reconnect still ends the copy', () => {
+  const registering = deferred<undefined>();
+  const release = deferred<undefined>();
+  const answered = deferred<undefined>();
+  return withEdge({
+    before: (route, nth) => {
+      if (route !== 'subscribe' || nth !== 2) return undefined;
+      registering.resolve(undefined);
+      return release.promise;
+    },
+    refuse: (route, nth) => {
+      if (route !== 'sync' || nth !== 2) return false;
+      answered.resolve(undefined);
+      return errorBody('forbidden', {detail: 'a synthetic refusal'});
+    },
+  }, async edge => {
+    const {clock, ended} = await followed(edge);
+    const second = await straddled(edge, clock, registering.promise, () => { release.resolve(undefined); }, answered.promise.then(() => {}));
+    // The copy ends at once; closing its subscriptions waits for the stream, so the handler hears of it once that is back.
+    second.run();
+    assert.equal(await ended, 'failed forbidden');
+  });
+});
+
+it('a resync that cannot reach the edge waits to hear whether its stream was lost, and syncs again after the reconnect', context => withEdge({}, async edge => {
+  const {clock, copy, ended, at} = await followed(edge);
+  const refused = unreachable(context, 'sync');
+  edge.edge.disconnect('bunny/wall');
+  (await clock.next(backoff)).run();
+  // The reconnect's gap notice starts a resync that cannot reach the edge, as when the runtime stops with the call and
+  // the stream both open, and the client hears of the lost stream only afterwards.
+  await refused;
+  await flush();
+  assert.deepEqual(copy.changes, ['updated s1@1', 'synced @1'], 'the copy waits while its stream still looks open');
+  edge.edge.disconnect('bunny/wall');
+  at(2);
+  (await clock.next(backoff)).run();
+  assert.equal(await ended, 'synced @2');
+}));
+
+it('a resync that cannot reach the edge while its stream stays open ends the copy unavailable at the request\'s deadline', context => withEdge({}, async edge => {
+  const {clock, copy, ended} = await followed(edge);
+  const refused = unreachable(context, 'sync');
+  edge.edge.disconnect('bunny/wall');
+  (await clock.next(backoff)).run();
+  await refused;
+  await flush();
+  assert.deepEqual(copy.changes, ['updated s1@1', 'synced @1']);
+  (await clock.next(syncDeadline)).run();
+  assert.equal(await ended, 'failed unavailable');
+  assert.deepEqual(copy.details, ['the edge could not be reached'], 'the copy hears the refusal the client first heard, not the deadline\'s');
+}));
+
+it('a first sync that cannot reach the edge while its stream is open is refused at once, without waiting for its deadline', context => withEdge({}, async edge => {
+  await checked(edge.bus.connect('bunny/core')).serveSync([FAMILY], () => ({revision: 1, states: [session('s1', 1)]}));
+  const clock = stepped();
+  const consumer = await edge.connect('bunny/wall', {scheduler: clock});
+  const refused = unreachable(context, 'sync');
+  const first = consumer.sync<Session>([FAMILY], () => {}, {timeoutMs: 5000});
+  await refused;
+  await flush();
+  // The request has its answer, so its deadline is cancelled; a request still waiting would hold it.
+  assert.equal(clock.holds(syncDeadline), false, 'the first sync waits for nothing');
+  const result = await first;
+  assert.equal(result.status === 'rejected' ? `${result.error.error.code}: ${result.error.error.detail ?? ''}` : result.status, 'unavailable: the edge could not be reached');
+}));
+
 it('a command sent again while its first forward still waits never reaches the responder: the edge refuses it as duplicate-conflict', () => withEdge({}, async edge => {
   const responder = checked(await edge.connect('bunny/wall'));
   const holding = deferred<Reply>();
