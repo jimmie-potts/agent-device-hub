@@ -1,7 +1,6 @@
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {Ajv2020} from 'ajv/dist/2020.js';
-import {compileOnFirstUse} from './compile-on-first-use.js';
+import {Ajv2020, type ValidateFunction} from 'ajv/dist/2020.js';
 import {MAX_BYTES,MAX_DEPTH,MAX_NODES,validateEvent as validateEarlierEvent,type Envelope as EarlierEnvelope} from './index.js';
 
 // Lifecycle 1.2 (Hub #784) lives beside the frozen 1.0/1.1 module: `index.js` decides whether a
@@ -17,7 +16,9 @@ export type Envelope = Omit<EarlierEnvelope,'apiVersion'> & {
 };
 export type Validation = {ok:true; value:Envelope}|{ok:false; code:'invalid-event'};
 const schema:unknown = JSON.parse(readFileSync(new URL('../schemas/lifecycle-v1.2.schema.json', import.meta.url), 'utf8'));
-const check = compileOnFirstUse(() => new Ajv2020({strict:true, allErrors:false}).compile(schema as object));
+// Compiled on first use, not at import (Hub #1686).
+let compiled: ValidateFunction | undefined;
+const check = (value:unknown):boolean => (compiled ??= new Ajv2020({strict:true, allErrors:false}).compile(schema as object))(value);
 
 // The same plain-JSON bounds as the 1.0/1.1 module, applied before schema evaluation.
 function bounded(value:unknown, depth=0, budget={nodes:0, bytes:0}):boolean {

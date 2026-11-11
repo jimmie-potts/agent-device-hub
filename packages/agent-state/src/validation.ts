@@ -3,22 +3,17 @@ import {Ajv2020} from 'ajv/dist/2020.js';
 import {validateEvent} from '@jimmie-potts/agent-lifecycle-contracts';
 import {identityKey} from './memory-storage.js';
 import {childCounts} from './children.js';
-import {compileOnFirstUse} from './compile-on-first-use.js';
 import type {DurableState,Session,Snapshot} from './types.js';
 
 const MAX_BYTES=16*1024*1024,MAX_NODES=1000000;
-let ajv:Ajv2020|undefined;
-const schemaCheck=(name:string)=>{
-  const schema:unknown=JSON.parse(readFileSync(new URL(`../schemas/${name}.schema.json`,import.meta.url),'utf8'));
-  return compileOnFirstUse(()=>(ajv??=new Ajv2020({strict:true,allErrors:false})).compile(schema as object));
-};
-const durableCheck=schemaCheck('durable-v1');
-const snapshotCheck=schemaCheck('snapshot-v1');
-const durableV2Check=schemaCheck('durable-v2');
-const snapshotV11Check=schemaCheck('snapshot-v1.1');
+const ajv=new Ajv2020({strict:true,allErrors:false});
+const durableCheck=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/durable-v1.schema.json',import.meta.url),'utf8')));
+const snapshotCheck=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/snapshot-v1.schema.json',import.meta.url),'utf8')));
+const durableV2Check=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/durable-v2.schema.json',import.meta.url),'utf8')));
+const snapshotV11Check=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/snapshot-v1.1.schema.json',import.meta.url),'utf8')));
 
-const durableV21Check=schemaCheck('durable-v2.1');
-const snapshotV12Check=schemaCheck('snapshot-v1.2');
+const durableV21Check=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/durable-v2.1.schema.json',import.meta.url),'utf8')));
+const snapshotV12Check=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/snapshot-v1.2.schema.json',import.meta.url),'utf8')));
 
 // Reject accessors and non-JSON input before serialization, schema traversal or cloning.
 function bounded(value:unknown,depth=0,budget={nodes:0,bytes:0}):boolean {

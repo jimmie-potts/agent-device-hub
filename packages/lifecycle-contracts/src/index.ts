@@ -1,7 +1,6 @@
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {Ajv2020} from 'ajv/dist/2020.js';
-import {compileOnFirstUse} from './compile-on-first-use.js';
 
 export const ARTIFACT_VERSION = '1.1.0';
 export const API_VERSION = '1.0';
@@ -27,12 +26,12 @@ export type Envelope = {
 export type Validation = {ok:true; value:Envelope}|{ok:false; code:'invalid-event'};
 const schema = JSON.parse(readFileSync(new URL('../schemas/lifecycle-v1.schema.json', import.meta.url), 'utf8'));
 const metadataSchema = JSON.parse(readFileSync(new URL('../schemas/lifecycle-v1.1.schema.json', import.meta.url), 'utf8'));
-const metadataCheck = compileOnFirstUse(() => new Ajv2020({strict:true, allErrors:false}).compile(metadataSchema));
+const metadataCheck = new Ajv2020({strict:true, allErrors:false}).compile(metadataSchema);
 const displayPattern = new RegExp(metadataSchema.$defs.displayText.pattern,'u');
 export function validDisplayText(value:unknown, maximum=160):value is string {
   return typeof value==='string' && [...value].length<=maximum && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value) && displayPattern.test(value);
 }
-const check = compileOnFirstUse(() => new Ajv2020({strict:true, allErrors:false}).compile(schema));
+const check = new Ajv2020({strict:true, allErrors:false}).compile(schema);
 
 // Accept plain JSON only, before schema evaluation or serialization. Never return
 // Ajv errors: their paths/parameters can carry attacker-controlled field names.
