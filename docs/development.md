@@ -1610,7 +1610,12 @@ taken over with a printed line. When the pool kills a process for memory while
 a job runs, the command says so in one line. That is a failed run to retry, not
 a reason to raise the ceiling. A real Docker VM restart restarts the installed
 core, so recreation after one is observed only when the owner restarts the VM
-for other reasons. The six-job observation is recorded on Hub #1641.
+for other reasons. In one 25-minute run on 2026-11-11, with six commands kept
+running or waiting, admission let six jobs run at once for 140 seconds in total,
+at most 90 seconds in a row. It held starts back for 290 seconds because the load
+was at or above 8, and for 580 seconds because the start lock was held. The core
+stayed healthy, with health checks of at most 122 ms. The pool peaked at 2.75 GiB
+of `anon` and `shmem` with no memory kill. Hub #1641 records the details.
 
 ### Workspace audit
 
