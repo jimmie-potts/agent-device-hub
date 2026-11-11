@@ -535,6 +535,51 @@ On Linux they run, except that the `unshare` cases also skip on a host that refu
 an unprivileged user namespace. The other `:built` unit suites, the old dashboard's
 journeys and the Python-dependent tests have not been measured natively.
 
+### Catalog shards
+
+Tests inside one file run one after another, so `catalog.test.ts` sets the
+scenario suite's time however many workers it has (Hub #1674). Most of that time
+is the in-memory harness waiting. `BUNNY_SCENARIO_SHARD=<i>/<n>` makes the file
+generate only shard `i` of `n` of its scenario and transport pairs; without it the
+file generates every pair, with the same test names. The split
+(`tests/scenarios/shard.ts`) is round-robin over the catalog's ordered pairs, so
+each module's run of long scenarios is spread across the shards. The three
+structural tests run in shard 1 only, so the shards' totals add up to the
+unsharded run's. A selection that is not `<i>/<n>` with `1 <= i <= n` and `n` no
+more than the number of pairs fails the file with its reason.
+
+After the root build, run every shard at once:
+
+```bash
+npm run test:runtime:scenarios:shards
+npm run test:runtime:scenarios:shards -- --shards 2
+npm run test:runtime:scenarios:shards -- --shards 4 -- --test-name-pattern=art-
+npm run test:container -- --issue <n> --job shards --size wide -- test:runtime:scenarios:shards --shards 2
+```
+
+`scripts/scenario-shards.mjs` starts one `node --test` process per shard (4 unless
+`--shards` names another count, from 1 to 99) and one more that runs the suite's
+other test files once, each with one test file at a time. Options after a second
+`--` go to every process. Each output line starts with its process's label, such
+as `[shard 2/4]` or `[other files]`. The run ends with each process's exit status,
+wall time and totals, and the catalog shards' totals together, and exits with the
+first failing process's status, or 0. A process that cannot start ends with
+status 1 and a labelled message. Totals are read from each process's standard
+output only. Like `scripts/native-test.mjs` it sets `TMPDIR` to a new private
+directory under `/tmp` and removes it afterwards, whatever the outcome, and it
+passes SIGINT and SIGTERM on to every process. At four shards on the Mac the run
+averaged about 1.2 cores and peaked at about 2.75 GiB across the shard processes
+(Hub #1674). Inside a test container its
+processes share that container's memory, and each catalog process holds several
+hundred MiB: at the standard size even two shards were killed for memory, and the
+wide size ran two (Hub #1674). On the Mac each of its processes counts
+as one native suite under
+[Test work on the Mac](../../docs/development.md#test-work-on-the-mac), so the
+default run takes five slots.
+`node --test scripts/tests/scenario-shards.test.mjs` checks the runner, and
+`tests/scenario-shard.test.ts` in the unit suite checks the split and the refusal.
+Hosted CI keeps running `npm run test:runtime:scenarios:built`.
+
 ### Runtime verification runs
 
 Hub #920 adds the runtime adapter for the
