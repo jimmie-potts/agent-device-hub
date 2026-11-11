@@ -120,6 +120,12 @@ export type CoreOptions = {
   operationLimit?: number;
   /** Bounded schedule choice; deterministic fixture injection, never a runtime configuration field. */
   artScheduleChoice?: () => number;
+  /**
+   * The music capture part's monotonic clock in milliseconds, which it checks the context's wall clock against.
+   * Defaults to `performance.now()`. Tests that run the runtime on a manual clock pass one that advances with it; never
+   * a runtime configuration field.
+   */
+  monotonic?: () => number;
 };
 
 /** The consumer a source may acknowledge for: the last segment of its source, such as `pixoo` for `bunny/modules/pixoo`. */
@@ -338,7 +344,7 @@ class Core {
   /** The start under way, which a stop waits for so that an owner it opens late is shut down too. */
   #starting: Promise<void> | undefined;
 
-  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice}: CoreOptions, ownership?: CoreOwnership) {
+  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic}: CoreOptions, ownership?: CoreOwnership) {
     this.#sdk = context.sdk;
     this.#log = context.log;
     this.#clock = context.clock;
@@ -357,7 +363,7 @@ class Core {
       retain: command => this.#tracker.retainCore(command),
       complete: (tx, authority, result) => this.#tracker.completeOwnedCore(tx, authority, result),
       end: command => this.#tracker.endOperator(command),
-    }, context.scheduler);
+    }, context.scheduler, monotonic);
     this.#lighting = new MusicLightingPart({
       admit: command => this.#tracker.admitOperator(command),
       complete: (tx, command, result) => this.#tracker.completeCore(tx, command, result),

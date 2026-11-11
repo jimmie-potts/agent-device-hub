@@ -60,7 +60,9 @@ during a session leaves the core stopped until the next sign-in.
    replacement image and matching scripts manually, then follow
    [Replace an image](#replace-an-image). Preserve the previous image and latest
    state if the new start fails; do not assume an older reader can reopen changed
-   stores.
+   stores. The core store's history migration (#1740) applies here too: check the
+   state volume's free space against
+   [Core history fact log](../apps/runtime/UPGRADE.md#core-history-fact-log).
 6. For owner-selected recovery, preserve the failed/latest instance and state,
    state the snapshot's data gap and [restore into a separate empty instance](#restore-into-a-separate-empty-instance)
    at the archive's source revision. A partial restore stays stopped for inspection.

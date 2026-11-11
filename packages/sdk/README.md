@@ -1224,7 +1224,15 @@ HTTP status that fits its code.
   `edge.disconnected` as a warning with `capacity`. The client takes a stream
   that delivers nothing, heartbeats included, for `idleMs` (`IDLE_MS`, 45 s) as
   lost, reconnects and tells its subscriptions of the gap, so its copies sync
-  again. These timers run on `liveness`, which defaults to real timers that keep
+  again. The same limit bounds the wait from requesting a stream to its
+  response: an open that gets no response in time is dropped and fails as an
+  unreachable edge does, `unavailable`, so a first connect is refused and a
+  reconnect tries again with its usual backoff. In the worst case each
+  swallowed open costs the full 45 s limit plus that backoff (up to 5 s), so a
+  feed can stay at reconnecting for about 50 s per swallowed attempt. A
+  refusal's body gets a full limit of its own from its headers; one that never
+  arrives fails as `internal`. Once a stream's response has started, only
+  silence counts. These timers run on `liveness`, which defaults to real timers that keep
   no process alive, whatever `scheduler` is.
 - **Validation.** The client builds every message, so it keeps its own `id` and
   `time`. The edge checks each one against profile 2.0, its registered payload

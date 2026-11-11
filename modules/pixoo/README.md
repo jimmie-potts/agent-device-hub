@@ -516,6 +516,14 @@ runs waits up to 1 s for that commit. A device command therefore makes five
 commits: two of the module's own, its acceptance and its outcome, and three of
 the SDK outbox, which marks each published row one row at a time. 20
 `brightness-set` commands made 100 commits, where they made 120 before. A
+moment's picture does not wait (#1724): its command runs for the whole moment,
+so the display record goes out as soon as the Pixoo acknowledges that picture.
+The record reports a moment (`showing: moment` and `moments.playing`) only from
+that acknowledgment until the moment ends, so a failed or unanswered write is
+never reported as a moment. Until the write is answered, `showing` reports what
+the covered base shows: the dashboard over the status base, or `none` over a
+held item. Once a failed or unanswered write settles over the status base, the
+status base stops as it does for a failed dashboard. A
 catalog command's change is committed before its outcome, so a failed read of
 the catalog after it never holds the outcome back: the read is tried again as
 above, and the change goes out once a read succeeds. What the module serves

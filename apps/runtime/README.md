@@ -393,6 +393,22 @@ and exits 1, and the service manager restarts it whole.
   history held, never a snapshot); and each step of a tracked action. A hook's
   raw observation and the acknowledgments are not kept: the session changes
   they cause are. The read API with filters and the timeline are #923's.
+- **Fact log** (#1740). Each history row also names its origin and its place
+  in that origin's order, `origin_seq`, counting from 1 with no gaps. The
+  origin identifies the installation: a random UUID the core store creates
+  once, at its first open, and keeps in the one-row table `core_origin`. It
+  needs no configuration and is not a host name; nothing derives it from a host,
+  user, address or path. Inside the core, `History.after(origin, afterSeq,
+  limit)` returns that origin's rows after `afterSeq`, oldest first, at most
+  500 a call. The reader keeps its own cursor, the last `originSeq` it read,
+  and asks again from there; the core stores no reader position. A read after
+  the last row returns nothing, and so does an origin the store does not hold.
+  Reading writes nothing and publishes nothing. The duplicate check by
+  `(source, id)` looks only at this origin's rows. The origin is in the history
+  row only: the message envelope is unchanged, and the filtered history read,
+  its gateway route and its MCP tool return the same rows as before. A store
+  written before #1740 is migrated at its first open; see
+  [Core history fact log](UPGRADE.md#core-history-fact-log).
 - **Extension point.** A `CorePart` (#923's inbox) creates its own tables in the
   core store, serves its families through the core's sync at the core's
   revision, derives rows from each committed core change and from each tracked

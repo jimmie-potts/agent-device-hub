@@ -3,22 +3,45 @@ import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {TestContext} from 'node:test';
 import type {DatabaseSync} from 'node:sqlite';
 import {observation, sessionStarted} from './fixtures/agents.js';
-import {CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_WINDOW_MS, MUSIC_PRODUCER_SOURCE, type CaptureResponseSettings, type CaptureFeatures, type CaptureProgress, type CaptureSelection, type CaptureState, type CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
+import {CAPTURE_CLOCK_DRIFT_MS, CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_VALIDITY_MS, CAPTURE_WINDOW_MS, MUSIC_PRODUCER_SOURCE, type CaptureResponseSettings, type CaptureFeatures, type CaptureProgress, type CaptureSelection, type CaptureState, type CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {connectRemote, type Command} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import {tokenDigest} from '../src/credentials.js';
-import {contextOf, edgeConfig, fixture, it, run, stateDir, waitFor} from './support.js';
+import {contextOf, edgeConfig, fixture, flush, it, manualClock, run, stateDir, waitFor} from './support.js';
 
 const schema = (family: string, version = '2.0') => `https://bunny.invalid/events/${family}/${version}`;
-async function setup(t: TestContext, directory?: string) {
+type ManualClock = ReturnType<typeof manualClock>;
+const STEP_MS = 10, POLL_STEP_MS = 100;
+/** Moves the clock forward in steps of at most 10 ms, letting the work each step's timers start run before the next step. */
+async function pass(clock: ManualClock, ms: number): Promise<void> {
+  for (let left = ms; left > 0; left -= STEP_MS) {clock.advance(Math.min(STEP_MS, left));await flush();}
+}
+/** Moves the clock forward 100 ms at a time until `condition` holds, and fails once `limitMs` of clock time has passed without it. */
+async function passUntil(clock: ManualClock, condition: () => boolean | Promise<boolean>, limitMs: number, what = 'the condition'): Promise<void> {
+  for (let passed = 0; !await condition(); passed += POLL_STEP_MS) {
+    if (passed >= limitMs) assert.fail(`${what} did not hold within ${String(limitMs)} ms of clock time`);
+    await pass(clock, POLL_STEP_MS);
+  }
+}
+/**
+ * A runtime with the core, an observer and a connected Music producer, all on one manual clock (#1695): the runtime's
+ * wall clock and scheduler, the capture part's monotonic clock and the producer read the same time, which moves only when
+ * the test passes it. So the 400 ms validity window and the calibration deadline end when the test says, never because
+ * the host was slow. `wallOffset` moves the wall clock alone, as a clock fault would. With `monotonic: 'default'` the core
+ * gets no monotonic clock and keeps its own default.
+ */
+async function setup(t: TestContext, {directory, clock = manualClock(Date.now()), monotonic = 'clock'}: {directory?: string; clock?: ManualClock; monotonic?: 'clock' | 'default'} = {}) {
   let handle: CoreHandle | undefined, wallOffset = 0;
-  const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}]});
+  // Each runtime's monotonic clock has its own origin, as a new process's does; it advances with the wall clock.
+  const origin = clock.now() - 1000;
+  const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}], ...(monotonic === 'clock' ? {monotonic: () => clock.now() - origin} : {})});
   const observer = fixture('capture-observer');
   const files = await edgeConfig(t, [], {credentials: JSON.stringify({schema: 'edge-credentials/1.0', credentials: [
     {id: 'music-producer', source: MUSIC_PRODUCER_SOURCE, digest: tokenDigest('synthetic-token'), scopes: [], role: 'music-producer'},
   ]})});
-  const {runtime} = await run(t, {modules: [core, observer], configFile: files.config, edge: {schemas: {}}, clock: {now: () => Date.now() + wallOffset}, ...(directory === undefined ? {} : {stateDir: directory})});
-  const producer = await connectRemote({url: runtime.url, source: MUSIC_PRODUCER_SOURCE, token: 'synthetic-token'});
+  const {runtime} = await run(t, {modules: [core, observer], configFile: files.config, edge: {schemas: {}}, clock: {now: () => clock.now() + wallOffset}, scheduler: clock.scheduler,
+    ...(directory === undefined ? {} : {stateDir: directory})});
+  const producer = await connectRemote({url: runtime.url, source: MUSIC_PRODUCER_SOURCE, token: 'synthetic-token', now: clock.now, scheduler: clock.scheduler});
   t.after(() => producer.close());
   const work: Command<CaptureWork>[] = [];let closed = 0, refuseStop = false;
   const endpoint = await producer.openEndpoint<CaptureWork>({family: 'music-capture-work', onClosed: () => {closed += 1;}, respond: command => {work.push(command);return refuseStop && command.data.action === 'stop' ? errorBody('unavailable') : {status: 'accepted'};}});
@@ -39,7 +62,7 @@ async function setup(t: TestContext, directory?: string) {
     draft: {type: 'org.bunny.music-capture.control.requested', subject: 'music', dataschema: schema('music-capture-control', selection.input === 'music' ? '2.0' : '2.1'), data: {action, expectedRevision, ...(action === 'start' ? {endpointId: endpoint.id, ...selection} : {})}}});
   const progress = (data: CaptureProgress) => endpoint.publish('music-capture-progress', {kind: 'occurrence', type: 'org.bunny.music-capture.progress.observed', dataschema: schema('music-capture-progress'), data});
   const frame = (generation: string, sequence: number, patch: Partial<CaptureFeatures> = {}) => {
-    const at = Date.now();
+    const at = clock.now();
     return endpoint.publish('music-capture-features', {kind: 'occurrence', type: 'org.bunny.music-capture.features.observed', dataschema: schema('music-capture-features', patch.input === 'microphone' ? '2.1' : '2.0'), data: {
       generation, input: 'music', sequence, sampleRateHz: 48000, channels: 2, frameCount: 4800,
       startMonotonicMs: (sequence - 1) * 100, endMonotonicMs: sequence * 100, emittedMonotonicMs: sequence * 100 + 1, observedAtMs: at, validUntilMs: at + 400,
@@ -48,7 +71,9 @@ async function setup(t: TestContext, directory?: string) {
   };
   const tune = (requestId: string, data: object) => core.operatorActions.dispatch({key: 'bunny.cmd.music-capture-control.music', requestedBy: 'bunny/parts/operator', requestId,
     draft: {type: 'org.bunny.music-capture.control.requested', subject: 'music', dataschema: schema('music-capture-control', '2.2'), data}});
-  return {core, runtime, producer, observer, endpoint, work, liveStates, tune, legacyResponsibilities: async () => {
+  return {core, runtime, producer, observer, endpoint, work, liveStates, tune, clock,
+    pass: (ms: number) => pass(clock, ms), passUntil: (condition: () => boolean | Promise<boolean>, limitMs: number, what?: string) => passUntil(clock, condition, limitMs, what),
+    legacyResponsibilities: async () => {
     assert.ok(handle);await handle.transaction(tx => {tx.database.exec("UPDATE music_capture_responsibilities SET record = json_remove(record, '$.selection')");});
   }, stateSchema: () => stateSchema, closed: () => closed, refuseStop: () => {refuseStop = true;}, read, enable, control, progress, frame, operation: (id: string) => handle?.operation(id), failWrites: async (value: boolean) => {
     assert.ok(handle);await handle.transaction(tx => {tx.database.exec(value
@@ -143,9 +168,12 @@ it('silence is live, expired and reversed frames do not refresh it, and a discon
   await h.progress({operationId: start.data.operationId, generation: start.data.generation, status: 'started'});
   await h.frame(start.data.generation, 10);
   await waitFor(async () => (await h.read()).session.status === 'active');
-  await waitFor(async () => (await h.read()).session.status === 'stale', 2500);
+  await h.pass(CAPTURE_VALIDITY_MS - 1);
+  assert.equal((await h.read()).session.status, 'active', 'a frame is live for its whole validity window');
+  await h.pass(1);
+  await waitFor(async () => (await h.read()).session.status === 'stale');
   await h.frame(start.data.generation, 9);
-  const old = Date.now() - 1000;
+  const old = h.clock.now() - 1000;
   await h.frame(start.data.generation, 11, {observedAtMs: old, validUntilMs: old + 400});
   assert.equal((await h.read()).session.status, 'stale');
   await h.frame(start.data.generation, 12);
@@ -157,14 +185,14 @@ it('silence is live, expired and reversed frames do not refresh it, and a discon
 });
 
 for (const input of ['music', 'microphone'] as const) it(`restart retires pending ${input} without replay, including old Music records`, async t => {
-  const directory = await stateDir(t), first = await setup(t, directory);
+  const directory = await stateDir(t), first = await setup(t, {directory});
   const selection: CaptureSelection = input === 'music' ? {input} : {input, microphoneId: 'studio-mic'};
   await first.enable(input === 'music' ? undefined : 'studio-mic');
   await first.control('pending-start', (await first.read()).revision, 'start', selection);
   await waitFor(() => first.work.length === 1);
   if (input === 'music') await first.legacyResponsibilities();
   await first.runtime.stop();await first.producer.close();
-  const second = await setup(t, directory), recovered = await second.read();
+  const second = await setup(t, {directory, clock: first.clock}), recovered = await second.read();
   assert.equal(recovered.availability, 'unavailable');
   assert.ok(recovered.session.status === 'unavailable');
   assert.equal(recovered.session.input, input);
@@ -198,7 +226,7 @@ it('a refused durable admission sends no capture work and bounded recovery never
   assert.ok('error' in refused);assert.equal(refused.error.code, 'internal');
   assert.equal(h.work.length, 0);
   await h.failWrites(false);
-  await waitFor(async () => {
+  await h.passUntil(async () => {
     try {return (await h.read()).availability === 'unavailable';} catch {return false;}
   }, 4000).catch(() => {assert.fail(JSON.stringify(h.runtime.health()));});
   assert.equal(h.work.length, 0);
@@ -213,7 +241,8 @@ it('a wall-clock jump retires capture and fresh-looking frames cannot restore it
   const start = h.work[0];assert.ok(start);
   await h.progress({operationId: start.data.operationId, generation: start.data.generation, status: 'started'});
   await h.frame(start.data.generation, 1);await waitFor(async () => (await h.read()).session.status === 'active');
-  h.wallOffset(100);
+  // The wall clock jumps while the monotonic clock does not; the part's next check finds the drift.
+  h.wallOffset(100);await h.pass(100);
   await waitFor(async () => (await h.read()).availability === 'unavailable');
   h.wallOffset(0);await assert.rejects(async () => h.frame(start.data.generation, 2));
   assert.equal((await h.read()).session.status, 'unavailable');
@@ -232,10 +261,12 @@ it('a superseded start deadline cannot fence a later active generation', async t
   await h.control('replacement-start', (await h.read()).revision, 'start');await waitFor(() => h.work.length === 3);
   const replacement = h.work[2];assert.ok(replacement);
   await h.progress({operationId: replacement.data.operationId, generation: replacement.data.generation, status: 'started'});
+  await waitFor(() => h.operation('replacement-start')?.result === 'succeeded');
+  // A fresh frame every 100 ms of clock time keeps the replacement live while the superseded start's deadline passes.
   for (let sequence = 1; sequence <= 120; sequence++) {
     await h.frame(replacement.data.generation, sequence);
     if (h.operation('superseded-start')?.result === 'uncertain') break;
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await h.pass(100);
   }
   assert.equal(h.operation('superseded-start')?.result, 'uncertain');
   await h.frame(replacement.data.generation, 121);
@@ -256,7 +287,7 @@ it('a failed feature-history commit disconnects capture even while current measu
   await waitFor(() => h.closed() === 1);
   assert.equal(h.runtime.health().modules.find(module => module.name === 'core')?.state, 'running');
   await h.failHistory(false);
-  await waitFor(async () => {try {return (await h.read()).availability === 'unavailable';} catch {return false;}}, 4000);
+  await h.passUntil(async () => {try {return (await h.read()).availability === 'unavailable';} catch {return false;}}, 4000);
   await assert.rejects(async () => h.frame(start.data.generation, 3));
   assert.equal(h.operation('history-start')?.result, 'succeeded');
 });
@@ -300,6 +331,23 @@ it('a core clock jump after registration refuses start before any capture work',
   h.wallOffset(0);
 });
 
+it('a core given no monotonic clock measures real elapsed time, and a given one is the only one it reads', async t => {
+  // Both runtimes' wall clocks stand still while more than the drift bound of real time passes after registration. On
+  // purpose, this test proves a real-time property: the default reads `performance.now()`.
+  const startAfterRealDrift = async (h: Awaited<ReturnType<typeof setup>>, requestId: string) => {
+    await h.enable();const initial = await h.read();
+    const registered = performance.now();
+    while (performance.now() - registered <= CAPTURE_CLOCK_DRIFT_MS) await new Promise(resolve => setTimeout(resolve, 5));
+    return h.control(requestId, initial.revision, 'start');
+  };
+  const supplied = await setup(t);
+  assert.deepEqual(await startAfterRealDrift(supplied, 'supplied-monotonic-start'), {status: 'accepted', requestId: 'supplied-monotonic-start'});
+  const fallback = await setup(t, {monotonic: 'default'});
+  const refused = await startAfterRealDrift(fallback, 'default-monotonic-start');
+  assert.ok('error' in refused, 'the default monotonic clock advanced in real time while the wall clock stood still');
+  assert.equal(refused.error.code, 'unavailable');assert.equal(fallback.work.length, 0);
+});
+
 
 it('a full disk during capture table creation keeps the core running and recovers without restart', async t => {
   const core = createCoreModule(), start = core.start.bind(core);
@@ -318,8 +366,8 @@ it('a full disk during capture table creation keeps the core running and recover
     };
     return start(context);
   };
-  const observer = fixture('capture-recovery-observer');
-  const {runtime, logs} = await run(t, {modules: [core, observer]});
+  const observer = fixture('capture-recovery-observer'), clock = manualClock(Date.now());
+  const {runtime, logs} = await run(t, {modules: [core, observer], clock: {now: clock.now}, scheduler: clock.scheduler});
   assert.equal(injected, true);
   assert.equal(runtime.health().modules.find(module => module.name === 'core')?.state, 'running');
   const sdk = contextOf(observer).sdk;
@@ -327,14 +375,14 @@ it('a full disk during capture table creation keeps the core running and recover
   assert.equal(refused.status, 'rejected');
   assert.ok(database);
   database.exec('PRAGMA max_page_count = 1073741823');
-  await waitFor(async () => {
+  await passUntil(clock, async () => {
     const synced = await sdk.sync<CaptureState>(['music-capture-state'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
     if (synced.status !== 'synced') return false;
     assert.equal(synced.copy.states()[0]?.data.availability, 'off');
     assert.deepEqual(synced.copy.states()[0]?.data.session, {status: 'idle'});
     await synced.copy.close();return true;
   }, 5000, 'the capture state after storage recovery');
-  const {key, draft} = observation(sessionStarted, Date.now());
+  const {key, draft} = observation(sessionStarted, clock.now());
   await sdk.publish(key, draft);
   await waitFor(() => logs.some(record => record.event_name === 'message.received' && record.attributes['bunny.participant'] === 'bunny/modules/capture-recovery-observer' && record.attributes['bunny.outcome'] === 'accepted'));
   assert.equal(runtime.health().modules.find(module => module.name === 'core')?.state, 'running');
@@ -347,7 +395,7 @@ async function activeMicrophone(h: Awaited<ReturnType<typeof setup>>, name: stri
   await h.control(name, (await h.read()).revision, 'start', selection);await waitFor(() => h.work.length === 1);
   const start = h.work[0];assert.ok(start);
   await h.progress({operationId: name, generation: start.data.generation, status: 'started'});
-  const first = {sequence: 1, observedAtMs: Date.now()};
+  const first = {sequence: 1, observedAtMs: h.clock.now()};
   await h.frame(start.data.generation, 1, {...selection, observedAtMs: first.observedAtMs, validUntilMs: first.observedAtMs + 400});
   await waitFor(async () => (await h.read()).session.status === 'active');
   const binding = {endpointId: h.endpoint.id, generation: start.data.generation, microphoneId: 'studio-mic', sampleRateHz: 48000, channels: 2};
@@ -355,36 +403,39 @@ async function activeMicrophone(h: Awaited<ReturnType<typeof setup>>, name: stri
 }
 type GridFrame = {sequence: number; observedAtMs: number};
 /**
- * Keeps a microphone source fresh after `first`, one frame per 100 ms on the source's own timeline, as a capture helper
- * does (#1545). Each frame's wall time matches its source time, so a slow runner cannot age the source past its 400 ms
- * validity, or make it look incoherent, while a test waits for an admission. `until` stops the feed after the frame that
- * satisfies it. `stop` keeps feeding until the next frame's time is at least `notBeforeMs`, then returns that next grid
- * slot for the test's own frame, waiting until its time has come unless `wait` is false.
+ * A microphone source after `first`, one frame per 100 ms slot of the source's own timeline, as a capture helper sends
+ * them (#1545). It runs on the test's clock: each frame goes out only once the test has moved the clock to its slot, so
+ * its wall time matches its source time and receipt, and no frame is early, late or out of step.
  */
-function feedSource(t: TestContext, h: Awaited<ReturnType<typeof setup>>, generation: string, selection: CaptureSelection, first: GridFrame,
-  {patch = {}, until}: {patch?: Partial<CaptureFeatures>; until?: () => Promise<boolean>} = {}) {
+function feedSource(h: Awaited<ReturnType<typeof setup>>, generation: string, selection: CaptureSelection, first: GridFrame, patch: Partial<CaptureFeatures> = {}) {
   const at = (sequence: number): number => first.observedAtMs + (sequence - first.sequence) * 100;
-  let next = first.sequence + 1, stopped = false, failure: Error | undefined, sending: Promise<void> = Promise.resolve();
-  const send = async (): Promise<void> => {
-    while (!stopped && at(next) <= Date.now()) {
+  let next = first.sequence + 1;
+  const reach = (): Promise<void> => h.pass(at(next) - h.clock.now());
+  const send = async (count: number): Promise<void> => {
+    for (let sent = 0; sent < count; sent++) {
+      await reach();
       const sequence = next++;
       await h.frame(generation, sequence, {...selection, ...patch, observedAtMs: at(sequence), validUntilMs: at(sequence) + 400});
-      if (until !== undefined && await until()) stopped = true;
     }
   };
-  const timer = setInterval(() => {sending = sending.then(send).catch((error: unknown) => {failure ??= error instanceof Error ? error : new Error('the feed could not publish a frame', {cause: error});stopped = true;});}, 20);
-  const stop = async ({notBeforeMs = 0, wait = true}: {notBeforeMs?: number; wait?: boolean} = {}): Promise<GridFrame> => {
-    while (!stopped && at(next) < notBeforeMs) await new Promise(resolve => setTimeout(resolve, 10));
-    stopped = true;clearInterval(timer);await sending;
-    if (failure !== undefined) throw failure;
-    if (wait) await new Promise(resolve => setTimeout(resolve, Math.max(0, at(next) - Date.now())));
-    return {sequence: next, observedAtMs: at(next)};
+  return {
+    send,
+    /** Sends frames until the next slot's time is at least `notBeforeMs`, moves the clock to that slot and returns it for the test's own frame. */
+    slot: async (notBeforeMs = 0): Promise<GridFrame> => {
+      while (at(next) < notBeforeMs) await send(1);
+      await reach();
+      return {sequence: next, observedAtMs: at(next)};
+    },
+    /** The last frame sent. */
+    last: (): GridFrame => ({sequence: next - 1, observedAtMs: at(next - 1)}),
   };
-  t.after(async () => {stopped = true;clearInterval(timer);await sending;});
-  return {stop, stopped: () => stopped};
 }
 /** A quiet measurement admits only frames observed after its window: one window plus the skew bound after admission. */
 const QUIET_WINDOW_OPENS_MS = CAPTURE_WINDOW_MS + CAPTURE_MAX_CLOCK_SKEW_MS + 1;
+/** The 100 ms slots after admission that come before the window opens, which the measurement ignores. */
+const EARLY_SLOTS = Math.ceil((QUIET_WINDOW_OPENS_MS - 1) / 100) - 1;
+/** A quiet measurement completes on its 50th admitted window. */
+const QUIET_WINDOWS = 50;
 const manualSettings: CaptureResponseSettings = {sensitivity: 2, smoothingMs: 150, emphasis: {bass: 2, mid: 1, treble: 0.5}, gate: {mode: 'manual', threshold: 0.02}};
 
 it('response Apply is atomic and revision-bound; calibration Cancel and Stop remain independent', async t => {
@@ -420,22 +471,23 @@ it('response Apply is atomic and revision-bound; calibration Cancel and Stop rem
   await h.progress({operationId: stop.data.operationId, generation: stop.data.generation, status: 'stopped'});
 });
 
-async function completeQuiet(t: TestContext, h: Awaited<ReturnType<typeof setup>>, active: Awaited<ReturnType<typeof activeMicrophone>>, requestId: string) {
+async function completeQuiet(h: Awaited<ReturnType<typeof setup>>, active: Awaited<ReturnType<typeof activeMicrophone>>, requestId: string) {
   const {binding, selection, first} = active;
-  const settled = async (): Promise<boolean> => ['ready', 'ended'].includes((await h.read()).response?.calibration.status ?? '');
-  const source = feedSource(t, h, binding.generation, selection, first, {patch: {rms: 0.01, peak: 0.02}, until: settled});
+  const source = feedSource(h, binding.generation, selection, first, {rms: 0.01, peak: 0.02});
   await h.tune(requestId, {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
-  await waitFor(() => source.stopped(), 15_000, 'a settled quiet measurement');
-  // The caller's next frame follows the ready frame at once, so nothing waits for the next grid slot here.
-  const next = await source.stop({wait: false});
+  await source.send(EARLY_SLOTS + QUIET_WINDOWS - 1);
+  assert.equal((await h.read()).response?.calibration.status, 'measuring', 'one admitted window short of the 50 it needs');
+  await source.send(1);
+  await waitFor(async () => (await h.read()).response?.calibration.status !== 'measuring', 5000, 'a settled quiet measurement');
   assert.deepEqual((await h.read()).response?.calibration, {status: 'ready', operationId: requestId}, 'the quiet measurement ended before it was ready');
   await waitFor(() => h.operation(requestId)?.result === 'succeeded');
-  return {state: await h.read(), sequence: next.sequence - 1};
+  // The clock stays at the ready frame's slot, so the caller's next frame follows it at once.
+  return {state: await h.read(), sequence: source.last().sequence};
 }
 
 it('a completed quiet interval is a candidate until Apply and restart retains evidence without qualification', async t => {
-  const directory = await stateDir(t), h = await setup(t, directory), active = await activeMicrophone(h, 'quiet-start'), {binding} = active;
-  const {state: candidate} = await completeQuiet(t, h, active, 'quiet-complete');assert.ok(candidate.response?.evidence);
+  const directory = await stateDir(t), h = await setup(t, {directory}), active = await activeMicrophone(h, 'quiet-start'), {binding} = active;
+  const {state: candidate} = await completeQuiet(h, active, 'quiet-complete');assert.ok(candidate.response?.evidence);
   assert.equal(candidate.response.evidence.windowCount, 50);assert.equal(candidate.response.evidence.percentileRms, 0.01);
   assert.equal(candidate.response.evidence.suggestedThreshold, 0.02);assert.equal(candidate.response.settings.gate.mode, 'off');
   assert.equal(candidate.response.appliedTo, null);
@@ -444,7 +496,7 @@ it('a completed quiet interval is a candidate until Apply and restart retains ev
   await waitFor(() => h.operation('apply-measured')?.result === 'succeeded');
   assert.deepEqual((await h.read()).response?.settings, settings);
   await h.runtime.stop();await h.producer.close();
-  const recovered = await setup(t, directory), state = await recovered.read();
+  const recovered = await setup(t, {directory, clock: h.clock}), state = await recovered.read();
   assert.deepEqual(state.response?.settings, settings);assert.deepEqual(state.response?.evidence, candidate.response.evidence);
   assert.equal(state.response?.appliedTo, null);assert.equal(state.response?.calibration.status, 'ended');
   assert.equal(recovered.operation('quiet-complete')?.result, 'succeeded');assert.equal(recovered.work.length, 0);
@@ -452,17 +504,18 @@ it('a completed quiet interval is a candidate until Apply and restart retains ev
 
 it('clipping fails quiet measurement and a later source discontinuity retires a manually applied gate', async t => {
   const h = await setup(t), {binding, selection, first} = await activeMicrophone(h, 'quiet-failure-start');
-  const source = feedSource(t, h, binding.generation, selection, first);
+  const source = feedSource(h, binding.generation, selection, first);
   await h.tune('clipped-quiet', {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
-  const clipped = await source.stop({notBeforeMs: Date.now() + QUIET_WINDOW_OPENS_MS});
+  const clipped = await source.slot(h.clock.now() + QUIET_WINDOW_OPENS_MS);
   await h.frame(binding.generation, clipped.sequence, {...selection, clippedFraction: 0.001, observedAtMs: clipped.observedAtMs, validUntilMs: clipped.observedAtMs + 400});
   await waitFor(() => h.operation('clipped-quiet')?.result === 'failed');
   assert.deepEqual((await h.read()).response?.calibration, {status: 'ended', operationId: 'clipped-quiet', reason: 'clipping'});
-  const after = feedSource(t, h, binding.generation, selection, clipped);
+  const after = feedSource(h, binding.generation, selection, clipped);
   const current = await h.read();assert.ok(current.response);
   await h.tune('manual-after-clipping', {action: 'apply-tuning', binding, expectedRevision: current.revision, expectedSettingsRevision: current.response.settingsRevision, settings: manualSettings});
   await waitFor(() => h.operation('manual-after-clipping')?.result === 'succeeded');
-  const broken = await after.stop();
+  await after.send(2);
+  const broken = await after.slot();
   assert.deepEqual((await h.read()).response?.appliedTo, binding, 'the manual gate is bound until the discontinuity');
   await h.frame(binding.generation, broken.sequence, {...selection, discontinuity: true, observedAtMs: broken.observedAtMs, validUntilMs: broken.observedAtMs + 400});
   await waitFor(async () => (await h.read()).response?.appliedTo === null);
@@ -471,13 +524,13 @@ it('clipping fails quiet measurement and a later source discontinuity retires a 
 
 it('incoherent source and wall elapsed fail calibration and retire the applied gate without replacing preferences', async t => {
   const h = await setup(t), {binding, selection, first} = await activeMicrophone(h, 'clock-evidence-start');
-  const source = feedSource(t, h, binding.generation, selection, first);
+  const source = feedSource(h, binding.generation, selection, first);
   const before = await h.read();assert.ok(before.response);
   await h.tune('clock-evidence-apply', {action: 'apply-tuning', binding, expectedRevision: before.revision,
     expectedSettingsRevision: before.response.settingsRevision, settings: manualSettings});
   await h.tune('clock-evidence-measure', {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
   // Two frames 100 ms apart in source time but observed at the same wall time, both inside the measurement window.
-  const next = await source.stop({notBeforeMs: Date.now() + QUIET_WINDOW_OPENS_MS}), patch = {...selection, observedAtMs: next.observedAtMs, validUntilMs: next.observedAtMs + 400};
+  const next = await source.slot(h.clock.now() + QUIET_WINDOW_OPENS_MS), patch = {...selection, observedAtMs: next.observedAtMs, validUntilMs: next.observedAtMs + 400};
   await h.frame(binding.generation, next.sequence, patch);await h.frame(binding.generation, next.sequence + 1, patch);
   await waitFor(() => h.operation('clock-evidence-measure')?.result === 'failed');
   const state = await h.read();
@@ -491,18 +544,18 @@ it('an applied gate without a measurement retires on incoherent clocks and requi
   const before = await h.read();assert.ok(before.response);
   await h.tune('ordinary-clock-apply', {action: 'apply-tuning', binding, expectedRevision: before.revision,
     expectedSettingsRevision: before.response.settingsRevision, settings: manualSettings});
-  const observedAtMs = Date.now();
+  const observedAtMs = h.clock.now();
   for (let sequence = 2; sequence <= 5; sequence++) await h.frame(binding.generation, sequence, {...selection, observedAtMs, validUntilMs: observedAtMs + 400});
   const retired = await h.read();assert.equal(retired.session.status, 'active');
   assert.equal(retired.response?.calibration.status, 'idle');assert.equal(retired.response?.appliedTo, null);
   assert.deepEqual(retired.response?.settings, manualSettings);
-  const reappliedAt = Date.now();
+  const reappliedAt = h.clock.now();
   await h.frame(binding.generation, 6, {...selection, observedAtMs: reappliedAt, validUntilMs: reappliedAt + 400});
   const inactive = await h.read();assert.ok(inactive.response);assert.equal(inactive.response.appliedTo, null);
   await h.tune('ordinary-clock-reapply', {action: 'apply-tuning', binding, expectedRevision: inactive.revision,
     expectedSettingsRevision: inactive.response.settingsRevision, settings: manualSettings});
   assert.deepEqual((await h.read()).response?.appliedTo, binding);
-  const nextAt = reappliedAt + 100;await new Promise(resolve => setTimeout(resolve, Math.max(0, nextAt - Date.now())));
+  const nextAt = reappliedAt + 100;await h.pass(nextAt - h.clock.now());
   await h.frame(binding.generation, 7, {...selection, observedAtMs: nextAt, validUntilMs: nextAt + 400});
   assert.deepEqual((await h.read()).response?.appliedTo, binding);
   assert.equal(h.work.length, 1);
@@ -510,7 +563,7 @@ it('an applied gate without a measurement retires on incoherent clocks and requi
 
 it('a ready candidate keeps its timing guard and loses eligibility on later clock drift', async t => {
   const h = await setup(t), active = await activeMicrophone(h, 'candidate-clock-start');
-  const {state: candidate, sequence} = await completeQuiet(t, h, active, 'candidate-clock-measure');
+  const {state: candidate, sequence} = await completeQuiet(h, active, 'candidate-clock-measure');
   assert.ok(candidate.response?.evidence);
   const observedAtMs = candidate.response.evidence.endedAtMs;
   await h.frame(active.binding.generation, sequence + 1, {...active.selection, observedAtMs, validUntilMs: observedAtMs + 400});
@@ -530,19 +583,19 @@ it('a refused clock-retirement write disconnects capture and recovery keeps sett
   await h.tune('clock-store-apply', {action: 'apply-tuning', binding, expectedRevision: before.revision,
     expectedSettingsRevision: before.response.settingsRevision, settings: manualSettings});
   await h.failWrites(true);
-  const observedAtMs = Date.now();
+  const observedAtMs = h.clock.now();
   for (let sequence = 2; sequence <= 3; sequence++) await h.frame(binding.generation, sequence, {...selection, observedAtMs, validUntilMs: observedAtMs + 400}).catch(() => {});
   await waitFor(() => h.closed() > 0);await h.failWrites(false);
-  await waitFor(async () => {try {return (await h.read()).availability === 'unavailable';} catch {return false;}}, 4000);
+  await h.passUntil(async () => {try {return (await h.read()).availability === 'unavailable';} catch {return false;}}, 4000);
   const recovered = await h.read();assert.deepEqual(recovered.response?.settings, manualSettings);
   assert.equal(recovered.response?.appliedTo, null);assert.equal(h.work.length, 1);
 });
 
 it('restart settles unfinished calibration and refuses later reuse of its candidate', async t => {
-  const directory = await stateDir(t), first = await setup(t, directory), {binding} = await activeMicrophone(first, 'restart-calibration-start');
+  const directory = await stateDir(t), first = await setup(t, {directory}), {binding} = await activeMicrophone(first, 'restart-calibration-start');
   await first.tune('interrupted-quiet', {action: 'calibrate', binding, expectedRevision: (await first.read()).revision});
   await first.runtime.stop();await first.producer.close();
-  const second = await setup(t, directory), recovered = await second.read();
+  const second = await setup(t, {directory, clock: first.clock}), recovered = await second.read();
   assert.equal(second.operation('interrupted-quiet')?.result, 'uncertain');
   assert.deepEqual(recovered.response?.calibration, {status: 'ended', operationId: 'interrupted-quiet', reason: 'restart'});
   assert.equal(recovered.response?.evidence, null);assert.equal(second.work.length, 0);
@@ -559,7 +612,7 @@ it('a refused tuning write leaves prior preferences intact and storage recovery 
   const refused = await h.tune('unsaved-tuning', {action: 'apply-tuning', binding, expectedRevision: current.revision,
     expectedSettingsRevision: current.response.settingsRevision, settings: manualSettings});
   assert.ok('error' in refused);assert.equal(refused.error.code, 'internal');await h.failWrites(false);
-  await waitFor(async () => {try {return (await h.read()).availability === 'unavailable';} catch {return false;}}, 4000);
+  await h.passUntil(async () => {try {return (await h.read()).availability === 'unavailable';} catch {return false;}}, 4000);
   assert.deepEqual((await h.read()).response?.settings, current.response.settings);assert.equal((await h.read()).response?.appliedTo, null);
   assert.equal(h.work.length, 1);assert.equal(h.operation('unsaved-tuning')?.result, 'failed');
 });
@@ -571,9 +624,10 @@ for (const interruption of ['format', 'stale', 'clock', 'source-lost'] as const)
     expectedSettingsRevision: current.response.settingsRevision, settings: manualSettings});
   await h.tune(`measure-${interruption}`, {action: 'calibrate', binding, expectedRevision: (await h.read()).revision});
   if (interruption === 'format') await h.frame(binding.generation, 2, {...selection, sampleRateHz: 44100, frameCount: 4410});
-  else if (interruption === 'clock') h.wallOffset(1000);
-  else if (interruption === 'source-lost') await h.endpoint.close();
-  await waitFor(async () => (await h.read()).response?.appliedTo === null, 2500);
+  else if (interruption === 'stale') await h.pass(CAPTURE_VALIDITY_MS);
+  else if (interruption === 'clock') {h.wallOffset(1000);await h.pass(100);}
+  else await h.endpoint.close();
+  await waitFor(async () => (await h.read()).response?.appliedTo === null);
   const retired = await h.read();assert.deepEqual(retired.response?.settings, manualSettings);
   assert.equal(retired.response?.calibration.status, 'ended');
   assert.notEqual(h.operation(`measure-${interruption}`)?.result, 'succeeded');

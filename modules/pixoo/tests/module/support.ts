@@ -10,12 +10,14 @@ import {deflateSync, crc32} from 'node:zlib';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, sessionEntityId, type Identity, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {InProcessBus, type BunnyModule, type CommandDraft, type Participant, type RequestResult, type StateDraft, type Subscription} from '@jimmie-potts/sdk';
+import {
+  InProcessBus, type BunnyModule, type Cancel, type CommandDraft, type Participant, type RequestResult, type Scheduler, type StateDraft, type Subscription,
+} from '@jimmie-potts/sdk';
 import {ModuleHarness, RecordedSpans} from '@jimmie-potts/sdk/testing';
 import {Library} from '../../src/library/index.js';
 import {encodeHostedGif} from '../../src/media/index.js';
 import {FAMILIES, pixooOwnSchemas, schemaOf, type DisplayRecord} from '../../src/module/schemas.js';
-import {createPixooModule, type PixooOptions} from '../../src/module/module.js';
+import {TICK_MS, createPixooModule, type PixooOptions} from '../../src/module/module.js';
 import {SimulatedPixoo, type SimulatedMode} from '../../src/module/transport.js';
 
 export const DEVICE = 'pixoo-1';
@@ -52,6 +54,70 @@ export function validator(): MessageValidator {
   registerDeviceFamilies(checker);
   for (const [dataschema, schema] of Object.entries(pixooOwnSchemas)) checker.register(dataschema, schema);
   return checker;
+}
+
+/**
+ * A clock for the module that moves only when a test advances it (Hub #1679, #1705). The module's own timers wait on
+ * it, so a moment, a tick or a coalesced publish happens only once the test moves time past it. The bus keeps the real
+ * clock: its request deadlines are a test's backstop, not the module's behavior.
+ */
+export class ManualClock {
+  #now: number;
+  #next = 0;
+  readonly #timers = new Map<number, {at: number; callback: () => void}>();
+  #settle: () => Promise<void> = turns;
+
+  constructor(start = Date.now()) {
+    this.#now = start;
+  }
+
+  readonly now = (): number => this.#now;
+
+  readonly scheduler: Scheduler = {after: (delayMs, callback) => {
+    const id = this.#next;
+    this.#next += 1;
+    this.#timers.set(id, {at: this.#now + delayMs, callback});
+    // A timer due now needs no time to pass: it runs after the current turn, as a real zero-delay timer would.
+    if (delayMs === 0) setImmediate(() => { this.#runDue(); });
+    const cancel: Cancel = () => { this.#timers.delete(id); };
+    return cancel;
+  }};
+
+  /** How the clock waits, before each timer it runs, for the work the earlier ones started. */
+  settleWith(settle: () => Promise<void>): void {
+    this.#settle = settle;
+  }
+
+  /**
+   * Moves time `ms` forward, running each timer that falls due in order of its time, then of its scheduling. Before
+   * each timer, and at the end, the work the earlier timers started settles, so no timer runs ahead of it.
+   */
+  async advance(ms: number): Promise<void> {
+    const end = this.#now + ms;
+    for (;;) {
+      await this.#settle();
+      let due: [number, {at: number; callback: () => void}] | undefined;
+      for (const entry of this.#timers) if (entry[1].at <= end && (due === undefined || entry[1].at < due[1].at)) due = entry;
+      if (due === undefined) break;
+      this.#timers.delete(due[0]);
+      this.#now = due[1].at;
+      due[1].callback();
+    }
+    this.#now = end;
+    await this.#settle();
+  }
+
+  /** Runs the timers due at the current time, in order of their scheduling. */
+  #runDue(): void {
+    for (const [id, timer] of [...this.#timers]) {
+      if (timer.at > this.#now || !this.#timers.delete(id)) continue;
+      timer.callback();
+    }
+  }
+}
+/** A few turns of the event loop, for promised work and zero-delay timers in this process. */
+async function turns(): Promise<void> {
+  for (let turn = 0; turn < 6; turn += 1) await new Promise(resolve => { setImmediate(resolve); });
 }
 
 export const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
@@ -113,9 +179,20 @@ export class World {
   readonly #section: unknown;
   readonly #hosted: ModuleHarness[] = [];
   readonly #subscriptions: Subscription[] = [];
+  /** The module's clock when the test controls it, or undefined when the module runs on the real clock. */
+  readonly clock: ManualClock | undefined;
 
-  private constructor(dir: string, mode: SimulatedMode, options: Omit<PixooOptions, 'transport'>, section: unknown) {
+  private constructor(dir: string, mode: SimulatedMode, options: Omit<PixooOptions, 'transport'>, section: unknown, clock: ManualClock | undefined) {
     this.#dir = dir;
+    this.clock = clock;
+    // A worker call, such as a render, runs outside this process's turns: the clock waits for the module's to end.
+    clock?.settleWith(async () => {
+      for (;;) {
+        await turns();
+        if (this.#hosted.every(harness => harness.runningWorkers() === 0)) return;
+        await waitFor(() => this.#hosted.every(harness => harness.runningWorkers() === 0) ? true : undefined, 'the module\'s worker calls');
+      }
+    });
     this.#options = options;
     this.#section = section;
     this.device = new SimulatedPixoo({mode});
@@ -127,10 +204,11 @@ export class World {
     this.harness = this.#fresh();
   }
 
-  static async open({mode = 'online', options = {}, section = SECTION, playback = true}: {
-    mode?: SimulatedMode; options?: Omit<PixooOptions, 'transport'>; section?: unknown; playback?: boolean;
+  /** `clock` runs the module on a clock the test advances; without it the module runs on the real clock. */
+  static async open({mode = 'online', options = {}, section = SECTION, playback = true, clock}: {
+    mode?: SimulatedMode; options?: Omit<PixooOptions, 'transport'>; section?: unknown; playback?: boolean; clock?: ManualClock;
   } = {}): Promise<World> {
-    const world = new World(await mkdtemp(join(tmpdir(), 'pixoo-module-')), mode, {timing: FAST, ...options}, section);
+    const world = new World(await mkdtemp(join(tmpdir(), 'pixoo-module-')), mode, {timing: FAST, ...options}, section, clock);
     world.#subscriptions.push(await world.probe.subscribe('bunny.*.*.*', message => {
       const checked = world.#validator.validate(message);
       if (!checked.ok) world.invalid.push(`${message.type}: ${checked.error.code} ${checked.error.detail ?? ''}`);
@@ -196,6 +274,7 @@ export class World {
     this.module = createPixooModule({...this.#options, transport: this.device});
     const harness = new ModuleHarness(this.module, {
       bus: this.bus, stateDir: this.#dir, spans: this.spans, ...(this.#section === undefined ? {} : {section: this.#section}),
+      ...(this.clock === undefined ? {} : {clock: {now: this.clock.now}, scheduler: this.clock.scheduler}),
     });
     this.#hosted.push(harness);
     return harness;
@@ -211,10 +290,31 @@ export class World {
     await this.harness.start();
   }
 
+  /** The module's time: the test's clock when it has one, otherwise the real clock. */
+  now(): number {
+    return this.clock?.now() ?? Date.now();
+  }
+
+  /**
+   * Moves the module's clock one presentation tick at a time until `find` returns something, and fails once `limitMs`
+   * of the module's time have passed without it. Each tick's work settles before `find` reads, so no real-time wait
+   * decides what it sees.
+   */
+  async tickUntil<T>(find: () => T | undefined, what: string, limitMs: number): Promise<T> {
+    const clock = this.clock;
+    if (clock === undefined) throw new Error('tickUntil needs a world on a manual clock');
+    for (let elapsed = 0; ; elapsed += TICK_MS) {
+      const found = find();
+      if (found !== undefined) return found;
+      if (elapsed >= limitMs) throw new Error(`${what} did not happen within ${limitMs} ms of the module's time`);
+      await clock.advance(TICK_MS);
+    }
+  }
+
   /** Publishes a new session record from the stand-in core. */
   async publishSession(patch: Partial<SessionRecord> = {}): Promise<SessionRecord> {
     this.revision += 1;
-    const record = sessionRecord(Date.now(), this.revision, patch);
+    const record = sessionRecord(this.now(), this.revision, patch);
     this.sessions = [record];
     await this.core.publish(`bunny.state.session.${record.id}`, {kind: 'state', ...sessionState(record)});
     return record;
@@ -223,7 +323,7 @@ export class World {
   /** Publishes a new playback record from the stand-in playback owner. */
   async publishPlayback(title?: string, player?: 'playing' | 'paused'): Promise<PlaybackState> {
     this.revision += 1;
-    const record = playbackRecord(Date.now(), this.revision, title, player);
+    const record = playbackRecord(this.now(), this.revision, title, player);
     this.playback = [record];
     await this.player.publish(`bunny.state.playback.${record.id}`, {kind: 'state', ...playbackState(record)});
     return record;
