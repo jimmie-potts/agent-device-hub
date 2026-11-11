@@ -148,20 +148,51 @@ it('a long wait stops at the grid point where the next timer fires', () => {
   assert.equal(stepOf(4950, 5000, undefined), 50, 'the last step ends the wait');
   assert.equal(stepOf(4990, 4995, 4999), 5, 'a timer past the end waits for a later wait');
   assert.equal(stepOf(300, 5000, Number.NaN), STEP_MS, 'a due time that is not a number counts as due now');
-  assert.equal(stepOf(300, 5000, Number.POSITIVE_INFINITY), STEP_MS, 'as does an infinite one');
+  assert.equal(stepOf(300, 5000, Number.NEGATIVE_INFINITY), STEP_MS, 'as does one at minus infinity');
+  assert.equal(stepOf(300, 5000, Number.POSITIVE_INFINITY), LONG_STEP_MS, 'a timer due at infinity counts as none');
   assert.equal(stepOf(4995, 5000, Number.NaN), 5, 'within the wait');
 });
 
-it('a timer with a NaN delay leaves a long wait on a finite clock, and fires as one fine step at a time fires it', async () => {
-  const runs = await Promise.all([fineSteps, stepThrough].map(async stepper => {
+it('the clock reports NaN while a timer due at NaN is pending, and otherwise its earliest timer', () => {
+  const cases: {delays: number[]; next: number | undefined}[] = [
+    {delays: [500, Number.NaN], next: Number.NaN},
+    {delays: [Number.NaN, 500], next: Number.NaN},
+    {delays: [Number.POSITIVE_INFINITY, 500], next: 500},
+    {delays: [500, Number.POSITIVE_INFINITY], next: 500},
+    {delays: [Number.POSITIVE_INFINITY, Number.NaN], next: Number.NaN},
+    {delays: [Number.POSITIVE_INFINITY], next: Number.POSITIVE_INFINITY},
+    {delays: [], next: undefined},
+  ];
+  for (const {delays, next} of cases) {
     const clock = manualClock();
-    const start = clock.now();
-    const fired: number[] = [];
-    clock.scheduler.after(Number.NaN, () => { fired.push(clock.now() - start); });
-    clock.scheduler.after(500, () => { fired.push(clock.now() - start); });
-    await stepper(clock, 5000, () => Promise.resolve(), () => Promise.resolve());
-    return {fired, end: clock.now() - start};
-  }));
-  assert.deepEqual(runs[1], runs[0]);
-  assert.deepEqual(runs[1], {fired: [10, 500], end: 5000});
+    for (const delay of delays) clock.scheduler.after(delay, () => {});
+    const due = clock.next();
+    assert.deepEqual(due === undefined ? undefined : due - clock.now(), next, `delays ${delays.map(String).join(', ')}`);
+  }
+});
+
+it('timers with NaN or infinite delays leave a long wait on a finite clock, firing as one fine step at a time does', async () => {
+  const cases: {delays: number[]; fired: number[]; steps: number}[] = [
+    {delays: [Number.NaN, 500], fired: [10, 500], steps: 51},
+    // The clock's sort cannot order NaN, so a NaN timer armed after another fires with it, with fine steps as well. While
+    // the NaN timer is pending the wait takes fine steps, as the clock reports NaN.
+    {delays: [500, Number.NaN], fired: [500, 500], steps: 95},
+    {delays: [Number.POSITIVE_INFINITY], fired: [], steps: 50},
+    {delays: [Number.POSITIVE_INFINITY, 500], fired: [500], steps: 50},
+    {delays: [Number.NaN, Number.POSITIVE_INFINITY], fired: [10], steps: 51},
+  ];
+  for (const {delays, fired, steps} of cases) {
+    const runs = await Promise.all([fineSteps, stepThrough].map(async stepper => {
+      const clock = manualClock();
+      const start = clock.now();
+      const times: number[] = [];
+      let taken = 0;
+      for (const delay of delays) clock.scheduler.after(delay, () => { times.push(clock.now() - start); });
+      await stepper(clock, 5000, () => Promise.resolve(), () => { taken += 1; return Promise.resolve(); });
+      return {fired: times, end: clock.now() - start, steps: taken};
+    }));
+    const named = `delays ${delays.map(String).join(', ')}`;
+    assert.deepEqual(runs[0], {fired, end: 5000, steps: 500}, `${named}: one fine step at a time`);
+    assert.deepEqual(runs[1], {fired, end: 5000, steps}, named);
+  }
 });
