@@ -811,7 +811,7 @@ session applies this rule itself; no coordinator grant is needed.
    applies the name, `--rm` and the limits without swap. A container started
    by hand matches it, runs one job and exits, never as a `sleep infinity`
    holder: `docker run --rm --name bunny-gh<n>-<name> --cpus 2 --memory 1250m --memory-swap 1250m`,
-   or wide `--name bunny-gh<n>-<name>-wide --cpus 4 --memory 2g --memory-swap 2g`.
+   or wide `docker run --rm --name bunny-gh<n>-<name>-wide --cpus 4 --memory 2g --memory-swap 2g`.
    The SDK suite runs wide. The runtime verification suite runs wide or through
    `npm run test:runtime:container -- --suite verify`, one slot with its own
    limits ([Runtime verification runs](#runtime-verification-runs)).
@@ -822,8 +822,8 @@ session applies this rule itself; no coordinator grant is needed.
    suite takes one. Run a package script that is one bare `node --test` command
    as `node scripts/native-test.mjs <script>` (2 workers); that satisfies a
    check list naming the npm script. Run other scripts, such as the browser
-   journeys, the `test:*:package:built` scripts and `test:workflow`, as their
-   check lists name them
+   journeys and the `test:*:package:built` scripts, as their check lists name
+   them
    ([Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos)).
 6. **Evidence.** A native macOS run of build, typecheck, lint, the Node suites,
    the scenario catalog and the browser journeys is accepted local validation
