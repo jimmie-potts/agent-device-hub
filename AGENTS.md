@@ -108,7 +108,8 @@ Markdown-only changes follow docs/sdlc.md "Markdown-only CI routing", including
 the conservative gate for delivery/validation policy changes.
 Before starting a test container or native test suite on the Mac, apply
 [Test work on the Mac](docs/development.md#test-work-on-the-mac): slot count,
-start check, container flags, lint route and stop condition.
+start check, container flags, lint route and stop condition. On the owner's PC,
+apply [Test work on the PC](docs/development.md#test-work-on-the-pc) instead.
 Validate locally before each push, then review alongside hosted CI; merge only after both. Recheck
 scope, head and base before a squash merge guarded by --match-head-commit.
 Never use --admin. Read all applicable merged-revision main CI jobs before issue closure.

@@ -7,7 +7,9 @@ import {join} from 'node:path';
 import {
   admission, countSlots, coreHealth, createArgs, decide, describe, ensurePool, IMAGE, LIMITS, NOT_READY, parseContainers,
   parseReading, poolName, poolSession, readings, lockDirectory, MAX_HOLD_MS, PRIVILEGED_SET, privilegedSetterArgs, READ, readerArgs, reportOverflow, SET, setterArgs, tryLock,
+  MAX_LOAD, SLOTS,
 } from '../test-container/pool.mjs';
+import {profileLine, profiles, selectProfile} from '../test-container/profile.mjs';
 
 const scratch = await mkdtemp(join(tmpdir(), 'test-container-pool-'));
 after(() => rm(scratch, {recursive:true, force:true}));
@@ -365,4 +367,78 @@ test('a live owner whose recorded time is unreadable keeps the lock', async () =
   await mkdir(join(directory, 'lock'), {recursive:true, mode:0o700});
   await writeFile(join(directory, 'lock', 'owner'), JSON.stringify({pid:4242, token:'t'}));
   assert.equal((await tryLock(fake({alive:() => true}), directory)).held, false);
+});
+
+test('each host profile has its slots, load thresholds, sizes and pool, and the Mac profile keeps today\'s values', () => {
+  assert.deepEqual(Object.keys(profiles), ['mac', 'pc']);
+  const {mac, pc} = profiles;
+  assert.equal(mac.slots, 5);
+  assert.equal(mac.startLoad, 8);
+  assert.equal(mac.stopLoad, 12);
+  assert.equal(mac.core, 'bunny-mac-personal-core-1');
+  assert.deepEqual(mac.pool, {name:'bunny-tests', limits:LIMITS});
+  assert.deepEqual(mac.sizes, {standard:{cpus:'2', memory:'1250m', slots:1, suffix:''}, wide:{cpus:'4', memory:'2048m', slots:2, suffix:'-wide'}});
+  assert.equal(mac.buildBytes, 2048 * 1024 ** 2);
+  assert.deepEqual(mac.runtimeCheck, {cpus:'2', memory:'1536m'});
+  assert.equal(mac.scratch, 'tmpdir');
+  assert.equal(pc.slots, 8);
+  assert.equal(pc.startLoad, 24);
+  assert.equal(pc.stopLoad, 32);
+  assert.equal(pc.core, null, 'no installed core, so no core health check');
+  assert.equal(pc.pool, null, 'no pool, so no helper, cgroup or pool headroom');
+  assert.deepEqual(pc.sizes, {standard:{cpus:'4', memory:'2048m', slots:1, suffix:''}, wide:{cpus:'8', memory:'3584m', slots:2, suffix:'-wide'}});
+  assert.deepEqual(pc.runtimeCheck, {cpus:'2', memory:'1536m'});
+  assert.equal(pc.scratch, 'cache', 'not the memory-backed WSL /tmp');
+  // Eight standard jobs' ceilings, or four wide ones, stay within 16 GiB of the PC's 19.5 GiB Docker VM.
+  const mib = memory => Number(memory.slice(0, -1));
+  assert.ok(pc.slots * mib(pc.sizes.standard.memory) <= 16 * 1024);
+  assert.ok((pc.slots / 2) * mib(pc.sizes.wide.memory) <= 16 * 1024);
+  for (const profile of [mac, pc]) assert.ok(Object.isFrozen(profile) && Object.isFrozen(profile.sizes) && Object.isFrozen(profile.sizes.standard));
+  assert.equal(SLOTS, mac.slots);
+  assert.equal(MAX_LOAD, mac.startLoad);
+});
+
+test('the PC profile needs the explicit setting and a WSL kernel; anything else gets the Mac profile or a refusal', () => {
+  const wsl = {platform:'linux', osRelease:'5.15.167.4-microsoft-standard-WSL2'};
+  assert.equal(selectProfile({}, wsl), profiles.mac, 'no setting: the Mac profile, even on the PC');
+  assert.equal(selectProfile({BUNNY_TEST_HOST:''}, wsl), profiles.mac);
+  assert.equal(selectProfile({BUNNY_TEST_HOST:'mac'}, wsl), profiles.mac);
+  assert.equal(selectProfile({}, {platform:'darwin', osRelease:'27.0.0'}), profiles.mac);
+  assert.equal(selectProfile({}, {platform:'linux', osRelease:'6.8.0-1017-azure'}), profiles.mac, 'a hosted runner is not the PC');
+  assert.equal(selectProfile({BUNNY_TEST_HOST:'pc'}, wsl), profiles.pc);
+  assert.throws(() => selectProfile({BUNNY_TEST_HOST:'pc'}, {platform:'darwin', osRelease:'27.0.0'}), /BUNNY_TEST_HOST=pc is for the PC's WSL Linux only/);
+  assert.throws(() => selectProfile({BUNNY_TEST_HOST:'pc'}, {platform:'linux', osRelease:'6.8.0-1017-azure'}), /BUNNY_TEST_HOST=pc is for the PC's WSL Linux only/);
+  for (const value of ['PC', 'big', 'pc ', 'windows']) assert.throws(() => selectProfile({BUNNY_TEST_HOST:value}, wsl), /BUNNY_TEST_HOST must be mac or pc, or unset for the Mac profile/, value);
+  assert.equal(profileLine(profiles.mac), 'profile mac: 5 slots, start under load 8, stop above 12, standard 2 CPUs 1250m, wide 4 CPUs 2048m, pool /bunny-tests, core check bunny-mac-personal-core-1');
+  assert.equal(profileLine(profiles.pc), 'profile pc: 8 slots, start under load 24, stop above 32, standard 4 CPUs 2048m, wide 8 CPUs 3584m, no pool, no core check');
+});
+
+test('the PC profile admits on load and its eight slots alone, and never reads a core or a pool', () => {
+  const need = {bytes:2048 * 1024 ** 2, slots:1};
+  const ok = {load:3, core:null, used:0};
+  assert.equal(decide(ok, need, profiles.pc), null);
+  assert.equal(decide({...ok, load:23.9}, need, profiles.pc), null);
+  assert.equal(decide({...ok, load:24}, need, profiles.pc), "the host's 1-minute load is 24.0, at or above 24");
+  assert.equal(decide({...ok, used:7}, need, profiles.pc), null);
+  assert.equal(decide({...ok, used:8}, need, profiles.pc), '8 of 8 test-job slots are taken and this job needs 1');
+  assert.equal(decide({...ok, used:7}, {bytes:1, slots:2}, profiles.pc), '7 of 8 test-job slots are taken and this job needs 2');
+  // The same readings decide as before under the Mac profile.
+  assert.equal(decide({...ok, used:5}, need), '5 of 5 test-job slots are taken and this job needs 1');
+  assert.equal(decide({...ok, load:8}, need, profiles.mac), "the host's 1-minute load is 8.0, at or above 8");
+  // A container named like the Mac's core on the PC is never inspected for health.
+  const io = fake({names:'bunny-mac-personal-core-1\trunning\nbunny-gh1-a\trunning', core:null});
+  const reading = readings(io, null, profiles.pc);
+  assert.equal(reading.core, null);
+  assert.equal(reading.used, 1);
+  assert.equal('pool' in reading, false);
+  assert.equal(io.calls.some(call => call[1] === 'inspect' || call[1] === 'run'), false);
+});
+
+test('admission under the PC profile waits on its own load threshold and slot count', async () => {
+  const io = fake({loads:[25, 25, 3], names:'bunny-gh1-a\trunning', core:null});
+  const gate = await admission(io, {pool:null, need:{bytes:1, slots:1}, waitMinutes:5, directory:lockDir(), profile:profiles.pc});
+  assert.equal(gate.status, 0);
+  assert.deepEqual(io.lines, ["waiting: the host's 1-minute load is 25.0, at or above 24"]);
+  await gate.release();
+  assert.equal(io.calls.some(call => call[1] === 'inspect'), false);
 });

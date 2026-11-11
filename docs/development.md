@@ -797,7 +797,10 @@ remain separate.
 
 The Mac's Docker Desktop VM also runs the installed core, the diagnostics stack
 and the Tronbyt server, and host load limits the test work beside them. Each
-session applies this rule itself; no coordinator grant is needed.
+session applies this rule itself; no coordinator grant is needed. The test
+commands apply it as the Mac profile, which every host gets unless
+[Test work on the PC](#test-work-on-the-pc) selects that host's own; their first
+line starts `profile mac:`.
 
 1. **Slots.** At most 5 test jobs at once, across all sessions. A job is one
    container (any except the core, the diagnostics containers, the Tronbyt
@@ -878,6 +881,62 @@ jobs; never touch another session's containers.
 - Lint: start it only when
   `ps -axo command= | grep -E '^([^ ]*/)?node .*(eslint/bin/eslint\.js|lint-shards\.mjs)'`
   prints nothing. An editor's ESLint language server does not match.
+
+### Test work on the PC
+
+The owner's PC runs test jobs in its WSL checkout, with Docker in WSL and about
+19.5 GiB for the Docker VM. It has no installed core, diagnostics stack or
+Tronbyt server, so it has no shared test pool and no core check. Each session
+applies this rule itself; no coordinator grant is needed. Its numbers are a
+first profile (owner decisions of 2026-11-11 on Hub #1681), to be tuned after a
+week of use.
+
+1. **Profile.** Set `export BUNNY_TEST_HOST=pc` in the WSL shell before
+   `npm run test:container` or `npm run test:runtime:container`. Both print the
+   profile as their first line, which must start `profile pc:`. Without the
+   setting every host, the PC included, gets the Mac profile. The PC profile is
+   refused outside a WSL kernel, and any value other than `mac` or `pc` is
+   refused, so the Mac never runs with the PC's numbers.
+2. **Slots.** At most 8 test jobs at once, across all sessions. A job is one
+   container or one native test suite; a `…-wide` container and one native
+   sharded catalog run (up to the default four shards) each count as two. A run
+   of more than four shards is unmeasured here. The operator and qualification
+   containers of [Test work on the Mac](#test-work-on-the-mac) item 2 are
+   Mac-only.
+3. **Start check.** Start only when the 1-minute load is under 24 and enough
+   slots are free. Otherwise wait a minute.
+4. **Containers.** Run each test job with
+   `npm run test:container -- --issue <n> --job <name> [--size wide] -- <package script>`.
+   A standard job has 4 CPUs and 2048 MiB, a wide one 8 CPUs and 3584 MiB, both
+   without swap. The SDK suite fits a standard job here. The runtime
+   verification suite runs wide or through
+   `npm run test:runtime:container -- --suite verify`, which keeps its 2 CPUs
+   and 1536 MiB. A container started by hand matches the command:
+   `docker run --rm --name bunny-gh<n>-<name> --cpus 4 --memory 2048m --memory-swap 2048m`,
+   or wide `--cpus 8 --memory 3584m --memory-swap 3584m` with a `-wide` name.
+   The job's private source snapshot goes under `$XDG_CACHE_HOME`, or
+   `~/.cache`, in `bunny-test-container/`, not in the memory-backed WSL `/tmp`.
+5. **Lint and native work.** Items 5 and 6 of
+   [Test work on the Mac](#test-work-on-the-mac) apply unchanged:
+   `npm run lint:js` natively, one at a time, and
+   `node scripts/native-test.mjs <script>` with its default of 2 workers.
+6. **Stop.** If the 1-minute load passes 32, the owner of the newest job stops
+   it. The command checks only the start; sessions apply this stop.
+
+To count, use [Counting test jobs](#counting-test-jobs) without the core check,
+with `ps -eo args=` in place of `ps -axo command=`. Stop and remove only your own
+jobs.
+
+Why these numbers: one `test:runtime:built` job took 276 s and about 1.2 GiB at
+4 CPUs, and 194 s and about 2.2 GiB at 8 CPUs (`node --test` starts a worker per
+CPU of the quota less one, so memory grows with CPUs). Eight standard ceilings,
+or four wide ones, make 16 GiB, which leaves about 3.5 GiB of the Docker VM for
+the engine, image builds and the WSL distribution. The Mac's 8 and 12 are 0.67
+and 1.0 times its 12 cores. Eight 2-CPU jobs at once reached a load of about 10.
+With no core to protect, the PC starts under 0.75 times its 32 threads, so the
+eighth 4-CPU job can still start, and stops above 1.0 times them. The first PC
+run of eight standard jobs records each start's load, the highest load and the
+lowest free memory to confirm both.
 
 ### Old system checks
 
@@ -1566,8 +1625,8 @@ See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verificat
 
 ### One test job in a container
 
-On macOS with Docker Desktop, run one package script in a disposable Linux
-container that starts from installed dependencies:
+On macOS with Docker Desktop, or in the PC's WSL with Docker, run one package
+script in a disposable Linux container that starts from installed dependencies:
 
 ```bash
 npm run test:container -- --issue <n> --job <name> [--size standard|wide] [--no-build] [--network] [--wait-minutes <n>] -- <package script> [arguments...]
@@ -1575,13 +1634,15 @@ npm run test:container -- --issue <n> --job <name> [--size standard|wide] [--no-
 
 The container is `bunny-gh<n>-<name>`, or `bunny-gh<n>-<name>-wide` at the wide
 size. The job name is free text: lowercase letters, digits and inner hyphens.
-Before the job starts, the command prints the container name, its size and the
-slots it takes.
+Its first line names the host's profile and its limits
+(`scripts/test-container/profile.mjs`; the Mac profile unless
+[Test work on the PC](#test-work-on-the-pc) selects the PC's). Before the job
+starts, the command prints the container name, its size and the slots it takes.
 
-| Size | Limits | Slots |
-| --- | --- | --- |
-| `standard` (default) | 2 CPUs, 1250 MiB, swap equal to memory | 1 |
-| `wide` | 4 CPUs, 2048 MiB, swap equal to memory | 2 |
+| Size | Mac limits | PC limits | Slots |
+| --- | --- | --- | --- |
+| `standard` (default) | 2 CPUs, 1250 MiB, swap equal to memory | 4 CPUs, 2048 MiB, swap equal to memory | 1 |
+| `wide` | 4 CPUs, 2048 MiB, swap equal to memory | 8 CPUs, 3584 MiB, swap equal to memory | 2 |
 
 Swap equal to memory means the container cannot swap. A small table in
 `scripts/test-container.mjs` refuses known scripts that do not fit a size and
@@ -1590,7 +1651,8 @@ names their routes:
 - `test:runtime:verify:built` needs `--size wide`, or
   `npm run test:runtime:container -- --suite verify`, which has its own
   1536 MiB limit.
-- `test:sdk:built` needs `--size wide`.
+- `test:sdk:built` needs `--size wide` on the Mac. A PC standard job has the
+  4 CPUs it needs.
 
 The command refuses a raw command or an unknown script name, `test:container`
 and `test:runtime:container`. It also refuses `lint:js`, which runs natively,
@@ -1646,8 +1708,8 @@ runs both in core CI.
 
 #### Shared test pool
 
-Both `npm run test:container` and `npm run test:runtime:container` start their
-containers under one cgroup in the Docker VM, `/sys/fs/cgroup/bunny-tests`
+On the Mac, both `npm run test:container` and `npm run test:runtime:container`
+start their containers under one cgroup in the Docker VM, `/sys/fs/cgroup/bunny-tests`
 (`--cgroup-parent /bunny-tests`). The pool's limits apply to all those
 containers together:
 
@@ -1687,8 +1749,12 @@ set the limits, the command prints why at start-up and falls back to
 per-container limits. `BUNNY_TEST_POOL_SCRATCH_NAME` names another pool for
 scratch exercises only. It must be one path segment that starts with `bunny-`.
 
+The PC profile has no pool: no helper runs, no cgroup is read or created, and
+jobs keep only their own size limits. Admission there checks the load (under
+24), `docker ps` and the slot count (8), not the core or pool memory.
+
 Admission runs without a daemon. Before an image build and before each job, the
-command waits until all of these hold:
+command waits until all of these hold on the Mac:
 
 - the host's 1-minute load (`os.loadavg()`) is under 8;
 - `docker ps` can be read;
@@ -1716,7 +1782,7 @@ start holding the lock, and prints a line only when the reason changes. Every
 Docker read times out after 60 seconds. After `--wait-minutes` (default 30) it
 stops with exit status 75 and the last reason. A start also takes one lock that
 every session on this machine shares, `/private/tmp/bunny-test-start/lock`
-(owner-only), with a random token in its owner file. It holds the lock from its
+(`/tmp/bunny-test-start/lock` on Linux, owner-only), with a random token in its owner file. It holds the lock from its
 admission check until its container has run for 30 seconds, and through an
 image build. Releasing removes the lock only while the token is still its own.
 A lock is taken over, with a printed line, only when its owner's process is

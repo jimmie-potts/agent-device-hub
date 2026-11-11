@@ -8,22 +8,24 @@
 import {execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {lstat, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
-import {loadavg, platform} from 'node:os';
+import {loadavg, platform, release} from 'node:os';
 import {join} from 'node:path';
+import {profiles} from './profile.mjs';
 
 // The pinned multi-architecture alpine index every helper and reader runs.
 export const IMAGE = 'docker.io/library/alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf';
 // For the scratch exercises only: a different pool directory, one safe path segment that starts with bunny-.
 export const SCRATCH_ENV = 'BUNNY_TEST_POOL_SCRATCH_NAME';
-export const DEFAULT_POOL = 'bunny-tests';
-export const CORE = 'bunny-mac-personal-core-1';
+// The Mac profile's values (./profile.mjs), under the names other scripts and tests import. Only the Mac has a pool.
+export const DEFAULT_POOL = profiles.mac.pool.name;
+export const CORE = profiles.mac.core;
 // 5 GiB, no swap, 6 CPUs, and a CPU weight of 25 against the default 100 that the core keeps (#1635 Appendix A).
-export const LIMITS = Object.freeze({'memory.max':'5368709120', 'memory.swap.max':'0', 'cpu.max':'600000 100000', 'cpu.weight':'25'});
-export const MAX_LOAD = 8;
+export const LIMITS = profiles.mac.pool.limits;
+export const MAX_LOAD = profiles.mac.startLoad;
 export const MAX_CHECK_MS = 500;
 // The rule's slot count (docs/development.md "Test work on the Mac", rule 1). The command enforces it with and without the
 // pool. It counts containers only; a session still counts its native suites itself under the rule's start check.
-export const SLOTS = 5;
+export const SLOTS = profiles.mac.slots;
 export const RECHECK_MS = 30_000;
 export const LOCK_RECHECK_MS = 3_000; // When the only reason to wait is another start holding the lock.
 export const HOLD_MS = 30_000; // A start keeps the lock this long after its container exists.
@@ -174,14 +176,16 @@ export function countSlots(names) {
 }
 
 /** Everything admission reads. A failed read is kept as an error, which makes the start wait. */
-export function readings(io, pool) {
+export function readings(io, pool, profile = profiles.mac) {
   const load = io.loadavg()[0];
   const listing = io.read(['ps','-a','--format','{{.Names}}\t{{.State}}']);
   if (listing === null) return {load, error:'docker ps failed, so the running test jobs cannot be counted'};
   const containers = parseContainers(listing);
-  // Only a machine with no container of that name has no installed core; any failure to read its health is a wait.
-  const core = containers.names.includes(CORE)
-    ? {...coreHealth(io.read(['inspect','--format','{{json .State.Health}}',CORE])), state: containers.states[CORE]}
+  // A profile without a core checks none. Otherwise only a machine with no container of that name has no installed
+  // core, and any failure to read its health is a wait.
+  const name = profile.core;
+  const core = name && containers.names.includes(name)
+    ? {...coreHealth(io.read(['inspect','--format','{{json .State.Health}}',name])), state: containers.states[name]}
     : null;
   const reading = {load, core, used: countSlots(containers.running)};
   if (pool) reading.pool = readPool(io, pool);
@@ -193,11 +197,12 @@ export const NOT_READY = 'the pool is missing, unreadable or without its limits'
 const poolKey = pool => JSON.stringify(pool ? {exists:pool.exists, controllers:pool.controllers, limits:pool.limits} : null);
 export const LOCK_BUSY = 'another test job is starting';
 
-/** Why a start must wait, or null. `need` is {bytes, slots}. */
-export function decide(reading, need) {
+/** Why a start must wait, or null. `need` is {bytes, slots}; `profile` gives the load threshold and slot count. */
+export function decide(reading, need, profile = profiles.mac) {
+  const {startLoad, slots} = profile;
   if (reading.error) return reading.error;
   if (!Number.isFinite(reading.load)) return "the host's 1-minute load cannot be read";
-  if (reading.load >= MAX_LOAD) return `the host's 1-minute load is ${reading.load.toFixed(1)}, at or above ${String(MAX_LOAD)}`;
+  if (reading.load >= startLoad) return `the host's 1-minute load is ${reading.load.toFixed(1)}, at or above ${String(startLoad)}`;
   if (reading.core) {
     if (reading.core.state !== 'running') return `the installed core is ${reading.core.state || 'in an unknown state'}, not running`;
     if (reading.core.status === 'unreadable') return "the installed core's health cannot be read";
@@ -206,7 +211,7 @@ export function decide(reading, need) {
     if (reading.core.lastMs >= MAX_CHECK_MS) return `the installed core's last health check took ${String(reading.core.lastMs)} ms, ${String(MAX_CHECK_MS)} or more`;
   }
   if (!Number.isInteger(reading.used) || reading.used < 0) return 'the running test jobs cannot be counted';
-  if (reading.used + need.slots > SLOTS) return `${String(reading.used)} of ${String(SLOTS)} test-job slots are taken and this job needs ${String(need.slots)}`;
+  if (reading.used + need.slots > slots) return `${String(reading.used)} of ${String(slots)} test-job slots are taken and this job needs ${String(need.slots)}`;
   if ('pool' in reading) {
     // Fail closed: only a pool that reads back with exactly its intended limits is a ceiling to admit against.
     if (!matches(reading.pool) || !Number.isFinite(reading.pool.anon) || !Number.isFinite(reading.pool.shmem)) return NOT_READY;
@@ -288,7 +293,7 @@ export async function tryLock(io, directory) {
  * is missing or without its limits is set up again with `ensurePool`, once for each distinct reading of it. The only
  * repeated side effect is the read-only pool reader, once per recheck.
  */
-export async function admission(io, {pool, need, waitMinutes, directory = io.lockDir, interrupted = () => false, signal, session = poolSession()}) {
+export async function admission(io, {pool, need, waitMinutes, directory = io.lockDir, interrupted = () => false, signal, session = poolSession(), profile = profiles.mac}) {
   const deadline = io.now() + waitMinutes * 60_000;
   let last = null;
   for (;;) {
@@ -299,8 +304,8 @@ export async function admission(io, {pool, need, waitMinutes, directory = io.loc
     const busy = !lock.held;
     if (busy) reason = `${LOCK_BUSY} (lock ${join(directory, 'lock')}, held by process ${String(lock.owner?.pid ?? 'unknown')})`;
     else {
-      reading = readings(io, pool);
-      reason = decide(reading, need);
+      reading = readings(io, pool, profile);
+      reason = decide(reading, need, profile);
       if (reason === null) return {status:0, release: lock.release};
       await lock.release();
     }
@@ -327,6 +332,9 @@ export function reportOverflow(io, pool, before, after) {
 /** The host side of the pool: timing, load and process facts. Docker calls come from the caller's io. */
 export const hostFacts = Object.freeze({
   loadavg,
+  // What ./profile.mjs `selectProfile` checks before it gives the PC profile: the platform and the kernel release.
+  platform: platform(),
+  osRelease: release(),
   now: () => Date.now(),
   sleep: (ms, signal) => new Promise(done => {
     const timer = setTimeout(done, ms);
