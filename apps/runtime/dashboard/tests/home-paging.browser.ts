@@ -148,6 +148,16 @@ try {
   }
   await wall.locator('summary').first().click();
   await expect(inboxList).toHaveAttribute('data-page', String(gridPage));await expect(visibleRows(inboxList)).toHaveCount(perGridPage);
+  // F24: a round trip through another width returns to the page the owner chose. The Wide Inbox shows one item a page at
+  // 1440 px and two at 1100 px; from page 4 the narrower page holds items 3 and 4, and back at 1440 page 4 shows again.
+  const chosenPage = Math.min(4, Number(await inboxList.getAttribute('data-pages')));
+  while (await inboxList.getAttribute('data-page') !== String(chosenPage)) await inbox.getByRole('button', {name: Number(await inboxList.getAttribute('data-page')) < chosenPage ? 'Next' : 'Previous', exact: true}).click();
+  const chosenKey = await visibleRows(inboxList).first().getAttribute('data-paged-key');
+  for (const width of [1100, 1440]) {
+    await page.setViewportSize({width, height: 1000});await settle(page);
+    await expect(inboxList.locator(`[data-paged-key="${chosenKey ?? ''}"]`)).toBeVisible();
+  }
+  await expect(inboxList).toHaveAttribute('data-page', String(chosenPage));
   await page.setViewportSize({width: 560, height: 1000});await expect(page.locator('.home-layout-grid')).toHaveAttribute('data-packed', 'false');
 
   // Agent sessions: a session that needs the owner, last in record order, is on page 1; several say so on the pager.

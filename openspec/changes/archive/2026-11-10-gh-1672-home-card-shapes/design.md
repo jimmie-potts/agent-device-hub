@@ -196,6 +196,18 @@ rule that short lists could not meet, so the owner chose to calculate rather tha
 - An idle test records every change inside the list cards for two seconds after Home settles, at every width from
   1100 to 2560px in 20px steps with 0, 1, 5, 6 and 13 Inbox items, on the built-in and two mixed layouts.
 
+### 12. Review round 1 of the changed approach (PR #1673)
+
+- An opened row takes the page and the list becomes the card's only scroll area (`overflow-y: auto`); the heading,
+  counts, filters and pager never shrink. Every control in an opened session or Inbox item scrolls into view inside
+  the card. This is CSS only; nothing measures.
+- A closed session tile shows its name and where it runs on one line each with an ellipsis (the full name is the
+  title attribute and shows when the tile opens), so the state row always fits the 124px tile. The fit test also
+  checks that nothing a closed row shows leaves it, with a long session title and long Inbox and Timeline names.
+- A change of page size shows the page holding the row the owner last chose (by paging, opening or Check Inbox), which
+  a size change never rewrites, so a round trip through another width returns to the same page.
+- The Timeline reserves its status line's 28px in every shape, so a refresh no longer changes the page size.
+
 ## Risks / Trade-offs
 
 - Visual order can differ from Tab order when a later card fills an earlier hole; Edit Home shows the real placement.

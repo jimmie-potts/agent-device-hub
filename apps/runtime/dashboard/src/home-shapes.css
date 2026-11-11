@@ -181,6 +181,8 @@
 .home-layout-card[data-home-shape] .timeline-filters{box-sizing:border-box;height:44px;margin:0 0 8px;flex-wrap:nowrap}
 .home-layout-card[data-home-shape] .timeline-status{box-sizing:border-box;height:20px;line-height:20px;margin:0 0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .home-layout-card[data-home-shape] .paged-list>ol.timeline-entries{margin:0}
+:is(.home-layout-card.home-shape-square,.home-layout-card.home-shape-wide) .timeline-card{position:relative}
+:is(.home-layout-card.home-shape-square,.home-layout-card.home-shape-wide) .timeline-card>.timeline-status{position:absolute;inset:auto 0 0 0;z-index:1;margin:0;background:var(--panel)}
 .home-layout-card[data-home-shape] .paged-list:not([data-held=true]) .timeline-entry:not([open])>summary{box-sizing:border-box;height:51px;min-height:0}
 .home-layout-card[data-home-shape] .timeline-card:has(>.timeline-empty) .paged-list{flex:0 0 auto}
 .home-layout-card[data-home-shape] .timeline-card>.timeline-empty{flex:1 1 auto;display:grid;place-items:center;margin:0;padding:0}
@@ -198,6 +200,15 @@
 .home-layout-card[data-home-shape] .paged-list:not([data-held=true])>.agent-grid .agent-state .chip{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .home-layout-card[data-home-shape] .agent-face{min-height:0}
 .home-layout-card[data-home-shape] .agent-grid .agent-disclosure{min-width:0}
+/* A closed tile keeps its name and where it runs on one line each, so the state row always fits the 124px tile; the
+   full name is its title, and an opened tile shows it in full. */
+.home-layout-card[data-home-shape] .paged-list:not([data-held=true])>.agent-grid :is(.session-id h3,.agent-client){display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+.home-layout-card[data-home-shape] .paged-list:not([data-held=true])>.agent-grid .session-id{min-width:0;overflow:hidden}
+/* Chrome keeps its fixed height in every state. While a row is open it takes the page, and the list becomes the card's
+   only scroll area, so a long detail is never clipped; its controls scroll into view as focus reaches them. */
+.home-layout-card[data-home-shape] :is(.inbox-card>header,.inbox-card>.hub-control-status,.timeline-heading,.timeline-card>.timeline-open,.timeline-filters,.timeline-card>.timeline-status,.widget[data-widget=sessions]>.widget-head,.agent-summary,.agent-sessions .filters,.paged-list-pager){flex-shrink:0}
+.home-layout-card[data-home-shape] .paged-list[data-held=true]{overflow-y:auto;overscroll-behavior:contain;scroll-padding-block:var(--space-xs);padding-inline:4px;margin-inline:-4px}
+.home-layout-card[data-home-shape] .paged-list[data-held=true]:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
 
 .light-empty{margin:0;padding:var(--space-m);text-align:center;color:var(--muted-dense);font-size:var(--type-small)}
 .home-art-slot-shaped{height:100%}

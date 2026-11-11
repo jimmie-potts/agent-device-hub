@@ -60,10 +60,12 @@ export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, h
   // category filters stay in Large square and on the Timeline page.
   const box = useHomeCardBox(), shape = box?.shape, oneRow = shape === 'square' || shape === 'wide', filters = shape === undefined || shape === 'large-square';
   // In a Home shape (#1672) a page holds the closed entries that fit below the heading, the Tall link or the Large
-  // square filters, and a status line while one shows.
+  // square filters, and the status line.
   const fit = listFit.timeline;
   const chrome = shape === 'tall' ? fit.tallHeading + fit.tallLink : shape === 'large-square' ? fit.heading + fit.filters : fit.heading;
-  const size = box === undefined ? pageSize : fitRows(box.height - listFit.frame - chrome - (status === '' ? 0 : fit.status), fit.row, rows.length, 0, !oneRow);
+  // A refresh never changes the page size: Tall and Large square always reserve the status line's height, and the
+  // one-row shapes show it over the card's bottom edge instead of in the flow.
+  const size = box === undefined ? pageSize : fitRows(box.height - listFit.frame - chrome - (oneRow ? 0 : fit.status), fit.row, rows.length, 0, !oneRow);
   // A shape without the category buttons shows every category, so no hidden filter narrows its list.
   if (!filters && category !== 'All') setCategory('All');
   return <div className="timeline-card" data-timeline-card data-history-error={snapshot.errorCode} aria-labelledby={headingId ?? uid}>
@@ -75,7 +77,7 @@ export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, h
     {shape === 'tall' && <a className="timeline-open" href="#/timeline">Filters on the Timeline page</a>}
     {filters && <div className="timeline-filters" role="group" aria-label="Activity filters" aria-describedby={`${uid}-window`}>{(['All', 'Agents', 'Devices', 'Automation'] as const).map(value => <button type="button" className="secondary" key={value} aria-pressed={category === value} onClick={() => {setCategory(value);}}>{value}</button>)}</div>}
     <p className="vh" id={`${uid}-window`}>Categories filter only the latest {snapshot.rows.length} loaded entries, up to 200 matching records.</p>
-    <p className={status === '' ? 'vh' : 'timeline-status'} role="status">{status !== '' ? status : `${rows.length} history entries.`}</p>
+    <p className={status === '' && box === undefined ? 'vh' : 'timeline-status'} role="status">{status !== '' ? status : box === undefined ? `${rows.length} history entries.` : <span className="vh">{rows.length} history entries.</span>}</p>
     {snapshot.readAt !== undefined && status === '' && shape === undefined && <p className="timeline-read-at">Latest {snapshot.rows.length} · Read {new Date(snapshot.readAt).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}</p>}
     <PagedList keys={rows.map(row => String(row.seq))} pageSize={size} pager={!oneRow} label="Timeline" resetKey={`${category}:${period}`}>{shown =>
       <ol className="timeline-entries" aria-label="Activity entries">{rows.map(row => <HistoryEntry key={row.seq} row={row} hidden={!shown(String(row.seq))}/>)}</ol>}</PagedList>

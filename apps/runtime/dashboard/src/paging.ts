@@ -23,8 +23,8 @@ export const listFit = {
   inbox: {heading: 52, notice: 24, row: 56},
   /**
    * Timeline: the heading row (44px) and 8px below it, or in Tall the heading over the period choice (76px) and 8px;
-   * Tall's link to the filters (44px); Large square's category buttons (44px) and 8px; a status line (20px) and 8px;
-   * one closed entry (51px) and its 1px rule.
+   * Tall's link to the filters (44px); Large square's category buttons (44px) and 8px; the status line (20px) and 8px,
+   * reserved even while empty so a refresh never changes the page size; one closed entry (51px) and its 1px rule.
    */
   timeline: {heading: 52, tallHeading: 84, tallLink: 44, filters: 52, status: 28, row: 52},
   /**

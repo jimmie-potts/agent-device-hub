@@ -34,20 +34,23 @@ export function PagedList({keys, pageSize, label, reveal, resetKey, note, pager 
   const alone = useRef(expandAlone);alone.current = expandAlone;
   const [revealed, setRevealed] = useState<number>(), pagerFocus = useRef<HTMLButtonElement | null>(null);
   const [reset, setReset] = useState(resetKey), size = pageSize, [sized, setSized] = useState(pageSize);
-  if (resetKey !== reset) {setReset(resetKey);setPage(0);}
-  // A new page size (the card changed shape or the window width) keeps the same rows in view: the page holding the
-  // opened row, or else the first row the page showed.
+  // The row the owner last chose by paging, opening or Check Inbox. A change of page size never rewrites it, so a
+  // round trip through another shape or width returns to the same page.
+  const [chosen, setChosen] = useState<string>();
+  if (resetKey !== reset) {setReset(resetKey);setPage(0);setChosen(undefined);}
+  // A new page size (the card changed shape or the window width) shows the page holding the opened row, else the row
+  // the owner last chose, else the first row the page showed.
   if (size !== sized) {
     setSized(size);
-    const held = opened.filter(key => keys.includes(key)).at(-1), anchor = held === undefined ? page * sized : keys.indexOf(held);
-    setPage(pageOf(anchor, size));
+    const held = opened.filter(key => keys.includes(key)).at(-1) ?? (chosen !== undefined && keys.includes(chosen) ? chosen : undefined);
+    setPage(pageOf(held === undefined ? page * sized : keys.indexOf(held), size));
   }
   // Check Inbox: show the item's page, with no other row holding it; the caller then opens the item, and its toggle
   // records it like any other.
   if (reveal !== undefined && reveal.serial !== revealed) {
     setRevealed(reveal.serial);
     const index = keys.indexOf(reveal.key);
-    if (index >= 0) {setPage(pageOf(index, size));setOpened(previous => previous.filter(key => key === reveal.key));}
+    if (index >= 0) {setPage(pageOf(index, size));setChosen(reveal.key);setOpened(previous => previous.filter(key => key === reveal.key));}
   }
   const pages = pager ? pageCount(keys.length, size) : 1, current = pager ? clampPage(page, keys.length, size) : 0;
   // Removing the last row of the last page moves back to the page before it.
@@ -78,6 +81,7 @@ export function PagedList({keys, pageSize, label, reveal, resetKey, note, pager 
       if (!details.open && alone.current) for (const other of rows) {const disclosure = other.querySelector('details');if (other !== row && disclosure?.open === true) disclosure.open = false;}
       const now = rows.filter(value => value.querySelector('details')?.open === true).flatMap(value => value.dataset.pagedKey ?? []);
       setOpened(previous => [...previous.filter(value => value !== key && now.includes(value)), ...now.filter(value => value !== key && !previous.includes(value)), ...(details.open ? [key] : [])]);
+      if (details.open) setChosen(key);
     };
     node.addEventListener('focusin', focused);node.addEventListener('focusout', left);node.addEventListener('toggle', toggled, true);
     return () => {node.removeEventListener('focusin', focused);node.removeEventListener('focusout', left);node.removeEventListener('toggle', toggled, true);};
@@ -95,7 +99,7 @@ export function PagedList({keys, pageSize, label, reveal, resetKey, note, pager 
   });
   const go = (target: number): void => {
     const value = clampPage(target, keys.length, size);
-    setPage(value);
+    setPage(value);setChosen(keys[value * size]);
     // A pager button that becomes disabled would drop focus, so focus passes to the other one.
     if (value === 0) pagerFocus.current = next.current;else if (value === pages - 1) pagerFocus.current = previous.current;
   };

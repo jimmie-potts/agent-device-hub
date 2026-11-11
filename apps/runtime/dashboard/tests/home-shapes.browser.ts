@@ -119,12 +119,14 @@ async function measure(page: Page): Promise<{columns: number; gap: number; left:
       let reach = top, band = 0;
       for (const [from, to] of spans) {band = Math.max(band, from - reach);reach = Math.max(reach, to);}
       band = Math.max(band, bottom - reach);
+      // An opened row's list is the card's scroll area (#1672 F22); listScrolls checks that its controls scroll into view.
+      const scrolled = (node: Element): boolean => node.closest('.paged-list[data-held=true]') !== null;
       const clipped = [...card.querySelectorAll<HTMLElement>('button, input, select, a[href], summary, canvas')].filter(node => {
-        const rect = node.getBoundingClientRect();if (rect.width === 0 || rect.height === 0 || unseen(node)) return false;
+        const rect = node.getBoundingClientRect();if (rect.width === 0 || rect.height === 0 || unseen(node) || scrolled(node)) return false;
         return rect.left < box.left - 1 || rect.right > box.right + 1 || rect.top < box.top - 1 || rect.bottom > box.bottom + 1;
       }).map(node => `${node.tagName.toLowerCase()}:${(node.textContent ?? node.getAttribute('aria-label') ?? '').trim().slice(0, 24)}`);
       const scrollers = [...card.querySelectorAll<HTMLElement>('*')].filter(node => {
-        if (unseen(node)) return false;
+        if (unseen(node) || node.matches('.paged-list[data-held=true]')) return false;
         const overflow = getComputedStyle(node).overflowY;return (overflow === 'auto' || overflow === 'scroll') && node.scrollHeight > node.clientHeight + 1;
       }).map(node => node.className);
       return {id: card.dataset.homeCard ?? '', shape: card.dataset.homeShape ?? null, offers: (card.dataset.homeOffers ?? '').split(' '), left: box.left, top: box.top, right: box.right, bottom: box.bottom,
@@ -160,7 +162,7 @@ async function listFits(page: Page): Promise<string[]> {
       const top = px(style.paddingTop) + px(style.borderTopWidth), bottom = px(style.paddingBottom) + px(style.borderBottomWidth);
       if (!near(top + bottom, fit.frame)) out.push(`${name}: frame ${String(top + bottom)}px, listFit.frame ${String(fit.frame)}`);
       const inner = {top: box.top + top, bottom: box.bottom - bottom};
-      const notices = card.querySelectorAll('.inbox-card>.hub-control-status').length, status = card.querySelector('.timeline-status') === null ? 0 : 1;
+      const notices = card.querySelectorAll('.inbox-card>.hub-control-status').length, status = shape === 'square' || shape === 'wide' ? 0 : 1;
       const chrome = id === 'inbox' ? fit.inbox.heading + notices * fit.inbox.notice
         : id === 'timeline' ? (shape === 'tall' ? fit.timeline.tallHeading + fit.timeline.tallLink : shape === 'large-square' ? fit.timeline.heading + fit.timeline.filters : fit.timeline.heading) + status * fit.timeline.status
           : fit.sessions.heading + (shape === 'tall' ? fit.sessions.tallSummary + fit.sessions.tallFilters : fit.sessions.summary + fit.sessions.filters);
@@ -174,6 +176,15 @@ async function listFits(page: Page): Promise<string[]> {
       for (const [index, value] of tops.slice(1).entries()) if (!near(value - (tops[index] ?? 0), pitch)) out.push(`${name}: row pitch ${String(value - (tops[index] ?? 0))}px, listFit ${String(pitch)}`);
       // A list row's last entry has no rule below it, so it is one pixel shorter.
       for (const row of rows) if (row.height > height + 0.5 || row.height < height - 1.5) out.push(`${name}: row ${row.height.toFixed(1)}px, listFit ${String(height)}`);
+      // Everything a closed row shows stays inside it: a long name is cut short, never pushed below the row (F23).
+      for (const row of all.filter(value => !value.hidden)) {
+        const outer = row.getBoundingClientRect();
+        for (const node of row.querySelectorAll<HTMLElement>('*')) {
+          const rect = node.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0 || !node.checkVisibility() || node.closest('.vh') !== null) continue;
+          if (rect.top < outer.top - 1 || rect.bottom > outer.bottom + 1) out.push(`${name}: ${node.tagName.toLowerCase()}.${String(node.className).slice(0, 30)} "${(node.textContent ?? '').trim().slice(0, 20)}" leaves its row`);
+        }
+      }
       const end = Math.max(...rows.map(row => row.bottom));
       if (end > limit + 0.5) out.push(`${name}: rows end ${(end - limit).toFixed(1)}px past ${pager === undefined ? 'the card' : 'the pager'}`);
       // A full page: more rows than it shows, and not the last page, which may hold fewer.
@@ -199,6 +210,8 @@ function tiles(value: Awaited<ReturnType<typeof measure>>): void {
 }
 
 try {
+  // F23: a provider title long enough to wrap four lines in a tile; first in record order, so the first page shows it.
+  await world.observe({kind: 'session-started'}, {identity: {...IDENTITY, sessionId: 'shape-long-title'}, title: {value: 'Rework the Home card shapes so every list fits its card at each window width, then report back', source: 'provider'}});
   for (let index = 0; index < 5; index += 1) await world.observe({kind: 'session-started'}, {identity: {...IDENTITY, sessionId: `shape-${String(index)}`}, title: {value: `Synthetic agent ${String(index + 1)}`, source: 'provider'}});
   await world.observe(approvalPrompt('shapes-attention'));
   for (let index = 0; index < 13; index += 1) await world.failCommand();
@@ -224,7 +237,7 @@ try {
     // AC1: the built-in layout, before any save, tiles on the unit grid; so do three mixed layouts with all four shapes.
     const value = await measure(page);assert.equal(value.columns, 5);assert.ok(Math.abs(value.cell - 225.6) < 1, String(value.cell));tiles(value);
     assert.deepEqual(misfits(value.cards), []);assert.deepEqual(halfEmpty(value.cards), []);assert.deepEqual(await listFits(page), []);
-    await shot(page, 'final4-default-1440');
+    await shot(page, 'final5-default-1440');
     // F3: automatic art stays in view at every width: trailing empty cells, or a Wide row of its own after the last card.
     // The sweep runs at 1x scale in its own page: 2x screenshots at 2560px exhaust the renderer.
     const sweepContext = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'}), sweep = await sweepContext.newPage();
@@ -308,7 +321,7 @@ try {
     await expect(choice.getByRole('button', {name: 'Large square', exact: true})).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.locator('[data-home-card="hub-mode"]')).toHaveAttribute('data-home-shape', 'large-square');
-    await shot(page, 'final4-edit-home-1440');
+    await shot(page, 'final5-edit-home-1440');
     // The screenshot clears focus; Escape from a control in the panel closes it and returns focus to its button.
     await choice.getByRole('button', {name: 'Large square', exact: true}).focus();await page.keyboard.press('Escape');await expect(toggle).toBeFocused();await expect(choice).toHaveCount(0);
     await page.getByRole('button', {name: 'Options for Inbox', exact: true}).click();
@@ -351,7 +364,7 @@ try {
     await expect.poll(order).toEqual(old.map(entry => entry.widget));
     await expect.poll(async () => Object.fromEntries((await measure(page)).cards.map(card => [card.id, card.shape]))).toEqual({'hub-mode': 'wide', inbox: 'tall', sessions: 'large-square', [lamps[0] ?? '']: 'tall', [lamps[1] ?? '']: 'large-square', [pixoo]: 'square', timeline: 'large-square', art: 'wide'});
     tiles(await measure(page));
-    await shot(page, 'final4-converted-old-layout-1440');
+    await shot(page, 'final5-converted-old-layout-1440');
     await page.waitForTimeout(500);assert.deepEqual(sent, [], 'loading an old-format layout writes nothing');
   }
 
@@ -374,7 +387,7 @@ try {
       assert.ok(card !== null && dismiss !== null && dismiss.y + dismiss.height <= card.y + card.height + 1, 'Dismiss is inside the card');
     };
     await reachable();assert.deepEqual(misfits((await measure(page)).cards), []);
-    await shot(page, 'final4-inbox-opened-item-1440');
+    await shot(page, 'final5-inbox-opened-item-1440');
     for (const shape of ['wide', 'large-square'] as const) {
       await save(page, [placement('inbox', shape), placement('hub-mode', 'wide')]);await expect(rows).toHaveCount(1);await reachable();
       assert.deepEqual(misfits((await measure(page)).cards), [], `opened item in ${shape}`);
@@ -441,7 +454,7 @@ try {
           }
           await tabs.first().click();
         }
-        if (width === 1440 || process.env.HOME_SHAPES_DEBUG !== undefined) await shot(page, `final4-every-card-${shape}-${String(width)}`);
+        if (width === 1440 || process.env.HOME_SHAPES_DEBUG !== undefined) await shot(page, `final5-every-card-${shape}-${String(width)}`);
       }
     }
     await page.setViewportSize({width: 1440, height: 1000});
@@ -465,7 +478,7 @@ try {
     await wide.getByRole('button', {name: 'Off', exact: true}).click();await inside(wide, /Refused/);
     await page.unroute('**/api/v2/commands/power-set');
     assert.deepEqual(misfits((await measure(page)).cards), []);
-    await shot(page, 'final4-light-results-1440');
+    await shot(page, 'final5-light-results-1440');
     // F15: the art card keeps its element, image and focused control across the one-column threshold and back.
     await save(page, representative);
     const unpin = page.locator('[data-home-card="art"]').getByRole('button', {name: 'Unpin art', exact: true});
@@ -497,6 +510,15 @@ try {
     await timeline.getByRole('button', {name: 'Devices', exact: true}).click();await expect(timeline.getByRole('button', {name: 'Devices', exact: true})).toHaveAttribute('aria-pressed', 'true');
     await save(page, [placement('timeline', 'tall')]);await expect(timeline.getByRole('button', {name: 'Devices', exact: true})).toHaveCount(0);
     await save(page, [placement('timeline', 'large-square')]);await expect(timeline.getByRole('button', {name: 'All', exact: true})).toHaveAttribute('aria-pressed', 'true');
+    // F25: the status line's height is reserved, so a refresh keeps the page size (rows a page) while it reads.
+    const history = timeline.locator('[data-paged-list="Timeline"]'), shownRows = history.locator('[data-paged-key]:not([hidden])');
+    const perPage = await shownRows.count();
+    // The read is held for a moment so the refreshing state is on screen long enough to check.
+    await page.route('**/api/v2/history**', async route => {await new Promise(resolve => setTimeout(resolve, 800));await route.continue();});
+    await timeline.getByRole('button', {name: 'Refresh history', exact: true}).click();
+    await expect(timeline.locator('.timeline-status')).toHaveText(/Refreshing/);assert.equal(await shownRows.count(), perPage, 'the page size holds while the refresh reads');
+    await expect(timeline.locator('.timeline-status')).not.toHaveText(/Refreshing/);assert.equal(await shownRows.count(), perPage, 'and after it');
+    await page.unroute('**/api/v2/history**');
   }
 
   /** Card pictures side by side in one private PNG, at half their 2x size. */
@@ -511,6 +533,77 @@ try {
     await target.evaluate(() => {if (document.activeElement instanceof HTMLElement) document.activeElement.blur();});await settle(target);
     return (await target.locator(`[data-home-card="${id}"]`).screenshot()).toString('base64');
   };
+
+  /**
+   * F22: an opened row's detail scrolls inside the card. Every control in it scrolls into view inside the list's scroll
+   * area and the card, takes focus and is the element a pointer would hit there; the chrome keeps its fixed heights.
+   */
+  const listScrolls = async (id: string): Promise<string[]> => page.locator(`[data-home-card="${id}"]`).evaluate((card, {fit, id}) => {
+    const out: string[] = [], list = card.querySelector<HTMLElement>('[data-paged-list]');
+    if (list?.dataset.held !== 'true') return ['no opened row'];
+    const style = getComputedStyle(list);if (style.overflowY !== 'auto') out.push(`list overflow ${style.overflowY}`);
+    const shape = card.getAttribute('data-home-shape') ?? '';
+    const chrome: [string, number][] = id === 'sessions' ? [['.widget-head', 44], ['.agent-summary', shape === 'tall' ? fit.sessions.tallSummary - 8 : fit.sessions.summary - 8], ['.agent-sessions .filters', shape === 'tall' ? fit.sessions.tallFilters - 8 : fit.sessions.filters - 8]]
+      : id === 'timeline' ? [['.timeline-heading', shape === 'tall' ? fit.timeline.tallHeading - 8 : fit.timeline.heading - 8], ['.timeline-card>.timeline-status', fit.timeline.status - 8]] : [];
+    for (const [selector, height] of chrome) {const node = card.querySelector(selector);if (node === null || Math.abs(node.getBoundingClientRect().height - height) > 1) out.push(`${selector} ${String(node?.getBoundingClientRect().height)}px, expected ${String(height)}`);}
+    const outer = card.getBoundingClientRect(), controls = [...list.querySelectorAll<HTMLElement>('button, a[href], summary, input, select, textarea')]
+      .filter(node => node.checkVisibility());
+    for (const node of controls) {
+      node.scrollIntoView({block: 'nearest'});node.focus();
+      const rect = node.getBoundingClientRect(), area = list.getBoundingClientRect(), x = rect.left + Math.min(rect.width / 2, 8), y = rect.top + rect.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      const name = `${node.tagName.toLowerCase()} "${(node.textContent ?? node.getAttribute('aria-label') ?? '').trim().slice(0, 24)}"`;
+      if (rect.top < area.top - 1 || rect.bottom > area.bottom + 1 || rect.bottom > outer.bottom + 1) out.push(`${name} not inside the scroll area`);
+      if (document.activeElement !== node && !node.matches(':disabled')) out.push(`${name} does not take focus`);
+      if (hit === null || !(hit === node || node.contains(hit))) out.push(`${name} is covered`);
+    }
+    list.scrollTop = 0;
+    return out;
+  }, {fit: listFit, id});
+
+  if (part('opened')) {
+    // F22: an opened session or Inbox item scrolls inside its card; nothing outside the scroll area is clipped.
+    for (const shape of ['large-square', 'tall'] as const) {
+      await save(page, [placement('sessions', shape), placement('hub-mode', 'wide')]);
+      for (const width of [1100, 1440]) {
+        await page.setViewportSize({width, height: 1000});await measure(page);
+        const tile = page.locator('[data-home-card="sessions"] [data-paged-key]:not([hidden])').first();
+        await tile.locator('summary.agent-face').click();await expect(page.locator('[data-home-card="sessions"] [data-paged-list]')).toHaveAttribute('data-held', 'true');
+        assert.deepEqual(await listScrolls('sessions'), [], `opened session in ${shape} at ${String(width)}`);
+        assert.deepEqual(misfits((await measure(page)).cards), [], `nothing outside the scroll area clipped in ${shape} at ${String(width)}`);
+        if (width === 1440) await shot(page, `final5-opened-session-${shape}-1440`);
+        await tile.locator('summary.agent-face').click();await expect(page.locator('[data-home-card="sessions"] [data-paged-list]')).toHaveAttribute('data-held', 'false');
+      }
+    }
+    // An Inbox item with its command evidence open, longer than a Wide card.
+    await save(page, [placement('inbox', 'wide'), placement('hub-mode', 'wide')]);
+    for (const width of [1100, 1440]) {
+      await page.setViewportSize({width, height: 1000});await measure(page);
+      const item = page.locator('[data-home-card="inbox"] [data-paged-key]:not([hidden])').first();
+      await item.locator('details.inbox-entry > summary').click();await item.locator('details.inbox-evidence > summary').click();
+      assert.deepEqual(await listScrolls('inbox'), [], `opened Inbox item at ${String(width)}`);
+      assert.deepEqual(misfits((await measure(page)).cards), [], `opened Inbox item at ${String(width)}`);
+      await item.locator('details.inbox-evidence > summary').click();await item.locator('details.inbox-entry > summary').click();
+    }
+    await page.setViewportSize({width: 1440, height: 1000});
+  }
+
+  if (part('long')) {
+    // F23: long names stay inside their fixed rows. The long session title comes from the synthetic world; for Inbox and
+    // Timeline rows this check puts a long name into the first rows' text, then reloads.
+    await save(page, [placement('sessions', 'large-square'), placement('inbox', 'tall'), placement('timeline', 'tall'), placement('hub-mode', 'wide')]);
+    const long = 'A very long name that would wrap to several lines in a narrow card if it were allowed to';
+    for (const width of [1100, 1440, 1920]) {
+      await page.setViewportSize({width, height: 1000});await measure(page);
+      await expect(page.locator('[data-home-card="sessions"] h3[title^="Rework the Home card shapes"]')).toBeVisible();
+      await page.evaluate(text => {
+        for (const node of document.querySelectorAll('[data-home-card] :is(.inbox-item-name,.inbox-item-sub,.timeline-title,.timeline-context)')) node.textContent = text;
+      }, long);
+      assert.deepEqual(await listFits(page), [], `long names at ${String(width)}`);
+      if (width === 1440) await shot(page, 'final5-long-title-session-1440');
+    }
+    await page.reload();await feed(page, 'connected');await page.setViewportSize({width: 1440, height: 1000});
+  }
 
   if (part('short')) {
     // A short or empty Inbox in each shape (#1672 owner decision 2026-11-11): one item sits at the top at its normal
@@ -547,7 +640,7 @@ try {
           pictures.push(await picture(fresh, 'inbox'));
         }
       }
-      await sheet('final4-inbox-one-item-and-empty-1440', pictures);
+      await sheet('final5-inbox-one-item-and-empty-1440', pictures);
     } finally {await quietContext.close();await quiet.close();}
   }
 
@@ -568,20 +661,20 @@ try {
 
   if (receipts !== undefined && part('shots')) {
     await save(page, [placement(lamps[0] ?? '', 'large-square'), placement(lamps[1] ?? '', 'wide'), placement(lamps[2] ?? '', 'tall'), placement('light:room:studio', 'square')]);
-    await shot(page, 'final4-lights-four-shapes-1440');
+    await shot(page, 'final5-lights-four-shapes-1440');
     // Hub mode in its four shapes, the Inbox's three shapes with a full list, and Agent sessions in its two.
     const hubShots: string[] = [];
     for (const shape of shapes) {await save(page, [placement('hub-mode', shape)]);hubShots.push(await picture(page, 'hub-mode'));}
-    await sheet('final4-hub-mode-four-shapes-1440', hubShots);
+    await sheet('final5-hub-mode-four-shapes-1440', hubShots);
     const inboxShots: string[] = [];
     for (const shape of ['wide', 'tall', 'large-square'] as const) {await save(page, [placement('inbox', shape)]);await expect(page.locator('[data-home-card="inbox"]')).toHaveAttribute('data-home-shape', shape);inboxShots.push(await picture(page, 'inbox'));}
-    await sheet('final4-inbox-three-shapes-full-1440', inboxShots);
+    await sheet('final5-inbox-three-shapes-full-1440', inboxShots);
     const sessionShots: string[] = [];
     for (const shape of ['tall', 'large-square'] as const) {await save(page, [placement('sessions', shape)]);await expect(page.locator('[data-home-card="sessions"]')).toHaveAttribute('data-home-shape', shape);sessionShots.push(await picture(page, 'sessions'));}
-    await sheet('final4-agent-sessions-1440', sessionShots);
+    await sheet('final5-agent-sessions-1440', sessionShots);
     await save(page, representative);
-    for (const width of [1100, 1440, 1920]) {await page.setViewportSize({width, height: 1000});await settle(page);await shot(page, `final4-home-${String(width)}`);}
-    await page.setViewportSize({width: 375, height: 812});await settle(page);await shot(page, 'final4-home-375');
+    for (const width of [1100, 1440, 1920]) {await page.setViewportSize({width, height: 1000});await settle(page);await shot(page, `final5-home-${String(width)}`);}
+    await page.setViewportSize({width: 375, height: 812});await settle(page);await shot(page, 'final5-home-375');
     await page.setViewportSize({width: 1440, height: 1000});
   }
   assert.deepEqual(errors, []);
