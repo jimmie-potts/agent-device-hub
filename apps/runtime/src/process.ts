@@ -97,19 +97,19 @@ export type ChildInputs = EdgeInputs & {testClock?: TestClock};
  * clock that advances with them, which the child passes to the core's options, since the runtime does not build them.
  * It is a programmatic input only:
  * no argument or environment variable names one, the installed entry points pass none, and `runProcess` refuses one
- * unless the process is a simulated test run with an edge, started by the verification supervisor with an IPC channel.
+ * unless the process is a simulated test run with an edge and has an IPC channel, as the verification supervisor's fork gives.
  */
 export type TestClock = {clock: Clock; scheduler: Scheduler; monotonic: () => number};
 
 /**
- * Why the process may not take a test clock, or undefined when it may: only a simulated test run with an edge, which the
- * verification supervisor starts with an IPC channel. The service manager and the container start it without one.
+ * Why the process may not take a test clock, or undefined when it may: only a simulated test run with an edge and an IPC
+ * channel. The verification supervisor's fork gives its child one; the service manager and the container entry do not.
  */
 function testClockRefusal({simulate, environment, edge}: ProcessOptions): string | undefined {
   if (!simulate) return 'a test clock needs --simulate';
   if (environment !== 'test') return 'a test clock needs --environment test';
   if (!edge) return 'a test clock needs --edge';
-  if (typeof process.send !== 'function') return 'a test clock needs the verification supervisor\'s IPC channel';
+  if (typeof process.send !== 'function') return 'a test clock needs an IPC channel';
   return undefined;
 }
 
