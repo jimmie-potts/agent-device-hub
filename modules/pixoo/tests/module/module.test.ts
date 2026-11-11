@@ -23,8 +23,8 @@ import {nowPlayingView, renderNowPlaying} from '../../src/presentation/now-playi
 import {monitorView} from '../../src/presentation/sources.js';
 import {PixooStore} from '../../src/module/store.js';
 import {HOSTED_PROFILE} from '../../src/module/configuration.js';
-import {FAMILIES, type PlaylistRecord, type RenditionRecord} from '../../src/module/schemas.js';
-import {COALESCE_MS} from '../../src/module/module.js';
+import {FAMILIES, type DisplayRecord, type PlaylistRecord, type RenditionRecord} from '../../src/module/schemas.js';
+import {COALESCE_MS, TICK_MS} from '../../src/module/module.js';
 import {frameDigest} from '../../src/module/transport.js';
 import {DEVICE, FAST, ManualClock, SECTION, SESSION_ID, World, bytesOf, declaredPng, hostedGif, manyColorGif, playbackRecord, playbackState, sleep, waitFor} from './support.js';
 
@@ -458,8 +458,8 @@ void describe('moments', () => {
       const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-monitor', {startAtMs: world.now()})));
       await world.tickUntil(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device', 2000);
       const shownAt = world.now();
-      // While the moment's command runs, the display record publishes the change once it has waited COALESCE_MS.
-      const showing = await world.tickUntil(() => world.display()?.showing === 'moment' ? world.display() : undefined, 'the moment in the display record', COALESCE_MS);
+      // The display record says so from the acknowledged frame, though the moment's command still runs (Hub #1724).
+      const showing = await world.tickUntil(() => world.display()?.showing === 'moment' ? world.display() : undefined, 'the moment in the display record', 0);
       assert.deepEqual([showing.mode, showing.base], ['work', 'status']);
       assert.deepEqual(showing.moments, {overStatus: true, playing: 'm-monitor'});
       assert.equal(world.device.state().shown?.digests[0], momentFrame(), 'the moment still plays');
@@ -553,8 +553,8 @@ void describe('moments', () => {
       // The moment's second counts from the write the Pixoo acknowledged, so it plays until the test moves time past it.
       await world.tickUntil(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device', 1000);
       const shownAt = world.now();
-      // While the moment's command runs, the display record publishes the change once it has waited COALESCE_MS.
-      const showing = await world.tickUntil(() => world.display()?.showing === 'moment' ? world.display() : undefined, 'the moment in the display record', COALESCE_MS);
+      // The display record says so from the acknowledged frame, though the moment's command still runs (Hub #1724).
+      const showing = await world.tickUntil(() => world.display()?.showing === 'moment' ? world.display() : undefined, 'the moment in the display record', 0);
       assert.deepEqual([showing.mode, showing.base], ['free', 'playback']);
       assert.equal(showing.player.intent, 'paused');
       assert.equal(world.device.state().shown?.digests[0], momentFrame(), 'the moment still plays');
@@ -567,6 +567,80 @@ void describe('moments', () => {
       const back = await world.tickUntil(() => world.display()?.player.intent === 'active' ? world.display() : undefined, 'the playlist back', COALESCE_MS);
       assert.equal(back.player.itemId, playing.player.itemId);
       assert.equal(back.mode, 'free');
+    });
+  });
+
+  /** Every display record the module publishes from now on, with whether the simulated Pixoo showed the moment as it arrived. */
+  const recordClaims = async (world: World): Promise<{claims: {showing: string; playing: string | null; onDevice: boolean}[]; close: () => Promise<void>}> => {
+    const claims: {showing: string; playing: string | null; onDevice: boolean}[] = [];
+    const subscription = await world.probe.subscribe(`bunny.state.${FAMILIES.display}.${DEVICE}`, message => {
+      const record = message.data as DisplayRecord;
+      claims.push({showing: record.showing, playing: record.moments.playing, onDevice: world.device.state().shown?.digests[0] === momentFrame()});
+    });
+    return {claims, close: () => subscription.close()};
+  };
+
+  // Hub #1724: the record says a moment is showing from the frame the Pixoo acknowledged until the moment ends, without
+  // waiting out the coalescing delay that holds other changes while the moment's command runs.
+  void it('reports a moment over a playing item in the display record from its acknowledged frame until it ends, short or long', async () => {
+    for (const durationMs of [1000, 3000]) {
+      const clock = new ManualClock();
+      const world = await World.open({clock});
+      await within(world, async () => {
+        await world.start();
+        const {list} = await readyPlaylist(world);
+        await world.outcome(await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id})));
+        await world.tickUntil(() => world.display()?.player.state === 'playing' ? true : undefined, 'the playing playlist', COALESCE_MS);
+        const {claims, close} = await recordClaims(world);
+        const momentId = `m-${durationMs}`;
+        const requestId = await accepted(world.request('moment-play', MOMENT, moment(momentId, {priorityClass: 'flourish', coversStatus: false, durationMs, startAtMs: world.now()})));
+        await world.tickUntil(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device', 1000);
+        const shownAt = world.now();
+        while (ended(world, requestId) === undefined) {
+          const into = world.now() - shownAt;
+          assert.ok(into < durationMs, `the moment ends at ${durationMs} ms`);
+          assert.equal(world.device.state().shown?.digests[0], momentFrame(), `the moment on the device ${into} ms in`);
+          assert.equal(world.display()?.showing, 'moment', `the record says moment ${into} ms in`);
+          assert.equal(world.display()?.moments.playing, momentId, `the record names the moment ${into} ms in`);
+          await clock.advance(TICK_MS);
+        }
+        assert.equal(world.now() - shownAt, durationMs, 'the moment lasted its duration of the module\'s time');
+        // Once it ended, the record stops saying so.
+        assert.notEqual(world.display()?.showing, 'moment');
+        assert.equal(world.display()?.moments.playing, null);
+        assert.equal((await world.outcome(requestId)).data.result, 'succeeded');
+        assert.equal(ended(world, requestId)?.ending, 'completed');
+        await close();
+        assert.ok(claims.some(claim => claim.showing === 'moment'), 'a record said moment');
+        assert.deepEqual(claims.filter(claim => (claim.showing === 'moment' || claim.playing !== null) && !claim.onDevice), [], 'no record said moment while the device did not show it');
+      });
+    }
+  });
+
+  void it('never reports a moment in the display record before the Pixoo acknowledged its frame', async () => {
+    const clock = new ManualClock();
+    const world = await World.open({clock});
+    await within(world, async () => {
+      await world.start();
+      await world.outcome(await mode(world, 'work'));
+      await world.publishSession();
+      await world.tickUntil(() => world.device.state().shown?.digests[0], 'the dashboard on the device', 2000);
+      const {claims, close} = await recordClaims(world);
+      // The Pixoo takes the moment's write and never answers it.
+      world.device.set('silent');
+      const sent = world.device.state().sent;
+      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-silent', {startAtMs: world.now(), durationMs: 1000})));
+      await world.tickUntil(() => world.device.state().sent > sent ? true : undefined, 'the moment\'s write', 1000);
+      // Well past the coalescing delay the write is still unanswered, and the record says nothing of the moment.
+      await clock.advance(2 * COALESCE_MS);
+      assert.equal(world.display()?.showing, 'dashboard');
+      assert.equal(world.display()?.moments.playing, null);
+      const outcome = await world.tickUntil(() => world.seen.find(message => message.kind === 'outcome' && (message.data as {requestId?: unknown}).requestId === requestId), 'the moment\'s outcome', 10_000);
+      assert.equal((outcome.data as {result: string}).result, 'uncertain');
+      assert.equal(ended(world, requestId), undefined);
+      await close();
+      assert.ok(claims.length > 0, 'the record was published meanwhile');
+      assert.deepEqual(claims.filter(claim => claim.showing === 'moment' || claim.playing !== null), [], 'no record said moment');
     });
   });
 

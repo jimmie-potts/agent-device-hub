@@ -133,6 +133,8 @@ export class MonitorPresentation {
  private clock:()=>number;
  private unsubscribe:()=>void;
  onChange=()=>{};
+ /** The Pixoo acknowledged a moment's picture: the display record should say so now, not after a coalescing wait. */
+ onShown=()=>{};
  constructor(private player:Player,private options:Options){
   this.configuration=presentationConfiguration.parse(options.configuration??defaultPresentation);
   this.clock=options.clock??(()=>performance.now());
@@ -211,18 +213,28 @@ export class MonitorPresentation {
  }
  /** What the display record reports of Now Playing, without the card's pixels. */
  nowPlayingSummary():Omit<NowPlayingStatus,'card'|'lastTakeover'|'source'>{
-  const frame=this.frame();
-  return {setting:this.nowPlaying,view:this.playback.view,showing:showingOf(frame),takeover:this.cardTakeover()};
+  return {setting:this.nowPlaying,view:this.playback.view,showing:this.showing(),takeover:this.cardTakeover()};
  }
  nowPlayingStatus():NowPlayingStatus{
-  const frame=this.frame(),card=this.cardFrame(this.playback.view);
+  const showing=this.showing(),card=this.cardFrame(this.playback.view);
   return {setting:structuredClone(this.nowPlaying),source:this.playback.source,view:structuredClone(this.playback.view),
-   showing:showingOf(frame),takeover:this.cardTakeover(),lastTakeover:this.lastTakeover,
+   showing,takeover:this.cardTakeover(),lastTakeover:this.lastTakeover,
    card:card===null?null:Array.from(card)};
  }
  private cardTakeover():NowPlayingStatus['takeover']{return this.takeover===null||this.takeover.kind==='moment'?null:this.takeover.kind;}
  /** The moment setting and the moment on the display, as the display record reports them. */
- momentSummary():{overStatus:boolean;playing:string|null}{return {overStatus:this.moments.overStatus,playing:this.moment?.phase==='showing'?this.moment.momentId:null};}
+ momentSummary():{overStatus:boolean;playing:string|null}{return {overStatus:this.moments.overStatus,playing:this.momentShown()?this.moment?.momentId??null:null};}
+ /** Whether the moment's picture is on the display: the Pixoo acknowledged its write, and nothing has ended it since. */
+ private momentShown():boolean{return this.moment?.phase==='showing'&&this.moment.upload?.ok===true;}
+ /**
+  * What the display shows, as the display record reports it. A moment counts from the write the Pixoo acknowledged
+  * (Hub #1724): until then the status base it covers, or, over a held item, nothing of the presentation's own.
+  */
+ private showing():NowPlayingState['showing']{
+  const moment=this.moment;
+  if(moment?.phase!=='showing'||this.momentShown())return showingOf(this.frame());
+  return moment.over==='status'?showingOf(this.baseFrame()):'none';
+ }
  /**
   * Why a moment could not play now, or null when it could (ADR 0014). Over the status base it needs the dashboard on the
   * display, the owner's setting, a current session source and, in Work only, the hub's permission to cover status. Over
@@ -456,6 +468,10 @@ export class MonitorPresentation {
  /** The picture the display should show now, if the presentation owns it. A moment on the display comes before its base. */
  private frame():Frame|null{
   if(this.moment?.phase==='showing'){const moment=this.moment;return {key:'moment:'+moment.momentId,frames:moment.rgb,generation:moment.generation,card:false,moment};}
+  return this.baseFrame();
+ }
+ /** The picture the display should show now without a moment: the status base's, or a card's. */
+ private baseFrame():Frame|null{
   const view=this.playback.view,ready=this.cardFrame(view);
   // While a changed card renders, the card the display already shows stays, under its own key, so nothing is sent again.
   const previous=this.previousCard;
@@ -611,7 +627,9 @@ export class MonitorPresentation {
     :write===null?{current,whileStopped:true}:{signal:abort.signal,current,whileStopped:this.active});
   if(moment!==undefined){
    moment.writtenAt=this.lastStart;
-   moment.writing=upload.then(result=>{this.momentUploaded(moment,result);},()=>{moment.rejected=true;this.momentUploaded(moment,undefined);}).finally(()=>{this.inFlight=false;this.onChange();});
+   // An acknowledged picture that still plays is reported at once; any other ending of the write is an ordinary change.
+   moment.writing=upload.then(result=>{this.momentUploaded(moment,result);},()=>{moment.rejected=true;this.momentUploaded(moment,undefined);})
+    .finally(()=>{this.inFlight=false;if(this.momentShown()&&this.moment===moment)this.onShown();else this.onChange();});
    return;
   }
   void upload.then(result=>{

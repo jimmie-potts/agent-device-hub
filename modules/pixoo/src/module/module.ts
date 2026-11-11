@@ -337,6 +337,7 @@ class PixooRuntime {
     await this.#respond();
     player.subscribe(() => { this.#detailVersion += 1; this.#changed(); });
     monitor.onChange = () => { this.#detailVersion += 1; this.#changed(); };
+    monitor.onShown = () => { this.#detailVersion += 1; this.#changed(true); };
     // The copies of the core's sessions and of the playback record, rebuilt by sync and never stored.
     await this.#follow(['session'], this.#sessions, 'feed', () => { this.#sessionsChanged(); });
     await this.#follow(['playback'], this.#playback, 'playback', () => { this.#playbackChanged(); });
@@ -832,11 +833,17 @@ class PixooRuntime {
   /**
    * A change somewhere in the player or the presentation: publishes what changed, once, after the current turn. While
    * a command runs, it waits up to `COALESCE_MS`, so the command's completion usually carries the change in its own
-   * transaction and the wait then finds nothing left to publish.
+   * transaction and the wait then finds nothing left to publish. A `prompt` change, a moment's picture the Pixoo
+   * acknowledged, is published after the current turn even then (Hub #1724): the moment's command runs for its whole
+   * life. A wait already under way then finds nothing left, or waits on for the changes after it.
    */
-  #changed(): void {
+  #changed(prompt = false): void {
     if (this.#stopping) return;
     this.#changedAt ??= this.#context.clock.now();
+    if (prompt) {
+      queueMicrotask(() => { this.#publishWaiting(); });
+      return;
+    }
     if (this.#publishing) return;
     this.#publishing = true;
     this.#publishChanges();
@@ -852,10 +859,14 @@ class PixooRuntime {
     }
     queueMicrotask(() => {
       this.#publishing = false;
-      // Another publish, such as a command's completion, may have carried the change already.
-      if (this.#stopping || this.#changedAt === undefined) return;
-      void this.#publish().catch((error: unknown) => { this.#failedWrite(error); });
+      this.#publishWaiting();
     });
+  }
+
+  /** Publishes the waiting change, unless another publish, such as a command's completion, carried it already. */
+  #publishWaiting(): void {
+    if (this.#stopping || this.#changedAt === undefined) return;
+    void this.#publish().catch((error: unknown) => { this.#failedWrite(error); });
   }
 
   /** A storage failure while the module runs: one ERROR record; the change waits for the next one. */
