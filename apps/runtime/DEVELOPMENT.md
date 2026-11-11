@@ -624,9 +624,9 @@ All runs keep the existing leases, synthetic data, simulated devices and an
 outside-checkout `TMPDIR`; they grant no installed-system or physical-device
 authority. Reset and stop only owned runs.
 
-The Runtime verification CI job runs the full `test:runtime:verify:built` suite
-on each pinned release qualification and conservative PR selection. Focused
-presentation admission can omit the broad job while retaining affected disposable
+The two Runtime verification CI jobs together run the full `test:runtime:verify:built` suite,
+split as in [Checks](verify/README.md#checks), on each pinned release qualification and
+conservative PR selection. Focused presentation admission can omit both broad jobs while retaining affected disposable
 acceptance. Focused local verification does not waive an applicable failed or
 missing CI job, contract check, browser check or independent review.
 

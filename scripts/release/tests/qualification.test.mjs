@@ -40,6 +40,21 @@ test('qualification requires the runtime unit and scenario jobs that left the co
     assert.throws(() => validateQualification(failed.receipt, expected), /qualification-refused/, name);
   }
 });
+test('qualification requires both runtime verification jobs (#1676)', () => {
+  const verification = ['Source coverage / Runtime verification captures on ubuntu-latest', 'Source coverage / Runtime verification on ubuntu-latest'];
+  for (const name of verification) assert.ok(EXPECTED_JOB_NAMES.includes(name), name);
+  // A receipt from before the split has no captures job, so its run did not judge that share of the capture cases here.
+  for (const name of verification) {
+    const {receipt, hosted} = fixture();
+    receipt.checks = receipt.checks.filter(check => check.name !== name);
+    hosted.jobs = hosted.jobs.filter(job => job.name !== name);
+    assert.throws(() => validateQualification(receipt, expected), /qualification-refused/, name);
+    assert.throws(() => validateHostedQualification(receipt, hosted, expected), /qualification-refused/, name);
+    const failed = fixture();
+    failed.receipt.checks.find(check => check.name === name).result = 'failure';
+    assert.throws(() => validateQualification(failed.receipt, expected), /qualification-refused/, name);
+  }
+});
 for (const [name, mutate] of [
   ['failed check', r => {r.checks[0].result = 'failure';}],
   ['missing check', r => {r.checks.pop();}],

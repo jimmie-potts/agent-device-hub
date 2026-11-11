@@ -523,7 +523,7 @@ cheap integration checks and queues pinned release qualification. Superseded PR
 revisions are cancelled per workflow and PR; an active qualification finishes
 while new arrivals replace the pending candidate. Each job has a ten-minute timeout, except the
 select and gate jobs' five, the Workflow job's fifteen, the retained documentation
-job's twenty-five, Runtime verification's forty-five, and forty for Core, the two
+job's twenty-five, forty-five for each of the two Runtime verification jobs, and forty for Core, the two
 runtime test jobs and App verification. Branch pushes do not duplicate PR checks.
 Core's finite 40-minute aggregate limit leaves headroom after full selections
 exhausted the previous 30-minute cap ([#1388](https://github.com/jimmie-potts/agent-device-hub/issues/1388)).
@@ -541,7 +541,8 @@ take about 844 s (`scenarios`), 862 s (`captures`) and 1,241 s (`verification`),
 so the longest lane leaves about 24 minutes of headroom. Each extra lane adds its
 own runner setup, archive download and derivative build, about three minutes.
 Runtime verification has a separate 45-minute job limit alongside the existing
-per-test deadlines. Two full catalog attempts
+per-test deadlines. Since [#1676](https://github.com/jimmie-potts/agent-device-hub/issues/1676) it runs
+as two jobs split like the packaged `captures` and `verification` lanes, and each keeps that limit. Two full catalog attempts
 reached the previous 35-minute limit before all cases reported their results
 ([#1497](https://github.com/jimmie-potts/agent-device-hub/issues/1497)).
 The previous increase to 35 minutes followed a passing verification step in a
@@ -550,7 +551,7 @@ qualification job that exhausted its 30-minute aggregate limit
 Hosted runners sometimes stall in apt, in `apt-get update` or in a browser
 install's `--with-deps` downloads, until the job's limit. So every apt command in
 CI runs through `scripts/apt-retry.sh` (#862): the browser installs in App
-verification, Runtime verification and retained documentation, with 300 s per attempt, and the hook-qualification
+verification, both Runtime verification jobs and retained documentation, with 300 s per attempt, and the hook-qualification
 step's `apt-get update` and `apt-get install`, together, with 180 s per attempt.
 The runner image already makes apt drop a connection that receives nothing for
 15 s and fall back to the next mirror in `/etc/apt/apt-mirrors.txt`, but a
@@ -593,7 +594,7 @@ file under their `dist/tests/`, and the package scripts copy their package's
 whole `dist/`. After switching branches or rebasing, delete the affected `dist/`
 before building; a stale Nanoleaf test file once failed a local run.
 
-Admission has ten GitHub-hosted Linux jobs with selected steps/jobs skipped.
+Admission has eleven GitHub-hosted Linux jobs with selected steps/jobs skipped.
 Full release source coverage reuses those same jobs, then adds its pinned ARM64
 artifact checks. Its evidence remains separate from the cheap Integration job:
 
@@ -607,10 +608,11 @@ artifact checks. Its evidence remains separate from the cheap Integration job:
 | Firmware | Host-compiled CHOMPI controller tests with sanitizers, then the ARM build with the pinned toolchain and the artifact check |
 | Retained documentation checks (Workflow workflow) | Python 3.12 diagram/atlas/navigation and maintenance-parser checks, plus Node 24 browser checks with review artifacts |
 | App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer, the CHOMPI bridge adapter's steps, the bridge control page's browser check, the smoke checks of the old dashboard and the runtime's dashboard, and the observability contract's browser check; lifecycle tests skip with a printed reason when the runner has no systemd user manager |
-| Runtime verification | Node 24 build and Chromium, then the unchanged full serial runtime adapter/catalog suite, including its browser journeys; the same user-manager isolation applies |
+| Runtime verification captures | Node 24 build and Chromium, then `npm run test:runtime:verify:captures:built`: capture shard 1/2 of the serial runtime catalog, including its browser journeys, when the runtime group is selected; the same user-manager isolation applies |
+| Runtime verification | Node 24 build and Chromium, then `npm run test:runtime:verify:rest:built`: every other runtime verification file serially, then capture shard 2/2, when the runtime group is selected. With the captures job it runs the whole suite once; the same user-manager isolation applies |
 | Selected checks gate | Node 24 with only `scripts/ci-selection` checked out: fails unless every selected Checks job succeeded |
 
-A full Checks run performs five full builds across its jobs. The Python
+A full Checks run performs six full builds across its jobs. The Python
 suites run on Python 3.14 only, the version of the installed Nanoleaf runtime.
 Jobs that name `ubuntu-latest` run on whichever image GitHub maps it to. GitHub
 moves that label from Ubuntu 24.04 to Ubuntu 26.04 between 2026-10-19 and
@@ -660,7 +662,7 @@ The mapping accepts extra work to stay simple; it is not a dependency graph.
 
 The selector explicitly lists existing dashboard and module frontend CSS assets.
 Only comparisons confined to those style paths and documentation use focused mode. They retain the affected
-core suites, including the two runtime test jobs, while omitting broad App verification and Runtime verification.
+core suites, including the two runtime test jobs, while omitting broad App verification and both Runtime verification jobs.
 All executable frontend code, including sign-in, connections, durable attempt
 fences and device controls, retains conservative coverage. New or renamed style
 paths also retain that coverage until their ownership is reviewed in the table. Backend, shared and unknown work cannot opt into
@@ -716,8 +718,8 @@ invoice or model-cost estimate. Record projected benefits as projections until
 both actual executions exist. This observation does not waive either gate.
 
 A group's unselected steps show as skipped in the job log. The two runtime test
-jobs, Firmware, App verification and Runtime verification report `skipped` when
-their groups are unselected. Those five jobs name their runner (`on ubuntu-latest`) instead of using a matrix,
+jobs, Firmware, App verification and the two Runtime verification jobs report `skipped` when
+their groups are unselected. Those six jobs name their runner (`on ubuntu-latest`) instead of using a matrix,
 because GitHub reports a job skipped before its matrix expands under the
 unexpanded name. The `Selected checks gate` job runs last, even after a
 failure, and fails unless the selection succeeded, every selected job
