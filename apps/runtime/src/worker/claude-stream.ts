@@ -11,6 +11,8 @@ const enumValue = (value: unknown): string | undefined =>
 const resetMs = (value: unknown): number | null => Number.isSafeInteger(value) && Number(value) > 0 && Number(value) < 1e11 ? Number(value) * 1000 : null;
 const utilization = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;
 const STATUS: Readonly<Record<string, CodingLimitWindow['status']>> = {allowed: 'allowed', allowed_warning: 'allowed-warning', rejected: 'rejected'};
+/** A key source as the stream names it (`ANTHROPIC_API_KEY`, `apiKeyHelper`), only when it reads as a name, never a value. */
+export const keySourceName = (source: string): string => /^[A-Za-z0-9 _./-]{1,64}$/.test(source) ? source : 'unnamed';
 /** At most this many limit windows are kept, as the contracts allow. */
 const MAX_WINDOWS = 8;
 
@@ -25,6 +27,7 @@ export class ClaudeStream {
   #limit: CodingLimit | undefined;
   readonly #windows = new Map<string, CodingLimitWindow>();
   #apiKeySource: string | undefined;
+  #progressed = false;
   #unreadable = 0;
   /** Reads a whole recorded or buffered output, one event per line. */
   static of(output: string): ClaudeStream {
@@ -38,6 +41,7 @@ export class ClaudeStream {
     let event: unknown;
     try {event = JSON.parse(text);} catch {this.#unreadable += 1; return;}
     if (!isRecord(event)) {this.#unreadable += 1; return;}
+    if (event.type === 'assistant' || event.type === 'result') this.#progressed = true;
     if (event.type === 'system' && event.subtype === 'init' && typeof event.apiKeySource === 'string') this.#apiKeySource = event.apiKeySource;
     else if (event.type === 'rate_limit_event') this.#rateLimit(event.rate_limit_info, false);
     else if (event.type === 'assistant' && event.api_error === 'usage_limit_reached') this.#rateLimit(isRecord(event.api_error_params) ? event.api_error_params.rate_limit_info : undefined, true);
@@ -74,6 +78,18 @@ export class ClaudeStream {
   get windows(): CodingLimitWindow[] {return [...this.#windows.values()].map(window => ({...window}));}
   /** Where the harness said its API credential came from (`none` for a subscription sign-in), when it said. */
   get apiKeySource(): string | undefined {return this.#apiKeySource;}
+  /** Whether an assistant or result event has arrived: the run has done work, whatever the events before it said. */
+  get progressed(): boolean {return this.#progressed;}
+  /**
+   * Why the run must not go on for its credential, or undefined while it may: a key source other than `none`, or work
+   * (an assistant or result event) before any readable key source. The second fails closed when the first event was
+   * over the length bound, malformed or carried no string source.
+   */
+  get credentialRefusal(): string | undefined {
+    if (this.#apiKeySource !== undefined && this.#apiKeySource !== 'none') return `the tool reported the API key source ${keySourceName(this.#apiKeySource)}`;
+    if (this.#apiKeySource === undefined && this.#progressed) return 'the tool did work before its stream named a readable credential source';
+    return undefined;
+  }
   get unreadable(): number {return this.#unreadable;}
   /** The providers the final result's per-model usage names (`firstParty` for the subscription), as bounded names. */
   get providers(): string[] {
@@ -128,13 +144,18 @@ const ALLOWED = /^(?:PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|LANG|LANGUAGE|LC_[A-Z_]
 const DENIED = /^(?:ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_OAUTH_(?!TOKEN$)|CLAUDE_CODE_API_KEY|CLAUDE_CODE_CLIENT_|CLAUDE_CODE_CERT_STORE$|CLAUDE_CODE_SKIP_|CLAUDE_CODE_PROVIDER_|CLAUDE_CONFIG_DIR$|AWS_|GOOGLE_|GCLOUD_|CLOUDSDK_|CLOUD_ML_REGION$|VERTEX_REGION_|AZURE_|HTTPS?_PROXY$|ALL_PROXY$|NO_PROXY$|NODE_EXTRA_CA_CERTS$|NODE_OPTIONS$|NODE_TLS_|SSL_CERT_|BUNNY_)/;
 /** Whether a variable name may never reach the harness, whatever the configuration says. */
 export const deniedVariable = (name: string): boolean => DENIED.test(name.toUpperCase());
+/** Variables that let commands authenticate to a remote without a credential-like name: the SSH agent and git's helpers. */
+const REMOTE_ACCESS = /^(?:SSH_AUTH_SOCK|SSH_ASKPASS|GIT_ASKPASS|GIT_SSH|GIT_SSH_COMMAND|GIT_CONFIG_\w+)$/i;
 /**
- * Whether the configuration may add a name: not denied, not named like a key, token, secret, password, credential or base
- * URL (the settings check's rule, so a GitHub token or another provider's key never reaches the agent's commands), and
- * not a dynamic-loader variable (`DYLD_`, `LD_`). The subscription token, already allowlisted, is the one exception.
+ * Whether the configuration may add a name: not denied, not named like a key, token, secret, password, credential, base
+ * URL, personal access token, private key or auth value (the settings check's rule, so a GitHub token or another
+ * provider's key never reaches the agent's commands), not the SSH agent socket or a git credential or ssh helper, and not
+ * a dynamic-loader variable (`DYLD_`, `LD_`). The subscription token, already allowlisted, is the one exception. The list
+ * is the owner's own; this rule catches mistakes and is not a security boundary: a name without a telltale word, such as
+ * `OPENAI_KEY` or `MY_PASSPHRASE`, is not recognized.
  */
 export const configurableVariable = (name: string): boolean =>
-  name === 'CLAUDE_CODE_OAUTH_TOKEN' || (!deniedVariable(name) && !CREDENTIAL_NAME.test(name) && !/^(?:DYLD_|LD_)/i.test(name));
+  name === 'CLAUDE_CODE_OAUTH_TOKEN' || (!deniedVariable(name) && !CREDENTIAL_NAME.test(name) && !REMOTE_ACCESS.test(name) && !/^(?:DYLD_|LD_)/i.test(name));
 /** The environment the harness and its probes start with: the allowlist plus configurable configured names, minus the denylist. */
 export function harnessEnvironment(environment: NodeJS.ProcessEnv, configured: readonly string[] = []): Record<string, string> {
   return Object.fromEntries(Object.entries(environment).filter((entry): entry is [string, string] =>
@@ -143,8 +164,11 @@ export function harnessEnvironment(environment: NodeJS.ProcessEnv, configured: r
 
 /** Settings keys that run a command to obtain a credential; the worker never executes them, it refuses the run. */
 const CREDENTIAL_HELPERS = ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'gcpAuthRefresh'];
-/** A settings `env` name that carries a key, token, secret or endpoint (whole words, so `MAX_THINKING_TOKENS` is not one). */
-const CREDENTIAL_NAME = /(?:^|_)(?:API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?|BASE_URL)(?:_|$)/i;
+/**
+ * A name that carries a key, token, secret, endpoint, personal access token, private key or auth value (whole words, so
+ * `MAX_THINKING_TOKENS` and `AUTHOR` are not one), used for settings `env` names and configured names alike.
+ */
+const CREDENTIAL_NAME = /(?:^|_)(?:API_KEY|APIKEY|TOKEN|SECRET|PASSWORD|CREDENTIALS?|BASE_URL|PAT|PRIVATE_KEY|AUTH)(?:_|$)/i;
 /**
  * Why project settings would undo the harness environment, or undefined when they would not. `text` is one settings file
  * the run loads, or undefined when it is absent. Settings are data here: nothing in them is executed. A file that is not a

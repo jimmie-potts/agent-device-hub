@@ -48,8 +48,11 @@ authority, showing readiness on the dashboard.
    worker reads them as data before the tool starts and refuses the run when they would undo the environment; it
    also blanks the provider switches through `--settings`. An API key source other than `none` in the stream's first
    event stops the run at that event, as `refused`; the tool writes it at about the moment of its first request, so at
-   most that request is spent. The settings check runs once, so a run that changes files under `.claude/` gets a
-   limitation. Hooks, the telemetry headers helper, status-line commands and plugins are not checked: none changes who
+   most that request is spent. Work arriving before any readable key source stops the run the same way (fail
+   closed, round 3). The settings check runs once, so the worker compares the settings files after the run with what
+   it read, which also sees ignored files, and git's changed paths under `.claude/` (renames, quoted, any case) add a
+   limitation. The configured-name rule guards against mistakes in the owner's own list; it is not a security
+   boundary and cannot recognize names without a credential word. Hooks, the telemetry headers helper, status-line commands and plugins are not checked: none changes who
    is billed, and repository hooks running commands predates this change (#502).
 6. **Fixtures.** Real runs recorded with synthetic prompts in an empty directory. Session, event, tool-use, message
    and request identifiers, paths, account values, the plan, the limit windows' figures, the timing origin and the

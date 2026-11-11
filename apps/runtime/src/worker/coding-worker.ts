@@ -4,7 +4,7 @@
 // as occurrences and never resends, retries or claims more than it observed. The container gets no CLI and no
 // repository; this process gets no state, no device and no dashboard authority.
 import {spawn, type ChildProcess} from 'node:child_process';
-import {randomUUID} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {mkdir, readFile, stat} from 'node:fs/promises';
 import {isAbsolute, join, resolve} from 'node:path';
@@ -17,13 +17,16 @@ import {CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingEn
   type CodingReadiness, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {readPrivateJson} from '../hook/producer.js';
 import {readPrivateFile} from '../state.js';
-import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, configurableVariable, harnessEnvironment, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
+import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, configurableVariable, harnessEnvironment, keySourceName, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
 
 const run = promisify(execFile);
 export const WORKER_SCHEMA = 'coding-worker/1.0';
 const MAX_CONFIG_BYTES = 8192;
-/** One stream event longer than this is skipped, not buffered; a run whose final result was skipped is unreadable output. */
-const MAX_LINE_BYTES = 4 * 1024 * 1024;
+/**
+ * One stream event longer than this many characters (UTF-16 code units, so up to about three times as many bytes) is
+ * skipped, not buffered; a run whose final result was skipped is unreadable output.
+ */
+const MAX_LINE_CHARS = 4 * 1024 * 1024;
 /** How long each readiness probe (`--version`, `auth status`) may take before its answer counts as unknown. */
 export const PROBE_MS = 10_000;
 const ENDPOINT_SCHEMA = 'https://bunny.invalid/events/coding-endpoint/2.1';
@@ -107,7 +110,7 @@ export type Harness = {
  * Splits decoded output into lines for `onLine`. A line longer than `maxLength` is skipped, whole or in part and whether
  * it ends in the same chunk or a later one, and marks the output truncated; memory stays bounded by one chunk over it.
  */
-export function lineSplitter(onLine: (line: string) => void, maxLength: number = MAX_LINE_BYTES): {write(text: string): void; end(text?: string): void; readonly truncated: boolean} {
+export function lineSplitter(onLine: (line: string) => void, maxLength: number = MAX_LINE_CHARS): {write(text: string): void; end(text?: string): void; readonly truncated: boolean} {
   let pending = '', skipping = false, truncated = false;
   const take = (text: string, last: boolean): void => {
     pending += text;
@@ -176,15 +179,21 @@ export const claudeHarness = (executable: string, environment: NodeJS.ProcessEnv
   },
 });
 
-/** A key source as the stream names it (`ANTHROPIC_API_KEY`, `apiKeyHelper`), only when it reads as a name, never a value. */
-const keySourceName = (source: string): string => /^[A-Za-z0-9 _./-]{1,64}$/.test(source) ? source : 'unnamed';
+/**
+ * Whether a changed path from git's status or diff is in the project settings directory: either side of a rename,
+ * quoted or not, with the directory name compared without case, as a case-insensitive volume resolves it.
+ */
+export function touchesSettingsDirectory(path: string): boolean {
+  return path.split(' -> ').some(side => /^\.claude(?:\/|$)/i.test(side.trim().replace(/^"|"$/g, '')));
+}
 const bounded = (value: unknown, max: number): string | undefined => typeof value === 'string' && value.trim() !== '' ? value.slice(0, max) : undefined;
 /**
  * The result from Claude Code's stream (or a buffered output read as one) and the git facts the worker observed itself.
  * The stream's final `result` event is the envelope. A usage limit the tool reported, on a run that did not end with a
  * successful result, is the `usage-limit` outcome with the window and reset the tool gave, or null where it gave none.
  */
-export function assembleResult(repository: string, base: string | null, head: string | null, changedFiles: string[], output: string | ClaudeStream, given?: CodingProgressReason): {result: CodingResult; reason?: CodingProgressReason} {
+export function assembleResult(repository: string, base: string | null, head: string | null, changedFiles: string[], output: string | ClaudeStream, given?: CodingProgressReason,
+  settingsChanged = false): {result: CodingResult; reason?: CodingProgressReason} {
   const stream = typeof output === 'string' ? ClaudeStream.of(output) : output;
   const envelope = stream.result;
   let structured: Record<string, unknown> | undefined, reason: CodingProgressReason | undefined = given;
@@ -220,8 +229,11 @@ export function assembleResult(repository: string, base: string | null, head: st
   if (keySource !== undefined && keySource !== 'none' && limitations.length < 32) limitations.push(`The harness reported an API key source (${keySourceName(keySource)}), so this run may not have used the subscription sign-in.`);
   const providers = stream.providers.filter(provider => provider !== 'firstParty');
   if (providers.length > 0 && limitations.length < 32) limitations.push(`The result names a model provider other than the first-party one (${providers.join(', ')}), so this run may not have used the subscription.`);
-  // The project settings were checked once, before the start; a file the run created or changed there was not.
-  if (changedFiles.some(file => file === '.claude' || file.startsWith('.claude/')) && limitations.length < 32) {
+  // The project settings were checked once, before the start. The worker compares the settings files themselves after the
+  // run (which also sees files the repository ignores), and git's changed paths name anything else under `.claude/`.
+  if (settingsChanged && limitations.length < 32) {
+    limitations.push('The run created, changed or removed a project settings file, which the settings check before the start did not see.');
+  } else if (changedFiles.some(touchesSettingsDirectory) && limitations.length < 32) {
     limitations.push('The run created or changed files under .claude/, the project settings directory, which the settings check before the start did not see.');
   }
   const usageLimited = reason === 'usage-limit' && limit !== undefined;
@@ -235,21 +247,32 @@ function refusedResult(result: CodingResult, summary: string): CodingResult {
 }
 /** The project settings files a run with `--setting-sources project` loads, relative to its worktree. */
 export const PROJECT_SETTINGS = ['.claude/settings.json', '.claude/settings.local.json'] as const;
-/** Reads the worktree's project settings as data and says why they would undo the harness environment, if they would. */
-export async function projectSettingsRefusal(worktree: string): Promise<string | undefined> {
+/**
+ * Reads the worktree's project settings as data: why they would undo the harness environment, if they would, and a
+ * fingerprint of what each file held (absent, unreadable or its SHA-256), to compare after the run.
+ */
+export async function readProjectSettings(worktree: string): Promise<{refusal?: string; fingerprint: string}> {
+  let refusal: string | undefined;
+  const prints: string[] = [];
   for (const file of PROJECT_SETTINGS) {
     let text: string | undefined;
     try {
       const buffer = await readFile(join(worktree, file));
-      if (buffer.length > 1024 * 1024) return `${file} is larger than the worker reads`;
+      prints.push(createHash('sha256').update(buffer).digest('hex'));
+      if (buffer.length > 1024 * 1024) {refusal ??= `${file} is larger than the worker reads`; continue;}
       text = buffer.toString('utf8');
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return `${file} could not be read`;
+      const missing = (error as NodeJS.ErrnoException).code === 'ENOENT';
+      prints.push(missing ? 'absent' : 'unreadable');
+      if (!missing) {refusal ??= `${file} could not be read`; continue;}
     }
-    const refusal = settingsRefusal(file, text);
-    if (refusal !== undefined) return refusal;
+    refusal ??= settingsRefusal(file, text);
   }
-  return undefined;
+  return {...(refusal === undefined ? {} : {refusal}), fingerprint: prints.join(' ')};
+}
+/** Why the worktree's project settings would undo the harness environment, if they would. */
+export async function projectSettingsRefusal(worktree: string): Promise<string | undefined> {
+  return (await readProjectSettings(worktree)).refusal;
 }
 
 async function git(cwd: string, args: string[], {timeoutMs = 60_000, trim = true}: {timeoutMs?: number; trim?: boolean} = {}): Promise<string> {
@@ -434,7 +457,7 @@ export class CodingWorker {
     if (running.cancelled) {await this.#progress({operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null}); return;}
     // The run loads the worktree's project settings, whose `env` and credential helpers could undo the harness
     // environment. They are read as data before the tool starts; one that would is refused, and nothing is spent.
-    const settings = await projectSettingsRefusal(worktree);
+    const {refusal: settings, fingerprint: settingsBefore} = await readProjectSettings(worktree);
     if (settings !== undefined) {
       await this.#progress({operationId: running.operationId, status: 'failed', reason: 'refused',
         result: refusedResult(assembleResult(repository.name, base, base, [], '', 'refused').result, `The run was refused before the tool started: ${settings}. Workers use only the subscription sign-in.`)});
@@ -454,13 +477,13 @@ export class CodingWorker {
     let timedOut = false;
     const started = Date.now();
     const stream = new ClaudeStream();
-    // The first event names the credential the tool will use, before its first model request: anything but the
-    // subscription stops the run there.
-    let keyRefused = false;
+    // The first event names the credential the tool will use: anything but the subscription stops the run there, and so
+    // does work arriving before any readable source (fail closed).
+    let keyRefused: string | undefined;
     const watch = (line: string): void => {
       stream.push(line);
-      const source = stream.apiKeySource;
-      if (!keyRefused && source !== undefined && source !== 'none') {keyRefused = true; running.child?.kill('SIGTERM'); setTimeout(() => {running.child?.kill('SIGKILL');}, 10_000).unref();}
+      const refusal = stream.credentialRefusal;
+      if (keyRefused === undefined && refusal !== undefined) {keyRefused = refusal; running.child?.kill('SIGTERM'); setTimeout(() => {running.child?.kill('SIGKILL');}, 10_000).unref();}
     };
     const finished = await this.#harness.start(args, worktree, brief, child => {
       running.child = child;
@@ -478,16 +501,18 @@ export class CodingWorker {
       changedFiles = status.split('\n').map(line => line.trimEnd()).filter(Boolean).map(line => line.slice(3).trim()).filter(Boolean);
       if (base !== null && head !== null && head !== base) changedFiles = [...new Set([...(await git(worktree, ['diff', '--name-only', `${base}..${head}`])).split('\n').filter(Boolean), ...changedFiles])];
     } catch {this.log('coding-worker: git facts unavailable after the run');}
-    if (running.cancelled) {await this.#progress({operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: assembleResult(repository.name, base, head, changedFiles, stream, 'cancelled').result}); return;}
-    if (keyRefused) {
-      await this.#progress({operationId: running.operationId, status: 'failed', reason: 'refused', result: refusedResult(assembleResult(repository.name, base, head, changedFiles, stream, 'refused').result,
-        `The run was stopped at its first event: the tool reported the API key source ${keySourceName(stream.apiKeySource ?? '')}, and workers use only the subscription sign-in.`)});
+    const settingsChanged = (await readProjectSettings(worktree)).fingerprint !== settingsBefore;
+    const assemble = (output: string | ClaudeStream, given?: CodingProgressReason) => assembleResult(repository.name, base, head, changedFiles, output, given, settingsChanged);
+    if (running.cancelled) {await this.#progress({operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: assemble(stream, 'cancelled').result}); return;}
+    if (keyRefused !== undefined) {
+      await this.#progress({operationId: running.operationId, status: 'failed', reason: 'refused', result: refusedResult(assemble(stream, 'refused').result,
+        `The run was stopped at its first event: ${keyRefused}, and workers use only the subscription sign-in.`)});
       return;
     }
-    if (timedOut) {await this.#progress({operationId: running.operationId, status: 'failed', reason: 'timeout', result: assembleResult(repository.name, base, head, changedFiles, stream, 'timeout').result}); return;}
+    if (timedOut) {await this.#progress({operationId: running.operationId, status: 'failed', reason: 'timeout', result: assemble(stream, 'timeout').result}); return;}
     // A skipped oversized event matters only when it was the final result.
-    if (finished.truncated && stream.result === undefined) {await this.#progress({operationId: running.operationId, status: 'failed', reason: 'invalid-output', result: assembleResult(repository.name, base, head, changedFiles, '', 'invalid-output').result}); return;}
-    const assembled = assembleResult(repository.name, base, head, changedFiles, stream);
+    if (finished.truncated && stream.result === undefined) {await this.#progress({operationId: running.operationId, status: 'failed', reason: 'invalid-output', result: assemble('', 'invalid-output').result}); return;}
+    const assembled = assemble(stream);
     if (assembled.result.usage !== null && assembled.result.usage.durationMs === null) assembled.result.usage.durationMs = Date.now() - started;
     // A usage limit keeps its own outcome and the limit the tool reported; every other failure is failed, as before.
     if (assembled.reason === 'usage-limit') {await this.#progress({operationId: running.operationId, status: 'failed', reason: 'usage-limit', result: assembled.result}); return;}

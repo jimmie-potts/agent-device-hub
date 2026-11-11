@@ -20,7 +20,7 @@ import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {Command, Reply} from '@jimmie-potts/sdk';
 import type {RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant, connectRemote} from '@jimmie-potts/sdk/remote';
 import {ClaudeStream, harnessEnvironment, parseAuthStatus, parseVersion, settingsRefusal} from '../src/worker/claude-stream.js';
-import {CodingWorker, DEFAULT_ALLOWED_TOOLS, assembleResult, claudeHarness, lineSplitter, parseConfiguration, projectSettingsRefusal, type Harness, type ProbeTimer} from '../src/worker/coding-worker.js';
+import {CodingWorker, DEFAULT_ALLOWED_TOOLS, assembleResult, claudeHarness, lineSplitter, parseConfiguration, projectSettingsRefusal, touchesSettingsDirectory, type Harness, type ProbeTimer} from '../src/worker/coding-worker.js';
 
 const FIXTURES = fileURLToPath(new URL('../../tests/fixtures/claude-stream/', import.meta.url));
 const fixture = (name: string): Promise<string> => readFile(join(FIXTURES, name), 'utf8');
@@ -355,7 +355,8 @@ void test('the real harness splits lines across chunks, counts noise, skips an o
 
 void test('a skipped oversized event fails the run only when no result arrived', {timeout: 60_000}, async t => {
   const result = (await fixture('recorded-success.jsonl')).trim().split('\n').at(-1) ?? '';
-  for (const [lines, expected] of [[[result], 'completed'], [[], 'invalid-output']] as const) {
+  const init = JSON.stringify({type: 'system', subtype: 'init', apiKeySource: 'none'});
+  for (const [lines, expected] of [[[init, result], 'completed'], [[init], 'invalid-output']] as const) {
     const repo = await repository(t), edge = eventEdge();
     const harness: Harness = {start: (_args, _cwd, _input, _onChild, onLine) => {for (const line of lines) onLine?.(line); return Promise.resolve({code: 0, signal: null, truncated: true});}};
     const worker = new CodingWorker(configuration(repo), 'token-'.padEnd(43, 'x'), harness, () => {}, edge.connect, () => NOW);
@@ -464,4 +465,81 @@ void test('a run stopped at a usage limit ends failed with the usage-limit reaso
   admitted('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', ended);
   assert.equal(edge.requests[1]?.readiness?.limits?.[0]?.status, 'rejected');
   await worker.stop();
+});
+
+// Hub #1743 review round 3. The first-event stop fails closed: work before any readable key source stops the run.
+// The three bad first events below are constructed, not recorded.
+void test('work before a readable key source stops the run as refused: an over-bound, malformed or non-string first event (constructed)', {timeout: 60_000}, async t => {
+  const recorded = (await fixture('recorded-success.jsonl')).trim().split('\n');
+  const assistant = recorded.find(line => line.startsWith('{"type":"assistant"')) ?? assert.fail('the recording has an assistant event');
+  for (const name of ['recorded-success.jsonl', 'recorded-question.jsonl']) assert.equal(ClaudeStream.of(await fixture(name)).credentialRefusal, undefined, `${name} names its source first`);
+  const cases: [string, string[], boolean][] = [
+    // The splitter skipped the over-bound first event, so the stream starts at the assistant event, truncated.
+    ['over-bound', [assistant, recorded.at(-1) ?? ''], true],
+    ['malformed', ['{"type":"system","subtype":"init","apiKeySource":', assistant, recorded.at(-1) ?? ''], false],
+    ['non-string source', [JSON.stringify({type: 'system', subtype: 'init', apiKeySource: 42}), assistant, recorded.at(-1) ?? ''], false],
+  ];
+  for (const [kind, lines, truncated] of cases) {
+    assert.match(ClaudeStream.of(lines.join('\n')).credentialRefusal ?? '', /did work before its stream named a readable credential source/, kind);
+    const repo = await repository(t), edge = eventEdge();
+    let killed = 0, delivered = 0;
+    const harness: Harness = {start: (_args, _cwd, _input, onChild, onLine) => {
+      onChild({kill: () => {killed += 1; return true;}} as never);
+      for (const line of lines) {if (killed > 0) break; delivered += 1; onLine?.(line);}
+      return Promise.resolve({code: null, signal: 'SIGTERM', truncated});
+    }};
+    const worker = new CodingWorker(configuration(repo), 'token-'.padEnd(43, 'x'), harness, () => {}, edge.connect, () => NOW);
+    await worker.start();
+    assert.deepEqual(edge.respond(start(`task-${kind.replaceAll(' ', '-')}`)), {status: 'accepted'});
+    await edge.until(() => edge.progress.length === 2);
+    const ended = edge.progress[1];
+    assert.ok(killed >= 1, kind); assert.equal(delivered, lines.indexOf(assistant) + 1, `${kind}: stopped at the first work event`);
+    assert.ok(ended?.status === 'failed', kind); assert.equal(ended.reason, 'refused', kind); assert.equal(ended.result?.outcome, 'failed', kind);
+    assert.match(ended.result?.summary ?? '', /stopped at its first event: the tool did work before its stream named a readable credential source/, kind);
+    admitted('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', ended);
+    await worker.stop();
+  }
+});
+
+void test('a changed project settings directory is recognized in renames, quoted paths and any case', () => {
+  for (const path of ['.claude/settings.json', '.claude', '.CLAUDE/settings.json', '.Claude/agents/x.md', 'old.json -> .claude/settings.json', '.claude/settings.json -> moved.json',
+    '".claude/caf\\303\\251.json"', '"old name.json" -> ".claude/settings.local.json"']) {
+    assert.equal(touchesSettingsDirectory(path), true, path);
+  }
+  for (const path of ['docs/.claude-notes.md', '.claudeish/x', 'a -> b', 'src/.claude/x.json', '"docs/.claude"']) assert.equal(touchesSettingsDirectory(path), false, path);
+  assert.ok(assembleResult('agent-device-hub', null, null, ['old.json -> .CLAUDE/settings.json'], '').result.limitations.some(text => text.includes('under .claude/')));
+});
+
+void test('a project settings file the repository ignores, created during the run, is still noticed', {timeout: 60_000}, async t => {
+  const repo = await repository(t), edge = eventEdge();
+  // The local settings file is ignored, so git's status never names it; the worker compares the file itself.
+  await writeFile(join(repo, '.gitignore'), '.claude/settings.local.json\n');
+  git(repo, 'add', '.'); git(repo, 'commit', '--quiet', '-m', 'ignore'); git(repo, 'push', '--quiet', 'origin', 'main');
+  const lines = [JSON.stringify({type: 'system', subtype: 'init', apiKeySource: 'none'}), (await fixture('recorded-success.jsonl')).trim().split('\n').at(-1) ?? ''];
+  const harness: Harness = {start: async (_args, cwd, _input, _onChild, onLine) => {
+    await mkdir(join(cwd, '.claude'), {recursive: true});
+    await writeFile(join(cwd, '.claude/settings.local.json'), JSON.stringify({env: {ANTHROPIC_API_KEY: 'synthetic'}}));
+    for (const line of lines) onLine?.(line);
+    return {code: 0, signal: null, truncated: false};
+  }};
+  const worker = new CodingWorker(configuration(repo), 'token-'.padEnd(43, 'x'), harness, () => {}, edge.connect, () => NOW);
+  await worker.start();
+  assert.deepEqual(edge.respond(start('task-ignored')), {status: 'accepted'});
+  await edge.until(() => edge.progress.length === 2);
+  const ended = edge.progress[1];
+  assert.ok(ended?.status === 'completed');
+  assert.ok(!ended.result.changedFiles.some(touchesSettingsDirectory), 'git does not name the ignored file');
+  assert.ok(ended.result.limitations.some(text => text.includes('created, changed or removed a project settings file')), JSON.stringify(ended.result.limitations));
+  assert.ok(!ended.result.limitations.join(' ').includes('synthetic') && !ended.result.summary.includes('synthetic'), 'no settings value is quoted');
+  await worker.stop();
+});
+
+void test('the configured-name rule also refuses personal access tokens, private keys, one-word API keys, auth values and remote-access helpers', () => {
+  const parse = (environment: string[]) => parseConfiguration({schema: 'coding-worker/1.0', edge: 'http://127.0.0.1:18788', tokenFile: '/private/token',
+    repositories: [{name: 'agent-device-hub', path: '/tmp/repo'}], claude: {executable: '/nonexistent/claude', environment}});
+  for (const name of ['GITHUB_PAT', 'PRIVATE_KEY', 'DEPLOY_PRIVATE_KEY', 'APIKEY', 'SERVICE_APIKEY', 'NPM_AUTH', 'SSH_AUTH_SOCK', 'SSH_ASKPASS', 'GIT_ASKPASS', 'GIT_SSH', 'GIT_SSH_COMMAND', 'GIT_CONFIG_COUNT']) {
+    assert.throws(() => parse([name]), /claude\.environment/, name);
+  }
+  // Whole words only: these carry no credential word.
+  assert.deepEqual(parse(['AUTHOR_NAME', 'PATCH_LEVEL', 'SOME_TOOL_HOME']).claude.environment, ['AUTHOR_NAME', 'PATCH_LEVEL', 'SOME_TOOL_HOME']);
 });

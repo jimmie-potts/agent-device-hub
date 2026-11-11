@@ -92,9 +92,19 @@ sign-in), not an API key. A denylist then removes, even from configured names:
   `NODE_OPTIONS`;
 - the worker's own `BUNNY_` variables.
 
-A configuration whose `claude.environment` lists a denied name, a name like a
-key, token, secret, password, credential or base URL, or a dynamic-loader
-variable refuses to load, and the harness filter applies the same rule.
+A configuration whose `claude.environment` lists any of these refuses to load,
+and the harness filter applies the same rule:
+
+- a denied name;
+- a name with the whole word key, token, secret, password, credential, base
+  URL, `PAT`, private key, `APIKEY` or auth;
+- the SSH agent socket or the SSH and git askpass, ssh and config helper
+  variables;
+- a dynamic-loader variable.
+
+The list is written by the owner. The name rule guards against mistakes; it is
+not a security boundary. It cannot recognize a name that has none of those
+words, such as `OPENAI_KEY` or `MY_PASSPHRASE`.
 
 **Project settings are checked before the tool starts.** The run loads the
 worktree's project settings (`.claude/settings.json`, and
@@ -118,12 +128,21 @@ documentation counts an empty value as unset for provider selection.
 the tool's API key source. Anything but `none` stops the run at that event,
 as failed with reason `refused`. The tool writes that event at about the
 moment it sends its first request, so the request already in flight may be
-spent on the key; nothing after it is. A result whose per-model usage names a
-provider other than `firstParty` gets a limitation saying so.
+spent on the key; nothing after it is. The check fails closed. The run is
+stopped in the same way when an assistant or result event arrives before any
+readable key source. That happens when the first event was over the line
+bound, malformed, or named its source as something other than a string. A
+result whose per-model usage names a provider other than `firstParty` gets a
+limitation saying so.
 
 **What the settings check does not cover.** It checks the project settings
-once, before the start. A run that creates or changes a file under `.claude/`
-gets a limitation saying so, without quoting it. The check does not look at
+once, before the start. After the run, the worker reads the two settings files
+again and compares them with what it read before. A file the run created,
+changed or removed gets a limitation, without quoting it. This covers files
+the repository ignores. Git's changed paths add a limitation for anything else
+under `.claude/`. That covers either side of a rename, quoted paths and any
+letter case, since a case-insensitive volume treats `.CLAUDE/` as the same
+directory. The check does not look at
 hooks, the telemetry headers helper (`otelHeadersHelper`), status-line
 commands or enabled plugins. None of these can change who is billed.
 Repository hooks have been able to run commands with the owner's rights since
@@ -210,12 +229,14 @@ refuses both, so such a worker cannot declare until the core knows them.
    destructive tools refuses. `claude.model` and `claude.maxTurns` are
    optional. `claude.environment` optionally lists up to 32 more variable
    names the harness may inherit, for a launch setup that needs one. The
-   configuration refuses to load when it lists a name the denylist in
-   [Subscription sign-in only](#subscription-sign-in-only) covers, one named
-   like a key, token, secret, password, credential or base URL (whole words,
-   so `GITHUB_TOKEN` and `OPENAI_API_KEY` refuse and `MAX_THINKING_TOKENS`
-   does not), or a dynamic-loader variable (`DYLD_*`, `LD_*`).
-   `CLAUDE_CODE_OAUTH_TOKEN` is the one exception and is allowlisted anyway.
+   configuration refuses to load when it lists a name the rule in
+   [Subscription sign-in only](#subscription-sign-in-only) covers: a denied
+   name, a credential word (whole words, so `GITHUB_TOKEN`, `GITHUB_PAT` and
+   `OPENAI_API_KEY` refuse, and `MAX_THINKING_TOKENS` and `AUTHOR_NAME` do not),
+   the SSH agent socket or a git helper, or a dynamic-loader variable
+   (`DYLD_*`, `LD_*`). `CLAUDE_CODE_OAUTH_TOKEN` is the one exception and is
+   allowlisted anyway. The rule guards against mistakes in a list you write
+   yourself; it is not a security boundary.
    Repository names are lowercase words joined by hyphens, dots or
    underscores and must match what the owner says to B.U.N.N.Y.
 4. Start it after sign-in from the reviewed release:

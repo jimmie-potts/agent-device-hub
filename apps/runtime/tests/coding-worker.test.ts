@@ -94,7 +94,8 @@ void test('the worker declares its endpoint, runs one task in a fresh worktree, 
     assert.match(cwd, /\.local\/worktrees\/bunny-task-[12]-/);
     await writeFile(join(cwd, 'new-file.txt'), 'made by the harness\n');
     await writeFile(join(cwd, 'README.md'), 'hello\nchanged by the harness\n');
-    return {code: 0, signal: null, stdout: JSON.stringify({type: 'result', session_id: 'session-9', num_turns: 2, total_cost_usd: 0.05, duration_ms: 10,
+    // The real tool's first event names its credential source; without one the worker stops the run (Hub #1743).
+    return {code: 0, signal: null, stdout: `${JSON.stringify({type: 'system', subtype: 'init', apiKeySource: 'none'})}\n` + JSON.stringify({type: 'result', session_id: 'session-9', num_turns: 2, total_cost_usd: 0.05, duration_ms: 10,
       structured_output: {outcome: 'tested-candidate', summary: 'Wrote the file.', checks: [{name: 'node --test', status: 'passed'}], findings: [], limitations: []}}), truncated: false};
   }};
   const config = configuration(repo);
