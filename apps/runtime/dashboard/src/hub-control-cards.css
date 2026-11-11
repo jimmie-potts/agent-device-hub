@@ -18,7 +18,7 @@
 .shell .widget[data-widget=inbox]:has(.inbox-card[data-attention=true]){background:var(--agent-attention-surface);border-color:var(--agent-attention-edge)}
 .inbox-entries{margin-top:var(--space-m)}
 .inbox-item{min-width:0;border-bottom:1px solid var(--edge-dense)}
-.inbox-item:last-child{border-bottom:0}
+.inbox-item:last-child,.inbox-item:nth-last-child(1 of .inbox-item:not([hidden])){border-bottom:0}
 .inbox-entry>summary{list-style:none;display:flex;align-items:center;gap:var(--space-s);min-height:76px;padding:var(--space-s) 0;cursor:pointer}
 .inbox-entry>summary::-webkit-details-marker{display:none}
 .inbox-item-mark{display:grid;place-items:center;width:32px;height:32px;background:var(--inset);border-radius:10px;color:var(--pending-text);flex-shrink:0}

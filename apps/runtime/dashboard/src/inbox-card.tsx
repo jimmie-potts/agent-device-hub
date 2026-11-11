@@ -28,11 +28,11 @@ export function InboxCard({count, live, control, children, headingId}: {count: n
 }
 
 /** Stable native disclosure retains evidence and keyboard focus across record updates. */
-export function InboxItemCard({item, label, disabled, control, answer, onHandle}: {
+export function InboxItemCard({item, label, disabled, control, answer, onHandle, hidden = false}: {
   item: InboxItem; label: string; disabled: boolean; control: boolean; answer: string;
-  onHandle: (action: 'dismiss' | 'send-again') => void;
+  onHandle: (action: 'dismiss' | 'send-again') => void; hidden?: boolean;
 }): React.JSX.Element {
-  return <article className="inbox-item" data-inbox={item.id}>
+  return <article className="inbox-item" data-inbox={item.id} data-paged-key={item.id} hidden={hidden}>
     <details className="inbox-entry"><summary><span className="inbox-item-mark" aria-hidden="true">!</span><span className="inbox-item-face"><span className="inbox-item-name">{label}</span><span className="inbox-item-sub">{inboxCommandName(item.item.command)} · {resultName(item.item.result)}</span></span><span className="inbox-caret" aria-hidden="true">›</span></summary>
       <div className="inbox-item-detail">
         <p>{item.item.result === 'conflict' ? 'Both success and failure were reported.' : item.item.result === 'uncertain' ? 'Delivery was not confirmed.' : item.item.result === 'failed' ? 'The request failed.' : 'Later success was reported. This item still needs handling.'}</p>

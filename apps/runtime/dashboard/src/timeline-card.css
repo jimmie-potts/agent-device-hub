@@ -10,7 +10,7 @@
 .timeline-read-at,.timeline-status{font-size:var(--type-label);color:var(--muted-dense);margin:0 0 var(--space-s)}
 .timeline-card .timeline-entries{list-style:none;padding:0;margin:0}
 .timeline-entries>li{border-bottom:1px solid var(--edge-faint);min-width:0}
-.timeline-entries>li:last-child{border:0}
+.timeline-entries>li:last-child,.timeline-entries>li:nth-last-child(1 of :not([hidden])){border:0}
 .timeline-entry>summary{list-style:none;display:flex;align-items:center;gap:var(--space-s);min-height:84px;padding:var(--space-m) 0;cursor:pointer}
 .timeline-entry>summary::-webkit-details-marker{display:none}
 .timeline-mark{display:grid;place-items:center;flex-shrink:0;width:36px;height:36px;border-radius:12px;background:var(--inset);color:var(--muted-dense)}

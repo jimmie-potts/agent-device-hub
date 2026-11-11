@@ -132,6 +132,21 @@ keeps a compact preferred width, Standard has more room, and Wide occupies its
 own row. Incomplete rows fill the available space without empty grid slots;
 phone layouts and the Phone editor preview stack cards in one column.
 
+Inbox, Agent status and Timeline page their lists through one shared pager
+(`src/paged-list.tsx`, #1658), so a long list never makes its card taller than
+one page of rows plus its heading and pager. **Previous**, **Next** and
+"Page x of y" appear once a list needs a second page. Rows per page are fixed in
+`src/paging.ts`: Inbox 5, Timeline 5 on Home and 20 on `#/timeline`, and Agent
+status two rows of tiles at the card's current column count. Paging covers only
+the records the page already holds and sends no request. The Inbox heading shows
+the total on every page, and **Check Inbox** on the Hub mode card shows the page
+holding its item. Entries open in place. Dismissing the only item on the last
+page moves back a page. Agent status lists sessions that need you first; when
+they fill more than a page, the page label says so. A new Timeline category or
+period returns to the first page. When focus is in a list and paging or a
+removed row would leave it on the page body, focus moves to a control in the
+list; focus that has left the list stays where it is.
+
 Art is an optional module card. **Add Art** reserves its own row; choose Auto,
 Banner, Square or Tall and pin it separately from a gallery favorite. **Unpin art**
 allows bounded placement in unused space after the functional cards. Automatic
@@ -891,7 +906,7 @@ through **Edit Home → Add card**; existing saved arrangements are unchanged.
 Short newest-first rows reveal evidence and an optional technical record when
 selected. Today, Yesterday and Recent select retained history; category buttons
 filter that snapshot locally. Every read requests the latest 200 matching
-entries. “Latest N” identifies the loaded window, and **Show more** reveals only
+entries. “Latest N” identifies the loaded window, and the pager pages only
 loaded entries. An empty category describes that window, not the whole archive. **Filters** preserves inclusive From/To, Kind,
 Source and qualified Session filters. Entry, **Refresh history** and applied
 filters read the existing authenticated gateway, without polling or commands.

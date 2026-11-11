@@ -138,7 +138,8 @@ try {
   await page.waitForFunction(count => Number(document.getElementById('main')?.dataset.syncs) >= count, 2);
   await feed(page, 'connected');
   await chip('Plan wave three', 'Finished · unread');
-  await row('Review the inbox').waitFor();
+  // The third session starts the Agent status card's second page (#1658): it is listed, but not on the first page.
+  await page.waitForFunction(() => [...document.querySelectorAll('article.session h3')].some(node => node.textContent === 'Review the inbox'));
   assert.ok(syncs.length > before, 'the copy synced again after the stream came back');
   assert.deepEqual(sent, [], 'a reconnect replays no command');
   checks.push('a reconnect keeps retained rows stale until its replacement snapshot, with no replayed command');
@@ -156,7 +157,7 @@ try {
 
   // A session's end removes it.
   await world.observe(runtimeEnded, {identity: {...OTHER, sessionId: 'session-sim-3'}});
-  await row('Review the inbox').waitFor({state: 'detached'});
+  await page.waitForFunction(() => ![...document.querySelectorAll('article.session h3')].some(node => node.textContent === 'Review the inbox'));
   checks.push('a session that ended leaves the list');
 
   // Details keep the rare facts; the search filters without sending anything.

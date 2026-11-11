@@ -43,7 +43,7 @@ Timeline SHALL read the existing authenticated history API on entry, explicit
 refresh and applied date/exact filters, with no polling or automatic retry.
 Today, Yesterday and Recent plus All, Agents, Devices and Automation filters
 SHALL be available. Existing exact kind, source, session and time filters SHALL
-remain available. Every read SHALL request the latest 200 matching entries. The card SHALL identify that result window; category filters and Show more SHALL operate on loaded entries only, and empty category results MUST NOT imply an empty archive. An obsolete read MUST NOT replace a later read's rows or status;
+remain available. Every read SHALL request the latest 200 matching entries. The card SHALL identify that result window; category filters and paging SHALL operate on loaded entries only, a new category or period SHALL return to the first page, and empty category results MUST NOT imply an empty archive. An obsolete read MUST NOT replace a later read's rows or status;
 unmount SHALL cancel pending reads. Loading, successful empty reads and failed
 reads SHALL be distinguishable, including when retaining earlier rows.
 
@@ -61,8 +61,12 @@ reads SHALL be distinguishable, including when retaining earlier rows.
 
 - **WHEN** the user enters either surface, chooses Today, Yesterday or Recent, applies exact/date filters or refreshes
 - **THEN** the request includes a limit of 200 and the card identifies the loaded result window
-- **WHEN** the user selects a category or Show more
+- **WHEN** the user selects a category or another page
 - **THEN** only loaded entries change presentation without another history read
+
+#### Scenario: A new category or period starts at the first page
+- **WHEN** the user is on a later page and chooses another category or period
+- **THEN** the first page of the new selection is shown
 
 ### Requirement: Quiet presentation
 

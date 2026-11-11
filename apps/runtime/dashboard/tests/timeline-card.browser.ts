@@ -76,20 +76,35 @@ try {
   await page.goto(`${world.url}/#/timeline`);await expect(card.getByRole('status')).toContainText('35 history entries.');
   await expect(card.locator('.timeline-read-at')).toContainText('Latest 35');
   await expect(card.getByRole('group', {name: 'Activity filters'})).toHaveAccessibleDescription(/Categories filter only the latest 35 loaded entries/);
-  assert.equal(await card.locator('[data-history-row]').count(), 20);
+  const shown = () => card.locator('[data-history-row]:not([hidden])');
+  assert.equal(await shown().count(), 20);await expect(card.getByText('Page 1 of 2', {exact: true})).toBeVisible();
   const beforeMore = reads;
-  await card.getByRole('button', {name: 'Show more', exact: true}).click();assert.equal(await card.locator('[data-history-row]').count(), 35);
-  assert.equal(reads, beforeMore, 'Show more reveals only the loaded window');
+  // The shared pager (#1658) replaces Show more; the dedicated page shows 20 entries a page.
+  await card.getByRole('button', {name: 'Next', exact: true}).click();assert.equal(await shown().count(), 15);
+  await expect(card.getByRole('button', {name: 'Previous', exact: true})).toBeFocused();
+  await card.getByRole('button', {name: 'Previous', exact: true}).press('Enter');assert.equal(await shown().count(), 20);
+  await expect(card.getByRole('button', {name: 'Next', exact: true})).toBeFocused();
+  assert.equal(reads, beforeMore, 'paging reveals only the loaded window');
+  // A new category or period starts again at the first page.
+  await card.getByRole('button', {name: 'Next', exact: true}).click();await expect(card.getByText('Page 2 of 2', {exact: true})).toBeVisible();
+  await card.getByRole('button', {name: 'Devices', exact: true}).click();await expect(card.getByText('Page 1 of 2', {exact: true})).toBeVisible();
+  await card.getByRole('button', {name: 'All', exact: true}).click();
+  await card.getByRole('button', {name: 'Next', exact: true}).click();await expect(card.getByText('Page 2 of 2', {exact: true})).toBeVisible();
+  await card.getByRole('combobox', {name: 'Activity period'}).selectOption('yesterday');
+  await card.getByRole('combobox', {name: 'Activity period'}).selectOption('today');
+  await expect(card.getByRole('status')).toContainText('35 history entries.');await expect(card.getByText('Page 1 of 2', {exact: true})).toBeVisible();
   const readCount = reads;
   for (const [category, expected] of [['Agents', 1], ['Automation', 1], ['Devices', 33]] as const) {
     await card.getByRole('button', {name: category, exact: true}).click();
-    assert.equal(await card.locator('[data-history-row]').count(), Math.min(20, expected));
+    assert.equal(await shown().count(), Math.min(20, expected));
   }
   assert.equal(reads, readCount, 'category filters are local');
   await card.getByRole('button', {name: 'All', exact: true}).click();
   const requested = card.locator('[data-history-row="4"]>details>summary');
   await requested.focus();await page.keyboard.press('Enter');
   await expect(card.locator('[data-history-row="4"]')).toContainText('Completion is not established');
+  // On the dedicated page no card height applies, so an opened entry stays beside the others and the pager stays.
+  assert.equal(await shown().count(), 20);await expect(card.getByText('Page 1 of 2', {exact: true})).toBeVisible();
   await card.locator('[data-history-row="4"] .timeline-technical>summary').click();
   await expect(card.locator('[data-history-row="4"] pre')).toContainText('diagnostic');
   await page.keyboard.press('Escape');await expect(requested).toBeFocused();
@@ -99,7 +114,7 @@ try {
   await card.getByRole('combobox', {name: 'Activity period'}).selectOption('recent');
   await expect(card.getByRole('status')).toContainText('35 history entries.');
   fault = true;await card.getByRole('button', {name: 'Refresh history'}).click();
-  await expect(card.getByRole('status')).toHaveText('History unavailable · previous results');assert.equal(await card.locator('[data-history-row]').count(), 20);
+  await expect(card.getByRole('status')).toHaveText('History unavailable · previous results');assert.equal(await shown().count(), 20);
   fault = false;malformed = true;await card.getByRole('button', {name: 'Refresh history'}).click();await expect(card.getByRole('status')).toHaveText('History unavailable · previous results');
   malformed = false;await card.getByRole('button', {name: 'Refresh history'}).click();await expect(card.getByRole('status')).toContainText('35 history entries.');
   await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));

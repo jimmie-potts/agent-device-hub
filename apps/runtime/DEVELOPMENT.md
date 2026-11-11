@@ -661,6 +661,16 @@ layout at 320, 390 and 1440 px. Run it after the root build with an
 outside-checkout `TMPDIR`; optional `DASHBOARD_RECEIPTS` keeps screenshots private.
 These synthetic checks change no installed routines or devices.
 
+Paged Home lists (#1658) extend the same Home editor chain, so hosted smoke and
+the full browser suite run them. After the root build,
+`node apps/runtime/dashboard/tests/home-paging.browser.ts` checks Inbox paging
+with the total count and card height, keyboard paging, items opened in place on a
+later page, last-item dismissal, the Check Inbox landing page, focus after a
+background removal, attention-first Agent status, Timeline reset, saved layouts
+and 375 px width. `node --test apps/runtime/dashboard/tests/paging.test.ts`
+covers the page arithmetic. Synthetic records only; with `DASHBOARD_RECEIPTS` set
+it saves private 2x screenshots.
+
 Home row balance (#1311) extends the existing Home editor browser journey,
 already included in hosted smoke and the full browser suite. After the root
 build, `node apps/runtime/dashboard/tests/home-balance.browser.ts` checks one,

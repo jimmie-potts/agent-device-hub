@@ -5,7 +5,7 @@ import {emptyHistoryFilters, historyQuery, type HistoryFilters, type HistoryPeri
 import {createHistoryReader, type HistorySnapshot} from './timeline-read.ts';
 
 /** Transport adapter: entry and explicit reads only, no subscription, polling or command path. */
-export function TimelinePanel({headingId, connected = true}: {headingId?: string; connected?: boolean}): React.JSX.Element {
+export function TimelinePanel({headingId, connected = true, pageSize}: {headingId?: string; connected?: boolean; pageSize?: number}): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<HistorySnapshot>({rows: [], phase: 'loading', readAt: undefined});
   const [period, setPeriod] = useState<HistoryPeriod>('today'), [draft, setDraft] = useState(emptyHistoryFilters);
   const [invalid, setInvalid] = useState('');
@@ -26,7 +26,7 @@ export function TimelinePanel({headingId, connected = true}: {headingId?: string
   const edit = (field: keyof HistoryFilters, value: string): void => {setDraft(previous => ({...previous, [field]: value}));};
   return <TimelineCard snapshot={snapshot} period={period} onPeriod={next => {
     setDraft(previous => ({...previous, from: '', to: ''}));read(next, {...applied.current, from: '', to: ''});
-  }} connected={connected} {...(headingId === undefined ? {} : {headingId})}
+  }} connected={connected} {...(headingId === undefined ? {} : {headingId})} {...(pageSize === undefined ? {} : {pageSize})}
     onRefresh={() => {read(selection.current, applied.current);}} advanced={<details className="timeline-advanced"><summary>Filters</summary>
       <form onSubmit={event => {event.preventDefault();read('custom', draft);}}>
         <label>From<input type="datetime-local" value={draft.from} onChange={event => {edit('from', event.target.value);}}/></label>
@@ -41,6 +41,6 @@ export function TimelinePanel({headingId, connected = true}: {headingId?: string
 
 export function Timeline({connected = true}: {connected?: boolean}): React.JSX.Element {
   return <section className="timeline" aria-label="Timeline"><h1 className="vh">Timeline</h1>
-    <article className="widget"><TimelinePanel connected={connected}/></article>
+    <article className="widget"><TimelinePanel connected={connected} pageSize={20}/></article>
   </section>;
 }
