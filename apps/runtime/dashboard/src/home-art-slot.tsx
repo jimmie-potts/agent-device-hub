@@ -2,14 +2,18 @@ import React, {useEffect, useRef, useState} from 'react';
 import type {HomeArtFormat} from '@jimmie-potts/event-contracts/v2/families';
 import {fitArt, type ArtFit} from './home-art.ts';
 
-/** Observe a reserved row or the unused trailing viewport. Art never measures or repacks individual cards. */
-export function HomeArtSlot({automatic, format, home, children}: {
-  automatic: boolean; format: HomeArtFormat; home: React.RefObject<HTMLDivElement | null>; children: React.ReactNode;
+/**
+ * Observe a reserved row or the unused trailing viewport. Art never measures or repacks individual cards. On the unit
+ * grid (`shaped`) the card's shape sizes the art instead. The element tree is the same either way, so crossing between
+ * the grid and one column keeps the art mounted, its image and its focused control (#1672).
+ */
+export function HomeArtSlot({automatic, format, home, shaped = false, children}: {
+  automatic: boolean; format: HomeArtFormat; home: React.RefObject<HTMLDivElement | null>; shaped?: boolean; children: React.ReactNode;
 }): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null), [fit, setFit] = useState<ArtFit>();
   useEffect(() => {
     const element = host.current, owner = home.current;
-    if (element === null || owner === null) return;
+    if (element === null || owner === null || shaped) return;
     let pointer = false;
     const measure = (): void => {
       if (automatic && (pointer || owner.classList.contains('is-editing') || (document.activeElement instanceof HTMLElement && owner.contains(document.activeElement) && document.activeElement.matches('button,input,textarea,select,a')))) return;
@@ -24,6 +28,9 @@ export function HomeArtSlot({automatic, format, home, children}: {
     owner.addEventListener('pointerdown', down);window.addEventListener('pointerup', up);window.addEventListener('pointercancel', up);
     owner.addEventListener('focusout', blur);window.addEventListener('resize', measure);measure();
     return () => {observer.disconnect();owner.removeEventListener('pointerdown', down);window.removeEventListener('pointerup', up);window.removeEventListener('pointercancel', up);owner.removeEventListener('focusout', blur);window.removeEventListener('resize', measure);};
-  }, [automatic, format, home]);
-  return <div className="home-art-slot" ref={host} data-art-placement={automatic ? 'automatic' : 'reserved'}>{fit !== undefined && <div className="home-art-box" data-art-format={fit.format} style={{width: fit.width, height: fit.height}}>{children}</div>}</div>;
+  }, [automatic, format, home, shaped]);
+  return <div className={`home-art-slot${shaped ? ' home-art-slot-shaped' : ''}`} ref={host} data-art-placement={automatic ? 'automatic' : 'reserved'}>
+    <div className={`home-art-box${shaped ? ' home-art-shaped' : ''}`} data-art-format={shaped ? undefined : fit?.format} hidden={!shaped && fit === undefined}
+      style={shaped || fit === undefined ? undefined : {width: fit.width, height: fit.height}}>{children}</div>
+  </div>;
 }

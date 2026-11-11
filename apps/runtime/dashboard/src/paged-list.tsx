@@ -48,17 +48,22 @@ export function PagedList({keys, pageSize, label, reveal, resetKey, note, pager 
   if (current !== page) setPage(current);
   const open = expandAlone ? opened.filter(key => keys.includes(key)).at(-1) : undefined;
   const visible = new Set(open === undefined ? pageKeys(keys, current, size) : [open]);
-  const pagerHeight = useRef(52);
+  const pagerHeight = useRef(52), settled = useRef<{key: string; seen: number[]}>({key: '', seen: []});
   useLayoutEffect(() => {
     const node = host.current;if (node === null || !expandAlone) {setFitted(undefined);return;}
     const frame = node.closest<HTMLElement>('.widget') ?? node.closest<HTMLElement>('.home-layout-card');if (frame === null) return;
     const measure = (): void => {
       if (node.dataset.held === 'true') return;
+      // Rows stretch to share the card's spare height; measure them at their natural height.
+      node.dataset.measuring = 'true';
+      try {measureRows();} finally {delete node.dataset.measuring;}
+    };
+    const measureRows = (): void => {
       const rows = [...node.querySelectorAll<HTMLElement>('[data-paged-key]')].filter(row => !row.hidden && row.getClientRects().length > 0);
       const first = rows[0];if (first === undefined) return;
       const pagerNode = node.querySelector<HTMLElement>('.paged-list-pager');
-      // The pager sits at the card's bottom with at least 16px above it.
-      if (pagerNode !== null) pagerHeight.current = pagerNode.getBoundingClientRect().height + 16;
+      // The pager sits at the card's bottom with at least 8px above it.
+      if (pagerNode !== null) pagerHeight.current = pagerNode.getBoundingClientRect().height + 8;
       const tops = [...new Set(rows.map(row => Math.round(row.getBoundingClientRect().top)))].sort((a, b) => a - b);
       // Tiles in a grid count whole rows of the grid's columns; a list counts one entry a row.
       const parent = first.parentElement, grid = parent === null ? undefined : getComputedStyle(parent);
@@ -68,12 +73,19 @@ export function PagedList({keys, pageSize, label, reveal, resetKey, note, pager 
       const space = bottom - first.getBoundingClientRect().top, fit = (room: number): number => Math.max(1, Math.floor((room - height) / step) + 1);
       const all = fit(space) * perRow;
       const next = !pager || all >= keys.length ? Math.max(perRow, all) : Math.max(1, fit(space - pagerHeight.current)) * perRow;
-      setFitted(previous => previous === next ? previous : next);
+      // Showing more or fewer rows can change what fits by one row (the pager appears or a wrapped tile moves); settle
+      // on the smaller count rather than alternate, until the card's size or the number of rows changes.
+      const key = `${String(Math.round(frame.getBoundingClientRect().height))}:${String(keys.length)}:${String(perRow)}`;
+      if (settled.current.key !== key) settled.current = {key, seen: []};
+      const seen = settled.current.seen;seen.push(next);if (seen.length > 8) seen.shift();
+      const value = seen.length >= 3 && seen.at(-3) === next && seen.at(-2) !== next ? Math.min(next, seen.at(-2) ?? next) : next;
+      setFitted(previous => previous === value ? previous : value);
     };
     measure();
     const observer = new ResizeObserver(measure);observer.observe(frame);
     return () => {observer.disconnect();};
-  }, [expandAlone, keys.length, pager, current, open]);
+    // Measured after every render as well as on resize, so tile columns and rows settle in the same pass before paint.
+  });
   useEffect(() => {
     const node = host.current;if (node === null) return;
     const focused = (event: FocusEvent): void => {last.current = event.target instanceof Element ? event.target : null;};

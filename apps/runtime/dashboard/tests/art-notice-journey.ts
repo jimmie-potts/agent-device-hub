@@ -61,10 +61,7 @@ export async function artNoticeJourney(): Promise<void> {
     await expect(image).toHaveAttribute('data-artwork', artworkId);assert.deepEqual(world.art.state(), calls, 'saved scheduled art sends no provider request');
     const pixels = await image.locator('canvas').evaluate(node => {if (!(node instanceof HTMLCanvasElement)) throw new Error('missing-canvas');return node.toDataURL();});
     for (const width of [1440, 390, 320]) {
-      // Between the grid and one column the art card remounts (#1672); wait for that layout and its image before scrolling.
-      await page.setViewportSize({width, height: 1100});
-      await expect(page.locator('.home-layout-grid')).toHaveAttribute('data-packed', width > 600 ? 'true' : 'false');
-      await expect(image).toHaveAttribute('data-art-image-state', 'ready');await image.scrollIntoViewIfNeeded();
+      await page.setViewportSize({width, height: 1100});await image.scrollIntoViewIfNeeded();
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await expect(notice).toBeVisible();
       await page.screenshot({path: join(artifacts, `art-notice-${String(width)}.png`), fullPage: true});

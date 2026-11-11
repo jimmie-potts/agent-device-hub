@@ -3,7 +3,7 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {HomeArrangements, HomePlacement, LightingLayoutRecord, LightingSelection, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import type {RuntimeData} from './runtime-feeds.ts';
 import {cardsFor, emptyLightingLayout, lightingDevices, selectionKey} from './lighting.ts';
-import {homeLayout, widgetCatalog, widgetDefinition, type WidgetSize} from './widgets.ts';
+import {widgetCatalog, widgetDefinition, type WidgetSize} from './widgets.ts';
 import {artFormatShapes, placementShape, shapeArtFormat, shapeStoredSize, type HomeShape} from './home-shapes.ts';
 
 type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; instance: string} | {kind: 'light'; selection: LightingSelection} | {kind: 'unavailable'};
@@ -82,8 +82,8 @@ export function savedHomeCard(id: string, catalog: readonly HomeCardDefinition[]
   return undefined;
 }
 export function defaultHomeArrangements(catalog: readonly HomeCardDefinition[]): HomeArrangements {
-  const base = homeLayout(), coreSizes = new Map([...base.wide, ...base.narrow].map(value => [value.widget, value.size]));
-  const entry = (card: HomeCardDefinition): HomePlacement => ({widget: card.id, size: coreSizes.get(card.id) ?? 'medium', hidden: false});
+  // The built-in layout shows each card in its Standard shape (#1672).
+  const entry = (card: HomeCardDefinition): HomePlacement => {const shape = homeCardShapes(card).standard;return {widget: card.id, size: shapeStoredSize[shape], hidden: false, shape};};
   const selected = catalog.filter(card => card.defaultSelected && card.id !== 'sessions' && card.id !== 'inbox' && card.id !== 'wispr');
   const tail = ['sessions', 'inbox', 'wispr'].flatMap(id => catalog.filter(card => card.id === id && card.defaultSelected));
   return {desktop: [...selected, ...tail].map(entry), phone: [...selected, ...tail].map(entry)};

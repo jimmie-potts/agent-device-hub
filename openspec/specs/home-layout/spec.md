@@ -141,12 +141,16 @@ Each Home card SHALL declare the shapes it offers and the shape a Standard place
 - **WHEN** the owner changes a card from Tall to Large square in Edit Home and chooses Done
 - **THEN** the save sends no device command, and reload, another browser and runtime restart show the card as Large square
 
+#### Scenario: Art stays mounted across layouts
+- **WHEN** the window crosses between the unit grid and one column with focus on a pinned art card's control
+- **THEN** the art card keeps its element, image and focus
+
 #### Scenario: Only offered shapes
 - **WHEN** the owner opens the shape choice of the Inbox card
 - **THEN** it offers Wide, Tall and Large square
 
 ### Requirement: Compact content for a shape
-Every Home card SHALL offer only shapes whose content fits at the 220px unit, with nothing clipped, no scrolling inside the card and no stretched card. Hub mode, Inbox, Agent sessions, Timeline, light, room and Nanoleaf cards SHALL show their own compact content. A card without compact content of its own SHALL show a generic compact face with its name, current state and an Open link to the existing page that holds its full content and controls; Pixoo, Tidbyt and Wispr SHALL use it until their modules provide compact content. A control hidden by a shape SHALL be reachable one step away. Device-acting controls shown in a shape SHALL behave as in the full card, and the result of a command sent from a shape SHALL show on the card's face. No offered shape SHALL leave more than 48px or 15% of the card, whichever is larger, empty below its last content. Art SHALL be cropped to its shape and the music visualizer SHALL fill its shape.
+Every Home card SHALL offer only shapes whose content fits at the 220px unit, with nothing clipped, no scrolling inside the card and no stretched card. Hub mode, Inbox, Agent sessions, Timeline, light, room and Nanoleaf cards SHALL show their own compact content. A card without compact content of its own SHALL show a generic compact face with its name, current state and an Open link to the existing page that holds its full content and controls; Pixoo, Tidbyt and Wispr SHALL use it until their modules provide compact content. A control hidden by a shape SHALL be reachable one step away. Device-acting controls shown in a shape SHALL behave as in the full card, and the result of a command sent from a shape SHALL show on the card's face. No offered shape SHALL leave a blank band (above the first content, between two consecutive content boxes, or below the last) taller than 48px or 15% of the card, whichever is larger; a blank placeholder panel is not content. The built-in layout SHALL show each card in its Standard shape, and the Inbox's Standard shape SHALL be Wide. Art SHALL be cropped to its shape and the music visualizer SHALL fill its shape.
 
 #### Scenario: Every offered shape fits
 - **WHEN** each card is placed in each shape it offers at 1100, 1440 and 1920 px

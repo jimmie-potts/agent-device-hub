@@ -46,7 +46,8 @@ export function LightCard({card, devices, capabilities: cap, artwork, modeChoice
     <header className="light-card-heading"><div><h3>{card.name}</h3><p title={compact || shape !== undefined ? `${card.selection.kind === 'device' ? 'Light' : `${String(card.members.length)} lights · ${card.selection.kind}`} · ${statusText}` : undefined}>{card.selection.kind === 'device' ? 'Light' : `${card.members.length} lights · ${card.selection.kind}`} · {statusText}</p></div>
       {options}
     </header>
-    <div className="light-artwork" data-light-artwork={card.selection.id}>{artwork}</div>
+    {/* A room or group with no lights says so where its artwork would be, instead of a blank panel (#1672). */}
+    <div className="light-artwork" data-light-artwork={card.selection.id}>{card.members.length === 0 ? <p className="light-empty">No lights in this {card.selection.kind} yet. Assign lights on the Rooms page.</p> : artwork}</div>
     {compact && <div className="light-compact">
       <div className="light-power"><button type="button" disabled={!cap.power} aria-pressed={power === true} onClick={() => { act({family: 'power-set', data: {on: true}}); }}>On</button>
         <button type="button" disabled={!cap.power} aria-pressed={power === false} onClick={() => { act({family: 'power-set', data: {on: false}}); }}>Off</button></div>

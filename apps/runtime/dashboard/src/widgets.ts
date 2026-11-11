@@ -82,8 +82,9 @@ export const widgetCatalog: readonly WidgetDefinition[] = [
   },
   {
     id: 'inbox', name: 'Inbox', description: 'Device commands that failed or whose result is unknown, for a person to decide on.',
-    // No Small square: Inbox has no page of its own to hold the rest of the list (owner decision, #1672).
-    sizes: ['small', 'medium'], shapes: ['wide', 'tall', 'large-square'], standard: 'tall', source: {kind: 'core', families: ['inbox-item']}, commands: false, slot: {story: '#923'},
+    // No Small square: Inbox has no page of its own to hold the rest of the list (owner decision, #1672). Its Standard
+    // shape is Wide, so its usual empty state is not a mostly blank Tall card.
+    sizes: ['small', 'medium'], shapes: ['wide', 'tall', 'large-square'], standard: 'wide', source: {kind: 'core', families: ['inbox-item']}, commands: false, slot: {story: '#923'},
   },
 ];
 

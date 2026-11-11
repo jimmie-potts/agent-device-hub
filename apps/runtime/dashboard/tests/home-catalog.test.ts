@@ -36,7 +36,7 @@ void test('width-only placements show stated shapes, and an explicit save stores
   };
   const cases: [HomePlacement, HomeShape][] = [
     [{widget: 'hub-mode', size: 'medium', hidden: false}, 'wide'], [{widget: 'hub-mode', size: 'large', hidden: false}, 'large-square'],
-    [{widget: 'inbox', size: 'small', hidden: false}, 'tall'], [{widget: 'inbox', size: 'medium', hidden: false}, 'tall'],
+    [{widget: 'inbox', size: 'small', hidden: false}, 'tall'], [{widget: 'inbox', size: 'medium', hidden: false}, 'wide'],
     [{widget: 'sessions', size: 'medium', hidden: false}, 'large-square'], [{widget: 'timeline', size: 'medium', hidden: false}, 'tall'],
     [{widget: 'light:device:lamp', size: 'medium', hidden: false}, 'tall'], [{widget: 'light:room:office', size: 'large', hidden: false}, 'large-square'],
     [{widget: 'light:device:lamp', size: 'small', hidden: false}, 'square'], [{widget: 'device:bunny/modules/roborock:vacuum', size: 'small', hidden: false}, 'square'],
@@ -55,6 +55,8 @@ void test('width-only placements show stated shapes, and an explicit save stores
   // The dashboard's stored widths equal the contract's, which the core uses to keep a shape.
   assert.deepEqual(shapeStoredSize, homeShapeSize);
   assert.deepEqual(artFormatShapes, homeArtShapes);
+  // The built-in layout shows each card in its Standard shape; the Inbox's is Wide.
+  assert.deepEqual(defaultHomeArrangements(catalog).desktop.find(entry => entry.widget === 'inbox'), {widget: 'inbox', size: 'medium', hidden: false, shape: 'wide'});
 });
 
 void test('every Home card offers only shapes from the catalog, with an existing page behind its generic face', () => {

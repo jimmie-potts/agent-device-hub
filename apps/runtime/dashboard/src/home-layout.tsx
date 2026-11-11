@@ -26,8 +26,8 @@ function ShapeIcon({shape}: {shape: HomeShape}): React.JSX.Element {
  */
 function CompactFace({card, state, open}: {card: HomeCardDefinition; state: string; open: string | undefined}): React.JSX.Element {
   return <article className="card home-compact-face" data-home-compact={card.id}>
-    <header><HomeCardIcon card={card}/><h2>{card.name}</h2></header>
-    <p className="home-compact-state">{state}</p>
+    <div className="home-compact-art"><HomeCardIcon card={card}/></div>
+    <header><h2 title={card.name}>{card.name}</h2><p className="home-compact-state" title={state}>{state}</p></header>
     {open !== undefined && <a className="home-compact-open" href={open} aria-label={`Open ${card.name}`}>Open</a>}
   </article>;
 }
@@ -178,8 +178,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
       const place = packed?.cards.get(entry.widget), shape = place === undefined ? undefined : shapes.get(entry.widget);
       const offered = homeCardShapes(definition), generic = shape !== undefined && offered.generic.includes(shape);
       const content = generic ? <CompactFace card={definition} state={homeCardState(definition, runtime, connected)} open={offered.open}/>
-        : entry.widget === 'art' ? place !== undefined ? <div className="home-art-shaped">{artControls(entry, entry.art?.pinned === false, true)}<div className="home-art-content" inert={editing}>{renderCard(definition, entry, [])}</div></div>
-          : <HomeArtSlot automatic={false} format={entry.art?.format ?? 'auto'} home={host}>{artControls(entry, entry.art?.pinned === false, false)}<div className="home-art-content" inert={editing}>{renderCard(definition, entry, [])}</div></HomeArtSlot>
+        : entry.widget === 'art' ? <HomeArtSlot automatic={false} shaped={place !== undefined} format={entry.art?.format ?? 'auto'} home={host}>{artControls(entry, entry.art?.pinned === false, place !== undefined)}<div className="home-art-content" inert={editing}>{renderCard(definition, entry, [])}</div></HomeArtSlot>
           : definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, entry, lights);
       return <div key={entry.widget} className={`home-layout-card${entry.widget === 'art' && place === undefined ? ' home-art-row' : ''}${shape === undefined ? '' : ` home-shape-${shape}`}`} data-home-card={entry.widget} data-home-shape={shape} data-home-offers={offered.shapes.join(' ')}
         style={place === undefined ? undefined : area(place)} onDragOver={event => {if (editing && drag.current !== undefined) event.preventDefault();}} onDrop={event => {
@@ -213,11 +212,11 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
       </div>;
     })}
       {editing && packed?.holes.map(hole => <div key={`${String(hole.row)}:${String(hole.column)}`} className="home-hole" aria-hidden="true" style={{gridColumn: String(hole.column), gridRow: String(hole.row)}}><span>Empty</span></div>)}
-      {artFit !== undefined && artCard !== undefined && <div className={`home-layout-card home-shape-${fitShape(artFit)}`} data-home-card="art" data-home-shape={fitShape(artFit)} data-art-placement="automatic" style={area(artFit)}>
-        <div className="home-card-content"><HomeShapeContext.Provider value={fitShape(artFit)}><div className="home-art-shaped">{artControls(artEntry, true, true, fitShape(artFit))}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></div></HomeShapeContext.Provider></div>
+      {/* Automatic art is the grid's last child in both layouts, so it stays mounted across the one-column threshold. */}
+      {automaticArt && (packed === undefined || artFit !== undefined) && <div key="automatic-art" className={`home-layout-card${artFit === undefined ? ' home-art-row' : ` home-shape-${fitShape(artFit)}`}`} data-home-card="art" data-home-shape={artFit === undefined ? undefined : fitShape(artFit)} data-art-placement="automatic" style={artFit === undefined ? undefined : area(artFit)}>
+        <div className="home-card-content"><HomeShapeContext.Provider value={artFit === undefined ? undefined : fitShape(artFit)}><HomeArtSlot automatic shaped={artFit !== undefined} format={artEntry?.art?.format ?? 'auto'} home={host}>{artControls(artEntry, true, artFit !== undefined, artFit === undefined ? undefined : fitShape(artFit))}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></HomeArtSlot></HomeShapeContext.Provider></div>
       </div>}
     </div>
-    {packed === undefined && automaticArt && <HomeArtSlot automatic format={artEntry?.art?.format ?? 'auto'} home={host}>{artControls(artEntry, true, false)}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></HomeArtSlot>}
     {!editing && artEntry?.hidden === true && <button type="button" className="secondary home-art-restore" disabled={locked} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: false}));}}>Restore art widget</button>}
     {shown.length === 0 && <p>No cards here. Choose Edit Home to add one.</p>}
     {editing && entries.some(entry => entry.hidden) && <div className="home-hidden"><span>Hidden</span>{entries.filter(entry => entry.hidden).map(entry => {

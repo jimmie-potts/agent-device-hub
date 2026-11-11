@@ -154,6 +154,22 @@ existing art reservation, its interaction freeze and the format choice, which al
   format change decides; ordinary cards keep the omitted-shape rule.
 - A category chosen in Large square resets to All in shapes without the category buttons.
 
+### 10. Review round 2 (PR #1673)
+
+- Hub mode scales to its card: the mode's artwork grows with the space and the three choices stretch (icons in one
+  unit, beside the mode in Wide, stacked in Tall, one row of tall buttons in Large square).
+- The generic face's icon grows into the space its name, state and Open leave.
+- List rows share the card's spare height with their content centred; PagedList measures them at natural height and
+  settles on the smaller count if showing more or fewer rows would otherwise make it alternate.
+- The test measures the largest blank band anywhere in a card (between consecutive content boxes, above the first and
+  below the last): text lines, controls, images and panels holding them count; blank placeholders do not.
+- A room or group with no lights says so in its artwork panel.
+- Art keeps one element tree on the grid and in one column, so it stays mounted with its image and focus.
+- Tall Agent sessions stacks its filters and shows each count over its label; tile columns and rows are measured in
+  one pass after every render.
+- The Inbox's Standard shape is Wide, and the built-in layout uses each card's Standard shape.
+- In Edit Home the card's own heading is hidden under its edit bar.
+
 ## Risks / Trade-offs
 
 - Visual order can differ from Tab order when a later card fills an earlier hole; Edit Home shows the real placement.

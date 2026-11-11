@@ -140,7 +140,7 @@ column at content height with full content.
 
 In Edit Home on the grid, each card's bar shows its name and move handle; its
 Options button opens Earlier, Later, the shape choice, Hide and Remove below it.
-Lists show as many rows as their card holds, with the pager at the bottom.
+Lists show as many rows as their card holds, with the pager at the bottom and the rows sharing any spare height. Hub mode's artwork and choices grow with its card. The built-in layout shows each card in its Standard shape; the Inbox's is Wide. A room or group with no lights says so where its artwork would be.
 Automatic art takes the empty cells after the last card, or a Wide row of its own.
 
 Each card offers only shapes its content fits at the 220px unit (`widgets.ts`
