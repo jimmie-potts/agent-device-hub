@@ -1,10 +1,18 @@
 // The core's history (Hub #782, ADR 0012 "Inbox and history"): private rows in the core store, with no time limit. It
 // keeps every removal, occurrence and outcome whole, a compact change event for each state change (what changed, not
 // the whole record: owner decision, 2026-10-07), and each step of every tracked action. Each row is written in the
-// transaction that commits what it records. History is the core's own record, never a feed: viewing it triggers
-// nothing, nothing is replayed from it, and its read API with filters is Hub #923's. It also drops a duplicate by
-// `(source, id)`, durably, since every whole message it keeps is one row: an outbox sends an unacknowledged outcome
-// again after every restart, and a crash can send a module's last messages twice.
+// transaction that commits what it records. Viewing history triggers nothing and nothing is published from it; its
+// read API with filters is Hub #923's. It also drops a duplicate by `(source, id)`, durably, since every whole message
+// it keeps is one row: an outbox sends an unacknowledged outcome again after every restart, and a crash can send a
+// module's last messages twice.
+//
+// History is also a fact log (#1740, owner decisions on #1729): each row names its origin, the installation that wrote
+// it, and its place in that origin's order, `origin_seq`, counting from 1 with no gaps. The origin is a random UUID the
+// store creates once and keeps in `core_origin`; it is never derived from a host, user, address or path. A reader asks
+// for one origin's rows after a sequence it holds, a bounded page at a time, and keeps its own cursor: the core keeps
+// no reader's position. The duplicate check looks only at the local origin's rows, so a fact another origin also holds
+// never hides the local copy. The message envelope does not carry the origin.
+import {randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {compareDelivery, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {OUTCOME_RECORDED_TYPE} from '@jimmie-potts/sdk';
@@ -73,6 +81,10 @@ export const kept = (message: Pick<Message<unknown>, 'kind' | 'type'>): boolean 
 export type HistoryFilter = {fromAtMs?: number; toAtMs?: number; kind?: HistoryKind; source?: string; session?: string; limit?: number};
 export type HistoryRow = {seq: number; atMs: number; revision: number; kind: HistoryKind; source: string; messageId: string | null;
   type: string; subject: string; requestId: string | null; record: Record<string, unknown>};
+/** A history row as the fact log reads it: a history row with its origin and its place in that origin's order. */
+export type FactRow = HistoryRow & {origin: string; originSeq: number};
+/** At most this many rows one read after a sequence returns. */
+export const MAX_FACTS = 500;
 export const HISTORY_FILTER_SCHEMA = {type: 'object' as const, additionalProperties: false, properties: {
   fromAtMs: {type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER}, toAtMs: {type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER},
   kind: {enum: ['change', 'removal', 'occurrence', 'outcome', 'operation']},
@@ -96,29 +108,53 @@ export class History {
   readonly #database: DatabaseSync;
   readonly #statements: {
     insert: StatementSync; stored: StatementSync; seen: StatementSync; latest: StatementSync; setLatest: StatementSync;
-    refuse: StatementSync; trimRefused: StatementSync;
+    refuse: StatementSync; trimRefused: StatementSync; after: StatementSync;
   };
 
+  /** This installation's origin: a random UUID, created once and kept in the core store. */
+  readonly origin: string;
+
+  /**
+   * Opens history on the core store's database, in one transaction: creates its tables on a new store, creates the
+   * store's origin once, and gives every row that has none, as every row of a store written before #1740 has none, this
+   * origin and the next sequence in the order the rows were written. A store already in that state changes nothing.
+   */
   constructor(database: DatabaseSync) {
     this.#database = database;
-    database.exec(`CREATE TABLE IF NOT EXISTS core_history (seq INTEGER PRIMARY KEY AUTOINCREMENT, at_ms INTEGER NOT NULL, revision INTEGER NOT NULL,
-        kind TEXT NOT NULL, source TEXT NOT NULL, message_id TEXT, type TEXT NOT NULL, subject TEXT NOT NULL, request_id TEXT, record TEXT NOT NULL) STRICT;
-      CREATE UNIQUE INDEX IF NOT EXISTS core_history_message ON core_history (source, message_id) WHERE message_id IS NOT NULL;
-      CREATE INDEX IF NOT EXISTS core_history_request ON core_history (request_id) WHERE request_id IS NOT NULL;
-      CREATE TABLE IF NOT EXISTS core_history_latest (source TEXT NOT NULL, family TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL,
-        record TEXT NOT NULL, PRIMARY KEY (source, family, id)) STRICT;
-      CREATE TABLE IF NOT EXISTS core_refused (seq INTEGER PRIMARY KEY AUTOINCREMENT, at_ms INTEGER NOT NULL, source TEXT NOT NULL, message_id TEXT NOT NULL,
-        message TEXT NOT NULL) STRICT`);
+    database.exec('BEGIN IMMEDIATE');
+    try {
+      this.origin = migrate(database);
+      database.exec('COMMIT');
+    } catch (error) {
+      if (database.isTransaction) database.exec('ROLLBACK');
+      throw error;
+    }
     this.#statements = {
-      insert: database.prepare('INSERT INTO core_history (at_ms, revision, kind, source, message_id, type, subject, request_id, record) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
-      stored: database.prepare('SELECT record FROM core_history WHERE source = ? AND message_id = ? AND kind != \'change\''),
-      seen: database.prepare('SELECT 1 FROM core_history WHERE source = ? AND message_id = ?'),
+      insert: database.prepare(`INSERT INTO core_history (at_ms, revision, kind, source, message_id, type, subject, request_id, record, origin, origin_seq)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(origin_seq), 0) + 1 FROM core_history WHERE origin = ?))`),
+      stored: database.prepare('SELECT record FROM core_history WHERE origin = ? AND source = ? AND message_id = ? AND kind != \'change\''),
+      seen: database.prepare('SELECT 1 FROM core_history WHERE origin = ? AND source = ? AND message_id = ?'),
       latest: database.prepare('SELECT revision, record FROM core_history_latest WHERE source = ? AND family = ? AND id = ?'),
       setLatest: database.prepare(`INSERT INTO core_history_latest VALUES (?, ?, ?, ?, ?)
         ON CONFLICT (source, family, id) DO UPDATE SET revision = excluded.revision, record = excluded.record`),
       refuse: database.prepare('INSERT INTO core_refused (at_ms, source, message_id, message) VALUES (?, ?, ?, ?)'),
       trimRefused: database.prepare('DELETE FROM core_refused WHERE seq <= (SELECT MAX(seq) FROM core_refused) - ?'),
+      after: database.prepare(`SELECT seq, at_ms AS atMs, revision, kind, source, message_id AS messageId, type, subject, request_id AS requestId,
+        record, origin, origin_seq AS originSeq FROM core_history WHERE origin = ? AND origin_seq > ? ORDER BY origin_seq LIMIT ?`),
     };
+  }
+
+  /**
+   * The rows of `origin` after its sequence `afterSeq`, oldest first, at most `limit` of them. The reader keeps its own
+   * cursor, the last `originSeq` it read; the core stores none. An origin history does not hold returns nothing. Reading
+   * writes nothing and publishes nothing.
+   */
+  after(origin: string, afterSeq: number, limit = MAX_FACTS): FactRow[] {
+    if (typeof origin !== 'string' || !Number.isSafeInteger(afterSeq) || afterSeq < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > MAX_FACTS) {
+      throw new RangeError(`a read after a sequence needs an origin, a sequence of 0 or more and a limit from 1 to ${MAX_FACTS}`);
+    }
+    const rows = this.#statements.after.all(origin, afterSeq, limit) as (Omit<FactRow, 'record'> & {record: string})[];
+    return rows.map(row => ({...row, record: JSON.parse(row.record) as Record<string, unknown>}));
   }
 
   /** Read committed history only. Inclusive filters combine, optionally selecting the latest rows by seq; returns oldest first and publishes nothing. */
@@ -138,11 +174,11 @@ export class History {
   }
 
   /**
-   * How history took a removal, occurrence or outcome with this `(source, id)` before: `new`, an exact `duplicate`, or
-   * a `conflict`, the same `(source, id)` with other content.
+   * How history took a removal, occurrence or outcome with this `(source, id)` before, among this origin's rows only:
+   * `new`, an exact `duplicate`, or a `conflict`, the same `(source, id)` with other content.
    */
   received(message: Message<unknown>): ReturnType<typeof compareDelivery> {
-    const row = this.#statements.stored.get(message.source, message.id) as {record: string} | undefined;
+    const row = this.#statements.stored.get(this.origin, message.source, message.id) as {record: string} | undefined;
     return compareDelivery(row === undefined ? undefined : JSON.parse(row.record) as Message<unknown>, message);
   }
 
@@ -160,13 +196,19 @@ export class History {
     }
   }
 
+  /** One row of this origin, at the next place in its order. */
+  #insert(atMs: number, revision: number, kind: string, source: string, messageId: string | null, type: string, subject: string,
+    requestId: string | null, record: string): void {
+    this.#statements.insert.run(atMs, revision, kind, source, messageId, type, subject, requestId, record, this.origin, this.origin);
+  }
+
   #operation(step: OperationStep, atMs: number, revision: number): void {
-    this.#statements.insert.run(atMs, revision, 'operation', step.requestedBy, null, step.command, step.target, step.requestId, JSON.stringify(step));
+    this.#insert(atMs, revision, 'operation', step.requestedBy, null, step.command, step.target, step.requestId, JSON.stringify(step));
   }
 
   #message(message: Message<unknown>, atMs: number, revision: number): void {
-    // A message history already holds, as a crash's resend, adds nothing.
-    if (!kept(message) || this.#statements.seen.get(message.source, message.id) !== undefined) return;
+    // A message this origin's history already holds, as a crash's resend, adds nothing.
+    if (!kept(message) || this.#statements.seen.get(this.origin, message.source, message.id) !== undefined) return;
     if (message.kind === 'state') {
       this.#change(message, atMs, revision);
       return;
@@ -180,7 +222,7 @@ export class History {
       }
     }
     const {requestId} = message.data as {requestId?: unknown};
-    this.#statements.insert.run(atMs, revision, message.kind, message.source, message.id, message.type, message.subject,
+    this.#insert(atMs, revision, message.kind, message.source, message.id, message.type, message.subject,
       message.kind === 'outcome' && typeof requestId === 'string' ? requestId : null, JSON.stringify(message));
   }
 
@@ -206,6 +248,42 @@ export class History {
     this.#statements.setLatest.run(message.source, family, id, entityRevision, JSON.stringify(record));
     if (Object.keys(changed).length === 0 && removed.length === 0) return;
     const event: ChangeEvent = {family, id, revision: entityRevision, previous: held === null ? null : latest?.revision ?? null, changed, removed};
-    this.#statements.insert.run(atMs, revision, 'change', message.source, message.id, message.type, message.subject, null, JSON.stringify(event));
+    this.#insert(atMs, revision, 'change', message.source, message.id, message.type, message.subject, null, JSON.stringify(event));
   }
+}
+
+/**
+ * Creates history's tables and the store's origin, and brings a store written before #1740 up to the fact log: adds
+ * `origin` and `origin_seq`, then gives each row without an origin this origin and the next sequence, in `seq` order,
+ * which is the order rows were written. Only rows after this origin's last row are looked at, so a store already
+ * migrated costs one index lookup. The old `(source, message_id)` index gives way to one per origin. Runs inside the
+ * caller's transaction and returns the origin.
+ */
+function migrate(database: DatabaseSync): string {
+  database.exec(`CREATE TABLE IF NOT EXISTS core_history (seq INTEGER PRIMARY KEY AUTOINCREMENT, at_ms INTEGER NOT NULL, revision INTEGER NOT NULL,
+      kind TEXT NOT NULL, source TEXT NOT NULL, message_id TEXT, type TEXT NOT NULL, subject TEXT NOT NULL, request_id TEXT, record TEXT NOT NULL,
+      origin TEXT, origin_seq INTEGER) STRICT;
+    CREATE INDEX IF NOT EXISTS core_history_request ON core_history (request_id) WHERE request_id IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS core_history_latest (source TEXT NOT NULL, family TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL,
+      record TEXT NOT NULL, PRIMARY KEY (source, family, id)) STRICT;
+    CREATE TABLE IF NOT EXISTS core_refused (seq INTEGER PRIMARY KEY AUTOINCREMENT, at_ms INTEGER NOT NULL, source TEXT NOT NULL, message_id TEXT NOT NULL,
+      message TEXT NOT NULL) STRICT;
+    CREATE TABLE IF NOT EXISTS core_origin (only INTEGER PRIMARY KEY CHECK (only = 1), origin TEXT NOT NULL) STRICT`);
+  database.prepare('INSERT INTO core_origin VALUES (1, ?) ON CONFLICT (only) DO NOTHING').run(randomUUID());
+  const {origin} = database.prepare('SELECT origin FROM core_origin WHERE only = 1').get() as {origin: string};
+  // A store written before #1740 lacks the columns; they are added as the store's parts add theirs (music-lighting.ts).
+  const columns = (database.prepare('PRAGMA table_info(core_history)').all() as {name: string}[]).map(column => column.name);
+  if (!columns.includes('origin')) database.exec('ALTER TABLE core_history ADD COLUMN origin TEXT');
+  if (!columns.includes('origin_seq')) database.exec('ALTER TABLE core_history ADD COLUMN origin_seq INTEGER');
+  // Every row without an origin is this origin's: before #1740 every row was, and a release before it, run again on this
+  // store, writes rows without one. They follow this origin's last row.
+  const last = database.prepare('SELECT seq, origin_seq AS originSeq FROM core_history WHERE origin = ? ORDER BY origin_seq DESC LIMIT 1').get(origin) as
+    {seq: number; originSeq: number} | undefined;
+  database.prepare(`UPDATE core_history SET origin = ?, origin_seq = numbered.next
+    FROM (SELECT seq, ? + ROW_NUMBER() OVER (ORDER BY seq) AS next FROM core_history WHERE seq > ? AND origin IS NULL) AS numbered
+    WHERE core_history.seq = numbered.seq`).run(origin, last?.originSeq ?? 0, last?.seq ?? 0);
+  database.exec(`DROP INDEX IF EXISTS core_history_message;
+    CREATE UNIQUE INDEX IF NOT EXISTS core_history_origin ON core_history (origin, origin_seq);
+    CREATE UNIQUE INDEX IF NOT EXISTS core_history_origin_message ON core_history (origin, source, message_id) WHERE message_id IS NOT NULL`);
+  return origin;
 }
