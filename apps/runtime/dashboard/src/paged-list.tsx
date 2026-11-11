@@ -37,29 +37,39 @@ export function PagedList({keys, pageSize, label, reveal, resetKey, note, pager 
   // The row the owner last chose by paging, opening or Check Inbox. A change of page size never rewrites it, so a
   // round trip through another shape or width returns to the same page.
   const [chosen, setChosen] = useState<string>();
-  if (resetKey !== reset) {setReset(resetKey);setPage(0);setChosen(undefined);}
+  // The page this render shows is decided in one place: a reset, a new page size or Check Inbox sets it, and only that
+  // result is clamped, so a clamp never overrides the anchor of a page-size change.
+  let wanted = page;
+  if (resetKey !== reset) {setReset(resetKey);setChosen(undefined);wanted = 0;}
   // A new page size (the card changed shape or the window width) shows the page holding the opened row, else the row
   // the owner last chose, else the first row the page showed.
   if (size !== sized) {
     setSized(size);
     const held = opened.filter(key => keys.includes(key)).at(-1) ?? (chosen !== undefined && keys.includes(chosen) ? chosen : undefined);
-    setPage(pageOf(held === undefined ? page * sized : keys.indexOf(held), size));
+    wanted = pageOf(held === undefined ? page * sized : keys.indexOf(held), size);
   }
   // Check Inbox: show the item's page, with no other row holding it; the caller then opens the item, and its toggle
   // records it like any other.
   if (reveal !== undefined && reveal.serial !== revealed) {
     setRevealed(reveal.serial);
     const index = keys.indexOf(reveal.key);
-    if (index >= 0) {setPage(pageOf(index, size));setChosen(reveal.key);setOpened(previous => previous.filter(key => key === reveal.key));}
+    if (index >= 0) {wanted = pageOf(index, size);setChosen(reveal.key);setOpened(previous => previous.filter(key => key === reveal.key));}
   }
-  const pages = pager ? pageCount(keys.length, size) : 1, current = pager ? clampPage(page, keys.length, size) : 0;
   // Removing the last row of the last page moves back to the page before it.
+  const pages = pager ? pageCount(keys.length, size) : 1, current = pager ? clampPage(wanted, keys.length, size) : 0;
   if (current !== page) setPage(current);
   const open = expandAlone ? opened.filter(key => keys.includes(key)).at(-1) : undefined;
   const visible = new Set(open === undefined ? pageKeys(keys, current, size) : [open]);
   useEffect(() => {
     const node = host.current;if (node === null) return;
-    const focused = (event: FocusEvent): void => {last.current = event.target instanceof Element ? event.target : null;};
+    const focused = (event: FocusEvent): void => {
+      last.current = event.target instanceof Element ? event.target : null;
+      // While a row is open the list is the card's scroll area (#1672 F27): focus scrolls the whole control into view,
+      // where the browser would leave a partly hidden one as it is. A control taller than the area (an opened tile's face
+      // with a long name in a Tall card) shows from its top.
+      const target = event.target;
+      if (node.dataset.held === 'true' && target instanceof Element && target !== node) target.scrollIntoView({block: target.getBoundingClientRect().height > node.clientHeight ? 'start' : 'nearest', inline: 'nearest'});
+    };
     // Forget focus that leaves the list. Focus can also drop to nothing because its control was disabled, removed or
     // hidden, as when Dismiss waits for its reply; those keep their claim, and a click elsewhere does not.
     const left = (event: FocusEvent): void => {

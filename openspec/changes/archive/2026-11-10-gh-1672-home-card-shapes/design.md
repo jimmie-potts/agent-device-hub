@@ -206,7 +206,15 @@ rule that short lists could not meet, so the owner chose to calculate rather tha
   checks that nothing a closed row shows leaves it, with a long session title and long Inbox and Timeline names.
 - A change of page size shows the page holding the row the owner last chose (by paging, opening or Check Inbox), which
   a size change never rewrites, so a round trip through another width returns to the same page.
-- The Timeline reserves its status line's 28px in every shape, so a refresh no longer changes the page size.
+- The Timeline reserves its status line's 28px in Tall and Large square, and shows it over the card's bottom edge in
+  Small square and Wide, so a refresh no longer changes the page size.
+
+### 13. Review round 2 of the changed approach (PR #1673)
+
+- PagedList decides the page a render shows in one place (a reset, a new page size or Check Inbox) and clamps only that
+  result, so a reshape to fewer pages keeps the chosen row instead of landing on the last page.
+- While a row is open, focus scrolls the whole focused control into view inside the list; a control taller than the
+  scroll area (an opened tile whose long name wraps in a Tall card) shows from its top.
 
 ## Risks / Trade-offs
 

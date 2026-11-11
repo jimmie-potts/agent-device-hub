@@ -158,6 +158,41 @@ try {
     await expect(inboxList.locator(`[data-paged-key="${chosenKey ?? ''}"]`)).toBeVisible();
   }
   await expect(inboxList).toHaveAttribute('data-page', String(chosenPage));
+  // F24: a reshape round trip, including to fewer pages, returns to the row the owner chose. Tall and Large square show
+  // five items a page at 1440 px and Wide one. Then again after paging back two items in Wide.
+  const reshape = async (shape: 'tall' | 'wide' | 'large-square'): Promise<void> => {
+    await page.evaluate(async shape => {
+      const data = await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': HomeLayoutRecord[]}};
+      const value = data.records['home-layout'][0];if (value === undefined) throw new Error('home-record');
+      const desktop = [{widget: 'inbox', size: shape === 'tall' ? 'small' : 'medium', hidden: false, shape}, {widget: 'hub-mode', size: 'medium', hidden: false, shape: 'wide'}];
+      const saved = await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
+        body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: value.revision, layouts: {desktop, phone: desktop}}})});
+      if (saved.status !== 200) throw new Error(`save ${String(saved.status)}`);
+    }, shape);
+    await expect(inboxCard).toHaveAttribute('data-home-shape', shape);await settle(page);
+  };
+  const listOrder = async (): Promise<string[]> => inboxList.locator('[data-paged-key]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.pagedKey ?? ''));
+  const showsRow = async (index: number, perPage: number, shape: string): Promise<void> => {
+    const key = (await listOrder())[index] ?? '';
+    await expect(inboxList.locator(`[data-paged-key="${key}"]`), `row ${String(index + 1)} shows in ${shape}`).toBeVisible();
+    await expect(inboxList).toHaveAttribute('data-page', String(Math.floor(index / perPage) + 1));
+  };
+  // From Wide page 4 (the fourth item, chosen above), Tall has fewer pages: it shows page 1, which holds that item.
+  await reshape('tall');await showsRow(chosenPage - 1, 5, 'tall from wide');
+  assert.ok((await listOrder()).length >= 10, 'ten or more items for a second Tall page');
+  await inbox.getByRole('button', {name: 'Next', exact: true}).click();await showsRow(5, 5, 'tall');
+  for (const [shape, perPage] of [['wide', 1], ['tall', 5], ['large-square', 5], ['wide', 1], ['tall', 5]] as const) {await reshape(shape);await showsRow(5, perPage, shape);}
+  await reshape('wide');await showsRow(5, 1, 'wide');
+  for (let step = 0; step < 2; step += 1) await inbox.getByRole('button', {name: 'Previous', exact: true}).click();
+  await showsRow(3, 1, 'wide after paging');
+  for (const [shape, perPage] of [['tall', 5], ['large-square', 5], ['wide', 1], ['tall', 5]] as const) {await reshape(shape);await showsRow(3, perPage, shape);}
+  // An empty save, so the core carries no shape from these saves onto the width-only layout saved below.
+  await page.evaluate(async () => {
+    const data = await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': HomeLayoutRecord[]}};
+    const value = data.records['home-layout'][0];if (value === undefined) throw new Error('home-record');
+    await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
+      body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: value.revision, layouts: {desktop: [], phone: []}}})});
+  });
   await page.setViewportSize({width: 560, height: 1000});await expect(page.locator('.home-layout-grid')).toHaveAttribute('data-packed', 'false');
 
   // Agent sessions: a session that needs the owner, last in record order, is on page 1; several say so on the pager.

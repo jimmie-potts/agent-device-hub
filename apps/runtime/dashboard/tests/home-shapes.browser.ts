@@ -553,7 +553,9 @@ try {
       const rect = node.getBoundingClientRect(), area = list.getBoundingClientRect(), x = rect.left + Math.min(rect.width / 2, 8), y = rect.top + rect.height / 2;
       const hit = document.elementFromPoint(x, y);
       const name = `${node.tagName.toLowerCase()} "${(node.textContent ?? node.getAttribute('aria-label') ?? '').trim().slice(0, 24)}"`;
-      if (rect.top < area.top - 1 || rect.bottom > area.bottom + 1 || rect.bottom > outer.bottom + 1) out.push(`${name} not inside the scroll area`);
+      // A control taller than the scroll area (an opened face with a long name in Tall) must show from its top.
+      const taller = rect.height > area.height + 1;
+      if (taller ? Math.abs(rect.top - area.top) > 1 : rect.top < area.top - 1 || rect.bottom > area.bottom + 1 || rect.bottom > outer.bottom + 1) out.push(`${name} not inside the scroll area`);
       if (document.activeElement !== node && !node.matches(':disabled')) out.push(`${name} does not take focus`);
       if (hit === null || !(hit === node || node.contains(hit))) out.push(`${name} is covered`);
     }
@@ -567,12 +569,25 @@ try {
       await save(page, [placement('sessions', shape), placement('hub-mode', 'wide')]);
       for (const width of [1100, 1440]) {
         await page.setViewportSize({width, height: 1000});await measure(page);
-        const tile = page.locator('[data-home-card="sessions"] [data-paged-key]:not([hidden])').first();
-        await tile.locator('summary.agent-face').click();await expect(page.locator('[data-home-card="sessions"] [data-paged-list]')).toHaveAttribute('data-held', 'true');
-        assert.deepEqual(await listScrolls('sessions'), [], `opened session in ${shape} at ${String(width)}`);
-        assert.deepEqual(misfits((await measure(page)).cards), [], `nothing outside the scroll area clipped in ${shape} at ${String(width)}`);
-        if (width === 1440) await shot(page, `final5-opened-session-${shape}-1440`);
-        await tile.locator('summary.agent-face').click();await expect(page.locator('[data-home-card="sessions"] [data-paged-list]')).toHaveAttribute('data-held', 'false');
+        for (const which of ['first', 'long'] as const) {
+          // The first tile, then the long-title one, whose opened face shows its whole name.
+          const sessionsList = page.locator('[data-home-card="sessions"] [data-paged-list]');
+          const tile = which === 'first' ? sessionsList.locator('[data-paged-key]:not([hidden])').first() : sessionsList.locator('[data-paged-key]').filter({has: page.locator('h3[title^="Rework the Home card shapes"]')});
+          if (which === 'long') for (let step = 0; step < 6 && !await tile.isVisible(); step += 1) await page.locator('[data-home-card="sessions"]').getByRole('button', {name: 'Next', exact: true}).click();
+          await tile.locator('summary.agent-face').click();await expect(page.locator('[data-home-card="sessions"] [data-paged-list]')).toHaveAttribute('data-held', 'true');
+          assert.deepEqual(await listScrolls('sessions'), [], `opened session in ${shape} at ${String(width)} (${which})`);
+          // F27: Shift+Tab from Edit label back to the tile's face scrolls the whole face into view.
+          await page.locator('[data-home-card="sessions"] [data-paged-list]').evaluate(list => {list.scrollTop = list.scrollHeight;});
+          await tile.getByRole('button', {name: /^Edit label/}).focus();await page.keyboard.press('Shift+Tab');
+          assert.deepEqual(await page.locator('[data-home-card="sessions"] [data-paged-list]').evaluate(list => {
+            const active = document.activeElement, area = list.getBoundingClientRect(), rect = active?.getBoundingClientRect();
+            const fits = rect !== undefined && (rect.height > area.height + 1 ? Math.abs(rect.top - area.top) <= 1 : rect.top >= area.top - 1 && rect.bottom <= area.bottom + 1);
+          return active !== null && list.contains(active) && fits ? 'inside' : `${active?.tagName ?? ''} ${String(rect?.top)}-${String(rect?.bottom)} in ${String(area.top)}-${String(area.bottom)}`;
+          }), 'inside', `the focused face is fully in view in ${shape} at ${String(width)} (${which})`);
+          assert.deepEqual(misfits((await measure(page)).cards), [], `nothing outside the scroll area clipped in ${shape} at ${String(width)} (${which})`);
+          if (width === 1440 && which === 'first') await shot(page, `final5-opened-session-${shape}-1440`);
+          await tile.locator('summary.agent-face').click();await expect(page.locator('[data-home-card="sessions"] [data-paged-list]')).toHaveAttribute('data-held', 'false');
+        }
       }
     }
     // An Inbox item with its command evidence open, longer than a Wide card.

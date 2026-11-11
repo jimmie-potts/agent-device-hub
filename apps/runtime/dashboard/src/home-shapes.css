@@ -208,6 +208,7 @@
    only scroll area, so a long detail is never clipped; its controls scroll into view as focus reaches them. */
 .home-layout-card[data-home-shape] :is(.inbox-card>header,.inbox-card>.hub-control-status,.timeline-heading,.timeline-card>.timeline-open,.timeline-filters,.timeline-card>.timeline-status,.widget[data-widget=sessions]>.widget-head,.agent-summary,.agent-sessions .filters,.paged-list-pager){flex-shrink:0}
 .home-layout-card[data-home-shape] .paged-list[data-held=true]{overflow-y:auto;overscroll-behavior:contain;scroll-padding-block:var(--space-xs);padding-inline:4px;margin-inline:-4px}
+.home-layout-card[data-home-shape] .paged-list[data-held=true] :focus{scroll-margin-block:var(--space-xs)}
 .home-layout-card[data-home-shape] .paged-list[data-held=true]:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
 
 .light-empty{margin:0;padding:var(--space-m);text-align:center;color:var(--muted-dense);font-size:var(--type-small)}
