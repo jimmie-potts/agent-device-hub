@@ -8,9 +8,12 @@ import {createHook} from 'node:async_hooks';
 /**
  * Resource kinds that are not themselves work in flight, so they never hold a pause. Connections, listeners, pipes,
  * open files and other handles last as long as their owner keeps them and call back many times; what passes over them
- * is this thread's work, which the harness's turns run. A module's worker thread is held separately: the harness waits
- * for each worker call itself. Timers, immediates, ticks, microtasks, promises and the test runner's own tests are this
- * thread's scheduling.
+ * is this thread's work, which the harness's turns run. Worker threads and their message ports never count either. Only
+ * a module's `workers.call` is held, by the harness's own wait in `holding()`. A long-lived worker from `workers.start`,
+ * as Wispr's reader is, is not counted while it computes a reply in its thread. Today's catalog never needs that: every
+ * Wispr read is an HTTP answer a check awaits while the virtual clock stands still. A scenario that needs such a worker's
+ * background work to finish within a virtual-time window needs the harness to hold that work, as it holds a worker call.
+ * Timers, immediates, ticks, microtasks, promises and the test runner's own tests are this thread's scheduling.
  */
 export const IDLE_KINDS: ReadonlySet<string> = new Set([
   'DIRHANDLE', 'DNSCHANNEL', 'ELDHISTOGRAM', 'FILEHANDLE', 'FSEVENTWRAP', 'HEAPSNAPSHOT', 'HTTPCLIENTREQUEST', 'HTTPINCOMINGMESSAGE',
