@@ -84,8 +84,8 @@ export function PagedList({keys, pageSize, label, reveal, resetKey, note, pager 
     measure();
     const observer = new ResizeObserver(measure);observer.observe(frame);
     return () => {observer.disconnect();};
-    // Measured after every render as well as on resize, so tile columns and rows settle in the same pass before paint.
-  });
+    // Measured again whenever what it shows changes, as well as on resize; tile columns and rows come from one pass.
+  }, [expandAlone, pager, keys.length, current, open, fitted]);
   useEffect(() => {
     const node = host.current;if (node === null) return;
     const focused = (event: FocusEvent): void => {last.current = event.target instanceof Element ? event.target : null;};

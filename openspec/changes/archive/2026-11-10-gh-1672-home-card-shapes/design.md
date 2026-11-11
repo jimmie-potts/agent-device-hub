@@ -92,7 +92,7 @@ browser test measures every card in every offered shape at 1100, 1440 and 1920px
 | --- | --- | --- |
 | Hub mode, Timeline, Music visualizer, Art | all four | Wide, Tall, Wide, Large square |
 | Light, room, group and Nanoleaf light cards | all four | Tall |
-| Inbox | Wide, Tall, Large square | Tall |
+| Inbox | Wide, Tall, Large square | Wide (Tall before review round 2) |
 | Agent sessions | Tall, Large square | Large square |
 | Pixoo, Tidbyt, Wemo, Roborock, Volcano, sign, Music, Wispr, Reachy, MicroDuck | Small square (generic face) | Small square |
 | Unavailable placeholders | Small square | Small square |
