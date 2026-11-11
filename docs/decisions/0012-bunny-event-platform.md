@@ -1,7 +1,7 @@
 # ADR 0012: One event and messaging platform for every component
 
 Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-17,
-2026-10-30, 2026-11-03 and 2026-11-11 (see [Amendments](#amendments); the
+2026-10-30, 2026-11-03, 2026-11-10 and 2026-11-11 (see [Amendments](#amendments); the
 [2026-11-11 amendment](#amendment-2026-11-11) adopts no event sourcing, makes
 history a fact log and says what a past fact may do).
 Supersedes [ADR 0010](0010-shared-event-contracts.md).
