@@ -36,12 +36,14 @@ export const profiles = freeze({
   pc: {
     name: 'pc',
     // Eight slots of 4 CPUs fill its 32 threads. The Mac's thresholds are 0.67 and 1.0 per core; with no core to
-    // protect the PC starts under 0.75 per thread (24), and stops above 1.0 per thread (32). The first PC run confirms.
+    // protect the PC starts under 0.75 per thread (24), and stops above 1.0 per thread (32). In the PC runs on
+    // #1681, eight jobs at once peaked at a load of 24.59 with no kills; one timing-sensitive test failed (#1695).
     slots: 8, startLoad: 24, stopLoad: 32,
     pool: null,
     core: null,
     // Measured with test:runtime:built: about 1.2 GiB at 4 CPUs and 2.2 GiB at 8. Eight standard ceilings make 16 GiB,
     // as do four wide ones, which leaves about 3.5 GiB of the Docker VM for the engine, builds and the WSL distro.
+    // One wide test:runtime:verify:built job peaked at 1660 MiB of 3584 and passed (#1696).
     sizes: {standard: {cpus:'4', memory:'2048m', slots:1, suffix:''}, wide: {cpus:'8', memory:'3584m', slots:2, suffix:'-wide'}},
     // Used only for pool headroom, so it has no effect without a pool.
     buildBytes: 2048 * MIB,
