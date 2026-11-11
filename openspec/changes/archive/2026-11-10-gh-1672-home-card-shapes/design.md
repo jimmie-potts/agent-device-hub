@@ -187,6 +187,8 @@ rule that short lists could not meet, so the owner chose to calculate rather tha
 - Rows keep their height and sit at the top with the pager at the bottom. A full list leaves less than one row above
   the pager; a short list leaves the rest of the card plain; an empty Inbox or Timeline centres its message. The
   blank-band rule now covers every card except these lists.
+- When the page size changes (a new shape or window width), the list keeps the same rows in view: the page holding
+  the opened row, or else the first row the page showed.
 - A room or group with no lights offers Small square and Wide, and shows a saved Tall or Large square as Wide; a save
   keeps the stored shape for when it has lights again.
 - In Edit Home only the card's own heading (in the header that opens its root element) is hidden; the generic face
