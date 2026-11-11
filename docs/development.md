@@ -808,10 +808,8 @@ command's first own line, on stderr after npm's banner, is
 1. **Slots.** At most 5 test jobs at once, across all sessions. A job is one
    container (any except the core, the diagnostics containers, the Tronbyt
    server and those in item 2) or one native test suite. A container named
-   `…-wide` counts as two. One native sharded catalog run
-   (`npm run test:runtime:scenarios:shards`) also counts as two, at any shard
-   count up to the default four; a run of more than four shards is not for the
-   Mac. Inside a test container only the container's size counts.
+   `…-wide` counts as two. Inside a test container only the container's size
+   counts.
 2. **Operator and qualification containers.** The archive-volume helper in
    [Back up a stopped instance](bunny-container.md#back-up-a-stopped-instance)
    and the release image's exercise container in
@@ -876,13 +874,8 @@ jobs; never touch another session's containers.
   `ps -axo command= | grep -E '^([^ ]*/)?(node|[Pp]ython[0-9.]*)( |$)' | grep -E -- '--test|/tests/|unittest|vitest|scripts/check-' | grep -v -- '--test-isolation=process'`.
   The listing is an aid. It hides test workers, and most suites show one line,
   the one naming the test files or the browser entry script; a
-  `scripts/package-*.mjs --test` suite shows two lines. A native sharded catalog
-  run shows up to five
-  `node --test --test-concurrency=1 apps/runtime/dist/tests/scenarios/…` lines,
-  and its `node scripts/scenario-shards.mjs` parent does not match; count those
-  lines as two slots for each run that
-  `ps -axo command= | grep -E '^([^ ]*/)?node scripts/scenario-shards\.mjs'`
-  lists. Also count every native suite you started yourself.
+  `scripts/package-*.mjs --test` suite shows two lines. Also count every native
+  suite you started yourself.
 - Lint: start it only when
   `ps -axo command= | grep -E '^([^ ]*/)?node .*(eslint/bin/eslint\.js|lint-shards\.mjs)'`
   prints nothing. An editor's ESLint language server does not match.
@@ -908,11 +901,9 @@ week of use.
    refused outside a WSL kernel, and any value other than `mac` or `pc` is
    refused, so the Mac never runs with the PC's numbers.
 2. **Slots.** At most 8 test jobs at once, across all sessions. A job is one
-   container or one native test suite; a `…-wide` container and one native
-   sharded catalog run (up to the default four shards) each count as two. A run
-   of more than four shards is unmeasured here. The operator and qualification
-   containers of [Test work on the Mac](#test-work-on-the-mac) item 2 are
-   Mac-only.
+   container or one native test suite; a `…-wide` container counts as two. The
+   operator and qualification containers of
+   [Test work on the Mac](#test-work-on-the-mac) item 2 are Mac-only.
 3. **Start check.** Start only when the 1-minute load is under 24 and enough
    slots are free. Otherwise wait a minute.
 4. **Containers.** Run each test job with
