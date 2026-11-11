@@ -495,7 +495,7 @@ void test('work before a readable key source stops the run as refused: an over-b
     const ended = edge.progress[1];
     assert.ok(killed >= 1, kind); assert.equal(delivered, lines.indexOf(assistant) + 1, `${kind}: stopped at the first work event`);
     assert.ok(ended?.status === 'failed', kind); assert.equal(ended.reason, 'refused', kind); assert.equal(ended.result?.outcome, 'failed', kind);
-    assert.match(ended.result?.summary ?? '', /stopped at its first event: the tool did work before its stream named a readable credential source/, kind);
+    assert.match(ended.result?.summary ?? '', /stopped at its first work event: the tool did work before its stream named a readable credential source/, kind);
     admitted('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', ended);
     await worker.stop();
   }

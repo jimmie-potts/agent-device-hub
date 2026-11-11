@@ -506,7 +506,7 @@ export class CodingWorker {
     if (running.cancelled) {await this.#progress({operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: assemble(stream, 'cancelled').result}); return;}
     if (keyRefused !== undefined) {
       await this.#progress({operationId: running.operationId, status: 'failed', reason: 'refused', result: refusedResult(assemble(stream, 'refused').result,
-        `The run was stopped at its first event: ${keyRefused}, and workers use only the subscription sign-in.`)});
+        `The run was stopped at its ${stream.apiKeySource === undefined ? 'first work event' : 'first event'}: ${keyRefused}, and workers use only the subscription sign-in.`)});
       return;
     }
     if (timedOut) {await this.#progress({operationId: running.operationId, status: 'failed', reason: 'timeout', result: assemble(stream, 'timeout').result}); return;}
