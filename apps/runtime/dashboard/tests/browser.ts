@@ -38,8 +38,10 @@ try {
   await page.getByRole('heading', {name: 'Home', exact: true}).waitFor();
   await page.locator('.empty', {hasText: 'No sessions observed'}).waitFor();
   assert.deepEqual(await page.locator('.home-layout-grid [data-widget]').evaluateAll(all => all.map(widget => widget.getAttribute('data-widget'))), ['hub-mode', 'sessions', 'inbox']);
-  const homeRows = await page.locator('.home-layout-grid > [data-home-card]').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().top));
-  assert.ok(homeRows.every(top => Math.abs(top - (homeRows[0] ?? 0)) <= 1), 'the three core cards share a balanced desktop row');
+  // On the unit grid (#1672) the built-in layout shows each core card in its Standard shape; home-shapes.browser.ts
+  // checks the tiling. At 1440 px the Wide Inbox packs into the row below Hub mode.
+  assert.deepEqual(await page.locator('.home-layout-grid > [data-home-card]').evaluateAll(nodes => nodes.map(node => `${(node as HTMLElement).dataset.homeCard ?? ''}=${(node as HTMLElement).dataset.homeShape ?? ''}`)),
+    ['hub-mode=wide', 'sessions=large-square', 'inbox=wide'], 'the three core cards show their Standard shapes on the desktop grid');
   assert.equal(await page.locator('[data-widget=hub-mode] button').count(), 3, 'the mode panel offers Work, Free and Quiet without applying on load');
   assert.equal(await page.locator('[data-widget=attention]').count(), 0);
   checks.push('Home composes reusable agent cards without a duplicate attention panel');
@@ -90,6 +92,8 @@ try {
   assert.equal(await row('Port the wall').locator('.chip').textContent(), 'Finished · unread', 'still unread: no timer cleared it');
   assert.deepEqual(sent, [], 'the page sent nothing by itself');
   checks.push('a finished turn stays unread until the record clears it');
+  // On the unit grid an opened session takes the card's page (#1672); close it so the next session shows beside it.
+  await row('Port the wall').locator('summary.agent-face').click();
 
   // A second session's new turn clears its finished turn for the consumers set to clear on one, which the record shows.
   await world.observe(sessionStarted, {identity: DESKTOP, title: {value: 'Plan wave three', source: 'provider'}});
@@ -149,6 +153,8 @@ try {
   await world.observe({kind: 'read-observed', state: 'read'}, {identity: DESKTOP, turn: 'turn-2'});
   await chip('Plan wave three', 'Idle');
   await row('Plan wave three').getByText('Acknowledged by: none.', {exact: false}).waitFor();
+  // An opened session takes the grid card's page (#1672): close this one and open the other to read its evidence.
+  await row('Plan wave three').locator('summary.agent-face').click();await row('Port the wall').locator('summary.agent-face').click();
   await world.acknowledge(SESSION_ID);
   await chip('Port the wall', 'Idle');
   await row('Port the wall').getByText('Acknowledged by: nanoleaf.', {exact: false}).waitFor();
