@@ -5,7 +5,7 @@ import {chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile} from 'n
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {admission, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, reportOverflow} from './test-container/pool.mjs';
+import {admission, dockerRead, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, reportOverflow} from './test-container/pool.mjs';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const suites = Object.freeze({all: ['test:runtime:scenarios:built', 'test:runtime:verify:built'],
@@ -75,20 +75,20 @@ function command(program, args, options = {}) {
   });
 }
 
-function captured(args) {
-  try { return execFileSync('docker', args, {encoding:'utf8', stdio:['ignore','pipe','ignore']}).trim(); } catch { return null; }
-}
-
-const io = Object.freeze({
+export const host = Object.freeze({
   ...hostFacts,
+  env: process.env,
   run: args => command('docker', args),
-  read: captured,
+  read: dockerRead,
+  snapshot,
+  print: line => console.log(line),
   log: line => console.error('runtime-container: ' + line),
 });
 
-async function main() {
-  const suite = parse(process.argv.slice(2));
-  const pool = await ensurePool(io, poolName(process.env));
+/** Runs the chosen suites in a disposable container and returns their status. `io` is the host, or a fake in tests. */
+export async function runChecks(argv, io = host, repository = root) {
+  const suite = parse(argv);
+  const pool = await ensurePool(io, poolName(io.env));
   let release = null;
   const admit = async bytes => {
     const gate = await admission(io, {pool, need:{bytes, slots:1}, waitMinutes:30});
@@ -102,7 +102,7 @@ async function main() {
   let cleanupError;
   try {
     const source = join(scratch,'source');
-    const files = await snapshot(root, source);
+    const files = await io.snapshot(repository, source);
     const context = join(scratch,'tool'); await mkdir(context, {mode:0o700});
     const manifests = files.filter(path => path === 'package-lock.json' || /(?:^|\/)package\.json$/.test(path));
     const hash = createHash('sha256');
@@ -113,29 +113,33 @@ async function main() {
     const recipe = await readFile(join(source,'scripts/runtime-container/Dockerfile'));
     hash.update(recipe); await writeFile(join(context,'Dockerfile'), recipe);
     const image = 'bunny-runtime-check-tools:' + hash.digest('hex').slice(0,24);
-    if (captured(['image','inspect','--format','{{.Id}}',image]) === null) {
+    const missing = () => io.read(['image','inspect','--format','{{.Id}}',image]) === null;
+    if (missing()) {
       await admit(BUILD_BYTES);
-      status = await command('docker', ['build','--tag',image,...(pool ? ['--cgroup-parent',`/${pool}`] : []),context]);
+      // A run that waited while another built the same image uses that image.
+      if (missing()) {
+        status = await io.run(['build','--tag',image,...(pool ? ['--cgroup-parent',`/${pool}`] : []),context]);
+        if (status !== 0) throw Object.assign(new Error('container-check-failed'), {status});
+      }
       await release(); release = null;
-      if (status !== 0) throw Object.assign(new Error('container-check-failed'), {status});
     }
-    const imageId = execFileSync('docker', ['image','inspect','--format','{{.Id}}',image], {encoding:'utf8'}).trim();
+    const imageId = io.read(['image','inspect','--format','{{.Id}}',image]) ?? '';
     if (!/^sha256:[a-f0-9]{64}$/.test(imageId)) throw new Error('tool-image-identity-refused');
     await admit(NEED_BYTES);
     const before = oomKills(io, pool);
-    console.log(pool ? `In the /${pool} pool.` : 'No pool: per-container limits and the count check.');
-    const id = execFileSync('docker', createArgs(name, imageId, suite, pool), {encoding:'utf8'}).trim();
+    io.print(pool ? `In the /${pool} pool.` : 'No pool: per-container limits and the count check.');
+    const id = io.read(createArgs(name, imageId, suite, pool)) ?? '';
     if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('container-identity-refused');
     created = id;
-    console.log('Disposable runtime checks: ' + name + ' ' + id);
-    status = await command('docker',['cp',source + '/.',id + ':/work/source']);
+    io.print('Disposable runtime checks: ' + name + ' ' + id);
+    status = await io.run(['cp',source + '/.',id + ':/work/source']);
     if (status !== 0) throw Object.assign(new Error('container-check-failed'), {status});
     const held = release;
     io.later(HOLD_MS, () => { void held?.(); });
-    status = await command('docker',['start','--attach',id]);
+    status = await io.run(['start','--attach',id]);
     reportOverflow(io, pool, before, oomKills(io, pool));
     // docker start --attach may return zero for a failed process on some engine versions.
-    const state = JSON.parse(execFileSync('docker',['inspect','--format','{{json .State}}',id],{encoding:'utf8'}));
+    const state = JSON.parse(io.read(['inspect','--format','{{json .State}}',id]) ?? '{"Running":true}');
     if (state.Running || state.Pid !== 0 || !Number.isInteger(state.ExitCode)) throw new Error('container-completion-unknown');
     status ||= state.ExitCode;
   } catch (error) {
@@ -144,7 +148,7 @@ async function main() {
   } finally {
     await release?.().catch(() => {});
     if (created) {
-      const cleaned = await command('docker',['rm','--force',created]);
+      const cleaned = await io.run(['rm','--force',created]);
       if (cleaned !== 0) cleanupError = new Error('owned-container-cleanup-failed: ' + created);
     }
     await rm(scratch, {recursive:true, force:true});
@@ -154,5 +158,5 @@ async function main() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().then(status => {process.exitCode = status;}).catch(error => {console.error(error.message);process.exitCode = 1;});
+  runChecks(process.argv.slice(2)).then(status => {process.exitCode = status;}).catch(error => {console.error(error.message);process.exitCode = 1;});
 }

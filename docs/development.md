@@ -1650,41 +1650,65 @@ image with `--network none`, and is removed when it exits:
   dropped, which mounts only the pool's own directory.
 - Only if that helper cannot write them does the owner-approved privileged helper
   (`--privileged --cgroupns=host`) write them, and only inside that directory.
+  The command first prints why the unprivileged helper did not: its exit status,
+  or the limits it read back.
 
-Nothing writes the VM's root `cgroup.subtree_control` or anything under
-`docker/`. If the root cgroup does not give its children the memory and CPU
-controllers, or neither helper can set the limits, the command prints why and
-falls back to per-container limits with the count check. The count check counts
-every running container except the installed core, the diagnostics containers,
-the Tronbyt server and the pool helpers, with a `-wide` name as two, and waits
-while five are taken. `BUNNY_TEST_POOL_SCRATCH_NAME` names another pool for
+Nothing in this change writes `cgroup.subtree_control` or anything under
+`docker/`. The container runtime enables the pool's memory and CPU controllers
+when it creates a container there, as it already does under `docker/`. If the
+root cgroup does not give its children those controllers, or neither helper can
+set the limits, the command prints why at start-up and falls back to
+per-container limits. `BUNNY_TEST_POOL_SCRATCH_NAME` names another pool for
 scratch exercises only. It must be one path segment that starts with `bunny-`.
 
 Admission runs without a daemon. Before an image build and before each job, the
 command waits until all of these hold:
 
 - the host's 1-minute load (`os.loadavg()`) is under 8;
-- the installed core is `healthy` and its last health check took under 500 ms;
-- the pool's `memory.max` minus its `anon` and `shmem` memory is at least the
-  job's memory size (2 GiB for an image build), or, without a pool, the count
-  check passes.
+- `docker ps` can be read;
+- the installed core is `healthy` and its last health check took under 500 ms.
+  The core is skipped only when `docker ps -a` lists no container named
+  `bunny-mac-personal-core-1`. Any failure to read its health is a wait;
+- the rule's five slots have room for the job, with or without the pool. The
+  count is every running container except the installed core, the diagnostics
+  containers, the Tronbyt server and the pool helpers, with a `-wide` name as
+  two. It covers containers only, so a session still counts its native suites
+  itself under the rule's start check in
+  [Test work on the Mac](#test-work-on-the-mac);
+- with the pool, the pool reads back with exactly its limits, and its
+  `memory.max` minus its `anon` and `shmem` memory is at least the job's memory
+  size (2 GiB for an image build). A pool that is missing, unreadable or without
+  its limits, as after a VM restart, is a wait: the command sets it up again
+  before the next check.
 
-It rechecks every 30 seconds and prints a line only when the reason changes.
-After `--wait-minutes` (default 30) it stops with exit status 75 and the last
-reason. A start also takes one lock that every session on this machine shares,
-`/private/tmp/bunny-test-start/lock` (owner-only). It holds the lock from its
+It rechecks every 30 seconds, or every 3 seconds when the only reason is another
+start holding the lock, and prints a line only when the reason changes. Every
+Docker read times out after 60 seconds. After `--wait-minutes` (default 30) it
+stops with exit status 75 and the last reason. A start also takes one lock that
+every session on this machine shares, `/private/tmp/bunny-test-start/lock`
+(owner-only), with a random token in its owner file. It holds the lock from its
 admission check until its container has run for 30 seconds, and through an
-image build. A lock whose process is gone, or that is older than 10 minutes, is
-taken over with a printed line. When the pool kills a process for memory while
-a job runs, the command says so in one line. That is a failed run to retry, not
-a reason to raise the ceiling. A real Docker VM restart restarts the installed
-core, so recreation after one is observed only when the owner restarts the VM
-for other reasons. In one 25-minute run on 2026-11-11, with six commands kept
-running or waiting, admission let six jobs run at once for 140 seconds in total,
-at most 90 seconds in a row. It held starts back for 290 seconds because the load
-was at or above 8, and for 580 seconds because the start lock was held. The core
-stayed healthy, with health checks of at most 122 ms. The pool peaked at 2.75 GiB
-of `anon` and `shmem` with no memory kill. Hub #1641 records the details.
+image build. Releasing removes the lock only while the token is still its own.
+A lock is taken over, with a printed line, only when its owner's process is
+gone, or when it has had no owner file for 10 seconds. Age alone never takes
+over a live owner, whose image build may be long. One taker at a time removes a
+stale lock. Both runners recheck the image tag after waiting to build.
+
+When the pool kills a process for memory while a job runs, the command says so
+in one line. That is a failed run to retry, not a reason to raise the ceiling.
+A real Docker VM restart restarts the installed core, so recreation after one is
+observed only when the owner restarts the VM for other reasons. The pool's
+5 GiB ceiling and the core's own 4 GB limit together exceed the VM's memory. A
+nearly full pool beside a busy core was not exercised; the six-job run below
+reached 2.75 GiB.
+
+In one 25-minute run on 2026-11-11, with six commands kept running or waiting,
+admission let six jobs run at once for 140 seconds in total, at most 90 seconds
+in a row. That run predates the slot count in pool mode. It held starts back for
+290 seconds because the load was at or above 8, and for 580 seconds because the
+start lock was held. The core stayed healthy, with health checks of at most
+122 ms. The pool peaked at 2.75 GiB of `anon` and `shmem` with no memory kill.
+Hub #1641 records the details.
 
 ### Workspace audit
 

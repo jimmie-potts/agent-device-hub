@@ -3,20 +3,20 @@
 // mounted read-only; the container copies it over the image's node_modules, builds unless told not to and runs one
 // package script. Jobs run under the shared test pool and start only with headroom (Hub #1641, ./test-container/pool.mjs).
 // docs/development.md "One test job in a container" is the procedure.
-import {spawn, execFileSync} from 'node:child_process';
+import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {constants, tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {snapshot} from './runtime-container.mjs';
-import {admission, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, reportOverflow} from './test-container/pool.mjs';
+import {admission, dockerRead, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, reportOverflow} from './test-container/pool.mjs';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const recipePath = 'scripts/test-container/Dockerfile';
 const keyLabel = 'org.bunny.test-deps.key';
 const USAGE = 'usage: npm run test:container -- --issue <n> --job <name> [--size standard|wide] [--no-build] [--network] [--wait-minutes <n>] -- <package script> [arguments...]';
-// The free pool memory an image build waits for: the build runs on the host, outside the pool and the job's limits.
+// The free pool memory an image build waits for. Its RUN steps run in the pool; the engine's image export does not.
 export const BUILD_BYTES = 2048 * 1024 ** 2;
 
 // The owner's container sizes. Swap equal to memory means the container cannot swap.
@@ -121,15 +121,12 @@ function spawned(program, args) {
   });
 }
 
-function captured(program, args) {
-  try { return execFileSync(program, args, {encoding:'utf8', stdio:['ignore','pipe','ignore']}).trim(); } catch { return null; }
-}
 
 export const host = Object.freeze({
   ...hostFacts,
   env: process.env,
   run: args => spawned('docker', args),
-  read: args => captured('docker', args),
+  read: dockerRead,
   snapshot,
   log: line => process.stderr.write(`test-container: ${line}\n`),
   onInterrupt: handler => { process.on('SIGINT', handler); process.on('SIGTERM', handler); },

@@ -116,12 +116,14 @@ function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuring
     loadavg: () => [loads[Math.min(Math.floor(clock / 30_000), loads.length - 1)], 0, 0],
     now: () => clock,
     sleep: async ms => { clock += ms; },
-    later: (_ms, task) => { task(); },
+    held: [],
+    later: (ms, task) => { io.held.push({ms, task}); },
     alive: () => true,
     pid: 1,
     uid: process.getuid?.(),
     lockDir,
     onInterrupt: handler => { interrupt = handler; },
+    interruptNow: () => interrupt(),
     snapshot: async (_repository, destination) => {
       if (interruptOnSnapshot) interrupt();
       await mkdir(join(destination, 'scripts/test-container'), {recursive:true});
@@ -161,6 +163,9 @@ function fakeHost({exit = 0, images = new Map(), linger = false, interruptDuring
         }
         containers.add(id); ranJob = true;
         await writeFile(args[args.indexOf('--cidfile') + 1], id + '\n');
+        // Let runJob see the cidfile, then record whether the start lock is still held while the job runs.
+        await new Promise(wait => setTimeout(wait, 120));
+        io.lockDuringRun = existsSync(join(lockDir, 'lock'));
         if (interruptDuringRun) {
           await new Promise(wait => setTimeout(wait, 150));
           interrupt();
@@ -376,5 +381,28 @@ test('a run that waited while another built the same image uses that image and b
     assert.equal(await runJob(argv, io, repo), 0);
     assert.equal(io.calls.some(call => call[0] === 'build'), false);
     assert.equal(io.lines.some(line => line.startsWith('building ')), false);
+  } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+test('a start keeps the lock for 30 s after its container exists, then releases it', async () => {
+  const repo = await repository();
+  try {
+    const io = fakeHost();
+    assert.equal(await runJob(argv, io, repo), 0);
+    assert.equal(io.lockDuringRun, true, 'the lock is held while the new container runs');
+    assert.deepEqual(io.held.map(entry => entry.ms), [30_000], 'its release is scheduled 30 s after the container exists');
+    assert.equal(existsSync(join(lockDir, 'lock')), false, 'the run releases it when the job ends');
+  } finally { await rm(repo, {recursive:true, force:true}); }
+});
+
+test('an interrupt during an admission wait stops the wait with 130 and starts nothing', async () => {
+  const repo = await repository();
+  try {
+    const io = fakeHost({loads:[9.5]});
+    const sleep = io.sleep;
+    io.sleep = async ms => { io.interruptNow(); await sleep(ms); };
+    assert.equal(await runJob(argv, io, repo), 130);
+    assert.equal(io.calls.some(call => call[0] === 'build' || (call[0] === 'run' && nameOf(call).startsWith('bunny-gh'))), false);
+    assert.ok(io.lines.includes("waiting: the host's 1-minute load is 9.5, at or above 8"));
   } finally { await rm(repo, {recursive:true, force:true}); }
 });
