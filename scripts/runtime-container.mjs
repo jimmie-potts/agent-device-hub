@@ -1,10 +1,11 @@
 // Disposable Linux checks for the current working tree, never the installed runtime.
-import {spawn, execFileSync} from 'node:child_process';
+import {spawn, spawnSync, execFileSync} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import {chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {admission, DOCKER_TIMEOUT_MS, dockerRead, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, poolSession, reportOverflow} from './test-container/pool.mjs';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const suites = Object.freeze({all: ['test:runtime:scenarios:built', 'test:runtime:verify:built'],
@@ -46,8 +47,14 @@ export async function snapshot(repository, destination) {
 // Two CPUs keep node --test at a small worker count; swap equal to memory means no swap.
 export const limits = Object.freeze({cpus:'2', memory:'1536m'});
 
-export function createArgs(name, imageId, suite) {
+// The free pool memory this runner waits for before its container (its own limit) and before an image build.
+export const NEED_BYTES = 1536 * 1024 ** 2;
+export const BUILD_BYTES = 2048 * 1024 ** 2;
+
+/** The container's create arguments; `pool` is the shared test pool's name (Hub #1641), or null. */
+export function createArgs(name, imageId, suite, pool = null) {
   return ['create','--init','--name',name,'--network','none','--cpus',limits.cpus,'--memory',limits.memory,'--memory-swap',limits.memory,
+    ...(pool ? ['--cgroup-parent',`/${pool}`] : []),
     '--cap-drop','ALL','--cap-add','CHOWN','--security-opt','no-new-privileges','--restart','no',
     '--env','TMPDIR=/tmp','--env','XDG_RUNTIME_DIR=','--env','DBUS_SESSION_BUS_ADDRESS=',imageId,suite];
 }
@@ -68,8 +75,34 @@ function command(program, args, options = {}) {
   });
 }
 
-async function main() {
-  const suite = parse(process.argv.slice(2));
+export const host = Object.freeze({
+  ...hostFacts,
+  env: process.env,
+  run: (args, {timeout} = {}) => command('docker', args, timeout ? {timeout} : {}),
+  // A Docker command whose output is needed and whose error text the person should see.
+  capture: args => {
+    const result = spawnSync('docker', args, {encoding:'utf8', stdio:['ignore','pipe','pipe'], timeout:DOCKER_TIMEOUT_MS});
+    const stderr = result.stderr || (result.error ? result.error.message : '');
+    if (stderr) process.stderr.write(stderr.endsWith('\n') ? stderr : stderr + '\n');
+    return {status: result.status ?? 1, stdout: result.stdout ?? '', stderr};
+  },
+  read: dockerRead,
+  snapshot,
+  print: line => console.log(line),
+  log: line => console.error('runtime-container: ' + line),
+});
+
+/** Runs the chosen suites in a disposable container and returns their status. `io` is the host, or a fake in tests. */
+export async function runChecks(argv, io = host, repository = root) {
+  const suite = parse(argv);
+  const session = poolSession();
+  const pool = await ensurePool(io, poolName(io.env), undefined, {session});
+  let release = null;
+  const admit = async bytes => {
+    const gate = await admission(io, {pool, need:{bytes, slots:1}, waitMinutes:30, session});
+    if (gate.status !== 0) throw Object.assign(new Error('admission-gave-up'), {status:gate.status});
+    release = gate.release;
+  };
   const scratch = await mkdtemp(join(tmpdir(), 'bunny-runtime-check-'));
   const name = 'bunny-runtime-check-' + randomUUID();
   let created = false;
@@ -77,7 +110,7 @@ async function main() {
   let cleanupError;
   try {
     const source = join(scratch,'source');
-    const files = await snapshot(root, source);
+    const files = await io.snapshot(repository, source);
     const context = join(scratch,'tool'); await mkdir(context, {mode:0o700});
     const manifests = files.filter(path => path === 'package-lock.json' || /(?:^|\/)package\.json$/.test(path));
     const hash = createHash('sha256');
@@ -88,27 +121,48 @@ async function main() {
     const recipe = await readFile(join(source,'scripts/runtime-container/Dockerfile'));
     hash.update(recipe); await writeFile(join(context,'Dockerfile'), recipe);
     const image = 'bunny-runtime-check-tools:' + hash.digest('hex').slice(0,24);
-    status = await command('docker', ['build','--tag',image,context]);
-    if (status !== 0) throw Object.assign(new Error('container-check-failed'), {status});
-    const imageId = execFileSync('docker', ['image','inspect','--format','{{.Id}}',image], {encoding:'utf8'}).trim();
+    const missing = () => io.read(['image','inspect','--format','{{.Id}}',image]) === null;
+    if (missing()) {
+      await admit(BUILD_BYTES);
+      // A run that waited while another built the same image uses that image.
+      if (missing()) {
+        status = await io.run(['build','--tag',image,...(pool ? ['--cgroup-parent',`/${pool}`] : []),context]);
+        if (status !== 0) throw Object.assign(new Error('container-check-failed'), {status});
+      }
+      await release(); release = null;
+    }
+    const imageId = io.read(['image','inspect','--format','{{.Id}}',image]) ?? '';
     if (!/^sha256:[a-f0-9]{64}$/.test(imageId)) throw new Error('tool-image-identity-refused');
-    const id = execFileSync('docker', createArgs(name, imageId, suite), {encoding:'utf8'}).trim();
-    if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('container-identity-refused');
+    await admit(NEED_BYTES);
+    const before = oomKills(io, pool);
+    io.print(pool ? `In the /${pool} pool.` : 'No pool: per-container limits and the count check.');
+    const made = io.capture(createArgs(name, imageId, suite, pool));
+    const id = made.stdout.trim();
+    if (!/^[a-f0-9]{64}$/.test(id)) {
+      // The engine may have created the container although the CLI failed or timed out. Remove it only by this run's own
+      // unique name, and only if it exists.
+      if (io.read(['container','inspect','--format','{{.Id}}',name]) !== null) await io.run(['rm','--force',name]);
+      throw new Error(`container-create-failed: ${made.stderr.trim() || 'docker create returned no container ID'}`);
+    }
     created = id;
-    console.log('Disposable runtime checks: ' + name + ' ' + id);
-    status = await command('docker',['cp',source + '/.',id + ':/work/source']);
+    io.print('Disposable runtime checks: ' + name + ' ' + id);
+    status = await io.run(['cp',source + '/.',id + ':/work/source']);
     if (status !== 0) throw Object.assign(new Error('container-check-failed'), {status});
-    status = await command('docker',['start','--attach',id]);
+    const held = release;
+    io.later(HOLD_MS, () => { void held?.(); });
+    status = await io.run(['start','--attach',id]);
+    reportOverflow(io, pool, before, oomKills(io, pool));
     // docker start --attach may return zero for a failed process on some engine versions.
-    const state = JSON.parse(execFileSync('docker',['inspect','--format','{{json .State}}',id],{encoding:'utf8'}));
+    const state = JSON.parse(io.read(['inspect','--format','{{json .State}}',id]) ?? '{"Running":true}');
     if (state.Running || state.Pid !== 0 || !Number.isInteger(state.ExitCode)) throw new Error('container-completion-unknown');
     status ||= state.ExitCode;
   } catch (error) {
     if (!error.status) throw error;
     status = error.status;
   } finally {
+    await release?.().catch(() => {});
     if (created) {
-      const cleaned = await command('docker',['rm','--force',created]);
+      const cleaned = await io.run(['rm','--force',created]);
       if (cleaned !== 0) cleanupError = new Error('owned-container-cleanup-failed: ' + created);
     }
     await rm(scratch, {recursive:true, force:true});
@@ -118,5 +172,5 @@ async function main() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().then(status => {process.exitCode = status;}).catch(error => {console.error(error.message);process.exitCode = 1;});
+  runChecks(process.argv.slice(2)).then(status => {process.exitCode = status;}).catch(error => {console.error(error.message);process.exitCode = 1;});
 }
