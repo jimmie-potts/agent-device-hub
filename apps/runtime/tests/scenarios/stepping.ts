@@ -16,12 +16,15 @@ export type SteppedClock = {now: () => number; next: () => number | undefined; a
  * How far the next step moves, `elapsed` into a wait of `ms`, when the earliest pending timer is due `dueIn` after the
  * wait began (undefined with none pending). Steps fall on a grid of `STEP_MS` from the wait's start, and a timer fires at
  * the first grid point at or after it is due. A short wait stops at every grid point. A long wait stops only at the point
- * where the next timer fires, at most `LONG_STEP_MS` on, and at its end.
+ * where the next timer fires, at most `LONG_STEP_MS` on, and at its end. A due time that is not a finite number, such
+ * as one from a NaN delay, counts as due now, so the wait takes one fine step, as one fine step at a time would.
  */
 export function stepOf(elapsed: number, ms: number, dueIn: number | undefined): number {
   const remaining = ms - elapsed;
   if (ms <= LONG_WAIT_MS) return Math.min(STEP_MS, remaining);
-  const fires = dueIn === undefined ? LONG_STEP_MS : Math.max(STEP_MS, Math.ceil((dueIn - elapsed) / STEP_MS) * STEP_MS);
+  if (dueIn === undefined) return Math.min(LONG_STEP_MS, remaining);
+  if (!Number.isFinite(dueIn)) return Math.min(STEP_MS, remaining);
+  const fires = Math.max(STEP_MS, Math.ceil((dueIn - elapsed) / STEP_MS) * STEP_MS);
   return Math.min(LONG_STEP_MS, fires, remaining);
 }
 

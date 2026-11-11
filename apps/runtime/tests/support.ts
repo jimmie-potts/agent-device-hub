@@ -204,10 +204,13 @@ export function manualClock(start = START): {
       }
     },
     pending: () => timers.size,
-    /** When the earliest pending timer is due, or undefined with none pending. */
+    /** When the earliest pending timer is due, or undefined with none pending. NaN while a timer due at NaN is pending. */
     next: () => {
       let earliest: number | undefined;
-      for (const {at} of timers) if (earliest === undefined || at < earliest) earliest = at;
+      for (const {at} of timers) {
+        if (Number.isNaN(at)) return at;
+        if (earliest === undefined || at < earliest) earliest = at;
+      }
       return earliest;
     },
   };
