@@ -71,6 +71,27 @@ export function profileLine(profile) {
     + `${profile.pool ? `pool /${profile.pool.name}` : 'no pool'}, ${profile.core ? `core check ${profile.core}` : 'no core check'}`;
 }
 
+const escaped = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * A function that rewrites a message for a profile whose scratch is under the cache: the cache directory (an absolute
+ * $XDG_CACHE_HOME) becomes `$XDG_CACHE_HOME` and the home directory `~`, so a pasted message names no local user. For
+ * the Mac profile the message is returned unchanged.
+ */
+export function redactor(profile, env, home = homedir()) {
+  if (profile.scratch !== 'cache') return text => text;
+  const pairs = [];
+  if (env.XDG_CACHE_HOME && isAbsolute(env.XDG_CACHE_HOME) && env.XDG_CACHE_HOME !== '/') pairs.push([env.XDG_CACHE_HOME.replace(/\/+$/, ''), '$XDG_CACHE_HOME']);
+  if (home && home !== '/') pairs.push([home.replace(/\/+$/, ''), '~']);
+  const rules = pairs.map(([from, to]) => [new RegExp(`${escaped(from)}(?=/|$|[^A-Za-z0-9._-])`, 'g'), to]);
+  return text => rules.reduce((out, [pattern, to]) => out.replace(pattern, () => to), String(text));
+}
+
+/** The redactor for the profile `env` selects, or no change when the selection itself is refused. */
+export function redactorFor(env, facts, home = homedir()) {
+  try { return redactor(selectProfile(env, facts), env, home); } catch { return text => text; }
+}
+
 /**
  * Where a profile writes a job's scratch directories: the temporary directory, or for `cache` a bunny-test-container
  * directory under $XDG_CACHE_HOME (when absolute) or ~/.cache, created owner-only.

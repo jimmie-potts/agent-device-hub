@@ -9,7 +9,7 @@ import {
   parseReading, poolName, poolSession, readings, lockDirectory, MAX_HOLD_MS, PRIVILEGED_SET, privilegedSetterArgs, READ, readerArgs, reportOverflow, SET, setterArgs, tryLock,
   MAX_LOAD, SLOTS,
 } from '../test-container/pool.mjs';
-import {profileLine, profiles, selectProfile} from '../test-container/profile.mjs';
+import {profileLine, profiles, redactor, redactorFor, selectProfile} from '../test-container/profile.mjs';
 
 const scratch = await mkdtemp(join(tmpdir(), 'test-container-pool-'));
 after(() => rm(scratch, {recursive:true, force:true}));
@@ -411,6 +411,22 @@ test('the PC profile needs the explicit setting and a WSL kernel; anything else 
   for (const value of ['PC', 'big', 'pc ', 'windows']) assert.throws(() => selectProfile({BUNNY_TEST_HOST:value}, wsl), /BUNNY_TEST_HOST must be mac or pc, or unset for the Mac profile/, value);
   assert.equal(profileLine(profiles.mac), 'profile mac: 5 slots, start under load 8, stop above 12, standard 2 CPUs 1250m, wide 4 CPUs 2048m, pool /bunny-tests, core check bunny-mac-personal-core-1');
   assert.equal(profileLine(profiles.pc), 'profile pc: 8 slots, start under load 24, stop above 32, standard 4 CPUs 2048m, wide 8 CPUs 3584m, no pool, no core check');
+});
+
+test('under the PC profile messages name the home and cache directories as ~ and $XDG_CACHE_HOME; the Mac\'s are unchanged', () => {
+  const home = '/home/someone';
+  const pc = redactor(profiles.pc, {}, home);
+  assert.equal(pc('could not remove /home/someone/.cache/bunny-test-container/bunny-test-container-abc123: EBUSY'), 'could not remove ~/.cache/bunny-test-container/bunny-test-container-abc123: EBUSY');
+  assert.equal(pc("ENOENT: no such file, open '/home/someone/repo/package.json'"), "ENOENT: no such file, open '~/repo/package.json'");
+  assert.equal(pc('/home/someone2/x and /home/someone'), '/home/someone2/x and ~', 'only the whole directory name is replaced');
+  const custom = redactor(profiles.pc, {XDG_CACHE_HOME:'/data/cache/'}, home);
+  assert.equal(custom('the scratch path /data/cache/bunny-test-container/x'), 'the scratch path $XDG_CACHE_HOME/bunny-test-container/x');
+  const mac = redactor(profiles.mac, {XDG_CACHE_HOME:'/data/cache'}, home);
+  const text = 'the scratch path /home/someone/tmp/x and /data/cache/y';
+  assert.equal(mac(text), text, 'the Mac profile changes no message');
+  assert.equal(redactorFor({}, {platform:'darwin'}, home)(text), text);
+  assert.equal(redactorFor({BUNNY_TEST_HOST:'pc'}, {platform:'darwin'}, home)(text), text, 'a refused selection changes nothing');
+  assert.equal(redactorFor({BUNNY_TEST_HOST:'pc'}, {platform:'linux', osRelease:'5.15.167.4-microsoft-standard-WSL2'}, home)('/home/someone/a'), '~/a');
 });
 
 test('the PC profile admits on load and its eight slots alone, and never reads a core or a pool', () => {

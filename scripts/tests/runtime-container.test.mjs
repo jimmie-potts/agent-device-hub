@@ -145,6 +145,11 @@ test('the runtime runner names its profile first, and under the PC profile reads
     assert.equal(await runChecks(['--suite','browser'], mac.io), 0);
     assert.equal(mac.io.lines[0], profileLine(profiles.mac));
   } finally { await mac.done(); }
+  const usage = await runner({imagePresent:true});
+  try {
+    await assert.rejects(runChecks(['--suite','nope'], usage.io), /^Error: usage: npm run test:runtime:container/);
+    assert.deepEqual(usage.io.lines, [profileLine(profiles.mac)], 'the profile line comes before a usage error');
+  } finally { await usage.done(); }
   const {io, done} = await runner({imagePresent:true, loads:[25, 3]});
   Object.assign(io, {platform:'linux', osRelease:'5.15.167.4-microsoft-standard-WSL2', env:{BUNNY_TEST_HOST:'pc', XDG_CACHE_HOME:io.lockDir}});
   try {

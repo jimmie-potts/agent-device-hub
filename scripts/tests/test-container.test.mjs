@@ -459,6 +459,23 @@ test('under the PC profile a job runs at the PC size with no pool, no helper and
   }
 });
 
+test('under the PC profile a refused scratch path names $XDG_CACHE_HOME, never the real cache or home path', async () => {
+  const repo = await repository();
+  const cache = await mkdtemp(join(tmpdir(), 'test container cache '));
+  try {
+    const io = Object.assign(fakeHost(), wsl);
+    io.env = {BUNNY_TEST_HOST:'pc', XDG_CACHE_HOME:cache};
+    assert.equal(await runJob(argv, io, repo), 2);
+    const line = io.lines.find(text => text.startsWith('the scratch path '));
+    assert.match(line, /^the scratch path \$XDG_CACHE_HOME\/bunny-test-container\/bunny-test-container-[A-Za-z0-9]{6} cannot be passed to docker unchanged: set XDG_CACHE_HOME to a directory whose path uses only letters, digits, dot, underscore, slash and hyphen$/);
+    assert.equal(io.lines.some(text => text.includes(cache)), false);
+    assert.equal(io.calls.some(call => ['build','run'].includes(call[0])), false);
+  } finally {
+    await rm(repo, {recursive:true, force:true});
+    await rm(cache, {recursive:true, force:true});
+  }
+});
+
 test('size minimums follow the profile: the SDK fits a PC standard job, verification still needs wide', () => {
   const plan = (size, script) => parse(['--issue','1','--job','a','--size',size,'--',script], scripts);
   assert.equal(admit(plan('standard','test:sdk:built'), {nameTaken:false, profile:profiles.pc}), null, 'a PC standard job has 4 CPUs');

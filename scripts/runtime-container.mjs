@@ -5,7 +5,7 @@ import {chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile} from 'n
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {admission, DOCKER_TIMEOUT_MS, dockerRead, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, poolSession, reportOverflow} from './test-container/pool.mjs';
-import {profileLine, profiles, scratchBase, selectProfile} from './test-container/profile.mjs';
+import {profileLine, profiles, redactor, redactorFor, scratchBase, selectProfile} from './test-container/profile.mjs';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const suites = Object.freeze({all: ['test:runtime:scenarios:built', 'test:runtime:verify:built'],
@@ -97,10 +97,17 @@ export const host = Object.freeze({
 
 /** Runs the chosen suites in a disposable container and returns their status. `io` is the host, or a fake in tests. */
 export async function runChecks(argv, io = host, repository = root) {
-  const suite = parse(argv);
+  // The profile comes first, so its line is the command's first own line even before a usage error.
   let profile;
   try { profile = selectProfile(io.env, io); } catch (error) { io.log(error.message); return 2; }
+  if (profile.scratch === 'cache') {
+    // Under the PC profile every line this run prints names the home and cache directories as ~ and $XDG_CACHE_HOME.
+    const redact = redactor(profile, io.env);
+    const {log, print} = io;
+    io = Object.create(io, {log:{value: line => log(redact(line))}, print:{value: line => print(redact(line))}});
+  }
   io.log(profileLine(profile));
+  const suite = parse(argv);
   const session = poolSession();
   const pool = profile.pool ? await ensurePool(io, poolName(io.env), undefined, {session}) : null;
   let release = null;
@@ -178,5 +185,5 @@ export async function runChecks(argv, io = host, repository = root) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  runChecks(process.argv.slice(2)).then(status => {process.exitCode = status;}).catch(error => {console.error(error.message);process.exitCode = 1;});
+  runChecks(process.argv.slice(2)).then(status => {process.exitCode = status;}).catch(error => {console.error(redactorFor(host.env, host)(error.message));process.exitCode = 1;});
 }

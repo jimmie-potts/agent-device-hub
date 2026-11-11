@@ -799,8 +799,9 @@ The Mac's Docker Desktop VM also runs the installed core, the diagnostics stack
 and the Tronbyt server, and host load limits the test work beside them. Each
 session applies this rule itself; no coordinator grant is needed. The test
 commands apply it as the Mac profile, which every host gets unless
-[Test work on the PC](#test-work-on-the-pc) selects that host's own; their first
-line starts `profile mac:`.
+[Test work on the PC](#test-work-on-the-pc) selects that host's own. Each
+command's first own line, on stderr after npm's banner, is
+`test-container: profile mac: …` or `runtime-container: profile mac: …`.
 
 1. **Slots.** At most 5 test jobs at once, across all sessions. A job is one
    container (any except the core, the diagnostics containers, the Tronbyt
@@ -892,8 +893,13 @@ first profile (owner decisions of 2026-11-11 on Hub #1681), to be tuned after a
 week of use.
 
 1. **Profile.** Set `export BUNNY_TEST_HOST=pc` in the WSL shell before
-   `npm run test:container` or `npm run test:runtime:container`. Both print the
-   profile as their first line, which must start `profile pc:`. Without the
+   `npm run test:container` or `npm run test:runtime:container`. Each command's
+   first own line, on stderr after npm's banner, must be
+   `test-container: profile pc: …` or `runtime-container: profile pc: …`; a
+   refused setting prints its refusal there instead. Under this profile the
+   commands print the home directory as `~` and an absolute
+   `$XDG_CACHE_HOME` by that name; Docker's and the job's own output passes
+   through unchanged, so check it before pasting. Without the
    setting every host, the PC included, gets the Mac profile. The PC profile is
    refused outside a WSL kernel, and any value other than `mac` or `pc` is
    refused, so the Mac never runs with the PC's numbers.
@@ -1634,7 +1640,8 @@ npm run test:container -- --issue <n> --job <name> [--size standard|wide] [--no-
 
 The container is `bunny-gh<n>-<name>`, or `bunny-gh<n>-<name>-wide` at the wide
 size. The job name is free text: lowercase letters, digits and inner hyphens.
-Its first line names the host's profile and its limits
+Its first own line, `test-container: profile <name>: …` on stderr, names the
+host's profile and its limits
 (`scripts/test-container/profile.mjs`; the Mac profile unless
 [Test work on the PC](#test-work-on-the-pc) selects the PC's). Before the job
 starts, the command prints the container name, its size and the slots it takes.

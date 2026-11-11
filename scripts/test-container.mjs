@@ -12,7 +12,7 @@ import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {snapshot} from './runtime-container.mjs';
 import {admission, dockerRead, ensurePool, hostFacts, HOLD_MS, oomKills, poolName, poolSession, reportOverflow} from './test-container/pool.mjs';
-import {profileLine, profiles, scratchBase, selectProfile} from './test-container/profile.mjs';
+import {profileLine, profiles, redactor, redactorFor, scratchBase, selectProfile} from './test-container/profile.mjs';
 
 const root = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const recipePath = 'scripts/test-container/Dockerfile';
@@ -144,6 +144,12 @@ export const host = Object.freeze({
 export async function runJob(argv, io = host, repository = root) {
   let profile;
   try { profile = selectProfile(io.env, io); } catch (error) { io.log(error.message); return 2; }
+  // Under the PC profile every line this run prints names the home and cache directories as ~ and $XDG_CACHE_HOME.
+  if (profile.scratch === 'cache') {
+    const redact = redactor(profile, io.env);
+    const log = io.log;
+    io = Object.create(io, {log:{value: line => log(redact(line))}});
+  }
   io.log(profileLine(profile));
   let plan;
   try {
@@ -273,7 +279,7 @@ async function job(plan, io, state, {repository, source, work, cidfile, pool}) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   runJob(process.argv.slice(2)).then(status => { process.exitCode = status; }, error => {
-    host.log(`stopped: ${error instanceof Error ? error.message : String(error)}`);
+    host.log(redactorFor(host.env, host)(`stopped: ${error instanceof Error ? error.message : String(error)}`));
     process.exitCode = 1;
   });
 }
