@@ -429,6 +429,28 @@ test('under the PC profile messages name the home and cache directories as ~ and
   assert.equal(redactorFor({BUNNY_TEST_HOST:'pc'}, {platform:'linux', osRelease:'5.15.167.4-microsoft-standard-WSL2'}, home)('/home/someone/a'), '~/a');
 });
 
+test('the rewriting starts only where a path starts, skips slash-only values and applies the longer path first', () => {
+  const home = '/home/someone';
+  const pc = redactor(profiles.pc, {}, home);
+  // (a) The home directory inside a longer path is left alone.
+  assert.equal(pc('/srv/home/someone/w and x/home/someone and a.home/someone'), '/srv/home/someone/w and x/home/someone and a.home/someone');
+  // A path at the start, or after =, :, a quote, a bracket, a space or a comma, is still rewritten.
+  for (const [before, after] of [['/home/someone/a', '~/a'], ['TMPDIR=/home/someone/t', 'TMPDIR=~/t'], ['open:/home/someone', 'open:~'],
+    ["open '/home/someone/p'", "open '~/p'"], ['"/home/someone"', '"~"'], ['[/home/someone/a]', '[~/a]'], ['(/home/someone)', '(~)'],
+    ['x /home/someone, y', 'x ~, y'], ['line1\n/home/someone/b', 'line1\n~/b']]) assert.equal(pc(before), after, before);
+  // (b) A home or cache directory of only slashes is skipped.
+  for (const slashes of ['//', '///']) {
+    const text = 'the scratch path /tmp/a/b, x/y';
+    assert.equal(redactor(profiles.pc, {XDG_CACHE_HOME:slashes}, slashes)(text), text, slashes);
+  }
+  // (c) A cache directory that is a parent of home cannot leave the user name visible.
+  const parent = redactor(profiles.pc, {XDG_CACHE_HOME:'/home'}, home);
+  assert.equal(parent('/home/someone/x and /home/other/y'), '~/x and $XDG_CACHE_HOME/other/y');
+  // A cache directory under home is named as the cache.
+  const inner = redactor(profiles.pc, {XDG_CACHE_HOME:'/home/someone/.cache'}, home);
+  assert.equal(inner('/home/someone/.cache/bunny-test-container/a and /home/someone/b'), '$XDG_CACHE_HOME/bunny-test-container/a and ~/b');
+});
+
 test('the PC profile admits on load and its eight slots alone, and never reads a core or a pool', () => {
   const need = {bytes:2048 * 1024 ** 2, slots:1};
   const ok = {load:3, core:null, used:0};

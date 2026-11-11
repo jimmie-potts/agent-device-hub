@@ -80,10 +80,16 @@ const escaped = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  */
 export function redactor(profile, env, home = homedir()) {
   if (profile.scratch !== 'cache') return text => text;
+  // A value that is only slashes strips to nothing and is skipped. The longer path goes first, so a cache directory that
+  // is a parent of the home directory cannot leave the user name visible. A path is replaced only where it starts a
+  // path (not after a path character) and ends one (at a slash, the end, or a character that is not a path character).
+  const strip = value => (typeof value === 'string' ? value.replace(/\/+$/, '') : '');
   const pairs = [];
-  if (env.XDG_CACHE_HOME && isAbsolute(env.XDG_CACHE_HOME) && env.XDG_CACHE_HOME !== '/') pairs.push([env.XDG_CACHE_HOME.replace(/\/+$/, ''), '$XDG_CACHE_HOME']);
-  if (home && home !== '/') pairs.push([home.replace(/\/+$/, ''), '~']);
-  const rules = pairs.map(([from, to]) => [new RegExp(`${escaped(from)}(?=/|$|[^A-Za-z0-9._-])`, 'g'), to]);
+  const cache = env.XDG_CACHE_HOME && isAbsolute(env.XDG_CACHE_HOME) ? strip(env.XDG_CACHE_HOME) : '';
+  if (cache) pairs.push([cache, '$XDG_CACHE_HOME']);
+  if (strip(home)) pairs.push([strip(home), '~']);
+  pairs.sort(([a], [b]) => b.length - a.length);
+  const rules = pairs.map(([from, to]) => [new RegExp(`(?<![A-Za-z0-9._/-])${escaped(from)}(?=/|$|[^A-Za-z0-9._-])`, 'g'), to]);
   return text => rules.reduce((out, [pattern, to]) => out.replace(pattern, () => to), String(text));
 }
 
