@@ -132,7 +132,8 @@ try {
   await page.setViewportSize({width: 1440, height: 1000});
   await expect(page.locator('.home-layout-grid')).toHaveAttribute('data-packed', 'true');await expect(inboxCard).toHaveAttribute('data-home-shape', /.+/);
   await expect(inboxList).toHaveAttribute('data-pages', /^[2-9]|\d\d/);
-  const perGridPage = await visibleRows(inboxList).count(), gridPage = Math.floor(order.indexOf(wallKey ?? '') / perGridPage) + 1;
+  const perGridPage = await visibleRows(inboxList).count(), gridOrder = await inboxList.locator('[data-paged-key]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.pagedKey));
+  const gridPage = Math.floor(gridOrder.indexOf(wallKey ?? '') / perGridPage) + 1;
   const gridAway = gridPage === 1 ? 2 : 1;
   while (await inboxList.getAttribute('data-page') !== String(gridAway)) await inbox.getByRole('button', {name: gridAway > gridPage ? 'Next' : 'Previous', exact: true}).click();
   await expect(wall).toBeHidden();

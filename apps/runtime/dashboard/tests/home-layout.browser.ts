@@ -73,8 +73,8 @@ try {
   await page.getByRole('button', {name: 'Add Studio', exact: true}).click();await page.getByRole('button', {name: 'Close', exact: true}).click();
   await cardOptions(page, 'Studio');await page.getByRole('button', {name: 'Move Studio earlier', exact: true}).click();
   await page.getByRole('button', {name: 'Move Studio; use arrow keys', exact: true}).press('ArrowUp');
-  // The shape choice replaced Small / Standard / Wide (#1672).
-  await page.getByRole('group', {name: 'Shape of Studio', exact: true}).getByRole('button', {name: 'Large square', exact: true}).click();
+  // The shape choice replaced Small / Standard / Wide (#1672); Studio has no lights, so it offers Small square and Wide.
+  await page.getByRole('group', {name: 'Shape of Studio', exact: true}).getByRole('button', {name: 'Small square', exact: true}).click();
   const roomId = (await order()).find(id => id.startsWith('light:room:'));assert.ok(roomId !== undefined && roomId !== '');
   const room = page.locator('[data-home-card]').filter({has: page.getByRole('heading', {name: 'Studio', exact: true})});
   await page.getByRole('button', {name: 'Phone', exact: true}).click();assert.equal((await order()).at(-1), roomId, 'adding appends to independent phone order');

@@ -33,8 +33,15 @@ export function PagedList({keys, pageSize, label, reveal, resetKey, note, pager 
   const [page, setPage] = useState(0), [opened, setOpened] = useState<readonly string[]>([]);
   const alone = useRef(expandAlone);alone.current = expandAlone;
   const [revealed, setRevealed] = useState<number>(), pagerFocus = useRef<HTMLButtonElement | null>(null);
-  const [reset, setReset] = useState(resetKey), size = pageSize;
+  const [reset, setReset] = useState(resetKey), size = pageSize, [sized, setSized] = useState(pageSize);
   if (resetKey !== reset) {setReset(resetKey);setPage(0);}
+  // A new page size (the card changed shape or the window width) keeps the same rows in view: the page holding the
+  // opened row, or else the first row the page showed.
+  if (size !== sized) {
+    setSized(size);
+    const held = opened.filter(key => keys.includes(key)).at(-1), anchor = held === undefined ? page * sized : keys.indexOf(held);
+    setPage(pageOf(anchor, size));
+  }
   // Check Inbox: show the item's page, with no other row holding it; the caller then opens the item, and its toggle
   // records it like any other.
   if (reveal !== undefined && reveal.serial !== revealed) {
