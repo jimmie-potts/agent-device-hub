@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {chromium} from 'playwright';
 import {expect, type Locator, type Page} from 'playwright/test';
 import {startWorld, changes, feed} from './harness.ts';
+import {cardOptions} from './home-editor.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 
@@ -193,7 +194,7 @@ try {
   await picker.getByRole('button', {name: 'Add Music visualizer', exact: true}).click();
   await picker.getByRole('button', {name: 'Close', exact: true}).click();
   const added = await order(); assert.equal(added.at(-1), 'music-visualizer');
-  await page.getByRole('button', {name: 'Move Music visualizer earlier', exact: true}).click();
+  await cardOptions(page, 'Music visualizer');await page.getByRole('button', {name: 'Move Music visualizer earlier', exact: true}).click();
   const moved = await order(); assert.equal(moved.at(-2), 'music-visualizer');
   await done.click(); await expect(editHome).toBeEnabled();
   assert.equal(sent.at(-1), '/api/v2/commands/home-layout-set');
@@ -223,7 +224,7 @@ try {
   await page.getByRole('region', {name: 'Music visualizer full view', exact: true}).getByText('Resting. Measurement is not running.', {exact: true}).waitFor();
   await shot('full-view-resting-1440');
   await page.goto(world.url + '/#/'); await feed(page, 'connected'); await expect(editHome).toBeEnabled();
-  await editHome.click(); await page.getByRole('button', {name: 'Remove Music visualizer', exact: true}).click(); await done.click(); await expect(editHome).toBeEnabled();
+  await editHome.click(); await cardOptions(page, 'Music visualizer'); await page.getByRole('button', {name: 'Remove Music visualizer', exact: true}).click(); await done.click(); await expect(editHome).toBeEnabled();
   await page.reload(); await feed(page, 'connected'); await expect(editHome).toBeEnabled();
   await expect(page.locator('[data-home-card="music-visualizer"]')).toHaveCount(0);
   assert.deepEqual(sent, ['/api/v2/commands/music-capture-control', '/api/v2/commands/home-layout-set', '/api/v2/commands/home-layout-set'],

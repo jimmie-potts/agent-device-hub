@@ -211,6 +211,17 @@ it('Home card shapes load old records unchanged, keep a shape only while its wid
     assert.equal(entry('hub-mode')?.shape, 'wide');
     await save([{widget: 'hub-mode', size: 'large', hidden: false}, {widget: 'inbox', size: 'medium', hidden: false}]);
     assert.deepEqual(entry('hub-mode'), {widget: 'hub-mode', size: 'large', hidden: false});
+    // An older dashboard that changes the art format, copying or omitting the shape, loses the shape, so the format decides.
+    await save([{widget: 'art', size: 'medium', hidden: false, shape: 'large-square', art: {format: 'square', pinned: true}}]);
+    assert.equal(entry('art')?.shape, 'large-square');
+    await save([{widget: 'art', size: 'medium', hidden: false, shape: 'large-square', art: {format: 'banner', pinned: true}}]);
+    assert.deepEqual(entry('art'), {widget: 'art', size: 'medium', hidden: false, art: {format: 'banner', pinned: true}});
+    await save([{widget: 'art', size: 'medium', hidden: false, shape: 'large-square', art: {format: 'square', pinned: true}}]);
+    await save([{widget: 'art', size: 'medium', hidden: false, art: {format: 'banner', pinned: true}}]);
+    assert.equal(entry('art')?.shape, undefined, 'an omitted shape is not carried onto a new art format');
+    await save([{widget: 'art', size: 'medium', hidden: false, shape: 'wide', art: {format: 'banner', pinned: true}}]);
+    await save([{widget: 'art', size: 'medium', hidden: false, art: {format: 'banner', pinned: false}}]);
+    assert.equal(entry('art')?.shape, 'wide', 'an unchanged format keeps the omitted shape');
     // Example 7: a duplicate delivery is not saved again; a stale revision is refused and changes nothing.
     const before = stored(), revision = saved().revision, again = command([{widget: 'inbox', size: 'small', hidden: false, shape: 'square'}], revision);
     assert.deepEqual(await responder?.(again), {status: 'accepted'});const after = stored();

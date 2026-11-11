@@ -808,9 +808,12 @@ widths keeps working. `homeShapeSize` gives the width stored beside each shape:
 `home-layout-set/2.0` command references the 2.2 layouts and accepts `shape` as
 an additive optional field; its revision guard and outcomes are unchanged. The
 core keeps a saved shape only while the placement's `size` agrees with it, and
-keeps the previous shape when a save omits it but keeps the width. The private
+keeps the previous shape when a save omits it but keeps the width. For art the
+format must also agree (`homeArtShapes`: banner Wide, tall Tall, square Small or
+Large square, auto Large square), so an older dashboard's format change drops a
+copied or omitted shape and the format decides. The private
 core store needs no migration. A core older than 2.2 refuses saves whose entries
-carry `shape`; see the dashboard guide for rollback.
+carry `shape`; a width-only save is accepted and removes the shapes. The recovery steps are in the runtime dashboard guide and the runtime upgrade guide (Home arrangement state).
 
 ### Selected microphone capture (`music-capture-*/2.1`)
 

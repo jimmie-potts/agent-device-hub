@@ -4,7 +4,7 @@ import type {HomeArrangements, HomePlacement, LightingLayoutRecord, LightingSele
 import type {RuntimeData} from './runtime-feeds.ts';
 import {cardsFor, emptyLightingLayout, lightingDevices, selectionKey} from './lighting.ts';
 import {homeLayout, widgetCatalog, widgetDefinition, type WidgetSize} from './widgets.ts';
-import {artShape, placementShape, shapeArtFormat, shapeStoredSize, type HomeShape} from './home-shapes.ts';
+import {artFormatShapes, placementShape, shapeArtFormat, shapeStoredSize, type HomeShape} from './home-shapes.ts';
 
 type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; instance: string} | {kind: 'light'; selection: LightingSelection} | {kind: 'unavailable'};
 export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean};
@@ -142,7 +142,7 @@ export function withShapes(layouts: HomeArrangements, catalog: readonly HomeCard
     const card = savedHomeCard(entry.widget, catalog);if (card === undefined) continue;
     const shape = shapeOf(entry, card);entry.shape = shape;entry.size = shapeStoredSize[shape];
     // Art keeps its format while it agrees with the shape (auto stays auto), so a one-column format choice survives.
-    if (entry.art !== undefined && artShape(entry.art.format) !== shape) entry.art = {...entry.art, format: shapeArtFormat[shape]};
+    if (entry.art !== undefined && !artFormatShapes[entry.art.format].includes(shape)) entry.art = {...entry.art, format: shapeArtFormat[shape]};
   }
   return next;
 }

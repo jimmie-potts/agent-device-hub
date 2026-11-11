@@ -43,6 +43,8 @@ export function shapeForSize(size: HomeSize, offered: readonly HomeShape[], stan
 /** The shape an art format shows on the grid: banner Wide, tall Tall, square and auto Large square. */
 export const artShape = (format: HomeArtFormat): HomeShape => format === 'banner' ? 'wide' : format === 'tall' ? 'tall' : 'large-square';
 const pick = (shape: HomeShape, offered: readonly HomeShape[], standard: HomeShape): HomeShape => offered.includes(shape) ? shape : offered.includes(standard) ? standard : offered[0] ?? 'square';
+/** The shapes each art format agrees with; equal to the contracts' `homeArtShapes`, which the core checks. */
+export const artFormatShapes: Readonly<Record<HomeArtFormat, readonly HomeShape[]>> = {banner: ['wide'], tall: ['tall'], square: ['square', 'large-square'], auto: ['large-square']};
 /** The art format an older dashboard shows for an art card in a shape. */
 export const shapeArtFormat: Readonly<Record<HomeShape, Exclude<HomeArtFormat, 'auto'>>> = {square: 'square', wide: 'banner', tall: 'tall', 'large-square': 'square'};
 

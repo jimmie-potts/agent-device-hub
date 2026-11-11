@@ -33,19 +33,47 @@ export function PagedList({keys, pageSize, label, reveal, resetKey, note, pager 
   const alone = useRef(expandAlone);alone.current = expandAlone;
   const [revealed, setRevealed] = useState<number>(), pagerFocus = useRef<HTMLButtonElement | null>(null);
   const [reset, setReset] = useState(resetKey);
+  // Inside a shaped Home card the page holds as many rows as the card's measured space fits, pager included (#1672).
+  const [fitted, setFitted] = useState<number>(), size = expandAlone && fitted !== undefined ? fitted : pageSize;
   if (resetKey !== reset) {setReset(resetKey);setPage(0);}
   // Check Inbox: show the item's page, with no other row holding it; the caller then opens the item, and its toggle
   // records it like any other.
   if (reveal !== undefined && reveal.serial !== revealed) {
     setRevealed(reveal.serial);
     const index = keys.indexOf(reveal.key);
-    if (index >= 0) {setPage(pageOf(index, pageSize));setOpened(previous => previous.filter(key => key === reveal.key));}
+    if (index >= 0) {setPage(pageOf(index, size));setOpened(previous => previous.filter(key => key === reveal.key));}
   }
-  const pages = pager ? pageCount(keys.length, pageSize) : 1, current = pager ? clampPage(page, keys.length, pageSize) : 0;
+  const pages = pager ? pageCount(keys.length, size) : 1, current = pager ? clampPage(page, keys.length, size) : 0;
   // Removing the last row of the last page moves back to the page before it.
   if (current !== page) setPage(current);
   const open = expandAlone ? opened.filter(key => keys.includes(key)).at(-1) : undefined;
-  const visible = new Set(open === undefined ? pageKeys(keys, current, pageSize) : [open]);
+  const visible = new Set(open === undefined ? pageKeys(keys, current, size) : [open]);
+  const pagerHeight = useRef(52);
+  useLayoutEffect(() => {
+    const node = host.current;if (node === null || !expandAlone) {setFitted(undefined);return;}
+    const frame = node.closest<HTMLElement>('.widget') ?? node.closest<HTMLElement>('.home-layout-card');if (frame === null) return;
+    const measure = (): void => {
+      if (node.dataset.held === 'true') return;
+      const rows = [...node.querySelectorAll<HTMLElement>('[data-paged-key]')].filter(row => !row.hidden && row.getClientRects().length > 0);
+      const first = rows[0];if (first === undefined) return;
+      const pagerNode = node.querySelector<HTMLElement>('.paged-list-pager');
+      // The pager sits at the card's bottom with at least 16px above it.
+      if (pagerNode !== null) pagerHeight.current = pagerNode.getBoundingClientRect().height + 16;
+      const tops = [...new Set(rows.map(row => Math.round(row.getBoundingClientRect().top)))].sort((a, b) => a - b);
+      // Tiles in a grid count whole rows of the grid's columns; a list counts one entry a row.
+      const parent = first.parentElement, grid = parent === null ? undefined : getComputedStyle(parent);
+      const perRow = grid?.display === 'grid' ? Math.max(1, grid.gridTemplateColumns.split(' ').filter(value => value !== '' && value !== 'none').length) : 1;
+      const height = first.getBoundingClientRect().height, step = tops.length > 1 ? (tops[1] ?? 0) - (tops[0] ?? 0) : height;
+      const style = getComputedStyle(frame), bottom = frame.getBoundingClientRect().bottom - Number.parseFloat(style.paddingBottom) - Number.parseFloat(style.borderBottomWidth);
+      const space = bottom - first.getBoundingClientRect().top, fit = (room: number): number => Math.max(1, Math.floor((room - height) / step) + 1);
+      const all = fit(space) * perRow;
+      const next = !pager || all >= keys.length ? Math.max(perRow, all) : Math.max(1, fit(space - pagerHeight.current)) * perRow;
+      setFitted(previous => previous === next ? previous : next);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);observer.observe(frame);
+    return () => {observer.disconnect();};
+  }, [expandAlone, keys.length, pager, current, open]);
   useEffect(() => {
     const node = host.current;if (node === null) return;
     const focused = (event: FocusEvent): void => {last.current = event.target instanceof Element ? event.target : null;};
@@ -86,7 +114,7 @@ export function PagedList({keys, pageSize, label, reveal, resetKey, note, pager 
     target.focus({preventScroll: true});
   });
   const go = (target: number): void => {
-    const value = clampPage(target, keys.length, pageSize);
+    const value = clampPage(target, keys.length, size);
     setPage(value);
     // A pager button that becomes disabled would drop focus, so focus passes to the other one.
     if (value === 0) pagerFocus.current = next.current;else if (value === pages - 1) pagerFocus.current = previous.current;
@@ -94,9 +122,11 @@ export function PagedList({keys, pageSize, label, reveal, resetKey, note, pager 
   return <div className="paged-list" ref={host} tabIndex={-1} data-paged-list={label} data-page={current + 1} data-pages={pages} data-held={open !== undefined}>
     {children(key => visible.has(key))}
     {pages > 1 && open === undefined && <div className="paged-list-pager" role="group" aria-label={`${label} pages`}>
-      <button type="button" className="secondary" ref={previous} disabled={current === 0} onClick={() => {go(current - 1);}}>Previous</button>
-      <span className="paged-list-position" aria-live="polite">Page {current + 1} of {pages}{note === undefined ? '' : ` · ${note}`}</span>
-      <button type="button" className="secondary" ref={next} disabled={current === pages - 1} onClick={() => {go(current + 1);}}>Next</button>
+      <button type="button" className="secondary" ref={previous} disabled={current === 0} aria-label={expandAlone ? 'Previous' : undefined} onClick={() => {go(current - 1);}}>{expandAlone ? '‹' : 'Previous'}</button>
+      {/* A shaped card shows the short form on one line; the full label stays for assistive technology. */}
+      <span className="paged-list-position" aria-live="polite">{expandAlone ? <><span aria-hidden="true">{current + 1} / {pages}</span><span className="vh">Page {current + 1} of {pages}{note === undefined ? '' : ` · ${note}`}</span></>
+        : <>Page {current + 1} of {pages}{note === undefined ? '' : ` · ${note}`}</>}</span>
+      <button type="button" className="secondary" ref={next} disabled={current === pages - 1} aria-label={expandAlone ? 'Next' : undefined} onClick={() => {go(current + 1);}}>{expandAlone ? '›' : 'Next'}</button>
     </div>}
   </div>;
 }

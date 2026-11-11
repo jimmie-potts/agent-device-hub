@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, expect} from 'playwright/test';
 import {changes, feed, startWorld} from './harness.ts';
+import {cardOptions} from './home-editor.ts';
 import type {HistoryRow} from '../src/timeline-model.ts';
 
 const world = await startWorld({inbox: true}), browser = await chromium.launch({headless: true});
@@ -45,7 +46,7 @@ try {
   await page.getByRole('button', {name: 'Add card', exact: true}).click();
   await page.getByRole('button', {name: 'Add Timeline', exact: true}).click();
   await page.getByRole('button', {name: 'Close', exact: true}).click();
-  await page.getByRole('button', {name: 'Move Timeline earlier', exact: true}).click();
+  await cardOptions(page, 'Timeline');await page.getByRole('button', {name: 'Move Timeline earlier', exact: true}).click();
   await page.getByRole('group', {name: 'Shape of Timeline', exact: true}).getByRole('button', {name: 'Large square', exact: true}).click();
   const order = await page.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-home-card')));
   await page.getByRole('button', {name: 'Done', exact: true}).click();
@@ -55,7 +56,7 @@ try {
   assert.deepEqual(await page.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-home-card'))), order);
   await expect(page.locator('[data-home-card="timeline"]')).toHaveAttribute('data-home-shape', 'large-square');
   await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
-  await page.getByRole('button', {name: 'Hide Timeline', exact: true}).click();
+  await cardOptions(page, 'Timeline');await page.getByRole('button', {name: 'Hide Timeline', exact: true}).click();
   await page.getByRole('button', {name: 'Done', exact: true}).click();
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   await expect(card).toHaveCount(0);await page.reload();await feed(page, 'connected');await expect(card).toHaveCount(0);

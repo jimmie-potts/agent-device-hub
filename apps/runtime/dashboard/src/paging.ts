@@ -8,9 +8,9 @@ import type {HomeShape} from './home-shapes.ts';
 export const listPageSize = {inbox: 5, timeline: 5, sessionRows: 2} as const;
 
 /**
- * Rows per page in each Home shape (#1672), so a page and its pager fit the shape at the 220px unit, the smallest a
- * column gets; a browser test measures every offered shape. Off the unit grid the lists keep listPageSize. Timeline in
- * one row shows its latest entries with no pager; the rest is on the Timeline page.
+ * First rows per page in each Home shape (#1672), used until PagedList has measured how many rows the card's space
+ * holds; then the measured count applies at every width. Off the unit grid the lists keep listPageSize. Timeline in one
+ * row shows the latest entries that fit, with no pager; the rest is on the Timeline page.
  */
 export const inboxShapePageSize: Readonly<Partial<Record<HomeShape, number>>> = {wide: 1, tall: 4, 'large-square': 4};
 export const timelineShapePageSize: Readonly<Record<HomeShape, number>> = {square: 2, wide: 2, tall: 4, 'large-square': 4};

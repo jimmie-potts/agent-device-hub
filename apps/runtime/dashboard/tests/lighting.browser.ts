@@ -3,6 +3,7 @@ import {directoryLink} from './navigation-helpers.ts';
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
+import {cardOptions} from './home-editor.ts';
 const world = await startWorld({lighting: true, nanoleaf: true});
 const browser = await chromium.launch({headless: true});
 try {
@@ -34,7 +35,7 @@ try {
   assert.equal(sent.filter(value => !value.includes('lighting-layout-set')).length, 0, 'group save sends only metadata');
   // Edit Home replaces the old Home-only Arrange checklist; group metadata remains retained.
   await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
-  await page.getByRole('button', {name: 'Remove Light group', exact: true}).click();
+  await cardOptions(page, 'Light group');await page.getByRole('button', {name: 'Remove Light group', exact: true}).click();
   await page.getByRole('button', {name: 'Add card', exact: true}).click();
   await page.getByRole('button', {name: 'Lights', exact: true}).click();
   await page.getByRole('button', {name: 'Add lamp-a', exact: true}).click();

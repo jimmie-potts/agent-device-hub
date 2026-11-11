@@ -150,6 +150,13 @@ the card's Standard shape and Wide as Large square or Wide; art follows its
 saved format. Loading never writes; the next Done or art action stores a shape
 and an agreeing width for every placement.
 
+A release from before #1672 reads a stored layout with shapes but refuses every
+Home save from its dashboard (`invalid-request`, nothing changes), because its
+save schema has no `shape` and its dashboard copies the saved placements. A
+width-only save is accepted and removes the shapes: in that release's dashboard
+choose Edit Home, Reset with Desktop selected, Reset with Phone selected, then
+Done. The runtime upgrade guide records the same under Home arrangement state.
+
 Inbox, Agent status and Timeline page their lists through one shared pager
 (`src/paged-list.tsx`, #1658), so a long list never makes its card taller than
 one page of rows plus its heading and pager. **Previous**, **Next** and

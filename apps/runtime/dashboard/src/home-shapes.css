@@ -13,7 +13,15 @@
 .home-layout-card[data-home-shape] .widget{display:flex;flex-direction:column;overflow:hidden}
 
 /* Edit Home keeps the real placement: the edit bar lies over the top of the card, whose content is inert while editing. */
-.home-layout-grid[data-packed=true] .home-card-editor{position:absolute;inset:0 0 auto 0;z-index:3;border-radius:var(--radius) var(--radius) 0 0;box-shadow:var(--shell-shadow)}
+/* Edit Home keeps the real placement: a one-row edit bar with the card's name lies over the top of the card, whose
+   content is inert while editing; the card's other controls open in a panel below the bar, one card at a time. */
+.home-layout-grid[data-packed=true] .home-card-editor{position:absolute;inset:0 0 auto 0;z-index:3;flex-wrap:nowrap;gap:var(--space-xs);padding:4px;border-radius:var(--radius) var(--radius) 0 0;box-shadow:var(--shell-shadow)}
+.home-layout-grid[data-packed=true] .home-card-editor>button{flex:0 0 auto;min-height:40px}
+.home-card-editor-name{flex:1 1 auto;min-width:0;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-card-editor-controls{display:contents}
+.home-card-options{position:absolute;top:100%;left:0;z-index:6;display:flex;flex-wrap:wrap;gap:4px;width:100%;box-sizing:border-box;padding:8px;background:var(--panel);border:1px solid var(--edge-dense);border-radius:0 0 var(--radius) var(--radius);box-shadow:var(--shell-shadow)}
+.home-card-options small{flex-basis:100%;color:var(--muted-dense)}
+.home-layout-grid[data-packed=true] .home-layout-card:has(.home-card-options){z-index:4}
 .home-shape-choice{display:inline-flex;gap:2px}
 .home-shape-choice button{min-width:36px;padding:6px}
 .home-shape-choice button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -48,18 +56,23 @@
 /* One row groups through the options menu's Group with; two rows keep the drag handle. */
 :is(.home-layout-card.home-shape-square,.home-layout-card.home-shape-wide) .light-card .light-drag{display:none}
 .home-layout-card[data-home-shape] .light-card .light-drag{min-height:36px;margin-top:var(--space-xs)}
-/* One row shows command results in the options menu's details instead of below the controls. */
-:is(.home-layout-card.home-shape-square,.home-layout-card.home-shape-wide) .light-card .light-attention{display:none}
+/* Tall shows the drag handle with the Power face, the shortest; taller faces use the whole card. */
+.home-layout-card.home-shape-tall .light-card:has(.light-tabs [role=tab][aria-selected=true]:not(:first-child)) .light-drag{display:none}
+/* One row shows a command's result on one line under On and Off; the full lines stay in the options menu's details. */
+:is(.home-layout-card.home-shape-square,.home-layout-card.home-shape-wide) .light-card>.light-attention{display:none}
+.light-attention-line{margin:var(--space-xs) 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .home-layout-card[data-home-shape] .light-card-heading p{margin-top:2px}
 .home-layout-card[data-home-shape] .light-card-heading{min-width:0}
 .home-layout-card[data-home-shape] .light-card-heading>div{min-width:0}
 .home-layout-card[data-home-shape] .light-card-heading p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:none}
-/* Tall keeps every control face in full, so its artwork stays mounted but hidden; Large square shows it beside the tabs. */
-.home-layout-card.home-shape-tall .light-card .light-artwork{display:none}
+/* Tall keeps every control face in full: the artwork takes the room the face leaves and collapses for the tallest face,
+   staying mounted in place; Large square shows it beside the tabs. */
+.home-layout-card.home-shape-tall .light-card .light-artwork{flex:1 1 0;min-height:0;margin-block:var(--space-xs)}
+.home-layout-card.home-shape-tall .light-card .light-face-space{flex:0 0 auto}
 .home-layout-card[data-home-shape] .light-card .light-face .light-slider{margin-block:var(--space-xs)}
 .home-layout-card.home-shape-tall .light-card{padding-block:var(--space-s)}
 .home-layout-card[data-home-shape] .light-card .light-face .light-note{margin-block:var(--space-xs)}
-.home-layout-card.home-shape-tall .light-card .light-face-space{height:auto;min-height:0}
+.home-layout-card.home-shape-tall .light-card .light-face-space{height:auto;min-height:0;flex:0 0 auto}
 .home-layout-card.home-shape-large-square .light-card .light-face-space{flex:1 1 auto;height:auto;min-height:0}
 .home-layout-card.home-shape-tall .light-card .light-face,.home-layout-card.home-shape-large-square .light-card .light-face{padding-top:var(--space-xs);height:auto;min-height:0;overflow:visible}
 .home-layout-card.home-shape-tall .light-card .light-tabs button{font-size:var(--type-label)}
@@ -85,7 +98,7 @@
 .home-layout-card[data-home-shape] .inbox-item-detail p{margin:0}
 .home-layout-card.home-shape-wide .inbox-card:has([data-held=true])>header{display:none}
 .home-layout-card[data-home-shape] .paged-list-pager{gap:var(--space-xs)}
-.home-layout-card[data-home-shape] .paged-list-pager button{padding-inline:var(--space-s)}
+.home-layout-card[data-home-shape] .paged-list-pager button{padding-inline:var(--space-s);min-width:56px;font-size:var(--type-heading)}
 .home-layout-card[data-home-shape] .paged-list-position{font-size:var(--type-label);text-align:center}
 
 /* Timeline: entries on one line each; Open Timeline holds the rest. */
@@ -124,3 +137,14 @@
 .home-art-shaped .art-image-frame{flex:1;min-height:0;aspect-ratio:auto}
 .home-art-shaped .art-image canvas,.home-art-shaped .art-image img{width:100%;height:100%;object-fit:cover}
 .home-art-shaped .art-image figcaption{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Cards use their whole shape (#1672): Hub mode spreads its content over the card, and list cards keep their pager at
+   the bottom with as many rows above it as the card fits (paged-list.tsx measures them). */
+.home-layout-card[data-home-shape] .widget>.hub-mode-card{flex:1 1 auto;min-height:0}
+.home-layout-card[data-home-shape]:not(.home-shape-wide) .hub-mode-card{display:flex;flex-direction:column;justify-content:space-between}
+.home-layout-card.home-shape-wide .hub-mode-card{grid-template-rows:auto 1fr;align-items:end}
+.home-layout-card.home-shape-wide .hub-mode-card>header{align-self:start}
+.home-layout-card[data-home-shape] .widget>:is(div:has(>.inbox-card),.timeline-card,.agent-sessions),.home-layout-card[data-home-shape] .inbox-card,.home-layout-card[data-home-shape] .inbox-entries{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
+.home-layout-card[data-home-shape] .paged-list{display:flex;flex-direction:column;flex:1 1 auto;min-height:0}
+.home-layout-card[data-home-shape] .paged-list-pager{margin-top:auto}
+.home-layout-card[data-home-shape] .paged-list-position{white-space:nowrap}

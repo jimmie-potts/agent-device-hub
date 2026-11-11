@@ -11,6 +11,11 @@ export type HomeSize = 'small' | 'medium' | 'large';
  * keeps a saved shape only while the placement's size agrees with it (home-layout/2.2).
  */
 export const homeShapeSize: Readonly<Record<HomeShape, HomeSize>> = {square: 'small', tall: 'small', wide: 'medium', 'large-square': 'medium'};
+/**
+ * The shapes each art format agrees with. An art placement whose format and shape disagree is one an older dashboard
+ * re-formatted without knowing shapes; the core then drops the shape so the format decides (#1672).
+ */
+export const homeArtShapes: Readonly<Record<HomeArtFormat, readonly HomeShape[]>> = {banner: ['wide'], tall: ['tall'], square: ['square', 'large-square'], auto: ['large-square']};
 export type HomePlacement = {widget: string; size: HomeSize; hidden: boolean; shape?: HomeShape; art?: HomeArtPlacement};
 export type HomeArrangements = {desktop: HomePlacement[]; phone: HomePlacement[]};
 export type HomeLayoutRecord = {id: 'home'; revision: number; version: 1; layouts: HomeArrangements | null};

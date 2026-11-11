@@ -4,7 +4,7 @@ import {lightingLayoutFamilies} from './lighting-layout.js';
 import {playbackLayoutFamilies} from './playback-layout.js';
 import {normalizeModeState} from './mode.js';
 import {homeLayoutFamilies} from './home-layout.js';
-export {homeShapeSize} from './home-layout.js';
+export {homeArtShapes, homeShapeSize} from './home-layout.js';
 export type {HomeArtFormat, HomeArtPlacement, HomePlacement, HomeArrangements, HomeLayoutRecord, HomeLayoutSetRequest, HomeShape, HomeSize} from './home-layout.js';
 export type {PlaybackPlacement, PlaybackLayoutRecord, PlaybackLayoutSetRequest} from './playback-layout.js';
 export type {LightingLayout, LightingLayoutRecord, LightingLayoutSetRequest, LightingRoom, LightingGroup, LightingSelection} from './lighting-layout.js';

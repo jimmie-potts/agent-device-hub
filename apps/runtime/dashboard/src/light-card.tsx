@@ -51,6 +51,9 @@ export function LightCard({card, devices, capabilities: cap, artwork, modeChoice
       <div className="light-power"><button type="button" disabled={!cap.power} aria-pressed={power === true} onClick={() => { act({family: 'power-set', data: {on: true}}); }}>On</button>
         <button type="button" disabled={!cap.power} aria-pressed={power === false} onClick={() => { act({family: 'power-set', data: {on: false}}); }}>Off</button></div>
       {shape === 'wide' && <Slider label={observedBrightness === undefined ? 'Brightness · requested' : 'Brightness · observed'} value={brightness} disabled={!cap.brightness} commit={percent => { act({family: 'brightness-set', data: {percent}}); }}/>}
+      {/* The result of a command sent from this card stays on its face: one line here, each member's detail in its options. */}
+      {attention.length > 0 && <p className="light-attention light-attention-line" role="status" title={attention.map(item => `${card.members.length > 1 ? `${item.name}: ` : ''}${item.text}`).join(' ')}>
+        {card.members.length > 1 ? `${attention[0]?.name ?? ''}: ` : ''}{attention[0]?.text}{attention.length > 1 ? ` (+${String(attention.length - 1)})` : ''}</p>}
     </div>}
     {!compact && <><div className="light-tabs" role="tablist" aria-label={`${card.name} controls`}>{tabs.map((name, index) => <button key={name} type="button" role="tab" id={`${id}-${name}`} aria-controls={`${id}-face`} aria-selected={tab === name} tabIndex={tab === name ? 0 : -1}
       onClick={() => { setTab(name); }} onKeyDown={event => {

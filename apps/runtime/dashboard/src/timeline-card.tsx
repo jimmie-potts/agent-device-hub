@@ -60,6 +60,8 @@ export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, h
   // category filters stay in Large square and on the Timeline page.
   const shape = useHomeShape(), oneRow = shape === 'square' || shape === 'wide', filters = shape === undefined || shape === 'large-square';
   const size = shape === undefined ? pageSize : timelineShapePageSize[shape];
+  // A shape without the category buttons shows every category, so no hidden filter narrows its list.
+  if (!filters && category !== 'All') setCategory('All');
   return <div className="timeline-card" data-timeline-card data-history-error={snapshot.errorCode} aria-labelledby={headingId ?? uid}>
     <header className="timeline-heading"><h2 id={headingId ?? uid}>Timeline</h2>{oneRow ? <a className="timeline-open" href="#/timeline">Open Timeline</a> : <div className="timeline-tools">
       <select aria-label="Activity period" value={period} onChange={event => {onPeriod(event.target.value as HistoryPeriod);}}>

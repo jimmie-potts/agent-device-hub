@@ -1,7 +1,7 @@
 // Private presentation metadata; this part has no device dispatch path (Hub #366).
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {coreValidator, homeShapeSize, type HomeLayoutRecord, type HomeLayoutSetRequest, type HomePlacement, type LightingLayout, type LightingLayoutSetRequest} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator, homeArtShapes, homeShapeSize, type HomeLayoutRecord, type HomeLayoutSetRequest, type HomePlacement, type HomeShape, type LightingLayout, type LightingLayoutSetRequest} from '@jimmie-potts/event-contracts/v2/families';
 import {Outcome, fullDisk, type Command, type Reply, type StateDraft} from '@jimmie-potts/sdk';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreTransaction} from './store.js';
@@ -11,16 +11,19 @@ const ID = 'home';
 const stateDraft = (record: HomeLayoutRecord): StateDraft => ({type: 'org.bunny.home-layout.updated', subject: ID,
   dataschema: 'https://bunny.invalid/events/home-layout/2.2', data: record});
 /**
- * A saved shape stays only while the placement's width agrees with it, so an older dashboard that changes a width and
- * copies the old shape loses the shape (#1672). A placement that omits its shape while keeping its width keeps the
- * previous shape, as older clients keep art options.
+ * A saved shape stays only while the placement's width agrees with it, and for art while its format agrees too, so an
+ * older dashboard that changes a width or an art format and copies the old shape loses the shape (#1672). A placement
+ * that omits its shape while keeping its width (and art format) keeps the previous shape, as older clients keep art options.
  */
+function agrees(entry: HomePlacement, shape: HomeShape): boolean {
+  return homeShapeSize[shape] === entry.size && (entry.art === undefined || homeArtShapes[entry.art.format].includes(shape));
+}
 function settleShapes(entries: HomePlacement[], previous: readonly HomePlacement[] | undefined): void {
   for (const entry of entries) {
     if (entry.shape === undefined) {
       const earlier = previous?.find(value => value.widget === entry.widget);
-      if (earlier?.shape !== undefined && earlier.size === entry.size && homeShapeSize[earlier.shape] === entry.size) entry.shape = earlier.shape;
-    } else if (homeShapeSize[entry.shape] !== entry.size) delete entry.shape;
+      if (earlier?.shape !== undefined && earlier.size === entry.size && agrees(entry, earlier.shape)) entry.shape = earlier.shape;
+    } else if (!agrees(entry, entry.shape)) delete entry.shape;
   }
 }
 export type HomeLayoutAdmission = {

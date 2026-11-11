@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {homeShapeSize, type HomePlacement, type HomeShape} from '@jimmie-potts/event-contracts/v2/families';
+import {homeArtShapes, homeShapeSize, type HomePlacement, type HomeShape} from '@jimmie-potts/event-contracts/v2/families';
 import {addHomeCard, defaultHomeArrangements, homeCardShapes, homeCatalog, savedHomeCard, shapeOf, withShapes, type HomeCardDefinition} from '../src/home-catalog.ts';
-import {shapeStoredSize} from '../src/home-shapes.ts';
+import {artFormatShapes, shapeStoredSize} from '../src/home-shapes.ts';
 import {widgetCatalog} from '../src/widgets.ts';
 import type {RuntimeData} from '../src/runtime-feeds.ts';
 import {emptyStatus} from '../../../../modules/roborock/src/contracts.ts';
@@ -54,6 +54,7 @@ void test('width-only placements show stated shapes, and an explicit save stores
   assert.deepEqual(layouts.desktop[0], {widget: 'hub-mode', size: 'medium', hidden: false}, 'conversion never changes the loaded layout');
   // The dashboard's stored widths equal the contract's, which the core uses to keep a shape.
   assert.deepEqual(shapeStoredSize, homeShapeSize);
+  assert.deepEqual(artFormatShapes, homeArtShapes);
 });
 
 void test('every Home card offers only shapes from the catalog, with an existing page behind its generic face', () => {

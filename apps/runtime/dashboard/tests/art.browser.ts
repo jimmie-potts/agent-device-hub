@@ -4,6 +4,7 @@ import {join} from 'node:path';
 import {chromium, expect, type Page} from 'playwright/test';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {changes, feed, startWorld} from './harness.ts';
+import {cardOptions} from './home-editor.ts';
 import {artSelectionJourney} from './art-selection-journey.ts';
 import {artScheduleJourney} from './art-schedule-journey.ts';
 import {artNoticeJourney} from './art-notice-journey.ts';
@@ -122,7 +123,7 @@ try {
   const layoutStart = sent.length;
   // On the wide Home grid (#1672) the art card's shape is chosen in Edit Home and the image is cropped to it.
   for (const [shape, label] of [['wide', 'Wide'], ['square', 'Small square'], ['tall', 'Tall'], ['large-square', 'Large square']] as const) {
-    await edit.click();await page.getByRole('group', {name: 'Shape of Art', exact: true}).getByRole('button', {name: label, exact: true}).click();
+    await edit.click();await cardOptions(page, 'Art');await page.getByRole('group', {name: 'Shape of Art', exact: true}).getByRole('button', {name: label, exact: true}).click();
     await page.getByRole('button', {name: 'Done', exact: true}).click();await expect(edit).toBeEnabled();
     await expect(art).toHaveAttribute('data-home-shape', shape);await noOverflow(page);
     const frame = await art.locator('.art-image-frame').boundingBox(), card = await art.boundingBox();
@@ -152,11 +153,12 @@ try {
   await world.restart();await page.reload();await feed(page, 'connected');await expect(art).toBeVisible();assert.equal(world.art.state().imageCalls, afterArrivalCalls, 'restart does not replay art');
   // Automatic placement uses only a free trailing rectangle and freezes during interaction.
   await edit.click();
-  const hideNames = await page.getByRole('button', {name: /^Hide /}).evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label')));
-  // Keep Hub mode so the grid has trailing empty cells for automatic art.
-  for (const name of hideNames) {
-    if (name === null || name === 'Hide Art' || name === 'Hide Hub mode') continue;
-    const button = page.getByRole('button', {name, exact: true});if (await button.isEnabled()) await button.click();
+  // Each card's Hide is in its options on the grid (#1672). Keep Hub mode so the grid has trailing empty cells for automatic art.
+  const cardNames = await page.getByRole('button', {name: /^Options for /}).evaluateAll(nodes => nodes.map(node => (node.getAttribute('aria-label') ?? '').slice('Options for '.length)));
+  for (const name of cardNames) {
+    if (name === 'Art' || name === 'Hub mode') continue;
+    await cardOptions(page, name);
+    const button = page.getByRole('button', {name: `Hide ${name}`, exact: true});if (await button.isEnabled()) await button.click();
   }
   await page.getByRole('button', {name: 'Done', exact: true}).click();await expect(edit).toBeEnabled();
   await controls.getByRole('button', {name: 'Unpin art', exact: true}).click();await expect(art).toHaveCount(0);
