@@ -1384,6 +1384,16 @@ synthetic token prefix `tok_SYNTHETIC835`.
 verification run's child uses it to end a part's stream, as a lost connection
 would; the shipped entry point does not pass it.
 
+`runMain`'s `testClock` option (#1709) runs the runtime on a clock, scheduler
+and monotonic clock that a verification run controls. It is code only: no
+argument or environment variable selects one, and the installed entry points
+pass none, which a test of their sources checks. With one, the process refuses
+to start unless it has `--simulate`, `--environment test`, `--edge` and an IPC
+channel, which the verification supervisor's fork gives its child and the
+service manager and the container entry do not. Without any of them it exits 1 with
+one `runtime.failed` record carrying `invalid-state`, before any module starts
+or any port is bound. No run passes a test clock yet (#1705).
+
 ### Credentials
 
 The configuration file's `edge` section names a private credentials file,

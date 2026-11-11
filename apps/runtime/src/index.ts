@@ -17,7 +17,7 @@ export {Redactions, type LogSink} from './log.js';
 export {
   buildModules, coreFactory, moduleSchemas, orderModules, registrations, shippedList, shippedModules, type ModuleFactory, type ModuleRegistration,
 } from './modules.js';
-export {DEFAULT_LAG_LIMIT_MS, DEFAULT_STATE_DIR, UsageError, parseArguments, runMain, runProcess, type EdgeInputs, type ProcessInputs, type ProcessOptions} from './process.js';
+export {DEFAULT_LAG_LIMIT_MS, DEFAULT_STATE_DIR, UsageError, parseArguments, runMain, runProcess, type ChildInputs, type EdgeInputs, type ProcessInputs, type ProcessOptions, type TestClock} from './process.js';
 export {ENVIRONMENTS, type Environment, type LogLevel, type LogRecord} from './record.js';
 export {SEGMENT_BYTES, SEGMENT_SPANS, SPANS_FILE, SPANS_PREVIOUS_FILE, readSpanFile, type SpanFileRead} from './span-file.js';
 export {
