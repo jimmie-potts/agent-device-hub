@@ -549,3 +549,37 @@ it('a stream whose response starts within the idle limit is not cut off for the 
   });
 });
 
+it('a refused stream open leaves no limit running', async () => {
+  const clock = manualClock();
+  await withEdge({refuse: route => route === 'stream'}, async edge => {
+    await assert.rejects(edge.connect('bunny/wall', {liveness: clock.scheduler, idleMs: 2000}), (error: unknown) => codeOf(error) === 'unavailable');
+    assert.equal(clock.pending(), 0, 'nothing is left on the liveness clock');
+  });
+});
+
+it('a refusal whose body never arrives gets a full idle limit from its headers, then fails internal', async () => {
+  const clock = manualClock();
+  // Counts each limit the client starts, so the test knows when the client has the refusal's headers.
+  let started = 0;
+  const liveness = {after: (delayMs: number, callback: () => void) => { started += 1; return clock.scheduler.after(delayMs, callback); }};
+  let refusal: ServerResponse | undefined;
+  await withEdge({onStream: response => { refusal = response; }, before: route => route === 'stream' ? new Promise<void>(() => {}) : undefined}, async edge => {
+    const outcome: {settled?: unknown} = {};
+    void edge.connect('bunny/wall', {liveness, idleMs: 2000}).then(() => { outcome.settled = 'connected'; }, (error: unknown) => { outcome.settled = error; });
+    await until(() => refusal !== undefined && started === 1, 'the stream request at the edge');
+    clock.advance(1999);
+    // The edge sends a refusal's headers just inside the bound, and never its body.
+    refusal?.writeHead(503, {'content-type': 'application/json'}).flushHeaders();
+    await until(() => started === 2, 'the client has the refusal\'s headers');
+    clock.advance(1999);
+    await flush();
+    assert.equal('settled' in outcome, false, 'the body gets its own full limit');
+    clock.advance(1);
+    await until(() => 'settled' in outcome, 'the abandoned refusal');
+    const {settled} = outcome;
+    assert.ok(settled instanceof SdkError, `refused, not ${String(settled)}`);
+    assert.deepEqual(settled.body, errorBody('internal', {detail: 'the edge answered 503'}), 'a refusal with no body is internal, as before');
+    assert.equal(clock.pending(), 0, 'nothing is left on the liveness clock');
+  });
+});
+

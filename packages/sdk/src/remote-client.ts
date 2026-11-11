@@ -225,8 +225,8 @@ class RemoteClient {
       void (async () => {
         try {
           // The limit runs from the request, so an edge, or a proxy before it, that takes the request and never answers
-          // fails the open, which the reconnect retries with its backoff (Hub #1690). Once the response starts, it
-          // counts silence from there.
+          // fails the open, which the reconnect retries with its backoff (Hub #1690). A refusal's body gets a full limit
+          // of its own from its headers; a stream's limit restarts at each read below.
           watch();
           const response = await fetch(`${this.#base}/stream`, {headers: this.#headers(), credentials: 'same-origin', signal: controller.signal});
           watch();
@@ -254,8 +254,10 @@ class RemoteClient {
           }
         } catch (error) {
           if (!ready) reject(new SdkError(bodyOf(error)));
+        } finally {
+          // Every way out, a refusal included, leaves no limit running.
+          idle();
         }
-        idle();
         if (!ready) reject(new SdkError(body('unavailable', 'the stream ended before it was ready')));
         else this.#lost(controller);
       })();
