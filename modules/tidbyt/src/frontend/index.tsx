@@ -14,7 +14,8 @@ export function TidbytDisplay({context}: {context: FrontendContext}): React.JSX.
     if (!context.connected) { setView(previous => ({...previous, live: false, pending: false})); return; }
     return followTidbyt(changed => context.api.sync<DeviceRecord>(['device'], changed), saved.current, next => { saved.current = next.device; setView(next); });
   }, [context.api, context.connected, attempt]);
-  return <TidbytCard view={view} connected={context.connected} retry={() => { setAttempt(value => value + 1); }}/>;
+  // The Home shape the shell places this card in, if any (#1672 PR B); the card draws compact content for it.
+  return <TidbytCard view={view} connected={context.connected} retry={() => { setAttempt(value => value + 1); }} {...(context.presentation === undefined ? {} : {shape: context.presentation.shape})}/>;
 }
 
 export const frontend: FrontendContribution = {module: 'tidbyt', pages: [{id: 'display', Component: TidbytDisplay}]};

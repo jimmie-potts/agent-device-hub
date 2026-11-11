@@ -29,6 +29,14 @@ published files and never starts collection. The full analytics page retains its
 filters, language protections and numeric downloads. No collection or sharing
 choice is enabled by placing this card.
 
+On the Home grid (#1672) `WisprWidget` passes the shape from the shell's
+optional `context.presentation` to `WisprCard` as `shape`. A Small square shows
+the totals and footer, and the seven-day line where its cell is tall enough
+(a CSS container query); Wide sets the line beside the totals; Tall and Large
+square add its caption and day choices. In a shape the line stretches to the
+room left, with strokes and dots at a fixed size. Without `shape` the card is
+unchanged. The reads are the same numeric-only reads in every shape.
+
 ## Validation
 
 After the repository build compiles the SDK and unchanged Wispr contracts, compile this package with `fnm exec --using=.nvmrc -- node node_modules/typescript/bin/tsc -p modules/wispr/tsconfig.json`. Run its compiled tests with `fnm exec --using=.nvmrc -- node --test modules/wispr/dist/tests/*.test.js` and lint `modules/wispr` with the repository strict profile. The root build and typecheck include this package; `npm run test:wispr-module:built` runs its tests in CI. Only this module has the scoped permission to import the existing pure Wispr contracts.

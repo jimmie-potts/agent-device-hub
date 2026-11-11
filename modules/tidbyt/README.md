@@ -51,6 +51,14 @@ instead of the cloud. The wooden 64×32 illustration stays mounted across keyboa
 Status/Content tabs and is explicitly illustrative, never an exact preview or a
 physical observation. Existing cloud behavior and private state are unchanged.
 
+On the Home grid (#1672) `TidbytDisplay` passes the shape from the shell's
+optional `context.presentation` to `TidbytCard` as `shape`, and the card draws
+compact content instead of tabs: a Small square shows the name, the framed
+illustration, the evidence line and the page links; Wide adds availability and
+the latest acceptance beside the illustration; Tall and Large square stack them
+under it with "Physical display unobserved." The Content face and Retry records
+stay on the device and module pages. Without `shape` the card is unchanged.
+
 After the root build, run
 `node --test modules/tidbyt/dist/tests/frontend.test.js` for copy replacement,
 failed sync, automatic read backoff, removal, late-copy cleanup and evidence labels, and

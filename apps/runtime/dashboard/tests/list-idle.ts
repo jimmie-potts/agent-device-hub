@@ -6,11 +6,11 @@ import type {Page} from 'playwright/test';
  * Every DOM change inside each Inbox, Agent sessions and Timeline card on the Home grid during `ms` idle milliseconds:
  * attributes, children and text. The shell's one-second clock is not paging and is left out: it counts up a session's
  * "Last evidence" age, and React's re-render of the controlled find field rewrites that input's name and type to the
- * values they already had.
+ * values they already had. `cards` names other cards to watch instead, each by its id or an id prefix (#1672 PR B).
  */
-export async function idleChanges(page: Page, ms = 2000): Promise<string[]> {
-  return page.evaluate(async ms => {
-    const cards = [...document.querySelectorAll<HTMLElement>('.home-layout-grid > [data-home-card]')].filter(card => ['inbox', 'sessions', 'timeline'].includes(card.dataset.homeCard ?? ''));
+export async function idleChanges(page: Page, ms = 2000, cards: readonly string[] = ['inbox', 'sessions', 'timeline']): Promise<string[]> {
+  return page.evaluate(async ({ms, watched}) => {
+    const cards = [...document.querySelectorAll<HTMLElement>('.home-layout-grid > [data-home-card]')].filter(card => watched.some(id => (card.dataset.homeCard ?? '').startsWith(id)) && (card.dataset.homeCard ?? '') !== '');
     const changes: string[] = [];
     const observers = cards.map(card => {
       const observer = new MutationObserver(records => {
@@ -26,5 +26,5 @@ export async function idleChanges(page: Page, ms = 2000): Promise<string[]> {
     await new Promise(resolve => setTimeout(resolve, ms));
     for (const observer of observers) observer.disconnect();
     return changes;
-  }, ms);
+  }, {ms, watched: cards});
 }

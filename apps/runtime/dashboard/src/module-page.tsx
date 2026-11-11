@@ -6,6 +6,7 @@ import {moduleView, type ModuleEntry, type ModulePage} from './modules.ts';
 import {Badge, Facts, InfoTip, Select} from './ui.tsx';
 import {Command} from './command-control.tsx';
 import {DeviceModeChoice} from './device-mode.tsx';
+import {useHomeCardBox} from './home-shape-context.ts';
 
 const ui: FrontendUi = {Badge, Facts, InfoTip, Select, Command, ModeChoice: DeviceModeChoice};
 type Props = {
@@ -36,7 +37,10 @@ export function ModuleFrontend({module, connection, Component, connected, contro
   const state = useSyncExternalStore(connection.subscribe, connection.getState);
   const modeCopy = state.runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'mode');
   const mode = modeCopy?.records.find((record): record is ModeState => 'mode' in record);
+  // A Home card on the unit grid tells its module the shape and outer size it is placed in (#1672), from the grid alone.
+  const box = useHomeCardBox();
   const context: FrontendContext = {module, api: scope.api, ui, connected, control, operations, operationsLive,
-    core: {sessions: state.sessions.records, sessionsLive: connected && state.sessions.synced, mode: mode?.mode, modeLive: connected && modeCopy?.synced === true}};
+    core: {sessions: state.sessions.records, sessionsLive: connected && state.sessions.synced, mode: mode?.mode, modeLive: connected && modeCopy?.synced === true},
+    ...(box === undefined ? {} : {presentation: {shape: box.shape, width: box.width, height: box.height}})};
   return <Component context={context}/>;
 }

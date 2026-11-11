@@ -6,6 +6,7 @@ import {readingOf, type Reading} from './player.js';
 import {AnimatedMedia, MediaPicker, type PickerMedia} from './media-picker.js';
 import {PlaylistEditor} from './playlist-editor.js';
 import {useCardCommand} from './card-command.js';
+import {PixooCompactCard} from './compact-card.js';
 
 type Props = {context: FrontendContext; device: DeviceRecord; display: DisplayRecord | undefined; live: boolean; playlists: readonly PlaylistRecord[]; command: FrontendCommand};
 const tabs = ['Display', 'Content'] as const;
@@ -46,8 +47,16 @@ export function PixooCard({context, device, display, live, playlists, command}: 
     || session === null || session === undefined || (action === 'restart-with-changes' && (session.source?.kind === 'media' || savedSession?.repeat !== true));
   const desiredBrightness = device.desired.brightness.status === 'known' ? device.desired.brightness.value : undefined;
   const screenOn = device.desired.power.status === 'known' ? device.desired.power.value : undefined;
+  const stateText = !current ? 'Stale' : display?.base === 'status' ? 'Monitor' : state?.state ?? 'Media';
+  const caption = `${session?.playlist.name ?? 'Choose something to play'}${activeItem === undefined ? '' : ` · ${(session?.playlist.items.findIndex(item => item.id === activeItem.id) ?? -1) + 1}/${session?.playlist.items.length}`}`;
+  // In a Home shape (#1672 PR B) the shell says which; the card shows compact content for it and keeps these hooks.
+  const shape = context.presentation?.shape;
+  if (shape !== undefined) return <PixooCompactCard context={context} device={device} shape={shape} state={stateText} renditionId={activeItem?.renditionId} current={current}
+    playing={state?.state === 'playing'} caption={caption} session={session !== undefined && session !== null} deviceBlocked={deviceBlocked} actionDisabled={actionDisabled}
+    screenOn={screenOn} desiredBrightness={desiredBrightness} send={send}
+    result={failure ?? (error ? 'Player unavailable. Device details can refresh it.' : state?.lastError !== null && state?.lastError !== undefined ? `Player error: ${state.lastError.code}.` : command.text)}/>;
   return <article className="light-card pixoo-card" aria-label="Pixoo display">
-    <header className="light-card-heading"><div><h3>{device.label ?? 'Pixoo'}</h3><p>{!current ? 'Stale' : display?.base === 'status' ? 'Monitor' : state?.state ?? 'Media'}</p></div>
+    <header className="light-card-heading"><div><h3>{device.label ?? 'Pixoo'}</h3><p>{stateText}</p></div>
       <details className="light-options"><summary aria-label="Pixoo options">⋯</summary><div className="light-options-body">
         <a href="#/module/pixoo/library">Library</a><a href="#/module/pixoo/playlists">Advanced playlists</a>
         <a href="#/module/pixoo/monitor">Monitor</a><a href="#/module/pixoo/settings">Settings</a>
@@ -59,7 +68,7 @@ export function PixooCard({context, device, display, live, playlists, command}: 
         <path d="M23 33v-8h4v-9h4v10h4V16h4v9h4v17h-5v5H28v-5h-5z"/></svg>
         : <AnimatedMedia api={context.api} renditionId={activeItem.renditionId} label="Active media illustration" active={current} animate={state?.state === 'playing'}/>}
     </div></div>
-    <p className="pixoo-caption">{session?.playlist.name ?? 'Choose something to play'}{activeItem === undefined ? '' : ` · ${(session?.playlist.items.findIndex(item => item.id === activeItem.id) ?? -1) + 1}/${session?.playlist.items.length}`}</p>
+    <p className="pixoo-caption">{caption}</p>
     <div className="light-tabs pixoo-tabs" role="tablist" aria-label="Pixoo controls">{tabs.map((name, index) => <button type="button" role="tab" key={name}
       id={`${id}-${name}`} aria-controls={`${id}-${name}-face`} aria-selected={tab === name} tabIndex={tab === name ? 0 : -1} onClick={() => { setTab(name); }} onKeyDown={event => {
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : ['ArrowRight', 'ArrowLeft'].includes(event.key) ? 1 - index : undefined;

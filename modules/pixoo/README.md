@@ -63,6 +63,15 @@ reported mode names the saved choice directly; the card has no separate native
 mode buttons. The Player page's Display mode select still sends Work, Free or
 Quiet to the device directly.
 
+On the Home grid (#1672) the card reads the shape from the shell's optional
+`context.presentation` and draws compact content (`compact-card.tsx`) from the
+same hooks and command path: a Small square shows the name, state, active media
+and caption; Wide and Tall add Screen on and off, playback (Previous,
+Pause/Resume, Next) while a session exists and one result line; Large square
+also adds brightness with Apply. The options menu's Device details opens the
+full card with its Content tab, playlists and mode exceptions. Off the grid the
+card is unchanged.
+
 The picker shows six referenced media previews per page. Visible GIFs animate
 from decoded frames; pause, reduced motion, hidden pages and unmount release
 animation frames. Search, paging and selection send no command. Play is explicit

@@ -39,12 +39,15 @@ try {
       const homeReads: string[] = [];
       page.on('request', request => {if (request.url().includes('/modules/wispr/content/')) homeReads.push(request.url());});
       await page.goto(`${world.url}/#/home`); await feed(page, 'connected');
-      // The wide Home grid (#1672) shows Wispr's generic compact face, which reads nothing and opens its analytics page;
-      // Home in one column keeps the full card checked below.
-      assert.equal(await page.getByRole('link', {name: 'Open Wispr', exact: true}).getAttribute('href'), '#/module/wispr/analytics');
-      assert.equal(homeReads.length, 0, 'the compact face reads no Wispr content');
+      // The wide Home grid (#1672 PR B) shows the Wispr module's compact card for its shape. It reads the same numeric
+      // summary as the full card and opens its analytics page; Home in one column keeps the full card checked below.
+      const compact = page.locator('.wispr-card[data-shape]');
+      await compact.getByText('120', {exact: true}).first().waitFor();
+      assert.equal(await compact.getByRole('link', {name: /^Open Wispr/}).getAttribute('href'), '#/module/wispr/analytics');
+      assert.equal(homeReads.some(path => path.includes('/language') || path.includes('includeText')), false, 'the compact card reads numeric content only');
       await page.setViewportSize({width: 560, height: 1000});
-      const widget = page.locator('[data-widget="wispr-summary"]');
+      // One column shows the full card, without a shape.
+      const widget = page.locator('[data-widget="wispr-summary"]:not([data-shape])');
       await widget.getByText('120', {exact: true}).first().waitFor();
       assert.equal(await widget.getByText('=SUM(1,2)', {exact: true}).count(), 0, 'home remains numeric');
       assert.deepEqual(sent, []);

@@ -19,9 +19,11 @@ try {
     assert.ok(owner);
     assert.equal(owner.state, 'running', 'the actual Tidbyt owner must be running before testing its card');
     assert.equal(owner.serves?.includes('device'), true);
-    // The wide Home grid (#1672) shows Tidbyt as the generic compact face, whose Open leads to its device page.
-    const open = page.getByRole('link', {name: 'Open tidbyt', exact: true});await open.waitFor();
-    assert.equal(await open.getAttribute('href'), '#/component/tidbyt');
+    // The wide Home grid (#1672 PR B) shows the Tidbyt module's compact card for its shape, with its evidence line and a
+    // link to its device page.
+    const compact = page.locator('[data-tidbyt-shape]');await compact.getByText('Current cloud evidence', {exact: true}).waitFor();
+    assert.equal(await compact.getByRole('link', {name: 'Device details', exact: true}).getAttribute('href'), '#/component/tidbyt');
+    assert.equal(await compact.getByRole('tab').count(), 0, 'the compact card has no tabs');
     // Home in one column keeps the full card. This assertion is the feature's negative control on the unmodified Home composition.
     await page.setViewportSize({width: 560, height: 900});
     await card.getByRole('tab', {name: 'Status', exact: true}).waitFor().catch(async error => { console.error(await page.locator('main').innerText()); console.error(JSON.stringify(await page.evaluate(async () => { const value: unknown = await (await fetch('/api/v2/modules')).json(); return value; }))); throw error; });

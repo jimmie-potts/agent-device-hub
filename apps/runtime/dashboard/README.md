@@ -147,9 +147,14 @@ Each card offers only shapes its content fits at the 220px unit (`widgets.ts`
 and `homeCardShapes` in `home-catalog.ts`); `tests/home-shapes.browser.ts`
 measures every card in every offered shape. Hub mode, Inbox, Agent sessions,
 Timeline, light, room and Nanoleaf cards show compact content for their shape.
-Other cards, including Pixoo, Tidbyt and Wispr until their modules provide
-compact content, show a generic face in one unit: the name, the current state
-and **Open**, which leads to the card's existing device, Music or module page.
+Pixoo, Tidbyt and Wispr draw their own compact content in every shape: their
+module frontends read the optional `presentation` field (shape and card size)
+that `src/module-page.tsx` adds to the SDK frontend context while the card is on
+the grid, and keep their full card without it. A Pixoo or Tidbyt card whose
+module does not serve its card, or an unavailable Wispr card, shows the generic
+face in one unit and keeps its saved shape. Other cards show a generic face in
+one unit: the name, the current state and **Open**, which leads to the card's
+existing device, Music or module page.
 A placement saved before shapes shows Small as Small square or Tall, Standard as
 the card's Standard shape and Wide as Large square or Wide; art follows its
 saved format. Loading never writes; the next Done or art action stores a shape
@@ -573,7 +578,8 @@ them without importing Node registrations. The SDK's type-only
 `@jimmie-potts/sdk/frontend` entry defines their component context.
 
 `src/module-page.tsx` supplies the shell's UI, connection evidence, scoped
-authenticated API and tracked operation records. `DashboardConnection.openModule`
+authenticated API and tracked operation records, and on the Home grid the card's
+shape and size as `presentation`. `DashboardConnection.openModule`
 creates an inert page scope; its first read, sync or command registers it with
 the connection. Unmounting or ending the session aborts reads and closes active
 and late sync copies. Each copy follows that module's declared owner on the

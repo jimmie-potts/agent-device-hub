@@ -687,7 +687,12 @@ cards calculate their rows (owner decision 2026-11-11): the same journey checks
 each fixed size in `listFit` (`src/paging.ts`) against the rendered card, a
 full list leaving less than one row above its pager, one and zero Inbox items
 in each shape, and no change inside a list card for two idle seconds at six
-widths. `HOME_SHAPES_ONLY=tiles,picker,convert,paging,fit,results,short,idle,shots`
+widths. Its `modules` part places the Pixoo, Tidbyt and Wispr cards in each
+shape at the three widths and checks their own compact content (#1672 PR B):
+nothing past the card even where it hides overflow, no generic face, no blank
+band, two idle seconds without change, and a Wide Pixoo Screen off sending one
+command whose result shows on the card.
+`HOME_SHAPES_ONLY=tiles,picker,convert,paging,fit,results,short,modules,idle,shots`
 selects parts. `node apps/runtime/dashboard/tests/home-idle.browser.ts`, in the
 full browser suite only, sweeps every width from 1100 to 2560 px in 20 px steps
 on the built-in and two mixed layouts with 0, 1, 5, 6 and 13 Inbox items and
@@ -702,7 +707,9 @@ Synthetic records only; with `DASHBOARD_RECEIPTS` set it saves private 2x
 screenshots. Journeys that inspect a module card's full content on Home
 (companions, speech, mode overrides, Music artwork, Roborock, Volcano, Wemo,
 Tidbyt, card consistency) do so in one column, where Home keeps full cards, and
-check the generic compact face and its Open link on the wide grid.
+check the generic compact face and its Open link on the wide grid; the Pixoo,
+Tidbyt and Wispr journeys and hosted smoke check those modules' compact cards
+there instead.
 
 The television journey (#1112) runs the existing shell at a 1,920 × 1,080
 viewport from the keyboard only, as a TV browser presents the D-pad. After the

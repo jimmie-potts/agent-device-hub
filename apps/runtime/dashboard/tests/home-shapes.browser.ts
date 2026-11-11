@@ -659,6 +659,72 @@ try {
     } finally {await quietContext.close();await quiet.close();}
   }
 
+  if (part('modules')) {
+    // PR B: Pixoo, Tidbyt and Wispr draw compact content of their own in every shape, from the presentation hint the
+    // shell passes in their module context. Each fits its card at 1100, 1440 and 1920 px (nothing past the card, even
+    // where the card hides overflow), shows no generic face, and nothing inside it changes for two idle seconds.
+    const modules = [pixoo, tidbyt, 'wispr'], marker = (id: string, shape: HomeShape): string => id === pixoo ? `[data-pixoo-shape="${shape}"]` : id === tidbyt ? `[data-tidbyt-shape="${shape}"]` : `.wispr-card[data-shape="${shape}"]`;
+    await save(page, modules.map(widget => placement(widget, 'square')));
+    const offered = new Map((await measure(page)).cards.map(card => [card.id, card.offers]));
+    for (const id of modules) assert.deepEqual(offered.get(id), [...shapes], `${id} offers every shape`);
+    const failures: string[] = [], pictures = new Map<string, string[]>(modules.map(id => [id, []]));
+    for (const shape of shapes) {
+      await save(page, modules.map(widget => placement(widget, shape)));
+      for (const width of [1100, 1440, 1920]) {
+        await page.setViewportSize({width, height: 1000});const value = await measure(page);
+        for (const id of modules) {
+          const card = page.locator(`[data-home-card="${id}"]`);
+          // The module's own content for this shape has loaded; a generic face would mean the hint did not arrive.
+          await expect(card.locator(marker(id, shape))).toHaveCount(1);await expect(card.locator('.home-compact-face')).toHaveCount(0);
+          if (id === 'wispr') await expect(card.locator('.wispr-card')).toHaveAttribute('data-state', 'available');
+          const spill = await card.locator(marker(id, shape)).evaluate(root => {
+            const box = root.getBoundingClientRect(), out: string[] = [];
+            if (root.scrollHeight > root.clientHeight + 1 || root.scrollWidth > root.clientWidth + 1) out.push(`scroll ${String(root.scrollWidth)}x${String(root.scrollHeight)} in ${String(root.clientWidth)}x${String(root.clientHeight)}`);
+            // Every visible box stays inside the card, so overflow: hidden cannot hide content that does not fit.
+            for (const node of root.querySelectorAll<HTMLElement>('*')) {
+              const rect = node.getBoundingClientRect();
+              if (rect.width === 0 || rect.height === 0 || !node.checkVisibility() || node.closest('.wispr-card-accessible, details:not([open]) > :not(summary)') !== null) continue;
+              if (rect.left < box.left - 1 || rect.right > box.right + 1 || rect.top < box.top - 1 || rect.bottom > box.bottom + 1) out.push(`${node.tagName.toLowerCase()}.${String(node.className).slice(0, 30)} "${(node.textContent ?? '').trim().slice(0, 20)}"`);
+            }
+            return out;
+          });
+          failures.push(...spill.map(text => `${id}@${shape} ${String(width)}: ${text}`));
+        }
+        const placed = value.cards.filter(card => modules.includes(card.id));
+        failures.push(...misfits(placed).map(text => `${String(width)}: ${text}`), ...halfEmpty(placed).map(text => `${String(width)} half empty: ${text}`));
+        let still = await idleChanges(page, 2000, modules);if (still.length > 0) still = await idleChanges(page, 2000, modules);
+        failures.push(...still.slice(0, 3).map(text => `${String(width)} ${shape} idle: ${text}`));
+      }
+      await page.setViewportSize({width: 1440, height: 1000});await measure(page);
+      for (const id of modules) pictures.get(id)?.push(await picture(page, id));
+    }
+    assert.deepEqual(failures, [], 'Pixoo, Tidbyt and Wispr fit every shape and stay still');
+    for (const [id, list] of pictures) await sheet(`b-${id === pixoo ? 'pixoo' : id === tidbyt ? 'tidbyt' : 'wispr'}-four-shapes-1440`, list);
+    // A device-acting control shown in a shape behaves as in the full card, and its result shows on the card's face.
+    await save(page, [placement(pixoo, 'wide')]);
+    const wide = page.locator(`[data-home-card="${pixoo}"]`);
+    await page.waitForFunction(id => document.querySelector<HTMLButtonElement>(`[data-home-card="${id}"] .light-power button`)?.disabled === false, pixoo);
+    const sent = changes(page);
+    await wide.getByRole('button', {name: 'Screen off', exact: true}).click();
+    await expect.poll(() => sent.length).toBe(1);assert.deepEqual(sent, ['/api/v2/commands/power-set']);
+    await expect(wide.locator('.pixoo-compact-result')).not.toHaveText('No command sent from this page.');
+    assert.deepEqual(misfits((await measure(page)).cards), [], 'the result line stays inside the Wide Pixoo card');
+    // Home with the three cards in larger shapes, at each width and in Edit Home.
+    const showcase = [placement('hub-mode', 'wide'), placement(pixoo, 'tall'), placement(tidbyt, 'wide'), placement('wispr', 'large-square'), placement('inbox', 'wide'), placement('timeline', 'tall'), placement(lamps[0] ?? '', 'square'), placement('sessions', 'large-square')];
+    await save(page, showcase);
+    for (const width of [1100, 1440, 1920]) {
+      await page.setViewportSize({width, height: 1000});const value = await measure(page);tiles(value);
+      assert.deepEqual(misfits(value.cards), [], `showcase at ${String(width)}`);await shot(page, `b-home-${String(width)}`);
+    }
+    await page.setViewportSize({width: 375, height: 812});await settle(page);
+    // One column keeps every card in full: no presentation hint reaches the modules there.
+    await expect(page.locator('[data-pixoo-shape], [data-tidbyt-shape], .wispr-card[data-shape]')).toHaveCount(0);
+    await shot(page, 'b-home-375');
+    await page.setViewportSize({width: 1440, height: 1000});await measure(page);
+    await page.getByRole('button', {name: 'Edit Home', exact: true}).click();await shot(page, 'b-edit-home-1440');
+    await page.getByRole('button', {name: 'Cancel', exact: true}).click();
+  }
+
   if (part('idle')) {
     // F18: once Home has settled, nothing inside a list card changes while nobody acts, at widths where measured rows
     // used to re-render every frame. home-idle.browser.ts sweeps every 20 px with 0 to 13 Inbox items.
