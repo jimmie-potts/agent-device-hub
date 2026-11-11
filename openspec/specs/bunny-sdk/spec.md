@@ -941,7 +941,7 @@ As the profile requires (`bunny-message-profile`, "A message's subject is its ke
 
 ### Requirement: Stream liveness
 
-The edge SHALL write a heartbeat comment line on each stream every 15 s (`HEARTBEAT_MS`) and SHALL end a stream whose socket stays full for 30 s (`STALL_MS`), its reader having stopped, so its subscriptions close and free their queued messages; it SHALL report that end as an `edge.disconnected` warning with `capacity`. The client SHALL take a stream that delivers nothing, heartbeats included, for 45 s (`IDLE_MS`) as lost, reconnect and tell its subscriptions of the gap, so its copies sync again with nothing replayed. These timers SHALL run on a `liveness` scheduler that defaults to real timers that keep no process alive, whatever the deadline scheduler is.
+The edge SHALL write a heartbeat comment line on each stream every 15 s (`HEARTBEAT_MS`) and SHALL end a stream whose socket stays full for 30 s (`STALL_MS`), its reader having stopped, so its subscriptions close and free their queued messages; it SHALL report that end as an `edge.disconnected` warning with `capacity`. The client SHALL take a stream that delivers nothing, heartbeats included, for 45 s (`IDLE_MS`) as lost, reconnect and tell its subscriptions of the gap, so its copies sync again with nothing replayed. The same limit SHALL bound the wait from requesting a stream to its response: the client SHALL drop an open that gets no response in time and treat it as a failed open, `unavailable` as for an unreachable edge, so a first connect is refused and a reconnect counts it as a failed attempt and tries again with its usual backoff. Once the response has started, only silence SHALL count. These timers SHALL run on a `liveness` scheduler that defaults to real timers that keep no process alive, whatever the deadline scheduler is.
 
 #### Scenario: Heartbeats
 - **WHEN** a stream stays open with nothing to send
@@ -954,6 +954,11 @@ The edge SHALL write a heartbeat comment line on each stream every 15 s (`HEARTB
 #### Scenario: A silent stream
 - **WHEN** the edge sends no heartbeat and the client's idle limit passes while it holds a synced copy
 - **THEN** the client reports the lost stream, reconnects, and the copy syncs again at the owner's new revision
+
+#### Scenario: A stream open that gets no response
+- **WHEN** the edge takes a stream request and never answers it, on a first connect or on a reconnect
+- **THEN** at the idle limit the client drops the request; a first connect is refused `unavailable`, and a reconnect counts a failed attempt, tries again with its backoff and reports `remote.reconnected` once the edge answers, never adopting the dropped request's late answer
+- **AND** a stream whose response started within the limit is not ended for the time its open took
 
 ### Requirement: Publish one prepared message without a stream
 
