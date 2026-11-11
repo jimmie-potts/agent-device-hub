@@ -13,8 +13,8 @@ import {manualClock} from '../../dist/tests/support.js';
 
 /** The real work in flight in this process, such as a file write or a decode on the thread pool. */
 const work = realWork();
-/** The longest one step waits, in real time, for the worker calls in flight; a stalled call then takes its chances. */
-const WORKER_WAIT_MS = 10_000;
+/** The longest time holds, in real time, for one worker call from its start; a stalled call then takes its chances. */
+export const WORKER_WAIT_MS = 10_000;
 
 export type WorldClock = {
   readonly clock: Clock;
@@ -27,22 +27,28 @@ export type WorldClock = {
   advance(ms: number): Promise<void>;
 };
 
-/** A world clock that starts at `start`, the real time now unless given. */
-export function worldClock(start = Date.now()): WorldClock {
-  const manual = manualClock(start), calls = new Set<Promise<unknown>>(), pages = new Set<Page>();
-  const ready = async (): Promise<void> => {
-    if (calls.size === 0) return;
-    let bound: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([Promise.allSettled([...calls]), new Promise<void>(resolve => { bound = setTimeout(resolve, WORKER_WAIT_MS); })]);
-    clearTimeout(bound);
-  };
+/**
+ * A world clock that starts at `start`, the real time now unless given. `workerWaitMs` bounds each worker call once,
+ * from when it starts, as the in-memory scenario tier does; a test of this clock sets it small.
+ */
+export function worldClock(start = Date.now(), {workerWaitMs = WORKER_WAIT_MS}: {workerWaitMs?: number} = {}): WorldClock {
+  // Each entry settles when its call settles or its bound passes, whichever is first, and then leaves the set.
+  const manual = manualClock(start), calls = new Set<Promise<void>>(), pages = new Set<Page>();
+  const ready = async (): Promise<void> => { await Promise.all([...calls]); };
   const turn = (): Promise<void> => settle(work.busy);
   return {
     clock: {now: manual.now},
     scheduler: manual.scheduler,
     working: call => {
-      calls.add(call);
-      void call.then(() => { calls.delete(call); }, () => { calls.delete(call); });
+      let bound: ReturnType<typeof setTimeout> | undefined;
+      const held: Promise<void> = Promise.race([call.then(() => {}, () => {}), new Promise<void>(resolve => {
+        bound = setTimeout(resolve, workerWaitMs);
+        bound.unref();
+      })]).then(() => {
+        clearTimeout(bound);
+        calls.delete(held);
+      });
+      calls.add(held);
     },
     install: async page => {
       await page.clock.install({time: manual.now()});
