@@ -106,7 +106,7 @@ try {
   await edit.click();await page.getByRole('button', {name: 'Add card', exact: true}).click();
   await page.getByRole('button', {name: 'Add Art', exact: true}).click();await page.getByRole('button', {name: 'Close', exact: true}).click();
   await page.getByRole('button', {name: 'Done', exact: true}).click();await expect(edit).toBeEnabled();
-  const art = page.locator('[data-home-card="art"]'), controls = art.getByRole('group', {name: 'Art placement'});
+  const art = page.locator('[data-home-card="art"]:not([data-art-placement=automatic])'), controls = art.getByRole('group', {name: 'Art placement'});
   await expect(art.locator('.art-image')).toHaveAttribute('data-art-image-state', 'ready');
   const order = await page.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-home-card')));
   const savedGeometry = () => page.locator('[data-home-card]:not([data-home-card="art"])').evaluateAll(nodes => nodes.map(node => {const r = node.getBoundingClientRect();return [node.getAttribute('data-home-card'), r.x, r.y, r.width, r.height];}));

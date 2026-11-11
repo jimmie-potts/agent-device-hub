@@ -39,6 +39,11 @@ try {
       const homeReads: string[] = [];
       page.on('request', request => {if (request.url().includes('/modules/wispr/content/')) homeReads.push(request.url());});
       await page.goto(`${world.url}/#/home`); await feed(page, 'connected');
+      // The wide Home grid (#1672) shows Wispr's generic compact face, which reads nothing and opens its analytics page;
+      // Home in one column keeps the full card checked below.
+      assert.equal(await page.getByRole('link', {name: 'Open Wispr', exact: true}).getAttribute('href'), '#/module/wispr/analytics');
+      assert.equal(homeReads.length, 0, 'the compact face reads no Wispr content');
+      await page.setViewportSize({width: 560, height: 1000});
       const widget = page.locator('[data-widget="wispr-summary"]');
       await widget.getByText('120', {exact: true}).first().waitFor();
       assert.equal(await widget.getByText('=SUM(1,2)', {exact: true}).count(), 0, 'home remains numeric');
@@ -85,7 +90,7 @@ try {
       await widget.getByText('120', {exact: true}).first().waitFor();
       await page.unroute('**/modules/wispr/content/status');
       const readCount = homeReads.length;
-      for (const colorScheme of ['light', 'dark'] as const) for (const width of [1440, 736, 390, 320]) {
+      for (const colorScheme of ['light', 'dark'] as const) for (const width of [560, 390, 320]) {
         await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
         await page.setViewportSize({width, height: 1100});
         assert.equal(await widget.evaluate(el => el.scrollWidth <= el.clientWidth + 1), true, `${colorScheme}/${width} card overflow`);
@@ -97,7 +102,7 @@ try {
       }
       assert.equal(homeReads.length, readCount, 'local selection and viewport changes do not poll');
       assert.equal(homeReads.some(path => path.includes('/language') || path.includes('includeText')), false, 'Home remains numeric-only');
-      await page.setViewportSize({width: 1440, height: 1000});
+      await page.setViewportSize({width: 560, height: 1000});
       await widget.getByRole('link', {name: 'Open Wispr'}).click();
       const analytics = page.getByRole('region', {name: 'Wispr analytics', exact: true});
       await analytics.getByRole('heading', {name: 'Overview', exact: true}).waitFor();

@@ -41,12 +41,14 @@ try {
   await inbox.getByText('No commands need handling.', {exact: true}).waitFor();
   checks.push('the home shows the synced session\'s finished turn unread, with the Hub mode and inbox panels');
 
+  // The wide Home grid (#1672) shows Pixoo's generic compact face; its Open link leads to the full card on the device page.
+  await page.locator('[data-home-compact^="device:bunny/modules/pixoo:"] a.home-compact-open').click();
   const pixoo = page.getByRole('article', {name: 'Pixoo display', exact: true});
   await pixoo.getByRole('tab', {name: 'Display', exact: true}).waitFor();
   await pixoo.getByRole('tab', {name: 'Content', exact: true}).click();
   assert.equal(await pixoo.getByRole('tab', {name: 'Content', exact: true}).getAttribute('aria-selected'), 'true');
   assert.equal(world.pixooState().sent, 0);
-  checks.push('the reusable Pixoo card mounts and changes tabs without a display command');
+  checks.push('Home shows Pixoo as a compact face whose Open leads to the reusable card, which mounts and changes tabs without a display command');
 
   if (output !== undefined) await page.screenshot({path: `${output}/runtime-smoke-home.png`, fullPage: true});
 

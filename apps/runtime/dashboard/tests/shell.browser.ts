@@ -24,7 +24,8 @@ try {
   await page.goto(world.url); await feed(page, 'connected');
   assert.deepEqual(await primary.getByRole('link').allTextContents(), ['Home', 'Habitat', 'Rooms', 'Devices', 'Automation']);
   assert.equal(await primary.getByRole('link', {name: 'Settings'}).count(), 0);
-  await page.locator('.light-bulb-glow').first().waitFor();
+  // A Tall light card on the Home grid keeps its artwork mounted but hidden (#1672); its colors are still checked.
+  await page.locator('.light-bulb-glow').first().waitFor({state: 'attached'});
   // Decorative illustration and selected-state boundary contrast.
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({colorScheme});

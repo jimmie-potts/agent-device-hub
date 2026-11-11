@@ -45,8 +45,8 @@
 .home-layout-card[data-home-shape] .light-card .light-artwork{flex:1 1 auto;min-height:48px;height:auto;margin-block:var(--space-xs)}
 .home-layout-card[data-home-shape] .light-card .lighting-image-group svg{max-height:100%}
 .home-layout-card[data-home-shape] .light-card .light-power{margin-block:var(--space-xs)}
-/* One row groups through the options menu's Group with; two rows keep the drag handle. */
-:is(.home-layout-card.home-shape-square,.home-layout-card.home-shape-wide) .light-card .light-drag{display:none}
+/* Small square, Wide and Tall group through the options menu's Group with; Large square keeps the drag handle. */
+:is(.home-layout-card.home-shape-square,.home-layout-card.home-shape-wide,.home-layout-card.home-shape-tall) .light-card .light-drag{display:none}
 .home-layout-card[data-home-shape] .light-card .light-drag{min-height:36px;margin-top:var(--space-xs)}
 /* One row shows command results in the options menu's details instead of below the controls. */
 :is(.home-layout-card.home-shape-square,.home-layout-card.home-shape-wide) .light-card .light-attention{display:none}
@@ -59,7 +59,8 @@
 .home-layout-card[data-home-shape] .light-card .light-face .light-slider{margin-block:var(--space-xs)}
 .home-layout-card.home-shape-tall .light-card{padding-block:var(--space-s)}
 .home-layout-card[data-home-shape] .light-card .light-face .light-note{margin-block:var(--space-xs)}
-.home-layout-card.home-shape-tall .light-card .light-face-space,.home-layout-card.home-shape-large-square .light-card .light-face-space{flex:1 1 auto;height:auto;min-height:0}
+.home-layout-card.home-shape-tall .light-card .light-face-space{height:auto;min-height:0}
+.home-layout-card.home-shape-large-square .light-card .light-face-space{flex:1 1 auto;height:auto;min-height:0}
 .home-layout-card.home-shape-tall .light-card .light-face,.home-layout-card.home-shape-large-square .light-card .light-face{padding-top:var(--space-xs);height:auto;min-height:0;overflow:visible}
 .home-layout-card.home-shape-tall .light-card .light-tabs button{font-size:var(--type-label)}
 .home-layout-card.home-shape-wide .light-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);grid-template-rows:auto minmax(0,1fr);column-gap:var(--space-m)}
