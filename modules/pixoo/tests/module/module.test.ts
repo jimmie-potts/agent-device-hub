@@ -442,25 +442,35 @@ void describe('moments', () => {
     return result.status === 'rejected' ? result.error.error.code : result.status;
   };
 
+  // The moments group runs on a clock the test advances (Hub #1679): a moment lasts until the test moves the module's
+  // time past it, so the reads of the device and the display record cannot race its end. Each read waits for the
+  // module's own work while time stands still.
   void it('declares the moods and bound, and plays over the status base without changing its mode, then returns and reports its ending', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
       await world.start();
       const capabilities = await waitFor(() => world.deviceRecord()?.capabilities.moments, 'the capability');
       assert.deepEqual(capabilities, {supported: true, moods: ['celebrate', 'setback', 'reminder'], maxDurationMs: 10_000, coversStatus: true, art: {formats: ['png', 'gif'], maxBytes: 163_840, notices: ['rain-forecast']}});
       await world.outcome(await mode(world, 'work'));
       await world.publishSession();
-      const dashboard = await waitFor(() => world.device.state().shown?.digests[0], 'the dashboard on the device');
-      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-monitor')));
-      await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device');
-      const showing = await waitFor(() => world.display()?.showing === 'moment' ? world.display() : undefined, 'the moment in the display record');
+      const dashboard = await world.tickUntil(() => world.device.state().shown?.digests[0], 'the dashboard on the device', 2000);
+      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-monitor', {startAtMs: world.now()})));
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device', 2000);
+      const shownAt = world.now();
+      // While the moment's command runs, the display record publishes the change once it has waited COALESCE_MS.
+      const showing = await world.tickUntil(() => world.display()?.showing === 'moment' ? world.display() : undefined, 'the moment in the display record', COALESCE_MS);
       assert.deepEqual([showing.mode, showing.base], ['work', 'status']);
       assert.deepEqual(showing.moments, {overStatus: true, playing: 'm-monitor'});
+      assert.equal(world.device.state().shown?.digests[0], momentFrame(), 'the moment still plays');
+      assert.equal(ended(world, requestId), undefined, 'the moment has not ended');
+      await world.tickUntil(() => ended(world, requestId), 'the moment\'s end', 1000);
+      assert.equal(world.now() - shownAt, 1000, 'the moment lasted its second of the module\'s time');
       const outcome = await world.outcome(requestId);
       assert.equal(outcome.data.result, 'succeeded');
       assert.equal(outcome.data.evidence, 'transmitted');
       assert.deepEqual({...ended(world, requestId), endedAtMs: 0}, {requestId, momentId: 'm-monitor', ending: 'completed', endedAtMs: 0});
-      await waitFor(() => world.device.state().shown?.digests[0] === dashboard ? true : undefined, 'the dashboard back on the device');
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === dashboard ? true : undefined, 'the dashboard back on the device', 1000);
       assert.equal(world.display()?.participating, true);
     });
   });
@@ -502,28 +512,28 @@ void describe('moments', () => {
   });
 
   void it('ends over the status base when attention arrives, with no replay', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
       await world.start();
       await world.outcome(await mode(world, 'work'));
       await world.publishSession();
-      await waitFor(() => world.device.state().shown, 'the dashboard on the device');
-      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-attention', {durationMs: 10_000})));
-      await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device');
+      await world.tickUntil(() => world.device.state().shown ?? undefined, 'the dashboard on the device', 2000);
+      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-attention', {startAtMs: world.now(), durationMs: 10_000})));
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device', 2000);
       await world.publishSession({attention: [{id: {status: 'known', id: 'approve-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}]});
+      await world.tickUntil(() => ended(world, requestId), 'the moment\'s end', 1000);
       const outcome = await world.outcome(requestId);
       assert.equal(outcome.data.result, 'succeeded');
       assert.equal(ended(world, requestId)?.ending, 'preempted');
-      await waitFor(() => world.device.state().shown !== null && world.device.state().shown?.digests[0] !== momentFrame() ? true : undefined, 'the dashboard back on the device');
+      await world.tickUntil(() => world.device.state().shown !== null && world.device.state().shown?.digests[0] !== momentFrame() ? true : undefined, 'the dashboard back on the device', 1000);
       await world.publishSession({attention: []});
-      await sleep(1200);
+      // Most of the moment's ten seconds remain, yet with the attention resolved more of the module's time brings no replay.
+      await clock.advance(1200);
       assert.notEqual(world.device.state().shown?.digests[0], momentFrame());
     });
   });
 
-  // The module runs on a clock the test advances (Hub #1679): the moment lasts until the test moves time past it, so the
-  // reads of the device and the display record cannot race its end. Each read waits for the module's own work while
-  // time stands still.
   void it('plays over a playing item and gives the playlist back at the same item', async () => {
     const clock = new ManualClock();
     const world = await World.open({clock});
@@ -537,6 +547,7 @@ void describe('moments', () => {
       const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-media', {priorityClass: 'flourish', coversStatus: false, startAtMs: world.now()})));
       // The moment's second counts from the write the Pixoo acknowledged, so it plays until the test moves time past it.
       await world.tickUntil(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device', 1000);
+      const shownAt = world.now();
       // While the moment's command runs, the display record publishes the change once it has waited COALESCE_MS.
       const showing = await world.tickUntil(() => world.display()?.showing === 'moment' ? world.display() : undefined, 'the moment in the display record', COALESCE_MS);
       assert.deepEqual([showing.mode, showing.base], ['free', 'playback']);
@@ -544,10 +555,11 @@ void describe('moments', () => {
       assert.equal(world.device.state().shown?.digests[0], momentFrame(), 'the moment still plays');
       assert.equal(ended(world, requestId), undefined, 'the moment has not ended');
       await world.tickUntil(() => ended(world, requestId), 'the moment\'s end', 1000);
+      assert.equal(world.now() - shownAt, 1000, 'the moment lasted its second of the module\'s time');
       assert.equal((await world.outcome(requestId)).data.result, 'succeeded');
       assert.equal(ended(world, requestId)?.ending, 'completed');
-      await waitFor(() => world.device.state().shown?.digests[0] === picture ? true : undefined, 'the playlist\'s picture back');
-      const back = await waitFor(() => world.display()?.player.intent === 'active' ? world.display() : undefined, 'the playlist back');
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === picture ? true : undefined, 'the playlist\'s picture back', 1000);
+      const back = await world.tickUntil(() => world.display()?.player.intent === 'active' ? world.display() : undefined, 'the playlist back', COALESCE_MS);
       assert.equal(back.player.itemId, playing.player.itemId);
       assert.equal(back.mode, 'free');
     });
@@ -580,7 +592,6 @@ void describe('moments', () => {
     });
   });
 
-  // On the test's clock, as above: the moment's second passes only once the test has seen it on the device.
   void it('plays over the status base with nothing loaded in Free without cover permission, leaves the player alone and returns the dashboard', async () => {
     const clock = new ManualClock();
     const world = await World.open({clock});
@@ -591,10 +602,12 @@ void describe('moments', () => {
       const dashboard = await world.tickUntil(() => world.device.state().shown?.digests[0], 'the dashboard on the device', 2000);
       const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-idle', {startAtMs: world.now(), durationMs: 1000, priorityClass: 'flourish', coversStatus: false})));
       await world.tickUntil(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device', 2000);
+      const shownAt = world.now();
       await world.tickUntil(() => ended(world, requestId), 'the moment\'s end', 1000);
+      assert.equal(world.now() - shownAt, 1000, 'the moment lasted its second of the module\'s time');
       assert.equal((await world.outcome(requestId)).data.result, 'succeeded');
       assert.equal(ended(world, requestId)?.ending, 'completed');
-      await waitFor(() => world.device.state().shown?.digests[0] === dashboard ? true : undefined, 'the dashboard back on the device');
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === dashboard ? true : undefined, 'the dashboard back on the device', 1000);
       assert.deepEqual([world.display()?.mode, world.display()?.base], ['free', 'status']);
       assert.equal(world.display()?.player.intent, 'stopped');
     });
@@ -615,17 +628,19 @@ void describe('moments', () => {
   });
 
   void it('reports a moment cut off by a restart as uncertain and never plays it again', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
       await world.start();
       await world.outcome(await mode(world, 'work'));
       await world.publishSession();
-      await waitFor(() => world.device.state().shown, 'the dashboard on the device');
-      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-restart', {startAtMs: Date.now() + 200, durationMs: 10_000})));
+      await world.tickUntil(() => world.device.state().shown ?? undefined, 'the dashboard on the device', 2000);
+      const requestId = await accepted(world.request('moment-play', MOMENT, moment('m-restart', {startAtMs: world.now() + 200, durationMs: 10_000})));
       await world.restart();
       const outcome = await world.outcome(requestId);
       assert.equal(outcome.data.result, 'uncertain');
-      await sleep(600);
+      // Well past the moment's start, the new instance has played nothing of it.
+      await clock.advance(600);
       assert.notEqual(world.device.state().shown?.digests[0], momentFrame());
       assert.equal(ended(world, requestId), undefined);
     });
