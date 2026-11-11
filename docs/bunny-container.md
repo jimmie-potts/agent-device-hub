@@ -818,8 +818,10 @@ node scripts/bunny.mjs backup snapshot-1 --archive-volume bunny-archives --proje
 ```
 
 Use the same selected image tag/ID for this helper if you changed the Compose
-image. Reuse the archive volume for later snapshots, each with a new name;
-do not repeat its empty-volume initialization after creating a snapshot.
+image. This helper is not a test job: run it as written, whatever test work is
+running ([Test work on the Mac](development.md#test-work-on-the-mac), item 2).
+Reuse the archive volume for later snapshots, each with a new name; do not
+repeat its empty-volume initialization after creating a snapshot.
 
 The archive volume must already exist, use the local driver without driver options,
 and be separate from state, configuration and secrets. Those three input volumes
@@ -1053,9 +1055,11 @@ docker run --rm --pull never --network none --user 1000:1000 --cap-drop ALL --se
 ```
 
 The container's own writable layer supplies the fresh `/run/secrets/bunny` and
-temporary directories, and nothing persists after it exits. An image built before
-an exercise existed can still be recorded: create the container stopped, copy the
-exercise file into it with `docker cp`, then start it. Attribute that record to
+temporary directories, and nothing persists after it exits. On the Mac it is not
+a test job: run it as written, whatever test work is running
+([Test work on the Mac](development.md#test-work-on-the-mac), item 2). An image
+built before an exercise existed can still be recorded: create the container
+stopped, copy the exercise file into it with `docker cp`, then start it. Attribute that record to
 both the image revision and the exercise's revision.
 
 Actual
