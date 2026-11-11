@@ -131,17 +131,29 @@ keeps a compact preferred width, Standard has more room, and Wide occupies its
 own row. Incomplete rows fill the available space without empty grid slots;
 phone layouts and the Phone editor preview stack cards in one column.
 
-At the wide layout every size shares one standard height (#1658), set once as
-`--home-card-height` beside the width rule in `src/home-layout.css`. It fits the
-tallest card without a list, so cards in a row line up. A row still stretches to
-its tallest card, so a card that outgrows the height never clips its controls.
-Only cards the widget catalog marks `tall` may exceed it: Art and the music
-visualizer. Stacked in one column, each card is as tall as its content.
+At the wide layout every card has one of two standard heights (#1658), set once
+in `src/home-layout.css`: long (912 px), the list size, and short (448 px), so two
+short cards stacked with the 16 px gap are exactly one long card. Each widget
+declares its height in `src/widgets.ts`. Hub mode and Wispr are short. Inbox,
+Agent status, Timeline, MicroDuck, Reachy, Roborock, Volcano, the music
+visualizer and every device, light, room and Music card are long. A card whose
+source is unavailable shows only its reason and is short. Only Art, marked `tall`,
+may exceed the long height.
+
+Home is one 24-column grid. `src/home-packing.ts` fills rows in saved order by
+the preferred widths above, shares each row's spare width, and stacks two short
+cards in one column beside a long card. A short card goes under the first
+earlier short card left alone in the same row, so it can appear ahead of a long
+card saved before it; that is the only time visual order differs from saved
+order. A short card left alone beside long cards fills both tracks. Cards stay
+in saved order in the page, so Tab follows saved order. A card whose content
+outgrows its height makes its tracks taller instead of clipping. Stacked in one
+column, each card is as tall as its content.
 
 Inbox, Agent status and Timeline page their lists through one shared pager
 (`src/paged-list.tsx`) instead of growing. **Previous**, **Next** and
 "Page x of y" appear once a list needs a second page. Rows per page are fixed in
-`src/paging.ts` so a full page fits the standard height; the `#/timeline` page
+`src/paging.ts` so a full page fits the long height; the `#/timeline` page
 shows 20 entries a page. Agent status pages whole
 rows of tiles at the card's current column count. Paging covers only the records
 the page already holds and sends no request. The Inbox heading shows the total on

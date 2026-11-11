@@ -6,11 +6,13 @@
  * Wispr (#927) reads private numeric content on demand; it never joins the broadcast families.
  */
 export type SourceKind = 'core' | 'module' | 'external';
-/**
- * Small prefers a compact width, medium a wider card and large a whole row; narrow screens stack every size.
- * At the wide layout every size shares one standard Home height (#1658), set once in home-layout.css.
- */
+/** Small prefers a compact width, medium a wider card and large a whole row; narrow screens stack every size. */
 export type WidgetSize = 'small' | 'medium' | 'large';
+/**
+ * The card's standard Home height at the wide layout (#1658), set once in home-layout.css: long is the list size, and
+ * short is half of it, so two short cards stacked with the grid gap are as tall as one long card.
+ */
+export type WidgetHeight = 'short' | 'long';
 export type WidgetDefinition = {
   /** Stable identifier in lowercase letters, digits and hyphens. */
   id: string;
@@ -18,6 +20,8 @@ export type WidgetDefinition = {
   description: string;
   /** The sizes the widget renders well at. */
   sizes: readonly WidgetSize[];
+  /** Short when its content fits half the list height without clipping or scrolling; otherwise long. */
+  height: WidgetHeight;
   /** The source kind and its synced families or explicit private content reads. */
   source: {kind: SourceKind; families: readonly string[]; content?: readonly string[]};
   /** true when the widget offers explicit command actions; a read-only widget has none. */
@@ -28,8 +32,8 @@ export type WidgetDefinition = {
    */
   slot?: {story: string};
   /**
-   * true when the card may be taller than the standard Home card height (owner decision D2, #1658). Only media
-   * cards opt out; every other card fits the standard height, and a card with a list pages it instead of growing.
+   * true when the card may be taller than the long Home height (owner decision D2, #1658). Only art opts out: it sizes
+   * its own reservation. Every other card fits its standard height, and a card with a list pages it instead of growing.
    */
   tall?: true;
 };
@@ -37,49 +41,49 @@ export type WidgetDefinition = {
 export const widgetCatalog: readonly WidgetDefinition[] = [
   {
     id: 'art', name: 'Art', description: 'A rich generated composition, private gallery and explicit owner requests.',
-    sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['art'], content: ['art/catalog', 'art/rendition']}, commands: true, tall: true,
+    height: 'long', sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['art'], content: ['art/catalog', 'art/rendition']}, commands: true, tall: true,
   },
   {
     id: 'reachy', name: 'Reachy', description: 'Latest fixed-text reaction, guarded text controls and separately enabled browser speech.',
-    sizes: ['medium', 'large'], source: {kind: 'module', families: ['companion-state', 'companion-speech-state']}, commands: true,
+    height: 'long', sizes: ['medium', 'large'], source: {kind: 'module', families: ['companion-state', 'companion-speech-state']}, commands: true,
   },
   {
     id: 'roborock', name: 'Roborock', description: 'Observed vacuum state, battery, recorded run and care usage.',
-    sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['roborock-vacuum'], content: ['roborock/status', 'roborock/latest-run']}, commands: false,
+    height: 'long', sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['roborock-vacuum'], content: ['roborock/status', 'roborock/latest-run']}, commands: false,
   },
   {
     id: 'volcano', name: 'Volcano', description: 'Observed heater state, heating timeline, sessions, daily totals and the session threshold.',
-    sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['volcano-status'], content: ['volcano/timeline', 'volcano/sessions', 'volcano/totals', 'volcano/gaps']}, commands: true,
+    height: 'long', sizes: ['small', 'medium', 'large'], source: {kind: 'module', families: ['volcano-status'], content: ['volcano/timeline', 'volcano/sessions', 'volcano/totals', 'volcano/gaps']}, commands: true,
   },
   {
     id: 'duck-latest', name: 'MicroDuck', description: 'Latest intended meaning from one explicitly selected Reachy–Duck conversation.',
-    sizes: ['medium', 'large'], source: {kind: 'module', families: ['assistant-state'], content: ['companions/duck-widget', 'companions/companion-history']}, commands: true,
+    height: 'long', sizes: ['medium', 'large'], source: {kind: 'module', families: ['assistant-state'], content: ['companions/duck-widget', 'companions/companion-history']}, commands: true,
   },
   {
     id: 'timeline', name: 'Timeline', description: 'Retained Hub activity with read-only filters and evidence.',
-    sizes: ['medium', 'large'], source: {kind: 'core', families: [], content: ['/api/v2/history']}, commands: false,
+    height: 'long', sizes: ['medium', 'large'], source: {kind: 'core', families: [], content: ['/api/v2/history']}, commands: false,
   },
   {
     // Reads the capture state and the existing derived feature stream in the browser (#1619); it starts no capture.
     id: 'music-visualizer', name: 'Music visualizer', description: 'A live visualizer of the measured Music audio, in the effect chosen in this browser.',
-    sizes: ['medium', 'large'], source: {kind: 'core', families: ['music-capture-state']}, commands: false, tall: true,
+    height: 'long', sizes: ['medium', 'large'], source: {kind: 'core', families: ['music-capture-state']}, commands: false,
   },
   {
     id: 'wispr', name: 'Wispr', description: 'Numeric dictation totals from the manually selected collector files.',
-    sizes: ['small', 'medium'], source: {kind: 'module', families: [], content: ['wispr/status', 'wispr/summary']}, commands: false,
+    height: 'short', sizes: ['small', 'medium'], source: {kind: 'module', families: [], content: ['wispr/status', 'wispr/summary']}, commands: false,
   },
   {
     id: 'hub-mode', name: 'Hub mode', description: 'The Hub mode and the result of each device\'s mode command.',
-    sizes: ['medium', 'large'], source: {kind: 'core', families: ['mode', 'operation']}, commands: true,
+    height: 'short', sizes: ['medium', 'large'], source: {kind: 'core', families: ['mode', 'operation']}, commands: true,
   },
   {
     id: 'sessions', name: 'Agent sessions',
     description: 'Agent sessions as compact rows with their names, activity, attention, finished turns and read evidence, synced from the core.',
-    sizes: ['medium', 'large'], source: {kind: 'core', families: ['session']}, commands: true,
+    height: 'long', sizes: ['medium', 'large'], source: {kind: 'core', families: ['session']}, commands: true,
   },
   {
     id: 'inbox', name: 'Inbox', description: 'Device commands that failed or whose result is unknown, for a person to decide on.',
-    sizes: ['small', 'medium'], source: {kind: 'core', families: ['inbox-item']}, commands: false, slot: {story: '#923'},
+    height: 'long', sizes: ['small', 'medium'], source: {kind: 'core', families: ['inbox-item']}, commands: false, slot: {story: '#923'},
   },
 ];
 

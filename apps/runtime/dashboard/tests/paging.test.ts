@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {clampPage, listPageSize, pageCount, pageKeys, pageOf} from '../src/paging.ts';
 import {widgetCatalog} from '../src/widgets.ts';
-import {homeCatalog} from '../src/home-catalog.ts';
+import {homeCardHeight, homeCatalog} from '../src/home-catalog.ts';
 
 void test('pages cover every row and an empty list keeps one page', () => {
   assert.equal(pageCount(0, 7), 1);
@@ -26,8 +26,13 @@ void test('every list card pages at least two rows', () => {
   for (const size of Object.values(listPageSize)) assert.ok(Number.isInteger(size) && size >= 2);
 });
 
-void test('only media cards may be taller than the standard Home height', () => {
-  assert.deepEqual(widgetCatalog.filter(widget => widget.tall === true).map(widget => widget.id), ['art', 'music-visualizer']);
+void test('only art may be taller than the long Home height, and lists and cards that cannot fit half of it are long', () => {
+  assert.deepEqual(widgetCatalog.filter(widget => widget.tall === true).map(widget => widget.id), ['art']);
+  assert.deepEqual(widgetCatalog.filter(widget => widget.height === 'short').map(widget => widget.id).sort(), ['hub-mode', 'wispr']);
+  for (const id of ['inbox', 'sessions', 'timeline']) assert.equal(widgetCatalog.find(widget => widget.id === id)?.height, 'long');
   const catalog = homeCatalog({modules: [], copies: [], control: true, catalogFailed: false}, true);
-  assert.deepEqual(catalog.filter(card => card.tall === true).map(card => card.id).sort(), ['art', 'music-visualizer']);
+  assert.deepEqual(catalog.filter(card => card.tall === true).map(card => card.id), ['art']);
+  const pixoo = catalog.find(card => card.id === 'module:pixoo');
+  assert.ok(pixoo !== undefined);
+  assert.equal(homeCardHeight(pixoo), 'short', 'an unavailable source shows only its reason');
 });
