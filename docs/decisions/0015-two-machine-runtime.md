@@ -1,16 +1,34 @@
 # ADR 0015: Run B.U.N.N.Y. on the Mac and the PC with a Mac-preferred lead
 
 Status: Proposed for
-[Hub #1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723),
-awaiting the owner's acceptance. It would amend
-[ADR 0008](0008-runtime-hosting.md) and parts of
-[ADR 0012](0012-bunny-event-platform.md). Until the owner accepts it, nothing in
-ADR 0008, ADR 0012, `docs/architecture.md`, `docs/bunny-container.md` or
-`AGENTS.md` changes, and the rules there stay in force: one designated writer
-per device and no automatic failover. The owner may accept it whole or one
-stage at a time ([Stages](#stages)). It installs nothing, authorizes no new
-host and sends no device command. Items marked *proposed* are the author's, and
-the owner can change them.
+[Hub #1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723).
+The owner accepts it one stage at a time ([Acceptance](#acceptance)), and no
+stage is accepted yet. Each stage would amend the sentences listed under it in
+[Amendments by stage](#amendments-by-stage). Until a stage is accepted, nothing
+it lists changes in [ADR 0008](0008-runtime-hosting.md),
+[ADR 0012](0012-bunny-event-platform.md), `docs/architecture.md`,
+`docs/bunny-container.md` or `AGENTS.md`, and the rules there stay in force: one
+designated writer per device and no automatic failover. This record installs
+nothing, authorizes no new host and sends no device command. Items marked
+*proposed* are the author's, and the owner can change them.
+
+## Acceptance
+
+The owner decided how this record is accepted, in chat to the coordinating
+session at 2026-11-11T17:56:35Z: "We can do stage by stage."
+([recorded on #1725](https://github.com/jimmie-potts/agent-device-hub/pull/1725#issuecomment-6803327523)).
+
+| Stage | Adds | Status |
+| --- | --- | --- |
+| [0](#stage-0-prerequisites) | The PC qualified as a host; the fact log on the Mac | not accepted |
+| [1](#stage-1-one-way-settings-and-a-standby-started-by-hand) | Settings read one way from the Mac; a standby started by hand | not accepted |
+| [2](#stage-2-facts-in-both-directions) | Facts merged in both directions; media copied | not accepted |
+| [3](#stage-3-the-mac-preferred-lead-and-automatic-takeover) | The Mac-preferred lead and automatic takeover | not accepted |
+| [4](#stage-4-either-copy-writes-for-qualified-devices) | Either-copy writes for qualified devices | not accepted |
+
+Accepting a stage adopts its section and needs a follow-up commit that applies
+its amendments. A stage's "Before it starts" list names the earlier stages it
+needs. Accepting one stage does not accept a later one.
 
 ## Context
 
@@ -32,15 +50,19 @@ and the
 [PC host qualification plan](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6800998613).
 In short:
 
-- **There is no replayable event log.** ADR 0012 says "This is not event
-  sourcing", rules out replay and never stores commands. Each owner keeps its
-  own SQLite state. The core's history is append-only but stores state changes
-  as diffs, omits hook observations and acknowledgments, and orders rows with a
-  counter local to one installation (audit, answer 1).
+- **No replayable log existed when the audit ran.** ADR 0012 rules out replay
+  and never stores commands, and each owner keeps its own SQLite state. The
+  core's history was append-only but carried no machine and ordered rows with a
+  counter local to one installation (audit, answer 1). Since then,
+  [#1729](https://github.com/jimmie-potts/agent-device-hub/issues/1729) decided
+  that history becomes a fact log (below).
 - **Identity is not scoped to a machine.** Both cores would publish as
   `bunny/core`, and each module as `bunny/modules/<name>`, with independent
-  revision counters. Consumers would drop the other machine's records as stale
-  (audit, answers 1 and 3).
+  revision counters. The fact log adds the origin to history rows only. The
+  live intake still cannot tell machines apart: a peer's state for the same
+  entity at a lower revision is dropped as stale (audit, answers 1 and 3;
+  [prototype](https://github.com/jimmie-potts/agent-device-hub/issues/1729#issuecomment-6803058506),
+  A5).
 - **Many stores need one writer.** Automation budgets, routine watermarks, the
   art ledger and daily claims, the tracker's "one request ID, one action" rule,
   companion allowances and the coding-worker selection are counters, budgets,
@@ -73,9 +95,8 @@ In short:
 
 ## Owner decisions
 
-These are the owner's own decisions, recorded on #1723 from chat on 2026-11-11.
-They are stated here as decisions. They take effect only as part of this record
-once it is accepted.
+These are the owner's own decisions, recorded on #1723, #1729 and #1725 from
+chat on 2026-11-11. They take effect here only with the stage that uses them.
 
 1. **Shared state is held locally on both machines with eventual consistency,
    not in a cloud service.** At 15:45:13Z the owner asked whether "a cloud
@@ -94,10 +115,34 @@ once it is accepted.
    current rules don't apply and that each physical device could have multiple
    writers, how does that impact this decision?" #1723 records the outcome as
    "multiple writers considered acceptable for this design".
+4. **Events and stores** were decided on #1729 at 17:29:53Z and 17:38:20Z
+   ([decisions](https://github.com/jimmie-potts/agent-device-hub/issues/1729#issuecomment-6802744525),
+   [confirmation](https://github.com/jimmie-potts/agent-device-hub/issues/1729#issuecomment-6802945487),
+   from the
+   [options paper](https://github.com/jimmie-potts/agent-device-hub/issues/1729#issuecomment-6802532343)).
+   The ADR 0012 amendment that records them is pending in
+   [PR #1742](https://github.com/jimmie-potts/agent-device-hub/pull/1742).
+   Event sourcing is not adopted, and no store moves off SQLite. History
+   becomes a fact log: every row carries the installation it came from (its
+   origin) and a sequence per origin, and a reader asks for everything from an
+   origin after N.
+   [#1740](https://github.com/jimmie-potts/agent-device-hub/issues/1740)
+   implements it. No rule limits what a display or device on the owner's
+   network may read and show, and "A past fact never triggers a command by
+   itself" (17:38:20Z).
+5. **Settings replicate as records through the fact log, not through the
+   database's built-in change capture.** At 17:56:35Z the owner answered "Your
+   recommendation." to that question, recorded on
+   [#1729](https://github.com/jimmie-potts/agent-device-hub/issues/1729#issuecomment-6803326773). The
+   [prototype](https://github.com/jimmie-potts/agent-device-hub/issues/1729#issuecomment-6803058506)
+   showed that the built-in change capture works with the runtime's database
+   settings but cannot apply "latest edit wins" by itself. Its conflict handler
+   sees only the conflict type, never the rows.
 
-## Proposal
+## Rules every stage keeps
 
-Everything in this section is *proposed* and open to the owner's change.
+Everything in this section is *proposed* and open to the owner's change. A
+stage uses only the rules it needs.
 
 ### Two classes of behavior
 
@@ -113,21 +158,25 @@ Everything in this section is *proposed* and open to the owner's change.
   longest tracked-command deadline plus two failed reachability checks of the
   Mac. Stage 3 fixes the number.
 
-### Replicate records, not commands or a log
+These rules govern commands to devices. Nothing here limits what a display or
+device may read and show.
 
-ADR 0012's rules stay as they are: commands are live-only, and there is no
-replay. Replication copies stored records between the two copies.
+### Replicate through the fact log, not commands
 
-- Each replicated record gains an **origin**: a configured machine label such
-  as `mac` or `pc`, never a host name. Its source and identity are then
-  qualified by machine, so revisions from the two machines never collide.
+Commands stay live-only and are never replicated. One installation reads the
+other's facts from its fact log after N per origin and stores them.
+
+- **The origin** is #1740's: an identifier created once per installation and
+  kept in the core store, never a host name. Revisions stay per origin and are
+  never compared across origins.
 - **Settings** (mode, layouts, rules and routine definitions, the art schedule
   policy, power limit definitions, device preferences, scenes and playlists)
-  merge last-writer-wins. The comparison uses a timestamp that is comparable
-  across machines: a hybrid logical clock, or wall time with the origin as a
-  tie-break.
-- **Append-only records** (history, art feedback, the Volcano and Roborock
-  archives, assistant conversations) merge as a union keyed by origin.
+  are records in the fact log. The reader applies the latest edit, comparing a
+  timestamp that is comparable across machines: a hybrid logical clock, or wall
+  time with the origin as a tie-break. A delete travels as a record of its own
+  (a tombstone).
+- **Append-only facts** (history, and the archives once they are facts) merge
+  as a union: read after N per origin and add.
 - **Acknowledgements and inbox handling** merge monotonically: once handled,
   always handled.
 - **Immutable media** (Pixoo originals and renditions, generated art) are copied
@@ -136,8 +185,11 @@ replay. Replication copies stored records between the two copies.
 - **Counters, budgets, claims and watermarks are never merged.** They stay with
   the lead or stay per machine.
 - **Sessions are not replicated.** Each machine reduces them from the same hook
-  observations once producers report to both machines or are forwarded. The
-  agent-state block stays local to each core.
+  observations once producers report to both machines. The agent-state block
+  stays local to each core.
+- **A merged fact never triggers a command by itself.** In the prototype the
+  merge wrote only history rows, with no publication, no tracker change and no
+  device call (A6).
 
 ### Spending, delivery claims and secrets
 
@@ -148,200 +200,230 @@ replay. Replication copies stored records between the two copies.
   either copy. This keeps #1722's orchestrator safe from a split lead.
 - **Credentials and secrets are placed on the second machine only by the owner,
   one by one.** Nothing replicates a secret. Each producer that reports to both
-  machines needs its own grant on each.
+  machines needs its own grant on each, and so does the peer read.
 
 ## Stages
 
-Each stage is smallest first. It lists what a takeover would have and lack at
-that stage, which accepted rule it needs amended, and the audit's effort mark.
-The owner can accept stages one at a time. Each amendment is quoted under
-[Amendments on acceptance](#amendments-on-acceptance).
+Each stage lists what it adds, what must be true before it starts, what a
+takeover has and lacks, its amendments and its effort. Effort marks are the
+audit's unless stated.
 
 ### Stage 0: prerequisites
 
-The PC is qualified as a host: device reach from Docker in WSL 2 (the plan's
-probe), an AMD64 image, a git identity in the PC checkout, and staying awake
-(plan, Checklist B and items A14 and A15). Record identity gains the origin.
-
+- **Adds:** the PC qualified as a host. That covers device reach from Docker in
+  WSL 2 (the plan's probe), an AMD64 image, a git identity in the PC checkout,
+  and staying awake (plan, Checklist B and items A14 and A15). The fact log of
+  #1740 runs on the Mac.
+- **Before it starts:** the owner authorizes the PC as a host, since `AGENTS.md`
+  withholds new hosts from standing authority, and approves the plan's probe.
+  For AMD64, a release qualification lane and its gate-policy change.
 - **Takeover:** none.
-- **Amends:** no accepted rule. It needs the owner's authorization of the PC as
-  a host, since `AGENTS.md` withholds new hosts from standing authority. It also
-  needs an ADR 0012 contract change for the origin and, for AMD64, a release
-  qualification and gate-policy change.
-- **Effort:** not sized by the audit. The origin is the main unknown of the
-  append-only class (high).
+- **Amendments:** none. #1740 and its ADR 0012 amendment (PR #1742, pending)
+  carry the origin, so this record needs no contract change of its own.
+- **Effort:** #1740 is sized there (medium, low uncertainty after the
+  prototype). The AMD64 lane is not sized.
 
 ### Stage 1: one-way settings and a standby started by hand
 
-Owner-entered settings replicate one way, from the Mac to the PC, as
-last-writer-wins records (audit, answer 5). The PC has its own spending share.
-When the Mac is down, the owner starts the PC copy by hand after confirming the
-Mac core is stopped, and stops it again before the Mac core starts. There is
-still one writer at a time and no automatic takeover.
-
+- **Adds:** owner-entered settings become records in the Mac's fact log. The PC
+  reads them after N and applies the latest edit (audit, answer 5; owner
+  decision 5). The PC has its own spending share. When the Mac is down, the
+  owner starts the PC copy by hand after confirming the Mac core is stopped,
+  and stops it again before the Mac core starts. There is one writer at a time
+  and no automatic takeover.
+- **Before it starts:** stage 0. Settings that are not published families today
+  become facts. Most module settings are not, and each needs a change record
+  (audit, answer 6). A read route for "after N" with its own grant, reachable
+  from the PC; the private entry refuses role credentials today (plan,
+  "The network path"). Apply code on the PC for each settings family.
 - **Takeover has:** settings, preferences, layouts, rules, scenes and playlists,
   and device control from the PC.
-- **Takeover lacks:** history and inbox handling since the last sync, sessions
-  until hooks report to the PC, the art catalog and ledger, the Pixoo media
-  library, remembered Nanoleaf scenes, gaps in the Volcano and Roborock
-  archives, and every Mac-only input. Settings changed on the PC while it leads
-  are not carried back.
-- **Amends:** ADR 0008's PC role and "The Mac owns persistent state",
-  `docs/architecture.md`'s PC role and "One runtime owns", and ADR 0012's
-  personal data host.
-- **Effort:** medium (settings), plus low (configuration templating for the PC).
+- **Takeover lacks:** history and inbox handling, sessions until hooks report to
+  the PC, the art catalog and ledger, the Pixoo media library, remembered
+  Nanoleaf scenes, gaps in the Volcano and Roborock archives, and every
+  Mac-only input. Settings changed on the PC while it leads are not carried
+  back.
+- **Amendments:** 1.1 to 1.6.
+- **Effort:** medium for settings, plus low for configuration templating on the
+  PC.
 
-### Stage 2: append-only and monotonic records in both directions
+### Stage 2: facts in both directions
 
-History, inbox handling, acknowledgements, art feedback, assistant
-conversations and the Volcano and Roborock archives merge in both directions.
-Art images and Pixoo media copy as files. Fire-and-forget producers (hooks, the
-Codex Desktop collector, the Volcano collector, read receipts) report to both
-machines, or one machine forwards with an outbox. Connection-bound producers
-stay with the lead.
-
-- **Takeover has:** Stage 1, plus history, handled inbox items, archives and
+- **Adds:** each installation reads the other's facts after N per origin and
+  adds them, in both directions. The prototype showed this works. Order held
+  within each origin, the origins did not collide, a repeated merge added
+  nothing, and the merge published and commanded nothing (A1 to A4, A6).
+  Acknowledgements, inbox handling, art feedback, assistant conversations and
+  the Volcano and Roborock archives become facts so that they merge too. Art
+  images and Pixoo media copy as files. Fire-and-forget producers (hooks, the
+  Codex Desktop collector, the Volcano collector, read receipts) report to both
+  machines. Connection-bound producers stay with whichever machine they connect
+  to.
+- **Before it starts:** stage 1. History's duplicate check looks only at the
+  local origin's rows, which #1740 includes. Without it, a fact delivered to
+  both machines makes the local tracker ignore its own copy (A8). Code that
+  rebuilds state from merged history groups change rows by origin, since each
+  is a diff against its own origin's previous record. The exchange stays
+  pull-only: a live link between the runtimes would need the origin in the
+  envelope and in the live staleness check (A5), which this record does not
+  propose.
+- **Takeover has:** stage 1, plus history, handled inbox items, archives and
   media up to the last exchange, and current sessions.
 - **Takeover lacks:** automatic takeover, Mac-only inputs, and connection-bound
   producers until they reconnect.
-- **Amends:** ADR 0012's "Copies of other owners' state are rebuilt by sync,
-  not stored". The no-replay and live-only command rules stay.
-- **Effort:** high (append-only and monotonic), low to medium (files).
+- **Amendments:** 2.1.
+- **Effort:** the history exchange is small once #1740 exists. The prototype's
+  fact log took about 75 lines in `history.ts`. Turning the archives,
+  acknowledgements and inbox handling into facts is not sized. Media copying is
+  low to medium.
 
 ### Stage 3: the Mac-preferred lead and automatic takeover
 
-The lead rule, the takeover interval and lead-only fencing start here. Both
-copies run, but only the lead writes to devices and runs lead-only work.
-
-- **Takeover has:** Stage 2, automatic.
+- **Adds:** the lead rule, the takeover interval and lead-only fencing. Both
+  copies run, but only the lead writes to devices and runs lead-only work.
+- **Before it starts:** stage 2. Each installation knows which peer is the
+  preferred lead. The origin is an opaque identifier, so this is its own
+  setting (*proposed*). The takeover interval is fixed.
+- **Takeover has:** stage 2, automatic.
 - **Takeover lacks:** either-copy device writes, so the PC writes nothing while
   the Mac leads, and Mac-only inputs.
-- **Amends:** ADR 0008's "automatic failover ... not required" and "never run
-  both device writers", `docs/architecture.md`'s "no automatic failover",
-  `AGENTS.md`'s one-designated-writer sentence for the split-lead case, and
-  `docs/bunny-container.md`'s handoff paragraph.
+- **Amendments:** 3.1 to 3.6.
 - **Effort:** high (lead-only work).
 
 ### Stage 4: either-copy writes for qualified devices
 
-Each device qualified for it accepts writes from both copies.
-
+- **Adds:** each device qualified for it accepts writes from both copies.
+- **Before it starts:** stage 3, and one physical qualification per device with
+  the owner's permission for that test.
 - **Takeover has:** everything except the Mac-only inputs and connection-bound
   producers.
-- **Amends:** "one writer controls each device" in ADR 0012 and
-  `docs/architecture.md`, and `AGENTS.md`'s one-designated-writer sentence.
-- **Effort:** not sized by the audit. One physical qualification per device.
+- **Amendments:** 4.1 to 4.3.
+- **Effort:** not sized by the audit.
 
-## Amendments on acceptance
+## Amendments by stage
 
-None of these is made now. Acceptance needs a follow-up commit that applies
-those for the accepted stages, with each first mention of ADR 0015 linked.
-Stage numbers are in brackets.
+None of these is made now. Accepting a stage needs a follow-up commit that
+applies that stage's amendments, linking the first mention of ADR 0015 in each
+file. [PR #1742](https://github.com/jimmie-potts/agent-device-hub/pull/1742),
+pending, already amends ADR 0012's no-replay wording, its log and event
+sourcing alternatives and `docs/architecture.md`'s "No replay" bullet. This
+record does not propose those again.
 
-### ADR 0008, "Current decision"
+### Stage 1
 
-1. [1] "The PC is an optional activity producer, client and host for explicitly
-   PC-attached hardware. It is not a relay or startup dependency for the Mac's
-   normal operation."
-   Replace with: "The PC is an optional activity producer, client and host for
-   explicitly PC-attached hardware, and a second B.U.N.N.Y. host at the stages
-   of ADR 0015 the owner has accepted. It is not
-   a relay or startup dependency for the Mac's normal operation."
-2. [1] "The Mac owns persistent state and the serving endpoint."
-   Replace with: "The Mac owns persistent state and the serving endpoint while
-   it leads. The PC keeps the records ADR 0015 replicates and serves while it
-   leads."
-3. [3] "Unattended pre-login startup, automatic failover and a new recovery
-   framework are not required."
-   Replace with: "Unattended pre-login startup and a new recovery framework are
-   not required. Automatic takeover follows ADR 0015's Mac-preferred lead rule."
-4. [3] "Manual return must stop the Mac writer first, set its start hold so that
-   sign-in cannot restart it, and explicitly select the preserved source and
-   data gap; never run both device writers."
-   Replace with: "Outside ADR 0015, manual return must stop the Mac writer
-   first, set its start hold so that sign-in cannot restart it, and explicitly
-   select the preserved source and data gap. Under ADR 0015 only the lead
-   writes to a device not qualified for either-copy writes. A split lead is the
-   accepted exception, bounded by the takeover interval."
+1.1. ADR 0008, "Current decision": "The PC is an optional activity producer,
+client and host for explicitly PC-attached hardware. It is not a relay or
+startup dependency for the Mac's normal operation."
+Replace with: "The PC is an optional activity producer, client and host for
+explicitly PC-attached hardware, and a second B.U.N.N.Y. host at the stages of
+ADR 0015 the owner has accepted. It is not a relay or startup dependency for
+the Mac's normal operation."
 
-### ADR 0012
+1.2. ADR 0008, "Runtime and access": "The Mac owns persistent state and the
+serving endpoint."
+Replace with: "The Mac owns persistent state and the serving endpoint while it
+leads. The PC keeps the records ADR 0015 replicates and serves while it leads."
 
-5. [1] "Personal data": "It is stored only in private owner-controlled storage on
-   the runtime host."
-   Replace with: "It is stored only in private owner-controlled storage on the
-   runtime hosts the owner has selected."
-6. [2] "Ownership and publication": "Copies of other owners' state are rebuilt
-   by sync, not stored."
-   Replace with: "Copies of other owners' state are rebuilt by sync, not stored.
-   Records replicated from the other host under ADR 0015 are stored with their
-   origin and are not sync copies."
-7. [4] "Ownership and publication": "One owner publishes each fact, and one
-   writer controls each device."
-   Replace with: "One owner publishes each fact; a replicated record keeps its
-   origin machine as owner. One writer controls each device, except devices
-   ADR 0015 qualifies for either-copy writes."
+1.3. ADR 0012, "Personal data": "It is stored only in private owner-controlled
+storage on the runtime host."
+Replace with: "It is stored only in private owner-controlled storage on the
+runtime hosts the owner has selected."
 
-### `docs/architecture.md`
+1.4. `docs/architecture.md`, "Hosting and access": "One runtime owns its core,
+fixed modules, private stores and serving endpoint."
+Replace with: "Each running host's runtime owns its core, fixed modules,
+private stores and serving endpoint. ADR 0015 sets which records replicate
+between hosts and which host leads."
 
-8. [1] "Hosting and access": "One runtime owns its core, fixed modules, private
-   stores and serving endpoint."
-   Replace with: "Each running host's runtime owns its core, fixed modules,
-   private stores and serving endpoint. ADR 0015 sets which records replicate between hosts and which host leads."
-9. [1] "Hosting and access": "The PC is an optional producer/client and host for
-   explicitly PC-attached hardware; normal hub startup, storage, dashboard
-   access and selected portable device integrations must work with it off."
-   Replace with: "The PC is an optional producer/client, host for explicitly
-   PC-attached hardware and, under ADR 0015, a second host that may lead when
-   the Mac is unreachable. Normal hub startup, storage, dashboard access and
-   selected portable device integrations must work on the Mac with the PC off."
-10. [3] "Hosting and access": "Local leases do not fence other computers. There
-    is no automatic failover or snapshot rollback."
-    Replace with: "Local leases do not fence other computers. ADR 0015's lead
-    rule and takeover interval are the cross-machine fence, and they are not
-    exact. There is no snapshot rollback."
-11. [4] "Event and messaging platform": "One owner holds each fact, and one
-    writer controls each device."
-    Replace with: "One owner holds each fact, and one writer controls each
-    device, except devices ADR 0015 qualifies for either-copy writes."
+1.5. `docs/architecture.md`, "Hosting and access": "The PC is an optional
+producer/client and host for explicitly PC-attached hardware; normal hub
+startup, storage, dashboard access and selected portable device integrations
+must work with it off."
+Replace with: "The PC is an optional producer/client, host for explicitly
+PC-attached hardware and, under ADR 0015, a second host. Normal hub startup,
+storage, dashboard access and selected portable device integrations must work
+on the Mac with the PC off."
 
-### `AGENTS.md`, "Runtime and migration boundaries"
+1.6. `AGENTS.md`, "Runtime and migration boundaries": keep "Keep controller
+databases private, especially across Windows and WSL. Use explicit
+API/ownership handoffs, not concurrent access to a mounted SQLite file." and
+add: "Replicate between hosts only through ADR 0015's fact-log replication,
+never by copying or mounting a live SQLite file."
 
-12. [3, 4] "Maintain one active agent-state owner and one designated writer per
-    physical device."
-    Replace with: "Maintain one active agent-state owner per running host and
-    one designated writer per physical device: the lead under ADR 0015. Only
-    devices ADR 0015 qualifies for either-copy writes take both copies."
-13. [1] "Keep controller databases private, especially across Windows and WSL.
-    Use explicit API/ownership handoffs, not concurrent access to a mounted
-    SQLite file."
-    Keep, and add: "Replicate between hosts only through ADR 0015's record
-    replication, never by copying or mounting a live SQLite file."
+### Stage 2
+
+2.1. ADR 0012, "Ownership and publication": "Copies of other owners' state are
+rebuilt by sync, not stored."
+Replace with: "Copies of other owners' state are rebuilt by sync, not stored.
+Facts read from a peer installation's fact log under ADR 0015 are stored in
+history with their origin; they are not sync copies."
+
+### Stage 3
+
+3.1. ADR 0008, "Manual operation and state handoff": "Unattended pre-login
+startup, automatic failover and a new recovery framework are not required."
+Replace with: "Unattended pre-login startup and a new recovery framework are not
+required. Automatic takeover follows ADR 0015's Mac-preferred lead rule."
+
+3.2. ADR 0008, "Manual operation and state handoff": "Manual return must stop
+the Mac writer first, set its start hold so that sign-in cannot restart it, and
+explicitly select the preserved source and data gap; never run both device
+writers."
+Replace with: "Outside ADR 0015, manual return must stop the Mac writer first,
+set its start hold so that sign-in cannot restart it, and explicitly select the
+preserved source and data gap. Under ADR 0015 only the lead writes to devices.
+A split lead is the accepted exception, bounded by the takeover interval."
+
+3.3. `docs/architecture.md`, "Hosting and access": "Local leases do not fence
+other computers. There is no automatic failover or snapshot rollback."
+Replace with: "Local leases do not fence other computers. ADR 0015's lead rule
+and takeover interval are the cross-machine fence, and they are not exact.
+There is no snapshot rollback."
+
+3.4. `AGENTS.md`, "Runtime and migration boundaries": "Maintain one active
+agent-state owner and one designated writer per physical device."
+Replace with: "Maintain one active agent-state owner per running host and one
+designated writer per physical device: the lead under ADR 0015, with its
+split-lead case as the accepted exception."
+
+3.5. `docs/bunny-container.md`, "Start, stop and inspect": "Before enabling
+device control on another host, manually stop and verify the old host's device
+writer, including any restart actor. The local state lease prevents two
+cooperating processes from opening the same volume; it cannot prevent two hosts
+with separate volumes from controlling one device. Do not use a copied volume
+or a control flag as proof of a device handoff."
+Replace with: "Outside ADR 0015, before enabling device control on another host,
+manually stop and verify the old host's device writer, including any restart
+actor. Under ADR 0015 the lead rule decides which host writes to a device. The
+local state lease prevents two cooperating processes from opening the same
+volume; it cannot prevent two hosts with separate volumes from controlling one
+device. Do not use a copied volume, a replicated record or a control flag as
+proof of a device handoff."
+
+3.6. `docs/bunny-container.md`, "Production device profile": keep "A local state
+lease cannot exclude another computer's writer." and add: "A second host under
+ADR 0015 follows its lead rule."
 
 The sentence that standing installation authority "does not authorize new hosts"
-stays. The owner authorizes the PC separately.
+stays in `AGENTS.md`. The cutover paragraph under "Manual operation after Mac
+sign-in" and the start hold's "returning the device writer to another computer"
+describe the WSL return path and stay as they are.
 
-### `docs/bunny-container.md`
+### Stage 4
 
-14. [3] "Start, stop and inspect": "Before enabling device control on another
-    host, manually stop and verify the old host's device writer, including any
-    restart actor. The local state lease prevents two cooperating processes
-    from opening the same volume; it cannot prevent two hosts with separate
-    volumes from controlling one device. Do not use a copied volume or a
-    control flag as proof of a device handoff."
-    Replace with: "Outside ADR 0015, before enabling device control on another
-    host, manually stop and verify the old host's device writer, including any
-    restart actor. Under ADR 0015 the lead rule decides which host writes to a
-    lead-only device. The local state lease prevents two cooperating processes
-    from opening the same volume; it cannot prevent two hosts with separate
-    volumes from controlling one device. Do not use a copied volume, a
-    replicated record or a control flag as proof of a device handoff."
-15. [3] "Production device profile": "A local state lease cannot exclude another
-    computer's writer."
-    Keep, and add: "A second host under ADR 0015 follows its lead rule."
+4.1. ADR 0012, "Ownership and publication": "One owner publishes each fact, and
+one writer controls each device."
+Replace with: "One owner publishes each fact; a fact read from a peer keeps its
+origin. One writer controls each device, except devices ADR 0015 qualifies for
+either-copy writes."
 
-The cutover paragraph under "Manual operation after Mac sign-in" and the start
-hold's "returning the device writer to another computer" describe the WSL
-return path and stay as they are.
+4.2. `docs/architecture.md`, "Event and messaging platform": "One owner holds
+each fact, and one writer controls each device."
+Replace with: "One owner holds each fact, and one writer controls each device,
+except devices ADR 0015 qualifies for either-copy writes."
+
+4.3. `AGENTS.md`, the sentence as replaced by 3.4: add "Devices ADR 0015
+qualifies for either-copy writes take writes from both hosts."
 
 ## Consequences and risks
 
@@ -357,9 +439,10 @@ return path and stay as they are.
   without the Mac's inputs. If the Tidbyt uses the Tronbyt backend, a PC lead
   also loses its display server, which lives on the Mac. Moving or duplicating
   these inputs is a separate owner decision.
-- **Clock agreement.** Last-writer-wins needs comparable clocks. WSL 2 clocks
-  can drift after the host sleeps (inferred). Clock skew is a qualification
-  check on the PC (plan, B9), and a hybrid logical clock bounds its effect.
+- **Clock agreement.** Latest-edit-wins needs comparable clocks, and a merged
+  row's time comes from the peer's clock. WSL 2 clocks can drift after the host
+  sleeps (inferred). Clock skew is a qualification check on the PC (plan, B9),
+  and a hybrid logical clock bounds its effect.
 - **Doubled polling.** Two copies poll the Wemo plugs, speakers, weather and
   Roborock, and call vendor accounts twice. Roborock and the Volcano link may
   not tolerate a second client. Under this proposal their collection stays
@@ -367,10 +450,13 @@ return path and stay as they are.
 - **Exposure.** Every secret copied to the PC doubles its exposure (inferred).
   Personal data also lives on a second machine. ADR 0011 allows that in
   owner-controlled storage.
-- **Work per stage**, from the audit's effort marks: settings medium,
-  append-only and monotonic high, files low to medium, lead-only high, local
-  configuration low. Stage 0's AMD64 lane and stage 4's per-device qualification
-  are not sized.
+- **History grows on both machines.** The prototype's illustration of about 470
+  rows, or 0.4 MB, an hour is synthetic. The real rate is not known.
+- **Work per stage**, from the audit's effort marks unless stated: settings
+  medium, lead-only high, local configuration low, media low to medium. The
+  history exchange is small once #1740 exists. Turning the archives and
+  handling into facts, stage 0's AMD64 lane and stage 4's per-device
+  qualification are not sized.
 
 ## Alternatives considered
 
@@ -380,33 +466,38 @@ return path and stay as they are.
 - **A small cloud tie-breaker for the lead.** It would settle the split-lead
   case, but the owner chose no cloud for the first solution. It is the natural
   next step if the split lead proves costly.
-- **Full event sourcing with a replicated log.** ADR 0012 rejected a durable log
-  in the Hub and deferred event sourcing. Commands are never stored, and
-  history omits observations and stores diffs. A log would mean building
-  consumer positions, redelivery and retention, and reversing the no-replay
-  rule across every consumer.
+- **Event sourcing with a replicated log.** Not adopted (decision 4). Each owner
+  keeps its current state, which stays authoritative. The fact log carries
+  facts, never commands, and this record replicates through it.
+- **The database's built-in change capture for settings.** Not chosen
+  (decision 5). Besides lacking latest-edit-wins, the prototype found it needs
+  tombstones, keys that are not local counters, echo suppression and
+  schema-version checks. A changeset from a wider table applied to a narrower
+  one silently applied nothing.
+- **A store with built-in replication instead of SQLite.** Not adopted: no store
+  moves off SQLite (decision 4).
 - **A cold standby from periodic snapshots.** It needs no merge rules, and loss
   is the time since the last snapshot. Three blockers stand today (audit,
   answer 5). Exclusive locking means the snapshot must come from inside the
   runtime, and no such code exists. Restore refuses a different source revision
   and is qualified only on Mac ARM64. A copied volume is not a device handoff.
 - **Keep ADR 0008 unchanged.** The Mac stays the only host, and an outage lasts
-  until the Mac returns. This is the cheapest option and remains the default
-  until the owner accepts this record.
+  until the Mac returns. This is the cheapest option and remains in force for
+  every stage the owner has not accepted.
 
 ## Open decisions for the owner
 
-1. Accept this record whole, stage by stage, or not at all.
-2. Authorize the PC as a B.U.N.N.Y. host, separately from the worker host of
+1. Authorize the PC as a B.U.N.N.Y. host, separately from the worker host of
    #1722, and approve the plan's device-reach probe.
-3. AMD64: add a release qualification lane (a CI and gate-policy change), or
+2. AMD64: add a release qualification lane (a CI and gate-policy change), or
    leave the PC unqualified until needed.
-4. The takeover interval's length, and how the PC checks that it can reach the
+3. The takeover interval's length, and how the PC checks that it can reach the
    Mac and the home router.
+4. How each installation knows which peer is the preferred lead.
 5. Which devices to qualify for either-copy writes, starting with Nanoleaf and
    Pixoo.
 6. Each ceiling's split between the machines.
 7. Which secrets to place on the PC.
 8. Whether to move or duplicate the Mac-only inputs, the Tronbyt server first.
-9. The clock for last-writer-wins: a hybrid logical clock, or wall time with an
+9. The clock for latest-edit-wins: a hybrid logical clock, or wall time with an
    origin tie-break.
