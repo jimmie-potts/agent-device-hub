@@ -952,10 +952,11 @@ killed for memory. The 1-minute load peaked at about 24.6 after the last start,
 over the start threshold and under the stop threshold, and available memory
 never fell below 11,169 MiB. One of the eight jobs failed one timing-sensitive
 test (#1695). Such a single failure at full occupancy may come from the load,
-so rerun it before treating it as a regression. The wide size has not been
-measured for the verification suite here: the first wide verification job is
-that measurement, `npm run test:runtime:container -- --suite verify` (1536 MiB)
-is the measured route until then, and #1696 tracks it.
+so rerun it before treating it as a regression. One wide
+`test:runtime:verify:built` job, alone on the PC, passed in 1334 s with the same
+two skips as hosted CI. Its memory peaked at 1660 MiB of 3584 MiB, with no kill
+and a 1-minute load of at most 2.75 (#1696). That is adequate for the wide size,
+but 81% of a standard job's 2048 MiB, so the suite stays wide.
 
 ### Old system checks
 
