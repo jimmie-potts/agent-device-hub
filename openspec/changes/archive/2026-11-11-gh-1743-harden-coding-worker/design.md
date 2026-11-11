@@ -39,14 +39,18 @@ authority, showing readiness on the dashboard.
    `waiting-for-owner` and the appended instruction asks for it, with the question first in findings.
 5. **Credentials stay out of the harness (revised in review round 1).** The environment is an allowlist: search path,
    home, user, shell, locale, temporary directory, terminal, time zone and `CLAUDE_CODE_OAUTH_TOKEN`, which is the
-   subscription token, plus names the private configuration lists. A denylist second pass removes every `ANTHROPIC_`
+   subscription token, plus names the private configuration lists, which may not be named like a key, token, secret,
+   password, credential or base URL, nor be loader variables (round 2). A denylist second pass removes every `ANTHROPIC_`
    variable (credentials, base URLs and also model names, which the configuration sets instead), the
    `CLAUDE_CODE_USE_` switches, the OAuth refresh token and scopes, API-key helpers and descriptors, client
    certificates, skipped-auth switches, `CLAUDE_CONFIG_DIR`, cloud credentials, proxies, certificate settings,
    `NODE_OPTIONS` and `BUNNY_` variables. Project settings can carry an `env` block and credential helpers, so the
    worker reads them as data before the tool starts and refuses the run when they would undo the environment; it
    also blanks the provider switches through `--settings`. An API key source other than `none` in the stream's first
-   event stops the run before its first model request, as `refused`.
+   event stops the run at that event, as `refused`; the tool writes it at about the moment of its first request, so at
+   most that request is spent. The settings check runs once, so a run that changes files under `.claude/` gets a
+   limitation. Hooks, the telemetry headers helper, status-line commands and plugins are not checked: none changes who
+   is billed, and repository hooks running commands predates this change (#502).
 6. **Fixtures.** Real runs recorded with synthetic prompts in an empty directory. Session, event, tool-use, message
    and request identifiers, paths, account values, the plan, the limit windows' figures, the timing origin and the
    overage reason were replaced; the token counts and costs of the synthetic runs were kept. A real usage limit

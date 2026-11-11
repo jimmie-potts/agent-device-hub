@@ -17,7 +17,7 @@ import {CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingEn
   type CodingReadiness, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {readPrivateJson} from '../hook/producer.js';
 import {readPrivateFile} from '../state.js';
-import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, deniedVariable, harnessEnvironment, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
+import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, configurableVariable, harnessEnvironment, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
 
 const run = promisify(execFile);
 export const WORKER_SCHEMA = 'coding-worker/1.0';
@@ -83,8 +83,8 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
   if (!Array.isArray(allowedTools) || allowedTools.length > 64 || allowedTools.some(tool => typeof tool !== 'string' || tool.length > 128 || /push|gh |curl|wget|ssh|rm -rf/i.test(tool))) return bad('claude.allowedTools must be a bounded list without push, network or destructive tools');
   if (claude.maxTurns !== undefined && (!Number.isSafeInteger(claude.maxTurns) || Number(claude.maxTurns) < 1 || Number(claude.maxTurns) > 200)) return bad('claude.maxTurns must be 1 to 200');
   const environment = claude.environment;
-  if (environment !== undefined && (!Array.isArray(environment) || environment.length > 32 || environment.some(name => typeof name !== 'string' || !/^[A-Z_][A-Z0-9_]{0,63}$/.test(name) || deniedVariable(name)))) {
-    return bad('claude.environment must list at most 32 variable names without provider credentials or switches');
+  if (environment !== undefined && (!Array.isArray(environment) || environment.length > 32 || environment.some(name => typeof name !== 'string' || !/^[A-Z_][A-Z0-9_]{0,63}$/.test(name) || !configurableVariable(name)))) {
+    return bad('claude.environment must list at most 32 variable names without credentials, provider switches or loader variables');
   }
   return {edge: url.origin, tokenFile, repositories: list, claude: {executable: claude.executable, ...(claude.model === undefined ? {} : {model: claude.model}), permissionMode, allowedTools: allowedTools as string[],
     ...(claude.maxTurns === undefined ? {} : {maxTurns: Number(claude.maxTurns)}), ...(environment === undefined ? {} : {environment: environment as string[]})}};
@@ -103,24 +103,51 @@ export type Harness = {
   /** Reports the tool's version and sign-in without starting a task or a session; absent means all unknown. */
   readiness?(): Promise<HarnessReadiness>;
 };
-type Probe = {stdout: string; missing: boolean; answered: boolean};
 /**
- * Runs one side-effect-free status command of the tool with no input, the harness's environment and a deadline that kills
- * it outright, so a tool that ignores a terminate signal cannot hold the worker's start.
+ * Splits decoded output into lines for `onLine`. A line longer than `maxLength` is skipped, whole or in part and whether
+ * it ends in the same chunk or a later one, and marks the output truncated; memory stays bounded by one chunk over it.
  */
-const probe = (executable: string, args: string[], env: Record<string, string>, cwd: string | undefined, timeoutMs: number): Promise<Probe> => new Promise(resolvePromise => {
-  execFile(executable, args, {env, cwd, timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 64 * 1024, encoding: 'utf8'}, (error, stdout) => {
+export function lineSplitter(onLine: (line: string) => void, maxLength: number = MAX_LINE_BYTES): {write(text: string): void; end(text?: string): void; readonly truncated: boolean} {
+  let pending = '', skipping = false, truncated = false;
+  const take = (text: string, last: boolean): void => {
+    pending += text;
+    for (let end = pending.indexOf('\n'); end !== -1; end = pending.indexOf('\n')) {
+      const line = pending.slice(0, end); pending = pending.slice(end + 1);
+      if (line.length > maxLength) {truncated = true;} else if (!skipping) onLine(line);
+      skipping = false;
+    }
+    if (pending.length > maxLength) {pending = ''; skipping = true; truncated = true;}
+    if (last && pending !== '' && !skipping) onLine(pending);
+  };
+  return {write: text => {take(text, false);}, end: (text = '') => {take(text, true);}, get truncated() {return truncated;}};
+}
+type Probe = {stdout: string; missing: boolean; answered: boolean};
+/** Arms a deadline and returns its cancel; the default is a real timer, and tests fire it themselves. */
+export type ProbeTimer = (ms: number, fire: () => void) => () => void;
+const realTimer: ProbeTimer = (ms, fire) => {const timer = setTimeout(fire, ms); timer.unref(); return () => {clearTimeout(timer);};};
+/**
+ * Runs one side-effect-free status command of the tool with no input, the harness's environment and a deadline whose
+ * timer kills it outright, so a tool that ignores a terminate signal cannot hold the worker's start. A probe ended by the
+ * deadline has not answered.
+ */
+const probe = (executable: string, args: string[], env: Record<string, string>, cwd: string | undefined, timeoutMs: number, timer: ProbeTimer): Promise<Probe> => new Promise(resolvePromise => {
+  const child = execFile(executable, args, {env, cwd, maxBuffer: 64 * 1024, encoding: 'utf8'}, (error, stdout) => {
+    cancel();
     const code = (error as NodeJS.ErrnoException | null)?.code;
     resolvePromise({stdout: typeof stdout === 'string' ? stdout : '', missing: code === 'ENOENT', answered: error === null || typeof code === 'number'});
-  }).stdin?.end();
+  });
+  child.stdin?.end();
+  const cancel = timer(timeoutMs, () => {child.kill('SIGKILL');});
 });
 export type HarnessOptions = {
   /** Further variable names the harness may inherit (the configuration's `claude.environment`). */
   environment?: readonly string[];
   /** The working directory of the readiness probes: the first allowlisted repository, as near the run's as a probe can be. */
   probeCwd?: string;
-  /** Each probe's deadline; tests shorten it. */
+  /** Each probe's deadline. */
   probeMs?: number;
+  /** The probes' deadline timer; tests inject one they fire themselves. */
+  probeTimer?: ProbeTimer;
 };
 /**
  * The real harness: `claude` started with an allowlisted environment without provider credentials or switches, so the
@@ -134,26 +161,16 @@ export const claudeHarness = (executable: string, environment: NodeJS.ProcessEnv
     child.stdin?.on('error', () => {});
     child.stdin?.end(input);
     const decoder = new StringDecoder('utf8');
-    let pending = '', skipping = false, truncated = false;
-    const take = (text: string, last: boolean): void => {
-      pending += text;
-      for (let end = pending.indexOf('\n'); end !== -1; end = pending.indexOf('\n')) {
-        const line = pending.slice(0, end); pending = pending.slice(end + 1);
-        if (!skipping) onLine?.(line);
-        skipping = false;
-      }
-      if (pending.length > MAX_LINE_BYTES) {pending = ''; skipping = true; truncated = true;}
-      if (last && pending !== '' && !skipping) onLine?.(pending);
-    };
-    child.stdout?.on('data', (chunk: Buffer) => {take(decoder.write(chunk), false);});
-    child.on('error', () => {resolvePromise({code: null, signal: null, truncated});});
-    child.on('close', (code, signal) => {take(decoder.end(), true); resolvePromise({code, signal, truncated});});
+    const lines = lineSplitter(line => {onLine?.(line);});
+    child.stdout?.on('data', (chunk: Buffer) => {lines.write(decoder.write(chunk));});
+    child.on('error', () => {resolvePromise({code: null, signal: null, truncated: lines.truncated});});
+    child.on('close', (code, signal) => {lines.end(decoder.end()); resolvePromise({code, signal, truncated: lines.truncated});});
   }),
   readiness: async () => {
-    const env = harnessEnvironment(environment, options.environment), timeoutMs = options.probeMs ?? PROBE_MS;
-    const version = await probe(executable, ['--version'], env, options.probeCwd, timeoutMs);
+    const env = harnessEnvironment(environment, options.environment), timeoutMs = options.probeMs ?? PROBE_MS, timer = options.probeTimer ?? realTimer;
+    const version = await probe(executable, ['--version'], env, options.probeCwd, timeoutMs, timer);
     if (version.missing) return {...UNKNOWN_READINESS, installed: 'no'};
-    const auth = await probe(executable, ['auth', 'status', '--json'], env, options.probeCwd, timeoutMs);
+    const auth = await probe(executable, ['auth', 'status', '--json'], env, options.probeCwd, timeoutMs, timer);
     const parsed = parseVersion(version.stdout);
     return {installed: parsed === null ? 'unknown' : 'yes', version: parsed, ...(auth.answered ? parseAuthStatus(auth.stdout) : {signedIn: 'unknown', plan: null})};
   },
@@ -203,6 +220,10 @@ export function assembleResult(repository: string, base: string | null, head: st
   if (keySource !== undefined && keySource !== 'none' && limitations.length < 32) limitations.push(`The harness reported an API key source (${keySourceName(keySource)}), so this run may not have used the subscription sign-in.`);
   const providers = stream.providers.filter(provider => provider !== 'firstParty');
   if (providers.length > 0 && limitations.length < 32) limitations.push(`The result names a model provider other than the first-party one (${providers.join(', ')}), so this run may not have used the subscription.`);
+  // The project settings were checked once, before the start; a file the run created or changed there was not.
+  if (changedFiles.some(file => file === '.claude' || file.startsWith('.claude/')) && limitations.length < 32) {
+    limitations.push('The run created or changed files under .claude/, the project settings directory, which the settings check before the start did not see.');
+  }
   const usageLimited = reason === 'usage-limit' && limit !== undefined;
   return {result: {outcome: usageLimited ? 'usage-limit' : reason === undefined ? outcome : Outcome.failed, repository, base, head, changedFiles: changedFiles.slice(0, 200).map(file => file.slice(0, 512)), checks,
     findings: strings(structured?.findings), limitations, summary, sessionId, usage, ...(usageLimited ? {limit} : {})}, ...(reason === undefined ? {} : {reason})};

@@ -4,10 +4,11 @@
 // not recordings: a real usage limit cannot be provoked, so they follow the event shapes the tool's own stream schema
 // documents (`rate_limit_event` with status `rejected`; an assistant message typed `usage_limit_reached` with
 // `api_error_params.rate_limit_info`), and a signed-out status follows `claude auth status --json`'s recorded shape.
-// Every case goes through the real parsing code. No real `claude`, edge or network; no test waits on the clock except
-// the probe-deadline case, whose subject is the deadline itself.
+// Every case goes through the real parsing code. No real `claude`, edge or network; no test waits on the clock (the
+// probe-deadline case fires an injected timer when the stand-in has set its trap).
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
+import {existsSync, watch, type FSWatcher} from 'node:fs';
 import {chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -19,7 +20,7 @@ import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {Command, Reply} from '@jimmie-potts/sdk';
 import type {RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant, connectRemote} from '@jimmie-potts/sdk/remote';
 import {ClaudeStream, harnessEnvironment, parseAuthStatus, parseVersion, settingsRefusal} from '../src/worker/claude-stream.js';
-import {CodingWorker, DEFAULT_ALLOWED_TOOLS, assembleResult, claudeHarness, parseConfiguration, projectSettingsRefusal, type Harness} from '../src/worker/coding-worker.js';
+import {CodingWorker, DEFAULT_ALLOWED_TOOLS, assembleResult, claudeHarness, lineSplitter, parseConfiguration, projectSettingsRefusal, type Harness, type ProbeTimer} from '../src/worker/coding-worker.js';
 
 const FIXTURES = fileURLToPath(new URL('../../tests/fixtures/claude-stream/', import.meta.url));
 const fixture = (name: string): Promise<string> => readFile(join(FIXTURES, name), 'utf8');
@@ -367,16 +368,70 @@ void test('a skipped oversized event fails the run only when no result arrived',
   }
 });
 
-void test('a readiness probe that ignores the terminate signal is killed at its deadline and reads unknown', async t => {
+void test('the line splitter skips a complete over-bound line that ends in the same chunk, whatever the platform\'s pipe reads', () => {
+  const lines: string[] = [];
+  const splitter = lineSplitter(line => {lines.push(line);}, 10);
+  // One chunk: a short line, an over-bound complete line, a short line and an unterminated tail.
+  splitter.write(`short\n${'x'.repeat(20)}\nafter\nun`);
+  splitter.end('term');
+  assert.deepEqual(lines, ['short', 'after', 'unterm']); assert.equal(splitter.truncated, true);
+  // Across chunks: an over-bound line that grows past the bound before its newline, then a line that fits.
+  const across: string[] = [], second = lineSplitter(line => {across.push(line);}, 10);
+  second.write('y'.repeat(6)); second.write('y'.repeat(6)); second.write('yy\nok\n'); second.end();
+  assert.deepEqual(across, ['ok']); assert.equal(second.truncated, true);
+  // Within the bound nothing is truncated.
+  const fits = lineSplitter(() => {}, 10); fits.write('0123456789\n'); fits.end(); assert.equal(fits.truncated, false);
+});
+
+void test('a readiness probe that ignores the terminate signal is killed at its deadline and reads unknown, with no wait on the clock', {timeout: 20_000}, async t => {
   const dir = await mkdtemp(join(tmpdir(), 'coding-worker-hang-'));
-  t.after(() => rm(dir, {recursive: true, force: true}));
-  const file = join(dir, 'claude');
-  // No child process: the shell itself spins, ignoring SIGTERM, so only SIGKILL ends it.
-  await writeFile(file, ['#!/bin/sh', 'if [ "$1" = "--version" ]; then echo "2.1.292 (Claude Code)"; exit 0; fi', 'trap "" TERM', 'while :; do :; done', ''].join('\n'));
+  const file = join(dir, 'claude'), pidFile = `${file}.pid`;
+  // The stand-in must not outlive the test, even when a regression leaves it spinning: a timed-out test never reaches
+  // its own finally, so its abort signal kills the stand-in too.
+  const killStandIn = async (): Promise<void> => {try {process.kill(Number(await readFile(pidFile, 'utf8')), 'SIGKILL');} catch { /* already gone or never started */ }};
+  t.signal.addEventListener('abort', () => {void killStandIn();});
+  // No child process: after ignoring SIGTERM and writing its PID, the shell itself spins, so only SIGKILL ends it.
+  await writeFile(file, ['#!/bin/sh', 'if [ "$1" = "--version" ]; then echo "2.1.292 (Claude Code)"; exit 0; fi', 'trap "" TERM',
+    'echo $$ > "$0.pid.tmp"', 'mv "$0.pid.tmp" "$0.pid"', 'while :; do :; done', ''].join('\n'));
   await chmod(file, 0o755);
-  // The deadline under test is the bound itself, not a wait for something to happen.
-  const readiness = await claudeHarness(file, {PATH: process.env.PATH ?? '/usr/bin:/bin'}, {probeMs: 150}).readiness?.();
-  assert.deepEqual(readiness, {installed: 'yes', version: '2.1.292', signedIn: 'unknown', plan: null});
+  let watcher: FSWatcher | undefined, armed = 0;
+  // The test's own deadline: the version probe's never fires; the status probe's fires as soon as the stand-in has
+  // set its trap, observed through the file it writes, so the kill is what ends a process that ignores SIGTERM.
+  const timer: ProbeTimer = (_ms, fire) => {
+    armed += 1;
+    if (armed === 1) return () => {};
+    const check = (): void => {if (existsSync(pidFile)) {watcher?.close(); fire();}};
+    watcher = watch(dir, check); check();
+    return () => {watcher?.close();};
+  };
+  try {
+    const readiness = await claudeHarness(file, {PATH: process.env.PATH ?? '/usr/bin:/bin'}, {probeTimer: timer}).readiness?.();
+    assert.deepEqual(readiness, {installed: 'yes', version: '2.1.292', signedIn: 'unknown', plan: null});
+    assert.equal(armed, 2);
+  } finally {
+    watcher?.close();
+    await killStandIn();
+    await rm(dir, {recursive: true, force: true});
+  }
+});
+
+void test('the configuration may not add credential-named or loader variables; the subscription token is the one exception', () => {
+  const parse = (environment: string[]) => parseConfiguration({schema: 'coding-worker/1.0', edge: 'http://127.0.0.1:18788', tokenFile: '/private/token',
+    repositories: [{name: 'agent-device-hub', path: '/tmp/repo'}], claude: {executable: '/nonexistent/claude', environment}});
+  for (const name of ['GITHUB_TOKEN', 'OPENAI_API_KEY', 'NPM_TOKEN', 'SOME_SECRET', 'DB_PASSWORD', 'SERVICE_CREDENTIALS', 'OTHER_BASE_URL', 'DYLD_INSERT_LIBRARIES', 'LD_PRELOAD',
+    'CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST', 'AWS_PROFILE']) {
+    assert.throws(() => parse([name]), /claude\.environment/, name);
+  }
+  assert.deepEqual(parse(['CLAUDE_CODE_OAUTH_TOKEN', 'SOME_TOOL_HOME', 'MAX_THINKING_TOKENS']).claude.environment, ['CLAUDE_CODE_OAUTH_TOKEN', 'SOME_TOOL_HOME', 'MAX_THINKING_TOKENS']);
+  // The harness filter applies the same rule, so a configured name the loader would have refused never passes either.
+  const kept = harnessEnvironment({PATH: '/bin', GITHUB_TOKEN: 'synthetic', DYLD_INSERT_LIBRARIES: '/synthetic/lib', SOME_TOOL_HOME: '/synthetic'}, ['GITHUB_TOKEN', 'DYLD_INSERT_LIBRARIES', 'SOME_TOOL_HOME']);
+  assert.deepEqual(Object.keys(kept).sort(), ['PATH', 'SOME_TOOL_HOME']);
+});
+
+void test('a run that changed its project settings directory says so, without quoting anything', () => {
+  const changed = assembleResult('agent-device-hub', null, null, ['src/a.ts', '.claude/settings.json'], '').result.limitations;
+  assert.ok(changed.some(text => text.includes('under .claude/')), JSON.stringify(changed));
+  assert.ok(!assembleResult('agent-device-hub', null, null, ['src/a.ts', 'docs/.claude-notes.md'], '').result.limitations.some(text => text.includes('under .claude/')));
 });
 
 

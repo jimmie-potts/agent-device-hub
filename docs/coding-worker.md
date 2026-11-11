@@ -82,7 +82,8 @@ sign-in), not an API key. A denylist then removes, even from configured names:
 - `CLAUDE_CODE_OAUTH_REFRESH_TOKEN` and `CLAUDE_CODE_OAUTH_SCOPES`, which only
   an interactive login reads;
 - `CLAUDE_CODE_API_KEY_*`, `CLAUDE_CODE_CLIENT_*`, `CLAUDE_CODE_CERT_STORE`,
-  `CLAUDE_CODE_SKIP_*` and `CLAUDE_CONFIG_DIR`, which selects another account's
+  `CLAUDE_CODE_SKIP_*`, `CLAUDE_CODE_PROVIDER_*` (the host-managed provider
+  switch) and `CLAUDE_CONFIG_DIR`, which selects another account's
   configuration;
 - cloud credentials (`AWS_*`, `GOOGLE_*`, `GCLOUD_*`, `CLOUDSDK_*`,
   `CLOUD_ML_REGION`, `VERTEX_REGION_*`, `AZURE_*`);
@@ -91,8 +92,9 @@ sign-in), not an API key. A denylist then removes, even from configured names:
   `NODE_OPTIONS`;
 - the worker's own `BUNNY_` variables.
 
-A configuration that lists a denied name in `claude.environment` refuses to
-load.
+A configuration whose `claude.environment` lists a denied name, a name like a
+key, token, secret, password, credential or base URL, or a dynamic-loader
+variable refuses to load, and the harness filter applies the same rule.
 
 **Project settings are checked before the tool starts.** The run loads the
 worktree's project settings (`.claude/settings.json`, and
@@ -113,10 +115,30 @@ settings, with the `CLAUDE_CODE_USE_` provider switches set empty. The tool's
 documentation counts an empty value as unset for provider selection.
 
 **The first event names the credential.** The stream's first event reports
-the tool's API key source. Anything but `none` stops the run there, before
-its first model request, as failed with reason `refused`. A result whose
-per-model usage names a provider other than `firstParty` gets a limitation
-saying so.
+the tool's API key source. Anything but `none` stops the run at that event,
+as failed with reason `refused`. The tool writes that event at about the
+moment it sends its first request, so the request already in flight may be
+spent on the key; nothing after it is. A result whose per-model usage names a
+provider other than `firstParty` gets a limitation saying so.
+
+**What the settings check does not cover.** It checks the project settings
+once, before the start. A run that creates or changes a file under `.claude/`
+gets a limitation saying so, without quoting it. The check does not look at
+hooks, the telemetry headers helper (`otelHeadersHelper`), status-line
+commands or enabled plugins. None of these can change who is billed.
+Repository hooks have been able to run commands with the owner's rights since
+the worker was first built (#502); this change leaves that as it was.
+
+**Not yet seen on a real host.** No host signed in only by
+`CLAUDE_CODE_OAUTH_TOKEN` exists yet. Until one does, two things are
+unverified. The first is whether its status reports `authMethod` `claude.ai`
+with `firstParty`; if it does not, readiness reads `unknown` while runs still
+work. The second is whether its first event reports the key source `none`; if
+it does not, every run there is refused at its first event. The installed
+acceptance should also confirm that the checks the repository documents still
+run under the narrowed environment: a variable a check needs beyond the
+allowlist must be listed in `claude.environment`, and proxy variables cannot
+be listed.
 
 ## Readiness
 
@@ -187,9 +209,14 @@ refuses both, so such a worker cannot declare until the core knows them.
    `git status`, `git diff` and `git log`; a list that names push, network or
    destructive tools refuses. `claude.model` and `claude.maxTurns` are
    optional. `claude.environment` optionally lists up to 32 more variable
-   names the harness may inherit, for a launch setup that needs one; a name
-   the denylist in [Subscription sign-in only](#subscription-sign-in-only)
-   covers refuses the configuration. Repository names are lowercase words joined by hyphens, dots or
+   names the harness may inherit, for a launch setup that needs one. The
+   configuration refuses to load when it lists a name the denylist in
+   [Subscription sign-in only](#subscription-sign-in-only) covers, one named
+   like a key, token, secret, password, credential or base URL (whole words,
+   so `GITHUB_TOKEN` and `OPENAI_API_KEY` refuse and `MAX_THINKING_TOKENS`
+   does not), or a dynamic-loader variable (`DYLD_*`, `LD_*`).
+   `CLAUDE_CODE_OAUTH_TOKEN` is the one exception and is allowlisted anyway.
+   Repository names are lowercase words joined by hyphens, dots or
    underscores and must match what the owner says to B.U.N.N.Y.
 4. Start it after sign-in from the reviewed release:
 

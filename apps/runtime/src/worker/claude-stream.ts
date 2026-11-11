@@ -123,15 +123,22 @@ const ALLOWED = /^(?:PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|LANG|LANGUAGE|LC_[A-Z_]
  * `CLAUDE_CODE_USE_` provider switches, the OAuth refresh token and scopes (read only by an interactive login), the
  * API-key descriptors and helpers, client certificates, skipped-auth switches, the configuration-directory selector, cloud
  * credentials (`AWS_`, `GOOGLE_`, `GCLOUD_`, `CLOUD_ML_REGION`, `VERTEX_REGION_`, `AZURE_`), proxies, extra CA
- * certificates, `NODE_OPTIONS`, and the worker's own `BUNNY_` variables.
+ * certificates, `NODE_OPTIONS`, the host-managed provider switch, and the worker's own `BUNNY_` variables.
  */
-const DENIED = /^(?:ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_OAUTH_(?!TOKEN$)|CLAUDE_CODE_API_KEY|CLAUDE_CODE_CLIENT_|CLAUDE_CODE_CERT_STORE$|CLAUDE_CODE_SKIP_|CLAUDE_CONFIG_DIR$|AWS_|GOOGLE_|GCLOUD_|CLOUDSDK_|CLOUD_ML_REGION$|VERTEX_REGION_|AZURE_|HTTPS?_PROXY$|ALL_PROXY$|NO_PROXY$|NODE_EXTRA_CA_CERTS$|NODE_OPTIONS$|NODE_TLS_|SSL_CERT_|BUNNY_)/;
+const DENIED = /^(?:ANTHROPIC_|CLAUDE_CODE_USE_|CLAUDE_CODE_OAUTH_(?!TOKEN$)|CLAUDE_CODE_API_KEY|CLAUDE_CODE_CLIENT_|CLAUDE_CODE_CERT_STORE$|CLAUDE_CODE_SKIP_|CLAUDE_CODE_PROVIDER_|CLAUDE_CONFIG_DIR$|AWS_|GOOGLE_|GCLOUD_|CLOUDSDK_|CLOUD_ML_REGION$|VERTEX_REGION_|AZURE_|HTTPS?_PROXY$|ALL_PROXY$|NO_PROXY$|NODE_EXTRA_CA_CERTS$|NODE_OPTIONS$|NODE_TLS_|SSL_CERT_|BUNNY_)/;
 /** Whether a variable name may never reach the harness, whatever the configuration says. */
 export const deniedVariable = (name: string): boolean => DENIED.test(name.toUpperCase());
-/** The environment the harness and its probes start with: the allowlist plus configured names, minus the denylist. */
+/**
+ * Whether the configuration may add a name: not denied, not named like a key, token, secret, password, credential or base
+ * URL (the settings check's rule, so a GitHub token or another provider's key never reaches the agent's commands), and
+ * not a dynamic-loader variable (`DYLD_`, `LD_`). The subscription token, already allowlisted, is the one exception.
+ */
+export const configurableVariable = (name: string): boolean =>
+  name === 'CLAUDE_CODE_OAUTH_TOKEN' || (!deniedVariable(name) && !CREDENTIAL_NAME.test(name) && !/^(?:DYLD_|LD_)/i.test(name));
+/** The environment the harness and its probes start with: the allowlist plus configurable configured names, minus the denylist. */
 export function harnessEnvironment(environment: NodeJS.ProcessEnv, configured: readonly string[] = []): Record<string, string> {
   return Object.fromEntries(Object.entries(environment).filter((entry): entry is [string, string] =>
-    typeof entry[1] === 'string' && (ALLOWED.test(entry[0]) || configured.includes(entry[0])) && !deniedVariable(entry[0])));
+    typeof entry[1] === 'string' && (ALLOWED.test(entry[0]) || (configured.includes(entry[0]) && configurableVariable(entry[0]))) && !deniedVariable(entry[0])));
 }
 
 /** Settings keys that run a command to obtain a credential; the worker never executes them, it refuses the run. */
