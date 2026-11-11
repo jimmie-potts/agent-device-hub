@@ -4,6 +4,7 @@ import type {HomeArrangements, HomePlacement, LightingLayoutRecord, LightingSele
 import type {RuntimeData} from './runtime-feeds.ts';
 import {cardsFor, emptyLightingLayout, lightingDevices, selectionKey} from './lighting.ts';
 import {widgetCatalog, widgetDefinition, type WidgetSize} from './widgets.ts';
+import {moduleCard, moduleCardOwners} from './module-cards.ts';
 import {artFormatShapes, placementShape, shapeArtFormat, shapeStoredSize, type HomeShape} from './home-shapes.ts';
 
 type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; instance: string} | {kind: 'light'; selection: LightingSelection} | {kind: 'unavailable'};
@@ -13,8 +14,7 @@ type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; ins
  * unavailable): it shows the generic face in one unit, and a save keeps its stored shape for when the module is back.
  */
 export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean; empty?: boolean; fallback?: boolean};
-/** Device owners whose module frontend draws compact content for every Home shape (#1672 PR B). */
-const compactOwners: Readonly<Record<string, string>> = {'bunny/modules/pixoo': 'pixoo', 'bunny/modules/tidbyt': 'tidbyt'};
+
 const ordinarySizes: readonly WidgetSize[] = ['medium', 'large'];
 export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardDefinition[] {
   // Roborock and Volcano metadata describe each existing device placement, not a second default card.
@@ -43,9 +43,6 @@ export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardD
     wispr.defaultSelected = exposed;
     if (!exposed || !connected) {wispr.source = {kind: 'unavailable'};wispr.reason = !exposed ? 'Wispr browser exposure is not available.' : 'Wispr records are unavailable or stale.';wispr.fallback = true;}
   }
-  // The same conditions main.tsx uses to mount the Pixoo and Tidbyt module cards; otherwise Home shows their generic face.
-  const serves = (owner: string, kind: string): boolean => owner === 'bunny/modules/pixoo' ? kind === 'pixoo' && runtime.modules?.some(module => module.name === 'pixoo' && module.serves.includes('pixoo-display')) === true
-    : owner === 'bunny/modules/tidbyt' && kind === 'tidbyt' && runtime.modules?.some(module => module.name === 'tidbyt' && module.state === 'running' && module.pages.some(page => page.id === 'display')) === true;
   const devices = lightingDevices(runtime.copies, connected);
   const layoutCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'lighting-layout');
   const lighting = (layoutCopy?.records as readonly LightingLayoutRecord[] | undefined)?.find(record => record.id === 'lighting')?.layout ?? emptyLightingLayout();
@@ -67,7 +64,8 @@ export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardD
         category: device.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' ? 'Cleaning' : device.kind === 'wemo' ? 'Plugs' : device.kind === 'pixoo' || device.kind === 'tidbyt' ? 'Displays' : 'Devices',
         sizes: device.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' ? widgetDefinition('roborock')?.sizes ?? ordinarySizes : device.kind === 'volcano' && copy.owner === 'bunny/modules/volcano' ? widgetDefinition('volcano')?.sizes ?? ordinarySizes : ordinarySizes,
         source: {kind: 'device', owner: copy.owner, instance: device.id}, defaultSelected: true, ...(!connected || !copy.synced ? {reason: 'Device records are unavailable or stale.'} : {}),
-        ...(compactOwners[copy.owner] !== undefined && !serves(copy.owner, device.kind) ? {fallback: true} : {})});
+        // main.tsx mounts the module's own card by the same rule; without it Home shows the generic face.
+        ...(moduleCardOwners[copy.owner] !== undefined && moduleCard(runtime.modules, copy.owner, device.kind) === undefined ? {fallback: true} : {})});
     }
     if (copy.family === 'playback') for (const playback of copy.records as readonly PlaybackState[]) result.push({id: `music:${copy.owner}:${playback.id}`, name: `Music · ${playback.id}`, category: 'Audio', sizes: ordinarySizes,
       source: {kind: 'music', owner: copy.owner, instance: playback.id}, defaultSelected: true, ...(!connected || !copy.synced ? {reason: 'Playback records are unavailable or stale.'} : {})});
@@ -139,7 +137,7 @@ export function homeCardShapes(card: Pick<HomeCardDefinition, 'id' | 'source' | 
   if (widget !== undefined) return {shapes: widget.shapes, standard: widget.standard, generic: widget.generic ?? [], ...(widget.open === undefined ? {} : {open: widget.open})};
   // A room or group with no lights has only its name, state and a short note to show, so it offers one-row shapes.
   if (card.source.kind === 'light') return card.empty === true ? {shapes: ['square', 'wide'], standard: 'wide', generic: []} : {shapes: allShapes, standard: 'tall', generic: []};
-  if (card.source.kind === 'device' && compactOwners[card.source.owner] !== undefined) return {shapes: allShapes, standard: 'square', generic: [], ...(page === undefined ? {} : {open: page})};
+  if (card.source.kind === 'device' && moduleCardOwners[card.source.owner] !== undefined) return {shapes: allShapes, standard: 'square', generic: [], ...(page === undefined ? {} : {open: page})};
   if (card.source.kind === 'device') return {...generic, open: `#/component/${encodeURIComponent(card.source.instance)}`};
   if (card.source.kind === 'music') return {...generic, open: `#/music/${encodeURIComponent(card.source.instance)}`};
   return generic;

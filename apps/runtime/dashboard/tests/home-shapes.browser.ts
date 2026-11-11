@@ -10,6 +10,7 @@ import {changes, feed, startWorld} from './harness.ts';
 import {approvalPrompt, IDENTITY} from '../../dist/tests/fixtures/agents.js';
 import {listFit} from '../src/paging.ts';
 import {idleChanges} from './list-idle.ts';
+import {gifFixture} from '../../../../modules/pixoo/dist/tests/helpers/media-fixtures.js';
 
 const receipts = process.env.DASHBOARD_RECEIPTS;
 const only = process.env.HOME_SHAPES_ONLY?.split(',');
@@ -659,6 +660,53 @@ try {
     } finally {await quietContext.close();await quiet.close();}
   }
 
+  /**
+   * F1 (#1672 PR B round 1): an open options menu hangs past its card over the card below; every item in it stays on
+   * top and takes a pointer. Opens the menu by pointer, then checks that the element under its last item is that item.
+   */
+  const menuReach = async (id: string): Promise<string> => {
+    const card = page.locator(`[data-home-card="${id}"]`);
+    await card.locator('details.light-options > summary').click();
+    const body = card.locator('details.light-options[open] .light-options-body');await expect(body).toBeVisible();
+    const result = await body.evaluate(menu => {
+      const items = [...menu.querySelectorAll<HTMLElement>('a[href], button, select, input')].filter(node => node.checkVisibility());
+      const last = items.at(-1);if (last === undefined) return 'no item';
+      last.scrollIntoView({block: 'nearest'});
+      const rect = last.getBoundingClientRect(), hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return hit !== null && (hit === last || last.contains(hit)) ? 'reachable' : `"${(last.textContent ?? '').trim()}" is under ${hit?.closest('[data-home-card]')?.getAttribute('data-home-card') ?? hit?.tagName ?? 'nothing'}`;
+    });
+    return result;
+  };
+
+  if (part('menus')) {
+    // F1: the Pixoo menu in Small square and Wide, and a light card's menu, each with a card directly below it.
+    const failures: string[] = [];
+    await page.setViewportSize({width: 1440, height: 1000});
+    // Five columns: row 1 holds five squares, so the next two sit under the first two.
+    await save(page, [placement(lamps[0] ?? '', 'square'), placement(pixoo, 'square'), placement(tidbyt, 'square'), placement('wispr', 'square'), placement('timeline', 'square'), placement(lamps[1] ?? '', 'square'), placement(lamps[2] ?? '', 'square')]);
+    const below = new Map((await measure(page)).cards.map(card => [card.id, card]));
+    assert.ok(Math.abs((below.get(lamps[2] ?? '')?.top ?? 0) - (below.get(pixoo)?.bottom ?? 0) - 16) <= 1 && Math.abs((below.get(lamps[1] ?? '')?.top ?? 0) - (below.get(lamps[0] ?? '')?.bottom ?? 0) - 16) <= 1, 'a card sits directly below the Pixoo and the light');
+    for (const id of [pixoo, lamps[0] ?? '']) {
+      const reach = await menuReach(id);if (reach !== 'reachable') failures.push(`${id}@square: ${reach}`);
+      if (id === pixoo) await shot(page, 'b2-pixoo-menu-over-card-1440');
+      // Close it again by pointer on its summary.
+      await page.locator(`[data-home-card="${id}"] details.light-options[open] > summary`).click();await expect(page.locator(`[data-home-card="${id}"] details.light-options[open]`)).toHaveCount(0);
+    }
+    // Wide Pixoo over Wide Wispr: the last link is clicked by pointer and opens its page.
+    await save(page, [placement(pixoo, 'wide'), placement('hub-mode', 'wide'), placement(lamps[0] ?? '', 'square'), placement('wispr', 'wide')]);
+    const reach = await menuReach(pixoo);if (reach !== 'reachable') failures.push(`${pixoo}@wide: ${reach}`);
+    else {
+      const last = page.locator(`[data-home-card="${pixoo}"] .light-options-body a`).last(), box = await last.boundingBox();assert.ok(box !== null);
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/module/pixoo/settings');
+      await page.goto(`${world.url}/#/home`);await feed(page, 'connected');
+    }
+    // Close any menu still open, by pointer, so later parts measure closed cards.
+    for (const summary of await page.locator('details.light-options[open] > summary').all()) await summary.click();
+    await expect(page.locator('details.light-options[open]')).toHaveCount(0);
+    assert.deepEqual(failures, [], 'every item of an open card menu is on top of the card below');
+  }
+
   if (part('modules')) {
     // PR B: Pixoo, Tidbyt and Wispr draw compact content of their own in every shape, from the presentation hint the
     // shell passes in their module context. Each fits its card at 1100, 1440 and 1920 px (nothing past the card, even
@@ -699,7 +747,7 @@ try {
       for (const id of modules) pictures.get(id)?.push(await picture(page, id));
     }
     assert.deepEqual(failures, [], 'Pixoo, Tidbyt and Wispr fit every shape and stay still');
-    for (const [id, list] of pictures) await sheet(`b-${id === pixoo ? 'pixoo' : id === tidbyt ? 'tidbyt' : 'wispr'}-four-shapes-1440`, list);
+    for (const [id, list] of pictures) await sheet(`b2-${id === pixoo ? 'pixoo' : id === tidbyt ? 'tidbyt' : 'wispr'}-four-shapes-1440`, list);
     // A device-acting control shown in a shape behaves as in the full card, and its result shows on the card's face.
     await save(page, [placement(pixoo, 'wide')]);
     const wide = page.locator(`[data-home-card="${pixoo}"]`);
@@ -709,19 +757,89 @@ try {
     await expect.poll(() => sent.length).toBe(1);assert.deepEqual(sent, ['/api/v2/commands/power-set']);
     await expect(wide.locator('.pixoo-compact-result')).not.toHaveText('No command sent from this page.');
     assert.deepEqual(misfits((await measure(page)).cards), [], 'the result line stays inside the Wide Pixoo card');
+    // F3: with an active session, the playback row and the Large square brightness form each send one request whose
+    // data is what the full card sends for the same control; moving the slider sends nothing and a double click one.
+    const deviceId = pixoo.split(':').at(-1) ?? '';
+    const bodies: {path: string; data: Record<string, unknown>}[] = [];
+    page.on('request', request => {
+      if (request.method() !== 'POST' || !request.url().includes('/api/v2/commands/')) return;
+      const body = JSON.parse(request.postData() ?? '{}') as {data?: Record<string, unknown>};
+      bodies.push({path: new URL(request.url()).pathname, data: body.data ?? {}});
+    });
+    // An active session from the full card, as the owner starts one: a synthetic GIF, then Play selected media.
+    await page.goto(`${world.url}/#/module/pixoo/library`);await feed(page, 'connected');
+    await page.getByLabel('Media file', {exact: true}).setInputFiles({name: 'Shapes.gif', mimeType: 'image/gif', buffer: gifFixture(2, 2, [{width: 2, height: 2, pixels: [0, 1, 2, 3], delay: 50}, {width: 2, height: 2, pixels: [3, 2, 1, 0], delay: 50}])});
+    await page.getByRole('button', {name: 'Add media', exact: true}).click();
+    await page.getByRole('cell', {name: 'Shapes.gif', exact: true}).waitFor({timeout: 30_000});
+    await page.goto(`${world.url}/#/component/${encodeURIComponent(deviceId)}`);
+    const full = page.getByRole('article', {name: 'Pixoo display', exact: true});
+    await full.getByRole('tab', {name: 'Content', exact: true}).click();
+    await full.getByRole('combobox', {name: 'Browse', exact: true}).selectOption('media');
+    await full.locator('button.pixoo-media-tile').first().click();
+    await full.getByRole('button', {name: 'Play selected media', exact: true}).click();
+    // Screen off above may leave the new session paused; either way the session's toggle shows.
+    await full.getByRole('button', {name: /^(Pause|Resume)$/}).waitFor();
+    // The full card's own request for Next, the reference for the compact card's.
+    const settled = async (scope: Locator, name: string): Promise<void> => {await expect(scope.getByRole('button', {name, exact: true})).toBeEnabled();};
+    await settled(full, 'Next');let mark = bodies.length;
+    await full.getByRole('button', {name: 'Next', exact: true}).click();await expect.poll(() => bodies.length).toBe(mark + 1);
+    const reference = bodies.at(-1);assert.ok(reference !== undefined);
+    await page.goto(`${world.url}/#/home`);await feed(page, 'connected');
+    await save(page, [placement(pixoo, 'wide')]);
+    const device = async (): Promise<{configurationRevision: number; generation: number}> => page.evaluate(async id => {
+      const data = await (await fetch('/api/v2/snapshot?families=device&owner=bunny/modules/pixoo')).json() as {records: {device: {id: string; configurationRevision: number; generation: number}[]}};
+      const record = data.records.device.find(value => value.id === id);if (record === undefined) throw new Error('pixoo-record');
+      return {configurationRevision: record.configurationRevision, generation: record.generation};
+    }, deviceId);
+    const press = async (scope: Locator, name: string, family: string, data: Record<string, unknown>, double = false): Promise<void> => {
+      await settled(scope, name);const guard = await device();mark = bodies.length;
+      const button = scope.getByRole('button', {name, exact: true});
+      if (double) await button.dblclick();else await button.click();
+      await expect.poll(() => bodies.length).toBe(mark + 1);await page.waitForTimeout(300);
+      assert.equal(bodies.length, mark + 1, `${name} sends one request${double ? ' for a double click' : ''}`);
+      assert.deepEqual(bodies.at(-1), {path: `/api/v2/commands/${family}`, data: {...data, expectedConfigurationRevision: guard.configurationRevision, expectedGeneration: guard.generation}}, name);
+    };
+    const playing = page.locator(`[data-home-card="${pixoo}"]`);
+    // The screen goes back on (Screen off above paused the player), with the same body the full card sends.
+    await press(playing, 'Screen on', 'power-set', {on: true});
+    await press(playing, 'Next', 'media-control', {action: 'next'});
+    assert.deepEqual(Object.keys(bodies.at(-1)?.data ?? {}).sort(), Object.keys(reference.data).sort(), 'the same fields as the full card\'s Next');
+    await press(playing, 'Previous', 'media-control', {action: 'previous'});
+    // Pause and Resume share one control; drive it both ways from whichever state the session is in.
+    const toggle = playing.getByRole('button', {name: /^(Pause|Resume)$/});await expect(toggle).toBeEnabled();
+    const first = await toggle.getAttribute('aria-label') ?? 'Pause', second = first === 'Pause' ? 'Resume' : 'Pause';
+    await press(playing, first, 'media-control', {action: first.toLowerCase()});
+    await expect(playing.getByRole('button', {name: second, exact: true})).toBeVisible();
+    await press(playing, second, 'media-control', {action: second.toLowerCase()});
+    await press(playing, 'Next', 'media-control', {action: 'next'}, true);
+    await save(page, [placement(pixoo, 'large-square'), placement(tidbyt, 'large-square')]);
+    await settled(playing, 'Next');mark = bodies.length;
+    const slider = playing.getByRole('slider', {name: 'Brightness'});
+    await slider.focus();for (let step = 0; step < 5; step += 1) await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(300);assert.equal(bodies.length, mark, 'moving the slider sends nothing');
+    const draft = Number(await slider.inputValue());
+    await press(playing, 'Apply brightness', 'brightness-set', {percent: draft});
+    assert.deepEqual(misfits((await measure(page)).cards), [], 'the Large square Pixoo with a session fits');
+    await shot(page, 'b2-pixoo-large-square-playing-1440');
+    // F5: in Large square the media is a square on top, as large as the controls under it allow, and they follow it.
+    const large = await playing.evaluate(card => {
+      const art = card.querySelector('.pixoo-artwork')?.getBoundingClientRect(), body = card.querySelector('.pixoo-compact-body')?.getBoundingClientRect();
+      return art === undefined || body === undefined ? undefined : {width: art.width, height: art.height, artTop: art.top, bodyTop: body.top, card: card.getBoundingClientRect().width};
+    });
+    assert.ok(large !== undefined && Math.abs(large.width - large.height) <= 1 && large.width >= large.card * 0.4 && large.bodyTop - large.artTop - large.height >= 0 && large.bodyTop - large.artTop - large.height <= 12, `Large square media and controls: ${JSON.stringify(large)}`);
     // Home with the three cards in larger shapes, at each width and in Edit Home.
     const showcase = [placement('hub-mode', 'wide'), placement(pixoo, 'tall'), placement(tidbyt, 'wide'), placement('wispr', 'large-square'), placement('inbox', 'wide'), placement('timeline', 'tall'), placement(lamps[0] ?? '', 'square'), placement('sessions', 'large-square')];
     await save(page, showcase);
     for (const width of [1100, 1440, 1920]) {
       await page.setViewportSize({width, height: 1000});const value = await measure(page);tiles(value);
-      assert.deepEqual(misfits(value.cards), [], `showcase at ${String(width)}`);await shot(page, `b-home-${String(width)}`);
+      assert.deepEqual(misfits(value.cards), [], `showcase at ${String(width)}`);await shot(page, `b2-home-${String(width)}`);
     }
     await page.setViewportSize({width: 375, height: 812});await settle(page);
     // One column keeps every card in full: no presentation hint reaches the modules there.
     await expect(page.locator('[data-pixoo-shape], [data-tidbyt-shape], .wispr-card[data-shape]')).toHaveCount(0);
-    await shot(page, 'b-home-375');
+    await shot(page, 'b2-home-375');
     await page.setViewportSize({width: 1440, height: 1000});await measure(page);
-    await page.getByRole('button', {name: 'Edit Home', exact: true}).click();await shot(page, 'b-edit-home-1440');
+    await page.getByRole('button', {name: 'Edit Home', exact: true}).click();await shot(page, 'b2-edit-home-1440');
     await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   }
 
@@ -757,6 +875,20 @@ try {
     for (const width of [1100, 1440, 1920]) {await page.setViewportSize({width, height: 1000});await settle(page);await shot(page, `final5-home-${String(width)}`);}
     await page.setViewportSize({width: 375, height: 812});await settle(page);await shot(page, 'final5-home-375');
     await page.setViewportSize({width: 1440, height: 1000});
+  }
+  if (part('stale')) {
+    // F2: while the compact Pixoo card's controls are disabled, its line says why. A runtime restart ends the browser's
+    // session, so the card's records go stale; reloading signs in again on the trusted loopback.
+    await save(page, [placement(pixoo, 'wide')]);
+    const card = page.locator(`[data-home-card="${pixoo}"]`);
+    await expect(card.getByRole('button', {name: 'Screen off', exact: true})).toBeEnabled();
+    await world.restart();
+    await expect(card.getByRole('button', {name: 'Screen off', exact: true})).toBeDisabled();
+    const line = card.locator('.pixoo-compact-result');
+    await expect(line).toHaveText('Pixoo records are stale.');await expect(line).toHaveAttribute('title', 'Pixoo records are stale.');
+    assert.deepEqual(misfits((await measure(page)).cards), [], 'the reason line stays inside the card');
+    await page.reload();await feed(page, 'connected');
+    await expect(card.getByRole('button', {name: 'Screen off', exact: true})).toBeEnabled();
   }
   assert.deepEqual(errors, []);
 } finally {

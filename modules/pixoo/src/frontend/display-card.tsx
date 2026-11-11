@@ -51,10 +51,15 @@ export function PixooCard({context, device, display, live, playlists, command}: 
   const caption = `${session?.playlist.name ?? 'Choose something to play'}${activeItem === undefined ? '' : ` · ${(session?.playlist.items.findIndex(item => item.id === activeItem.id) ?? -1) + 1}/${session?.playlist.items.length}`}`;
   // In a Home shape (#1672 PR B) the shell says which; the card shows compact content for it and keeps these hooks.
   const shape = context.presentation?.shape;
+  // One line: while the controls are disabled their reason comes first (the full card shows it on its own line), then a
+  // failed send, a player error and the command attempt's own text.
+  // A routine re-read of the player after a display change is not a reason; the line keeps what it showed.
+  const reason = !deviceBlocked ? undefined : blocked ?? (error ? 'Player unavailable. Device details can refresh it.' : loading ? undefined : !current ? 'Pixoo records are stale.' : device.availability !== 'available' ? 'Pixoo is unavailable.' : undefined);
+  const compactResult = reason ?? failure ?? (state?.lastError !== null && state?.lastError !== undefined ? `Player error: ${state.lastError.code}.` : command.text);
   if (shape !== undefined) return <PixooCompactCard context={context} device={device} shape={shape} state={stateText} renditionId={activeItem?.renditionId} current={current}
     playing={state?.state === 'playing'} caption={caption} session={session !== undefined && session !== null} deviceBlocked={deviceBlocked} actionDisabled={actionDisabled}
     screenOn={screenOn} desiredBrightness={desiredBrightness} send={send}
-    result={failure ?? (error ? 'Player unavailable. Device details can refresh it.' : state?.lastError !== null && state?.lastError !== undefined ? `Player error: ${state.lastError.code}.` : command.text)}/>;
+    result={compactResult}/>;
   return <article className="light-card pixoo-card" aria-label="Pixoo display">
     <header className="light-card-heading"><div><h3>{device.label ?? 'Pixoo'}</h3><p>{stateText}</p></div>
       <details className="light-options"><summary aria-label="Pixoo options">⋯</summary><div className="light-options-body">

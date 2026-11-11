@@ -152,7 +152,10 @@ module frontends read the optional `presentation` field (shape and card size)
 that `src/module-page.tsx` adds to the SDK frontend context while the card is on
 the grid, and keep their full card without it. A Pixoo or Tidbyt card whose
 module does not serve its card, or an unavailable Wispr card, shows the generic
-face in one unit and keeps its saved shape. Other cards show a generic face in
+face in one unit and keeps its saved shape (`src/module-cards.ts` holds the one
+rule `main.tsx` mounts these module cards by). A card whose options menu is open
+is raised above the cards after it, so the whole menu takes a pointer. Other
+cards show a generic face in
 one unit: the name, the current state and **Open**, which leads to the card's
 existing device, Music or module page.
 A placement saved before shapes shows Small as Small square or Tall, Standard as

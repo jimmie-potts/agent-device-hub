@@ -10,7 +10,7 @@ export type PixooCompactProps = {
   /** Playback controls show while a session exists; each is enabled exactly as in the full card. */
   session: boolean; deviceBlocked: boolean; actionDisabled: (action: MediaAction) => boolean;
   screenOn: boolean | undefined; desiredBrightness: number | undefined;
-  /** The one result line: a refused or failed send, the command attempt, a block reason or a player error. */
+  /** The one result line: why the controls are disabled, else a refused or failed send, a player error or the attempt. */
   result: string;
   send: (family: string, data: object) => void;
 };

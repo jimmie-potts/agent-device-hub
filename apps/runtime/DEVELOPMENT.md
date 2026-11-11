@@ -691,8 +691,16 @@ widths. Its `modules` part places the Pixoo, Tidbyt and Wispr cards in each
 shape at the three widths and checks their own compact content (#1672 PR B):
 nothing past the card even where it hides overflow, no generic face, no blank
 band, two idle seconds without change, and a Wide Pixoo Screen off sending one
-command whose result shows on the card.
-`HOME_SHAPES_ONLY=tiles,picker,convert,paging,fit,results,short,modules,idle,shots`
+command whose result shows on the card. With an active session it also drives
+Next, Previous, Pause and Resume in Wide and brightness Apply in Large square:
+one request each, with the full card's fields, none for moving the slider and
+one for a double click. `menus` opens the Pixoo menu in Small square and Wide
+and a light card's menu, each over the card below, and checks by pointer that
+the last item is on top; `stale` restarts the runtime and checks that the
+disabled Pixoo controls say why. The idle recorder (`tests/list-idle.ts`) counts
+an attribute only when its value at the end of the window differs from its
+value at the start.
+`HOME_SHAPES_ONLY=tiles,picker,convert,paging,fit,results,short,menus,modules,idle,shots,stale`
 selects parts. `node apps/runtime/dashboard/tests/home-idle.browser.ts`, in the
 full browser suite only, sweeps every width from 1100 to 2560 px in 20 px steps
 on the built-in and two mixed layouts with 0, 1, 5, 6 and 13 Inbox items and

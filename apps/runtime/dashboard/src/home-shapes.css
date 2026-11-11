@@ -22,6 +22,9 @@
 .home-card-options{position:absolute;top:100%;left:0;z-index:6;display:flex;flex-wrap:wrap;gap:4px;width:100%;box-sizing:border-box;padding:8px;background:var(--panel);border:1px solid var(--edge-dense);border-radius:0 0 var(--radius) var(--radius);box-shadow:var(--shell-shadow)}
 .home-card-options small{flex-basis:100%;color:var(--muted-dense)}
 .home-layout-grid[data-packed=true] .home-layout-card:has(.home-card-options){z-index:4}
+/* A card's open options menu can hang past its bottom edge over the next card; the card is raised while it is open so
+   every item in the menu stays on top and clickable (#1672 PR B F1). */
+.home-layout-grid[data-packed=true] .home-layout-card:has(.light-options[open]){z-index:5}
 .home-shape-choice{display:inline-flex;gap:2px}
 .home-shape-choice button{min-width:36px;padding:6px}
 .home-shape-choice button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -128,9 +131,20 @@
 .home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-links{gap:var(--space-xs);flex-wrap:nowrap;min-width:0}
 .home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-links a{display:block;flex:0 1 auto;min-width:0;padding-inline:var(--space-xs);line-height:calc(var(--card-target-size,44px) - 2 * var(--space-s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 :is(.home-layout-card.home-shape-wide,.home-layout-card.home-shape-large-square) .pixoo-compact .pixoo-artwork{margin:0}
-:is(.home-layout-card.home-shape-wide,.home-layout-card.home-shape-large-square) :is(.pixoo-compact-body,.tidbyt-compact-body){align-self:center}
+.home-layout-card.home-shape-wide :is(.pixoo-compact-body,.tidbyt-compact-body){align-self:center}
+.home-layout-card.home-shape-large-square .tidbyt-compact-body{align-self:center}
 .home-layout-card.home-shape-wide .tidbyt-compact .tidbyt-artwork{margin:0}
-.home-layout-card.home-shape-large-square .pixoo-compact{grid-template-rows:auto minmax(0,1fr)}
+/* Large square: the media is a square on top, as tall as the controls under it leave room for, and the controls follow. */
+.home-layout-card.home-shape-large-square .pixoo-compact{display:flex}
+.home-layout-card.home-shape-large-square .pixoo-compact .pixoo-artwork{flex:1 1 0;min-height:96px;height:auto;width:auto;max-width:100%;aspect-ratio:1;align-self:center;margin:var(--space-xs) 0}
+.home-layout-card.home-shape-large-square .pixoo-compact-body{align-self:stretch;display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);grid-template-areas:"caption caption" "power playback" "brightness brightness" "result result"}
+/* Screen and playback share one row, and Apply sits beside the slider, so the media keeps as much height as it can. */
+.home-layout-card.home-shape-large-square .pixoo-compact-body>.pixoo-caption{grid-area:caption}
+.home-layout-card.home-shape-large-square .pixoo-compact-body>.light-power{grid-area:power}
+.home-layout-card.home-shape-large-square .pixoo-compact-body:not(:has(>.pixoo-playback))>.light-power{grid-column:1/-1}
+.home-layout-card.home-shape-large-square .pixoo-compact-body>.pixoo-playback{grid-area:playback}
+.home-layout-card.home-shape-large-square .pixoo-compact-body>.pixoo-compact-brightness{grid-area:brightness;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:var(--space-xs)}
+.home-layout-card.home-shape-large-square .pixoo-compact-body>.pixoo-compact-result{grid-area:result}
 /* Large square stacks the Tidbyt's wide artwork over its evidence, as Tall does. */
 .home-layout-card.home-shape-large-square .tidbyt-compact{display:flex}
 .home-layout-card.home-shape-large-square .tidbyt-compact-body{align-self:stretch}

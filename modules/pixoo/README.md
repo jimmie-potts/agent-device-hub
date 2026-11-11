@@ -68,7 +68,10 @@ On the Home grid (#1672) the card reads the shape from the shell's optional
 same hooks and command path: a Small square shows the name, state, active media
 and caption; Wide and Tall add Screen on and off, playback (Previous,
 Pause/Resume, Next) while a session exists and one result line; Large square
-also adds brightness with Apply. The options menu's Device details opens the
+puts the media on top, as large as the controls under it allow, and adds
+brightness with Apply. While the controls are disabled the result line gives the
+reason (stale records, a command still settling, held or queued changes) before
+any earlier result, with the full text in its title. The options menu's Device details opens the
 full card with its Content tab, playlists and mode exceptions. Off the grid the
 card is unchanged.
 
