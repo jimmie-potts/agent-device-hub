@@ -112,8 +112,9 @@ again changes nothing.
 
 The step rewrites every history row once, all in one transaction, so the
 write-ahead log `core.sqlite-wal` holds a new copy of every history page and both
-new indexes. The extra space measured about the store's size plus 90 to 230 bytes
-per history row, so it is largest, as a multiple of the store, for small rows. On
+new indexes. The extra space measured about the store's size plus 90 to 260 bytes
+per history row, across this change's measurements and the independent review's,
+so it is largest, as a multiple of the store, for small rows. On
 synthetic stores with the runtime's database settings, the extra space at the
 peak was:
 
