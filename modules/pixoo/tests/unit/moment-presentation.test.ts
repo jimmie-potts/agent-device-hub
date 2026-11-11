@@ -163,15 +163,43 @@ it('attention during the moment\'s write lets it finish, keeps the status base o
   const results:MomentResult[]=[];
   void monitor.playMoment({momentId:'m1',coversStatus:true,durationMs:3000,startAtMs:clock.now(),toleranceMs:10000,frames:()=>Promise.resolve([RGB(7)])}).then(result=>results.push(result));
   await flush(clock);
-  for(let t=0;t<2000&&monitor.momentSummary().playing===null;t+=100){clock.advance(100);monitor.tick();await flush(clock);}
+  for(let t=0;t<2000&&monitor.status().inFlight===0;t+=100){clock.advance(100);monitor.tick();await flush(clock);}
   clock.advance(100);monitor.tick();await flush(clock);
-  expect(monitor.momentSummary().playing).toBe('m1');
+  // The moment's write is still on its way: until the Pixoo acknowledges it, the record reports the dashboard it covers (Hub #1724).
+  expect(monitor.status().inFlight).toBe(1);
+  expect(monitor.momentSummary().playing).toBeNull();
+  expect(monitor.nowPlayingSummary().showing).toBe('dashboard');
   monitor.submit(attentionView);await run(2000);
   ended(results,'preempted');
   expect(monitor.status().participating).toBe(true);
   expect(player.getState().lastError).toBeNull();
   expect(shown().at(-1)).toEqual(present(present(monitor.rendition().rendition).frames.at(-1)));
  }finally{await monitor.close();await player.close();}
+});
+it('over a playing item reports the moment from the write the Pixoo acknowledged, and asks for that report at once (Hub #1724)',async()=>{
+ const s=await setup({latencyMs:300});
+ try{
+  await s.settle(s.player.start(s.store.playlist.id));
+  for(let t=0;t<2000&&s.player.getState().state!=='playing';t+=100)await s.run(100);
+  expect(s.player.getState()).toMatchObject({intent:'active',state:'playing'});
+  let reports=0;s.monitor.onShown=()=>{reports++;};
+  s.play({durationMs:1000});
+  for(let t=0;t<2000&&!(s.monitor.momentBusy()&&s.monitor.status().inFlight===1);t+=100){s.clock.advance(100);s.monitor.tick();await flush(s.clock);}
+  // The held item is still on the display while the moment's write is on its way.
+  expect(s.player.getState().intent).toBe('paused');
+  expect(s.monitor.nowPlayingSummary().showing).toBe('none');
+  expect(s.monitor.momentSummary().playing).toBeNull();
+  expect(reports).toBe(0);
+  await s.run(300);
+  expect(s.frames().at(-1)).toEqual(art);
+  expect(s.monitor.nowPlayingSummary().showing).toBe('moment');
+  expect(s.monitor.momentSummary().playing).toBe('m1');
+  expect(reports).toBe(1);
+  await s.run(1200);
+  expect(s.monitor.nowPlayingSummary().showing).not.toBe('moment');
+  expect(s.monitor.momentSummary().playing).toBeNull();
+  expect(reports).toBe(1);
+ }finally{await s.close();}
 });
 it('over the status base refuses attention, lost evidence, in Work a moment the hub did not allow, and the setting off',async()=>{
  const s=await setup();
