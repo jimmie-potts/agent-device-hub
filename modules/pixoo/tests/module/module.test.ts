@@ -476,17 +476,18 @@ void describe('moments', () => {
   });
 
   void it('refuses what the device does not offer, what the status base in Work does not admit, and a moment it has seen, across a restart', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
       await world.start();
-      const send = (id: string, patch: object = {}): Promise<RequestResult> => world.request('moment-play', MOMENT, moment(id, patch));
+      const send = (id: string, patch: object = {}): Promise<RequestResult> => world.request('moment-play', MOMENT, moment(id, {startAtMs: world.now(), ...patch}));
       assert.equal(await refusal(send('m-mood', {mood: 'unknown-mood'})), 'unsupported-capability');
       assert.equal(await refusal(send('m-long', {durationMs: 10_001})), 'unsupported-capability');
       await world.outcome(await mode(world, 'work'));
       await world.publishSession();
-      await waitFor(() => world.device.state().shown, 'the dashboard on the device');
+      await world.tickUntil(() => world.device.state().shown ?? undefined, 'the dashboard on the device', 2000);
       assert.equal(await refusal(send('m-flourish', {priorityClass: 'flourish', coversStatus: false})), 'invalid-state');
-      assert.equal(await refusal(send('m-late', {startAtMs: Date.now() - 5000, toleranceMs: 1000})), 'invalid-state');
+      assert.equal(await refusal(send('m-late', {startAtMs: world.now() - 5000, toleranceMs: 1000})), 'invalid-state');
       const off = await accepted(world.request(FAMILIES.moments, 'org.bunny.pixoo-moments.set.requested', {overStatus: false}));
       assert.deepEqual((await world.outcome(off)).data, {requestId: off, result: 'succeeded', evidence: 'observed'});
       await waitFor(() => {
@@ -497,12 +498,16 @@ void describe('moments', () => {
       const on = await accepted(world.request(FAMILIES.moments, 'org.bunny.pixoo-moments.set.requested', {overStatus: true}));
       await world.outcome(on);
       await world.publishSession({attention: [{id: {status: 'known', id: 'approve-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}]});
-      await waitFor(() => world.display()?.monitor.attention === 1 ? true : undefined, 'the attention');
+      await world.tickUntil(() => world.display()?.monitor.attention === 1 ? true : undefined, 'the attention', 1000);
       assert.equal(await refusal(send('m-attention')), 'invalid-state');
       await world.publishSession({attention: []});
-      await waitFor(() => world.display()?.monitor.attention === 0 ? true : undefined, 'the attention resolved');
+      await world.tickUntil(() => world.display()?.monitor.attention === 0 ? true : undefined, 'the attention resolved', 1000);
       const played = await accepted(send('m-once'));
+      // While the clock stands inside the moment, a second one is refused for capacity.
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device', 2000);
       assert.equal(await refusal(send('m-busy')), 'capacity');
+      assert.equal(ended(world, played), undefined, 'the moment has not ended');
+      await world.tickUntil(() => ended(world, played), 'the moment\'s end', 1000);
       await world.outcome(played);
       assert.equal(await refusal(send('m-once')), 'invalid-state');
       await world.restart();
@@ -566,28 +571,29 @@ void describe('moments', () => {
   });
 
   void it('keeps playing when next is pressed during a moment over a playing item, and blanks the art when pause is', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
       await world.start();
       const {list} = await readyPlaylist(world);
       await world.outcome(await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id})));
-      await waitFor(() => world.display()?.player.state === 'playing' ? true : undefined, 'the playing playlist');
+      await world.tickUntil(() => world.display()?.player.state === 'playing' ? true : undefined, 'the playing playlist', COALESCE_MS);
       const flourish = {priorityClass: 'flourish', coversStatus: false, durationMs: 10_000};
-      const first = await accepted(world.request('moment-play', MOMENT, moment('m-next', flourish)));
-      await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device');
+      const first = await accepted(world.request('moment-play', MOMENT, moment('m-next', {...flourish, startAtMs: world.now()})));
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the moment on the device', 1000);
       const next = await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'next'}));
       assert.equal((await world.outcome(next)).data.result, 'succeeded');
       assert.equal((await world.outcome(first)).data.result, 'succeeded');
       assert.equal(ended(world, first)?.ending, 'interrupted');
-      await waitFor(() => world.display()?.player.intent === 'active' ? true : undefined, 'the playlist still playing');
-      await waitFor(() => world.device.state().shown?.digests[0] !== momentFrame() ? true : undefined, 'the art replaced');
-      await waitFor(() => world.display()?.player.state === 'playing' ? true : undefined, 'the playlist playing again');
-      const second = await accepted(world.request('moment-play', MOMENT, moment('m-pause', flourish)));
-      await waitFor(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the second moment on the device');
+      await world.tickUntil(() => world.display()?.player.intent === 'active' ? true : undefined, 'the playlist still playing', COALESCE_MS);
+      await world.tickUntil(() => world.device.state().shown?.digests[0] !== momentFrame() ? true : undefined, 'the art replaced', 1000);
+      await world.tickUntil(() => world.display()?.player.state === 'playing' ? true : undefined, 'the playlist playing again', COALESCE_MS);
+      const second = await accepted(world.request('moment-play', MOMENT, moment('m-pause', {...flourish, startAtMs: world.now()})));
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === momentFrame() ? true : undefined, 'the second moment on the device', 1000);
       const paused = await accepted(world.request('media-control', 'org.bunny.media.control.requested', {action: 'pause'}));
       await world.outcome(paused);
       assert.equal(ended(world, second)?.ending ?? (await world.outcome(second), ended(world, second)?.ending), 'interrupted');
-      await waitFor(() => world.device.state().shown?.digests[0] === frameDigest(new Uint8Array(12288)) ? true : undefined, 'the blank frame');
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === frameDigest(new Uint8Array(12288)) ? true : undefined, 'the blank frame', 1000);
       assert.equal(world.display()?.player.intent, 'paused');
     });
   });
