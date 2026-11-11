@@ -614,11 +614,11 @@ async function testClockArguments(context: TestContext, leave?: '--simulate' | '
   ];
 }
 
-for (const [name, leave, ipc] of [
-  ['the production environment', 'test', true],
-  ['no --simulate', '--simulate', true],
-  ['no --edge', '--edge', true],
-  ['no IPC channel', undefined, false],
+for (const [name, leave, ipc, text] of [
+  ['the production environment', 'test', true, 'a test clock needs --environment test'],
+  ['no --simulate', '--simulate', true, 'a test clock needs --simulate'],
+  ['no --edge', '--edge', true, 'a test clock needs --edge'],
+  ['no IPC channel', undefined, false, 'a test clock needs an IPC channel'],
 ] as const) {
   it(`a test clock with ${name} exits 1 with one runtime.failed record, before any module starts or any port is bound`, async context => {
     const runtime = spawnRuntime(context, FIXTURE, ['test-clock', ...await testClockArguments(context, leave)], {ipc});
@@ -628,7 +628,7 @@ for (const [name, leave, ipc] of [
     const {['exception.message']: message, ['exception.stacktrace']: stack, ['bunny.exception.redacted_count']: redacted, ...decision} =
       runtime.records()[0]?.attributes ?? {};
     assert.deepEqual(decision, {'error.type': 'RuntimeError', 'error.code': 'invalid-state', 'bunny.provenance': 'source', 'bunny.exception.truncated': false});
-    assert.ok(typeof message === 'string' && message.startsWith('a test clock'), 'the refusal\'s own fixed text');
+    assert.equal(message, text, 'the missing condition\'s own fixed text');
     assert.ok(typeof stack === 'string' && stack.startsWith('RuntimeError: '));
     assert.equal(redacted, 0);
     assert.equal(runtime.stdout(), '', 'no ready line');
