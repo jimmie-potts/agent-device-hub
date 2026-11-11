@@ -13,7 +13,7 @@ import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {connectRemote} from '@jimmie-potts/sdk';
-import {parseArguments, shippedModules, type LogRecord} from '../src/index.js';
+import {UsageError, parseArguments, shippedModules, type LogRecord} from '../src/index.js';
 import {SPANS_FILE, readSpanFile} from '../src/span-file.js';
 import {writeSimulatedConfiguration} from './fixtures/simulated.js';
 import {edgeConfig, entry, health, it, stateDir, waitFor} from './support.js';
@@ -26,9 +26,12 @@ type Exit = {code: number | null; signal: NodeJS.Signals | null};
 type Spawned = {child: ChildProcess; records: () => LogRecord[]; stdout: () => string; exited: Promise<Exit>};
 type Launched = Spawned & {url: string};
 
-/** Starts a runtime process. It is killed after the test if it is still running. */
-function spawnRuntime(context: TestContext, script: string, args: readonly string[]): Spawned {
-  const child = spawn(process.execPath, [script, ...args], {stdio: ['ignore', 'pipe', 'pipe']});
+/**
+ * Starts a runtime process. It is killed after the test if it is still running. With `ipc`, it has an IPC channel, as a
+ * verification supervisor's child does; the service manager and the container start it without one.
+ */
+function spawnRuntime(context: TestContext, script: string, args: readonly string[], {ipc = false}: {ipc?: boolean} = {}): Spawned {
+  const child = spawn(process.execPath, [script, ...args], {stdio: ipc ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe']});
   const exited = once(child, 'exit').then(([code, signal]) => ({code: code as number | null, signal: signal as NodeJS.Signals | null}));
   context.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
   let stderr = '';
@@ -98,8 +101,8 @@ async function phase(runtime: Spawned, condition: () => boolean, timeoutMs: numb
 }
 
 /** Starts a runtime process and waits for its ready line. */
-async function launch(context: TestContext, script: string, args: readonly string[], name = 'the ready line'): Promise<Launched> {
-  const spawned = spawnRuntime(context, script, args);
+async function launch(context: TestContext, script: string, args: readonly string[], name = 'the ready line', spawnOptions: {ipc?: boolean} = {}): Promise<Launched> {
+  const spawned = spawnRuntime(context, script, args, spawnOptions);
   const exitedEarly = spawned.exited.then(exit => assert.fail(`exited before ready: ${JSON.stringify(exit)} ${JSON.stringify(spawned.records())}`));
   await Promise.race([phase(spawned, () => spawned.stdout().includes('\n'), START_BOUND_MS, name), exitedEarly]);
   const ready = JSON.parse(spawned.stdout().split('\n')[0] ?? '') as {event: string; url: string};
@@ -574,4 +577,77 @@ it('--record-spans is a flag with no value, and the usage line names it', () => 
   assert.equal(parseArguments(['--port', '0']).recordSpans, false);
   assert.equal(parseArguments(['--port', '0', '--record-spans']).recordSpans, true);
   assert.throws(() => parseArguments(['--port', '0', '--record-spans', 'yes']), /unexpected argument|positional/i);
+});
+
+// Hub #1709: a test clock is a programmatic input from the verification run's child only. No argument names one, the
+// installed entry points pass none, and the process refuses one outside a simulated test run under a supervisor.
+const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+/** Where the `test-clock` fixture scenario's clock stands (tests/fixtures/process.ts). */
+const TEST_CLOCK_START = '2001-02-03T04:05:06.000Z';
+
+it('no argument selects a clock: parseArguments refuses each with a usage error, and the shipped entry point exits 2', async context => {
+  for (const args of [['--clock'], ['--clock', 'virtual'], ['--clock=virtual'], ['--test-clock'], ['--virtual-clock'], ['--scheduler', 'manual'], ['--monotonic', '0']]) {
+    assert.throws(() => parseArguments(['--port', '0', ...args]), UsageError, args.join(' '));
+  }
+  const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', await stateDir(context), '--clock', 'virtual']);
+  assert.deepEqual(await exitOf(runtime, START_BOUND_MS, 'the usage exit'), {code: 2, signal: null});
+  assert.equal(runtime.stdout(), '');
+  assert.deepEqual(runtime.records(), []);
+});
+
+it('the installed entry points construct and pass no clock, scheduler or monotonic clock', async () => {
+  // The service manager runs src/main.js, which runs runMain through launch.ts with the factories of modules.ts, whose
+  // core takes no options; the container runs deploy/container/entrypoint.mjs. None of them may name a clock: a test
+  // clock reaches the runtime only from the verification child (verify/child.ts).
+  for (const file of ['apps/runtime/src/main.ts', 'apps/runtime/src/launch.ts', 'apps/runtime/src/modules.ts', 'deploy/container/entrypoint.mjs']) {
+    const source = await readFile(join(ROOT, file), 'utf8');
+    assert.doesNotMatch(source, /clock|scheduler|monotonic/i, `${file} names a clock`);
+  }
+});
+
+/** The `test-clock` fixture's arguments for a simulated test run with an edge, less the one condition `leave` names. */
+async function testClockArguments(context: TestContext, leave?: '--simulate' | '--edge' | 'test'): Promise<string[]> {
+  const {config} = await edgeConfig(context, []);
+  return [
+    '--port', '0', '--state-dir', await stateDir(context), '--config', config, '--environment', leave === 'test' ? 'production' : 'test',
+    ...(leave === '--simulate' ? [] : ['--simulate']), ...(leave === '--edge' ? [] : ['--edge']),
+  ];
+}
+
+for (const [name, leave, ipc] of [
+  ['the production environment', 'test', true],
+  ['no --simulate', '--simulate', true],
+  ['no --edge', '--edge', true],
+  ['no IPC channel', undefined, false],
+] as const) {
+  it(`a test clock with ${name} exits 1 with one runtime.failed record, before any module starts or any port is bound`, async context => {
+    const runtime = spawnRuntime(context, FIXTURE, ['test-clock', ...await testClockArguments(context, leave)], {ipc});
+    assert.deepEqual(await exitOf(runtime, START_BOUND_MS, 'the refusal'), {code: 1, signal: null});
+    // The only record is the refusal: no runtime.started, which comes once the listener is bound, and no module record.
+    assert.deepEqual(runtime.records().map(record => record.event_name), ['runtime.failed']);
+    const {['exception.message']: message, ['exception.stacktrace']: stack, ['bunny.exception.redacted_count']: redacted, ...decision} =
+      runtime.records()[0]?.attributes ?? {};
+    assert.deepEqual(decision, {'error.type': 'RuntimeError', 'error.code': 'invalid-state', 'bunny.provenance': 'source', 'bunny.exception.truncated': false});
+    assert.ok(typeof message === 'string' && message.startsWith('a test clock'), 'the refusal\'s own fixed text');
+    assert.ok(typeof stack === 'string' && stack.startsWith('RuntimeError: '));
+    assert.equal(redacted, 0);
+    assert.equal(runtime.stdout(), '', 'no ready line');
+  });
+}
+
+it('a test clock in a simulated test run with an edge and an IPC channel reaches the runtime, whose records follow it', async context => {
+  const runtime = await launch(context, FIXTURE, ['test-clock', ...await testClockArguments(context)], 'the ready line', {ipc: true});
+  const started = runtime.records().find(record => record.event_name === 'runtime.started');
+  assert.equal(started?.timestamp, TEST_CLOCK_START, 'the runtime\'s records take the test clock\'s time');
+  runtime.child.kill('SIGTERM');
+  assert.deepEqual(await exitOf(runtime, STOP_BOUND_MS, 'the runtime to stop'), {code: 0, signal: null});
+  assert.equal(recorded(runtime, 'fixture.timer'), false, 'the module timer is on the test clock, which never moved');
+});
+
+it('with no clock given, a module timer fires in real time on the runtime\'s default scheduler', async context => {
+  // The one real-clock check of this wiring: a 20 ms timer, awaited as a condition with the start bound as its limit.
+  const runtime = await launch(context, FIXTURE, ['timer', '--port', '0', '--state-dir', await stateDir(context)]);
+  await phase(runtime, () => recorded(runtime, 'fixture.timer'), START_BOUND_MS, 'the module timer');
+  runtime.child.kill('SIGTERM');
+  assert.deepEqual(await exitOf(runtime, STOP_BOUND_MS, 'the runtime to stop'), {code: 0, signal: null});
 });

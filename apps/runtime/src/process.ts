@@ -3,7 +3,7 @@
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {parseArgs} from 'node:util';
-import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
+import type {BunnyModule, Clock, RemoteEdge, Scheduler} from '@jimmie-potts/sdk';
 import {recordLog} from '@jimmie-potts/sdk';
 import {contain} from './host.js';
 import {INSTANCE_ID, LogWriter, Redactions, faultFields, stderrSink} from './log.js';
@@ -87,8 +87,31 @@ export function parseArguments(argv: readonly string[]): ProcessOptions {
  * although no module here owns them, such as a verification run's fixture families (#920), and a hook that gets the
  * edge once it serves. The shipped entry point passes only the factories.
  */
-export type ProcessInputs = {modules: readonly ModuleFactory[]} & EdgeInputs;
+export type ProcessInputs = {modules: readonly ModuleFactory[]} & ChildInputs;
 export type EdgeInputs = {schemas?: Readonly<Record<string, object>>; onEdge?: (edge: RemoteEdge) => void};
+/** What only the verification run's child (verify/child.ts) adds: the edge's inputs and, for a run on virtual time, a test clock. */
+export type ChildInputs = EdgeInputs & {testClock?: TestClock};
+
+/**
+ * A clock a disposable verification run controls (Hub #1709): the runtime's wall clock and scheduler, and the monotonic
+ * clock that advances with them, which the child passes to the core's options, since the runtime does not build them.
+ * It is a programmatic input only:
+ * no argument or environment variable names one, the installed entry points pass none, and `runProcess` refuses one
+ * unless the process is a simulated test run with an edge, started by the verification supervisor with an IPC channel.
+ */
+export type TestClock = {clock: Clock; scheduler: Scheduler; monotonic: () => number};
+
+/**
+ * Why the process may not take a test clock, or undefined when it may: only a simulated test run with an edge, which the
+ * verification supervisor starts with an IPC channel. The service manager and the container start it without one.
+ */
+function testClockRefusal({simulate, environment, edge}: ProcessOptions): string | undefined {
+  if (!simulate) return 'a test clock needs --simulate';
+  if (environment !== 'test') return 'a test clock needs --environment test';
+  if (!edge) return 'a test clock needs --edge';
+  if (typeof process.send !== 'function') return 'a test clock needs the verification supervisor\'s IPC channel';
+  return undefined;
+}
 
 /** Already built inputs from an admitting entrypoint; these values do not themselves grant ownership. */
 export type ProcessStartup = {modules: readonly BunnyModule[]; config: RuntimeConfig; listener?: 'container-host-local'};
@@ -110,6 +133,12 @@ export async function runProcess(options: ProcessOptions & ProcessInputs, startu
     log.fatal('runtime.failed', faultFields(error, redactions));
     process.exit(1);
   };
+  // A test clock is for a disposable verification run only (Hub #1709). The installed image holds the run's child too,
+  // so the process itself refuses one outside such a run, before any module starts or any port is bound.
+  if (options.testClock !== undefined) {
+    const refusal = testClockRefusal(options);
+    if (refusal !== undefined) fail(new RuntimeError('invalid-state', refusal));
+  }
   const escaped = (error: unknown): void => { if (!contain(error)) fail(error); };
   process.on('uncaughtException', escaped);
   process.on('unhandledRejection', escaped);
@@ -146,6 +175,7 @@ export async function runProcess(options: ProcessOptions & ProcessInputs, startu
       modules: startup?.modules ?? buildModules(options.modules, options.simulate), port: options.port, stateDir: options.stateDir,
       ...(startup === undefined ? (options.config === undefined ? {} : {configFile: options.config}) : {config: startup.config}),
       logLevel: options.logLevel, environment: options.environment, lagCheck: {limitMs: options.lagLimitMs}, simulate: options.simulate, redactions,
+      ...(options.testClock === undefined ? {} : {clock: options.testClock.clock, scheduler: options.testClock.scheduler}),
       // The runtime cannot continue without the one owner of agent sessions: the service manager restarts it whole.
       onCoreFailure: () => { fail(new RuntimeError('core-failed', 'the core failed')); },
       ...(options.recordSpans ? {spans: 'state-file' as const} : {}),
@@ -170,9 +200,10 @@ export async function runProcess(options: ProcessOptions & ProcessInputs, startu
 /**
  * The entry point: parses `argv`, exiting with status 2 and a usage line when it is malformed, then runs the process with
  * a module from each factory: with its simulated transport under `--simulate`. `schemas` are families the edge accepts
- * beyond the modules' own; `onEdge` gets the edge once it serves under `--edge`.
+ * beyond the modules' own; `onEdge` gets the edge once it serves under `--edge`; `testClock` runs the runtime on a
+ * verification run's clock, which `runProcess` refuses outside such a run.
  */
-export async function runMain(argv: readonly string[], modules: readonly ModuleFactory[], {schemas, onEdge}: EdgeInputs = {}): Promise<void> {
+export async function runMain(argv: readonly string[], modules: readonly ModuleFactory[], {schemas, onEdge, testClock}: ChildInputs = {}): Promise<void> {
   let options: ProcessOptions;
   try {
     options = parseArguments(argv);
@@ -181,5 +212,7 @@ export async function runMain(argv: readonly string[], modules: readonly ModuleF
     process.stderr.write(`${error.message}\n${USAGE}\n`);
     process.exit(2);
   }
-  await runProcess({...options, modules, ...(schemas === undefined ? {} : {schemas}), ...(onEdge === undefined ? {} : {onEdge})});
+  await runProcess({
+    ...options, modules, ...(schemas === undefined ? {} : {schemas}), ...(onEdge === undefined ? {} : {onEdge}), ...(testClock === undefined ? {} : {testClock}),
+  });
 }
