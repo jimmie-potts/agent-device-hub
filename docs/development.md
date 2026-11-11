@@ -1535,6 +1535,81 @@ gives the commands and lists the tests that still need Linux.
 
 See [Runtime verification runs](../apps/runtime/DEVELOPMENT.md#runtime-verification-runs) for the authoritative procedure.
 
+### One test job in a container
+
+On macOS with Docker Desktop, run one package script in a disposable Linux
+container that starts from installed dependencies:
+
+```bash
+npm run test:container -- --issue <n> --job <name> [--size standard|wide] [--no-build] [--network] -- <package script> [arguments...]
+```
+
+The container is `bunny-gh<n>-<name>`, or `bunny-gh<n>-<name>-wide` at the wide
+size. The job name is free text: lowercase letters, digits and inner hyphens.
+Before the job starts, the command prints the container name, its size and the
+slots it takes.
+
+| Size | Limits | Slots |
+| --- | --- | --- |
+| `standard` (default) | 2 CPUs, 1250 MiB, swap equal to memory | 1 |
+| `wide` | 4 CPUs, 2048 MiB, swap equal to memory | 2 |
+
+Swap equal to memory means the container cannot swap. A small table in
+`scripts/test-container.mjs` refuses known scripts that do not fit a size and
+names their routes:
+
+- `test:runtime:verify:built` needs `--size wide`, or
+  `npm run test:runtime:container -- --suite verify`, which has its own
+  1536 MiB limit.
+- `test:sdk:built` needs `--size wide`.
+
+The command refuses a raw command or an unknown script name, `test:container`
+and `test:runtime:container`. It also refuses `lint:js`, which runs natively,
+one at a time (see [Heap budget](static-analysis.md#heap-budget)).
+Python-dependent suites are not supported: the image has no Python packages.
+
+How a run works:
+
+1. The command copies the current tracked and nonignored source into a private
+   scratch directory (mode 0700) under the snapshot rules of
+   [Runtime verification runs](#runtime-verification-runs): no ignored files,
+   private paths, build output or symlinks.
+2. It mounts that snapshot read-only at `/snapshot`. Unlike
+   `npm run test:runtime:container`, this command mounts a host path, but only
+   this private read-only snapshot, never the worktree.
+3. In the container, the snapshot is copied over the image's `node_modules` and
+   recorded in a temporary Git commit. `npm run build` runs unless `--no-build`
+   is given, then `npm run <package script> [-- arguments]` runs.
+
+The container runs with `--rm`, `--init`, `--network none` (`--network` uses
+Docker's default bridge and prints that it did), all capabilities dropped except
+`CHOWN`, `no-new-privileges` and no published ports. A two-hour deadline in the
+container bounds a job whose host caller has gone. The command returns the
+job's exit status: 2 for its own refusals, and 128 plus the signal number for a
+job ended by a signal. On an interrupt it kills its own container by the ID
+Docker wrote to its cidfile. It never stops or removes a container it did not
+start. A name already in use is refused and left alone.
+
+The dependency image is `bunny-test-deps:<key>`. The key is a hash of
+`package-lock.json` and `scripts/test-container/Dockerfile`, and the image carries
+it as the `org.bunny.test-deps.key` label. The command builds the image only when
+that tag is missing. The build is a host step with network that uses CPU and
+memory outside the job's limits, and the command prints that it is building.
+Every run recomputes the key from its snapshot, runs by image ID, and refuses an
+image whose label does not match, so an image built for another lockfile is
+never used. Each image is about 3.5 GB, and a new one appears for each lockfile
+or recipe change. Two first runs at the same time can each build the image; one
+tag wins and the other build is left untagged. The images are caches shared by
+every run of the same lockfile;
+[Cleanup after delivery](sdlc.md#cleanup-after-delivery) keeps them, and the
+owner removes old `bunny-test-deps` images, including such untagged builds.
+
+Inside a 2-CPU container `node --test` already starts one worker, so the command
+runs package scripts directly, not through `scripts/native-test.mjs`. The
+command's argument, key, refusal, cleanup and exit-status checks are in
+`scripts/tests/test-container.test.mjs`, which `npm run test:workspace-audit`
+runs in core CI.
+
 ### Workspace audit
 
 `npm run audit:workspace` prints the read-only report that

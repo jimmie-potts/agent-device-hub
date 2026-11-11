@@ -577,7 +577,9 @@ the resource.
    directory, qualified
    `bunny-core:release-*` images, third-party images, the shared
    `bunny-runtime-check-tools` caches, which every
-   `npm run test:runtime:container` run of the same manifests reuses, and the
+   `npm run test:runtime:container` run of the same manifests reuses, the shared
+   `bunny-test-deps` dependency images, which every `npm run test:container` run
+   of the same lockfile reuses and only the owner removes, and the
    retained release directories under `~/.local/share/bunny/releases/`, which
    the installed hooks and the running core reference. Confirm with
    `docker ps -a`, `docker images`, `docker volume ls` and `docker network ls`
