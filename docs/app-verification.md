@@ -75,8 +75,9 @@ See [Operations](../packages/app-verify/OPERATIONS.md#operations) for the author
 ### One run at a time
 
 Normal task launches permit concurrent simulated runtimes, each with its own
-worktree, build outputs, ports, synthetic credentials and state. No default
-count limit or capacity check applies. Keep the existing two-hour leases,
+worktree, build outputs, ports, synthetic credentials and state. The launchers
+apply no count limit or capacity check; on the Mac, test jobs follow
+[Test work on the Mac](development.md#test-work-on-the-mac). Keep the existing two-hour leases,
 extension, expiry and owned cleanup. Household installation remains serialized;
 physical tests retain their designated writer and explicit authorization.
 

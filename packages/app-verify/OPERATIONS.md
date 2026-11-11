@@ -100,8 +100,9 @@ directory is still to be removed by `stop`. The frozen set is unaffected.
 
 Independent tasks may start disposable simulated runtimes concurrently through
 the normal launchers. Each uses separate worktrees and build outputs, ports,
-synthetic credentials and state. There is no default run-count limit or
-capacity-qualification gate. The existing two-hour lease, extension, expiry,
+synthetic credentials and state. The launchers set no run-count limit or
+capacity-qualification gate; on the Mac, test jobs follow
+[Test work on the Mac](../../docs/development.md#test-work-on-the-mac). The existing two-hour lease, extension, expiry,
 receipts, frozen proof and cleanup behavior remain unchanged. Stop only owned
 runs, and stop unneeded ones if resources become constrained. Household
 installation remains serialized and physical devices retain one designated
