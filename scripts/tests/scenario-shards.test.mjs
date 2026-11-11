@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
-import {Writable} from 'node:stream';
+import {spawn} from 'node:child_process';
+import {EventEmitter} from 'node:events';
+import {existsSync} from 'node:fs';
+import {realpath} from 'node:fs/promises';
+import {join} from 'node:path';
+import {PassThrough, Writable} from 'node:stream';
 import {test} from 'node:test';
-import {DEFAULT_SHARDS, combinedStatus, jobs, parse, run, summary, totals} from '../scenario-shards.mjs';
+import {DEFAULT_SHARDS, combinedStatus, jobs, parse, run, runIsolated, summary, totals} from '../scenario-shards.mjs';
 
 const FILES = ['catalog.test.js', 'roborock.test.js', 'runner.test.js'];
 
@@ -59,4 +64,72 @@ test('each output line names its process, and each keeps its own exit status', a
   assert.deepEqual(results[0].totals, {tests: 2});
   assert.equal(combinedStatus(results.map(result => result.status)), 3);
   assert.deepEqual(output.split('\n').filter(Boolean).sort(), ['[a] one', '[a] ℹ tests 2', '[b] b']);
+});
+
+/** A writable that keeps what is written, and calls `seen` with the text so far after each write. */
+function collector(seen = () => undefined) {
+  const out = new Writable({write(chunk, _encoding, done) { out.text += String(chunk); seen(out.text); done(); }});
+  out.text = '';
+  return out;
+}
+
+test('a process that cannot start ends with status 1 and a labelled message, and the others still report', async () => {
+  const out = collector();
+  const failing = () => {
+    const child = new EventEmitter();
+    Object.assign(child, {stdout: new PassThrough(), stderr: new PassThrough(), kill: () => true});
+    setImmediate(() => child.emit('error', new Error('spawn node ENOENT')));
+    return child;
+  };
+  const start = (command, args, options) => {
+    if (args[0] === 'emits') return failing();
+    if (args[0] === 'throws') throw new Error('bad arguments');
+    return spawn(command, args, options);
+  };
+  const results = await run([
+    {label: 'fine', env: {}, args: ['-e', 'console.log("ℹ tests 1")']},
+    {label: 'emits', env: {}, args: ['emits']},
+    {label: 'throws', env: {}, args: ['throws']},
+  ], {out, start});
+  assert.deepEqual(results.map(result => [result.label, result.status]), [['fine', 0], ['emits', 1], ['throws', 1]]);
+  assert.deepEqual(results[0].totals, {tests: 1});
+  assert.match(out.text, /^\[emits\] could not start: spawn node ENOENT$/m);
+  assert.match(out.text, /^\[throws\] could not start: bad arguments$/m);
+  assert.equal(combinedStatus(results.map(result => result.status)), 1);
+  assert.match(summary(results), /emits: exit 1 after/);
+});
+
+test('totals come from standard output alone, so standard error cannot split or add to them', async () => {
+  const body = [
+    'process.stdout.write("ℹ te")',
+    'setTimeout(() => process.stderr.write("noise\\nℹ tests 99\\n"), 50)',
+    'setTimeout(() => process.stdout.write("sts 5\\nℹ pass 5\\n"), 150)',
+  ].join(';');
+  const results = await run([{label: 'mixed', env: {}, args: ['-e', body]}], {out: collector()});
+  assert.deepEqual(results[0].totals, {tests: 5, pass: 5});
+});
+
+test('SIGINT and SIGTERM reach every process', async () => {
+  for (const [signal, status] of [['SIGTERM', 143], ['SIGINT', 130]]) {
+    const signals = new EventEmitter();
+    const out = collector(text => { if ((text.match(/\] ready$/gm) ?? []).length === 2) signals.emit(signal, signal); });
+    const forever = {env: {}, args: ['-e', 'console.log("ready");setInterval(() => undefined, 1000)']};
+    const results = await run([{label: 'a', ...forever}, {label: 'b', ...forever}], {out, signals});
+    assert.deepEqual(results.map(result => result.status), [status, status], signal);
+    assert.equal(signals.listenerCount(signal), 0, 'the run stops listening once it ends');
+  }
+});
+
+test('the private temporary directory is the processes\' TMPDIR and is removed after success, failure and interrupt', async () => {
+  const tmp = await realpath('/tmp');
+  const writes = 'require("node:fs").writeFileSync(require("node:path").join(process.env.TMPDIR, "left"), "x");console.log("dir " + process.env.TMPDIR)';
+  for (const [name, tail, status] of [['success', '', 0], ['failure', ';process.exit(4)', 4], ['interrupt', ';setInterval(() => undefined, 1000)', 143]]) {
+    const signals = new EventEmitter();
+    const out = collector(text => { if (name === 'interrupt' && /^\[job\] dir /m.test(text)) signals.emit('SIGTERM', 'SIGTERM'); });
+    const results = await runIsolated([{label: 'job', env: {}, args: ['-e', `${writes}${tail}`]}], {out, signals});
+    assert.equal(results[0].status, status, name);
+    const dir = /^\[job\] dir (.*)$/m.exec(out.text)?.[1];
+    assert.ok(dir?.startsWith(join(tmp, 'bunny-shards.')), `${name}: ${String(dir)}`);
+    assert.equal(existsSync(dir), false, `${name}: the directory is gone`);
+  }
 });

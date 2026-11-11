@@ -52,12 +52,13 @@ export function totals(text) {
   return found;
 }
 
-/** Writes each complete line of a stream with a prefix, and keeps the stream's text for its totals. */
+/** Writes each complete line of a stream with a prefix, and keeps the stream's text in `kept` when one is given. */
 function relay(stream, prefix, out, kept) {
+  if (stream === null || stream === undefined) return;
   let partial = '';
   stream.setEncoding('utf8');
   stream.on('data', text => {
-    kept.push(text);
+    kept?.push(text);
     const lines = (partial + text).split('\n');
     partial = lines.pop();
     for (const line of lines) out.write(`${prefix}${line}\n`);
@@ -65,29 +66,61 @@ function relay(stream, prefix, out, kept) {
   stream.on('end', () => { if (partial !== '') out.write(`${prefix}${partial}\n`); });
 }
 
+/** The message of an error, or the value as text. */
+const message = error => (error instanceof Error ? error.message : String(error));
+
 /**
  * Runs the jobs at once from `cwd`, each line of their output prefixed with its label, and resolves to each job's
- * label, exit status, wall seconds and totals. SIGINT and SIGTERM are passed on to every job.
+ * label, exit status, wall seconds and totals, read from its standard output alone. SIGINT and SIGTERM that `signals`
+ * emits are passed on to every job. A job that cannot start ends with status 1 and a labelled message.
  */
-export async function run(planned, {cwd = root, env = process.env, out = process.stdout} = {}) {
+export async function run(planned, {cwd = root, env = process.env, out = process.stdout, signals = process, start = spawn} = {}) {
   const children = [];
   const forward = signal => { for (const child of children) child.kill(signal); };
-  process.on('SIGINT', forward);
-  process.on('SIGTERM', forward);
+  signals.on('SIGINT', forward);
+  signals.on('SIGTERM', forward);
   try {
     return await Promise.all(planned.map(async job => {
       const started = Date.now();
-      const child = spawn(process.execPath, job.args, {cwd, env: {...env, ...job.env}, stdio: ['ignore', 'pipe', 'pipe']});
-      children.push(child);
-      const kept = [];
-      relay(child.stdout, `[${job.label}] `, out, kept);
-      relay(child.stderr, `[${job.label}] `, out, kept);
-      const [code, signal] = await new Promise(done => { child.once('close', (...result) => done(result)); });
-      return {label: job.label, status: exitStatus(code, signal), seconds: (Date.now() - started) / 1000, totals: totals(kept.join(''))};
+      const prefix = `[${job.label}] `;
+      const stdout = [];
+      const ended = await new Promise(done => {
+        let child;
+        try {
+          child = start(process.execPath, job.args, {cwd, env: {...env, ...job.env}, stdio: ['ignore', 'pipe', 'pipe']});
+        } catch (error) {
+          done({error});
+          return;
+        }
+        children.push(child);
+        relay(child.stdout, prefix, out, stdout);
+        relay(child.stderr, prefix, out);
+        child.once('error', error => done({error}));
+        child.once('close', (code, signal) => done({code, signal}));
+      });
+      if (ended.error !== undefined) out.write(`${prefix}could not start: ${message(ended.error)}\n`);
+      const status = ended.error === undefined ? exitStatus(ended.code, ended.signal) : 1;
+      return {label: job.label, status, seconds: (Date.now() - started) / 1000, totals: totals(stdout.join(''))};
     }));
   } finally {
-    process.off('SIGINT', forward);
-    process.off('SIGTERM', forward);
+    signals.off('SIGINT', forward);
+    signals.off('SIGTERM', forward);
+  }
+}
+
+/**
+ * Runs the jobs as `run` does, with `TMPDIR` set to a new private directory under `tmp` by its resolved path, as
+ * scripts/native-test.mjs makes, and removes that directory afterwards whatever the jobs' outcome.
+ */
+export async function runIsolated(planned, {tmp = '/tmp', env = process.env, warn = text => process.stderr.write(text), ...options} = {}) {
+  const scratch = await mkdtemp(join(await realpath(tmp), 'bunny-shards.'));
+  try {
+    return await run(planned, {...options, env: {...env, TMPDIR: scratch}});
+  } finally {
+    // A directory left behind is reported, never allowed to replace the suite's own status.
+    await rm(scratch, {recursive: true, force: true, maxRetries: 3}).catch(error => {
+      warn(`scenario-shards: could not remove ${scratch}: ${message(error)}\n`);
+    });
   }
 }
 
@@ -107,22 +140,16 @@ async function main() {
   const {shards, extra} = parse(process.argv.slice(2));
   const files = readdirSync(join(root, SUITE)).filter(file => file.endsWith('.test.js')).sort();
   const planned = jobs(shards, files, extra);
-  // A private temporary directory of the run's own under /tmp, by its resolved path, as scripts/native-test.mjs makes.
-  const scratch = await mkdtemp(join(await realpath('/tmp'), 'bunny-shards.'));
   process.stderr.write(`scenario-shards: the catalog in ${String(shards)} shards at once, and ${String(planned.length - shards)} process for the other files\n`);
   const started = Date.now();
-  const results = await run(planned, {env: {...process.env, TMPDIR: scratch}});
+  const results = await runIsolated(planned);
   process.stderr.write(`${summary(results)}\nscenario-shards: all done after ${((Date.now() - started) / 1000).toFixed(1)} s\n`);
   process.exitCode = combinedStatus(results.map(result => result.status));
-  // A directory left behind is reported, never allowed to replace the suite's own status.
-  await rm(scratch, {recursive: true, force: true, maxRetries: 3}).catch(error => {
-    process.stderr.write(`scenario-shards: could not remove ${scratch}: ${error instanceof Error ? error.message : String(error)}\n`);
-  });
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch(error => {
-    process.stderr.write(`scenario-shards: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`scenario-shards: ${message(error)}\n`);
     process.exitCode = 2;
   });
 }

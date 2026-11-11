@@ -563,9 +563,13 @@ other test files once, each with one test file at a time. Options after a second
 `--` go to every process. Each output line starts with its process's label, such
 as `[shard 2/4]` or `[other files]`. The run ends with each process's exit status,
 wall time and totals, and the catalog shards' totals together, and exits with the
-first failing process's status, or 0. Like `scripts/native-test.mjs` it sets
-`TMPDIR` to a new private directory under `/tmp` and removes it afterwards, and it
-passes SIGINT and SIGTERM on to every process. Inside a test container its
+first failing process's status, or 0. A process that cannot start ends with
+status 1 and a labelled message. Totals are read from each process's standard
+output only. Like `scripts/native-test.mjs` it sets `TMPDIR` to a new private
+directory under `/tmp` and removes it afterwards, whatever the outcome, and it
+passes SIGINT and SIGTERM on to every process. At four shards on the Mac the run
+averaged about 1.2 cores and peaked at about 2.75 GiB across the shard processes
+(Hub #1674). Inside a test container its
 processes share that container's memory, and each catalog process holds several
 hundred MiB: at the standard size even two shards were killed for memory, and the
 wide size ran two (Hub #1674). On the Mac each of its processes counts
