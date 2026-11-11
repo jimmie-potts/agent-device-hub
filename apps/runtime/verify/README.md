@@ -594,17 +594,18 @@ manager, and starts each negative control. Each catalog capture and negative con
 a five-minute limit and a newly seeded run. Tests remain serial; the capture step's own limits and the 45-minute limit
 of each CI job below also apply. Adding a scenario does not consume another scenario's test budget, and a
 failed or cancelled case is reported by name. `BUNNY_CAPTURE_SHARD=<index>/<count>` runs one share of the capture cases;
-packaged release qualification splits them between two parallel jobs this way. Unset, every case runs.
-
-Hosted CI splits the suite the same way, into two jobs on separate runners that the selected checks gate both requires
-(#1676). Runtime verification captures runs `npm run test:runtime:verify:captures:built`: capture shard `1/2` of
-`steps.test.js`, which also holds that file's tests outside the capture loop. Runtime verification runs
-`npm run test:runtime:verify:rest:built`: the other verification files serially, then capture shard `2/2`. Together they
-run each test once. `npm run test:runtime:verify:built` still runs the whole suite in one process for local use. It tests the supervisor's stop, crash restart, restart serialization, orphan
-handling and harness API, and the follow query: the supervisor's route, a clean restart and a killed runtime, and the
+packaged release qualification splits them between two parallel jobs this way. Unset, every case runs. The suite tests
+the supervisor's stop, crash restart, restart serialization, orphan handling and harness API, and the follow query: the
+supervisor's route, a clean restart and a killed runtime, and the
 pure query's cases with their negative controls. It also tests the guard's reach in every thread and child process,
 that `build-current` watches every source the run loads, that health fails once a module fails in a run and passes an
 expected refusal, that the harness's refusals come from the registry, a malformed or oversized body included, and that
 neither the run adapter nor a failed step's detail in a capture's proof quotes an exception's text.
 Its lifecycle tests drive real transient units through the wrapper and skip with a printed reason where there is no
 user manager (#873). See [Runtime verification runs](../../../docs/development.md#runtime-verification-runs).
+
+Hosted CI splits the suite the same way, into two jobs on separate runners that the selected checks gate both requires
+(#1676). Runtime verification captures runs `npm run test:runtime:verify:captures:built`: capture shard `1/2` of
+`steps.test.js`, which also holds that file's tests outside the capture loop. Runtime verification runs
+`npm run test:runtime:verify:rest:built`: the other verification files serially, then capture shard `2/2`. Together they
+run each test once. `npm run test:runtime:verify:built` still runs the whole suite in one process for local use.
