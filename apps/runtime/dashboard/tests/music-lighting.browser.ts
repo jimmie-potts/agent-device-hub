@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
-import {chromium} from 'playwright';
+import {chromium, type Request} from 'playwright';
 import {expect} from 'playwright/test';
 import {LINES_ADDRESS, PANELS_ADDRESS} from '@jimmie-potts/nanoleaf';
 import {startWorld, changes, feed} from './harness.ts';
@@ -26,14 +26,23 @@ async function mode(value: 'free' | 'work', light: 'wall' | 'nl22' = 'wall'): Pr
 let producer: Awaited<ReturnType<typeof musicCaptureProducer>> | undefined;
 const browser = await chromium.launch({headless: true});
 const artifacts = await browserArtifactDirectory();
+/** The page's API requests still without an answer, which a failure prints: a hung request is told apart from a slow card. */
+const unanswered = new Map<Request, string>();
 try {
   const context = await browser.newContext({viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
   const page = await context.newPage(); page.setDefaultTimeout(12_000);
+  // Playwright stops intercepting when a page's last route goes, and a request paused at that moment can hang with no
+  // answer and no failure, whatever its URL (#1664). This pass-through route stays, so each `unroute` below only removes
+  // its own handler.
+  await page.route('**/*', route => route.fallback());
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   const sent = changes(page), controls: Control[] = [];
   page.on('request', request => {
-    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/v2/commands/music-lighting-control') controls.push(request.postDataJSON() as Control);
+    const {pathname} = new URL(request.url());
+    if (pathname.startsWith('/api/')) unanswered.set(request, `${request.method()} ${pathname}`);
+    if (request.method() === 'POST' && pathname === '/api/v2/commands/music-lighting-control') controls.push(request.postDataJSON() as Control);
   });
+  page.on('response', response => {unanswered.delete(response.request());}); page.on('requestfailed', request => {unanswered.delete(request);});
   await page.goto(world.url + '/#/audio'); await feed(page, 'connected');
   const card = page.getByRole('article', {name: 'Music lighting', exact: true});
   // One section per light: the Lines (`wall`) and the NL22 Light Panels (`nl22`).
@@ -205,4 +214,16 @@ try {
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({journey: 'music-lighting', lightingCommands: controls.length, lostReplies: lost, artifacts, physical: false}));
   await context.close();
+} catch (error) {
+  // Hosted runs keep no screenshot, so a failure prints what each page showed before the browser closes (#1664).
+  for (const context of browser.contexts()) for (const open of context.pages()) {
+    const shown = await open.evaluate(() => ({feed: document.querySelector('main#main')?.getAttribute('data-feed'),
+      statuses: [...document.querySelectorAll('main [role=status]')].map(item => (item as HTMLElement).innerText.replace(/\s+/g, ' ').trim())}))
+      .catch((failure: unknown) => String(failure));
+    console.error(JSON.stringify({journey: 'music-lighting', failed: new URL(open.url()).hash, shown}));
+  }
+  console.error(JSON.stringify({journey: 'music-lighting', unanswered: [...unanswered.values()]}));
+  console.error(JSON.stringify({journey: 'music-lighting', warnings: world.logs.filter(record => record.severity_text !== 'INFO').slice(-20)
+    .map(record => [record.event_name, record.attributes])}));
+  throw error;
 } finally {await browser.close(); await producer?.close(); await world.close();}
