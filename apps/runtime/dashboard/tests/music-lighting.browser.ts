@@ -33,7 +33,8 @@ try {
   const page = await context.newPage(); page.setDefaultTimeout(12_000);
   // Playwright stops intercepting when a page's last route goes, and a request paused at that moment can hang with no
   // answer and no failure, whatever its URL (#1664). This pass-through route stays, so each `unroute` below only removes
-  // its own handler.
+  // its own handler. With interception on, Playwright also keeps the page's HTTP cache off for the whole journey; no
+  // assertion here depends on caching.
   await page.route('**/*', route => route.fallback());
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   const sent = changes(page), controls: Control[] = [];
@@ -215,15 +216,20 @@ try {
   console.log(JSON.stringify({journey: 'music-lighting', lightingCommands: controls.length, lostReplies: lost, artifacts, physical: false}));
   await context.close();
 } catch (error) {
-  // Hosted runs keep no screenshot, so a failure prints what each page showed before the browser closes (#1664).
-  for (const context of browser.contexts()) for (const open of context.pages()) {
-    const shown = await open.evaluate(() => ({feed: document.querySelector('main#main')?.getAttribute('data-feed'),
-      statuses: [...document.querySelectorAll('main [role=status]')].map(item => (item as HTMLElement).innerText.replace(/\s+/g, ' ').trim())}))
-      .catch((failure: unknown) => String(failure));
-    console.error(JSON.stringify({journey: 'music-lighting', failed: new URL(open.url()).hash, shown}));
-  }
-  console.error(JSON.stringify({journey: 'music-lighting', unanswered: [...unanswered.values()]}));
-  console.error(JSON.stringify({journey: 'music-lighting', warnings: world.logs.filter(record => record.severity_text !== 'INFO').slice(-20)
-    .map(record => [record.event_name, record.attributes])}));
+  // Hosted runs keep no screenshot, so a failure prints what each page showed before the browser closes (#1664). Each
+  // page read has its own 2 s limit, since `evaluate` ignores the default timeout, and the original error always follows.
+  try {
+    for (const context of browser.contexts()) for (const open of context.pages()) {
+      const limit = new AbortController();
+      const shown = await Promise.race([open.evaluate(() => ({feed: document.querySelector('main#main')?.getAttribute('data-feed'),
+        statuses: [...document.querySelectorAll('main [role=status]')].map(item => (item as HTMLElement).innerText.replace(/\s+/g, ' ').trim())}))
+        .catch((failure: unknown) => String(failure)), delay(2000, 'timed out', {signal: limit.signal})]);
+      limit.abort();
+      console.error(JSON.stringify({journey: 'music-lighting', failed: new URL(open.url()).hash, shown}));
+    }
+    console.error(JSON.stringify({journey: 'music-lighting', unanswered: [...unanswered.values()]}));
+    console.error(JSON.stringify({journey: 'music-lighting', warnings: world.logs.filter(record => record.severity_text !== 'INFO').slice(-20)
+      .map(record => [record.event_name, record.attributes])}));
+  } catch (failure) {console.error(JSON.stringify({journey: 'music-lighting', dumpFailed: String(failure)}));}
   throw error;
 } finally {await browser.close(); await producer?.close(); await world.close();}
