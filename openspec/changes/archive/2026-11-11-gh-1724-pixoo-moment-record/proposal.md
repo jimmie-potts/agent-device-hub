@@ -5,7 +5,7 @@ The Pixoo display record said a moment was showing only for its last instant ([#
 ## What Changes
 
 - **Prompt publish:** when the Pixoo acknowledges a moment's picture, the display record goes out after the current turn, without the coalescing wait. Every other change still waits up to 1 s for a running command's completion.
-- **Acknowledged moments only:** the record reports a moment (`showing` `moment` and `moments.playing`) only from the acknowledged write until the moment ends. Before that, and when the write fails or goes unanswered, `showing` reports what the covered base shows: the dashboard over the status base, or `none` over a held item.
+- **Acknowledged moments only:** the record reports a moment (`showing` `moment` and `moments.playing`) only from the acknowledged write until the moment ends, so a failed or unanswered write is never reported as a moment. Until the write is answered, `showing` reports what the covered base shows: the dashboard over the status base, or `none` over a held item. Once a failed or unanswered write settles over the status base, the status base stops as it does for a failed dashboard, as before.
 - **Unchanged:** the end of a moment, which the command's completion already carried at once; the Pixoo's command limits and write pacing; message formats and error shapes.
 
 ## Capabilities

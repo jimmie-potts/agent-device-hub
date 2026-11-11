@@ -638,6 +638,8 @@ void describe('moments', () => {
       const outcome = await world.tickUntil(() => world.seen.find(message => message.kind === 'outcome' && (message.data as {requestId?: unknown}).requestId === requestId), 'the moment\'s outcome', 10_000);
       assert.equal((outcome.data as {result: string}).result, 'uncertain');
       assert.equal(ended(world, requestId), undefined);
+      // Once the write timed out, the status base stops as it does for a failed dashboard: nothing is showing.
+      assert.deepEqual([world.display()?.showing, world.display()?.participating, world.display()?.moments.playing], ['none', false, null]);
       await close();
       assert.ok(claims.length > 0, 'the record was published meanwhile');
       assert.deepEqual(claims.filter(claim => claim.showing === 'moment' || claim.playing !== null), [], 'no record said moment');
