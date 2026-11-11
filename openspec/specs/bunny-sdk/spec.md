@@ -177,7 +177,7 @@ After a sync, the copy SHALL apply live messages in order, with the same buffer 
 
 A buffer overflow, or a message dropped on one of the copy's subscriptions, SHALL make the copy want a new sync, and a served answer to a request sent before the latest overflow SHALL NOT be applied; a refusal still ends the first sync or the copy. Each such overflow SHALL be reported to the bus's `onSyncRestart` with the copy's source and `sync <families>` as its pattern. A copy SHALL have at most one sync request outstanding: it SHALL send the next one only when no other is outstanding and its handler is not running.
 
-`sync` SHALL resolve with the copy after its first sync. If that sync is refused, `sync` SHALL resolve as `rejected` with the shared error body instead. If it has not completed within `timeoutMs` of its first request, `sync` SHALL resolve as `rejected` with `unavailable`, naming the last request it sent; each later request of the first sync SHALL get only the time left. Only the first request SHALL join `parent`'s trace; a later request SHALL start its own. After that, a sync that cannot be served SHALL end the copy with a `failed` change; the copy SHALL keep its last records. A refused or failed copy SHALL follow nothing more, however many messages arrive. Closing a copy SHALL withdraw its outstanding request, and a first sync still under way SHALL resolve as `rejected` with `cancelled`. A copy closed while it is still subscribing to its families SHALL make no further subscription and SHALL close the one it was making. A request that the transport rejects or throws on SHALL be reported to `onError` and refused with `unavailable`. A family list that is empty, longer than 32, repeated, not made of family names or longer than 256 characters joined SHALL be refused with `invalid-request`. So SHALL a `timeoutMs` that is not an integer from 1 to `MAX_TIMEOUT_MS`, a `maxBuffered` that is not a positive integer, and an `owner` that is not a participant source, before any request is sent.
+`sync` SHALL resolve with the copy after its first sync. If that sync is refused, `sync` SHALL resolve as `rejected` with the shared error body instead. If it has not completed within `timeoutMs` of its first request, `sync` SHALL resolve as `rejected` with `unavailable`, naming the last request it sent; each later request of the first sync SHALL get only the time left. Only the first request SHALL join `parent`'s trace; a later request SHALL start its own. After that, a sync that cannot be served SHALL end the copy with a `failed` change; the copy SHALL keep its last records. The one exception is a later sync that a transport whose stream reconnects answers as `interrupted`, because it was refused `unavailable` while the stream it went out under was lost (Hub #1700): the copy SHALL NOT end or hear `failed`, SHALL stay syncing with its last records and apply no live message, as during the reconnect, and SHALL send its next request only when the reconnect's gap notice, or another overflow, wants one. A first sync answered `interrupted` SHALL resolve as `rejected` with its error body, as before. A refused or failed copy SHALL follow nothing more, however many messages arrive. Closing a copy SHALL withdraw its outstanding request, and a first sync still under way SHALL resolve as `rejected` with `cancelled`. A copy closed while it is still subscribing to its families SHALL make no further subscription and SHALL close the one it was making. A request that the transport rejects or throws on SHALL be reported to `onError` and refused with `unavailable`. A family list that is empty, longer than 32, repeated, not made of family names or longer than 256 characters joined SHALL be refused with `invalid-request`. So SHALL a `timeoutMs` that is not an integer from 1 to `MAX_TIMEOUT_MS`, a `maxBuffered` that is not a positive integer, and an `owner` that is not a participant source, before any request is sent.
 
 #### Scenario: Current state, then live messages
 - **WHEN** an owner holds two sessions and a consumer syncs, and the owner later updates one
@@ -214,6 +214,10 @@ A buffer overflow, or a message dropped on one of the copy's subscriptions, SHAL
 #### Scenario: A later sync that cannot be served
 - **WHEN** the owner stops serving and the copy's subscription then drops a message
 - **THEN** the handler hears `failed` with `unavailable`, and the copy follows nothing more but keeps its last records
+
+#### Scenario: A later sync that meets a lost stream
+- **WHEN** a copy's resync is answered `interrupted` and a live message then arrives
+- **THEN** the handler hears no `failed`, the copy keeps its last record and applies nothing, and only the next gap notice sends a request, whose served answer the handler hears as usual
 
 #### Scenario: Duplicates and stale revisions
 - **WHEN** a synced copy receives a repeated state, older states, a state at or below the sync revision, a removal, a state older than that removal and the removal again
@@ -1143,3 +1147,23 @@ The browser entry SHALL offer `followCopy`, which follows one page copy through 
 #### Scenario: A refusal that cannot clear
 - **WHEN** a read is refused, fails or throws with `forbidden`, `invalid-state`, `invalid-request` or `not-found`
 - **THEN** the page hears the refusal once, no read is scheduled and only its explicit retry or a new follow reads again
+
+### Requirement: A remote resync survives a reconnect
+
+The remote client SHALL answer a copy's sync request as `interrupted`, with the refusal's error body, when the request is refused `unavailable`, by the edge, by its deadline or because the edge could not be reached, while the stream it went out under is lost: that stream was lost or replaced before the answer, or no stream was open when it went out (Hub #1700). A request that could not reach the edge while its stream still looks open SHALL wait, within the request's own deadline, to hear whether that stream is lost; if the stream stays open, the refusal SHALL be passed on unchanged and end the copy as before. Any refusal with another code, and any refusal while the stream it went out under stays open, SHALL be passed on unchanged. The repeat SHALL be paced by the reconnect alone: the client SHALL send no request of its own and SHALL add no timer, retry loop, message format or error shape, so a copy ends only when its participant closes or a refusal ends it. A sync only reads, so this repeat is a resync after reconnection under ADR 0012's retry rule and never resends a command.
+
+#### Scenario: A reconnect that straddles a second restart
+- **WHEN** the runtime restarts again while the reconnect from a first restart registers a copy's family, and the resync that the reconnect's gap notice starts cannot reach the edge
+- **THEN** the copy neither fails nor takes anything new, and once the next reconnect's gap notice arrives it syncs to the owner's current state
+
+#### Scenario: A refused resync heard before the lost stream
+- **WHEN** a resync cannot reach the edge and the client hears afterwards that its stream was lost, as when a runtime stops with both open
+- **THEN** the copy waits, and syncs again after the next reconnect
+
+#### Scenario: A refused resync while the stream stays open
+- **WHEN** a resync cannot reach the edge and its stream stays open until the request's deadline
+- **THEN** the handler hears `failed` with `unavailable` at that deadline
+
+#### Scenario: Another refusal during a reconnect
+- **WHEN** a resync is refused `forbidden` while the stream is lost
+- **THEN** the handler hears `failed` with `forbidden`
