@@ -1437,7 +1437,8 @@ used at least 1.2 GB (the largest sample, a lower bound), and at a 1250 MiB
 limit the run was killed for memory. The image build is a separate step without
 these limits. The container also runs under the shared test pool and waits for
 admission, as described in [Shared test pool](#shared-test-pool). An image
-build, which is needed only when its tag is missing, waits for the same admission.
+build, which is needed only when its tag is missing, waits for the same admission
+and runs its RUN steps in the pool.
 The temporary Git commit identifies a working-tree snapshot, not a reviewed
 release or independent Acceptance result. Dependency preparation needs network
 access; the checks install from the image's offline npm cache.
@@ -1528,8 +1529,11 @@ start. A name already in use is refused and left alone.
 The dependency image is `bunny-test-deps:<key>`. The key is a hash of
 `package-lock.json` and `scripts/test-container/Dockerfile`, and the image carries
 it as the `org.bunny.test-deps.key` label. The command builds the image only when
-that tag is missing. The build is a host step with network that uses CPU and
-memory outside the job's limits, and the command prints that it is building.
+that tag is missing. The build has network and uses CPU and memory outside the
+job's limits, and the command prints that it is building. With the shared test
+pool, the build's RUN steps run in the pool (`--cgroup-parent`), and BuildKit
+leaves an empty `buildkit` child cgroup there. Exporting the image stays with the
+Docker engine, outside the pool.
 Every run recomputes the key from its snapshot, runs by image ID, and refuses an
 image whose label does not match, so an image built for another lockfile is
 never used. Each image is about 3.5 GB, and a new one appears for each lockfile

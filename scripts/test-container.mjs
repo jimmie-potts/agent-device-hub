@@ -216,14 +216,15 @@ async function job(plan, io, state, {repository, source, work, cidfile, pool}) {
     if (waited !== 0) return waited;
   }
   if (state.release && missing()) {
-    io.log(`building ${tag}, the dependencies for this lockfile and recipe. This is a host step with network, outside the job's limits; later runs with the same lockfile reuse the image.`);
+    io.log(`building ${tag}, the dependencies for this lockfile and recipe. This is a step with network, outside the job's limits${pool ? ` but with its RUN steps in the /${pool} pool` : ''}; later runs with the same lockfile reuse the image.`);
     const context = join(work, 'context');
     for (const path of files.filter(file => file === 'package-lock.json' || /(?:^|\/)package\.json$/.test(file))) {
       await mkdir(dirname(join(context, path)), {recursive:true});
       await writeFile(join(context, path), await readFile(join(source, path)));
     }
     await writeFile(join(context, 'Dockerfile'), recipe);
-    const built = await io.run(['build','--tag',tag,'--build-arg',`BUNNY_TEST_DEPS_KEY=${key}`,context]);
+    // The build's RUN steps run in the pool too (measured, Hub #1641); exporting the image stays with the engine.
+    const built = await io.run(['build','--tag',tag,'--build-arg',`BUNNY_TEST_DEPS_KEY=${key}`,...(pool ? ['--cgroup-parent',`/${pool}`] : []),context]);
     if (built !== 0) { io.log(`the dependency image build failed with status ${String(built)}`); return built; }
   }
   await state.release?.();

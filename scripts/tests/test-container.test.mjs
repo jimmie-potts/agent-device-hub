@@ -328,9 +328,12 @@ test('a job runs in the pool when it exists, and with per-container limits when 
     assert.equal(await runJob(argv, pooled, repo), 0);
     assert.deepEqual(jobRun(pooled).slice(jobRun(pooled).indexOf('--cgroup-parent'), jobRun(pooled).indexOf('--cgroup-parent') + 2), ['--cgroup-parent','/bunny-tests']);
     assert.ok(pooled.lines.some(line => line.endsWith('in the /bunny-tests pool')));
+    const build = pooled.calls.find(call => call[0] === 'build');
+    assert.deepEqual(build.slice(-3, -1), ['--cgroup-parent','/bunny-tests'], 'the build runs its RUN steps in the pool');
     const fallback = fakeHost({pool:null});
     assert.equal(await runJob(argv, fallback, repo), 0);
     assert.equal(jobRun(fallback).includes('--cgroup-parent'), false);
+    assert.equal(fallback.calls.find(call => call[0] === 'build').includes('--cgroup-parent'), false);
     assert.ok(fallback.lines.includes('pool unavailable: the read-only pool reader could not run; using per-container limits and the count check'));
     assert.ok(fallback.lines.some(line => line.endsWith('no pool (count check)')));
   } finally { await rm(repo, {recursive:true, force:true}); }

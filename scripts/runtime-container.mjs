@@ -115,7 +115,7 @@ async function main() {
     const image = 'bunny-runtime-check-tools:' + hash.digest('hex').slice(0,24);
     if (captured(['image','inspect','--format','{{.Id}}',image]) === null) {
       await admit(BUILD_BYTES);
-      status = await command('docker', ['build','--tag',image,context]);
+      status = await command('docker', ['build','--tag',image,...(pool ? ['--cgroup-parent',`/${pool}`] : []),context]);
       await release(); release = null;
       if (status !== 0) throw Object.assign(new Error('container-check-failed'), {status});
     }
