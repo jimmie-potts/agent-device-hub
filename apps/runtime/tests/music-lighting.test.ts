@@ -529,25 +529,37 @@ it('a Stop while starting ends stopped through the module and sends nothing agai
   assert.equal((await h.light()).session.status, 'idle');
 });
 
-it('the inbox cannot send failed lighting work again', async t => {
+it('refused lighting work stays in history with no inbox item, and the inbox cannot send failed work again', async t => {
   const h = await setup(t);
   await h.enable();
   const capture = await h.liveCapture();
-  h.lines.reply = () => errorBody('invalid-state');
-  await h.start('refused-start', capture);
-  await h.status('wall', 'idle');
-  const workId = lightingWorkRequestId('refused-start', 'wall');
   const inbox = async (): Promise<InboxItem[]> => {
     const result = await contextOf(h.observer).sdk.sync<InboxItem>(['inbox-item'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
     assert.equal(result.status, 'synced');if (result.status !== 'synced') return [];
     const items = result.copy.states().map(message => message.data);await result.copy.close();return items;
   };
+  // #1657 (D1): the module refuses the Start before acting, and only the core may send lighting work, so Send again could
+  // only be refused. The refusal keeps its code in the tracked operation and history, and opens no item.
+  h.lines.reply = () => errorBody('invalid-state', {detail: 'live Music starts only over a listed named scene on a light that is on'});
+  await h.start('refused-start', capture);
+  await h.status('wall', 'idle');
+  const refusedId = lightingWorkRequestId('refused-start', 'wall');
+  await waitFor(() => h.operation(refusedId)?.status === 'rejected', 5000, 'the refused work recorded');
+  assert.deepEqual([h.operation(refusedId)?.result, h.operation(refusedId)?.evidence, h.operation(refusedId)?.error?.code], ['failed', 'none', 'invalid-state']);
+  // Work the module accepted and then failed still opens an item, and Send again is refused for it.
+  h.lines.reply = () => ({status: 'accepted'});
+  await h.start('failed-start', capture);
+  await waitFor(() => h.lines.work.length === 2);
+  const start = h.lines.work[1];assert.ok(start !== undefined);
+  await h.lines.outcome(start, 'failed', 'unavailable');
+  const workId = lightingWorkRequestId('failed-start', 'wall');
   await waitFor(async () => (await inbox()).some(item => item.item.requestId === workId), 5000, 'the failed work in the inbox');
+  assert.equal((await inbox()).some(item => item.item.requestId === refusedId), false, 'the refusal opened no item');
   const item = (await inbox()).find(candidate => candidate.item.requestId === workId);assert.ok(item !== undefined);
   const resend = await contextOf(h.observer).sdk.request(`bunny.cmd.inbox-handle.${item.id}`, {type: 'org.bunny.inbox.handle.requested', subject: item.id,
     dataschema: schema('inbox-handle'), data: {action: 'send-again', expectedRevision: item.revision}}, {timeoutMs: 3000, requestId: 'resend-lighting'});
   assert.equal(resend.status === 'rejected' && resend.error.error.code, 'forbidden');
   await sleep(100);
-  assert.equal(h.lines.work.length, 1, 'nothing is sent again');
+  assert.equal(h.lines.work.length, 2, 'nothing is sent again');
   assert.ok((await inbox()).some(candidate => candidate.id === item.id), 'the item stays for a person');
 });

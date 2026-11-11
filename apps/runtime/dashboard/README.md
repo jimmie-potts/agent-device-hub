@@ -28,7 +28,8 @@ returns that device to the global choice. The Hub card keeps its artwork and
 three buttons, with a neutral collapsed summary when saved exceptions or fresh
 native differences exist. Expanding it shows the choices, available device
 request evidence and links to device controls. It makes no physical-mode claim.
-Failures keep using Check Inbox. Native Monitor/Media, scene, power, brightness
+Failures that open an Inbox item keep using Check Inbox; a mode change refused
+for a stale revision opens none and shows its refusal on the page (#1657). Native Monitor/Media, scene, power, brightness
 and media controls keep their own meaning and never create saved exceptions.
 All placements use the same controls and existing shell copies; opening,
 navigating, reconnecting and reloading send no mode command.
@@ -906,7 +907,11 @@ Installation and physical acceptance remain separate.
 ## Inbox and timeline
 
 Home syncs the core's shared inbox and shows failed, uncertain and conflicting
-operations. **Send again** explicitly sends saved operation data as a fresh
+operations. A result whose only possible handling is Dismiss never reaches it
+(#1657). Examples are a display refusing a scheduled art moment, a light
+refusing core-dispatched Music lighting work, an unconfirmed companion speech
+line and a mode change refused for a stale revision. Each stays in **Timeline**
+history with its code and detail. **Send again** explicitly sends saved operation data as a fresh
 tracked command and handles the old item; **Dismiss** only handles the item.
 Both use its current revision. Stale copies disable actions; read-only sessions
 show the records without controls. A handling reply is separate from the synced
