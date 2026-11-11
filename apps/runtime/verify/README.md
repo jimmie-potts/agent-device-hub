@@ -244,7 +244,9 @@ the run, so even a control never touches the owner's files.
 Independent tasks may start simulated runtime runs concurrently, each from its own
 worktree and build outputs with separate ports, credentials and state
 ([docs/sdlc.md](../../../docs/sdlc.md#acceptance-review)). Normal launches have no
-run-count limit; keep the existing leases and reset or stop only owned runs.
+run-count limit; on the Mac, test jobs follow
+[Test work on the Mac](../../../docs/development.md#test-work-on-the-mac). Keep the
+existing leases and reset or stop only owned runs.
 Run with Node 24 from the repository root, and build first:
 `start` serves the built candidate, and the `build-current` check fails a start whose sources are newer than the
 build.

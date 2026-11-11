@@ -10,6 +10,7 @@ export {
   DEADLINES, advance, kindOf, pending, type ActionKind, type Evidence, type Operation, type OperationEvent, type OperationResult, type OperationStatus,
   type TakenOutcome,
 } from './core/operations.js';
+export {historyOnly, resendRefusal} from './core/inbox.js';
 export {MAX_REFUSED, type ChangeEvent, type HistoryKind, type OperationStep} from './core/history.js';
 export {MAX_OPERATION_RECORDS, OPERATION_FAMILY, OPERATION_SCHEMA, operationRecord} from './core/operation-records.js';
 export {Redactions, type LogSink} from './log.js';

@@ -235,10 +235,11 @@ new authority or unresolved conflict, and continue independent authorized work.
 
 For disposable verification, independent tasks may start simulated runtimes
 concurrently through the normal npm wrappers or host route. Each run uses its
-own worktree, build outputs, ports, synthetic credentials and state. There is
-no default run-count limit or capacity-qualification gate. Keep the existing
-two-hour leases, extension, expiry and cleanup; stop only your own runs. Stop
-unneeded owned runs if resources become constrained. Household installation
+own worktree, build outputs, ports, synthetic credentials and state. The
+launchers set no run-count limit or capacity-qualification gate; on the Mac,
+test jobs follow [Test work on the Mac](development.md#test-work-on-the-mac).
+Keep the existing two-hour leases, extension, expiry and cleanup; stop only your
+own runs. Stop unneeded owned runs if resources become constrained. Household installation
 remains serialized, and physical devices keep one designated writer and their
 existing explicit authorization.
 

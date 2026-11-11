@@ -327,8 +327,12 @@ which forwards an allowlisted `mode-set` through its tracked dispatcher as an
 operation requested by this module, with the recorded revision as
 `expectedRevision`. The dispatcher's answer becomes the tool result,
 `accepted: …` or `refused: <code>` such as `revision-conflict` after the mode
-changed by hand; the operation's outcome, inbox item and history belong to the
-core, and the conversation never claims a device effect. The dispatcher's own
+changed by hand. The approval keeps the revision it was proposed against, so it
+never overrides that manual choice; the result then says the mode changed since
+the proposal and nothing was changed. The operation's outcome, inbox item and
+history belong to the core: a stale refusal like this opens no inbox item,
+because sending its saved revision again would always be refused (#1657). The
+conversation never claims a device effect. The dispatcher's own
 uncertainty, a reply deadline that passed while the mode owner held the
 command, reaches the module as `uncertain-result` and leaves the call
 uncertain like a lost answer. A decline sends

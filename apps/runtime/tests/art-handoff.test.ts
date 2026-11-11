@@ -420,9 +420,13 @@ const sendAgain = (sdk: Sdk, item: InboxItem, requestId: string) => sdk.request(
   dataschema: 'https://bunny.invalid/events/inbox-handle/2.0', data: {action: 'send-again', expectedRevision: item.revision}}, {timeoutMs: 3000, requestId});
 
 it('inbox Send again refuses a moment naming art, because a fresh one must pass arbitration; a plain moment is unchanged', async context => {
-  const w = await world(context, () => errorBody('unavailable', {detail: 'synthetic refusal'}));
-  assert.equal(codeOf(await w.core.actions.dispatch(momentAction('moment-art', {compositionId: COMPOSITION}))), 'unavailable');
+  // The art moment is accepted and then fails, so it opens an item; a display's refusal of one opens none (#1657, below).
+  const w = await world(context, command => command.data.requestId === 'moment-art' ? {status: 'accepted'} : errorBody('unavailable', {detail: 'synthetic refusal'}));
+  assert.deepEqual(await w.core.actions.dispatch(momentAction('moment-art', {compositionId: COMPOSITION})), accepted('moment-art'));
+  await outcomes.get(w.seen)?.publish('bunny.event.moment-play.panel', {kind: 'outcome', type: 'org.bunny.moment.play.completed', subject: 'panel',
+    dataschema: 'https://bunny.invalid/events/outcome/2.0', data: {requestId: 'moment-art', result: 'failed', evidence: 'none', error: {code: 'unavailable', retryable: true}}});
   assert.equal(codeOf(await w.core.actions.dispatch(momentAction('moment-plain'))), 'unavailable');
+  await waitFor(async () => (await inboxOf(w.art)).length === 2);
   const items = await inboxOf(w.art);
   const of = (requestId: string): InboxItem => { const item = items.find(each => each.item.requestId === requestId); assert.ok(item !== undefined); return item; };
   assert.equal(w.seen.length, 2);
@@ -433,6 +437,31 @@ it('inbox Send again refuses a moment naming art, because a fresh one must pass 
   await sendAgain(w.other, of('moment-plain'), 'resend-plain');
   assert.equal(w.seen.length, 3, 'a moment without art is sent again as before');
   assert.equal((w.seen[2]?.data as {art?: unknown}).art, undefined);
+});
+
+it('a display refusing a scheduled art moment keeps the refusal in history and opens no inbox item; a moment without art still opens one', async context => {
+  // #1657 (AC1, owner decision D1): only the core may request a moment naming art, so Send again could only be refused.
+  const w = await world(context, command => errorBody('invalid-state', {detail: command.data.art === undefined ? 'synthetic busy display' : 'the Tidbyt holds a pin the owner chose'}));
+  for (const requestId of ['plan-pinned', 'plan-busy']) {
+    assert.equal(codeOf(await w.core.actions.dispatch(momentAction(requestId, {compositionId: COMPOSITION}))), 'invalid-state');
+  }
+  assert.equal(codeOf(await w.core.actions.dispatch(momentAction('automation-plain'))), 'invalid-state');
+  await waitFor(async () => (await inboxOf(w.art)).length === 1);
+  assert.deepEqual((await inboxOf(w.art)).map(item => item.item.requestId), ['automation-plain']);
+  for (const requestId of ['plan-pinned', 'plan-busy']) {
+    const operation = w.handle.operation(requestId);
+    assert.deepEqual([operation?.status, operation?.result, operation?.evidence, operation?.error?.code], ['rejected', 'failed', 'none', 'invalid-state']);
+    const kept = (w.database.prepare("SELECT record FROM core_history WHERE request_id = ? AND kind = 'operation'").all(requestId) as {record: string}[])
+      .map(row => JSON.parse(row.record) as {status: string; error?: {code: string; detail?: string}});
+    assert.ok(kept.some(step => step.status === 'rejected' && step.error?.code === 'invalid-state' && step.error.detail === 'the Tidbyt holds a pin the owner chose'),
+      'history keeps the refusal with its code and detail');
+  }
+  // A display that later reports an outcome for a moment it refused contradicts its own refusal: that opens an item.
+  await outcomes.get(w.seen)?.publish('bunny.event.moment-play.panel', {kind: 'outcome', type: 'org.bunny.moment.play.completed', subject: 'panel',
+    dataschema: 'https://bunny.invalid/events/outcome/2.0', data: {requestId: 'plan-busy', result: 'uncertain', evidence: 'transmitted', error: {code: 'uncertain-result', retryable: false}}});
+  await waitFor(async () => (await inboxOf(w.art)).length === 2);
+  assert.deepEqual((await inboxOf(w.art)).map(item => item.item.requestId).sort(), ['automation-plain', 'plan-busy']);
+  assert.equal(w.handle.operation('plan-busy')?.status, 'rejected', 'the late outcome keeps the operation rejected');
 });
 
 it('a device refusing a lapsed copy leaves the operation rejected, never claiming the command failed to reach its owner', async context => {

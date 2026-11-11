@@ -1,6 +1,7 @@
 // Real core store, dispatcher, native responders and operation projection, on one owned port-0 runtime at a time.
 import assert from 'node:assert/strict';
-import type {InboxItem, Mode, ModeState} from '@jimmie-potts/event-contracts/v2/families';
+import type {DatabaseSync} from 'node:sqlite';
+import {operationEntityId, type InboxItem, type Mode, type ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import type {Action} from '../src/core/tracker.js';
 import {modeChildRequestId} from '../src/core/mode-participants.js';
@@ -152,9 +153,10 @@ it('qualified failed modules remain targets; refused modules are excluded and pe
   await waitFor(() => pixoo.commands.length === 2, 5000, 'the admitted target'); await third.runtime.stop();
 });
 
-it('resending a stale mode request accepts committed inbox handling and records the fresh refusal separately', async context => {
+it('a stale mode request stays in history with no inbox item, and Send again of a stale item is refused before anything is handled or sent', async context => {
   const operator = {source: 'bunny/parts/operator', token: 'synthetic-mode-inbox', scopes: ['read', 'control'] as const};
-  const core = createCoreModule();
+  let handle: CoreHandle | undefined, database: DatabaseSync | undefined;
+  const core = createCoreModule({parts: [{open: db => {database = db;}, start: given => {handle = given; return Promise.resolve();}}]});
   const nano = new ModeDevice('nanoleaf', 'wall');
   const pixoo = new ModeDevice('pixoo', 'pixoo-1');
   const files = await edgeConfig(context, [operator], {modules: {nanoleaf: {}, pixoo: {}}});
@@ -170,20 +172,24 @@ it('resending a stale mode request accepts committed inbox handling and records 
   const saved = (await read<ModeState>('mode'))[0]; assert.ok(saved);
   const stale = await core.actions.dispatch(action('quiet', 'stale-mode-original', initial.revision));
   assert.ok('error' in stale && stale.error.code === 'revision-conflict');
-  await waitFor(async () => (await read<InboxItem>('inbox-item')).length === 1);
-  const original = (await read<InboxItem>('inbox-item'))[0]; assert.ok(original);
+  // #1657 (D1): the saved revision can never match the mode again, so Send again could only be refused. History keeps
+  // the refusal; no item opens.
+  assert.deepEqual([handle?.operation('stale-mode-original')?.status, handle?.operation('stale-mode-original')?.error?.code], ['rejected', 'revision-conflict']);
+  assert.deepEqual(await read<InboxItem>('inbox-item'), []);
+  // An item a release before #1657 opened for the same refusal: Send again is refused before handling, and nothing is sent.
+  const original: InboxItem = {id: operationEntityId('stale-mode-original'), revision: 1, createdAtMs: Date.now(), dismissedBy: [],
+    item: {kind: 'operation', requestId: 'stale-mode-original', command: 'org.bunny.mode.set.requested', target: 'hub', result: 'failed', evidence: 'none',
+      error: {code: 'revision-conflict', retryable: false, requestId: 'stale-mode-original'}}};
+  assert.ok(database); database.prepare('INSERT INTO inbox_records (id, record) VALUES (?, ?)').run(original.id, JSON.stringify(original));
   const response = await fetch(new URL('/api/v2/commands/inbox-handle', runtime.url), {
     method: 'POST', headers: {authorization: `Bearer ${operator.token}`, 'content-type': 'application/json'},
     body: JSON.stringify({target: original.id, requestId: 'handle-stale-mode', data: {action: 'send-again', expectedRevision: original.revision}}),
   });
-  assert.equal(response.status, 200, 'the sent operation and original handling committed before the fresh mode refusal');
-  assert.equal((await response.json() as {status: string}).status, 'accepted');
-  const current = await read<InboxItem>('inbox-item');
-  assert.equal(current.length, 1);
-  assert.notEqual(current[0]?.id, original.id, 'the original item is handled');
-  assert.notEqual(current[0]?.item.requestId, original.item.requestId, 'the new request has its own identity');
-  assert.equal(current[0]?.item.result, 'failed');
-  assert.equal(current[0]?.item.error?.code, 'revision-conflict');
+  assert.notEqual(response.status, 200);
+  assert.equal((await response.json() as {error: {code: string}}).error.code, 'revision-conflict');
+  assert.deepEqual((database.prepare('SELECT handled_by FROM inbox_records').all() as {handled_by: string | null}[]).map(row => row.handled_by), [null], 'the item stays for a person');
+  assert.equal((database.prepare("SELECT count(*) AS count FROM core_operations WHERE json_extract(record, '$.family') = 'mode-set'").get() as {count: number}).count, 2,
+    'no fresh mode request was tracked');
   assert.deepEqual((await read<ModeState>('mode'))[0], saved, 'refused selections leave the saved choice unchanged');
-  assert.equal(nano.commands.length + pixoo.commands.length, 2, 'refused original and explicit resend send no native command');
+  assert.equal(nano.commands.length + pixoo.commands.length, 2, 'the refused original and the refused Send again send no native command');
 });

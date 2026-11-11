@@ -145,7 +145,8 @@ ledger and private store. They cover favorite/reuse/variation, invalid bytes, lo
 responses, restart without replay, recent retention and the monthly ceiling.
 After building, focus them with
 `node --test --test-name-pattern='art-theme|art-gallery|art-catalog|art-spending-limit' apps/runtime/dist/tests/scenarios/catalog.test.js`.
-On a Mac, use `npm run test:runtime:container -- --suite scenarios`.
+On a Mac, run it natively ([Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos))
+or with `npm run test:runtime:container -- --suite scenarios`.
 
 For local theme controls, select `scenario-art-theme`; its labelled capture shows
 contrasting saved art, locking the colors, restoring defaults and following again,
@@ -746,14 +747,18 @@ Admission-policy changes retain full coverage before their new rules activate.
 Use one worktree per task. Own its build outputs, container identity, writable
 state, ports, synthetic credentials, browser context and client configuration.
 Research may read shared source and caches. Runtime/test/browser runs must use
-their own mutable resources. Independent work needs no installation handoff and
-has no default concurrency cap. Stop only exact owned runs. Managed verification
+their own mutable resources. Independent work needs no installation handoff; on
+the Mac its test jobs share the slots in [Test work on the Mac](#test-work-on-the-mac).
+Stop only exact owned runs. Managed verification
 retains its two-hour lease; finite container checks retain their declared deadline
 and interruption/cleanup limits. See [runtime verification](#runtime-verification-runs)
 and [portable acceptance](../apps/runtime/verify/PORTABLE.md).
 
-On a Mac, use `npm run test:runtime:container -- --suite scenarios` and
-`-- --suite browser` from each task worktree. The runner copies source and uses
+On a Mac, run the scenario and browser suites natively
+([Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos)) or
+with `npm run test:runtime:container -- --suite scenarios` and
+`-- --suite browser` from each task worktree, under
+[Test work on the Mac](#test-work-on-the-mac). The container runner copies source and uses
 its own synthetic state with no installed volumes, mounts or ports. For a
 reviewable runtime capture, use the exact committed candidate and the existing
 portable acceptance route. Keep synthetic credentials scoped to that runtime's
@@ -787,6 +792,68 @@ the selected live operation. Its verified private record supplies completion and
 writer release; feature tasks reuse the public sanitized result without asking
 for another acknowledgment. Device permission and each issue's own acceptance
 remain separate.
+
+### Test work on the Mac
+
+The Mac's Docker Desktop VM also runs the installed core, the diagnostics stack
+and the Tronbyt server, and host load limits the test work beside them. Each
+session applies this rule itself; no coordinator grant is needed.
+
+1. **Slots.** At most 5 test jobs at once, across all sessions. A job is one
+   container (any except the core, the diagnostics containers and the Tronbyt
+   server) or one native test suite. A container named `…-wide` counts as two.
+2. **Start check.** Start only when the 1-minute load is under 8, the
+   installed core is `healthy` and enough slots are free
+   ([Counting test jobs](#counting-test-jobs)). Otherwise wait a minute.
+3. **Containers.** Run each test job in its own container with
+   `npm run test:container -- --issue <n> --job <name> [--size wide] -- <package script>`
+   ([One test job in a container](#one-test-job-in-a-container)), which
+   applies the name, `--rm` and the limits without swap. A container started
+   by hand matches it, runs one job and exits, never as a `sleep infinity`
+   holder: `docker run --rm --name bunny-gh<n>-<name> --cpus 2 --memory 1250m --memory-swap 1250m`,
+   or wide `docker run --rm --name bunny-gh<n>-<name>-wide --cpus 4 --memory 2g --memory-swap 2g`.
+   The SDK suite runs wide. The runtime verification suite runs wide or through
+   `npm run test:runtime:container -- --suite verify`, one slot with its own
+   limits ([Runtime verification runs](#runtime-verification-runs)).
+4. **Lint** (`npm run lint:js`) runs natively only, one at a time across all
+   sessions; [Counting test jobs](#counting-test-jobs) has the check and
+   [Heap budget](static-analysis.md#heap-budget) the reason.
+5. **Native work.** Build, typecheck, lint and `npm ci` take no slot. A native
+   suite takes one. Run a package script that is one bare `node --test` command
+   as `node scripts/native-test.mjs <script>` (2 workers); that satisfies a
+   check list naming the npm script. Run other scripts, such as the browser
+   journeys and the `test:*:package:built` scripts, as their check lists name
+   them
+   ([Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos)).
+6. **Evidence.** A native macOS run of build, typecheck, lint, the Node suites,
+   the scenario catalog and the browser journeys is accepted local validation
+   before a push; hosted Linux CI is the gate. A Linux container is needed only
+   for a test that still needs Linux (listed in Native runs on macOS, or so
+   marked in its own guide) or to reproduce a hosted failure; it stays allowed
+   otherwise.
+7. **Stop.** If the 1-minute load passes 12 or the core is not `healthy`, the
+   owner of the newest job stops it.
+
+Test work never stops, restarts or reconfigures the installed core, the
+diagnostics containers or the Tronbyt server. Stop and remove only your own
+jobs; never touch another session's containers.
+
+#### Counting test jobs
+
+- Load: `uptime`. Core:
+  `docker inspect -f '{{.State.Health.Status}}' bunny-mac-personal-core-1`
+  prints `healthy`.
+- Containers: `docker ps --format '{{.Names}}'`. Test containers usually start
+  with `bunny-gh` or `bunny-runtime-check-`; count a `…-wide` name twice.
+- Native suites:
+  `ps -axo command= | grep -E '^([^ ]*/)?(node|[Pp]ython[0-9.]*)( |$)' | grep -E -- '--test|/tests/|unittest|vitest|scripts/check-' | grep -v -- '--test-isolation=process'`.
+  The listing is an aid. It hides test workers, and most suites show one line,
+  the one naming the test files or the browser entry script; a
+  `scripts/package-*.mjs --test` suite shows two lines. Also count every native
+  suite you started yourself.
+- Lint: start it only when
+  `ps -axo command= | grep -E '^([^ ]*/)?node .*(eslint/bin/eslint\.js|lint-shards\.mjs)'`
+  prints nothing. An editor's ESLint language server does not match.
 
 ### Old system checks
 
@@ -1422,7 +1489,8 @@ See [Runtime test layers](../apps/runtime/DEVELOPMENT.md#runtime-test-layers) fo
 
 ### Runtime verification runs
 
-On macOS with Docker Desktop, run `npm run test:runtime:container`. It snapshots
+On macOS with Docker Desktop, the Linux route is `npm run test:runtime:container`;
+the native route follows below. It snapshots
 current tracked and nonignored new source, prepares a reusable image using the
 pinned Node 24 base and lockfile-selected Chromium, then runs `npm ci --include=dev`,
 `npm run build`, `npm run test:runtime:scenarios:built` and
@@ -1445,7 +1513,8 @@ access; the checks install from the image's offline npm cache.
 
 Use `-- --suite scenarios` or `-- --suite verify` for a focused suite, and
 `-- --suite browser` for the runtime dashboard browser smoke check. Separate
-invocations may run concurrently, including from independent worktrees. Each
+invocations may run concurrently, including from independent worktrees, within
+the slots of [Test work on the Mac](#test-work-on-the-mac). Each
 owns a unique container; cleanup removes only that container. The source copy
 excludes ignored files, private paths and build output and refuses symlinks.
 Keep private work outside tracked/nonignored source. The in-container two-hour
