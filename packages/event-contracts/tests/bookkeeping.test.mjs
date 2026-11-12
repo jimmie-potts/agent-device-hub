@@ -88,7 +88,7 @@ test('a pointer to a member the schema does not declare, or to one that holds me
   const device = versionsOf('device');
   assert.equal(bookkeepingProblem('device', ['/observed/readAtMs'], device), '/observed/readAtMs is not a member the schema declares');
   assert.equal(bookkeepingProblem('device', ['/lastSeenAtMs'], device), '/lastSeenAtMs is not a member the schema declares');
-  assert.equal(bookkeepingProblem('device', ['/observed'], device), '/observed names a member that may hold other members');
+  assert.equal(bookkeepingProblem('device', ['/observed'], device), '/observed names a member that may hold the type "object", not only a number');
   assert.equal(bookkeepingProblem('device', ['/capabilities/modes/values/0'], device), '/capabilities/modes/values/0 names an array position');
   for (const pointer of ['observedAtMs', '/', '/observed//observedAtMs', '/observed/~0', '']) {
     assert.equal(bookkeepingProblem('device', [pointer], device), `${pointer} is not a JSON pointer to an object member`, pointer);
@@ -116,7 +116,7 @@ test('members are found through $ref, allOf, oneOf and anyOf, in the same docume
   for (const pointer of ['/local/stampAtMs', '/remote/readAtMs', '/either/atMs', '/maybe/atMs', '/both/atMs', '/wrapped/value']) {
     assert.equal(bookkeepingProblem('lamp-glow', [pointer], [schema], refs), undefined, pointer);
   }
-  assert.equal(bookkeepingProblem('lamp-glow', ['/wrapped'], [schema], refs), '/wrapped names a member that may hold other members');
+  assert.equal(bookkeepingProblem('lamp-glow', ['/wrapped'], [schema], refs), '/wrapped names a member that may hold the type "object", not only a number');
   assert.equal(bookkeepingProblem('lamp-glow', ['/maybe/sinceMs'], [schema], refs), '/maybe/sinceMs is not a member the schema declares');
   assert.equal(bookkeepingProblem('lamp-glow', ['/gone/atMs'], [{properties: {gone: {$ref: 'https://bunny.invalid/events/missing/2.0'}}}], refs),
     '/gone/atMs meets a schema reference that does not resolve or nests too deeply');
@@ -222,8 +222,9 @@ test('a record parsed from JSON with an own __proto__ member is compared and mut
   assert.equal(shapeOf(Object.prototype), before);
 });
 
-// Review finding R3 on #1783: the single-value rule needs every alternative to say it holds a scalar.
-test('a member whose schema does not positively declare a single value is refused, in each form', () => {
+// Review findings R3 and R5 on #1783: a bookkeeping member holds a number, or a number or null, in every alternative at
+// any depth.
+test('a member whose schema does not say it holds a number, or a number or null, is refused, in each form', () => {
   const instant = {$ref: 'https://bunny.invalid/events/blocks/2.0#/$defs/instantMs'};
   const refused = {
     'unconstrained {}': {},
@@ -238,9 +239,22 @@ test('a member whose schema does not positively declare a single value is refuse
     'an unconstrained branch': {oneOf: [{type: 'integer'}, {}]},
     'a time or a state': {oneOf: [instant, {enum: ['pending', 'done']}]},
     'a time or a state behind a reference': {anyOf: [{type: 'null'}, instant, {$ref: '#/$defs/state'}]},
+    'an enumeration inside allOf': {oneOf: [{type: 'integer'}, {allOf: [{enum: ['pending', 'done']}]}]},
+    'an enumeration behind a $ref to an allOf': {oneOf: [{type: 'integer'}, {$ref: '#/$defs/combined'}]},
+    'an enumeration in a nested oneOf': {oneOf: [{type: 'integer'}, {oneOf: [{type: 'null'}, {enum: ['pending']}]}]},
+    'an integer or string type': {type: ['integer', 'string']},
+    'an integer or a boolean': {oneOf: [{type: 'integer'}, {type: 'boolean'}]},
+    'an integer or a string': {anyOf: [{type: 'integer'}, {type: 'string'}]},
+    'an enumeration alone': {enum: [0, 1, 2]},
+    'a const alone': {const: 3},
+    'a boolean alone': {type: 'boolean'},
+    'a string alone': {type: 'string'},
+    'a date-time string': {type: 'string', format: 'date-time'},
+    'null alone': {type: 'null'},
+    'a branch that says nothing': {oneOf: [{type: 'integer'}, {minimum: 0}]},
   };
   for (const [form, at] of Object.entries(refused)) {
-    const schema = {type: 'object', $defs: {state: {const: 'pending'}}, properties: {at}};
+    const schema = {type: 'object', $defs: {state: {const: 'pending'}, combined: {allOf: [{enum: ['a', 'b']}]}}, properties: {at}};
     assert.match(bookkeepingProblem('lamp-glow', ['/at'], [schema]) ?? '', /^\/at names a member that /, form);
   }
   const accepted = {
@@ -248,8 +262,10 @@ test('a member whose schema does not positively declare a single value is refuse
     'a nullable type': {type: ['integer', 'null']},
     'a time or null (anyOf)': {anyOf: [{type: 'null'}, instant]},
     'a time or null (oneOf)': {oneOf: [instant, {const: null}]},
-    'an enumeration alone': {enum: [0, 1, 2]},
+    'an integer': {type: 'integer'},
+    'a number': {type: 'number', minimum: 0},
     'bounds in allOf': {allOf: [{type: 'integer'}, {minimum: 0}]},
+    'a number or null nested': {anyOf: [{type: 'null'}, {oneOf: [instant]}]},
   };
   for (const [form, at] of Object.entries(accepted)) {
     assert.equal(bookkeepingProblem('lamp-glow', ['/at'], [{type: 'object', properties: {at}}]), undefined, form);

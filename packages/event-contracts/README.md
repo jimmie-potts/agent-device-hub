@@ -598,12 +598,13 @@ register.
 | `lifx-light` (module) | `/observed/observedAtMs` | The color reading time |
 
 `bookkeepingProblem` holds the rules a declaration must meet. A pointer names
-a member, never an array position, whose schema positively declares a single
-value in every registered version of the family and in every alternative,
-through `$ref`, `allOf`, `oneOf` and `anyOf`: a scalar `type`, or a `const` or
-`enum` of scalars. An unconstrained schema, another keyword such as `if` or
-`not`, and alternatives that mix a value with a `const` or `enum` are refused,
-and so is a pointer through `__proto__`, `constructor` or `prototype`. It names no member in `NEVER_BOOKKEEPING`, at any depth: identity,
+a member, never an array position, that holds a number, or a number or null,
+in every registered version of the family: every alternative reached through
+`$ref`, `allOf`, `oneOf` and `anyOf`, at any depth, is an `integer` or
+`number` type or null. An `enum`, a non-null `const`, a `boolean` or
+`string`, an object or array, an unconstrained schema and any other keyword
+are refused wherever they appear, and so is a pointer through `__proto__`,
+`constructor` or `prototype`. It names no member in `NEVER_BOOKKEEPING`, at any depth: identity,
 availability, generation, configuration revision, holds, status, observed power
 and brightness, desired values, pending work and outcomes, a transmission's
 request and operations, power-limit settings and status, and `showing`,

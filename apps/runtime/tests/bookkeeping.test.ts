@@ -104,10 +104,16 @@ it('the runtime refuses a module that declares a family it does not register, tw
   assert.throws(() => shippedList([lamp({'lamp-glow': []}), lamp({'lamp-glow': []}, 'lantern')]), /lamp-glow's bookkeeping is declared twice/);
   assert.throws(() => shippedList([lamp({'lamp-glow': ['/observed/status']})]), /lamp's bookkeeping for lamp-glow: \/observed\/status names status, which is never bookkeeping/);
   assert.throws(() => shippedList([lamp({'lamp-glow': ['/observed/seenAtMs']})]), /\/observed\/seenAtMs is not a member the schema declares/);
-  assert.throws(() => shippedList([lamp({'lamp-glow': ['/observed']})]), /\/observed names a member that may hold other members/);
+  assert.throws(() => shippedList([lamp({'lamp-glow': ['/observed']})]), /\/observed names a member that may hold the type "object", not only a number/);
+  // The real Pixoo display's freshness state may not be declared, although it is a single value (review finding R5).
+  const pixoo = registrations.find(({name}) => name === 'pixoo');
+  assert.ok(pixoo !== undefined);
+  const stateful = {...pixoo, bookkeeping: {'pixoo-display': ['/monitor/page', '/monitor/connection']}};
+  assert.throws(() => shippedList([...registrations.filter(({name}) => name !== 'pixoo'), stateful]),
+    {message: 'the shipped module list cannot be assembled: pixoo\'s bookkeeping for pixoo-display: /monitor/connection names a member that uses enum, not only a number'});
   const loose = registered('loose', {schemas: {[`${SCHEMA_BASE}lamp-glow/2.0`]: {type: 'object', properties: {at: {}}}}, bookkeeping: {'lamp-glow': ['/at']}});
   assert.throws(() => shippedList([loose]),
-    {message: 'the shipped module list cannot be assembled: loose\'s bookkeeping for lamp-glow: /at names a member that does not say it holds a single value'});
+    {message: 'the shipped module list cannot be assembled: loose\'s bookkeeping for lamp-glow: /at names a member that does not say it holds a number'});
   const broken = registered('broken', {
     schemas: {[`${SCHEMA_BASE}lamp-glow/2.0`]: {type: 'object', properties: {gone: {$ref: `${SCHEMA_BASE}missing/2.0`}}}}, bookkeeping: {'lamp-glow': ['/gone/atMs']},
   });

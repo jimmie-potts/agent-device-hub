@@ -139,76 +139,65 @@ function branches(node: Node, refs: Readonly<Record<string, object>>, depth = 0)
   return found;
 }
 
-const SCALAR_TYPES: readonly unknown[] = ['integer', 'number', 'string', 'boolean', 'null'];
-/** The keywords a single-value member's schema may use: scalar types and their bounds, notes, and composition. */
-const SCALAR_KEYWORDS: readonly string[] = [
-  'type', 'const', 'enum', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'pattern',
-  'format', '$ref', 'allOf', 'oneOf', 'anyOf', '$schema', '$id', '$comment', 'title', 'description', 'default', 'examples', 'deprecated',
-  'readOnly', 'writeOnly',
+const NUMBER_TYPES: readonly unknown[] = ['integer', 'number'];
+/** The keywords a bookkeeping member's schema may use: a number or null type, a null `const`, bounds, notes and composition. */
+const NUMBER_KEYWORDS: readonly string[] = [
+  'type', 'const', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', '$ref', 'allOf', 'oneOf', 'anyOf',
+  '$schema', '$id', '$comment', 'title', 'description', 'default', 'examples', 'deprecated', 'readOnly', 'writeOnly',
 ];
-const scalar = (value: unknown): boolean => value === null || ['number', 'string', 'boolean'].includes(typeof value);
-// A `null` alternative is how a schema says a time is not known yet.
-const isNull = (schema: Record<string, unknown>): boolean => schema.type === 'null' || (Object.hasOwn(schema, 'const') && schema.const === null);
-// A `const` or `enum` alternative names states rather than a value such as a time.
-const isEnumeration = (schema: Record<string, unknown>): boolean => Object.hasOwn(schema, 'const') || Object.hasOwn(schema, 'enum');
-
-// The schema an alternative names once its own `$ref` chain is followed.
-function target(node: Node, refs: Readonly<Record<string, object>>): Record<string, unknown> {
-  let current = node;
-  for (let depth = 0; depth <= MAX_REFS; depth += 1) {
-    const schema = objectOf(current.schema) ?? {};
-    if (typeof schema.$ref !== 'string' || isNull(schema) || isEnumeration(schema)) return schema;
-    const next = resolve(schema.$ref, current.root, refs);
-    if (next === undefined) return schema;
-    current = next;
-  }
-  throw new Error('bookkeeping schema references nest too deeply');
-}
 
 /**
- * Why a member's schema does not positively declare a single value, or undefined. Every alternative must say it holds a
- * scalar: a scalar `type`, or a `const` or `enum` of scalars, directly, through `$ref`, through one `allOf` part, or in
- * every `oneOf` and `anyOf` branch. A keyword outside `SCALAR_KEYWORDS` anywhere, such as `if`, `not` or
- * `patternProperties`, refuses it, and so does an unconstrained `{}` or `true`. A member whose alternatives mix a value
- * with a `const` or `enum` is refused too: one of its alternatives is a state, so a change of it can be a change of state.
+ * Why a member's schema does not say it holds a number, or a number or null, or undefined. Every schema reached through
+ * `$ref`, `allOf`, `oneOf` and `anyOf`, at any depth, may use only `NUMBER_KEYWORDS`, with an `integer`, `number` or
+ * `null` type and a `const` only of null; `oneOf` and `anyOf` branches must each say what they hold, and at least one
+ * alternative must be a number. So an `enum`, a non-null `const`, a `boolean` or `string`, an object or array, an
+ * unconstrained `{}` or `true`, and any other keyword are refused wherever they hide: a bookkeeping member is a reading,
+ * paint or update time or a counter, never a state.
  */
-function notScalar(node: Node, refs: Readonly<Record<string, object>>, depth = 0): string | undefined {
-  const schema = objectOf(node.schema);
-  if (schema === undefined) return 'may hold any value';
-  if (depth > MAX_REFS) throw new Error('bookkeeping schema references nest too deeply');
-  const types = schema.type === undefined ? [] : Array.isArray(schema.type) ? schema.type as unknown[] : [schema.type];
-  if (!types.every(type => SCALAR_TYPES.includes(type))) return 'may hold other members';
-  const other = Object.keys(schema).find(keyword => !SCALAR_KEYWORDS.includes(keyword));
-  if (other !== undefined) return `uses ${other}, so it may hold more than one value`;
-  if (Object.hasOwn(schema, 'const') && !scalar(schema.const)) return 'may hold other members';
-  if (Object.hasOwn(schema, 'enum') && !(Array.isArray(schema.enum) && schema.enum.every(scalar))) return 'may hold other members';
-  let positive = types.length > 0 || Object.hasOwn(schema, 'const') || Object.hasOwn(schema, 'enum');
-  if (typeof schema.$ref === 'string') {
-    const target = resolve(schema.$ref, node.root, refs);
-    if (target === undefined) throw new Error(`bookkeeping schema reference not found: ${schema.$ref}`);
-    const problem = notScalar(target, refs, depth + 1);
-    if (problem !== undefined) return problem;
-    positive = true;
-  }
-  if (Array.isArray(schema.allOf)) {
-    for (const part of schema.allOf) {
-      const problem = notScalar({schema: part, root: node.root}, refs, depth + 1);
-      if (problem === undefined) positive = true;
-      else if (problem !== 'does not say it holds a single value') return problem;
+function notNumber(node: Node, refs: Readonly<Record<string, object>>): string | undefined {
+  let numeric = false;
+  // Whether the schema at `node` says what it holds, or why it may hold something other than a number or null.
+  const visit = (current: Node, depth: number): {says: boolean} | string => {
+    const schema = objectOf(current.schema);
+    if (schema === undefined) return 'may hold any value';
+    if (depth > MAX_REFS) throw new Error('bookkeeping schema references nest too deeply');
+    const types = schema.type === undefined ? [] : Array.isArray(schema.type) ? schema.type as unknown[] : [schema.type];
+    const other = types.find(type => !NUMBER_TYPES.includes(type) && type !== 'null');
+    if (other !== undefined) return `may hold the type ${JSON.stringify(other)}, not only a number`;
+    const keyword = Object.keys(schema).find(name => !NUMBER_KEYWORDS.includes(name));
+    if (keyword !== undefined) return `uses ${keyword}, not only a number`;
+    if (Object.hasOwn(schema, 'const') && schema.const !== null) return 'uses const, not only a number';
+    if (types.some(type => NUMBER_TYPES.includes(type))) numeric = true;
+    let says = types.length > 0 || Object.hasOwn(schema, 'const');
+    if (typeof schema.$ref === 'string') {
+      const target = resolve(schema.$ref, current.root, refs);
+      if (target === undefined) throw new Error(`bookkeeping schema reference not found: ${schema.$ref}`);
+      const found = visit(target, depth + 1);
+      if (typeof found === 'string') return found;
+      says ||= found.says;
     }
-  }
-  for (const keyword of ['oneOf', 'anyOf']) {
-    const list = schema[keyword];
-    if (!Array.isArray(list)) continue;
-    for (const branch of list) {
-      const problem = notScalar({schema: branch, root: node.root}, refs, depth + 1);
-      if (problem !== undefined) return problem;
+    if (Array.isArray(schema.allOf)) {
+      for (const part of schema.allOf) {
+        const found = visit({schema: part, root: current.root}, depth + 1);
+        if (typeof found === 'string') return found;
+        says ||= found.says;
+      }
     }
-    const alternatives = list.map(branch => target({schema: branch, root: node.root}, refs)).filter(branch => !isNull(branch));
-    if (alternatives.length > 1 && alternatives.some(isEnumeration)) return 'mixes a value with a state enumeration';
-    if (list.length > 0) positive = true;
-  }
-  return positive ? undefined : 'does not say it holds a single value';
+    for (const name of ['oneOf', 'anyOf']) {
+      const list = schema[name];
+      if (!Array.isArray(list)) continue;
+      for (const branch of list) {
+        const found = visit({schema: branch, root: current.root}, depth + 1);
+        if (typeof found === 'string') return found;
+        if (!found.says) return `has a ${name} branch that does not say it holds a number`;
+      }
+      if (list.length > 0) says = true;
+    }
+    return {says};
+  };
+  const found = visit(node, 0);
+  if (typeof found === 'string') return found;
+  return found.says && numeric ? undefined : 'does not say it holds a number';
 }
 
 /** Why one version's schema does not declare `pointer` as a member that holds a single value, or undefined. */
@@ -224,7 +213,7 @@ function undeclared(pointer: string, schema: object, refs: Readonly<Record<strin
     nodes = next;
   }
   for (const node of nodes) {
-    const problem = notScalar(node, refs);
+    const problem = notNumber(node, refs);
     if (problem !== undefined) return `${pointer} names a member that ${problem}`;
   }
   return undefined;
