@@ -159,6 +159,12 @@ class Run implements RunHarness {
   #inFlight = 0;
   /** On virtual time, the parts whose stream is lost until they reconnect, which they do over real I/O. */
   readonly #away = new Set<Role>();
+  /**
+   * Where the reader stood when its stream was lost, until it is back in sync (Hub #1711): set by `disconnect`, and on
+   * virtual time when the remote client reports the loss, as after a crash. A wait does not end between its stream's
+   * return and its copies' resync, which is real I/O.
+   */
+  #readerLost: ReaderMark | undefined;
 
   readonly #client: GatewayClient;
 
@@ -265,9 +271,12 @@ class Run implements RunHarness {
   async wait(ms: number): Promise<void> {
     await this.#actions;
     for (const part of this.#held.splice(0)) part.scheduler.release();
-    if (this.#virtual !== undefined) return this.#advance(this.#virtual, ms);
-    await sleep(ms);
-    await this.#refresh();
+    if (this.#virtual !== undefined) await this.#advance(this.#virtual, ms);
+    else {
+      await sleep(ms);
+      await this.#refresh();
+    }
+    await this.#readerBack();
   }
 
   /** The runtime's edge ends the part's stream; the same remote part reconnects once the next wait releases its timers. */
@@ -275,6 +284,7 @@ class Run implements RunHarness {
     return this.#act(async () => {
       await this.#refresh();
       const part = this.#part(role);
+      if (role === 'reader' && part.participant !== undefined) this.#readerLost ??= this.reader.mark();
       part.scheduler.hold();
       this.#held.push(part);
       await this.#post('disconnect', {source: sourceOf(role)});
@@ -538,6 +548,7 @@ class Run implements RunHarness {
   /** On virtual time, follows whether a part's stream is lost, so that no wait passes while it reconnects. */
   #heard(role: Role, {event}: Diagnostic): void {
     if (event === 'remote.disconnected') this.#away.add(role);
+    if (event === 'remote.disconnected' && role === 'reader') this.#readerLost ??= this.reader.mark();
     if (event === 'remote.reconnected') this.#away.delete(role);
     if (this.#virtual !== undefined) this.#virtual.quiet = false;
   }
@@ -545,7 +556,10 @@ class Run implements RunHarness {
   async #retire(part: Part): Promise<void> {
     const {participant} = part;
     part.participant = undefined;
-    if (part.role === 'reader') this.reader.copies = [];
+    if (part.role === 'reader') {
+      this.reader.copies = [];
+      this.#readerLost = undefined;
+    }
     await participant?.close();
   }
 
@@ -563,6 +577,25 @@ class Run implements RunHarness {
     const part = this.#part('reader');
     if (part.closed || part.participant === undefined || this.#held.includes(part)) return undefined;
     return this.reader.mark();
+  }
+
+  /**
+   * Once the reader's lost stream is back, waits until every copy has synced again, within `RESYNC_WITHIN_MS` of real
+   * time: the resync is real I/O, which neither the run's time nor a real sleep of the wait's length bounds (Hub #1711).
+   * While its stream is still away it returns at once, since the reconnect may need the parts' time, which the next wait
+   * moves. Past the bound it names what did not come back.
+   */
+  async #readerBack(): Promise<void> {
+    const mark = this.#readerLost;
+    if (mark === undefined || this.reader.gaps() <= mark.gaps) return;
+    const deadline = Date.now() + RESYNC_WITHIN_MS;
+    for (;;) {
+      const missing = this.reader.behind(mark);
+      if (missing.length === 0) break;
+      if (Date.now() >= deadline) throw new RunFailure(`the reader did not resync within ${RESYNC_WITHIN_MS} ms of its stream's return: ${missing.join('; ')}`);
+      await sleep(RESYNC_POLL_MS);
+    }
+    this.#readerLost = undefined;
   }
 
   /** Waits until the reader has resynced since `mark`, within the run's bound; past it, names what did not come back. */
