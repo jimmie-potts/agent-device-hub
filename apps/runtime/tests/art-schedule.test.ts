@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
-import {DEFAULT_ART_POLICY,START_TOLERANCE_MS,artPolicyWrite,initialArtRecord,nextArtStart,planArtDay,savedArtwork,wakingDay,rainForecast} from '../src/core/art-schedule-model.js';
+import {DEFAULT_ART_POLICY,PREPARATION_MS,START_TOLERANCE_MS,artPolicyWrite,initialArtRecord,nextArtStart,planArtDay,savedArtwork,wakingDay,rainForecast} from '../src/core/art-schedule-model.js';
 import {ArtScheduleStore} from '../src/core/art-schedule-store.js';
 import {AutomationStore} from '../src/core/automation-store.js';
 import {DEFAULT_SETTINGS,DEFAULT_INTERRUPT_SET,createAutomation} from '../src/core/automation.js';
@@ -109,7 +109,7 @@ void test('actual core exposes revisioned policy, publishes it, and reopens with
   await harness.start();await flush();assert.ok(core.automation.artSchedule);assert.equal(core.automation.artSchedule.get().settingsRevision,1);assert.equal(core.automation.artSchedule.get().policy.enabled,true);
 });
 
-import {createArtPlans} from '../src/core/art-plans.js';
+import {createArtPlans,type ArtPlan} from '../src/core/art-plans.js';
 import {createArtSchedule} from '../src/core/art-schedule.js';
 import type {Action} from '../src/core/tracker.js';
 import {deviceRecord} from './fixtures/device.js';
@@ -120,7 +120,7 @@ const syntheticWeather=(revision=9,observedAtMs=local(8),staleAtMs=local(8,45)):
   const hour={startAtMs:local(10),endAtMs:local(11),condition:'rain' as const,likely:true,temperatureF:60,precipitationPercent:80,windMph:0,isDaytime:true,dayPart:'morning' as const};
   return {id:'local',revision,status:'available',observedAtMs,staleAtMs,ageMs:0,forecastUpdatedAtMs:observedAtMs,current:hour,forecast:[hour],alerts:[],words:['rain']};
 };
-function scheduledWorld(withDisplay=false,choice:()=>number=()=>0.5,displayId='shelf-display',clock=manualClock(local(8))) {
+function scheduledWorld(withDisplay=false,choice:()=>number=()=>0.5,displayId='shelf-display',clock=manualClock(local(8)),pixooId?:string) {
   const db=new DatabaseSync(':memory:'),commands:Action[]=[],failures:string[]=[];
   const provider=(name:'openai'|'anthropic')=>({provider:name,available:false,ceilingMicros:0,paceMicros:0,spentMicros:0,reservedMicros:0,uncertainMicros:0,remainingMicros:0,todayMicros:0,excessMicros:0,earlierUncertainMicros:0});
   const catalog:ArtRecord={id:'art',revision:1,month:'2026-11',day:'2026-11-05',providers:[provider('openai'),provider('anthropic')],guard:{calls:0,limit:30,windowMs:3_600_000},
@@ -129,8 +129,9 @@ function scheduledWorld(withDisplay=false,choice:()=>number=()=>0.5,displayId='s
   const shared=new AutomationStore(db,()=>{},{settings:currentSettings,interruptSet:[...DEFAULT_INTERRUPT_SET]});
   const store=new ArtScheduleStore(db),dispatch=(action:Action)=>{commands.push(structuredClone(action));return Promise.resolve({requestId:action.requestId??'synthetic',status:'accepted' as const});};
   const display=deviceRecord(displayId,1,'tidbyt','available');
-  const targets=()=>withDisplay?[{target:displayId,kind:'tidbyt' as const}]:[];
+  const targets=()=>withDisplay?[{target:displayId,kind:'tidbyt' as const},...(pixooId===undefined?[]:[{target:pixooId,kind:'pixoo' as const}])]:[];
   if(withDisplay)catalog.artworks[0]?.compositions.push({target:'tidbyt',compositionId:'d'.repeat(64),outcome:'succeeded',motion:'gif',renditions:[{renditionId:'e'.repeat(64),width:64,height:32,frames:8,durationMs:1600,format:'gif',bytes:100,ref:'rendition.synthetic-display'}]});
+  if(withDisplay&&pixooId!==undefined)catalog.artworks[0]?.compositions.push({target:'pixoo',compositionId:'f'.repeat(64),outcome:'succeeded',motion:'gif',renditions:[{renditionId:'0'.repeat(64),width:64,height:64,frames:8,durationMs:1600,format:'gif',bytes:100,ref:'rendition.synthetic-pixoo'}]});
   const plans=createArtPlans({clock:clock.now,scheduler:clock.scheduler,active:()=>true,targets,current:()=>withDisplay?display:undefined,dispatch,operation:()=>undefined,claim:(id,digest)=>{assert.equal(shared.claimArtPlan(id,digest),true);return undefined;}});
   let enabled=false,artReads=0,weatherReads=0,weatherState:WeatherState|undefined;
   const inputs={set:(value:typeof policy)=>{enabled=value.enabled;},art:()=>{artReads++;return enabled?catalog:undefined;},weather:()=>{weatherReads++;return weatherState;}};
@@ -434,5 +435,20 @@ void test('an owner show inside quiet hours after a scheduled appearance leaves 
     await w.move(next-45_000);await w.move(next);
     assert.equal(w.owner.get().lastOpportunity?.startAtMs,next,'the next scheduled appearance still runs as planned');
     assert.equal((w.commands.at(-1)?.draft.data as ArtAuto22).action,'present');assert.deepEqual(w.failures,[]);
+  }finally{await w.close();}
+});
+void test('a scheduled appearance prepares its plan 45 s before its start and holds the Tidbyt 30 s and the Pixoo 10 s (Hub #1711)',async()=>{
+  // Pins the shipped lead and holds, which the virtual-time captures only follow: a change to one fails here.
+  assert.equal(PREPARATION_MS,45_000);
+  const w=scheduledWorld(true,()=>0.5,'shelf-display',manualClock(local(8)),'desk-display');try{
+    const plans:{atMs:number;plan:ArtPlan}[]=[];const present=w.plans.present;
+    w.plans.present=(plan,...rest)=>{plans.push({atMs:w.clock.now(),plan:structuredClone(plan)});return present(plan,...rest);};
+    const saved=await w.owner.save({expectedSettingsRevision:0,policy:{...policy,ambient:false,targets:['shelf-display','desk-display']}});
+    const start=saved.nextOpportunity?.startAtMs;assert.ok(start!==undefined);
+    await w.move(start-PREPARATION_MS-1);assert.equal(plans.length,0,'no plan before the lead');
+    await w.move(start-PREPARATION_MS);assert.equal(plans.length,1);
+    assert.equal(plans[0]?.atMs,start-45_000,'the plan is prepared 45 s before its start');
+    assert.deepEqual(plans[0]?.plan.displays.map(({target,durationMs})=>({target,durationMs})),
+      [{target:'shelf-display',durationMs:30_000},{target:'desk-display',durationMs:10_000}]);
   }finally{await w.close();}
 });
