@@ -126,12 +126,13 @@ async function journey(): Promise<void> {
     await input.fill('30');
     await card.getByRole('button', {name: 'Save', exact: true}).click();
     await page.waitForFunction(() => document.querySelector<HTMLElement>('[data-volcano-card] .volcano-note[role=status]') !== null);
-    // The module saves the threshold and its outcome in one transaction, so the shown outcome means the setting is stored.
+    // The module saves the threshold and its outcome in one transaction, so it is stored when the outcome shows, before
+    // the clock moves on.
     await card.getByText('Completed: succeeded. The module observed the result.', {exact: true}).waitFor();
+    assert.equal(((await world.volcanoRead('status')).body as {gapMinutes: number}).gapMinutes, 30, 'the threshold is stored with its outcome');
     // Half a second more on the page's and the runtime's timers, then two frames, sends nothing else.
     await clock.advance(500); await frame(page);
     assert.deepEqual(sent, ['/api/v2/commands/volcano-session-gap'], 'the save is one command on the threshold family');
-    assert.equal(((await world.volcanoRead('status')).body as {gapMinutes: number}).gapMinutes, 30);
     await card.getByRole('tab', {name: 'Sessions', exact: true}).click();
     await card.getByText('Heater activity, grouped when less than 30 min apart. Not consumption or dose. Times are local to this browser.', {exact: true}).waitFor();
     await card.locator('li[data-kind=session]').first().waitFor();
