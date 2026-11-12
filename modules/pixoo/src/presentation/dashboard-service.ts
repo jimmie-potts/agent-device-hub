@@ -44,7 +44,8 @@ export class DashboardService {
  tick(render=true):boolean {
   if(this.closed||!this.input)return false;
   const layout=this.pager.layout(this.input.view,this.clock(),this.input.filter);
-  // An identical layout keeps its rendition, so an unchanged picture is never rendered or sent again.
+  // An identical layout keeps its rendition, so an unchanged picture is not rendered again, nor sent again except by the
+  // presentation's refresh, recoveries and redraws.
   const signature=JSON.stringify(layout);
   const changed=signature!==this.signature;
   if(changed){this.signature=signature;this.generation++;this.latest=layout;this.pending={generation:this.generation,layout};this.failed=false;}

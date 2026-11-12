@@ -32,6 +32,12 @@ export const POPUP_MS=10000;
 type Card=Extract<NowPlayingView,{card:true}>;
 /** How long a card whose render failed waits before it is rendered again. */
 export const CARD_RETRY_MS=5000;
+/**
+ * How long the unchanged status picture stays before it is sent once more: the owner's choice of 2026-11-12 (Hub #1765,
+ * option A). It bounds how long a Pixoo restart that no probe sees can leave the display on its own picture, at up to
+ * 288 sends a day of a picture that never changes.
+ */
+export const STATUS_REFRESH_MS=5*60_000;
 /** The shortest wait between the writes that start and end a moment, whatever the status view's cadence: they are bounded by its duration. */
 const MOMENT_WRITE_GAP_MS=1000;
 /** What replaces a moment's picture when no base follows it. */
@@ -101,6 +107,8 @@ export class MonitorPresentation {
  private heard_:{availability:PlayerState['availability'];external:boolean;recoveries:number}={availability:'unknown',external:false,recoveries:0};
  private inFlight=false;
  private lastStart=-Infinity;
+ /** When the device last acknowledged the status base's own picture, which the refresh counts from; null before any. */
+ private statusSentAt:number|null=null;
  /** The last submitted frame's source: a dashboard rendition or a card. */
  private lastFrame='';
  private playback:PlaybackSourceStatus={source:'unavailable',view:{card:false}};
@@ -614,6 +622,10 @@ export class MonitorPresentation {
   this.invalidateCardWrite();
   const gap=this.momentWrite?Math.min(MOMENT_WRITE_GAP_MS,this.configuration.cadenceMs):this.configuration.cadenceMs;
   if(this.clearArt(frame,gap))return;
+  // The status base's own picture, unchanged and already sent, goes once more after STATUS_REFRESH_MS from its last
+  // acknowledged send, so a restart no probe saw is repaired (Hub #1765). Never a moment's, a card's or a kept picture.
+  if(this.active&&frame!==null&&!frame.card&&frame.moment===undefined&&frame.retained!==true&&frame.key===this.lastFrame&&!this.inFlight
+   &&this.statusSentAt!==null&&this.clock()-this.statusSentAt>=STATUS_REFRESH_MS)this.lastFrame='';
   if(!frame||frame.retained===true||this.inFlight||frame.key===this.lastFrame||this.clock()-this.lastStart<gap)return;
   this.momentWrite=false;
   const {moment}=frame;
@@ -654,6 +666,8 @@ export class MonitorPresentation {
    // A takeover over playback reports through its own status; a failed or uncertain card upload ends it without resuming.
    const sent=result?.ok===true;
    if(takeover){if(!sent&&this.takeover===takeover)this.dropTakeover();return;}
+   // Any acknowledged send of the status base's own picture restarts the refresh's count.
+   if(sent&&write===null)this.statusSentAt=this.clock();
    this.lastOutcome={generation,renditionGeneration,status:result===undefined?'cancelled':result.ok?'sent':result.priorEffects==='possible'?'uncertain':result.code==='cancelled'||result.code==='stale-generation'?'cancelled':'failed',...(result!==undefined&&!result.ok?{code:result.code}:{})};
    // A status write that failed holds the status base, even when its own uncertainty already paused the player and so
    // retired its generation; one a newer player change cancelled before it had any effect does not.

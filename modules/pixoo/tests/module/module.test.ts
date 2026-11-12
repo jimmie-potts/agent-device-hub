@@ -21,6 +21,7 @@ import {renderDashboard} from '../../src/presentation/dashboard-pixels.js';
 import {momentContent, renderMomentContent} from '../../src/presentation/moment-content.js';
 import {nowPlayingView, renderNowPlaying} from '../../src/presentation/now-playing.js';
 import {monitorView} from '../../src/presentation/sources.js';
+import {STATUS_REFRESH_MS} from '../../src/presentation/monitor-presentation.js';
 import {PixooStore} from '../../src/module/store.js';
 import {HOSTED_PROFILE} from '../../src/module/configuration.js';
 import {FAMILIES, type DisplayRecord, type PlaylistRecord, type RenditionRecord} from '../../src/module/schemas.js';
@@ -472,6 +473,32 @@ void describe('moments', () => {
       assert.deepEqual({...ended(world, requestId), endedAtMs: 0}, {requestId, momentId: 'm-monitor', ending: 'completed', endedAtMs: 0});
       await world.tickUntil(() => world.device.state().shown?.digests[0] === dashboard ? true : undefined, 'the dashboard back on the device', 1000);
       assert.equal(world.display()?.participating, true);
+    });
+  });
+
+  void it('sends the unchanged status picture once more after the refresh interval: one upload, a new last transmission, the same display record (Hub #1765)', async () => {
+    const clock = new ManualClock();
+    const world = await World.open({clock});
+    await within(world, async () => {
+      await world.start();
+      await world.outcome(await mode(world, 'work'));
+      await world.publishSession();
+      const picture = await world.tickUntil(() => world.device.state().shown?.digests[0], 'the dashboard on the device', 2000);
+      await world.tickUntil(() => world.display()?.showing === 'dashboard' ? true : undefined, 'the status base in the display record', 2000);
+      const without = (record: DisplayRecord | undefined): Omit<DisplayRecord, 'revision'> | undefined => {
+        if (record === undefined) return undefined;
+        const {revision: _revision, ...rest} = record;
+        return rest;
+      };
+      const uploads = world.device.state().uploads, display = without(world.display()), transmission = world.deviceRecord()?.lastTransmission;
+      await clock.advance(STATUS_REFRESH_MS - 1000);
+      assert.equal(world.device.state().uploads, uploads, 'nothing is sent before the interval');
+      await clock.advance(1000 + TICK_MS);
+      assert.equal(world.device.state().uploads, uploads + 1, 'one refresh');
+      assert.equal(world.device.state().shown?.digests[0], picture, 'the same picture');
+      assert.deepEqual(without(world.display()), display, 'the display record did not change');
+      const moved = world.deviceRecord()?.lastTransmission;
+      assert.ok(moved?.status === 'known' && transmission?.status === 'known' && moved.transmittedAtMs > transmission.transmittedAtMs, 'the last transmission moved');
     });
   });
 

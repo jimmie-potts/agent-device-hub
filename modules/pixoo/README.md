@@ -339,6 +339,18 @@ owner's own picture. A simulated Pixoo's start is passive until a mode or player
 command; a real device's start draws the status base at once when the player
 holds no item.
 
+The status base sends a picture only when it changes, with three exceptions that
+send the unchanged picture once more, each only while the status base is drawn and
+its own picture was the last one sent. The first is when the device answers again
+after it was unavailable. The second is when a probe answers after one that failed
+with any code but `cancelled` or `stale-generation`. The third is when 5 minutes
+(`STATUS_REFRESH_MS`) have passed since the device last acknowledged it, so a
+restart that no probe sees leaves the Pixoo on its own picture for at most that
+long (#1765). Each refresh is one upload and moves the device record's
+`lastTransmission`; the display record does not change. None is sent during a
+moment or a Now Playing card, under external control, while Media plays, while a
+failed write holds the status base or with the screen off.
+
 ### Moments
 
 [ADR 0013](../../docs/decisions/0013-pixoo-moment-interludes.md) records the
