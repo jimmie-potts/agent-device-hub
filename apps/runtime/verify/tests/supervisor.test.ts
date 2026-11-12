@@ -244,7 +244,11 @@ void test('the harness refuses a simulation it does not know with 400, and the P
   assert.equal(await act(run, 'req-pixoo-30', {key: 'bunny.cmd.brightness-set.pixoo-1', draft: {
     type: 'org.bunny.brightness.set.requested', subject: 'pixoo-1', dataschema: 'https://bunny.invalid/events/brightness-set/2.0', data: {percent: 30},
   }}), 'accepted');
-  await until(async () => (await deviceOf<SimulatedPixooState>(run, 'pixoo')).brightness === 30, 'the panel at 30 percent');
+  // The catalog scenario's run is on virtual time (Hub #1711): the command's work moves on as the test advances the run.
+  await until(async () => {
+    assert.equal((await post(run, 'clock/advance', {ms: 100})).status, 200);
+    return (await deviceOf<SimulatedPixooState>(run, 'pixoo')).brightness === 30;
+  }, 'the panel at 30 percent');
   const before = await deviceOf<SimulatedPixooState>(run, 'pixoo');
   assert.equal((await post(run, 'restart')).status, 200);
   await until(async () => (await state(run)).generation === 2, 'the restarted runtime');

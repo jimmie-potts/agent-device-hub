@@ -506,8 +506,13 @@ class Run implements RunHarness {
   }
 
   /** The participant, each of whose calls first sends the run the time it is owed, on virtual time. */
+  /** Each part's wrapper, so that on virtual time `sdk` answers the same object for the same part, as on the real clock. */
+  readonly #wrapped = new WeakMap<Participant, Participant>();
+
   #caughtUp(participant: Participant): Participant {
-    return new Proxy(participant, {get: (target, property) => {
+    const known = this.#wrapped.get(participant);
+    if (known !== undefined) return known;
+    const wrapped = new Proxy(participant, {get: (target, property) => {
       const value: unknown = Reflect.get(target, property);
       if (typeof value !== 'function') return value;
       return async (...args: unknown[]): Promise<unknown> => {
@@ -515,6 +520,8 @@ class Run implements RunHarness {
         return this.#tracked(Promise.resolve((value as (...args: unknown[]) => unknown).apply(target, args)));
       };
     }});
+    this.#wrapped.set(participant, wrapped);
+    return wrapped;
   }
 
   async #fetchState(): Promise<boolean> {
