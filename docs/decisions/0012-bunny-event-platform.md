@@ -430,10 +430,14 @@ reactions stay on the home network.
 ### Personal data
 
 Profile 2.0 drops profile 1.0's privacy-based field exclusions.
-[ADR 0011](0011-private-personal-data-retention.md), as amended on 2026-10-05,
-governs personal data:
+[ADR 0011](0011-private-personal-data-retention.md), as amended on 2026-10-05
+and 2026-11-11, governs personal data:
 - It is stored only in private owner-controlled storage on the runtime host.
 - It may be sent to Claude and Codex in prompts.
+- Only the classes its [2026-11-11 amendment](0011-private-personal-data-retention.md#amendment-2026-11-11)
+  lists as may be sent may also go to OpenAI's Decisions endpoint, as input to
+  a decision. The delivery orchestrator's decision step may send only issue
+  text and repository facts to the OpenAI API.
 - It never goes to GitHub.
 
 Credentials, tokens and secrets never enter messages, logs or history. Prompt,

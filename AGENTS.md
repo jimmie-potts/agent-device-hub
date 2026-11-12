@@ -238,11 +238,12 @@ telemetry; credentials, authentication tokens and secrets remain excluded.
 Retained personal data may be used in Claude and Codex prompts, within the
 existing collection and sharing choices. This selects no new source. New work
 needs no clearing, erasure or retention-expiry features (ADR 0011 amendment,
-2026-10-05). The classes listed in ADR 0011's 2026-11-11 amendment may also go
-to OpenAI's Decisions endpoint as input to a decision; nothing outside that
-list may.
+2026-10-05). Only the classes that ADR 0011's 2026-11-11 amendment lists as
+may be sent, outside its not-for-now list, may also go to OpenAI's Decisions
+endpoint, and only as input to a decision; the delivery orchestrator's decision
+step may send only issue text and repository facts to the OpenAI API.
 Before changing collection, retention, diagnostics, export or evidence publication,
-read [ADR 0011](docs/decisions/0011-private-personal-data-retention.md) for the
+or sending personal data to a model or cloud service, read [ADR 0011](docs/decisions/0011-private-personal-data-retention.md) for the
 collection and sharing boundaries. Use synthetic or sanitized publication copies
 without stripping the private originals. Preserve explicit collection/sharing
 choices, existing clear/recovery behavior and device authorization. Only fields declared
