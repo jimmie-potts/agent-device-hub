@@ -152,13 +152,16 @@ export class MonitorPresentation {
    const external=state.lastError?.code==='external-control';
    if(external&&!this.heard_.external){this.statusHeld='external';if(this.active)this.suspend();}
    else if(this.statusHeld==='write'&&this.heard_.availability!=='available'&&state.availability==='available')this.statusHeld=false;
+   // A device back from an outage may have restarted and show its own picture: the status base's is sent once again,
+   // since an unchanged picture is otherwise never sent again (Hub #1757).
+   if(this.active&&this.heard_.availability==='offline'&&state.availability==='available')this.lastFrame='';
    this.heard_={availability:state.availability,external};
    this.settleBase();
    // Any player change the takeover did not make, or screen-off, is the user's: never resume over it.
    if(this.takeover&&(state.generation!==this.takeover.generation||!state.requestedScreenOn))this.dropTakeover();
   });
  }
- status():DisplayStatus{return {configuration:structuredClone(this.configuration),mode:this.mode,base:this.base(),sourceRevision:this.view?.snapshot?.revision??null,sourceConnection:this.view?.connection??'unavailable',renditionGeneration:this.dashboard.current()?.generation??null,generation:this.generation,pendingMode:this.pendingMode,participating:this.active&&this.dashboard.current()!==null,inFlight:this.inFlight?1:0,lastOutcome:structuredClone(this.lastOutcome)};}
+ status():DisplayStatus{return {configuration:structuredClone(this.configuration),mode:this.mode,base:this.base(),sourceRevision:this.view?.snapshot?.revision??null,sourceConnection:this.view?.connection??'unavailable',renditionGeneration:this.dashboard.current()?.generation??null,generation:this.generation,pendingMode:this.pendingMode,participating:this.active&&this.dashboardFrame()!==null,inFlight:this.inFlight?1:0,lastOutcome:structuredClone(this.lastOutcome)};}
  /** The base on the display: the player's item while it holds one, active or paused, and the status base otherwise. */
  base():Base{return holdsItem(this.player.getState())?'playback':'status';}
  /** The last Hub mode the module was given. */
@@ -478,11 +481,20 @@ export class MonitorPresentation {
   const card=ready!==null?{key:this.cardKey(view),rgb:ready,retained:false}:view.card&&previous!==null&&this.lastFrame===previous.key?{key:previous.key,rgb:previous.rgb,retained:true}:null;
   if(this.active){
    if(this.popupUntil!==0&&view.card)return card===null?null:{key:card.key,frames:[card.rgb],generation:this.playerGeneration,card:true,retained:card.retained};
-   const rendition=this.dashboard.current();
-   return rendition?{key:'dashboard:'+rendition.generation,frames:rendition.frames,generation:this.playerGeneration,card:false}:null;
+   return this.dashboardFrame();
   }
   if(this.takeover!==null&&card!==null)return {key:card.key,frames:[card.rgb],generation:this.takeover.generation,card:true,retained:card.retained};
   return null;
+ }
+ /**
+  * The status base's picture: the current rendition, or, while a changed layout renders, the last one if it is the
+  * picture last sent. That one stays on the display and is not sent again, as a card's does (Hub #1757).
+  */
+ private dashboardFrame():Frame|null{
+  const rendition=this.dashboard.current();
+  if(rendition)return {key:'dashboard:'+rendition.generation,frames:rendition.frames,generation:this.playerGeneration,card:false};
+  const kept=this.dashboard.superseded(),key=kept===null?'':'dashboard:'+kept.generation;
+  return kept!==null&&this.lastFrame===key?{key,frames:kept.frames,generation:this.playerGeneration,card:false,retained:true}:null;
  }
  private observation():string{return this.cardContext?.observation??JSON.stringify(this.playback.view);}
  private cardKey(view:NowPlayingView):string{return 'card:'+JSON.stringify(view)+':'+artworkKey(this.cardContext?.artwork);}

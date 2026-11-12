@@ -63,7 +63,8 @@ it('bounds bursts by latest rendition and cadence without submitting missed page
   // One-frame pictures keep the fake's per-frame latency to one 100 ms step per upload.
   const view=present(syntheticDashboardViews()[0]).view;for(const session of present(view.snapshot).sessions)session.attention=[];
   monitor.submit(view);await flush(clock);monitor.tick();
-  for(let i=0;i<20;i++){present(view.snapshot).revision++;present(present(view.snapshot).sessions[0]).label=`Burst ${i}`;monitor.submit(view);await flush(clock);}
+  // Every session is relabelled, so the one on the shown page changes its picture too: the same picture is not sent again (Hub #1757).
+  for(let i=0;i<20;i++){present(view.snapshot).revision++;for(const session of present(view.snapshot).sessions)session.label=`Burst ${i}`;monitor.submit(view);await flush(clock);}
   expect(monitor.status().inFlight).toBe(1);clock.advance(100);await flush(clock);monitor.tick();await flush(clock);
   expect(device.operations.filter(o=>o.kind==='uploadAnimation')).toHaveLength(1);
   clock.advance(900);monitor.tick();await flush(clock);monitor.tick();clock.advance(100);await flush(clock);
@@ -235,5 +236,52 @@ it('reports a change only when something it shows changed, not at every tick',as
   present(present(view.snapshot).sessions[0]).label='Changed';present(view.snapshot).revision++;monitor.submit(view);
   for(let i=0;i<20;i++){clock.advance(100);monitor.tick();await flush(clock);}
   expect(changes).toBeGreaterThan(0);
+ }finally{await monitor.close();await player.close();}
+});
+it('keeps the status picture on the display, and does not send it again, while a session changes only its observation times (Hub #1757)',async()=>{
+ const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock});const player=await Player.open({store,device,clock});
+ const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now()});
+ try{
+  // One session, so the dashboard has one page and never pages on its own.
+  const view=present(syntheticDashboardViews()[0]).view;present(view.snapshot).sessions.splice(1);monitor.submit(view);
+  for(let i=0;i<30;i++){clock.advance(100);monitor.tick();await flush(clock);}
+  expect([monitor.status().participating,monitor.nowPlayingSummary().showing]).toEqual([true,'dashboard']);
+  const sent=uploads(device),generation=monitor.status().renditionGeneration;
+  for(let update=0;update<5;update++){
+   const session=present(present(view.snapshot).sessions[0]);
+   session.observedAtMs+=1000;session.lastEvidenceAtMs+=1000;present(view.snapshot).revision++;monitor.submit(view);
+   // The new layout renders after this turn: until then the picture already on the display stays the status base's.
+   expect([monitor.status().participating,monitor.nowPlayingSummary().showing]).toEqual([true,'dashboard']);
+   for(let i=0;i<20;i++){clock.advance(100);monitor.tick();await flush(clock);}
+   expect([monitor.status().participating,monitor.nowPlayingSummary().showing]).toEqual([true,'dashboard']);
+  }
+  expect(uploads(device)).toBe(sent);expect(monitor.status().renditionGeneration).toBe(generation);
+  // A change the picture shows is still drawn and sent.
+  present(present(view.snapshot).sessions[0]).label='Changed';present(view.snapshot).revision++;monitor.submit(view);
+  for(let i=0;i<20;i++){clock.advance(100);monitor.tick();await flush(clock);}
+  expect(uploads(device)).toBe(sent+1);
+ }finally{await monitor.close();await player.close();}
+});
+it('sends the status picture once again after an outage in which nothing was sent, and not for later observation-only updates (Hub #1757)',async()=>{
+ const clock=new ManualClock(),store=new MemoryPlaybackStore(),device=new FakeDeviceAdapter({clock});const player=await Player.open({store,device,clock});
+ const monitor=new MonitorPresentation(player,{save:async()=>{},clock:()=>clock.now()});
+ const update=async(view:ReturnType<typeof syntheticDashboardViews>[number]['view'])=>{
+  const session=present(present(view.snapshot).sessions[0]);
+  session.observedAtMs+=1000;session.lastEvidenceAtMs+=1000;present(view.snapshot).revision++;monitor.submit(view);
+  for(let i=0;i<20;i++){clock.advance(100);monitor.tick();await flush(clock);}
+ };
+ try{
+  const view=present(syntheticDashboardViews()[0]).view;present(view.snapshot).sessions.splice(1);monitor.submit(view);
+  for(let i=0;i<30;i++){clock.advance(100);monitor.tick();await flush(clock);}
+  const sent=uploads(device);
+  // The Pixoo drops off and comes back, say after a power cycle, while the module sends nothing: it may now show its own picture.
+  device.setOnline(false);let probe=player.probe();await flush(clock);await probe;expect(player.getState().availability).toBe('offline');
+  device.setOnline(true);probe=player.probe();await flush(clock);await probe;expect(player.getState().availability).toBe('available');
+  for(let i=0;i<20;i++){clock.advance(100);monitor.tick();await flush(clock);}
+  expect(uploads(device)).toBe(sent+1);
+  expect(device.effects.filter(e=>e.kind==='frame').at(-1)?.frame.rgb).toEqual(new Uint8Array(present(present(monitor.rendition().rendition).frames.at(-1))));
+  await update(view);await update(view);
+  expect(uploads(device)).toBe(sent+1);
+  expect([monitor.status().participating,monitor.nowPlayingSummary().showing]).toEqual([true,'dashboard']);
  }finally{await monitor.close();await player.close();}
 });
