@@ -30,6 +30,41 @@ void test('a dropped part stays away until the next wait, then the same part rec
   assert.deepEqual(h.problems(), []);
 });
 
+// Hub #1711: on virtual time a wait passes in a few milliseconds, so a dropped reader whose stream is back may still be
+// resyncing a copy, which is real I/O, when the wait ends. The reader's resync of its lamp copy is held by a gate the
+// test opens only after many turns of the event loop: a wait that ended at the stream's return reads the copy unsynced.
+void test('a wait after a dropped reader is back ends only once each of its copies has synced again', {timeout: 60_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  assert.equal(h.clock, 'virtual');
+  let open: () => void = () => {};
+  const gate = new Promise<void>(resolve => { open = resolve; });
+  const real = globalThis.fetch;
+  let armed = false;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const source = (init?.headers as Record<string, string> | undefined)?.['bunny-source'];
+    if (armed && init?.method === 'POST' && source === sourceOf('reader') && url.endsWith('/sync') && String(init.body).includes('lamp')) await gate;
+    return real(input, init);
+  };
+  context.after(() => { globalThis.fetch = real; });
+  await h.disconnect('reader');
+  armed = true;
+  // Opens the gate a thousand turns after the session copy has synced again; no timer, no sleep.
+  void (async () => {
+    for (let turn = 0; h.reader.syncs('session') < 2 && turn < 1_000_000; turn += 1) await new Promise(resolve => { setImmediate(resolve); });
+    for (let turn = 0; turn < 1000; turn += 1) await new Promise(resolve => { setImmediate(resolve); });
+    open();
+  })();
+  for (let waited = 0; h.reader.syncs('session') < 2 && waited < 50; waited += 1) await h.wait(100);
+  open();
+  assert.deepEqual([h.reader.gaps(), h.reader.syncs('session'), h.reader.syncs('lamp')], [1, 2, 2], 'the wait ended with each copy synced again');
+  assert.deepEqual(h.problems(), []);
+});
+
 /**
  * Makes the reader's calls to the edge (`subscribe` or `sync`) take `slow` first, while the returned `armed` flag is set,
  * and puts back the real `fetch` when the test ends. The remote client calls the global `fetch`, so this holds back
