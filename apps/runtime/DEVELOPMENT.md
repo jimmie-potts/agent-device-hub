@@ -697,9 +697,9 @@ one request each, with the full card's fields, none for moving the slider and
 one for a double click. `menus` opens the Pixoo menu in Small square and Wide
 and a light card's menu, each over the card below, and checks by pointer that
 the last item is on top; `stale` restarts the runtime and checks that the
-disabled Pixoo controls say why. The idle recorder (`tests/list-idle.ts`) counts
-an attribute only when its value at the end of the window differs from its
-value at the start.
+disabled Pixoo controls say why. The idle recorder
+(`apps/runtime/dashboard/tests/list-idle.ts`) counts an attribute only when its
+value at the end of the window differs from its value at the start.
 `HOME_SHAPES_ONLY=tiles,picker,convert,paging,fit,results,short,menus,modules,idle,shots,stale`
 selects parts. `node apps/runtime/dashboard/tests/home-idle.browser.ts`, in the
 full browser suite only, sweeps every width from 1100 to 2560 px in 20 px steps
