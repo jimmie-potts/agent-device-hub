@@ -132,6 +132,55 @@ try {
   for (const query of historyRequests) assert.deepEqual(query.searchParams.getAll('limit'), ['200'], query.search);
   assert.equal(sent.length, saves, 'filters, evidence, refresh, reload and read-only browsing send no command');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({journey: 'timeline-card', realHistory: true, homePlacement: true, filters: true, evidence: true, failedReads: true, readOnly: true, passive: true}));
   await context.close();
+
+  // Spans, a gap, a closing row and an open span (#1773), on a fixed page clock, in UTC, at twice the pixel density.
+  const fixed = Date.UTC(2026, 10, 12, 15, 0), H = 3_600_000, M = 60_000;
+  const spanContext = await browser.newContext({viewport: {width: 1440, height: 1000}, deviceScaleFactor: 2, timezoneId: 'UTC', locale: 'en-US', reducedMotion: 'reduce'});
+  const spanPage = await spanContext.newPage();spanPage.setDefaultTimeout(12_000);await spanPage.clock.setFixedTime(fixed);
+  const spanErrors: string[] = [];spanContext.on('weberror', error => {spanErrors.push(error.error().message);});
+  const spanSent = changes(spanPage), spanCard = spanPage.locator('[data-timeline-card]');
+  const device = (seq: number, id: string, atMs: number, record: Record<string, unknown>): HistoryRow => ({seq, atMs, kind: 'change', source: 'bunny/modules/wemo', subject: id,
+    type: 'org.bunny.device.updated', requestId: null, record: {family: 'device', id, revision: seq, previous: seq - 1, changed: {}, removed: [], ...record}});
+  const spanRows: HistoryRow[] = [
+    device(1, 'synthetic-clock', fixed - 5 * H, {changed: {label: 'Synthetic clock'}}),
+    device(2, 'synthetic-heater', fixed - 4 * H, {changed: {label: 'Synthetic heater'}, revision: 2, previous: 2, closedBy: 'removal',
+      span: {sinceAtMs: fixed - 8 * H - 29 * M, lastConfirmedAtMs: fixed - 4 * H - M, confirmations: 3300}}),
+    {seq: 3, atMs: fixed - 4 * H, kind: 'removal', source: 'bunny/modules/wemo', subject: 'synthetic-heater', type: 'org.bunny.device.removed', requestId: null, record: {data: {entity: {family: 'device', id: 'synthetic-heater'}, revision: 3}}},
+    device(4, 'synthetic-fan', fixed - 2 * H, {changed: {label: 'Synthetic fan'}, gapMs: H + 12 * M, span: {sinceAtMs: fixed - 6 * H, lastConfirmedAtMs: fixed - 3 * H - 12 * M, confirmations: 40}}),
+    device(5, 'synthetic-lamp', fixed - H, {changed: {label: 'Synthetic lamp', observed: {power: {status: 'known', value: false}}},
+      span: {sinceAtMs: fixed - 5 * H - 29 * M, lastConfirmedAtMs: fixed - H - M, confirmations: 3300}}),
+  ];
+  const spanOpen = [{source: 'bunny/modules/wemo', family: 'device', id: 'synthetic-lamp', revision: 5, sinceAtMs: fixed - H, lastConfirmedAtMs: fixed - 5 * M, confirmations: 660}];
+  await spanPage.route('**/api/v2/history*', route => route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify({schema: 'history/2.0', rows: spanRows, open: spanOpen})}));
+  await spanPage.goto(`${world.url}/#/timeline`);await feed(spanPage, 'connected');
+  await expect(spanCard.getByRole('status')).toContainText('5 history entries.');
+  const notes = (seq: number) => spanCard.locator(`[data-history-row="${seq}"] .timeline-note`).allTextContents();
+  const title = (seq: number) => spanCard.locator(`[data-history-row="${seq}"] .timeline-title`).innerText();
+  assert.deepEqual(await notes(5), ['After 4 h 28 min unchanged, 3,300 readings', 'Unchanged since Nov 12, 2:00 PM, last reading at Nov 12, 2:55 PM, 660 readings']);
+  assert.equal(await title(5), 'Device updated');
+  assert.deepEqual(await notes(4), ['No reading for 1 h 12 min, then the same state']);assert.equal(await title(4), 'Readings resumed');
+  assert.deepEqual(await notes(2), ['4 h 28 min unchanged, 3,300 readings']);assert.equal(await title(2), 'Last readings before removal');
+  assert.equal(await title(3), 'Record removed');assert.deepEqual(await notes(3), []);
+  assert.equal(await title(1), 'Device updated');assert.deepEqual(await notes(1), [], 'a row without a span reads as before');
+  assert.equal(await spanCard.locator('.timeline-note').filter({hasText: /\bnow\b/i}).count(), 0);
+  const gap = spanCard.locator('[data-history-row="4"]>details>summary');
+  await gap.focus();await spanPage.keyboard.press('Enter');
+  await expect(spanCard.locator('[data-history-row="4"]')).toContainText('The recorded times show readings stopped and resumed. This entry does not say why.');
+  await spanPage.keyboard.press('Escape');await expect(gap).toBeFocused();
+  for (const width of [1440, 390]) {
+    await spanPage.setViewportSize({width, height: 1000});
+    assert.equal(await spanPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    if (process.env.DASHBOARD_RECEIPTS !== undefined) {
+      await mkdir(process.env.DASHBOARD_RECEIPTS, {recursive: true});
+      for (const [seq, shape] of [[5, 'span-and-open'], [4, 'gap'], [2, 'closing'], [3, 'removal'], [1, 'plain']] as const) {
+        await spanCard.locator(`[data-history-row="${seq}"]`).screenshot({path: `${process.env.DASHBOARD_RECEIPTS}/timeline-${shape}-${width}.png`});
+      }
+      await spanCard.screenshot({path: `${process.env.DASHBOARD_RECEIPTS}/timeline-spans-${width}.png`});
+    }
+  }
+  assert.equal(spanSent.length, 0, 'reading spans sends nothing');
+  assert.deepEqual(spanErrors, []);
+  await spanContext.close();
+  console.log(JSON.stringify({journey: 'timeline-card', realHistory: true, homePlacement: true, filters: true, evidence: true, failedReads: true, readOnly: true, passive: true, spans: true}));
 } finally {await browser.close();await world.close();}

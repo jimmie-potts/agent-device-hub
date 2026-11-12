@@ -2545,6 +2545,31 @@ filtered scan time. Unknown, repeated or invalid fields are refused. Every calle
 with read scope sees the whole history and inbox. The MCP tools `core_inbox`
 and `core_history` read the same owner without triggering actions.
 
+The answer is `{schema: 'history/2.0', rows}` and, since #1773, the optional
+`open`: for each entity with a change row in `rows`, the span its next row
+would close if it came now (see Changes and spans), when that span holds more
+than its row's reading. Each entry gives `source`, `family`, `id`, the
+`revision` of the entity's last row, `sinceAtMs` (null when the start is
+unknown), `lastConfirmedAtMs` and `confirmations`, as history holds them. The
+core reads them with one keyed lookup per distinct entity with a change row in
+the page (`History.page`, `History.open`); other rows add none. A span the
+intake would reset, or of an entity whose last row is a removal, is left out.
+`open` is present only when it has an entry, so any other answer is exactly the
+answer before #1773, and a reader that reads only `rows` is unaffected. Open
+spans are not facts: a read after a sequence (`History.after`) returns rows
+only. `core_history` returns rows only, with its closed output schema
+unchanged, and its read does no span lookup.
+
+The Timeline (`dashboard/src/timeline-model.ts`) reads `open` and adds plain
+lines under a row's context: "After 4 h 29 min unchanged, 3,300 readings" on a
+change row with a span; "Readings resumed" with "No reading for 1 h 12 min,
+then the same state" on a gap row; "Last readings before removal" with the
+stretch it closes on a closing row; and, on the newest change row of an entity
+whose open span continues it, "Unchanged since …, last reading at …, N
+readings". An unknown start is said to be unknown, and when the recorded times
+run backward no length is shown. In a Home shape the lines show only when the
+entry is open.
+
 `POST /api/v2/commands/inbox-handle` takes `{target, requestId, data:
 {expectedRevision, action}}`, where action is `dismiss` or `send-again`.
 `core_handle_inbox` takes `{id, expectedRevision, action}`. Both need control;

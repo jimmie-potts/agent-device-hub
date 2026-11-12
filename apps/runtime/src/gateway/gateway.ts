@@ -1,4 +1,4 @@
-import {historyFilter, type HistoryFilter, type HistoryRow} from '../core/history.js';
+import {historyFilter, type HistoryFilter, type HistoryPage} from '../core/history.js';
 import type {AutomationControls} from '../core/automation-part.js';
 import {AUTOMATION_PREFIX, automationRoute} from './automation-routes.js';
 // The runtime's gateway (Hub #835): every route of its listener but health. It serves the SDK edge for remote parts,
@@ -113,7 +113,7 @@ export type GatewayOptions = {
   onDiagnostic?: OnDiagnostic;
   /** The core's dispatcher, which the action routes call (#782); without it, every action is `unavailable`. */
   actions?: CoreActions;
-  history?: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody};
+  history?: {read: (filter: HistoryFilter) => HistoryPage | ErrorBody};
   /** Fresh rules/settings owned by the runtime core; no legacy store is opened. */
   automation?: AutomationControls;
   /** Closed file-reader exception: analytics never become SDK families or MCP tools. */
@@ -420,9 +420,10 @@ export class Gateway {
       const values = Object.fromEntries(url.searchParams);
       const filter = historyFilter(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, key === 'fromAtMs' || key === 'toAtMs' || key === 'limit' ? (/^[0-9]+$/.test(value) ? Number(value) : NaN) : value])));
       if (filter === undefined) throw refuse('invalid-request', 'invalid history filters');
-      const rows = this.#options.history?.read(filter) ?? errorBody('unavailable', {detail: 'no core history is available'});
-      if (this.#options.redactions.holds(JSON.stringify(rows))) throw refuse('internal', 'history holds a secret, which the gateway never serves');
-      return this.#dashboardRequest(request, path, () => Array.isArray(rows) ? json(200, {schema: 'history/2.0', rows}) : json(statusOf(rows.error.code), rows));
+      const page = this.#options.history?.read(filter) ?? errorBody('unavailable', {detail: 'no core history is available'});
+      if (this.#options.redactions.holds(JSON.stringify(page))) throw refuse('internal', 'history holds a secret, which the gateway never serves');
+      // `open` is an optional member of `history/2.0` (#1773), present only when an entity in the page has an open span.
+      return this.#dashboardRequest(request, path, () => 'rows' in page ? json(200, {schema: 'history/2.0', ...page}) : json(statusOf(page.error.code), page));
     }
     if (path === '/api/v2/build') {
       noQuery();

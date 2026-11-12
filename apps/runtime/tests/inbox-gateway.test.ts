@@ -48,8 +48,15 @@ it('gateway and MCP readers see the whole inbox/history; handling needs control 
   const tool = async (name: string, args: object) => (await call('/mcp', operator.token, {jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name, arguments: args}}, mcpHeaders)).body.result as {isError: boolean; structuredContent: {data: {result: {items?: unknown[]; rows?: unknown[]}}}};
   assert.equal((await tool('core_inbox', {})).structuredContent.data.result.items?.length, 2);
   assert.equal((await tool('core_history', {kind: 'operation'})).structuredContent.data.result.rows?.length, 4);
-  const listed = (await call('/mcp', operator.token, {jsonrpc: '2.0', id: 3, method: 'tools/list'}, mcpHeaders)).body.result as {tools: {name: string; inputSchema: {properties: Record<string, unknown>}}[]};
+  const listed = (await call('/mcp', operator.token, {jsonrpc: '2.0', id: 3, method: 'tools/list'}, mcpHeaders)).body.result as
+    {tools: {name: string; inputSchema: {properties: Record<string, unknown>}; outputSchema?: {additionalProperties?: unknown; properties?: Record<string, unknown>}}[]};
   assert.deepEqual(listed.tools.find(item => item.name === 'core_history')?.inputSchema.properties.limit, {type: 'integer', minimum: 1, maximum: 500});
+  // The published output schema of core_history, closed and rows only, as before #1773. Adding `open` to it is the
+  // owner's decision on #1773; this assertion changes with that decision.
+  // The MCP package embeds the gateway's closed `{result}|{error}` schema as `data`.
+  const published = listed.tools.find(item => item.name === 'core_history')?.outputSchema?.properties?.data as {additionalProperties?: unknown; properties?: Record<string, unknown>} | undefined;
+  assert.equal(published?.additionalProperties, false);
+  assert.deepEqual(published?.properties?.result, {type: 'object', additionalProperties: false, required: ['rows'], properties: {rows: {type: 'array'}}, $id: 'urn:bunny:tool:core:history:output'});
   for (const limit of [1, 200, 500]) assert.deepEqual((await tool('core_history', {kind: 'operation', source: operator.source, limit})).structuredContent.data.result.rows, history.slice(-limit));
   for (const limit of [0, -1, 1.5, 501, '200', null, true]) {
     const refused = await tool('core_history', {limit});

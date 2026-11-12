@@ -126,6 +126,15 @@ export const kept = (message: Pick<Message<unknown>, 'kind' | 'type'>): boolean 
 export type HistoryFilter = {fromAtMs?: number; toAtMs?: number; kind?: HistoryKind; source?: string; session?: string; limit?: number};
 export type HistoryRow = {seq: number; atMs: number; revision: number; kind: HistoryKind; source: string; messageId: string | null;
   type: string; subject: string; requestId: string | null; record: Record<string, unknown>};
+/**
+ * An entity's open span as a reader sees it (#1773): the stretch the entity's next row would close if it came now. It
+ * names the entity, the revision of the entity's last row, which wrote or, after a reset, preceded it, and the span's
+ * start (null when unknown), last confirmation and count of readings history took in it. It is not a fact: the fact log
+ * never carries it.
+ */
+export type HistoryOpenSpan = {source: string; family: string; id: string; revision: number; sinceAtMs: number | null; lastConfirmedAtMs: number; confirmations: number};
+/** A page of history: its rows and, when any entity with a change row in the page has one, the open spans of those entities. */
+export type HistoryPage = {rows: HistoryRow[]; open?: HistoryOpenSpan[]};
 /** A history row as the fact log reads it: a history row with its origin and its place in that origin's order. */
 export type FactRow = HistoryRow & {origin: string; originSeq: number};
 /** At most this many rows one read after a sequence returns. */
@@ -155,6 +164,7 @@ export class History {
   readonly #statements: {
     insert: StatementSync; stored: StatementSync; seen: StatementSync; latest: StatementSync; setLatest: StatementSync;
     refuse: StatementSync; trimRefused: StatementSync; after: StatementSync; span: StatementSync; setSpan: StatementSync; dropSpan: StatementSync;
+    open: StatementSync;
   };
 
   /** This installation's origin: a random UUID, created once and kept in the core store. */
@@ -198,6 +208,11 @@ export class History {
         seen_message_id = excluded.seen_message_id, seen_type = excluded.seen_type, since_at_ms = excluded.since_at_ms, confirmed_at_ms = excluded.confirmed_at_ms,
         confirmations = excluded.confirmations`),
       dropSpan: database.prepare('DELETE FROM core_history_span WHERE source = ? AND family = ? AND id = ?'),
+      // One statement per entity, two primary-key probes: the span and the latest record it must still match.
+      open: database.prepare(`SELECT span.row_revision AS rowRevision, span.seen_revision AS seenRevision, span.since_at_ms AS sinceAtMs,
+        span.confirmed_at_ms AS confirmedAtMs, span.confirmations AS confirmations, latest.revision AS latestRevision, latest.record = 'null' AS tombstone
+        FROM core_history_span AS span JOIN core_history_latest AS latest ON latest.source = span.source AND latest.family = span.family AND latest.id = span.id
+        WHERE span.source = ? AND span.family = ? AND span.id = ?`),
     };
   }
 
@@ -228,6 +243,39 @@ export class History {
       type, subject, request_id AS requestId, record FROM core_history ${where.length === 0 ? '' : `WHERE ${where.join(' AND ')}`} ORDER BY seq${filter.limit === undefined ? '' : ' DESC LIMIT ?'}`).all(...values) as (Omit<HistoryRow, 'record'> & {record: string})[];
     if (filter.limit !== undefined) rows.reverse();
     return rows.map(row => ({...row, record: JSON.parse(row.record) as Record<string, unknown>}));
+  }
+
+  /**
+   * The open spans of the entities that have a change row in `rows` (#1773), one keyed lookup per distinct entity: for
+   * each, the span the entity's next row would close if it came now, when it holds more than its row's reading, as
+   * `#closes` decides for a row. A span the write path would reset, because another release took a reading of its
+   * entity since, holds no confirmation yet and is left out, as is any entity whose last row is a removal. Rows other
+   * than changes add no lookup. Reading writes nothing and publishes nothing; `after` never returns these.
+   */
+  open(rows: readonly HistoryRow[]): HistoryOpenSpan[] {
+    const entities = new Map<string, {source: string; family: string; id: string}>();
+    for (const row of rows) {
+      if (row.kind !== 'change') continue;
+      const {family, id} = row.record;
+      if (typeof family !== 'string' || typeof id !== 'string') continue;
+      entities.set(JSON.stringify([row.source, family, id]), {source: row.source, family, id});
+    }
+    const open: HistoryOpenSpan[] = [];
+    for (const {source, family, id} of entities.values()) {
+      const found = this.#statements.open.get(source, family, id) as (Pick<SpanRow, 'rowRevision' | 'seenRevision' | 'sinceAtMs' | 'confirmedAtMs' | 'confirmations'>
+        & {latestRevision: number; tombstone: number}) | undefined;
+      if (found === undefined || found.tombstone === 1 || found.rowRevision !== found.latestRevision || found.seenRevision < found.latestRevision) continue;
+      const closes = History.#closes(found);
+      if (closes !== undefined) open.push({source, family, id, revision: found.latestRevision, ...closes});
+    }
+    return open;
+  }
+
+  /** A page of `filter`'s rows with the open spans of the entities that have a change row in it, `open` only when there is one. */
+  page(filter: HistoryFilter = {}): HistoryPage {
+    const rows = this.read(filter);
+    const open = this.open(rows);
+    return open.length === 0 ? {rows} : {rows, open};
   }
 
   /**
@@ -305,7 +353,7 @@ export class History {
   }
 
   /** The stretch a row closes, when history took more readings in it than the row that opened it, or undefined. */
-  static #closes(span: SpanRow): HistorySpan | undefined {
+  static #closes(span: Pick<SpanRow, 'sinceAtMs' | 'confirmedAtMs' | 'confirmations'>): HistorySpan | undefined {
     if (span.confirmedAtMs === null || span.confirmations <= (span.sinceAtMs === null ? 0 : 1)) return undefined;
     return {sinceAtMs: span.sinceAtMs, lastConfirmedAtMs: span.confirmedAtMs, confirmations: span.confirmations};
   }

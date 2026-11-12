@@ -165,6 +165,7 @@
 .home-layout-card[data-home-shape] .timeline-entry>summary{min-height:48px;padding:var(--space-xs) 0}
 .home-layout-card[data-home-shape] .timeline-entry:not([open]) :is(.timeline-title,.timeline-context){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .home-layout-card[data-home-shape] .timeline-face{overflow-wrap:normal}
+.home-layout-card[data-home-shape] .timeline-entry:not([open]) .timeline-note{display:none}
 .home-layout-card[data-home-shape] .timeline-entry time span{display:none}
 .home-layout-card[data-home-shape] .timeline-mark{display:none}
 .timeline-open{display:inline-flex;align-items:center;min-height:44px;font-size:var(--type-small)}

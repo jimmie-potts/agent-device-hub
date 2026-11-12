@@ -18,7 +18,7 @@ import {
 import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
-import type {HistoryFilter, HistoryRow, HistoryRules} from './history.js';
+import type {HistoryFilter, HistoryPage, HistoryRow, HistoryRules} from './history.js';
 import {inboxTool, historyTool} from './read-tools.js';
 import {InboxRecords} from './inbox.js';
 import {OperationRecords} from './operation-records.js';
@@ -196,7 +196,8 @@ export interface CoreModule extends BunnyModule {
   setArtCatalog(read: ArtCatalogRead): void;
   /** The host binds only the fixed Music producer connection lifetime. */
   setMusicCaptureRetirement(retire: () => void): void;
-  readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody};
+  /** The gateway's history read: a page of rows with the open spans of the entities that have a change row in it (#1773). */
+  readonly history: {read: (filter: HistoryFilter) => HistoryPage | ErrorBody};
 }
 
 /** Whether a hosted module is the core, whose dispatcher the gateway's action routes call. */
@@ -249,6 +250,8 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
       content: (ref, request) => contentContext === undefined || contentContext.signal.aborted
         ? errorBody('unavailable') : readRoomContent(() => { if (contentContext === undefined) throw new Error('core-content-unavailable'); return contentContext.files(); }, ref, contentContext.signal, request),
       tools: [sessionsTool(() => core?.sessions()),
+      // `core_history` reads rows only (#1773): whether it also returns `open` is an open contract decision, because its
+      // published output schema is closed. Returning spans would read `core?.historyPage(filter)` here instead.
       inboxTool(() => core?.inbox()), historyTool(filter => core?.history(filter))]},
     start: context => {
       if (ownership !== undefined) {
@@ -261,7 +264,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
       return core.start();
     },
     stop: () => core?.stop(),
-    history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'})},
+    history: {read: filter => core?.historyPage(filter) ?? errorBody('unavailable', {detail: 'the core has not started'})},
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
       artSchedule:{get:()=>artSchedule().get(),save:(value,parent)=>artSchedule().save(value,parent)},
@@ -787,8 +790,13 @@ class Core {
   }
 
   inbox(): ReturnType<InboxRecords['records']> { return this.#inbox.records(); }
+  /** History's rows only: what the MCP tool `core_history` reads, so it does no span lookup and its output is unchanged (#1773). */
   history(filter: HistoryFilter): HistoryRow[] | ErrorBody {
     return this.#store.open ? this.#store.history.read(filter) : errorBody('unavailable', {detail: 'the core history is unavailable'});
+  }
+  /** History's rows with the open spans of the entities that have a change row among them (#1773): the gateway's read. */
+  historyPage(filter: HistoryFilter): HistoryPage | ErrorBody {
+    return this.#store.open ? this.#store.history.page(filter) : errorBody('unavailable', {detail: 'the core history is unavailable'});
   }
 
   /** Sends one tracked action through the dispatcher (#782); see `CoreActions.dispatch`. */
