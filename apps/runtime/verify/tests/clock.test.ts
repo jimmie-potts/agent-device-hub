@@ -1,7 +1,8 @@
 // Hub #1710: a disposable run on virtual time. The run's supervisor is the authority for its time, which moves only
 // when the harness API advances it, with the child's clock and a restart's hold; a run on the real clock refuses the
 // clock routes, and the runtime's gateway serves none. The verification child gives the fixture core the same monotonic
-// clock that its test clock carries.
+// clock that its test clock carries. Hub #1711: a restart that waits for a release lets a hook meet a stopped runtime on
+// virtual time; a run on the real clock refuses it and the release.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
@@ -9,7 +10,7 @@ import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {switchLamp} from '../../tests/fixtures/lamp.js';
 import {scenario} from '../../tests/scenarios/catalog.js';
 import {childClockOf, fixtureCoreOptions} from '../child-clock.js';
-import {RunFailure, connectRun, readGrants} from '../adapter.js';
+import {connectRun, readGrants} from '../adapter.js';
 import {HARNESS_PATH, MAX_ADVANCE_MS, type ClockState, type HarnessState} from '../protocol.js';
 import {base, startRun, type Started} from './support.js';
 
@@ -44,6 +45,17 @@ async function switchOn(run: Started, requestId: string): Promise<unknown> {
 /** The same switch as `switchOn`, answering `lost` when the call loses its connection with the runtime. */
 const switchOrLost = (run: Started, requestId: string): Promise<unknown> => switchOn(run, requestId).catch(() => 'lost');
 
+/**
+ * A run on the real clock also refuses a restart that waits for a release, and the release itself (Hub #1711): only a
+ * hook against a stopped runtime on virtual time needs them. The refused restart leaves the runtime's generation alone.
+ */
+async function refusedReleaseRoutes(run: Started): Promise<void> {
+  const generation = (await state(run)).generation;
+  await refusedWith(await post(new URL(`${HARNESS_PATH}/restart`, run.harness), {untilReleased: true}), 409, 'invalid-state');
+  await refusedWith(await post(new URL(`${HARNESS_PATH}/release`, run.harness), {}), 409, 'invalid-state');
+  assert.equal((await state(run)).generation, generation, 'the refused restart restarted nothing');
+}
+
 /** Paths a clock control could have on the runtime's gateway; it serves none of them. */
 const GATEWAY_CLOCK_PATHS = ['/clock', '/clock/advance', `${HARNESS_PATH}/clock`, `${HARNESS_PATH}/clock/advance`, '/api/v2/clock', '/api/v2/clock/advance', '/api/runtime/v1/clock'];
 
@@ -51,6 +63,7 @@ void test('a run on the real clock refuses both clock routes with 409, and the r
   const run = await startRun(context, await base(context), 'fixtures');
   await refusedWith(await fetch(clockOf(run)), 409, 'invalid-state');
   await refusedWith(await post(advanceOf(run), {ms: 10}), 409, 'invalid-state');
+  await refusedReleaseRoutes(run);
   for (const path of GATEWAY_CLOCK_PATHS) {
     assert.equal((await fetch(new URL(path, run.url))).status, 404, `GET ${path} on the gateway`);
     assert.equal((await post(new URL(path, run.url), {ms: 10})).status, 404, `POST ${path} on the gateway`);
@@ -62,11 +75,12 @@ void test('a run of the shipped runtime refuses both clock routes with 409', {ti
   const run = await startRun(context, await base(context), 'shipped');
   await refusedWith(await fetch(clockOf(run)), 409, 'invalid-state');
   await refusedWith(await post(advanceOf(run), {ms: 10}), 409, 'invalid-state');
+  await refusedReleaseRoutes(run);
   assert.equal((await stopOf(run)), 0);
 });
 
 void test('a run on virtual time moves its runtime\'s clock only on an advance, and a restart\'s hold moves it too', {timeout: 60_000}, async context => {
-  // The shared-inbox scenario's run asks for virtual time (tests/scenarios/inbox.ts): the core and the fixture lamp.
+  // Every catalog scenario's run is on virtual time (Hub #1711); the shared-inbox scenario's has the core and the fixture lamp.
   const run = await startRun(context, await base(context), 'shared-inbox-history');
   const start = await (await fetch(clockOf(run))).json() as ClockState;
   assert.equal(start.clock, 'virtual');
@@ -104,7 +118,13 @@ void test('a run on virtual time moves its runtime\'s clock only on an advance, 
   }
   assert.equal((await (await fetch(clockOf(run))).json() as ClockState).nowMs, after.nowMs, 'a refused advance moved nothing');
 
-  // The run adapter follows the run's clock, and refuses a hook against a stopped runtime, which needs a real hold.
+  // A release with no restart waiting for one is refused, as is one with a field, and a restart's `untilReleased` is
+  // true or false (Hub #1711).
+  await refusedWith(await post(new URL(`${HARNESS_PATH}/release`, run.harness), {}), 409, 'invalid-state');
+  await refusedWith(await post(new URL(`${HARNESS_PATH}/release`, run.harness), {now: true}), 400, 'invalid-request');
+  await refusedWith(await post(new URL(`${HARNESS_PATH}/restart`, run.harness), {untilReleased: 'yes'}), 400, 'invalid-request');
+
+  // The run adapter follows the run's clock.
   const selected = scenario('shared-inbox-history');
   assert.ok(selected !== undefined);
   const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed: selected.seed});
@@ -113,12 +133,19 @@ void test('a run on virtual time moves its runtime\'s clock only on an advance, 
     assert.equal(h.now(), after.nowMs, 'the adapter\'s time is the run\'s');
     await h.wait(30_000);
     assert.equal(h.now(), after.nowMs + 30_000);
-    await assert.rejects(h.hook({}, {runtime: 'stopped'}), (error: unknown) => error instanceof RunFailure);
     // Idle polls may pass without the run; whatever they owe it reaches it before the next call does.
     for (let poll = 0; poll < 5; poll += 1) await h.wait(10);
     await h.gateway({as: 'reader', method: 'GET', path: '/api/v2/families/inbox-item'});
     assert.equal((await (await fetch(clockOf(run))).json() as ClockState).nowMs, after.nowMs + 30_050, 'the run got the time it was owed before the call');
     assert.equal(h.now(), after.nowMs + 30_050);
+    // A hook against a stopped runtime holds the runtime with a release while it runs; the restart's hold then moves the
+    // run's time, and the adapter's with it (Hub #1711).
+    const ran = await h.hook({}, {runtime: 'stopped'});
+    assert.equal(ran.code, 0, 'the hook exits quietly against the stopped runtime');
+    assert.equal(h.generation(), 3, 'the runtime was stopped and started again');
+    const held = await (await fetch(clockOf(run))).json() as ClockState;
+    assert.equal(held.nowMs, after.nowMs + 30_050 + 4000, 'the hold moved the run\'s time by its length');
+    assert.equal(h.now(), held.nowMs, 'the adapter follows the run\'s time after the hold');
   } finally {
     await h.close();
   }

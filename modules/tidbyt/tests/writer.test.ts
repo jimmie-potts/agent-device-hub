@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {MAX_RETRY_MS, TidbytCloudConnection, type CloudFetch} from '../src/cloud.js';
 import {CloudQueue, TileWriter, type TileCall, type TileMemory, type TileTarget, type TileWriterOptions} from '../src/writer.js';
+import {MIN_INTERVAL_MS} from '../src/module.js';
 import {flush, manualClock} from './support.js';
 
 type Pending = {url: string; method: string; resolve: (response: Response) => void; signal: AbortSignal};
@@ -365,4 +366,9 @@ void test('a superseded mutation that actually began still reports its uncertain
     assert.deepEqual(tile.ended, [false]); assert.equal(tile.remembered.at(-1)?.lastWriteAtMs, clock.now());
     eligible = true; assert.equal(await tile.writer.write(cardTarget('b')), 15_000);
   } finally { queue.close(); await writing; }
+});
+
+void test('the shipped tile gate is 15 s between two writes of one tile (Hub #1711)', () => {
+  // Pins the default the module configures its writers with; the virtual-time captures only follow it.
+  assert.equal(MIN_INTERVAL_MS, 15_000);
 });

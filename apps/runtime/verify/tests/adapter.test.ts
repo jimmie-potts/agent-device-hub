@@ -7,7 +7,7 @@ import {test} from 'node:test';
 import {act, runScenario, scenario, type Harness} from '../../tests/scenarios/catalog.js';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError} from '@jimmie-potts/sdk';
-import {RunFailure, connectRun, failureOf} from '../adapter.js';
+import {RESYNC_WITHIN_MS, RunFailure, connectRun, failureOf} from '../adapter.js';
 import {scenarioProof} from '../plugin.js';
 import {Reader, sourceOf} from '../../tests/scenarios/parts.js';
 import {base, startRun} from './support.js';
@@ -52,7 +52,8 @@ function readerCalls(context: {after: (fn: () => void) => void}, call: 'subscrib
 void test('a restart resolves only once the reader has resynced with the new runtime', {timeout: 60_000}, async context => {
   const seed = scenario('reconnect-and-sync')?.seed;
   assert.ok(seed);
-  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  // Its subject is real elapsed time, so its run stays on the real clock (Hub #1711).
+  const run = await startRun(context, await base(context), 'reconnect-and-sync', {testOnlyRealClock: true});
   const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
   context.after(() => h.close());
   const before = [h.reader.gaps(), h.reader.syncs('session'), h.reader.syncs('lamp')];
@@ -68,6 +69,41 @@ void test('a restart resolves only once the reader has resynced with the new run
   assert.deepEqual(h.problems(), []);
 });
 
+// Hub #1711: on virtual time the run advances while the reader comes back, so its bound passes in a few seconds of real
+// time, while the reader's re-registration is real I/O. The wait also needs the bound in real time before it fails. The
+// re-registration is held by a gate the test opens once the run's time has passed the bound and stopped moving.
+void test('on virtual time a restart waits for a reader held past the bound of the run\'s time, and resolves once it is back', {timeout: 60_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  assert.equal(h.clock, 'virtual');
+  const before = [h.reader.gaps(), h.reader.syncs('session'), h.reader.syncs('lamp')];
+  let open: () => void = () => {};
+  const gate = new Promise<void>(resolve => { open = resolve; });
+  const held = readerCalls(context, 'subscribe', () => gate);
+  held.armed = true;
+  const started = h.now();
+  let settled = false;
+  const restarted = h.restart().finally(() => { settled = true; });
+  restarted.catch(() => {});
+  // Until the restart has failed, or the run's time has passed the bound and stopped moving: polls, no sleep.
+  for (let last = h.now(); !settled;) {
+    for (let turn = 0; turn < 200; turn += 1) await new Promise(resolve => { setImmediate(resolve); });
+    if (h.now() >= started + RESYNC_WITHIN_MS && h.now() === last) break;
+    last = h.now();
+  }
+  held.armed = false;
+  open();
+  await restarted;
+  assert.ok(h.now() >= started + RESYNC_WITHIN_MS, 'the run\'s time passed the bound while the reader was held');
+  assert.deepEqual([h.reader.gaps(), h.reader.syncs('session'), h.reader.syncs('lamp')], before.map(count => count + 1),
+    'the reader heard of the gap and synced each copy again before the restart resolved');
+  assert.equal(h.generation(), 2);
+  assert.deepEqual(h.problems(), []);
+});
+
 // The bound is above the reader's longest reconnect backoff (5 s), so its stream is back before the bound however long the
 // restart took, and only the refused copies are named: the message stays exact on a slow host too.
 const NEVER_RESYNCS_WITHIN_MS = 8000;
@@ -75,7 +111,8 @@ const NEVER_RESYNCS_WITHIN_MS = 8000;
 void test('a restart fails within its bound, naming what did not come back, when the reader never resyncs', {timeout: 60_000}, async context => {
   const seed = scenario('reconnect-and-sync')?.seed;
   assert.ok(seed);
-  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  // Its subject is real elapsed time, so its run stays on the real clock (Hub #1711).
+  const run = await startRun(context, await base(context), 'reconnect-and-sync', {testOnlyRealClock: true});
   const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed, resyncWithinMs: NEVER_RESYNCS_WITHIN_MS});
   context.after(() => h.close());
   // Each resync is refused at the connection, as when the runtime is gone, so each copy stops for good.

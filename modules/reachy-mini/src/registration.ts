@@ -13,7 +13,7 @@ const simulation:DeviceSimulation<SimulatedReachy,SimulatedReachy>={
       if(r.method==='cancel'&&typeof r.args==='string')return d.cancel(r.args,r.signal);
       throw new Error('invalid simulation request');
     },
-    remote:link=>createReachyModule({transport:{
+    remote:(link,options)=>createReachyModule({transport:{
       async connect(observer,signal){
         let closed=false,index=0;const poll=async():Promise<void>=>{
           const answer=await link.call('state',{},signal);if(closed)return;
@@ -24,6 +24,11 @@ const simulation:DeviceSimulation<SimulatedReachy,SimulatedReachy>={
           const offset=Math.max(0,index-(value.eventCount-value.events.length));
           for(const event of value.events.slice(offset))observer.event(event);index=value.eventCount;
         };
+        if(options!==undefined){
+          // Every 100 ms on the run's virtual time when the run gives its clocks (Hub #1711).
+          await poll();let cancel=options.scheduler.after(100,function tick(){if(closed)return;cancel=options.scheduler.after(100,tick);void poll();});
+          const close=():void=>{closed=true;cancel();signal.removeEventListener('abort',close);};signal.addEventListener('abort',close,{once:true});return close;
+        }
         await poll();const timer=setInterval(()=>{void poll();},100);
         const close=():void=>{closed=true;clearInterval(timer);signal.removeEventListener('abort',close);};signal.addEventListener('abort',close,{once:true});return close;
       },

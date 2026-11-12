@@ -5,7 +5,7 @@
 // options, so the core's durations advance with its wall clock. Each `advance` from the supervisor moves the clock,
 // with virtual time standing still while a module's worker call runs, and gives real work its turn, as the in-memory
 // harness does (tests/scenarios/real-work.ts, stepping.ts, virtual-time.ts).
-import type {BunnyModule} from '@jimmie-potts/sdk';
+import type {BunnyModule, RemoteSimulationOptions} from '@jimmie-potts/sdk';
 import type {CoreModule, TestClock} from '../src/index.js';
 import {createCoreModule, type FixtureCoreOptions} from '../tests/fixtures/core.js';
 import {realWork, settle} from '../tests/scenarios/real-work.js';
@@ -28,6 +28,14 @@ export class ChildClock {
   constructor(startMs: number) {
     this.#clock = manualClock(startMs);
     this.testClock = {clock: {now: this.#clock.now}, scheduler: this.#clock.scheduler, monotonic: this.#clock.now};
+  }
+
+  /**
+   * The clocks a registered module built over its link gets (Hub #1711): the test clock's wall clock, scheduler and
+   * monotonic clock, so its simulated transport and its monotonic durations move with the run.
+   */
+  get remoteOptions(): RemoteSimulationOptions {
+    return {now: this.#clock.now, scheduler: this.#clock.scheduler, monotonic: this.#clock.now};
   }
 
   /** The fixture core's options with the test clock's monotonic clock, the one `testClock` carries. */

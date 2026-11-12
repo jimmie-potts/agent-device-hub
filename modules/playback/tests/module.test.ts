@@ -9,7 +9,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {setTimeout as delay} from 'node:timers/promises';
 import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness, moduleConformance} from '@jimmie-potts/sdk/testing';
-import {PLAYBACK_SCHEMA, controlPlayback, createPlaybackModule} from '../src/module.js';
+import {CALL_TIMEOUT_MS, PLAYBACK_SCHEMA, POLL_MS, controlPlayback, createPlaybackModule} from '../src/module.js';
 import {SimulatedSpeakers} from '../src/simulated.js';
 import {httpSpeakers, type SpeakerTransport} from '../src/transport.js';
 import {
@@ -553,4 +553,9 @@ test('over HTTP, each speaker is polled on its cadence without overlapping reads
   await delay(80);
   assert.equal(sony.calls.length + sonos.calls.length, calls, 'stopping ends the polling');
   assert.deepEqual(harness.failures, []);
+});
+
+test('the shipped poll is every 2 s and a speaker call times out after 1.5 s (Hub #1711)', () => {
+  // Pins the defaults `createPlaybackModule` uses; the virtual-time captures only follow them.
+  assert.deepEqual({POLL_MS, CALL_TIMEOUT_MS}, {POLL_MS: 2000, CALL_TIMEOUT_MS: 1500});
 });

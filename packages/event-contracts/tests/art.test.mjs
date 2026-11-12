@@ -6,6 +6,7 @@ import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {MessageValidator} from '../dist/v2/index.js';
+import {ART_SHOW_LEAD_MS} from '../dist/v2/art-show.js';
 import {artStageSupported, commandSupported, deviceFamilies, registerDeviceFamilies} from '../dist/v2/devices.js';
 import {CORE_SOURCE, coreFamilies, registerCoreFamilies} from '../dist/v2/families.js';
 import {
@@ -490,4 +491,9 @@ test('a Tidbyt declares art at 64 by 32, stages it, shows a tile and clears it, 
   assert.deepEqual(fake.transport, [['tile', stage.compositionId], ['show', stage.compositionId], ['tile', null]]);
   const small = {...declared.capabilities, moments: {...declared.capabilities.moments, art: {formats: ['gif'], maxBytes: 10}}};
   assert.equal(artStageSupported(small, stage), false);
+});
+
+test('the shipped art show lead is 20 s to the common start (Hub #1711)', () => {
+  // Pins the lead the core sets a show's start with; the virtual-time captures only follow it.
+  assert.equal(ART_SHOW_LEAD_MS, 20_000);
 });

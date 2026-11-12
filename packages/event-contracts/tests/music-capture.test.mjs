@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {MessageValidator} from '../dist/v2/index.js';
 import {registerCoreFamilies} from '../dist/v2/families.js';
+import {
+  CAPTURE_CLOCK_DRIFT_MS, CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_MAX_SOURCE_AGE_MS, CAPTURE_REGISTRATION_SKEW_MS, CAPTURE_VALIDITY_MS, CAPTURE_WINDOW_MS,
+} from '../dist/v2/music-capture-data.js';
 
 const validator = new MessageValidator();
 registerCoreFamilies(validator);
@@ -132,4 +135,11 @@ test('2.2 state carries bounded persisted response evidence while old state shap
   valid({...v22(state), data: {...data, response: {...response, evidence}}});
   invalid({...v22(state), data: {...data, response: {...response, evidence: {...evidence, windowCount: 49}}}});
   invalid({...v22(state), data: {...data, response: {...response, evidence: {...evidence, rawAudio: []}}}});
+});
+
+test('the shipped capture windows are pinned (Hub #1711)', () => {
+  // Producers, the core and the browser all read these; a change to one fails here rather than only in timing.
+  assert.deepEqual({CAPTURE_WINDOW_MS, CAPTURE_MAX_SOURCE_AGE_MS, CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_REGISTRATION_SKEW_MS, CAPTURE_CLOCK_DRIFT_MS, CAPTURE_VALIDITY_MS}, {
+    CAPTURE_WINDOW_MS: 100, CAPTURE_MAX_SOURCE_AGE_MS: 250, CAPTURE_MAX_CLOCK_SKEW_MS: 100, CAPTURE_REGISTRATION_SKEW_MS: 50, CAPTURE_CLOCK_DRIFT_MS: 25, CAPTURE_VALIDITY_MS: 400,
+  });
 });

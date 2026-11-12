@@ -68,7 +68,8 @@ export const playbackSimulation: DeviceSimulation<SimulatedSpeakers, SimulatedSp
     build: (speakers, {now}) => createPlaybackModule({transport: speakers, monotonic: now, artwork: {fetch: createSimulatedArtworkFetch(() => speakers.artworkAcquired())}}),
   },
   run: {
-    create: () => new SimulatedSpeakers(),
+    // A slow speaker waits on the run's scheduler: real timers, or the run's virtual time (Hub #1711).
+    create: ({scheduler}) => new SimulatedSpeakers({}, {scheduler}),
     state: speakers => speakers.state(),
     act: (speakers, simulation) => { act(speakers, simulation); },
     serve: (speakers, {method, args, signal}) => {
@@ -85,13 +86,14 @@ export const playbackSimulation: DeviceSimulation<SimulatedSpeakers, SimulatedSp
       return speakers.sonos('', action, soap, signal);
     },
     // A speaker that does not answer never replies, so the module's deadline aborts the call, which tells the supervisor too.
-    remote: link => {
+    // On virtual time freshness follows the run's monotonic clock (Hub #1711); otherwise the module keeps its own.
+    remote: (link, options) => {
       const call = async (method: 'sony' | 'sonos', body: SonyCall | SonosCall, signal: AbortSignal): Promise<unknown> => {
         const answer = await link.call(method, body, signal);
         if (answer.status !== 'answered') throw new Error('the speaker did not answer');
         return answer.value;
       };
-      return createPlaybackModule({transport: {
+      return createPlaybackModule({...(options === undefined ? {} : {monotonic: options.monotonic}), transport: {
         sony: async (endpoint, method, version, signal) => simulatedArtworkReply(await call('sony', {method, version}, signal) as SonyReply, endpoint),
         sonos: async (_endpoint, action, args, signal) => await call('sonos', {action, args}, signal) as SonosReply,
       }, artwork: {fetch: async (candidate, endpoint, signal, source) => {

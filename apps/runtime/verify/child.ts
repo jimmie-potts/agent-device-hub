@@ -206,10 +206,11 @@ const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
     },
     stop: () => {},
   })),
-  // Every registered module, with the link to its simulated device in the supervisor (Hub #999).
+  // Every registered module, with the link to its simulated device in the supervisor (Hub #999), and on virtual time
+  // with the run's clocks (Hub #1711).
   ...Object.fromEntries(registrations.map(({name, schemas, simulation, simulate}) =>
     [name, fixture(name, () => scheduled.remote(name, names, () => links.link(name))
-      ?? (simulation === undefined ? simulate() : simulation.run.remote(links.link(name))), schemas)] as const)),
+      ?? (simulation === undefined ? simulate() : simulation.run.remote(links.link(name), clock?.remoteOptions)), schemas)] as const)),
 };
 
 const names = [...(list === '-' ? [] : list.split(',')), ...(fault === 'installed-port' ? ['prober'] : [])];

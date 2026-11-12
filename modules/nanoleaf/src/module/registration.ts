@@ -25,7 +25,8 @@ export const nanoleafSimulation: DeviceSimulation<SimulatedNanoleaf, SimulatedNa
     build: nanoleaf => createNanoleafModule({transport: nanoleaf.request, datagram: nanoleaf.datagram}),
   },
   run: {
-    create: () => new SimulatedNanoleaf(),
+    // The controllers stamp their writes on the run's clock: real, or the run's virtual time (Hub #1711).
+    create: ({now}) => new SimulatedNanoleaf({now}),
     state: nanoleaf => nanoleaf.state(),
     act: (nanoleaf, {action}) => { nanoleaf.act(action as SimulatedAction); },
     async serve(nanoleaf, {method: call, args}): Promise<LightAnswer | null> {

@@ -35,7 +35,7 @@ export {
 } from './module.js';
 export {WorkerCalls, type WorkerCallsOptions} from './workers.js';
 export {
-  type DeviceAction, type DeviceLink, type DeviceSimulation, type LinkAnswer, type LinkCall, type ModuleFactory, type ModuleRegistration, type SimulationOptions,
+  type DeviceAction, type DeviceLink, type DeviceSimulation, type LinkAnswer, type LinkCall, type ModuleFactory, type ModuleRegistration, type RemoteSimulationOptions, type SimulationOptions,
 } from './registration.js';
 export {childOf, traceFields} from './trace.js';
 export {

@@ -326,12 +326,11 @@ class Run implements RunHarness {
   /**
    * Runs the hook script against the run's runtime, with the producer file the supervisor wrote. While it runs
    * `stopped`, the supervisor holds the runtime stopped: the adapter asks for a restart that waits before it starts the
-   * runtime again, and runs the hook once the runtime's port refuses connections.
+   * runtime again, and runs the hook once the runtime's port refuses connections. On virtual time the restart's hold
+   * passes at once, so the restart also waits for the adapter's release, which it sends once the hook has run (Hub #1711).
    */
   async hook(payload: HookPayload, {runtime = 'running'}: {runtime?: 'running' | 'stopped'} = {}): Promise<HookRun> {
     await this.#actions;
-    // A hook against a stopped runtime needs a real hold it can meet; on virtual time a restart's hold is virtual.
-    if (runtime === 'stopped' && this.#virtual !== undefined) throw new RunFailure('a hook against a stopped runtime runs only on the real clock');
     await this.#catchUp();
     const producer = producerOf(this.#target.dataDir);
     if (runtime === 'running') {
@@ -339,7 +338,8 @@ class Run implements RunHarness {
       await this.#refresh();
       return ran;
     }
-    const restarted = this.#post('restart', {holdMs: STOPPED_HOLD_MS});
+    const v = this.#virtual;
+    const restarted = this.#post('restart', {holdMs: STOPPED_HOLD_MS, ...(v === undefined ? {} : {untilReleased: true})});
     // Until the restart's answer, the run's refresh would wait on the stopped runtime; a failed restart fails the hook.
     restarted.catch(() => {});
     const deadline = Date.now() + STOPPED_HOLD_MS;
@@ -347,8 +347,15 @@ class Run implements RunHarness {
       if (Date.now() > deadline) throw new RunFailure('the runtime did not stop');
       await sleep(25);
     }
-    const ran = await runHookScript(producer, payload);
+    let ran: HookRun;
+    try {
+      ran = await runHookScript(producer, payload);
+    } finally {
+      if (v !== undefined) await this.#post('release');
+    }
     await restarted;
+    // On virtual time the hold moved the run's time on; the parts' clock follows it, which fires their timers due by then.
+    if (v !== undefined) await this.#followRun(v);
     // The restart ended the browser's session with the runtime that opened it.
     this.#client.forget();
     await this.#refresh();
@@ -436,6 +443,17 @@ class Run implements RunHarness {
     v.quiet = !state.busy && reached === ms;
   }
 
+  /** Moves the parts' clock to the run's time after the run moved without the adapter, as a restart's hold moves it. */
+  async #followRun(v: Virtual): Promise<void> {
+    const response = await fetch(new URL(`${HARNESS_PATH}/clock`, this.#target.harness));
+    if (!response.ok) throw new RunFailure(`clock answered ${response.status}`);
+    const state = await response.json() as ClockState;
+    const ahead = state.nowMs - (v.clock.now() - v.owed);
+    if (ahead > 0) v.clock.advance(ahead);
+    v.runNext = state.nextDueMs ?? undefined;
+    v.quiet = false;
+  }
+
   /** On virtual time, sends the run the time it is owed, so that what reaches it next happens at the adapter's time. */
   async #catchUp(): Promise<void> {
     const v = this.#virtual;
@@ -455,9 +473,14 @@ class Run implements RunHarness {
     });
   }
 
+  /** Each part's wrapper, so that on virtual time `sdk` answers the same object for the same part, as on the real clock. */
+  readonly #wrapped = new WeakMap<Participant, Participant>();
+
   /** The participant, each of whose calls first sends the run the time it is owed, on virtual time. */
   #caughtUp(participant: Participant): Participant {
-    return new Proxy(participant, {get: (target, property) => {
+    const known = this.#wrapped.get(participant);
+    if (known !== undefined) return known;
+    const wrapped = new Proxy(participant, {get: (target, property) => {
       const value: unknown = Reflect.get(target, property);
       if (typeof value !== 'function') return value;
       return async (...args: unknown[]): Promise<unknown> => {
@@ -465,6 +488,8 @@ class Run implements RunHarness {
         return this.#tracked(Promise.resolve((value as (...args: unknown[]) => unknown).apply(target, args)));
       };
     }});
+    this.#wrapped.set(participant, wrapped);
+    return wrapped;
   }
 
   async #fetchState(): Promise<boolean> {
@@ -544,14 +569,16 @@ class Run implements RunHarness {
   async #resynced(mark: ReaderMark | undefined): Promise<void> {
     if (mark === undefined) return;
     const withinMs = this.#target.resyncWithinMs ?? RESYNC_WITHIN_MS;
-    // On virtual time the bound is virtual too: the reader's reconnect backoff runs on the parts' clock.
+    // On virtual time the reader's reconnect backoff runs on the parts' clock, so the run advances for up to the bound;
+    // its reconnect is also real I/O, so the wait ends only once the bound has passed in real time too (Hub #1711).
     const v = this.#virtual;
-    const deadline = this.now() + withinMs;
+    const deadline = this.now() + withinMs, realDeadline = Date.now() + withinMs;
     for (;;) {
       const missing = this.reader.behind(mark);
       if (missing.length === 0) return;
-      if (this.now() >= deadline) throw new RunFailure(`the reader did not resync within ${withinMs} ms of the restart: ${missing.join('; ')}`);
-      if (v === undefined) await sleep(RESYNC_POLL_MS);
+      const virtualPassed = this.now() >= deadline;
+      if (virtualPassed && Date.now() >= realDeadline) throw new RunFailure(`the reader did not resync within ${withinMs} ms of the restart: ${missing.join('; ')}`);
+      if (v === undefined || virtualPassed) await sleep(RESYNC_POLL_MS);
       // While the reader is behind, every piece reaches the run, so its reconnect over real I/O gets real time.
       else await this.#advance(v, RESYNC_POLL_MS, false);
     }

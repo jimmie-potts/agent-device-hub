@@ -8,6 +8,7 @@ import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import {stat} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import type {Page} from 'playwright';
 import {definePlugin, type CaptureContext, type CaptureStep, type CheckOutcome, type ProbeContext} from '@jimmie-potts/app-verify';
 import {SdkError, connectRemote, Outcome} from '@jimmie-potts/sdk';
 import {moduleFolders} from '../build/registry.js';
@@ -218,7 +219,12 @@ async function judge(t: CaptureContext, scenario: Scenario): Promise<void> {
   let result;
   try {
     result = await runScenario(scenario, run);
-    if (result.outcome === 'passed') await scenario.capture?.(t, run);
+    if (result.outcome === 'passed' && scenario.capture !== undefined) {
+      // On virtual time the page's clock starts at the run's (Hub #1711), so the deadlines the page stamps on its
+      // requests mean what they say to the runtime. The run does not move during the capture unless the capture moves it.
+      if (run.clock === 'virtual') await (t.page as Page).clock.setSystemTime(run.now());
+      await scenario.capture(t, run);
+    }
   } finally {
     await run.close();
   }

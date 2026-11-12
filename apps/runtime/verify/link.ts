@@ -86,7 +86,7 @@ export class SupervisorDevices {
   /** Each call a device still serves, by the runtime's generation and the child's ID, so the child can abandon it. */
   readonly #serving = new Map<string, AbortController>();
 
-  constructor(registrations: readonly ModuleRegistration[], options: SimulationOptions) {
+  constructor(registrations: readonly ModuleRegistration[], options: SimulationOptions & {readonly monotonic?: () => number}) {
     this.#devices = new Map(registrations.flatMap(({name, simulation}) => simulation === undefined ? [] : [[name, {
       simulation: simulation.run, held: simulation.run.create(options), admits: (request: Readonly<Record<string, unknown>>) => admitted(simulation, request),
     }] as const]));
