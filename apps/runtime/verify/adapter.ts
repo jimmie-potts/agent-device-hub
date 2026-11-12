@@ -14,7 +14,7 @@ import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {connectRemote, type CommandDraft, type Diagnostic, type Participant, type Scheduler} from '@jimmie-potts/sdk';
 import {HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
 import {
-  ROLES, StepFailure, failureOf, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
+  ROLES, StepFailure, failureOf, type DeviceStates, type Overtime, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
   type Simulation,
 } from '../tests/scenarios/framework.js';
 import {
@@ -55,7 +55,13 @@ const STOPPED_HOLD_MS = 4000;
  * between attempts, so this leaves room for a slow start and the resync after it.
  */
 export const RESYNC_WITHIN_MS = 15_000;
-/** How often a restart looks again whether the reader is back in sync. */
+/**
+ * How long, in real time, a wait for real work holds before it fails, naming what is missing (Hub #1711): the reader's
+ * resync after its stream's return, what the run published reaching the reader, and the real work an expectation's
+ * overtime waits for. The same bound as a restart's.
+ */
+export const REAL_WORK_WITHIN_MS = RESYNC_WITHIN_MS;
+/** How often a wait for real work looks again when nothing woke it sooner. */
 const RESYNC_POLL_MS = 25;
 const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
 
@@ -165,6 +171,16 @@ class Run implements RunHarness {
    * return and its copies' resync, which is real I/O.
    */
   #readerLost: ReaderMark | undefined;
+  /**
+   * How often the reader's stream has been opened, lost or restored, or the reader closed (Hub #1711): with its gap
+   * notices, the reader's stream epoch. Nothing published before an epoch began is waited for in it, since a lost
+   * stream replays nothing.
+   */
+  #readerTurns = 0;
+  /** From which of the run's published messages the reader is waited for, and in which epoch that was decided. */
+  #watched: {epoch: number; from: number} | undefined;
+  /** What waits for real work to change: a call's answer, a part's stream, or anything the reader heard. */
+  readonly #wakers = new Set<() => void>();
 
   readonly #client: GatewayClient;
 
@@ -174,6 +190,7 @@ class Run implements RunHarness {
     this.#origin = new URL(target.url).origin;
     this.#client = new GatewayClient(() => this.#origin, tokens, tokens.producer);
     this.reader = new Reader(target.seed.follows);
+    this.reader.onChange = () => { this.#wake(); };
     this.#parts = new Map();
   }
 
@@ -190,6 +207,8 @@ class Run implements RunHarness {
     this.#parts = new Map(ROLES.map(role => [role, {role, participant: undefined, closed: false, scheduler: new HeldScheduler(base)}]));
     await this.#refresh();
     for (const part of this.#parts.values()) await this.#connect(part);
+    // Fixes from where the reader is waited for, before the first step publishes anything (Hub #1711).
+    if (this.#virtual !== undefined) await this.#refresh();
   }
 
   /** Which clock the run is on, which a capture's proof records. */
@@ -224,6 +243,7 @@ class Run implements RunHarness {
       // What the run published before the answer is in the copy before the scenario reads it.
       await this.#refresh();
       this.#answers.set(label, answer);
+      this.#wake();
       return answer;
     });
   }
@@ -236,6 +256,7 @@ class Run implements RunHarness {
     return started.then(({call}) => call).then(actionAnswerOf, () => 'lost').then(async answer => {
       await this.#refresh();
       this.#answers.set(label, answer);
+      this.#wake();
       return answer;
     });
   }
@@ -277,6 +298,7 @@ class Run implements RunHarness {
       await this.#refresh();
     }
     await this.#readerBack();
+    await this.#delivered();
   }
 
   /** The runtime's edge ends the part's stream; the same remote part reconnects once the next wait releases its timers. */
@@ -284,7 +306,10 @@ class Run implements RunHarness {
     return this.#act(async () => {
       await this.#refresh();
       const part = this.#part(role);
-      if (role === 'reader' && part.participant !== undefined) this.#readerLost ??= this.reader.mark();
+      if (role === 'reader' && part.participant !== undefined) {
+        this.#readerLost ??= this.reader.mark();
+        this.#readerTurns += 1;
+      }
       part.scheduler.hold();
       this.#held.push(part);
       await this.#post('disconnect', {source: sourceOf(role)});
@@ -370,6 +395,40 @@ class Run implements RunHarness {
     this.#client.forget();
     await this.#refresh();
     return ran;
+  }
+
+  /**
+   * On virtual time, an expectation past its bound (Hub #1711): the run's time stands still while real work the parts
+   * wait on is in flight, which the run's time does not bound, and the check looks again whenever some of it ends. Past
+   * `REAL_WORK_WITHIN_MS` of real time it names what is still in flight. On the real clock the bound was real already.
+   */
+  overtime(): Overtime | undefined {
+    const v = this.#virtual;
+    if (v === undefined) return undefined;
+    let deadline: number | undefined, waited = false;
+    return {next: async () => {
+      try {
+        // The run gets the time the steps already passed, then an advance of 0, a settle that moves nothing: it says
+        // whether the run's own work is in flight, and the refresh after it brings what the run did meanwhile.
+        await this.#catchUp();
+        await this.#advanceRun(v, 0);
+        const changed = await this.#refresh();
+        const work = this.#realWork(!v.quiet);
+        deadline ??= Date.now() + REAL_WORK_WITHIN_MS;
+        // Once the work has ended, or the settle brought something new, the check looks once more before it fails.
+        if (work.length === 0) {
+          const again = (waited || changed) && Date.now() < deadline;
+          waited = false;
+          return again;
+        }
+        if (Date.now() >= deadline) return `still in flight after ${REAL_WORK_WITHIN_MS} ms of real time past the bound: ${work.join('; ')}`;
+        await this.#change();
+        waited = true;
+        return true;
+      } catch (error) {
+        return `the overtime failed: ${failureOf(error)}`;
+      }
+    }};
   }
 
   problems(): readonly string[] {
@@ -480,6 +539,7 @@ class Run implements RunHarness {
     return call.finally(() => {
       this.#inFlight -= 1;
       if (this.#virtual !== undefined) this.#virtual.quiet = false;
+      this.#wake();
     });
   }
 
@@ -503,6 +563,7 @@ class Run implements RunHarness {
   }
 
   async #fetchState(): Promise<boolean> {
+    const epoch = this.#readerEpoch();
     const url = new URL(`${HARNESS_PATH}/state`, this.#target.harness);
     url.searchParams.set('logs', String(this.#state.logs.length));
     url.searchParams.set('published', String(this.#state.published.length));
@@ -515,6 +576,10 @@ class Run implements RunHarness {
     const changed = state.logs.length > 0 || state.published.length > 0 || state.generation !== this.#state.generation
       || this.#seeded(state.devices) !== this.#seeded(this.#state.devices);
     this.#state = {...state, logs: [...this.#state.logs, ...state.logs], published: [...this.#state.published, ...state.published]};
+    // The first refresh that starts in a new epoch of the reader's stream fixes from where the reader is waited for:
+    // what this flush returned may predate the stream's subscriptions, and what comes after it does not.
+    if (epoch !== this.#readerEpoch()) this.#watched = undefined;
+    else if (this.#watched?.epoch !== epoch) this.#watched = {epoch, from: this.#state.published.length};
     return changed;
   }
 
@@ -542,6 +607,7 @@ class Run implements RunHarness {
       await follow(part.participant, this.reader, this.#target.seed.follows, {
         check: (message, where) => { this.#check(message, where); }, problem: text => { this.#problems.push(text); },
       });
+      this.#readerTurns += 1;
     }
   }
 
@@ -550,7 +616,9 @@ class Run implements RunHarness {
     if (event === 'remote.disconnected') this.#away.add(role);
     if (event === 'remote.disconnected' && role === 'reader') this.#readerLost ??= this.reader.mark();
     if (event === 'remote.reconnected') this.#away.delete(role);
+    if (role === 'reader' && (event === 'remote.disconnected' || event === 'remote.reconnected')) this.#readerTurns += 1;
     if (this.#virtual !== undefined) this.#virtual.quiet = false;
+    this.#wake();
   }
 
   async #retire(part: Part): Promise<void> {
@@ -559,6 +627,7 @@ class Run implements RunHarness {
     if (part.role === 'reader') {
       this.reader.copies = [];
       this.#readerLost = undefined;
+      this.#readerTurns += 1;
     }
     await participant?.close();
   }
@@ -588,14 +657,87 @@ class Run implements RunHarness {
   async #readerBack(): Promise<void> {
     const mark = this.#readerLost;
     if (mark === undefined || this.reader.gaps() <= mark.gaps) return;
-    const deadline = Date.now() + RESYNC_WITHIN_MS;
-    for (;;) {
-      const missing = this.reader.behind(mark);
-      if (missing.length === 0) break;
-      if (Date.now() >= deadline) throw new RunFailure(`the reader did not resync within ${RESYNC_WITHIN_MS} ms of its stream's return: ${missing.join('; ')}`);
-      await sleep(RESYNC_POLL_MS);
-    }
+    await this.#until(() => this.reader.behind(mark), missing => `the reader did not resync within ${REAL_WORK_WITHIN_MS} ms of its stream's return: ${missing.join('; ')}`);
     this.#readerLost = undefined;
+  }
+
+  /** The reader's stream epoch: a new one begins whenever its stream is opened, lost or restored, or it hears a gap. */
+  #readerEpoch(): number {
+    return this.#readerTurns + this.reader.gapNotices;
+  }
+
+  /**
+   * On virtual time, what the run published that has not reached the reader yet (Hub #1711). Live delivery to a part's
+   * stream is real I/O, which a wait on virtual time outruns. Only the reader receives anything on its stream: the other
+   * parts' answers come with their calls. Nothing is waited for while its stream is away, held or closed, or in an epoch
+   * whose start no refresh has fixed yet, and what was delivered is not looked at again.
+   */
+  #undelivered(): string[] {
+    const watched = this.#watched, part = this.#part('reader');
+    if (this.#virtual === undefined || watched === undefined || watched.epoch !== this.#readerEpoch()) return [];
+    if (part.closed || part.participant === undefined || this.#away.has('reader') || this.#held.includes(part)) return [];
+    const published = this.#state.published;
+    const missing = this.reader.undelivered(published.slice(watched.from).map(({message}) => message));
+    if (missing.length === 0) watched.from = published.length;
+    return missing;
+  }
+
+  /** Waits until the reader has received what the run published, within `REAL_WORK_WITHIN_MS` of real time (Hub #1711). */
+  #delivered(): Promise<void> {
+    return this.#until(() => this.#undelivered(), missing =>
+      `the reader did not receive within ${REAL_WORK_WITHIN_MS} ms what the run published: ${missing.slice(0, 5).join('; ')}${missing.length > 5 ? `; and ${missing.length - 5} more` : ''}`);
+  }
+
+  /**
+   * The real work in flight that the parts wait on and the run's time does not bound (Hub #1711): calls waiting for their
+   * answers, a part's stream reconnecting (not one held away until the next wait), the reader's resync after its stream's
+   * return, what the run published that has not reached the reader, and, when `runBusy`, the run's own work, which its
+   * last advance reported in flight.
+   */
+  #realWork(runBusy: boolean): string[] {
+    const work: string[] = [];
+    if (runBusy) work.push('the run\'s own work');
+    if (this.#inFlight > 0) work.push(`${this.#inFlight} call${this.#inFlight === 1 ? '' : 's'} waiting for an answer`);
+    // A request or action is in flight until its answer is recorded, after the refresh that follows its call.
+    const pending = [...this.#answers].flatMap(([label, answer]) => answer === 'pending' ? [label] : []);
+    if (pending.length > 0) work.push(`the answer to ${pending.join(', ')}`);
+    for (const role of this.#away) if (!this.#held.some(part => part.role === role)) work.push(`the ${role}'s stream reconnecting`);
+    const mark = this.#readerLost;
+    if (mark !== undefined && this.reader.gaps() > mark.gaps) work.push(...this.reader.behind(mark).map(missing => `the reader: ${missing}`));
+    work.push(...this.#undelivered().map(missing => `the reader: ${missing}`));
+    return work;
+  }
+
+  /**
+   * Waits until `missing` answers nothing, looking again whenever real work changes, within `REAL_WORK_WITHIN_MS` of real
+   * time; past it, fails with `failure`'s fixed text, which names what is missing. Returns at once when nothing is.
+   */
+  async #until(missing: () => readonly string[], failure: (missing: readonly string[]) => string): Promise<void> {
+    let deadline: number | undefined;
+    for (;;) {
+      const now = missing();
+      if (now.length === 0) return;
+      deadline ??= Date.now() + REAL_WORK_WITHIN_MS;
+      if (Date.now() >= deadline) throw new RunFailure(failure(now));
+      await this.#change();
+    }
+  }
+
+  /** Resolves once real work changes, or after `RESYNC_POLL_MS` of real time when nothing said so sooner. */
+  #change(): Promise<void> {
+    return new Promise(resolve => {
+      const done = (): void => {
+        clearTimeout(timer);
+        this.#wakers.delete(done);
+        resolve();
+      };
+      const timer = setTimeout(done, RESYNC_POLL_MS);
+      this.#wakers.add(done);
+    });
+  }
+
+  #wake(): void {
+    for (const done of [...this.#wakers]) done();
   }
 
   /** Waits until the reader has resynced since `mark`, within the run's bound; past it, names what did not come back. */
@@ -609,10 +751,12 @@ class Run implements RunHarness {
     for (;;) {
       const missing = this.reader.behind(mark);
       if (missing.length === 0) return;
-      const virtualPassed = this.now() >= deadline;
-      if (virtualPassed && Date.now() >= realDeadline) throw new RunFailure(`the reader did not resync within ${withinMs} ms of the restart: ${missing.join('; ')}`);
-      if (v === undefined || virtualPassed) await sleep(RESYNC_POLL_MS);
-      // While the reader is behind, every piece reaches the run, so its reconnect over real I/O gets real time.
+      // Once its stream is back, the reader's resync is real I/O whose deadlines run on the parts' clock, which moving
+      // the run's time would run out under it: the run's time stands still until the resync or the real bound (Hub #1711).
+      const still = this.now() >= deadline || this.reader.gapNotices > mark.gaps;
+      if (still && Date.now() >= realDeadline) throw new RunFailure(`the reader did not resync within ${withinMs} ms of the restart: ${missing.join('; ')}`);
+      if (v === undefined || still) await this.#change();
+      // While the reader's stream is away, every piece reaches the run, so its reconnect over real I/O gets real time.
       else await this.#advance(v, RESYNC_POLL_MS, false);
     }
   }

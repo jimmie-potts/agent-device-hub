@@ -4,7 +4,8 @@
 import assert from 'node:assert/strict';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {test} from 'node:test';
-import {act, runScenario, scenario, type Harness} from '../../tests/scenarios/catalog.js';
+import {act, answered, expect, runScenario, scenario, type Harness} from '../../tests/scenarios/catalog.js';
+import {switchLamp} from '../../tests/fixtures/lamp.js';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {SdkError} from '@jimmie-potts/sdk';
 import {RESYNC_WITHIN_MS, RunFailure, connectRun, failureOf} from '../adapter.js';
@@ -62,6 +63,161 @@ void test('a wait after a dropped reader is back ends only once each of its copi
   for (let waited = 0; h.reader.syncs('session') < 2 && waited < 50; waited += 1) await h.wait(100);
   open();
   assert.deepEqual([h.reader.gaps(), h.reader.syncs('session'), h.reader.syncs('lamp')], [1, 2, 2], 'the wait ended with each copy synced again');
+  assert.deepEqual(h.problems(), []);
+});
+
+/** A request's URL and the source header a remote part sends, as the test process's `fetch` sees them. */
+function requestOf(input: Parameters<typeof fetch>[0], init: RequestInit | undefined): {url: string; source: string | undefined; method: string} {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  return {url, source: (init?.headers as Record<string, string> | undefined)?.['bunny-source'], method: init?.method ?? 'GET'};
+}
+
+/** A promise the test opens itself, never on a timer. */
+function gate(): {opened: Promise<void>; open: () => void} {
+  let open: () => void = () => {};
+  const opened = new Promise<void>(resolve => { open = resolve; });
+  return {opened, open};
+}
+
+/** `count` turns of the event loop: no timer and no sleep. */
+async function turns(count: number): Promise<void> {
+  for (let turn = 0; turn < count; turn += 1) await new Promise(resolve => { setImmediate(resolve); });
+}
+
+/**
+ * Wraps the test process's `fetch` until the test ends: `around` sees each request first and may hold it, and `after`
+ * sees each answer. The remote parts and the adapter call the global `fetch`, so this reaches both.
+ */
+function intercept(context: {after: (fn: () => void) => void}, around: (request: ReturnType<typeof requestOf>) => Promise<void> | void,
+  after: (request: ReturnType<typeof requestOf>, response: Response) => Response = (_request, response) => response): void {
+  const real = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const request = requestOf(input, init);
+    await around(request);
+    return after(request, await real(input, init));
+  };
+  context.after(() => { globalThis.fetch = real; });
+}
+
+/**
+ * Turns of the event loop until the run's time has passed `bound` and then stood still for a thousand turns, which an
+ * expectation in overtime gives it, or `stop()` says so.
+ */
+async function untilStill(h: Harness, bound: number, stop: () => boolean): Promise<void> {
+  for (let last = h.now(), still = 0; !stop() && still < 1000;) {
+    await turns(1);
+    still = h.now() >= bound && h.now() === last ? still + 1 : 0;
+    last = h.now();
+  }
+}
+
+// Hub #1711: live delivery to the reader's stream is real I/O. Once a wait's last refresh has seen what the run
+// published, a wait on virtual time could end in a few turns while that delivery is still on its way. The reader's
+// stream is held by a gate the test opens a thousand turns after the wait's last refresh answered.
+void test('on virtual time a wait ends only once what the run published has reached the reader', {timeout: 60_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const held = gate();
+  let armed = false, refreshed = 0;
+  intercept(context, () => {}, (request, response) => {
+    if (request.url.includes('/api/harness/v1/state')) refreshed += 1;
+    if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        if (armed) await held.opened;
+        controller.enqueue(chunk);
+      },
+    }));
+    return new Response(body, {status: response.status, headers: response.headers});
+  });
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  assert.equal(h.clock, 'virtual');
+  armed = true;
+  assert.equal(await h.dispatch('operator', 'gated', switchLamp('lamp-1', 'on'), 'req-gated'), 'accepted');
+  const published = h.published().filter(({message}) => message.kind === 'occurrence' || message.kind === 'outcome').map(({message}) => message.id);
+  assert.ok(published.length > 0, 'the switch published an occurrence or an outcome');
+  const before = refreshed;
+  let ended = false;
+  const waited = h.wait(10).finally(() => { ended = true; });
+  // Opens the gate a thousand turns after the wait's refresh answered; no timer, no sleep.
+  void (async () => {
+    while (refreshed === before && !ended) await turns(1);
+    await turns(1000);
+    held.open();
+  })();
+  await waited;
+  held.open();
+  const heard = new Set(h.reader.heard().map(({id}) => id));
+  assert.deepEqual(published.filter(id => !heard.has(id)), [], 'the wait ended with everything published heard');
+  assert.equal(copiedPower(h), 'on', 'and the reader\'s copy of the lamp shows it on');
+  assert.deepEqual(h.problems(), []);
+});
+
+const copiedPower = (h: Harness): unknown => h.reader.states<{id: string; power: unknown}>('lamp').find(state => state.data.id === 'lamp-1')?.data.power;
+
+// Hub #1711: an expectation's bound is counted in the run's time, which a wait on virtual time moves while a part's
+// reconnect, real I/O, is still on its way. The reader's reopened stream is held by a gate the test opens once the run's
+// time has passed the bound and stood still: the expectation then waits in overtime instead of failing.
+void test('on virtual time an expectation past its bound waits while a dropped reader is still reconnecting', {timeout: 60_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const held = gate();
+  let armed = false;
+  intercept(context, async request => {
+    if (armed && request.url.endsWith('/stream') && request.source === sourceOf('reader')) await held.opened;
+  });
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  assert.equal(h.clock, 'virtual');
+  await h.disconnect('reader');
+  armed = true;
+  const started = h.now();
+  let done = false;
+  const result = runScenario({id: 'overtime-reconnect', title: 'overtime', seed, steps: [
+    expect('the reader is back and synced each copy again', h => (h.reader.syncs('session') === 2 && h.reader.syncs('lamp') === 2) || 'not yet', 200),
+  ]}, h).finally(() => { done = true; });
+  await untilStill(h, started + 200, () => done);
+  held.open();
+  const {outcome, steps} = await result;
+  assert.equal(outcome, 'passed', JSON.stringify(steps));
+  assert.ok(h.now() - started < 1000, 'the run\'s time stood still past the bound');
+  assert.deepEqual(h.problems(), []);
+});
+
+// Hub #1711: the same for a call in flight: an action's answer is real I/O, which the run's time does not bound. The
+// answer is held by a gate the test opens once the run's time has passed the expectation's bound and stood still.
+void test('on virtual time an expectation past its bound waits while an action\'s answer is still on its way', {timeout: 60_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const held = gate();
+  let armed = false;
+  intercept(context, () => {}, (request, response) => {
+    if (!armed || request.method !== 'POST' || !request.url.includes('/api/v2/commands/')) return response;
+    const late = response.text().then(async text => { await held.opened; return text; });
+    return new Response(new ReadableStream<Uint8Array>({async start(controller) {
+      controller.enqueue(new TextEncoder().encode(await late));
+      controller.close();
+    }}), {status: response.status, headers: response.headers});
+  });
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  assert.equal(h.clock, 'virtual');
+  armed = true;
+  const started = h.now();
+  let done = false;
+  const result = runScenario({id: 'overtime-answer', title: 'overtime', seed, steps: [
+    act('the operator switches lamp-1 on', h => { void h.dispatch('operator', 'held', switchLamp('lamp-1', 'on'), 'req-held-answer'); }),
+    expect('its answer is accepted', h => answered(h, 'held', 'accepted'), 200),
+  ]}, h).finally(() => { done = true; });
+  await untilStill(h, started + 200, () => done);
+  held.open();
+  const {outcome, steps} = await result;
+  assert.equal(outcome, 'passed', JSON.stringify(steps));
+  assert.ok(h.now() - started < 1000, 'the run\'s time stood still past the bound');
   assert.deepEqual(h.problems(), []);
 });
 
@@ -136,6 +292,46 @@ void test('on virtual time a restart waits for a reader held past the bound of t
   assert.deepEqual([h.reader.gaps(), h.reader.syncs('session'), h.reader.syncs('lamp')], before.map(count => count + 1),
     'the reader heard of the gap and synced each copy again before the restart resolved');
   assert.equal(h.generation(), 2);
+  assert.deepEqual(h.problems(), []);
+});
+
+// Hub #1711: once a restarted reader's stream is back, its resync is real I/O whose deadline (5 s) runs on the parts'
+// clock. The run's time stands still while the resync is on its way, so the deadline cannot pass under it. The resync is
+// held by a gate the test opens once the run's time has stood still for two thousand turns, or has run on by more than
+// that deadline.
+void test('on virtual time a restart holds the run\'s time while the returned reader resyncs', {timeout: 60_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  assert.equal(h.clock, 'virtual');
+  const before = [h.reader.gaps(), h.reader.syncs('session'), h.reader.syncs('lamp')];
+  const held = gate();
+  let heldAt: number | undefined, advances = 0, armed = true;
+  intercept(context, async request => {
+    if (heldAt !== undefined && request.url.endsWith('/clock/advance')) advances += 1;
+    if (armed && request.method === 'POST' && request.source === sourceOf('reader') && request.url.endsWith('/sync')) {
+      heldAt ??= h.now();
+      await held.opened;
+    }
+  });
+  let settled = false;
+  const restarted = h.restart().finally(() => { settled = true; });
+  restarted.catch(() => {});
+  void (async () => {
+    while (heldAt === undefined && !settled) await turns(1);
+    for (let quiet = 0, seen = advances; !settled && quiet < 2000 && h.now() < (heldAt ?? 0) + 6000; seen = advances) {
+      await turns(1);
+      quiet = advances === seen ? quiet + 1 : 0;
+    }
+    held.open();
+  })();
+  await restarted;
+  armed = false;
+  held.open();
+  assert.equal(advances, 0, 'the run\'s time did not move while the resync was held');
+  assert.deepEqual([h.reader.gaps(), h.reader.syncs('session'), h.reader.syncs('lamp')], before.map(count => count + 1));
   assert.deepEqual(h.problems(), []);
 });
 

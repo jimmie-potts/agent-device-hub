@@ -206,6 +206,22 @@ export interface Harness {
    * same state directory afterwards.
    */
   hook(payload: HookPayload, options?: {runtime?: 'running' | 'stopped'}): Promise<HookRun>;
+  /**
+   * Only a harness on virtual time whose real work runs outside its clock, as a disposable run's does (Hub #1711): what
+   * an expectation does once its bound has passed in the harness's time while its check still fails. The expectation
+   * fails only once no such work is in flight, or the work has stayed in flight for a bound of real time.
+   */
+  overtime?(): Overtime | undefined;
+}
+
+/** An expectation's time past its bound, in which the harness's time stands still while real work is in flight (Hub #1711). */
+export interface Overtime {
+  /**
+   * Waits, without moving the harness's time, until some of the real work in flight ends, and resolves `true` to have
+   * the check look again; `false` when no such work is in flight; or, once the work has stayed in flight for the bound of
+   * real time, fixed text naming what is still in flight.
+   */
+  next(): Promise<true | false | string>;
 }
 
 // Steps
@@ -278,10 +294,18 @@ async function attempt(check: () => Outcome | Promise<Outcome>): Promise<Outcome
 }
 
 async function poll(h: Harness, check: Check, withinMs: number): Promise<Outcome> {
+  let overtime: Overtime | undefined;
   for (let waited = 0; ; waited += POLL_MS) {
     const outcome = await attempt(() => check(h));
-    if (outcome === true || waited >= withinMs) return outcome;
-    await h.wait(POLL_MS);
+    if (outcome === true) return outcome;
+    if (waited < withinMs) {
+      await h.wait(POLL_MS);
+      continue;
+    }
+    // The bound never passes on the harness's time alone while real work the check may wait on is still in flight.
+    overtime ??= h.overtime?.();
+    const more = overtime === undefined ? false : await overtime.next();
+    if (more !== true) return more === false ? outcome : `${outcome}; ${more}`;
   }
 }
 
