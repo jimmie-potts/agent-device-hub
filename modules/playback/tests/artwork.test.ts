@@ -25,7 +25,7 @@ function setup(decode?: (bytes: Uint8Array, signal: AbortSignal) => Promise<Artw
     onDiagnostic: record => { diagnostics.push(record); }});
   const view = (extra: Partial<ArtworkPresentation> = {}, title = 'A'): ArtworkPresentation => ({index: 0, kind: 'sony', endpoint: ENDPOINT,
     availability: 'available', observation: {status: 'playing', title, thumbnailUrl: `${ENDPOINT}/image`}, ...extra});
-  return {controller, signal, view, diagnostics, fetches: () => fetches, changes: () => changes,
+  return {controller, signal, view, diagnostics, fetches: () => fetches, changes: () => changes, after: (ms: number, callback: () => void) => scheduler.after(ms, callback),
     failFetch: () => { fetchResult = artworkFailure('unavailable', true); },
     hardFetch: () => { fetchResult = artworkFailure('capacity'); },
     advance: async (ms: number) => {
@@ -135,18 +135,25 @@ void test('a replacement that fails withdraws the held image after its attempts;
   assert.equal(run.changes(), 6);
 });
 
-for (const failure of ['immediate', 'deadline'] as const) {
+for (const failure of ['immediate', 'deadline', 'longest'] as const) {
   void test(`a held image under a failing ${failure} replacement ends at missing after the third attempt, never later (#1758)`, async () => {
     // Same association, new reference: the held image stays only for the bounded attempts. Immediate transient failures
-    // end at 0 + 2 s + 4 s; fetches that hang to their 2 s deadline end at 2 + 2 + 2 + 4 + 2 = 12 s.
+    // end at 0 + 2 s + 4 s; fetches that hang to their 2 s deadline end at 2 + 2 + 2 + 4 + 2 = 12 s. The longest case is a
+    // fetch that answers 1 ms inside its 2 s deadline and a decode that hangs to its own 2 s deadline: three attempts of
+    // 3.999 s plus the 2 s and 4 s waits end at 17.997 s.
     let failing = false;
-    const run = setup(imageOf, () => failing ? (failure === 'immediate' ? Promise.resolve(artworkFailure('unavailable', true)) : new Promise(() => {}))
-      : Promise.resolve({ok: true, value: new Uint8Array([1])}));
+    const ok = (): ArtworkResult<Uint8Array> => ({ok: true, value: new Uint8Array([1])});
+    const run = setup(bytes => failing && failure === 'longest' ? new Promise(() => {}) : imageOf(bytes), () => {
+      if (!failing) return Promise.resolve(ok());
+      if (failure === 'immediate') return Promise.resolve(artworkFailure('unavailable', true));
+      if (failure === 'deadline') return new Promise(() => {});
+      return new Promise(resolve => { run.after(1999, () => { resolve(ok()); }); });
+    });
     run.controller.update(run.view()); await flush();
     const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
     failing = true;
     run.controller.update(run.view({observation: {status: 'playing', title: 'A', thumbnailUrl: `${ENDPOINT}/second`}})); await flush();
-    const end = failure === 'immediate' ? 6000 : 12_000;
+    const end = failure === 'immediate' ? 6000 : failure === 'deadline' ? 12_000 : 17_997;
     await run.advance(end - 1);
     assert.deepEqual(run.controller.snapshot(), ready);
     await run.advance(1);

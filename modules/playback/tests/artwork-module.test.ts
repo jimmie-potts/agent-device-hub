@@ -84,9 +84,7 @@ test('a speaker alternating two forms of one image publishes it once; a track ch
     speakers.candidate = forms[flip % 2];
     await h.advance(2000);
   }
-  const during = h.records().slice(before);
-  assert.deepEqual(during.filter(record => JSON.stringify(record.artwork) !== JSON.stringify(ready)), [],
-    'no flip published missing or the image again');
+  assert.deepEqual(h.records().slice(before), [], 'no flip published a record: not missing, not the image again, not a new revision');
   const artworkChanges = (records: ReturnType<typeof h.records>) => records.filter((record, index) =>
     index === 0 || JSON.stringify(record.artwork) !== JSON.stringify(records[index - 1]?.artwork)).map(record => record.artwork);
   assert.equal(artworkChanges(h.records()).filter(artwork => artwork?.status === 'ready').length, 1, 'the image was published once');

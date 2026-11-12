@@ -297,7 +297,7 @@ The playback owner SHALL provide its current bounded normalized PNG through its 
 - **AND** it returns missing content once a different image is published, the replacement's attempts are exhausted, the reference is absent or refused, or the generation changes
 
 #### Scenario: Observation moves before publication
-- **WHEN** the owner has moved to another observation or generation while the committed record still identifies earlier artwork
+- **WHEN** the owner has moved to another track, player status or presented source, or to a new generation, while the committed record still identifies earlier artwork
 - **THEN** the earlier reference returns missing content until the exact current ready record and private snapshot agree
 
 #### Scenario: Generation persists while the record changes
