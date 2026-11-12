@@ -349,7 +349,16 @@ restart that no probe sees leaves the Pixoo on its own picture for at most that
 long (#1765). Each refresh is one upload and moves the device record's
 `lastTransmission`; the display record does not change. None is sent during a
 moment or a Now Playing card, under external control, while Media plays, while a
-failed write holds the status base or with the screen off.
+failed write holds the status base or with the screen off. A recovery that comes
+while the status picture is already on its way to the device sends nothing more.
+
+A refresh that fails with no prior effects, whatever its code, changed nothing on
+the device. It holds nothing: the status base keeps reporting the picture the
+device last acknowledged, and the refresh is tried again 5 minutes after the
+failure. A device that keeps failing therefore gets at most 12 attempts an hour.
+A refresh whose effects are possible is held like any other failed status write.
+A changed picture that fails to send is held as before, until a mode or player
+command, or until the device answers again after it was unavailable.
 
 ### Moments
 

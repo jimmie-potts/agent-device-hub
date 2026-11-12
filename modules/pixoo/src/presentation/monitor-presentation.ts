@@ -109,6 +109,10 @@ export class MonitorPresentation {
  private lastStart=-Infinity;
  /** When the device last acknowledged the status base's own picture, which the refresh counts from; null before any. */
  private statusSentAt:number|null=null;
+ /** When a refresh last failed with no prior effects: the next is tried STATUS_REFRESH_MS after it, not at every tick. */
+ private refreshFailedAt:number|null=null;
+ /** The key of the status picture whose write is in flight, which already serves as a recovery's resend. */
+ private statusWriting:string|null=null;
  /** The last submitted frame's source: a dashboard rendition or a card. */
  private lastFrame='';
  private playback:PlaybackSourceStatus={source:'unavailable',view:{card:false}};
@@ -165,7 +169,8 @@ export class MonitorPresentation {
    // again (Hub #1757, #1765). Only the status base's own picture: never a moment's, a card's or another owner's.
    const recoveries=player.probeRecoveries();
    const returned=this.heard_.availability==='offline'&&state.availability==='available'||recoveries!==this.heard_.recoveries;
-   if(returned&&this.active&&this.lastFrame.startsWith('dashboard:'))this.lastFrame='';
+   // A status picture already on its way to the device answers for the recovery, so it is not sent twice.
+   if(returned&&this.active&&this.lastFrame.startsWith('dashboard:')&&this.statusWriting!==this.lastFrame)this.lastFrame='';
    this.heard_={availability:state.availability,external,recoveries};
    this.settleBase();
    // Any player change the takeover did not make, or screen-off, is the user's: never resume over it.
@@ -624,8 +629,11 @@ export class MonitorPresentation {
   if(this.clearArt(frame,gap))return;
   // The status base's own picture, unchanged and already sent, goes once more after STATUS_REFRESH_MS from its last
   // acknowledged send, so a restart no probe saw is repaired (Hub #1765). Never a moment's, a card's or a kept picture.
-  if(this.active&&frame!==null&&!frame.card&&frame.moment===undefined&&frame.retained!==true&&frame.key===this.lastFrame&&!this.inFlight
-   &&this.statusSentAt!==null&&this.clock()-this.statusSentAt>=STATUS_REFRESH_MS)this.lastFrame='';
+  // A refresh that failed with no prior effects is tried again STATUS_REFRESH_MS after that failure.
+  const refreshFrom=Math.max(this.statusSentAt??-Infinity,this.refreshFailedAt??-Infinity);
+  const refresh=this.active&&frame!==null&&!frame.card&&frame.moment===undefined&&frame.retained!==true&&frame.key===this.lastFrame&&!this.inFlight
+   &&this.statusSentAt!==null&&this.clock()-refreshFrom>=STATUS_REFRESH_MS;
+  if(refresh)this.lastFrame='';
   if(!frame||frame.retained===true||this.inFlight||frame.key===this.lastFrame||this.clock()-this.lastStart<gap)return;
   this.momentWrite=false;
   const {moment}=frame;
@@ -648,6 +656,7 @@ export class MonitorPresentation {
    &&observation===this.observation()&&playback===JSON.stringify(this.playback)
    &&(this.active?this.popupUntil>this.clock()&&!this.attention():this.takeover===takeover&&takeover!==null&&this.clock()<takeover.until);
   const write=frame.card?{abort,current,key:frame.key}:null;this.cardWrite=write;
+  if(write===null&&moment===undefined)this.statusWriting=frame.key;
   this.inFlight=true;this.lastStart=this.clock();this.lastFrame=frame.key;this.onChange();
   const upload=this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration,
    moment!==undefined?{current,whileStopped:moment.over==='status',...(moment.delayMs===undefined?{}:{artDelayMs:moment.delayMs})}
@@ -672,11 +681,14 @@ export class MonitorPresentation {
    // A status write that failed holds the status base, even when its own uncertainty already paused the player and so
    // retired its generation; one a newer player change cancelled before it had any effect does not.
    const superseded=result===undefined||!result.ok&&(result.code==='cancelled'||result.code==='stale-generation')&&result.priorEffects==='none';
+   // A refresh that failed with no prior effects changed nothing on the device: the picture it last acknowledged stays
+   // the status base's, nothing is held, and the refresh is tried again later (Hub #1765). An uncertain one is held.
+   if(refresh&&result!==undefined&&!result.ok&&result.priorEffects==='none'){this.refreshFailedAt=this.clock();return;}
    if(!sent&&(generation===this.generation||!superseded))this.holdStatus();
   }).catch(()=>{
    if(takeover){if(this.takeover===takeover)this.dropTakeover();return;}
    this.lastOutcome={generation,renditionGeneration,status:'failed',code:'operation-failed'};if(generation===this.generation)this.holdStatus();
-  }).finally(()=>{if(this.cardWrite===write)this.cardWrite=null;this.inFlight=false;this.onChange();});
+  }).finally(()=>{if(this.cardWrite===write)this.cardWrite=null;if(this.statusWriting===frame.key)this.statusWriting=null;this.inFlight=false;this.onChange();});
  }
  async close(){
   if(this.closed)return;
