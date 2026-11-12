@@ -255,7 +255,7 @@ The playback owner SHALL acquire optional Sony or Sonos artwork independently of
 
 ### Requirement: Artwork follows the presented observation
 
-Artwork SHALL carry an opaque generation that changes on a presented source or reported track change, loss of the eligible playing/paused session, unavailable playback or restart. A generation SHALL persist through duplicate polls, playing/paused transitions and freshness-only changes. Candidate replacement SHALL invalidate earlier pending results even within the same generation. The owner SHALL retain only current artwork, deduplicate acquired candidates and permit at most three transient attempts per candidate and generation, spaced by bounded backoff. A later candidate after absent content SHALL be eligible for acquisition. Image completion SHALL NOT refresh metadata evidence or trigger a new-track presentation. Sonos SHALL acquire only its own candidate and SHALL NOT inherit Sony artwork; Sony SHALL NOT inherit Sonos artwork. Either source without a usable candidate SHALL publish missing artwork. Metadata that the receiver has not yet reported SHALL NOT be inferred.
+Artwork SHALL carry an opaque generation that changes on a presented source or reported track change, loss of the eligible playing/paused session, unavailable playback or restart. A generation SHALL persist through duplicate polls, playing/paused transitions and freshness-only changes. Candidate replacement SHALL invalidate earlier pending results even within the same generation. Within one generation, a ready image SHALL remain current only while the first admissible replacement candidate after it makes its first acquisition attempt. Only an acquired image that differs from it in media type, dimensions or bytes SHALL replace it, and an acquired image equal to it SHALL publish nothing. Missing artwork SHALL be published at once when that attempt fails, or when an absent or refused reference or another reference arrives before the replacement is confirmed. So a ready image that the current reference has not confirmed SHALL NOT outlast one bounded acquisition attempt. The owner SHALL retain only current artwork, deduplicate acquired candidates and permit at most three transient attempts per candidate and generation, spaced by bounded backoff. A later candidate after absent content SHALL be eligible for acquisition. Image completion SHALL NOT refresh metadata evidence or trigger a new-track presentation. Sonos SHALL acquire only its own candidate and SHALL NOT inherit Sony artwork; Sony SHALL NOT inherit Sonos artwork. Either source without a usable candidate SHALL publish missing artwork. Metadata that the receiver has not yet reported SHALL NOT be inferred.
 
 #### Scenario: Late artwork after a handoff
 - **WHEN** Sony artwork is pending and Sonos becomes presented with identical text
@@ -264,6 +264,19 @@ Artwork SHALL carry an opaque generation that changes on a presented source or r
 #### Scenario: Same observation receives artwork later
 - **WHEN** duplicate metadata initially lacks a candidate and later reports one
 - **THEN** the current generation can become ready without changing the track, freshness evidence or presentation timer
+
+#### Scenario: Another reference to the same image
+- **WHEN** a receiver alternates between two references that yield the same normalized image while the generation is unchanged, and each reference is confirmed before the next arrives
+- **THEN** the ready image stays current without a `missing` state, and no new record revision is published for the alternation
+
+#### Scenario: A same-generation replacement fails
+- **WHEN** a ready image is held and the first acquisition attempt for the receiver's new admissible reference fails
+- **THEN** missing artwork is published when that attempt fails, at the latest when its fetch and decode deadlines expire
+- **AND** later attempts for that reference proceed from missing artwork
+
+#### Scenario: A replacement is superseded before it is confirmed
+- **WHEN** a ready image is held for a replacement reference and the receiver reports another reference before that replacement is confirmed
+- **THEN** missing artwork is published at once, however often the reference keeps changing, and a stale completion cannot restore an image
 
 #### Scenario: Stop and restart
 - **WHEN** the module stops while fetching or decoding and then restarts
@@ -284,7 +297,12 @@ The playback owner SHALL provide its current bounded normalized PNG through its 
 - **THEN** they receive the same bounded PNG without another acquisition, decode, state publication or command
 
 #### Scenario: Replacement precedes publication
-- **WHEN** the owner has moved to another candidate or observation while the committed record still identifies earlier artwork
+- **WHEN** the owner is making the first acquisition attempt for a same-generation replacement candidate while the committed record still identifies the held ready image
+- **THEN** the held image's reference stays readable, because the record and the owner's current artwork still agree
+- **AND** it returns missing content once a different image is published, that attempt fails, another reference supersedes the replacement, the reference is absent or refused, or the generation changes
+
+#### Scenario: Observation moves before publication
+- **WHEN** the owner has moved to another track, player status or presented source, or to a new generation, while the committed record still identifies earlier artwork
 - **THEN** the earlier reference returns missing content until the exact current ready record and private snapshot agree
 
 #### Scenario: Generation persists while the record changes

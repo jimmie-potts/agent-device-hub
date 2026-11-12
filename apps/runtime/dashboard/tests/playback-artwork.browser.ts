@@ -409,9 +409,10 @@ try {
         }
         const operation = await card.getByRole('status').innerText();
         await textAndControls(`Image ${kind}`, operation); await shot(`playback-${kind}-${new URL(page.url()).hash.includes('/music/') ? 'music' : 'home'}`);
-        // Another eligible revision/image request is independent of the already recorded command outcome.
+        // Another eligible revision/image request is independent of the already recorded command outcome. The replacement
+        // is a different image: another reference to the same image publishes no new revision (#1758).
         const beforeReplacement = await current({title: `Image ${kind}`, artwork: 'ready'});
-        speakers.candidate = `/synthetic-browser-${++serial}-blue.png`;
+        speakers.candidate = `/synthetic-browser-${++serial}-red.png`;
         const next = await current({title: `Image ${kind}`, artwork: 'ready', after: beforeReplacement.revision});
         assert.equal(next.artwork?.generation, beforeReplacement.artwork?.generation); assert.notEqual(pathOf(next), pathOf(beforeReplacement));
         await page.waitForFunction(path => {const img = document.querySelector<HTMLImageElement>('article[aria-label="Music living-room"] img');

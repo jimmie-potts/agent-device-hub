@@ -30,6 +30,8 @@ export class ArtworkController {
   #running = false;
   #retry: (() => void) | undefined;
   #failure: ErrorCode | undefined;
+  /** Whether the ready image is held while the first replacement after it is acquired, so the current reference has not confirmed it. */
+  #holding = false;
 
   constructor(options: ArtworkControllerOptions) {
     this.#options = options;
@@ -75,10 +77,18 @@ export class ArtworkController {
     const raw = observation.thumbnailUrl;
     const identity = artworkIdentity(raw, view.kind);
     if (identity !== this.#candidateIdentity) {
+      const superseded = this.#holding;
       this.#clear();
       this.#candidateIdentity = identity;
-      this.#artwork = {status: 'missing', generation: this.#artwork.generation};
       const url = artworkUrl(raw, view.endpoint, view.kind);
+      // A ready image here was acquired for this same association: an association change above has already made it
+      // `missing` under a new generation. It is held only while the first admissible replacement after it makes its first
+      // attempt, and an acquired image equal to it publishes nothing, so a receiver that alternates two references to one
+      // image publishes that image once (#1758). An absent or refused reference, a reference that supersedes an
+      // unconfirmed replacement, and a failed attempt all report `missing`, as before: an unconfirmed image never outlasts
+      // one bounded attempt (the fetch and decode deadlines).
+      if (this.#artwork.status === 'ready' && url !== undefined && !superseded) this.#holding = true;
+      else this.#artwork = {status: 'missing', generation: this.#artwork.generation};
       if (url !== undefined) this.#candidate = {source: view.kind, url, endpoint: view.endpoint, generation: this.#artwork.generation, sequence: this.#sequence, attempts: 0};
       else if (raw !== undefined) this.#failed('unsupported-capability', 0, view.kind);
     }
@@ -89,6 +99,7 @@ export class ArtworkController {
     this.#sequence += 1;
     this.#candidate = undefined;
     this.#candidateIdentity = undefined;
+    this.#holding = false;
     this.#retry?.();
     this.#retry = undefined;
   }
@@ -131,7 +142,7 @@ export class ArtworkController {
 
   #start(): void {
     const candidate = this.#candidate;
-    if (this.#running || this.#retry !== undefined || candidate === undefined || !this.#current(candidate) || candidate.exhausted === true || candidate.attempts >= 3 || this.#artwork?.status === 'ready') return;
+    if (this.#running || this.#retry !== undefined || candidate === undefined || !this.#current(candidate) || candidate.exhausted === true || candidate.attempts >= 3) return;
     this.#running = true;
     candidate.attempts += 1;
     void this.#acquire(candidate).then(result => {
@@ -141,11 +152,24 @@ export class ArtworkController {
           this.#options.onDiagnostic?.({kind: 'recovery', code: this.#failure, attempts: candidate.attempts, source: candidate.source});
           this.#failure = undefined;
         }
+        // The candidate is acquired; it is not acquired again until a different one replaces it.
+        this.#candidate = undefined;
+        this.#holding = false;
+        const held = this.#artwork;
+        if (held?.status === 'ready' && held.mediaType === result.value.mediaType && held.width === result.value.width
+          && held.height === result.value.height && held.base64 === result.value.base64) return;
         this.#artwork = {status: 'ready', generation: candidate.generation, ...result.value};
         this.#options.onChange();
       } else {
         const code: ErrorCode = result.code === 'unsupported' ? 'unsupported-capability' : result.code === 'invalid-response' ? 'invalid-state' : result.code;
         this.#failed(code, candidate.attempts, candidate.source);
+        // The held image was not confirmed for the reference the receiver reports now, so it is withdrawn. Consumers hear
+        // of it only after the retry bookkeeping, so one that re-enters update() clears this candidate's retry.
+        const withdrawn = this.#holding;
+        if (withdrawn) {
+          this.#holding = false;
+          this.#artwork = {status: 'missing', generation: candidate.generation};
+        }
         if (code === 'unavailable' && result.transient && candidate.attempts < 3) {
           this.#options.onDiagnostic?.({kind: 'retry', code, attempts: candidate.attempts, source: candidate.source});
           this.#retry = this.#options.scheduler.after(candidate.attempts === 1 ? 2000 : 4000, () => {
@@ -156,6 +180,7 @@ export class ArtworkController {
           candidate.exhausted = true;
           this.#options.onDiagnostic?.({kind: 'exhausted', code, attempts: candidate.attempts, source: candidate.source});
         }
+        if (withdrawn) this.#options.onChange();
       }
     }).finally(() => {
       this.#running = false;
