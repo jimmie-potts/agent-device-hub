@@ -65,7 +65,7 @@ void test('on the real clock a run\'s MicroDuck device and remote module keep pr
   const device = run.create({now: Date.now, scheduler: still});
   assert.equal(sensorOf(device), '5001000000', 'the device stamps its sensor with hrtime');
   // The module judges that stamp fresh only on the same clock: on the wall clock it would be decades old.
-  assert.equal(await connection(context, run.remote(linkTo(device)), new TestClock(), async () => { context.mock.timers.tick(100); }), 'available',
+  assert.equal(await connection(context, run.remote(linkTo(device)), new TestClock(), () => { context.mock.timers.tick(100); return Promise.resolve(); }), 'available',
     'the module without options reads hrtime and polls on real timers');
 });
 
