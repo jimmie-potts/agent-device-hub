@@ -31,6 +31,7 @@ import {PlaybackWorkspace} from './playback-workspace.tsx';
 import {BuildIdentity} from './build-identity.tsx';
 import {FRONTENDS} from '@bunny/module-frontends';
 import {ModuleFrontend, ModulePageView} from './module-page.tsx';
+import {moduleCard} from './module-cards.ts';
 import {PixooDisplay} from '@jimmie-potts/pixoo/frontend';
 import {TidbytDisplay} from '@jimmie-potts/tidbyt/frontend';
 import {WisprWidget} from '@jimmie-potts/wispr/frontend';
@@ -198,12 +199,12 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const known = route.kind === 'habitat' || route.kind === 'devices' || route.kind === 'settings' || route.kind === 'audio' || route.kind === 'visualizer' || route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
   const contextModule = route.kind === 'module' ? selectedModule : route.kind === 'lighting-brand' ? runtime.modules?.find(module => module.name === route.brand)
     : route.kind === 'component' ? runtime.modules?.find(module => devices.some(device => device.record.id === route.id && device.copy.owner === `bunny/modules/${module.name}`)) : undefined;
-  const deviceCard = ({record, copy}: (typeof devices)[number]): React.ReactNode => (record.kind === 'pixoo' && copy.owner === 'bunny/modules/pixoo' && runtime.modules?.some(module => module.name === 'pixoo' && module.serves.includes('pixoo-display')) === true && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <>
+  const deviceCard = ({record, copy}: (typeof devices)[number]): React.ReactNode => (moduleCard(runtime.modules, copy.owner, record.kind) === 'pixoo' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <>
             <ModuleFrontend module="pixoo" connection={connection} connected={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed}
               control={runtime.control} operations={operations} operationsLive={operationsLive} Component={PixooDisplay}/>
             {route.kind === 'component' && <details><summary>Advanced device controls</summary><DeviceCard record={record} owner={copy.owner}
               live={state.feed === 'connected' && copy.synced} control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now}/></details>}
-          </> : record.kind === 'tidbyt' && copy.owner === 'bunny/modules/tidbyt' && runtime.modules?.some(module => module.name === 'tidbyt' && module.state === 'running' && module.pages.some(page => page.id === 'display')) === true && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <><ModuleFrontend
+          </> : moduleCard(runtime.modules, copy.owner, record.kind) === 'tidbyt' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <><ModuleFrontend
             module="tidbyt" connection={connection} connected={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed}
             control={false} operations={operations} operationsLive={operationsLive} Component={TidbytDisplay}/>
             {route.kind === 'component' && <details><summary>Device evidence</summary><DeviceCard record={record} owner={copy.owner}

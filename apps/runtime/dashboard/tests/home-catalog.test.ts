@@ -40,7 +40,7 @@ void test('width-only placements show stated shapes, and an explicit save stores
     [{widget: 'sessions', size: 'medium', hidden: false}, 'large-square'], [{widget: 'timeline', size: 'medium', hidden: false}, 'tall'],
     [{widget: 'light:device:lamp', size: 'medium', hidden: false}, 'tall'], [{widget: 'light:room:office', size: 'large', hidden: false}, 'large-square'],
     [{widget: 'light:device:lamp', size: 'small', hidden: false}, 'square'], [{widget: 'device:bunny/modules/roborock:vacuum', size: 'small', hidden: false}, 'square'],
-    [{widget: 'device:bunny/modules/pixoo:pixoo-1', size: 'large', hidden: false}, 'square'], [{widget: 'wispr', size: 'medium', hidden: false}, 'square'],
+    [{widget: 'device:bunny/modules/pixoo:pixoo-1', size: 'large', hidden: false}, 'large-square'], [{widget: 'device:bunny/modules/pixoo:pixoo-1', size: 'medium', hidden: false}, 'square'], [{widget: 'wispr', size: 'medium', hidden: false}, 'square'],
     [{widget: 'art', size: 'medium', hidden: false, art: {format: 'banner', pinned: true}}, 'wide'], [{widget: 'art', size: 'medium', hidden: false, art: {format: 'auto', pinned: true}}, 'large-square'],
     [{widget: 'music-visualizer', size: 'large', hidden: false}, 'large-square'],
     // A saved shape wins when the card offers it; one it no longer offers converts like a width.
@@ -67,8 +67,12 @@ void test('every Home card offers only shapes from the catalog, with an existing
     if (shapes.generic.length > 0 && widget.id !== 'volcano') assert.match(shapes.open ?? '', /^#\//, widget.id);
   }
   assert.deepEqual(homeCardShapes({id: 'inbox', source: {kind: 'core'}}).shapes, ['wide', 'tall', 'large-square']);
-  assert.deepEqual(homeCardShapes({id: 'device:bunny/modules/pixoo:pixoo-1', source: {kind: 'device', owner: 'bunny/modules/pixoo', instance: 'pixoo-1'}}),
-    {shapes: ['square'], standard: 'square', generic: ['square'], open: '#/component/pixoo-1'});
+  // Pixoo, Tidbyt and Wispr draw compact content of their own in every shape (#1672 PR B); Wemo keeps the generic face.
+  for (const owner of ['pixoo', 'tidbyt']) assert.deepEqual(homeCardShapes({id: `device:bunny/modules/${owner}:d`, source: {kind: 'device', owner: `bunny/modules/${owner}`, instance: 'd'}}),
+    {shapes: ['square', 'wide', 'tall', 'large-square'], standard: 'square', generic: [], open: '#/component/d'});
+  assert.deepEqual(homeCardShapes({id: 'wispr', source: {kind: 'core'}}), {shapes: ['square', 'wide', 'tall', 'large-square'], standard: 'square', generic: [], open: '#/module/wispr/analytics'});
+  assert.deepEqual(homeCardShapes({id: 'device:bunny/modules/wemo:plug', source: {kind: 'device', owner: 'bunny/modules/wemo', instance: 'plug'}}),
+    {shapes: ['square'], standard: 'square', generic: ['square'], open: '#/component/plug'});
   assert.deepEqual(homeCardShapes({id: 'music:bunny/modules/playback:room', source: {kind: 'music', owner: 'bunny/modules/playback', instance: 'room'}}).open, '#/music/room');
   assert.deepEqual(homeCardShapes({id: 'light:room:office', source: {kind: 'light', selection: {kind: 'room', id: 'office'}}}).shapes, ['square', 'wide', 'tall', 'large-square']);
 });
@@ -81,6 +85,23 @@ void test('a room or group with no lights offers one-row shapes and shows a save
     const card: HomeCardDefinition = {...empty, name: 'Office', category: 'Rooms', sizes: ['medium', 'large'], defaultSelected: false};
     assert.equal(withShapes({desktop: [entry], phone: []}, [card]).desktop[0]?.shape, shape, `a save keeps ${shape}`);
   }
+});
+void test('a module card that cannot draw its compact content shows the generic face in one unit and a save keeps its shape', () => {
+  const pixoo = {kind: 'pixoo', id: 'pixoo-1'};
+  const record = {owner: 'bunny/modules/pixoo', family: 'device', synced: true, records: [{id: pixoo.id, kind: pixoo.kind, availability: 'available'}]} as unknown as RuntimeData['copies'][number];
+  const serving: RuntimeData = {...runtime, modules: [{name: 'pixoo', state: 'running', serves: ['device', 'pixoo-display'], pages: []}], copies: [record]};
+  const id = 'device:bunny/modules/pixoo:pixoo-1', entry: HomePlacement = {widget: id, size: 'small', hidden: false, shape: 'tall'};
+  const shown = homeCatalog(serving, true).find(card => card.id === id);assert.ok(shown !== undefined);
+  assert.equal(shown.fallback, undefined);assert.equal(shapeOf(entry, shown), 'tall');
+  // Without the module's display contribution main.tsx mounts no module card, so Home shows the generic face.
+  const plain = homeCatalog({...serving, modules: [{name: 'pixoo', state: 'running', serves: ['device'], pages: []}]}, true).find(card => card.id === id);assert.ok(plain !== undefined);
+  assert.equal(plain.fallback, true);assert.deepEqual(homeCardShapes(plain), {shapes: ['square'], standard: 'square', generic: ['square'], open: '#/component/pixoo-1'});
+  assert.equal(shapeOf(entry, plain), 'square');
+  assert.equal(withShapes({desktop: [entry], phone: []}, [plain]).desktop[0]?.shape, 'tall', 'a save keeps the stored shape');
+  // An unavailable Wispr shows the generic face and keeps its stored shape too.
+  const wispr = homeCatalog(runtime, true).find(card => card.id === 'wispr');assert.ok(wispr !== undefined);
+  assert.equal(wispr.fallback, true);assert.equal(shapeOf({widget: 'wispr', size: 'medium', hidden: false, shape: 'wide'}, wispr), 'square');
+  assert.equal(withShapes({desktop: [{widget: 'wispr', size: 'medium', hidden: false, shape: 'wide'}], phone: []}, [wispr]).desktop[0]?.shape, 'wide');
 });
 void test('Roborock keeps existing device placements and offers an unavailable source without a duplicate', () => {
   const catalog = homeCatalog(runtime, true), missing = catalog.find(value => value.id === 'module:roborock');

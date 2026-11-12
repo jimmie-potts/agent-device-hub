@@ -1,7 +1,7 @@
 // Type-only browser entry for fixed, shipped React contributions (Hub #932). Import no Node module implementation.
 import type {ComponentType, ReactNode} from 'react';
 import type {ErrorBody} from '@jimmie-potts/event-contracts/v2/errors';
-import type {Mode, SessionRecord, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {HomeShape, Mode, SessionRecord, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {SpeechEndpointControl, SpeechOutput, SpeechPlayback} from '@jimmie-potts/event-contracts/v2/companions';
 import type {RemoteEndpointOptions, RequestResult, SyncHandler, SyncResult} from './remote.js';
 import type {TraceContext} from './sdk.js';
@@ -54,6 +54,13 @@ export type FrontendUi = {
   ModeChoice?: ComponentType<{target: string}>;
 };
 
+/**
+ * Where the shell renders a module's card (#1672): the Home card shape and that card's outer size in CSS pixels, which
+ * the shell's unit grid already knows. A card that reads it chooses compact content for the shape from these values and
+ * does not measure itself. It is a presentation hint only: it carries no source, command or permission.
+ */
+export type FrontendPresentation = {readonly shape: HomeShape; readonly width: number; readonly height: number};
+
 export type FrontendContext = {
   readonly module: string;
   readonly api: FrontendApi;
@@ -64,6 +71,11 @@ export type FrontendContext = {
   readonly operationsLive: boolean;
   /** Existing shell-owned core copies for module previews. No new subscription or source authority. */
   readonly core?: {readonly sessions: readonly SessionRecord[]; readonly sessionsLive: boolean; readonly mode: Mode | undefined; readonly modeLive: boolean};
+  /**
+   * Present only while the card is placed in a Home shape on the unit grid. Absent on module and device pages, in one
+   * column and in the Phone arrangement, where the card shows its full content. Ignoring it keeps the full card.
+   */
+  readonly presentation?: FrontendPresentation;
 };
 
 /** Export as `frontend` from a module package's explicit `./frontend` browser entry. */

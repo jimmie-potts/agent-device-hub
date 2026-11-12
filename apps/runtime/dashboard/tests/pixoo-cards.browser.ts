@@ -41,8 +41,11 @@ try {
   }
   const setupRequests = sent.length;
   await page.getByRole('link', {name: /^Home/}).click();
-  // The wide Home grid (#1672) shows Pixoo as the generic compact face; its Open link leads to the full card on the device page.
-  const open = page.locator('[data-home-compact^="device:bunny/modules/pixoo:"] a.home-compact-open');
+  // The wide Home grid (#1672 PR B) shows the Pixoo module's compact card for its shape; its options menu leads to the full
+  // card on the device page.
+  const compact = page.locator('[data-home-card^="device:bunny/modules/pixoo:"] [data-pixoo-shape]');
+  await compact.locator('summary').click();
+  const open = compact.getByRole('link', {name: 'Device details', exact: true});
   const devicePage = await open.getAttribute('href');assert.match(devicePage ?? '', /^#\/component\//);
   await open.click();
   const card = page.getByRole('article', {name: 'Pixoo display', exact: true});

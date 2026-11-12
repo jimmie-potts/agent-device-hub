@@ -22,6 +22,9 @@
 .home-card-options{position:absolute;top:100%;left:0;z-index:6;display:flex;flex-wrap:wrap;gap:4px;width:100%;box-sizing:border-box;padding:8px;background:var(--panel);border:1px solid var(--edge-dense);border-radius:0 0 var(--radius) var(--radius);box-shadow:var(--shell-shadow)}
 .home-card-options small{flex-basis:100%;color:var(--muted-dense)}
 .home-layout-grid[data-packed=true] .home-layout-card:has(.home-card-options){z-index:4}
+/* A card's open options menu can hang past its bottom edge over the next card; the card is raised while it is open so
+   every item in the menu stays on top and clickable (#1672 PR B F1). */
+.home-layout-grid[data-packed=true] .home-layout-card:has(.light-options[open]){z-index:5}
 .home-shape-choice{display:inline-flex;gap:2px}
 .home-shape-choice button{min-width:36px;padding:6px}
 .home-shape-choice button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -105,6 +108,46 @@
 .home-layout-card.home-shape-large-square .light-card :is(.light-tabs,.light-face-space){grid-column:2}
 .home-layout-card.home-shape-large-square .light-card .light-tabs button{font-size:var(--type-label);padding-inline:2px}
 .home-layout-card[data-home-shape] .light-compact .light-slider{margin:0}
+
+/* Pixoo and Tidbyt in a shape (#1672 PR B): their modules draw compact content from the shell's presentation hint and
+   these rules fit it to the card. The device artwork fills the room the text and controls leave and keeps its own
+   proportions inside it (object-fit and the SVG's own aspect ratio), so nothing depends on a measured size. One-line
+   text is cut short with its full value in its title. The light card rules above lay out Wide (artwork beside the rest). */
+.home-layout-card[data-home-shape] :is(.pixoo-compact .pixoo-artwork,.tidbyt-compact .tidbyt-compact-frame){position:relative;flex:1 1 0;min-height:48px;height:auto;margin:var(--space-xs) 0}
+.home-layout-card[data-home-shape] .pixoo-compact .pixoo-device{position:absolute;inset:var(--space-s);width:auto;height:auto;padding:0;border:0;background:transparent;box-shadow:none}
+.home-layout-card[data-home-shape] .pixoo-compact .pixoo-device :is(.pixoo-thumbnail,.pixoo-frame,svg){display:block;width:100%;height:100%;max-width:none;aspect-ratio:auto;object-fit:contain}
+.home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-artwork{display:flex;flex-direction:column;flex:1 1 0;min-height:0;margin:0;gap:0}
+.home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-compact-frame svg{position:absolute;inset:0;width:100%;height:100%}
+.home-layout-card[data-home-shape] .tidbyt-compact figcaption{text-align:center;line-height:20px}
+.home-layout-card[data-home-shape] :is(.pixoo-compact-body,.tidbyt-compact-body){display:flex;flex-direction:column;gap:var(--space-xs);min-width:0;min-height:0}
+.home-layout-card[data-home-shape] :is(.pixoo-compact .pixoo-caption,.pixoo-compact-result,.tidbyt-compact .light-note){margin:0;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-layout-card[data-home-shape] .pixoo-compact :is(.light-power,.pixoo-playback){margin:0;flex-wrap:nowrap;gap:var(--space-xs)}
+.home-layout-card[data-home-shape] .pixoo-compact .pixoo-playback>button{padding-inline:0;font-size:1.1rem}
+.home-layout-card[data-home-shape] .pixoo-compact .light-power>button{flex:1 1 0;min-width:0;padding-inline:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-layout-card[data-home-shape] .pixoo-compact-brightness .light-slider{margin:0}
+.home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-facts{gap:0}
+.home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-facts dd{margin:0 0 var(--space-xs)}
+/* Links and two-button rows share one line and shorten with an ellipsis rather than leave the card, whatever the font. */
+.home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-links{gap:var(--space-xs);flex-wrap:nowrap;min-width:0}
+.home-layout-card[data-home-shape] .tidbyt-compact .tidbyt-links a{display:block;flex:0 1 auto;min-width:0;padding-inline:var(--space-xs);line-height:calc(var(--card-target-size,44px) - 2 * var(--space-s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+:is(.home-layout-card.home-shape-wide,.home-layout-card.home-shape-large-square) .pixoo-compact .pixoo-artwork{margin:0}
+.home-layout-card.home-shape-wide :is(.pixoo-compact-body,.tidbyt-compact-body){align-self:center}
+.home-layout-card.home-shape-large-square .tidbyt-compact-body{align-self:center}
+.home-layout-card.home-shape-wide .tidbyt-compact .tidbyt-artwork{margin:0}
+/* Large square: the media is a square on top, as tall as the controls under it leave room for, and the controls follow. */
+.home-layout-card.home-shape-large-square .pixoo-compact{display:flex}
+.home-layout-card.home-shape-large-square .pixoo-compact .pixoo-artwork{flex:1 1 0;min-height:96px;height:auto;width:auto;max-width:100%;aspect-ratio:1;align-self:center;margin:var(--space-xs) 0}
+.home-layout-card.home-shape-large-square .pixoo-compact-body{align-self:stretch;display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);grid-template-areas:"caption caption" "power playback" "brightness brightness" "result result"}
+/* Screen and playback share one row, and Apply sits beside the slider, so the media keeps as much height as it can. */
+.home-layout-card.home-shape-large-square .pixoo-compact-body>.pixoo-caption{grid-area:caption}
+.home-layout-card.home-shape-large-square .pixoo-compact-body>.light-power{grid-area:power}
+.home-layout-card.home-shape-large-square .pixoo-compact-body:not(:has(>.pixoo-playback))>.light-power{grid-column:1/-1}
+.home-layout-card.home-shape-large-square .pixoo-compact-body>.pixoo-playback{grid-area:playback}
+.home-layout-card.home-shape-large-square .pixoo-compact-body>.pixoo-compact-brightness{grid-area:brightness;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:var(--space-xs)}
+.home-layout-card.home-shape-large-square .pixoo-compact-body>.pixoo-compact-result{grid-area:result}
+/* Large square stacks the Tidbyt's wide artwork over its evidence, as Tall does. */
+.home-layout-card.home-shape-large-square .tidbyt-compact{display:flex}
+.home-layout-card.home-shape-large-square .tidbyt-compact-body{align-self:stretch}
 
 /* Inbox: shorter rows on one line each, so a page and its pager fit; an opened item takes the page. */
 .home-layout-card[data-home-shape] .inbox-entry>summary{min-height:52px;padding:var(--space-xs) 0}

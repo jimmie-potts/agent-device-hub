@@ -592,6 +592,13 @@ export const sign: BunnyModule<SignConfig> = {
   Reconnection never registers it again. The browser capability stays inside the
   SDK; module code receives only the public endpoint identity.
 
+  Optional `context.presentation` is `{shape, width, height}`: the Home shape
+  (`square`, `wide`, `tall` or `large-square`) a module card is placed in and the
+  card's outer size in CSS pixels, from the shell's unit grid (#1672). It is set
+  only on the Home grid. A card may choose compact content from these values
+  instead of measuring itself; one that ignores it keeps its full content. It
+  carries no source, command or permission.
+
   `context.ui.ModeChoice`, when supplied, renders the shell's saved Work/Free/Quiet
   control for a qualified device target. It uses the shell's current mode and
   device copies, without adding module subscriptions or importing shell code.

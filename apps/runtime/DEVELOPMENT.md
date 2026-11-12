@@ -687,7 +687,22 @@ cards calculate their rows (owner decision 2026-11-11): the same journey checks
 each fixed size in `listFit` (`src/paging.ts`) against the rendered card, a
 full list leaving less than one row above its pager, one and zero Inbox items
 in each shape, and no change inside a list card for two idle seconds at six
-widths. `HOME_SHAPES_ONLY=tiles,picker,convert,paging,fit,results,short,idle,shots`
+widths. Its `modules` part places the Pixoo, Tidbyt and Wispr cards in each
+shape at the three widths and checks their own compact content (#1672 PR B):
+nothing past the card even where it hides overflow, no generic face, no blank
+band, two idle seconds without change, and a Wide Pixoo Screen off sending one
+command whose result shows on the card. With an active session it also drives
+Next, Previous, Pause and Resume in Wide and brightness Apply in Large square:
+one request each, with the full card's fields, none for moving the slider and
+one for a double click. `menus` opens the Pixoo menu in Small square and Wide
+and a light card's menu, each over the card below, and checks by pointer that
+the last item is on top; `stale` restarts the runtime and checks that the
+disabled Pixoo controls say why. The idle recorder
+(`apps/runtime/dashboard/tests/list-idle.ts`) counts every attribute write that
+changes the value, even when a later write restores it, and leaves out only a
+write of the value the attribute already had; `recorder` checks that a
+per-frame flip and restore of an attribute, `hidden` and a class is reported.
+`HOME_SHAPES_ONLY=tiles,picker,convert,paging,fit,results,short,menus,modules,recorder,idle,shots,stale`
 selects parts. `node apps/runtime/dashboard/tests/home-idle.browser.ts`, in the
 full browser suite only, sweeps every width from 1100 to 2560 px in 20 px steps
 on the built-in and two mixed layouts with 0, 1, 5, 6 and 13 Inbox items and
@@ -702,7 +717,9 @@ Synthetic records only; with `DASHBOARD_RECEIPTS` set it saves private 2x
 screenshots. Journeys that inspect a module card's full content on Home
 (companions, speech, mode overrides, Music artwork, Roborock, Volcano, Wemo,
 Tidbyt, card consistency) do so in one column, where Home keeps full cards, and
-check the generic compact face and its Open link on the wide grid.
+check the generic compact face and its Open link on the wide grid; the Pixoo,
+Tidbyt and Wispr journeys and hosted smoke check those modules' compact cards
+there instead.
 
 The television journey (#1112) runs the existing shell at a 1,920 × 1,080
 viewport from the keyboard only, as a TV browser presents the D-pad. After the

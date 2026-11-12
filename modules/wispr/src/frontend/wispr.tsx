@@ -100,5 +100,6 @@ export function WisprPage({context}:{context:FrontendContext}):React.JSX.Element
 export function WisprWidget({context}:{context:FrontendContext}):React.JSX.Element{
  const [refresh,setRefresh]=useState(0);
  const {read,error,loading}=useWispr(context,HOME,false,refresh);
- return <WisprCard summary={wisprSummary(read,error,loading,Date.now())} onRefresh={()=>setRefresh(value=>value+1)}/>;
+ // The Home shape the shell places this card in, if any (#1672 PR B).
+ return <WisprCard summary={wisprSummary(read,error,loading,Date.now())} onRefresh={()=>setRefresh(value=>value+1)} {...(context.presentation===undefined?{}:{shape:context.presentation.shape})}/>;
 }
