@@ -161,19 +161,23 @@ creates the table empty. It adds no column, changes no row, index or other
 table, and reads no history row, so the step costs the same on a store of any
 size. Opening the store again changes nothing.
 
-After the upgrade, a reading whose only change is a bookkeeping value no longer
-writes a history row or rewrites `core_history_latest`: it updates one small
-row of `core_history_span`. A change writes one history row, rewrites
-`core_history_latest` and its span row, as before plus the span row. Rows
-already stored stay as they are. The release does not measure the effect on
-the store's growth; #1774 measures it after installation.
+After the upgrade, a reading whose only change is a bookkeeping value updates
+one small row of `core_history_span` and writes no history row and no
+`core_history_latest`, with two exceptions: a reading of a polled family after
+a silence longer than its gap writes a gap row and rewrites
+`core_history_latest`, and a removal of an entity whose span holds more than its
+row's reading writes one closing row before the removal row. A change writes one
+history row and rewrites `core_history_latest`, as before, and also its span
+row. Rows already stored stay as they are. The release does not measure the
+effect on the store's growth; #1774 measures it after installation.
 
 Returning to the previous release on a store this release opened works from
 the code and focused tests: that release ignores `core_history_span`, starts,
 and writes `core_history_latest` and a row for each changed reading as before,
-in the same gapless order. Coming forward again, this release treats a span
-the previous release left behind as starting at an unknown time and keeps
-counting from there. This is not a qualified recovery, so recovery stays
+in the same gapless order. Coming forward again, this release treats the span
+of each entity whose reading the previous release took as starting at an
+unknown time and keeps counting from there; it keeps the spans of entities that
+release took no reading of. This is not a qualified recovery, so recovery stays
 unknown unless separately qualified; prefer fixing forward.
 
 ## Routine operation checklist

@@ -400,16 +400,24 @@ and exits 1, and the service manager restarts it whole.
   the entity's open span in `core_history_span` records its last confirmation
   and count. That table sits outside the rows and holds one row per entity:
   when the stretch started, when it was last confirmed, how many readings
-  history took in it, and the last revision, message ID and type a reading
-  carried. A state that differs writes a change row against the last row's
+  history took in it, the last revision, message ID and type a reading
+  carried, and the revision of the last row. A state that differs writes a change row against the last row's
   record with every member that differs, bookkeeping values included, and,
   when the stretch held more than its own row's reading, the span it closes
   (`span`: `sinceAtMs`, `lastConfirmedAtMs`, `confirmations`). A family that a
   module's registration declares in `polling` gets one gap row (`gapMs`) when a
   confirmation comes more than four polling intervals, and more than two
-  minutes, after the last one; any other family has no gap rule. A removal of
-  an entity whose span holds more than its row's reading writes a closing row
-  (`closedBy: 'removal'`, no changed member) before the removal. A count is of
+  minutes, after the last one; any other family has no gap rule. The last
+  confirmation's time never moves back when the clock does. A removal of an
+  entity whose span holds more than its row's reading first writes a closing
+  row: `closedBy: 'removal'`, no changed member, the last row's revision as both
+  `revision` and `previous`, no message ID, and the last confirmation's time
+  and count in `span`, so it claims nothing newer than the values it holds. A
+  span row keeps the revision of the last row it was written against
+  (`row_revision`); when `core_history_latest` holds another revision, a release
+  without spans took a reading of that entity, and the span restarts from an
+  unknown start (`sinceAtMs` null). A state reusing the last confirmation's
+  message ID with another state is a change, not a resend. A count is of
   readings history took, not of readings a device answered, and history no
   longer keeps each repeated reading's time. `core_history_latest` keeps its
   five columns and holds the record of each entity's last row. Spans are never

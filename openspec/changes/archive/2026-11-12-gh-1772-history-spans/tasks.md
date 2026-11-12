@@ -14,3 +14,9 @@
 - [x] 3.1 Update `apps/runtime/README.md` "History" and `apps/runtime/UPGRADE.md`.
 - [x] 3.2 Run build, typecheck, lint, the runtime, SDK, event and contract suites, the module suites for the changed registrations, the scenario catalog and the workflow checks; record the results in the pull request.
 - [x] 3.3 Sync and archive this change on the delivery branch. Independent review and a focused storage review follow; installation is #1774.
+
+## 4. Review round 1 (PR #1790)
+
+- [x] 4.1 Closing row with the last row's revision and no message ID; a removal in the rebuild test.
+- [x] 4.2 `row_revision` in the span row for the reset rule; tests for a same-revision confirmation, a repeated revision and both previous-release cases.
+- [x] 4.3 The later confirmation instant kept; a reused message ID judged by its state; the fixture core and the dashboard harness given the registrations' rules.
