@@ -98,7 +98,7 @@ export class MonitorPresentation {
   */
  private statusHeld:false|'passive'|'external'|'write';
  /** The player's availability and external control as last heard, to see each change. */
- private heard_:{availability:PlayerState['availability'];external:boolean}={availability:'unknown',external:false};
+ private heard_:{availability:PlayerState['availability'];external:boolean;recoveries:number}={availability:'unknown',external:false,recoveries:0};
  private inFlight=false;
  private lastStart=-Infinity;
  /** The last submitted frame's source: a dashboard rendition or a card. */
@@ -143,7 +143,7 @@ export class MonitorPresentation {
   this.moments=structuredClone(options.moments??defaultMoments);
   this.mode=options.mode??defaultMode;
   this.statusHeld=options.passive===true?'passive':false;
-  const initial=player.getState();this.heard_={availability:initial.availability,external:initial.lastError?.code==='external-control'};
+  const initial=player.getState();this.heard_={availability:initial.availability,external:initial.lastError?.code==='external-control',recoveries:player.probeRecoveries()};
   this.unsubscribe=player.subscribe(()=>{
    const state=player.getState();
    // A player change retires the status base's generation; it is drawn again at once under the new one if it still rests,
@@ -152,10 +152,13 @@ export class MonitorPresentation {
    const external=state.lastError?.code==='external-control';
    if(external&&!this.heard_.external){this.statusHeld='external';if(this.active)this.suspend();}
    else if(this.statusHeld==='write'&&this.heard_.availability!=='available'&&state.availability==='available')this.statusHeld=false;
-   // A device back from an outage may have restarted and show its own picture: the status base's is sent once again,
-   // since an unchanged picture is otherwise never sent again (Hub #1757).
-   if(this.active&&this.heard_.availability==='offline'&&state.availability==='available')this.lastFrame='';
-   this.heard_={availability:state.availability,external};
+   // A device back from an outage, or answering a probe again after one failed with any code, may have restarted and
+   // show its own picture: the status base's is sent once again, since an unchanged picture is otherwise never sent
+   // again (Hub #1757, #1765). Only the status base's own picture: never a moment's, a card's or another owner's.
+   const recoveries=player.probeRecoveries();
+   const returned=this.heard_.availability==='offline'&&state.availability==='available'||recoveries!==this.heard_.recoveries;
+   if(returned&&this.active&&this.lastFrame.startsWith('dashboard:'))this.lastFrame='';
+   this.heard_={availability:state.availability,external,recoveries};
    this.settleBase();
    // Any player change the takeover did not make, or screen-off, is the user's: never resume over it.
    if(this.takeover&&(state.generation!==this.takeover.generation||!state.requestedScreenOn))this.dropTakeover();
