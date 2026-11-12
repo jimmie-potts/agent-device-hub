@@ -517,7 +517,7 @@ it('after the clock steps back and stays back, an outage still writes a gap row'
   for (let at = back; at <= back + 10 * 60_000; at += 5000) take(state(plug(++revision, at)), at);
   assert.equal(rowsOf(history).length, 1, 'the backward step itself is no gap');
   const resumed = back + 10 * 60_000 + 30 * 60_000;
-  take(state(plug(++revision, resumed)), resumed);
+  take(state(plug(revision + 1, resumed)), resumed);
   const rows = rowsOf(history);
   assert.equal(rows.length, 2, 'the 30-minute outage writes one gap row');
   assert.equal(rows[1]?.record.gapMs, 30 * 60_000);
