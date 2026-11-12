@@ -57,12 +57,16 @@ export class ChildClock {
 }
 
 /**
- * The child's fixture core, the only way the child builds one: on virtual time with the monotonic clock that `clock`'s
- * test clock carries, which the child gives `runMain` (Hub #1710), and on the real clock with none. `create` builds the
- * core; a test passes its own to see the options.
+ * The options the child's fixture core is built with: on virtual time with the monotonic clock that `clock`'s test clock
+ * carries, which the child gives `runMain` (Hub #1710), and on the real clock unchanged.
  */
-export function fixtureCore(clock: ChildClock | undefined, options: FixtureCoreOptions, create: (options: FixtureCoreOptions) => CoreModule = createCoreModule): CoreModule {
-  return create(clock === undefined ? options : clock.coreOptions(options));
+export function fixtureCoreOptions(clock: ChildClock | undefined, options: FixtureCoreOptions): FixtureCoreOptions {
+  return clock === undefined ? options : clock.coreOptions(options);
+}
+
+/** The child's fixture core, the only way the child builds one, with `fixtureCoreOptions`. It takes no other factory. */
+export function fixtureCore(clock: ChildClock | undefined, options: FixtureCoreOptions): CoreModule {
+  return createCoreModule(fixtureCoreOptions(clock, options));
 }
 
 /** The child's clock from its argument: undefined on the real clock. Anything but `real` or a start time is refused. */

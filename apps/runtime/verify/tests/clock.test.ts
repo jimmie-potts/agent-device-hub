@@ -8,9 +8,7 @@ import {test} from 'node:test';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {switchLamp} from '../../tests/fixtures/lamp.js';
 import {scenario} from '../../tests/scenarios/catalog.js';
-import type {CoreModule} from '../../src/index.js';
-import type {FixtureCoreOptions} from '../../tests/fixtures/core.js';
-import {childClockOf, fixtureCore} from '../child-clock.js';
+import {childClockOf, fixtureCoreOptions} from '../child-clock.js';
 import {RunFailure, connectRun, readGrants} from '../adapter.js';
 import {HARNESS_PATH, MAX_ADVANCE_MS, type ClockState, type HarnessState} from '../protocol.js';
 import {base, startRun, type Started} from './support.js';
@@ -132,13 +130,9 @@ void test('the verification child gives the fixture core the monotonic clock its
   for (const argument of ['', 'virtual', '-1', '1.5', '01', '12345678901234567']) assert.throws(() => childClockOf(argument), {message: /clock argument/}, argument);
   const clock = childClockOf('1000');
   assert.ok(clock !== undefined);
-  // The child builds its core only through `fixtureCore`: on virtual time with the test clock's monotonic clock.
-  const built: FixtureCoreOptions[] = [];
-  const create = (options: FixtureCoreOptions): CoreModule => { built.push(options); return {} as CoreModule; };
-  fixtureCore(clock, {}, create);
-  fixtureCore(undefined, {}, create);
-  assert.equal(built[0]?.monotonic, clock.testClock.monotonic, 'the fixture core and runMain get the same monotonic clock');
-  assert.equal(built[1]?.monotonic, undefined, 'on the real clock the core keeps its own');
+  // The child builds its core only through `fixtureCore`, with these options: on virtual time the test clock's monotonic clock.
+  assert.equal(fixtureCoreOptions(clock, {}).monotonic, clock.testClock.monotonic, 'the fixture core and runMain get the same monotonic clock');
+  assert.equal(fixtureCoreOptions(undefined, {}).monotonic, undefined, 'on the real clock the core keeps its own');
   assert.equal(clock.testClock.clock.now(), 1000);
   assert.equal(clock.testClock.monotonic(), 1000);
   const answer = await clock.advance(2500, () => false);
@@ -146,7 +140,7 @@ void test('the verification child gives the fixture core the monotonic clock its
   // The child itself: its core comes from `fixtureCore` with its clock, never from the core factory directly, and its
   // test clock goes to runMain.
   const child = await readFile(new URL('../../../verify/child.ts', import.meta.url), 'utf8');
-  assert.match(child, /fixtureCore = buildCore\(clock, /, 'the child builds its core through fixtureCore with its clock');
+  assert.match(child, /fixtureCore = buildCore\(clock, scheduled\.coreOptions\(names\)\)\)/, 'the child builds its core through fixtureCore with its clock and nothing else');
   assert.doesNotMatch(child, /createCoreModule|tests\/fixtures\/core\.js/, 'the child builds no core of its own');
   assert.match(child, /testClock: clock\.testClock/, 'the child gives runMain the same clock');
 });
@@ -156,12 +150,16 @@ void test('an advance that meets an ended runtime ends at once, so the runtime\'
   // The runtime will die between the lamp's next commit and its publish.
   assert.equal((await post(new URL(`${HARNESS_PATH}/arm-crash`, run.harness), {})).status, 200);
   // Two advances queue on the run's lifecycle before the switch that kills the runtime, so its restart queues behind
-  // both: the first is under way, or about to begin, when the runtime dies, and the second begins with it gone.
+  // both: the first is under way when the runtime dies, and the second begins with it gone. The switch goes only once a
+  // clock read shows the first advance has taken a step.
+  const start = await (await fetch(clockOf(run))).json() as ClockState;
   const first = advance(run, MAX_ADVANCE_MS);
+  while ((await (await fetch(clockOf(run))).json() as ClockState).nowMs === start.nowMs) { /* read again until the first step is taken */ }
   const second = advance(run, 60_000);
   assert.equal(await switchOrLost(run, 'req-crash'), 'lost');
-  // The first advance ends at the time the runtime died, which it reached.
+  // The first advance ends at the time the runtime died, which it reached, short of its hour.
   const [died] = await Promise.all([first, second]);
+  assert.ok(died.nowMs > start.nowMs && died.nowMs < start.nowMs + MAX_ADVANCE_MS, 'the first advance ended when the runtime died');
   // An advance of nothing comes after the restart in the lifecycle queue.
   await advance(run, 0);
   const restarted = (await state(run)).logs.find(({generation, record}) => generation === 2 && record.event_name === 'runtime.started');
