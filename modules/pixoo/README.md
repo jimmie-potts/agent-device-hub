@@ -339,6 +339,46 @@ owner's own picture. A simulated Pixoo's start is passive until a mode or player
 command; a real device's start draws the status base at once when the player
 holds no item.
 
+The status base sends a picture only when it changes, with three exceptions that
+send the unchanged picture once more, each only while the status base is drawn and
+its own picture was the last one sent. The first is when the device answers again
+after it was unavailable. The second is when a probe answers after one that failed
+with any code but `cancelled` or `stale-generation`. The third is when 5 minutes
+(`STATUS_REFRESH_MS`) have passed since the device last acknowledged it, so a
+restart that no probe sees leaves the Pixoo on its own picture for at most that
+long (#1765). Each refresh is one upload and moves the device record's
+`lastTransmission`; the display record does not change. None is sent during a
+moment or a Now Playing card, under external control, while Media plays, while a
+failed write holds the status base or with the screen off. A recovery that comes
+while the status picture is already on its way to the device sends nothing more.
+
+A refresh that fails with no prior effects, whatever its code, changed nothing on
+the device. It holds nothing: the status base keeps reporting the picture the
+device last acknowledged, and the refresh is tried again 5 minutes after the
+failure. A device that keeps failing therefore gets at most 12 attempts an hour.
+A recovery heard while that refresh was on its way is not lost: the picture is
+sent once more at once, as an ordinary status write, which is held like any other
+if it fails too.
+
+While refreshes fail this way, the display record keeps reporting
+`participating: true` and `showing: 'dashboard'`. A failure with no prior effects
+did not change the panel, so it still shows the last acknowledged picture, unless
+a restart that no probe saw replaced it. Nothing can detect that case, and then the
+record is wrong until a refresh or a recovery succeeds. The failure shows in two
+places:
+- the display record's `player.lastError`, which keeps the code until a player
+  command clears it;
+- the presentation's last outcome, which the Monitor page shows as "Last monitor
+  transport".
+
+No log record is written for a failed status write. The device record's
+`lastOutcome` belongs to commands, and its `lastTransmission` stays at the last
+acknowledged send. The next successful refresh or recovery repairs the display.
+
+A refresh whose effects are possible is held like any other failed status write.
+A changed picture that fails to send is held as before, until a mode or player
+command, or until the device answers again after it was unavailable.
+
 ### Moments
 
 [ADR 0013](../../docs/decisions/0013-pixoo-moment-interludes.md) records the
