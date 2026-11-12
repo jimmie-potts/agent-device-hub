@@ -2,6 +2,7 @@
 
 Status: Stage 0 accepted on 2026-11-12; stages 1 to 4 proposed, for
 [Hub #1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723).
+The owner accepted stage 1's design on 2026-11-12, but not stage 1 itself.
 The owner accepts it one stage at a time ([Acceptance](#acceptance)). Stage 0
 changes no rule in an accepted document. Each later stage would amend the
 sentences listed under it in [Amendments by stage](#amendments-by-stage). Until
@@ -21,7 +22,7 @@ session at 2026-11-11T17:56:35Z: "We can do stage by stage."
 | Stage | Adds | Status |
 | --- | --- | --- |
 | [0](#stage-0-prerequisites) | The PC checked as a host; the fact log on the Mac (in source; not installed when stage 0 was accepted, see [#1750](https://github.com/jimmie-potts/agent-device-hub/issues/1750)) | accepted 2026-11-12: "your recommendation is good for all 7" (owner decision 6) |
-| [1](#stage-1-one-way-settings-to-a-pc-copy-that-runs-with-device-control-off) | Settings read one way from the Mac by a PC copy that runs with device control off; takeover by hand | not accepted |
+| [1](#stage-1-one-way-settings-to-a-pc-copy-that-runs-with-device-control-off) | Settings read one way from the Mac by a PC copy that runs with device control off; takeover by hand | not accepted; its design accepted 2026-11-12 (owner decision 10) |
 | [2](#stage-2-facts-in-both-directions) | Facts merged in both directions; media copied | not accepted |
 | [3](#stage-3-the-mac-preferred-lead-and-automatic-takeover) | The Mac-preferred lead and automatic takeover | not accepted |
 | [4](#stage-4-either-copy-writes-for-qualified-devices) | Either-copy writes for qualified devices | not accepted |
@@ -30,7 +31,8 @@ Accepting a stage adopts its section and needs a follow-up commit that applies
 its amendments; stage 0 has none. A stage's "Before it starts" list names the
 earlier stages it needs. Accepting one stage does not accept a later one. The
 owner was to decide stage 1 after the device reach probe's result. That result
-came in on 2026-11-12, and stage 1 is open.
+came in on 2026-11-12. The owner then accepted stage 1's design, not stage 1,
+and decides stage 1 after a read-only sizing pass (owner decision 10).
 
 ## Context
 
@@ -100,8 +102,8 @@ In short:
 ## Owner decisions
 
 These are the owner's own decisions, recorded on #1722, #1723, #1729 and #1725
-from chat on 2026-11-11 and 2026-11-12. Decisions 1 to 5 take effect here only
-with the stage that uses them.
+from chat on 2026-11-11 and 2026-11-12. Decisions 1 to 5 and 8 take effect
+here only with the stage that uses them.
 
 1. **Shared state is held locally on both machines with eventual consistency,
    not in a cloud service.** At 15:45:13Z the owner asked whether "a cloud
@@ -175,12 +177,66 @@ with the stage that uses them.
    the owner's session on the PC, instead of the owner typing them. They are
    never a guessed target and never written to GitHub. The rest of the plan
    stood, and its step 6 (other network modes) stayed unapproved.
+8. **The PC may sleep, restart or be off at any time, and that must not affect
+   B.U.N.N.Y. on the Mac.** On open decision 1, the owner said in chat to the
+   orchestrator session, read at 2026-11-12T16:19:47Z: "Let's revisit decision
+   1: shape of stage 1. Although I do plan on having my PC running most of the
+   time, I will occasionally have it sleep or restart, and I don't want that to
+   impact the system, the Bunny Hub."
+   ([recorded on #1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6829213115)).
+   It is a requirement on every stage that puts a copy on the PC
+   ([Rules every stage keeps](#the-pc-may-sleep-restart-or-be-off)). By itself
+   it accepted no stage. The rule's wording, including "or be off", is the
+   recorded statement the owner accepted with the first recommendation of
+   decision 10.
+9. **Commits made in the PC clone use the account's GitHub no-reply address.**
+   The owner answered the PC orchestrating session of #1705, read at
+   2026-11-12T16:53:59Z: "1. GitHub no-reply address"
+   ([recorded on #1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6830103422)).
+   The address is set for that clone only. The PC's global git settings stay
+   as they are, and the older local-only commits stay unpushed.
+10. **Stage 1's design is accepted; stage 1 is not.** The owner answered four
+    numbered decisions, each put with a recommendation, in chat to the
+    orchestrator session, read at 2026-11-12T17:05:44Z: "For the four blocked
+    by me decisions, let's go with a recommendation for all four." The
+    recommendations accepted, as recorded on
+    [#1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6830376845):
+    - The shape of stage 1 (open decision 1): the PC copy that runs alongside
+      the Mac with device control off, with the owner's rule of decision 8
+      written in, is "Accepted as the design of stage 1. This accepts the
+      design only. It does not accept stage 1."
+    - Stage 1 and the standby host (open decision 2): "Stage 1 is not accepted
+      and the PC is not authorized as a standby runtime host. The read-only
+      sizing pass is authorized." The pass breaks stage 1 into sized stories,
+      and both decisions follow it. It builds, installs and starts nothing.
+    - The Mac-only inputs (open decision 6): "They stay on the Mac." A
+      takeover by hand on the PC runs without them. They are revisited with
+      automatic takeover (stage 3), the Tronbyt server first.
+    - Updating this record: "Authorized." A small documentation pull request
+      records stage 0's results and adds the owner's rule and its consequences
+      to the stage 1 design. It changes no accepted rule and applies none of
+      the stage amendments.
+11. **Commits made in the PC clone use the account's GitHub login as the author
+    name.** The owner answered the orchestrator session, read at
+    2026-11-12T17:06:06Z, on "Set the author name on the PC to your GitHub
+    login?" (recommended yes): "5, also your recommendation as well."
+    ([recorded on #1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6830385607)).
+    The name is set for that clone only, and unpushed local commits that
+    carried the other name are re-authored before their branch is pushed. The
+    PC's global git settings stay as they are.
 
 ## Rules every stage keeps
 
-Everything in this section is *proposed* and open to the owner's change.
-Stage 0 adopts none of them. Each rule takes effect only with an accepted stage
-that uses it.
+Everything in this section is *proposed* and open to the owner's change, except
+the owner's own requirement that comes first. Stage 0 adopts none of them. Each
+rule takes effect only with an accepted stage that uses it.
+
+### The PC may sleep, restart or be off
+
+This is the owner's requirement (owner decision 8), not a proposal. The PC may
+sleep, restart or be off at any time, and that must not affect B.U.N.N.Y. on
+the Mac. It binds every stage that puts a copy on the PC. Stage 1, stage 2 and
+"Spending, delivery claims and secrets" state what it means for each.
 
 ### Two classes of behavior
 
@@ -239,6 +295,13 @@ other's facts from its fact log after N per origin and stores them.
 - **Spending is split.** Each machine has its own share of each ceiling (art,
   companions, assistant). Together the shares never exceed the owner's ceiling,
   even when both lead.
+- **A split ceiling must not shrink what the Mac can spend while the PC is
+  idle** (*proposed*, with open decision 4). This follows from the owner's
+  requirement that the PC may sleep or be off (owner decision 8). In stages 1
+  and 2 the PC spends only while the Mac is stopped. From stage 3 this bullet
+  and the one above can conflict in a split lead, because the Mac cannot tell a
+  sleeping PC from one that leads behind a failed link. Which one yields then is
+  part of open decision 4.
 - **A delivery job is claimed on GitHub** (the issue's assignment), not in
   either copy. This keeps #1722's orchestrator safe from a split lead.
 - **Credentials and secrets are placed on the second machine only by the owner,
@@ -293,9 +356,33 @@ Accepted on 2026-11-12 (owner decision 6).
   or sleep and idle behavior. No runtime was started on the PC and no device
   command was sent, so no module was exercised. The result authorizes nothing
   by itself.
-- **Still to do:** the locally built image, staying awake, and the git identity
-  in the PC checkout. With the probe result in, the owner's decisions on
-  authorizing the PC as a standby runtime host and on stage 1 are open again.
+- **Other results:** stage 0 is complete on the PC
+  ([readback](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6830452987)).
+  The staying-awake read changed no setting on the PC. No container was started
+  from the image, and no device command was sent.
+  - Local image: built on the PC for its processor (AMD64) from `main` at
+    `73ac31e2`, as the release build does except for the platform, and kept
+    there under a local tag
+    ([result](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6829027880)).
+    It has never been run. Starting anything from it needs its own owner
+    decision, and it qualifies nothing (see "Image" above).
+  - Staying awake, read only (same result): on AC power the PC does not sleep
+    by itself today, and nothing needs changing for worker and test jobs. One
+    drop is unexplained: on 2026-11-11 at about 06:29Z, during a wide
+    verification job, Docker and the Windows file mount failed and WSL
+    restarted about four minutes later. Not shown: behavior over days, on
+    battery or after a Windows update restart, the cause of that drop, and the
+    live state of Docker Desktop's Resource Saver.
+  - Git identity: commits made in the PC clone use the account's GitHub
+    no-reply address and its GitHub login as the author name, both set for
+    that clone only (owner decisions 9 and 11;
+    [e-mail readback](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6830329235),
+    [complete readback](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6830452987)).
+    Nothing was pushed from the PC before those checks passed. Older
+    local-only commits keep the earlier identity and stay unpushed.
+- **Next decisions:** the owner has since accepted stage 1's design, not stage
+  1, and authorized a read-only sizing pass. Accepting stage 1 and authorizing
+  the PC as a standby runtime host are decided after it (owner decision 10).
 - **Takeover:** none.
 - **Amendments:** none. Accepting stage 0 changes no rule in an accepted
   document. The PC's roles under ADR 0008 and `docs/architecture.md` stay as
@@ -304,22 +391,24 @@ Accepted on 2026-11-12 (owner decision 6).
   qualification also stays true, because a local build installs and qualifies
   nothing. #1740 and ADR 0012's 2026-11-11 amendment carry the origin, so this
   record needs no contract change of its own.
-- **Effort:** #1740 is delivered in source and the probe is done. The local
-  build, staying awake and the git identity are not sized.
+- **Effort:** done. #1740 is delivered in source, and the probe, the local
+  build, the staying-awake read and the git identity are complete.
 
 ### Stage 1: one-way settings to a PC copy that runs with device control off
 
 The owner was asked on 2026-11-12 about an earlier version of this stage, a
 standby started by hand. On 2026-11-12, during review of this record, it was
-changed to the version below, and the owner has not been asked about it (open
-decision 1).
+changed to the version below. Later that day the owner accepted this version as
+the design of stage 1, with the owner's rule of decision 8 written in (owner
+decision 10). That accepts the design only. Stage 1 itself is not accepted, and
+the PC is not authorized as a standby runtime host.
 
 - **Adds:** owner-entered settings become records in the Mac's fact log. The PC
   reads them after N and applies the latest edit (audit, answer 5; owner
   decision 5). The PC has its own spending share. There is one device writer at
   a time and no automatic takeover.
-- **The PC copy's mode** (*proposed*; it does not exist today, see "Before it
-  starts"):
+- **The PC copy's mode** (accepted as design, owner decision 10; it does not
+  exist today, see "Before it starts"):
   - The PC must read the Mac's settings while the Mac runs, so the PC copy runs
     alongside the Mac all the time, with device control off.
   - It reads the Mac's settings facts and applies them. No producer reports to
@@ -330,6 +419,13 @@ decision 1).
     start hold set, as `docs/bunny-container.md` already requires before device
     control moves to another host, and then turns device control on in the PC
     copy. Before the Mac core starts again, the owner turns it off.
+  - The PC may sleep, restart or be off at any time without effect on the Mac
+    (owner decision 8). The PC pulls the Mac's settings after N, so the Mac
+    sends nothing to the PC and waits for nothing from it.
+  - After a restart, the PC copy starts by itself with device control off.
+    After a sleep, it catches up by reading the Mac's settings after N from
+    where it stopped.
+  - A takeover shows how old the PC's settings are.
 - **Today's product** (read on `main` at `eebb5923`):
   - Device control is fixed when the container is created.
     `deploy/container/compose.production.yaml` sets
@@ -375,11 +471,15 @@ decision 1).
   the PC, the art catalog and ledger, the Pixoo media library, remembered
   Nanoleaf scenes, gaps in the Volcano and Roborock archives, and every
   Mac-only input. Settings changed on the PC while it leads are not carried
-  back.
+  back. If the Mac stops while the PC is asleep or off, the PC's settings are
+  stale: they lack every edit made on the Mac after the PC's last read.
 - **Amendments:** 1.1 to 1.7. Amendment 1.7 covers the second running core.
 - **Effort:** medium for settings, plus low for configuration templating on the
   PC. The standby mode, the refusal of edits and the control switch are not
-  sized.
+  sized in this record. The read-only sizing pass the owner authorized (owner
+  decision 10) is on
+  [#1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6830783763),
+  as a planning input on which the owner has decided nothing.
 
 ### Stage 2: facts in both directions
 
@@ -391,8 +491,9 @@ decision 1).
   the Volcano and Roborock archives become facts so that they merge too. Art
   images and Pixoo media copy as files. Fire-and-forget producers (hooks, the
   Codex Desktop collector, the Volcano collector, read receipts) report to both
-  machines. Connection-bound producers stay with whichever machine they connect
-  to.
+  machines. Producers that report to both machines never wait on a sleeping PC
+  (owner decision 8). Connection-bound producers stay with whichever machine
+  they connect to.
 - **The PC copy's mode** (*proposed*): while the Mac runs, the PC copy keeps
   stage 1's standby mode with device control off. Unlike stage 1, it takes
   observations from the producers that report to it, reduces its own sessions
@@ -607,8 +708,9 @@ writes from both."
   the Mac Music producer, Codex Desktop reads, the Tronbyt server and browser
   speech. On Windows: the CHOMPI bridge and the Wispr collector. A PC lead runs
   without the Mac's inputs. If the Tidbyt uses the Tronbyt backend, a PC lead
-  also loses its display server, which lives on the Mac. Moving or duplicating
-  these inputs is a separate owner decision.
+  also loses its display server, which lives on the Mac. The owner decided that
+  the Mac-only inputs stay on the Mac and are revisited with automatic takeover
+  in stage 3, the Tronbyt server first (owner decision 10).
 - **Clock agreement.** Latest-edit-wins needs comparable clocks, and a merged
   row's time comes from the peer's clock. WSL 2 clocks can drift after the host
   sleeps (inferred). Clock skew is a qualification check on the PC (plan, B9),
@@ -630,7 +732,7 @@ writes from both."
   medium, lead-only high, local configuration low, media low to medium. The
   history exchange is small now that #1740 is delivered in source. Turning the
   archives and handling into facts, a qualified image for a PC standby and
-  stage 4's per-device qualification are not sized.
+  stage 4's per-device qualification are not sized in this record.
 
 ## Alternatives considered
 
@@ -663,8 +765,10 @@ writes from both."
 
 Each item names the first stage that needs it.
 
-1. **Stage 1 changed after the owner was asked** (*proposed*, not yet put to
-   the owner).
+1. **Stage 1 changed after the owner was asked.** Answered on 2026-11-12
+   (owner decision 10): the owner accepted this version as the design of stage
+   1, with the owner's rule of decision 8 written in. This accepts the design
+   only, not stage 1.
    - **What changed:** on 2026-11-12 the owner was asked about a standby
      started by hand when the Mac is down. Later that day, during review of
      this record, it was replaced with a PC copy that runs all the time
@@ -680,10 +784,11 @@ Each item names the first stage that needs it.
        restore refuses a different source revision and is qualified only on
        Mac ARM64 (audit, answer 5).
      - Not at all: the owner re-enters settings by hand during a takeover.
-   - The owner has not been asked about this version.
 2. Now that the probe has passed: whether to accept stage 1, and whether to
    authorize the PC as a standby runtime host (stage 1). The result authorizes
-   neither by itself.
+   neither by itself. Size first, then decide (owner decision 10): stage 1 is
+   not accepted and the PC is not authorized as a standby runtime host. A
+   read-only sizing pass is authorized, and both decisions follow it.
 3. Which image a PC standby runs. The local build qualifies nothing, so a
    standby needs a qualified image for the PC's processor, through a release
    qualification lane (a gate change) or another route the owner chooses
@@ -691,7 +796,9 @@ Each item names the first stage that needs it.
 4. Each ceiling's split between the machines (stage 1).
 5. Which secrets to place on the PC (stage 1).
 6. Whether to move or duplicate the Mac-only inputs, the Tronbyt server first
-   (stage 1).
+   (stage 1). Answered on 2026-11-12 (owner decision 10): they stay on the
+   Mac, and a takeover by hand on the PC runs without them. They are revisited
+   with automatic takeover in stage 3, the Tronbyt server first.
 7. The clock for latest-edit-wins: a hybrid logical clock, or wall time with an
    origin tie-break (stage 1).
 8. The takeover interval's length, and how the PC checks that it can reach the
