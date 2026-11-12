@@ -171,3 +171,45 @@ test('the leaf mutations reach array items and empty containers, and leave the r
   assert.deepEqual(mutations[0].record.list, [2, 'b', true, null]);
   for (const {record: changed} of mutations) assert.equal(sameState(record, changed, ['/nested/atMs']), false);
 });
+
+// Code scanning alert 24 (js/prototype-polluting-assignment): a pointer through `__proto__`, `constructor` or
+// `prototype` must never reach `Object.prototype` or `Object`, whoever calls the helpers.
+const UNSAFE = ['/__proto__/x', '/constructor/prototype/x', '/prototype/x', '/__proto__', '/constructor'];
+const shapeOf = target => Object.getOwnPropertyNames(target).sort().join(',');
+
+test('a pointer through __proto__, constructor or prototype removes nothing and leaves the prototypes alone', () => {
+  const sentinel = 'gh1771Sentinel';
+  Object.defineProperty(Object.prototype, 'x', {value: sentinel, configurable: true, writable: true});
+  try {
+    const before = shapeOf(Object.prototype), beforeObject = shapeOf(Object);
+    const record = {id: 'a', revision: 1, x: 1, nested: {x: 2}};
+    assert.deepEqual(withoutBookkeeping(record, UNSAFE), record);
+    assert.equal(sameState(record, {...record, x: 5}, UNSAFE), false);
+    assert.equal(Object.getOwnPropertyDescriptor(Object.prototype, 'x')?.value, sentinel, 'Object.prototype keeps its member');
+    assert.equal(shapeOf(Object.prototype), before);
+    assert.equal(shapeOf(Object), beforeObject);
+    assert.equal(typeof Object.prototype.constructor, 'function');
+  } finally {
+    delete Object.prototype.x;
+  }
+});
+
+test('a declaration through __proto__, constructor or prototype is refused', () => {
+  const schema = {type: 'object', properties: {x: {type: 'integer'}}};
+  for (const pointer of UNSAFE) {
+    assert.match(bookkeepingProblem('lamp-glow', [pointer], [schema]) ?? '', /, which no pointer may name$/, pointer);
+  }
+});
+
+test('a record parsed from JSON with an own __proto__ member is compared and mutated as data', () => {
+  const before = shapeOf(Object.prototype);
+  const record = JSON.parse('{"id":"a","revision":1,"__proto__":{"polluted":1},"atMs":3}');
+  assert.ok(Object.hasOwn(record, '__proto__'));
+  assert.deepEqual(Object.keys(withoutBookkeeping(record, ['/atMs'])), ['id', 'revision', '__proto__']);
+  const mutations = leafMutations(record, ['/atMs']);
+  assert.deepEqual(mutations.map(({pointer}) => pointer), ['/__proto__/polluted']);
+  assert.equal(Object.getOwnPropertyDescriptor(mutations[0].record, '__proto__')?.value.polluted, 2);
+  assert.equal(sameState(record, mutations[0].record, ['/atMs']), false);
+  assert.equal(({}).polluted, undefined);
+  assert.equal(shapeOf(Object.prototype), before);
+});

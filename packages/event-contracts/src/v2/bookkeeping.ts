@@ -101,14 +101,21 @@ type Node = {schema: unknown; root: unknown};
 const MAX_REFS = 32;
 const objectOf = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+/** Tokens that could lead from a record to `Object.prototype` or `Object`: no pointer names them, and they match nothing. */
+const UNSAFE_TOKENS: readonly string[] = ['__proto__', 'constructor', 'prototype'];
+/** The own member `token` of an object, never an inherited one or one through an unsafe token. */
+const member = (value: unknown, token: string): unknown => {
+  const object = objectOf(value);
+  return object !== undefined && !UNSAFE_TOKENS.includes(token) && Object.hasOwn(object, token) ? object[token] : undefined;
+};
 
 function resolve(ref: string, root: unknown, refs: Readonly<Record<string, object>>): Node | undefined {
   const hash = ref.indexOf('#'), document = hash < 0 ? ref : ref.slice(0, hash), fragment = hash < 0 ? '' : ref.slice(hash + 1);
-  const target = document === '' ? root : refs[document];
+  const target = document === '' ? root : Object.hasOwn(refs, document) ? refs[document] : undefined;
   if (target === undefined) return undefined;
   let schema: unknown = target;
   for (const token of fragment === '' ? [] : tokens(fragment)) {
-    schema = objectOf(schema)?.[token];
+    schema = member(schema, token);
     if (schema === undefined) return undefined;
   }
   return {schema, root: target};
@@ -145,8 +152,8 @@ function undeclared(pointer: string, schema: object, refs: Readonly<Record<strin
   for (const token of tokens(pointer)) {
     const next: Node[] = [];
     for (const node of nodes.flatMap(node => branches(node, refs))) {
-      const member = objectOf(objectOf(node.schema)?.properties)?.[token];
-      if (member !== undefined) next.push({schema: member, root: node.root});
+      const declared = member(member(node.schema, 'properties'), token);
+      if (declared !== undefined) next.push({schema: declared, root: node.root});
     }
     if (next.length === 0) return `${pointer} is not a member the schema declares`;
     nodes = next;
@@ -172,6 +179,8 @@ export function bookkeepingProblem(family: string, pointers: readonly string[], 
     seen.add(pointer);
     const path = tokens(pointer);
     if (path.some(token => INDEX.test(token))) return `${pointer} names an array position`;
+    const unsafe = path.find(token => UNSAFE_TOKENS.includes(token));
+    if (unsafe !== undefined) return `${pointer} names ${unsafe}, which no pointer may name`;
     const denied = path.find(token => NEVER_BOOKKEEPING.includes(token));
     if (denied !== undefined) return `${pointer} names ${denied}, which is never bookkeeping`;
     for (const schema of versions) {
@@ -194,15 +203,19 @@ const canonical = (value: unknown): string => {
   return `{${Object.keys(record).sort().map(key => `${JSON.stringify(key)}:${canonical(record[key])}`).join(',')}}`;
 };
 
-/** A copy of `record` without its bookkeeping members. A pointer whose parent is absent or not an object removes nothing. */
+/**
+ * A copy of `record` without its bookkeeping members. A pointer whose parent is absent or not an object removes nothing.
+ * It follows and removes own members only, and a pointer through `__proto__`, `constructor` or `prototype` removes
+ * nothing, so no pointer, declared or not, reaches a prototype (code scanning alert 24).
+ */
 export function withoutBookkeeping(record: unknown, pointers: readonly string[]): unknown {
   const copy = structuredClone(record);
   for (const pointer of pointers) {
     const path = tokens(pointer), last = path.pop() as string;
     let parent: unknown = copy;
-    for (const token of path) parent = objectOf(parent)?.[token];
+    for (const token of path) parent = member(parent, token);
     const object = objectOf(parent);
-    if (object !== undefined) delete object[last];
+    if (object !== undefined && !UNSAFE_TOKENS.includes(last) && Object.hasOwn(object, last)) Reflect.deleteProperty(object, last);
   }
   return copy;
 }
@@ -234,7 +247,8 @@ const escape = (token: string): string => token.replace(/~/g, '~0').replace(/\//
  * `sameState` does, which the package's tests check for every declared family's fixtures.
  */
 export function leafMutations(record: unknown, pointers: readonly string[]): LeafMutation[] {
-  const skipped = ['/id', '/revision', ...pointers];
+  // A pointer through an unsafe token removes nothing in `withoutBookkeeping`, so it skips nothing here either.
+  const skipped = ['/id', '/revision', ...pointers.filter(pointer => !tokens(pointer).some(token => UNSAFE_TOKENS.includes(token)))];
   const mutations: LeafMutation[] = [];
   const walk = (value: unknown, path: string[]): void => {
     const pointer = path.map(escape).map(token => `/${token}`).join('');
@@ -251,8 +265,10 @@ export function leafMutations(record: unknown, pointers: readonly string[]): Lea
       return;
     }
     let parent: unknown = copy;
-    for (const token of path.slice(0, -1)) parent = (parent as Record<string, unknown>)[token];
-    (parent as Record<string, unknown>)[path.at(-1) as string] = changed(value);
+    // The path holds the record's own keys; each step and the write stay on own data members, so a member a JSON
+    // record names `__proto__` is changed as data and never reaches a prototype.
+    for (const token of path.slice(0, -1)) parent = Object.getOwnPropertyDescriptor(parent, token)?.value;
+    Object.defineProperty(parent, path.at(-1) as string, {value: changed(value), writable: true, enumerable: true, configurable: true});
     mutations.push({pointer, record: copy});
   };
   walk(record, []);
