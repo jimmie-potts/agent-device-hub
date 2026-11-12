@@ -27,7 +27,7 @@ import {HOSTED_PROFILE} from '../../src/module/configuration.js';
 import {FAMILIES, type DisplayRecord, type PlaylistRecord, type RenditionRecord} from '../../src/module/schemas.js';
 import {COALESCE_MS, TICK_MS} from '../../src/module/module.js';
 import {frameDigest} from '../../src/module/transport.js';
-import {DEVICE, FAST, ManualClock, SECTION, SESSION_ID, World, bytesOf, declaredPng, hostedGif, manyColorGif, playbackRecord, playbackState, sleep, waitFor} from './support.js';
+import {DEVICE, FAST, ManualClock, SECTION, SESSION_ID, World, bytesOf, declaredPng, hostedGif, manyColorGif, playbackRecord, playbackState, waitFor} from './support.js';
 
 const FAILING_WORKER = new URL('./fixtures/failing-render-worker.js', import.meta.url);
 const HEAP_WORKER = new URL('./fixtures/heap-worker.js', import.meta.url);
@@ -103,14 +103,18 @@ void describe('Monitor', () => {
   });
 
   void it('keeps its picture and runs on when a render fails, reporting the run of failures once', async () => {
-    const world = await World.open({options: {renderWorker: FAILING_WORKER}});
+    const clock = new ManualClock();
+    const world = await World.open({clock, options: {renderWorker: FAILING_WORKER}});
     await within(world, async () => {
       await world.start();
       await world.publishSession();
       await mode(world, 'free');
-      await waitFor(() => world.logs().find(entry => entry.event === 'operation.failed' && entry.fields['bunny.operation'] === 'feed'), 'the failed render\'s record');
-      await sleep(1500);
-      assert.equal(world.logs().filter(entry => entry.event === 'operation.failed' && entry.fields['bunny.operation'] === 'feed').length, 1, 'one record for the run of failures');
+      const failed = (): number => world.logs().filter(entry => entry.event === 'operation.failed' && entry.fields['bunny.operation'] === 'feed').length;
+      await world.tickUntil(() => failed() > 0 ? true : undefined, 'the failed render\'s record', 2000);
+      // A failed dashboard is rendered again once the 1 s render cadence has passed, so 1.5 s of the module's time brings
+      // another failed render.
+      await clock.advance(1500);
+      assert.equal(failed(), 1, 'one record for the run of failures');
       assert.equal(world.device.state().uploads, 0, 'nothing reached the device');
       assert.equal(world.deviceRecord()?.availability, 'available', 'a failed render is no evidence about the device');
     });
@@ -204,39 +208,42 @@ void describe('Media', () => {
   });
 
   void it('reports a command it accepted before a restart as uncertain, and never sends it again', async () => {
-    const world = await World.open({mode: 'silent'});
+    const clock = new ManualClock();
+    const world = await World.open({mode: 'silent', clock});
     await within(world, async () => {
       await world.start();
       const requestId = await accepted(world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 30}));
-      await waitFor(() => world.deviceRecord()?.pending === 1 ? true : undefined, 'the pending command on the device record');
+      await world.tickUntil(() => world.deviceRecord()?.pending === 1 ? true : undefined, 'the pending command on the device record', COALESCE_MS);
       assert.equal(world.device.state().sent, 1, 'the silent Pixoo took the write');
       await world.restart();
       const outcome = await world.outcome(requestId);
       assert.deepEqual([outcome.data.result, outcome.data.evidence, outcome.data.error?.code], ['uncertain', 'none', 'uncertain-result']);
       world.device.set('online');
-      await waitFor(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the device back online');
-      await sleep(200);
+      await world.tickUntil(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the device back online', 2000);
+      await clock.advance(200);
       assert.deepEqual([world.device.state().sent, world.device.state().writes], [1, 0], 'the write was never sent again');
       assert.equal(world.deviceRecord()?.pending, 0);
     });
   });
 
   void it('accepts a repeated request again and changes nothing', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
       await world.start();
       const first = await accepted(world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 55}, {requestId: 'bright-1'}));
       assert.equal((await world.outcome(first)).data.result, 'succeeded');
       const again = await world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 55}, {requestId: 'bright-1'});
       assert.equal(again.status, 'accepted');
-      await sleep(100);
+      await clock.advance(100);
       assert.equal(world.device.state().writes, 1, 'one write');
       assert.equal(world.seen.filter(message => message.kind === 'outcome' && (message.data as {requestId?: unknown}).requestId === 'bright-1').length, 1, 'one outcome');
     });
   });
 
   void it('refuses a request ID used again for other content with duplicate-conflict, before and after a restart', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
       await world.start();
       const first = await accepted(world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 55}, {requestId: 'bright-2'}));
@@ -248,7 +255,7 @@ void describe('Media', () => {
       assert.equal(later.status === 'rejected' && later.error.error.code, 'duplicate-conflict');
       const same = await world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 55}, {requestId: 'bright-2'});
       assert.equal(same.status, 'accepted', 'the same request is still accepted, and changes nothing');
-      await sleep(100);
+      await clock.advance(100);
       assert.equal(world.device.state().writes, 1, 'one write');
       assert.equal(world.device.state().brightness, 55);
     });
@@ -282,18 +289,19 @@ void describe('Media', () => {
 
 void describe('Now Playing', () => {
   void it('invalid artwork keeps the text card and safe refusal diagnostics recover on a valid image', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
       await world.start(); await world.publishSession(); await mode(world, 'free');
-      await waitFor(() => world.display()?.showing === 'dashboard' && world.device.state().shown !== null ? true : undefined, 'Monitor before playback');
-      const baseline = {...playbackRecord(Date.now(), ++world.revision), playback: {status: 'known' as const, player: 'playing' as const, title: 'A', artist: 'H', controls: ['pause', 'next'] as ('pause' | 'next')[]}};
+      await world.tickUntil(() => world.display()?.showing === 'dashboard' && world.device.state().shown !== null ? true : undefined, 'Monitor before playback', 2000);
+      const baseline = {...playbackRecord(world.now(), ++world.revision), playback: {status: 'known' as const, player: 'playing' as const, title: 'A', artist: 'H', controls: ['pause', 'next'] as ('pause' | 'next')[]}};
       const png = await sharp({create: {width: 1, height: 1, channels: 3, background: {r: 192, g: 24, b: 48}}}).png().toBuffer();
       const invalid = {...baseline, artwork: {status: 'ready' as const, generation: '12345678-1234-4234-8234-123456789abc',
         mediaType: 'image/png' as const, width: 1, height: 1, base64: png.subarray(0, png.length - 1).toString('base64')}};
       world.playback = [invalid];
       const refusedInput = await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(invalid)});
       const textDigest = frameDigest(renderNowPlaying(nowPlayingView(baseline, {current: true})));
-      await waitFor(() => world.device.state().shown?.digests[0] === textDigest ? true : undefined, 'the current text fallback');
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === textDigest ? true : undefined, 'the current text fallback', 2000);
       const decisions = (event: string) => world.logs().filter(entry => entry.event === event && entry.fields['bunny.operation'] === 'playback');
       assert.equal(decisions('operation.failed').length, 1);
       assert.equal(decisions('operation.failed')[0]?.fields['bunny.code'], 'invalid-request');
@@ -303,14 +311,14 @@ void describe('Now Playing', () => {
 
       const uploads = world.device.state().uploads;
       await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(invalid)});
-      await sleep(1100);
+      await clock.advance(1100);
       assert.equal(world.device.state().uploads, uploads, 'duplicate artwork does not upload again');
       assert.equal(decisions('operation.failed').length, 1);
       const valid = {...invalid, revision: ++world.revision, artwork: {...invalid.artwork, generation: '22345678-1234-4234-8234-123456789abc', base64: png.toString('base64')}};
       world.playback = [valid];
       const recoveredInput = await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(valid)});
       const digest = frameDigest(expectedCard(64, 'playing', false, [{text: 'A', y: 13}, {text: 'H', y: 27, artist: true}]));
-      await waitFor(() => world.device.state().shown?.digests[0] === digest ? true : undefined, 'the valid image replacement');
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === digest ? true : undefined, 'the valid image replacement', 2000);
       assert.equal(decisions('operation.completed').length, 1);
       const recovery = decisions('operation.completed')[0];
       assert.deepEqual({level: recovery?.level, trace: recovery?.trace},
@@ -321,41 +329,42 @@ void describe('Now Playing', () => {
     });
   });
   void it('renders ready playback/2.1 and keeps text cards for missing2.1 and legacy2.0 updates', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
-      const baseline = {...playbackRecord(Date.now(), ++world.revision), playback: {status: 'known' as const, player: 'playing' as const, title: 'A', artist: 'H', controls: ['pause', 'next'] as ('pause' | 'next')[]}};
+      const baseline = {...playbackRecord(world.now(), ++world.revision), playback: {status: 'known' as const, player: 'playing' as const, title: 'A', artist: 'H', controls: ['pause', 'next'] as ('pause' | 'next')[]}};
       const png = await sharp({create: {width: 1, height: 1, channels: 3, background: {r: 192, g: 24, b: 48}}}).png().toBuffer();
       const ready = {...baseline, playback: {...baseline.playback, player: 'paused' as const}, artwork: {status: 'ready' as const, generation: '12345678-1234-4234-8234-123456789abc', mediaType: 'image/png' as const, width: 1, height: 1,
         base64: png.toString('base64')}};
       world.playback = [ready];
       await world.start();
-      await waitFor(() => world.display()?.nowPlaying.card === true ? true : undefined, 'the ready2.1 paused record accepted through initial sync');
+      await world.tickUntil(() => world.display()?.nowPlaying.card === true ? true : undefined, 'the ready2.1 paused record accepted through initial sync', 2000);
       await world.publishSession();
       await mode(world, 'free');
-      await waitFor(() => world.display()?.showing === 'dashboard' && world.device.state().shown !== null ? true : undefined, 'Monitor active with its dashboard before playback resumes');
+      await world.tickUntil(() => world.display()?.showing === 'dashboard' && world.device.state().shown !== null ? true : undefined, 'Monitor active with its dashboard before playback resumes', 2000);
       // Startup sync occurs while Monitor is inactive. Resume after selecting Monitor supplies its actual popup trigger.
       const playing = {...baseline, revision: ++world.revision, artwork: ready.artwork};
       world.playback = [playing];
       await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(playing)});
       const pictureOf = (record: ReturnType<typeof playbackRecord>): string => frameDigest(renderNowPlaying(nowPlayingView(record, {current: true})));
       const artworkDigest = frameDigest(expectedCard(64, 'playing', false, [{text: 'A', y: 13}, {text: 'H', y: 27, artist: true}]));
-      await waitFor(() => world.device.state().shown?.digests[0] === artworkDigest ? true : undefined, 'the module passes the synced image to its worker and device queue');
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === artworkDigest ? true : undefined, 'the module passes the synced image to its worker and device queue', 2000);
       assert.equal(world.display()?.nowPlaying.card, true);
       assert.equal(playbackState(ready).dataschema, 'https://bunny.invalid/events/playback/2.1');
 
       const unsupported = {...baseline, revision: ++world.revision, artwork: {status: 'unsupported' as const, generation: '22345678-1234-4234-8234-123456789abc'}};
       world.playback = [unsupported];
       await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(unsupported)});
-      await waitFor(() => world.device.state().shown?.digests[0] === pictureOf(baseline) ? true : undefined, 'same-text Sonos handoff clears the old image');
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === pictureOf(baseline) ? true : undefined, 'same-text Sonos handoff clears the old image', 2000);
       const returned = {...playing, revision: ++world.revision, artwork: {...ready.artwork, generation: '32345678-1234-4234-8234-123456789abc'}};
       world.playback = [returned];
       await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(returned)});
-      await waitFor(() => world.device.state().shown?.digests[0] === artworkDigest ? true : undefined, 'same-text Sony return uses its new association');
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === artworkDigest ? true : undefined, 'same-text Sony return uses its new association', 2000);
       const uploads = world.device.state().uploads;
       const duplicate = {...returned, revision: ++world.revision, artwork: {...returned.artwork, generation: '42345678-1234-4234-8234-123456789abc'}};
       world.playback = [duplicate];
       await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(duplicate)});
-      await sleep(1100);
+      await clock.advance(1100);
       assert.equal(world.device.state().uploads, uploads, 'identical current pixels need no duplicate upload');
 
       // Pause changes the visible marker, so rejection of this live2.1 record cannot pass unnoticed.
@@ -363,13 +372,13 @@ void describe('Now Playing', () => {
       const missing = {...paused, artwork: {status: 'missing' as const, generation: ready.artwork.generation}};
       world.playback = [missing];
       await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(missing)});
-      await waitFor(() => world.device.state().shown?.digests[0] === pictureOf(paused) ? true : undefined, 'missing2.1 changed the text card to paused');
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === pictureOf(paused) ? true : undefined, 'missing2.1 changed the text card to paused', 2000);
 
       const legacy = playbackRecord(baseline.observedAtMs ?? 0, ++world.revision);
       world.playback = [legacy];
       assert.equal(playbackState(legacy).dataschema, 'https://bunny.invalid/events/playback/2.0');
       await world.player.publish('bunny.state.playback.presented', {kind: 'state', ...playbackState(legacy)});
-      await waitFor(() => world.device.state().shown?.digests[0] === pictureOf(legacy) ? true : undefined, 'legacy2.0 changed the text card back to playing');
+      await world.tickUntil(() => world.device.state().shown?.digests[0] === pictureOf(legacy) ? true : undefined, 'legacy2.0 changed the text card back to playing', 2000);
     });
   });
 
@@ -789,16 +798,17 @@ void describe('moments', () => {
 
 void describe('the device', () => {
   void it('starts while the Pixoo is offline, reports it unavailable, and logs one degradation and one recovery', async () => {
-    const world = await World.open({mode: 'offline'});
+    const clock = new ManualClock();
+    const world = await World.open({mode: 'offline', clock});
     await within(world, async () => {
       await world.start();
-      await waitFor(() => world.deviceRecord()?.availability === 'unavailable' ? true : undefined, 'the device unavailable');
-      // Several probes fail while it stays offline.
-      await sleep(900);
+      await world.tickUntil(() => world.deviceRecord()?.availability === 'unavailable' ? true : undefined, 'the device unavailable', 1000);
+      // Several probes fail while it stays offline: in 900 ms of the module's time, the retries after 20, 40, 80, 160 and 320 ms.
+      await clock.advance(900);
       const warnings = world.logs().filter(entry => entry.event === 'device.unavailable' && entry.level === 'warn');
       assert.equal(warnings.length, 1, 'one degradation, not a warning per probe');
       world.device.set('online');
-      await waitFor(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the device available');
+      await world.tickUntil(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the device available', 2000);
       const recoveries = world.logs().filter(entry => entry.event === 'device.available');
       assert.equal(recoveries.length, 1);
       assert.ok(Number(recoveries[0]?.fields['bunny.attempt_count']) > 1, 'the recovery counts the failed probes');
@@ -836,22 +846,24 @@ void describe('another module\'s devices', () => {
 
 void describe('the copies of other owners\' records', () => {
   void it('waits quietly for a playback owner that starts later, warns once if it stays away, and records its arrival once', async () => {
-    const world = await World.open({playback: false});
+    const clock = new ManualClock();
+    const world = await World.open({playback: false, clock});
     await within(world, async () => {
       await world.start();
       const playback = (event: string, level: string): number =>
         world.logs().filter(entry => entry.event === event && entry.level === level && entry.fields['bunny.operation'] === 'playback').length;
       // The first attempts are DEBUG: an owner that starts after the Pixoo is no fault.
-      await waitFor(() => playback('operation.failed', 'debug') >= 2 ? true : undefined, 'the quiet attempts');
+      await world.tickUntil(() => playback('operation.failed', 'debug') >= 2 ? true : undefined, 'the quiet attempts', 1000);
       assert.equal(playback('operation.failed', 'warn'), 0);
       // Once the wait has grown to its longest, one warning says Now Playing has no source.
-      await waitFor(() => playback('operation.failed', 'warn') === 1 ? true : undefined, 'one warning');
-      await sleep(500);
+      await world.tickUntil(() => playback('operation.failed', 'warn') === 1 ? true : undefined, 'one warning', 1000);
+      // 500 ms of the module's time at the longest wait, 200 ms, brings two more attempts.
+      await clock.advance(500);
       assert.equal(playback('operation.failed', 'warn'), 1, 'one warning, not one per attempt');
       await world.servePlayback();
-      await waitFor(() => playback('operation.completed', 'info') === 1 ? true : undefined, 'one recovery');
+      await world.tickUntil(() => playback('operation.completed', 'info') === 1 ? true : undefined, 'one recovery', 2000);
       await world.publishPlayback();
-      await waitFor(() => world.display()?.nowPlaying.card === true ? true : undefined, 'the card from the playback record');
+      await world.tickUntil(() => world.display()?.nowPlaying.card === true ? true : undefined, 'the card from the playback record', 2000);
     });
   });
 });
@@ -942,18 +954,19 @@ void describe('commands and the catalog', () => {
   void it('commits a command\'s acceptance with its pending count, so a device command commits at most five times', async () => {
     const commits = countCommits();
     // No probe in the window: only the commands commit.
-    const world = await World.open({options: {timing: {...FAST, probeMs: 60_000}}});
+    const clock = new ManualClock();
+    const world = await World.open({clock, options: {timing: {...FAST, probeMs: 60_000}}});
     try {
       await within(world, async () => {
         await world.start();
-        await waitFor(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the device available');
-        await sleep(200);
+        await world.tickUntil(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the device available', 1000);
+        await clock.advance(200);
         const before = commits.count();
         for (let index = 0; index < 5; index += 1) {
           const requestId = await accepted(world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 20 + index}));
           await world.outcome(requestId);
         }
-        await sleep(200);
+        await clock.advance(200);
         // Acceptance with its pending count is one commit, the completion another, and the SDK outbox marks each
         // published row with one more: three rows a command.
         assert.ok(commits.count() - before <= 25, `${commits.count() - before} commits for 5 commands`);
@@ -964,10 +977,11 @@ void describe('commands and the catalog', () => {
   });
 
   void it('keeps what it serves at what it committed when an outcome\'s transaction rolls back', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
       await world.start();
-      await waitFor(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the device available');
+      await world.tickUntil(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the device available', 1000);
       // A synthetic storage failure: the module's next outcome cannot be stored, so its transaction rolls back.
       // The module keeps its file to itself (Hub #972), so the trigger goes in through its own connection.
       const database = world.harness.moduleDatabase();
@@ -976,7 +990,7 @@ void describe('commands and the catalog', () => {
         database.exec('CREATE TRIGGER fail_outcome BEFORE INSERT ON bunny_outbox WHEN NEW.kind = \'outcome\' BEGIN SELECT RAISE(ABORT, \'synthetic failure\'); END');
         const requestId = await accepted(world.request('brightness-set', 'org.bunny.brightness.set.requested', {percent: 42}, {requestId: 'rolled-back'}));
         await waitFor(() => world.logs().some(entry => entry.event === 'operation.failed' && entry.fields['bunny.operation'] === 'storage') ? true : undefined, 'the failed write');
-        await sleep(200);
+        await clock.advance(200);
         assert.equal(world.seen.some(message => message.kind === 'outcome' && (message.data as {requestId?: unknown}).requestId === requestId), false, 'no outcome went out');
         // A new copy syncs exactly what followers heard live: the last committed record, still pending, with no transmission for the command.
         const live = world.deviceRecord();
@@ -1029,7 +1043,8 @@ void describe('commands and the catalog', () => {
   });
 
   void it('refuses a sync of its catalog as unavailable while the catalog cannot be read, and serves it once it can', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
       await world.populate(async library => { await library.importMedia(bytesOf(await solid([0, 0, 255])), 'Blue'); });
       // A storage fault: the rendition's manifest is no longer JSON, so every read of the catalog fails.
@@ -1041,17 +1056,19 @@ void describe('commands and the catalog', () => {
       assert.ok(performance.now() - asked < 2000, `refused after ${String(Math.round(performance.now() - asked))} ms, not at the sync's deadline`);
       // The device record is still served, and the reads that keep failing are one record.
       assert.equal((await world.synced('device')).length, 1);
-      await sleep(300);
+      // 300 ms of the module's time brings the reads again after 20, 40, 80 and 160 ms.
+      await clock.advance(300);
       assert.equal(storageRecords(world, 'operation.failed').length, 1, 'one record for the run of failed reads');
       // The fault is repaired: the next read serves the catalog, and logs the recovery once.
       manifest.restore();
-      await waitFor(() => storageRecords(world, 'operation.completed').length === 1 ? true : undefined, 'the recovery');
+      await world.tickUntil(() => storageRecords(world, 'operation.completed').length === 1 ? true : undefined, 'the recovery', 2000);
       assert.deepEqual((await world.synced<RenditionRecord>(FAMILIES.rendition)).map(item => item.name), ['Blue']);
     });
   });
 
   void it('completes a catalog command with its outcome though the read of the catalog after it fails', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
       await world.populate(async library => { await library.importMedia(bytesOf(await solid([0, 0, 255])), 'Blue'); });
       await world.start();
@@ -1061,11 +1078,12 @@ void describe('commands and the catalog', () => {
       const created = await accepted(playlist(world, {operation: 'create', name: 'Desk'}));
       assert.deepEqual((await world.outcome(created, 3000)).data, {requestId: created, result: 'succeeded', evidence: 'observed'});
       assert.equal(world.deviceRecord()?.pending, 0);
-      await sleep(300);
+      // 300 ms of the module's time brings the reads again after 20, 40, 80 and 160 ms.
+      await clock.advance(300);
       assert.equal(storageRecords(world, 'operation.failed').length, 1, 'one record for the run of failed reads');
       // Once the catalog can be read again, the playlist goes out without another command.
       manifest.restore();
-      await waitFor(() => records<PlaylistRecord>(world, FAMILIES.playlist).find(item => item.name === 'Desk'), 'the playlist, published live');
+      await world.tickUntil(() => records<PlaylistRecord>(world, FAMILIES.playlist).find(item => item.name === 'Desk'), 'the playlist, published live', 2000);
       assert.equal(storageRecords(world, 'operation.completed').length, 1, 'one recovery');
     });
   });
@@ -1105,9 +1123,13 @@ void describe('commands and the catalog', () => {
         assert.equal((await world.outcome(edit)).data.result, 'succeeded');
         await world.restart();
         await waitFor(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the restarted device');
-        await sleep(300);
+        // A sync of the catalog waits for the new instance's first read of it, and the frame check after that read starts
+        // in the same step and reaches the frame store through promise continuations only: once the sync has answered,
+        // one turn of the event loop holds any read the restart would make.
+        const restarted = await world.synced<RenditionRecord>(FAMILIES.rendition);
+        await new Promise(resolve => { setImmediate(resolve); });
         assert.equal(reads.count() - before, count + 1, 'no frames read for the edit or the restart');
-        assert.deepEqual((await world.synced<RenditionRecord>(FAMILIES.rendition)).filter(item => !item.compatible).map(item => item.name), ['Too many colors'],
+        assert.deepEqual(restarted.filter(item => !item.compatible).map(item => item.name), ['Too many colors'],
           'the kept check survives the restart');
         // A new hosted clip's frames are checked once, at its import, before its outcome.
         const imported = await accepted(asset(world, {operation: 'import', name: 'New clip', content: {inline: hostedGif(99, 20).toString('base64')}}));
@@ -1151,13 +1173,14 @@ void describe('Hub mode', () => {
   });
 
   void it('refuses playback starts in Work, plays them in Free, and Work stops playback with no resume on Free (AC2)', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
       await world.start();
       const {list, rendition} = await readyPlaylist(world);
       await world.outcome(await mode(world, 'work'));
       await world.publishSession();
-      await waitFor(() => world.display()?.participating === true ? true : undefined, 'the status base');
+      await world.tickUntil(() => world.display()?.participating === true ? true : undefined, 'the status base', 2000);
       const before = world.device.state(), refused = refusals(world, 'invalid-state');
       const results = [
         await world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id}),
@@ -1171,11 +1194,11 @@ void describe('Hub mode', () => {
       await world.outcome(await mode(world, 'free'));
       const started = await accepted(world.request('media-start', 'org.bunny.media.start.requested', {playlistId: list.id}));
       assert.deepEqual((await world.outcome(started)).data, {requestId: started, result: 'succeeded', evidence: 'transmitted'});
-      await waitFor(() => world.display()?.base === 'playback' && world.display()?.player.intent === 'active' ? true : undefined, 'the playback base');
+      await world.tickUntil(() => world.display()?.base === 'playback' && world.display()?.player.intent === 'active' ? true : undefined, 'the playback base', 2000);
       // Work stops it: the mode command completes as that stop, the status base returns, and the item is kept.
       const working = await mode(world, 'work');
       assert.deepEqual((await world.outcome(working)).data, {requestId: working, result: 'succeeded', evidence: 'observed'});
-      const stopped = await waitFor(() => world.display()?.base === 'status' && world.display()?.participating === true ? world.display() : undefined, 'the status base after Work');
+      const stopped = await world.tickUntil(() => world.display()?.base === 'status' && world.display()?.participating === true ? world.display() : undefined, 'the status base after Work', 2000);
       assert.deepEqual([stopped.player.intent, stopped.player.playlistId], ['stopped', list.id]);
       // A resume and a restart-with-changes are starts too, refused in Work while something is selected.
       for (const action of ['resume', 'restart-with-changes'] as const) {
@@ -1184,7 +1207,7 @@ void describe('Hub mode', () => {
       }
       const uploads = world.device.state().uploads;
       await world.outcome(await mode(world, 'free'));
-      await sleep(600);
+      await clock.advance(600);
       assert.equal(world.display()?.player.intent, 'stopped', 'nothing resumes when Free returns');
       assert.ok(world.device.state().uploads - uploads <= 1, 'at most the dashboard repainted');
     });
@@ -1218,7 +1241,8 @@ void describe('Hub mode', () => {
   });
 
   void it('applies nothing at startup: a restart in Quiet reports Quiet and writes nothing until the next mode command', async () => {
-    const world = await World.open();
+    const clock = new ManualClock();
+    const world = await World.open({clock});
     await within(world, async () => {
       await world.start();
       await brightness(world, 80);
@@ -1228,7 +1252,7 @@ void describe('Hub mode', () => {
       const record = await waitFor(() => world.deviceRecord()?.desired.mode.status === 'known' ? world.deviceRecord() : undefined, 'the record after the restart');
       assert.deepEqual(record.desired.mode, {status: 'known', value: 'quiet'});
       const writes = world.device.state().writes;
-      await sleep(600);
+      await clock.advance(600);
       assert.equal(world.device.state().writes, writes, 'no brightness or player write at startup');
       const free = await mode(world, 'free');
       assert.equal((await world.outcome(free)).data.evidence, 'transmitted');
