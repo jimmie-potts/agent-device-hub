@@ -199,7 +199,11 @@ it('an abort listener that throws or rejects stays with its own module, on a han
   const runtime = await launch(context, FIXTURE, ['abort-listeners', '--port', '0', '--state-dir', await stateDir(context)]);
   const failedAll = async (): Promise<boolean> => (await health(runtime.url)).body.modules.filter(module => module.state === 'failed').length === 4;
   await waitFor(failedAll, 5000, 'the four failures');
-  await new Promise(resolve => { setTimeout(resolve, 200); });
+  // Each failed module's abort listener has raised its error and the runtime has placed it: after the module's stop, as an
+  // error of that module. A listener's error blamed on another flow would have failed that module first.
+  const placed = (): string[] => runtime.records().filter(record => record.event_name === 'runtime.module.error-after-stop').map(record => String(record.attributes['bunny.module'])).sort();
+  await phase(runtime, () => placed().length >= 4, 5000, 'the four abort listeners\' errors');
+  assert.deepEqual(placed(), ['handler-rejects', 'handler-throws', 'start-rejects', 'start-throws'], 'each listener\'s error stays with its own module');
   const {body} = await health(runtime.url);
   for (const name of ['handler-throws', 'handler-rejects']) assert.deepEqual(entry(body, name).reason, {code: 'internal', detail: 'a handler threw'}, name);
   for (const name of ['start-throws', 'start-rejects']) assert.deepEqual(entry(body, name).reason, {code: 'internal', detail: 'start failed'}, name);

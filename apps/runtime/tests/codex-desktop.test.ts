@@ -8,13 +8,13 @@ import {chmod, mkdir, mkdtemp, open, readdir, realpath, rm, writeFile} from 'nod
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
-import {DESKTOP_METADATA_SCHEMA, MARKER_FILE, SimulatedMarker, createCodexDesktopModule, folderReader} from '@jimmie-potts/codex-desktop';
+import {DESKTOP_METADATA_SCHEMA, MARKER_FILE, POLL_MS, SimulatedMarker, createCodexDesktopModule, folderReader} from '@jimmie-potts/codex-desktop';
 import {desktopFeedId, sessionEntityId, type DesktopMetadataSnapshot, type Identity, type LifecycleEvent, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {prepareMessage, publishOnce, type Sdk, type SyncedCopy} from '@jimmie-potts/sdk';
 import {producerSource} from '../src/hook/index.js';
 import {createCoreModule, type LogRecord} from '../src/index.js';
 import {lifecycleOf} from './fixtures/agents.js';
-import {contextOf, edgeConfig, entry, fixture, flush, health, it, manualClock, run, stateDir} from './support.js';
+import {contextOf, edgeConfig, entry, fixture, flush, health, it, manualClock, run, stateDir, waitFor} from './support.js';
 
 const SOURCE = {hostId: 'host-sim', sourceId: 'codex-desktop'} as const;
 const desktop = (sessionId: string, sourceId: string = SOURCE.sourceId): Identity => ({provider: 'codex', client: 'desktop', hostId: SOURCE.hostId, sourceId, sessionId});
@@ -52,12 +52,26 @@ async function privateConfig(context: TestContext, home: string): Promise<string
   return file;
 }
 
-/** A hook's observation of a Codex Desktop session, published as a part on the runtime's bus would. */
-async function observe(sdk: Sdk, identity: Identity, event: LifecycleEvent, parent?: Identity): Promise<void> {
-  const data = {...lifecycleOf(event, Date.now(), {identity, turn: 'turn-1'}), ...(parent === undefined ? {} : {parent: {status: 'known' as const, identity: parent}})};
+/**
+ * A hook's observation of a Codex Desktop session at `atMs`, published as a part on the runtime's bus would. Returns the
+ * message's ID.
+ */
+async function observe(sdk: Sdk, identity: Identity, event: LifecycleEvent, parent?: Identity, atMs = Date.now()): Promise<string> {
+  const data = {...lifecycleOf(event, atMs, {identity, turn: 'turn-1'}), ...(parent === undefined ? {} : {parent: {status: 'known' as const, identity: parent}})};
   const subject = sessionEntityId(identity);
-  await sdk.publish(`bunny.event.lifecycle.${subject}`, {kind: 'occurrence', type: 'org.bunny.lifecycle.observed', subject, dataschema: 'https://bunny.invalid/events/lifecycle/2.0', data});
+  const message = await sdk.publish(`bunny.event.lifecycle.${subject}`, {kind: 'occurrence', type: 'org.bunny.lifecycle.observed', subject, dataschema: 'https://bunny.invalid/events/lifecycle/2.0', data});
+  return message.id;
 }
+
+/** Waits until the core has decided on each message in `ids`, taken or not, as its intake records show. */
+async function decided(logs: readonly LogRecord[], ids: readonly string[], what: string): Promise<void> {
+  const taken = (id: string): boolean => logs.some(log => log.event_name === 'message.received' && log.attributes['bunny.module'] === 'core' && log.attributes['bunny.message.id'] === id);
+  await waitFor(() => ids.every(taken), 5000, what);
+}
+
+/** How many of the codex-desktop module's messages the core has decided on. */
+const fromModule = (logs: readonly LogRecord[]): number => logs.filter(log => log.event_name === 'message.received' && log.attributes['bunny.module'] === 'core' &&
+  log.attributes['bunny.participant'] === 'bunny/modules/codex-desktop').length;
 
 /** Waits until the core's record of `identity` satisfies `ready`, through a copy of its sessions. */
 async function until(copy: SyncedCopy<SessionRecord>, identity: Identity, ready: (record: SessionRecord) => boolean, what: string, timeoutMs = 8000): Promise<SessionRecord> {
@@ -196,15 +210,20 @@ it('Desktop metadata from the real reader keeps archives closed and titles indep
   const copy = result.copy;context.after(async () => { await copy.close(); });
   await observe(sdk, desktop('one'), {kind: 'turn-ended'});
   await until(copy, desktop('one'), record => record.title?.value === 'Desktop title', 'the independent title');
-  await observe(sdk, desktop('closed'), {kind: 'turn-started'});
-  await observe(sdk, desktop('closed-child'), {kind: 'turn-started'}, desktop('closed'));
-  await new Promise(resolve => { setTimeout(resolve, 100); });
+  // The module's admission evidence for the archived conversation, as the probe hears it.
+  const unarchived: string[] = [];
+  await sdk.subscribe<{event: {archived?: boolean}}>(`bunny.event.lifecycle.${sessionEntityId(desktop('closed'))}`, message => {
+    if (message.source === 'bunny/modules/codex-desktop' && message.data.event.archived === false) unarchived.push(message.id);
+  });
+  const hooks = [await observe(sdk, desktop('closed'), {kind: 'turn-started'}), await observe(sdk, desktop('closed-child'), {kind: 'turn-started'}, desktop('closed'))];
+  await decided(logs, hooks, 'the core\'s decision on both hooks');
   assert.equal(copy.states().some(message => ['closed', 'closed-child'].includes(message.data.identity.sessionId)), false);
   await rm(file);
   const limit = performance.now() + 6000;
   while (!logs.some(log => log.event_name === 'message.received' && log.attributes['bunny.participant'] === 'bunny/modules/codex-desktop' && log.attributes['bunny.outcome'] === 'accepted') && performance.now() < limit) await flush();
-  // The next completed poll reports the missing positive; a fresh hook then admits the conversation.
-  await new Promise(resolve => { setTimeout(resolve, 2200); });
+  // The next completed poll reports the missing positive. The core takes the bus's lifecycle messages one at a time in
+  // the order they come, so it takes that report before the fresh hook, which then admits the conversation.
+  await waitFor(() => unarchived.length > 0, 8000, 'the poll that reports the archive gone');
   await observe(sdk, desktop('closed'), {kind: 'turn-started'});
   await until(copy, desktop('closed'), () => true, 'fresh unarchived work');
   assert.equal(JSON.stringify(logs).includes(home), false);
@@ -273,31 +292,45 @@ it('a remote source\'s snapshots, published through the edge by the collector\'s
   const hookToken = 'tok_SYNTHETIC567_hook_abcdefghijklmnopqrstuvwxyz0123456789abc';
   const {config} = await edgeConfig(context, [{source: collector, token, scopes: ['ingest']}, {source: hook, token: hookToken, scopes: ['ingest']}],
     {modules: {'codex-desktop': {sources: [{...pc}]}}});
+  // The runtime runs on a clock the test moves, so the module polls its feed only when the test advances a poll.
+  const clock = manualClock();
   const probe = fixture('probe');
-  const {runtime, logs} = await run(context, {modules: [createCoreModule(), createCodexDesktopModule({transport: new SimulatedMarker()}), probe], configFile: config, edge: {schemas: {}}});
+  const {runtime, logs} = await run(context, {
+    logLevel: 'debug', modules: [createCoreModule(), createCodexDesktopModule({transport: new SimulatedMarker()}), probe], configFile: config, edge: {schemas: {}},
+    clock, scheduler: clock.scheduler,
+  });
   const {sdk} = contextOf(probe);
   const synced = await sdk.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
   if (synced.status !== 'synced') assert.fail('the core served its sessions');
   const {copy} = synced;
   const identity = (sessionId: string): Identity => ({...feed, sessionId});
-  await observe(sdk, identity('one'), {kind: 'turn-ended'});
-  await observe(sdk, identity('two'), {kind: 'turn-ended'});
+  await observe(sdk, identity('one'), {kind: 'turn-ended'}, undefined, clock.now());
+  await observe(sdk, identity('two'), {kind: 'turn-ended'}, undefined, clock.now());
   await until(copy, identity('two'), () => true, 'the sessions');
-  const publish = (source: string, bearer: string, data: DesktopMetadataSnapshot, subject = feedId) => publishOnce(
-    {url: runtime.url, source, token: bearer, timeoutMs: 4000}, `bunny.event.desktop-metadata.${subject}`,
-    prepareMessage(source, {kind: 'occurrence', type: 'org.bunny.desktop-metadata.observed', subject, dataschema: DESKTOP_METADATA_SCHEMA, data}),
-  );
-  const snapshot = (fields: Partial<DesktopMetadataSnapshot>): DesktopMetadataSnapshot => ({feed, observedAtMs: Date.now(), stamp: `s${Date.now()}`, unread: [], archived: [], titles: [], ...fields});
-  // The collector's first snapshot: one listed as unread, a title for the other, and an archived conversation.
+  /** Publishes a snapshot through the edge; once the edge takes it, waits until the module has taken it from the bus. */
+  const publish = async (source: string, bearer: string, data: DesktopMetadataSnapshot, subject = feedId) => {
+    const message = prepareMessage(source, {kind: 'occurrence', type: 'org.bunny.desktop-metadata.observed', subject, dataschema: DESKTOP_METADATA_SCHEMA, data});
+    const result = await publishOnce({url: runtime.url, source, token: bearer, timeoutMs: 4000}, `bunny.event.desktop-metadata.${subject}`, message);
+    if (result.status === 'published') {
+      await waitFor(() => logs.some(log => log.event_name === 'message.received' && log.attributes['bunny.module'] === 'codex-desktop' && log.attributes['bunny.message.id'] === message.id),
+        5000, 'the module\'s receipt of the snapshot');
+    }
+    return result;
+  };
+  const snapshot = (fields: Partial<DesktopMetadataSnapshot>): DesktopMetadataSnapshot => ({feed, observedAtMs: clock.now(), stamp: `s${clock.now()}`, unread: [], archived: [], titles: [], ...fields});
+  // The collector's first snapshot: one listed as unread, a title for the other, and an archived conversation. The
+  // module's first poll, due at its start, reads it.
   assert.deepEqual(await publish(collector, token, snapshot({unread: ['one'], archived: ['closed'], titles: [{id: 'two', title: {value: 'PC title', source: 'provider'}}]})), {status: 'published'});
+  clock.advance(0);
   await until(copy, identity('one'), record => record.read === 'unread', 'the unread session');
   await until(copy, identity('two'), record => record.title?.value === 'PC title', 'the titled session');
   // A late hook for the archived conversation is refused admission while the positive evidence is fresh.
-  await observe(sdk, identity('closed'), {kind: 'turn-ended'});
-  await new Promise(resolve => { setTimeout(resolve, 300); });
+  await decided(logs, [await observe(sdk, identity('closed'), {kind: 'turn-ended'}, undefined, clock.now())], 'the core\'s decision on the late hook');
   assert.equal(readOf(copy, identity('closed')), undefined, 'the archived conversation was admitted');
-  // Desktop clears the flag: the next snapshot reads the session as read.
+  // Desktop clears the flag: the next snapshot, a poll later, reads the session as read at the poll after it.
+  clock.advance(POLL_MS);
   assert.deepEqual(await publish(collector, token, snapshot({unread: [], archived: ['closed']})), {status: 'published'});
+  clock.advance(POLL_MS);
   await until(copy, identity('one'), record => record.read === 'read', 'the read session');
   // A hook's credential cannot speak for the feed, and the collector's cannot speak for another feed: neither changes a record.
   const before = [readOf(copy, identity('one')), readOf(copy, identity('two'))];
@@ -306,7 +339,12 @@ it('a remote source\'s snapshots, published through the edge by the collector\'s
   const mac = {provider: 'codex', client: 'desktop', hostId: 'mac-sim', sourceId: 'codex-desktop'} as const;
   const other = await publish(collector, token, {...snapshot({unread: ['one', 'two']}), feed: mac}, desktopFeedId(mac));
   assert.equal(other.status === 'rejected' ? other.error.error.code : other.status, 'forbidden');
-  await new Promise(resolve => { setTimeout(resolve, 2500); });
+  // A poll's worth of time and more passes: the module polls its feed once, the core decides on what that poll sent,
+  // and any evidence the same poll drew then reaches the copy.
+  const sent = fromModule(logs);
+  clock.advance(2500);
+  await waitFor(() => fromModule(logs) > sent, 5000, 'the core\'s decision on the next poll\'s messages');
+  for (let n = 0; n < 8; n += 1) await flush();
   assert.deepEqual([readOf(copy, identity('one')), readOf(copy, identity('two'))], before, 'a refused snapshot changed read state');
   // The module published as itself, and nothing carried a token.
   const intake = logs.filter(record => record.event_name === 'message.received' && record.attributes['bunny.participant'] === 'bunny/modules/codex-desktop');
