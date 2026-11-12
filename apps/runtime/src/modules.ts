@@ -4,9 +4,13 @@
 // a code change in its own folder, fixed when the runtime is built. Each entry is a factory: it creates the module with
 // its real device transport, or, when the runtime runs with `--simulate`, with its simulated one, so a disposable
 // verification run (#920) touches no device.
-import {bookkeepingProblem, contractSchemas, familyOfSchema, isContractFamily, type Bookkeeping} from '@jimmie-potts/event-contracts/v2/bookkeeping';
+import {
+  bookkeeping as contractBookkeeping, bookkeepingProblem, contractFamilies, contractSchemas, familyOfSchema, isContractFamily, type Bookkeeping,
+} from '@jimmie-potts/event-contracts/v2/bookkeeping';
 import type {BunnyModule, ModuleFactory, ModuleRegistration} from '@jimmie-potts/sdk';
 import {CORE_MODULE, createCoreModule} from './core/core.js';
+import type {HistoryRules} from './core/history.js';
+import {sourceOf} from './host.js';
 import {REGISTRATIONS} from './registry.js';
 
 export type {ModuleFactory, ModuleRegistration} from '@jimmie-potts/sdk';
@@ -18,6 +22,11 @@ export type {ModuleFactory, ModuleRegistration} from '@jimmie-potts/sdk';
  * the same. It is not a registration, so no declared order can move it.
  */
 export const coreFactory: ModuleFactory = {name: CORE_MODULE, create: () => createCoreModule(), simulate: () => createCoreModule()};
+// `coreFactory` gives history the contracts package's rules only; `shippedList` builds the core with every registration's.
+
+/** The longest polling interval a module may declare: one hour. */
+export const MAX_POLLING_MS = 3_600_000;
+const contractStates = new Set(contractFamilies.filter(({kind}) => kind === 'state').map(({family}) => family));
 
 /** Throws a fixed sentence: the registrations break a rule of the shipped list, which a build of this checkout must fix. */
 function refuse(sentence: string): never {
@@ -60,13 +69,15 @@ export function orderModules(registrations: readonly ModuleRegistration[]): Modu
 }
 
 /**
- * The core's factory, then every shipped registration in start order. Throws as `orderModules` does, and when a
- * registration's bookkeeping declaration breaks a rule of `moduleBookkeeping`, so the runtime does not start.
+ * The core's factory, with the history rules of every registration, then every shipped registration in start order.
+ * Throws as `orderModules` does, and when a registration's bookkeeping or polling declaration breaks a rule of
+ * `moduleBookkeeping` or `modulePolling`, so the runtime does not start.
  */
 export function shippedList(registrations: readonly ModuleRegistration[]): ModuleFactory[] {
   const ordered = orderModules(registrations);
-  moduleBookkeeping(registrations);
-  return [coreFactory, ...ordered];
+  const history = historyRules(registrations);
+  const create = (): BunnyModule => createCoreModule({history});
+  return [{name: CORE_MODULE, create, simulate: create}, ...ordered];
 }
 
 /** Every module folder's registration, shipped or not, in folder order, as the build collected them. */
@@ -87,7 +98,7 @@ export function moduleSchemas(factories: readonly ModuleFactory[]): Readonly<Rec
 /**
  * Every factory's bookkeeping members, by family (Hub #1771), beside the contracts package's own. Throws for a module
  * that declares a family of the contracts package, a family its `schemas` do not register or one another module also
- * declares, and for pointers `bookkeepingProblem` refuses. Nothing reads the result yet: history will (#1772).
+ * declares, and for pointers `bookkeepingProblem` refuses. History reads the result (#1772).
  */
 export function moduleBookkeeping(factories: readonly ModuleFactory[]): Bookkeeping {
   const merged: Record<string, readonly string[]> = {};
@@ -104,4 +115,36 @@ export function moduleBookkeeping(factories: readonly ModuleFactory[]): Bookkeep
     }
   }
   return Object.freeze(merged);
+}
+
+
+/**
+ * The families each factory publishes on a poll, by the factory's source, with their polling intervals (Hub #1772).
+ * Throws for a family that is neither a state family of the contracts package nor one the factory's `schemas`
+ * register, and for an interval that is not a whole number of milliseconds from 1 to `MAX_POLLING_MS`.
+ */
+export function modulePolling(factories: readonly ModuleFactory[]): HistoryRules['polling'] {
+  const polling: Record<string, Readonly<Record<string, number>>> = {};
+  for (const {name, schemas = {}, polling: declared = {}} of factories) {
+    const own = new Set(Object.keys(schemas).map(familyOfSchema).filter((family): family is string => family !== undefined));
+    const families: Record<string, number> = {};
+    for (const [family, interval] of Object.entries(declared)) {
+      if (!contractStates.has(family) && !own.has(family)) refuse(`${name} declares a polling interval for ${family}, which is not a state family it can publish`);
+      if (!Number.isSafeInteger(interval) || interval < 1 || interval > MAX_POLLING_MS) {
+        refuse(`${name}'s polling interval for ${family} is not a whole number of milliseconds from 1 to ${MAX_POLLING_MS}`);
+      }
+      families[family] = interval;
+    }
+    if (Object.keys(families).length > 0) polling[sourceOf(name)] = Object.freeze(families);
+  }
+  return Object.freeze(polling);
+}
+
+/**
+ * What the core's history needs to know of the shipped families (Hub #1772): the contracts package's bookkeeping
+ * members with every factory's own, and every factory's polled families. Throws as `moduleBookkeeping` and
+ * `modulePolling` do.
+ */
+export function historyRules(factories: readonly ModuleFactory[]): HistoryRules {
+  return Object.freeze({bookkeeping: Object.freeze({...contractBookkeeping, ...moduleBookkeeping(factories)}), polling: modulePolling(factories)});
 }

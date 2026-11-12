@@ -3,7 +3,7 @@
 // reaches it: it reports what it shows to the supervisor, which hands that to the next runtime, so the Pixoo keeps its
 // picture and its mode across a restart, as a real one does, and the supervisor hands each mode change to it.
 import type {DeviceSimulation, ModuleRegistration} from '@jimmie-potts/sdk';
-import {createPixooModule, pixooFactory} from './module.js';
+import {createPixooModule, pixooFactory, PROBE_MS} from './module.js';
 import {SimulatedPixoo, type SimulatedMode, type SimulatedPixooState} from './transport.js';
 
 const MODES: readonly string[] = ['online', 'offline', 'silent'] satisfies SimulatedMode[];
@@ -46,7 +46,10 @@ export const pixooSimulation: DeviceSimulation<SimulatedPixoo, Held> = {
 };
 
 // After the playback module, whose record Now Playing follows from its start. The status picture turns its page every
-// 10 s while several pages match, so the page shown is bookkeeping (owner decision 3 on #1768, 2026-11-12; #1771).
+// 10 s while several pages match, so the page shown is bookkeeping (owner decision 3 on #1768, 2026-11-12; #1771). The
+// device record is published after each probe, every `PROBE_MS` while the device answers, with its new reading time
+// (#1772); the display record follows what is shown and is not polled.
 export const registration: ModuleRegistration = {
   ...pixooFactory, shipped: true, order: 400, after: ['playback'], simulation: pixooSimulation, bookkeeping: {'pixoo-display': ['/monitor/page']},
+  polling: {device: PROBE_MS},
 };

@@ -32,7 +32,7 @@ import {
 } from '@jimmie-potts/sdk';
 import {takeLock, type Lock} from './lock.js';
 import {borrowRuntimeOwnership, type CoreOwnership} from '../runtime-ownership.js';
-import {History, type HistoryEntry, type OperationStep} from './history.js';
+import {History, type HistoryEntry, type HistoryRules, type OperationStep} from './history.js';
 import {
   REMOVAL_SCHEMA, sessionSchema, attentionAdded, changed, entityOf, project, turnsUncertainAt,
 } from './mapping.js';
@@ -108,6 +108,8 @@ export type StoreOptions = {
   saveCost?: SaveCost;
   /** Monotonic milliseconds that saves are timed with: `performance.now` by default. */
   timer?: () => number;
+  /** What history needs to know of the families it keeps (#1772): `DEFAULT_HISTORY_RULES` by default. */
+  history?: HistoryRules;
 };
 
 /** When a save of the state block is costly: past `stateBytes` of state, or past `saveMs` of work. */
@@ -434,7 +436,7 @@ export class CoreStore implements Storage {
       CREATE TABLE IF NOT EXISTS core_taken (source TEXT NOT NULL, id TEXT NOT NULL, message TEXT NOT NULL, expires_at_ms INTEGER,
         PRIMARY KEY (source, id)) STRICT;
       CREATE INDEX IF NOT EXISTS core_taken_expiry ON core_taken (expires_at_ms) WHERE expires_at_ms IS NOT NULL`);
-    const history = new History(db);
+    const history = new History(db, this.#options.history);
     for (const open of this.#options.open ?? []) open(db);
     const statements = prepare(db);
     const outbox = new Outbox({

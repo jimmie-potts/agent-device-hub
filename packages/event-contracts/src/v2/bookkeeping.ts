@@ -5,7 +5,7 @@
 // bookkeeping member declares an empty list, which is a deliberate answer: every member counts.
 //
 // The declaration is metadata. It changes no message, schema, payload or validation result, and it is not a family
-// version. Nothing reads it yet: history will use it to tell a repeated reading from a change (#1772).
+// version. The core's history reads it to tell a repeated reading from a change (#1772).
 import {SCHEMA_BASE, schemas} from './index.js';
 import {artStateFamilies} from './art-state.js';
 import {deviceFamilies} from './devices.js';

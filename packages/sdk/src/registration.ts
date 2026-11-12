@@ -21,9 +21,19 @@ export type ModuleFactory = {
    * The bookkeeping members of the module's own state families (Hub #1771): by family, JSON pointers to members that
    * may change while the state does not, such as a reading time. A family left out has none. A module declares only
    * families its `schemas` register and never a family of the contracts package, whose `v2/bookkeeping` declares
-   * those; the runtime refuses the shipped list at start otherwise. Nothing reads it yet: history will (#1772).
+   * those; the runtime refuses the shipped list at start otherwise. History reads it to tell a repeated reading from a
+   * change (#1772).
    */
   readonly bookkeeping?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * The state families the module publishes on a poll (Hub #1772), each with its polling interval in milliseconds: the
+   * longest one when the interval changes with the device's state. A family left out is published only when something
+   * happens. A family is one the module's `schemas` register or a state family of the contracts package, such as
+   * `device`; the interval is a whole number of milliseconds from 1 to one hour. The runtime refuses the shipped list at
+   * start otherwise. History writes a gap row for a declared family when its readings fall silent for more than four
+   * times this interval, and at least two minutes (#1768, decision 4).
+   */
+  readonly polling?: Readonly<Record<string, number>>;
   /** The module's configuration section for simulated runs (--simulate, the shipped run, tests), without its `secrets` member. */
   readonly simulatedSection?: {
     readonly config: Readonly<Record<string, unknown>>;

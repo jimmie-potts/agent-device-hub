@@ -1,5 +1,5 @@
 import type {DeviceAction,DeviceSimulation,ModuleRegistration} from '@jimmie-potts/sdk';
-import {createWemoModule} from './module.js';
+import {createWemoModule,POLL_MS} from './module.js';
 import {registerWemoFamilies,wemoSchemas} from './families.js';
 import type {Attempt,Observation,PlugTransport} from './transport.js';
 import {Outcome} from '@jimmie-potts/sdk';
@@ -24,4 +24,5 @@ const simulation:DeviceSimulation<SimulatedWemo,SimulatedWemo>={
       async setPower(on,signal,before){const code=before();if(code!==undefined)return {result:Outcome.failed,evidence:Outcome.none,code,connection:'unknown'};const answer=await link.call('set',{id:plug.id,on},signal);return answer.status==='answered'?answer.value as Attempt:{result:Outcome.uncertain,evidence:Outcome.none,code:'uncertain-result',connection:'unknown'};},
     })}),},
 };
-export const registration:ModuleRegistration={name:'wemo',shipped:true,order:550,create:()=>createWemoModule(),simulate:()=>{const device=new SimulatedWemo();return createWemoModule({transport:plug=>device.transport(plug.id)});},schemas:wemoSchemas,registerFamilies:registerWemoFamilies,simulatedSection:{config:WEMO_SIMULATED_SECTION},simulation};
+// Each plug is read every `POLL_MS` after its last read ends, and each answer publishes its device record with a new reading time (#1772).
+export const registration:ModuleRegistration={name:'wemo',shipped:true,order:550,create:()=>createWemoModule(),simulate:()=>{const device=new SimulatedWemo();return createWemoModule({transport:plug=>device.transport(plug.id)});},schemas:wemoSchemas,registerFamilies:registerWemoFamilies,simulatedSection:{config:WEMO_SIMULATED_SECTION},simulation,polling:{device:POLL_MS}};

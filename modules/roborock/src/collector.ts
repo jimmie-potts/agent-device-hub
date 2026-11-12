@@ -17,6 +17,9 @@ const TRANSPORT_READ_MS = 9000;
 const CYCLE_MS = 120000;
 const MAP_WINDOW_MS = 60000;
 const MAX_BACKOFF_MS = 300000;
+// How long after a status reading the next poll starts: while cleaning or returning, and otherwise.
+export const ACTIVE_POLL_MS = 15000;
+export const IDLE_POLL_MS = 60000;
 // A request admitted this long after its policy deadline is on time. Timers and a poll's
 // own admission take milliseconds; serialized work that holds a poll back takes whole reads.
 const MISSED_POLL_GRACE_MS = 500;
@@ -317,7 +320,7 @@ export class Collector {
         this.#timer?.();
         const status = this.#control.status;
         const cadence = status.activity === 'cleaning' || status.activity === 'returning'
-            ? 15000 : 60000;
+            ? ACTIVE_POLL_MS : IDLE_POLL_MS;
         const delay = explicit ?? (this.#pending !== undefined || this.#control.failureStreak > 0
             ? retryDelay(this.#control.failureStreak)
             : this.#store.hasIdentity() && this.#store.hasGapRecoveryWork()
@@ -701,7 +704,7 @@ export class Collector {
         if (control.status.availability === 'available' && control.openGapId === null
             && control.status.observedAtMs.status === 'known') {
             const cadence = control.status.activity === 'cleaning' || control.status.activity === 'returning'
-                ? 15000 : 60000;
+                ? ACTIVE_POLL_MS : IDLE_POLL_MS;
             const expected = control.status.observedAtMs.value + cadence;
             if (entry.requestedAt > expected + MISSED_POLL_GRACE_MS) {
                 this.#store.appendGap({
