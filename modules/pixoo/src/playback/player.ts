@@ -25,8 +25,9 @@ export class Player {
   private listeners=new Set<()=>void>();
   private published='';
   subscribe(listener:()=>void):()=>void {this.listeners.add(listener);return ()=>{this.listeners.delete(listener);};}
-  private notify():void {
-    const state=JSON.stringify(this.getState());if(state===this.published)return;this.published=state;
+  /** `force` tells the listeners even when the state is unchanged, as a probe's recovery does, which only a counter shows. */
+  private notify(force=false):void {
+    const state=JSON.stringify(this.getState());if(state===this.published&&!force)return;this.published=state;
     for(const listener of this.listeners){try{listener();}catch{/* Observers cannot interrupt the player. */}}
   }
   private record:PlaybackCheckpoint|undefined;
@@ -223,13 +224,29 @@ export class Player {
     else if(result.code==='stale-generation'||result.code==='cancelled')await this.takeover();
     if(generation===this.adapterGeneration)await this.queue(()=>this.persist());
   }
+  /** Whether a probe failed since the last one that answered, and how many times one answered after such a failure. */
+  private probeFailed=false;
+  private recoveredProbes=0;
+  /**
+   * How many times a probe answered after one that failed with any code but `cancelled` or `stale-generation`, which
+   * mean another writer, not an outage. The device may have restarted in between, though availability never left
+   * `available`, so the presentation sends its picture again (Hub #1765). Listeners hear each new recovery.
+   */
+  probeRecoveries():number{return this.recoveredProbes;}
   /** Reads the device's channel and display settings. `timeoutMs` shortens the deadline, as a background reachability check does. */
   async probe(options:{timeoutMs?:number}={}){
     if(this.closing)throw new PlaybackError('closed');
     const generation=this.adapterGeneration;
     const result=await this.device.probe({generation,timeoutMs:options.timeoutMs??this.operationTimeoutMs});
     this.observeProbe(result,generation);
-    await this.observedControl(result,generation);return result;
+    let recovered=false;
+    if(generation===this.adapterGeneration&&!this.closing){
+     if(!result.ok&&result.code!=='cancelled'&&result.code!=='stale-generation')this.probeFailed=true;
+     else if(result.ok&&this.probeFailed){this.probeFailed=false;this.recoveredProbes++;recovered=true;}
+    }
+    await this.observedControl(result,generation);
+    if(recovered)this.notify(true);
+    return result;
   }
   async setBrightness(percent:number):Promise<OperationResult<void>> {
     if(!Number.isInteger(percent)||percent<0||percent>100)throw new PlaybackError('invalid-input');
