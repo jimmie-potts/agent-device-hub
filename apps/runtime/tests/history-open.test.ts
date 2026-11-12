@@ -96,10 +96,10 @@ void test('a page carries the open span of each entity with a change row in it, 
   ], 'the heater\'s span holds only its row\'s reading, so it is no open span, as it would close none');
   // A page with each entity's first row only still gets each entity's open span: the reader decides which row it
   // continues. A page holding none of the fan's rows asks nothing about the fan.
-  const first = history.page(historyFilter({toAtMs: T0}) as HistoryFilter);
+  const first = history.page(historyFilter({toAtMs: T0}));
   assert.deepEqual(first.open?.map(span => span.id), ['lamp', 'fan']);
   const asked = lookups();
-  const quiet = history.page(historyFilter({fromAtMs: T0 + 1, toAtMs: T0 + 9000}) as HistoryFilter);
+  const quiet = history.page(historyFilter({fromAtMs: T0 + 1, toAtMs: T0 + 9000}));
   assert.equal(quiet.rows.length, 1, 'only the occurrence');
   assert.equal(quiet.open, undefined);
   assert.equal(lookups(), asked, 'a page without change rows asks nothing');
