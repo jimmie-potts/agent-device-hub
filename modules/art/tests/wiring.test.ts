@@ -11,10 +11,37 @@ import {createArtModule} from '../src/module.js';
 import {registration} from '../src/registration.js';
 import {artDevice, deviceDraft} from './device-fixtures.js';
 import {drawing, fakeImages} from './fixtures.js';
-import {hosted, until} from './support.js';
+import {hosted, until, type Hosted} from './support.js';
 
 /** One turn of the event loop: the bus, the module's sync copies and its outbox settle on promises, never on a timer. */
 const flush = () => new Promise<void>(resolve => {setImmediate(resolve);});
+/**
+ * The module's scheduler, recorded as the other art tests record it: a timer runs only when `advance` moves the module's
+ * clock past it. The bus keeps its own real request deadlines, which are 2 s or more.
+ */
+function moduleTimers() {
+  let elapsed = 0;
+  const timers: {at: number; callback: () => void; cancelled: boolean}[] = [];
+  const scheduler = {after: (delay: number, callback: () => void) => {const timer = {at: elapsed + delay, callback, cancelled: false}; timers.push(timer); return () => {timer.cancelled = true;};}};
+  /**
+   * Lets the work under way settle for one turn, then moves `art`'s clock `ms` on, running each timer that falls due in
+   * order of its time, with one turn after each for the work it starts.
+   */
+  const advance = async (art: Hosted, ms: number): Promise<void> => {
+    const end = elapsed + ms;
+    await flush();
+    for (;;) {
+      const due = timers.filter(timer => !timer.cancelled && timer.at <= end).sort((a, b) => a.at - b.at)[0];
+      if (due === undefined) break;
+      due.cancelled = true;
+      art.clock.value += due.at - elapsed; elapsed = due.at;
+      due.callback();
+      await flush();
+    }
+    art.clock.value += end - elapsed; elapsed = end;
+  };
+  return {scheduler, advance};
+}
 
 const start = (targets: string[], purpose = 'request') => ({action: 'start', purpose, origin: {kind: 'owner'}, targets});
 const validator = new MessageValidator(); registerCoreFamilies(validator);
@@ -23,7 +50,8 @@ const operation = (requestId: string, status: OperationRecord['status'], result?
 
 /** The module with the default seams and a stand-in core: it checks each dispatch and publishes the operation records a test asks for. */
 async function withCore(t: TestContext) {
-  const dispatched: Message<ArtDispatch>[] = [], providers = {openai: fakeImages(drawing())}, art = await hosted(t, {providers}), {operator} = art;
+  const timers = moduleTimers(), dispatched: Message<ArtDispatch>[] = [], providers = {openai: fakeImages(drawing())};
+  const art = await hosted(t, {providers, scheduler: timers.scheduler}), {operator} = art;
   await operator.respond<ArtDispatch>('bunny.cmd.art-dispatch.art', command => {
     const checked = validator.validate(command, {nowMs: art.clock.now()});
     assert.equal(checked.ok, true, JSON.stringify(checked));
@@ -58,12 +86,14 @@ async function withCore(t: TestContext) {
     await flush();
   };
   await restart();
-  return {art, dispatched, publish, restart};
+  /** Moves the module's clock `ms` on, after the work under way has settled, and runs the module's timers that fall due. */
+  const advance = (ms: number): Promise<void> => timers.advance(art, ms);
+  return {art, dispatched, publish, restart, advance};
 }
 const stageOf = (message: Message<ArtDispatch> | undefined): Extract<ArtDispatch, {family: 'art-stage'}> => message?.data.family === 'art-stage' ? message.data : assert.fail('not a stage');
 
 void test('a composition is dispatched through the core as a valid art-stage, and offered only after its operation succeeded', async t => {
-  const {art, dispatched, publish} = await withCore(t);
+  const {art, dispatched, publish, advance} = await withCore(t);
   await art.owner(start(['tidbyt']), 'req');
   await art.finished('req');
   await until(() => dispatched.length === 1, 'the dispatch');
@@ -73,7 +103,7 @@ void test('a composition is dispatched through the core as a valid art-stage, an
   assert.equal(stage.data.compositionId, art.state.artworks[0]?.compositions[0]?.compositionId);
   // The module follows the core's records since its sync at start, and an accepted operation proves no effect.
   await publish(operation(stage.requestId, 'accepted'), 2);
-  await flush();
+  await advance(20);
   assert.equal(art.state.candidates.length, 0);
   await publish(operation(stage.requestId, 'completed', 'succeeded'), 3);
   await until(() => art.state.candidates.length === 1, 'the candidate');
@@ -83,24 +113,25 @@ void test('a composition is dispatched through the core as a valid art-stage, an
 });
 
 void test('a failed or rejected operation offers nothing, and another module\'s records are ignored', async t => {
-  const {art, dispatched, publish} = await withCore(t);
+  const {art, dispatched, publish, advance} = await withCore(t);
   await art.owner(start(['pixoo']), 'req');
   await art.finished('req');
   await until(() => dispatched.length === 1, 'the dispatch');
   await publish({...operation('other', 'completed', 'succeeded'), family: 'power-set'}, 2);
   await publish(operation(stageOf(dispatched[0]).requestId, 'rejected'), 3);
-  await flush();
+  await advance(20);
   assert.deepEqual(art.state.candidates, []);
   assert.equal(dispatched.length, 1);
 });
 
 void test('after a restart a stage is not resent, and the core\'s record can still settle it', async t => {
-  const {art, dispatched, publish, restart} = await withCore(t);
+  const {art, dispatched, publish, restart, advance} = await withCore(t);
   await art.owner(start(['tidbyt']), 'req');
   await art.finished('req');
   await until(() => dispatched.length === 1, 'the dispatch');
   const {requestId} = stageOf(dispatched[0]);
   await restart();
+  await advance(30);
   assert.equal(dispatched.length, 1, 'a restart resends nothing');
   assert.equal(art.state.candidates.length, 0);
   await publish(operation(requestId, 'completed', 'succeeded'), 2);
@@ -125,9 +156,8 @@ void test('an ambient job sets the tile through the core once its stage succeede
  * sync meets no owner, so it asks again 1 s later on its own clock, which `retry` advances.
  */
 async function withWeather(t: TestContext, record: () => object) {
-  const timers: {delay: number; callback: () => void; cancelled: boolean}[] = [];
-  const scheduler = {after: (delay: number, callback: () => void) => {const timer = {delay, callback, cancelled: false}; timers.push(timer); return () => {timer.cancelled = true;};}};
-  const images = fakeImages(drawing()), art = await hosted(t, {providers: {openai: images}, scheduler}), owner: Participant = art.bus.connect('bunny/modules/weather');
+  const timers = moduleTimers();
+  const images = fakeImages(drawing()), art = await hosted(t, {providers: {openai: images}, scheduler: timers.scheduler}), owner: Participant = art.bus.connect('bunny/modules/weather');
   t.after(() => owner.close());
   let syncs = 0;
   await owner.serveSync(['weather-state'], () => {
@@ -135,13 +165,12 @@ async function withWeather(t: TestContext, record: () => object) {
     return {revision: 1, states: [{type: 'org.bunny.weather-state.updated', subject: 'local', dataschema: 'https://bunny.invalid/events/weather-state/2.0', data: record() as never}]};
   });
   /**
-   * Moves the module's clock 1 s on and runs every timer the module set at its start that falls due by then: the retries
-   * of the copies it follows, the weather copy's among them. It then waits until the weather owner has served the module,
+   * Moves the module's clock 1 s on and runs every timer that falls due by then: the retries of the copies the module
+   * follows, the weather copy's among them. It then waits until the weather owner has served the module,
    * and one turn more for the module to take the answer.
    */
   const retry = async (): Promise<void> => {
-    art.clock.value += 1000;
-    for (const timer of timers.filter(entry => !entry.cancelled && entry.delay <= 1000)) {timer.cancelled = true; timer.callback();}
+    await timers.advance(art, 1000);
     await until(() => syncs > 0, 'the weather owner to serve the module\'s retry');
     await flush();
   };
