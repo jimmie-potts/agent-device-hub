@@ -14,8 +14,6 @@ const handling = (h: Harness, action: 'dismiss' | 'send-again') => {
 export const inboxScenarios: readonly Scenario[] = [{
   id: 'shared-inbox-history', title: 'failed and uncertain operations require explicit handling; history reads send nothing',
   seed: {modules: ['core', 'lamp'], follows: [[...CORE_FAMILIES, 'operation'], ['lamp']]},
-  // The 60 s mode outcome deadline passes on virtual time in a disposable run (Hub #1710).
-  runClock: 'virtual',
   steps: [
     act('the simulated lamp fails its next command', h => { h.simulate({device: 'lamp', action: 'fail-next'}); }),
     act('the operator switches the lamp on', h => dispatchOnce(h, 'operator', 'fail-inbox', switchLamp('lamp-1', 'on'), 'inbox-failed')),

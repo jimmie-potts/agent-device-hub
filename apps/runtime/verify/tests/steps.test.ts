@@ -143,9 +143,8 @@ for (const step of inShard(reference, shard)) {
       const attached = result.attachments.find(file => file.endsWith('scenario-result.json'));
       if (attached === undefined) assert.fail(`${step} attaches its scenario result`);
       const scenario = JSON.parse(await readFile(attached, 'utf8')) as {synthetic: boolean; physical: boolean; clock: string; outcome: string; tier: string; problems: unknown[]};
-      // The proof says which clock the run was on (Hub #1710): virtual only for a scenario that asks for it.
-      const clock = SCENARIOS.find(entry => `scenario-${entry.id}` === step)?.runClock ?? 'real';
-      assert.deepEqual([scenario.synthetic, scenario.physical, scenario.clock, scenario.outcome, scenario.tier, scenario.problems], [true, false, clock, 'passed', 'run', []]);
+      // The proof says which clock the run was on (Hub #1710): every catalog scenario's run is on virtual time (Hub #1711).
+      assert.deepEqual([scenario.synthetic, scenario.physical, scenario.clock, scenario.outcome, scenario.tier, scenario.problems], [true, false, 'virtual', 'passed', 'run', []]);
     }
     if (step === 'follow-one-request') await assertFollowAttachments(result);
   });

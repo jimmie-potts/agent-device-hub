@@ -244,11 +244,6 @@ export type Scenario = {
   /** Keep a browser journey's final view instead of returning to health for its screenshot. */
   readonly keepCapturePage?: boolean;
   readonly captureTimeoutMs?: number;
-  /**
-   * A disposable run of this scenario runs on virtual time (Hub #1710): the runtime and its simulated devices move only
-   * when the run adapter advances them. Without it, a run is on the real clock.
-   */
-  readonly runClock?: 'virtual';
 };
 export type StepResult = {name: string; kind: Step['kind']; outcome: 'passed' | 'failed'; detail?: string};
 export type ScenarioResult = {

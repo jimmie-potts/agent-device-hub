@@ -29,7 +29,7 @@ export type RunScenario = {
   wisprFixture?: Seed['wisprFixture']; sections?: Seed['sections'];
   /** Whether the run grants the Desktop metadata collector's credential and writes its files at each start (Hub #567). */
   collector?: boolean;
-  /** The run's clock: real unless the catalog scenario asks for virtual time (Hub #1710). */
+  /** The run's clock (Hub #1710): virtual for a catalog scenario's run (Hub #1711), real for every other run. */
   clock?: RunClock;
 };
 
@@ -53,7 +53,8 @@ export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
     description: `Seeded for the catalog scenario: ${scenario.title}`, runtime: 'fixtures', modules: scenario.seed.modules,
     ...(scenario.seed.config === undefined ? {} : {config: scenario.seed.config}), ...(scenario.seed.sections === undefined ? {} : {sections: scenario.seed.sections}), ...(scenario.seed.refused === undefined ? {} : {refused: scenario.seed.refused}),
     ...(scenario.seed.wisprFixture === undefined ? {} : {wisprFixture: scenario.seed.wisprFixture}),
-    ...(scenario.runClock === undefined ? {} : {clock: scenario.runClock}),
+    // Every catalog scenario's run is on virtual time (Hub #1711): its waits pass when the run adapter advances them.
+    clock: 'virtual',
   } satisfies RunScenario])),
   'control-real-transports': {
     description: 'Negative control, start only: the shipped runtime without --simulate, so the simulated-transports check fails',

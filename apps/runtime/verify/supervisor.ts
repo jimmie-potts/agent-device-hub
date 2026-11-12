@@ -298,15 +298,26 @@ async function stopRuntime(): Promise<void> {
   await flushed;
 }
 
+/** A restart that keeps the runtime stopped until the harness API releases it (Hub #1711), or undefined. */
+let held: (() => void) | undefined;
+
 /**
  * Stops the runtime and starts it again, after any start or restart before it, `holdMs` after it stopped, so that a
- * hook can meet a stopped runtime (Hub #926). A runtime that cannot start ends the run.
+ * hook can meet a stopped runtime (Hub #926). With `untilReleased`, the runtime stays stopped until `POST /release`, or
+ * at most `MAX_HOLD_MS` of real time, before the hold begins: on virtual time a hold passes at once, so a hook that runs
+ * against the stopped runtime holds it with a release instead (Hub #1711). A runtime that cannot start ends the run.
  */
-function restart(holdMs = 0): Promise<void> {
+function restart(holdMs = 0, untilReleased = false): Promise<void> {
   return queue(async () => {
     restarting = true;
     try {
       await stopRuntime();
+      if (untilReleased) {
+        await new Promise<void>(released => {
+          const timer = setTimeout(() => { held = undefined; released(); }, MAX_HOLD_MS);
+          held = () => { clearTimeout(timer); held = undefined; released(); };
+        });
+      }
       // On virtual time the hold is virtual too: the devices' timers run through it while no runtime does.
       if (holdMs > 0) await (virtual === undefined ? new Promise(resolve => { setTimeout(resolve, holdMs); }) : advanceBy(holdMs));
       await start();
@@ -525,12 +536,16 @@ async function body(request: IncomingMessage): Promise<unknown> {
   }
 }
 
-/** How long a restart request holds the runtime stopped: 0 without `holdMs`, or undefined for any other field or value. */
-function holdOf(value: unknown): number | undefined {
+/**
+ * How long a restart request holds the runtime stopped, 0 without `holdMs`, and whether it waits for a release first
+ * (`untilReleased`, false without it), or undefined for any other field or value.
+ */
+function holdOf(value: unknown): {holdMs: number; untilReleased: boolean} | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const {holdMs = 0, ...rest} = value as Record<string, unknown>;
+  const {holdMs = 0, untilReleased = false, ...rest} = value as Record<string, unknown>;
   if (Object.keys(rest).length > 0 || typeof holdMs !== 'number' || !Number.isSafeInteger(holdMs) || holdMs < 0 || holdMs > MAX_HOLD_MS) return undefined;
-  return holdMs;
+  if (typeof untilReleased !== 'boolean') return undefined;
+  return {holdMs, untilReleased};
 }
 
 /** The actions the harness accepts for each fixture module's device: every action a `FixtureSimulation` names, as `Unlisted` checks. */
@@ -656,12 +671,21 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       return answer(response, 200, clockState(virtual));
     }
     case 'POST /restart': {
-      const holdMs = holdOf(await body(request));
-      if (holdMs === undefined) {
-        return answer(response, 400, refusal('invalid-request', `a restart takes only holdMs, a whole number of milliseconds from 0 to ${MAX_HOLD_MS}`));
+      const hold = holdOf(await body(request));
+      if (hold === undefined) {
+        return answer(response, 400, refusal('invalid-request', `a restart takes only holdMs, a whole number of milliseconds from 0 to ${MAX_HOLD_MS}, and untilReleased, true or false`));
       }
-      await restart(holdMs);
+      await restart(hold.holdMs, hold.untilReleased);
       return answer(response, 200, {status: 'restarted', generation});
+    }
+    case 'POST /release': {
+      const asked = await body(request);
+      if (asked === null || typeof asked !== 'object' || Array.isArray(asked) || Object.keys(asked).length > 0) {
+        return answer(response, 400, refusal('invalid-request', 'a release takes no field'));
+      }
+      if (held === undefined) return answer(response, 409, refusal('invalid-state', 'no restart waits for a release'));
+      held();
+      return answer(response, 200, {status: 'released'});
     }
     default:
       return answer(response, 404, refusal('not-found', 'no such route'));

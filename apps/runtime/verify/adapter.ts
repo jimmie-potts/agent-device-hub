@@ -32,6 +32,12 @@ export type RunTarget = {url: string; harness: string; dataDir: string; seed: Se
 export interface RunHarness extends Harness {
   /** Which clock the run is on (Hub #1710), which a capture's proof records. */
   readonly clock: 'virtual' | 'real';
+  /**
+   * Runs `body`, such as a capture's browser journey, with the run's time passing as real time does (Hub #1711): on
+   * virtual time the adapter advances the run by the real time that passed, every `PACE_MS`, until `body` ends, so the
+   * runtime keeps working while a browser drives it in real time. On the real clock it only runs `body`.
+   */
+  paced<T>(body: () => Promise<T>): Promise<T>;
   /** What went wrong outside the steps: messages that break profile 2.0, and errors a part reported. */
   problems(): readonly string[];
   close(): Promise<void>;
@@ -121,6 +127,9 @@ type Part = {role: Role; participant: Participant | undefined; closed: boolean; 
  * the last advance found nothing in flight and changed nothing the adapter can read.
  */
 type Virtual = {clock: ReturnType<typeof manualClock>; owed: number; runNext: number | undefined; quiet: boolean};
+
+/** How often a paced run on virtual time catches up with the real time that passed (Hub #1711). */
+export const PACE_MS = 20;
 
 /** How many event-loop turns the adapter gives the parts' streams after each advance of the run, as the in-memory harness gives real I/O. */
 const TURNS = 4;
@@ -326,12 +335,11 @@ class Run implements RunHarness {
   /**
    * Runs the hook script against the run's runtime, with the producer file the supervisor wrote. While it runs
    * `stopped`, the supervisor holds the runtime stopped: the adapter asks for a restart that waits before it starts the
-   * runtime again, and runs the hook once the runtime's port refuses connections.
+   * runtime again, and runs the hook once the runtime's port refuses connections. On virtual time the restart's hold
+   * passes at once, so the restart also waits for the adapter's release, which it sends once the hook has run (Hub #1711).
    */
   async hook(payload: HookPayload, {runtime = 'running'}: {runtime?: 'running' | 'stopped'} = {}): Promise<HookRun> {
     await this.#actions;
-    // A hook against a stopped runtime needs a real hold it can meet; on virtual time a restart's hold is virtual.
-    if (runtime === 'stopped' && this.#virtual !== undefined) throw new RunFailure('a hook against a stopped runtime runs only on the real clock');
     await this.#catchUp();
     const producer = producerOf(this.#target.dataDir);
     if (runtime === 'running') {
@@ -339,7 +347,8 @@ class Run implements RunHarness {
       await this.#refresh();
       return ran;
     }
-    const restarted = this.#post('restart', {holdMs: STOPPED_HOLD_MS});
+    const v = this.#virtual;
+    const restarted = this.#post('restart', {holdMs: STOPPED_HOLD_MS, ...(v === undefined ? {} : {untilReleased: true})});
     // Until the restart's answer, the run's refresh would wait on the stopped runtime; a failed restart fails the hook.
     restarted.catch(() => {});
     const deadline = Date.now() + STOPPED_HOLD_MS;
@@ -347,12 +356,42 @@ class Run implements RunHarness {
       if (Date.now() > deadline) throw new RunFailure('the runtime did not stop');
       await sleep(25);
     }
-    const ran = await runHookScript(producer, payload);
+    let ran: HookRun;
+    try {
+      ran = await runHookScript(producer, payload);
+    } finally {
+      if (v !== undefined) await this.#post('release');
+    }
     await restarted;
+    // On virtual time the hold moved the run's time on; the parts' clock follows it, which fires their timers due by then.
+    if (v !== undefined) await this.#followRun(v);
     // The restart ended the browser's session with the runtime that opened it.
     this.#client.forget();
     await this.#refresh();
     return ran;
+  }
+
+  async paced<T>(body: () => Promise<T>): Promise<T> {
+    const v = this.#virtual;
+    if (v === undefined) return body();
+    await this.#actions;
+    await this.#catchUp();
+    let done = false, last = Date.now();
+    const pacing = (async () => {
+      while (!done) {
+        await sleep(PACE_MS);
+        const now = Date.now(), passed = now - last;
+        last = now;
+        // Every piece reaches the run, as real time would: nothing is owed while a browser watches it.
+        if (passed > 0) await this.#advance(v, passed, false);
+      }
+    })();
+    try {
+      return await body();
+    } finally {
+      done = true;
+      await pacing;
+    }
   }
 
   problems(): readonly string[] {
@@ -434,6 +473,17 @@ class Run implements RunHarness {
     v.owed = Math.max(0, v.owed + (ms - v.owed) - reached);
     v.runNext = state.nextDueMs ?? undefined;
     v.quiet = !state.busy && reached === ms;
+  }
+
+  /** Moves the parts' clock to the run's time after the run moved without the adapter, as a restart's hold moves it. */
+  async #followRun(v: Virtual): Promise<void> {
+    const response = await fetch(new URL(`${HARNESS_PATH}/clock`, this.#target.harness));
+    if (!response.ok) throw new RunFailure(`clock answered ${response.status}`);
+    const state = await response.json() as ClockState;
+    const ahead = state.nowMs - (v.clock.now() - v.owed);
+    if (ahead > 0) v.clock.advance(ahead);
+    v.runNext = state.nextDueMs ?? undefined;
+    v.quiet = false;
   }
 
   /** On virtual time, sends the run the time it is owed, so that what reaches it next happens at the adapter's time. */

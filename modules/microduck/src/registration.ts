@@ -9,14 +9,15 @@ export const MICRODUCK_SIMULATED_SECTION={id:'microduck-sim',fixtureRoot:'/tmp/b
 const simulation:DeviceSimulation<SimulatedMicroDuck,SimulatedMicroDuck>={
   actions:['online','offline','coast','fresh'],
   memory:{create:options=>new SimulatedMicroDuck(options),state:d=>d.state(),act:(d,a)=>{d.act(a.action);},build:d=>createMicroDuckModule({transport:d})},
-  run:{create:()=>new SimulatedMicroDuck(),state:d=>d.state(),act:(d,a)=>{d.act(a.action);},serve:(d,r)=>{
+  run:{create:options=>new SimulatedMicroDuck(options),state:d=>d.state(),act:(d,a)=>{d.act(a.action);},serve:(d,r)=>{
     if(r.method==='state')return d.state();
     if(r.method==='head'&&typeof r.args==='number'&&[-.1,0,.1].includes(r.args))return d.head(r.args,r.signal,()=>{});
     throw new Error('Invalid MicroDuck simulation request');
-  },remote:link=>{
+  },remote:(link,options)=>{
     let current:ReturnType<SimulatedMicroDuck['state']>|undefined;
     return createMicroDuckModule({transport:{
-      nowNs:()=>process.hrtime.bigint(),guard:()=>{if(current===undefined||!current.online||current.mismatch)throw new Error('Synthetic MicroDuck unavailable');return current.session;},
+      // The supervisor's device stamps its sensor on the run's clock, so freshness is judged on the same clock (Hub #1711).
+      nowNs:()=>BigInt((options?.now??Date.now)())*1000000n,guard:()=>{if(current===undefined||!current.online||current.mismatch)throw new Error('Synthetic MicroDuck unavailable');return current.session;},
       async connect(observer,signal){
         let closed=false;
         const poll=async():Promise<void>=>{
@@ -25,8 +26,12 @@ const simulation:DeviceSimulation<SimulatedMicroDuck,SimulatedMicroDuck>={
           current=answer.value;if(!current.online||current.mismatch){observer.lost(current.mismatch);return;}
           observer.state(current.observation);
         };
-        await poll();const timer=setInterval(()=>{void poll();},100);
-        const close=():void=>{closed=true;clearInterval(timer);signal.removeEventListener('abort',close);};signal.addEventListener('abort',close,{once:true});return close;
+        await poll();
+        // Every 100 ms on real timers, or on the run's virtual time when the run gives its clocks (Hub #1711).
+        let cancel:()=>void;
+        if(options===undefined){const timer=setInterval(()=>{void poll();},100);cancel=()=>{clearInterval(timer);};}
+        else{const tick=():void=>{if(closed)return;cancel=options.scheduler.after(100,tick);void poll();};cancel=options.scheduler.after(100,tick);}
+        const close=():void=>{closed=true;cancel();signal.removeEventListener('abort',close);};signal.addEventListener('abort',close,{once:true});return close;
       },async head(yaw,signal,beforeEffect){beforeEffect();const answer=await link.call('head',yaw,signal);if(answer.status!=='answered')throw new Error('Synthetic MicroDuck input unanswered');},
     }});
   }},

@@ -51,8 +51,15 @@ export type ModuleRegistration = ModuleFactory & {
 /** What a scenario asks a simulated device to do: the device's module, the action, and any fields the action takes. */
 export type DeviceAction = {readonly device: string; readonly action: string; readonly [field: string]: unknown};
 
-/** The harness's clock and scheduler: virtual in the in-memory harness, real in a disposable run. */
+/** The harness's clock and scheduler: virtual in the in-memory harness, and in a disposable run on virtual time. */
 export type SimulationOptions = {readonly now: () => number; readonly scheduler: Scheduler};
+
+/**
+ * The runtime process's clocks for a module built over a disposable run's link, which a run on virtual time gives
+ * (Hub #1711): its wall clock, its scheduler and its monotonic clock, all moving only when the run advances. A run on
+ * the real clock gives none, and the module keeps its own real clocks.
+ */
+export type RemoteSimulationOptions = SimulationOptions & {readonly monotonic: () => number};
 
 /**
  * How a call over a disposable run's link ended: the device's answer, a failure the device reported, or `abandoned`
@@ -112,7 +119,10 @@ export interface DeviceSimulation<Device = unknown, Held = unknown> {
     serve(held: Held, call: LinkCall): unknown;
     /** What the next runtime process starts with, as its link's `handover`. */
     handover?(held: Held): unknown;
-    /** The module in the runtime's process, reaching the supervisor's device over `link`. */
-    remote(link: DeviceLink): BunnyModule;
+    /**
+     * The module in the runtime's process, reaching the supervisor's device over `link`. `options` are the runtime's
+     * clocks on virtual time; without them the module keeps its real clocks, as in an installed runtime.
+     */
+    remote(link: DeviceLink, options?: RemoteSimulationOptions): BunnyModule;
   };
 }
