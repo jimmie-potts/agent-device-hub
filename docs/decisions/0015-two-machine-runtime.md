@@ -186,7 +186,9 @@ here only with the stage that uses them.
    ([recorded on #1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6829213115)).
    It is a requirement on every stage that puts a copy on the PC
    ([Rules every stage keeps](#the-pc-may-sleep-restart-or-be-off)). By itself
-   it accepted no stage.
+   it accepted no stage. The rule's wording, including "or be off", is the
+   recorded statement the owner accepted with the first recommendation of
+   decision 10.
 9. **Commits made in the PC clone use the account's GitHub no-reply address.**
    The owner answered the PC orchestrating session of #1705, read at
    2026-11-12T16:53:59Z: "1. GitHub no-reply address"
@@ -295,8 +297,11 @@ other's facts from its fact log after N per origin and stores them.
   even when both lead.
 - **A split ceiling must not shrink what the Mac can spend while the PC is
   idle** (*proposed*, with open decision 4). This follows from the owner's
-  requirement that the PC may sleep or be off (owner decision 8). How a split
-  meets both this and the bullet above is part of that decision.
+  requirement that the PC may sleep or be off (owner decision 8). In stages 1
+  and 2 the PC spends only while the Mac is stopped. From stage 3 this bullet
+  and the one above can conflict in a split lead, because the Mac cannot tell a
+  sleeping PC from one that leads behind a failed link. Which one yields then is
+  part of open decision 4.
 - **A delivery job is claimed on GitHub** (the issue's assignment), not in
   either copy. This keeps #1722's orchestrator safe from a split lead.
 - **Credentials and secrets are placed on the second machine only by the owner,
@@ -366,7 +371,8 @@ Accepted on 2026-11-12 (owner decision 6).
     drop is unexplained: on 2026-11-11 at about 06:29Z, during a wide
     verification job, Docker and the Windows file mount failed and WSL
     restarted about four minutes later. Not shown: behavior over days, on
-    battery or after a Windows update restart, and the cause of that drop.
+    battery or after a Windows update restart, the cause of that drop, and the
+    live state of Docker Desktop's Resource Saver.
   - Git identity: commits made in the PC clone use the account's GitHub
     no-reply address and its GitHub login as the author name, both set for
     that clone only (owner decisions 9 and 11;
@@ -470,7 +476,10 @@ the PC is not authorized as a standby runtime host.
 - **Amendments:** 1.1 to 1.7. Amendment 1.7 covers the second running core.
 - **Effort:** medium for settings, plus low for configuration templating on the
   PC. The standby mode, the refusal of edits and the control switch are not
-  sized. A read-only sizing pass is authorized (owner decision 10).
+  sized in this record. The read-only sizing pass the owner authorized (owner
+  decision 10) is on
+  [#1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6830783763),
+  as a planning input on which the owner has decided nothing.
 
 ### Stage 2: facts in both directions
 
@@ -723,7 +732,7 @@ writes from both."
   medium, lead-only high, local configuration low, media low to medium. The
   history exchange is small now that #1740 is delivered in source. Turning the
   archives and handling into facts, a qualified image for a PC standby and
-  stage 4's per-device qualification are not sized.
+  stage 4's per-device qualification are not sized in this record.
 
 ## Alternatives considered
 
