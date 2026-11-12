@@ -3,8 +3,8 @@
 Status: accepted direction on 2026-10-03; amended on 2026-10-05 (see the
 [amendment](#amendment-2026-10-05)) and on 2026-11-11, with four cases added
 on 2026-11-12 (see the [amendment](#amendment-2026-11-11)). Runtime adoption
-requires scoped,
-versioned implementation and its own source and installed evidence.
+requires scoped, versioned implementation and its own source and installed
+evidence.
 Policy delivery: [Hub #775](https://github.com/jimmie-potts/agent-device-hub/issues/775).
 
 ## Context
@@ -228,8 +228,8 @@ the coordinating session, the owner answered question 3 of the orchestrator's
 design record [#1722](https://github.com/jimmie-potts/agent-device-hub/issues/1722)
 with "Your recommendation." That record states the decision as: "The
 personal-data decision is extended to the OpenAI API for the delivery
-orchestrator's decision step, limited to issue text and repository facts."
-Nothing else may be sent there on that decision.
+orchestrator's decision step, limited to issue text and repository facts".
+That decision covers nothing else.
 
 What does not change:
 

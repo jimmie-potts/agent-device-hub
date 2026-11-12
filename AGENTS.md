@@ -243,7 +243,8 @@ may be sent, outside its not-for-now list, may also go to OpenAI's Decisions
 endpoint, and only as input to a decision; the delivery orchestrator's decision
 step may send only issue text and repository facts to the OpenAI API.
 Before changing collection, retention, diagnostics, export or evidence publication,
-or sending personal data to a model or cloud service, read [ADR 0011](docs/decisions/0011-private-personal-data-retention.md) for the
+or sending personal data to a model or cloud service, read
+[ADR 0011](docs/decisions/0011-private-personal-data-retention.md) for the
 collection and sharing boundaries. Use synthetic or sanitized publication copies
 without stripping the private originals. Preserve explicit collection/sharing
 choices, existing clear/recovery behavior and device authorization. Only fields declared
