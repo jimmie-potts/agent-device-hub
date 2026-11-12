@@ -179,9 +179,9 @@ call to the run while nothing can change: the last advance found nothing in flig
 the scenario reads, no call waits for an answer, no part is reconnecting and no timer is due before the wait ends. The run
 gets that time before anything else reaches it: an action, a gateway call, health, a hook or a call on a part. Waiting
 for the reader's resync after a restart advances the run until its bound (15 s) has passed in the run's time; since the
-reader comes back over real I/O, the restart fails only once the bound has also passed in real time. A hook against a stopped runtime asks for a restart that
-waits for a release, runs the hook once the runtime refuses connections, then releases it; once the restart answers, the
-adapter's clock follows the time its hold moved the run on.
+reader comes back over real I/O, the restart fails only once the bound has also passed in real time. A hook against a
+stopped runtime asks for a restart that waits for a release, runs the hook once the runtime refuses connections, then
+releases it; once the restart answers, the adapter's clock follows the time its hold moved the run on.
 
 Before a capture's browser journey starts, the page's clock is set to the run's time, so the deadlines the page stamps
 on its requests mean what they say to the runtime. The run does not move while the journey runs, unless the capture
@@ -358,7 +358,8 @@ npm run -s verify:runtime -- stop <run-id>
 By hand, the run's `harness` endpoint drives the speakers: `POST /api/harness/v1/simulate` with
 `{"device": "playback", "speaker": "sony" | "sonos", "action": "play", "title": "..."}`, or with the action `pause`,
 `stop`, `other-input`, `silent`, `slow` (each call answered 400 ms late, #930), `answer` (answering again, at once),
-`refuse-next` or `hang-next`. `GET /api/harness/v1/state` shows each
+`refuse-next` or `hang-next`. The run is on [virtual time](#virtual-time), so a slow answer, a silent speaker's
+staleness and the module's polls come only as `POST /api/harness/v1/clock/advance` moves the run. `GET /api/harness/v1/state` shows each
 speaker's status and the actions it received. A remote part with the reader's grant syncs `playback` from the edge, and
 one with the operator's grant sends `playback-control` to `bunny.cmd.playback-control.living-room`.
 
@@ -386,7 +387,9 @@ By hand, `GET /api/harness/v1/state` shows `devices.tidbyt`: each installation t
 agent status, `nowplaying` for the card) with its frame as 32 text rows of 64 characters (`.` dark, `A` amber, `B`
 blue, `G` green, `W` white or grey, lower case when dimmed), how often it was pushed and when, and every call the cloud
 heard. `POST /api/harness/v1/simulate` with `{"device": "tidbyt", "action": "offline"}` or `"online"` takes the cloud
-away or brings it back, and the speakers' and the hook's actions above drive what the tiles show. A remote part with the
+away or brings it back, and the speakers' and the hook's actions above drive what the tiles show; on
+[virtual time](#virtual-time) a tile waits for its gate and its polls until `POST /api/harness/v1/clock/advance` moves the
+run. A remote part with the
 reader's grant syncs `device` from the edge and finds the Tidbyt's record from `bunny/modules/tidbyt`.
 
 To check the Pixoo module (#843) as a reviewer would, start each Pixoo scenario's run, capture its scenario, and read
@@ -484,9 +487,11 @@ echo '{"hook_event_name":"SessionStart","session_id":"by-hand-1","cwd":"/home/ow
 echo '{"hook_event_name":"UserPromptSubmit","session_id":"by-hand-1","prompt_id":"p1"}' | hook
 reader=$(node -p "require('<runtime dir>/data/config/part-tokens.json').reader")
 curl -s -H "authorization: Bearer $reader" "<origin>/api/v2/families/session"     # the session, its project demo, active in turn p1
-curl -s -X POST -H 'content-type: application/json' -d '{"holdMs":8000}' "<harness endpoint>api/harness/v1/restart" &   # the runtime stops for 8 s
+# The run is on virtual time, where a hold passes at once: the restart keeps the runtime stopped until the release below.
+curl -s -X POST -H 'content-type: application/json' -d '{"holdMs":8000,"untilReleased":true}' "<harness endpoint>api/harness/v1/restart" &
 sleep 2; curl -s "<origin>/api/runtime/v1/health" || echo "the runtime is stopped"
 time (echo '{"hook_event_name":"Stop","session_id":"by-hand-1","prompt_id":"p1"}' | hook); echo "exit $?"   # exit 0 at once, nothing printed
+curl -s -X POST -H 'content-type: application/json' -d '{}' "<harness endpoint>api/harness/v1/release"   # {"status":"released"}; the 8 s hold then passes in virtual time
 wait   # the restarted runtime: the Stop above was lost, so by-hand-1 is still active
 echo '{"hook_event_name":"Stop","session_id":"by-hand-1","prompt_id":"p1"}' | hook
 curl -s -H "authorization: Bearer $reader" "<origin>/api/v2/families/session"     # by-hand-1 idle, with its turn-ended notice
