@@ -17,6 +17,13 @@ export type ModuleFactory = {
   readonly simulate: () => BunnyModule;
   /** The module's own payload schemas by `dataschema`, which the SDK edge checks remote parts' messages against. */
   readonly schemas?: Readonly<Record<string, object>>;
+  /**
+   * The bookkeeping members of the module's own state families (Hub #1771): by family, JSON pointers to members that
+   * may change while the state does not, such as a reading time. A family left out has none. A module declares only
+   * families its `schemas` register and never a family of the contracts package, whose `v2/bookkeeping` declares
+   * those; the runtime refuses the shipped list at start otherwise. Nothing reads it yet: history will (#1772).
+   */
+  readonly bookkeeping?: Readonly<Record<string, readonly string[]>>;
   /** The module's configuration section for simulated runs (--simulate, the shipped run, tests), without its `secrets` member. */
   readonly simulatedSection?: {
     readonly config: Readonly<Record<string, unknown>>;

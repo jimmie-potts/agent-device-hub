@@ -42,4 +42,6 @@ const simulation: DeviceSimulation<SimulatedRoborock, SimulatedRoborock> = { act
             }
             default: return { ok: false, error: errorBody('invalid-request') };
         } }, remote: link => createRoborockModule({ transport: new RemoteSimulation(link) }) } };
-export const registration: ModuleRegistration = { name: 'roborock', create: () => createRoborockModule(), simulate: () => createRoborockModule({ transport: new SimulatedRoborock() }), schemas: roborockSchemas, registerFamilies: registerRoborockFamilies, simulatedSection: { config: { id: 'vacuum' } }, shipped: true, order: 850, simulation };
+// The status reading time moves with every poll while the vacuum stays as it was; whether a reading exists still
+// counts, so the value is bookkeeping and not the member (#1771).
+export const registration: ModuleRegistration = { name: 'roborock', create: () => createRoborockModule(), simulate: () => createRoborockModule({ transport: new SimulatedRoborock() }), schemas: roborockSchemas, registerFamilies: registerRoborockFamilies, simulatedSection: { config: { id: 'vacuum' } }, shipped: true, order: 850, simulation, bookkeeping: { 'roborock-vacuum': ['/observedAtMs/value'] } };

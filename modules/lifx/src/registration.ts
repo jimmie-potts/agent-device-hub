@@ -47,6 +47,8 @@ export const lifxSimulation: DeviceSimulation<SimulatedLifx, SimulatedLifx> = {
   },
 };
 
+// A bulb's color reading time moves with every read while the color stays as it was (#1771).
 export const registration: ModuleRegistration = {
   ...lifxModuleFactory, shipped: true, order: 200, registerFamilies: registerLifxFamilies, simulation: lifxSimulation,
+  bookkeeping: {'lifx-light': ['/observed/observedAtMs']},
 };

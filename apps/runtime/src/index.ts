@@ -15,7 +15,7 @@ export {MAX_REFUSED, type ChangeEvent, type HistoryKind, type OperationStep} fro
 export {MAX_OPERATION_RECORDS, OPERATION_FAMILY, OPERATION_SCHEMA, operationRecord} from './core/operation-records.js';
 export {Redactions, type LogSink} from './log.js';
 export {
-  buildModules, coreFactory, moduleSchemas, orderModules, registrations, shippedList, shippedModules, type ModuleFactory, type ModuleRegistration,
+  buildModules, coreFactory, moduleBookkeeping, moduleSchemas, orderModules, registrations, shippedList, shippedModules, type ModuleFactory, type ModuleRegistration,
 } from './modules.js';
 export {DEFAULT_LAG_LIMIT_MS, DEFAULT_STATE_DIR, UsageError, parseArguments, runMain, runProcess, type ChildInputs, type EdgeInputs, type ProcessInputs, type ProcessOptions, type TestClock} from './process.js';
 export {ENVIRONMENTS, type Environment, type LogLevel, type LogRecord} from './record.js';

@@ -575,6 +575,54 @@ subject that is not a routing ID, checks the Hub-mode table for each
 participating device kind, and checks that `device/2.1` is `device/2.0` plus
 `held`, with every 2.0 record valid under both versions.
 
+### Bookkeeping members of state families
+
+`@jimmie-potts/event-contracts/v2/bookkeeping` declares, for every state family
+of this package, the members that may change while the state does not: a
+reading, paint or update time (Hub #1771, design #1768). Each is a JSON pointer
+to an object member at any depth, declared by family and not by version. A
+family with none declares an empty list, which is a deliberate answer: every
+member counts. A module declares its own families in its registration's
+`bookkeeping` (`packages/sdk/src/registration.ts`), and the runtime refuses to
+start a module that declares a family of this package or one it does not
+register.
+
+| Family | Bookkeeping members | Why |
+|---|---|---|
+| `device` | `/observed/observedAtMs`, `/lastTransmission/transmittedAtMs`, `/externalControl/observedAtMs` | Reading, paint and evidence times move with every poll, probe or paint; the paint time by owner decision 3 on #1768 |
+| `power-limit` | `/observedAtMs`, `/updatedAtMs` | The core copies the device's reading time and stamps each view with its clock |
+| `playback` | `/observedAtMs` | The source's reading time |
+| `session` and every other state family | none | Agent session times stay rows (decision 6 on #1768) |
+| `pixoo-display` (module) | `/monitor/page` | The status picture's page turn (decision 3) |
+| `roborock-vacuum` (module) | `/observedAtMs/value` | The status reading time; whether a reading exists still counts |
+| `lifx-light` (module) | `/observed/observedAtMs` | The color reading time |
+
+`bookkeepingProblem` holds the rules a declaration must meet. A pointer names
+a member that holds a single value in every registered version of the family,
+through `$ref`, `allOf`, `oneOf` and `anyOf`, and never an array position.
+It names no member in `NEVER_BOOKKEEPING`, at any depth: identity,
+availability, generation, configuration revision, holds, status, observed power
+and brightness, desired values, pending work and outcomes, a transmission's
+request and operations, power-limit settings and status, and `showing`,
+`freshness` and `failing`. A family in `SETTINGS_FAMILIES` declares none,
+because settings replicate by their latest edit (ADR 0015).
+
+`sameState(a, b, pointers)` compares two records with their bookkeeping
+members, `id` and `revision` removed. `leafMutations(record, pointers)` changes
+every other leaf alone, each on its own copy, and every one of those copies
+must count as a change. History's intake (#1772) will use both. The
+declaration changes no message, schema, payload or validation result, and it
+is not a family version. Nothing reads it until #1772.
+
+`tests/bookkeeping.test.mjs` checks that every state family of this package is
+classified, refuses each name in the deny list and each pointer the schema does
+not declare, and runs the leaf mutations over every state fixture.
+`apps/runtime/tests/fixtures/bookkeeping-classification.ts` is the checked-in
+classification of every state family and version of the core and every
+registered module, and `apps/runtime/tests/bookkeeping.test.ts` compares it
+with the families and the declarations, so a new family or version fails until
+someone lists it.
+
 ### Agent status helper
 
 `@jimmie-potts/event-contracts/v2/status` holds `sessionState`, `highestStatus`

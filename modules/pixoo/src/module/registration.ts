@@ -45,5 +45,8 @@ export const pixooSimulation: DeviceSimulation<SimulatedPixoo, Held> = {
   },
 };
 
-// After the playback module, whose record Now Playing follows from its start.
-export const registration: ModuleRegistration = {...pixooFactory, shipped: true, order: 400, after: ['playback'], simulation: pixooSimulation};
+// After the playback module, whose record Now Playing follows from its start. The status picture turns its page every
+// 10 s while several pages match, so the page shown is bookkeeping (owner decision 3 on #1768, 2026-11-12; #1771).
+export const registration: ModuleRegistration = {
+  ...pixooFactory, shipped: true, order: 400, after: ['playback'], simulation: pixooSimulation, bookkeeping: {'pixoo-display': ['/monitor/page']},
+};
