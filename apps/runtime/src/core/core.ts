@@ -18,7 +18,7 @@ import {
 import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
-import type {HistoryFilter, HistoryRow, HistoryRules} from './history.js';
+import {DEFAULT_HISTORY_RULES, type HistoryFilter, type HistoryRow, type HistoryRules} from './history.js';
 import {inboxTool, historyTool} from './read-tools.js';
 import {InboxRecords} from './inbox.js';
 import {OperationRecords} from './operation-records.js';
@@ -196,7 +196,11 @@ export interface CoreModule extends BunnyModule {
   setArtCatalog(read: ArtCatalogRead): void;
   /** The host binds only the fixed Music producer connection lifetime. */
   setMusicCaptureRetirement(retire: () => void): void;
-  readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody};
+  /**
+   * Retained history's filtered read, and the rules this core's history keeps by (#1772): each family's bookkeeping
+   * members and the polled families, as the core was built with them, so an entry point's tests can show which (#1795).
+   */
+  readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody; readonly rules: HistoryRules};
 }
 
 /** Whether a hosted module is the core, whose dispatcher the gateway's action routes call. */
@@ -261,7 +265,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
       return core.start();
     },
     stop: () => core?.stop(),
-    history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'})},
+    history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'}), rules: options.history ?? DEFAULT_HISTORY_RULES},
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
       artSchedule:{get:()=>artSchedule().get(),save:(value,parent)=>artSchedule().save(value,parent)},
