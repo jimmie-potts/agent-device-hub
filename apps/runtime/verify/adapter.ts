@@ -473,10 +473,10 @@ class Run implements RunHarness {
     });
   }
 
-  /** The participant, each of whose calls first sends the run the time it is owed, on virtual time. */
   /** Each part's wrapper, so that on virtual time `sdk` answers the same object for the same part, as on the real clock. */
   readonly #wrapped = new WeakMap<Participant, Participant>();
 
+  /** The participant, each of whose calls first sends the run the time it is owed, on virtual time. */
   #caughtUp(participant: Participant): Participant {
     const known = this.#wrapped.get(participant);
     if (known !== undefined) return known;
