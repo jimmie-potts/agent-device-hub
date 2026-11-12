@@ -13,6 +13,9 @@ import {artDevice, deviceDraft} from './device-fixtures.js';
 import {drawing, fakeImages} from './fixtures.js';
 import {hosted, until} from './support.js';
 
+/** One turn of the event loop: the bus, the module's sync copies and its outbox settle on promises, never on a timer. */
+const flush = () => new Promise<void>(resolve => {setImmediate(resolve);});
+
 const start = (targets: string[], purpose = 'request') => ({action: 'start', purpose, origin: {kind: 'owner'}, targets});
 const validator = new MessageValidator(); registerCoreFamilies(validator);
 const operation = (requestId: string, status: OperationRecord['status'], result?: OperationRecord['result']): OperationRecord => ({id: operationEntityId(requestId), revision: 1, requestId, kind: 'device', family: 'art-stage',
@@ -29,7 +32,11 @@ async function withCore(t: TestContext) {
     return {status: 'accepted'};
   });
   const records = new Map<string, OperationRecord>();
-  await operator.serveSync(['operation'], () => ({revision: 1, states: [...records.values()].map(data => ({type: 'org.bunny.operation.updated', subject: data.id, dataschema: 'https://bunny.invalid/events/operation/2.0', data}))}));
+  let syncs = 0;
+  await operator.serveSync(['operation'], () => {
+    syncs += 1;
+    return {revision: 1, states: [...records.values()].map(data => ({type: 'org.bunny.operation.updated', subject: data.id, dataschema: 'https://bunny.invalid/events/operation/2.0', data}))};
+  });
   const publish = async (record: OperationRecord, revision: number): Promise<void> => {
     records.set(record.id, record);
     await operator.publish(`bunny.state.operation.${record.id}`, {kind: 'state', type: 'org.bunny.operation.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/operation/2.0', data: {...record, revision}});
@@ -39,8 +46,19 @@ async function withCore(t: TestContext) {
     await owner.serveSync(['device'], () => ({revision: 1, states: [deviceDraft(device)]}));
     t.after(() => owner.close());
   }
-  await art.restart();
-  return {art, dispatched, publish};
+  /**
+   * Restarts the module and waits until the core has served the new module's sync of the operation records, and one turn
+   * more for the module to take the answer. Its copy subscribes before it asks, so every record the core publishes from
+   * then on reaches the module.
+   */
+  const restart = async (): Promise<void> => {
+    const before = syncs;
+    await art.restart();
+    await until(() => syncs > before, 'the module\'s sync of the core\'s operation records');
+    await flush();
+  };
+  await restart();
+  return {art, dispatched, publish, restart};
 }
 const stageOf = (message: Message<ArtDispatch> | undefined): Extract<ArtDispatch, {family: 'art-stage'}> => message?.data.family === 'art-stage' ? message.data : assert.fail('not a stage');
 
@@ -53,10 +71,9 @@ void test('a composition is dispatched through the core as a valid art-stage, an
   assert.deepEqual([stage.target, stage.data.format, stage.data.width, stage.data.height, stage.data.frames, stage.data.durationMs], ['tidbyt-configured', 'gif', 64, 32, 8, 1600]);
   assert.equal(stage.data.sha256, createHash('sha256').update(bytes).digest('hex'));
   assert.equal(stage.data.compositionId, art.state.artworks[0]?.compositions[0]?.compositionId);
-  // The module follows the core's records once its own sync has settled, and an accepted operation proves no effect.
-  await new Promise(resolve => setTimeout(resolve, 30));
+  // The module follows the core's records since its sync at start, and an accepted operation proves no effect.
   await publish(operation(stage.requestId, 'accepted'), 2);
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await flush();
   assert.equal(art.state.candidates.length, 0);
   await publish(operation(stage.requestId, 'completed', 'succeeded'), 3);
   await until(() => art.state.candidates.length === 1, 'the candidate');
@@ -70,22 +87,20 @@ void test('a failed or rejected operation offers nothing, and another module\'s 
   await art.owner(start(['pixoo']), 'req');
   await art.finished('req');
   await until(() => dispatched.length === 1, 'the dispatch');
-  await new Promise(resolve => setTimeout(resolve, 30));
   await publish({...operation('other', 'completed', 'succeeded'), family: 'power-set'}, 2);
   await publish(operation(stageOf(dispatched[0]).requestId, 'rejected'), 3);
-  await new Promise(resolve => setTimeout(resolve, 20));
+  await flush();
   assert.deepEqual(art.state.candidates, []);
   assert.equal(dispatched.length, 1);
 });
 
 void test('after a restart a stage is not resent, and the core\'s record can still settle it', async t => {
-  const {art, dispatched, publish} = await withCore(t);
+  const {art, dispatched, publish, restart} = await withCore(t);
   await art.owner(start(['tidbyt']), 'req');
   await art.finished('req');
   await until(() => dispatched.length === 1, 'the dispatch');
   const {requestId} = stageOf(dispatched[0]);
-  await art.restart();
-  await new Promise(resolve => setTimeout(resolve, 30));
+  await restart();
   assert.equal(dispatched.length, 1, 'a restart resends nothing');
   assert.equal(art.state.candidates.length, 0);
   await publish(operation(requestId, 'completed', 'succeeded'), 2);
@@ -98,7 +113,6 @@ void test('an ambient job sets the tile through the core once its stage succeede
   await art.automatic(start(['tidbyt'], 'ambient'), 'tile');
   await art.finished('tile');
   await until(() => dispatched.length === 1, 'the stage');
-  await new Promise(resolve => setTimeout(resolve, 30));
   await publish(operation(stageOf(dispatched[0]).requestId, 'completed', 'succeeded'), 2);
   await until(() => dispatched.length === 2, 'the ambient set');
   const ambient: ArtDispatch = dispatched[1]?.data ?? assert.fail('no ambient');
@@ -106,18 +120,39 @@ void test('an ambient job sets the tile through the core once its stage succeede
   assert.deepEqual([ambient.target, ambient.data], ['tidbyt-configured', {compositionId: stageOf(dispatched[0]).data.compositionId}]);
 });
 
+/**
+ * The module with no weather owner at its start, on a scheduler the test runs, and then a weather owner. The module's first
+ * sync meets no owner, so it asks again 1 s later on its own clock, which `retry` advances.
+ */
 async function withWeather(t: TestContext, record: () => object) {
-  const images = fakeImages(drawing()), art = await hosted(t, {providers: {openai: images}}), owner: Participant = art.bus.connect('bunny/modules/weather');
+  const timers: {delay: number; callback: () => void; cancelled: boolean}[] = [];
+  const scheduler = {after: (delay: number, callback: () => void) => {const timer = {delay, callback, cancelled: false}; timers.push(timer); return () => {timer.cancelled = true;};}};
+  const images = fakeImages(drawing()), art = await hosted(t, {providers: {openai: images}, scheduler}), owner: Participant = art.bus.connect('bunny/modules/weather');
   t.after(() => owner.close());
-  await owner.serveSync(['weather-state'], () => ({revision: 1, states: [{type: 'org.bunny.weather-state.updated', subject: 'local', dataschema: 'https://bunny.invalid/events/weather-state/2.0', data: record() as never}]}));
-  return {art, images, owner};
+  let syncs = 0;
+  await owner.serveSync(['weather-state'], () => {
+    syncs += 1;
+    return {revision: 1, states: [{type: 'org.bunny.weather-state.updated', subject: 'local', dataschema: 'https://bunny.invalid/events/weather-state/2.0', data: record() as never}]};
+  });
+  /**
+   * Moves the module's clock 1 s on and runs every timer the module set at its start that falls due by then: the retries
+   * of the copies it follows, the weather copy's among them. It then waits until the weather owner has served the module,
+   * and one turn more for the module to take the answer.
+   */
+  const retry = async (): Promise<void> => {
+    art.clock.value += 1000;
+    for (const timer of timers.filter(entry => !entry.cancelled && entry.delay <= 1000)) {timer.cancelled = true; timer.callback();}
+    await until(() => syncs > 0, 'the weather owner to serve the module\'s retry');
+    await flush();
+  };
+  return {art, images, owner, retry};
 }
 const available = (staleAtMs: number) => ({id: 'local', revision: 1, status: 'available', observedAtMs: 1, staleAtMs, ageMs: 0, words: ['chance of rain', '48°F', 'evening'], location: 'Springfield'});
 
 void test('weather comes from weather-state as condition words only, with no location, temperature or day part', async t => {
-  const stale = new Date(2030, 0, 1).getTime(), {art, images} = await withWeather(t, () => available(stale));
+  const stale = new Date(2030, 0, 1).getTime(), {art, images, retry} = await withWeather(t, () => available(stale));
   // The module's first sync met no owner, so its retry finds this one; a live record reaches it from then on.
-  await new Promise(resolve => setTimeout(resolve, 1200));
+  await retry();
   await art.owner(start(['tidbyt']), 'req');
   await art.finished('req');
   const prompt = images.requests[0]?.prompt ?? assert.fail('no prompt');
@@ -129,8 +164,8 @@ void test('weather comes from weather-state as condition words only, with no loc
 
 void test('stale or unavailable weather-state makes no claim', async t => {
   for (const record of [available(1), {id: 'local', revision: 1, status: 'unavailable', reason: 'outage', observedAtMs: null, ageMs: null}]) {
-    const {art, images} = await withWeather(t, () => record);
-    await new Promise(resolve => setTimeout(resolve, 1200));
+    const {art, images, retry} = await withWeather(t, () => record);
+    await retry();
     await art.owner(start(['tidbyt']), 'req');
     await art.finished('req');
     assert.equal(/mood|rain/.test(images.requests[0]?.prompt ?? ''), false);
