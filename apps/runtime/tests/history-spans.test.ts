@@ -153,14 +153,19 @@ it('a removal closes an open span with one row first, and a late state at the re
   take(removed, T0 + 9000);
   const rows = rowsOf(history);
   assert.deepEqual(rows.map(row => row.kind), ['change', 'change', 'removal']);
-  assert.deepEqual(rows[1]?.record, {family: 'device', id: 'desk-lamp', revision: 2, previous: 1, changed: {}, removed: [],
+  // The closing row claims nothing newer than its values: the last row's revision, and no message ID.
+  assert.deepEqual(rows[1]?.record, {family: 'device', id: 'desk-lamp', revision: 1, previous: 1, changed: {}, removed: [],
     span: {sinceAtMs: T0, lastConfirmedAtMs: T0 + 5000, confirmations: 2}, closedBy: 'removal'});
-  assert.equal(rows[1]?.messageId, last.id, 'the closing row carries the last confirmation\'s message ID and type');
-  assert.equal(rows[1]?.type, 'org.bunny.device.updated');
+  assert.equal(rows[1]?.messageId, null);
+  assert.equal(rows[1]?.type, 'org.bunny.device.updated', 'the last confirmation\'s type');
   assert.deepEqual(rows[2]?.record, removed, 'the removal is kept whole');
   assert.equal(spanOf(database), undefined, 'the span is gone');
+  take(last, T0 + 9500);
+  assert.equal(rowsOf(history).length, 3, 'the last confirmation sent again after the removal is stale against the tombstone');
   take(state(plug(3, T0 + 10_000)), T0 + 10_000);
   assert.equal(rowsOf(history).length, 3, 'a late state at the removal\'s revision brings nothing back');
+  assert.equal(history.received(removed), 'duplicate', 'the removal\'s duplicate check is unchanged');
+  assert.equal(history.received({...removed, data: {entity: {family: 'device', id: 'desk-lamp'}, revision: 9}}), 'conflict');
   take(state(plug(4, T0 + 11_000)), T0 + 11_000);
   assert.equal(rowsOf(history).at(-1)?.record.previous, null, 'a new entity under the same ID starts afresh');
   // A removal right after a row, with no confirmation since, needs no closing row.
@@ -211,10 +216,11 @@ it('the span survives a store close and reopen, and a restart longer than the ga
 
 it('a record rebuilt from rows equals the published record at each row\'s instant', context => {
   const {history, take} = open(context);
-  const published = new Map<string, Record<string, unknown>>();
+  const published = new Map<string, Record<string, unknown>>(), byRevision = new Map<number, Record<string, unknown>>();
   const send = (data: Record<string, unknown>, atMs: number): void => {
     const message = state(data);
     published.set(message.id, data);
+    byRevision.set(data.revision as number, data);
     take(message, atMs);
   };
   let at = T0;
@@ -225,15 +231,23 @@ it('a record rebuilt from rows equals the published record at each row\'s instan
     if (revision % 17 === 0) record.held = {requestId: `hold-${revision}`};
     send(record, at);
   }
-  send({...plug(41, at + 1000), lastTransmission: {status: 'known', requestId: 'r-1', transmittedAtMs: at, operationIds: []}}, at + 1000);
+  const painted = (revision: number, atMs: number): Record<string, unknown> =>
+    ({...plug(revision, atMs), lastTransmission: {status: 'known', requestId: 'r-1', transmittedAtMs: atMs, operationIds: []}});
+  send(painted(41, at + 1000), at + 1000);
+  // Two confirmations, then a removal: its closing row must not claim the confirmations' revision.
+  send(painted(42, at + 6000), at + 6000);
+  send(painted(43, at + 11_000), at + 11_000);
+  take(removal('device', 'desk-lamp', 50), at + 12_000);
   let rebuilt: Record<string, unknown> = {};
   const rows = rowsOf(history);
   assert.ok(rows.some(row => row.record.gapMs !== undefined) && rows.some(row => row.record.span !== undefined), 'gap rows and spans are covered');
-  for (const row of rows) {
+  assert.ok(rows.some(row => row.record.closedBy === 'removal'), 'a closing row is covered');
+  for (const row of rows.filter(entry => entry.kind === 'change')) {
     const {changed, removed, id, revision} = row.record;
     rebuilt = {...rebuilt, ...changed};
     for (const name of removed) delete rebuilt[name];
-    assert.deepEqual({id, revision, ...rebuilt}, published.get(row.messageId ?? ''), `row ${row.seq}`);
+    assert.deepEqual({id, revision, ...rebuilt}, row.messageId === null ? byRevision.get(revision) : published.get(row.messageId), `row ${row.seq}`);
+    if (row.messageId !== null) assert.equal(published.get(row.messageId)?.revision, revision);
   }
 });
 
@@ -456,4 +470,73 @@ it('the runtime refuses to start with a polling declaration for a family the mod
   const own = registered('lamp', {schemas: {[`${SCHEMA_BASE}lamp-glow/2.0`]: {type: 'object'}}, polling: {'lamp-glow': 1000, device: MAX_POLLING_MS}});
   assert.deepEqual(modulePolling([own]), {'bunny/modules/lamp': {'lamp-glow': 1000, device: MAX_POLLING_MS}});
   assert.equal(shippedList([own]).length, 2);
+});
+
+it('a confirmation at the last row\'s revision keeps its span: the start, the count and the gap check stay', context => {
+  const {history, take} = open(context);
+  take(state(plug(5, T0)), T0);
+  take(state(plug(5, T0 + 5000)), T0 + 5000);
+  take(state(plug(6, T0 + 5000 + 10 * 60_000)), T0 + 5000 + 10 * 60_000);
+  const rows = rowsOf(history);
+  assert.equal(rows.length, 2, 'one gap row');
+  assert.equal(rows[1]?.record.gapMs, 10 * 60_000);
+  assert.deepEqual(rows[1]?.record.span, {sinceAtMs: T0, lastConfirmedAtMs: T0 + 5000, confirmations: 2}, 'with its known start');
+});
+
+it('a publisher that repeats one revision keeps one span with its start and count', context => {
+  const {database, history, take} = open(context);
+  for (let index = 0; index < 7; index++) take(state(plug(3, T0 + 5000 * index)), T0 + 5000 * index);
+  assert.deepEqual({since: spanOf(database)?.since_at_ms, confirmations: spanOf(database)?.confirmations, row: spanOf(database)?.row_revision},
+    {since: T0, confirmations: 7, row: 3});
+  take(state(plug(4, T0 + 35_000, false)), T0 + 35_000);
+  assert.deepEqual(rowsOf(history).at(-1)?.record.span, {sinceAtMs: T0, lastConfirmedAtMs: T0 + 30_000, confirmations: 7});
+});
+
+it('a span is kept when the previous release took no reading of its entity, and reset when it took one past the span', context => {
+  const {database, history, take} = open(context);
+  take(state(plug(1, T0)), T0);
+  take(state(plug(2, T0 + 5000)), T0 + 5000);
+  // The previous release starts on the store and takes another entity's reading only.
+  previousRelease(database)(state({...plug(1, T0 + 6000), id: 'shelf-lamp'}), T0 + 6000);
+  take(state(plug(3, T0 + 10_000)), T0 + 10_000);
+  assert.deepEqual({since: spanOf(database)?.since_at_ms, confirmations: spanOf(database)?.confirmations}, {since: T0, confirmations: 3}, 'kept');
+  // Now it takes a reading of this entity, past the span.
+  previousRelease(database)(state(plug(4, T0 + 15_000)), T0 + 15_000);
+  take(state(plug(5, T0 + 20_000)), T0 + 20_000);
+  assert.deepEqual({since: spanOf(database)?.since_at_ms, confirmations: spanOf(database)?.confirmations}, {since: null, confirmations: 1}, 'reset');
+  assert.equal(rowsOf(history).length, 3);
+});
+
+it('a clock that steps back neither moves the last confirmation back nor overstates the next silence', context => {
+  const {database, history, take} = open(context);
+  take(state(plug(1, T0)), T0);
+  take(state(plug(2, T0 + 5000)), T0 + 5000);
+  take(state(plug(3, T0 - 60_000)), T0 - 60_000);
+  assert.equal(spanOf(database)?.confirmed_at_ms, T0 + 5000, 'the later instant stays');
+  take(state(plug(4, T0 + 70_000)), T0 + 70_000);
+  assert.equal(rowsOf(history).length, 1, '65 s after the last confirmation is no gap');
+  take(state(plug(5, T0 + 75_000, false)), T0 + 75_000);
+  const span = rowsOf(history).at(-1)?.record.span;
+  assert.deepEqual(span, {sinceAtMs: T0, lastConfirmedAtMs: T0 + 70_000, confirmations: 4});
+});
+
+it('a state that reuses a message ID with another body is judged by its body, never dropped as a resend', context => {
+  const {history, take} = open(context);
+  take(state(plug(1, T0)), T0);
+  const older = state(plug(2, T0 + 5000));
+  take(older, T0 + 5000);
+  const latest = state(plug(3, T0 + 10_000));
+  take(latest, T0 + 10_000);
+  // The last confirmation's ID with a changed state: a change row, where a genuine resend adds nothing.
+  take(latest, T0 + 11_000);
+  assert.equal(rowsOf(history).length, 1, 'the genuine resend adds nothing');
+  take(state(plug(4, T0 + 12_000, false), {id: latest.id}), T0 + 12_000);
+  assert.equal(rowsOf(history).length, 2);
+  assert.equal(rowsOf(history).at(-1)?.messageId, latest.id);
+  // An older confirmation's ID with a higher revision and a changed state: also a change row.
+  take(state(plug(5, T0 + 13_000), {id: older.id}), T0 + 13_000);
+  assert.equal(rowsOf(history).length, 3);
+  // The same state under a row's own ID is dropped as before #1772: history holds that message.
+  take(state(plug(6, T0 + 14_000, false), {id: older.id}), T0 + 14_000);
+  assert.equal(rowsOf(history).length, 3);
 });
