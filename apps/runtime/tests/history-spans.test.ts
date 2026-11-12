@@ -30,7 +30,7 @@ function state(data: Record<string, unknown>, options: {source?: string; datasch
     specversion: '1.0', bunnyprofile: '2.0', id: options.id ?? `state-${++next}`, source: options.source ?? WEMO, type: options.type ?? 'org.bunny.device.updated',
     subject: typeof data.id === 'string' ? data.id : 'entity', time: new Date(T0).toISOString(), kind: 'state', datacontenttype: 'application/json',
     dataschema: options.dataschema ?? `${SCHEMA_BASE}device/2.4`, traceparent: TRACE, data,
-  } as Message<unknown>;
+  };
 }
 
 /** A Wemo plug's device record at `revision`, read at `atMs`, with its power. */
@@ -44,7 +44,7 @@ const plug = (revision: number, atMs: number, power = true): Record<string, unkn
 const removal = (family: string, id: string, revision: number, source = WEMO): Message<unknown> => ({
   specversion: '1.0', bunnyprofile: '2.0', id: `removal-${++next}`, source, type: `org.bunny.${family}.removed`, subject: id, time: new Date(T0).toISOString(),
   kind: 'removal', datacontenttype: 'application/json', dataschema: `${SCHEMA_BASE}removal/2.0`, traceparent: TRACE, data: {entity: {family, id}, revision},
-} as Message<unknown>);
+});
 
 /** The rules the shipped list gives history, with Wemo's 5 s poll. */
 const RULES: HistoryRules = {bookkeeping, polling: {[WEMO]: {device: 5000}, 'bunny/modules/roborock': {device: 60_000}}};
@@ -277,12 +277,12 @@ it('through the core store\'s intake, every leaf that is not bookkeeping changed
     const members = Object.keys(fixture.data).filter(key => key !== 'id' && key !== 'revision').length;
     assert.equal(await written(fixture.data), members === 0 ? 0 : 1, `${name}: the first record`);
     // A bookkeeping value moved alone, in every declared member present: a confirmation.
-    const moved = structuredClone(fixture.data) as Record<string, unknown>;
+    const moved = structuredClone(fixture.data);
     let movedAny = false;
     for (const pointer of pointers) {
       const path = pointer.slice(1).split('/'), last = path.pop() as string;
       const parent = path.reduce<unknown>((node, token) => (node as Record<string, unknown> | undefined)?.[token], moved) as Record<string, unknown> | undefined;
-      if (parent !== undefined && typeof parent[last] === 'number') { parent[last] = (parent[last] as number) + 1; movedAny = true; }
+      if (parent !== undefined && typeof parent[last] === 'number') { parent[last] += 1; movedAny = true; }
     }
     if (movedAny) assert.equal(await written(moved), 0, `${name}: a bookkeeping value alone writes no row`);
     for (const mutation of leafMutations(fixture.data, pointers)) {
@@ -318,7 +318,7 @@ it('the fact log stays gapless and never returns span content; the duplicate che
   assert.equal(history.received(outcome), 'new');
   take(outcome, T0 + 300_000);
   assert.equal(history.received(outcome), 'duplicate');
-  assert.equal(history.received({...outcome, data: {requestId: 'request-1', result: 'failed'}} as Message<unknown>), 'conflict');
+  assert.equal(history.received({...outcome, data: {requestId: 'request-1', result: 'failed'}}), 'conflict');
 });
 
 /** History's statements exactly as the release before #1772 prepares and runs them (history.ts at 5566afbc). */
