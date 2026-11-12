@@ -3,6 +3,9 @@
 // around each write, a failed send ends the session without a retry, and the loop never overlaps two device requests.
 // The same loop runs on the Lines (version 2) and on the NL22 Light Panels (version 1), each on its own device.
 import assert from 'node:assert/strict';
+import {mkdtempSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import type {CaptureFeatures} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {admitCommand, discovered, Refused, sceneList} from '../src/controls.js';
@@ -12,7 +15,7 @@ import type {MusicRecipeV1} from '../src/music-effects.js';
 import {expireQueued, held, initJournal, journalRow, type Outcome, type Transact} from '../src/journal.js';
 import {restoreFreeBase} from '../src/moments.js';
 import {colorStateOf, readMusicBase, restoreMusicBase, type ColorState, type MusicBase, type MusicColor} from '../src/music-base.js';
-import {lastSelection, saveSelection, SELECTION_REFRESH_MS} from '../src/music-store.js';
+import {initMusicSessions, lastSelection, saveSelection, SELECTION_REFRESH_MS} from '../src/music-store.js';
 import {HttpError} from '../src/transport.js';
 import type {Indication} from '../src/line-projection.js';
 import {MusicInput, type MusicClock} from '../src/music-input.js';
@@ -44,6 +47,8 @@ const V1_ANSWER = {streamControlIpAddr: '192.0.2.99', streamControlPort: 60221, 
 
 type World = {
   db: DatabaseSync; outcomes: Outcome[]; writes: {endpoint: string; payload: unknown; atMs: number}[]; inFlight: number; maxInFlight: number;
+  /** When the session reported a change of the light's kept selection, which republishes its record. */
+  selectionReports: number[];
   /** The light the session runs on. */
   target: Target;
   /** What the light answers a version 1 streaming entry with. */
@@ -86,7 +91,8 @@ function open(target: Target = LINES_TARGET): World {
   const now = 1_793_836_800_000;
   const clock: MusicClock = {wallMs: now, monotonicMs: now};
   return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, target, entryAnswer: V1_ANSWER, datagrams: [], reads: [], failSend: false, patch: {}, now, selected: 'Ocean', streaming: false, brightness: 50, on: true, alert: false, feeding: true, sequence: 0,
-    input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined, onRead: () => {}, onArrive: () => {}, color: undefined, stateAnswer: undefined};
+    input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined, onRead: () => {}, onArrive: () => {}, color: undefined, stateAnswer: undefined,
+    selectionReports: []};
 }
 
 const feature = (world: World): CaptureFeatures => {
@@ -111,7 +117,10 @@ const OCEAN: MusicBase = {kind: 'scene', name: 'Ocean', brightness: 50};
  */
 async function run(world: World, step: (world: World) => void, base: MusicBase = OCEAN, presetId = 'preset-green'): Promise<void> {
   const {db, target} = world;
-  const transact: Transact = action => Promise.resolve(transaction(db, () => action(message => { if (message.type === 'outcome') world.outcomes.push(message); })));
+  const transact: Transact = action => Promise.resolve(transaction(db, () => action(message => {
+    if (message.type === 'outcome') world.outcomes.push(message);
+    else if (message.type === 'selection') world.selectionReports.push(world.now);
+  })));
   transaction(db, () => admitMusicStart(db, target.device, {requestId: 'start', generation: GENERATION, capture: CAPTURE, presetId}, target.layout,
     base, 0, world.now, world.now + 5000, () => {}));
   const request: LightRequest = async (_target, method, endpoint = '', payload = null) => {
@@ -1387,4 +1396,101 @@ test('#1777 diagnostic: an NL22 session keeps its playing check\'s colour state 
   }
   assert.deepEqual(runs[1], runs[0], 'the same ending, writes, frames and reads, at the same times');
   assert.deepEqual((runs[0] as {ended: unknown}).ended, {reason: 'stopped', restoration: 'restored'});
+});
+
+test('#1777 R4: a hue that changes at every check republishes nothing within a minute, and a colour mode change is published at once', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    let modeAt: number | undefined;
+    let startedAt: number | undefined;
+    await run(world, current => {
+      startedAt ??= frameWrites(current).length > 0 ? current.now : undefined;
+      // After five seconds the Panels report a hue and saturation, and the hue differs at every once-a-second check.
+      if (startedAt !== undefined && current.now - startedAt >= 5000) {
+        modeAt ??= current.now;
+        current.color = {hue: Math.floor(current.now / 1000) % 360, sat: 50};
+      }
+      stopNl22After(150)(current);
+    });
+    assert.ok(startedAt !== undefined && modeAt !== undefined);
+    assert.deepEqual(ended(world), {reason: 'stopped', restoration: 'restored'});
+    const checks = world.reads.filter(read => read.endpoint === '/state' && read.atMs > (modeAt ?? 0)).length;
+    assert.ok(checks >= 8, `${checks} checks saw a changed hue`);
+    assert.equal(world.selectionReports.length, 2, 'the first check, then the colour mode change, and no republish for a changed hue');
+    const [first, changed] = world.selectionReports;
+    assert.ok(first !== undefined && first - startedAt <= 1100, 'the first check is kept at once');
+    assert.ok(changed !== undefined && changed >= modeAt && changed - modeAt <= 1100, 'the colour mode change is kept at once');
+    const kept = lastSelection(world.db, 'nl22');
+    assert.equal(kept?.color?.colorMode, 'hs');
+    assert.equal(kept?.readAtMs, changed, 'the kept numbers are the mode change\'s, up to a minute old');
+  } finally {
+    world.db.close();
+  }
+});
+
+test('#1777 R4: a changed hue, saturation or colour temperature alone is kept after a minute, as an unchanged read time is', () => {
+  const world = open();
+  try {
+    const reported: number[] = [];
+    const save = (color: ColorState | undefined, atMs: number): void => transaction(world.db, () => saveSelection(world.db, 'wall',
+      {selection: '*Dynamic*', saved: false, restores: 'nothing'}, atMs, () => { reported.push(atMs); }, color));
+    save({colorMode: 'hs', hue: 10, sat: 20}, 1000);
+    save({colorMode: 'hs', hue: 11, sat: 20}, 2000);
+    save({colorMode: 'hs', hue: 12, sat: 21, ct: 3000}, 30_000);
+    assert.deepEqual(lastSelection(world.db, 'wall')?.color, {colorMode: 'hs', hue: 10, sat: 20}, 'the numbers wait for the minute');
+    save({colorMode: 'hs', hue: 13, sat: 22}, 1000 + SELECTION_REFRESH_MS);
+    assert.deepEqual(lastSelection(world.db, 'wall')?.color, {colorMode: 'hs', hue: 13, sat: 22});
+    save({colorMode: 'ct', ct: 2700}, 2000 + SELECTION_REFRESH_MS);
+    assert.deepEqual(lastSelection(world.db, 'wall')?.color, {colorMode: 'ct', ct: 2700}, 'a mode change is kept at once');
+    assert.deepEqual(reported, [1000, 1000 + SELECTION_REFRESH_MS, 2000 + SELECTION_REFRESH_MS]);
+  } finally {
+    world.db.close();
+  }
+});
+
+test('#1777 store: the colour table is created if absent, survives a reopen, and an older writer\'s selection never shows a stale colour', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'gh-1777-store-'));
+  const path = join(directory, 'nanoleaf.sqlite');
+  try {
+    // A store from before #1777: only the older module's selection table, with one row.
+    const older = new DatabaseSync(path);
+    older.exec(`CREATE TABLE nanoleaf_selections (device TEXT PRIMARY KEY, selection TEXT NOT NULL, saved INTEGER NOT NULL,
+      restores TEXT NOT NULL, read_at_ms INTEGER NOT NULL) STRICT`);
+    older.prepare('INSERT OR REPLACE INTO nanoleaf_selections VALUES (?,?,?,?,?)').run('nl22', '*Static*', 0, 'nothing', 500);
+    older.close();
+
+    // The newer module opens it: the colour table is added, the existing table and row are unchanged.
+    const newer = new DatabaseSync(path);
+    initMusicSessions(newer);
+    const columns = (table: string): string[] => (newer.prepare(`SELECT name FROM pragma_table_info('${table}')`).all() as {name: string}[]).map(row => row.name);
+    assert.deepEqual(columns('nanoleaf_selections'), ['device', 'selection', 'saved', 'restores', 'read_at_ms']);
+    assert.deepEqual(columns('nanoleaf_selection_colors'), ['device', 'read_at_ms', 'color_mode', 'hue', 'sat', 'ct']);
+    assert.deepEqual(lastSelection(newer, 'nl22'), {selection: '*Static*', saved: false, restores: 'nothing', readAtMs: 500});
+    transaction(newer, () => saveSelection(newer, 'nl22', {selection: '*Dynamic*', saved: false, restores: 'nothing'}, 1000, () => {},
+      {colorMode: 'effect', hue: 0, sat: 0, ct: 4000}));
+    newer.close();
+
+    // Reopened, the newer module reads what it wrote.
+    const reopened = new DatabaseSync(path);
+    initMusicSessions(reopened);
+    assert.deepEqual(lastSelection(reopened, 'nl22')?.color, {colorMode: 'effect', hue: 0, sat: 0, ct: 4000});
+    reopened.close();
+
+    // An older module on the newer store: its own create is a no-op, and its positional insert and read still work.
+    const back = new DatabaseSync(path);
+    back.exec(`CREATE TABLE IF NOT EXISTS nanoleaf_selections (device TEXT PRIMARY KEY, selection TEXT NOT NULL, saved INTEGER NOT NULL,
+      restores TEXT NOT NULL, read_at_ms INTEGER NOT NULL) STRICT`);
+    back.prepare('INSERT OR REPLACE INTO nanoleaf_selections VALUES (?,?,?,?,?)').run('nl22', 'Ocean', 1, 'scene', 2000);
+    assert.deepEqual({...back.prepare('SELECT selection,saved,restores,read_at_ms FROM nanoleaf_selections WHERE device=?').get('nl22')},
+      {selection: 'Ocean', saved: 1, restores: 'scene', read_at_ms: 2000});
+    back.close();
+
+    // The newer module again: the colour row the older writer left behind belongs to another read, so none shows.
+    const again = new DatabaseSync(path);
+    initMusicSessions(again);
+    assert.deepEqual(lastSelection(again, 'nl22'), {selection: 'Ocean', saved: true, restores: 'scene', readAtMs: 2000});
+    again.close();
+  } finally {
+    rmSync(directory, {recursive: true, force: true});
+  }
 });

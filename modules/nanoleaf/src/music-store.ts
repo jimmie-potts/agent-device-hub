@@ -55,20 +55,25 @@ function colorOf(db: Db, device: string, readAtMs: number): ColorState | undefin
     ...(ct === undefined ? {} : {ct})};
 }
 
-const sameColor = (left: ColorState | undefined, right: ColorState | undefined): boolean =>
-  left === undefined || right === undefined ? left === right
-    : left.colorMode === right.colorMode && left.hue === right.hue && left.sat === right.sat && left.ct === right.ct;
+/**
+ * Whether two colour states have the same colour mode, counting no `/state` read as a mode of its own. Only the mode is
+ * compared: a hue, saturation or colour temperature that differs from read to read must not republish the record every
+ * second (#1777 R4), so it waits for the same refresh as an unchanged selection's read time.
+ */
+const sameColorMode = (left: ColorState | undefined, right: ColorState | undefined): boolean =>
+  left === undefined || right === undefined ? left === right : left.colorMode === right.colorMode;
 
 /**
  * Keeps one read of the light's selection, with the colour state of the `/state` read made beside it, if any (#1777), and
- * reports a change: always when what it found changed, and otherwise once `SELECTION_REFRESH_MS` has passed since the
- * kept read time.
+ * reports a change: at once when the selection or the colour mode changed, and otherwise, a changed hue, saturation or
+ * colour temperature included, once `SELECTION_REFRESH_MS` has passed since the kept read time. Kept numbers may
+ * therefore be up to that long old.
  */
 export function saveSelection(db: Db, device: string, read: SelectionRead, atMs: number, report: Report, color?: ColorState): void {
   const kept = lastSelection(db, device);
   const readAtMs = Math.max(0, Math.round(atMs));
   if (kept !== undefined && kept.selection === read.selection && kept.saved === read.saved && kept.restores === read.restores &&
-    sameColor(kept.color, color) && readAtMs - kept.readAtMs < SELECTION_REFRESH_MS) return;
+    sameColorMode(kept.color, color) && readAtMs - kept.readAtMs < SELECTION_REFRESH_MS) return;
   execute(db, 'INSERT OR REPLACE INTO nanoleaf_selections VALUES (?,?,?,?,?)', device, read.selection, read.saved ? 1 : 0, read.restores, readAtMs);
   if (color === undefined) execute(db, 'DELETE FROM nanoleaf_selection_colors WHERE device=?', device);
   else {

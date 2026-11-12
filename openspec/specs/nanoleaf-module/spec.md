@@ -551,7 +551,7 @@ While a session plays, the module SHALL read the light's selection at least once
 
 ### Requirement: The light's last read selection in its record
 
-The Nanoleaf module's `nanoleaf-wall` record SHALL show each light's last read selection: whether it is a scene saved on the light, a saved scene's opaque scene ID, the light's own placeholder name when it is one, what a live Music ending over it would put back, and when it was read. It SHALL also show what the latest Music session's ending puts back, with that session's generation. The selection SHALL come only from reads a Start and a playing session already make, with no added device request. No record SHALL hold a scene name. An unchanged selection SHALL keep its read time for at most a minute. When a `/state` read was made with that selection read, the selection SHALL also show what it said of the light's colour: its colour mode, or null when it gave none or an unexpected one, and the whole hue, saturation and colour temperature it reported. This is a diagnostic for the installed check (#1777). It SHALL NOT end, guard or restore a session, it SHALL add no device request, and the Lines and the NL22 SHALL show it alike.
+The Nanoleaf module's `nanoleaf-wall` record SHALL show each light's last read selection: whether it is a scene saved on the light, a saved scene's opaque scene ID, the light's own placeholder name when it is one, what a live Music ending over it would put back, and when it was read. It SHALL also show what the latest Music session's ending puts back, with that session's generation. The selection SHALL come only from reads a Start and a playing session already make, with no added device request. No record SHALL hold a scene name. An unchanged selection SHALL keep its read time for at most a minute. When a `/state` read was made with that selection read, the selection SHALL also show what it said of the light's colour: its colour mode, or null when it gave none or an unexpected one, and the whole hue, saturation and colour temperature it reported. A changed colour mode SHALL be kept at once; a change of only those numbers SHALL wait for the same one-minute refresh as the read time. This is a diagnostic for the installed check (#1777). It SHALL NOT end, guard or restore a session, it SHALL add no device request, and the Lines and the NL22 SHALL show it alike.
 
 #### Scenario: Selection from existing reads
 - **WHEN** a Start reads the light, or a playing session runs its once-per-second check
@@ -560,6 +560,10 @@ The Nanoleaf module's `nanoleaf-wall` record SHALL show each light's last read s
 #### Scenario: Colour state from existing reads
 - **WHEN** a Start's base read, or a playing check's `/state` read while the light reports its streaming value, shows a colour mode with or without a hue, saturation and colour temperature
 - **THEN** the light's record shows them with the selection, a selection read with no `/state` read beside it shows none, and the session's reads, writes, frames and ending are the same whatever they show
+
+#### Scenario: Colour state refresh
+- **WHEN** the colour mode a check reads differs from the kept one, or only the hue, saturation or colour temperature differs, at every once-per-second check
+- **THEN** a changed colour mode is kept and published at once, while a change of only the numbers is kept and published at most once a minute with the selection's read time, so the published numbers may be up to a minute old
 
 #### Scenario: No scene names
 - **WHEN** the light shows a saved scene, a placeholder or an unsaved scene
