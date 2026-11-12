@@ -11,6 +11,7 @@ const thumbnail: ArtworkThumbnail = {mediaType: 'image/png', width: 1, height: 1
 const flush = async (): Promise<void> => { for (let n = 0; n < 30; n++) await Promise.resolve(); };
 function setup(decode?: (bytes: Uint8Array, signal: AbortSignal) => Promise<ArtworkResult<ArtworkThumbnail>>, fetch?: ArtworkFetch) {
   let now = 0, generations = 0, fetches = 0, changes = 0;
+  let onChange: (() => void) | undefined;
   const tasks: {at: number; callback: () => void; cancelled: boolean}[] = [];
   const scheduler = {after(ms: number, callback: () => void) {
     const task = {at: now + ms, callback, cancelled: false}; tasks.push(task);
@@ -21,11 +22,12 @@ function setup(decode?: (bytes: Uint8Array, signal: AbortSignal) => Promise<Artw
   const diagnostics: ArtworkDiagnostic[] = [];
   const controller = new ArtworkController({scheduler, signal: signal.signal, generation: () => `00000000-0000-4000-8000-${String(++generations).padStart(12, '0')}`,
     fetch: (candidate, endpoint, abort) => { fetches++; return fetch?.(candidate, endpoint, abort) ?? Promise.resolve(fetchResult); },
-    decode: decode ?? (() => Promise.resolve({ok: true, value: thumbnail})), onChange: () => { changes++; },
+    decode: decode ?? (() => Promise.resolve({ok: true, value: thumbnail})), onChange: () => { changes++; onChange?.(); },
     onDiagnostic: record => { diagnostics.push(record); }});
   const view = (extra: Partial<ArtworkPresentation> = {}, title = 'A'): ArtworkPresentation => ({index: 0, kind: 'sony', endpoint: ENDPOINT,
     availability: 'available', observation: {status: 'playing', title, thumbnailUrl: `${ENDPOINT}/image`}, ...extra});
   return {controller, signal, view, diagnostics, fetches: () => fetches, changes: () => changes, after: (ms: number, callback: () => void) => scheduler.after(ms, callback),
+    whenChanged: (hook: (() => void) | undefined) => { onChange = hook; },
     failFetch: () => { fetchResult = artworkFailure('unavailable', true); },
     hardFetch: () => { fetchResult = artworkFailure('capacity'); },
     advance: async (ms: number) => {
@@ -229,6 +231,22 @@ void test('a stale completion after a withdrawal cannot restore or replace the i
   release({ok: true, value: {...thumbnail, base64: 'c3ludGhldGljIGI='}}); await flush();
   assert.deepEqual(run.controller.snapshot(), ready, 'only the current reference completed, with its own image');
   assert.equal(run.changes(), 2);
+});
+
+void test('a consumer that re-enters update from the withdrawal is not delayed by the stale candidate retry (#1758)', async () => {
+  // The withdrawal is announced after the retry bookkeeping, so a re-entry with a newer reference clears the stale retry.
+  let failing = false;
+  const run = setup(imageOf, candidate => Promise.resolve(failing && candidate.endsWith('/second') ? artworkFailure('unavailable', true) : ok()));
+  run.controller.update(run.view()); await flush();
+  const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
+  failing = true;
+  let reentered = false;
+  run.whenChanged(() => { if (!reentered) { reentered = true; run.controller.update(run.view(changed('third'))); } });
+  run.controller.update(run.view(changed('second'))); await flush();
+  assert.ok(reentered);
+  assert.deepEqual(run.controller.snapshot(), ready, 'the newer reference is acquired at once, not after the stale 2 s retry');
+  assert.equal(run.fetches(), 3);
+  await run.advance(30_000); assert.equal(run.fetches(), 3, 'the stale retry never runs');
 });
 
 void test('a replacement that yields a different image replaces the held one in the same generation (#1758)', async () => {

@@ -163,11 +163,12 @@ export class ArtworkController {
       } else {
         const code: ErrorCode = result.code === 'unsupported' ? 'unsupported-capability' : result.code === 'invalid-response' ? 'invalid-state' : result.code;
         this.#failed(code, candidate.attempts, candidate.source);
-        // The held image was not confirmed for the reference the receiver reports now, so it is withdrawn.
-        if (this.#holding) {
+        // The held image was not confirmed for the reference the receiver reports now, so it is withdrawn. Consumers hear
+        // of it only after the retry bookkeeping, so one that re-enters update() clears this candidate's retry.
+        const withdrawn = this.#holding;
+        if (withdrawn) {
           this.#holding = false;
           this.#artwork = {status: 'missing', generation: candidate.generation};
-          this.#options.onChange();
         }
         if (code === 'unavailable' && result.transient && candidate.attempts < 3) {
           this.#options.onDiagnostic?.({kind: 'retry', code, attempts: candidate.attempts, source: candidate.source});
@@ -179,6 +180,7 @@ export class ArtworkController {
           candidate.exhausted = true;
           this.#options.onDiagnostic?.({kind: 'exhausted', code, attempts: candidate.attempts, source: candidate.source});
         }
+        if (withdrawn) this.#options.onChange();
       }
     }).finally(() => {
       this.#running = false;
