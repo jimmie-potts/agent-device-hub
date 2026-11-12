@@ -303,21 +303,22 @@ let held: (() => void) | undefined;
 
 /**
  * Stops the runtime and starts it again, after any start or restart before it, `holdMs` after it stopped, so that a
- * hook can meet a stopped runtime (Hub #926). With `untilReleased`, the runtime stays stopped until `POST /release`, or
- * at most `MAX_HOLD_MS` of real time, before the hold begins: on virtual time a hold passes at once, so a hook that runs
- * against the stopped runtime holds it with a release instead (Hub #1711). A runtime that cannot start ends the run.
+ * hook can meet a stopped runtime (Hub #926). With `untilReleased`, which only a run on virtual time takes, the runtime
+ * stays stopped until `POST /release`, or at most `MAX_HOLD_MS` of real time, before the hold begins: on virtual time a
+ * hold passes at once, so a hook that runs against the stopped runtime holds it with a release instead (Hub #1711). The
+ * release is awaited from before the runtime stops, so a caller that saw it stopped can always release it. A runtime
+ * that cannot start ends the run.
  */
 function restart(holdMs = 0, untilReleased = false): Promise<void> {
   return queue(async () => {
     restarting = true;
     try {
+      const release = untilReleased ? new Promise<void>(released => {
+        const timer = setTimeout(() => { held = undefined; released(); }, MAX_HOLD_MS);
+        held = () => { clearTimeout(timer); held = undefined; released(); };
+      }) : undefined;
       await stopRuntime();
-      if (untilReleased) {
-        await new Promise<void>(released => {
-          const timer = setTimeout(() => { held = undefined; released(); }, MAX_HOLD_MS);
-          held = () => { clearTimeout(timer); held = undefined; released(); };
-        });
-      }
+      await release;
       // On virtual time the hold is virtual too: the devices' timers run through it while no runtime does.
       if (holdMs > 0) await (virtual === undefined ? new Promise(resolve => { setTimeout(resolve, holdMs); }) : advanceBy(holdMs));
       await start();
@@ -675,10 +676,13 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       if (hold === undefined) {
         return answer(response, 400, refusal('invalid-request', `a restart takes only holdMs, a whole number of milliseconds from 0 to ${MAX_HOLD_MS}, and untilReleased, true or false`));
       }
+      // Only a run on virtual time needs a release: a real hold is one the hook can meet (Hub #1711).
+      if (hold.untilReleased && virtual === undefined) return answer(response, 409, refusal('invalid-state', 'this run is on the real clock'));
       await restart(hold.holdMs, hold.untilReleased);
       return answer(response, 200, {status: 'restarted', generation});
     }
     case 'POST /release': {
+      if (virtual === undefined) return answer(response, 409, refusal('invalid-state', 'this run is on the real clock'));
       const asked = await body(request);
       if (asked === null || typeof asked !== 'object' || Array.isArray(asked) || Object.keys(asked).length > 0) {
         return answer(response, 400, refusal('invalid-request', 'a release takes no field'));

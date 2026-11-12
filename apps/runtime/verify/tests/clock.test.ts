@@ -44,6 +44,17 @@ async function switchOn(run: Started, requestId: string): Promise<unknown> {
 /** The same switch as `switchOn`, answering `lost` when the call loses its connection with the runtime. */
 const switchOrLost = (run: Started, requestId: string): Promise<unknown> => switchOn(run, requestId).catch(() => 'lost');
 
+/**
+ * A run on the real clock also refuses a restart that waits for a release, and the release itself (Hub #1711): only a
+ * hook against a stopped runtime on virtual time needs them. The refused restart leaves the runtime's generation alone.
+ */
+async function refusedReleaseRoutes(run: Started): Promise<void> {
+  const generation = (await state(run)).generation;
+  await refusedWith(await post(new URL(`${HARNESS_PATH}/restart`, run.harness), {untilReleased: true}), 409, 'invalid-state');
+  await refusedWith(await post(new URL(`${HARNESS_PATH}/release`, run.harness), {}), 409, 'invalid-state');
+  assert.equal((await state(run)).generation, generation, 'the refused restart restarted nothing');
+}
+
 /** Paths a clock control could have on the runtime's gateway; it serves none of them. */
 const GATEWAY_CLOCK_PATHS = ['/clock', '/clock/advance', `${HARNESS_PATH}/clock`, `${HARNESS_PATH}/clock/advance`, '/api/v2/clock', '/api/v2/clock/advance', '/api/runtime/v1/clock'];
 
@@ -51,6 +62,7 @@ void test('a run on the real clock refuses both clock routes with 409, and the r
   const run = await startRun(context, await base(context), 'fixtures');
   await refusedWith(await fetch(clockOf(run)), 409, 'invalid-state');
   await refusedWith(await post(advanceOf(run), {ms: 10}), 409, 'invalid-state');
+  await refusedReleaseRoutes(run);
   for (const path of GATEWAY_CLOCK_PATHS) {
     assert.equal((await fetch(new URL(path, run.url))).status, 404, `GET ${path} on the gateway`);
     assert.equal((await post(new URL(path, run.url), {ms: 10})).status, 404, `POST ${path} on the gateway`);
@@ -62,6 +74,7 @@ void test('a run of the shipped runtime refuses both clock routes with 409', {ti
   const run = await startRun(context, await base(context), 'shipped');
   await refusedWith(await fetch(clockOf(run)), 409, 'invalid-state');
   await refusedWith(await post(advanceOf(run), {ms: 10}), 409, 'invalid-state');
+  await refusedReleaseRoutes(run);
   assert.equal((await stopOf(run)), 0);
 });
 
