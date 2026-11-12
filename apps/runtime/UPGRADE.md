@@ -152,6 +152,43 @@ sequences. This follows from the code and focused tests, not from a qualified
 recovery, so recovery stays unknown unless separately qualified; prefer fixing
 forward.
 
+## Core history spans
+
+The #1772 release adds the table `core_history_span` to the core store
+(`modules/core.sqlite`), for every core store, the Mac container's state volume
+included. At its first open, in the transaction that opens history, the core
+creates the table empty. It adds no column, changes no row, index or other
+table, and reads no history row, so the step costs the same on a store of any
+size. Opening the store again changes nothing.
+
+After the upgrade, a reading whose only change is a bookkeeping value updates
+one small row of `core_history_span` and writes no history row and no
+`core_history_latest`, with two exceptions: a reading of a polled family after
+a silence longer than its gap writes a gap row and rewrites
+`core_history_latest`, and a removal of an entity whose span holds more than its
+row's reading writes one closing row before the removal row. A change writes one
+history row and rewrites `core_history_latest`, as before, and also its span
+row. Rows already stored stay as they are. The release does not measure the
+effect on the store's growth; #1774 measures it after installation.
+
+Returning to the previous release on a store this release opened works from
+the code and focused tests: that release ignores `core_history_span`, starts,
+and writes `core_history_latest` and a row for each changed reading as before,
+in the same gapless order. Coming forward again, this release resets an
+entity's span to an unknown start when the previous release took a reading of
+that entity at a revision other than the span's row, and keeps counting from
+there; it keeps the span of an entity that release took no reading of. It does not detect a row the previous release wrote at the revision
+of the entity's last row when no reading with a higher revision reached that
+release, which needs a publisher that republishes one revision with a different
+value. In that case, when the first change, gap or closing row this release
+writes for that entity afterwards carries a `span` member, two stored values in
+it are wrong, `span.sinceAtMs` and `span.confirmations`: the start falls before the previous
+release's row and the count leaves out its readings. That row's revision,
+previous revision and changed members are right, so every record rebuilt from
+rows is right and the order stays gapless; the span member stays wrong because
+rows are never updated. This is not a qualified recovery, so recovery stays
+unknown unless separately qualified; prefer fixing forward.
+
 ## Routine operation checklist
 
 1. Verify reviewed merged source, applicable CI and release integrity. Assess

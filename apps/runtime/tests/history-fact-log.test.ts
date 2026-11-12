@@ -84,11 +84,13 @@ void it('a store written by the release before #1740 migrates every row to this 
   assert.deepEqual(database.prepare(`SELECT ${OLD_COLUMNS} FROM core_history ORDER BY seq`).all().map(row => ({...row})), oldRows, 'every other column is unchanged');
   const after = dump(database, ['core_history']);
   for (const table of Object.keys(before).filter(name => name !== 'schema')) assert.deepEqual(after[table], before[table], `${table} is unchanged`);
-  assert.deepEqual(after.core_origin, [{only: 1, origin: history.origin}], 'the only new table is the origin');
+  assert.deepEqual(after.core_origin, [{only: 1, origin: history.origin}], 'the origin is created');
+  assert.deepEqual(after.core_history_span, [], 'and the span table (#1772) is created empty');
   const newSchema = (after.schema as {name: string}[]);
   for (const entry of oldSchema) assert.ok(newSchema.some(item => JSON.stringify(item) === JSON.stringify(entry)), `${entry.name} is unchanged`);
   assert.deepEqual(newSchema.map(entry => entry.name).filter(name => !oldSchema.some(item => item.name === name)).sort(),
-    ['core_history', 'core_history_origin', 'core_history_origin_message', 'core_origin'], 'history gains its columns and indexes, and the old message index goes');
+    ['core_history', 'core_history_origin', 'core_history_origin_message', 'core_history_span', 'core_origin', 'sqlite_autoindex_core_history_span_1'],
+    'history gains its columns and indexes, the old message index goes, and the span table (#1772) comes');
   assert.equal(database.isTransaction, false, 'the migration committed');
 
   // Opened again, as at the next start, it changes nothing at all.

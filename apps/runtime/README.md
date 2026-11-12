@@ -393,6 +393,50 @@ and exits 1, and the service manager restarts it whole.
   history held, never a snapshot); and each step of a tracked action. A hook's
   raw observation and the acknowledgments are not kept: the session changes
   they cause are. The read API with filters and the timeline are #923's.
+- **Changes and spans** (#1772). A row is a change. A state is compared with
+  the record of its entity's last row by `sameState` from the contracts
+  package's `v2/bookkeeping`, with the family's bookkeeping members. When only
+  their values differ, the reading is a confirmation: no row is written, and
+  the entity's open span in `core_history_span` records its last confirmation
+  and count. That table sits outside the rows and holds one row per entity:
+  when the stretch started, when it was last confirmed, how many readings
+  history took in it, the last revision, message ID and type a reading
+  carried, and the revision of the last row. A state that differs writes a change row against the last row's
+  record with every member that differs, bookkeeping values included, and,
+  when the stretch held more than its own row's reading, the span it closes
+  (`span`: `sinceAtMs`, `lastConfirmedAtMs`, `confirmations`). A family that a
+  module's registration declares in `polling` gets one gap row (`gapMs`) when a
+  confirmation comes more than four polling intervals, and more than two
+  minutes, after the last one; any other family has no gap rule. Each confirmation keeps its own instant, and a reading stamped
+  before the last confirmation, after the clock stepped back, is no gap; a
+  closed span's last confirmation can then be earlier than its start. So an
+  outage after a backward step still shows. The rule is wrong for a clock that
+  steps back and then forward by more than the gap: that writes one gap row
+  for a silence that did not happen. It was chosen over keeping the later
+  instant, which hid every outage while the clock stayed behind its earlier
+  high point, the usual case after a correction. A removal of an
+  entity whose span holds more than its row's reading first writes a closing
+  row: `closedBy: 'removal'`, no changed member, the last row's revision as both
+  `revision` and `previous`, no message ID, and the last confirmation's time
+  and count in `span`, so it claims nothing newer than the values it holds. A
+  span row keeps the revision of the last row it was written against
+  (`row_revision`); when `core_history_latest` holds another revision, a release
+  without spans took a reading of that entity at a revision other than the
+  span's row, and the span restarts from an unknown start (`sinceAtMs` null);
+  a span of an entity that release took no reading of is kept. It is not
+  detected when that release wrote a row at the revision of the entity's last
+  row and no higher revision reached it, which needs a publisher that
+  republishes one revision with another value; then the next row's `span`
+  start and count are wrong when that row carries a `span`, and everything
+  rebuilt from rows is right. A state reusing the last confirmation's
+  message ID with another state is a change, not a resend. A count is of
+  readings history took, not of readings a device answered, and history no
+  longer keeps each repeated reading's time. `core_history_latest` keeps its
+  five columns and holds the record of each entity's last row. Spans are never
+  in the fact log, and rows are never updated. The shipped list gives the core
+  every registration's bookkeeping members and polled families; a core built
+  without them uses the contracts package's members and no polled family. See
+  [Core history spans](UPGRADE.md#core-history-spans) for the store change.
 - **Fact log** (#1740). Each history row also names its origin and its place
   in that origin's order, `origin_seq`, counting from 1 with no gaps. The
   origin identifies the installation: a random UUID the core store creates

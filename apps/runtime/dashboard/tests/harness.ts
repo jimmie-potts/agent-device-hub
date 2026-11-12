@@ -25,7 +25,7 @@ import {createNanoleafModule, SIMULATED_SECTION as NANOLEAF_SECTION, SYNTHETIC_T
 import {SIGN_SECTION, SYNTHETIC_TOKEN, SimulatedSigns, createSignModule, signSchemas} from '../../dist/tests/fixtures/sign.js';
 import {connectRemote, type BunnyModule, type RemoteParticipant, type Sdk, type Clock, type Scheduler, type WorkerCallOptions} from '@jimmie-potts/sdk';
 import type {Page} from 'playwright';
-import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, createCoreModule, startRuntime, tokenDigest, type LogRecord, type Runtime} from '../../dist/src/index.js';
+import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, createCoreModule, historyRules, registrations, startRuntime, tokenDigest, type LogRecord, type Runtime} from '../../dist/src/index.js';
 import {IDENTITY, observation, type ObservationOptions} from '../../dist/tests/fixtures/agents.js';
 import {CLAUDE_RECEIPT_FEED, receiptSource} from '../../dist/src/read-receipts/qualification.js';
 import {ModeDevice} from '../../dist/tests/fixtures/mode-devices.js';
@@ -285,7 +285,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.privateProxy === undefined ? {} : {privateProxy: options.privateProxy}),
   }}));
   const logs: LogRecord[] = [];
-  const coreOptions = {...(options.artSchedule === undefined ? {} : {artScheduleChoice: options.artSchedule.choice}), ...(options.clock === undefined ? {} : {monotonic: now})};
+  // History keeps by the registrations' rules, as the shipped list's core does (#1772).
+  const coreOptions = {history: historyRules(registrations), ...(options.artSchedule === undefined ? {} : {artScheduleChoice: options.artSchedule.choice}), ...(options.clock === undefined ? {} : {monotonic: now})};
   let core = createCoreModule(coreOptions);
   let wispr = createWisprModule();
   const nano = new ModeDevice('nanoleaf', 'wall'); nano.result = 'failed';

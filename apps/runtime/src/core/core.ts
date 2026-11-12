@@ -18,7 +18,7 @@ import {
 import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
-import type {HistoryFilter, HistoryRow} from './history.js';
+import type {HistoryFilter, HistoryRow, HistoryRules} from './history.js';
 import {inboxTool, historyTool} from './read-tools.js';
 import {InboxRecords} from './inbox.js';
 import {OperationRecords} from './operation-records.js';
@@ -126,6 +126,12 @@ export type CoreOptions = {
    * a runtime configuration field.
    */
   monotonic?: () => number;
+  /**
+   * Each family's bookkeeping members and the families each module publishes on a poll, which history keeps repeated
+   * readings and gaps by (#1772). The shipped list passes the contracts package's and every registration's; without
+   * it, history uses the contracts package's members and no polled family.
+   */
+  history?: HistoryRules;
 };
 
 /** The consumer a source may acknowledge for: the last segment of its source, such as `pixoo` for `bunny/modules/pixoo`. */
@@ -344,7 +350,7 @@ class Core {
   /** The start under way, which a stop waits for so that an owner it opens late is shut down too. */
   #starting: Promise<void> | undefined;
 
-  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic}: CoreOptions, ownership?: CoreOwnership) {
+  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic, history}: CoreOptions, ownership?: CoreOwnership) {
     this.#sdk = context.sdk;
     this.#log = context.log;
     this.#clock = context.clock;
@@ -420,6 +426,7 @@ class Core {
         ...parts.flatMap(part => part.open === undefined ? [] : [(database: DatabaseSync) => { part.open?.(database); }]),
       ],
       ...(beforePublish === undefined ? {} : {beforePublish}),
+      ...(history === undefined ? {} : {history}),
       // Committed is not published (ADR 0012): the change stands, its messages go out at the next commit or start, and
       // the outbox records the refusal as `outbox.deferred`, once per run of refusals.
       log: context.log, trace: context.trace,

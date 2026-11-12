@@ -11,11 +11,14 @@ export {
   type TakenOutcome,
 } from './core/operations.js';
 export {historyOnly, resendRefusal} from './core/inbox.js';
-export {MAX_REFUSED, type ChangeEvent, type HistoryKind, type OperationStep} from './core/history.js';
+export {
+  DEFAULT_HISTORY_RULES, GAP_INTERVALS, MAX_REFUSED, MIN_GAP_MS, gapOf, type ChangeEvent, type HistoryKind, type HistoryRules, type HistorySpan, type OperationStep,
+} from './core/history.js';
 export {MAX_OPERATION_RECORDS, OPERATION_FAMILY, OPERATION_SCHEMA, operationRecord} from './core/operation-records.js';
 export {Redactions, type LogSink} from './log.js';
 export {
-  buildModules, coreFactory, moduleBookkeeping, moduleSchemas, orderModules, registrations, shippedList, shippedModules, type ModuleFactory, type ModuleRegistration,
+  MAX_POLLING_MS, buildModules, coreFactory, historyRules, moduleBookkeeping, modulePolling, moduleSchemas, orderModules, registrations, shippedList, shippedModules,
+  type ModuleFactory, type ModuleRegistration,
 } from './modules.js';
 export {DEFAULT_LAG_LIMIT_MS, DEFAULT_STATE_DIR, UsageError, parseArguments, runMain, runProcess, type ChildInputs, type EdgeInputs, type ProcessInputs, type ProcessOptions, type TestClock} from './process.js';
 export {ENVIRONMENTS, type Environment, type LogLevel, type LogRecord} from './record.js';

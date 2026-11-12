@@ -12,9 +12,17 @@
 // for one origin's rows after a sequence it holds, a bounded page at a time, and keeps its own cursor: the core keeps
 // no reader's position. The duplicate check looks only at the local origin's rows, so a fact another origin also holds
 // never hides the local copy. The message envelope does not carry the origin.
+//
+// History keeps changes, and repeated readings as spans (#1772, ADR 0012's amendment of 2026-11-12). A state whose
+// record holds the same state as the record of its entity's last row, as `sameState` decides with the family's
+// bookkeeping members (#1771), is a confirmation: it writes no row and updates the entity's open span in
+// `core_history_span`, beside the log. A state that differs writes a change row against the last row's record, with
+// the span it closes. For a family a module publishes on a poll, a confirmation after a silence longer than the gap
+// writes one gap row. The span table is never part of the log: `after` reads rows only, and rows are never updated.
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {compareDelivery, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
+import {bookkeeping as contractBookkeeping, sameState, type Bookkeeping} from '@jimmie-potts/event-contracts/v2/bookkeeping';
 import {OUTCOME_RECORDED_TYPE} from '@jimmie-potts/sdk';
 import type {ActionKind, Evidence, OperationResult, OperationStatus} from './operations.js';
 
@@ -22,12 +30,49 @@ import type {ActionKind, Evidence, OperationResult, OperationStatus} from './ope
 export type HistoryKind = 'change' | 'removal' | 'occurrence' | 'outcome' | 'operation';
 
 /**
- * A compact change event: one state message as what changed since the previous record of its entity that history
- * holds. `previous` is that record's revision, or null when history held none, as for a new entity, whose every member
- * is then `changed`. `changed` holds each top-level member whose value differs, with its new value, and `removed` each
- * member the new record no longer has. The entity's `id` and `revision` are not members here.
+ * A stretch of readings of one entity that held the same state: from the reading that wrote its row, or from an
+ * unknown start (`sinceAtMs` null) when a release without spans wrote the entity's rows before it, to its last
+ * confirmation, with the number of readings history took in it.
  */
-export type ChangeEvent = {family: string; id: string; revision: number; previous: number | null; changed: Record<string, unknown>; removed: string[]};
+export type HistorySpan = {sinceAtMs: number | null; lastConfirmedAtMs: number; confirmations: number};
+
+/**
+ * A compact change event: one state message as what changed since the record of its entity's last row. `previous` is
+ * that record's revision, or null when history held none, as for a new entity, whose every member is then `changed`.
+ * `changed` holds each top-level member whose value differs, with its new value, bookkeeping values included, and
+ * `removed` each member the new record no longer has. The entity's `id` and `revision` are not members here.
+ *
+ * `span` is the stretch of confirmations the row closes, when history took more readings in it than the row that
+ * opened it. `gapMs` marks a gap row: a confirmation of a polled family that came this long after the last one.
+ * `closedBy: 'removal'` marks the row that closes an open span just before its entity's removal row; it changes no
+ * member, and its `revision` is the last row's, equal to `previous`.
+ */
+export type ChangeEvent = {family: string; id: string; revision: number; previous: number | null; changed: Record<string, unknown>; removed: string[];
+  span?: HistorySpan; gapMs?: number; closedBy?: 'removal'};
+
+/**
+ * What history needs to know of the families it keeps: each family's bookkeeping members (#1771), and, by source, the
+ * families that source publishes on a poll with their polling interval in milliseconds (#1772).
+ */
+export type HistoryRules = {readonly bookkeeping: Bookkeeping; readonly polling: Readonly<Record<string, Readonly<Record<string, number>>>>};
+
+/** The contracts package's bookkeeping members and no polled family: the core's own families publish on events. */
+export const DEFAULT_HISTORY_RULES: HistoryRules = Object.freeze({bookkeeping: contractBookkeeping, polling: Object.freeze({})});
+/** The shortest silence that makes a gap, whatever the polling interval (#1768, decision 4). */
+export const MIN_GAP_MS = 120_000;
+/** A gap is a silence longer than this many polling intervals (#1768, decision 4). */
+export const GAP_INTERVALS = 4;
+
+/** The silence after which a confirmation of `family` from `source` writes a gap row, or undefined when it has no gap rule. */
+export function gapOf(rules: HistoryRules, source: string, family: string): number | undefined {
+  const polled = Object.hasOwn(rules.polling, source) ? rules.polling[source] : undefined;
+  const interval = polled !== undefined && Object.hasOwn(polled, family) ? polled[family] : undefined;
+  return interval === undefined ? undefined : Math.max(MIN_GAP_MS, GAP_INTERVALS * interval);
+}
+
+/** An entity's open span as `core_history_span` holds it. */
+type SpanRow = {rowRevision: number | null; seenRevision: number; seenMessageId: string; seenType: string; sinceAtMs: number | null; confirmedAtMs: number | null;
+  confirmations: number};
 
 /** One step of a tracked action, as history keeps it. */
 export type OperationStep = {
@@ -106,9 +151,10 @@ export function historyFilter(value: Record<string, unknown>): HistoryFilter | u
 
 export class History {
   readonly #database: DatabaseSync;
+  readonly #rules: HistoryRules;
   readonly #statements: {
     insert: StatementSync; stored: StatementSync; seen: StatementSync; latest: StatementSync; setLatest: StatementSync;
-    refuse: StatementSync; trimRefused: StatementSync; after: StatementSync;
+    refuse: StatementSync; trimRefused: StatementSync; after: StatementSync; span: StatementSync; setSpan: StatementSync; dropSpan: StatementSync;
   };
 
   /** This installation's origin: a random UUID, created once and kept in the core store. */
@@ -118,9 +164,12 @@ export class History {
    * Opens history on the core store's database, in one transaction: creates its tables on a new store, creates the
    * store's origin once, and gives every row that has none, as every row of a store written before #1740 has none, this
    * origin and the next sequence in the order the rows were written. A store already in that state changes nothing.
+   * `rules` names each family's bookkeeping members and the polled families; by default, the contracts package's
+   * members and no polled family.
    */
-  constructor(database: DatabaseSync) {
+  constructor(database: DatabaseSync, rules: HistoryRules = DEFAULT_HISTORY_RULES) {
     this.#database = database;
+    this.#rules = rules;
     database.exec('BEGIN IMMEDIATE');
     try {
       this.origin = migrate(database);
@@ -141,6 +190,14 @@ export class History {
       trimRefused: database.prepare('DELETE FROM core_refused WHERE seq <= (SELECT MAX(seq) FROM core_refused) - ?'),
       after: database.prepare(`SELECT seq, at_ms AS atMs, revision, kind, source, message_id AS messageId, type, subject, request_id AS requestId,
         record, origin, origin_seq AS originSeq FROM core_history WHERE origin = ? AND origin_seq > ? ORDER BY origin_seq LIMIT ?`),
+      span: database.prepare(`SELECT row_revision AS rowRevision, seen_revision AS seenRevision, seen_message_id AS seenMessageId, seen_type AS seenType, since_at_ms AS sinceAtMs,
+        confirmed_at_ms AS confirmedAtMs, confirmations FROM core_history_span WHERE source = ? AND family = ? AND id = ?`),
+      setSpan: database.prepare(`INSERT INTO core_history_span (source, family, id, row_revision, seen_revision, seen_message_id, seen_type, since_at_ms, confirmed_at_ms,
+        confirmations) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (source, family, id) DO UPDATE SET row_revision = excluded.row_revision,
+        seen_revision = excluded.seen_revision,
+        seen_message_id = excluded.seen_message_id, seen_type = excluded.seen_type, since_at_ms = excluded.since_at_ms, confirmed_at_ms = excluded.confirmed_at_ms,
+        confirmations = excluded.confirmations`),
+      dropSpan: database.prepare('DELETE FROM core_history_span WHERE source = ? AND family = ? AND id = ?'),
     };
   }
 
@@ -215,10 +272,12 @@ export class History {
     }
     if (message.kind === 'removal') {
       // The entity's previous record becomes a tombstone at the removal's revision, so a late state at or below it
-      // brings nothing back, and a new entity under the same ID starts afresh.
+      // brings nothing back, and a new entity under the same ID starts afresh. An open span is closed by a row first.
       const {entity, revision: removedAt} = message.data as {entity?: {family?: unknown; id?: unknown}; revision?: unknown};
       if (typeof entity?.family === 'string' && typeof entity.id === 'string') {
+        this.#closeBeforeRemoval(message, entity.family, entity.id, atMs, revision);
         this.#statements.setLatest.run(message.source, entity.family, entity.id, typeof removedAt === 'number' ? removedAt : 0, 'null');
+        this.#statements.dropSpan.run(message.source, entity.family, entity.id);
       }
     }
     const {requestId} = message.data as {requestId?: unknown};
@@ -226,9 +285,50 @@ export class History {
       message.kind === 'outcome' && typeof requestId === 'string' ? requestId : null, JSON.stringify(message));
   }
 
+  /** The record of the entity's last row and its revision, null for a tombstone, or undefined when history holds none. */
+  #latest(source: string, family: string, id: string): {revision: number; record: Record<string, unknown> | null} | undefined {
+    const row = this.#statements.latest.get(source, family, id) as {revision: number; record: string} | undefined;
+    return row === undefined ? undefined : {revision: row.revision, record: JSON.parse(row.record) as Record<string, unknown> | null};
+  }
+
   /**
-   * A state message as a compact change event against the entity's previous record, or nothing when the record is
-   * stale or changed nothing.
+   * The entity's open span, given the revision of its last row: the stored one while it was written against that row,
+   * or, when a release without spans wrote `core_history_latest` since, as a previous release run on this store does,
+   * a span reset to an unknown start with no confirmation yet. The span row keeps the revision of the entity's last row
+   * it was written against (`row_revision`); this release moves `core_history_latest` only with the span, so a
+   * different revision there means another release took a reading of the entity at a revision other than the span's row.
+   */
+  #span(source: string, family: string, id: string, lastRow: number): SpanRow {
+    const stored = this.#statements.span.get(source, family, id) as SpanRow | undefined;
+    if (stored !== undefined && stored.rowRevision === lastRow && stored.seenRevision >= lastRow) return stored;
+    return {rowRevision: lastRow, seenRevision: lastRow, seenMessageId: '', seenType: '', sinceAtMs: null, confirmedAtMs: null, confirmations: 0};
+  }
+
+  /** The stretch a row closes, when history took more readings in it than the row that opened it, or undefined. */
+  static #closes(span: SpanRow): HistorySpan | undefined {
+    if (span.confirmedAtMs === null || span.confirmations <= (span.sinceAtMs === null ? 0 : 1)) return undefined;
+    return {sinceAtMs: span.sinceAtMs, lastConfirmedAtMs: span.confirmedAtMs, confirmations: span.confirmations};
+  }
+
+  /**
+   * Before a removal: when its entity's open span holds confirmations beyond its own row, one change row closes it. The
+   * row changes no member, so it claims nothing newer than its values: it carries the last row's revision (equal to
+   * `previous`) and no message ID, the last confirmation's type, and the confirmation's instant and count in `span`.
+   */
+  #closeBeforeRemoval(removal: Message<unknown>, family: string, id: string, atMs: number, revision: number): void {
+    const latest = this.#latest(removal.source, family, id);
+    if (latest === undefined || latest.record === null) return;
+    const span = this.#span(removal.source, family, id, latest.revision);
+    const closes = History.#closes(span);
+    if (closes === undefined) return;
+    const event: ChangeEvent = {family, id, revision: latest.revision, previous: latest.revision, changed: {}, removed: [], span: closes, closedBy: 'removal'};
+    this.#insert(atMs, revision, 'change', removal.source, null, span.seenType, removal.subject, null, JSON.stringify(event));
+  }
+
+  /**
+   * A state message against the record of its entity's last row: nothing when it is stale, out of order or a resend of
+   * the last confirmation; a confirmation of the open span when it holds the same state; a gap row when that
+   * confirmation of a polled family comes after a silence longer than the gap; and otherwise a change row.
    */
   #change(message: Message<unknown>, atMs: number, revision: number): void {
     const family = familyOf(message.dataschema);
@@ -236,18 +336,52 @@ export class History {
     if (family === undefined || typeof record !== 'object' || record === null || Array.isArray(record)) return;
     const id = typeof record.id === 'string' ? record.id : message.subject;
     const entityRevision = typeof record.revision === 'number' ? record.revision : 0;
-    const latest = this.#statements.latest.get(message.source, family, id) as {revision: number; record: string} | undefined;
-    const held = latest === undefined ? null : JSON.parse(latest.record) as Record<string, unknown> | null;
-    // A state older than the record history holds, or at or below the revision that removed its entity, is stale.
-    if (latest !== undefined && (entityRevision < latest.revision || (held === null && entityRevision <= latest.revision))) return;
+    const latest = this.#latest(message.source, family, id);
+    // A state older than the record of the entity's last row, or at or below the revision that removed its entity, is stale.
+    if (latest !== undefined && (entityRevision < latest.revision || (latest.record === null && entityRevision <= latest.revision))) return;
+    const held = latest?.record ?? null;
+    const span = latest === undefined || held === null ? undefined : this.#span(message.source, family, id, latest.revision);
+    // Older than the last confirmation: nothing new.
+    if (span !== undefined && span.confirmedAtMs !== null && entityRevision < span.seenRevision) return;
+    const same = held !== null && span !== undefined && sameState(held, record, this.#rules.bookkeeping[family] ?? []);
+    // That confirmation sent again: nothing new. A message under its ID whose state differs is not a resend, and is a change.
+    if (same && span?.confirmedAtMs !== null && message.id === span?.seenMessageId) return;
+    if (same && span !== undefined) {
+      const gap = gapOf(this.#rules, message.source, family);
+      // Each confirmation keeps its own instant, and a negative silence, after the clock stepped back, is no gap. So an
+      // outage after a backward step still shows; a clock that steps back and then forward by more than the gap writes
+      // one gap row for a silence that did not happen (review of PR #1790: keeping the later instant hid real outages).
+      const silence = span.confirmedAtMs === null ? undefined : atMs - span.confirmedAtMs;
+      if (gap === undefined || silence === undefined || silence <= gap) {
+        this.#statements.setSpan.run(message.source, family, id, span.rowRevision, entityRevision, message.id, message.type, span.sinceAtMs, atMs,
+          span.confirmations + 1);
+        return;
+      }
+      this.#row(message, family, id, record, latest, span, atMs, revision, silence);
+      return;
+    }
+    this.#row(message, family, id, record, latest, span, atMs, revision);
+  }
+
+  /**
+   * One change row for `record` against the record of the entity's last row, carrying the span it closes and, for a
+   * gap row, the silence; the record becomes the last row's, and a new span opens with this reading.
+   */
+  #row(message: Message<unknown>, family: string, id: string, record: Record<string, unknown>, latest: {revision: number; record: Record<string, unknown> | null} | undefined,
+    span: SpanRow | undefined, atMs: number, revision: number, gapMs?: number): void {
+    const entityRevision = typeof record.revision === 'number' ? record.revision : 0;
+    const held = latest?.record ?? null;
     const before = held ?? {};
     const members = (value: Record<string, unknown>): string[] => Object.keys(value).filter(name => name !== 'id' && name !== 'revision');
     const changed: Record<string, unknown> = {};
     for (const name of members(record)) if (JSON.stringify(record[name]) !== JSON.stringify(before[name])) changed[name] = record[name];
     const removed = members(before).filter(name => !Object.hasOwn(record, name));
     this.#statements.setLatest.run(message.source, family, id, entityRevision, JSON.stringify(record));
-    if (Object.keys(changed).length === 0 && removed.length === 0) return;
-    const event: ChangeEvent = {family, id, revision: entityRevision, previous: held === null ? null : latest?.revision ?? null, changed, removed};
+    this.#statements.setSpan.run(message.source, family, id, entityRevision, entityRevision, message.id, message.type, atMs, atMs, 1);
+    if (Object.keys(changed).length === 0 && removed.length === 0 && gapMs === undefined) return;
+    const closes = span === undefined ? undefined : History.#closes(span);
+    const event: ChangeEvent = {family, id, revision: entityRevision, previous: held === null ? null : latest?.revision ?? null, changed, removed,
+      ...(closes === undefined ? {} : {span: closes}), ...(gapMs === undefined ? {} : {gapMs})};
     this.#insert(atMs, revision, 'change', message.source, message.id, message.type, message.subject, null, JSON.stringify(event));
   }
 }
@@ -256,8 +390,9 @@ export class History {
  * Creates history's tables and the store's origin, and brings a store written before #1740 up to the fact log: adds
  * `origin` and `origin_seq`, then gives each row without an origin this origin and the next sequence, in `seq` order,
  * which is the order rows were written. Only rows after this origin's last row are looked at, so a store already
- * migrated costs one index lookup. The old `(source, message_id)` index gives way to one per origin. Runs inside the
- * caller's transaction and returns the origin.
+ * migrated costs one index lookup. The old `(source, message_id)` index gives way to one per origin. The span table
+ * (#1772) is created empty when missing: it adds no column to another table and reads no row. Runs inside the caller's
+ * transaction and returns the origin.
  */
 function migrate(database: DatabaseSync): string {
   database.exec(`CREATE TABLE IF NOT EXISTS core_history (seq INTEGER PRIMARY KEY AUTOINCREMENT, at_ms INTEGER NOT NULL, revision INTEGER NOT NULL,
@@ -268,7 +403,10 @@ function migrate(database: DatabaseSync): string {
       record TEXT NOT NULL, PRIMARY KEY (source, family, id)) STRICT;
     CREATE TABLE IF NOT EXISTS core_refused (seq INTEGER PRIMARY KEY AUTOINCREMENT, at_ms INTEGER NOT NULL, source TEXT NOT NULL, message_id TEXT NOT NULL,
       message TEXT NOT NULL) STRICT;
-    CREATE TABLE IF NOT EXISTS core_origin (only INTEGER PRIMARY KEY CHECK (only = 1), origin TEXT NOT NULL) STRICT`);
+    CREATE TABLE IF NOT EXISTS core_origin (only INTEGER PRIMARY KEY CHECK (only = 1), origin TEXT NOT NULL) STRICT;
+    CREATE TABLE IF NOT EXISTS core_history_span (source TEXT NOT NULL, family TEXT NOT NULL, id TEXT NOT NULL, row_revision INTEGER, seen_revision INTEGER NOT NULL,
+      seen_message_id TEXT NOT NULL, seen_type TEXT NOT NULL, since_at_ms INTEGER, confirmed_at_ms INTEGER NOT NULL, confirmations INTEGER NOT NULL,
+      PRIMARY KEY (source, family, id)) STRICT`);
   database.prepare('INSERT INTO core_origin VALUES (1, ?) ON CONFLICT (only) DO NOTHING').run(randomUUID());
   const {origin} = database.prepare('SELECT origin FROM core_origin WHERE only = 1').get() as {origin: string};
   // A store written before #1740 lacks the columns; they are added as the store's parts add theirs (music-lighting.ts).

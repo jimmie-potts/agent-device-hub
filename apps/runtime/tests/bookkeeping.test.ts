@@ -1,7 +1,7 @@
 // The bookkeeping members of every state family the runtime carries (Hub #1771): the checked-in classification lists
 // every state family and version of the core and of every registered module, each entry equals the declaration, the
 // runtime refuses a module's declaration that breaks a rule at start, and every leaf that is not bookkeeping still
-// counts as a change in each declared family's fixtures. Nothing reads the declaration yet (#1772).
+// counts as a change in each declared family's fixtures. History reads the declaration (#1772; history-spans.test.ts).
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {MessageValidator, SCHEMA_BASE, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
@@ -11,6 +11,7 @@ import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {ModuleRegistration} from '@jimmie-potts/sdk';
 import {CORE_MODULE, moduleBookkeeping, registrations, shippedList} from '../src/index.js';
 import {OTHER_MODULE_FAMILIES, STATE_FAMILIES} from './fixtures/bookkeeping-classification.js';
+import {AT, RECORDS, known, monitor} from './fixtures/module-state-records.js';
 import {it} from './support.js';
 
 const short = (dataschema: string): string => dataschema.slice(SCHEMA_BASE.length);
@@ -122,37 +123,6 @@ it('the runtime refuses a module that declares a family it does not register, tw
   assert.deepEqual(shippedList([lamp({'lamp-glow': ['/observed/readAtMs']})]).map(({name}) => name), [CORE_MODULE, 'lamp']);
   assert.deepEqual(moduleBookkeeping([lamp({'lamp-glow': ['/observed/readAtMs']})]), {'lamp-glow': ['/observed/readAtMs']});
 });
-
-// Records of the families a module declares bookkeeping for, as their modules publish them.
-const AT = 1_791_287_998_500;
-const known = (value: number): {status: 'known'; value: number} => ({status: 'known', value});
-const STATUS_KEYS = ['state', 'batteryPercent', 'cleanTimeSeconds', 'cleanAreaMm2', 'inCleaning', 'inReturning', 'errorCode', 'dockErrorStatus', 'chargeStatus',
-  'dustCollectionStatus', 'waterBoxStatus', 'waterShortageStatus', 'washStatus', 'washPhase', 'dryStatus', 'avoidCount', 'dss'];
-const CONSUMABLE_KEYS = ['mainBrushSeconds', 'sideBrushSeconds', 'filterSeconds', 'filterElementSeconds', 'sensorSeconds', 'strainerCycles', 'dustCollectionCycles',
-  'cleaningBrushCycles'];
-const monitor = {filter: {q: 'build'}, cadenceMs: 10_000, connection: 'current', sessions: 4, matched: 3, attention: 1, page: 1, pages: 2};
-const player = {state: 'playing', intent: 'active', playlistId: null, itemId: null, renditionId: null, lastError: null};
-const RECORDS: Readonly<Record<string, {type: string; data: Record<string, unknown>}>> = {
-  'lifx-light/2.0': {type: 'org.bunny.lifx-light.updated', data: {
-    id: 'bulb', revision: 4, capabilities: {color: {supported: true}, temperature: {supported: true, minimum: 1500, maximum: 9000}},
-    observed: {status: 'known', observedAtMs: AT, hue: 120, saturation: 50, brightness: 80, kelvin: 3500},
-  }},
-  'roborock-vacuum/2.0': {type: 'org.bunny.roborock-vacuum.updated', data: {
-    schema: 'roborock-vacuum/2.0', id: 'vacuum', revision: 7, observedAtMs: known(AT), availability: 'available', activity: 'cleaning',
-    status: Object.fromEntries(STATUS_KEYS.map(key => [key, known(1)])),
-    consumables: {observedAtMs: known(AT - 60_000), ...Object.fromEntries(CONSUMABLE_KEYS.map(key => [key, known(2)]))},
-    totals: {observedAtMs: known(AT - 60_000), cleanTimeSeconds: known(3), cleanAreaMm2: known(4), cleanCount: known(5), dustCollectionCount: known(6)},
-    collection: {retainedRuns: 1, observedSamples: 2, gaps: 0, history: 'partial', maps: 'unverified', clock: 'unqualified', lastFailure: {status: 'unknown'}},
-  }},
-  'pixoo-display/2.1': {type: 'org.bunny.pixoo-display.updated', data: {
-    id: 'pixoo', revision: 9, mode: 'work', pendingMode: null, base: 'status', participating: true, showing: 'dashboard', monitor,
-    nowPlaying: {media: 'popup', card: false, stale: false, takeover: null}, player, moments: {overStatus: true, playing: null},
-  }},
-  'pixoo-display/2.0': {type: 'org.bunny.pixoo-display.updated', data: {
-    id: 'pixoo', revision: 9, mode: 'monitor', participating: true, pendingMode: null, showing: 'dashboard', monitor,
-    nowPlaying: {media: 'popup', card: false, stale: false, takeover: null}, player, moments: {overMonitor: true, playing: null},
-  }},
-};
 
 function validator(): MessageValidator {
   const validator = new MessageValidator();

@@ -2,6 +2,7 @@ import { errorBody } from '@jimmie-potts/event-contracts/v2';
 import type { DeviceLink, DeviceSimulation, ModuleRegistration } from '@jimmie-potts/sdk';
 import type { ReadOptions, Reading, VendorJson } from '@jimmie-potts/roborock-transport';
 import { createRoborockModule } from './module.js';
+import { IDLE_POLL_MS } from './collector.js';
 import { registerRoborockFamilies, roborockSchemas } from './families.js';
 import { SimulatedRoborock, SIMULATION_ACTIONS, type SimulationAction } from './simulated.js';
 import type { CollectorTransport } from './collector.js';
@@ -43,5 +44,6 @@ const simulation: DeviceSimulation<SimulatedRoborock, SimulatedRoborock> = { act
             default: return { ok: false, error: errorBody('invalid-request') };
         } }, remote: link => createRoborockModule({ transport: new RemoteSimulation(link) }) } };
 // The status reading time moves with every poll while the vacuum stays as it was; whether a reading exists still
-// counts, so the value is bookkeeping and not the member (#1771).
-export const registration: ModuleRegistration = { name: 'roborock', create: () => createRoborockModule(), simulate: () => createRoborockModule({ transport: new SimulatedRoborock() }), schemas: roborockSchemas, registerFamilies: registerRoborockFamilies, simulatedSection: { config: { id: 'vacuum' } }, shipped: true, order: 850, simulation, bookkeeping: { 'roborock-vacuum': ['/observedAtMs/value'] } };
+// counts, so the value is bookkeeping and not the member (#1771). Each poll publishes the vacuum and device records, every
+// `IDLE_POLL_MS` while idle and more often while cleaning or returning, so the idle interval is the longest (#1772).
+export const registration: ModuleRegistration = { name: 'roborock', create: () => createRoborockModule(), simulate: () => createRoborockModule({ transport: new SimulatedRoborock() }), schemas: roborockSchemas, registerFamilies: registerRoborockFamilies, simulatedSection: { config: { id: 'vacuum' } }, shipped: true, order: 850, simulation, bookkeeping: { 'roborock-vacuum': ['/observedAtMs/value'] }, polling: { 'roborock-vacuum': IDLE_POLL_MS, device: IDLE_POLL_MS } };
