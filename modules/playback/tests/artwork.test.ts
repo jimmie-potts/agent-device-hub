@@ -58,18 +58,100 @@ void test('a Sony clock query on an unchanged jacket path keeps the ready image 
     await flush();
   }
   assert.equal(run.fetches(), 1); assert.equal(run.changes(), 1);
-  // A different jacket path is a new candidate in the same generation, and replaces the image.
+  // A different jacket path is a new candidate in the same generation and is acquired; the same image publishes nothing.
   run.controller.update(run.view());
-  assert.equal(run.controller.snapshot()?.status, 'missing'); assert.equal(run.controller.snapshot()?.generation, ready?.generation);
-  await flush(); assert.equal(run.controller.snapshot()?.status, 'ready'); assert.equal(run.fetches(), 2);
+  assert.deepEqual(run.controller.snapshot(), ready);
+  await flush(); assert.deepEqual(run.controller.snapshot(), ready); assert.equal(run.fetches(), 2); assert.equal(run.changes(), 1);
 });
 
 void test('a Sonos reference with a changed query remains a new candidate', async () => {
   const sonos = (query: string): ArtworkPresentation => ({index: 0, kind: 'sonos', endpoint: 'http://127.0.0.1:1400/MediaRenderer/AVTransport/Control',
     availability: 'available', observation: {status: 'playing', title: 'A', thumbnailUrl: `/getaa?${query}`}});
   const run = setup(); run.controller.update(sonos('1')); await flush(); assert.equal(run.controller.snapshot()?.status, 'ready');
-  run.controller.update(sonos('2')); assert.equal(run.controller.snapshot()?.status, 'missing');
+  run.controller.update(sonos('2')); assert.equal(run.controller.snapshot()?.status, 'ready');
   await flush(); assert.equal(run.fetches(), 2);
+});
+
+/** Decodes the first fetched byte to one of two synthetic images, so a test controls what each candidate shows. */
+const imageOf = (bytes: Uint8Array): Promise<ArtworkResult<ArtworkThumbnail>> =>
+  Promise.resolve({ok: true, value: {...thumbnail, base64: bytes[0] === 2 ? 'c3ludGhldGljIGI=' : 'c3ludGhldGljIGE='}});
+
+void test('two alternating forms of the same image publish it once, never missing between them (#1758)', async () => {
+  const forms = [`${ENDPOINT}/image`, 'http://127.0.0.1:58080/image'] as const;
+  const run = setup(imageOf);
+  run.controller.update(run.view()); await flush();
+  const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
+  for (let flip = 1; flip <= 6; flip++) {
+    run.controller.update(run.view({observation: {status: 'playing', title: 'A', thumbnailUrl: forms[flip % 2 === 0 ? 0 : 1]}}));
+    assert.deepEqual(run.controller.snapshot(), ready, `flip ${flip} keeps the ready image while the form is acquired`);
+    await flush();
+    assert.deepEqual(run.controller.snapshot(), ready);
+  }
+  assert.equal(run.changes(), 1, 'the image was published once');
+  assert.equal(run.fetches(), 7, 'each changed form is still acquired');
+});
+
+void test('an absent or refused reference still reports missing for the same track (#1758 keeps the existing rule)', async () => {
+  const run = setup(imageOf);
+  run.controller.update(run.view()); await flush();
+  const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
+  run.controller.update(run.view({observation: {status: 'playing', title: 'A'}}));
+  assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation});
+  run.controller.update(run.view()); await flush();
+  assert.deepEqual(run.controller.snapshot(), ready);
+  run.controller.update(run.view({observation: {status: 'playing', title: 'A', thumbnailUrl: 'http://192.0.2.1/elsewhere'}}));
+  assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation});
+  assert.equal(run.fetches(), 2);
+});
+
+void test('a replacement that fails withdraws the held image after its attempts; a different image replaces it once acquired (#1758)', async () => {
+  let failure: ArtworkResult<Uint8Array> | undefined;
+  const run = setup(imageOf, (candidate) => Promise.resolve(failure ?? {ok: true, value: new Uint8Array([candidate.endsWith('/other') ? 2 : 1])}));
+  run.controller.update(run.view()); await flush();
+  const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
+  // Transient failures keep the held image through the 2 s and 4 s retries, and the last one withdraws it.
+  failure = artworkFailure('unavailable', true);
+  run.controller.update(run.view({observation: {status: 'playing', title: 'A', thumbnailUrl: `${ENDPOINT}/second`}})); await flush();
+  assert.deepEqual(run.controller.snapshot(), ready);
+  await run.advance(2000); assert.deepEqual(run.controller.snapshot(), ready);
+  await run.advance(4000);
+  assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation}); assert.equal(run.changes(), 2);
+  failure = undefined;
+  run.controller.update(run.view()); await flush();
+  assert.deepEqual(run.controller.snapshot(), ready); assert.equal(run.changes(), 3);
+  // A refusal withdraws it at once.
+  failure = artworkFailure('capacity');
+  run.controller.update(run.view({observation: {status: 'playing', title: 'A', thumbnailUrl: `${ENDPOINT}/third`}})); await flush();
+  assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation}); assert.equal(run.changes(), 4);
+  failure = undefined;
+  run.controller.update(run.view()); await flush();
+  assert.deepEqual(run.controller.snapshot(), ready); assert.equal(run.changes(), 5);
+  run.controller.update(run.view({observation: {status: 'playing', title: 'A', thumbnailUrl: `${ENDPOINT}/other`}}));
+  assert.deepEqual(run.controller.snapshot(), ready, 'nothing is shown for a form before it is acquired');
+  await flush();
+  const replaced = run.controller.snapshot();
+  assert.equal(replaced?.status, 'ready'); assert.equal(replaced?.generation, ready?.generation);
+  assert.notEqual(replaced?.status === 'ready' ? replaced.base64 : undefined, ready?.status === 'ready' ? ready.base64 : undefined);
+  assert.equal(run.changes(), 6);
+});
+
+void test('a change of track publishes missing then ready with the new image, and never the earlier one (#1758)', async () => {
+  const run = setup(imageOf, (candidate) => Promise.resolve({ok: true, value: new Uint8Array([candidate.endsWith('/b') ? 2 : 1])}));
+  run.controller.update(run.view()); await flush();
+  const first = run.controller.snapshot(); assert.equal(first?.status, 'ready');
+  // The same reference for a new track is still acquired again under a new generation.
+  run.controller.update(run.view({}, 'B'));
+  const missing = run.controller.snapshot();
+  assert.equal(missing?.status, 'missing'); assert.notEqual(missing?.generation, first?.generation);
+  await flush();
+  assert.equal(run.controller.snapshot()?.status, 'ready'); assert.equal(run.controller.snapshot()?.generation, missing?.generation);
+  assert.equal(run.fetches(), 2);
+  run.controller.update(run.view({observation: {status: 'playing', title: 'C', thumbnailUrl: `${ENDPOINT}/b`}}));
+  assert.equal(run.controller.snapshot()?.status, 'missing');
+  await flush();
+  const third = run.controller.snapshot();
+  assert.equal(third?.status === 'ready' ? third.base64 : undefined, 'c3ludGhldGljIGI=');
+  assert.equal(run.changes(), 3);
 });
 
 void test('absent candidate then later candidate retains generation', async () => {

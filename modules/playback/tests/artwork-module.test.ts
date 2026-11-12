@@ -65,6 +65,44 @@ test('artwork publishes independently, reuses sync bytes, and does not refresh m
   assert.ok(!JSON.stringify(h.logs()).includes('image-a'));
 });
 
+test('a speaker alternating two forms of one image publishes it once; a track change publishes missing then the new image (#1758)', async context => {
+  const speakers = new ArtworkSpeakers({sony: playing});
+  const [a, b] = await Promise.all(['#a04080', '#2060a0'].map(async background =>
+    decodeArtwork(await sharp({create: {width: 8, height: 8, channels: 3, background}}).png().toBuffer())));
+  assert.ok(a?.ok === true && b?.ok === true);
+  const h = await host(context, speakers, {artwork: {
+    // The fetched marker names the synthetic image the receiver serves for that reference.
+    fetch: candidate => Promise.resolve({ok: true, value: new Uint8Array([candidate.endsWith('/image-b') ? 2 : 1])}),
+    decode: bytes => Promise.resolve(bytes[0] === 2 ? b : a),
+  }});
+  const forms = [`${receiverOrigin}/image-a`, `http://${new URL(sonyEndpoint).hostname}:58080/image-a`];
+  await h.advance(2000);
+  const ready = h.record().artwork;
+  assert.equal(ready?.status, 'ready');
+  const before = h.records().length;
+  for (let flip = 1; flip <= 8; flip++) {
+    speakers.candidate = forms[flip % 2];
+    await h.advance(2000);
+  }
+  const during = h.records().slice(before);
+  assert.deepEqual(during.filter(record => JSON.stringify(record.artwork) !== JSON.stringify(ready)), [],
+    'no flip published missing or the image again');
+  const artworkChanges = (records: ReturnType<typeof h.records>) => records.filter((record, index) =>
+    index === 0 || JSON.stringify(record.artwork) !== JSON.stringify(records[index - 1]?.artwork)).map(record => record.artwork);
+  assert.equal(artworkChanges(h.records()).filter(artwork => artwork?.status === 'ready').length, 1, 'the image was published once');
+
+  const mark = h.records().length;
+  speakers.candidate = `${receiverOrigin}/image-b`;
+  speakers.play('sony', {title: 'Track B'});
+  await h.advance(2000);
+  const changes = artworkChanges(h.records().slice(mark - 1)).slice(1);
+  assert.deepEqual(changes.map(artwork => artwork?.status), ['missing', 'ready']);
+  assert.notEqual(changes[0]?.generation, ready?.generation);
+  assert.equal(changes[1]?.generation, changes[0]?.generation);
+  assert.equal(changes[1]?.status === 'ready' ? changes[1].base64 : undefined, b.value.base64);
+  assert.deepEqual(h.problems(), []);
+});
+
 test('a delayed image cannot publish after a reported track change and controls remain usable', async context => {
   const speakers = new ArtworkSpeakers({sony: playing});
   const releases: ((value: ArtworkResult<ArtworkThumbnail>) => void)[] = [];

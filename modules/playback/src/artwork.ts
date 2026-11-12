@@ -77,8 +77,12 @@ export class ArtworkController {
     if (identity !== this.#candidateIdentity) {
       this.#clear();
       this.#candidateIdentity = identity;
-      this.#artwork = {status: 'missing', generation: this.#artwork.generation};
       const url = artworkUrl(raw, view.endpoint, view.kind);
+      // A ready image here was acquired for this same association: an association change above has already made it
+      // `missing` under a new generation. While an admissible replacement is acquired it stays shown, and only an acquired
+      // image that differs from it replaces it, so a receiver that alternates two references to one image publishes that
+      // image once (#1758). An absent or refused reference, and a replacement that fails, still report `missing`.
+      if (this.#artwork.status !== 'ready' || url === undefined) this.#artwork = {status: 'missing', generation: this.#artwork.generation};
       if (url !== undefined) this.#candidate = {source: view.kind, url, endpoint: view.endpoint, generation: this.#artwork.generation, sequence: this.#sequence, attempts: 0};
       else if (raw !== undefined) this.#failed('unsupported-capability', 0, view.kind);
     }
@@ -131,7 +135,7 @@ export class ArtworkController {
 
   #start(): void {
     const candidate = this.#candidate;
-    if (this.#running || this.#retry !== undefined || candidate === undefined || !this.#current(candidate) || candidate.exhausted === true || candidate.attempts >= 3 || this.#artwork?.status === 'ready') return;
+    if (this.#running || this.#retry !== undefined || candidate === undefined || !this.#current(candidate) || candidate.exhausted === true || candidate.attempts >= 3) return;
     this.#running = true;
     candidate.attempts += 1;
     void this.#acquire(candidate).then(result => {
@@ -141,6 +145,11 @@ export class ArtworkController {
           this.#options.onDiagnostic?.({kind: 'recovery', code: this.#failure, attempts: candidate.attempts, source: candidate.source});
           this.#failure = undefined;
         }
+        // The candidate is acquired; it is not acquired again until a different one replaces it.
+        this.#candidate = undefined;
+        const held = this.#artwork;
+        if (held?.status === 'ready' && held.mediaType === result.value.mediaType && held.width === result.value.width
+          && held.height === result.value.height && held.base64 === result.value.base64) return;
         this.#artwork = {status: 'ready', generation: candidate.generation, ...result.value};
         this.#options.onChange();
       } else {
@@ -155,6 +164,11 @@ export class ArtworkController {
         } else {
           candidate.exhausted = true;
           this.#options.onDiagnostic?.({kind: 'exhausted', code, attempts: candidate.attempts, source: candidate.source});
+          // A held image was not confirmed for the reference the receiver reports now, so it is withdrawn.
+          if (this.#artwork?.status === 'ready') {
+            this.#artwork = {status: 'missing', generation: candidate.generation};
+            this.#options.onChange();
+          }
         }
       }
     }).finally(() => {

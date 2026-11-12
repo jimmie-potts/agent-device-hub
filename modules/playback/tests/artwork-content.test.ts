@@ -128,7 +128,7 @@ test('a failed artwork association commit cannot resurrect content from the old 
   assert.ok(await h.readContent(reference(h.record()))); assert.equal(await h.readContent(oldRef), undefined);
 });
 
-test('same-generation candidate replacement retires its old revision before the delayed decode answers', async context => {
+test('same-generation candidate replacement keeps its image until a different one is acquired, then retires the old revision (#1758)', async context => {
   const speakers = new ArtworkSpeakers({sony: playing});
   let release: (() => void) | undefined, decodes = 0;
   const PNG_B = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGM4ISLyHwAEiAHwkp1qPAAAAABJRU5ErkJggg==', 'base64');
@@ -142,9 +142,9 @@ test('same-generation candidate replacement retires its old revision before the 
   }});
   const old = h.record(), oldRef = reference(old);
   speakers.candidate = 'image-b'; await h.advance(2000);
-  assert.equal(h.record().artwork?.status, 'missing');
-  assert.equal(h.record().artwork?.generation, old.artwork?.generation);
-  assert.equal(await h.readContent(oldRef), undefined);
+  // The same track's image stays current while the replacement is acquired; nothing new is published yet.
+  assert.deepEqual(h.record(), old);
+  assert.ok(await h.readContent(oldRef));
   assert.ok(release); release(); await flush();
   const next = h.record(); assert.equal(next.artwork?.generation, old.artwork?.generation);
   assert.notEqual(next.revision, old.revision);
