@@ -963,10 +963,10 @@ The decisions:
 3. **The Pixoo's churn.** The remaining churn of the Pixoo's display record is
    left to the source fix that is already merged
    ([PR #1763](https://github.com/jimmie-potts/agent-device-hub/pull/1763)).
-   No short-return rule, no hourly cap and no overlay rule is added. ("Number
-   one" at 15:48:22Z.) Pixoo page turns (`monitor.page`) and paint times
-   (`lastTransmission.transmittedAtMs`) are bookkeeping. ("Both" at
-   15:51:15Z.)
+   No short-return rule, no hourly cap and no overlay rule is added for now.
+   ("number one" and "sufficient to me for now" at 15:48:22Z.) Pixoo page
+   turns (`monitor.page`) and paint times (`lastTransmission.transmittedAtMs`)
+   are bookkeeping. ("Both" at 15:51:15Z.)
 4. **Gap length.** A gap row is written only for record families that publish
    on a poll, when the silence is longer than four times the family's own
    polling interval, with a minimum of two minutes. Families that publish only
@@ -980,19 +980,21 @@ The decisions:
    and `lastEvidenceAtMs` are not bookkeeping for now. (Recommendation accepted
    at 15:48:22Z.)
 7. **A noisy-device alarm, not a cap.** When one entity writes more than a set
-   number of history rows in an hour, the core raises a diagnostic and the
-   dashboard shows it. Nothing is capped, folded or deleted
-   ([#1778](https://github.com/jimmie-potts/agent-device-hub/issues/1778)).
-   (15:51:15Z, in place of the cap.)
+   number of history rows in an hour, the core is to raise a diagnostic and the
+   dashboard to show it. Nothing is capped, folded or deleted. The alarm is not
+   built yet; [#1778](https://github.com/jimmie-potts/agent-device-hub/issues/1778)
+   owns it. (15:51:15Z, in place of the cap.)
 
-**What history keeps under these rules:**
+**What history will keep under these rules.** The mechanism below is the
+design in #1768, which the owner's answers settle but do not word; #1771 and
+#1772 build it.
 - A bookkeeping member is a member of a state record that can change while the
   state it describes does not, such as a reading, transmission or update time.
   Each state family declares its bookkeeping members beside its schema
   ([#1771](https://github.com/jimmie-potts/agent-device-hub/issues/1771)).
-  Safety members are never bookkeeping: availability, generation,
-  configuration revision, holds, observed power and brightness, and power-limit
-  settings and status.
+  Safety members are never bookkeeping, and #1771's contract test refuses
+  them: availability, generation, configuration revision, holds, observed power
+  and brightness, and power-limit settings and status.
 - History compares a new record with the record of the entity's last row, with
   bookkeeping members removed. If nothing else differs, the reading is a
   confirmation: no row is written, and the entity's open span records its last
@@ -1002,15 +1004,17 @@ The decisions:
 - A silence longer than the gap is recorded by one row when readings resume. A
   removal closes an open span with one row first.
 - The open span is kept outside the history rows. Rows are never updated, so
-  the fact log stays append-only and numbered without gaps. A peer installation
-  reads rows only: open spans and freshness are never replicated.
+  the fact log stays append-only and numbered without gaps. A peer installation,
+  proposed in [ADR 0015](0015-two-machine-runtime.md), would read rows only:
+  open spans and freshness are never replicated.
 
 **What stays:**
 - Devices keep polling and publishing as they do. Every live reader, the safety
   checks and the dashboard's freshness signals among them, keeps reading the
   live record through sync. Nothing reads freshness from history.
-- History keeps no time limit, and nothing stored is deleted. Time limits and
-  purge are held by the owner.
+- History keeps no time limit: the owner held time limits and purge at
+  14:53:16Z. Nothing stored is deleted; under decision 5, stored rows are
+  looked at again after #1774.
 - Everything else in this record stands: no broker, each owner keeps and
   publishes its own state, consumers sync current state, no replay, and a past
   fact never triggers a command by itself.

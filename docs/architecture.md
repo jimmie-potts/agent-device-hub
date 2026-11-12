@@ -413,9 +413,10 @@ runs without device modules. The 1.x field mapping is in
   view, display or device may read and show past facts. B.U.N.N.Y. does not use
   event sourcing, and its stores stay on SQLite
   ([ADR 0012 amendment of 2026-11-11](decisions/0012-bunny-event-platform.md#amendment-2026-11-11)).
-  The core's history is a fact log that any reader may read after a cursor it
-  keeps ([#1740](https://github.com/jimmie-potts/agent-device-hub/issues/1740)).
-  A peer installation reading it the same way is proposed in
+  The core's history is a fact log that a reader inside the core may read after
+  a cursor it keeps ([#1740](https://github.com/jimmie-potts/agent-device-hub/issues/1740));
+  the read API and MCP tool return the same rows as before. A peer installation
+  reading it the same way is proposed in
   [ADR 0015](decisions/0015-two-machine-runtime.md)
   ([#1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723)).
 - **History.** History keeps changes. Once

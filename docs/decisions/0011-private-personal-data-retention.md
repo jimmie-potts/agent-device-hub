@@ -275,9 +275,11 @@ The owner-selected rule, for core history:
   15:48:22Z).
 - **Not kept:** each repeated reading's own time and other bookkeeping values
   within a stretch, such as the page a Pixoo status picture showed.
-- Bookkeeping members are declared per state family. Safety members are never
-  bookkeeping, and the session record's times stay rows (decision 6, answered
-  at 15:48:22Z).
+- Bookkeeping members are declared per state family. Under the design in
+  #1768, safety members are never bookkeeping, and story
+  [#1771](https://github.com/jimmie-potts/agent-device-hub/issues/1771) is to
+  refuse them. The session record's times stay rows for now (decision 6, answered at
+  15:48:22Z).
 
 [ADR 0012's amendment of 2026-11-12](0012-bunny-event-platform.md#amendment-2026-11-12)
 records the rule and the other decisions. The rule applies once
@@ -286,9 +288,11 @@ and installed; until then history keeps what it keeps today.
 
 What does not change:
 
-- History keeps no time limit, and rows already stored are left as they are
-  (decision 5, answered at 15:48:22Z). Time limits and purge are held by the
-  owner.
+- History keeps no time limit. Time limits and purge are held by the owner
+  (direction of 14:53:16Z: "We can hold off on the time-to-live record").
+- Rows already stored are left as they are, and are looked at again after the
+  re-measurement ([#1774](https://github.com/jimmie-potts/agent-device-hub/issues/1774))
+  (decision 5, answered at 15:48:22Z).
 - Removals, occurrences, outcomes and the steps of tracked actions are kept as
   before.
 - Every other rule of this record stands, including the exclusion of
