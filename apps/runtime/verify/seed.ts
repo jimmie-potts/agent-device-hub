@@ -10,11 +10,11 @@ import {simulatedSections} from '../tests/fixtures/simulated.js';
 import {prepareWisprFixture} from '../tests/fixtures/wispr.js';
 import {MODULE_FILES, SCENARIOS, type ModuleName, type Seed} from '../tests/scenarios/catalog.js';
 import {partTokens, producerToken, writeConfiguration} from '../tests/scenarios/parts.js';
-import {RUN_FILE, RUN_SCHEMA, configDirOf, homeOf, partTokensOf, stateDirOf, type Fault, type RunFile, type RunRuntime} from './paths.js';
+import {RUN_FILE, RUN_SCHEMA, configDirOf, homeOf, partTokensOf, stateDirOf, type Fault, type RunClock, type RunFile, type RunRuntime} from './paths.js';
 import {prepareMacCodex} from './mac-codex.js';
 
 export {
-  RUN_FILE, RUN_SCHEMA, collectorOf, configDirOf, credentialsOf, homeOf, migrationOf, partTokensOf, producerOf, stateDirOf, type Fault, type RunFile, type RunRuntime,
+  RUN_FILE, RUN_SCHEMA, collectorOf, configDirOf, credentialsOf, homeOf, migrationOf, partTokensOf, producerOf, stateDirOf, type Fault, type RunClock, type RunFile, type RunRuntime,
 } from './paths.js';
 
 /**
@@ -29,6 +29,8 @@ export type RunScenario = {
   wisprFixture?: Seed['wisprFixture']; sections?: Seed['sections'];
   /** Whether the run grants the Desktop metadata collector's credential and writes its files at each start (Hub #567). */
   collector?: boolean;
+  /** The run's clock: real unless the catalog scenario asks for virtual time (Hub #1710). */
+  clock?: RunClock;
 };
 
 /** The shipped modules that take a section: a run that gives no sections, as the shipped controls do, has them refused. */
@@ -51,6 +53,7 @@ export const RUN_SCENARIOS: Readonly<Record<string, RunScenario>> = {
     description: `Seeded for the catalog scenario: ${scenario.title}`, runtime: 'fixtures', modules: scenario.seed.modules,
     ...(scenario.seed.config === undefined ? {} : {config: scenario.seed.config}), ...(scenario.seed.sections === undefined ? {} : {sections: scenario.seed.sections}), ...(scenario.seed.refused === undefined ? {} : {refused: scenario.seed.refused}),
     ...(scenario.seed.wisprFixture === undefined ? {} : {wisprFixture: scenario.seed.wisprFixture}),
+    ...(scenario.runClock === undefined ? {} : {clock: scenario.runClock}),
   } satisfies RunScenario])),
   'control-real-transports': {
     description: 'Negative control, start only: the shipped runtime without --simulate, so the simulated-transports check fails',
@@ -92,7 +95,10 @@ export async function seedRun(dataDir: string, name: string): Promise<void> {
   });
   await writeFile(partTokensOf(dataDir), `${JSON.stringify({...tokens, producer, ...(collector === undefined ? {} : {collector})})}\n`, {mode: 0o600});
   await chmod(partTokensOf(dataDir), 0o600);
-  const run: RunFile = {schema: RUN_SCHEMA, runtime: scenario.runtime, modules: [...scenario.modules], ...(scenario.fault === undefined ? {} : {fault: scenario.fault}), config};
+  const run: RunFile = {
+    schema: RUN_SCHEMA, runtime: scenario.runtime, modules: [...scenario.modules], ...(scenario.fault === undefined ? {} : {fault: scenario.fault}), config,
+    ...(scenario.clock === undefined ? {} : {clock: scenario.clock}),
+  };
   await writeFile(join(dataDir, RUN_FILE), `${JSON.stringify(run)}\n`, {mode: 0o600});
   for (const dir of [stateDirOf(dataDir), homeOf(dataDir)]) {
     await mkdir(dir, {mode: 0o700});

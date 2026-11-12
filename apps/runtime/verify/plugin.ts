@@ -201,11 +201,12 @@ async function boundariesHold(t: CaptureContext): Promise<void> {
 }
 
 /**
- * What a scenario's capture keeps: the result it attaches, with the parts' problems, and the reason its expectation gives
- * when a step failed. A step's detail and a problem name an exception only by its type or registry code (Hub #954).
+ * What a scenario's capture keeps: the result it attaches, with the clock the run was on (Hub #1710) and the parts'
+ * problems, and the reason its expectation gives when a step failed. A step's detail and a problem name an exception
+ * only by its type or registry code (Hub #954).
  */
-export function scenarioProof(result: ScenarioResult, problems: readonly string[]): {attachment: string; failure?: string} {
-  const attachment = JSON.stringify({synthetic: true, physical: false, ...result, problems}, null, 2);
+export function scenarioProof(result: ScenarioResult, clock: 'virtual' | 'real', problems: readonly string[]): {attachment: string; failure?: string} {
+  const attachment = JSON.stringify({synthetic: true, physical: false, clock, ...result, problems}, null, 2);
   if (result.outcome === 'passed') return {attachment};
   const failed = result.steps.at(-1);
   return {attachment, failure: `${failed?.name ?? 'no step'}: ${failed?.detail ?? ''}`};
@@ -221,7 +222,7 @@ async function judge(t: CaptureContext, scenario: Scenario): Promise<void> {
   } finally {
     await run.close();
   }
-  const proof = scenarioProof(result, run.problems());
+  const proof = scenarioProof(result, run.clock, run.problems());
   await t.attach('scenario-result.json', proof.attachment);
   await t.expect(`the scenario ${scenario.id} passed every step`, () => {
     if (proof.failure !== undefined) throw new Error(proof.failure);

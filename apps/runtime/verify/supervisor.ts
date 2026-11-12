@@ -7,7 +7,8 @@
 // run adapter drive the devices and the run's controls and read what the run did. Its ready line names the runtime's
 // health page, which the preview card links, and the harness as an extra endpoint. Each registered module's simulated
 // device is held and driven through its registration (link.ts), so only the fixture modules' devices are named here
-// (Hub #999).
+// (Hub #999). A run on virtual time (Hub #1710) is the authority for the run's time: it moves its devices' clock and the
+// child's together, only when the harness API's `clock/advance` asks, and a restart's hold moves it too.
 import {fork, type ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
 import {existsSync, readFileSync, readdirSync, readlinkSync, statSync} from 'node:fs';
@@ -25,6 +26,8 @@ import {SimulatedLamps} from '../tests/fixtures/lamp.js';
 import {SimulatedSigns} from '../tests/fixtures/sign.js';
 import type {Generational} from '../tests/scenarios/framework.js';
 import {writeCollector, writeProducer} from '../tests/scenarios/parts.js';
+import {stepThrough} from '../tests/scenarios/stepping.js';
+import {WORKER_WAIT_MS, manualClock} from '../tests/scenarios/virtual-time.js';
 import {DRAIN_MS, drained} from './drain.js';
 import {guardEnvironment} from './environment.js';
 import {ChildHome} from './home.js';
@@ -32,8 +35,8 @@ import {FollowRefusal, follow, queryOf, type Evidence, type SpanEvidence} from '
 import {Journal} from './journal.js';
 import {SupervisorDevices} from './link.js';
 import {
-  HARNESS_PATH, type Attempt, type BoundaryReport, type ChildMessage, type Control, type DisconnectRequest, type FixtureSimulation, type HarnessState,
-  type SimulateRequest, type SupervisorMessage,
+  HARNESS_PATH, MAX_ADVANCE_MS, type Attempt, type BoundaryReport, type ChildMessage, type ClockState, type Control, type DisconnectRequest, type FixtureSimulation,
+  type HarnessState, type SimulateRequest, type SupervisorMessage,
 } from './protocol.js';
 import {BurstLimit} from './restarts.js';
 import {RUN_FILE, configDirOf, credentialsOf, homeOf, partTokensOf, stateDirOf, type RunFile} from './seed.js';
@@ -53,12 +56,16 @@ const ANSWER_MS = 3000;
 const MAX_HOLD_MS = 10_000;
 /** The lowest level the run's runtime writes, which the run states instead of leaving to the runtime's default. */
 const LOG_LEVEL = 'info';
+/** How long one advance waits for the child's answer: a held worker call, then a turn of real work. */
+const ADVANCE_ANSWER_MS = WORKER_WAIT_MS + ANSWER_MS;
 
 const {values} = parseArgs({options: {data: {type: 'string'}, port: {type: 'string'}, 'harness-port': {type: 'string'}}, strict: true});
 if (values.data === undefined) throw new Error('usage: supervisor.js --data <dir> --port <port> --harness-port <port>');
 const dataDir = resolve(values.data);
 const run = JSON.parse(readFileSync(join(dataDir, RUN_FILE), 'utf8')) as RunFile;
 const fixtures = run.runtime === 'fixtures';
+/** The run's virtual clock, which only a run of the fixture runtime can have, or undefined on the real clock. */
+const virtual = fixtures && run.clock === 'virtual' ? manualClock(Date.now()) : undefined;
 const lamps = new SimulatedLamps(['lamp-1']);
 const chime = new SimulatedChime();
 const signs = new SimulatedSigns();
@@ -67,15 +74,21 @@ const timers: Scheduler = {after: (delayMs, callback) => {
   const timer = setTimeout(callback, delayMs);
   return () => { clearTimeout(timer); };
 }};
-/** Every registered module's simulated device, which outlives the runtime as a real one would (Hub #999). */
-const devices = new SupervisorDevices(registrations, {now: Date.now, scheduler: timers});
+/** Every registered module's simulated device, which outlives the runtime as a real one would (Hub #999), on the run's clock. */
+const devices = new SupervisorDevices(registrations, virtual === undefined ? {now: Date.now, scheduler: timers} : {now: virtual.now, scheduler: virtual.scheduler});
+/** On virtual time, what the current child last said: its earliest pending timer and whether work is in flight. */
+let childNext: number | undefined;
+let childBusy = false;
+/** How many stderr lines each runtime's journal has read, and who waits for more. */
+const heardLines = new Map<number, number>();
+const lineWaiters = new Set<() => void>();
 /** Each show an offline sign still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const shows = new Map<string, AbortController>();
 const journal = new Journal();
 const published: Generational<{message: Message}>[] = [];
 /** Where the guard of the runtime, its threads and its child processes writes each refused connection. */
 const guardReport = join(dataDir, 'guard-report.jsonl');
-const waiting = new Map<number, () => void>();
+const waiting = new Map<number, (message: ChildMessage) => void>();
 /** The newest log record of one runtime with this event name. */
 const newest = (number: number, event: string): LogRecord | undefined =>
   [...journal.entries].reverse().find(entry => entry.generation === number && entry.record.event_name === event)?.record;
@@ -170,7 +183,8 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
       return;
     case 'applied':
     case 'flushed':
-      waiting.get(message.id)?.();
+    case 'advanced':
+      waiting.get(message.id)?.(message);
       waiting.delete(message.id);
       return;
   }
@@ -188,7 +202,11 @@ function spawnRuntime(): Promise<string> {
   const number = generation;
   // The new runtime's registered modules start with what the last one left, such as what a device beside its module showed.
   const handovers = Buffer.from(JSON.stringify(devices.handovers())).toString('base64url');
-  const args = fixtures ? [run.modules.length === 0 ? '-' : run.modules.join(','), run.fault ?? 'none', handovers, '--', ...runtimeArgs()] : runtimeArgs();
+  // A child on virtual time starts at the run's virtual time, so time never runs backwards across a restart.
+  const clockArgument = virtual === undefined ? 'real' : String(virtual.now());
+  childNext = undefined;
+  childBusy = false;
+  const args = fixtures ? [run.modules.length === 0 ? '-' : run.modules.join(','), run.fault ?? 'none', handovers, clockArgument, '--', ...runtimeArgs()] : runtimeArgs();
   const child = fork(fixtures ? CHILD : MAIN, args, {
     execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: {...process.env, HOME: homeOf(dataDir), ...guardEnvironment(guardReport)},
   });
@@ -197,6 +215,8 @@ function spawnRuntime(): Promise<string> {
   lines(child.stderr, line => {
     process.stderr.write(`${line}\n`);
     journal.take(number, line);
+    heardLines.set(number, (heardLines.get(number) ?? 0) + 1);
+    for (const waiter of lineWaiters) waiter();
   });
   child.on('message', message => {
     if (childHome.hear(child, number, message)) return;
@@ -231,6 +251,8 @@ function spawnRuntime(): Promise<string> {
 
 async function start(): Promise<void> {
   runtimeUrl = await spawnRuntime();
+  // On virtual time the new child says when its first timers are due before the run moves on.
+  if (virtual !== undefined) await advanceChild(virtual.now(), current).catch(() => {});
   runtimePort = Number(new URL(runtimeUrl).port);
   await childHome.settle();
   // The agent hooks' producer file names the runtime's port, which restarts keep (Hub #926).
@@ -285,7 +307,8 @@ function restart(holdMs = 0): Promise<void> {
     restarting = true;
     try {
       await stopRuntime();
-      if (holdMs > 0) await new Promise(resolve => { setTimeout(resolve, holdMs); });
+      // On virtual time the hold is virtual too: the devices' timers run through it while no runtime does.
+      if (holdMs > 0) await (virtual === undefined ? new Promise(resolve => { setTimeout(resolve, holdMs); }) : advanceBy(holdMs));
       await start();
     } catch (error) {
       startFailed(error);
@@ -307,6 +330,106 @@ function ask(build: (id: number) => SupervisorMessage): Promise<void> {
     waiting.set(id, () => { clearTimeout(timer); done(); });
     tell(child, build(id));
   });
+}
+
+/** The child did not answer an advance: it ended, or it did not settle within its bound. */
+class Unsettled extends Error {}
+
+/** Whether `child` is still the running runtime. */
+const live = (child: ChildProcess | undefined): child is ChildProcess =>
+  child !== undefined && child === current && child.exitCode === null && child.signalCode === null && child.connected;
+
+/**
+ * Moves the clock of `child`, the runtime the advance started with, to `toMs` and waits for its answer, then until the
+ * journal has read every line it wrote. An advance that started with no runtime steps the devices alone while a
+ * restart holds the runtime stopped. Otherwise a runtime that has ended or been replaced, or that does not answer in
+ * time, is `Unsettled`, which ends the advance, so the runtime's restart need not wait behind it.
+ */
+async function advanceChild(toMs: number, child: ChildProcess | undefined): Promise<void> {
+  if (child === undefined) {
+    if (restarting) return;
+    throw new Unsettled();
+  }
+  if (!live(child)) throw new Unsettled();
+  const number = generation;
+  next += 1;
+  const id = next;
+  const answer = await new Promise<ChildMessage | undefined>(done => {
+    const end = (message: ChildMessage | undefined): void => {
+      clearTimeout(timer);
+      child.off('exit', exited);
+      waiting.delete(id);
+      done(message);
+    };
+    const exited = (): void => { end(undefined); };
+    const timer = setTimeout(exited, ADVANCE_ANSWER_MS);
+    child.once('exit', exited);
+    waiting.set(id, end);
+    tell(child, {type: 'advance', id, toMs});
+  });
+  if (answer?.type !== 'advanced') throw new Unsettled();
+  childNext = answer.nextDueMs ?? undefined;
+  childBusy = answer.busy;
+  await linesRead(child, number, answer.lines);
+}
+
+/** Resolves once the journal has read `count` stderr lines of the runtime `number`, it ended, or `ANSWER_MS` passed. */
+function linesRead(child: ChildProcess, number: number, count: number): Promise<void> {
+  if ((heardLines.get(number) ?? 0) >= count) return Promise.resolve();
+  return new Promise(done => {
+    const end = (): void => {
+      clearTimeout(timer);
+      lineWaiters.delete(check);
+      child.off('exit', end);
+      done();
+    };
+    const check = (): void => { if ((heardLines.get(number) ?? 0) >= count) end(); };
+    const timer = setTimeout(end, ANSWER_MS);
+    child.once('exit', end);
+    lineWaiters.add(check);
+  });
+}
+
+/** The earliest timer due in the devices or the current child, or undefined with none. */
+function nextDue(clock: ReturnType<typeof manualClock>): number | undefined {
+  const own = clock.next();
+  if (own === undefined) return childNext;
+  return childNext === undefined ? own : Math.min(own, childNext);
+}
+
+/**
+ * Moves the run's virtual time on by `ms` (Hub #1710), in the in-memory harness's steps: each step moves the devices'
+ * clock, which fires their timers due by then, and then the child's, which answers once real work had its turn. A long
+ * advance stops at the earliest timer due in either. It ends early when the child ends or stops answering, so the run
+ * can start its next runtime before time moves on; the caller sees the time reached. Callers run it on the lifecycle queue.
+ */
+async function advanceBy(ms: number): Promise<void> {
+  const clock = virtual;
+  if (clock === undefined) return;
+  const stepped = {now: clock.now, next: () => nextDue(clock), advance: (step: number) => { clock.advance(step); }};
+  // The runtime the advance starts with, or none while a restart holds it stopped.
+  const child = live(current) ? current : undefined;
+  try {
+    // A runtime that already ended when the advance begins ends it before any step, so its restart is next.
+    if (child === undefined && !restarting) throw new Unsettled();
+    await stepThrough(stepped, ms, () => Promise.resolve(), () => advanceChild(clock.now(), child));
+  } catch (error) {
+    if (!(error instanceof Unsettled)) throw error;
+  }
+}
+
+/** The run's virtual time, when its next timer is due and whether work is in flight. */
+function clockState(clock: ReturnType<typeof manualClock>): ClockState {
+  const due = nextDue(clock);
+  return {clock: 'virtual', nowMs: clock.now(), nextDueMs: due === undefined ? null : Number.isFinite(due) ? due : clock.now(), busy: childBusy || devices.serving > 0};
+}
+
+/** How far an advance moves virtual time: a whole number of milliseconds from 0 to `MAX_ADVANCE_MS`, and no other field. */
+function advanceOf(value: unknown): number | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const {ms, ...rest} = value as Record<string, unknown>;
+  if (Object.keys(rest).length > 0 || typeof ms !== 'number' || !Number.isSafeInteger(ms) || ms < 0 || ms > MAX_ADVANCE_MS) return undefined;
+  return ms;
 }
 const control = (name: Control): Promise<void> => ask(id => ({type: 'control', id, control: name}));
 const flush = (): Promise<void> => ask(id => ({type: 'flush', id}));
@@ -521,6 +644,16 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       }
       await ask(id => ({type: 'disconnect', id, source}));
       return answer(response, 200, {status: 'applied'});
+    }
+    case 'GET /clock':
+      if (virtual === undefined) return answer(response, 409, refusal('invalid-state', 'this run is on the real clock'));
+      return answer(response, 200, clockState(virtual));
+    case 'POST /clock/advance': {
+      if (virtual === undefined) return answer(response, 409, refusal('invalid-state', 'this run is on the real clock'));
+      const ms = advanceOf(await body(request));
+      if (ms === undefined) return answer(response, 400, refusal('invalid-request', `an advance takes only ms, a whole number of milliseconds from 0 to ${MAX_ADVANCE_MS}`));
+      await queue(() => advanceBy(ms));
+      return answer(response, 200, clockState(virtual));
     }
     case 'POST /restart': {
       const holdMs = holdOf(await body(request));

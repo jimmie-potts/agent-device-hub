@@ -135,7 +135,7 @@ void test('a scenario\'s proof and its failed expectation never quote an excepti
   const result = await runScenario({id: 'control-proof', title: 'negative control', seed: {modules: [], follows: []}, steps: [
     act('read a body that is not JSON', () => { JSON.parse(secret); }),
   ]}, h);
-  const proof = scenarioProof(result, [`bunny/parts/reader on stream: ${failureOf(new TypeError(`fetch failed for ${secret}`))}`]);
+  const proof = scenarioProof(result, 'real', [`bunny/parts/reader on stream: ${failureOf(new TypeError(`fetch failed for ${secret}`))}`]);
   assert.equal(proof.failure, 'read a body that is not JSON: threw SyntaxError');
   assert.match(proof.attachment, /"detail": "threw SyntaxError"/);
   assert.match(proof.attachment, /bunny\/parts\/reader on stream: TypeError/);

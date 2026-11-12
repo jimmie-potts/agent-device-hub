@@ -1,7 +1,7 @@
 // The runtime as a service process: arguments, the ready line, signals, escaped errors and the event-loop lag check.
 // systemd runs it with `Restart=on-failure`: a failure exit (1) or the lag check's SIGKILL restarts the whole runtime.
 import {homedir} from 'node:os';
-import {join} from 'node:path';
+import {join, resolve} from 'node:path';
 import {parseArgs} from 'node:util';
 import type {BunnyModule, Clock, RemoteEdge, Scheduler} from '@jimmie-potts/sdk';
 import {recordLog} from '@jimmie-potts/sdk';
@@ -102,14 +102,19 @@ export type ChildInputs = EdgeInputs & {testClock?: TestClock};
 export type TestClock = {clock: Clock; scheduler: Scheduler; monotonic: () => number};
 
 /**
- * Why the process may not take a test clock, or undefined when it may: only a simulated test run with an edge and an IPC
- * channel. The verification supervisor's fork gives its child one; the service manager and the container entry do not.
+ * Why the process may not take a test clock, or undefined when it may: only a simulated test run with an edge, an IPC
+ * channel and a state directory other than the default. The verification supervisor's fork gives its child an IPC
+ * channel and names the run's state directory; the service manager and the container entry give no IPC channel. Node
+ * also opens one for a process whose environment names an open descriptor (`NODE_CHANNEL_FD`), so the default state
+ * directory is refused too (Hub #1710). An explicit state directory, such as an installation's, is not refused by this
+ * check; the other conditions still apply to it.
  */
-function testClockRefusal({simulate, environment, edge}: ProcessOptions): string | undefined {
+function testClockRefusal({simulate, environment, edge, stateDir}: ProcessOptions): string | undefined {
   if (!simulate) return 'a test clock needs --simulate';
   if (environment !== 'test') return 'a test clock needs --environment test';
   if (!edge) return 'a test clock needs --edge';
   if (typeof process.send !== 'function') return 'a test clock needs an IPC channel';
+  if (resolve(stateDir) === resolve(DEFAULT_STATE_DIR)) return 'a test clock needs a --state-dir of its own';
   return undefined;
 }
 

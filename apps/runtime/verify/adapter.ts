@@ -1,15 +1,17 @@
 // The run adapter of the runtime's scenario catalog (Hub #920, tier 2): the catalog's `Harness` over a disposable run.
 // The scenario's parts are remote parts, each with its run-generated grant, connected to the run's SDK edge; the
 // simulated devices, the run's controls, its log records and what its bus published come from the run's harness API.
-// Time is real. The catalog's reads are synchronous, so the adapter keeps a copy of the run's state, refreshed on every
-// wait and after every action, and the harness API's flush makes that copy current. `disconnect` has the runtime's edge
+// Time is real, unless the run is on virtual time (Hub #1710): then `now` is the run's virtual time and `wait` advances
+// it through the harness API, and the parts run on a manual clock that moves with it. The catalog's reads are
+// synchronous, so the adapter keeps a copy of the run's state, refreshed on every wait and after every action, and the
+// harness API's flush makes that copy current. `disconnect` has the runtime's edge
 // end the part's stream, and the same remote part reconnects on its own, as in the in-memory harness; its timers wait
 // until the next wait, as the in-memory harness's wait until virtual time moves, so it stays away for the steps between.
 // What it reports goes into a capture's proof, so a failure is named by its registry code, its type or the adapter's own
 // fixed text, never by an exception's message (ADR 0012, "Safe errors"; Hub #954).
 import {readFile} from 'node:fs/promises';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {connectRemote, type CommandDraft, type Participant, type Scheduler} from '@jimmie-potts/sdk';
+import {connectRemote, type CommandDraft, type Diagnostic, type Participant, type Scheduler} from '@jimmie-potts/sdk';
 import {HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
 import {
   ROLES, StepFailure, failureOf, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
@@ -18,7 +20,8 @@ import {
 import {
   GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, follow, runHookScript, scenarioValidator, sourceOf, type ReaderMark,
 } from '../tests/scenarios/parts.js';
-import {HARNESS_PATH, type HarnessState} from './protocol.js';
+import {manualClock} from '../tests/scenarios/virtual-time.js';
+import {HARNESS_PATH, type ClockState, type HarnessState} from './protocol.js';
 import {partTokensOf, producerOf} from './seed.js';
 
 /**
@@ -27,6 +30,8 @@ import {partTokensOf, producerOf} from './seed.js';
  */
 export type RunTarget = {url: string; harness: string; dataDir: string; seed: Seed; resyncWithinMs?: number};
 export interface RunHarness extends Harness {
+  /** Which clock the run is on (Hub #1710), which a capture's proof records. */
+  readonly clock: 'virtual' | 'real';
   /** What went wrong outside the steps: messages that break profile 2.0, and errors a part reported. */
   problems(): readonly string[];
   close(): Promise<void>;
@@ -54,19 +59,28 @@ export const RESYNC_WITHIN_MS = 15_000;
 const RESYNC_POLL_MS = 25;
 const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
 
+/** Real timers, which a remote part's scheduler uses on the real clock. */
+const timers: Scheduler = {after: (delayMs, callback) => {
+  const timer = setTimeout(callback, delayMs);
+  return () => { clearTimeout(timer); };
+}};
+
 /**
- * A remote part's scheduler on real timers, which the adapter can hold: a callback scheduled while it is held, such as
- * the reconnect after a dropped stream, starts its delay only once it is released.
+ * A remote part's scheduler on real timers, or on the parts' manual clock in a run on virtual time, which the adapter
+ * can hold: a callback scheduled while it is held, such as the reconnect after a dropped stream, starts its delay only
+ * once it is released.
  */
 class HeldScheduler implements Scheduler {
   #held = false;
   readonly #waiting = new Set<{delayMs: number; callback: () => void; cancel?: () => void}>();
+  readonly #base: Scheduler;
+
+  constructor(base: Scheduler) {
+    this.#base = base;
+  }
 
   after(delayMs: number, callback: () => void): () => void {
-    if (!this.#held) {
-      const timer = setTimeout(callback, delayMs);
-      return () => { clearTimeout(timer); };
-    }
+    if (!this.#held) return this.#base.after(delayMs, callback);
     const entry: {delayMs: number; callback: () => void; cancel?: () => void} = {delayMs, callback};
     this.#waiting.add(entry);
     return () => { if (!this.#waiting.delete(entry)) entry.cancel?.(); };
@@ -80,8 +94,7 @@ class HeldScheduler implements Scheduler {
     this.#held = false;
     for (const entry of [...this.#waiting]) {
       this.#waiting.delete(entry);
-      const timer = setTimeout(entry.callback, entry.delayMs);
-      entry.cancel = () => { clearTimeout(timer); };
+      entry.cancel = this.#base.after(entry.delayMs, entry.callback);
     }
   }
 }
@@ -101,13 +114,27 @@ export async function readGrants(dataDir: string): Promise<Map<string, string>> 
 
 type Part = {role: Role; participant: Participant | undefined; closed: boolean; scheduler: HeldScheduler};
 
+/**
+ * A run on virtual time, as the adapter follows it (Hub #1710). The parts' manual clock is the adapter's own time; the
+ * run's time trails it by `owed`, which a wait adds while no timer is due and nothing is in flight anywhere, and which is
+ * sent to the run before anything else reaches it. `runNext` is when the run's next timer is due, and `quiet` whether
+ * the last advance found nothing in flight and changed nothing the adapter can read.
+ */
+type Virtual = {clock: ReturnType<typeof manualClock>; owed: number; runNext: number | undefined; quiet: boolean};
+
+/** How many event-loop turns the adapter gives the parts' streams after each advance of the run, as the in-memory harness gives real I/O. */
+const TURNS = 4;
+const turns = async (): Promise<void> => {
+  for (let turn = 0; turn < TURNS; turn += 1) await new Promise(resolve => { setImmediate(resolve); });
+};
 class Run implements RunHarness {
   readonly tier = 'run';
   readonly transport = 'remote';
   readonly reader: Reader;
   readonly #target: RunTarget;
   readonly #grants: Map<string, string>;
-  readonly #parts: ReadonlyMap<Role, Part>;
+  /** The parts, which `open` creates once it knows the run's clock. */
+  #parts: ReadonlyMap<Role, Part>;
   readonly #validator = scenarioValidator();
   readonly #answers = new Map<string, string>();
   readonly #problems: string[] = [];
@@ -125,7 +152,13 @@ class Run implements RunHarness {
   /** Actions run one after another in the order the scenario calls them. */
   #actions: Promise<unknown> = Promise.resolve();
   /** Refreshes run one after another, so two never append the same records. */
-  #refreshing: Promise<void> = Promise.resolve();
+  #refreshing: Promise<boolean> = Promise.resolve(false);
+  /** The run's virtual time, or undefined on the real clock, which `open` learns from the harness API. */
+  #virtual: Virtual | undefined;
+  /** Calls to the run that are still waiting for their answer, such as a request whose reply comes later. */
+  #inFlight = 0;
+  /** On virtual time, the parts whose stream is lost until they reconnect, which they do over real I/O. */
+  readonly #away = new Set<Role>();
 
   readonly #client: GatewayClient;
 
@@ -135,16 +168,31 @@ class Run implements RunHarness {
     this.#origin = new URL(target.url).origin;
     this.#client = new GatewayClient(() => this.#origin, tokens, tokens.producer);
     this.reader = new Reader(target.seed.follows);
-    this.#parts = new Map(ROLES.map(role => [role, {role, participant: undefined, closed: false, scheduler: new HeldScheduler()}]));
+    this.#parts = new Map();
   }
 
   async open(): Promise<void> {
+    const clock = await fetch(new URL(`${HARNESS_PATH}/clock`, this.#target.harness));
+    if (clock.status === 200) {
+      const state = await clock.json() as ClockState;
+      this.#virtual = {clock: manualClock(state.nowMs), owed: 0, runNext: state.nextDueMs ?? undefined, quiet: false};
+    } else {
+      await clock.body?.cancel();
+      if (clock.status !== 409) throw new RunFailure(`clock answered ${clock.status}`);
+    }
+    const base = this.#virtual?.clock.scheduler ?? timers;
+    this.#parts = new Map(ROLES.map(role => [role, {role, participant: undefined, closed: false, scheduler: new HeldScheduler(base)}]));
     await this.#refresh();
     for (const part of this.#parts.values()) await this.#connect(part);
   }
 
+  /** Which clock the run is on, which a capture's proof records. */
+  get clock(): 'virtual' | 'real' {
+    return this.#virtual === undefined ? 'real' : 'virtual';
+  }
+
   now(): number {
-    return Date.now();
+    return this.#virtual?.clock.now() ?? Date.now();
   }
 
   generation(): number {
@@ -152,6 +200,11 @@ class Run implements RunHarness {
   }
 
   sdk(role: Role): Participant {
+    const participant = this.#connected(role);
+    return this.#virtual === undefined ? participant : this.#caughtUp(participant);
+  }
+
+  #connected(role: Role): Participant {
     const {participant} = this.#part(role);
     if (participant === undefined) throw new RunFailure(`the ${role} is not connected`);
     return participant;
@@ -160,7 +213,7 @@ class Run implements RunHarness {
   send(role: Role, label: string, {key, draft}: {key: string; draft: CommandDraft<object>}, options: {timeoutMs: number; requestId: string}): Promise<string> {
     this.#answers.set(label, 'pending');
     // The request starts in its turn among the actions; its answer may come long after the next action began.
-    const started = this.#act(() => Promise.resolve({request: this.sdk(role).request(key, draft, options)}));
+    const started = this.#act(() => Promise.resolve({request: this.#tracked(this.#connected(role).request(key, draft, options))}));
     return started.then(({request}) => request).then(answerOf, (error: unknown) => `threw ${failureOf(error)}`).then(async answer => {
       // What the run published before the answer is in the copy before the scenario reads it.
       await this.#refresh();
@@ -173,7 +226,7 @@ class Run implements RunHarness {
     this.#answers.set(label, 'pending');
     // The action starts in its turn among the actions; its answer may come long after the next action began. An HTTP
     // call whose connection a crash ended is `lost`: its fate is the tracker's to know.
-    const started = this.#act(() => Promise.resolve({call: this.#client.call(actionCall(role, command, requestId))}));
+    const started = this.#act(() => Promise.resolve({call: this.#tracked(this.#client.call(actionCall(role, command, requestId)))}));
     return started.then(({call}) => call).then(actionAnswerOf, () => 'lost').then(async answer => {
       await this.#refresh();
       this.#answers.set(label, answer);
@@ -195,6 +248,7 @@ class Run implements RunHarness {
 
   async health(): Promise<readonly ModuleHealth[]> {
     await this.#actions;
+    await this.#catchUp();
     const response = await fetch(new URL(HEALTH_PATH, this.#origin));
     if (!response.ok) throw new RunFailure(`health answered ${response.status}`);
     return (await response.json() as RuntimeHealth).modules;
@@ -211,6 +265,7 @@ class Run implements RunHarness {
   async wait(ms: number): Promise<void> {
     await this.#actions;
     for (const part of this.#held.splice(0)) part.scheduler.release();
+    if (this.#virtual !== undefined) return this.#advance(this.#virtual, ms);
     await sleep(ms);
     await this.#refresh();
   }
@@ -261,7 +316,8 @@ class Run implements RunHarness {
 
   async gateway(call: GatewayCall): Promise<GatewayAnswer> {
     await this.#actions;
-    const answer = await this.#client.call(call);
+    await this.#catchUp();
+    const answer = await this.#tracked(this.#client.call(call));
     // What the call made the runtime log or publish is in the copy before the scenario reads it.
     await this.#refresh();
     return answer;
@@ -274,6 +330,9 @@ class Run implements RunHarness {
    */
   async hook(payload: HookPayload, {runtime = 'running'}: {runtime?: 'running' | 'stopped'} = {}): Promise<HookRun> {
     await this.#actions;
+    // A hook against a stopped runtime needs a real hold it can meet; on virtual time a restart's hold is virtual.
+    if (runtime === 'stopped' && this.#virtual !== undefined) throw new RunFailure('a hook against a stopped runtime runs only on the real clock');
+    await this.#catchUp();
     const producer = producerOf(this.#target.dataDir);
     if (runtime === 'running') {
       const ran = await runHookScript(producer, payload);
@@ -310,7 +369,10 @@ class Run implements RunHarness {
   }
 
   #act<T>(action: () => Promise<T>): Promise<T> {
-    const done = this.#actions.then(action);
+    const done = this.#actions.then(async () => {
+      await this.#catchUp();
+      return action();
+    });
     this.#actions = done.catch((error: unknown) => { this.#problems.push(`an action failed: ${failureOf(error)}`); });
     return done;
   }
@@ -322,14 +384,90 @@ class Run implements RunHarness {
     if (!response.ok) throw new RunFailure(`${route} answered ${response.status}`);
   }
 
-  /** Brings the copy of the run's state up to date: the harness flushes the runtime before it answers. */
-  #refresh(): Promise<void> {
+  /**
+   * Brings the copy of the run's state up to date: the harness flushes the runtime before it answers. Resolves with
+   * whether anything the scenario can read changed.
+   */
+  #refresh(): Promise<boolean> {
     const refreshed = this.#refreshing.then(() => this.#fetchState());
-    this.#refreshing = refreshed.catch(() => {});
+    this.#refreshing = refreshed.catch(() => false);
     return refreshed;
   }
 
-  async #fetchState(): Promise<void> {
+  /**
+   * Lets `ms` of virtual time pass (Hub #1710), split at the parts' own timers, which fire once the run has reached
+   * them. A piece in which no timer of the run or the parts is due, after an advance that found nothing in flight and
+   * changed nothing, and with no call waiting for its answer, passes without a call to the run: it is owed, and sent with
+   * the next advance or before anything else reaches the run. Every other piece is one advance, then a few turns of the
+   * event loop for the parts' streams, then a refresh.
+   */
+  async #advance(v: Virtual, ms: number, local = true): Promise<void> {
+    const target = v.clock.now() + ms;
+    while (v.clock.now() < target) {
+      const due = v.clock.next();
+      const end = due === undefined || due === Number.POSITIVE_INFINITY ? target : Number.isFinite(due) ? Math.max(v.clock.now(), Math.min(target, due)) : v.clock.now();
+      const step = end - v.clock.now();
+      const idle = local && v.quiet && this.#inFlight === 0 && this.#away.size === 0 && (due === undefined || due > end) && (v.runNext === undefined || end < v.runNext);
+      if (idle) {
+        v.owed += step;
+        v.clock.advance(step);
+        continue;
+      }
+      await this.#advanceRun(v, v.owed + step);
+      v.clock.advance(step);
+      await turns();
+      const changed = await this.#refresh();
+      // A part's timer that fired, such as a reconnect, starts work the run's answer could not see.
+      v.quiet &&= !changed && (due === undefined || due > end);
+    }
+  }
+
+  /** Moves the run's virtual time on by `ms` and takes what its answer says. Time the run did not reach stays owed. */
+  async #advanceRun(v: Virtual, ms: number): Promise<void> {
+    const before = v.clock.now() - v.owed;
+    const response = await fetch(new URL(`${HARNESS_PATH}/clock/advance`, this.#target.harness), {
+      method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({ms}),
+    });
+    if (!response.ok) throw new RunFailure(`clock/advance answered ${response.status}`);
+    const state = await response.json() as ClockState;
+    const reached = state.nowMs - before;
+    v.owed = Math.max(0, v.owed + (ms - v.owed) - reached);
+    v.runNext = state.nextDueMs ?? undefined;
+    v.quiet = !state.busy && reached === ms;
+  }
+
+  /** On virtual time, sends the run the time it is owed, so that what reaches it next happens at the adapter's time. */
+  async #catchUp(): Promise<void> {
+    const v = this.#virtual;
+    if (v === undefined) return;
+    while (v.owed > 0) await this.#advanceRun(v, v.owed);
+    // What reaches the run next may change it without a timer.
+    v.quiet = false;
+  }
+
+  /** Counts `call` as waiting for its answer until it settles, so that no wait passes without the run meanwhile. */
+  #tracked<T>(call: Promise<T>): Promise<T> {
+    this.#inFlight += 1;
+    if (this.#virtual !== undefined) this.#virtual.quiet = false;
+    return call.finally(() => {
+      this.#inFlight -= 1;
+      if (this.#virtual !== undefined) this.#virtual.quiet = false;
+    });
+  }
+
+  /** The participant, each of whose calls first sends the run the time it is owed, on virtual time. */
+  #caughtUp(participant: Participant): Participant {
+    return new Proxy(participant, {get: (target, property) => {
+      const value: unknown = Reflect.get(target, property);
+      if (typeof value !== 'function') return value;
+      return async (...args: unknown[]): Promise<unknown> => {
+        await this.#catchUp();
+        return this.#tracked(Promise.resolve((value as (...args: unknown[]) => unknown).apply(target, args)));
+      };
+    }});
+  }
+
+  async #fetchState(): Promise<boolean> {
     const url = new URL(`${HARNESS_PATH}/state`, this.#target.harness);
     url.searchParams.set('logs', String(this.#state.logs.length));
     url.searchParams.set('published', String(this.#state.published.length));
@@ -337,7 +475,18 @@ class Run implements RunHarness {
     if (!response.ok) throw new RunFailure(`state answered ${response.status}`);
     const state = await response.json() as HarnessState;
     for (const {message} of state.published) this.#check(message, 'a published message');
+    // Only the devices of the scenario's own modules count: another simulated device may report a reading of its own,
+    // such as a sensor clock, at every refresh.
+    const changed = state.logs.length > 0 || state.published.length > 0 || state.generation !== this.#state.generation
+      || this.#seeded(state.devices) !== this.#seeded(this.#state.devices);
     this.#state = {...state, logs: [...this.#state.logs, ...state.logs], published: [...this.#state.published, ...state.published]};
+    return changed;
+  }
+
+  /** The states of the devices of the scenario's own modules, as one text to compare. */
+  #seeded(devices: DeviceStates): string {
+    const modules: readonly string[] = this.#target.seed.modules;
+    return JSON.stringify(Object.entries(devices).filter(([name]) => modules.includes(name)));
   }
 
   async #connect(part: Part): Promise<void> {
@@ -347,6 +496,8 @@ class Run implements RunHarness {
     if (token === undefined) throw new RunFailure(`the run has no grant for ${source}`);
     part.participant = await connectRemote({
       url: this.#origin, source, token, reconnectDelayMs: RECONNECT_MS, scheduler: part.scheduler,
+      // On virtual time the parts stamp their messages and judge expiry on the adapter's virtual time.
+      ...(this.#virtual === undefined ? {} : {now: this.#virtual.clock.now, onDiagnostic: (diagnostic: Diagnostic) => { this.#heard(part.role, diagnostic); }}),
       onError: (error, scope) => {
         // While a runtime restarts, a remote part's reconnects meet a closed port or an edge still starting.
         if (scope.pattern !== 'stream') this.#problems.push(`${scope.source} on ${scope.pattern}: ${failureOf(error)}`);
@@ -357,6 +508,13 @@ class Run implements RunHarness {
         check: (message, where) => { this.#check(message, where); }, problem: text => { this.#problems.push(text); },
       });
     }
+  }
+
+  /** On virtual time, follows whether a part's stream is lost, so that no wait passes while it reconnects. */
+  #heard(role: Role, {event}: Diagnostic): void {
+    if (event === 'remote.disconnected') this.#away.add(role);
+    if (event === 'remote.reconnected') this.#away.delete(role);
+    if (this.#virtual !== undefined) this.#virtual.quiet = false;
   }
 
   async #retire(part: Part): Promise<void> {
@@ -386,12 +544,16 @@ class Run implements RunHarness {
   async #resynced(mark: ReaderMark | undefined): Promise<void> {
     if (mark === undefined) return;
     const withinMs = this.#target.resyncWithinMs ?? RESYNC_WITHIN_MS;
-    const deadline = Date.now() + withinMs;
+    // On virtual time the bound is virtual too: the reader's reconnect backoff runs on the parts' clock.
+    const v = this.#virtual;
+    const deadline = this.now() + withinMs;
     for (;;) {
       const missing = this.reader.behind(mark);
       if (missing.length === 0) return;
-      if (Date.now() >= deadline) throw new RunFailure(`the reader did not resync within ${withinMs} ms of the restart: ${missing.join('; ')}`);
-      await sleep(RESYNC_POLL_MS);
+      if (this.now() >= deadline) throw new RunFailure(`the reader did not resync within ${withinMs} ms of the restart: ${missing.join('; ')}`);
+      if (v === undefined) await sleep(RESYNC_POLL_MS);
+      // While the reader is behind, every piece reaches the run, so its reconnect over real I/O gets real time.
+      else await this.#advance(v, RESYNC_POLL_MS, false);
     }
   }
 

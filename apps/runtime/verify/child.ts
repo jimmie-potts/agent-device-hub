@@ -1,5 +1,5 @@
 // The runtime of a verification run with fixture modules (Hub #920): `node child.js <modules|-> <fault|none>
-// <handovers> -- <runtime arguments>`, forked by the supervisor. It runs the runtime's own entry (`runMain`) with each
+// <handovers> <real|start ms> -- <runtime arguments>`, forked by the supervisor. It runs the runtime's own entry (`runMain`) with each
 // module's factory, whose simulated transport reaches the supervisor's simulated device over the IPC channel; the
 // arguments name the run's configuration file when its seed has one (Hub #919). The fixture modules have transports of
 // their own here; every registered module is built through its registration's link (link.ts), so this file names none
@@ -7,18 +7,19 @@
 // module, such as what a simulated device that lives beside its module showed. With any module, a harness module
 // reports every message the bus publishes. The supervisor's controls arm a crash between the lamp's commit and its
 // publish, lose the core's next acknowledgment to the lamp, make the chime's next ring fail, or end a remote part's
-// stream at the edge, which `runMain` hands over once it serves.
+// stream at the edge, which `runMain` hands over once it serves. On virtual time (Hub #1710) the clock argument is the
+// run's virtual time, at which the child's clock starts; the child then moves it only on the supervisor's `advance`.
 import http from 'node:http';
 import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
 import {createWisprModule} from '@jimmie-potts/wispr';
-import {registrations, runMain, type ModuleFactory} from '../src/index.js';
+import {registrations, runMain, type CoreModule, type ModuleFactory} from '../src/index.js';
 import {createChimeModule, type ChimeRing, type ChimeTransport} from '../tests/fixtures/chime.js';
-import {createCoreModule} from '../tests/fixtures/core.js';
 import {SCHEDULE_FIXTURE, ScheduledFixture} from '../tests/fixtures/scheduled.js';
 import {createPresentationFixture} from '../tests/fixtures/presentation.js';
 import {createLampModule, lampSchemas, type Indicator, type LampTransport, type Power} from '../tests/fixtures/lamp.js';
 import {createSignModule, signSchemas, type SignTransport} from '../tests/fixtures/sign.js';
 import {SCENARIO_SCHEMAS} from '../tests/scenarios/parts.js';
+import {childClockOf, fixtureCore as buildCore, type ChildClock} from './child-clock.js';
 import {ChildLinks} from './link.js';
 import type {ChildMessage, Control, SupervisorMessage} from './protocol.js';
 
@@ -75,8 +76,22 @@ process.on('message', (value: unknown) => {
     case 'device.push':
       links.hear(message);
       return;
+    case 'advance':
+      advance(message.id, message.toMs);
+      return;
   }
 });
+
+/** Advances one after another, in the order the supervisor sent them. */
+let advancing: Promise<void> = Promise.resolve();
+function advance(id: number, toMs: number): void {
+  advancing = advancing.then(async () => {
+    if (clock === undefined) return;
+    // The child waits on the supervisor while a device call or a fixture device's answer is outstanding.
+    const answer = await clock.advance(toMs, () => links.waiting > 0 || switches.size > 0 || shows.size > 0);
+    send({type: 'advanced', id, ...answer, lines});
+  });
+}
 
 /** The lamps, reached over the IPC channel; the supervisor's simulated lamps answer. */
 const lamps: LampTransport = {
@@ -118,7 +133,7 @@ const chime: ChimeTransport = {
   },
 };
 
-const [list = '-', fault = 'none', handover = '', separator, ...runtimeArgs] = process.argv.slice(2);
+const [list = '-', fault = 'none', handover = '', clockArgument = '', separator, ...runtimeArgs] = process.argv.slice(2);
 /** What the last runtime left with the supervisor for each registered module, by name. */
 const handovers = ((): Readonly<Record<string, unknown>> | undefined => {
   try {
@@ -128,11 +143,27 @@ const handovers = ((): Readonly<Record<string, unknown>> | undefined => {
     return undefined;
   }
 })();
-if (separator !== '--' || handovers === undefined) throw new Error('usage: child.js <modules|-> <fault|none> <handovers> -- <runtime arguments>');
+if (separator !== '--' || handovers === undefined) throw new Error('usage: child.js <modules|-> <fault|none> <handovers> <real|start ms> -- <runtime arguments>');
 const links = new ChildLinks(send, handovers);
+/** The run's virtual clock, or undefined on the real clock. */
+const clock: ChildClock | undefined = childClockOf(clockArgument);
+/**
+ * How many lines the child has written to stderr, which carries the runtime's records to the supervisor on a pipe of its
+ * own: an advance's answer names it, so the supervisor reads them before it answers in turn.
+ */
+let lines = 0;
+if (clock !== undefined) {
+  const write = process.stderr.write.bind(process.stderr) as (...args: unknown[]) => boolean;
+  process.stderr.write = (chunk: unknown, ...rest: unknown[]): boolean => {
+    lines += typeof chunk === 'string' ? chunk.split('\n').length - 1 : chunk instanceof Uint8Array ? chunk.filter(byte => byte === 0x0a).length : 0;
+    return write(chunk, ...rest);
+  };
+}
 
+/** On virtual time, a module's worker calls hold the clock while they run, as in the in-memory harness. */
+const held = (module: BunnyModule): BunnyModule => clock === undefined ? module : clock.wrap(module);
 const fixture = (name: string, simulate: () => BunnyModule, schemas?: Readonly<Record<string, object>>): ModuleFactory => ({
-  name, simulate, ...(schemas === undefined ? {} : {schemas}),
+  name, simulate: () => held(simulate()), ...(schemas === undefined ? {} : {schemas}),
   create: () => { throw new Error(`the fixture ${name} has no real device; run it with --simulate`); },
 });
 
@@ -145,11 +176,12 @@ const harness = fixture('harness', () => ({
   stop: () => {},
 }));
 
-let fixtureCore: ReturnType<typeof createCoreModule> | undefined;
+let fixtureCore: CoreModule | undefined;
 const scheduled = new ScheduledFixture();
 const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
-  wispr: {name: 'wispr', create: () => createWisprModule(), simulate: () => createWisprModule()},
-  core: fixture('core', () => fixtureCore = createCoreModule(scheduled.coreOptions(names))),
+  wispr: {name: 'wispr', create: () => createWisprModule(), simulate: () => held(createWisprModule())},
+  // On virtual time the core's monotonic clock is the test clock's (Hub #1709, #1710), the one `runMain` gets below.
+  core: fixture('core', () => fixtureCore = buildCore(clock, scheduled.coreOptions(names))),
   [SCHEDULE_FIXTURE]: fixture(SCHEDULE_FIXTURE, () => scheduled.module()),
   'presentation-fixture': fixture('presentation-fixture', () => createPresentationFixture(() => fixtureCore)),
   lamp: fixture('lamp', () => createLampModule({
@@ -189,7 +221,9 @@ const factories = names.map(name => {
 // A run with no module hosts none, not even the harness module, so its health lists none. Its edge and gateway still
 // know every family the scenario's parts use, from the one list the in-memory harness takes too: the fixture core's
 // the inbox among them; retained history reads use `/api/v2/history`.
-// The run passes no test clock yet, so the runtime keeps the real clock. A run on virtual time (#1705) will pass one here
-// as `testClock`, which `runProcess` takes only in this simulated test run under the supervisor (Hub #1709), and the same
-// clock's `monotonic` in the fixture core's options above.
-await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {schemas: SCENARIO_SCHEMAS, onEdge: served => { edge = served; }});
+// On virtual time the run passes its test clock, which `runProcess` takes only in this simulated test run under the
+// supervisor (Hub #1709); its monotonic clock is the one the fixture core's options above carry. On the real clock it
+// passes none.
+await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {
+  schemas: SCENARIO_SCHEMAS, onEdge: served => { edge = served; }, ...(clock === undefined ? {} : {testClock: clock.testClock}),
+});
