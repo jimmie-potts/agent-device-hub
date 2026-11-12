@@ -219,13 +219,12 @@ async function judge(t: CaptureContext, scenario: Scenario): Promise<void> {
   let result;
   try {
     result = await runScenario(scenario, run);
-    const {capture} = scenario;
-    if (result.outcome === 'passed' && capture !== undefined) await run.paced(async () => {
-      // On virtual time the browser's clock starts at the run's and both then pass as real time does (Hub #1711), so
-      // the deadlines the page stamps on its requests mean what they say to the runtime.
+    if (result.outcome === 'passed' && scenario.capture !== undefined) {
+      // On virtual time the page's clock starts at the run's (Hub #1711), so the deadlines the page stamps on its
+      // requests mean what they say to the runtime. The run does not move during the capture unless the capture moves it.
       if (run.clock === 'virtual') await (t.page as Page).clock.setSystemTime(run.now());
-      await capture(t, run);
-    });
+      await scenario.capture(t, run);
+    }
   } finally {
     await run.close();
   }

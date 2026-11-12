@@ -2,11 +2,12 @@
 // gets its own seeded data directory under the system temporary directory, which must be outside every Git checkout.
 import {spawn, type ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
-import {mkdir, mkdtemp, realpath, rm} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {RUN_FILE, type RunFile} from '../paths.js';
 import plugin from '../plugin.js';
 
 export const SUPERVISOR = fileURLToPath(new URL('../supervisor.js', import.meta.url));
@@ -44,13 +45,24 @@ export async function base(context: TestContext): Promise<string> {
 
 let runs = 0;
 /** Seeds `scenario` into a new run directory under `at` and starts the supervisor on it, as a run's unit would. */
-export async function startRun(context: TestContext, at: string, scenario: string): Promise<Started> {
+/**
+ * Starts a run of `scenario` under its own supervisor. `testOnlyRealClock` puts a catalog scenario's run, which its seed
+ * writes on virtual time (Hub #1711), back on the real clock, for an adapter test whose subject is real elapsed time.
+ * Only a test file passes it: the seed, the catalog and the capture steps never do, and every capture proof still says
+ * `virtual`, as steps.test.ts asserts.
+ */
+export async function startRun(context: TestContext, at: string, scenario: string, {testOnlyRealClock = false}: {testOnlyRealClock?: boolean} = {}): Promise<Started> {
   runs += 1;
   const runtimeDir = join(at, `r${runs}`), dataDir = join(runtimeDir, 'data');
   await mkdir(dataDir, {recursive: true, mode: 0o700});
   const seed = plugin.scenarios[scenario];
   if (seed === undefined) throw new Error(`no run scenario ${scenario}`);
   await seed.seed({runId: `runtime-unmanaged-r${runs}`, root: ROOT, runtimeDir, dataDir, scenario, inputs: {}});
+  if (testOnlyRealClock) {
+    const file = join(dataDir, RUN_FILE);
+    const {clock: _clock, ...run} = JSON.parse(await readFile(file, 'utf8')) as RunFile;
+    await writeFile(file, `${JSON.stringify(run)}\n`, {mode: 0o600});
+  }
   const supervisor = spawn(process.execPath, [SUPERVISOR, '--data', dataDir, '--port', '0', '--harness-port', '0'], {
     cwd: ROOT, env: {...process.env, TMPDIR: runtimeDir}, stdio: ['ignore', 'pipe', 'pipe'],
   });

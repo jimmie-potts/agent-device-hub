@@ -32,12 +32,6 @@ export type RunTarget = {url: string; harness: string; dataDir: string; seed: Se
 export interface RunHarness extends Harness {
   /** Which clock the run is on (Hub #1710), which a capture's proof records. */
   readonly clock: 'virtual' | 'real';
-  /**
-   * Runs `body`, such as a capture's browser journey, with the run's time passing as real time does (Hub #1711): on
-   * virtual time the adapter advances the run by the real time that passed, every `PACE_MS`, until `body` ends, so the
-   * runtime keeps working while a browser drives it in real time. On the real clock it only runs `body`.
-   */
-  paced<T>(body: () => Promise<T>): Promise<T>;
   /** What went wrong outside the steps: messages that break profile 2.0, and errors a part reported. */
   problems(): readonly string[];
   close(): Promise<void>;
@@ -127,9 +121,6 @@ type Part = {role: Role; participant: Participant | undefined; closed: boolean; 
  * the last advance found nothing in flight and changed nothing the adapter can read.
  */
 type Virtual = {clock: ReturnType<typeof manualClock>; owed: number; runNext: number | undefined; quiet: boolean};
-
-/** How often a paced run on virtual time catches up with the real time that passed (Hub #1711). */
-export const PACE_MS = 20;
 
 /** How many event-loop turns the adapter gives the parts' streams after each advance of the run, as the in-memory harness gives real I/O. */
 const TURNS = 4;
@@ -371,29 +362,6 @@ class Run implements RunHarness {
     return ran;
   }
 
-  async paced<T>(body: () => Promise<T>): Promise<T> {
-    const v = this.#virtual;
-    if (v === undefined) return body();
-    await this.#actions;
-    await this.#catchUp();
-    let done = false, last = Date.now();
-    const pacing = (async () => {
-      while (!done) {
-        await sleep(PACE_MS);
-        const now = Date.now(), passed = now - last;
-        last = now;
-        // Every piece reaches the run, as real time would: nothing is owed while a browser watches it.
-        if (passed > 0) await this.#advance(v, passed, false);
-      }
-    })();
-    try {
-      return await body();
-    } finally {
-      done = true;
-      await pacing;
-    }
-  }
-
   problems(): readonly string[] {
     return this.#problems;
   }
@@ -601,14 +569,16 @@ class Run implements RunHarness {
   async #resynced(mark: ReaderMark | undefined): Promise<void> {
     if (mark === undefined) return;
     const withinMs = this.#target.resyncWithinMs ?? RESYNC_WITHIN_MS;
-    // On virtual time the bound is virtual too: the reader's reconnect backoff runs on the parts' clock.
+    // On virtual time the reader's reconnect backoff runs on the parts' clock, so the run advances for up to the bound;
+    // its reconnect is also real I/O, so the wait ends only once the bound has passed in real time too (Hub #1711).
     const v = this.#virtual;
-    const deadline = this.now() + withinMs;
+    const deadline = this.now() + withinMs, realDeadline = Date.now() + withinMs;
     for (;;) {
       const missing = this.reader.behind(mark);
       if (missing.length === 0) return;
-      if (this.now() >= deadline) throw new RunFailure(`the reader did not resync within ${withinMs} ms of the restart: ${missing.join('; ')}`);
-      if (v === undefined) await sleep(RESYNC_POLL_MS);
+      const virtualPassed = this.now() >= deadline;
+      if (virtualPassed && Date.now() >= realDeadline) throw new RunFailure(`the reader did not resync within ${withinMs} ms of the restart: ${missing.join('; ')}`);
+      if (v === undefined || virtualPassed) await sleep(RESYNC_POLL_MS);
       // While the reader is behind, every piece reaches the run, so its reconnect over real I/O gets real time.
       else await this.#advance(v, RESYNC_POLL_MS, false);
     }
