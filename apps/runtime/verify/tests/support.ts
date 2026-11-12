@@ -44,12 +44,11 @@ export async function base(context: TestContext): Promise<string> {
 }
 
 let runs = 0;
-/** Seeds `scenario` into a new run directory under `at` and starts the supervisor on it, as a run's unit would. */
 /**
- * Starts a run of `scenario` under its own supervisor. `testOnlyRealClock` puts a catalog scenario's run, which its seed
- * writes on virtual time (Hub #1711), back on the real clock, for an adapter test whose subject is real elapsed time.
- * Only a test file passes it: the seed, the catalog and the capture steps never do, and every capture proof still says
- * `virtual`, as steps.test.ts asserts.
+ * Seeds `scenario` into a new run directory under `at` and starts the supervisor on it, as a run's unit would.
+ * `testOnlyRealClock` puts a catalog scenario's run, which its seed writes on virtual time (Hub #1711), back on the real
+ * clock, for an adapter test whose subject is real elapsed time. Only a test file passes it: the seed, the catalog and the
+ * capture steps never do, and every capture proof still says `virtual`, as steps.test.ts asserts.
  */
 export async function startRun(context: TestContext, at: string, scenario: string, {testOnlyRealClock = false}: {testOnlyRealClock?: boolean} = {}): Promise<Started> {
   runs += 1;
