@@ -1,7 +1,8 @@
 // Hub #1710: a disposable run on virtual time. The run's supervisor is the authority for its time, which moves only
 // when the harness API advances it, with the child's clock and a restart's hold; a run on the real clock refuses the
 // clock routes, and the runtime's gateway serves none. The verification child gives the fixture core the same monotonic
-// clock that its test clock carries.
+// clock that its test clock carries. Hub #1711: a restart that waits for a release lets a hook meet a stopped runtime on
+// virtual time; a run on the real clock refuses it and the release.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';

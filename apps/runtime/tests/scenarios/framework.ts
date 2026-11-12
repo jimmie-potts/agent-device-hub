@@ -250,7 +250,10 @@ export type ScenarioResult = {
   id: string; title: string; tier: Harness['tier']; transport: TransportName; outcome: 'passed' | 'failed'; steps: StepResult[];
 };
 
-/** How often a step looks again: virtual milliseconds in memory, real ones in a run. */
+/**
+ * How often a step looks again: virtual milliseconds in memory and in a catalog scenario's run (Hub #1711), real ones in
+ * any other run.
+ */
 export const POLL_MS = 10;
 
 /**

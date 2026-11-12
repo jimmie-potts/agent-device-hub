@@ -30,7 +30,7 @@ such restarts within a minute. Starts and restarts run one after another, so ove
 for the port. Its loopback harness API, the run's `harness` endpoint, drives the simulated devices and the run's
 controls: hold, release, fail the next switch, fault the chime, bring the sign online or offline, play, pause, stop,
 silence or slow either simulated speaker or switch it to another input and refuse or never answer its next command, take a LIFX
-bulb off the network or back, take the simulated Tidbyt cloud offline or back, set the Pixoo online, offline or silent, take the simulated Nanoleaf controller offline or online, switch it as its app would or lose its next power or brightness answer, have the simulated Codex Desktop marker list threads as unread, turn unusable, stall or answer again, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart, optionally holding the runtime stopped for up to 10 s first (`{"holdMs": n}`, #926). A simulation that names an unknown device, action or field, a restart with any field but a whole `holdMs` from 0 to 10 000, and a body that is not JSON or is over 4 KiB are refused with 400 and a registry body, and change nothing. It also
+bulb off the network or back, take the simulated Tidbyt cloud offline or back, set the Pixoo online, offline or silent, take the simulated Nanoleaf controller offline or online, switch it as its app would or lose its next power or brightness answer, have the simulated Codex Desktop marker list threads as unread, turn unusable, stall or answer again, arm a crash, lose an acknowledgment, end a part's stream at the edge, and restart, optionally holding the runtime stopped for up to 10 s first (`{"holdMs": n}`, #926) and, on [virtual time](#virtual-time) only, until a release (`{"untilReleased": true}`, #1711). A simulation that names an unknown device, action or field, a restart with any field but a whole `holdMs` from 0 to 10 000 and a boolean `untilReleased`, and a body that is not JSON or is over 4 KiB are refused with 400 and a registry body, and change nothing. It also
 reports the run's state: the devices, the runtime's log records and everything its bus published, each with the
 runtime's generation, and it answers [one request's records and spans](#follow-one-request). It answers only local JSON
 requests that name its listener, as the runtime's health does. Ending a stream takes only a part's source,
@@ -124,8 +124,8 @@ exercise optional legacy utilities; neither is part of the fresh cutover.
 | `control-scenario-fails` | A negative control, not a catalog scenario: it expects lamp-1 on though nothing switched it, so it must fail |
 | `control-follow-fails` | A negative control: it expects the follow query to find a request that was never sent, so it must fail |
 
-The run adapter implements the catalog's `Harness` in real time, or on [virtual time](#virtual-time) for a scenario
-that asks for it. Its parts are remote, so the per-transport
+The run adapter implements the catalog's `Harness` on [virtual time](#virtual-time) for a catalog scenario's run, and
+in real time for every other run. Its parts are remote, so the per-transport
 expectations are the remote ones, and every catalog scenario passes as it does in the in-memory harness. Its `gateway`
 call reaches the runtime's gateway over HTTP, as a part with its token, a browser signed in by a trusted loopback page,
 a stranger or a caller with neither, and its `dispatch` sends a device's command through the core's dispatcher on the
@@ -142,9 +142,10 @@ page moves to it in #922's third slice.
 
 ## Virtual time
 
-A catalog scenario can ask for its disposable run to be on virtual time (`runClock: 'virtual'` in the scenario, #1710).
-Today `shared-inbox-history` and `art-show` do; every other run, and every `shipped` run, is on the real clock. The seed
-writes `"clock": "virtual"` into the run file, and the supervisor then owns the run's time:
+Every catalog scenario's disposable run is on virtual time (#1710, by default since #1711); a scenario has no choice.
+Every other run, such as `fixtures`, `mac-codex-local`, a module's own runs and the negative controls, and every
+`shipped` run, is on the real clock. The seed writes `"clock": "virtual"` into the run file, and the supervisor then owns
+the run's time:
 
 - It starts at the real time when the run starts. The simulated devices run on its manual clock, and each runtime child
   starts at the run's current virtual time and runs on a manual clock of its own, passed to `runMain` as its test clock
@@ -162,19 +163,36 @@ writes `"clock": "virtual"` into the run file, and the supervisor then owns the 
   supervisor answers once its journal has read those lines. An advance of `0` is a settle: everything the runtime did
   since is in the state the harness reports next.
 - A restart's `holdMs` moves virtual time by the hold, without waiting in real time.
+- A restart with `{"untilReleased": true}` keeps the runtime stopped until `POST /api/harness/v1/release` with `{}`, or
+  at most 10 s of real time, and only then runs its hold. The release answers `{"status": "released"}`, 409 with
+  `invalid-state` when no restart waits for one, and 400 with `invalid-request` for a body with a field. A run on the real
+  clock, or a `shipped` run, refuses `untilReleased` and the release with 409 and `invalid-state`, and restarts nothing.
+- Each registered module that the child builds over its link to the supervisor's device gets the run's clocks as
+  `run.remote`'s options (`RemoteSimulationOptions`: `now`, `scheduler` and `monotonic`, #1711), and the supervisor's
+  devices get the run's monotonic clock with `run.create`'s options. On the real clock neither gets a monotonic clock or
+  options, and each keeps the clocks it kept before, such as Playback's `performance.now()` and MicroDuck's
+  `process.hrtime` and 100 ms `setInterval`.
 
 The run adapter learns the clock from `GET /clock`. On virtual time its `now()` is virtual, its parts run on a manual
 clock that stamps their messages, and `wait(ms)` advances the run, split at the parts' own timers. A wait passes without a
 call to the run while nothing can change: the last advance found nothing in flight, the refresh after it changed nothing
 the scenario reads, no call waits for an answer, no part is reconnecting and no timer is due before the wait ends. The run
 gets that time before anything else reaches it: an action, a gateway call, health, a hook or a call on a part. Waiting
-for the reader's resync after a restart always advances the run. A hook against a stopped runtime is refused on virtual
-time, because the supervisor's hold is then virtual.
+for the reader's resync after a restart advances the run until its bound (15 s) has passed in the run's time; since the
+reader comes back over real I/O, the restart fails only once the bound has also passed in real time. A hook against a stopped runtime asks for a restart that
+waits for a release, runs the hook once the runtime refuses connections, then releases it; once the restart answers, the
+adapter's clock follows the time its hold moved the run on.
+
+Before a capture's browser journey starts, the page's clock is set to the run's time, so the deadlines the page stamps
+on its requests mean what they say to the runtime. The run does not move while the journey runs, unless the capture
+moves it.
 
 Timers that guard real I/O stay real: the edge's heartbeat and stall, a part's idle limit, the lag watchdog, launcher
 probes, device and media I/O deadlines and the supervisor's own answer bounds. Process starts, the browser and video are
 real by nature. A capture's `scenario-result.json` records `"clock": "virtual"` or `"real"`, so no proof reads as real-time
-evidence when it is not. To drive a virtual run by hand:
+evidence when it is not; every catalog capture records `virtual`. The shipped durations the captures follow are pinned
+by unit tests where they are declared. A run started by hand for a catalog scenario is on virtual time too, so its timers
+fire only when it is advanced. To drive a virtual run by hand:
 
 ```bash
 npm run -s verify:runtime -- start --scenario shared-inbox-history
@@ -355,8 +373,8 @@ npm run -s verify:runtime -- stop <run-id>
 To watch the Tidbyt's tiles (#930) follow agent status and what plays, on a simulated cloud, start the Tidbyt scenario.
 Its capture step starts a session and a turn, sends a burst of approval prompts inside the 15-second gate, plays a song
 to the Move, restarts the runtime with the Move answering 400 ms late once the card has stood past its gate, pauses the
-song and stops it, and checks each tile against the frame the reader's own copies call for. Time is real, so the step
-takes about a minute and a half.
+song and stops it, and checks each tile against the frame the reader's own copies call for. The run is on
+[virtual time](#virtual-time), so the gates pass when the step advances the run, and the step takes seconds.
 
 ```bash
 npm run -s verify:runtime -- start --scenario tidbyt-tiles
@@ -477,8 +495,8 @@ npm run -s verify:runtime -- stop <run-id>
 
 To watch Codex Desktop's read marker (#926) become read evidence, start `codex-desktop-read`. Its capture step ends a
 Desktop turn and a subagent's, lists both as unread, clears the flag, turns the marker unusable, stalls the Codex home
-and lets it answer again, and checks each session's read state and the marker's records. Time is real, so it takes about
-half a minute. By hand, `POST /api/harness/v1/simulate` with `{"device": "codex-desktop", "action": "list", "sessions":
+and lets it answer again, and checks each session's read state and the marker's records. The run is on
+[virtual time](#virtual-time), so its holds pass when the step advances the run. By hand, `POST /api/harness/v1/simulate` with `{"device": "codex-desktop", "action": "list", "sessions":
 ["<thread id>"]}` (up to 64 IDs of letters, digits, `.`, `_` and `-`), or with the action `unusable`, `stall` or
 `answer`, drives the marker, and `GET /api/harness/v1/state` shows `devices["codex-desktop"]`: what it lists, whether it
 stalls and how many reads it answered or holds.
