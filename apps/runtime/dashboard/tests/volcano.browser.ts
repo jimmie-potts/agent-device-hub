@@ -1,5 +1,6 @@
 // The Volcano card's browser journey (Hub #616), on synthetic data only: the real module and store over a simulated feed,
-// then the card's states over fixed documents. Nothing here reaches an installation, a radio or a device.
+// then the card's states over fixed documents. Nothing here reaches an installation, a radio or a device. The world runs
+// on a clock the journey moves (Hub #1708, #1712): the feed's history is spaced by advancing it, never by real waiting.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -7,33 +8,27 @@ import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 import {chromium, type Page} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
+import {worldClock} from './world-clock.ts';
 
 const TABS = ['Now', 'Timeline', 'Sessions', 'Totals', 'Gaps'];
 const browser = await chromium.launch({headless: true});
-const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
 const frame = (page: Page): Promise<void> => page.evaluate(() => new Promise<void>(resolve => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve(); }); }); }));
 
 async function journey(): Promise<void> {
-  const world = await startWorld({volcano: true});
+  const clock = worldClock();
+  const world = await startWorld({volcano: true, clock});
   try {
     const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
     const errors: string[] = [];
     context.on('weberror', error => { errors.push(error.error().message); });
     const page = await context.newPage();
-    page.setDefaultTimeout(20_000);
+    page.setDefaultTimeout(20_000); await clock.install(page);
     const sent = changes(page);
-    world.volcanoAction('heater-on');
-    await sleep(1100);
-    world.volcanoAction('tick');
-    await sleep(1100);
-    world.volcanoAction('pump-on');
-    await sleep(1100);
-    world.volcanoAction('pump-off');
-    await sleep(1100);
-    world.volcanoAction('heater-off');
-    await sleep(1100);
-    world.volcanoAction('heater-on');
-    await sleep(1100);
+    // Each snapshot is stamped on the world's clock when its action applies; the module's 5 s heartbeat fires on it too.
+    for (const action of ['heater-on', 'tick', 'pump-on', 'pump-off', 'heater-off', 'heater-on'] as const) {
+      world.volcanoAction(action);
+      await clock.advance(1100);
+    }
 
     await page.goto(`${world.url}/#/`); await feed(page, 'connected');
     const card = page.locator('[data-volcano-card]');
@@ -59,14 +54,18 @@ async function journey(): Promise<void> {
     await page.setViewportSize({width: 1280, height: 1000});
     await page.goto(`${world.url}/#/`); await feed(page, 'connected');
     const placement = page.locator('[data-home-card="device:bunny/modules/volcano:volcano"]');
+    const save = (size: 'small' | 'medium' | 'large' | undefined): Promise<number> => page.evaluate(async size => {
+      const data = await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': {revision: number}[]}};
+      const record = data.records['home-layout'][0]; if (record === undefined) throw new Error('home-record');
+      const placed = size === undefined ? [] : [{widget: 'device:bunny/modules/volcano:volcano', size, hidden: false}];
+      return (await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'}, body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: record.revision, layouts: {desktop: placed, phone: placed}}})})).status;
+    }, size);
     for (const size of ['small', 'medium', 'large'] as const) {
-      assert.equal(await page.evaluate(async size => {
-        const data = await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': {revision: number}[]}};
-        const record = data.records['home-layout'][0]; if (record === undefined) throw new Error('home-record');
-        const placed = [{widget: 'device:bunny/modules/volcano:volcano', size, hidden: false}];
-        return (await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'}, body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: record.revision, layouts: {desktop: placed, phone: placed}}})})).status;
-      }, size), 200, `saving ${size}`);
-      await sleep(500);
+      // An empty layout first takes the Volcano off Home, so its return shows that the page applied this size's save.
+      assert.equal(await save(undefined), 200, `emptying Home before ${size}`);
+      await placement.waitFor({state: 'detached'});
+      assert.equal(await save(size), 200, `saving ${size}`);
+      await placement.waitFor();
       assert.equal(await placement.getAttribute('data-home-shape'), 'square', `${size} shows a Small square`);
       assert.equal(await card.count(), 0, 'the compact face mounts no Volcano reader');
     }
@@ -127,9 +126,11 @@ async function journey(): Promise<void> {
     await input.fill('30');
     await card.getByRole('button', {name: 'Save', exact: true}).click();
     await page.waitForFunction(() => document.querySelector<HTMLElement>('[data-volcano-card] .volcano-note[role=status]') !== null);
-    await sleep(500);
+    // The module saves the threshold and its outcome in one transaction, so the shown outcome means the setting is stored.
+    await card.getByText('Completed: succeeded. The module observed the result.', {exact: true}).waitFor();
+    // Half a second more on the page's and the runtime's timers, then two frames, sends nothing else.
+    await clock.advance(500); await frame(page);
     assert.deepEqual(sent, ['/api/v2/commands/volcano-session-gap'], 'the save is one command on the threshold family');
-    for (let i = 0; i < 50 && ((await world.volcanoRead('status')).body as {gapMinutes: number}).gapMinutes !== 30; i++) await sleep(100);
     assert.equal(((await world.volcanoRead('status')).body as {gapMinutes: number}).gapMinutes, 30);
     await card.getByRole('tab', {name: 'Sessions', exact: true}).click();
     await card.getByText('Heater activity, grouped when less than 30 min apart. Not consumption or dose. Times are local to this browser.', {exact: true}).waitFor();
