@@ -507,17 +507,44 @@ it('a span is kept when the previous release took no reading of its entity, and 
   assert.equal(rowsOf(history).length, 3);
 });
 
-it('a clock that steps back neither moves the last confirmation back nor overstates the next silence', context => {
+it('after the clock steps back and stays back, an outage still writes a gap row', context => {
+  const {history, take} = open(context);
+  take(state(plug(1, T0)), T0);
+  take(state(plug(2, T0 + 5000)), T0 + 5000);
+  // The clock is set back three hours, and readings go on every 5 s for ten minutes.
+  const back = T0 + 5000 - 3 * 3_600_000;
+  let revision = 2;
+  for (let at = back; at <= back + 10 * 60_000; at += 5000) take(state(plug(++revision, at)), at);
+  assert.equal(rowsOf(history).length, 1, 'the backward step itself is no gap');
+  const resumed = back + 10 * 60_000 + 30 * 60_000;
+  take(state(plug(++revision, resumed)), resumed);
+  const rows = rowsOf(history);
+  assert.equal(rows.length, 2, 'the 30-minute outage writes one gap row');
+  assert.equal(rows[1]?.record.gapMs, 30 * 60_000);
+});
+
+it('a single backward step writes no gap row, and the closed span keeps the instants the clock gave', context => {
   const {database, history, take} = open(context);
   take(state(plug(1, T0)), T0);
   take(state(plug(2, T0 + 5000)), T0 + 5000);
   take(state(plug(3, T0 - 60_000)), T0 - 60_000);
-  assert.equal(spanOf(database)?.confirmed_at_ms, T0 + 5000, 'the later instant stays');
+  assert.equal(rowsOf(history).length, 1);
+  assert.equal(spanOf(database)?.confirmed_at_ms, T0 - 60_000, 'each confirmation keeps its own instant');
+  take(state(plug(4, T0 - 55_000, false)), T0 - 55_000);
+  // The last confirmation may be earlier than the span's start: both are what the clock said.
+  assert.deepEqual(rowsOf(history).at(-1)?.record.span, {sinceAtMs: T0, lastConfirmedAtMs: T0 - 60_000, confirmations: 3});
+});
+
+it('the documented wrong case: a clock that steps back and then forward by more than the gap writes one gap row', context => {
+  const {history, take} = open(context);
+  take(state(plug(1, T0)), T0);
+  take(state(plug(2, T0 + 5000)), T0 + 5000);
+  take(state(plug(3, T0 - 60_000)), T0 - 60_000);
   take(state(plug(4, T0 + 70_000)), T0 + 70_000);
-  assert.equal(rowsOf(history).length, 1, '65 s after the last confirmation is no gap');
-  take(state(plug(5, T0 + 75_000, false)), T0 + 75_000);
-  const span = rowsOf(history).at(-1)?.record.span;
-  assert.deepEqual(span, {sinceAtMs: T0, lastConfirmedAtMs: T0 + 70_000, confirmations: 4});
+  // Only 65 s passed since the +5 s reading, but the clock reports 130 s since the last confirmation it stamped.
+  const rows = rowsOf(history);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1]?.record.gapMs, 130_000);
 });
 
 it('a state that reuses a message ID with another body is judged by its body, never dropped as a resend', context => {

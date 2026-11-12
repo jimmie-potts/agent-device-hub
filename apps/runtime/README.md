@@ -407,16 +407,26 @@ and exits 1, and the service manager restarts it whole.
   (`span`: `sinceAtMs`, `lastConfirmedAtMs`, `confirmations`). A family that a
   module's registration declares in `polling` gets one gap row (`gapMs`) when a
   confirmation comes more than four polling intervals, and more than two
-  minutes, after the last one; any other family has no gap rule. The last
-  confirmation's time never moves back when the clock does. A removal of an
+  minutes, after the last one; any other family has no gap rule. Each confirmation keeps its own instant, and a reading stamped
+  before the last confirmation, after the clock stepped back, is no gap; a
+  closed span's last confirmation can then be earlier than its start. So an
+  outage after a backward step still shows. The rule is wrong for a clock that
+  steps back and then forward by more than the gap: that writes one gap row
+  for a silence that did not happen. It was chosen over keeping the later
+  instant, which hid every outage while the clock stayed behind its earlier
+  high point, the usual case after a correction. A removal of an
   entity whose span holds more than its row's reading first writes a closing
   row: `closedBy: 'removal'`, no changed member, the last row's revision as both
   `revision` and `previous`, no message ID, and the last confirmation's time
   and count in `span`, so it claims nothing newer than the values it holds. A
   span row keeps the revision of the last row it was written against
   (`row_revision`); when `core_history_latest` holds another revision, a release
-  without spans took a reading of that entity, and the span restarts from an
-  unknown start (`sinceAtMs` null). A state reusing the last confirmation's
+  without spans wrote a row for that entity, and the span restarts from an
+  unknown start (`sinceAtMs` null). It is not detected when that release
+  wrote a row at the revision of the entity's last row and no higher revision
+  reached it, which needs a publisher that republishes one revision with
+  another value; then the next row's `span` start and count are wrong, and
+  everything rebuilt from rows is right. A state reusing the last confirmation's
   message ID with another state is a change, not a resend. A count is of
   readings history took, not of readings a device answered, and history no
   longer keeps each repeated reading's time. `core_history_latest` keeps its

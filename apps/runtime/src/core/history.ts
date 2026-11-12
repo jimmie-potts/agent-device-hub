@@ -296,7 +296,7 @@ export class History {
    * or, when a release without spans wrote `core_history_latest` since, as a previous release run on this store does,
    * a span reset to an unknown start with no confirmation yet. The span row keeps the revision of the entity's last row
    * it was written against (`row_revision`); this release moves `core_history_latest` only with the span, so a
-   * different revision there means another release took a reading.
+   * different revision there means another release wrote a row for the entity.
    */
   #span(source: string, family: string, id: string, lastRow: number): SpanRow {
     const stored = this.#statements.span.get(source, family, id) as SpanRow | undefined;
@@ -348,11 +348,12 @@ export class History {
     if (same && span?.confirmedAtMs !== null && message.id === span?.seenMessageId) return;
     if (same && span !== undefined) {
       const gap = gapOf(this.#rules, message.source, family);
-      // A clock that steps back neither moves the last confirmation back nor makes the next silence look longer.
+      // Each confirmation keeps its own instant, and a negative silence, after the clock stepped back, is no gap. So an
+      // outage after a backward step still shows; a clock that steps back and then forward by more than the gap writes
+      // one gap row for a silence that did not happen (review of PR #1790: keeping the later instant hid real outages).
       const silence = span.confirmedAtMs === null ? undefined : atMs - span.confirmedAtMs;
       if (gap === undefined || silence === undefined || silence <= gap) {
-        const confirmed = span.confirmedAtMs === null ? atMs : Math.max(span.confirmedAtMs, atMs);
-        this.#statements.setSpan.run(message.source, family, id, span.rowRevision, entityRevision, message.id, message.type, span.sinceAtMs, confirmed,
+        this.#statements.setSpan.run(message.source, family, id, span.rowRevision, entityRevision, message.id, message.type, span.sinceAtMs, atMs,
           span.confirmations + 1);
         return;
       }
