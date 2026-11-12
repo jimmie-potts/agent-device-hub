@@ -348,11 +348,13 @@ type HostOptions = Omit<PlaybackModuleOptions, 'transport'> & {
   clock?: ReturnType<typeof manualClock>;
   /** Builds the bus from the options the host gives it, such as a `HeldBus`. */
   bus?: (options: BusOptions) => InProcessBus;
+  /** Builds the module in place of `createPlaybackModule` over `speakers`, such as a disposable run's remote module. */
+  module?: () => BunnyModule;
 };
 
 export async function host(context: TestContext, speakers: SimulatedSpeakers, options: HostOptions = {}): Promise<Hosted> {
   const {
-    section = SECTION, clock = manualClock(), bus: buildBus = (busOptions: BusOptions) => new InProcessBus(busOptions), wrapDatabase, ...moduleOptions
+    section = SECTION, clock = manualClock(), bus: buildBus = (busOptions: BusOptions) => new InProcessBus(busOptions), wrapDatabase, module: buildModule, ...moduleOptions
   } = options;
   const thrown: unknown[] = [];
   // The bus stamps `expiresat` and runs request deadlines on the module's manual clock, as the runtime's does.
@@ -369,7 +371,7 @@ export async function host(context: TestContext, speakers: SimulatedSpeakers, op
   await watcher.subscribe('bunny.*.*.*', message => { published.push(message); });
   let readContent: BunnyModule['manifest']['content'];
   const build = (): ModuleHarness => {
-    const inner = createPlaybackModule({transport: speakers, monotonic: clock.now, ...moduleOptions});
+    const inner = (buildModule?.() as BunnyModule<PlaybackConfig> | undefined) ?? createPlaybackModule({transport: speakers, monotonic: clock.now, ...moduleOptions});
     readContent = inner.manifest.content;
     const module: BunnyModule<PlaybackConfig> = {
       manifest: inner.manifest,
