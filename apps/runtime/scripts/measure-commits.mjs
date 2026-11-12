@@ -42,7 +42,8 @@ if (scenarios.some(name => !SCENARIOS.includes(name)) || !(seconds > 0) || !(rat
 }
 
 const runtimeDist = new URL('../dist/src/', import.meta.url);
-const {createCoreModule, startRuntime, CONFIG_SCHEMA} = await import(new URL('index.js', runtimeDist).href);
+// The shipped core, with the registrations' history rules, as every entry point builds it (#1795).
+const {coreFactory, startRuntime, CONFIG_SCHEMA} = await import(new URL('index.js', runtimeDist).href);
 const {openModuleDatabase} = await import(new URL('state.js', runtimeDist).href);
 const {InProcessBus, Outbox, Outcome} = await import('@jimmie-potts/sdk');
 const {LIFX_SIMULATED_SECTION, lifxModuleFactory} = await import('@jimmie-potts/lifx');
@@ -218,7 +219,7 @@ async function intake() {
   const directory = await stateDirectory();
   const received = {};
   const hook = participant('hook');
-  const runtime = await startRuntime({modules: [createCoreModule(), hook.module], port: 0, stateDir: directory.state, log: record => {
+  const runtime = await startRuntime({modules: [coreFactory.create(), hook.module], port: 0, stateDir: directory.state, log: record => {
     if (record.attributes['bunny.module'] === 'core' && record.event_name === 'message.received') {
       const outcome = String(record.attributes['bunny.outcome']);
       received[outcome] = (received[outcome] ?? 0) + 1;
@@ -250,7 +251,7 @@ async function lifx() {
   const configFile = join(directory.dir, 'config.json');
   await writeFile(configFile, JSON.stringify({schema: CONFIG_SCHEMA, modules: {lifx: LIFX_SIMULATED_SECTION}}), {mode: 0o600});
   const driver = participant('driver');
-  const runtime = await startRuntime({modules: [createCoreModule(), lifxModuleFactory.simulate(), driver.module], port: 0, stateDir: directory.state, configFile, log: () => {}});
+  const runtime = await startRuntime({modules: [coreFactory.create(), lifxModuleFactory.simulate(), driver.module], port: 0, stateDir: directory.state, configFile, log: () => {}});
   try {
     const {sdk} = driver.lent;
     const outcomes = new Map();

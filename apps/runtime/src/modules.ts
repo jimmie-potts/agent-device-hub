@@ -16,13 +16,18 @@ import {REGISTRATIONS} from './registry.js';
 export type {ModuleFactory, ModuleRegistration} from '@jimmie-potts/sdk';
 
 /**
- * The core (Hub #831) comes first: it registers before its first await, and the runtime starts the next module once it
- * awaits, so device modules that sync from it or republish to it at their start find it listening; and it closes first
- * at a clean stop, so an action still queued ends `cancelled`. It reaches no device, so its real and simulated builds are
- * the same. It is not a registration, so no declared order can move it.
+ * The core's factory for `registrations` (Hub #831): the core comes first. It registers before its first await, and the
+ * runtime starts the next module once it awaits, so device modules that sync from it or republish to it at their start
+ * find it listening; and it closes first at a clean stop, so an action still queued ends `cancelled`. It reaches no
+ * device, so its real and simulated builds are the same. It is not a registration, so no declared order can move it.
+ * Its history keeps by every registration's bookkeeping members and polled families (#1772, #1795); a module that a
+ * profile does not host publishes nothing, so its rules never apply. Throws as `historyRules` does.
  */
-export const coreFactory: ModuleFactory = {name: CORE_MODULE, create: () => createCoreModule(), simulate: () => createCoreModule()};
-// `coreFactory` gives history the contracts package's rules only; `shippedList` builds the core with every registration's.
+function coreFactoryFor(registrations: readonly ModuleRegistration[]): ModuleFactory {
+  const history = historyRules(registrations);
+  const create = (): BunnyModule => createCoreModule({history});
+  return {name: CORE_MODULE, create, simulate: create};
+}
 
 /** The longest polling interval a module may declare: one hour. */
 export const MAX_POLLING_MS = 3_600_000;
@@ -75,15 +80,20 @@ export function orderModules(registrations: readonly ModuleRegistration[]): Modu
  */
 export function shippedList(registrations: readonly ModuleRegistration[]): ModuleFactory[] {
   const ordered = orderModules(registrations);
-  const history = historyRules(registrations);
-  const create = (): BunnyModule => createCoreModule({history});
-  return [{name: CORE_MODULE, create, simulate: create}, ...ordered];
+  return [coreFactoryFor(registrations), ...ordered];
 }
 
 /** Every module folder's registration, shipped or not, in folder order, as the build collected them. */
 export const registrations: readonly ModuleRegistration[] = REGISTRATIONS;
 
 export const shippedModules: readonly ModuleFactory[] = shippedList(registrations);
+
+/**
+ * The shipped list's own core factory, which every entry point that hosts a subset of the modules (the container's
+ * profiles, Hub #1202 and #1595) puts first. It is the same factory as `shippedModules[0]`, so no entry point can build
+ * a core without the registrations' history rules (#1795).
+ */
+export const coreFactory: ModuleFactory = shippedModules[0] as ModuleFactory;
 
 /** Each factory's module, with its simulated transport when `simulate` is set and its real one otherwise. */
 export function buildModules(factories: readonly ModuleFactory[], simulate: boolean): BunnyModule[] {

@@ -433,9 +433,12 @@ and exits 1, and the service manager restarts it whole.
   readings history took, not of readings a device answered, and history no
   longer keeps each repeated reading's time. `core_history_latest` keeps its
   five columns and holds the record of each entity's last row. Spans are never
-  in the fact log, and rows are never updated. The shipped list gives the core
-  every registration's bookkeeping members and polled families; a core built
-  without them uses the contracts package's members and no polled family. See
+  in the fact log, and rows are never updated. The shipped list's core
+  factory, `coreFactory`, gives history every registration's bookkeeping
+  members and polled families, and every entry point builds its core with it:
+  the installed runtime and each profile of the container (#1795). Only a core
+  created directly with `createCoreModule()` and no `history` option, as some
+  tests do, uses the contracts package's members and no polled family. See
   [Core history spans](UPGRADE.md#core-history-spans) for the store change.
 - **Fact log** (#1740). Each history row also names its origin and its place
   in that origin's order, `origin_seq`, counting from 1 with no gaps. The
