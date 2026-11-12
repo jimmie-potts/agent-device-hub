@@ -21,7 +21,7 @@ session at 2026-11-11T17:56:35Z: "We can do stage by stage."
 | Stage | Adds | Status |
 | --- | --- | --- |
 | [0](#stage-0-prerequisites) | The PC checked as a host; the fact log on the Mac (in source; not installed when stage 0 was accepted, see [#1750](https://github.com/jimmie-potts/agent-device-hub/issues/1750)) | accepted 2026-11-12: "your recommendation is good for all 7" (owner decision 6) |
-| [1](#stage-1-one-way-settings-and-a-standby-started-by-hand) | Settings read one way from the Mac; a standby started by hand | not accepted |
+| [1](#stage-1-one-way-settings-to-a-pc-copy-that-runs-with-device-control-off) | Settings read one way from the Mac by a PC copy that runs with device control off; takeover by hand | not accepted |
 | [2](#stage-2-facts-in-both-directions) | Facts merged in both directions; media copied | not accepted |
 | [3](#stage-3-the-mac-preferred-lead-and-automatic-takeover) | The Mac-preferred lead and automatic takeover | not accepted |
 | [4](#stage-4-either-copy-writes-for-qualified-devices) | Either-copy writes for qualified devices | not accepted |
@@ -271,13 +271,17 @@ Accepted on 2026-11-12 (owner decision 6).
   without the PC becoming a standby runtime host.
 - **Probe result:** passed, on 2026-11-12 between 00:44Z and 00:49Z
   ([result](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6811046647)).
-  Steps 0 to 5 passed:
-  - TCP from WSL and from bridge containers reached every probed device, the
-    Tronbyt server on the Mac and the internet hosts.
+  Steps 0 to 5 passed, as the result's own table records:
+  - From WSL directly, every TCP row connected (Pixoo, both Nanoleaf devices,
+    both Wemo plugs, Sonos, the Sony receiver and the Tronbyt server on the
+    Mac). The LIFX bulb was checked by ping only.
+  - From throwaway containers on the default bridge and on a project-style
+    bridge, every TCP row was `open` and the Tronbyt health read returned 200.
+    The weather, OpenAI and Anthropic hosts were reached by TLS handshake only.
   - One LIFX `LightGet` through the repository's unmodified transport got a
     reply. It replaced the plan's `GetService` or `GetPower` because the
     encoder accepts only the reads 14, 32 and 101.
-  - A port published on the PC answered one fetch from the Mac.
+  - One fetch from the Mac to a port published on the PC returned HTTP 200.
 
   It did not show Nanoleaf UDP frames, the Pixoo's own fetch, anything about
   the Roborock (which has no address in the configuration), sustained traffic,
@@ -298,22 +302,49 @@ Accepted on 2026-11-12 (owner decision 6).
 - **Effort:** #1740 is delivered in source and the probe is done. The local
   build, staying awake and the git identity are not sized.
 
-### Stage 1: one-way settings and a standby started by hand
+### Stage 1: one-way settings to a PC copy that runs with device control off
+
+The owner was asked on 2026-11-12 about an earlier version of this stage, a
+standby started by hand. Revision 4 changed it to the version below, and the
+owner has not been asked about it (open decision 1).
 
 - **Adds:** owner-entered settings become records in the Mac's fact log. The PC
   reads them after N and applies the latest edit (audit, answer 5; owner
   decision 5). The PC has its own spending share. There is one device writer at
   a time and no automatic takeover.
-- **The PC copy's mode** (*proposed*): the PC copy reads while the Mac runs, so
-  it runs alongside the Mac as a standby with device control off. It reads the
-  Mac's settings facts and applies them. No producer reports to it, so it holds
-  no sessions. It serves no client, sends no device command, runs no lead-only
-  work (routines, schedules, spending, claims) and accepts no settings edits.
-  When the Mac is down, the owner confirms the Mac core is stopped with its
-  start hold set, as `docs/bunny-container.md` already requires before device
-  control moves to another host, and then turns device control on in the PC
-  copy. Before the Mac core starts again, the
-  owner turns it off.
+- **The PC copy's mode** (*proposed*; it does not exist today, see "Before it
+  starts"):
+  - The PC must read the Mac's settings while the Mac runs, so the PC copy runs
+    alongside the Mac all the time, with device control off.
+  - It reads the Mac's settings facts and applies them. No producer reports to
+    it, so it holds no sessions.
+  - It serves no client, sends no device command, runs no lead-only work
+    (routines, schedules, spending, claims) and accepts no settings edits.
+  - When the Mac is down, the owner confirms the Mac core is stopped with its
+    start hold set, as `docs/bunny-container.md` already requires before device
+    control moves to another host, and then turns device control on in the PC
+    copy. Before the Mac core starts again, the owner turns it off.
+- **Today's product** (read on `main` at `eebb5923`):
+  - Device control is fixed when the container is created.
+    `deploy/container/compose.production.yaml` sets
+    `BUNNY_CONTROL: ${BUNNY_CONTROL:-disabled}` in the private Compose file the
+    owner renders. `deploy/container/entrypoint.mjs` (`containerOptions`) reads
+    it once at start, and `docs/bunny-container.md` "Production device profile"
+    says to set `BUNNY_CONTROL=enabled` "when rendering". So turning control on
+    or off means rendering the Compose file again and recreating the container
+    (I: a running container's environment cannot change).
+  - With control disabled, the entrypoint starts the core plus only configured
+    modules that reach no device (`productionModules`, which falls back to
+    `hostLocalModules` and `checkLocalBrowserConfig`). `docs/bunny-container.md`
+    says the image "instantiates only the real session core". A copy in that
+    mode cannot apply the settings that device modules keep, such as Nanoleaf
+    preferences, Pixoo playlists and LIFX mode.
+  - With control enabled, every configured module starts. The core's options
+    (`CoreOptions` in `apps/runtime/src/core/core.ts`) have no switch that holds
+    back routines, the art schedule, power limits or claims
+    (`apps/runtime/src/core/automation.ts`, `art-schedule.ts`,
+    `power-schedules.ts`). A search of `apps/runtime/src` found no standby or
+    lead setting, and nothing refuses settings edits.
 - **Before it starts:** stage 0 and the probe's result. The owner authorizes
   the PC as a standby runtime host, since `AGENTS.md` withholds new hosts from
   standing authority. The PC runs an image fit for a standby: the local build
@@ -321,7 +352,14 @@ Accepted on 2026-11-12 (owner decision 6).
   become facts. Most module settings are not, and each needs a change record
   (audit, answer 6). A read route for "after N" with its own grant, reachable
   from the PC; the private entry refuses role credentials today (plan,
-  "The network path"). Apply code on the PC for each settings family.
+  "The network path"). Apply code on the PC for each settings family. New build
+  and qualification work, because none of it exists today:
+  - a standby mode in which the runtime applies settings facts, including
+    device modules' settings, without device writes, lead-only work, spending
+    or claims;
+  - refusal of settings edits on the standby;
+  - a qualified way to turn device control on and off for a takeover, and back,
+    with the Mac's start hold in place.
 - **Takeover has:** settings, preferences, layouts, rules, scenes and playlists,
   and device control from the PC.
 - **Takeover lacks:** history and inbox handling, sessions until hooks report to
@@ -331,7 +369,8 @@ Accepted on 2026-11-12 (owner decision 6).
   back.
 - **Amendments:** 1.1 to 1.7. Amendment 1.7 covers the second running core.
 - **Effort:** medium for settings, plus low for configuration templating on the
-  PC.
+  PC. The standby mode, the refusal of edits and the control switch are not
+  sized.
 
 ### Stage 2: facts in both directions
 
@@ -351,10 +390,14 @@ Accepted on 2026-11-12 (owner decision 6).
   and exchanges facts with the Mac in both directions. It still sends no device
   command, runs no lead-only work, serves no client except producer intake and
   the peer read, and accepts no settings edits. Settings still travel one way
-  from the Mac until stage 3. The other direction carries the facts the PC
-  recorded while it led during a takeover by hand. Takeover stays by hand, as
-  in stage 1.
-- **Before it starts:** stage 1. History's duplicate check looks only at the
+  from the Mac until stage 3. The other direction runs all the time. The PC
+  records the observations its producers send it, and the Mac merges those
+  rows. So the Mac holds a second-origin copy of every fact delivered to both
+  machines, as the prototype's A8 found: the union keeps the fact once per
+  origin. The same direction also carries what the PC recorded while it led
+  during a takeover by hand. Takeover stays by hand, as in stage 1.
+- **Before it starts:** stage 1, including its standby mode and control switch,
+  which this stage also needs. History's duplicate check looks only at the
   local origin's rows, which #1740 includes. Without it, a fact delivered to
   both machines makes the local tracker ignore its own copy (A8). Code that
   rebuilds state from merged history groups change rows by origin, since each
@@ -567,7 +610,11 @@ writes from both."
   Personal data also lives on a second machine. ADR 0011 allows that in
   owner-controlled storage.
 - **History grows on both machines.** The prototype's illustration of about 470
-  rows, or 0.4 MB, an hour is synthetic. The real rate is not known.
+  rows, or 0.4 MB, an hour is synthetic. The real rate is not known. From
+  stage 2 each machine also stores the other's rows. Every fact delivered to
+  both machines is then held twice on each machine, once per origin (A8), so
+  for facts from producers that report to both, history grows about twice as
+  fast on each machine (inferred).
 - **Work per stage**, from the audit's effort marks unless stated: settings
   medium, lead-only high, local configuration low, media low to medium. The
   history exchange is small now that #1740 is delivered in source. Turning the
@@ -605,21 +652,38 @@ writes from both."
 
 Each item names the first stage that needs it.
 
-1. Now that the probe has passed: whether to accept stage 1, and whether to
+1. **Stage 1 changed after the owner was asked** (*proposed*, not yet put to
+   the owner).
+   - **What changed:** on 2026-11-12 the owner was asked about a standby
+     started by hand when the Mac is down. Revision 4 replaced it with a PC
+     copy that runs all the time alongside the Mac, with device control off.
+   - **Why:** the PC must read the Mac's settings while the Mac runs, and a
+     takeover cannot read from a Mac that is down.
+   - **Cost:** the continuous copy needs a standby mode, refusal of settings
+     edits and a qualified control switch, none of which exists today (stage
+     1, "Before it starts").
+   - **Alternative:** a hand-started standby that copies settings at takeover
+     from the last backup, or not at all.
+     - From the backup: settings are only as fresh as that backup. Today's
+       restore refuses a different source revision and is qualified only on
+       Mac ARM64 (audit, answer 5).
+     - Not at all: the owner re-enters settings by hand during a takeover.
+   - The owner has not been asked about this version.
+2. Now that the probe has passed: whether to accept stage 1, and whether to
    authorize the PC as a standby runtime host (stage 1). The result authorizes
    neither by itself.
-2. Which image a PC standby runs. The local build qualifies nothing, so a
+3. Which image a PC standby runs. The local build qualifies nothing, so a
    standby needs a qualified image for the PC's processor, through a release
    qualification lane (a gate change) or another route the owner chooses
    (stage 1).
-3. Each ceiling's split between the machines (stage 1).
-4. Which secrets to place on the PC (stage 1).
-5. Whether to move or duplicate the Mac-only inputs, the Tronbyt server first
+4. Each ceiling's split between the machines (stage 1).
+5. Which secrets to place on the PC (stage 1).
+6. Whether to move or duplicate the Mac-only inputs, the Tronbyt server first
    (stage 1).
-6. The clock for latest-edit-wins: a hybrid logical clock, or wall time with an
+7. The clock for latest-edit-wins: a hybrid logical clock, or wall time with an
    origin tie-break (stage 1).
-7. The takeover interval's length, and how the PC checks that it can reach the
+8. The takeover interval's length, and how the PC checks that it can reach the
    Mac and the home router (stage 3).
-8. How each installation knows which peer is the preferred lead (stage 3).
-9. Which devices to qualify for either-copy writes, starting with Nanoleaf and
+9. How each installation knows which peer is the preferred lead (stage 3).
+10. Which devices to qualify for either-copy writes, starting with Nanoleaf and
    Pixoo (stage 4).
