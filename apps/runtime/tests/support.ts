@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import {parseRecord} from '@jimmie-potts/bunny-observability';
-import type {BunnyModule, CommandDraft, Draft, ModuleContext, Scheduler} from '@jimmie-potts/sdk';
+import type {BunnyModule, CommandDraft, Draft, ModuleContext} from '@jimmie-potts/sdk';
 import {
   CONFIG_SCHEMA, CREDENTIALS_SCHEMA, HEALTH_PATH, startRuntime, tokenDigest, type LogRecord, type ModuleHealth, type Runtime, type RuntimeHealth,
   type RuntimeOptions, type Scope,
@@ -181,40 +181,8 @@ export function deferred<T>(): {promise: Promise<T>; resolve: (value: T) => void
   return {promise, resolve};
 }
 
-export const START = Date.parse('2026-10-06T12:00:00.000Z');
-
-/** A clock and scheduler that move only when the test advances them. */
-export function manualClock(start = START): {
-  now: () => number; scheduler: Scheduler; advance: (ms: number) => void; pending: () => number; next: () => number | undefined;
-} {
-  let now = start;
-  const timers = new Set<{at: number; callback: () => void}>();
-  return {
-    now: () => now,
-    scheduler: {after: (delayMs, callback) => {
-      const timer = {at: now + delayMs, callback};
-      timers.add(timer);
-      return () => { timers.delete(timer); };
-    }},
-    advance: ms => {
-      now += ms;
-      for (const timer of [...timers].sort((a, b) => a.at - b.at)) {
-        if (timer.at > now) break;
-        if (timers.delete(timer)) timer.callback();
-      }
-    },
-    pending: () => timers.size,
-    /** When the earliest pending timer is due, or undefined with none pending. NaN while a timer due at NaN is pending. */
-    next: () => {
-      let earliest: number | undefined;
-      for (const {at} of timers) {
-        if (Number.isNaN(at)) return at;
-        if (earliest === undefined || at < earliest) earliest = at;
-      }
-      return earliest;
-    },
-  };
-}
+// The manual clock is shared with a disposable run's child, which cannot import this file (Hub #1710).
+export {START, manualClock} from './scenarios/virtual-time.js';
 
 const BASE = 'https://bunny.invalid/events/';
 export const session = (revision: number): Draft<{id: string; revision: number}> =>

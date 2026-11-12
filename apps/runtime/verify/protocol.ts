@@ -30,7 +30,14 @@ export type ChildMessage =
   | {type: 'device.abandon'; id: number}
   | {type: 'published'; message: Message}
   | {type: 'applied'; id: number}
-  | {type: 'flushed'; id: number};
+  | {type: 'flushed'; id: number}
+  /**
+   * A run on virtual time (Hub #1710): the child moved its clock to `nowMs` and gave real work its turn. `nextDueMs` is
+   * when its earliest pending timer is due (null with none), `busy` whether work is still in flight that may change
+   * what the run shows without a timer, and `lines` how many lines it has written to stderr, which the supervisor reads
+   * on a pipe of its own.
+   */
+  | {type: 'advanced'; id: number; nowMs: number; nextDueMs: number | null; busy: boolean; lines: number};
 
 export type SupervisorMessage =
   | {type: 'lamp.switched'; id: number; power: Power}
@@ -45,7 +52,9 @@ export type SupervisorMessage =
   | {type: 'device.push'; id: number; device: string; simulation: DeviceAction}
   /** Ends a remote part's stream at the edge, as a lost connection would; the part reconnects on its own. */
   | {type: 'disconnect'; id: number; source: string}
-  | {type: 'flush'; id: number};
+  | {type: 'flush'; id: number}
+  /** A run on virtual time: moves the child's clock to `toMs`, which the child answers with `advanced` (Hub #1710). */
+  | {type: 'advance'; id: number; toMs: number};
 
 /** The harness API's routes, under the supervisor's own loopback listener (the run's `harness` endpoint). */
 export const HARNESS_PATH = '/api/harness/v1';
@@ -81,6 +90,15 @@ export type BoundaryReport = {
   /** Every outbound connection or datagram the guard refused, from the runtime and every process it started. */
   outbound: Attempt[];
 };
+
+/**
+ * `GET clock` and `POST clock/advance {ms}` in a run on virtual time (Hub #1710): the run's virtual time, when the next
+ * timer of the runtime or its simulated devices is due (null with none), and whether work is still in flight that may
+ * change what the run shows without a timer. A run on the real clock answers both with 409.
+ */
+export type ClockState = {clock: 'virtual'; nowMs: number; nextDueMs: number | null; busy: boolean};
+/** The most one `POST clock/advance` moves virtual time. */
+export const MAX_ADVANCE_MS = 3_600_000;
 
 /** `POST disconnect`: the remote part whose stream the edge ends. Only a part's source, `bunny/parts/<role>`, is taken. */
 export type DisconnectRequest = {source: string};

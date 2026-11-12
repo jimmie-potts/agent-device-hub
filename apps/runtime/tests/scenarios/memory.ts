@@ -15,7 +15,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {createWisprModule, isWisprModule} from '@jimmie-potts/wispr';
 import {
-  connectRemote, type BunnyModule, type CommandDraft, type DeviceSimulation, type Diagnostic, type ModuleRegistration, type Participant, type WorkerCallOptions,
+  connectRemote, type BunnyModule, type CommandDraft, type DeviceSimulation, type Diagnostic, type ModuleRegistration, type Participant,
 } from '@jimmie-potts/sdk';
 import {readEdgeCredentials, type EdgeCredential} from '../../src/credentials.js';
 import {Gateway, readableFamilies} from '../../src/gateway/gateway.js';
@@ -33,7 +33,6 @@ import {ScheduledFixture} from '../fixtures/scheduled.js';
 import {createPresentationFixture} from '../fixtures/presentation.js';
 import {SimulatedLamps, createLampModule} from '../fixtures/lamp.js';
 import {SimulatedSigns, createSignModule} from '../fixtures/sign.js';
-import {manualClock} from '../support.js';
 import {prepareWisprFixture} from '../fixtures/wispr.js';
 import {
   ROLES, StepFailure, failureOf, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type ModuleName, type Role,
@@ -45,17 +44,12 @@ import {
 } from './parts.js';
 import {realWork, settle} from './real-work.js';
 import {stepThrough} from './stepping.js';
+import {WORKER_WAIT_MS, WorkerHold, manualClock} from './virtual-time.js';
 
 /** The ports of the installed Hub, the local controllers and their services, which a harness never listens on. */
 export const INSTALLED_PORTS: readonly number[] = [8765, 8787, 8788, 8791, 41231];
 /** How long a dropped part waits before it connects again, as the remote client's backoff does. */
 const RECONNECT_MS = 20;
-/**
- * How long, in real time, virtual time waits for one module's worker call. A worker runs in real time but its deadline
- * is on virtual time, which runs several times faster, so a stalled runner could time out a worker that had done nothing
- * wrong (Hub #1442). A call still running after this long takes its chances: a worker that never answers reaches its deadline.
- */
-const WORKER_WAIT_MS = 10_000;
 
 export interface MemoryHarness extends Harness {
   /** The private state directory the runtime uses across restarts. */
@@ -105,19 +99,14 @@ type Simulated = {simulation: DeviceSimulation; device: unknown};
 
 /**
  * The module, keeping each database it opens in `databases`, so a crash can close them as a process's end would, and
- * handing each worker call it makes to `working`, so virtual time can wait for the worker.
+ * handing each worker call it makes to `workers`, so virtual time can wait for the worker.
  */
-function holding(module: BunnyModule, databases: Set<DatabaseSync>, working: (call: Promise<unknown>) => void): BunnyModule {
-  return {...module, start: context => module.start({...context, database: () => {
+function holding(module: BunnyModule, databases: Set<DatabaseSync>, workers: WorkerHold): BunnyModule {
+  return workers.wrap({...module, start: context => module.start({...context, database: () => {
     const database = context.database();
     databases.add(database);
     return database;
-  }, workers: {...context.workers, call: <Reply>(file: URL, request: unknown, options: WorkerCallOptions): Promise<Reply> => {
-    const call = context.workers.call<Reply>(file, request, options);
-    working(call);
-    // A promise of its own, so a rejection the module leaves unhandled stays unhandled, as it would in the runtime.
-    return call.then(reply => reply);
-  }}})};
+  }})});
 }
 
 class Memory implements MemoryHarness {
@@ -160,9 +149,8 @@ class Memory implements MemoryHarness {
   readonly #crashed = new WeakSet<Participant>();
   /** A restart or reconnect under way. Every call waits for them, and virtual time stands still meanwhile. */
   readonly #pending = new Set<Promise<void>>();
-  /** Module worker calls under way, each until it ends or `#workerWaitMs` passes. Virtual time stands still meanwhile. */
-  readonly #working = new Set<Promise<void>>();
-  readonly #workerWaitMs: number;
+  /** Module worker calls under way, each until it ends or its real bound passes. Virtual time stands still meanwhile. */
+  readonly #workers: WorkerHold;
   /** What the retired runtimes and parts still release. */
   readonly #retiring: Promise<unknown>[] = [];
   #server: Server | undefined;
@@ -174,7 +162,7 @@ class Memory implements MemoryHarness {
 
   constructor(seed: Seed, transport: TransportName, stateDir: string, registrations: readonly ModuleRegistration[], workerWaitMs: number) {
     this.#seed = seed;
-    this.#workerWaitMs = workerWaitMs;
+    this.#workers = new WorkerHold(workerWaitMs);
     this.#registrations = new Map(registrations.map(registration => [registration.name, registration]));
     this.#validator = scenarioValidator(registrations);
     this.#schemas = scenarioSchemas(registrations);
@@ -383,9 +371,7 @@ class Memory implements MemoryHarness {
 
   async wait(ms: number): Promise<void> {
     await this.#settled();
-    await stepThrough(this.#clock, ms, async () => {
-      while (this.#working.size > 0) await Promise.race([...this.#working]);
-    }, async () => {
+    await stepThrough(this.#clock, ms, () => this.#workers.idle(), async () => {
       await settle(work.busy);
       await this.#settled();
     });
@@ -463,7 +449,7 @@ class Memory implements MemoryHarness {
     const clock = {now: this.#clock.now};
     const logs = new LogWriter(record => { this.#logs.push({generation: number, record}); }, 'info', clock);
     const databases = new Set<DatabaseSync>();
-    const modules = this.#seed.modules.map(name => holding(this.#build(name), databases, call => { this.#waitFor(call); }));
+    const modules = this.#seed.modules.map(name => holding(this.#build(name), databases, this.#workers));
     const host = new ModuleHost(modules, {
       clock, scheduler: this.#clock.scheduler, stateDir: this.stateDir, logs, startTimeoutMs: 10_000, stopTimeoutMs: 5000,
       ...(this.#tracing === undefined ? {} : {tracing: this.#tracing}),
@@ -618,16 +604,6 @@ class Memory implements MemoryHarness {
 
   #release(...work: (Promise<unknown> | undefined)[]): void {
     for (const promise of work) if (promise !== undefined) this.#retiring.push(promise);
-  }
-
-  /** Holds virtual time while a module's worker call runs, for at most `#workerWaitMs` of real time. */
-  #waitFor(call: Promise<unknown>): void {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const ended = Promise.race([call.then(() => {}, () => {}), new Promise<void>(resolve => { timer = setTimeout(resolve, this.#workerWaitMs); })]).then(() => {
-      clearTimeout(timer);
-      this.#working.delete(ended);
-    });
-    this.#working.add(ended);
   }
 
   #track(work: Promise<void>): void {

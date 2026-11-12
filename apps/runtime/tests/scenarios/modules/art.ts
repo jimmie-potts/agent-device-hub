@@ -100,6 +100,8 @@ export const scenarios: readonly Scenario[] = [{
 }, {
   id: 'art-show', title: 'the owner shows one saved artwork now on the simulated Pixoo, Tidbyt and browser with independent outcomes',
   memoryTimeoutMs: 90_000,
+  // The 20 s common start passes on virtual time in a disposable run (Hub #1710).
+  runClock: 'virtual',
   seed: {modules: ['core', 'playback', 'pixoo', 'tidbyt', 'art'], sections: {art: {recentLimit: 4}},
     config: {playback: PLAYBACK_SECTION, pixoo: {device: {...PIXOO_SECTION.device, id: 'desk-display'}}, tidbyt: {...sharedTidbyt, id: 'shelf-display'}},
     follows: [{owner: OWNER, families: ['art']}, {owner: 'bunny/core', families: ['operation']},

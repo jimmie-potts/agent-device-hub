@@ -22,10 +22,11 @@ export const staged = [];
 const tests = ['**/tests/**', '**/*.test.{ts,tsx,js,mjs}'];
 // Named entry points that own the process's standard streams, so `bunny/no-console` skips them: the runtime's journal
 // sink and its process entry (the ready line and usage), the explicit Roborock account-setup CLI, the Pixoo library migration's and the Nanoleaf migration's
-// entries (each its JSON line), and the verification run's supervisor and network guard.
+// entries (each its JSON line), the verification run's supervisor and network guard, and its runtime child, which on
+// virtual time counts the lines it writes to stderr so the supervisor can read them all before it answers (Hub #1710).
 export const streamOwners = [
   'apps/runtime/src/log.ts', 'apps/runtime/src/process.ts', 'apps/runtime/src/migrate-pixoo.ts', 'apps/runtime/src/migrate-nanoleaf.ts',
-  'apps/runtime/verify/guard.ts', 'apps/runtime/verify/supervisor.ts',
+  'apps/runtime/verify/guard.ts', 'apps/runtime/verify/supervisor.ts', 'apps/runtime/verify/child.ts',
   'modules/roborock/bin/setup.mjs',
   // The explicit disposable MicroDuck fixture CLI owns its one ready line.
   'modules/microduck/src/fixture.ts',

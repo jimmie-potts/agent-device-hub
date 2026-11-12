@@ -21,6 +21,11 @@ export class ChildLinks {
     this.#handovers = handovers;
   }
 
+  /** How many calls still wait for their device's answer. */
+  get waiting(): number {
+    return this.#waiting.size;
+  }
+
   /** The link the module `device` reaches its simulated device with. */
   link(device: string): DeviceLink {
     return {
@@ -91,6 +96,11 @@ export class SupervisorDevices {
   admits(request: Readonly<Record<string, unknown>>): request is DeviceAction {
     const device = typeof request.device === 'string' ? this.#devices.get(request.device) : undefined;
     return device?.admits(request) ?? false;
+  }
+
+  /** How many calls the devices still serve. */
+  get serving(): number {
+    return this.#serving.size;
   }
 
   has(device: string): boolean {

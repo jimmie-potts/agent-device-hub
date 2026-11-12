@@ -12,8 +12,13 @@ export type Fault = 'real-transports' | 'installed-port' | 'default-state';
  * `fixtures`, the same runtime with the fixture modules and families the scenario catalog uses.
  */
 export type RunRuntime = 'shipped' | 'fixtures';
+/**
+ * Which clock a run's runtime and simulated devices use (Hub #1710): `real`, the default, or `virtual`, which moves only
+ * when the harness API advances it. Only a run of the fixture runtime can be virtual.
+ */
+export type RunClock = 'real' | 'virtual';
 /** What the supervisor reads from the run's data directory. `config` is the run's configuration file. */
-export type RunFile = {schema: typeof RUN_SCHEMA; runtime: RunRuntime; modules: string[]; fault?: Fault; config: string};
+export type RunFile = {schema: typeof RUN_SCHEMA; runtime: RunRuntime; modules: string[]; fault?: Fault; config: string; clock?: RunClock};
 
 /** The run's state directory, which the runtime's `--state-dir` names: `<data>/state`. */
 export const stateDirOf = (dataDir: string): string => join(dataDir, 'state');

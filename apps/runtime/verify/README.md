@@ -124,7 +124,8 @@ exercise optional legacy utilities; neither is part of the fresh cutover.
 | `control-scenario-fails` | A negative control, not a catalog scenario: it expects lamp-1 on though nothing switched it, so it must fail |
 | `control-follow-fails` | A negative control: it expects the follow query to find a request that was never sent, so it must fail |
 
-The run adapter implements the catalog's `Harness` in real time. Its parts are remote, so the per-transport
+The run adapter implements the catalog's `Harness` in real time, or on [virtual time](#virtual-time) for a scenario
+that asks for it. Its parts are remote, so the per-transport
 expectations are the remote ones, and every catalog scenario passes as it does in the in-memory harness. Its `gateway`
 call reaches the runtime's gateway over HTTP, as a part with its token, a browser signed in by a trusted loopback page,
 a stranger or a caller with neither, and its `dispatch` sends a device's command through the core's dispatcher on the
@@ -138,6 +139,48 @@ naming what did not come back. A reader that the scenario disconnected or closed
 step's page shows the runtime's health document. The step loads it at its start and again at its end, so `after.png`
 shows health as the step left it. The run's origin also serves the [dashboard](../dashboard/README.md) (#922); the steps'
 page moves to it in #922's third slice.
+
+## Virtual time
+
+A catalog scenario can ask for its disposable run to be on virtual time (`runClock: 'virtual'` in the scenario, #1710).
+Today `shared-inbox-history` and `art-show` do; every other run, and every `shipped` run, is on the real clock. The seed
+writes `"clock": "virtual"` into the run file, and the supervisor then owns the run's time:
+
+- It starts at the real time when the run starts. The simulated devices run on its manual clock, and each runtime child
+  starts at the run's current virtual time and runs on a manual clock of its own, passed to `runMain` as its test clock
+  (#1709). The fixture core gets the same clock's monotonic reading.
+- Time moves only when the harness API asks. `GET /api/harness/v1/clock` answers `{"clock": "virtual", "nowMs",
+  "nextDueMs", "busy"}`: the run's time, when the next timer of its devices or runtime is due (`null` with none), and
+  whether work is still in flight. `POST /api/harness/v1/clock/advance` with `{"ms": n}`, a whole number from 0 to
+  3 600 000, moves it and answers the same once the advance is settled. Any other body is a 400 with `invalid-request`.
+  A run on the real clock, or a `shipped` run, answers both with 409 and `invalid-state`. The runtime's gateway serves no
+  clock route.
+- An advance moves in the in-memory harness's steps (`tests/scenarios/stepping.ts`), each stopping at the earliest timer
+  due in the devices or the runtime. Each step moves the devices' clock, then the child's: the child waits for its
+  modules' worker calls (at most 10 s real each), moves its clock, gives real work its turn (`tests/scenarios/real-work.ts`)
+  and answers on its IPC channel with its next due time, whether it is busy, and how many stderr lines it has written. The
+  supervisor answers once its journal has read those lines. An advance of `0` is a settle: everything the runtime did
+  since is in the state the harness reports next.
+- A restart's `holdMs` moves virtual time by the hold, without waiting in real time.
+
+The run adapter learns the clock from `GET /clock`. On virtual time its `now()` is virtual, its parts run on a manual
+clock that stamps their messages, and `wait(ms)` advances the run, split at the parts' own timers. A wait passes without a
+call to the run while nothing can change: the last advance found nothing in flight, the refresh after it changed nothing
+the scenario reads, no call waits for an answer, no part is reconnecting and no timer is due before the wait ends. The run
+gets that time before anything else reaches it: an action, a gateway call, health, a hook or a call on a part. Waiting
+for the reader's resync after a restart always advances the run. A hook against a stopped runtime is refused on virtual
+time, because the supervisor's hold is then virtual.
+
+Timers that guard real I/O stay real: the edge's heartbeat and stall, a part's idle limit, the lag watchdog, launcher
+probes, device and media I/O deadlines and the supervisor's own answer bounds. Process starts, the browser and video are
+real by nature. A capture's `scenario-result.json` records `"clock": "virtual"` or `"real"`, so no proof reads as real-time
+evidence when it is not. To drive a virtual run by hand:
+
+```bash
+npm run -s verify:runtime -- start --scenario shared-inbox-history
+curl -s "<harness endpoint>api/harness/v1/clock"
+curl -s -X POST -H 'content-type: application/json' -d '{"ms":61000}' "<harness endpoint>api/harness/v1/clock/advance"
+```
 
 ## Follow one request
 

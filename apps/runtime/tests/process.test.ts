@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import {spawn, type ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
+import {existsSync} from 'node:fs';
 import {randomBytes} from 'node:crypto';
 import {access, chmod, mkdir, readFile, stat, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
@@ -28,10 +29,13 @@ type Launched = Spawned & {url: string};
 
 /**
  * Starts a runtime process. It is killed after the test if it is still running. With `ipc`, it has an IPC channel, as a
- * verification supervisor's child does; the service manager and the container start it without one.
+ * verification supervisor's child does; the service manager and the container start it without one. With `home`, the
+ * process gets that home, under which its default state directory lies.
  */
-function spawnRuntime(context: TestContext, script: string, args: readonly string[], {ipc = false}: {ipc?: boolean} = {}): Spawned {
-  const child = spawn(process.execPath, [script, ...args], {stdio: ipc ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe']});
+function spawnRuntime(context: TestContext, script: string, args: readonly string[], {ipc = false, home}: {ipc?: boolean; home?: string} = {}): Spawned {
+  const child = spawn(process.execPath, [script, ...args], {
+    stdio: ipc ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'], ...(home === undefined ? {} : {env: {...process.env, HOME: home}}),
+  });
   const exited = once(child, 'exit').then(([code, signal]) => ({code: code as number | null, signal: signal as NodeJS.Signals | null}));
   context.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
   let stderr = '';
@@ -606,11 +610,11 @@ it('the installed entry points construct and pass no clock, scheduler or monoton
 });
 
 /** The `test-clock` fixture's arguments for a simulated test run with an edge, less the one condition `leave` names. */
-async function testClockArguments(context: TestContext, leave?: '--simulate' | '--edge' | 'test'): Promise<string[]> {
+async function testClockArguments(context: TestContext, leave?: '--simulate' | '--edge' | 'test' | '--state-dir'): Promise<string[]> {
   const {config} = await edgeConfig(context, []);
   return [
-    '--port', '0', '--state-dir', await stateDir(context), '--config', config, '--environment', leave === 'test' ? 'production' : 'test',
-    ...(leave === '--simulate' ? [] : ['--simulate']), ...(leave === '--edge' ? [] : ['--edge']),
+    '--port', '0', ...(leave === '--state-dir' ? [] : ['--state-dir', await stateDir(context)]), '--config', config,
+    '--environment', leave === 'test' ? 'production' : 'test', ...(leave === '--simulate' ? [] : ['--simulate']), ...(leave === '--edge' ? [] : ['--edge']),
   ];
 }
 
@@ -619,9 +623,13 @@ for (const [name, leave, ipc, text] of [
   ['no --simulate', '--simulate', true, 'a test clock needs --simulate'],
   ['no --edge', '--edge', true, 'a test clock needs --edge'],
   ['no IPC channel', undefined, false, 'a test clock needs an IPC channel'],
+  // Hub #1710: an IPC channel alone does not prove the verification supervisor, so the default state directory is refused.
+  ['the default state directory', '--state-dir', true, 'a test clock needs a --state-dir of its own'],
 ] as const) {
   it(`a test clock with ${name} exits 1 with one runtime.failed record, before any module starts or any port is bound`, async context => {
-    const runtime = spawnRuntime(context, FIXTURE, ['test-clock', ...await testClockArguments(context, leave)], {ipc});
+    // The process's home is a private directory, so its default state directory is never the one of this host's user.
+    const home = await stateDir(context);
+    const runtime = spawnRuntime(context, FIXTURE, ['test-clock', ...await testClockArguments(context, leave)], {ipc, home});
     assert.deepEqual(await exitOf(runtime, START_BOUND_MS, 'the refusal'), {code: 1, signal: null});
     // The only record is the refusal: no runtime.started, which comes once the listener is bound, and no module record.
     assert.deepEqual(runtime.records().map(record => record.event_name), ['runtime.failed']);
@@ -632,6 +640,7 @@ for (const [name, leave, ipc, text] of [
     assert.ok(typeof stack === 'string' && stack.startsWith('RuntimeError: '));
     assert.equal(redacted, 0);
     assert.equal(runtime.stdout(), '', 'no ready line');
+    assert.equal(existsSync(join(home, '.local')), false, 'nothing is created under the default state directory');
   });
 }
 
