@@ -175,14 +175,14 @@ Returning to the previous release on a store this release opened works from
 the code and focused tests: that release ignores `core_history_span`, starts,
 and writes `core_history_latest` and a row for each changed reading as before,
 in the same gapless order. Coming forward again, this release resets an
-entity's span to an unknown start when the previous release wrote a row for
-that entity at a different revision from the span's row, and keeps counting
-from there. It does not detect a row the previous release wrote at the revision
+entity's span to an unknown start when the previous release took a reading of
+that entity at a revision other than the span's row, and keeps counting from
+there; it keeps the span of an entity that release took no reading of. It does not detect a row the previous release wrote at the revision
 of the entity's last row when no reading with a higher revision reached that
 release, which needs a publisher that republishes one revision with a different
-value. In that case two stored values are wrong, `span.sinceAtMs` and
-`span.confirmations`, in the first change, gap or closing row this release
-writes for that entity afterwards: the start falls before the previous
+value. In that case, when the first change, gap or closing row this release
+writes for that entity afterwards carries a `span` member, two stored values in
+it are wrong, `span.sinceAtMs` and `span.confirmations`: the start falls before the previous
 release's row and the count leaves out its readings. That row's revision,
 previous revision and changed members are right, so every record rebuilt from
 rows is right and the order stays gapless; the span member stays wrong because

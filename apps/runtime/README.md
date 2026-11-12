@@ -421,12 +421,14 @@ and exits 1, and the service manager restarts it whole.
   and count in `span`, so it claims nothing newer than the values it holds. A
   span row keeps the revision of the last row it was written against
   (`row_revision`); when `core_history_latest` holds another revision, a release
-  without spans wrote a row for that entity, and the span restarts from an
-  unknown start (`sinceAtMs` null). It is not detected when that release
-  wrote a row at the revision of the entity's last row and no higher revision
-  reached it, which needs a publisher that republishes one revision with
-  another value; then the next row's `span` start and count are wrong, and
-  everything rebuilt from rows is right. A state reusing the last confirmation's
+  without spans took a reading of that entity at a revision other than the
+  span's row, and the span restarts from an unknown start (`sinceAtMs` null);
+  a span of an entity that release took no reading of is kept. It is not
+  detected when that release wrote a row at the revision of the entity's last
+  row and no higher revision reached it, which needs a publisher that
+  republishes one revision with another value; then the next row's `span`
+  start and count are wrong when that row carries a `span`, and everything
+  rebuilt from rows is right. A state reusing the last confirmation's
   message ID with another state is a change, not a resend. A count is of
   readings history took, not of readings a device answered, and history no
   longer keeps each repeated reading's time. `core_history_latest` keeps its

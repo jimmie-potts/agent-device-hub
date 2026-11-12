@@ -296,7 +296,7 @@ export class History {
    * or, when a release without spans wrote `core_history_latest` since, as a previous release run on this store does,
    * a span reset to an unknown start with no confirmation yet. The span row keeps the revision of the entity's last row
    * it was written against (`row_revision`); this release moves `core_history_latest` only with the span, so a
-   * different revision there means another release wrote a row for the entity.
+   * different revision there means another release took a reading of the entity at a revision other than the span's row.
    */
   #span(source: string, family: string, id: string, lastRow: number): SpanRow {
     const stored = this.#statements.span.get(source, family, id) as SpanRow | undefined;
