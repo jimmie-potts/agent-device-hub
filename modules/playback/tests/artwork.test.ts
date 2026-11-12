@@ -135,6 +135,27 @@ void test('a replacement that fails withdraws the held image after its attempts;
   assert.equal(run.changes(), 6);
 });
 
+for (const failure of ['immediate', 'deadline'] as const) {
+  void test(`a held image under a failing ${failure} replacement ends at missing after the third attempt, never later (#1758)`, async () => {
+    // Same association, new reference: the held image stays only for the bounded attempts. Immediate transient failures
+    // end at 0 + 2 s + 4 s; fetches that hang to their 2 s deadline end at 2 + 2 + 2 + 4 + 2 = 12 s.
+    let failing = false;
+    const run = setup(imageOf, () => failing ? (failure === 'immediate' ? Promise.resolve(artworkFailure('unavailable', true)) : new Promise(() => {}))
+      : Promise.resolve({ok: true, value: new Uint8Array([1])}));
+    run.controller.update(run.view()); await flush();
+    const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
+    failing = true;
+    run.controller.update(run.view({observation: {status: 'playing', title: 'A', thumbnailUrl: `${ENDPOINT}/second`}})); await flush();
+    const end = failure === 'immediate' ? 6000 : 12_000;
+    await run.advance(end - 1);
+    assert.deepEqual(run.controller.snapshot(), ready);
+    await run.advance(1);
+    assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation});
+    assert.equal(run.changes(), 2);
+    await run.advance(30_000); assert.equal(run.fetches(), 4, 'no fourth attempt');
+  });
+}
+
 void test('a change of track publishes missing then ready with the new image, and never the earlier one (#1758)', async () => {
   const run = setup(imageOf, (candidate) => Promise.resolve({ok: true, value: new Uint8Array([candidate.endsWith('/b') ? 2 : 1])}));
   run.controller.update(run.view()); await flush();
