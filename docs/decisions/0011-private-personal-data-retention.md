@@ -187,7 +187,7 @@ recommendations:
 - an art idea the owner types: may be sent;
 - a device's name as the owner labelled it: may be sent.
 
-The decision maker's decision:
+The decision for B.U.N.N.Y.'s decision maker, with those cases included:
 
 - **Destination and purpose.** The classes below may be sent to OpenAI's
   Decisions endpoint as input to a decision by B.U.N.N.Y.'s decision maker.
