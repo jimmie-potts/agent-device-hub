@@ -104,64 +104,144 @@ void test('an absent or refused reference still reports missing for the same tra
   assert.equal(run.fetches(), 2);
 });
 
-void test('a replacement that fails withdraws the held image after its attempts; a different image replaces it once acquired (#1758)', async () => {
-  let failure: ArtworkResult<Uint8Array> | undefined;
-  const run = setup(imageOf, (candidate) => Promise.resolve(failure ?? {ok: true, value: new Uint8Array([candidate.endsWith('/other') ? 2 : 1])}));
-  run.controller.update(run.view()); await flush();
-  const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
-  // Transient failures keep the held image through the 2 s and 4 s retries, and the last one withdraws it.
-  failure = artworkFailure('unavailable', true);
-  run.controller.update(run.view({observation: {status: 'playing', title: 'A', thumbnailUrl: `${ENDPOINT}/second`}})); await flush();
-  assert.deepEqual(run.controller.snapshot(), ready);
-  await run.advance(2000); assert.deepEqual(run.controller.snapshot(), ready);
-  await run.advance(4000);
-  assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation}); assert.equal(run.changes(), 2);
-  failure = undefined;
-  run.controller.update(run.view()); await flush();
-  assert.deepEqual(run.controller.snapshot(), ready); assert.equal(run.changes(), 3);
-  // A refusal withdraws it at once.
-  failure = artworkFailure('capacity');
-  run.controller.update(run.view({observation: {status: 'playing', title: 'A', thumbnailUrl: `${ENDPOINT}/third`}})); await flush();
-  assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation}); assert.equal(run.changes(), 4);
-  failure = undefined;
-  run.controller.update(run.view()); await flush();
-  assert.deepEqual(run.controller.snapshot(), ready); assert.equal(run.changes(), 5);
-  run.controller.update(run.view({observation: {status: 'playing', title: 'A', thumbnailUrl: `${ENDPOINT}/other`}}));
-  assert.deepEqual(run.controller.snapshot(), ready, 'nothing is shown for a form before it is acquired');
-  await flush();
-  const replaced = run.controller.snapshot();
-  assert.equal(replaced?.status, 'ready'); assert.equal(replaced?.generation, ready?.generation);
-  assert.notEqual(replaced?.status === 'ready' ? replaced.base64 : undefined, ready?.status === 'ready' ? ready.base64 : undefined);
-  assert.equal(run.changes(), 6);
-});
+// The invariant these tests pin (#1758): a ready image that the current reference has not confirmed is withdrawn to
+// `missing` at the end of the first attempt for the first changed reference, under 4 s (the 2 s fetch and 2 s decode
+// deadlines), or at once when another, absent or refused reference arrives first; it stays only when that attempt
+// yields an equal image.
+const ok = (marker = 1): ArtworkResult<Uint8Array> => ({ok: true, value: new Uint8Array([marker])});
+const changed = (reference: string): Partial<ArtworkPresentation> =>
+  ({observation: {status: 'playing', title: 'A', thumbnailUrl: `${ENDPOINT}/${reference}`}});
 
-for (const failure of ['immediate', 'deadline', 'longest'] as const) {
-  void test(`a held image under a failing ${failure} replacement ends at missing after the third attempt, never later (#1758)`, async () => {
-    // Same association, new reference: the held image stays only for the bounded attempts. Immediate transient failures
-    // end at 0 + 2 s + 4 s; fetches that hang to their 2 s deadline end at 2 + 2 + 2 + 4 + 2 = 12 s. The longest case is a
-    // fetch that answers 1 ms inside its 2 s deadline and a decode that hangs to its own 2 s deadline: three attempts of
-    // 3.999 s plus the 2 s and 4 s waits end at 17.997 s.
+for (const failure of ['immediate', 'refused', 'deadline', 'longest'] as const) {
+  void test(`a held image is withdrawn when the first attempt of a ${failure} replacement fails, never later (#1758)`, async () => {
+    // Immediate transient failures and refusals end the attempt at once; a fetch that hangs ends at its 2 s deadline; the
+    // longest attempt is a fetch that answers 1 ms inside its deadline and a decode that hangs to its own: 3.999 s.
     let failing = false;
-    const ok = (): ArtworkResult<Uint8Array> => ({ok: true, value: new Uint8Array([1])});
     const run = setup(bytes => failing && failure === 'longest' ? new Promise(() => {}) : imageOf(bytes), () => {
       if (!failing) return Promise.resolve(ok());
       if (failure === 'immediate') return Promise.resolve(artworkFailure('unavailable', true));
+      if (failure === 'refused') return Promise.resolve(artworkFailure('capacity'));
       if (failure === 'deadline') return new Promise(() => {});
       return new Promise(resolve => { run.after(1999, () => { resolve(ok()); }); });
     });
     run.controller.update(run.view()); await flush();
     const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
     failing = true;
-    run.controller.update(run.view({observation: {status: 'playing', title: 'A', thumbnailUrl: `${ENDPOINT}/second`}})); await flush();
-    const end = failure === 'immediate' ? 6000 : failure === 'deadline' ? 12_000 : 17_997;
-    await run.advance(end - 1);
-    assert.deepEqual(run.controller.snapshot(), ready);
-    await run.advance(1);
+    run.controller.update(run.view(changed('second')));
+    assert.deepEqual(run.controller.snapshot(), ready, 'held while its first attempt runs');
+    await flush();
+    const end = failure === 'deadline' ? 2000 : failure === 'longest' ? 3999 : 0;
+    if (end > 0) {
+      await run.advance(end - 1); assert.deepEqual(run.controller.snapshot(), ready);
+      await run.advance(1);
+    }
     assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation});
     assert.equal(run.changes(), 2);
-    await run.advance(30_000); assert.equal(run.fetches(), 4, 'no fourth attempt');
+    // Later attempts run from `missing`, as on main, and stay within the three-attempt limit.
+    await run.advance(30_000);
+    assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation});
+    assert.equal(run.fetches(), failure === 'refused' ? 2 : 4); assert.equal(run.changes(), 2);
   });
 }
+
+for (const failure of ['immediate', 'deadline'] as const) {
+  void test(`a reference that changes on every poll while ${failure} fetches fail withdraws the image and holds it no longer (#1758)`, async () => {
+    // The reviewer's exercise: a new reference every 2 s poll for 120 s while every fetch fails.
+    let failing = false;
+    const run = setup(imageOf, () => !failing ? Promise.resolve(ok())
+      : failure === 'immediate' ? Promise.resolve(artworkFailure('unavailable', true)) : new Promise(() => {}));
+    run.controller.update(run.view()); await flush();
+    const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
+    failing = true;
+    for (let poll = 1; poll <= 60; poll++) {
+      run.controller.update(run.view(changed(`clock-${poll}`)));
+      if (poll > 1) assert.notEqual(run.controller.snapshot()?.status, 'ready', `poll ${poll} at ${(poll - 1) * 2000} ms`);
+      await run.advance(2000);
+      assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation}, `after poll ${poll}`);
+    }
+    assert.equal(run.changes(), 2, 'withdrawn once, no flapping');
+  });
+}
+
+void test('a reference that changes on every poll with fetches slower than the poll shows missing once, then ready once it settles (#1758)', async () => {
+  // Each successful acquisition takes 3 s (a 1.5 s fetch and a 1.5 s decode, each inside its deadline), longer than the
+  // 2 s poll, so every replacement is superseded before it confirms.
+  const run = setup(bytes => new Promise(resolve => { run.after(1500, () => { resolve(imageOf(bytes)); }); }),
+    () => new Promise(resolve => { run.after(1500, () => { resolve(ok()); }); }));
+  run.controller.update(run.view()); await flush(); await run.advance(3000);
+  const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
+  run.controller.update(run.view(changed('clock-1'))); await flush();
+  assert.deepEqual(run.controller.snapshot(), ready, 'held while the first replacement is acquired');
+  await run.advance(2000);
+  assert.deepEqual(run.controller.snapshot(), ready, 'still held, not yet superseded');
+  for (let poll = 2; poll <= 30; poll++) {
+    run.controller.update(run.view(changed(`clock-${poll}`)));
+    assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation}, `poll ${poll}`);
+    await flush(); await run.advance(2000);
+    assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation});
+  }
+  assert.equal(run.changes(), 1, 'a superseded withdrawal is synchronous and stale completions publish nothing');
+  // When the reference settles, its acquisition confirms the same image once.
+  await run.advance(10_000);
+  assert.deepEqual(run.controller.snapshot(), ready); assert.equal(run.changes(), 2);
+});
+
+void test('the measured 2026-11-08 sequence publishes nothing: a new reference every 1.94 s, each confirmed 70 ms later (#1758)', async () => {
+  const run = setup(imageOf, () => new Promise(resolve => { run.after(70, () => { resolve(ok()); }); }));
+  run.controller.update(run.view()); await flush(); await run.advance(70);
+  const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
+  for (let poll = 1; poll <= 60; poll++) {
+    run.controller.update(run.view(changed(`clock-${poll}`)));
+    assert.deepEqual(run.controller.snapshot(), ready);
+    await flush(); await run.advance(1940);
+    assert.deepEqual(run.controller.snapshot(), ready);
+  }
+  assert.equal(run.changes(), 1); assert.equal(run.fetches(), 61);
+});
+
+void test('a reference that supersedes an unconfirmed replacement withdraws the image at once, and its own success restores it (#1758)', async () => {
+  let hang = false;
+  const run = setup(imageOf, () => hang ? new Promise(() => {}) : Promise.resolve(ok()));
+  run.controller.update(run.view()); await flush();
+  const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
+  hang = true;
+  run.controller.update(run.view(changed('second'))); await flush();
+  assert.deepEqual(run.controller.snapshot(), ready);
+  hang = false;
+  run.controller.update(run.view(changed('third')));
+  assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation});
+  // The hanging attempt ends at its deadline; the newest reference is acquired next.
+  await run.advance(2000);
+  assert.deepEqual(run.controller.snapshot(), ready); assert.equal(run.changes(), 2);
+});
+
+void test('a stale completion after a withdrawal cannot restore or replace the image (#1758)', async () => {
+  let decodes = 0;
+  let release: ((value: ArtworkResult<ArtworkThumbnail>) => void) | undefined;
+  const run = setup(bytes => ++decodes === 2 ? new Promise(resolve => { release = resolve; }) : imageOf(bytes),
+    candidate => Promise.resolve(ok(candidate.endsWith('/second') ? 2 : 1)));
+  run.controller.update(run.view()); await flush();
+  const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
+  run.controller.update(run.view(changed('second'))); await flush();
+  assert.ok(release);
+  run.controller.update(run.view(changed('third')));
+  assert.deepEqual(run.controller.snapshot(), {status: 'missing', generation: ready?.generation});
+  release({ok: true, value: {...thumbnail, base64: 'c3ludGhldGljIGI='}}); await flush();
+  assert.deepEqual(run.controller.snapshot(), ready, 'only the current reference completed, with its own image');
+  assert.equal(run.changes(), 2);
+});
+
+void test('a replacement that yields a different image replaces the held one in the same generation (#1758)', async () => {
+  const run = setup(imageOf, candidate => Promise.resolve(ok(candidate.endsWith('/other') ? 2 : 1)));
+  run.controller.update(run.view()); await flush();
+  const ready = run.controller.snapshot(); assert.equal(ready?.status, 'ready');
+  run.controller.update(run.view(changed('other')));
+  assert.deepEqual(run.controller.snapshot(), ready, 'nothing is shown for a reference before it is acquired');
+  await flush();
+  const replaced = run.controller.snapshot();
+  assert.equal(replaced?.status === 'ready' ? replaced.base64 : undefined, 'c3ludGhldGljIGI=');
+  assert.equal(replaced?.generation, ready?.generation); assert.equal(run.changes(), 2);
+});
 
 void test('a change of track publishes missing then ready with the new image, and never the earlier one (#1758)', async () => {
   const run = setup(imageOf, (candidate) => Promise.resolve({ok: true, value: new Uint8Array([candidate.endsWith('/b') ? 2 : 1])}));
