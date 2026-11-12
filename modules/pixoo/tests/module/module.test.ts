@@ -27,7 +27,7 @@ import {HOSTED_PROFILE} from '../../src/module/configuration.js';
 import {FAMILIES, type DisplayRecord, type PlaylistRecord, type RenditionRecord} from '../../src/module/schemas.js';
 import {COALESCE_MS, TICK_MS} from '../../src/module/module.js';
 import {frameDigest} from '../../src/module/transport.js';
-import {DEVICE, FAST, ManualClock, SECTION, SESSION_ID, World, bytesOf, declaredPng, hostedGif, manyColorGif, playbackRecord, playbackState, sleep, waitFor} from './support.js';
+import {DEVICE, FAST, ManualClock, SECTION, SESSION_ID, World, bytesOf, declaredPng, hostedGif, manyColorGif, playbackRecord, playbackState, waitFor} from './support.js';
 
 const FAILING_WORKER = new URL('./fixtures/failing-render-worker.js', import.meta.url);
 const HEAP_WORKER = new URL('./fixtures/heap-worker.js', import.meta.url);
@@ -1123,9 +1123,13 @@ void describe('commands and the catalog', () => {
         assert.equal((await world.outcome(edit)).data.result, 'succeeded');
         await world.restart();
         await waitFor(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the restarted device');
-        await sleep(300);
+        // A sync of the catalog waits for the new instance's first read of it, and the frame check after that read starts
+        // in the same step and reaches the frame store through promise continuations only: once the sync has answered,
+        // one turn of the event loop holds any read the restart would make.
+        const restarted = await world.synced<RenditionRecord>(FAMILIES.rendition);
+        await new Promise(resolve => { setImmediate(resolve); });
         assert.equal(reads.count() - before, count + 1, 'no frames read for the edit or the restart');
-        assert.deepEqual((await world.synced<RenditionRecord>(FAMILIES.rendition)).filter(item => !item.compatible).map(item => item.name), ['Too many colors'],
+        assert.deepEqual(restarted.filter(item => !item.compatible).map(item => item.name), ['Too many colors'],
           'the kept check survives the restart');
         // A new hosted clip's frames are checked once, at its import, before its outcome.
         const imported = await accepted(asset(world, {operation: 'import', name: 'New clip', content: {inline: hostedGif(99, 20).toString('base64')}}));
