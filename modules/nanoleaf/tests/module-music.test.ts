@@ -244,7 +244,9 @@ test('the wall record shows the last read selection, whether it is saved and whe
   assert.equal(lastDetail, 'live Music starts only on a light that is on; the light is off, showing *Solid*');
   assert.equal(lines(world)?.writes, before, 'a refused Start writes nothing');
   await world.advance(100);
-  assert.deepEqual(world.wall()?.selection, {saved: false, sceneId: null, placeholder: '*Solid*', restores: 'color', readAtMs: world.wall()?.selection?.readAtMs});
+  // #1777 diagnostic: the Start's own `/state` read shows the colour state with the selection, on the Lines as on the Panels.
+  assert.deepEqual(world.wall()?.selection, {saved: false, sceneId: null, placeholder: '*Solid*', restores: 'color', readAtMs: world.wall()?.selection?.readAtMs,
+    colorMode: 'hs', hue: 10, sat: 90, ct: 4000});
   // A saved scene shows as its opaque ID.
   world.device.setPower(LINES_ADDRESS, true);
   world.device.chooseScene(LINES_ADDRESS, 'Beach Waves');
@@ -252,7 +254,8 @@ test('the wall record shows the last read selection, whether it is saved and whe
   assert.deepEqual(await start(session, 'off-scene', generation(3)), {status: 'rejected', code: 'invalid-state'});
   assert.equal(lastDetail, `live Music starts only on a light that is on; the light is off, showing saved scene ${sceneId}`);
   await world.advance(100);
-  assert.deepEqual(world.wall()?.selection, {saved: true, sceneId, placeholder: null, restores: 'scene', readAtMs: world.wall()?.selection?.readAtMs});
+  assert.deepEqual(world.wall()?.selection, {saved: true, sceneId, placeholder: null, restores: 'scene', readAtMs: world.wall()?.selection?.readAtMs,
+    colorMode: 'effect', hue: 10, sat: 90, ct: 4000});
   world.verify();
 });
 
@@ -298,9 +301,11 @@ test('an NL22 session streams version 1 to the Panels only, and a Lines session 
   const panels = panelsOf(world);
   assert.deepEqual({select: panels?.select, streaming: panels?.streaming}, {select: '*Dynamic*', streaming: {version: 'v1', port: 60221}});
   assert.ok((panels?.streamed ?? 0) >= 30 && panels?.ignored === 0, `${panels?.streamed} applied, ${panels?.ignored} ignored`);
-  const panelsRecord = world.state<{selection?: {placeholder: unknown; restores: unknown} | null}>('nanoleaf-wall', 'nl22')?.selection;
-  assert.deepEqual({placeholder: panelsRecord?.placeholder, restores: panelsRecord?.restores}, {placeholder: '*Dynamic*', restores: 'nothing'},
-    'the Panels\' record shows what they report while streaming');
+  const panelsRecord = world.state<{selection?: Record<string, unknown> | null}>('nanoleaf-wall', 'nl22')?.selection;
+  const {placeholder, restores, colorMode, hue, sat, ct} = panelsRecord ?? {};
+  assert.deepEqual({placeholder, restores}, {placeholder: '*Dynamic*', restores: 'nothing'}, 'the Panels\' record shows what they report while streaming');
+  // #1777 diagnostic: the playing check's own `/state` read, as the simulated Panels answer it while streaming.
+  assert.deepEqual({colorMode, hue, sat, ct}, {colorMode: 'effect', hue: 0, sat: 0, ct: 4000}, 'the record shows the colour state the check read');
   assert.deepEqual(Object.keys(panels?.frame ?? {}).sort(), ['200', '201', '202', '203'], 'every triangle by its panel ID');
   assert.equal(panels?.tooSoon, 0, 'no datagram less than 100 ms after the last, on the module\'s clock');
   assert.deepEqual({writes: lines(world)?.writes, streamed: lines(world)?.streamed, ignored: lines(world)?.ignored}, linesBefore, 'the Lines are untouched');

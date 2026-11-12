@@ -36,7 +36,7 @@ import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, ty
 import {changeMode} from '../modes.js';
 import {Metadata} from '../project-map.js';
 import {admitMoment, initMoments, momentRevision, readFreeBase, type FreeBase} from '../moments.js';
-import {readMusicBase} from '../music-base.js';
+import {colorStateOf, readMusicBase} from '../music-base.js';
 import {saveSelection} from '../music-store.js';
 import type {LightingWork} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import {admitMusicStart, admitMusicStop, checkMusicStart, endMusicAtStart, MusicFeeds, musicDeviceState, MUSIC_STOP} from '../music-session.js';
@@ -939,16 +939,23 @@ export class NanoleafRuntime {
     // The read of the current selection and state is the work command's first device call, as a moment's is (Hub #813).
     const call = this.#context.trace.start('bunny.device.call', {parent: command, kind: 'client',
       attributes: {'bunny.device.id': device, 'bunny.operation': 'snapshot', 'bunny.request.id': requestId}});
+    // The `/state` answer the base read already gets, kept for the record's colour state (#1777): no request is added.
+    let stateAnswer: {value: unknown} | undefined;
     try {
-      read = await readMusicBase(endpoint => link.request({ip: '', token: ''}, 'GET', endpoint));
+      read = await readMusicBase(async endpoint => {
+        const answer = await link.request({ip: '', token: ''}, 'GET', endpoint);
+        if (endpoint === '/state') stateAnswer = {value: answer};
+        return answer;
+      });
       call.end();
     } catch {
       call.end('error');
       return errorBody('unavailable', {requestId, detail: 'the light did not answer the read of its current selection'});
     }
     const {observed} = read;
+    const color = stateAnswer === undefined ? undefined : colorStateOf(stateAnswer.value);
     if (observed !== undefined) {
-      await this.#transact(report => { saveSelection(this.#db, device, observed, clock.now(), report); }).catch(() => {
+      await this.#transact(report => { saveSelection(this.#db, device, observed, clock.now(), report, color); }).catch(() => {
         // The store refused: the record keeps the earlier selection, and an admission below fails on the same store.
       });
     }

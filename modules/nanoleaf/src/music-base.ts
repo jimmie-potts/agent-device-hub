@@ -67,6 +67,23 @@ export function sameColorOf(state: unknown, color: MusicColor): boolean {
     : 'hue' in now && now.hue === color.hue && now.sat === color.sat);
 }
 
+/**
+ * What one `/state` read showed of the light's colour, kept with the selection read beside it for the light's record
+ * (#1777): its own colour mode, or null when it reports none or one that is not a short plain word, and each whole hue
+ * (0 to 360), saturation (0 to 100) and colour temperature (0 to 65535) it reports. A diagnostic for the installed check
+ * only: no session ends, starts or restores on it.
+ */
+export type ColorState = {colorMode: string | null; hue?: number; sat?: number; ct?: number};
+const COLOR_MODE = /^[A-Za-z0-9_-]{1,16}$/;
+export function colorStateOf(state: unknown): ColorState {
+  if (!isObject(state)) return {colorMode: null};
+  const whole = (field: unknown, high: number): number | undefined => isObject(field) && typeof field.value === 'number' &&
+    Number.isInteger(field.value) && field.value >= 0 && field.value <= high ? field.value : undefined;
+  const hue = whole(state.hue, 360), sat = whole(state.sat, 100), ct = whole(state.ct, 0xffff);
+  return {colorMode: typeof state.colorMode === 'string' && COLOR_MODE.test(state.colorMode) ? state.colorMode : null,
+    ...(hue === undefined ? {} : {hue}), ...(sat === undefined ? {} : {sat}), ...(ct === undefined ? {} : {ct})};
+}
+
 /** Why a Start cannot take the base it read: the light is off, or it reported no selection or brightness. */
 export type BaseRefusal = 'off' | 'unreadable';
 /**

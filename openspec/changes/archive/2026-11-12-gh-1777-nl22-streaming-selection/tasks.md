@@ -15,4 +15,11 @@
 
 - [x] 4.1 Update the Nanoleaf README (base, streaming entry, app takeover, restoration, Known limits) and the Audio card's `*Dynamic*` and manual-change text with its unit test. Make the Music lighting journey assert `*Dynamic*` and play past the first check.
 - [x] 4.2 Run build, typecheck, lint, the Nanoleaf, runtime dashboard, runtime Music lighting and Nanoleaf checks, the scenario catalog, OpenSpec validation, the workflow checks and the Music lighting journey twice, and record the results.
-- [x] 4.3 Sync and archive this change on the delivery branch. Independent review, a focused device-command safety review and the installed NL22 check under owner-approved terms follow outside this change.
+- [x] 4.3 Sync and archive this change on the delivery branch. (Fix round 1 below updated the archived copy and the main specs together.)
+
+## 5. Review fix round 1
+
+- [x] 5.1 Describe the limit as anything that leaves the NL22 reporting `*Dynamic*` with brightness and power unchanged: an app dynamic effect, a temporary display from the app or an integration, and another external-control client. Mark the evidence that datagrams are ignored after an app pick as observed on the Lines only, state what happens if the NL22 keeps applying them, and add that question as an installed-check step. Verify by readback of the README, both spec copies, the design and the Audio card text and test.
+- [x] 5.2 Correct the scene-restorer note (endings that leave the last frame, the mode-command pass, the fallback colour, the Lines' `*ExtControl*` exemption) and the unnamed-base entry window. List the owner's five options once, alike in the README, design D2 and the PR text. Verify by readback.
+- [x] 5.3 Name the limit on the shared ending paths with tests: a colour base ending by Stop, and a scene base ending by an alert and by source loss. Verify that they pass with no behaviour change.
+- [x] 5.4 Write failing tests for the colour-state diagnostic (parse, store with its once-a-minute rule, playing check, Start read, record on both lights, unchanged reads and outcomes), then keep the `/state` read's colour state with the selection in `nanoleaf_selection_colors` and publish it as optional `selection` fields. Verify with the session and module tests and the schema check in the module tests. Independent review, a focused device-command safety review and the installed NL22 check under owner-approved terms follow outside this change.

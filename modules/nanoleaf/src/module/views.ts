@@ -19,7 +19,7 @@ import {geometry, triangleGeometry, type Point} from '../geometry.js';
 import {ANIMATION, journal, type HeldOperation} from '../journal.js';
 import {fallbackTitle, owners, palette, pending, settings, taskProjects} from '../project-map.js';
 import {evictionToken, presented, selected, state as sharedState, visibleTasks, type SharedCopy} from '../shared-input.js';
-import {PLACEHOLDERS, type Restores, type SelectionRead} from '../music-base.js';
+import {PLACEHOLDERS, type ColorState, type Restores, type SelectionRead} from '../music-base.js';
 import {lastSelection, sessionBase} from '../music-store.js';
 import {first, rows, type Db, type SqlValue} from '../sqlite.js';
 import {controlState, overrides} from '../store.js';
@@ -272,11 +272,16 @@ function shown(db: Db, device: string, read: SelectionRead): {sceneId: string | 
   return {sceneId: read.saved ? sceneList(db, device).find(scene => scene.name === read.selection)?.id ?? null : null,
     placeholder: (PLACEHOLDERS as readonly string[]).includes(read.selection) ? read.selection : null};
 }
-export type SelectionView = {saved: boolean; sceneId: string | null; placeholder: string | null; restores: Restores; readAtMs: number};
-/** The light's last read selection, whether it is saved on the light, what an ending would put back and when it was read. */
+export type SelectionView = {saved: boolean; sceneId: string | null; placeholder: string | null; restores: Restores; readAtMs: number} &
+  Partial<ColorState>;
+/**
+ * The light's last read selection, whether it is saved on the light, what an ending would put back and when it was read,
+ * and, when a `/state` read came with it, the light's colour mode and whole hue, saturation and colour temperature
+ * (#1777): a diagnostic for the installed check, which nothing in the module decides on.
+ */
 export function selectionView(db: Db, device: string): SelectionView | null {
   const read = lastSelection(db, device);
-  return read === undefined ? null : {saved: read.saved, ...shown(db, device, read), restores: read.restores, readAtMs: read.readAtMs};
+  return read === undefined ? null : {saved: read.saved, ...shown(db, device, read), restores: read.restores, readAtMs: read.readAtMs, ...read.color};
 }
 /** A read selection in a refusal's words, with no owner's name: `saved scene scene-…`, a placeholder, or an unsaved selection. */
 export function selectionText(db: Db, device: string, read: SelectionRead): string {

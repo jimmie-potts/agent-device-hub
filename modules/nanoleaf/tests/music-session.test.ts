@@ -11,7 +11,7 @@ import {elementId, metaKey, type LayoutEntry} from '../src/devices.js';
 import type {MusicRecipeV1} from '../src/music-effects.js';
 import {expireQueued, held, initJournal, journalRow, type Outcome, type Transact} from '../src/journal.js';
 import {restoreFreeBase} from '../src/moments.js';
-import {readMusicBase, restoreMusicBase, type MusicBase, type MusicColor} from '../src/music-base.js';
+import {colorStateOf, readMusicBase, restoreMusicBase, type ColorState, type MusicBase, type MusicColor} from '../src/music-base.js';
 import {lastSelection, saveSelection, SELECTION_REFRESH_MS} from '../src/music-store.js';
 import {HttpError} from '../src/transport.js';
 import type {Indication} from '../src/line-projection.js';
@@ -1296,4 +1296,95 @@ test('a Start over the stream an earlier NL22 session left reads it as an unname
   } finally {
     world.db.close();
   }
+});
+
+// #1777 limit on the shared ending paths: anything that leaves the NL22 reporting `*Dynamic*` with brightness and power
+// unchanged is not seen, and every guarded restoration puts a scene or colour base back over it.
+for (const [base, ending] of [[COLOR, 'stopped'], [OCEAN, 'alert'], [OCEAN, 'source-lost']] as const) {
+  test(`#1777 limit: an unseen *Dynamic* choice on the NL22 over a ${base.kind === 'color' ? 'colour' : 'scene'} base is restored over by ${ending === 'stopped' ? 'Stop' : ending === 'alert' ? 'an alert' : 'source loss'}`, async () => {
+    const world = open(PANELS_TARGET);
+    try {
+      if (base.kind === 'color') {
+        world.selected = '*Solid*';
+        world.color = {hue: 120, sat: 80};
+      }
+      let pickedAt: number | undefined;
+      await run(world, current => {
+        if (pickedAt === undefined && frameWrites(current).length === 12) {
+          pickedAt = current.now;
+          current.streaming = false;
+          current.selected = '*Dynamic*';
+        }
+        if (ending === 'stopped') stopNl22After(30)(current);
+        else if (frameWrites(current).length >= 30) {
+          if (ending === 'alert') current.alert = true;
+          else current.feeding = false;
+        }
+      }, base);
+      assert.ok(pickedAt !== undefined);
+      assert.deepEqual(ended(world), {reason: ending, restoration: 'restored'}, 'the choice is not recognised as a manual change');
+      assert.ok(frameWrites(world).filter(frame => frame.atMs >= (pickedAt ?? 0)).every(frame => !frame.applied));
+      assert.deepEqual(world.writes.slice(-2).map(write => write.payload),
+        [{brightness: {value: 50, duration: 0}}, base.kind === 'scene' ? {select: 'Ocean'} : {hue: {value: 120}, sat: {value: 80}}],
+        'the guarded restoration writes the base over the unseen choice');
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
+// #1777 diagnostic: what the playing check's own `/state` read showed of the light's colour is kept with the selection
+// for the record. It never decides an ending: whether it tells the NL22's stream from an app choice is unknown.
+test('#1777 diagnostic: the light\'s colour state from a /state read is kept with what it reports, bounded and in its own mode', () => {
+  assert.deepEqual(colorStateOf({colorMode: 'hs', hue: {value: 10, max: 360, min: 0}, sat: {value: 20}, ct: {value: 4000}}),
+    {colorMode: 'hs', hue: 10, sat: 20, ct: 4000});
+  assert.deepEqual(colorStateOf({colorMode: 'effect'}), {colorMode: 'effect'});
+  assert.deepEqual(colorStateOf({hue: {value: 10}}), {colorMode: null, hue: 10}, 'no colour mode reads as null');
+  assert.deepEqual(colorStateOf({colorMode: 'not a mode!', hue: {value: 400}, sat: {value: 20.5}, ct: {value: -1}}), {colorMode: null},
+    'an unexpected mode is null, and values out of range or not whole are left out');
+  assert.deepEqual(colorStateOf('not a state'), {colorMode: null});
+});
+
+test('#1777 diagnostic: a kept selection carries the colour state read with it, a changed one is kept at once, and a read without one keeps none', () => {
+  const world = open();
+  try {
+    const reported: string[] = [];
+    const save = (color: ColorState | undefined, atMs: number): void => transaction(world.db, () => saveSelection(world.db, 'wall',
+      {selection: '*Dynamic*', saved: false, restores: 'nothing'}, atMs, message => { reported.push(message.type); }, color));
+    save({colorMode: 'effect', hue: 0, sat: 0, ct: 4000}, 1000);
+    assert.deepEqual(lastSelection(world.db, 'wall')?.color, {colorMode: 'effect', hue: 0, sat: 0, ct: 4000});
+    save({colorMode: 'effect', hue: 0, sat: 0, ct: 4000}, 2000);
+    assert.equal(lastSelection(world.db, 'wall')?.readAtMs, 1000, 'an unchanged read keeps its time for a minute');
+    save({colorMode: 'hs', hue: 10, sat: 20}, 3000);
+    assert.deepEqual(lastSelection(world.db, 'wall')?.color, {colorMode: 'hs', hue: 10, sat: 20});
+    save({colorMode: null}, 3500);
+    assert.deepEqual(lastSelection(world.db, 'wall')?.color, {colorMode: null});
+    save(undefined, 4000);
+    assert.equal(lastSelection(world.db, 'wall')?.color, undefined, 'a selection read with no /state read keeps no colour state');
+    assert.equal(lastSelection(world.db, 'wall')?.readAtMs, 4000);
+    assert.deepEqual(reported, ['selection', 'selection', 'selection', 'selection']);
+  } finally {
+    world.db.close();
+  }
+});
+
+test('#1777 diagnostic: an NL22 session keeps its playing check\'s colour state with no request of its own, and the colour state decides nothing', async () => {
+  const runs: unknown[] = [];
+  for (const variant of ['effect', 'hs'] as const) {
+    const world = open(PANELS_TARGET);
+    try {
+      await run(world, current => {
+        // The Panels keep streaming and reporting `*Dynamic*`; only what `/state` says of their colour differs.
+        if (variant === 'hs' && frameWrites(current).length === 3) current.color = {hue: 10, sat: 20};
+        stopNl22After(30)(current);
+      });
+      assert.deepEqual(lastSelection(world.db, 'nl22')?.color, variant === 'hs' ? {colorMode: 'hs', hue: 10, sat: 20} : {colorMode: 'effect'});
+      runs.push({ended: ended(world), writes: sequence(world), frames: frameWrites(world).map(frame => [frame.atMs, frame.applied]),
+        reads: world.reads.map(read => [read.endpoint, read.atMs])});
+    } finally {
+      world.db.close();
+    }
+  }
+  assert.deepEqual(runs[1], runs[0], 'the same ending, writes, frames and reads, at the same times');
+  assert.deepEqual((runs[0] as {ended: unknown}).ended, {reason: 'stopped', restoration: 'restored'});
 });

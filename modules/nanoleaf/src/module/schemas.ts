@@ -129,8 +129,11 @@ export const nanoleafSchemas: Readonly<Record<string, object>> = {
         startedAtMs: block('instantMs'), element: nullable(ELEMENT), manualProject: nullable(PROJECT), evictionToken: {type: 'string', pattern: '^[0-9a-f]{64}$'},
         codexUrl: {type: 'string', pattern: '^codex://threads/[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$'},
         statusEvidence: {enum: ['current', 'uncertain']}}, ['startedAtMs', 'evictionToken', 'codexUrl']), 0, 1024),
+      // #1777: the colour state of a `/state` read made with the selection, a diagnostic only, present when one was made.
       selection: nullable(closed({saved: {type: 'boolean'}, sceneId: nullable(SCENE_ID), placeholder: nullable({enum: [...PLACEHOLDERS]}),
-        restores: {enum: [...RESTORES]}, readAtMs: block('instantMs')})),
+        restores: {enum: [...RESTORES]}, readAtMs: block('instantMs'), colorMode: nullable({type: 'string', pattern: '^[A-Za-z0-9_-]{1,16}$'}),
+        hue: {type: 'integer', minimum: 0, maximum: 360}, sat: {type: 'integer', minimum: 0, maximum: 100},
+        ct: {type: 'integer', minimum: 0, maximum: 65535}}, ['colorMode', 'hue', 'sat', 'ct'])),
       musicBase: nullable(closed({generation: text(64), restores: {enum: [...RESTORES]}})),
     }, ['selection', 'musicBase']),
   },

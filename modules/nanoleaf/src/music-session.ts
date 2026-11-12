@@ -15,7 +15,7 @@ import {ValueError} from './errors.js';
 import {finish, finishMusicStops, held, journal, journalRow, type End, type JournalRow, type Report, type Transact} from './journal.js';
 import type {Indication} from './line-projection.js';
 import {alerting, newerChoice, NEWER_CHOICES, type Admitted, type DeviceRead} from './moments.js';
-import {restoreMusicBase, sameColorOf, selectionOf, selectionRead, type MusicBase} from './music-base.js';
+import {colorStateOf, restoreMusicBase, sameColorOf, selectionOf, selectionRead, type MusicBase} from './music-base.js';
 import {MusicRenderer, type MusicRecipeV1} from './music-effects.js';
 import {musicBinding, MusicInput, type MusicBinding, type MusicClock, type MusicSample} from './music-input.js';
 import {readReactiveCatalog} from './music-presets.js';
@@ -295,8 +295,9 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   const protocol = streamProtocol(command.layout.kind);
   // The selection the light reports while it streams, from its kind (#1777): `*ExtControl*` on the Lines, `*Dynamic*` on
   // the NL22. The playing check and the restoration guard read it as "still our stream"; a scene, colour or other
-  // selection chosen on the light leaves the mode and shows. On the NL22 an unsaved dynamic effect also reports
-  // `*Dynamic*`, and no documented read tells it apart, so such a pick is not seen (README, Known limits).
+  // selection chosen on the light leaves the mode and shows. On the NL22 anything else that reports `*Dynamic*` with the
+  // brightness and power unchanged (an app's dynamic effect or temporary display, another streaming client) reads the
+  // same, and no documented read tells it apart, so it is not seen (README, Known limits).
   const shown = protocol.streaming;
   // Entering streaming is the Start's own journaled write: a lost answer ends it uncertain and holds the device, and an
   // answered refusal fails it; either way `finish` ends the session as a device failure (#1598).
@@ -383,19 +384,22 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
       lastCheck = now();
       let showing: boolean;
       let listing: {select?: unknown};
+      let state: {on?: {value?: unknown}; brightness?: {value?: unknown}} | undefined;
       try {
         // A scene chosen on the light leaves streaming, and the datagrams sent since cannot replace it: any selection other
         // than streaming, or an external brightness or power choice, is a manual takeover.
         listing = await read('/effects') as {select?: unknown};
-        const state = listing.select === shown ? await read('/state') as {on?: {value?: unknown}; brightness?: {value?: unknown}} : undefined;
+        state = listing.select === shown ? await read('/state') as {on?: {value?: unknown}; brightness?: {value?: unknown}} : undefined;
         showing = state?.brightness?.value === freeBase.brightness && state.on?.value !== false;
       } catch (error) {
         deviceFailure(error);
         return end('device', 'none', undefined, undefined, 'unavailable');
       }
-      // The light's record keeps the selection this read found (#1614), with no request of its own.
+      // The light's record keeps the selection this read found (#1614), with no request of its own, and what the `/state`
+      // read beside it showed of the light's colour (#1777). That colour state is a diagnostic only: nothing here uses it.
       const found = selectionRead(listing);
-      if (found !== undefined) await transact(report => { saveSelection(db, device, found, now(), report); });
+      const color = state === undefined ? undefined : colorStateOf(state);
+      if (found !== undefined) await transact(report => { saveSelection(db, device, found, now(), report, color); });
       if (!showing) return end('manual', 'none');
       // The read took time: every check runs again before the next frame.
       continue;

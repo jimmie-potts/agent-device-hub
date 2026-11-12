@@ -172,7 +172,9 @@ void test('#1614: the card explains what an ending puts back, before Start and a
   assert.equal(baseText(scene, '10:00'), 'Last read at 10:00: a scene saved on the light. Stop, an alert or lost Music input puts that scene back at its brightness.'
     + ' A scene or colour picked on the light wins and nothing is put back, unless it lands in the instant the session takes the light.'
     + ' A brightness or power change on the light ends the session within about a second, so a Music frame may already have replaced the scene or colour.'
-    + ' On the Light Panels an unsaved effect picked in the app reads the same as Music frames, so it is not seen: the session plays on, and Stop, an alert or lost Music input may put the base back over it.');
+    + ' On the Light Panels, a choice they report as an unsaved dynamic effect, such as one picked or played by an app, looks the same as Music frames and is not seen: the session plays on, and Stop, an alert or lost Music input may put the base back over it.');
+  // #1777 R1: an unsaved static selection is seen on the Panels, so the card names only the dynamic case.
+  assert.doesNotMatch(baseText(scene, '10:00'), /unsaved effect picked in the app/);
   assert.match(baseText(read({placeholder: '*Solid*', restores: 'color'}), '10:00'), /a plain colour\. .*puts that colour back/);
   assert.match(baseText(read({placeholder: '*Solid*'}), '10:00'), /a plain colour whose value could not be read\. .*puts nothing back.*last Music frame/);
   assert.match(baseText(read({placeholder: '*ExtControl*'}), '10:00'), /streamed frames.*earlier Music session.*puts nothing back/);

@@ -147,7 +147,7 @@ const PUTS_BACK: Record<Restores, string> = {
 };
 // #1777: the NL22 reports `*Dynamic*` while it streams and for an unsaved dynamic effect alike, so the Panels cannot show such a pick.
 const MANUAL = 'A scene or colour picked on the light wins and nothing is put back, unless it lands in the instant the session takes the light. A brightness or power change on the light ends the session within about a second, so a Music frame may already have replaced the scene or colour.'
-  + ' On the Light Panels an unsaved effect picked in the app reads the same as Music frames, so it is not seen: the session plays on, and Stop, an alert or lost Music input may put the base back over it.';
+  + ' On the Light Panels, a choice they report as an unsaved dynamic effect, such as one picked or played by an app, looks the same as Music frames and is not seen: the session plays on, and Stop, an alert or lost Music input may put the base back over it.';
 /** What a read selection is, in plain words: never a scene's name, which the light module does not publish. */
 function selectionWords(selection: WallSelection): string {
   if (selection.saved) return 'a scene saved on the light';
