@@ -155,9 +155,9 @@ writes `"clock": "virtual"` into the run file, and the supervisor then owns the 
   3 600 000, moves it and answers the same once the advance is settled. Any other body is a 400 with `invalid-request`.
   A run on the real clock, or a `shipped` run, answers both with 409 and `invalid-state`. The runtime's gateway serves no
   clock route.
-- An advance moves in the in-memory harness's steps (`tests/scenarios/stepping.ts`), each stopping at the earliest timer
+- An advance moves in the in-memory harness's steps (`apps/runtime/tests/scenarios/stepping.ts`), each stopping at the earliest timer
   due in the devices or the runtime. Each step moves the devices' clock, then the child's: the child waits for its
-  modules' worker calls (at most 10 s real each), moves its clock, gives real work its turn (`tests/scenarios/real-work.ts`)
+  modules' worker calls (at most 10 s real each), moves its clock, gives real work its turn (`apps/runtime/tests/scenarios/real-work.ts`)
   and answers on its IPC channel with its next due time, whether it is busy, and how many stderr lines it has written. The
   supervisor answers once its journal has read those lines. An advance of `0` is a settle: everything the runtime did
   since is in the state the harness reports next.

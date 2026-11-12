@@ -12,15 +12,14 @@
 import http from 'node:http';
 import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
 import {createWisprModule} from '@jimmie-potts/wispr';
-import {registrations, runMain, type ModuleFactory} from '../src/index.js';
+import {registrations, runMain, type CoreModule, type ModuleFactory} from '../src/index.js';
 import {createChimeModule, type ChimeRing, type ChimeTransport} from '../tests/fixtures/chime.js';
-import {createCoreModule} from '../tests/fixtures/core.js';
 import {SCHEDULE_FIXTURE, ScheduledFixture} from '../tests/fixtures/scheduled.js';
 import {createPresentationFixture} from '../tests/fixtures/presentation.js';
 import {createLampModule, lampSchemas, type Indicator, type LampTransport, type Power} from '../tests/fixtures/lamp.js';
 import {createSignModule, signSchemas, type SignTransport} from '../tests/fixtures/sign.js';
 import {SCENARIO_SCHEMAS} from '../tests/scenarios/parts.js';
-import {childClockOf, type ChildClock} from './child-clock.js';
+import {childClockOf, fixtureCore as buildCore, type ChildClock} from './child-clock.js';
 import {ChildLinks} from './link.js';
 import type {ChildMessage, Control, SupervisorMessage} from './protocol.js';
 
@@ -177,15 +176,12 @@ const harness = fixture('harness', () => ({
   stop: () => {},
 }));
 
-let fixtureCore: ReturnType<typeof createCoreModule> | undefined;
+let fixtureCore: CoreModule | undefined;
 const scheduled = new ScheduledFixture();
 const FACTORIES: Readonly<Record<string, ModuleFactory>> = {
   wispr: {name: 'wispr', create: () => createWisprModule(), simulate: () => held(createWisprModule())},
   // On virtual time the core's monotonic clock is the test clock's (Hub #1709, #1710), the one `runMain` gets below.
-  core: fixture('core', () => {
-    const options = scheduled.coreOptions(names);
-    return fixtureCore = createCoreModule(clock === undefined ? options : clock.coreOptions(options));
-  }),
+  core: fixture('core', () => fixtureCore = buildCore(clock, scheduled.coreOptions(names))),
   [SCHEDULE_FIXTURE]: fixture(SCHEDULE_FIXTURE, () => scheduled.module()),
   'presentation-fixture': fixture('presentation-fixture', () => createPresentationFixture(() => fixtureCore)),
   lamp: fixture('lamp', () => createLampModule({

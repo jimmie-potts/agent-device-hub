@@ -8,7 +8,7 @@
 - [x] 2.1 The adapter's virtual `now` and `wait`, its parts on a manual clock, and the idle-poll fast path with owed time. Evidence: both converted cases pass repeatedly; measurements with and without the fast path and with no event-loop turns after an advance.
 - [x] 2.2 The proof's `clock` field and its check in `steps.test.ts`; `scenario-art-show` on virtual time. Evidence: both captures record `virtual`, every other scenario `real`.
 - [x] 2.3 A restart's hold on virtual time, and a stopped-runtime hook refused on it. Evidence: `verify/tests/clock.test.ts`.
-- [x] 2.4 The guard refuses the installed default state directory with a test clock. Evidence: `tests/process.test.ts`, failing without the check.
+- [x] 2.4 The guard refuses the default state directory with a test clock. Evidence: `tests/process.test.ts`, failing without the check.
 
 ## 3. Guards and delivery
 

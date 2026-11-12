@@ -6,8 +6,8 @@
 // with virtual time standing still while a module's worker call runs, and gives real work its turn, as the in-memory
 // harness does (tests/scenarios/real-work.ts, stepping.ts, virtual-time.ts).
 import type {BunnyModule} from '@jimmie-potts/sdk';
-import type {TestClock} from '../src/index.js';
-import type {FixtureCoreOptions} from '../tests/fixtures/core.js';
+import type {CoreModule, TestClock} from '../src/index.js';
+import {createCoreModule, type FixtureCoreOptions} from '../tests/fixtures/core.js';
 import {realWork, settle} from '../tests/scenarios/real-work.js';
 import {WorkerHold, manualClock} from '../tests/scenarios/virtual-time.js';
 
@@ -54,6 +54,15 @@ export class ChildClock {
     // A timer due at NaN counts as due now, as the in-memory harness's stepping takes it.
     return {nowMs: this.#clock.now(), nextDueMs: next === undefined ? null : Number.isFinite(next) ? next : this.#clock.now(), busy: busy()};
   }
+}
+
+/**
+ * The child's fixture core, the only way the child builds one: on virtual time with the monotonic clock that `clock`'s
+ * test clock carries, which the child gives `runMain` (Hub #1710), and on the real clock with none. `create` builds the
+ * core; a test passes its own to see the options.
+ */
+export function fixtureCore(clock: ChildClock | undefined, options: FixtureCoreOptions, create: (options: FixtureCoreOptions) => CoreModule = createCoreModule): CoreModule {
+  return create(clock === undefined ? options : clock.coreOptions(options));
 }
 
 /** The child's clock from its argument: undefined on the real clock. Anything but `real` or a start time is refused. */

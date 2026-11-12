@@ -103,10 +103,11 @@ export type TestClock = {clock: Clock; scheduler: Scheduler; monotonic: () => nu
 
 /**
  * Why the process may not take a test clock, or undefined when it may: only a simulated test run with an edge, an IPC
- * channel and a state directory of its own. The verification supervisor's fork gives its child one and names the run's
- * state directory; the service manager and the container entry give no IPC channel. Node also opens one for a process
- * whose environment names an open descriptor (`NODE_CHANNEL_FD`), so the installed default state directory is refused
- * too, and a test clock never runs against the installed runtime's state (Hub #1710).
+ * channel and a state directory other than the default. The verification supervisor's fork gives its child an IPC
+ * channel and names the run's state directory; the service manager and the container entry give no IPC channel. Node
+ * also opens one for a process whose environment names an open descriptor (`NODE_CHANNEL_FD`), so the default state
+ * directory is refused too (Hub #1710). An explicit state directory, such as an installation's, is not refused by this
+ * check; the other conditions still apply to it.
  */
 function testClockRefusal({simulate, environment, edge, stateDir}: ProcessOptions): string | undefined {
   if (!simulate) return 'a test clock needs --simulate';

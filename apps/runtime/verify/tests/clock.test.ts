@@ -3,11 +3,14 @@
 // clock routes, and the runtime's gateway serves none. The verification child gives the fixture core the same monotonic
 // clock that its test clock carries.
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {switchLamp} from '../../tests/fixtures/lamp.js';
 import {scenario} from '../../tests/scenarios/catalog.js';
-import {childClockOf} from '../child-clock.js';
+import type {CoreModule} from '../../src/index.js';
+import type {FixtureCoreOptions} from '../../tests/fixtures/core.js';
+import {childClockOf, fixtureCore} from '../child-clock.js';
 import {RunFailure, connectRun, readGrants} from '../adapter.js';
 import {HARNESS_PATH, MAX_ADVANCE_MS, type ClockState, type HarnessState} from '../protocol.js';
 import {base, startRun, type Started} from './support.js';
@@ -40,6 +43,8 @@ async function switchOn(run: Started, requestId: string): Promise<unknown> {
   });
   return (await response.json() as {status?: unknown}).status;
 }
+/** The same switch as `switchOn`, answering `lost` when the call loses its connection with the runtime. */
+const switchOrLost = (run: Started, requestId: string): Promise<unknown> => switchOn(run, requestId).catch(() => 'lost');
 
 /** Paths a clock control could have on the runtime's gateway; it serves none of them. */
 const GATEWAY_CLOCK_PATHS = ['/clock', '/clock/advance', `${HARNESS_PATH}/clock`, `${HARNESS_PATH}/clock/advance`, '/api/v2/clock', '/api/v2/clock/advance', '/api/runtime/v1/clock'];
@@ -122,18 +127,48 @@ void test('a run on virtual time moves its runtime\'s clock only on an advance, 
   assert.equal((await stopOf(run)), 0);
 });
 
-void test('the verification child gives the fixture core the monotonic clock its test clock carries, which moves with its wall clock', () => {
+void test('the verification child gives the fixture core the monotonic clock its test clock carries, which moves with its wall clock', async () => {
   assert.equal(childClockOf('real'), undefined, 'on the real clock the child passes no test clock');
   for (const argument of ['', 'virtual', '-1', '1.5', '01', '12345678901234567']) assert.throws(() => childClockOf(argument), {message: /clock argument/}, argument);
   const clock = childClockOf('1000');
   assert.ok(clock !== undefined);
-  const options = clock.coreOptions({});
-  assert.equal(options.monotonic, clock.testClock.monotonic, 'the fixture core and runMain get the same monotonic clock');
+  // The child builds its core only through `fixtureCore`: on virtual time with the test clock's monotonic clock.
+  const built: FixtureCoreOptions[] = [];
+  const create = (options: FixtureCoreOptions): CoreModule => { built.push(options); return {} as CoreModule; };
+  fixtureCore(clock, {}, create);
+  fixtureCore(undefined, {}, create);
+  assert.equal(built[0]?.monotonic, clock.testClock.monotonic, 'the fixture core and runMain get the same monotonic clock');
+  assert.equal(built[1]?.monotonic, undefined, 'on the real clock the core keeps its own');
   assert.equal(clock.testClock.clock.now(), 1000);
   assert.equal(clock.testClock.monotonic(), 1000);
-  return clock.advance(2500, () => false).then(answer => {
-    assert.deepEqual([answer.nowMs, clock.testClock.clock.now(), clock.testClock.monotonic()], [2500, 2500, 2500], 'monotonic time moves with the wall clock');
-  });
+  const answer = await clock.advance(2500, () => false);
+  assert.deepEqual([answer.nowMs, clock.testClock.clock.now(), clock.testClock.monotonic()], [2500, 2500, 2500], 'monotonic time moves with the wall clock');
+  // The child itself: its core comes from `fixtureCore` with its clock, never from the core factory directly, and its
+  // test clock goes to runMain.
+  const child = await readFile(new URL('../../../verify/child.ts', import.meta.url), 'utf8');
+  assert.match(child, /fixtureCore = buildCore\(clock, /, 'the child builds its core through fixtureCore with its clock');
+  assert.doesNotMatch(child, /createCoreModule|tests\/fixtures\/core\.js/, 'the child builds no core of its own');
+  assert.match(child, /testClock: clock\.testClock/, 'the child gives runMain the same clock');
+});
+
+void test('an advance that meets an ended runtime ends at once, so the runtime\'s restart does not wait behind it', {timeout: 60_000}, async context => {
+  const run = await startRun(context, await base(context), 'shared-inbox-history');
+  // The runtime will die between the lamp's next commit and its publish.
+  assert.equal((await post(new URL(`${HARNESS_PATH}/arm-crash`, run.harness), {})).status, 200);
+  // Two advances queue on the run's lifecycle before the switch that kills the runtime, so its restart queues behind
+  // both: the first is under way, or about to begin, when the runtime dies, and the second begins with it gone.
+  const first = advance(run, MAX_ADVANCE_MS);
+  const second = advance(run, 60_000);
+  assert.equal(await switchOrLost(run, 'req-crash'), 'lost');
+  // The first advance ends at the time the runtime died, which it reached.
+  const [died] = await Promise.all([first, second]);
+  // An advance of nothing comes after the restart in the lifecycle queue.
+  await advance(run, 0);
+  const restarted = (await state(run)).logs.find(({generation, record}) => generation === 2 && record.event_name === 'runtime.started');
+  assert.ok(restarted !== undefined, 'the runtime restarted');
+  // The restarted runtime starts at the run's virtual time, which no advance moved while no runtime ran.
+  assert.equal(Date.parse(restarted.record.timestamp ?? ''), died.nowMs, 'the restart did not wait behind a minute of virtual time with no runtime');
+  assert.equal((await stopOf(run)), 0);
 });
 
 /** Stops the run and answers its supervisor's exit code. */

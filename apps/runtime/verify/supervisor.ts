@@ -252,7 +252,7 @@ function spawnRuntime(): Promise<string> {
 async function start(): Promise<void> {
   runtimeUrl = await spawnRuntime();
   // On virtual time the new child says when its first timers are due before the run moves on.
-  if (virtual !== undefined) await advanceChild(virtual.now()).catch(() => {});
+  if (virtual !== undefined) await advanceChild(virtual.now(), current).catch(() => {});
   runtimePort = Number(new URL(runtimeUrl).port);
   await childHome.settle();
   // The agent hooks' producer file names the runtime's port, which restarts keep (Hub #926).
@@ -335,13 +335,22 @@ function ask(build: (id: number) => SupervisorMessage): Promise<void> {
 /** The child did not answer an advance: it ended, or it did not settle within its bound. */
 class Unsettled extends Error {}
 
+/** Whether `child` is still the running runtime. */
+const live = (child: ChildProcess | undefined): child is ChildProcess =>
+  child !== undefined && child === current && child.exitCode === null && child.signalCode === null && child.connected;
+
 /**
- * Moves the current child's clock to `toMs` and waits for its answer, then until the journal has read every line it
- * wrote. With no child running, nothing waits. A child that ends meanwhile, or does not answer in time, is `Unsettled`.
+ * Moves the clock of `child`, the runtime the advance started with, to `toMs` and waits for its answer, then until the
+ * journal has read every line it wrote. An advance that started with no runtime steps the devices alone while a
+ * restart holds the runtime stopped. Otherwise a runtime that has ended or been replaced, or that does not answer in
+ * time, is `Unsettled`, which ends the advance, so the runtime's restart need not wait behind it.
  */
-async function advanceChild(toMs: number): Promise<void> {
-  const child = current;
-  if (child === undefined || child.exitCode !== null || child.signalCode !== null || !child.connected) return;
+async function advanceChild(toMs: number, child: ChildProcess | undefined): Promise<void> {
+  if (child === undefined) {
+    if (restarting) return;
+    throw new Unsettled();
+  }
+  if (!live(child)) throw new Unsettled();
   const number = generation;
   next += 1;
   const id = next;
@@ -398,8 +407,12 @@ async function advanceBy(ms: number): Promise<void> {
   const clock = virtual;
   if (clock === undefined) return;
   const stepped = {now: clock.now, next: () => nextDue(clock), advance: (step: number) => { clock.advance(step); }};
+  // The runtime the advance starts with, or none while a restart holds it stopped.
+  const child = live(current) ? current : undefined;
   try {
-    await stepThrough(stepped, ms, () => Promise.resolve(), () => advanceChild(clock.now()));
+    // A runtime that already ended when the advance begins ends it before any step, so its restart is next.
+    if (child === undefined && !restarting) throw new Unsettled();
+    await stepThrough(stepped, ms, () => Promise.resolve(), () => advanceChild(clock.now(), child));
   } catch (error) {
     if (!(error instanceof Unsettled)) throw error;
   }

@@ -9,7 +9,7 @@ Every wait in a disposable run's capture case is real time: the runtime child, t
 - The child and the supervisor gain an IPC pair, `advance {id, toMs}` and `advanced {id, nowMs, nextDueMs, busy, lines}`, which extends their existing harness protocol and carries nothing on the bus. The child runs the runtime on a manual clock passed to `runMain` as its test clock, and gives the fixture core the same monotonic clock. An advance waits for held worker calls, moves the clock and gives real work its turn, with the in-memory harness's code, now shared: `stepThrough`, `realWork`/`settle`, and the worker hold and manual clock moved to `tests/scenarios/virtual-time.ts`.
 - The run adapter learns the run's clock from `GET /clock`. On virtual time its `now()` is virtual, its `wait()` advances the run, split at its parts' own timers, and its parts run on a manual clock that stamps their messages. A wait in which no timer is due anywhere, after an advance that found nothing in flight and changed nothing, passes without a call to the run; the run gets that time before anything else reaches it.
 - A capture's `scenario-result.json` records `clock: "virtual" | "real"`.
-- With a test clock, the runtime process also refuses the installed default state directory (the advisory point from #1709's review): an IPC channel alone does not prove the verification supervisor.
+- With a test clock, the runtime process also refuses the default state directory (the advisory point from #1709's review): an IPC channel alone does not prove the verification supervisor.
 - `scenario-shared-inbox-history` and `scenario-art-show` run on virtual time.
 
 ## Capabilities
