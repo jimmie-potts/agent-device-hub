@@ -8,7 +8,7 @@ import {feed, startWorld} from './harness.ts';
 /** Actual scheduler selection and decoded artwork over a synthetic weather service and manual runtime clock. */
 export async function artNoticeJourney(): Promise<void> {
   const clock = manualClock(new Date(2026, 10, 5, 8, 0).getTime());
-  const world = await startWorld({art: true, artSchedule: {clock, scheduler: clock.scheduler, choice: () => 0}});
+  const world = await startWorld({art: true, clock: {clock, scheduler: clock.scheduler}, artSchedule: {choice: () => 0}});
   const browser = await chromium.launch({headless: true}), context = await browser.newContext({viewport: {width: 1440, height: 1100}});
   const page = await context.newPage(), artifacts = await browserArtifactDirectory(), errors: string[] = [];
   page.setDefaultTimeout(12_000);page.on('pageerror', error => {errors.push(error.message);});
