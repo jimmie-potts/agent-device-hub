@@ -9,15 +9,16 @@ export const MICRODUCK_SIMULATED_SECTION={id:'microduck-sim',fixtureRoot:'/tmp/b
 const simulation:DeviceSimulation<SimulatedMicroDuck,SimulatedMicroDuck>={
   actions:['online','offline','coast','fresh'],
   memory:{create:options=>new SimulatedMicroDuck(options),state:d=>d.state(),act:(d,a)=>{d.act(a.action);},build:d=>createMicroDuckModule({transport:d})},
-  run:{create:options=>new SimulatedMicroDuck(options),state:d=>d.state(),act:(d,a)=>{d.act(a.action);},serve:(d,r)=>{
+  // On virtual time the device stamps its sensor on the run's clock; on the real clock it keeps hrtime (Hub #1711).
+  run:{create:options=>options.monotonic===undefined?new SimulatedMicroDuck():new SimulatedMicroDuck(options),state:d=>d.state(),act:(d,a)=>{d.act(a.action);},serve:(d,r)=>{
     if(r.method==='state')return d.state();
     if(r.method==='head'&&typeof r.args==='number'&&[-.1,0,.1].includes(r.args))return d.head(r.args,r.signal,()=>{});
     throw new Error('Invalid MicroDuck simulation request');
   },remote:(link,options)=>{
     let current:ReturnType<SimulatedMicroDuck['state']>|undefined;
     return createMicroDuckModule({transport:{
-      // The supervisor's device stamps its sensor on the run's clock, so freshness is judged on the same clock (Hub #1711).
-      nowNs:()=>BigInt((options?.now??Date.now)())*1000000n,guard:()=>{if(current===undefined||!current.online||current.mismatch)throw new Error('Synthetic MicroDuck unavailable');return current.session;},
+      // On virtual time the supervisor's device stamps its sensor on the run's clock, so freshness is judged on it (Hub #1711).
+      nowNs:options===undefined?()=>process.hrtime.bigint():()=>BigInt(options.now())*1000000n,guard:()=>{if(current===undefined||!current.online||current.mismatch)throw new Error('Synthetic MicroDuck unavailable');return current.session;},
       async connect(observer,signal){
         let closed=false;
         const poll=async():Promise<void>=>{

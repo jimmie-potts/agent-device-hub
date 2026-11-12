@@ -75,7 +75,7 @@ const timers: Scheduler = {after: (delayMs, callback) => {
   return () => { clearTimeout(timer); };
 }};
 /** Every registered module's simulated device, which outlives the runtime as a real one would (Hub #999), on the run's clock. */
-const devices = new SupervisorDevices(registrations, virtual === undefined ? {now: Date.now, scheduler: timers} : {now: virtual.now, scheduler: virtual.scheduler});
+const devices = new SupervisorDevices(registrations, virtual === undefined ? {now: Date.now, scheduler: timers} : {now: virtual.now, scheduler: virtual.scheduler, monotonic: virtual.now});
 /** On virtual time, what the current child last said: its earliest pending timer and whether work is in flight. */
 let childNext: number | undefined;
 let childBusy = false;

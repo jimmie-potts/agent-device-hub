@@ -35,7 +35,7 @@ export class ChildClock {
    * monotonic clock, so its simulated transport and its monotonic durations move with the run.
    */
   get remoteOptions(): RemoteSimulationOptions {
-    return {now: this.testClock.clock.now, scheduler: this.testClock.scheduler, monotonic: this.testClock.monotonic};
+    return {now: this.#clock.now, scheduler: this.#clock.scheduler, monotonic: this.#clock.now};
   }
 
   /** The fixture core's options with the test clock's monotonic clock, the one `testClock` carries. */

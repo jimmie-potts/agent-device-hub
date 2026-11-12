@@ -111,7 +111,11 @@ export interface DeviceSimulation<Device = unknown, Held = unknown> {
   };
   /** A disposable run: the supervisor holds what outlives the runtime, and the runtime's process reaches it over a link. */
   readonly run: {
-    create(options: SimulationOptions): Held;
+    /**
+     * The device the supervisor holds, on the run's clock. A run on virtual time also gives its monotonic clock
+     * (Hub #1711); a run on the real clock gives none, so a device can keep its own real monotonic clock.
+     */
+    create(options: SimulationOptions & {readonly monotonic?: () => number}): Held;
     state(held: Held): unknown;
     /** Acts on an admitted simulation; `push` hands it to the current runtime process's `onPush` handlers. */
     act(held: Held, simulation: DeviceAction, push: (simulation: DeviceAction) => Promise<void>): void | Promise<void>;
