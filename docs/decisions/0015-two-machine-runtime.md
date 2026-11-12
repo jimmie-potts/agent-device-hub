@@ -305,8 +305,9 @@ Accepted on 2026-11-12 (owner decision 6).
 ### Stage 1: one-way settings to a PC copy that runs with device control off
 
 The owner was asked on 2026-11-12 about an earlier version of this stage, a
-standby started by hand. Revision 4 changed it to the version below, and the
-owner has not been asked about it (open decision 1).
+standby started by hand. On 2026-11-12, during review of this record, it was
+changed to the version below, and the owner has not been asked about it (open
+decision 1).
 
 - **Adds:** owner-entered settings become records in the Mac's fact log. The PC
   reads them after N and applies the latest edit (audit, answer 5; owner
@@ -333,9 +334,12 @@ owner has not been asked about it (open decision 1).
     says to set `BUNNY_CONTROL=enabled` "when rendering". So turning control on
     or off means rendering the Compose file again and recreating the container
     (I: a running container's environment cannot change).
-  - With control disabled, the entrypoint starts the core plus only configured
-    modules that reach no device (`productionModules`, which falls back to
-    `hostLocalModules` and `checkLocalBrowserConfig`). `docs/bunny-container.md`
+  - With control disabled, the container starts the core and the configured
+    modules that reach no device. It refuses to start if a device module is
+    configured. `productionModules` falls back to `hostLocalModules`, whose
+    `checkLocalBrowserConfig` and `refuseNamedDevices` throw
+    `container-browser-config-refused` for such a module
+    (`deploy/container/entrypoint.mjs`). `docs/bunny-container.md`
     says the image "instantiates only the real session core". A copy in that
     mode cannot apply the settings that device modules keep, such as Nanoleaf
     preferences, Pixoo playlists and LIFX mode.
@@ -655,8 +659,9 @@ Each item names the first stage that needs it.
 1. **Stage 1 changed after the owner was asked** (*proposed*, not yet put to
    the owner).
    - **What changed:** on 2026-11-12 the owner was asked about a standby
-     started by hand when the Mac is down. Revision 4 replaced it with a PC
-     copy that runs all the time alongside the Mac, with device control off.
+     started by hand when the Mac is down. Later that day, during review of
+     this record, it was replaced with a PC copy that runs all the time
+     alongside the Mac, with device control off.
    - **Why:** the PC must read the Mac's settings while the Mac runs, and a
      takeover cannot read from a Mac that is down.
    - **Cost:** the continuous copy needs a standby mode, refusal of settings
