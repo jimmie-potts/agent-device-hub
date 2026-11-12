@@ -30,7 +30,7 @@ const EXIT_BOUND_MS = 10_000;
 const SILENT_EXIT_BOUND_MS = 18_000;
 
 type Exit = {code: number | null; signal: NodeJS.Signals | null};
-type Control = {action: string; endpoint: string; traceId: string};
+type Control = {action: string; endpoint: string; traceId: string; installed?: string};
 type Worker = {child: ChildProcess; stderr: () => string; exited: Promise<Exit>};
 
 /** The SDK's edge on a free port, with a fake core that selects one endpoint and releases it on disable or loss. */
@@ -41,7 +41,7 @@ async function fakeEdge(context: TestContext, grant: EdgePermissions = WORKER_GR
   const controls: Control[] = [], lost: string[] = [], held: ServerResponse[] = [], silent = new Set<string>(), calls = new Map<string, number>();
   let selected: string | null = null, streams = 0, hang: Promise<void> | undefined;
   await companions.respond<CodingEndpointControl>('bunny.cmd.coding-endpoint.*', async (command: Command<CodingEndpointControl>): Promise<Reply> => {
-    controls.push({action: command.data.action, endpoint: command.subject, traceId: command.traceparent.split('-')[1] ?? ''});
+    controls.push({action: command.data.action, endpoint: command.subject, traceId: command.traceparent.split('-')[1] ?? '', ...(command.data.readiness === undefined ? {} : {installed: command.data.readiness.installed})});
     if (command.data.action === 'disable') {
       if (selected !== command.subject) return errorBody('forbidden');
       selected = null;
@@ -131,6 +131,8 @@ void test('a second worker is refused, ends non-zero with its connection closed 
   const world = await fakeEdge(context), configuration = await privateConfiguration(context, world.url, world.token);
   const owner = invoke(context, configuration), holder = await declared(owner);
   assert.equal(world.selected(), holder);
+  // The configured tool is missing here, and the declaration's readiness says so rather than guessing (Hub #1743).
+  assert.equal(world.controls[0]?.installed, 'no');
 
   // All refused: each fresh process is refused once, closes what it opened and ends. None stays connected and idle.
   for (const attempt of [1, 2, 3]) {
