@@ -179,9 +179,12 @@ try {
   await panels.getByText('Active. The light reported that it is playing this session.', {exact: true}).waitFor();
   await panels.getByText(/Start light work: Completed: succeeded\. Written to the light; the physical effect was not observed\./).waitFor();
   await light.getByText('Idle. No Music lighting session is running.', {exact: true}).waitFor();
-  await expect.poll(() => world.nanoleafState().devices[PANELS_ADDRESS]?.streamed ?? 0).toBeGreaterThan(2);
+  // Past the session's first once-a-second check: the Panels keep playing while they report `*Dynamic*` (#1777).
+  await expect.poll(() => world.nanoleafState().devices[PANELS_ADDRESS]?.streamed ?? 0, {timeout: 10000}).toBeGreaterThan(15);
+  await expect(panels.getByText('Active. The light reported that it is playing this session.', {exact: true})).toBeVisible();
   const streaming = world.nanoleafState().devices[PANELS_ADDRESS];
-  assert.deepEqual({select: streaming?.select, streaming: streaming?.streaming}, {select: '*ExtControl*', streaming: {version: 'v1', port: 60221}});
+  // The simulated NL22 reports `*Dynamic*` while it streams, as the installed one did (#1777).
+  assert.deepEqual({select: streaming?.select, streaming: streaming?.streaming}, {select: '*Dynamic*', streaming: {version: 'v1', port: 60221}});
   assert.deepEqual(Object.keys(streaming?.frame ?? {}).sort(), ['200', '201', '202', '203'], 'the NL22 frames light its own panels');
   const linesNow = world.nanoleafState().devices[LINES_ADDRESS];
   assert.deepEqual({writes: linesNow?.writes, streamed: linesNow?.streamed}, {writes: linesBefore?.writes, streamed: linesBefore?.streamed}, 'the Lines are untouched');

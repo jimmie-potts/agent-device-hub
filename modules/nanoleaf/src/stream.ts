@@ -4,7 +4,8 @@
 // The Lines take version 2 on the fixed port 60222 (#1598). The original NL22 Light Panels take version 1 (#1272): the
 // entry's 200 answer names the streaming port, and each datagram carries one-byte panel IDs. Nanoleaf's OpenAPI
 // documentation, sections 3.2.6.2 and 5.7, describes both layouts; the OpenSpec change gh-1272-nl22-live-sessions
-// separates what it documents from what only the installed light can show.
+// separates what it documents from what only the installed light can show. The selection each light reports while it
+// streams is observed, not documented: `*ExtControl*` on the Lines (#1598) and `*Dynamic*` on the NL22 (#1777).
 import {createSocket} from 'node:dgram';
 import {isObject} from './compat.js';
 import type {Kind} from './devices.js';
@@ -13,8 +14,13 @@ import {LIGHT_TIMEOUT_SECONDS} from './transport.js';
 
 /** The streaming port of a version 2 light; it reports no other. */
 export const STREAM_PORT = 60222;
-/** The selection a light reports while it is in external-control mode. */
+/** The selection the Lines report while they stream version 2, as #1598 observed on the installed Lines. */
 export const STREAMING = '*ExtControl*';
+/**
+ * The selection the NL22 Light Panels report while they stream version 1, as #1777 observed on the installed NL22. The
+ * documentation reserves this name for a temporary dynamic effect, so a dynamic effect picked in the app reads the same.
+ */
+export const STREAMING_V1 = '*Dynamic*';
 /** The write that enters version 2 external-control mode. */
 // Lines frames address the two logical zones of each Line, as every Lines display write does (`effects.ts`).
 export const ENTER_STREAMING = Object.freeze({write: Object.freeze({command: 'display', animType: 'extControl', extControlVersion: 'v2',
@@ -33,6 +39,8 @@ export type LightDatagram = (address: {ip: string; port: number}, packet: Uint8A
 export type StreamProtocol = {
   readonly version: 'v1' | 'v2';
   readonly entry: object;
+  /** The selection the light reports while it streams: the session's only sign that its stream is still what the light shows. */
+  readonly streaming: string;
   /** The port frames go to, from the entry's answer, or undefined when the answer names none. */
   port(answer: unknown): number | undefined;
   packet(zones: readonly Zone[]): Uint8Array;
@@ -100,11 +108,11 @@ export function streamPortV1(answer: unknown): number | undefined {
 }
 
 const LINES_STREAM: StreamProtocol = Object.freeze({
-  version: 'v2', entry: ENTER_STREAMING, port: () => STREAM_PORT, packet: streamPacket,
+  version: 'v2', entry: ENTER_STREAMING, streaming: STREAMING, port: () => STREAM_PORT, packet: streamPacket,
   addresses: (ids: readonly number[]) => ids.length <= 0xffff && ids.every(id => Number.isInteger(id) && id >= 0 && id <= 0xffff),
 });
 const PANELS_STREAM: StreamProtocol = Object.freeze({
-  version: 'v1', entry: ENTER_STREAMING_V1, port: streamPortV1, packet: streamPacketV1,
+  version: 'v1', entry: ENTER_STREAMING_V1, streaming: STREAMING_V1, port: streamPortV1, packet: streamPacketV1,
   addresses: (ids: readonly number[]) => ids.length <= V1_MAX_ID && ids.every(id => Number.isInteger(id) && id >= 0 && id <= V1_MAX_ID),
 });
 

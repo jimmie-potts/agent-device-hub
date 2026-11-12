@@ -6,7 +6,7 @@ import {createSocket} from 'node:dgram';
 import {DeviceLink, type LinkOptions} from '../src/module/link.js';
 import {nanoleafSimulation} from '../src/module/registration.js';
 import {LINES_ADDRESS, PANELS_ADDRESS, SimulatedNanoleaf, SYNTHETIC_TOKEN} from '../src/module/simulated.js';
-import {ENTER_STREAMING, ENTER_STREAMING_V1, lightDatagram, STREAM_PORT, STREAMING, streamPacket, streamPacketV1, streamPortV1,
+import {ENTER_STREAMING, ENTER_STREAMING_V1, lightDatagram, STREAM_PORT, STREAMING, STREAMING_V1, streamPacket, streamPacketV1, streamPortV1,
   streamProtocol, V1_MAX_ID} from '../src/stream.js';
 import {test} from './support.js';
 
@@ -71,6 +71,13 @@ test('each kind streams its own version: the Lines version 2 on the fixed port, 
   assert.equal(panels.addresses(Array.from({length: 256}, (_, index) => index % 200)), false, 'more panels than one byte counts');
 });
 
+test('each kind names the selection its light reports while it streams: *ExtControl* on the Lines, *Dynamic* on the NL22 (#1777)', () => {
+  assert.equal(STREAMING, '*ExtControl*');
+  assert.equal(STREAMING_V1, '*Dynamic*');
+  assert.equal(streamProtocol('lines').streaming, STREAMING, 'as #1598 observed on the installed Lines');
+  assert.equal(streamProtocol('panels').streaming, STREAMING_V1, 'as #1777 observed on the installed NL22');
+});
+
 test('the UDP sender delivers one datagram to the address and port, and a failed send rejects', async () => {
   const server = createSocket('udp4');
   try {
@@ -132,7 +139,7 @@ test('the simulated Panels enter version 1, answer with their streaming port and
   assert.equal(panels()?.select, 'Beach Waves', 'a refused entry changes nothing');
   const answer = await nanoleaf.request(address, 'PUT', '/effects', ENTER_STREAMING_V1);
   assert.deepEqual(answer, {streamControlIpAddr: PANELS_ADDRESS, streamControlPort: 60221, streamControlProtocol: 'udp'});
-  assert.equal(panels()?.select, STREAMING);
+  assert.equal(panels()?.select, STREAMING_V1, 'the NL22 reports *Dynamic* while it streams (#1777)');
   const port = streamPortV1(answer) ?? 0;
   await nanoleaf.datagram({ip: PANELS_ADDRESS, port}, streamPacketV1([[200, [[1, 2, 3, 1]]], [203, [[4, 5, 6, 1]]]]));
   assert.deepEqual(panels()?.frame, {200: [1, 2, 3], 203: [4, 5, 6]});
@@ -153,4 +160,48 @@ test('the simulated Panels enter version 1, answer with their streaming port and
   await nanoleaf.datagram({ip: PANELS_ADDRESS, port}, streamPacketV1([[200, [[9, 9, 9, 1]]]]));
   assert.equal(panels()?.ignored, 1, 'a scene chosen in the app leaves streaming');
   assert.deepEqual(panels()?.frame, {200: [1, 2, 3], 203: [4, 5, 6], 201: [7, 8, 9], 202: [7, 8, 9]});
+});
+
+test('the simulated Panels report a saved scene, *Static* and *Dynamic* before streaming, and every app choice leaves streaming (#1777)', async () => {
+  let now = 7000;
+  const nanoleaf = new SimulatedNanoleaf({devices: {[PANELS_ADDRESS]: 'panels'}, now: () => now});
+  const address = {ip: PANELS_ADDRESS, token: SYNTHETIC_TOKEN};
+  const panels = () => nanoleaf.state().devices[PANELS_ADDRESS];
+  const select = (): Promise<unknown> => nanoleaf.request(address, 'GET', '/effects/select');
+  assert.equal(await select(), 'Beach Waves', 'a saved scene by its name');
+  nanoleaf.chooseEffect(PANELS_ADDRESS, 'static');
+  assert.equal(await select(), '*Static*', 'an unsaved static selection');
+  nanoleaf.chooseEffect(PANELS_ADDRESS, 'dynamic');
+  assert.equal(await select(), '*Dynamic*', 'an unsaved dynamic effect, the same name the NL22 reports while streaming');
+  nanoleaf.chooseColor(PANELS_ADDRESS, {hue: 30, sat: 70});
+  assert.deepEqual([await select(), panels()?.colorMode, panels()?.hue, panels()?.sat], ['*Solid*', 'hs', 30, 70]);
+  const port = streamPortV1(await nanoleaf.request(address, 'PUT', '/effects', ENTER_STREAMING_V1)) ?? 0;
+  for (const choice of ['scene', 'colour', 'static', 'dynamic'] as const) {
+    await nanoleaf.request(address, 'PUT', '/effects', ENTER_STREAMING_V1);
+    assert.equal(await select(), STREAMING_V1);
+    now += 200;
+    if (choice === 'scene') nanoleaf.chooseScene(PANELS_ADDRESS, 'Northern Lights');
+    else if (choice === 'colour') nanoleaf.chooseColor(PANELS_ADDRESS, {ct: 2700});
+    else nanoleaf.chooseEffect(PANELS_ADDRESS, choice);
+    assert.equal(panels()?.manualAtMs, now, `the app's ${choice} is kept with its time`);
+    assert.equal(panels()?.streaming, null, `the app's ${choice} leaves streaming`);
+    const ignored = panels()?.ignored ?? 0;
+    await nanoleaf.datagram({ip: PANELS_ADDRESS, port}, streamPacketV1([[200, [[9, 9, 9, 1]]]]));
+    assert.equal(panels()?.ignored, ignored + 1, `a datagram after the app's ${choice} is ignored`);
+  }
+  // The one choice the selection cannot show: the app's dynamic effect reads exactly as streaming did.
+  assert.equal(await select(), STREAMING_V1);
+});
+
+test('the simulated Lines keep reporting *ExtControl* while streaming, and an app effect or colour leaves it', async () => {
+  const nanoleaf = new SimulatedNanoleaf({now: () => 3000});
+  const address = {ip: LINES_ADDRESS, token: SYNTHETIC_TOKEN};
+  for (const leave of ['dynamic', 'colour'] as const) {
+    await nanoleaf.request(address, 'PUT', '/effects', ENTER_STREAMING);
+    assert.equal(await nanoleaf.request(address, 'GET', '/effects/select'), STREAMING);
+    if (leave === 'dynamic') nanoleaf.chooseEffect(LINES_ADDRESS, 'dynamic');
+    else nanoleaf.chooseColor(LINES_ADDRESS, {hue: 10, sat: 20});
+    assert.equal(await nanoleaf.request(address, 'GET', '/effects/select'), leave === 'dynamic' ? '*Dynamic*' : '*Solid*');
+    assert.equal(nanoleaf.state().devices[LINES_ADDRESS]?.streaming, null);
+  }
 });

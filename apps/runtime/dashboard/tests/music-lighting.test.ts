@@ -171,11 +171,15 @@ void test('#1614: the card explains what an ending puts back, before Start and a
   const scene = read({saved: true, sceneId: `scene-${'a'.repeat(64)}`, restores: 'scene'});
   assert.equal(baseText(scene, '10:00'), 'Last read at 10:00: a scene saved on the light. Stop, an alert or lost Music input puts that scene back at its brightness.'
     + ' A scene or colour picked on the light wins and nothing is put back, unless it lands in the instant the session takes the light.'
-    + ' A brightness or power change on the light ends the session within about a second, so a Music frame may already have replaced the scene or colour.');
+    + ' A brightness or power change on the light ends the session within about a second, so a Music frame may already have replaced the scene or colour.'
+    + ' On the Light Panels an unsaved effect picked in the app reads the same as Music frames, so it is not seen: the session plays on, and Stop, an alert or lost Music input may put the base back over it.');
   assert.match(baseText(read({placeholder: '*Solid*', restores: 'color'}), '10:00'), /a plain colour\. .*puts that colour back/);
   assert.match(baseText(read({placeholder: '*Solid*'}), '10:00'), /a plain colour whose value could not be read\. .*puts nothing back.*last Music frame/);
   assert.match(baseText(read({placeholder: '*ExtControl*'}), '10:00'), /streamed frames.*earlier Music session.*puts nothing back/);
   assert.match(baseText(read({placeholder: '*Dynamic*'}), '10:00'), /an effect that is not a scene saved on the light.*puts nothing back/);
+  // #1777: the NL22 reports `*Dynamic*` while it streams, so that name can also be the frames an earlier session left.
+  assert.match(baseText(read({placeholder: '*Dynamic*'}), '10:00'), /or, on the Light Panels, streamed frames such as those an earlier Music session left\./);
+  assert.doesNotMatch(baseText(read({placeholder: '*Static*'}), '10:00'), /streamed frames/);
   assert.match(baseText(read({}), '10:00'), /a selection that is not a scene saved on the light.*puts nothing back/);
   assert.match(baseText(null, ''), /^Start reads what the light shows\..*scene saved on the light or a plain colour.*last Music frame/);
   assert.match(sessionBaseText('color'), /started over a plain colour\. .*puts it back/);

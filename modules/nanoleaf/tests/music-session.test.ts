@@ -34,6 +34,11 @@ const PANELS_LAYOUT: LayoutEntry = {kind: 'panels', elements: PANEL_IDS.map((id,
 type Target = {device: string; layout: LayoutEntry};
 const LINES_TARGET: Target = {device: 'wall', layout: LAYOUT};
 const PANELS_TARGET: Target = {device: 'nl22', layout: PANELS_LAYOUT};
+/**
+ * The selection each light reports while it streams, as each installed light showed: `*ExtControl*` on the Lines
+ * (#1598), `*Dynamic*` on the NL22 (#1777), the same name the NL22 gives an unsaved dynamic effect.
+ */
+const streamingOf = (target: Target): string => target.layout.kind === 'panels' ? '*Dynamic*' : '*ExtControl*';
 /** The documented version 1 entry answer: where to stream. Its address is never used. */
 const V1_ANSWER = {streamControlIpAddr: '192.0.2.99', streamControlPort: 60221, streamControlProtocol: 'udp'};
 
@@ -52,6 +57,8 @@ type World = {
   now: number; selected: string; brightness: number; alert: boolean; feeding: boolean; sequence: number; input: MusicInput;
   /** Whether `/state` reports the light on: the app or the light's own switch can turn it off. */
   on: boolean;
+  /** Whether the light is in external control: only its entry sets it, and any other choice clears it (#1777). */
+  streaming: boolean;
   /** The plain colour `/state` reports, if one was chosen: a colour write selects `*Solid*` (#1614). */
   color: MusicColor | undefined;
   /** Answers the next `/state` read with this instead of the light's state, once. */
@@ -78,7 +85,7 @@ function open(target: Target = LINES_TARGET): World {
     recipe: {rendererVersion: 1, effect: 'level-glow', palette: ['#12ab34'], intensity: 0.5, sensitivity: 1, smoothingMs: 0}}, 1));
   const now = 1_793_836_800_000;
   const clock: MusicClock = {wallMs: now, monotonicMs: now};
-  return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, target, entryAnswer: V1_ANSWER, datagrams: [], reads: [], failSend: false, patch: {}, now, selected: 'Ocean', brightness: 50, on: true, alert: false, feeding: true, sequence: 0,
+  return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, target, entryAnswer: V1_ANSWER, datagrams: [], reads: [], failSend: false, patch: {}, now, selected: 'Ocean', streaming: false, brightness: 50, on: true, alert: false, feeding: true, sequence: 0,
     input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined, onRead: () => {}, onArrive: () => {}, color: undefined, stateAnswer: undefined};
 }
 
@@ -136,13 +143,17 @@ async function run(world: World, step: (world: World) => void, base: MusicBase =
     }
     const body = payload as {select?: string; write?: {animType: string; extControlVersion?: string}; brightness?: {value: number}};
     if (endpoint === '/effects') {
-      world.selected = body.select ?? (body.write?.animType === 'extControl' ? '*ExtControl*' : body.write?.animType === 'static' ? '*Static*' : '*Dynamic*');
+      world.streaming = body.write?.animType === 'extControl';
+      world.selected = body.select ?? (world.streaming ? streamingOf(world.target) : body.write?.animType === 'static' ? '*Static*' : '*Dynamic*');
     }
     if (body.brightness !== undefined) world.brightness = body.brightness.value;
     const colored = payload as {hue?: {value: number}; sat?: {value: number}; ct?: {value: number}};
     if (colored.ct !== undefined) world.color = {ct: colored.ct.value};
     else if (colored.hue !== undefined && colored.sat !== undefined) world.color = {hue: colored.hue.value, sat: colored.sat.value};
-    if (colored.ct !== undefined || colored.hue !== undefined) world.selected = '*Solid*';
+    if (colored.ct !== undefined || colored.hue !== undefined) {
+      world.selected = '*Solid*';
+      world.streaming = false;
+    }
     world.onWrite(endpoint, payload);
     // A version 1 light answers its streaming entry with where to stream (Nanoleaf OpenAPI 5.7).
     return body.write?.extControlVersion === 'v1' ? world.entryAnswer : {};
@@ -158,7 +169,8 @@ async function run(world: World, step: (world: World) => void, base: MusicBase =
       world.failSend = false;
       throw Object.assign(new Error('the datagram was not sent'), {code: 'EHOSTUNREACH'});
     }
-    world.datagrams.push({atMs: world.now, applied: world.selected === '*ExtControl*', packet: Buffer.from(packet), port});
+    // A choice in the app leaves streaming: a test that changes the selection, or clears `streaming`, stops the frames.
+    world.datagrams.push({atMs: world.now, applied: world.streaming && world.selected === streamingOf(world.target), packet: Buffer.from(packet), port});
   };
   const row = journalRow(db, 'start');
   assert.ok(row);
@@ -971,7 +983,8 @@ test('an NL22 session over a selection nothing can select again leaves the last 
     await run(world, stopNl22After(3), {kind: 'unnamed', selection: '*Dynamic*', brightness: 50});
     assert.deepEqual(ended(world), {reason: 'stopped', restoration: 'none'});
     assert.deepEqual(sequence(world), ['stream']);
-    assert.equal(world.selected, '*ExtControl*');
+    assert.ok(frameWrites(world).length === 3 && frameWrites(world).every(frame => frame.applied));
+    assert.equal(world.selected, '*Dynamic*', 'the NL22 keeps the last frame, still reporting *Dynamic*');
   } finally {
     world.db.close();
   }
@@ -1005,8 +1018,8 @@ test('an NL22 that refuses the version 1 entry ends the session with the answer\
   }
 });
 
-for (const change of ['brightness', 'power off', 'not streaming'] as const) {
-  test(`${change === 'not streaming' ? 'an NL22 that no longer reports external control' : `a ${change} made in the app`} during an NL22 session ends it as manual at the next check, with no datagram after and no restoration`, async () => {
+for (const change of ['brightness', 'power off', 'colour', 'static selection'] as const) {
+  test(`a ${change} made in the app during an NL22 session ends it as manual at the next check, with no datagram after and no restoration`, async () => {
     const world = open(PANELS_TARGET);
     try {
       let changedAt: number | undefined;
@@ -1015,7 +1028,12 @@ for (const change of ['brightness', 'power off', 'not streaming'] as const) {
         changedAt = current.now;
         if (change === 'brightness') current.brightness = 20;
         else if (change === 'power off') current.on = false;
-        else current.selected = '*Dynamic*';
+        else {
+          // A colour or an unsaved static selection leaves streaming, and the selection shows it (#1777).
+          current.streaming = false;
+          current.selected = change === 'colour' ? '*Solid*' : '*Static*';
+          if (change === 'colour') current.color = {hue: 10, sat: 90};
+        }
       });
       assert.ok(changedAt !== undefined);
       const session = musicDeviceState(world.db, 'nl22').session;
@@ -1023,7 +1041,10 @@ for (const change of ['brightness', 'power off', 'not streaming'] as const) {
       assert.deepEqual({reason: session.ended.reason, restoration: session.ended.restoration}, {reason: 'manual', restoration: 'none'});
       assert.ok(session.ended.atMs - changedAt <= 1100, 'the once-per-second check ends it');
       assert.equal(frameWrites(world).filter(frame => frame.atMs > session.ended.atMs).length, 0, 'no datagram after the ending');
-      if (change === 'not streaming') assert.equal(frameWrites(world).filter(frame => frame.atMs > (changedAt ?? 0) && frame.applied).length, 0);
+      if (change === 'colour' || change === 'static selection') {
+        assert.equal(frameWrites(world).filter(frame => frame.atMs > (changedAt ?? 0) && frame.applied).length, 0, 'no frame paints over it');
+        assert.equal(world.selected, change === 'colour' ? '*Solid*' : '*Static*', 'the app\'s choice stays');
+      }
       assert.deepEqual(sequence(world), ['stream'], 'no restoration write over the newer choice');
       assert.deepEqual({brightness: world.brightness, on: world.on}, {brightness: change === 'brightness' ? 20 : 50, on: change !== 'power off'});
     } finally {
@@ -1104,3 +1125,175 @@ for (const target of [LINES_TARGET, PANELS_TARGET]) {
     });
   }
 }
+
+// #1777: the installed NL22 reports `*Dynamic*` while it streams version 1, not `*ExtControl*` as the Lines do. A Panels
+// session keeps playing on that selection; a scene, colour or static selection picked in the app still ends it
+// `manual`. An unsaved dynamic effect picked in the app reads exactly as streaming does, so it is not seen.
+test('an NL22 session keeps playing past several once-a-second checks while the Panels report *Dynamic*', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    let startedAt: number | undefined;
+    await run(world, current => {
+      startedAt ??= frameWrites(current).length > 0 ? current.now : undefined;
+      stopNl22After(45)(current);
+    });
+    assert.ok(startedAt !== undefined);
+    assert.deepEqual(ended(world), {reason: 'stopped', restoration: 'restored'});
+    const frames = frameWrites(world);
+    assert.equal(frames.length, 45, 'every frame until the Stop, none after');
+    assert.ok(frames.every(frame => frame.applied && frame.port === 60221), 'the Panels apply every frame');
+    const checks = world.reads.filter(read => read.endpoint === '/effects' && read.atMs >= (startedAt ?? 0) && read.atMs < (frames.at(-1)?.atMs ?? 0));
+    assert.ok(checks.length >= 3, `${checks.length} once-a-second checks passed`);
+    const kept = lastSelection(world.db, 'nl22');
+    assert.deepEqual(kept === undefined ? undefined : {selection: kept.selection, saved: kept.saved, restores: kept.restores},
+      {selection: '*Dynamic*', saved: false, restores: 'nothing'}, 'the record keeps what the Panels report while streaming');
+    assert.deepEqual(world.writes.slice(-2).map(write => write.payload), [{brightness: {value: 50, duration: 0}}, {select: 'Ocean'}]);
+    assert.equal(world.selected, 'Ocean');
+    assert.equal(world.maxInFlight, 1);
+  } finally {
+    world.db.close();
+  }
+});
+
+for (const base of [OCEAN, COLOR]) {
+  for (const ending of ['stopped', 'alert', 'source-lost'] as const) {
+    test(`${ending === 'stopped' ? 'Stop' : ending === 'alert' ? 'an alert' : 'source loss'} after several checks puts an NL22 ${base.kind === 'scene' ? 'scene' : 'colour'} base back over *Dynamic*`, async () => {
+      const world = open(PANELS_TARGET);
+      try {
+        if (base.kind === 'color') {
+          world.selected = '*Solid*';
+          world.color = {hue: 120, sat: 80};
+        }
+        await run(world, current => {
+          if (ending === 'stopped') stopNl22After(25)(current);
+          else if (frameWrites(current).length >= 25) {
+            if (ending === 'alert') current.alert = true;
+            else current.feeding = false;
+          }
+        }, base);
+        assert.deepEqual(ended(world), {reason: ending, restoration: 'restored'});
+        assert.ok(frameWrites(world).length >= 25 && frameWrites(world).every(frame => frame.applied));
+        assert.deepEqual(world.writes.slice(-2).map(write => write.payload),
+          [{brightness: {value: 50, duration: 0}}, base.kind === 'scene' ? {select: 'Ocean'} : {hue: {value: 120}, sat: {value: 80}}]);
+        assert.equal(world.selected, base.kind === 'scene' ? 'Ocean' : '*Solid*');
+        if (ending === 'stopped') {
+          assert.deepEqual(world.outcomes.find(outcome => outcome.requestId === 'stop'),
+            {type: 'outcome', device: 'nl22', requestId: 'stop', result: 'succeeded', evidence: 'transmitted'});
+        }
+      } finally {
+        world.db.close();
+      }
+    });
+  }
+}
+
+test('a scene picked in the app during an NL22 colour-base session ends it as manual with no colour write', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    world.selected = '*Solid*';
+    world.color = {hue: 120, sat: 80};
+    let pickedAt: number | undefined;
+    await run(world, current => {
+      if (pickedAt === undefined && frameWrites(current).length === 12) {
+        pickedAt = current.now;
+        current.streaming = false;
+        current.selected = 'New scene';
+      }
+    }, COLOR);
+    assert.ok(pickedAt !== undefined);
+    assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
+    assert.deepEqual(sequence(world), ['stream'], 'nothing is written over the app\'s scene');
+    assert.equal(world.selected, 'New scene');
+    assert.equal(frameWrites(world).filter(frame => frame.atMs >= (pickedAt ?? 0) && frame.applied).length, 0);
+  } finally {
+    world.db.close();
+  }
+});
+
+test('#1777 limit: an unsaved dynamic effect picked in the app during an NL22 session is not seen, and Stop puts the base back over it', async () => {
+  // The Panels report `*Dynamic*` both while they stream and for an unsaved dynamic effect, and no documented read tells
+  // them apart. The session plays on: its datagrams reach a light that left streaming and are ignored, and the Stop's
+  // guarded restoration finds `*Dynamic*`, an unchanged brightness and the power on, so it writes the base.
+  const world = open(PANELS_TARGET);
+  try {
+    let pickedAt: number | undefined;
+    await run(world, current => {
+      if (pickedAt === undefined && frameWrites(current).length === 12) {
+        pickedAt = current.now;
+        current.streaming = false;
+        current.selected = '*Dynamic*';
+      }
+      stopNl22After(30)(current);
+    });
+    assert.ok(pickedAt !== undefined);
+    assert.deepEqual(ended(world), {reason: 'stopped', restoration: 'restored'}, 'the pick is not recognised as a manual change');
+    const after = frameWrites(world).filter(frame => frame.atMs >= (pickedAt ?? 0));
+    assert.ok(after.length >= 10 && after.every(frame => !frame.applied), 'frames go on, and a light that left streaming ignores them');
+    assert.deepEqual(sequence(world), ['stream', 'brightness 50', 'select Ocean'], 'the Stop restores the base over the app\'s effect');
+  } finally {
+    world.db.close();
+  }
+});
+
+test('on the Lines, *Dynamic* is still a manual change: an effect picked in the app ends the session with no write (#1777)', async () => {
+  const world = open();
+  try {
+    let pickedAt: number | undefined;
+    await run(world, current => {
+      if (pickedAt === undefined && frameWrites(current).length === 12) {
+        pickedAt = current.now;
+        current.streaming = false;
+        current.selected = '*Dynamic*';
+      }
+    });
+    assert.ok(pickedAt !== undefined);
+    assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
+    const session = musicDeviceState(world.db, 'wall').session;
+    assert.ok(session?.status === 'ended' && session.ended.atMs - pickedAt <= 1100, 'the once-per-second check ends it');
+    assert.deepEqual(sequence(world), ['stream'], 'nothing is written over the app\'s effect');
+    assert.equal(world.selected, '*Dynamic*');
+  } finally {
+    world.db.close();
+  }
+});
+
+test('the NL22 restoration guard writes only while the Panels report *Dynamic*, an unchanged brightness and the power on', async () => {
+  const on = {on: {value: true}, brightness: {value: 50}};
+  const cases: readonly [string, string, object, boolean][] = [
+    ['streaming', '*Dynamic*', on, true],
+    ['the Lines\' streaming selection', '*ExtControl*', on, false],
+    ['a scene', 'Ocean', on, false],
+    ['a colour', '*Solid*', on, false],
+    ['a static selection', '*Static*', on, false],
+    ['a changed brightness', '*Dynamic*', {on: {value: true}, brightness: {value: 30}}, false],
+    ['the power off', '*Dynamic*', {on: {value: false}, brightness: {value: 50}}, false],
+  ];
+  const bases: readonly Exclude<MusicBase, {kind: 'unnamed'}>[] = [{kind: 'scene', name: 'Ocean', brightness: 50},
+    {kind: 'color', selection: '*Solid*', color: {hue: 120, sat: 80}, brightness: 50}];
+  for (const [why, select, state, restores] of cases) {
+    for (const base of bases) {
+      const writes: string[] = [];
+      const read = (endpoint: string): Promise<unknown> => Promise.resolve(endpoint === '/effects' ? {select, effectsList: ['Ocean']} : state);
+      const done = await restoreMusicBase(read, base, '*Dynamic*', () => false, endpoint => { writes.push(endpoint); return Promise.resolve({}); });
+      assert.equal(done, restores, `${why}, ${base.kind}`);
+      assert.equal(writes.length, restores ? 2 : 0, `${why}, ${base.kind}`);
+    }
+  }
+});
+
+test('a Start over the stream an earlier NL22 session left reads it as an unnamed *Dynamic* base with nothing to restore', async () => {
+  const read = (endpoint: string): Promise<unknown> => Promise.resolve(endpoint === '/effects'
+    ? {select: '*Dynamic*', effectsList: ['Ocean']} : {on: {value: true}, brightness: {value: 50}, colorMode: 'effect'});
+  assert.deepEqual(await readMusicBase(read),
+    {observed: {selection: '*Dynamic*', saved: false, restores: 'nothing'}, base: {kind: 'unnamed', selection: '*Dynamic*', brightness: 50}});
+  const world = open(PANELS_TARGET);
+  try {
+    world.selected = '*Dynamic*';
+    await run(world, current => { if (frameWrites(current).length >= 15) current.alert = true; }, {kind: 'unnamed', selection: '*Dynamic*', brightness: 50});
+    assert.deepEqual(ended(world), {reason: 'alert', restoration: 'none'});
+    assert.ok(frameWrites(world).length >= 15 && frameWrites(world).every(frame => frame.applied), 'the session plays past its checks on the leftover selection');
+    assert.deepEqual(sequence(world), ['stream'], 'no scene is guessed and nothing is written after the frames');
+  } finally {
+    world.db.close();
+  }
+});

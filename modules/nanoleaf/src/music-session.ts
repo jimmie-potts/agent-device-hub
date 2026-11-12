@@ -23,7 +23,7 @@ import {endSession, liveSession, markPlaying, musicSession, MUSIC_PLAY, MUSIC_ST
 import type {RenderConfig} from './renderer.js';
 import {execute, type Db} from './sqlite.js';
 import {controlState, markDirty, overrides, type Overrides} from './store.js';
-import {STREAMING, streamProtocol} from './stream.js';
+import {streamProtocol} from './stream.js';
 import {HttpError, type LightRequest} from './transport.js';
 
 export {MUSIC_PLAY, MUSIC_STOP, musicDeviceState, initMusicSessions} from './music-store.js';
@@ -290,11 +290,14 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     if (now() >= deadline) return end('source-lost', 'none', {kind: 'refused', code: 'unavailable'});
     await sleep(POLL_MS / 1000);
   }
-  // The light reports this selection while it streams; a scene chosen on it leaves the mode.
-  const shown = STREAMING;
   // The stream the light's kind takes: the Lines version 2 on its fixed port, the Panels version 1 on the port its
   // entry's answer names.
   const protocol = streamProtocol(command.layout.kind);
+  // The selection the light reports while it streams, from its kind (#1777): `*ExtControl*` on the Lines, `*Dynamic*` on
+  // the NL22. The playing check and the restoration guard read it as "still our stream"; a scene, colour or other
+  // selection chosen on the light leaves the mode and shows. On the NL22 an unsaved dynamic effect also reports
+  // `*Dynamic*`, and no documented read tells it apart, so such a pick is not seen (README, Known limits).
+  const shown = protocol.streaming;
   // Entering streaming is the Start's own journaled write: a lost answer ends it uncertain and holds the device, and an
   // answered refusal fails it; either way `finish` ends the session as a device failure (#1598).
   let answer: unknown;

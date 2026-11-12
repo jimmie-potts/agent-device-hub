@@ -1,8 +1,9 @@
-// What a live Music session on the Lines starts over and what its ending can put back (#1614, over #1272 design D4).
+// What a live Music session on a light starts over and what its ending can put back (#1614, over #1272 design D4).
 // A scene saved on the light is selected again by name, and a plain colour (`*Solid*`) is written back from the hue and
 // saturation or colour temperature read at the Start. Anything else, such as an unsaved scene, an effect or the frames
-// an earlier session left, cannot be selected again: the session still starts, and its ending puts nothing back. No
-// scene is guessed. Bounded moments keep the named-scene rule (`readFreeBase` in moments.ts).
+// an earlier session left (`*ExtControl*` on the Lines, `*Dynamic*` on the NL22, #1777), cannot be selected again: the
+// session still starts, and its ending puts nothing back. No scene is guessed. Bounded moments keep the named-scene
+// rule (`readFreeBase` in moments.ts).
 import {isObject} from './compat.js';
 import type {DeviceRead} from './moments.js';
 
@@ -91,7 +92,8 @@ export async function readMusicBase(read: DeviceRead): Promise<{observed: Select
 }
 
 /**
- * Puts the base back on a light still in the session's streaming selection `shown`: brightness, then the scene by name
+ * Puts the base back on a light still in the session's streaming selection `shown`, its kind's (`StreamProtocol.streaming`):
+ * brightness, then the scene by name
  * or the colour, each through `write`, which guards it. Only while the light still reports `shown`, a scene base is
  * still listed, the light is not off, its brightness is unchanged and nothing newer took over (`stale`). An unnamed base
  * has nothing to put back and is never passed here. False: skipped without a write. A guard that finds a newer choice

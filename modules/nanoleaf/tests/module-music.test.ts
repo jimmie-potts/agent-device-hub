@@ -291,11 +291,16 @@ test('an NL22 session streams version 1 to the Panels only, and a Lines session 
   assert.deepEqual(await start(session, 'panels-start', generation(1), 'preset-green', 'nl22'), {status: 'accepted'});
   await play(session, 300);
   await world.until(() => deviceState(world, 'nl22')?.session?.status === 'playing', 2000, 'the Panels playing');
-  await play(session, 1000);
+  // Past several once-a-second checks: the Panels report `*Dynamic*` while they stream (#1777), and the session plays on.
+  await play(session, 3500);
+  assert.equal(deviceState(world, 'nl22')?.session?.status, 'playing', 'the Panels play past their checks');
   assert.deepEqual(outcome(world, 'panels-start'), {requestId: 'panels-start', result: 'succeeded', evidence: 'transmitted'});
   const panels = panelsOf(world);
-  assert.deepEqual({select: panels?.select, streaming: panels?.streaming}, {select: '*ExtControl*', streaming: {version: 'v1', port: 60221}});
-  assert.ok((panels?.streamed ?? 0) >= 5 && panels?.ignored === 0, `${panels?.streamed} applied, ${panels?.ignored} ignored`);
+  assert.deepEqual({select: panels?.select, streaming: panels?.streaming}, {select: '*Dynamic*', streaming: {version: 'v1', port: 60221}});
+  assert.ok((panels?.streamed ?? 0) >= 30 && panels?.ignored === 0, `${panels?.streamed} applied, ${panels?.ignored} ignored`);
+  const panelsRecord = world.state<{selection?: {placeholder: unknown; restores: unknown} | null}>('nanoleaf-wall', 'nl22')?.selection;
+  assert.deepEqual({placeholder: panelsRecord?.placeholder, restores: panelsRecord?.restores}, {placeholder: '*Dynamic*', restores: 'nothing'},
+    'the Panels\' record shows what they report while streaming');
   assert.deepEqual(Object.keys(panels?.frame ?? {}).sort(), ['200', '201', '202', '203'], 'every triangle by its panel ID');
   assert.equal(panels?.tooSoon, 0, 'no datagram less than 100 ms after the last, on the module\'s clock');
   assert.deepEqual({writes: lines(world)?.writes, streamed: lines(world)?.streamed, ignored: lines(world)?.ignored}, linesBefore, 'the Lines are untouched');
@@ -361,9 +366,80 @@ test('a module restart mid-session ends the NL22 session as restart with nothing
   assert.deepEqual({reason: record.ended.reason, restoration: record.ended.restoration}, {reason: 'restart', restoration: 'none'});
   assert.deepEqual({writes: panelsOf(world)?.writes, streamed: panelsOf(world)?.streamed, select: panelsOf(world)?.select}, stopped,
     'no write, no frame and no replay after the restart: the Panels keep their last frame');
-  assert.equal(stopped.select, '*ExtControl*');
+  assert.equal(stopped.select, '*Dynamic*', 'the NL22 reports its leftover stream as *Dynamic*');
+
+  // The next Start reads that leftover stream as an unnamed base: it plays past its checks, and Stop puts nothing back.
+  assert.deepEqual(await start(session, 'panels-again', generation(2), 'preset-green', 'nl22'), {status: 'accepted'});
+  const againAt = world.clock.now();
+  await play(session, 300);
+  await world.until(() => deviceState(world, 'nl22')?.session?.status === 'playing', 2000, 'the Panels playing again');
+  await play(session, 2500);
+  assert.equal(deviceState(world, 'nl22')?.session?.status, 'playing');
+  assert.deepEqual(world.state<{musicBase?: unknown}>('nanoleaf-wall', 'nl22')?.musicBase, {generation: generation(2), restores: 'nothing'});
+  assert.deepEqual(await stop(session, 'panels-again-stop', generation(2), 'nl22'), {status: 'accepted'});
+  await play(session, 300);
+  await world.until(() => world.outcomes('panels-again-stop').length === 1, 2000, 'the Panels stop outcome');
+  assert.deepEqual(outcome(world, 'panels-again-stop'), {requestId: 'panels-again-stop', result: 'succeeded', evidence: 'observed'});
+  const again = deviceState(world, 'nl22')?.session;
+  assert.ok(again?.status === 'ended');
+  assert.deepEqual({reason: again.ended.reason, restoration: again.ended.restoration}, {reason: 'stopped', restoration: 'none'});
+  assert.equal((panelsOf(world)?.recent ?? []).filter(write => write.atMs >= againAt && (write.select !== undefined || write.brightness !== undefined)).length, 0,
+    'nothing is restored and no scene is guessed');
+  assert.equal(panelsOf(world)?.select, '*Dynamic*', 'the Panels keep the last frame');
   world.verifyMessages();
 });
+
+// #1777: with both lights playing, each light's manual change is read from its own streaming selection: `*Dynamic*` on
+// the Panels, `*ExtControl*` on the Lines. A scene or colour picked on the Panels ends their session `manual` with
+// nothing written over it; an unsaved dynamic effect picked there reads as streaming and is not seen.
+for (const pick of ['scene', 'colour', 'dynamic effect'] as const) {
+  test(`with both lights playing, a ${pick} picked in the app on the Panels ${pick === 'dynamic effect' ? 'is not seen, and Stop puts their base back over it' : 'ends only their session, as manual, with nothing written over it'}`, async context => {
+    const session = await bothInFree(context);
+    const {world} = session;
+    assert.deepEqual(await start(session, 'panels-start', generation(1), 'preset-green', 'nl22'), {status: 'accepted'});
+    assert.deepEqual(await start(session, 'lines-start', generation(2)), {status: 'accepted'});
+    await play(session, 500);
+    await world.until(() => deviceState(world)?.session?.status === 'playing' && deviceState(world, 'nl22')?.session?.status === 'playing', 2000, 'both playing');
+    await play(session, 2000);
+    const linesBefore = lines(world)?.streamed ?? 0;
+    if (pick === 'scene') world.device.chooseScene(PANELS_ADDRESS, 'Northern Lights');
+    else if (pick === 'colour') world.device.chooseColor(PANELS_ADDRESS, {hue: 10, sat: 90});
+    else world.device.chooseEffect(PANELS_ADDRESS, 'dynamic');
+    const pickedAt = world.clock.now();
+    await play(session, 2500);
+    const panelsWrites = (): number => (panelsOf(world)?.recent ?? []).filter(write => write.atMs > pickedAt).length;
+    assert.equal(panelsOf(world)?.streams.filter(entry => entry.applied && entry.atMs > pickedAt).length, 0, 'no frame paints over the app\'s pick');
+    assert.equal(deviceState(world)?.session?.status, 'playing', 'the Lines play on');
+    assert.ok((lines(world)?.streamed ?? 0) >= linesBefore + 20, 'the Lines keep applying their frames');
+    if (pick !== 'dynamic effect') {
+      const record = deviceState(world, 'nl22')?.session;
+      assert.ok(record?.status === 'ended');
+      assert.deepEqual({reason: record.ended.reason, restoration: record.ended.restoration}, {reason: 'manual', restoration: 'none'});
+      assert.ok(record.ended.atMs - pickedAt <= 1200, 'the next once-a-second check ends it');
+      assert.equal(panelsWrites(), 0, 'nothing is written over the app\'s pick');
+      assert.equal(panelsOf(world)?.select, pick === 'scene' ? 'Northern Lights' : '*Solid*', 'the app\'s pick stays');
+    } else {
+      // The limit #1777 names: the Panels report `*Dynamic*` for the app's effect as while streaming, so the session
+      // plays on into a light that ignores its frames, and Stop's guarded restoration writes the base over the effect.
+      assert.equal(deviceState(world, 'nl22')?.session?.status, 'playing', 'the pick is not recognised as a manual change');
+      assert.ok((panelsOf(world)?.ignored ?? 0) >= 20, 'its frames reach a light that left streaming and are ignored');
+      assert.deepEqual(await stop(session, 'panels-stop', generation(1), 'nl22'), {status: 'accepted'});
+      await play(session, 300);
+      await world.until(() => world.outcomes('panels-stop').length === 1, 2000, 'the Panels stop outcome');
+      const record = deviceState(world, 'nl22')?.session;
+      assert.ok(record?.status === 'ended');
+      assert.deepEqual({reason: record.ended.reason, restoration: record.ended.restoration}, {reason: 'stopped', restoration: 'restored'});
+      assert.equal(panelsOf(world)?.select, 'Beach Waves', 'the base is put back over the app\'s effect');
+    }
+    // The Lines' session is untouched and still ends by its own rules.
+    assert.deepEqual(await stop(session, 'lines-stop', generation(2)), {status: 'accepted'});
+    await play(session, 300);
+    await world.until(() => world.outcomes('lines-stop').length === 1, 2000, 'the Lines stop outcome');
+    assert.deepEqual({reason: ended(world)?.reason, restoration: ended(world)?.restoration}, {reason: 'stopped', restoration: 'restored'});
+    assert.equal(lines(world)?.select, 'Beach Waves');
+    world.verify();
+  });
+}
 
 test('an alert ends both lights\' sessions, and each puts back its own scene', async context => {
   const session = await bothInFree(context);

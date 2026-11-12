@@ -1,0 +1,30 @@
+## Why
+
+On the first run on the real NL22 Light Panels ([#1777](https://github.com/jimmie-potts/agent-device-hub/issues/1777), 2026-11-12, installed core `eebb5923`), every live Music session ended about a second after it started. While it streams version 1, the NL22 reports its selection as `*Dynamic*`, not `*ExtControl*` as the Lines do. The module read that as a newer manual choice, so it ended the session `manual`. That ending wrote nothing, which was the safe failure. [#1272](https://github.com/jimmie-potts/agent-device-hub/issues/1272) (PR #1652) had listed the NL22's streaming selection as assumed. This change corrects it under epic #720 and delivery handoff #1617.
+
+## What Changes
+
+- **Streaming selection by kind.** Each light's stream protocol (`stream.ts`) names the selection the light reports while it streams: `*ExtControl*` on the Lines and `*Dynamic*` on the NL22. The once-a-second playing check and the restoration guard both read that value as "the stream still shows". The Lines' value, requests, bytes and port do not change.
+- **Manual change on the Panels.** A saved scene, a colour or an unsaved static selection picked on the NL22 during a session still ends it `manual` with nothing written over it. Each shows as a scene name, `*Solid*` or `*Static*`.
+- **Stated limit.** On the NL22, an unsaved dynamic effect picked in the app also reports `*Dynamic*`. No documented read tells it apart from streaming without a write, so the pick is not seen. The session plays on, and a later Stop, alert or source loss restores the base over it. The README, the specs and the Audio card say so. The owner decides whether to accept this or to approve a distinguishing request.
+- **Leftover stream.** At the next Start, a leftover NL22 stream reads as an unnamed `*Dynamic*` base with nothing to restore, as #1614 already classifies `*Dynamic*`. The record's placeholder is `*Dynamic*`.
+- **Simulated controllers.** The simulated Panels report `*Dynamic*` while they stream. Datagrams apply only while the controller is streaming, which every app choice ends. New app actions pick a colour or an unsaved static or dynamic effect, as the Nanoleaf app would.
+- **Audio card.** The `*Dynamic*` base text also names streamed frames on the Light Panels, and the manual-change text states the Panels' limit.
+- **Unchanged:** the Lines' behaviour; the device requests a Panels session makes; the event families, error shapes and records; prepared timelines (#1273); the capture feed and visualizer.
+
+## Capabilities
+
+### New Capabilities
+
+None.
+
+### Modified Capabilities
+
+- `nanoleaf-module`: live sessions check each light's own streaming selection, and the Panels' unseen-dynamic-pick limit is stated.
+- `runtime-dashboard`: the Audio Music lighting card states the Panels' limit and what `*Dynamic*` may be on them.
+
+## Impact
+
+- `modules/nanoleaf`: `stream.ts` (the per-kind streaming selection), `music-session.ts` (uses it), `music-base.ts` (comments), the simulated controller and its app actions, and the stream, session and module tests and README.
+- `apps/runtime/dashboard`: `music-lighting-model.ts` wording, its unit test, and one assertion and wait in `music-lighting.browser.ts`.
+- No contract package, core, schema, migration, store, device request or installation change. The installed NL22 check under #1777 and #725 needs owner-approved terms.
