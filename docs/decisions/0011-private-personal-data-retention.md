@@ -2,7 +2,9 @@
 
 Status: accepted direction on 2026-10-03; amended on 2026-10-05 (see the
 [amendment](#amendment-2026-10-05)) and on 2026-11-11, with four cases added
-on 2026-11-12 (see the [amendment](#amendment-2026-11-11)). Runtime adoption
+on 2026-11-12 (see the [amendment](#amendment-2026-11-11)); amended on
+2026-11-12 with an owner-selected retention rule for repeated readings in core
+history (see the [amendment](#amendment-2026-11-12)). Runtime adoption
 requires scoped, versioned implementation and its own source and installed
 evidence.
 Policy delivery: [Hub #775](https://github.com/jimmie-potts/agent-device-hub/issues/775).
@@ -45,6 +47,16 @@ and fail-open hooks; make loss visible and qualify durable acceptance before
 claiming a complete archive. Capacity pressure must not silently erase retained
 observations. Existing explicit opt-out/clear behavior remains supported until
 a separately scoped change preserves its meaning and recovery guarantees.
+
+One owner-selected retention rule applies to core history's repeated readings
+(2026-11-12, see the [amendment](#amendment-2026-11-12)). A stretch of state
+readings that differ only in declared bookkeeping members is kept as a span:
+its first confirmation, its last confirmation, the count of readings and, for a
+polled record that falls silent for too long, a gap row. Each repeated
+reading's own time and other bookkeeping values, such as the page a Pixoo
+status picture showed, are not kept. The rule applies once
+[#1772](https://github.com/jimmie-potts/agent-device-hub/issues/1772) is merged
+and installed; until then history keeps what it keeps today.
 
 Credentials, authentication tokens, API keys and secrets remain excluded from
 analytics and diagnostic capture. Credential stores retain their own protection.
@@ -242,3 +254,43 @@ What does not change:
 - Prompt, response and transcript capture stays under
   [Hub #425](https://github.com/jimmie-potts/agent-device-hub/issues/425).
 - Claude and Codex remain as the 2026-10-05 amendment left them.
+
+## Amendment, 2026-11-12
+
+The owner decided the following on 2026-11-12, in chat to the coordinating
+session, while answering decision 2 of the design record
+[#1768](https://github.com/jimmie-potts/agent-device-hub/issues/1768). At
+15:24:52Z the owner answered "Yes to decisions 1 and 2 and go for the replay."
+Decision 2 asked whether a first confirmation, a last confirmation and a count
+are enough for a stretch of repeated readings, without each repeat's own time.
+
+The owner-selected rule, for core history:
+
+- **Kept:** every reading that changes a member other than a declared
+  bookkeeping member writes a history row, as before. A stretch of readings
+  that differ only in bookkeeping members is kept as its first confirmation,
+  its last confirmation and the count of readings. For a record family that
+  publishes on a poll, a silence longer than four times its polling interval,
+  and at least two minutes, is kept as a gap row (decision 4, answered at
+  15:48:22Z).
+- **Not kept:** each repeated reading's own time and other bookkeeping values
+  within a stretch, such as the page a Pixoo status picture showed.
+- Bookkeeping members are declared per state family. Safety members are never
+  bookkeeping, and the session record's times stay rows (decision 6, answered
+  at 15:48:22Z).
+
+[ADR 0012's amendment of 2026-11-12](0012-bunny-event-platform.md#amendment-2026-11-12)
+records the rule and the other decisions. The rule applies once
+[#1772](https://github.com/jimmie-potts/agent-device-hub/issues/1772) is merged
+and installed; until then history keeps what it keeps today.
+
+What does not change:
+
+- History keeps no time limit, and rows already stored are left as they are
+  (decision 5, answered at 15:48:22Z). Time limits and purge are held by the
+  owner.
+- Removals, occurrences, outcomes and the steps of tracked actions are kept as
+  before.
+- Every other rule of this record stands, including the exclusion of
+  credentials, authentication tokens, API keys and secrets, and the GitHub
+  boundary.
