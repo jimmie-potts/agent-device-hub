@@ -9,11 +9,14 @@
 // External control follows each kind's documented version (`stream.ts`): the Lines enter version 2 and take it on port
 // 60222, the Panels enter version 1, answer with their streaming port and take one-byte panel IDs. The simulation is
 // stricter than a light is known to be, so a wrong version, port, layout or zone fails loudly: it refuses the other
-// version's entry and rejects a datagram on another port, of another layout or for a zone it does not light.
+// version's entry and rejects a datagram on another port, of another layout or for a zone it does not light. While
+// streaming, each reports the selection its installed light showed: the Lines `*ExtControl*` (#1598), the Panels
+// `*Dynamic*` (#1777), which is also what they report for an unsaved dynamic effect. Only the entry starts streaming,
+// and any scene, colour or effect chosen afterwards leaves it.
 import {isObject} from '../compat.js';
 import {ValueError} from '../errors.js';
 import {NEIGHBOR} from '../panels.js';
-import {STREAM_PORT, STREAM_TRANSITION, STREAMING, type LightDatagram} from '../stream.js';
+import {STREAM_PORT, STREAM_TRANSITION, streamProtocol, type LightDatagram} from '../stream.js';
 import {HttpError, type LightAddress, type LightRequest} from '../transport.js';
 
 /** The synthetic token every simulated controller accepts. It is no credential and must appear in no message, record or proof. */
@@ -48,7 +51,10 @@ export type SimulatedDevice = {
   kind: SimulatedKind;
   on: boolean;
   brightness: number;
-  /** The playing selection: a saved scene's name, `*Solid*` after a colour write, `*Dynamic*` after an effect write, `*Static*`, or `*ExtControl*` while streaming. */
+  /**
+   * The playing selection: a saved scene's name, `*Solid*` after a colour, `*Dynamic*` after an effect, `*Static*` after
+   * a static one, and while streaming `*ExtControl*` on the Lines or `*Dynamic*` on the Panels.
+   */
   select: string;
   /** The last colour written, and the colour mode `/state` reports: `hs` or `ct` after a colour write, `effect` otherwise. */
   hue: number; sat: number; ct: number; colorMode: 'hs' | 'ct' | 'effect';
@@ -168,7 +174,9 @@ export class SimulatedNanoleaf {
       device.streams.push({atMs, applied});
       if (device.streams.length > KEPT_WRITES) device.streams.shift();
     };
-    const streaming = device.select === STREAMING ? device.streaming : null;
+    // Every choice that leaves streaming clears it, so it alone says whether the light applies a datagram: on the Panels
+    // the selection cannot, since an unsaved dynamic effect reports the same `*Dynamic*`.
+    const streaming = device.streaming;
     if (streaming === null) {
       device.ignored += 1;
       kept(false);
@@ -195,6 +203,36 @@ export class SimulatedNanoleaf {
       device.streaming = null;
       device.manualAtMs = this.#now();
     }
+  }
+
+  /** Picks a plain colour on a controller as the Nanoleaf app would: `*Solid*`, which also leaves streaming. */
+  chooseColor(address: string, color: {hue: number; sat: number} | {ct: number}): void {
+    const device = this.#devices.get(address);
+    if (device === undefined) return;
+    if ('ct' in color) {
+      device.ct = color.ct;
+      device.colorMode = 'ct';
+    } else {
+      device.hue = color.hue;
+      device.sat = color.sat;
+      device.colorMode = 'hs';
+    }
+    device.select = '*Solid*';
+    device.streaming = null;
+    device.manualAtMs = this.#now();
+  }
+
+  /**
+   * Shows an unsaved effect on a controller as the Nanoleaf app would: a static one reports `*Static*` and a dynamic one
+   * `*Dynamic*`, the documentation's reserved names. Either leaves streaming; on the Panels a dynamic one reads as it did.
+   */
+  chooseEffect(address: string, effect: 'static' | 'dynamic'): void {
+    const device = this.#devices.get(address);
+    if (device === undefined) return;
+    device.select = effect === 'static' ? '*Static*' : '*Dynamic*';
+    device.colorMode = 'effect';
+    device.streaming = null;
+    device.manualAtMs = this.#now();
   }
 
   online(): void {
@@ -320,7 +358,7 @@ export class SimulatedNanoleaf {
       }
       if (isObject(write) && typeof write.animType === 'string') {
         const streaming = write.animType === 'extControl' ? entered(device.kind, write) : null;
-        device.select = streaming !== null ? STREAMING : write.animType === 'static' ? '*Static*' : '*Dynamic*';
+        device.select = streaming !== null ? streamProtocol(device.kind).streaming : write.animType === 'static' ? '*Static*' : '*Dynamic*';
         device.colorMode = 'effect';
         device.effect = write.animType;
         device.streaming = streaming;

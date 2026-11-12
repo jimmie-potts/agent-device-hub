@@ -145,7 +145,9 @@ const PUTS_BACK: Record<Restores, string> = {
   color: 'Stop, an alert or lost Music input puts that colour back at its brightness.',
   nothing: 'The light cannot select it again, so Stop, an alert or lost Music input puts nothing back and the light keeps the last Music frame.',
 };
-const MANUAL = 'A scene or colour picked on the light wins and nothing is put back, unless it lands in the instant the session takes the light. A brightness or power change on the light ends the session within about a second, so a Music frame may already have replaced the scene or colour.';
+// #1777: the NL22 reports `*Dynamic*` while it streams and for an unsaved dynamic effect alike, so the Panels cannot show such a pick.
+const MANUAL = 'A scene or colour picked on the light wins and nothing is put back, unless it lands in the instant the session takes the light. A brightness or power change on the light ends the session within about a second, so a Music frame may already have replaced the scene or colour.'
+  + ' On the Light Panels, a choice they report as an unsaved dynamic effect, such as one picked or played by an app, looks the same as Music frames and is not seen: the session plays on, and Stop, an alert or lost Music input may put the base back over it.';
 /** What a read selection is, in plain words: never a scene's name, which the light module does not publish. */
 function selectionWords(selection: WallSelection): string {
   if (selection.saved) return 'a scene saved on the light';
@@ -153,7 +155,8 @@ function selectionWords(selection: WallSelection): string {
   switch (selection.placeholder) {
     case '*ExtControl*': return 'streamed frames, such as those an earlier Music session left';
     case '*Solid*': return 'a plain colour whose value could not be read';
-    case '*Dynamic*': case '*Static*': return 'an effect that is not a scene saved on the light';
+    case '*Dynamic*': return 'an effect that is not a scene saved on the light or, on the Light Panels, streamed frames such as those an earlier Music session left';
+    case '*Static*': return 'an effect that is not a scene saved on the light';
     case null: default: return 'a selection that is not a scene saved on the light';
   }
 }

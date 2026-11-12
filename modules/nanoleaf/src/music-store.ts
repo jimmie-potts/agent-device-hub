@@ -6,7 +6,7 @@
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {LightingDeviceState, LightingEnded, LightingEndReason, LightingRestoration} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import type {End, JournalRow, Report} from './journal.js';
-import {RESTORES, restoresOf, type MusicBase, type Restores, type SelectionRead} from './music-base.js';
+import {RESTORES, restoresOf, type ColorState, type MusicBase, type Restores, type SelectionRead} from './music-base.js';
 import {execute, first, text, type Db} from './sqlite.js';
 
 export const MUSIC_PLAY = 'music.play';
@@ -22,32 +22,64 @@ export function initMusicSessions(db: Db): void {
   db.exec(`CREATE TABLE IF NOT EXISTS nanoleaf_music_sessions (device TEXT PRIMARY KEY, generation TEXT NOT NULL,
     status TEXT NOT NULL, start_id TEXT NOT NULL, detail TEXT NOT NULL, ended TEXT) STRICT;
     CREATE TABLE IF NOT EXISTS nanoleaf_selections (device TEXT PRIMARY KEY, selection TEXT NOT NULL, saved INTEGER NOT NULL,
-    restores TEXT NOT NULL, read_at_ms INTEGER NOT NULL) STRICT`);
+    restores TEXT NOT NULL, read_at_ms INTEGER NOT NULL) STRICT;
+    CREATE TABLE IF NOT EXISTS nanoleaf_selection_colors (device TEXT PRIMARY KEY, read_at_ms INTEGER NOT NULL, color_mode TEXT,
+    hue INTEGER, sat INTEGER, ct INTEGER) STRICT`);
+  // #1777: the colour state read with the selection has its own table, not new columns: an older module inserts five
+  // positional values into `nanoleaf_selections`, so it keeps working on this store and leaves this table alone. A colour
+  // row counts only with the selection row of the same read time, so one an older module left behind is never shown.
 }
 
 /** How long an unchanged selection keeps its read time, so a playing session's once-per-second read republishes nothing. */
 export const SELECTION_REFRESH_MS = 60_000;
-export type SavedSelection = SelectionRead & {readAtMs: number};
+export type SavedSelection = SelectionRead & {readAtMs: number; color?: ColorState};
 
 /** The light's last read selection, or none before the first read since the store began. */
 export function lastSelection(db: Db, device: string): SavedSelection | undefined {
   const row = first(db, 'SELECT selection,saved,restores,read_at_ms FROM nanoleaf_selections WHERE device=?', device);
   if (row === undefined) return undefined;
   const restores = text(row, 2);
+  const readAtMs = Number(row[3]);
+  const color = colorOf(db, device, readAtMs);
   return {selection: text(row, 0), saved: row[1] === 1, restores: (RESTORES as readonly string[]).includes(restores) ? restores as Restores : 'nothing',
-    readAtMs: Number(row[3])};
+    readAtMs, ...(color === undefined ? {} : {color})};
+}
+
+/** The colour state kept with the light's selection read at `readAtMs`, or none when no `/state` read came with it. */
+function colorOf(db: Db, device: string, readAtMs: number): ColorState | undefined {
+  const row = first(db, 'SELECT color_mode,hue,sat,ct FROM nanoleaf_selection_colors WHERE device=? AND read_at_ms=?', device, readAtMs);
+  if (row === undefined) return undefined;
+  const whole = (index: number): number | undefined => typeof row[index] === 'number' && Number.isInteger(row[index]) ? row[index] : undefined;
+  const hue = whole(1), sat = whole(2), ct = whole(3);
+  return {colorMode: typeof row[0] === 'string' ? row[0] : null, ...(hue === undefined ? {} : {hue}), ...(sat === undefined ? {} : {sat}),
+    ...(ct === undefined ? {} : {ct})};
 }
 
 /**
- * Keeps one read of the light's selection and reports a change: always when what it found changed, and otherwise once
- * `SELECTION_REFRESH_MS` has passed since the kept read time.
+ * Whether two colour states have the same colour mode, counting no `/state` read as a mode of its own. Only the mode is
+ * compared: a hue, saturation or colour temperature that differs from read to read must not republish the record every
+ * second (#1777 R4), so it waits for the same refresh as an unchanged selection's read time.
  */
-export function saveSelection(db: Db, device: string, read: SelectionRead, atMs: number, report: Report): void {
+const sameColorMode = (left: ColorState | undefined, right: ColorState | undefined): boolean =>
+  left === undefined || right === undefined ? left === right : left.colorMode === right.colorMode;
+
+/**
+ * Keeps one read of the light's selection, with the colour state of the `/state` read made beside it, if any (#1777), and
+ * reports a change: at once when the selection or the colour mode changed, and otherwise, a changed hue, saturation or
+ * colour temperature included, once `SELECTION_REFRESH_MS` has passed since the kept read time. Kept numbers may
+ * therefore be up to that long old.
+ */
+export function saveSelection(db: Db, device: string, read: SelectionRead, atMs: number, report: Report, color?: ColorState): void {
   const kept = lastSelection(db, device);
   const readAtMs = Math.max(0, Math.round(atMs));
   if (kept !== undefined && kept.selection === read.selection && kept.saved === read.saved && kept.restores === read.restores &&
-    readAtMs - kept.readAtMs < SELECTION_REFRESH_MS) return;
+    sameColorMode(kept.color, color) && readAtMs - kept.readAtMs < SELECTION_REFRESH_MS) return;
   execute(db, 'INSERT OR REPLACE INTO nanoleaf_selections VALUES (?,?,?,?,?)', device, read.selection, read.saved ? 1 : 0, read.restores, readAtMs);
+  if (color === undefined) execute(db, 'DELETE FROM nanoleaf_selection_colors WHERE device=?', device);
+  else {
+    execute(db, 'INSERT OR REPLACE INTO nanoleaf_selection_colors VALUES (?,?,?,?,?,?)', device, readAtMs, color.colorMode, color.hue ?? null,
+      color.sat ?? null, color.ct ?? null);
+  }
   report({type: 'selection', device});
 }
 

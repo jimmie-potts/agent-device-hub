@@ -254,9 +254,9 @@ light's ending never writes, holds or ends the other.
   - a **saved scene**, listed in the light's `effectsList`;
   - a **plain colour**, `*Solid*` whose `/state` reports `colorMode` `hs` with a hue and
     saturation, or `ct` with a colour temperature;
-  - anything else, an **unnamed** base: an unsaved scene, an effect, `*ExtControl*` frames
-    an earlier session left, or `*Solid*` whose colour is unreadable. Nothing can select
-    it again, and no scene is guessed.
+  - anything else, an **unnamed** base: an unsaved scene, an effect, the frames an earlier
+    session left (`*ExtControl*` on the Lines, `*Dynamic*` on the NL22), or `*Solid*` whose
+    colour is unreadable. Nothing can select it again, and no scene is guessed.
 
   A refusal names the selection without a scene name: `saved scene scene-…` (the
   opaque ID the device record lists), the light's own placeholder (`*Solid*`,
@@ -283,7 +283,10 @@ light's ending never writes, holds or ends the other.
   version 1 on the NL22. The version comes from the kind of the saved layout frozen into the
   Start, which agrees with the registry's configured kind by construction: the module reads
   and saves each light's layout by its configured kind, and only `wall` can be the Lines.
-  The light reports `*ExtControl*`. The NL22 answers with the UDP port to stream to, used
+  While streaming, the Lines report `*ExtControl*` and the NL22 reports `*Dynamic*`, each as
+  its installed light showed (#1598, #1777). The session takes its light's own value
+  (`StreamProtocol.streaming`) as the sign that its stream still shows, in the playing
+  check and the restoration guard. The NL22 answers with the UDP port to stream to, used
   only if it is from 1024 to 65535. An answer without a usable port fails the Start
   `failed`/`transmitted` with `unsupported-capability` and ends the session `device`, with no
   frame, no hold and no further write. The write completes the work command `succeeded`/`transmitted`, the
@@ -299,10 +302,14 @@ light's ending never writes, holds or ends the other.
   Each renders the newest fresh sample only, with one request or datagram in
   flight, at least 100 ms between frames and no catch-up. Silent valid frames keep
   playing. Nothing answers a datagram, so it holds nothing and opens no span.
-- **App takeover.** A scene chosen in the Nanoleaf app leaves streaming mode, and the
-  light ignores later datagrams, so no frame can paint over it. The once-per-second read
-  finds the scene and ends the session `manual` with no restoration; a later Stop has no
-  session to restore. While playing, the session's only HTTP requests are that read
+- **App takeover.** The once-per-second read ends the session `manual` with no restoration
+  when it finds any selection other than the light's streaming value: a scene's name,
+  `*Solid*` for a colour or `*Static*` on either light, and `*Dynamic*` on the Lines; a
+  later Stop has no session to restore. That a scene chosen in the app takes the light out
+  of streaming, so it ignores the datagrams sent before that read, is observed on the
+  Lines only (#1598). On the NL22 nothing chosen in the app during a session has been
+  observed yet. Anything that leaves the NL22 reporting `*Dynamic*` with brightness and
+  power unchanged is not seen at all (Known limits). While playing, the session's only HTTP requests are that read
   (`/effects`, then `/state`), not a read and write per frame. After every read, every
   ending check runs again before the next frame: the Stop, a newer choice, an alert, the
   input's freshness and, before streaming starts, the Start's expiry. A Stop or alert
@@ -318,7 +325,8 @@ light's ending never writes, holds or ends the other.
 - **Restoration** re-reads the light and writes brightness, then the base: a scene by
   name (`PUT /effects {select}`), or a colour in one `PUT /state` with its hue and
   saturation or its colour temperature. It writes only while the light still reports
-  `*ExtControl*`, a scene base is listed, the light is not off, the brightness is
+  its streaming value (`*ExtControl*` on the Lines, `*Dynamic*` on the NL22), a scene base
+  is listed, the light is not off, the brightness is
   unchanged and nothing newer exists before and after each write. Moments use the
   same guard for their named scene. The result is `restored`; `skipped` with no further
   write; or `uncertain` when a restoration write's answer was lost, since it may have
@@ -352,19 +360,43 @@ request of its own:
   The Start's read and the playing check's `/effects` read keep it in the private
   `nanoleaf_selections` table. An unchanged selection keeps its read time for up to a
   minute, so the once-per-second check does not republish the record every second.
+  When a `/state` read came with that selection read, it also holds that read's
+  `colorMode` (or `null`) and whole `hue`, `sat` and `ct`, kept in
+  `nanoleaf_selection_colors`. This is a diagnostic only (#1777, Known limits). A changed
+  `colorMode` is kept and published at once, as a changed selection is. A change of only
+  `hue`, `sat` or `ct` waits for the same one-minute refresh as an unchanged selection's
+  read time, so the published numbers may be up to a minute old. An older module leaves
+  that table alone and keeps working on the store.
 - `musicBase`: the latest session's `generation` and what its ending puts back (`restores`).
 
 No record holds a scene name.
 
 Known limits:
 
-- A scene chosen in the Nanoleaf app in the short gap between the entry's read and the streaming entry is replaced by the entry, once per session. So is a different colour picked in the gap between a colour base's `/state` read and the entry write; one picked before that read ends the session `manual`.
+- A scene chosen in the Nanoleaf app in the short gap between the entry's selection read and the streaming entry is replaced by the entry, once per session. So is a different colour picked in the gap between a colour base's `/state` read and the entry write; one picked before that read ends the session `manual`. Over an unnamed `*Dynamic*` or `*Static*` base, a choice that reports the same placeholder at any time from the Start's base read to the entry write is not seen, and the entry replaces it. That window lasts until the first fresh feature renders, up to the 2 s first-feature wait.
 - Colour restoration follows the Nanoleaf API documentation; #1614's installed check qualifies it on the Lines.
 - An app takeover, and brightness and power changes made outside the hub, are seen within about a second. The entry checks only the selection (and a colour base's colour), so a brightness or power change made before it is seen by the first playing check, after a frame may have replaced the base.
-- After a `device` or `restart` ending, or a module stop mid-session, nothing is written: the light stays in streaming mode, showing the last frame, until it times out or a scene is chosen. The scene restorer treats `*ExtControl*` in Free as someone else's choice.
+- Several endings write nothing and leave the light on the last frame, still streaming until it times out or a scene is chosen: a `device` or `restart` ending, a module stop mid-session, a Stop, alert or source loss over an unnamed base, a brightness or power `manual` ending, and a skipped restoration. Afterwards the worker's scene restorer holds the light as the module's own, with its last selection `*Dynamic*`. A later mode command that makes a new revision, for example one that clears a power or brightness override, runs a pass. That pass reads the light's selection, finds it unlisted, and writes power on, the brightness and the restorer's remembered scene, journaled under the mode command. With no remembered scene, or one no longer listed, it draws the fallback colour instead. A plain Free-to-Free command writes nothing. The one exception is `*ExtControl*` in Free, which the restorer leaves alone as someone else's choice; that covers a leftover Lines stream, but not the NL22's, which reads `*Dynamic*` (#1777). On both lights the same applies to any unlisted selection the owner picks after a session. This change does not make a leftover stream more likely. It newly lets an NL22 ending restore a colour, which leaves `*Solid*`, an unlisted selection, as on the Lines. The behaviour belongs to the scene restorer and is tracked separately.
+- **Unseen choices on the NL22 (#1777).** The NL22 reports `*Dynamic*` while it streams, and no documented read tells that apart from anything else reporting `*Dynamic*` without a write. So anything that leaves the NL22 reporting `*Dynamic*`, with brightness and power unchanged, is not seen as a manual change. Examples:
+  - an unsaved dynamic effect picked in the Nanoleaf app;
+  - a scene, palette or effect that the app or an integration plays with a temporary display write instead of selecting a listed name. To the owner this can look like picking a scene: #1777 recorded the app's own label not matching the name the API reported;
+  - another external-control client that starts streaming to the Panels mid-session. Its frames and this session's may then interleave on the same port, so this is not a case of frames being ignored. On the Lines the same applies to another client streaming with `*ExtControl*`.
+
+  The session keeps sending frames. Whether the NL22 ignores them after such a choice is not known: the Lines ignored them after an app scene (#1598), and on the NL22 nothing chosen during a session has been observed. If the NL22 still applies them, they keep painting over the choice with no bound except Stop, an alert, source loss, a hub choice, a brightness or power change, or a module stop. A later Stop, alert or source loss puts a scene or colour base back over the choice when the brightness is unchanged and the light is on. A saved scene, a colour or an unsaved static selection picked on the NL22 is still seen within about a second and ends the session `manual` with nothing written. The installed check includes the step "an app dynamic effect picked during a Panels session: does it stay, or do the frames paint over it?". The owner's options are listed in the next item.
+- **Owner options for the unseen choices (#1777, pending):** (1) accept the limit as it stands; (2) restore only on an explicit Stop on the Panels, not on an alert or source loss, which departs from #40's rule that an alert and source loss restore and narrows the limit without removing it; (3) send `PUT /effects` with `{"write": {"command": "request", "animName": "*Dynamic*"}}` once a second, a write-method command whose answer for a reserved name is undocumented and whose effect on the stream is unknown; (4) subscribe to effects events with `GET /events?id=3`, a long-lived connection outside the device queue, where it is undocumented whether a pick with the same name sends an event; (5) first read the colour-state diagnostic below during the installed check, which needs no new request, and decide from that evidence.
+- **Colour-state diagnostic (#1777).** Each light's `nanoleaf-wall` record now also shows what the `/state` read made with its last selection read said of the light's colour, with no added request. These fields are present only when such a read was made: the Start's base read always makes one, and the playing check makes one only while the light reports its streaming value. They are `colorMode` (the light's own word, or `null` when it gives none or an unexpected one) and the whole `hue`, `sat` and `ct` it reports. The fields are stored in `nanoleaf_selection_colors`, beside `nanoleaf_selections`. A changed `colorMode` is kept and published at once. A change of only `hue`, `sat` or `ct` waits for the selection's one-minute refresh, so those numbers may be up to a minute old. Nothing in the module ends, guards or restores a session on them. They exist so that the installed check can see whether the NL22's colour state differs between its own stream and an app choice.
 - The Lines' streaming behavior (zone addressing, app takeover, brightness) comes from third-party protocol notes; #725 qualifies it on the installed Lines.
 - An NL22 that accepts the streaming entry but names no usable port (none, or one outside 1024 to 65535) is in external control with no frame sent. The ending reports `device` with `unsupported-capability`, and the Audio card says so. Nothing is put back and no write is made to leave the mode: the light keeps its last presentation until it times out or a scene is chosen.
-- The NL22's version 1 entry, answer and datagram layout follow Nanoleaf's OpenAPI documentation; that it reports `*ExtControl*` while streaming, how an app scene and a timeout end the mode, how brightness applies and whether its panel IDs fit one byte are unqualified until #725 checks the installed NL22.
+- The NL22's version 1 entry, answer and datagram layout follow Nanoleaf's OpenAPI documentation. The installed NL22 accepted the entry, answered with a usable port, applied frames and reported `*Dynamic*` while streaming on 2026-11-12 (#1777); an app scene picked after the session ended appeared and stayed. The following are unqualified until the installed check under #1777 and #725:
+  - that a session plays past its checks;
+  - that a colour or static pick shows as `*Solid*` or `*Static*`;
+  - whether an app dynamic effect picked during a Panels session stays, or the frames paint over it;
+  - what the colour-state diagnostic shows while streaming and after an app choice;
+  - how a timeout ends the mode;
+  - how brightness applies;
+  - restoration from streaming.
+
+  Nanoleaf's documentation says the Light Panels support stream control versions 1 and 2 (5.7), and separately that they use version 1 (3.2.6.2). The module uses version 1.
 - Every effect family plays on both lights from a saved preset; spatial effects need the saved positions, which an NL22 layout always has.
 - The input reads the runtime's one clock for both its wall and monotonic readings.
 - #725 owns physical cadence and appearance.

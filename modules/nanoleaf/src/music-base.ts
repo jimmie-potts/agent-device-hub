@@ -1,8 +1,9 @@
-// What a live Music session on the Lines starts over and what its ending can put back (#1614, over #1272 design D4).
+// What a live Music session on a light starts over and what its ending can put back (#1614, over #1272 design D4).
 // A scene saved on the light is selected again by name, and a plain colour (`*Solid*`) is written back from the hue and
 // saturation or colour temperature read at the Start. Anything else, such as an unsaved scene, an effect or the frames
-// an earlier session left, cannot be selected again: the session still starts, and its ending puts nothing back. No
-// scene is guessed. Bounded moments keep the named-scene rule (`readFreeBase` in moments.ts).
+// an earlier session left (`*ExtControl*` on the Lines, `*Dynamic*` on the NL22, #1777), cannot be selected again: the
+// session still starts, and its ending puts nothing back. No scene is guessed. Bounded moments keep the named-scene
+// rule (`readFreeBase` in moments.ts).
 import {isObject} from './compat.js';
 import type {DeviceRead} from './moments.js';
 
@@ -66,6 +67,23 @@ export function sameColorOf(state: unknown, color: MusicColor): boolean {
     : 'hue' in now && now.hue === color.hue && now.sat === color.sat);
 }
 
+/**
+ * What one `/state` read showed of the light's colour, kept with the selection read beside it for the light's record
+ * (#1777): its own colour mode, or null when it reports none or one that is not a short plain word, and each whole hue
+ * (0 to 360), saturation (0 to 100) and colour temperature (0 to 65535) it reports. A diagnostic for the installed check
+ * only: no session ends, starts or restores on it.
+ */
+export type ColorState = {colorMode: string | null; hue?: number; sat?: number; ct?: number};
+const COLOR_MODE = /^[A-Za-z0-9_-]{1,16}$/;
+export function colorStateOf(state: unknown): ColorState {
+  if (!isObject(state)) return {colorMode: null};
+  const whole = (field: unknown, high: number): number | undefined => isObject(field) && typeof field.value === 'number' &&
+    Number.isInteger(field.value) && field.value >= 0 && field.value <= high ? field.value : undefined;
+  const hue = whole(state.hue, 360), sat = whole(state.sat, 100), ct = whole(state.ct, 0xffff);
+  return {colorMode: typeof state.colorMode === 'string' && COLOR_MODE.test(state.colorMode) ? state.colorMode : null,
+    ...(hue === undefined ? {} : {hue}), ...(sat === undefined ? {} : {sat}), ...(ct === undefined ? {} : {ct})};
+}
+
 /** Why a Start cannot take the base it read: the light is off, or it reported no selection or brightness. */
 export type BaseRefusal = 'off' | 'unreadable';
 /**
@@ -91,7 +109,8 @@ export async function readMusicBase(read: DeviceRead): Promise<{observed: Select
 }
 
 /**
- * Puts the base back on a light still in the session's streaming selection `shown`: brightness, then the scene by name
+ * Puts the base back on a light still in the session's streaming selection `shown`, its kind's (`StreamProtocol.streaming`):
+ * brightness, then the scene by name
  * or the colour, each through `write`, which guards it. Only while the light still reports `shown`, a scene base is
  * still listed, the light is not off, its brightness is unchanged and nothing newer took over (`stale`). An unnamed base
  * has nothing to put back and is never passed here. False: skipped without a write. A guard that finds a newer choice
