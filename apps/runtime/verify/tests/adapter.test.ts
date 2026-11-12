@@ -47,7 +47,7 @@ void test('a wait after a dropped reader is back ends only once each of its copi
   globalThis.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const source = (init?.headers as Record<string, string> | undefined)?.['bunny-source'];
-    if (armed && init?.method === 'POST' && source === sourceOf('reader') && url.endsWith('/sync') && String(init.body).includes('lamp')) await gate;
+    if (armed && init?.method === 'POST' && source === sourceOf('reader') && url.endsWith('/sync') && typeof init.body === 'string' && init.body.includes('lamp')) await gate;
     return real(input, init);
   };
   context.after(() => { globalThis.fetch = real; });
