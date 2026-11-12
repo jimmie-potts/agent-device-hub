@@ -621,7 +621,8 @@ alone, and makes each bookkeeping member null (or, when null, a value) and
 removes it, each on its own copy, and every one of those copies must count as a
 change. History's intake (#1772) must use both unchanged. The
 declaration changes no message, schema, payload or validation result, and it
-is not a family version. Nothing reads it until #1772.
+is not a family version. The core's history reads it (#1772; see
+`apps/runtime/README.md` "Changes and spans").
 
 `tests/bookkeeping.test.mjs` checks that every state family of this package is
 classified, refuses each name in the deny list and each pointer the schema does
