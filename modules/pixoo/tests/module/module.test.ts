@@ -475,6 +475,37 @@ void describe('moments', () => {
     });
   });
 
+  void it('keeps the status picture and its records still when a session changes only its observation times (Hub #1757)', async () => {
+    const clock = new ManualClock();
+    const world = await World.open({clock});
+    await within(world, async () => {
+      await world.start();
+      await world.outcome(await mode(world, 'work'));
+      await world.publishSession();
+      await world.tickUntil(() => world.device.state().shown?.digests[0], 'the dashboard on the device', 2000);
+      await world.tickUntil(() => world.display()?.participating === true && world.display()?.showing === 'dashboard' ? true : undefined, 'the status base in the display record', 2000);
+      await clock.advance(2000);
+      const without = <T extends {revision: number}>(record: T | undefined): Omit<T, 'revision'> | undefined => {
+        if (record === undefined) return undefined;
+        const {revision: _revision, ...rest} = record;
+        return rest;
+      };
+      const display = without(world.display()), transmission = world.deviceRecord()?.lastTransmission, uploads = world.device.state().uploads;
+      const from = world.seen.length;
+      // A session's record moves on with each piece of evidence while what the dashboard draws stays the same.
+      for (let update = 0; update < 5; update += 1) {
+        await clock.advance(3000);
+        await world.publishSession();
+        await clock.advance(2000);
+      }
+      const later = world.seen.slice(from).filter(message => message.kind === 'state' && message.source === 'bunny/modules/pixoo');
+      const displays = later.filter(message => message.type === `org.bunny.${FAMILIES.display}.updated`).map(message => without(message.data as DisplayRecord));
+      assert.deepEqual(displays.filter(record => JSON.stringify(record) !== JSON.stringify(display)), [], 'the display record never changed: no flip of participating or showing');
+      assert.equal(world.device.state().uploads, uploads, 'the same picture is not sent again');
+      assert.deepEqual(world.deviceRecord()?.lastTransmission, transmission, 'the last transmission did not move');
+    });
+  });
+
   void it('refuses what the device does not offer, what the status base in Work does not admit, and a moment it has seen, across a restart', async () => {
     const clock = new ManualClock();
     const world = await World.open({clock});

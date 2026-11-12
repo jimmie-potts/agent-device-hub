@@ -18,7 +18,12 @@ export class DashboardService {
  private closed=false;
  private failed=false;
  private nextStart=0;
+ /**
+  * The latest finished picture, kept while a changed layout renders so the display's own picture is still known, and
+  * the layout generation it was rendered for. It is current only while that is the latest layout's.
+  */
  private rendition:DashboardRendition|null=null;
+ private renderedFor=0;
  /** The layout of the latest input, rendered or not. */
  private latest:DashboardLayout|null=null;
  private readonly onChange:()=>void;
@@ -42,7 +47,7 @@ export class DashboardService {
   // An identical layout keeps its rendition, so an unchanged picture is never rendered or sent again.
   const signature=JSON.stringify(layout);
   const changed=signature!==this.signature;
-  if(changed){this.signature=signature;this.generation++;this.latest=layout;this.pending={generation:this.generation,layout};this.rendition=null;this.failed=false;}
+  if(changed){this.signature=signature;this.generation++;this.latest=layout;this.pending={generation:this.generation,layout};this.failed=false;}
   if(!render||this.active||!this.pending||this.clock()<this.nextStart)return changed;
   const job=this.pending;this.pending=null;this.active=true;this.nextStart=this.clock()+this.cadence;
   void Promise.resolve().then(()=>this.render(structuredClone(job.layout))).then(frames=>{
@@ -50,19 +55,30 @@ export class DashboardService {
    if(!Array.isArray(frames)||frames.length<1||frames.length>2||frames.some(rgb=>!(rgb instanceof Uint8Array)||rgb.length!==12288))throw new Error('invalid-dashboard-pixels');
    const copies=frames.map(rgb=>Array.from(rgb));
    const [first]=copies;if(first===undefined)throw new Error('invalid-dashboard-pixels');
-   this.rendition={version:1,generation:job.generation,width:64,height:64,format:'rgb888',layout:job.layout,rgb:first,frames:copies,frameDelayMs:DASHBOARD_FRAME_MS};this.failed=false;
+   // A layout that draws the same pixels, as a session's new observation time does, keeps its picture's generation, so
+   // the same picture is not sent again (Hub #1757).
+   const previous=this.rendition;
+   this.rendition=previous!==null&&samePixels(previous.frames,copies)?{...previous,layout:job.layout}
+    :{version:1,generation:job.generation,width:64,height:64,format:'rgb888',layout:job.layout,rgb:first,frames:copies,frameDelayMs:DASHBOARD_FRAME_MS};
+   this.renderedFor=job.generation;this.failed=false;
    this.onChange();
   }).catch(()=>{
    if(!this.closed&&job.generation===this.generation){this.failed=true;this.pending=job;}
   }).finally(()=>{this.active=false;});
   return changed;
  }
- /** The current rendition, not copied: for readers in this process that never change it. */
- current():Readonly<DashboardRendition>|null{return this.rendition;}
+ /** The current rendition, the latest layout's, not copied: for readers in this process that never change it. */
+ current():Readonly<DashboardRendition>|null{return this.renderedFor===this.generation?this.rendition:null;}
+ /** The last picture while a changed layout renders or failed to, not copied; null when it is current or there is none. */
+ superseded():Readonly<DashboardRendition>|null{return this.renderedFor===this.generation?null:this.rendition;}
  /** The latest layout, rendered or not, not copied. */
  layout():Readonly<DashboardLayout>|null{return this.latest;}
  status(){
-  return {state:this.closed?'closed':this.failed?'error':this.rendition?'current':'pending',active:this.active?1:0,pending:this.pending?1:0,cadenceMs:this.cadence,rendition:structuredClone(this.rendition)};
+  const current=this.current();
+  return {state:this.closed?'closed':this.failed?'error':current?'current':'pending',active:this.active?1:0,pending:this.pending?1:0,cadenceMs:this.cadence,rendition:structuredClone(current)};
  }
  close():void{this.closed=true;this.generation++;this.pending=null;this.input=null;this.rendition=null;this.latest=null;}
 }
+const samePixels=(a:readonly number[][],b:readonly number[][]):boolean=>a.length===b.length&&a.every((frame,index)=>{
+ const other=b[index];return other!==undefined&&frame.length===other.length&&frame.every((value,at)=>value===other[at]);
+});
