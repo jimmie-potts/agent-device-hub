@@ -104,7 +104,10 @@ it('the runtime refuses a module that declares a family it does not register, tw
   assert.throws(() => shippedList([lamp({'lamp-glow': []}), lamp({'lamp-glow': []}, 'lantern')]), /lamp-glow's bookkeeping is declared twice/);
   assert.throws(() => shippedList([lamp({'lamp-glow': ['/observed/status']})]), /lamp's bookkeeping for lamp-glow: \/observed\/status names status, which is never bookkeeping/);
   assert.throws(() => shippedList([lamp({'lamp-glow': ['/observed/seenAtMs']})]), /\/observed\/seenAtMs is not a member the schema declares/);
-  assert.throws(() => shippedList([lamp({'lamp-glow': ['/observed']})]), /\/observed names a member that holds other members/);
+  assert.throws(() => shippedList([lamp({'lamp-glow': ['/observed']})]), /\/observed names a member that may hold other members/);
+  const loose = registered('loose', {schemas: {[`${SCHEMA_BASE}lamp-glow/2.0`]: {type: 'object', properties: {at: {}}}}, bookkeeping: {'lamp-glow': ['/at']}});
+  assert.throws(() => shippedList([loose]),
+    {message: 'the shipped module list cannot be assembled: loose\'s bookkeeping for lamp-glow: /at names a member that does not say it holds a single value'});
   const broken = registered('broken', {
     schemas: {[`${SCHEMA_BASE}lamp-glow/2.0`]: {type: 'object', properties: {gone: {$ref: `${SCHEMA_BASE}missing/2.0`}}}}, bookkeeping: {'lamp-glow': ['/gone/atMs']},
   });
@@ -194,4 +197,29 @@ it('what the history replay on #1768 showed as real state still counts in the de
   const reading = STATE_FAMILIES['roborock-vacuum/2.0'] ?? [];
   assert.equal(sameState(vacuum, {...vacuum, observedAtMs: {status: 'unknown'}}, reading), false, 'whether a reading exists still counts');
   assert.equal(sameState(vacuum, {...vacuum, availability: 'unavailable'}, reading), false);
+});
+
+it('a module\'s bookkeeping value does not count, but its presence and null-ness do (review finding R4)', () => {
+  const display = RECORDS['pixoo-display/2.1']?.data as Record<string, unknown>;
+  const page = STATE_FAMILIES['pixoo-display/2.1'] ?? [];
+  const withPage = (value: unknown): Record<string, unknown> => {
+    const copy = structuredClone(monitor) as Record<string, unknown>;
+    if (value === undefined) delete copy.page;
+    else copy.page = value;
+    return {...display, monitor: copy};
+  };
+  assert.equal(sameState(display, withPage(1), page), true);
+  assert.equal(sameState(display, withPage(null), page), false);
+  assert.equal(sameState(display, withPage(undefined), page), false);
+  const vacuum = RECORDS['roborock-vacuum/2.0']?.data as Record<string, unknown>;
+  const reading = STATE_FAMILIES['roborock-vacuum/2.0'] ?? [];
+  assert.equal(sameState(vacuum, {...vacuum, observedAtMs: known(AT + 60_000)}, reading), true);
+  assert.equal(sameState(vacuum, {...vacuum, observedAtMs: {status: 'known', value: null}}, reading), false);
+  assert.equal(sameState(vacuum, {...vacuum, observedAtMs: {status: 'known'}}, reading), false);
+  const light = RECORDS['lifx-light/2.0']?.data as {observed: Record<string, unknown>};
+  const color = STATE_FAMILIES['lifx-light/2.0'] ?? [];
+  assert.equal(sameState(light, {...light, observed: {...light.observed, observedAtMs: AT + 5}}, color), true);
+  assert.equal(sameState(light, {...light, observed: {...light.observed, observedAtMs: null}}, color), false);
+  const {observedAtMs: _gone, ...unread} = light.observed;
+  assert.equal(sameState(light, {...light, observed: unread}, color), false);
 });

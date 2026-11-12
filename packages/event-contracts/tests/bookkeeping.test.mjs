@@ -6,7 +6,7 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {
   NEVER_BOOKKEEPING, SETTINGS_FAMILIES, bookkeeping, bookkeepingProblem, contractFamilies, contractSchemas, familyOfSchema, isContractFamily,
-  leafMutations, sameState, withoutBookkeeping,
+  BOOKKEEPING_VALUE, leafMutations, sameState, withoutBookkeeping,
 } from '../dist/v2/bookkeeping.js';
 
 const read = name => JSON.parse(readFileSync(new URL(`../fixtures/v2/${name}`, import.meta.url), 'utf8'));
@@ -88,7 +88,7 @@ test('a pointer to a member the schema does not declare, or to one that holds me
   const device = versionsOf('device');
   assert.equal(bookkeepingProblem('device', ['/observed/readAtMs'], device), '/observed/readAtMs is not a member the schema declares');
   assert.equal(bookkeepingProblem('device', ['/lastSeenAtMs'], device), '/lastSeenAtMs is not a member the schema declares');
-  assert.equal(bookkeepingProblem('device', ['/observed'], device), '/observed names a member that holds other members');
+  assert.equal(bookkeepingProblem('device', ['/observed'], device), '/observed names a member that may hold other members');
   assert.equal(bookkeepingProblem('device', ['/capabilities/modes/values/0'], device), '/capabilities/modes/values/0 names an array position');
   for (const pointer of ['observedAtMs', '/', '/observed//observedAtMs', '/observed/~0', '']) {
     assert.equal(bookkeepingProblem('device', [pointer], device), `${pointer} is not a JSON pointer to an object member`, pointer);
@@ -116,7 +116,7 @@ test('members are found through $ref, allOf, oneOf and anyOf, in the same docume
   for (const pointer of ['/local/stampAtMs', '/remote/readAtMs', '/either/atMs', '/maybe/atMs', '/both/atMs', '/wrapped/value']) {
     assert.equal(bookkeepingProblem('lamp-glow', [pointer], [schema], refs), undefined, pointer);
   }
-  assert.equal(bookkeepingProblem('lamp-glow', ['/wrapped'], [schema], refs), '/wrapped names a member that holds other members');
+  assert.equal(bookkeepingProblem('lamp-glow', ['/wrapped'], [schema], refs), '/wrapped names a member that may hold other members');
   assert.equal(bookkeepingProblem('lamp-glow', ['/maybe/sinceMs'], [schema], refs), '/maybe/sinceMs is not a member the schema declares');
   assert.equal(bookkeepingProblem('lamp-glow', ['/gone/atMs'], [{properties: {gone: {$ref: 'https://bunny.invalid/events/missing/2.0'}}}], refs),
     '/gone/atMs meets a schema reference that does not resolve or nests too deeply');
@@ -131,7 +131,9 @@ test('every leaf that is not bookkeeping, changed alone, is a change in every st
     covered.add(family);
     const mutations = leafMutations(message.data, pointers);
     for (const {pointer, record} of mutations) assert.equal(sameState(message.data, record, pointers), false, `${name} ${pointer}`);
-    assert.ok(mutations.every(({pointer}) => !pointers.some(skip => pointer === skip || pointer.startsWith(`${skip}/`))), name);
+    const values = mutations.filter(({change}) => change === 'value');
+    assert.ok(values.every(({pointer}) => !pointers.some(skip => pointer === skip || pointer.startsWith(`${skip}/`))), name);
+    assert.ok(mutations.filter(({change}) => change !== 'value').every(({pointer}) => pointers.includes(pointer)), name);
     assert.ok(mutations.every(({pointer}) => pointer !== '/id' && pointer !== '/revision'), name);
   }
   for (const family of ['device', 'power-limit', 'playback']) assert.ok(covered.has(family), `${family} has a fixture`);
@@ -157,7 +159,11 @@ test('a record whose only changes are bookkeeping members, its id or its revisio
   const reordered = Object.fromEntries(Object.entries(device).reverse());
   assert.equal(sameState(device, reordered, []), true);
   const limit = fixtures['power-limit'].data;
-  assert.equal(sameState(limit, {...limit, observedAtMs: 5, updatedAtMs: limit.updatedAtMs + 1}, bookkeeping['power-limit']), true);
+  assert.equal(limit.observedAtMs, null);
+  assert.equal(sameState(limit, {...limit, updatedAtMs: limit.updatedAtMs + 1}, bookkeeping['power-limit']), true);
+  assert.equal(sameState(limit, {...limit, observedAtMs: 5}, bookkeeping['power-limit']), false, 'a first reading is a change');
+  const read = {...limit, observedAtMs: 5};
+  assert.equal(sameState(read, {...read, observedAtMs: 9, updatedAtMs: limit.updatedAtMs + 1}, bookkeeping['power-limit']), true);
   assert.equal(sameState(limit, {...limit, status: 'armed'}, bookkeeping['power-limit']), false);
   assert.deepEqual(withoutBookkeeping({observed: {status: 'unknown'}}, ['/observed/observedAtMs', '/absent/atMs']), {observed: {status: 'unknown'}});
 });
@@ -166,7 +172,8 @@ test('the leaf mutations reach array items and empty containers, and leave the r
   const record = {id: 'a', revision: 1, list: [1, 'b', true, null], empty: {}, none: [], nested: {atMs: 3, keep: 4}};
   const before = structuredClone(record);
   const mutations = leafMutations(record, ['/nested/atMs']);
-  assert.deepEqual(mutations.map(({pointer}) => pointer), ['/list/0', '/list/1', '/list/2', '/list/3', '/empty', '/none', '/nested/keep']);
+  assert.deepEqual(mutations.map(({pointer, change}) => `${pointer} ${change}`),
+    ['/list/0 value', '/list/1 value', '/list/2 value', '/list/3 value', '/empty value', '/none value', '/nested/atMs null', '/nested/atMs removed', '/nested/keep value']);
   assert.deepEqual(record, before);
   assert.deepEqual(mutations[0].record.list, [2, 'b', true, null]);
   for (const {record: changed} of mutations) assert.equal(sameState(record, changed, ['/nested/atMs']), false);
@@ -205,11 +212,74 @@ test('a record parsed from JSON with an own __proto__ member is compared and mut
   const before = shapeOf(Object.prototype);
   const record = JSON.parse('{"id":"a","revision":1,"__proto__":{"polluted":1},"atMs":3}');
   assert.ok(Object.hasOwn(record, '__proto__'));
-  assert.deepEqual(Object.keys(withoutBookkeeping(record, ['/atMs'])), ['id', 'revision', '__proto__']);
+  assert.deepEqual(Object.entries(withoutBookkeeping(record, ['/atMs'])).map(([key]) => key), ['id', 'revision', '__proto__', 'atMs']);
+  assert.equal(withoutBookkeeping(record, ['/atMs']).atMs, BOOKKEEPING_VALUE);
   const mutations = leafMutations(record, ['/atMs']);
-  assert.deepEqual(mutations.map(({pointer}) => pointer), ['/__proto__/polluted']);
+  assert.deepEqual(mutations.map(({pointer, change}) => `${pointer} ${change}`), ['/__proto__/polluted value', '/atMs null', '/atMs removed']);
   assert.equal(Object.getOwnPropertyDescriptor(mutations[0].record, '__proto__')?.value.polluted, 2);
   assert.equal(sameState(record, mutations[0].record, ['/atMs']), false);
   assert.equal(({}).polluted, undefined);
   assert.equal(shapeOf(Object.prototype), before);
+});
+
+// Review finding R3 on #1783: the single-value rule needs every alternative to say it holds a scalar.
+test('a member whose schema does not positively declare a single value is refused, in each form', () => {
+  const instant = {$ref: 'https://bunny.invalid/events/blocks/2.0#/$defs/instantMs'};
+  const refused = {
+    'unconstrained {}': {},
+    'unconstrained true': true,
+    'if and then': {if: {type: 'integer'}, then: {minimum: 0}},
+    'enum of objects': {enum: [{at: 1}]},
+    'const of an object': {const: {at: 1}},
+    'not': {not: {type: 'object'}},
+    'patternProperties': {patternProperties: {'^a': {type: 'integer'}}},
+    'additionalProperties': {additionalProperties: {type: 'integer'}},
+    'an object type among scalars': {type: ['integer', 'object']},
+    'an unconstrained branch': {oneOf: [{type: 'integer'}, {}]},
+    'a time or a state': {oneOf: [instant, {enum: ['pending', 'done']}]},
+    'a time or a state behind a reference': {anyOf: [{type: 'null'}, instant, {$ref: '#/$defs/state'}]},
+  };
+  for (const [form, at] of Object.entries(refused)) {
+    const schema = {type: 'object', $defs: {state: {const: 'pending'}}, properties: {at}};
+    assert.match(bookkeepingProblem('lamp-glow', ['/at'], [schema]) ?? '', /^\/at names a member that /, form);
+  }
+  const accepted = {
+    'a time': instant,
+    'a nullable type': {type: ['integer', 'null']},
+    'a time or null (anyOf)': {anyOf: [{type: 'null'}, instant]},
+    'a time or null (oneOf)': {oneOf: [instant, {const: null}]},
+    'an enumeration alone': {enum: [0, 1, 2]},
+    'bounds in allOf': {allOf: [{type: 'integer'}, {minimum: 0}]},
+  };
+  for (const [form, at] of Object.entries(accepted)) {
+    assert.equal(bookkeepingProblem('lamp-glow', ['/at'], [{type: 'object', properties: {at}}]), undefined, form);
+  }
+});
+
+// Review finding R4 on #1783: a bookkeeping member's value does not count, but whether it is present and whether it is
+// null do.
+function presenceCounts(record, pointer, pointers) {
+  const path = pointer.slice(1).split('/'), last = path.pop();
+  const parentOf = copy => path.reduce((node, token) => node[token], copy);
+  const set = value => {
+    const copy = structuredClone(record);
+    if (value === undefined) delete parentOf(copy)[last];
+    else parentOf(copy)[last] = value;
+    return copy;
+  };
+  const value = parentOf(record)[last];
+  assert.equal(typeof value, 'number', pointer);
+  assert.equal(sameState(record, set(value + 7), pointers), true, `${pointer}: another value is the same state`);
+  assert.equal(sameState(record, set(null), pointers), false, `${pointer}: null against a value is a change`);
+  assert.equal(sameState(record, set(undefined), pointers), false, `${pointer}: absent against a value is a change`);
+  assert.equal(sameState(set(null), set(undefined), pointers), false, `${pointer}: null against absent is a change`);
+}
+
+test('absent, null and a value of a bookkeeping member are three states, and two values are one', () => {
+  const device = fixtures['device-nanoleaf'].data;
+  for (const pointer of bookkeeping.device) presenceCounts(device, pointer, bookkeeping.device);
+  const limit = {...fixtures['power-limit'].data, observedAtMs: 1_791_287_998_500};
+  for (const pointer of bookkeeping['power-limit']) presenceCounts(limit, pointer, bookkeeping['power-limit']);
+  presenceCounts(fixtures.playback.data, '/observedAtMs', bookkeeping.playback);
+  assert.deepEqual(withoutBookkeeping({a: 1, b: null, c: {d: 2}}, ['/a', '/b', '/c/d', '/e']), {a: BOOKKEEPING_VALUE, b: null, c: {d: BOOKKEEPING_VALUE}});
 });

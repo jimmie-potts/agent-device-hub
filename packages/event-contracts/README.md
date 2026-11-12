@@ -598,19 +598,27 @@ register.
 | `lifx-light` (module) | `/observed/observedAtMs` | The color reading time |
 
 `bookkeepingProblem` holds the rules a declaration must meet. A pointer names
-a member that holds a single value in every registered version of the family,
-through `$ref`, `allOf`, `oneOf` and `anyOf`, and never an array position.
-It names no member in `NEVER_BOOKKEEPING`, at any depth: identity,
+a member, never an array position, whose schema positively declares a single
+value in every registered version of the family and in every alternative,
+through `$ref`, `allOf`, `oneOf` and `anyOf`: a scalar `type`, or a `const` or
+`enum` of scalars. An unconstrained schema, another keyword such as `if` or
+`not`, and alternatives that mix a value with a `const` or `enum` are refused,
+and so is a pointer through `__proto__`, `constructor` or `prototype`. It names no member in `NEVER_BOOKKEEPING`, at any depth: identity,
 availability, generation, configuration revision, holds, status, observed power
 and brightness, desired values, pending work and outcomes, a transmission's
 request and operations, power-limit settings and status, and `showing`,
 `freshness` and `failing`. A family in `SETTINGS_FAMILIES` declares none,
 because settings replicate by their latest edit (ADR 0015).
 
-`sameState(a, b, pointers)` compares two records with their bookkeeping
-members, `id` and `revision` removed. `leafMutations(record, pointers)` changes
-every other leaf alone, each on its own copy, and every one of those copies
-must count as a change. History's intake (#1772) will use both. The
+`sameState(a, b, pointers)` compares two records once `withoutBookkeeping` has
+set aside the value of each bookkeeping member, `id` and `revision`: a present,
+non-null value becomes one fixed marker, `BOOKKEEPING_VALUE`. A bookkeeping
+member's value never counts, but whether it is present and whether it is null
+do: absent, null and a value are three states, so a first reading (null to a
+time) is a change. `leafMutations(record, pointers)` changes every other leaf
+alone, and makes each bookkeeping member null (or, when null, a value) and
+removes it, each on its own copy, and every one of those copies must count as a
+change. History's intake (#1772) must use both unchanged. The
 declaration changes no message, schema, payload or validation result, and it
 is not a family version. Nothing reads it until #1772.
 
