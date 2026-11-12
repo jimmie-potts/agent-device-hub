@@ -71,7 +71,9 @@ Pause/Resume, Next) while a session exists and one result line; Large square
 puts the media on top, as large as the controls under it allow, and adds
 brightness with Apply. While the controls are disabled the result line gives the
 reason (stale records, a command still settling, held or queued changes) before
-any earlier result, with the full text in its title. The options menu's Device details opens the
+any earlier result, with the full text in its title. The card reads its player
+again when the display record changes, except for its Monitor fields
+(`player-key.ts`): the Monitor's page turns say nothing about the player. The options menu's Device details opens the
 full card with its Content tab, playlists and mode exceptions. Off the grid the
 card is unchanged.
 

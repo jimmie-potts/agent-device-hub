@@ -698,9 +698,11 @@ one for a double click. `menus` opens the Pixoo menu in Small square and Wide
 and a light card's menu, each over the card below, and checks by pointer that
 the last item is on top; `stale` restarts the runtime and checks that the
 disabled Pixoo controls say why. The idle recorder
-(`apps/runtime/dashboard/tests/list-idle.ts`) counts an attribute only when its
-value at the end of the window differs from its value at the start.
-`HOME_SHAPES_ONLY=tiles,picker,convert,paging,fit,results,short,menus,modules,idle,shots,stale`
+(`apps/runtime/dashboard/tests/list-idle.ts`) counts every attribute write that
+changes the value, even when a later write restores it, and leaves out only a
+write of the value the attribute already had; `recorder` checks that a
+per-frame flip and restore of an attribute, `hidden` and a class is reported.
+`HOME_SHAPES_ONLY=tiles,picker,convert,paging,fit,results,short,menus,modules,recorder,idle,shots,stale`
 selects parts. `node apps/runtime/dashboard/tests/home-idle.browser.ts`, in the
 full browser suite only, sweeps every width from 1100 to 2560 px in 20 px steps
 on the built-in and two mixed layouts with 0, 1, 5, 6 and 13 Inbox items and

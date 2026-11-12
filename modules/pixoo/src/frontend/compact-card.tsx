@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useMemo, useState} from 'react';
 import type {DeviceRecord, MediaAction} from '@jimmie-potts/event-contracts/v2/devices';
 import type {FrontendContext, FrontendPresentation} from '@jimmie-potts/sdk/frontend';
 import {AnimatedMedia} from './media-picker.js';
@@ -30,6 +30,10 @@ export function PixooCompactCard(props: PixooCompactProps): React.JSX.Element {
   const [brightness, setBrightness] = useState<number>();
   const controls = context.control && shape !== 'square';
   const pause = playing ? 'pause' : 'resume';
+  // The shell re-renders every second for its clock; React rewrites an input's name on each update, so the slider is kept
+  // as one element that changes only with its own values.
+  const slider = useMemo(() => <input aria-label="Brightness" type="range" min="0" max="100" step="1" value={brightness ?? desiredBrightness ?? 50} disabled={deviceBlocked} onChange={event => { setBrightness(Number(event.target.value)); }}/>,
+    [brightness, desiredBrightness, deviceBlocked]);
   return <article className="light-card pixoo-card pixoo-compact" aria-label="Pixoo display" data-pixoo-shape={shape}>
     <header className="light-card-heading"><div><h3 title={device.label ?? 'Pixoo'}>{device.label ?? 'Pixoo'}</h3><p title={state}>{state}</p></div>
       <details className="light-options"><summary aria-label="Pixoo options">⋯</summary><div className="light-options-body">
@@ -51,7 +55,7 @@ export function PixooCompactCard(props: PixooCompactProps): React.JSX.Element {
       </div>}
       {controls && shape === 'large-square' && device.capabilities.brightness.supported && <form className="pixoo-compact-brightness" onSubmit={event => { event.preventDefault(); if (brightness !== undefined) send('brightness-set', {percent: brightness}); }}>
         <label className="light-slider"><span>Brightness<output>{brightness ?? desiredBrightness ?? 'Unknown'}% · {brightness !== undefined && brightness !== desiredBrightness ? 'draft' : 'requested'}</output></span>
-          <input aria-label="Brightness" type="range" min="0" max="100" step="1" value={brightness ?? desiredBrightness ?? 50} disabled={deviceBlocked} onChange={event => { setBrightness(Number(event.target.value)); }}/>
+          {slider}
         </label><button type="submit" className="secondary" disabled={deviceBlocked || brightness === undefined || brightness === desiredBrightness}>Apply brightness</button>
       </form>}
       {/* Symbols keep three controls on one row in one unit; each keeps the full card's name. */}

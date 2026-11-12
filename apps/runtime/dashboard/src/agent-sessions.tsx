@@ -30,6 +30,9 @@ export function AgentSessions({records, synced, live, control, now}: {
 }): React.JSX.Element {
   const [query, setQuery] = useState('');
   const [provider, setProvider] = useState('');
+  // The shell re-renders every second for its clock; React rewrites an input's name on each update, so the field is kept
+  // as one element that changes only with its value (#1672 PR B round 2).
+  const find = useMemo(() => <input type="search" maxLength={120} value={query} onChange={event => {setQuery(event.target.value);}} placeholder="Find a session"/>, [query]);
   // Sessions that need the owner come first, in record order otherwise, so they stay on the first page (#1658).
   const rows = useMemo(() => {const all = sessionRows(records);return [...all.filter(needsAttention), ...all.filter(row => !needsAttention(row))];}, [records]);
   const shown = new Set(records.filter(record => matches(record, query, provider)).map(record => record.id));
@@ -47,7 +50,7 @@ export function AgentSessions({records, synced, live, control, now}: {
   return <div className="agent-sessions">
     <AgentStatusSummary rows={rows} live={live}/>
     <div className="filters">
-      <label>Find a session<input type="search" maxLength={120} value={query} onChange={event => {setQuery(event.target.value);}} placeholder="Find a session"/></label>
+      <label>Find a session{find}</label>
       <Select label="Provider" value={provider} onChange={setProvider} options={[{value: '', label: 'All providers'}, ...providers.map(value => ({value, label: value}))]}/>
     </div>
     {shown.size === 0 && <div className="empty"><h3>{filtering ? 'No matching sessions' : synced ? 'No sessions observed' : 'Sessions not synced yet'}</h3>

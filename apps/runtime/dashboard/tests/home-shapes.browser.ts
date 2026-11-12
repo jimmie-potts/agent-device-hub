@@ -843,6 +843,34 @@ try {
     await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   }
 
+  if (part('recorder')) {
+    // F6 (#1672 PR B round 2): the idle recorder reports churn that ends where it began, as a render loop does. A static
+    // page with one list card flips an attribute, a row's `hidden` and a class every frame and restores each; a write
+    // of the value an attribute already has is not a change.
+    const probe = await context.newPage();
+    try {
+      await probe.setContent('<div class="home-layout-grid"><div data-home-card="inbox"><ul><li data-row="a">A</li><li>B</li></ul><input name="find" type="search"></div></div>');
+      const churn = async (kind: string): Promise<string[]> => {
+        await probe.evaluate(kind => {
+          const row = document.querySelector<HTMLElement>('[data-row]'), input = document.querySelector('input');if (row === null || input === null) return;
+          const step = (): void => {
+            if (kind === 'attribute') {row.dataset.row = 'b';row.dataset.row = 'a';}
+            else if (kind === 'hidden') {row.hidden = true;row.hidden = false;}
+            else if (kind === 'class') {row.classList.toggle('busy');row.classList.toggle('busy');}
+            else {input.setAttribute('name', 'find');input.setAttribute('type', 'search');}
+            (window as unknown as {churn?: number}).churn = requestAnimationFrame(step);
+          };
+          step();
+        }, kind);
+        const seen = await idleChanges(probe, 500);
+        await probe.evaluate(() => {cancelAnimationFrame((window as unknown as {churn?: number}).churn ?? 0);});
+        return seen;
+      };
+      for (const kind of ['attribute', 'hidden', 'class']) assert.ok((await churn(kind)).length > 0, `a per-frame ${kind} flip and restore is reported`);
+      assert.deepEqual(await churn('same-value'), [], 'a write of the value an attribute already has is not reported');
+    } finally {await probe.close();}
+  }
+
   if (part('idle')) {
     // F18: once Home has settled, nothing inside a list card changes while nobody acts, at widths where measured rows
     // used to re-render every frame. home-idle.browser.ts sweeps every 20 px with 0 to 13 Inbox items.

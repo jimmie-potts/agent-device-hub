@@ -7,6 +7,7 @@ import {AnimatedMedia, MediaPicker, type PickerMedia} from './media-picker.js';
 import {PlaylistEditor} from './playlist-editor.js';
 import {useCardCommand} from './card-command.js';
 import {PixooCompactCard} from './compact-card.js';
+import {playerKey} from './player-key.js';
 
 type Props = {context: FrontendContext; device: DeviceRecord; display: DisplayRecord | undefined; live: boolean; playlists: readonly PlaylistRecord[]; command: FrontendCommand};
 const tabs = ['Display', 'Content'] as const;
@@ -18,11 +19,11 @@ export function PixooCard({context, device, display, live, playlists, command}: 
   const [source, setSource] = useState('playlists'), [selectedId, setSelectedId] = useState('');
   const [selection, setSelection] = useState<ReadonlyMap<string, PickerMedia>>(new Map());
   const [editor, setEditor] = useState<{saved?: PlaylistRecord}>();
-  const [reading, setReading] = useState<{value: Reading; revision: number}>(), [loading, setLoading] = useState(false), [error, setError] = useState(false), [retry, setRetry] = useState(0);
+  const [reading, setReading] = useState<{value: Reading; revision: string}>(), [loading, setLoading] = useState(false), [error, setError] = useState(false), [retry, setRetry] = useState(0);
   const [playlistOffset, setPlaylistOffset] = useState(0);
   const [brightness, setBrightness] = useState<number>();
   const {blocked, failure, send} = useCardCommand(context, device, live, command);
-  const revision = display?.revision;
+  const revision = playerKey(display);
   useEffect(() => {
     let disposed = false;
     setError(false); setLoading(true);
