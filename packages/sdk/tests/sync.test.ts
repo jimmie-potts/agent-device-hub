@@ -7,7 +7,7 @@ import type {PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {
   SdkError, type Draft, type ErrorScope, type Removal, type Sdk, type Snapshot, type Subscription, type SyncChange, type SyncedCopy, type SyncRequest,
 } from '../src/index.js';
-import {startSync, type SyncAnswer, type SyncCompleted, type SyncTransport} from '../src/sync.js';
+import {startSync, type SyncAnswer, type SyncCompleted, type SyncInterrupted, type SyncTransport} from '../src/sync.js';
 import {
   MODE_SCHEMA, SESSION_FAMILY, START, assertValid, bus, checked, deferred, flush, it, manualClock, peek, removed, session, trace, turnEnded,
   type Session,
@@ -852,6 +852,67 @@ it('a per-copy restart callback invalidates retained state before replacement an
   assert.equal(reported[0].body.error.code, 'capacity', 'the original dropped-delivery error is preserved');
   assert.equal(reported[1], failure, 'the observer failure is reported once without replacing the delivery error');
   if (result.status === 'synced') assert.deepEqual(held(result.copy), ['s1@3']);
+});
+
+it('a later sync that met a lost stream leaves the copy syncing until the next gap notice; a first sync that met one is refused', async context => {
+  const common = {specversion: '1.0' as const, bunnyprofile: '2.0' as const, source: 'bunny/core',
+    time: new Date(START).toISOString(), datacontenttype: 'application/json' as const, traceparent: PARENT.traceparent};
+  const served = (revision: number) => (requestId: string): SyncAnswer => ({status: 'served', requestId,
+    states: [{...session('s1', revision), ...common, id: crypto.randomUUID()}],
+    completed: {...common, id: crypto.randomUUID(), kind: 'sync-completed', type: 'org.bunny.sync.completed', subject: FAMILY,
+      dataschema: 'https://bunny.invalid/events/sync-completed/2.0', data: {requestId, revision, members: [{family: FAMILY, id: 's1'}]}}});
+  const interrupted = (requestId: string): SyncInterrupted =>
+    ({status: 'interrupted', requestId, error: errorBody('unavailable', {requestId, detail: 'the edge could not be reached'})});
+  const replies: ((requestId: string) => SyncAnswer | SyncInterrupted)[] = [];
+  let gap = (): void => {};
+  let live = (_message: Message): void => {};
+  let requests = 0;
+  const transport: SyncTransport = {
+    now: () => START,
+    subscribe: (_pattern, handler, options) => {
+      gap = () => { void options.onOverflow?.({}); };
+      live = message => { void handler(message); };
+      return Promise.resolve({close: () => Promise.resolve()});
+    },
+    request: request => {
+      requests += 1;
+      const reply = replies.shift();
+      return reply === undefined ? assert.fail('every request has its reply') : Promise.resolve(reply(request.requestId));
+    },
+    report: error => { assert.fail(String(error)); },
+  };
+  const changes: string[] = [];
+  let restarts = 0;
+  replies.push(served(1));
+  const result = await startSync<Session>(transport, [FAMILY], change => { changes.push(show(change)); }, {timeoutMs: 5000, onRestarted: () => { restarts += 1; }});
+  assert.equal(result.status, 'synced');
+  if (result.status !== 'synced') return;
+  context.after(() => result.copy.close());
+
+  // A reconnect's gap notice starts a resync, which meets the stream lost again.
+  replies.push(interrupted);
+  gap();
+  await flush();
+  assert.equal(requests, 2);
+  assert.deepEqual(changes, ['updated s1@1', 'synced @1'], 'the copy does not fail');
+  assert.equal(restarts, 1, 'the holder heard once that the copy lost freshness');
+  // A live message while the copy waits is not taken as current.
+  live({...session('s1', 5), ...common, id: crypto.randomUUID()});
+  await flush();
+  assert.equal(result.copy.get({family: FAMILY, id: 's1'})?.data.revision, 1, 'the copy keeps its last record and applies nothing new');
+  assert.equal(requests, 2, 'nothing asks again until the next gap notice');
+
+  // The next reconnect's gap notice starts the next resync.
+  replies.push(served(2));
+  gap();
+  await flush();
+  assert.equal(requests, 3);
+  assert.deepEqual(changes, ['updated s1@1', 'synced @1', 'updated s1@2', 'synced @2']);
+
+  // A first sync keeps its deadline: one that met a lost stream is refused with the transport's error.
+  replies.push(interrupted);
+  const first = await startSync<Session>(transport, [FAMILY], () => {}, {timeoutMs: 5000});
+  assert.equal(first.status === 'rejected' ? first.error.error.detail : first.status, 'the edge could not be reached');
 });
 
 it('overflow during snapshot notification preserves every applied entity change without stale completion', async context => {

@@ -39,7 +39,161 @@ its reason. The worktree stays for the owner's inspection; its path never
 enters a message. Pushing or opening a PR is a later explicit approval, not
 part of this slice.
 
+The worker reads the run as a stream (`--output-format stream-json
+--verbose`) as it arrives, so it sees the tool's limit events as well as the
+final result (Hub #1743). Two outcomes come from that:
+
+- `usage-limit`: the tool reported that a usage limit stopped the run, either
+  as a `rate_limit_event` with status `rejected` or as a message typed
+  `usage_limit_reached`, and the run did not end with a structured result.
+  The task ends failed with reason `usage-limit` and the limit's window and
+  reset time, or `unknown` where the tool gave none. A generic rate-limit error
+  is an ordinary failure. The run's own later stop wins: a budget stop after a
+  limit event is `budget`, and a turn-cap stop is an ordinary failure, not a
+  limit. Nothing is retried at the reset.
+- `waiting-for-owner`: the run stopped at a choice the brief left open. It
+  completes with that outcome and the question first among the findings.
+
+The `usage-limit` path is tested against streams constructed from the event
+shapes the tool documents, not against a recording of a real limit, which
+cannot be provoked on purpose. When a real limit stream first occurs, record
+it privately, scrub it as the other recordings were, and replace the
+constructed fixture with it.
+
+### Subscription sign-in only
+
+Workers use the owner's subscription sign-in; provider API keys are for the
+supervisor only. Three checks hold that line.
+
+**The harness environment is an allowlist.** The harness and its readiness
+probes inherit only `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`,
+`LANG`, `LANGUAGE`, `LC_*`, `TERM`, `TZ` and `CLAUDE_CODE_OAUTH_TOKEN`, plus
+any names the private configuration lists in `claude.environment`.
+`CLAUDE_CODE_OAUTH_TOKEN` is kept because it is a subscription sign-in (the
+long-lived token `claude setup-token` makes, for a host without a keychain
+sign-in), not an API key. A denylist then removes, even from configured names:
+
+- every `ANTHROPIC_` variable: API keys, auth tokens, base URLs, custom
+  headers and provider settings, and also the model names such as
+  `ANTHROPIC_MODEL`, which are not credentials but which the worker
+  configuration's `claude.model` sets instead;
+- the `CLAUDE_CODE_USE_` provider switches (Bedrock, Vertex, Foundry and the
+  others);
+- `CLAUDE_CODE_OAUTH_REFRESH_TOKEN` and `CLAUDE_CODE_OAUTH_SCOPES`, which only
+  an interactive login reads;
+- `CLAUDE_CODE_API_KEY_*`, `CLAUDE_CODE_CLIENT_*`, `CLAUDE_CODE_CERT_STORE`,
+  `CLAUDE_CODE_SKIP_*`, `CLAUDE_CODE_PROVIDER_*` (the host-managed provider
+  switch) and `CLAUDE_CONFIG_DIR`, which selects another account's
+  configuration;
+- cloud credentials (`AWS_*`, `GOOGLE_*`, `GCLOUD_*`, `CLOUDSDK_*`,
+  `CLOUD_ML_REGION`, `VERTEX_REGION_*`, `AZURE_*`);
+- proxies and certificates (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`,
+  `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, `NODE_TLS_*`, `SSL_CERT_*`) and
+  `NODE_OPTIONS`;
+- the worker's own `BUNNY_` variables.
+
+A configuration whose `claude.environment` lists any of these refuses to load,
+and the harness filter applies the same rule:
+
+- a denied name;
+- a name with the whole word key, token, secret, password, credential, base
+  URL, `PAT`, private key, `APIKEY` or auth;
+- the SSH agent socket or the SSH and git askpass, ssh and config helper
+  variables;
+- a dynamic-loader variable.
+
+The list is written by the owner. The name rule guards against mistakes; it is
+not a security boundary. It cannot recognize a name that has none of those
+words, such as `OPENAI_KEY` or `MY_PASSPHRASE`.
+
+**Project settings are checked before the tool starts.** The run loads the
+worktree's project settings (`.claude/settings.json`, and
+`.claude/settings.local.json` if one is present). Their `env` block or a
+credential helper could undo the environment above. The worker reads them as
+data and executes nothing in them. It refuses the run, as failed with reason
+`refused` and the setting's name in the summary, before the tool starts and
+before anything is spent, when they:
+
+- set a credential helper (`apiKeyHelper`, `awsAuthRefresh`,
+  `awsCredentialExport` or `gcpAuthRefresh`);
+- set in `env` a denied variable or one named like a key, token, secret,
+  password, credential or base URL;
+- are not a JSON object.
+
+The run also passes `--settings`, which the tool ranks above project
+settings, with the `CLAUDE_CODE_USE_` provider switches set empty. The tool's
+documentation counts an empty value as unset for provider selection.
+
+**The first event names the credential.** The stream's first event reports
+the tool's API key source. Anything but `none` stops the run at that event,
+as failed with reason `refused`. The tool writes that event at about the
+moment it sends its first request, so the request already in flight may be
+spent on the key; nothing after it is. The check fails closed. The run is
+stopped in the same way when an assistant or result event arrives before any
+readable key source. That happens when the first event was over the line
+bound, malformed, or named its source as something other than a string. A
+result whose per-model usage names a provider other than `firstParty` gets a
+limitation saying so.
+
+**What the settings check does not cover.** It checks the project settings
+once, before the start. After the run, the worker reads the two settings files
+again and compares them with what it read before. A file the run created,
+changed or removed gets a limitation, without quoting it. This covers files
+the repository ignores. Git's changed paths add a limitation for anything else
+under `.claude/`. That covers either side of a rename, quoted paths and any
+letter case, since a case-insensitive volume treats `.CLAUDE/` as the same
+directory. The check does not look at
+hooks, the telemetry headers helper (`otelHeadersHelper`), status-line
+commands or enabled plugins. None of these can change who is billed.
+Repository hooks have been able to run commands with the owner's rights since
+the worker was first built (#502); this change leaves that as it was.
+
+**Not yet seen on a real host.** No host signed in only by
+`CLAUDE_CODE_OAUTH_TOKEN` exists yet. Until one does, two things are
+unverified. The first is whether its status reports `authMethod` `claude.ai`
+with `firstParty`; if it does not, readiness reads `unknown` while runs still
+work. The second is whether its first event reports the key source `none`; if
+it does not, every run there is refused at its first event. The installed
+acceptance should also confirm that the checks the repository documents still
+run under the narrowed environment: a variable a check needs beyond the
+allowlist must be listed in `claude.environment`, and proxy variables cannot
+be listed.
+
+## Readiness
+
+Before it connects, the worker asks its tool what it is, without starting a
+task or a session and without spending: `claude --version` and
+`claude auth status --json`. Each runs with no input, the harness's
+environment, the first allowlisted repository as its working directory and a
+ten-second deadline, after which the probe is killed outright. Its
+declaration (`coding-endpoint/2.1`) carries the record, and the companions
+module publishes it in the coding state (`coding-state/2.1`):
+
+| Field | Value |
+| --- | --- |
+| `installed` | `yes`, `no` when the executable is missing, `unknown` otherwise |
+| `version` | the version the tool printed, or null |
+| `signedIn` | `yes` only for the subscription sign-in (`authMethod` `claude.ai` and `apiProvider` `firstParty`); `no` when the tool says it is signed out; `unknown` for any other sign-in or no answer |
+| `plan` | the tool's subscription type when `signedIn` is `yes`, or null |
+| `limits` | the windows (such as `five-hour`, `seven-day`) the latest run reported, with status, reset time and use, or null before any run |
+
+Only the sign-in state, the sign-in method, the provider and the plan are read
+from the status; the account, organization, e-mail address and directories
+are not. One difference from the run remains: the status command takes no
+setting-source option, so it loads the owner's user settings, while the run
+loads only the worktree's project settings. A provider chosen in user settings
+therefore shows as `unknown`, and the run itself is still held to the checks
+above. The tool reports limit
+windows only during a run, so after a run that reported them the worker
+probes again and sends one more enable from its endpoint with the new record.
+That enable is a report: if it is refused or lost, nothing is sent again. A
+disabled or lost endpoint clears the record.
+
 ## Install once
+
+Upgrade the core before the worker. A worker from Hub #1743 on declares with
+`coding-endpoint/2.1` and reports `coding-progress/2.1`, and an older core
+refuses both, so such a worker cannot declare until the core knows them.
 
 1. Grant the credential. Add one entry with the `coding-worker` role to the
    installation's private `edge-credentials/1.0` file, bound to the source
@@ -73,7 +227,17 @@ part of this slice.
    and `Bash` limited to `npm run`, `npm test`, `npx tsc`, `node --test`,
    `git status`, `git diff` and `git log`; a list that names push, network or
    destructive tools refuses. `claude.model` and `claude.maxTurns` are
-   optional. Repository names are lowercase words joined by hyphens, dots or
+   optional. `claude.environment` optionally lists up to 32 more variable
+   names the harness may inherit, for a launch setup that needs one. The
+   configuration refuses to load when it lists a name the rule in
+   [Subscription sign-in only](#subscription-sign-in-only) covers: a denied
+   name, a credential word (whole words, so `GITHUB_TOKEN`, `GITHUB_PAT` and
+   `OPENAI_API_KEY` refuse, and `MAX_THINKING_TOKENS` and `AUTHOR_NAME` do not),
+   the SSH agent socket or a git helper, or a dynamic-loader variable
+   (`DYLD_*`, `LD_*`). `CLAUDE_CODE_OAUTH_TOKEN` is the one exception and is
+   allowlisted anyway. The rule guards against mistakes in a list you write
+   yourself; it is not a security boundary.
+   Repository names are lowercase words joined by hyphens, dots or
    underscores and must match what the owner says to B.U.N.N.Y.
 4. Start it after sign-in from the reviewed release:
 
@@ -138,7 +302,18 @@ one task runs at a time; a second proposal is refused
 until the first ends.
 
 Source tests cover the worker over a fake harness and a fake edge, and its real
-entry point as a child process over the SDK's edge with a fake core. Running it
+entry point as a child process over the SDK's edge with a fake core. They also
+replay recordings of real headless runs and status commands through the real
+parsing code (`apps/runtime/tests/fixtures/claude-stream/recorded-*`), recorded
+with synthetic prompts in an empty directory. Session, event, tool-use,
+message and request identifiers, paths, account values, the plan, the limit
+windows' figures, the timing origin and the overage reason were replaced with
+synthetic values; the token counts and costs of those synthetic runs were
+kept. A guard test fails on a home or temporary path, an e-mail address, a
+token-like string, an account or organization member, or an identifier that
+is not synthetic. A real usage limit cannot be provoked, so the
+`constructed-*` limit fixtures follow the event shapes the tool documents and
+are not recordings. Running it
 against the installed core with a real `claude` is the installed check the
 owner records under the running checklist. The handoff between two supervised
 workers, and the interval launchd actually takes, is an installed check on

@@ -189,4 +189,7 @@ const factories = names.map(name => {
 // A run with no module hosts none, not even the harness module, so its health lists none. Its edge and gateway still
 // know every family the scenario's parts use, from the one list the in-memory harness takes too: the fixture core's
 // the inbox among them; retained history reads use `/api/v2/history`.
+// The run passes no test clock yet, so the runtime keeps the real clock. A run on virtual time (#1705) will pass one here
+// as `testClock`, which `runProcess` takes only in this simulated test run under the supervisor (Hub #1709), and the same
+// clock's `monotonic` in the fixture core's options above.
 await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {schemas: SCENARIO_SCHEMAS, onEdge: served => { edge = served; }});

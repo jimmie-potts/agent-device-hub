@@ -227,7 +227,11 @@ Existing versioned contracts remain in force until their scoped replacements
 are delivered; a bounded snapshot or diagnostic stream is not a complete archive.
 The 2026-10-05 [amendment](decisions/0011-private-personal-data-retention.md#amendment-2026-10-05)
 allows retained data in Claude and Codex prompts and requires no new clearing
-features.
+features. The 2026-11-11 [amendment](decisions/0011-private-personal-data-retention.md#amendment-2026-11-11)
+lets only the classes it lists as may be sent, outside its not-for-now list, go
+to OpenAI's Decisions endpoint as input to a decision, and lets the delivery
+orchestrator's decision step send only issue text and repository facts to the
+OpenAI API.
 
 ## Ownership
 

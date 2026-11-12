@@ -1,5 +1,6 @@
 import {openAudio, openConnections} from './navigation-helpers.ts';
 // Focused #1069 RED/green fixture: real producer owner/decoder, authenticated native image and shared Home/Music card.
+// The world runs on a clock the journey moves (Hub #1708): each speaker read waits for the journey to advance one poll.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Browser, type ElementHandle, type Route} from 'playwright';
@@ -7,8 +8,9 @@ import {expect} from 'playwright/test';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {REQUEST_HEADER, SOURCE_HEADER} from '@jimmie-potts/sdk';
-import {SimulatedSpeakers, type SonyReply, type PlaybackModuleOptions} from '@jimmie-potts/playback';
+import {POLL_MS, SimulatedSpeakers, type SonyReply, type PlaybackModuleOptions} from '@jimmie-potts/playback';
 import {changes, feed, startWorld} from './harness.ts';
+import {worldClock} from './world-clock.ts';
 import {controlReach, textOverlaps} from './layout.ts';
 
 // Independent valid input and pixel oracle, without a production image renderer/helper.
@@ -30,7 +32,10 @@ class ArtworkSpeakers extends SimulatedSpeakers {
 }
 type ArtworkFetch = NonNullable<NonNullable<PlaybackModuleOptions['artwork']>['fetch']>;
 type SyncCall = {schema: string; owner?: string; request: Message<{requestId: string; families: string[]}>};
-const speakers = new ArtworkSpeakers({sony: {input: 'airplay', status: 'playing', title: TITLE, artist: ARTIST}});
+const clock = worldClock();
+const speakers = new ArtworkSpeakers({sony: {input: 'airplay', status: 'playing', title: TITLE, artist: ARTIST}}, {scheduler: clock.scheduler});
+/** Moves the world on by one speaker poll, so each speaker is read once more. */
+const poll = (): Promise<void> => clock.advance(POLL_MS);
 let acquisitions = 0;
 const fetchArtwork: ArtworkFetch = (candidate, endpoint, signal) => {
   assert.ok(!signal.aborted, 'synthetic acquisition is current');
@@ -38,7 +43,7 @@ const fetchArtwork: ArtworkFetch = (candidate, endpoint, signal) => {
   acquisitions++;
   return Promise.resolve({ok: true, value: new Uint8Array(new URL(candidate).pathname.endsWith('-red.png') ? PNG_B : PNG)});
 };
-const world = await startWorld({playbackArtwork: {speakers, fetch: fetchArtwork}});
+const world = await startWorld({playbackArtwork: {speakers, fetch: fetchArtwork}, clock});
 let browser: Browser | undefined;
 try {
   browser = await chromium.launch({headless: true});
@@ -46,7 +51,7 @@ try {
   const context = await browser.newContext({viewport: {width: 560, height: 900}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
-    const page = await context.newPage(); page.setDefaultTimeout(15_000);
+    const page = await context.newPage(); page.setDefaultTimeout(15_000); await clock.install(page);
     const sent = changes(page);
     let playbackSync: SyncCall | undefined;
     const contentRequests: string[] = [];
@@ -83,6 +88,7 @@ try {
       return state?.availability === 'available' && state.playback.status === 'known' && state.playback.player === 'playing'
         && state.artwork?.status === 'ready' ? state : false;
       }, {template: initialSync, sourceHeader: SOURCE_HEADER, requestHeader: REQUEST_HEADER});
+      if (readyProbe.value === false) await poll();
       return readyProbe.value !== false;
     }, {timeout: 15_000, intervals: [100]}).toBe(true);
     const ready = readyProbe.value; assert.ok(ready !== false);
@@ -171,6 +177,8 @@ try {
           && (wanted.title === undefined || state.playback.status === 'known' && state.playback.title === wanted.title)
           && (wanted.player === undefined || state.playback.status === 'known' && state.playback.player === wanted.player) ? state : false;
         }, {template: currentSync, sourceHeader: SOURCE_HEADER, requestHeader: REQUEST_HEADER, wanted});
+        // The owner's record changes only on a read, so a record that is not yet wanted waits for the next poll.
+        if (observed.value === false) await poll();
         return observed.value !== false;
       }, {timeout, intervals: [100]}).toBe(true);
       assert.ok(observed.value !== false); return observed.value;
@@ -230,7 +238,7 @@ try {
       await page.route(imagePattern, handler);
       let element: ElementHandle | null = null;
       try {
-        begin(); const url = await bounded(entered.wait, 'truthful A image');
+        begin(); await poll(); const url = await bounded(entered.wait, 'truthful A image');
         const record = await current({artwork: 'ready', availability: 'available'});
         await image.waitFor({state: 'attached'}); element = await image.elementHandle();
         assert.equal(new URL(await image.getAttribute('src') ?? '', world.url).href, url);
@@ -300,7 +308,7 @@ try {
       });
       await page.route(imagePattern, handler);
       try {
-        change(); const url = await bounded(entered.wait, 'same-generation revision image');
+        change(); await poll(); const url = await bounded(entered.wait, 'same-generation revision image');
         const after = await current({...wanted, artwork: 'ready', after: before.revision});
         assert.equal(after.artwork?.generation, before.artwork?.generation); assert.equal(new URL(url).pathname, pathOf(after));
         assert.equal(await old.evaluate(node => node.isConnected), true, 'the loaded picture stays mounted while the next revision loads');
@@ -494,7 +502,7 @@ try {
     speakers.silent('sony'); speakers.silent('sonos');
     await current({availability: 'stale'}); await noImage(); await card.getByText('Stale', {exact: true}).waitFor(); await square();
     for (const button of await card.locator('fieldset button').all()) assert.equal(await button.isDisabled(), true);
-    await current({availability: 'unavailable'}, 40_000); await noImage(); await square();
+    await current({availability: 'unavailable'}); await noImage(); await square();
     assert.equal(await card.getByRole('status').innerText(), completed); checks.push('stale/unavailable');
     assert.equal(sent.length, 1); assert.deepEqual(speakers.state().sony.commands, ['pause']); assert.deepEqual(speakers.state().sonos.commands, []);
     assert.deepEqual(errors, []);

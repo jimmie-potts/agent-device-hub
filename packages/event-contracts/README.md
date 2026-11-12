@@ -854,6 +854,28 @@ binding while retaining preferences and evidence. All earlier schema files and
 Music/microphone raw feature meanings remain unchanged. The core never
 dual-publishes state.
 
+### Coding worker readiness and outcomes (`coding-*/2.1`)
+
+The `./v2/coding` entry (Hub #502) registers the coding families with the core
+families. Hub #1743 adds three versions beside the unchanged 2.0 schemas:
+
+- `coding-endpoint/2.1`: an `enable` may carry `readiness`, the worker's
+  harness as it reported itself without starting a task: `installed` and
+  `signedIn` (`yes`, `no` or `unknown`), `version` and `plan` (or null), the
+  latest run's limit `windows` with status, `resetsAtMs` and `utilization` (or
+  null), `limitsObservedAtMs` and `checkedAtMs`. A `disable` never carries it.
+- `coding-state/2.1`: requires `readiness`, the selected endpoint's latest
+  record or null.
+- `coding-progress/2.1`: a result may have the outcome `usage-limit`, which
+  carries `limit: {window, resetsAtMs}` (each null where the tool gave none) and
+  ends `failed` with reason `usage-limit`, or `waiting-for-owner`. A `limit`
+  appears with that outcome only.
+
+The worker publishes 2.1 progress and endpoint commands and the companions
+module publishes 2.1 state; a 2.0 message stays valid and refuses the new
+members. The credential role's families are unchanged. `tests/coding.test.mjs`
+covers both versions.
+
 ### Music lighting sessions (`music-lighting-*/2.0`)
 
 `registerMusicLightingFamilies` registers four new families, all at 2.0, for the first live Music lighting trial (#1272, #722, policy in #40). The browser-safe `v2/music-lighting-data` export owns their types and reason lists.

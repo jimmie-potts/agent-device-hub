@@ -23,7 +23,7 @@ import {createLifxModule, LIFX_SIMULATED_SECTION, PACKET, SimulatedLifx, lifxSch
 import {createNanoleafModule, SIMULATED_SECTION as NANOLEAF_SECTION, SYNTHETIC_TOKEN as NANOLEAF_TOKEN,
   LINES_ADDRESS, PANELS_ADDRESS, SimulatedNanoleaf, nanoleafSchemas, type SimulatedState} from '@jimmie-potts/nanoleaf';
 import {SIGN_SECTION, SYNTHETIC_TOKEN, SimulatedSigns, createSignModule, signSchemas} from '../../dist/tests/fixtures/sign.js';
-import {connectRemote, type BunnyModule, type RemoteParticipant, type Sdk, type Clock, type Scheduler} from '@jimmie-potts/sdk';
+import {connectRemote, type BunnyModule, type RemoteParticipant, type Sdk, type Clock, type Scheduler, type WorkerCallOptions} from '@jimmie-potts/sdk';
 import type {Page} from 'playwright';
 import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, createCoreModule, startRuntime, tokenDigest, type LogRecord, type Runtime} from '../../dist/src/index.js';
 import {IDENTITY, observation, type ObservationOptions} from '../../dist/tests/fixtures/agents.js';
@@ -47,8 +47,14 @@ const HOOK_SOURCE = 'bunny/parts/hook';
 export type WorldOptions = {
   /** Synthetic art provider through the real catalog and ledger; no credentials or device routes. */
   art?: boolean;
+  /**
+   * One clock for the whole world (Hub #1708): the runtime's clock and scheduler, the core's and Playback's monotonic
+   * clocks, and the times the harness stamps. Time moves only when the test advances it. `working`, when given, takes
+   * each module worker call, so the test can hold time while one runs (`worldClock` in world-clock.ts).
+   */
+  clock?: {clock: Clock; scheduler: Scheduler; working?: (call: Promise<unknown>) => void};
   /** Deterministic core schedule over a real weather owner with invented responses and no network fallback. */
-  artSchedule?: {clock: Clock; scheduler: Scheduler; choice: () => number};
+  artSchedule?: {choice: () => number};
   /** A numeric-only fake Music producer may use the existing endpoint role; no native helper. */
   musicCapture?: boolean;
   /** A dedicated synthetic Claude terminal receipt producer for the real helper. */
@@ -173,6 +179,25 @@ export type World = {
   close(): Promise<void>;
 };
 
+/** `module`, handing each worker call it makes to `working` (as the in-memory scenario tier's `holding` does). */
+function holdingWorkers(module: BunnyModule, working: (call: Promise<unknown>) => void): BunnyModule {
+  const start = (context: Parameters<BunnyModule['start']>[0]): ReturnType<BunnyModule['start']> => module.start({...context, workers: {...context.workers,
+    call: <Reply>(file: URL, request: unknown, options: WorkerCallOptions): Promise<Reply> => {
+      const call = context.workers.call<Reply>(file, request, options);
+      working(call);
+      // A promise of its own, so a rejection the module leaves unhandled stays unhandled, as it would in the runtime.
+      return call.then(reply => reply);
+    }}});
+  // The module's own members stay bound to it, so a class's private fields still resolve.
+  return new Proxy(module, {get: (target, key) => {
+    if (key === 'start') return start;
+    const value: unknown = Reflect.get(target, key, target);
+    if (typeof value !== 'function') return value;
+    const bound: unknown = value.bind(target);
+    return bound;
+  }});
+}
+
 async function writePrivate(file: string, text: string): Promise<void> {
   await writeFile(file, text, {mode: 0o600});
   await chmod(file, 0o600);
@@ -182,6 +207,7 @@ async function writePrivate(file: string, text: string): Promise<void> {
 export async function startWorld(options: WorldOptions = {}): Promise<World> {
   assert.equal(options.nanoleaf === true && options.modeDevices === true, false, 'one Nanoleaf writer per world');
   const withDevices = options.devices === true || options.lighting === true;
+  const now = (): number => options.clock?.clock.now() ?? Date.now();
   const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-dash-')));
   const stateDir = join(root, 's');
   const configDir = join(root, 'c');
@@ -228,7 +254,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   if (withDevices) await writePrivate(signToken, SYNTHETIC_TOKEN);
   const nanoleafToken = join(configDir, 'nanoleaf-token');
   if (options.nanoleaf === true) await writePrivate(nanoleafToken, NANOLEAF_TOKEN);
-  const wisprConfig = options.wispr === undefined ? undefined : await prepareWisprFixture(configDir, Date.now(), {
+  const wisprConfig = options.wispr === undefined ? undefined : await prepareWisprFixture(configDir, now(), {
     observation: 'fresh', exposeToDashboard: options.wispr.exposeToDashboard ?? false, language: true,
   });
   const moduleConfig = {
@@ -259,7 +285,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.privateProxy === undefined ? {} : {privateProxy: options.privateProxy}),
   }}));
   const logs: LogRecord[] = [];
-  const coreOptions = options.artSchedule === undefined ? {} : {artScheduleChoice: options.artSchedule.choice};
+  const coreOptions = {...(options.artSchedule === undefined ? {} : {artScheduleChoice: options.artSchedule.choice}), ...(options.clock === undefined ? {} : {monotonic: now})};
   let core = createCoreModule(coreOptions);
   let wispr = createWisprModule();
   const nano = new ModeDevice('nanoleaf', 'wall'); nano.result = 'failed';
@@ -289,11 +315,12 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       core = createCoreModule(coreOptions), ...(options.artSchedule === undefined ? [] : [createWeatherModule({fetch: clock => url => Promise.resolve(
         url.includes('/points/') ? weatherJson(pointsBody()) : url.includes('/alerts/') ? weatherJson(alertsBody())
           : weatherJson(hourlyBody(clock.now(), [{shortForecast: 'Sunny', precipitation: 0}, {shortForecast: 'Chance Rain Showers', precipitation: 40}], clock.now() - 1000)))})]), ...(options.art === true ? [createArtModule({providers: simulatedProviders(art.call.bind(art))})] : []), ...(options.microduck===true?[options.microduckVendor===true?createMicroDuckModule():createMicroDuckModule({transport:options.microduckTransport??microduck})]:[]), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]),...(options.volcano===true?[createVolcanoModule({feed:volcano})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
-      ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}})]
+      ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}, ...(options.clock === undefined ? {} : {monotonic: now})})]
         : options.pixooPages === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
-      ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request, datagram: lines.datagram})] : [])],
-    ...(options.artSchedule === undefined ? {} : {clock: options.artSchedule.clock, scheduler: options.artSchedule.scheduler}),
+      ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request, datagram: lines.datagram})] : [])]
+      .map(module => options.clock?.working === undefined ? module : holdingWorkers(module, options.clock.working)),
+    ...(options.clock === undefined ? {} : {clock: options.clock.clock, scheduler: options.clock.scheduler}),
     port, stateDir, configFile: config, edge: {schemas: {...(options.artSchedule === undefined ? {} : weatherSchemas),...(options.art === true ? artRegistration.schemas : {}),...(options.microduck===true?microduckSchemas:{}),...(options.reachy===true?reachySchemas:{}),...(options.wemo===true?wemoSchemas:{}),...options.roborock===true?roborockSchemas:{}, ...options.volcano===true?volcanoSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime: Runtime;
@@ -318,8 +345,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     art,
     presentArt: async (artworkId, compositionId) => {
       assert.equal(options.art, true);assert.ok(core.automation.art !== undefined);
-      const now = Date.now();
-      const result = await core.automation.art.present({id: randomUUID(), artworkId, startAtMs: now, prepareUntilMs: now,
+      const at = now();
+      const result = await core.automation.art.present({id: randomUUID(), artworkId, startAtMs: at, prepareUntilMs: at,
         toleranceMs: 5000, mood: 'celebrate', priorityClass: 'event', coversStatus: false, displays: [], browser: {compositionId}}, () => undefined);
       assert.ok(!('error' in result));assert.equal(result.browser?.status, 'tracked');
     },
@@ -432,12 +459,12 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       return response.status;
     },
     observe: async (event, observed = {}) => {
-      const {key, draft} = observation(event, Date.now(), observed);
+      const {key, draft} = observation(event, now(), observed);
       await (await connected()).publish(key, draft);
     },
     desktopTitle: async (identity, title) => {
       assert.ok(desktopSdk, 'the synthetic Desktop module is running');
-      const {key, draft} = observation({kind: 'metadata-observed'}, Date.now(), {identity, turn: null, title: {value: title, source: 'provider'}});
+      const {key, draft} = observation({kind: 'metadata-observed'}, now(), {identity, turn: null, title: {value: title, source: 'provider'}});
       await desktopSdk.publish(key, draft);
     },
     acknowledge: async session => {

@@ -829,7 +829,13 @@ The focused artwork journey runs with
 It uses the real playback owner and decoder with synthetic speakers and PNG
 bytes. Its pixel oracle and acquisition/command counters check the shared Home
 and Audio card; synthetic browser evidence is separate from the installed
-runtime identity and served browser build.
+runtime identity and served browser build. The runtime and Playback run on a
+clock the journey moves one speaker poll at a time (`worldClock` in
+`tests/world-clock.ts`, Hub #1708), so no step waits for the real poll or
+freshness timers. The page's clock starts at the world's time and moves with
+each advance, but keeps running at real pace between advances, so the page's
+own liveness, reconnect and retry timers still run. The art show journey uses
+the same clock for the show's lead.
 
 ## Devices, music and operations
 

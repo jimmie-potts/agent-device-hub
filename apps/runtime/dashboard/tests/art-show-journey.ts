@@ -1,15 +1,22 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {chromium, expect} from 'playwright/test';
+import {ART_SHOW_LEAD_MS} from '@jimmie-potts/event-contracts/v2/art-show';
 import {CATALOG_PAGE_SIZE} from '../../../../modules/art/dist/src/frontend/model.js';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {feed, startWorld} from './harness.ts';
+import {worldClock} from './world-clock.ts';
 
-/** Show now (Hub #1581), including art past the record's 24 most recent (Hub #1584), through the real gallery, gateway, core and simulated Tidbyt; providers are synthetic. The runtime scenario covers display sends. */
+/**
+ * Show now (Hub #1581), including art past the record's 24 most recent (Hub #1584), through the real gallery, gateway, core
+ * and simulated Tidbyt; providers are synthetic. The runtime scenario covers display sends, on the real clock. Here the
+ * world runs on a clock the journey moves through the show's lead (Hub #1708).
+ */
 export async function artShowJourney(): Promise<void> {
-  const world = await startWorld({art: true, tidbyt: true}), browser = await chromium.launch({headless: true});
+  const clock = worldClock();
+  const world = await startWorld({art: true, tidbyt: true, clock}), browser = await chromium.launch({headless: true});
   const artifacts = await browserArtifactDirectory(), context = await browser.newContext({viewport: {width: 1440, height: 1100}, reducedMotion: 'reduce'});
-  const page = await context.newPage();page.setDefaultTimeout(15_000);
+  const page = await context.newPage();page.setDefaultTimeout(15_000);await clock.install(page);
   const errors: string[] = [], shows: unknown[] = [];
   page.on('pageerror', error => {errors.push(error.message);});
   page.on('request', request => {if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/v2/commands/art-show') shows.push(request.postDataJSON());});
@@ -37,7 +44,8 @@ export async function artShowJourney(): Promise<void> {
     await expect(tile.getByRole('button', {name: 'Show now', exact: true})).toBeDisabled();
     const results = panel.getByRole('list', {name: 'Show results', exact: true});
     await expect(results.locator('[data-art-show-surface="browser"]')).toContainText('Waiting for the common start');
-    await expect(panel.getByRole('status')).toContainText('Show handed off. Each surface has its own result below.', {timeout: 40_000});
+    await clock.advance(ART_SHOW_LEAD_MS);
+    await expect(panel.getByRole('status')).toContainText('Show handed off. Each surface has its own result below.');
     await expect(results.locator('[data-art-show-surface="browser"]')).toContainText('Browser selection saved; rendering is not confirmed.');
     // This harness's simulated Tidbyt declares no exact art, so the plan skips it and says so; the browser proceeds alone.
     await expect(results.locator(`[data-art-show-surface="${target}"]`)).toContainText('Not sent. Recent automation attempts on the Automation page give the reason.');
@@ -84,7 +92,8 @@ export async function artShowJourney(): Promise<void> {
     const resent = shows[1] as {target: string; data: {artworkId: string; targets: string[]}};
     assert.deepEqual(resent.data, {artworkId, targets: ['browser', target]}, 'older retained art is sent like recent art');
     await expect(results.locator('[data-art-show-surface="browser"]')).toContainText('Waiting for the common start');
-    await expect(results.locator('[data-art-show-surface="browser"]')).toContainText('Browser selection saved; rendering is not confirmed.', {timeout: 40_000});
+    await clock.advance(ART_SHOW_LEAD_MS);
+    await expect(results.locator('[data-art-show-surface="browser"]')).toContainText('Browser selection saved; rendering is not confirmed.');
     await expect(panel.getByRole('status')).toContainText('Show handed off. Each surface has its own result below.');
     await page.screenshot({path: join(artifacts, 'art-show-older.png'), fullPage: true});
     assert.deepEqual(errors, []);
