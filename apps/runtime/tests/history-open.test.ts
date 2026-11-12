@@ -156,7 +156,7 @@ async function gateway(context: TestContext, read: (filter: HistoryFilter) => Hi
   const served = new Gateway({
     bus: new InProcessBus({scheduler}), host: {modules: () => []} as unknown as ModuleHost, validator: edgeValidator(),
     families: new Set<string>(), credentials: [], clock, scheduler, log: writer.logger('bunny.runtime'), redactions: writer.redactions,
-    stateDir: '/unused', history: {read},
+    stateDir: '/unused', history: {page: read},
     edge: {credentials: 'unused', browserAccess: 'trusted-loopback' as const, launcher: false, mcp: false, editorLinks: {}, placeLinks: {}},
   });
   await served.start('http://127.0.0.1:0', ['127.0.0.1:0']);

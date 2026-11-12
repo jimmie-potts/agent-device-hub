@@ -113,7 +113,8 @@ export type GatewayOptions = {
   onDiagnostic?: OnDiagnostic;
   /** The core's dispatcher, which the action routes call (#782); without it, every action is `unavailable`. */
   actions?: CoreActions;
-  history?: {read: (filter: HistoryFilter) => HistoryPage | ErrorBody};
+  /** The core's history page: rows and the open spans of the entities in them (#1773). */
+  history?: {page: (filter: HistoryFilter) => HistoryPage | ErrorBody};
   /** Fresh rules/settings owned by the runtime core; no legacy store is opened. */
   automation?: AutomationControls;
   /** Closed file-reader exception: analytics never become SDK families or MCP tools. */
@@ -420,7 +421,7 @@ export class Gateway {
       const values = Object.fromEntries(url.searchParams);
       const filter = historyFilter(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, key === 'fromAtMs' || key === 'toAtMs' || key === 'limit' ? (/^[0-9]+$/.test(value) ? Number(value) : NaN) : value])));
       if (filter === undefined) throw refuse('invalid-request', 'invalid history filters');
-      const page = this.#options.history?.read(filter) ?? errorBody('unavailable', {detail: 'no core history is available'});
+      const page = this.#options.history?.page(filter) ?? errorBody('unavailable', {detail: 'no core history is available'});
       if (this.#options.redactions.holds(JSON.stringify(page))) throw refuse('internal', 'history holds a secret, which the gateway never serves');
       // `open` is an optional member of `history/2.0` (#1773), present only when an entity in the page has an open span.
       return this.#dashboardRequest(request, path, () => 'rows' in page ? json(200, {schema: 'history/2.0', ...page}) : json(statusOf(page.error.code), page));
