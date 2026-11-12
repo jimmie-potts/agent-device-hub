@@ -152,6 +152,9 @@ export class MonitorPresentation {
    const external=state.lastError?.code==='external-control';
    if(external&&!this.heard_.external){this.statusHeld='external';if(this.active)this.suspend();}
    else if(this.statusHeld==='write'&&this.heard_.availability!=='available'&&state.availability==='available')this.statusHeld=false;
+   // A device back from an outage may have restarted and show its own picture: the status base's is sent once again,
+   // since an unchanged picture is otherwise never sent again (Hub #1757).
+   if(this.active&&this.heard_.availability==='offline'&&state.availability==='available')this.lastFrame='';
    this.heard_={availability:state.availability,external};
    this.settleBase();
    // Any player change the takeover did not make, or screen-off, is the user's: never resume over it.
