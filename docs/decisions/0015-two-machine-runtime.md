@@ -20,7 +20,7 @@ session at 2026-11-11T17:56:35Z: "We can do stage by stage."
 
 | Stage | Adds | Status |
 | --- | --- | --- |
-| [0](#stage-0-prerequisites) | The PC qualified as a host; the fact log on the Mac | accepted 2026-11-12: "your recommendation is good for all 7" (owner decision 6) |
+| [0](#stage-0-prerequisites) | The PC checked as a host; the fact log on the Mac (in source; not installed when stage 0 was accepted, see [#1750](https://github.com/jimmie-potts/agent-device-hub/issues/1750)) | accepted 2026-11-12: "your recommendation is good for all 7" (owner decision 6) |
 | [1](#stage-1-one-way-settings-and-a-standby-started-by-hand) | Settings read one way from the Mac; a standby started by hand | not accepted |
 | [2](#stage-2-facts-in-both-directions) | Facts merged in both directions; media copied | not accepted |
 | [3](#stage-3-the-mac-preferred-lead-and-automatic-takeover) | The Mac-preferred lead and automatic takeover | not accepted |
@@ -28,8 +28,9 @@ session at 2026-11-11T17:56:35Z: "We can do stage by stage."
 
 Accepting a stage adopts its section and needs a follow-up commit that applies
 its amendments; stage 0 has none. A stage's "Before it starts" list names the
-earlier stages it needs. Accepting one stage does not accept a later one, and
-the owner decides stage 1 after the device reach probe's result.
+earlier stages it needs. Accepting one stage does not accept a later one. The
+owner was to decide stage 1 after the device reach probe's result. That result
+came in on 2026-11-12, and stage 1 is open.
 
 ## Context
 
@@ -92,9 +93,9 @@ In short:
   (plan, "The network path"). This matters to #1722, which shares the PC worker.
   The owner has since authorized the PC as a worker host, and #1722's
   orchestrator runs alongside today's way of working (owner decision 6).
-- **Container reach from the PC is unproven.** Whether Docker Desktop on WSL 2
-  reaches the devices has not been measured. The owner approved the probe in
-  the plan's section 6 on 2026-11-12 (owner decision 6); it has not run yet.
+- **Container reach from the PC was unproven until 2026-11-12.** The probe in
+  the plan's section 6 had not run when stage 0 was accepted. It ran later that
+  night and passed ([Stage 0](#stage-0-prerequisites)).
 
 ## Owner decisions
 
@@ -158,17 +159,28 @@ with the stage that uses them.
      for the probe result.
    - The device reach probe is approved as written in the plan, "including the
      one read-only request to a LIFX bulb, with the Roborock limited to a
-     ping". It still needs the device addresses from the owner and a session on
-     the PC, and it sends no command to any device.
+     ping". It sends no command to any device. One point of the plan changed
+     afterwards on the owner's instruction (decision 7).
    - For the PC's processor image, start with a local build on the PC
      "instead of a new release qualification lane, which would be a gate
      change".
    - The delivery orchestrator runs alongside today's way of working (#1722).
+7. **Device addresses for the probe come from the Mac's configuration.** After
+   approving the probe, the owner instructed the coordinating session: "Pull
+   the device IP addresses from our configs and send the info to the 'Mac
+   connection test' session and coordinate and orchestrate." (recorded on
+   [#1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6810927337)
+   at 2026-11-12T00:43:06Z). So the coordinating session read the addresses
+   from the Mac runtime's private configuration and passed them privately to
+   the owner's session on the PC, instead of the owner typing them. They are
+   never a guessed target and never written to GitHub. The rest of the plan
+   stood, and its step 6 (other network modes) stayed unapproved.
 
 ## Rules every stage keeps
 
-Everything in this section is *proposed* and open to the owner's change. A
-stage uses only the rules it needs.
+Everything in this section is *proposed* and open to the owner's change.
+Stage 0 adopts none of them. Each rule takes effect only with an accepted stage
+that uses it.
 
 ### Two classes of behavior
 
@@ -241,18 +253,40 @@ Accepted on 2026-11-12 (owner decision 6).
 - **Adds:** the PC checked as a host. That covers device reach from Docker in
   WSL 2 (the plan's probe), an image for the PC's processor, a git identity in
   the PC checkout, and staying awake (plan, Checklist B and items A14 and
-  A15). The fact log of #1740 reaches the Mac with a routine upgrade; it is
-  merged in source and its installation is tracked on its own.
+  A15). The fact log of #1740 is merged in source. It was not installed on the
+  Mac when stage 0 was accepted, and it reaches the Mac with a routine upgrade
+  tracked on [#1750](https://github.com/jimmie-potts/agent-device-hub/issues/1750).
+- **No runtime on the PC.** Stage 0's checks start no B.U.N.N.Y. runtime on the
+  PC. They use throwaway containers only, with no persistent state and no
+  device command. Checking the local build by starting a throwaway runtime from
+  it needs its own owner decision.
 - **Image:** a local build on the PC, not a new release qualification lane. A
   locally built image is not a qualified release, so it qualifies nothing
   beyond the probe and stage 0's checks. It is not a reviewed immutable image
   under ADR 0008, the operator's qualified routes refuse it, and it gives no
   standby or device-writer authority.
-- **Before it starts:** met. The owner approved the plan's probe as written. It
-  still needs the device addresses from the owner, never a guessed target and
-  never written to GitHub, and a session on the PC. It sends no command to any
-  device. The PC is authorized as a worker host only, so stage 0's checks run
+- **Before it starts:** met. The owner approved the plan's probe as written,
+  except that the addresses came from the Mac's configuration (owner decisions
+  6 and 7). The PC is authorized as a worker host only, so stage 0's checks run
   without the PC becoming a standby runtime host.
+- **Probe result:** passed, on 2026-11-12 between 00:44Z and 00:49Z
+  ([result](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6811046647)).
+  Steps 0 to 5 passed:
+  - TCP from WSL and from bridge containers reached every probed device, the
+    Tronbyt server on the Mac and the internet hosts.
+  - One LIFX `LightGet` through the repository's unmodified transport got a
+    reply. It replaced the plan's `GetService` or `GetPower` because the
+    encoder accepts only the reads 14, 32 and 101.
+  - A port published on the PC answered one fetch from the Mac.
+
+  It did not show Nanoleaf UDP frames, the Pixoo's own fetch, anything about
+  the Roborock (which has no address in the configuration), sustained traffic,
+  or sleep and idle behavior. No runtime was started on the PC and no device
+  command was sent, so no module was exercised. The result authorizes nothing
+  by itself.
+- **Still to do:** the locally built image, staying awake, and the git identity
+  in the PC checkout. With the probe result in, the owner's decisions on
+  authorizing the PC as a standby runtime host and on stage 1 are open again.
 - **Takeover:** none.
 - **Amendments:** none. Accepting stage 0 changes no rule in an accepted
   document. The PC's roles under ADR 0008 and `docs/architecture.md` stay as
@@ -261,17 +295,25 @@ Accepted on 2026-11-12 (owner decision 6).
   qualification also stays true, because a local build installs and qualifies
   nothing. #1740 and ADR 0012's 2026-11-11 amendment carry the origin, so this
   record needs no contract change of its own.
-- **Effort:** #1740 is delivered in source. The probe and the local build are
-  not sized.
+- **Effort:** #1740 is delivered in source and the probe is done. The local
+  build, staying awake and the git identity are not sized.
 
 ### Stage 1: one-way settings and a standby started by hand
 
 - **Adds:** owner-entered settings become records in the Mac's fact log. The PC
   reads them after N and applies the latest edit (audit, answer 5; owner
-  decision 5). The PC has its own spending share. When the Mac is down, the
-  owner starts the PC copy by hand after confirming the Mac core is stopped,
-  and stops it again before the Mac core starts. There is one writer at a time
-  and no automatic takeover.
+  decision 5). The PC has its own spending share. There is one device writer at
+  a time and no automatic takeover.
+- **The PC copy's mode** (*proposed*): the PC copy reads while the Mac runs, so
+  it runs alongside the Mac as a standby with device control off. It reads the
+  Mac's settings facts and applies them. No producer reports to it, so it holds
+  no sessions. It serves no client, sends no device command, runs no lead-only
+  work (routines, schedules, spending, claims) and accepts no settings edits.
+  When the Mac is down, the owner confirms the Mac core is stopped with its
+  start hold set, as `docs/bunny-container.md` already requires before device
+  control moves to another host, and then turns device control on in the PC
+  copy. Before the Mac core starts again, the
+  owner turns it off.
 - **Before it starts:** stage 0 and the probe's result. The owner authorizes
   the PC as a standby runtime host, since `AGENTS.md` withholds new hosts from
   standing authority. The PC runs an image fit for a standby: the local build
@@ -287,7 +329,7 @@ Accepted on 2026-11-12 (owner decision 6).
   Nanoleaf scenes, gaps in the Volcano and Roborock archives, and every
   Mac-only input. Settings changed on the PC while it leads are not carried
   back.
-- **Amendments:** 1.1 to 1.6.
+- **Amendments:** 1.1 to 1.7. Amendment 1.7 covers the second running core.
 - **Effort:** medium for settings, plus low for configuration templating on the
   PC.
 
@@ -303,6 +345,15 @@ Accepted on 2026-11-12 (owner decision 6).
   Codex Desktop collector, the Volcano collector, read receipts) report to both
   machines. Connection-bound producers stay with whichever machine they connect
   to.
+- **The PC copy's mode** (*proposed*): while the Mac runs, the PC copy keeps
+  stage 1's standby mode with device control off. Unlike stage 1, it takes
+  observations from the producers that report to it, reduces its own sessions
+  and exchanges facts with the Mac in both directions. It still sends no device
+  command, runs no lead-only work, serves no client except producer intake and
+  the peer read, and accepts no settings edits. Settings still travel one way
+  from the Mac until stage 3. The other direction carries the facts the PC
+  recorded while it led during a takeover by hand. Takeover stays by hand, as
+  in stage 1.
 - **Before it starts:** stage 1. History's duplicate check looks only at the
   local origin's rows, which #1740 includes. Without it, a fact delivered to
   both machines makes the local tracker ignore its own copy (A8). Code that
@@ -327,7 +378,8 @@ Accepted on 2026-11-12 (owner decision 6).
   copies run, but only the lead writes to devices and runs lead-only work.
 - **Before it starts:** stage 2. Each installation knows which peer is the
   preferred lead. The origin is an opaque identifier, so this is its own
-  setting (*proposed*). The takeover interval is fixed.
+  setting (*proposed*). The takeover interval is fixed. From this stage either
+  copy accepts settings edits, merged by latest edit.
 - **Takeover has:** stage 2, automatic.
 - **Takeover lacks:** either-copy device writes, so the PC writes nothing while
   the Mac leads, and Mac-only inputs.
@@ -341,7 +393,8 @@ Accepted on 2026-11-12 (owner decision 6).
   the owner's permission for that test.
 - **Takeover has:** everything except the Mac-only inputs and connection-bound
   producers.
-- **Amendments:** 4.1 to 4.3.
+- **Amendments:** 4.1 to 4.5. Amendments 4.4 and 4.5 add the exception to
+  stage 3's "only the lead writes" sentences.
 - **Effort:** not sized by the audit.
 
 ## Amendments by stage
@@ -397,6 +450,12 @@ API/ownership handoffs, not concurrent access to a mounted SQLite file." and
 add: "Replicate between hosts only through ADR 0015's fact-log replication,
 never by copying or mounting a live SQLite file."
 
+1.7. `AGENTS.md`, "Runtime and migration boundaries": "Maintain one active
+agent-state owner and one designated writer per physical device."
+Replace with: "Maintain one active agent-state owner per running host and one
+designated writer per physical device. Under ADR 0015 a second host's copy runs
+with device control off until the owner turns it on for a takeover."
+
 ### Stage 2
 
 2.1. ADR 0012, "Ownership and publication": "Copies of other owners' state are
@@ -427,8 +486,7 @@ Replace with: "Local leases do not fence other computers. ADR 0015's lead rule
 and takeover interval are the cross-machine fence, and they are not exact.
 There is no snapshot rollback."
 
-3.4. `AGENTS.md`, "Runtime and migration boundaries": "Maintain one active
-agent-state owner and one designated writer per physical device."
+3.4. `AGENTS.md`, the sentences as replaced by 1.7.
 Replace with: "Maintain one active agent-state owner per running host and one
 designated writer per physical device: the lead under ADR 0015, with its
 split-lead case as the accepted exception."
@@ -471,6 +529,17 @@ except devices ADR 0015 qualifies for either-copy writes."
 
 4.3. `AGENTS.md`, the sentence as replaced by 3.4: add "Devices ADR 0015
 qualifies for either-copy writes take writes from both hosts."
+
+4.4. ADR 0008, the sentence "Under ADR 0015 only the lead writes to devices."
+as added by 3.2.
+Replace with: "Under ADR 0015 only the lead writes to devices, except devices
+ADR 0015 qualifies for either-copy writes."
+
+4.5. `docs/bunny-container.md`, the sentence "Under ADR 0015 the lead rule
+decides which host writes to a device." as added by 3.5.
+Replace with: "Under ADR 0015 the lead rule decides which host writes to a
+device, except devices ADR 0015 qualifies for either-copy writes, which take
+writes from both."
 
 ## Consequences and risks
 
@@ -536,8 +605,9 @@ qualifies for either-copy writes take writes from both hosts."
 
 Each item names the first stage that needs it.
 
-1. After the probe result: whether to accept stage 1, and whether to authorize
-   the PC as a standby runtime host (stage 1).
+1. Now that the probe has passed: whether to accept stage 1, and whether to
+   authorize the PC as a standby runtime host (stage 1). The result authorizes
+   neither by itself.
 2. Which image a PC standby runs. The local build qualifies nothing, so a
    standby needs a qualified image for the PC's processor, through a release
    qualification lane (a gate change) or another route the owner chooses
