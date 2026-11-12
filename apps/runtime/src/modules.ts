@@ -4,6 +4,7 @@
 // a code change in its own folder, fixed when the runtime is built. Each entry is a factory: it creates the module with
 // its real device transport, or, when the runtime runs with `--simulate`, with its simulated one, so a disposable
 // verification run (#920) touches no device.
+import {bookkeepingProblem, contractSchemas, familyOfSchema, isContractFamily, type Bookkeeping} from '@jimmie-potts/event-contracts/v2/bookkeeping';
 import type {BunnyModule, ModuleFactory, ModuleRegistration} from '@jimmie-potts/sdk';
 import {CORE_MODULE, createCoreModule} from './core/core.js';
 import {REGISTRATIONS} from './registry.js';
@@ -58,9 +59,14 @@ export function orderModules(registrations: readonly ModuleRegistration[]): Modu
   return ordered;
 }
 
-/** The core's factory, then every shipped registration in start order. */
+/**
+ * The core's factory, then every shipped registration in start order. Throws as `orderModules` does, and when a
+ * registration's bookkeeping declaration breaks a rule of `moduleBookkeeping`, so the runtime does not start.
+ */
 export function shippedList(registrations: readonly ModuleRegistration[]): ModuleFactory[] {
-  return [coreFactory, ...orderModules(registrations)];
+  const ordered = orderModules(registrations);
+  moduleBookkeeping(registrations);
+  return [coreFactory, ...ordered];
 }
 
 /** Every module folder's registration, shipped or not, in folder order, as the build collected them. */
@@ -76,4 +82,26 @@ export function buildModules(factories: readonly ModuleFactory[], simulate: bool
 /** Every factory's payload schemas, for the SDK edge's validator. */
 export function moduleSchemas(factories: readonly ModuleFactory[]): Readonly<Record<string, object>> {
   return Object.assign({}, ...factories.map(factory => factory.schemas ?? {})) as Record<string, object>;
+}
+
+/**
+ * Every factory's bookkeeping members, by family (Hub #1771), beside the contracts package's own. Throws for a module
+ * that declares a family of the contracts package, a family its `schemas` do not register or one another module also
+ * declares, and for pointers `bookkeepingProblem` refuses. Nothing reads the result yet: history will (#1772).
+ */
+export function moduleBookkeeping(factories: readonly ModuleFactory[]): Bookkeeping {
+  const merged: Record<string, readonly string[]> = {};
+  const refs = {...contractSchemas(), ...moduleSchemas(factories)};
+  for (const {name, schemas = {}, bookkeeping = {}} of factories) {
+    for (const [family, pointers] of Object.entries(bookkeeping)) {
+      if (isContractFamily(family)) refuse(`${name} declares bookkeeping for ${family}, a family of the contracts package`);
+      if (Object.hasOwn(merged, family)) refuse(`${family}'s bookkeeping is declared twice`);
+      const versions = Object.entries(schemas).filter(([dataschema]) => familyOfSchema(dataschema) === family).map(([, schema]) => schema);
+      if (versions.length === 0) refuse(`${name} declares bookkeeping for ${family}, which it does not register`);
+      const problem = bookkeepingProblem(family, pointers, versions, refs);
+      if (problem !== undefined) refuse(`${name}'s bookkeeping for ${family}: ${problem}`);
+      merged[family] = Object.freeze([...pointers]);
+    }
+  }
+  return Object.freeze(merged);
 }

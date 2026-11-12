@@ -2,7 +2,7 @@
 // handoff families are `v2/art`; this adds only the owner's catalog command, which they do not carry. The record carries references and amounts only: prompts, keys,
 // locations and image bytes stay in the module, and bytes are read through its authenticated content route.
 import {SCHEMA_BASE, type ErrorCode, type MessageValidator} from './index.js';
-import {defineFamily, registerFamilies} from './registry.js';
+import {defineFamily, registerFamilies, type PayloadFamily} from './registry.js';
 
 export const ART_ID = 'art';
 export const ART_STATE_SCHEMA = `${SCHEMA_BASE}art/2.0`;
@@ -84,5 +84,7 @@ export const ART_CATALOG_EDIT_TYPE = 'org.bunny.art-catalog.edit.requested';
 
 const onArt = (message: {subject: string}): string | undefined => message.subject === ART_ID ? undefined : 'envelope /subject must be art';
 const families = [defineFamily('art', 'state', ART_STATE_TYPE, onArt), defineFamily('art', 'state', ART_STATE_TYPE, onArt, '2.1'), defineFamily('art-catalog-edit', 'command', ART_CATALOG_EDIT_TYPE, onArt)];
+/** The art state and catalog families, which the art module registers (Hub #680). */
+export const artStateFamilies: readonly PayloadFamily[] = families;
 export const artSchemas: Readonly<Record<string, object>> = Object.fromEntries(families.map(family => [family.dataschema, family.schema]));
 export function registerArtStateFamily(validator: MessageValidator): void {registerFamilies(validator, families);}
