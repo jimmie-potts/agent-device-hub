@@ -178,10 +178,28 @@ clock that stamps their messages, and `wait(ms)` advances the run, split at the 
 call to the run while nothing can change: the last advance found nothing in flight, the refresh after it changed nothing
 the scenario reads, no call waits for an answer, no part is reconnecting and no timer is due before the wait ends. The run
 gets that time before anything else reaches it: an action, a gateway call, health, a hook or a call on a part. Waiting
-for the reader's resync after a restart advances the run until its bound (15 s) has passed in the run's time; since the
-reader comes back over real I/O, the restart fails only once the bound has also passed in real time. A hook against a
-stopped runtime asks for a restart that waits for a release, runs the hook once the runtime refuses connections, then
-releases it; once the restart answers, the adapter's clock follows the time its hold moved the run on.
+for the reader's resync after a restart advances the run while the reader's stream is away, until its bound (15 s) has
+passed in the run's time. Once the stream is back, the run's time stands still while the copies resync, since their sync
+deadlines run on the parts' clock and the resync is real I/O; the restart fails only once the bound has passed in real
+time. A hook against a stopped runtime asks for a restart that waits for a release, runs the hook once the runtime
+refuses connections, then releases it; once the restart answers, the adapter's clock follows the time its hold moved the
+run on.
+
+Some waits hold for real work, which virtual time would outrun (#1711). Each holds only while that work is in flight,
+looks again whenever the reader, a call or a part's stream changes, and fails after 15 s of real time with fixed text
+naming what is missing:
+
+- A wait ends only once a reader whose lost stream is back has synced every copy again: on either clock after
+  `disconnect`, and on virtual time after any loss, such as a crash.
+- On virtual time a wait also ends only once the reader holds what the run published while its stream was open: every
+  occurrence and outcome, and in each copy that has synced, its owner's latest state or removal of each entity at that
+  revision or later. Nothing published before the stream's latest opening, loss, return or gap notice is waited for, and
+  nothing while it is away, since a lost stream replays nothing.
+- On virtual time an expectation whose bound has passed in the run's time keeps looking without moving the run's time
+  while real work is in flight: a call waiting for its answer, a part's stream reconnecting (not one the scenario
+  disconnected, which stays away until the next wait), the reader's resync or a delivery to it, or the run's own work,
+  which an advance of 0 reports. It fails once none is in flight, with its check's own text, or after 15 s with that text
+  and what is still in flight. The in-memory harness has no such overtime.
 
 Before a capture's browser journey starts, the page's clock is set to the run's time, so the deadlines the page stamps
 on its requests mean what they say to the runtime. The run does not move while the journey runs, unless the capture
