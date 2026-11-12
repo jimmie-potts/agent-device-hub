@@ -26,10 +26,13 @@ class Failing extends FakeDeviceAdapter {
   const atMs=this.clock_.now();
   return Promise.resolve({ok:false,code,priorEffects,generation:options.generation,timing:{submittedAtMs:atMs,startedAtMs:atMs,completedAtMs:atMs,queueMs:0,serviceMs:0}});
  }
+ /** How long each next upload takes before it answers, so a probe can land while it is on its way. */
+ readonly uploadDelays:number[]=[];
  override uploadAnimation(animation:Animation,options:OperationOptions):Promise<OperationResult<UploadResult>>{
   this.tried++;
-  const next=this.uploadFailures.shift();
-  return next===undefined?super.uploadAnimation(animation,options):this.failure(options,next.code,next.priorEffects);
+  const next=this.uploadFailures.shift(),delayMs=this.uploadDelays.shift()??0;
+  const answer=()=>next===undefined?super.uploadAnimation(animation,options):this.failure<UploadResult>(options,next.code,next.priorEffects);
+  return delayMs===0?answer():new Promise(resolve=>{this.clock_.schedule(delayMs,()=>{resolve(answer());});});
  }
  override probe(options:OperationOptions):Promise<OperationResult<ProbeResult>>{
   const code=this.probeFailures.shift();
@@ -213,6 +216,9 @@ for(const code of ['upload-failed','device-error','protocol-error','http-error',
    const failedAt=s.clock.now(),tried=s.device.tried;
    expect(s.monitor.status().lastOutcome).toMatchObject({status:'failed',code});
    expect(shape(s)).toEqual([true,'dashboard']);
+   // Where the failure shows (round 2): the presentation's last outcome above, and the player's last error, which the
+   // display record reports as `player.lastError` until a player command clears it.
+   expect(s.player.getState().lastError?.code).toBe(code);
    if(code==='offline'||code==='timeout'||code==='http-error'){
     // These set the device offline; when it answers again, its own resend (#1763) sends the picture at once.
     expect(s.player.getState().availability).toBe('offline');
@@ -227,6 +233,7 @@ for(const code of ['upload-failed','device-error','protocol-error','http-error',
    expect(s.device.tried).toBe(before);expect(shape(s)).toEqual([true,'dashboard']);
    s.clock.advance(1);await s.tick();
    expect(s.device.tried).toBe(before+1);expect(s.shown()).toEqual(s.dashboard());
+   expect(s.monitor.status().lastOutcome).toMatchObject({status:'sent'});expect(s.player.getState().lastError?.code).toBe(code);
   }finally{await s.close();}
  });
 }
@@ -295,5 +302,66 @@ it('holds the status base after a changed picture fails to send, exactly as befo
   // A mode command releases it and draws the changed picture.
   await s.monitor.setMode('free');await s.run(2000);
   expect(s.device.tried).toBe(tried+1);expect(s.monitor.status().participating).toBe(true);expect(s.shown()).toEqual(s.dashboard());
+ }finally{await s.close();}
+});
+
+// Review round 2 of #1765: a recovery heard while a refresh is on its way, which then fails with no prior effects.
+/** A probe that fails and one that answers: one recovery. */
+const recover=async(s:Setup)=>{
+ s.device.probeFailures.push('device-error');
+ for(let i=0;i<2;i++){const probe=s.player.probe();await flush(s.clock);await probe;}
+};
+for(const code of ['device-error','protocol-error','upload-failed'] as const){
+ it(`resends at once when a recovery came during a refresh that then failed with ${code} and no prior effects`,async()=>{
+  const s=await setup();
+  try{
+   const sentAt=await drawn(s);
+   s.device.uploadFailures.push({code,priorEffects:'none'});s.device.uploadDelays.push(2000);
+   s.clock.advance(sentAt+STATUS_REFRESH_MS-s.clock.now());await s.tick();
+   const tried=s.device.tried;
+   // The Pixoo restarted while the refresh was on its way; the probe recovery lands 300 ms into it.
+   const own=new Uint8Array(12288).fill(9),replaced=s.device.uploadAnimation({frames:[{rgb:own,delayMs:500}]},{generation:s.device.generation});
+   await flush(s.clock);await replaced;
+   s.clock.advance(300);await flush(s.clock);await recover(s);
+   expect(s.player.probeRecoveries()).toBe(1);
+   await s.run(3000);
+   expect(s.device.tried).toBe(tried+2);expect(s.shown()).toEqual(s.dashboard());
+   expect(s.monitor.status()).toMatchObject({participating:true,lastOutcome:{status:'sent'}});
+  }finally{await s.close();}
+ });
+}
+it('sends one write when a recovery comes during a changed picture that succeeds, and holds as before when it fails',async()=>{
+ for(const fails of [false,true]){
+  const s=await setup();
+  try{
+   await drawn(s);await s.run(2000);
+   if(fails)s.device.uploadFailures.push({code:'device-error',priorEffects:'none'});
+   s.device.uploadDelays.push(2000);
+   s.device.probeFailures.push('device-error');const failed=s.player.probe();await flush(s.clock);await failed;
+   present(present(s.view.snapshot).sessions[0]).label='Changed';present(s.view.snapshot).revision++;s.monitor.submit(s.view);
+   await s.run(300);
+   const tried=s.device.tried;
+   expect(s.monitor.status().inFlight).toBe(1);
+   const probe=s.player.probe();await flush(s.clock);await probe;
+   await s.run(5000);
+   expect(s.device.tried).toBe(tried);
+   expect(s.monitor.status().participating).toBe(!fails);
+  }finally{await s.close();}
+ }
+});
+it('stays bounded against a device that fails every write and recovers every other probe: two writes, then held as on main',async()=>{
+ const s=await setup();
+ try{
+  const sentAt=await drawn(s),tried=s.device.tried;
+  for(let i=0;i<500;i++){s.device.uploadFailures.push({code:'device-error',priorEffects:'none'});s.device.uploadDelays.push(40_000);}
+  s.clock.advance(sentAt-s.clock.now());
+  // Probes every 30 s, alternately failing and answering: a recovery every minute, some while a write is on its way.
+  for(let t=0;t<60*60_000;t+=30_000){
+   if(t%60_000===0)s.device.probeFailures.push('device-error');
+   const probe=s.player.probe();await flush(s.clock);await probe;
+   await s.run(30_000,500);
+  }
+  expect(s.device.tried-tried).toBeLessThanOrEqual(2);
+  expect(s.monitor.status().participating).toBe(false);
  }finally{await s.close();}
 });

@@ -356,6 +356,25 @@ A refresh that fails with no prior effects, whatever its code, changed nothing o
 the device. It holds nothing: the status base keeps reporting the picture the
 device last acknowledged, and the refresh is tried again 5 minutes after the
 failure. A device that keeps failing therefore gets at most 12 attempts an hour.
+A recovery heard while that refresh was on its way is not lost: the picture is
+sent once more at once, as an ordinary status write, which is held like any other
+if it fails too.
+
+While refreshes fail this way, the display record keeps reporting
+`participating: true` and `showing: 'dashboard'`. A failure with no prior effects
+did not change the panel, so it still shows the last acknowledged picture, unless
+a restart that no probe saw replaced it. Nothing can detect that case, and then the
+record is wrong until a refresh or a recovery succeeds. The failure shows in two
+places:
+- the display record's `player.lastError`, which keeps the code until a player
+  command clears it;
+- the presentation's last outcome, which the Monitor page shows as "Last monitor
+  transport".
+
+No log record is written for a failed status write. The device record's
+`lastOutcome` belongs to commands, and its `lastTransmission` stays at the last
+acknowledged send. The next successful refresh or recovery repairs the display.
+
 A refresh whose effects are possible is held like any other failed status write.
 A changed picture that fails to send is held as before, until a mode or player
 command, or until the device answers again after it was unavailable.

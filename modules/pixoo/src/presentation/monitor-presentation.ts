@@ -113,6 +113,8 @@ export class MonitorPresentation {
  private refreshFailedAt:number|null=null;
  /** The key of the status picture whose write is in flight, which already serves as a recovery's resend. */
  private statusWriting:string|null=null;
+ /** A recovery came while that write was in flight and left its resend to it; a refresh that then fails resends once. */
+ private recoveredWhileWriting=false;
  /** The last submitted frame's source: a dashboard rendition or a card. */
  private lastFrame='';
  private playback:PlaybackSourceStatus={source:'unavailable',view:{card:false}};
@@ -170,7 +172,7 @@ export class MonitorPresentation {
    const recoveries=player.probeRecoveries();
    const returned=this.heard_.availability==='offline'&&state.availability==='available'||recoveries!==this.heard_.recoveries;
    // A status picture already on its way to the device answers for the recovery, so it is not sent twice.
-   if(returned&&this.active&&this.lastFrame.startsWith('dashboard:')&&this.statusWriting!==this.lastFrame)this.lastFrame='';
+   if(returned&&this.active&&this.lastFrame.startsWith('dashboard:')){if(this.statusWriting===this.lastFrame)this.recoveredWhileWriting=true;else this.lastFrame='';}
    this.heard_={availability:state.availability,external,recoveries};
    this.settleBase();
    // Any player change the takeover did not make, or screen-off, is the user's: never resume over it.
@@ -656,7 +658,7 @@ export class MonitorPresentation {
    &&observation===this.observation()&&playback===JSON.stringify(this.playback)
    &&(this.active?this.popupUntil>this.clock()&&!this.attention():this.takeover===takeover&&takeover!==null&&this.clock()<takeover.until);
   const write=frame.card?{abort,current,key:frame.key}:null;this.cardWrite=write;
-  if(write===null&&moment===undefined)this.statusWriting=frame.key;
+  if(write===null&&moment===undefined){this.statusWriting=frame.key;this.recoveredWhileWriting=false;}
   this.inFlight=true;this.lastStart=this.clock();this.lastFrame=frame.key;this.onChange();
   const upload=this.player.uploadDashboard(frame.frames.map(rgb=>new Uint8Array(rgb)),playerGeneration,
    moment!==undefined?{current,whileStopped:moment.over==='status',...(moment.delayMs===undefined?{}:{artDelayMs:moment.delayMs})}
@@ -683,12 +685,17 @@ export class MonitorPresentation {
    const superseded=result===undefined||!result.ok&&(result.code==='cancelled'||result.code==='stale-generation')&&result.priorEffects==='none';
    // A refresh that failed with no prior effects changed nothing on the device: the picture it last acknowledged stays
    // the status base's, nothing is held, and the refresh is tried again later (Hub #1765). An uncertain one is held.
-   if(refresh&&result!==undefined&&!result.ok&&result.priorEffects==='none'){this.refreshFailedAt=this.clock();return;}
+   // A recovery heard while it was on its way left its resend to it: that resend is now sent, once, as an ordinary write.
+   if(refresh&&result!==undefined&&!result.ok&&result.priorEffects==='none'){
+    this.refreshFailedAt=this.clock();
+    if(this.recoveredWhileWriting&&this.lastFrame===frame.key)this.lastFrame='';
+    return;
+   }
    if(!sent&&(generation===this.generation||!superseded))this.holdStatus();
   }).catch(()=>{
    if(takeover){if(this.takeover===takeover)this.dropTakeover();return;}
    this.lastOutcome={generation,renditionGeneration,status:'failed',code:'operation-failed'};if(generation===this.generation)this.holdStatus();
-  }).finally(()=>{if(this.cardWrite===write)this.cardWrite=null;if(this.statusWriting===frame.key)this.statusWriting=null;this.inFlight=false;this.onChange();});
+  }).finally(()=>{if(this.cardWrite===write)this.cardWrite=null;if(this.statusWriting===frame.key){this.statusWriting=null;this.recoveredWhileWriting=false;}this.inFlight=false;this.onChange();});
  }
  async close(){
   if(this.closed)return;
