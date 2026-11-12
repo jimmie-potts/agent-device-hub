@@ -214,7 +214,12 @@ other's facts from its fact log after N per origin and stores them.
   time with the origin as a tie-break. A delete travels as a record of its own
   (a tombstone).
 - **Append-only facts** (history, and the archives once they are facts) merge
-  as a union: read after N per origin and add.
+  as a union: read after N per origin and add. Once
+  [#1772](https://github.com/jimmie-potts/agent-device-hub/issues/1772) is
+  installed, history keeps repeated readings as spans
+  ([ADR 0012 amendment of 2026-11-12](0012-bunny-event-platform.md#amendment-2026-11-12)):
+  a peer receives each closed span with the row that ends it, and history's
+  open spans and the freshness of live records are never replicated.
 - **Acknowledgements and inbox handling** merge monotonically: once handled,
   always handled.
 - **Immutable media** (Pixoo originals and renditions, generated art) are copied
@@ -405,10 +410,12 @@ decision 1).
   local origin's rows, which #1740 includes. Without it, a fact delivered to
   both machines makes the local tracker ignore its own copy (A8). Code that
   rebuilds state from merged history groups change rows by origin, since each
-  is a diff against its own origin's previous record. The exchange stays
-  pull-only: a live link between the runtimes would need the origin in the
-  envelope and in the live staleness check (A5), which this record does not
-  propose.
+  is a diff against its own origin's previous record. Under the span rules of
+  #1772, a record rebuilt this way carries its bookkeeping values, such as
+  reading times, as of its origin's last row, not its latest reading, because
+  open spans and freshness are not replicated. The exchange stays pull-only: a
+  live link between the runtimes would need the origin in the envelope and in
+  the live staleness check (A5), which this record does not propose.
 - **Takeover has:** stage 1, plus history, handled inbox items, archives and
   media up to the last exchange, and current sessions.
 - **Takeover lacks:** automatic takeover, Mac-only inputs, and connection-bound

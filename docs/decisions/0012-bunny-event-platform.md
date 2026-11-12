@@ -1,9 +1,10 @@
 # ADR 0012: One event and messaging platform for every component
 
 Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-10,
-2026-10-11, 2026-10-17, 2026-10-30, 2026-11-03, 2026-11-10 and 2026-11-11 (see
+2026-10-11, 2026-10-17, 2026-10-30, 2026-11-03, 2026-11-10, 2026-11-11 and 2026-11-12 (see
 [Amendments](#amendments); the [2026-11-11 amendment](#amendment-2026-11-11) adopts no event sourcing, makes
-history a fact log and says what a past fact may do).
+history a fact log and says what a past fact may do; the
+[2026-11-12 amendment](#amendment-2026-11-12) keeps repeated readings in history as spans).
 Supersedes [ADR 0010](0010-shared-event-contracts.md).
 This decision implements and installs nothing by itself. The children of
 [epic #827](https://github.com/jimmie-potts/agent-device-hub/issues/827) own
@@ -209,7 +210,14 @@ State events and telemetry are not tracked.
   History keeps the turn-ended occurrence.
 - Long-term history is private SQLite in the core store, with no time limit, a
   dashboard timeline and a read API. Viewing history never triggers devices or
-  automation.
+  automation. The [2026-11-12 amendment](#amendment-2026-11-12) sets what
+  history keeps: changes, and each stretch of repeated readings that differ
+  only in declared bookkeeping members as a span, with its first confirmation,
+  its last confirmation and a count, and a gap row when a polled record falls
+  silent for too long. These rules apply once
+  [#1772](https://github.com/jimmie-potts/agent-device-hub/issues/1772) is
+  merged and installed; until then history behaves as before. The no-time-limit
+  rule stays.
 - When the disk is full, the core refuses durable work before it reports
   anything accepted.
 
@@ -399,7 +407,11 @@ evidence say what may have happened. Every boundary keeps the two apart.
   summaries: the first dropped delivery is logged at once, then a count each
   minute. A polled device that stays offline logs one degradation and one
   recovery, not a warning per poll, and polling publishes no state event that
-  changed nothing.
+  changed nothing. Since the [2026-11-12 amendment](#amendment-2026-11-12), a
+  poll may republish a record whose only change is a declared bookkeeping
+  member, such as its reading time, because live readers take freshness from
+  it. History keeps such a record as a confirmation, not a row, once #1772 is
+  merged and installed.
 - **Logs are not history.** History holds domain records and logs hold
   diagnostics. They share request and trace IDs, codes and entity IDs, never
   payloads. A republished or duplicate outcome writes no second execution
@@ -885,3 +897,135 @@ owns the decision maker,
 delivery orchestrator and #1723 two machines. The trade-off is that history
 becomes something other parts depend on, and that every component that acts
 must tell a decision it makes now apart from a past occurrence treated as new.
+
+### Amendment, 2026-11-12
+
+**History keeps changes, and repeated readings as spans.** On 2026-11-12 a
+measurement of a private backup copy of the core's history, recorded on
+[#1729](https://github.com/jimmie-potts/agent-device-hub/issues/1729), found
+866,704 rows over 21 days. 49 % of them only repeated a device reading with a
+new time. The owner asked for rules about what history keeps, instead of fewer
+device checks. The design record
+[#1768](https://github.com/jimmie-potts/agent-device-hub/issues/1768) put seven
+decisions to the owner, each with a recommendation. The owner answered in chat
+to the coordinating session, which recorded each answer on #1768 with the
+owner's words and time.
+
+At 2026-11-12T14:43:46Z:
+
+> For the decisions around the checks, instead of reducing checks and affecting
+> refreshing the devices, can we make rules around what gets saved to history?
+> Recording impactful events? Capturing timestamps and leveraging those where
+> necessary? Or perhaps bringing in TTL for these records so they can be purged
+> so we don't have too much noise and bloat? Can we brainstorm some design
+> changes that would follow best practices and patterns without regard to
+> project rules or previous decisions?
+
+The coordinating session answered with six ideas. At 2026-11-12T14:53:16Z the
+owner chose three of them:
+
+> Let's define and plan work for 1, 2, and 3. We can hold off on the
+> time-to-live record since we're reducing the amount of data substantially
+> with these changes.
+
+The three ideas: keep the latest record apart from history, so that freshness
+stays with the live record and history gets a row only when something
+meaningful changes; mark bookkeeping members in the contract and let history
+ignore them when it decides whether a record changed; and keep repeated
+readings as a span, not as rows. Time limits and purge, large content by
+reference and telemetry in the metrics stack were not selected.
+
+The owner's answers to the decisions came in three messages:
+
+- At 15:24:52Z: "Yes to decisions 1 and 2 and go for the replay."
+- At 15:48:22Z: "Okay, since the source fixes are merged, we'll stick with
+  number one there to reduce the churn. That sounds sufficient to me for now.
+  For the other decisions that are open for 4 and 5, let's go with your
+  recommendations, also, 6, go with your recommendation."
+- At 15:51:15Z: "Both and start, and also for decision 7, let's add a noisy
+  device alarm instead of the cap as well."
+
+The decisions:
+
+1. **A poll may republish a reading whose only change is bookkeeping.** A
+   device may keep publishing a reading whose only change is a declared
+   bookkeeping value, such as its reading time. History keeps it as a
+   confirmation, not a row. "Repetition" under
+   [Observability](#observability) says so. (Recommendation accepted at
+   15:24:52Z.)
+2. **Spans instead of each repeat.** History keeps a stretch of repeated
+   readings as its first confirmation, its last confirmation and a count, with
+   a silence longer than the gap as its own row. It does not keep each
+   repeat's own time. "Inbox and history" says so, and
+   [ADR 0011](0011-private-personal-data-retention.md#amendment-2026-11-12)
+   records it as the owner's selected retention rule. (Recommendation accepted
+   at 15:24:52Z.)
+3. **The Pixoo's churn.** The remaining churn of the Pixoo's display record is
+   left to the source fix that is already merged
+   ([PR #1763](https://github.com/jimmie-potts/agent-device-hub/pull/1763)).
+   No short-return rule, no hourly cap and no overlay rule is added for now.
+   ("number one" and "sufficient to me for now" at 15:48:22Z.) Pixoo page
+   turns (`monitor.page`) and paint times (`lastTransmission.transmittedAtMs`)
+   are bookkeeping. ("Both" at 15:51:15Z.)
+4. **Gap length.** A gap row is written only for record families that publish
+   on a poll, when the silence is longer than four times the family's own
+   polling interval, with a minimum of two minutes. Families that publish only
+   when something happens have no gap rule. (Recommendation accepted at
+   15:48:22Z.)
+5. **Rows already stored are left as they are.** They are looked at again after
+   the re-measurement
+   ([#1774](https://github.com/jimmie-potts/agent-device-hub/issues/1774)).
+   (Recommendation accepted at 15:48:22Z.)
+6. **Agent session times stay as rows.** The session record's `observedAtMs`
+   and `lastEvidenceAtMs` are not bookkeeping for now. (Recommendation accepted
+   at 15:48:22Z.)
+7. **A noisy-device alarm, not a cap.** When one entity writes more than a set
+   number of history rows in an hour, the core is to raise a diagnostic and the
+   dashboard to show it. Nothing is capped, folded or deleted. The alarm is not
+   built yet; [#1778](https://github.com/jimmie-potts/agent-device-hub/issues/1778)
+   owns it. (15:51:15Z, in place of the cap.)
+
+**What history will keep under these rules.** The mechanism below is the
+design in #1768, which the owner's answers settle but do not word; #1771 and
+#1772 build it.
+- A bookkeeping member is a member of a state record that can change while the
+  state it describes does not, such as a reading, transmission or update time.
+  Each state family declares its bookkeeping members beside its schema
+  ([#1771](https://github.com/jimmie-potts/agent-device-hub/issues/1771)).
+  Safety members are never bookkeeping, and #1771's contract test refuses
+  them: availability, generation, configuration revision, holds, observed power
+  and brightness, and power-limit settings and status.
+- History compares a new record with the record of the entity's last row, with
+  bookkeeping members removed. If nothing else differs, the reading is a
+  confirmation: no row is written, and the entity's open span records its last
+  confirmation and count. If something else differs, history writes a change
+  row as before. The row carries every member that differs from the last row,
+  bookkeeping values included, and the span it closes.
+- A silence longer than the gap is recorded by one row when readings resume. A
+  removal closes an open span with one row first.
+- The open span is kept outside the history rows. Rows are never updated, so
+  the fact log stays append-only and numbered without gaps. A peer installation,
+  proposed in [ADR 0015](0015-two-machine-runtime.md), would read rows only:
+  open spans and freshness are never replicated.
+
+**What stays:**
+- Devices keep polling and publishing as they do. Every live reader, the safety
+  checks and the dashboard's freshness signals among them, keeps reading the
+  live record through sync. Nothing reads freshness from history.
+- History keeps no time limit: the owner held time limits and purge at
+  14:53:16Z. Nothing stored is deleted; under decision 5, stored rows are
+  looked at again after #1774.
+- Everything else in this record stands: no broker, each owner keeps and
+  publishes its own state, consumers sync current state, no replay, and a past
+  fact never triggers a command by itself.
+
+This amendment is direction. It changes no code, schema, message format or
+installation. Until #1772 is merged and installed, history behaves as before:
+it writes a row whenever a top-level member of a record changes, a new reading
+time included. #1771 declares the bookkeeping members, #1772 changes what
+history keeps, [#1773](https://github.com/jimmie-potts/agent-device-hub/issues/1773)
+shows spans and gaps in the read API, the MCP tool and the Timeline, #1774
+installs the change and measures history again, and #1778 adds the alarm. The
+trade-off is that history no longer says when each repeated reading arrived:
+between two rows it holds only the first and last confirmation and a count, and
+the count is of readings history took, not of readings a device answered.
