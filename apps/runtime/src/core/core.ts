@@ -19,6 +19,8 @@ import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type C
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
 import {DEFAULT_HISTORY_RULES, type HistoryFilter, type HistoryPage, type HistoryRow, type HistoryRules} from './history.js';
+import {SETTINGS_FAMILIES, type SettingsPage, type SettingsRead, type SettingsSnapshot} from './settings-contract.js';
+import {readSettingsHistory} from './settings-history.js';
 import type {HistoryDevice} from './history-alarm.js';
 import {inboxTool, historyTool} from './read-tools.js';
 import {InboxRecords} from './inbox.js';
@@ -208,7 +210,8 @@ export interface CoreModule extends BunnyModule {
    * members and the polled families, as the core was built with them, so an entry point's tests can show which (#1795).
    * `page` is the gateway's read: the rows with the open spans of the entities that have a change row among them (#1773).
    */
-  readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody; page: (filter: HistoryFilter) => HistoryPage | ErrorBody; readonly rules: HistoryRules};
+  readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody; page: (filter: HistoryFilter) => HistoryPage | ErrorBody;
+    settings: (read: SettingsRead) => SettingsSnapshot | SettingsPage | ErrorBody; readonly rules: HistoryRules};
 }
 
 /** Whether a hosted module is the core, whose dispatcher the gateway's action routes call. */
@@ -277,7 +280,8 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     },
     stop: () => core?.stop(),
     history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'}),
-      page: filter => core?.historyPage(filter) ?? errorBody('unavailable', {detail: 'the core has not started'}), rules: options.history ?? DEFAULT_HISTORY_RULES},
+      page: filter => core?.historyPage(filter) ?? errorBody('unavailable', {detail: 'the core has not started'}),
+      settings: read => core?.settingsHistory(read) ?? errorBody('unavailable', {detail: 'the core has not started'}), rules: options.history ?? DEFAULT_HISTORY_RULES},
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
       artSchedule:{get:()=>artSchedule().get(),save:(value,parent)=>artSchedule().save(value,parent)},
@@ -326,6 +330,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
 
 class Core {
   readonly #automation: AutomationPart;
+  readonly #settingsParts: readonly CorePart[];
   readonly #companions = new CompanionPart();
   readonly #art: ArtPart;
   setMusicCaptureRetirement(retire: () => void): void {this.#music.setRetirement(retire);}
@@ -419,6 +424,7 @@ class Core {
     });
     const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, this.#art, this.#show, this.#music, this.#lighting, ...added];
     this.#parts = parts;
+    this.#settingsParts = [this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation];
     this.#consumers = consumers;
     this.#ready = new Promise<void>((resolve, reject) => {
       this.#opened = resolve;
@@ -824,6 +830,15 @@ class Core {
       return errorBody('internal', {detail: 'history holds a secret, which the gateway never serves'});
     }
     return page;
+  }
+
+  /** Read only the covered owners. General sync can refresh and publish sessions. */
+  settingsHistory(read: SettingsRead): SettingsSnapshot | SettingsPage | ErrorBody {
+    if (this.#stopped || this.#owner === undefined || !this.#store.open || !this.#automation.settingsAvailable()) {
+      return errorBody('unavailable', {detail: 'the core settings are unavailable'});
+    }
+    return readSettingsHistory(this.#store.history, read, () =>
+      this.#settingsParts.flatMap(part => part.states?.(SETTINGS_FAMILIES) ?? []));
   }
 
   /** Sends one tracked action through the dispatcher (#782); see `CoreActions.dispatch`. */

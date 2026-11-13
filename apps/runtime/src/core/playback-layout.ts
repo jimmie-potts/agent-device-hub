@@ -1,3 +1,4 @@
+import {settingsPatch} from './settings-contract.js';
 // Private presentation metadata; this part has no device dispatch path (Hub #1164).
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
@@ -57,8 +58,8 @@ export class PlaybackLayoutPart implements CorePart {
         if (Date.parse(command.expiresat ?? '') <= tx.atMs) return errorBody('expired', {detail: 'the playback layout command expired before saving'});
         if (current.revision !== command.data.expectedRevision) return errorBody('revision-conflict', {detail: 'the playback layout changed; refresh before saving'});
         const record: PlaybackLayoutRecord = {id: ID, revision: tx.revision(), assignments: command.data.assignments};
-        this.#save.run(JSON.stringify(record), ID);
-        tx.add('bunny.state.playback-layout.playback', {kind: 'state', ...stateDraft(record)}, {parent: command});tx.take(command);
+        if (Number(this.#save.run(JSON.stringify(record), ID).changes) !== 1) throw new Error('the playback layout was not stored');
+        tx.add('bunny.state.playback-layout.playback', {kind: 'state', ...stateDraft(record)}, {parent: command, settings: settingsPatch('playback-layout', current, record)});tx.take(command);
         committed = this.#admission.complete(tx, command, {result: Outcome.succeeded, evidence: Outcome.observed});
         return {status: 'accepted'} as const;
       });

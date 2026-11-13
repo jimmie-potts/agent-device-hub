@@ -2618,3 +2618,82 @@ state/completed message and total answer bytes against the existing per-message
 The private credentials file accepts an explicit `role: "bb8-link"`, `robotId: "bb8"`, fixed source `bunny/parts/bb8-windows` and `scopes: []`. Only this role gets respond/serve/publish/subscribe for its exact internal execute/recorded command targets, BB-8 link/result state families, corresponding internal outcomes and `outcome-recorded.bb8-windows`. State/result family wildcards are required by SDK family-level sync ownership; the helper serves only its enrolled robot and the module verifies receipt identity. The role cannot request commands or sync/subscribe session content. Ordinary read/control/ingest/admin and browser grants retain their permissions. Removing/changing this credential ends its streams; every SDK call reauthenticates.
 
 The [module](../../modules/bb8/README.md) owns public LED/status controls; the [Windows component](../bb8-windows/README.md) owns BLE and private transport receipts. Generic MCP execution, including inbox resend of BB-8 commands, is refused. Internal helper commands cannot use public HTTP action routes. No source delivery activates a helper or changes the installed runtime.
+
+### Core settings snapshot and catch-up
+
+An ordinary read credential can use these modes of the same
+`GET /api/v2/history` route. A response keeps `schema: "history/2.0"` and
+identifies its mode in `settings`. Settings queries reject repeated keys,
+unknown keys and legacy filters.
+
+| Query | Response members |
+| --- | --- |
+| `settings=snapshot` | `origin`, `checkpoint`, `records` |
+| `settings=page&after=…` with optional `through` | `origin`, `after`, `through`, `next`, `applyThrough`, `done`, `facts` |
+
+A snapshot includes current defaults and preexisting definitions from the core
+owners, read with the checkpoint in one committed view. A record has
+`family`, `id` and `value`.
+
+| Family | ID | Value members |
+| --- | --- | --- |
+| `mode` | `hub` | `mode`, `overrides` with `target` and `mode`. An empty array means no overrides. |
+| `home-layout` | `home` | `version`, `layouts` with the saved desktop and phone placements, or explicit `null` |
+| `lighting-layout` | `lighting` | `layout` with rooms, assignments, groups and Home selection |
+| `playback-layout` | `playback` | `assignments` |
+| `power-limit` | Target ID | `enabled`, `durationMs` |
+| `art-schedule` | `art` | `policy` |
+| `automation-rule` | Rule ID | `name`, `enabled`, `trigger`, `action` |
+| `automation-routine` | Routine ID | `name`, `enabled`, `days`, `time`, `actions` |
+| `automation-settings` | `settings` | `noFlourishes`, `quietHours`, `budgets` |
+| `automation-interrupt-set` | `interrupt-set` | `kinds`, including an explicit empty list |
+
+Snapshot records use the retained owner's ID rules for rules and routines.
+Page facts use the live routing ID rules. The singleton records are required.
+An empty collection means the current owner has no definitions for that family. The response omits mode timestamps,
+local target bindings, scheduling and run evidence, and unrelated families.
+The configured quiet-hours zone is part of Automation settings. The host zone
+used by art scheduling stays local.
+
+Start a catch-up pass with the durable checkpoint as `after` and omit
+`through`. Continue the pass with `next` as `after` and the exact `through`
+returned by the first page. The fixed head remains the end of that pass even
+if more rows commit. Checkpoints identify rows and the origin. They do not
+prove that an arbitrary row was a head. Use `next` only as the scan position
+and retain the last successfully applied checkpoint for recovery.
+
+Each page scans at most 63 raw rows in local origin order. `next` is the
+highest row scanned, including when `facts` is empty. `done` means the scan
+reached `through`. A fact includes `family`, `id`, `seq`, the outer source
+transaction `revision` and `atMs`. A `kind: "change"` carries `changed` and
+`removed`. Each changed top-level member replaces that member in full.
+Mode overrides are ordered by target. Reselecting the same target and mode
+updates ordinary history and advances the scan. It contributes no settings
+change. Clearing mode overrides returns `overrides: []`. A
+`kind: "removal"` deletes a power-limit, rule or routine definition. A
+removal-close row or a row with only run state, confirmations or gap
+metadata contributes no settings fact. All values follow the existing
+family bounds, including the 256 KiB per-value and 16 MiB per-answer limits.
+
+The settings patch comes from the owner's before and after values in the
+save transaction. If ordinary history would omit an effective owner edit,
+the same sequence retains a change row with its true raw delta and previous
+revision. Ordinary readers see that row and its span. The history-volume
+alarm skips a row retained solely for the settings patch.
+
+Apply only through `applyThrough`. It can be behind `next` or `null` while
+the trailing revision is unsealed. Hold up to two projected settings facts
+from that revision in memory. A Lighting edit and its Home reconciliation
+can span pages and belong to the same apply. The fixed head seals its last
+revision. On restart, discard buffered facts and start a new pass from the
+last durable checkpoint.
+
+Malformed queries return `invalid-request`. An origin mismatch returns
+`invalid-state`. A missing or replaced anchor or a legacy barrier returns
+`revision-conflict`. Discard the entire pass on a continuity conflict and
+replace from a new complete snapshot after verifying the pinned origin and
+expected durable checkpoint. See [Core settings continuity](UPGRADE.md#core-settings-continuity)
+for the older-writer recovery prerequisite. The gateway refuses a response
+containing any selected decoded secret, including IDs. Both modes are
+read-only and use the existing route trace. If a settings edit cannot persist
+its owner record and projected history fact, the transaction rolls back.

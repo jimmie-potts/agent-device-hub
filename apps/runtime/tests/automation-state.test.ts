@@ -1,3 +1,4 @@
+import {parseSettingsCheckpoint} from '../src/core/settings-contract.js';
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
@@ -142,6 +143,10 @@ void test('owner routes publish only effective automation edits and retain same-
   assert.deepEqual(copy.get({family: 'automation-settings', id: 'settings'})?.data, {id: 'settings', revision: 0, ...DEFAULT_SETTINGS});
   assert.deepEqual(copy.get({family: 'automation-interrupt-set', id: 'interrupt-set'})?.data,
     {id: 'interrupt-set', revision: 0, kinds: [...DEFAULT_INTERRUPT_SET].sort()});
+  const snapshot = w.core.history.settings({mode: 'snapshot'});
+  assert.ok('settings' in snapshot && snapshot.settings === 'snapshot');
+  const checkpoint = parseSettingsCheckpoint(snapshot.checkpoint);
+  assert.ok(checkpoint);
   const call = async (method: string, path: string, input: unknown = {}, status = 200) => {
     const result = await automationRoute(w.core.automation, {method, url: new URL(`http://runtime.invalid/api/v2/automation/${path}`),
       parent: requestParent, body: () => Promise.resolve(input), authorize: () => {}});
@@ -196,6 +201,13 @@ void test('owner routes publish only effective automation edits and retain same-
   await call('PUT', 'interrupt-set', {kinds: ['attention-raised', 'turn-ended']});
   const rows = w.history();
   assert.equal(rows.length, 12);
+  const settings = w.core.history.settings({mode: 'page', after: checkpoint});
+  assert.ok('settings' in settings && settings.settings === 'page');
+  assert.deepEqual(settings.facts.map(row => [row.family, row.kind]), [
+    ...['automation-rule', 'automation-routine'].flatMap(family =>
+      ['change', 'change', 'change', 'change', 'removal'].map(kind => [family, kind])),
+    ['automation-settings', 'change'], ['automation-interrupt-set', 'change'],
+  ]);
   assert.equal(w.messages.length, 12, 'identical saves produce no outbox publication or history confirmation');
   for (const message of w.messages) {
     assert.equal(coreValidator().validate(message).ok, true);

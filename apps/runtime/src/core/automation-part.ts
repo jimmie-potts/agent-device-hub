@@ -73,6 +73,12 @@ export class AutomationPart implements CorePart {
       ] : []),
     ];
   };
+  /** An empty settings collection is authoritative only after every covered owner has opened. */
+  settingsAvailable(): boolean {
+    return !this.#closed && this.#definitions !== undefined && this.#automation !== undefined &&
+      this.#routines !== undefined && this.#limits !== undefined && this.#schedule !== undefined;
+  }
+
   #definitions: AutomationDefinitions | undefined;
   #schedule:ArtSchedule|undefined;
   #inputs:ArtScheduleInputs|undefined;
