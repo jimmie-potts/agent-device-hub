@@ -28,7 +28,15 @@ import {partTokensOf, producerOf} from './seed.js';
  * Where a run adapter finds the run: its runtime's URL, its harness endpoint and its data directory. `resyncWithinMs`
  * bounds how long a restart waits for the reader to come back (`RESYNC_WITHIN_MS` unless given).
  */
-export type RunTarget = {url: string; harness: string; dataDir: string; seed: Seed; resyncWithinMs?: number};
+export type RunTarget = {
+  url: string;
+  harness: string;
+  dataDir: string;
+  seed: Seed;
+  resyncWithinMs?: number;
+  /** Overrides the monotonic clock and scheduler for virtual waits on real work, for adapter tests. */
+  realWorkClock?: {now: () => number; scheduler: Scheduler};
+};
 export interface RunHarness extends Harness {
   /** Which clock the run is on (Hub #1710), which a capture's proof records. */
   readonly clock: 'virtual' | 'real';
@@ -171,10 +179,11 @@ class Run implements RunHarness {
    * return and its copies' resync, which is real I/O.
    */
   #readerLost: ReaderMark | undefined;
-  /** First unchecked publication, and the counted overflow notices already observed. */
+  /** First unchecked publication. */
   #watchedFrom = 0;
-  #readerOverflows = 0;
+  /** Changes to what an expectation can read, excluding generic call completion. */
   #changes = 0;
+  readonly #realWorkClock: NonNullable<RunTarget['realWorkClock']>;
   /** What waits for real work to change: a call's answer, a part's stream, or anything the reader heard. */
   readonly #wakers = new Set<() => void>();
 
@@ -182,11 +191,12 @@ class Run implements RunHarness {
 
   constructor(target: RunTarget, tokens: PartTokens) {
     this.#target = target;
+    this.#realWorkClock = target.realWorkClock ?? {now: () => performance.now(), scheduler: timers};
     this.#grants = new Map(ROLES.map(role => [sourceOf(role), tokens[role]]));
     this.#origin = new URL(target.url).origin;
     this.#client = new GatewayClient(() => this.#origin, tokens, tokens.producer);
     this.reader = new Reader(target.seed.follows);
-    this.reader.onChange = () => { this.#wake(); };
+    this.reader.onChange = () => { this.#changed(); };
     this.#parts = new Map();
   }
 
@@ -238,7 +248,7 @@ class Run implements RunHarness {
       // What the run published before the answer is in the copy before the scenario reads it.
       await this.#refresh();
       this.#answers.set(label, answer);
-      this.#wake();
+      this.#changed();
       return answer;
     });
   }
@@ -251,7 +261,7 @@ class Run implements RunHarness {
     return started.then(({call}) => call).then(actionAnswerOf, () => 'lost').then(async answer => {
       await this.#refresh();
       this.#answers.set(label, answer);
-      this.#wake();
+      this.#changed();
       return answer;
     });
   }
@@ -401,7 +411,7 @@ class Run implements RunHarness {
     if (v === undefined) return undefined;
     let deadline: number | undefined, observed = this.#changes, waiting = false;
     return {next: async () => {
-      deadline ??= performance.now() + REAL_WORK_WITHIN_MS;
+      deadline ??= this.#realWorkClock.now() + REAL_WORK_WITHIN_MS;
       let stage = '';
       const expired = (): string => {
         const work = this.#realWork(stage === '' && !v.quiet);
@@ -438,20 +448,20 @@ class Run implements RunHarness {
 
   /** Races the entire settle against the time remaining on the one overtime deadline. */
   async #within<T>(deadline: number, expired: () => string, work: (signal: AbortSignal) => Promise<T>): Promise<T | string> {
-    const remaining = deadline - performance.now();
+    const remaining = deadline - this.#realWorkClock.now();
     if (remaining <= 0) return expired();
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancel = (): void => {};
     const limit = new Promise<string>(resolve => {
-      timer = setTimeout(() => {
+      cancel = this.#realWorkClock.scheduler.after(Math.ceil(remaining), () => {
         resolve(expired());
         controller.abort();
-      }, Math.ceil(remaining));
+      });
     });
     try {
       return await Promise.race([limit, work(controller.signal)]);
     } finally {
-      clearTimeout(timer);
+      cancel();
     }
   }
 
@@ -610,6 +620,7 @@ class Run implements RunHarness {
     const changed = state.logs.length > 0 || state.published.length > 0 || state.generation !== this.#state.generation
       || this.#seeded(state.devices) !== this.#seeded(this.#state.devices);
     this.#state = {...state, logs: [...this.#state.logs, ...state.logs], published: [...this.#state.published, ...state.published]};
+    if (changed) this.#changed();
     return changed;
   }
 
@@ -643,13 +654,10 @@ class Run implements RunHarness {
   /** On virtual time, follows whether a part's stream is lost, so that no wait passes while it reconnects. */
   #heard(role: Role, {event}: Diagnostic): void {
     if (event === 'remote.disconnected') this.#away.add(role);
-    if (event === 'remote.disconnected' && role === 'reader') {
-      this.#readerLost ??= this.reader.mark();
-      this.#readerOverflows = this.reader.overflows;
-    }
+    if (event === 'remote.disconnected' && role === 'reader') this.#readerLost ??= this.reader.mark();
     if (event === 'remote.reconnected') this.#away.delete(role);
     if (this.#virtual !== undefined) this.#virtual.quiet = false;
-    this.#wake();
+    if (event === 'remote.disconnected' || event === 'remote.reconnected') this.#changed();
   }
 
   async #retire(part: Part): Promise<void> {
@@ -689,7 +697,11 @@ class Run implements RunHarness {
     if (mark === undefined || this.reader.gaps() <= mark.gaps || this.#away.has('reader')) return;
     await this.#until(() => this.#away.has('reader') ? [] : this.reader.behind(mark),
       missing => `the reader did not resync within ${REAL_WORK_WITHIN_MS} ms of its stream's return: ${missing.join('; ')}`);
-    if (!this.#away.has('reader')) this.#readerLost = undefined;
+    if (!this.#away.has('reader')) {
+      // A state response from before subscriptions returned cannot attest to delivery on this stream.
+      this.#readerLost = undefined;
+      if (this.#virtual !== undefined) await this.#refresh();
+    }
   }
 
   /**
@@ -701,11 +713,6 @@ class Run implements RunHarness {
     const {generation, readerStream, published} = this.#state;
     if (this.#virtual === undefined || readerStream === undefined || part.closed || part.participant === undefined
       || this.#away.has('reader') || this.#held.includes(part)) return [];
-    // A counted overflow may have dropped messages on this same stream. A reconnect uses the new stream ordinal.
-    if (this.#readerOverflows !== this.reader.overflows) {
-      this.#readerOverflows = this.reader.overflows;
-      this.#watchedFrom = published.length;
-    }
     const eligible = published.slice(this.#watchedFrom).flatMap(item =>
       item.generation === generation && item.readerStream === readerStream ? [item.message] : []);
     const missing = this.reader.undelivered(eligible);
@@ -748,8 +755,8 @@ class Run implements RunHarness {
     for (;;) {
       const now = missing();
       if (now.length === 0) return;
-      deadline ??= performance.now() + REAL_WORK_WITHIN_MS;
-      if (performance.now() >= deadline) throw new RunFailure(failure(now));
+      deadline ??= this.#realWorkClock.now() + REAL_WORK_WITHIN_MS;
+      if (this.#realWorkClock.now() >= deadline) throw new RunFailure(failure(now));
       await this.#change();
     }
   }
@@ -759,19 +766,23 @@ class Run implements RunHarness {
     signal?.throwIfAborted();
     return new Promise(resolve => {
       const done = (): void => {
-        clearTimeout(timer);
+        cancel();
         this.#wakers.delete(done);
         signal?.removeEventListener('abort', done);
         resolve();
       };
-      const timer = setTimeout(done, RESYNC_POLL_MS);
+      const cancel = this.#realWorkClock.scheduler.after(RESYNC_POLL_MS, done);
       this.#wakers.add(done);
       signal?.addEventListener('abort', done, {once: true});
     });
   }
 
-  #wake(): void {
+  #changed(): void {
     this.#changes += 1;
+    this.#wake();
+  }
+
+  #wake(): void {
     for (const done of [...this.#wakers]) done();
   }
 

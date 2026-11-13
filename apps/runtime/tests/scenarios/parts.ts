@@ -289,8 +289,6 @@ export class Reader implements ReaderView {
   readonly counts: number[];
   readonly messages: Message[] = [];
   gapNotices = 0;
-  /** Counted drops, separate from a reconnect's uncounted notice. */
-  overflows = 0;
   /** Each copy's owner: the one its group names, or else the source of the `sync.completed` that first served it. */
   readonly owners: (string | undefined)[];
   /** The copies that stopped for good, because a later sync could not be served (Hub #1711). */
@@ -404,11 +402,7 @@ export async function follow(participant: Participant, reader: Reader, follows: 
     observer.check(message, 'a message the reader heard');
     reader.messages.push(message);
     reader.onChange();
-  }, {onOverflow: ({dropped}) => {
-    reader.gapNotices += 1;
-    if (dropped !== undefined) reader.overflows += 1;
-    reader.onChange();
-  }});
+  }, {onOverflow: () => { reader.gapNotices += 1; reader.onChange(); }});
   for (const [index, group] of follows.map(groupOf).entries()) {
     const {families, owner} = group;
     const result = await participant.sync(families, change => { changed(reader, index, change, group, observer); }, {timeoutMs: 5000, ...owner === undefined ? {} : {owner}});

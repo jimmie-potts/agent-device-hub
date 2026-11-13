@@ -196,11 +196,13 @@ naming what is missing:
   which stream had a matching subscription when each message went out. A refresh after reconnect includes live
   publications without asking the reader to replay what it missed while away. Occurrences and outcomes use source and
   ID. Each active synced copy uses the SDK's held revisions, tombstones and snapshot floor to account for its owner's
-  state and removals. A counted overflow may drop a batch from the same stream. A timeout lists every missing publication.
+  state and removals. A counted overflow keeps outstanding live publications under review. A snapshot may account for
+  lost state or removal. A timeout lists every missing publication.
 - On virtual time an expectation whose bound has passed keeps looking while an answer, reconnect, resync, delivery or the
   run's own work remains in flight. Its time stays at the bound. A single 15 s deadline includes any already owed time,
   a zero advance, state refreshes and waits for work to change. If work settles while the adapter is checking, the
-  expectation looks again before failing. The in-memory harness has no overtime.
+  expectation looks again before failing. Completing the check’s own read does not count as outstanding work. The
+  in-memory harness has no overtime.
 
 Before a capture's browser journey starts, the page's clock is set to the run's time, so the deadlines the page stamps
 on its requests mean what they say to the runtime. The run does not move while the journey runs, unless the capture

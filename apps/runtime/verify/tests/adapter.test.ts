@@ -11,7 +11,9 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, SdkError, prepareMessage, publishOnce, type Draft} from '@jimmie-potts/sdk';
 import {REAL_WORK_WITHIN_MS, RESYNC_WITHIN_MS, RunFailure, connectRun, failureOf, readGrants} from '../adapter.js';
 import {scenarioProof} from '../plugin.js';
+import {HEALTH_PATH} from '../../src/index.js';
 import {Reader, follow, sourceOf} from '../../tests/scenarios/parts.js';
+import {manualClock} from '../../tests/scenarios/virtual-time.js';
 import {base, startRun} from './support.js';
 
 void test('a dropped part stays away until the next wait, then the same part reconnects and resyncs', {timeout: 60_000}, async context => {
@@ -290,7 +292,8 @@ void test('overtime counts a held advance against its real deadline', {timeout: 
   const seed = scenario('zero-modules')?.seed;
   assert.ok(seed);
   const run = await startRun(context, await base(context), 'zero-modules');
-  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  const clock = manualClock(0);
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed, realWorkClock: clock});
   context.after(() => h.close());
   const held = gate(), advancing = gate();
   intercept(context, async request => {
@@ -299,21 +302,18 @@ void test('overtime counts a held advance against its real deadline', {timeout: 
     await held.opened;
   });
   const started = h.now();
-  context.mock.timers.enable({apis: ['Date', 'setTimeout']});
-  context.mock.method(performance, 'now', () => Date.now());
   const overtime = h.overtime?.();
   assert.ok(overtime);
   let detail: boolean | string | undefined;
   const checked = overtime.next().then(result => { detail = result; });
   try {
     await advancing.opened;
-    context.mock.timers.tick(REAL_WORK_WITHIN_MS);
+    clock.advance(REAL_WORK_WITHIN_MS);
     await turns(2);
     assert.equal(typeof detail, 'string', 'overtime expired while its advance was still held');
     assert.match(String(detail), /15000 ms.*advance/i);
     assert.equal(h.now(), started);
   } finally {
-    context.mock.timers.reset();
     held.open();
     await checked;
   }
@@ -361,7 +361,12 @@ void test('a delivery timeout names every missing publication', {timeout: 60_000
   const seed = scenario('reconnect-and-sync')?.seed;
   assert.ok(seed);
   const run = await startRun(context, await base(context), 'reconnect-and-sync');
-  const held = gate();
+  const held = gate(), ticking = gate();
+  const clock = manualClock(0);
+  const scheduler = {after: (delay: number, callback: () => void) => {
+    ticking.open();
+    return clock.scheduler.after(delay, callback);
+  }};
   let armed = false;
   intercept(context, () => {}, (request, response) => {
     if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
@@ -373,7 +378,7 @@ void test('a delivery timeout names every missing publication', {timeout: 60_000
     }));
     return new Response(body, {status: response.status, headers: response.headers});
   });
-  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed, realWorkClock: {now: clock.now, scheduler}});
   context.after(() => h.close());
   const before = h.published().length;
   armed = true;
@@ -383,17 +388,9 @@ void test('a delivery timeout names every missing publication', {timeout: 60_000
       await h.sdk('hook').publish(key, draft);
     }
     // Flush the journal without advancing the run, then control only the delivery wait's real timer.
-    await h.gateway({as: 'anonymous', method: 'GET', path: '/health'});
+    await h.gateway({as: 'anonymous', method: 'GET', path: HEALTH_PATH});
     const ids = h.published().slice(before).filter(({message}) => message.kind === 'occurrence' && message.source === sourceOf('hook')).map(({message}) => message.id);
     assert.equal(ids.length, 7);
-    const ticking = gate();
-    context.mock.timers.enable({apis: ['Date', 'setTimeout']});
-    context.mock.method(performance, 'now', () => Date.now());
-    const realTimer = globalThis.setTimeout;
-    context.mock.method(globalThis, 'setTimeout', (callback: () => void, delay: number) => {
-      if (delay === 25) ticking.open();
-      return realTimer(callback, delay);
-    });
     const wait = h.wait(0);
     const failed = assert.rejects(wait, (error: unknown) => {
       assert.ok(error instanceof RunFailure);
@@ -402,15 +399,172 @@ void test('a delivery timeout names every missing publication', {timeout: 60_000
     });
     try {
       await Promise.race([ticking.opened, wait]);
-      context.mock.timers.tick(REAL_WORK_WITHIN_MS);
+      clock.advance(REAL_WORK_WITHIN_MS);
       await failed;
     } finally {
-      context.mock.restoreAll();
-      context.mock.timers.reset();
+      held.open();
       await failed.catch(() => {});
     }
   } finally {
     held.open();
+  }
+});
+
+void test('a counted overflow does not waive a later live occurrence', {timeout: 45_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const source = sourceOf('hook');
+  const token = (await readGrants(run.dataDir)).get(source);
+  assert.ok(token);
+  const held = gate();
+  let overflowId: string | undefined, liveId: string | undefined;
+  intercept(context, () => {}, (request, response) => {
+    if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
+    const text = new TextDecoder();
+    const bytes = new TextEncoder();
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        const frame = text.decode(chunk);
+        if (liveId !== undefined && frame.includes(liveId)) await held.opened;
+        if (overflowId !== undefined && frame.includes(overflowId)) {
+          const subscription = /"subscription":"([^"]+)"/.exec(frame)?.[1];
+          assert.ok(subscription);
+          controller.enqueue(bytes.encode('event: overflow\ndata: ' + JSON.stringify({schema: 'sdk-remote/1.0', subscription, dropped: 1}) + '\n\n'));
+        }
+        controller.enqueue(chunk);
+      },
+    }));
+    return new Response(body, {status: response.status, headers: response.headers});
+  });
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  const publish = async (assign: (id: string) => void) => {
+    const {key, draft} = observation(sessionStarted, h.now());
+    const message = prepareMessage(source, draft, {now: () => h.now()});
+    assign(message.id);
+    assert.equal((await publishOnce({url: run.url, source, token, timeoutMs: 1000}, key, message)).status, 'published');
+  };
+  try {
+    const reader = h.reader;
+    assert.ok(reader instanceof Reader);
+    const notice = new Promise<void>(resolve => {
+      const changed = reader.onChange;
+      reader.onChange = () => {
+        changed();
+        if (reader.gaps() > 0) resolve();
+      };
+    });
+    await publish(id => { overflowId = id; });
+    await notice;
+    assert.equal(reader.gaps(), 1, 'the counted overflow reached the reader first');
+    await publish(id => { liveId = id; });
+    await h.gateway({as: 'anonymous', method: 'GET', path: HEALTH_PATH});
+    assert.ok(h.published().some(({message}) => message.id === liveId));
+    let finished = false;
+    const waiting = h.wait(0).finally(() => { finished = true; });
+    await turns(1000);
+    const finishedBeforeFrame = finished;
+    held.open();
+    await waiting;
+    assert.equal(finishedBeforeFrame, false, 'a known live publication after the overflow is still required');
+  } finally {
+    held.open();
+  }
+});
+
+void test('an async check does not manufacture overtime with its own read', {timeout: 60_000}, async context => {
+  const seed = scenario('zero-modules')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'zero-modules');
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  let checks = 0;
+  const result = await runScenario({id: 'no-overtime', title: 'no overtime', seed, steps: [
+    expect('the read still fails', async h => {
+      checks += 1;
+      await h.gateway({as: 'anonymous', method: 'GET', path: HEALTH_PATH});
+      return 'the original failed check';
+    }, 0),
+  ]}, h);
+  assert.equal(checks, 1);
+  assert.equal(result.steps[0]?.detail, 'the original failed check');
+});
+
+void test('resync refreshes delivery eligibility when the preceding state response is stale', {timeout: 60_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const source = sourceOf('hook'), token = (await readGrants(run.dataDir)).get(source);
+  assert.ok(token);
+  const subscribe = gate(), staleState = gate(), live = gate(), releaseFrame = gate();
+  let h: Awaited<ReturnType<typeof connectRun>> | undefined;
+  let armed = false, captured = false, reconnecting = false, liveId: string | undefined;
+  intercept(context, async request => {
+    if (!armed || request.source !== sourceOf('reader')) return;
+    if (request.url.endsWith('/stream')) {
+      reconnecting = true;
+      await subscribe.opened;
+    }
+  }, async (request, response) => {
+    if (reconnecting && !captured && request.url.includes('/api/harness/v1/state')) {
+      captured = true;
+      subscribe.open();
+      await staleState.opened;
+    }
+    if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        if (liveId !== undefined && new TextDecoder().decode(chunk).includes(liveId)) {
+          live.open();
+          await releaseFrame.opened;
+        }
+        controller.enqueue(chunk);
+      },
+    }));
+    return new Response(body, {status: response.status, headers: response.headers});
+  });
+  h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h?.close());
+  const reader = h.reader;
+  assert.ok(reader instanceof Reader);
+  const synced = gate();
+  const change = reader.onChange;
+  reader.onChange = () => {
+    change();
+    if (reader.syncs('session') > 1 && reader.syncs('lamp') > 1) synced.open();
+  };
+  await h.disconnect('reader');
+  armed = true;
+  let finished = false;
+  const waiting = (async () => {
+    for (let attempt = 0; !captured && attempt < 10; attempt += 1) await h.wait(50);
+  })().finally(() => { finished = true; });
+  const stop = gate();
+  context.signal.addEventListener('abort', stop.open, {once: true});
+  try {
+    await Promise.race([synced.opened, waiting, stop.opened]);
+    assert.equal(context.signal.aborted, false);
+    assert.equal(captured, true, 'a state response preceded re-registration');
+    const {key, draft} = observation(sessionStarted, h.now());
+    const message = prepareMessage(source, draft, {now: () => h?.now() ?? 0});
+    liveId = message.id;
+    assert.equal((await publishOnce({url: run.url, source, token, timeoutMs: 1000}, key, message)).status, 'published');
+    await Promise.race([live.opened, stop.opened]);
+    assert.equal(context.signal.aborted, false);
+    staleState.open();
+    while (!finished && !h.published().some(({message}) => message.id === liveId)) await turns(1);
+    await turns(1000);
+    const finishedBeforeFrame = finished;
+    releaseFrame.open();
+    await waiting;
+    assert.equal(finishedBeforeFrame, false, 'resync did not let a stale state response waive live delivery');
+    assert.ok(reader.heard().some(message => message.id === liveId));
+  } finally {
+    subscribe.open();
+    staleState.open();
+    releaseFrame.open();
+    await waiting.catch(() => {});
   }
 });
 
