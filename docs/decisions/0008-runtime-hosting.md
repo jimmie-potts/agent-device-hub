@@ -84,9 +84,11 @@ Keep the reviewed immutable image, matching operator scripts and private
 configuration separate from development checkouts and disposable previews.
 The Mac owns persistent state and the serving endpoint while it leads.
 Once separately authorized, a PC standby keeps the replicated core settings in
-its own private store and serves clients only after the owner completes the
-manual handoff in ADR 0015. Never depend on a PC login, mounted PC database
-or PC process to serve the Mac hub. Host-local producers
+its own private store. Before manual handoff, client access is limited to the
+bounded authenticated settings freshness read in ADR 0015, under existing
+access rules. General client service begins only after the owner completes
+the manual handoff. Never depend on a PC login, mounted PC database or PC
+process to serve the Mac hub. Host-local producers
 read only their selected local inputs and use the existing authenticated SDK
 HTTP/SSE edge; they do not share SQLite files. A missing PC source or PC-attached
 device reports its actual unavailable/stale state without preventing the Mac's

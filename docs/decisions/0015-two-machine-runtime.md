@@ -428,10 +428,13 @@ the standby host is separately authorized and the required work is qualified.
   effects and leaves run state, budgets, claims and watermarks local.
 - **Standby operation.** The PC copy runs alongside the Mac with device control
   off. It accepts no producer observations or settings edits and runs no
-  routines, schedules, spending or claims. It serves only status reads. The
-  Mac does not wait for it. A reconnect after sleep catches up from the saved
-  cursor. How the standby starts after a PC restart remains open. Any
-  standby start keeps device control off.
+  routines, schedules, spending or claims. Before manual handoff, client
+  access is limited to a bounded authenticated read of settings freshness
+  under existing access rules. The read returns freshness status only.
+  General client service begins after handoff. The Mac does not wait for
+  the PC. A reconnect after sleep catches up from the saved cursor. How the
+  standby starts after a PC restart remains open. Any standby start keeps
+  device control off.
 - **Manual handoff.** The owner verifies that the Mac core is stopped and its
   [start hold](../bunny-container.md#hold-the-core-stopped) is set before enabling
   device control on the PC. Before releasing that hold and restarting the Mac,
@@ -571,9 +574,10 @@ keeps the PC optional to the Mac and describes the second runtime host as
 conditional on separate owner authorization.
 
 1.2. [ADR 0008, "Runtime and access"](0008-runtime-hosting.md#runtime-and-access)
-keeps persistent state and service on the Mac while it leads. An authorized
-standby keeps the replicated core settings privately and serves clients only
-after manual handoff.
+keeps persistent state and general client service on the Mac while it leads.
+An authorized standby keeps the replicated core settings privately and
+allows a bounded authenticated freshness read under existing access rules.
+General client service on the PC begins after manual handoff.
 
 1.3. [ADR 0012, "Personal data"](0012-bunny-event-platform.md#personal-data)
 limits personal data to private owner-controlled storage on the runtime hosts
