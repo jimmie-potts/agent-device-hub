@@ -950,9 +950,9 @@ void test('a traced HTTP refusal waits for the operation it actually admitted', 
   const requestId = 'req-traced-refusal';
   let armed = false, replyTrace: string | undefined, checks = 0;
   intercept(context, async request => {
-    if (armed && request.url.endsWith('/api/v2/commands/lamp-switch') && String(request.body).includes(requestId)) await releaseCall.opened;
+    if (armed && request.url.endsWith('/api/v2/commands/lamp-switch') && typeof request.body === 'string' && request.body.includes(requestId)) await releaseCall.opened;
   }, async (request, response) => {
-    if (armed && request.url.endsWith('/api/v2/commands/lamp-switch') && String(request.body).includes(requestId)) {
+    if (armed && request.url.endsWith('/api/v2/commands/lamp-switch') && typeof request.body === 'string' && request.body.includes(requestId)) {
       assert.equal(response.status, 404);
       const body = await response.clone().json() as {error: {traceId?: string; requestId?: string}};
       assert.equal(body.error.requestId, requestId);
