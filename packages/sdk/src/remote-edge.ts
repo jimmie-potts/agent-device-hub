@@ -8,7 +8,7 @@ import {
 } from '@jimmie-potts/event-contracts/v2';
 import {errorType, levelOf, reporter, type Diagnostic, type EdgeRoute, type OnDiagnostic} from './diagnostics.js';
 import {buildMessage, type Content} from './envelope.js';
-import {failed, unanswered, undelivered, type InProcessBus} from './in-process.js';
+import {failed, observePublications, unanswered, undelivered, type InProcessBus} from './in-process.js';
 import {refusalOf, replyOf} from './refusal.js';
 import {parseKey, parsePattern, type Pattern} from './routing.js';
 import {
@@ -322,6 +322,12 @@ type Connection = {
   opened: Map<string, Subscription>;
 };
 
+/**
+ * Verification only. Observes publications eligible for the fixture's single reader stream. The returned function
+ * identifies its current stream by an ordinal local to this edge, without exposing the stream capability.
+ */
+export let watchRemotePublications: (edge: RemoteEdge, source: string, observe: (message: Message, stream: number) => void) => () => number | undefined;
+
 export class RemoteEdge {
   readonly #bus: InProcessBus;
   readonly #validator: MessageValidator;
@@ -396,6 +402,30 @@ export class RemoteEdge {
     };
     this.#stallMs = limit(options.stallMs, STALL_MS, 'stallMs');
     this.#liveness = options.liveness ?? realTimers;
+  }
+
+  static {
+    watchRemotePublications = (edge, source, observe) => {
+      let prior: string | undefined, ordinal = 0;
+      const stream = (): number | undefined => {
+        let current: Connection | undefined;
+        for (const connection of edge.#connections.values()) {
+          if (connection.source === source) current = connection;
+        }
+        if (current === undefined) return undefined;
+        if (current.id !== prior) {
+          prior = current.id;
+          ordinal += 1;
+        }
+        return ordinal;
+      };
+      observePublications(edge.#bus, source, (message, subscribed) => {
+        if (!subscribed) return;
+        const on = stream();
+        if (on !== undefined) observe(message, on);
+      });
+      return stream;
+    };
   }
 
   /** Serves one HTTP request; mount it on a `node:http` server. */

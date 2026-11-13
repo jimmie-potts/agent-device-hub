@@ -206,6 +206,18 @@ export interface Harness {
    * same state directory afterwards.
    */
   hook(payload: HookPayload, options?: {runtime?: 'running' | 'stopped'}): Promise<HookRun>;
+  /**
+   * Only a harness on virtual time whose real work runs outside its clock, as a disposable run's does (Hub #1711): what
+   * an expectation does once its bound has passed in the harness's time while its check still fails. The expectation
+   * fails only once no such work is in flight, or the work has stayed in flight for a bound of real time.
+   */
+  overtime?(): Overtime | undefined;
+}
+
+/** An expectation's time past its bound, in which the harness's time stands still while real work is in flight (Hub #1711). */
+export interface Overtime {
+  /** Evaluates the bound check, then repeats it only when independently pending work has completed. */
+  run(check: () => Promise<Outcome>): Promise<Outcome>;
 }
 
 // Steps
@@ -278,11 +290,14 @@ async function attempt(check: () => Outcome | Promise<Outcome>): Promise<Outcome
 }
 
 async function poll(h: Harness, check: Check, withinMs: number): Promise<Outcome> {
-  for (let waited = 0; ; waited += POLL_MS) {
-    const outcome = await attempt(() => check(h));
-    if (outcome === true || waited >= withinMs) return outcome;
+  const evaluate = (): Promise<Outcome> => attempt(() => check(h));
+  for (let waited = 0; waited < withinMs; waited += POLL_MS) {
+    const outcome = await evaluate();
+    if (outcome === true) return outcome;
     await h.wait(POLL_MS);
   }
+  const overtime = h.overtime?.();
+  return overtime === undefined ? evaluate() : overtime.run(evaluate);
 }
 
 /** Runs a scenario's steps in order. A failed step names what it observed and stops the scenario. */

@@ -10,6 +10,7 @@ import {MessageValidator, SCHEMA_BASE, type Message} from '@jimmie-potts/event-c
 import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {CommandDraft, DeviceSimulation, ModuleRegistration, Participant, RequestResult, SyncChange, SyncedCopy} from '@jimmie-potts/sdk';
+import {copyCovers, entryOf} from '@jimmie-potts/sdk/testing';
 import {producerCredentialId, producerSource} from '../../src/hook/index.js';
 import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, REQUEST_HEADER, SESSION_COOKIE, moduleSchemas, registrations, tokenDigest} from '../../src/index.js';
 import {lampSchemas} from '../fixtures/lamp.js';
@@ -199,7 +200,8 @@ export class GatewayClient {
     this.#producer = producer;
   }
 
-  async call({as, method, path, body, headers = {}, origin}: GatewayCall): Promise<GatewayAnswer> {
+  async call({as, method, path, body, headers = {}, origin}: GatewayCall,
+    beforeSend?: (url: URL, payload: string | Uint8Array | undefined) => void): Promise<GatewayAnswer> {
     const own = this.#origin();
     const sent: Record<string, string> = {...headers};
     if (body !== undefined && sent['content-type'] === undefined) sent['content-type'] = body instanceof Uint8Array ? 'application/octet-stream' : 'application/json';
@@ -222,7 +224,9 @@ export class GatewayClient {
       sent['sec-fetch-site'] = 'cross-site';
     }
     const payload = body instanceof Uint8Array ? Uint8Array.from(body) : JSON.stringify(body);
-    const response = await fetch(new URL(path, own), {method, headers: sent, ...(payload === undefined ? {} : {body: payload})});
+    const url = new URL(path, own);
+    beforeSend?.(url, payload);
+    const response = await fetch(url, {method, headers: sent, ...(payload === undefined ? {} : {body: payload})});
     const answered: Record<string, string> = {};
     response.headers.forEach((value, name) => { answered[name.toLowerCase()] = value; });
     return {status: response.status, headers: answered, text: await response.text()};
@@ -278,6 +282,9 @@ const groupOf = (follow: Follow): Group => 'families' in follow ? follow : {fami
 /** A group as a problem names it: its families, and its owner when it names one. */
 const named = ({families, owner}: Group): string => `${families.join(',')}${owner === undefined ? '' : ` from ${owner}`}`;
 
+// Profile 2.0 source and ID contain no spaces.
+const identityOf = ({source, id}: Message): string => `${source} ${id}`;
+
 /** The reader's copies, one per owner, how often each synced, every occurrence and outcome it heard and its gap notices. */
 export class Reader implements ReaderView {
   readonly groups: readonly Group[];
@@ -285,10 +292,17 @@ export class Reader implements ReaderView {
   readonly counts: number[];
   readonly messages: Message[] = [];
   gapNotices = 0;
+  /** Each copy's owner: the one its group names, or else the source of the `sync.completed` that first served it. */
+  readonly owners: (string | undefined)[];
+  /** The copies that stopped for good, because a later sync could not be served (Hub #1711). */
+  readonly stopped = new Set<number>();
+  /** Called whenever the reader hears a message or a gap notice, or a copy changes, so that a wait on it looks again at once. */
+  onChange: () => void = () => {};
 
   constructor(follows: Seed['follows']) {
     this.groups = follows.map(groupOf);
     this.counts = follows.map(() => 0);
+    this.owners = this.groups.map(group => group.owner);
   }
 
   families(): readonly string[] {
@@ -341,6 +355,39 @@ export class Reader implements ReaderView {
     }
     return missing;
   }
+
+  /**
+   * What of `published` has not reached the reader (Hub #1711), for messages the run published while its stream was open
+   * and subscribed: each occurrence and outcome it has not heard, and each entity whose latest state or removal from a
+   * copy's owner that copy does not show at that revision or later. A copy that has not synced yet or has stopped is not
+   * asked. It reads the reader's own records, never `states`, `syncs` or `gaps`, which a test may replace.
+   */
+  undelivered(published: readonly Message[]): string[] {
+    const missing: string[] = [];
+    let heard: ReadonlySet<string> | undefined;
+    const states = new Map<string, {index: number; entry: NonNullable<ReturnType<typeof entryOf>>}>();
+    for (const message of published) {
+      if (message.kind === 'occurrence' || message.kind === 'outcome') {
+        heard ??= new Set(this.messages.map(identityOf));
+        if (!heard.has(identityOf(message))) missing.push(`it did not hear ${message.type} ${message.source} ${message.id}`);
+        continue;
+      }
+      const entry = entryOf(message);
+      if (entry === undefined) continue;
+      for (const [index, group] of this.groups.entries()) {
+        const copy = this.copies[index];
+        if (copy === undefined || this.stopped.has(index) || this.owners[index] !== message.source
+          || !group.families.includes(entry.entity.family) || copyCovers(copy, message)) continue;
+        const key = `${index} ${entry.entity.family}/${entry.entity.id}`;
+        if ((states.get(key)?.entry.revision ?? -1) < entry.revision) states.set(key, {index, entry});
+      }
+    }
+    for (const {index, entry: {entity, revision}} of states.values()) {
+      const group = this.groups[index];
+      if (group !== undefined) missing.push(`its copy of ${named(group)} does not show ${entity.family} ${entity.id} at revision ${revision}`);
+    }
+    return missing;
+  }
 }
 
 /** The reader's gap notices and each copy's sync count at one moment, which `Reader.behind` compares with. */
@@ -357,7 +404,8 @@ export async function follow(participant: Participant, reader: Reader, follows: 
   await participant.subscribe('bunny.event.*.*', message => {
     observer.check(message, 'a message the reader heard');
     reader.messages.push(message);
-  }, {onOverflow: () => { reader.gapNotices += 1; }});
+    reader.onChange();
+  }, {onOverflow: () => { reader.gapNotices += 1; reader.onChange(); }});
   for (const [index, group] of follows.map(groupOf).entries()) {
     const {families, owner} = group;
     const result = await participant.sync(families, change => { changed(reader, index, change, group, observer); }, {timeoutMs: 5000, ...owner === undefined ? {} : {owner}});
@@ -367,6 +415,14 @@ export async function follow(participant: Participant, reader: Reader, follows: 
 }
 
 function changed(reader: Reader, index: number, change: SyncChange<Record<string, unknown>>, group: Group, observer: Observer): void {
+  try {
+    record(reader, index, change, group, observer);
+  } finally {
+    reader.onChange();
+  }
+}
+
+function record(reader: Reader, index: number, change: SyncChange<Record<string, unknown>>, group: Group, observer: Observer): void {
   switch (change.type) {
     case 'updated':
       observer.check(change.message, 'a synced state');
@@ -376,8 +432,10 @@ function changed(reader: Reader, index: number, change: SyncChange<Record<string
     case 'synced':
       observer.check(change.message, 'sync.completed');
       reader.counts[index] = (reader.counts[index] ?? 0) + 1;
+      reader.owners[index] ??= change.message.source;
       return;
     case 'failed':
+      reader.stopped.add(index);
       observer.problem(`the reader's copy of ${named(group)} stopped: ${change.error.error.code}`);
       return;
   }

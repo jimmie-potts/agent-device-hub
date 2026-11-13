@@ -178,10 +178,39 @@ clock that stamps their messages, and `wait(ms)` advances the run, split at the 
 call to the run while nothing can change: the last advance found nothing in flight, the refresh after it changed nothing
 the scenario reads, no call waits for an answer, no part is reconnecting and no timer is due before the wait ends. The run
 gets that time before anything else reaches it: an action, a gateway call, health, a hook or a call on a part. Waiting
-for the reader's resync after a restart advances the run until its bound (15 s) has passed in the run's time; since the
-reader comes back over real I/O, the restart fails only once the bound has also passed in real time. A hook against a
-stopped runtime asks for a restart that waits for a release, runs the hook once the runtime refuses connections, then
-releases it; once the restart answers, the adapter's clock follows the time its hold moved the run on.
+for the reader's resync after a restart advances the run while the reader's stream is away, until its bound (15 s) has
+passed in the run's time. Once the stream is back, the run's time stands still while the copies resync, since their sync
+deadlines run on the parts' clock and the resync is real I/O; the restart fails only once the bound has passed in real
+time. A hook against a stopped runtime asks for a restart that waits for a release, runs the hook once the runtime
+refuses connections, then releases it; once the restart answers, the adapter's clock follows the time its hold moved the
+run on.
+
+Some waits hold for real work, which virtual time would outrun (#1711). Each holds only while that work is in flight,
+looks again whenever the reader, a call or a part's stream changes, and fails after 15 s of real time with fixed text
+naming what is missing:
+
+- A wait ends only once a reader whose lost stream is back has synced every copy again. This applies on either clock
+  after `disconnect` and on virtual time after any loss, such as a crash. On virtual time an ordinary wait holds the
+  parts' clock during resync, then advances the rest of the requested interval.
+- On virtual time a wait checks publications eligible for delivery on the reader's current stream. The fixture records
+  which stream had a matching subscription when each message went out. A refresh after reconnect includes live
+  publications without asking the reader to replay what it missed while away. Occurrences and outcomes use source and
+  ID. Each active synced copy uses the SDK's held revisions, tombstones and snapshot floor to account for its owner's
+  state and removals. A counted overflow keeps outstanding live publications under review. A snapshot may account for
+  lost state or removal. A timeout lists every missing publication.
+- At a virtual expectation's bound, including zero, the adapter settles time already owed, advances by zero and
+  refreshes. It captures pending answers, reconnects, resyncs, eligible publications and child work before the first
+  check. Each captured completion can justify one recheck. A reconnect includes resync. A named action waits for
+  live publications linked by its existing command trace. SDK requests use their own reply or refusal trace. An HTTP
+  action uses unique admission evidence, fixed when its answer refresh completes. A gateway refusal before admission
+  carries no trace. A later request with the same ID cannot change established evidence. An HTTP refusal may replay an
+  earlier error body, so its trace must agree with the action's own admission. A generic write that uses the same
+  explicit request ID can make an HTTP admission ambiguous. The adapter reads the ID from the sent URL and body without
+  assuming which credential or route the runtime will admit. Without unique evidence, the adapter waits for the answer.
+  Ordinary waits still check all eligible publications. A generic gateway call completes with its reply and refresh,
+  so an unrelated frame does not hold a completed read. The child's busy signal is aggregate, so its captured work
+  clears when the child reports idle. One 15 s monotonic deadline includes settles, checks and waits. The run stays at
+  the virtual bound.
 
 Before a capture's browser journey starts, the page's clock is set to the run's time, so the deadlines the page stamps
 on its requests mean what they say to the runtime. The run does not move while the journey runs, unless the capture

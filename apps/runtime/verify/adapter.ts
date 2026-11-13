@@ -10,25 +10,33 @@
 // What it reports goes into a capture's proof, so a failure is named by its registry code, its type or the adapter's own
 // fixed text, never by an exception's message (ADR 0012, "Safe errors"; Hub #954).
 import {readFile} from 'node:fs/promises';
-import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {connectRemote, type CommandDraft, type Diagnostic, type Participant, type Scheduler} from '@jimmie-potts/sdk';
+import {RETRYABLE, isErrorCode, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import {connectRemote, statusOf, traceFields, type CommandDraft, type Diagnostic, type Participant, type Scheduler} from '@jimmie-potts/sdk';
 import {HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
 import {
-  ROLES, StepFailure, failureOf, type DeviceStates, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
+  ROLES, StepFailure, bodyOf, failureOf, type DeviceStates, type Outcome, type Overtime, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
   type Simulation,
 } from '../tests/scenarios/framework.js';
 import {
   GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, follow, runHookScript, scenarioValidator, sourceOf, type ReaderMark,
 } from '../tests/scenarios/parts.js';
 import {manualClock} from '../tests/scenarios/virtual-time.js';
-import {HARNESS_PATH, type ClockState, type HarnessState} from './protocol.js';
+import {HARNESS_PATH, type ClockState, type HarnessState, type Publication} from './protocol.js';
 import {partTokensOf, producerOf} from './seed.js';
 
 /**
  * Where a run adapter finds the run: its runtime's URL, its harness endpoint and its data directory. `resyncWithinMs`
  * bounds how long a restart waits for the reader to come back (`RESYNC_WITHIN_MS` unless given).
  */
-export type RunTarget = {url: string; harness: string; dataDir: string; seed: Seed; resyncWithinMs?: number};
+export type RunTarget = {
+  url: string;
+  harness: string;
+  dataDir: string;
+  seed: Seed;
+  resyncWithinMs?: number;
+  /** Overrides the monotonic clock and scheduler for virtual waits on real work, for adapter tests. */
+  realWorkClock?: {now: () => number; scheduler: Scheduler};
+};
 export interface RunHarness extends Harness {
   /** Which clock the run is on (Hub #1710), which a capture's proof records. */
   readonly clock: 'virtual' | 'real';
@@ -55,7 +63,13 @@ const STOPPED_HOLD_MS = 4000;
  * between attempts, so this leaves room for a slow start and the resync after it.
  */
 export const RESYNC_WITHIN_MS = 15_000;
-/** How often a restart looks again whether the reader is back in sync. */
+/**
+ * How long, in real time, a wait for real work holds before it fails, naming what is missing (Hub #1711): the reader's
+ * resync after its stream's return, what the run published reaching the reader, and the real work an expectation's
+ * overtime waits for. The same bound as a restart's.
+ */
+export const REAL_WORK_WITHIN_MS = RESYNC_WITHIN_MS;
+/** How often a wait for real work looks again when nothing woke it sooner. */
 const RESYNC_POLL_MS = 25;
 const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
 
@@ -120,7 +134,54 @@ type Part = {role: Role; participant: Participant | undefined; closed: boolean; 
  * sent to the run before anything else reaches it. `runNext` is when the run's next timer is due, and `quiet` whether
  * the last advance found nothing in flight and changed nothing the adapter can read.
  */
-type Virtual = {clock: ReturnType<typeof manualClock>; owed: number; runNext: number | undefined; quiet: boolean};
+type Virtual = {clock: ReturnType<typeof manualClock>; owed: number; runNext: number | undefined; quiet: boolean; busy: boolean};
+
+type PendingWork = () => readonly string[];
+type CompletedAnswer = Readonly<{text: string; traceId: string | undefined}>;
+type Answer = {text: string} & (
+  {trace: 'sdk'; traceId: string | undefined} | {trace: 'refusal'; traceId: string} | {trace: 'admission' | 'lost' | 'none'}
+);
+type ActionIdentity = {role: Role; requestId: string; key: string};
+type PendingAnswer = ActionIdentity & {
+  label: string; admission: 'command.queued' | 'runtime.command.admitted' | undefined;
+  logsFrom: number; publishedFrom: number; ambiguous: boolean;
+  admittedTrace?: string;
+  completed?: CompletedAnswer;
+};
+
+/** The tracker's request IDs are global. Check the outgoing generic call without inferring its authority or route. */
+function gatewayRequestIds(url: URL, payload: string | Uint8Array | undefined): Set<string> {
+  const ids = new Set(url.searchParams.getAll('requestId'));
+  if (payload === undefined) return ids;
+  const remaining: unknown[] = [];
+  try {
+    remaining.push(JSON.parse(typeof payload === 'string' ? payload : new TextDecoder().decode(payload)));
+  } catch {
+    return ids;
+  }
+  while (remaining.length > 0) {
+    const value = remaining.pop();
+    if (typeof value !== 'object' || value === null) continue;
+    for (const [key, field] of Object.entries(value)) {
+      if (key === 'requestId' && typeof field === 'string') ids.add(field);
+      else if (typeof field === 'object' && field !== null) remaining.push(field);
+    }
+  }
+  return ids;
+}
+
+function dispatchAnswer(response: GatewayAnswer): Answer {
+  const text = actionAnswerOf(response);
+  if (response.status === 200) return {text, trace: 'admission'};
+  const refusal = bodyOf<ErrorBody>(response)?.error;
+  if (refusal === undefined || !isErrorCode(refusal.code) || RETRYABLE[refusal.code] !== refusal.retryable
+    || statusOf(refusal.code) !== response.status) {
+    return {text, trace: 'none'};
+  }
+  // Gateway and tracker refusals before admission have no trace. A tracked duplicate can return an earlier SDK
+  // refusal verbatim, so a trace in the HTTP body must still agree with fresh evidence of this attempt's admission.
+  return typeof refusal.traceId !== 'string' ? {text, trace: 'none'} : {text, trace: 'refusal', traceId: refusal.traceId};
+}
 
 /** How many event-loop turns the adapter gives the parts' streams after each advance of the run, as the in-memory harness gives real I/O. */
 const TURNS = 4;
@@ -155,25 +216,36 @@ class Run implements RunHarness {
   #refreshing: Promise<boolean> = Promise.resolve(false);
   /** The run's virtual time, or undefined on the real clock, which `open` learns from the harness API. */
   #virtual: Virtual | undefined;
-  /** Calls to the run that are still waiting for their answer, such as a request whose reply comes later. */
-  #inFlight = 0;
+  /** Calls and action answers that the scenario cannot read yet, keyed per operation. */
+  readonly #calls = new Set<object>();
+  readonly #pendingAnswers = new Set<PendingAnswer>();
+  readonly #gatewayActions = new Set<Set<string>>();
+  readonly #uncertainActionIds = new Set<string>();
+  readonly #directRequests = new Set<ActionIdentity>();
   /** On virtual time, the parts whose stream is lost until they reconnect, which they do over real I/O. */
-  readonly #away = new Set<Role>();
+  readonly #away = new Map<Role, object>();
   /**
    * Where the reader stood when its stream was lost, until it is back in sync (Hub #1711): set by `disconnect`, and on
    * virtual time when the remote client reports the loss, as after a crash. A wait does not end between its stream's
    * return and its copies' resync, which is real I/O.
    */
   #readerLost: ReaderMark | undefined;
+  /** First unchecked publication. */
+  #watchedFrom = 0;
+  readonly #realWorkClock: NonNullable<RunTarget['realWorkClock']>;
+  /** What waits for real work to change: a call's answer, a part's stream, or anything the reader heard. */
+  readonly #wakers = new Set<() => void>();
 
   readonly #client: GatewayClient;
 
   constructor(target: RunTarget, tokens: PartTokens) {
     this.#target = target;
+    this.#realWorkClock = target.realWorkClock ?? {now: () => performance.now(), scheduler: timers};
     this.#grants = new Map(ROLES.map(role => [sourceOf(role), tokens[role]]));
     this.#origin = new URL(target.url).origin;
     this.#client = new GatewayClient(() => this.#origin, tokens, tokens.producer);
     this.reader = new Reader(target.seed.follows);
+    this.reader.onChange = () => { this.#wake(); };
     this.#parts = new Map();
   }
 
@@ -181,7 +253,7 @@ class Run implements RunHarness {
     const clock = await fetch(new URL(`${HARNESS_PATH}/clock`, this.#target.harness));
     if (clock.status === 200) {
       const state = await clock.json() as ClockState;
-      this.#virtual = {clock: manualClock(state.nowMs), owed: 0, runNext: state.nextDueMs ?? undefined, quiet: false};
+      this.#virtual = {clock: manualClock(state.nowMs), owed: 0, runNext: state.nextDueMs ?? undefined, quiet: false, busy: state.busy};
     } else {
       await clock.body?.cancel();
       if (clock.status !== 409) throw new RunFailure(`clock answered ${clock.status}`);
@@ -190,6 +262,7 @@ class Run implements RunHarness {
     this.#parts = new Map(ROLES.map(role => [role, {role, participant: undefined, closed: false, scheduler: new HeldScheduler(base)}]));
     await this.#refresh();
     for (const part of this.#parts.values()) await this.#connect(part);
+    if (this.#virtual !== undefined) await this.#refresh();
   }
 
   /** Which clock the run is on, which a capture's proof records. */
@@ -207,7 +280,7 @@ class Run implements RunHarness {
 
   sdk(role: Role): Participant {
     const participant = this.#connected(role);
-    return this.#virtual === undefined ? participant : this.#caughtUp(participant);
+    return this.#virtual === undefined ? participant : this.#caughtUp(role, participant);
   }
 
   #connected(role: Role): Participant {
@@ -217,27 +290,68 @@ class Run implements RunHarness {
   }
 
   send(role: Role, label: string, {key, draft}: {key: string; draft: CommandDraft<object>}, options: {timeoutMs: number; requestId: string}): Promise<string> {
-    this.#answers.set(label, 'pending');
+    const pending = this.#startAnswer(role, label, options.requestId, key);
     // The request starts in its turn among the actions; its answer may come long after the next action began.
-    const started = this.#act(() => Promise.resolve({request: this.#tracked(this.#connected(role).request(key, draft, options))}));
-    return started.then(({request}) => request).then(answerOf, (error: unknown) => `threw ${failureOf(error)}`).then(async answer => {
-      // What the run published before the answer is in the copy before the scenario reads it.
-      await this.#refresh();
-      this.#answers.set(label, answer);
-      return answer;
-    });
+    const started = this.#act(() => Promise.resolve({request: this.#connected(role).request(key, draft, options)}));
+    return started.then(({request}) => request).then(result => {
+      const traceId = result.status === 'accepted' ? traceFields(result.reply)?.traceId : result.error.error.traceId;
+      return this.#finishAnswer(pending, {text: answerOf(result), trace: 'sdk', traceId});
+    }, (error: unknown) => this.#finishAnswer(pending, {text: `threw ${failureOf(error)}`, trace: 'none'}));
   }
 
   dispatch(role: Role, label: string, command: {key: string; draft: CommandDraft<object>}, requestId: string): Promise<string> {
-    this.#answers.set(label, 'pending');
+    const call = actionCall(role, command, requestId);
+    const admission = command.key.startsWith('bunny.cmd.inbox-handle.') ? 'runtime.command.admitted' : 'command.queued';
+    const pending = this.#startAnswer(role, label, requestId, command.key, admission);
     // The action starts in its turn among the actions; its answer may come long after the next action began. An HTTP
     // call whose connection a crash ended is `lost`: its fate is the tracker's to know.
-    const started = this.#act(() => Promise.resolve({call: this.#tracked(this.#client.call(actionCall(role, command, requestId)))}));
-    return started.then(({call}) => call).then(actionAnswerOf, () => 'lost').then(async answer => {
+    const started = this.#act(() => Promise.resolve({answer: this.#client.call(call)}));
+    return started.then(({answer}) => answer).then(dispatchAnswer, (): Answer => ({text: 'lost', trace: 'lost'}))
+      .then(answer => this.#finishAnswer(pending, answer));
+  }
+
+  async #finishAnswer(pending: PendingAnswer, answer: Answer): Promise<string> {
+    try {
+      // Refresh before exposing the answer, and resolve its trace here while this attempt is still pending.
       await this.#refresh();
-      this.#answers.set(label, answer);
-      return answer;
-    });
+      const completed: CompletedAnswer = {text: answer.text, traceId: this.#answerTrace(pending, answer)};
+      pending.completed = completed;
+      this.#answers.set(pending.label, completed.text);
+      return completed.text;
+    } finally {
+      if (pending.admission !== undefined && (answer.trace === 'lost' || pending.completed === undefined)) {
+        this.#uncertainActionIds.add(pending.requestId);
+      }
+      this.#pendingAnswers.delete(pending);
+      this.#wake();
+    }
+  }
+
+  #answerTrace(pending: PendingAnswer, answer: Answer): string | undefined {
+    if (answer.trace === 'sdk') return answer.traceId;
+    if (answer.trace === 'none') return undefined;
+    const admission = pending.admittedTrace ?? this.#admissionTrace(pending);
+    return answer.trace === 'refusal' && answer.traceId !== admission ? undefined : admission;
+  }
+
+  #startAnswer(role: Role, label: string, requestId: string, key: string, admission?: PendingAnswer['admission']): PendingAnswer {
+    this.#answers.set(label, 'pending');
+    const pending = {label, role, requestId, key, admission, logsFrom: this.#state.logs.length, publishedFrom: this.#state.published.length,
+      ambiguous: this.#uncertainActionIds.has(requestId) || [...this.#gatewayActions].some(ids => ids.has(requestId))};
+    for (const answer of this.#pendingAnswers) {
+      if (!this.#sharesAdmission(answer, pending)) continue;
+      answer.ambiguous = true;
+      pending.ambiguous = true;
+    }
+    if (admission === 'runtime.command.admitted' && [...this.#directRequests].some(request => this.#sharesAdmission(pending, request))) {
+      pending.ambiguous = true;
+    }
+    this.#pendingAnswers.add(pending);
+    return pending;
+  }
+
+  #sharesAdmission(answer: ActionIdentity, other: ActionIdentity): boolean {
+    return answer.role === other.role && answer.requestId === other.requestId && answer.key === other.key;
   }
 
   answer(label: string): string {
@@ -277,6 +391,7 @@ class Run implements RunHarness {
       await this.#refresh();
     }
     await this.#readerBack();
+    await this.#delivered();
   }
 
   /** The runtime's edge ends the part's stream; the same remote part reconnects once the next wait releases its timers. */
@@ -284,7 +399,9 @@ class Run implements RunHarness {
     return this.#act(async () => {
       await this.#refresh();
       const part = this.#part(role);
-      if (role === 'reader' && part.participant !== undefined) this.#readerLost ??= this.reader.mark();
+      if (role === 'reader' && part.participant !== undefined) {
+        this.#readerLost ??= this.reader.mark();
+      }
       part.scheduler.hold();
       this.#held.push(part);
       await this.#post('disconnect', {source: sourceOf(role)});
@@ -327,10 +444,27 @@ class Run implements RunHarness {
   async gateway(call: GatewayCall): Promise<GatewayAnswer> {
     await this.#actions;
     await this.#catchUp();
-    const answer = await this.#tracked(this.#client.call(call));
-    // What the call made the runtime log or publish is in the copy before the scenario reads it.
-    await this.#refresh();
-    return answer;
+    let competing: Set<string> | undefined;
+    const response = this.#client.call(call, (url, payload) => {
+      if (call.method === 'GET') return;
+      const ids = gatewayRequestIds(url, payload);
+      if (ids.size === 0) return;
+      competing = ids;
+      this.#gatewayActions.add(ids);
+      for (const answer of this.#pendingAnswers) {
+        if (ids.has(answer.requestId)) answer.ambiguous = true;
+      }
+    });
+    return this.#tracked(response.then(async answer => {
+      // What the call made the runtime log or publish is in the copy before the scenario reads it.
+      await this.#refresh();
+      return answer;
+    }).catch((error: unknown) => {
+      for (const id of competing ?? []) this.#uncertainActionIds.add(id);
+      throw error;
+    }).finally(() => {
+      if (competing !== undefined) this.#gatewayActions.delete(competing);
+    }));
   }
 
   /**
@@ -372,6 +506,89 @@ class Run implements RunHarness {
     return ran;
   }
 
+  /**
+   * On virtual time, an expectation past its bound (Hub #1711): the run's time stands still while real work the parts
+   * wait on is in flight, which the run's time does not bound, and the check looks again whenever some of it ends. Past
+   * `REAL_WORK_WITHIN_MS` of real time it names what is still in flight. On the real clock the bound was real already.
+   */
+  overtime(): Overtime | undefined {
+    const v = this.#virtual;
+    if (v === undefined) return undefined;
+    return {run: check => this.#overtime(v, check)};
+  }
+
+  async #overtime(v: Virtual, check: () => Promise<Outcome>): Promise<Outcome> {
+    const deadline = this.#realWorkClock.now() + REAL_WORK_WITHIN_MS;
+    let failure: string | undefined, stage = '';
+    let pending: readonly PendingWork[] = [];
+    const expired = (): string => {
+      const names = pending.flatMap(work => work());
+      if (stage !== '') names.unshift(stage);
+      const detail = names.length === 0 ? '' : `: ${names.join('; ')}`;
+      return `${failure === undefined ? '' : `${failure}; `}still in flight after ${REAL_WORK_WITHIN_MS} ms of real time past the bound${detail}`;
+    };
+
+    try {
+      return await this.#within(deadline, expired, async signal => {
+        const settle = async (): Promise<void> => {
+          stage = "the run's clock catch-up";
+          await this.#catchUp(signal);
+          stage = "the run's zero advance";
+          await this.#advanceRun(v, 0, signal);
+          stage = "the run's state refresh";
+          await this.#refresh(signal);
+          await this.#refreshReturnedReader(signal);
+        };
+        // The first bound check needs fresh child evidence even when no virtual wait preceded it.
+        await settle();
+        pending = this.#pendingWork(v);
+        for (;;) {
+          signal.throwIfAborted();
+          if (this.#realWorkClock.now() >= deadline) return expired();
+          stage = 'the expectation check';
+          const result = await check();
+          signal.throwIfAborted();
+          if (this.#realWorkClock.now() >= deadline) return expired();
+          if (result === true) return result;
+          failure = result;
+          if (pending.length === 0) return failure;
+          for (;;) {
+            await settle();
+            stage = '';
+            const remaining = pending.filter(work => work().length > 0);
+            if (remaining.length < pending.length) {
+              // A completion can justify one recheck. Work started by a predicate is never added.
+              pending = remaining;
+              break;
+            }
+            await this.#change(signal);
+          }
+        }
+      });
+    } catch (error) {
+      return `${failure === undefined ? '' : `${failure}; `}the overtime failed: ${failureOf(error)}`;
+    }
+  }
+
+  /** Races the checks and settles against the one overtime deadline. */
+  async #within<T>(deadline: number, expired: () => string, work: (signal: AbortSignal) => Promise<T>): Promise<T | string> {
+    const remaining = deadline - this.#realWorkClock.now();
+    if (remaining <= 0) return expired();
+    const controller = new AbortController();
+    let cancel = (): void => {};
+    const limit = new Promise<string>(resolve => {
+      cancel = this.#realWorkClock.scheduler.after(Math.ceil(remaining), () => {
+        resolve(expired());
+        controller.abort();
+      });
+    });
+    try {
+      return await Promise.race([limit, work(controller.signal)]);
+    } finally {
+      cancel();
+    }
+  }
+
   problems(): readonly string[] {
     return this.#problems;
   }
@@ -405,8 +622,8 @@ class Run implements RunHarness {
    * Brings the copy of the run's state up to date: the harness flushes the runtime before it answers. Resolves with
    * whether anything the scenario can read changed.
    */
-  #refresh(): Promise<boolean> {
-    const refreshed = this.#refreshing.then(() => this.#fetchState());
+  #refresh(signal?: AbortSignal): Promise<boolean> {
+    const refreshed = this.#refreshing.then(() => this.#fetchState(signal));
     this.#refreshing = refreshed.catch(() => false);
     return refreshed;
   }
@@ -421,16 +638,23 @@ class Run implements RunHarness {
   async #advance(v: Virtual, ms: number, local = true): Promise<void> {
     const target = v.clock.now() + ms;
     while (v.clock.now() < target) {
+      if (local) await this.#readerBack();
+      // A reconnect can start its resync between any two round trips. Keep pieces small while it is away.
+      const until = this.#away.has('reader') && local ? Math.min(target, v.clock.now() + RESYNC_POLL_MS) : target;
       const due = v.clock.next();
-      const end = due === undefined || due === Number.POSITIVE_INFINITY ? target : Number.isFinite(due) ? Math.max(v.clock.now(), Math.min(target, due)) : v.clock.now();
+      const end = due === undefined || due === Number.POSITIVE_INFINITY ? until : Number.isFinite(due) ? Math.max(v.clock.now(), Math.min(until, due)) : v.clock.now();
       const step = end - v.clock.now();
-      const idle = local && v.quiet && this.#inFlight === 0 && this.#away.size === 0 && (due === undefined || due > end) && (v.runNext === undefined || end < v.runNext);
+      const idle = local && v.quiet && this.#calls.size === 0 && this.#pendingAnswers.size === 0 && this.#away.size === 0 && (due === undefined || due > end) && (v.runNext === undefined || end < v.runNext);
       if (idle) {
         v.owed += step;
         v.clock.advance(step);
         continue;
       }
       await this.#advanceRun(v, v.owed + step);
+      if (local && this.#readerLost !== undefined) {
+        // The stream may have returned while the supervisor was answering this piece.
+        await this.#readerBack();
+      }
       v.clock.advance(step);
       await turns();
       const changed = await this.#refresh();
@@ -440,16 +664,19 @@ class Run implements RunHarness {
   }
 
   /** Moves the run's virtual time on by `ms` and takes what its answer says. Time the run did not reach stays owed. */
-  async #advanceRun(v: Virtual, ms: number): Promise<void> {
+  async #advanceRun(v: Virtual, ms: number, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     const before = v.clock.now() - v.owed;
     const response = await fetch(new URL(`${HARNESS_PATH}/clock/advance`, this.#target.harness), {
-      method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({ms}),
+      method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({ms}), signal: signal ?? null,
     });
     if (!response.ok) throw new RunFailure(`clock/advance answered ${response.status}`);
     const state = await response.json() as ClockState;
+    signal?.throwIfAborted();
     const reached = state.nowMs - before;
     v.owed = Math.max(0, v.owed + (ms - v.owed) - reached);
     v.runNext = state.nextDueMs ?? undefined;
+    v.busy = state.busy;
     v.quiet = !state.busy && reached === ms;
   }
 
@@ -461,25 +688,28 @@ class Run implements RunHarness {
     const ahead = state.nowMs - (v.clock.now() - v.owed);
     if (ahead > 0) v.clock.advance(ahead);
     v.runNext = state.nextDueMs ?? undefined;
+    v.busy = state.busy;
     v.quiet = false;
   }
 
   /** On virtual time, sends the run the time it is owed, so that what reaches it next happens at the adapter's time. */
-  async #catchUp(): Promise<void> {
+  async #catchUp(signal?: AbortSignal): Promise<void> {
     const v = this.#virtual;
     if (v === undefined) return;
-    while (v.owed > 0) await this.#advanceRun(v, v.owed);
+    while (v.owed > 0) await this.#advanceRun(v, v.owed, signal);
     // What reaches the run next may change it without a timer.
     v.quiet = false;
   }
 
   /** Counts `call` as waiting for its answer until it settles, so that no wait passes without the run meanwhile. */
   #tracked<T>(call: Promise<T>): Promise<T> {
-    this.#inFlight += 1;
+    const pending = {};
+    this.#calls.add(pending);
     if (this.#virtual !== undefined) this.#virtual.quiet = false;
     return call.finally(() => {
-      this.#inFlight -= 1;
+      this.#calls.delete(pending);
       if (this.#virtual !== undefined) this.#virtual.quiet = false;
+      this.#wake();
     });
   }
 
@@ -487,7 +717,7 @@ class Run implements RunHarness {
   readonly #wrapped = new WeakMap<Participant, Participant>();
 
   /** The participant, each of whose calls first sends the run the time it is owed, on virtual time. */
-  #caughtUp(participant: Participant): Participant {
+  #caughtUp(role: Role, participant: Participant): Participant {
     const known = this.#wrapped.get(participant);
     if (known !== undefined) return known;
     const wrapped = new Proxy(participant, {get: (target, property) => {
@@ -495,26 +725,52 @@ class Run implements RunHarness {
       if (typeof value !== 'function') return value;
       return async (...args: unknown[]): Promise<unknown> => {
         await this.#catchUp();
-        return this.#tracked(Promise.resolve((value as (...args: unknown[]) => unknown).apply(target, args)));
+        const invoke = () => Promise.resolve((value as (...args: unknown[]) => unknown).apply(target, args));
+        if (property === 'request' && typeof args[0] === 'string' && args[0].startsWith('bunny.cmd.inbox-handle.')) {
+          const requestId = (args[2] as {requestId?: unknown} | undefined)?.requestId;
+          if (typeof requestId === 'string') return this.#tracked(this.#directRequest({role, key: args[0], requestId}, invoke));
+        }
+        return this.#tracked(invoke());
       };
     }});
     this.#wrapped.set(participant, wrapped);
     return wrapped;
   }
 
-  async #fetchState(): Promise<boolean> {
+  /** A raw inbox command can emit the same SDK admission evidence as the direct inbox gateway route. */
+  async #directRequest(request: ActionIdentity, invoke: () => Promise<unknown>): Promise<unknown> {
+    this.#directRequests.add(request);
+    for (const answer of this.#pendingAnswers) {
+      if (answer.admission === 'runtime.command.admitted' && this.#sharesAdmission(answer, request)) answer.ambiguous = true;
+    }
+    try {
+      const answer = await invoke();
+      await this.#refresh();
+      return answer;
+    } catch (error) {
+      this.#uncertainActionIds.add(request.requestId);
+      throw error;
+    } finally {
+      this.#directRequests.delete(request);
+    }
+  }
+
+  async #fetchState(signal?: AbortSignal): Promise<boolean> {
+    signal?.throwIfAborted();
     const url = new URL(`${HARNESS_PATH}/state`, this.#target.harness);
     url.searchParams.set('logs', String(this.#state.logs.length));
     url.searchParams.set('published', String(this.#state.published.length));
-    const response = await fetch(url);
+    const response = await fetch(url, {signal: signal ?? null});
     if (!response.ok) throw new RunFailure(`state answered ${response.status}`);
     const state = await response.json() as HarnessState;
+    signal?.throwIfAborted();
     for (const {message} of state.published) this.#check(message, 'a published message');
     // Only the devices of the scenario's own modules count: another simulated device may report a reading of its own,
     // such as a sensor clock, at every refresh.
     const changed = state.logs.length > 0 || state.published.length > 0 || state.generation !== this.#state.generation
       || this.#seeded(state.devices) !== this.#seeded(this.#state.devices);
     this.#state = {...state, logs: [...this.#state.logs, ...state.logs], published: [...this.#state.published, ...state.published]};
+    if (changed) this.#wake();
     return changed;
   }
 
@@ -547,15 +803,17 @@ class Run implements RunHarness {
 
   /** On virtual time, follows whether a part's stream is lost, so that no wait passes while it reconnects. */
   #heard(role: Role, {event}: Diagnostic): void {
-    if (event === 'remote.disconnected') this.#away.add(role);
-    if (event === 'remote.disconnected' && role === 'reader') this.#readerLost ??= this.reader.mark();
+    if (event === 'remote.disconnected') this.#away.set(role, {});
+    if (event === 'remote.disconnected' && role === 'reader') this.#readerLost = this.reader.mark();
     if (event === 'remote.reconnected') this.#away.delete(role);
     if (this.#virtual !== undefined) this.#virtual.quiet = false;
+    if (event === 'remote.disconnected' || event === 'remote.reconnected') this.#wake();
   }
 
   async #retire(part: Part): Promise<void> {
     const {participant} = part;
     part.participant = undefined;
+    this.#away.delete(part.role);
     if (part.role === 'reader') {
       this.reader.copies = [];
       this.#readerLost = undefined;
@@ -587,15 +845,139 @@ class Run implements RunHarness {
    */
   async #readerBack(): Promise<void> {
     const mark = this.#readerLost;
-    if (mark === undefined || this.reader.gaps() <= mark.gaps) return;
-    const deadline = Date.now() + RESYNC_WITHIN_MS;
-    for (;;) {
-      const missing = this.reader.behind(mark);
-      if (missing.length === 0) break;
-      if (Date.now() >= deadline) throw new RunFailure(`the reader did not resync within ${RESYNC_WITHIN_MS} ms of its stream's return: ${missing.join('; ')}`);
-      await sleep(RESYNC_POLL_MS);
-    }
+    if (mark === undefined || this.reader.gaps() <= mark.gaps || this.#away.has('reader')) return;
+    await this.#until(() => this.#away.has('reader') ? [] : this.reader.behind(mark),
+      missing => `the reader did not resync within ${REAL_WORK_WITHIN_MS} ms of its stream's return: ${missing.join('; ')}`);
+    await this.#refreshReturnedReader();
+  }
+
+  async #refreshReturnedReader(signal?: AbortSignal): Promise<void> {
+    const mark = this.#readerLost;
+    if (mark === undefined || this.#away.has('reader') || this.reader.behind(mark).length > 0) return;
+    // A state response from before subscriptions returned cannot attest to delivery on this stream.
     this.#readerLost = undefined;
+    if (this.#virtual !== undefined) await this.#refresh(signal);
+  }
+
+  /**
+   * On virtual time, the publications eligible for delivery on the reader's current stream. The fixture records
+   * eligibility at publication, so a state refresh cannot discard a live frame that is still on its way.
+   */
+  #undelivered(): string[] {
+    const published = this.#state.published;
+    if (!this.#watchingReader()) return [];
+    const missing = this.#missingDeliveries(published.slice(this.#watchedFrom));
+    if (missing.length === 0) this.#watchedFrom = published.length;
+    return missing;
+  }
+
+  #watchingReader(): boolean {
+    const part = this.#part('reader');
+    return this.#virtual !== undefined && this.#state.readerStream !== undefined && !part.closed
+      && part.participant !== undefined && !this.#away.has('reader') && !this.#held.includes(part);
+  }
+
+  #missingDeliveries(publications: readonly Publication[]): string[] {
+    if (!this.#watchingReader()) return [];
+    const {generation, readerStream} = this.#state;
+    const eligible = publications.flatMap(item =>
+      item.generation === generation && item.readerStream === readerStream ? [item.message] : []);
+    return this.reader.undelivered(eligible);
+  }
+
+  /** Waits until the reader has received what the run published, within `REAL_WORK_WITHIN_MS` of real time (Hub #1711). */
+  #delivered(): Promise<void> {
+    return this.#until(() => this.#undelivered(), missing =>
+      `the reader did not receive within ${REAL_WORK_WITHIN_MS} ms what the run published: ${missing.join('; ')}`);
+  }
+
+  /** Captures only work already pending before the first check. Each closure checks that operation's own result. */
+  #pendingWork(v: Virtual): PendingWork[] {
+    const work: PendingWork[] = [];
+    if (v.busy) work.push(() => v.busy ? ["the run's own work"] : []);
+    for (const call of this.#calls) work.push(() => this.#calls.has(call) ? ['a call waiting for an answer'] : []);
+    for (const answer of this.#pendingAnswers) {
+      // Preserve admission evidence that was already unique before the predicate can start a duplicate.
+      const admittedTrace = this.#admissionTrace(answer);
+      if (admittedTrace !== undefined) answer.admittedTrace ??= admittedTrace;
+      work.push(() => this.#answerWork(answer));
+    }
+    for (const [role, stream] of this.#away) {
+      if (role !== 'reader' && !this.#held.some(part => part.role === role)) {
+        work.push(() => this.#away.get(role) === stream ? [`the ${role}'s stream reconnecting`] : []);
+      }
+    }
+    const mark = this.#readerLost;
+    if (mark !== undefined && !this.#held.some(part => part.role === 'reader')) {
+      work.push(() => {
+        if (this.#part('reader').closed) return [];
+        if (this.#away.has('reader')) return ["the reader's stream reconnecting"];
+        return this.reader.behind(mark).map(missing => `the reader: ${missing}`);
+      });
+    }
+    const published = this.#state.published.slice(this.#watchedFrom);
+    if (this.#missingDeliveries(published).length > 0) work.push(() => this.#missingDeliveries(published));
+    return work;
+  }
+
+  #answerWork(answer: PendingAnswer): string[] {
+    if (this.#pendingAnswers.has(answer)) return [`the answer to ${answer.label}`];
+    // The dispatcher's existing request record links its answer to the same trace as the resulting publications.
+    // An SDK request can also give the trace in its reply or refusal.
+    const trace = answer.completed?.traceId;
+    if (trace === undefined) return [];
+    return this.#missingDeliveries(this.#state.published.slice(answer.publishedFrom).filter(({message}) =>
+      traceFields(message)?.traceId === trace));
+  }
+
+  #admissionTrace(answer: PendingAnswer): string | undefined {
+    // An HTTP duplicate can share its request ID with the original operation. Only fresh, unambiguous admission
+    // evidence can link this answer to new publications. Ordinary waits still check uncorrelated deliveries.
+    if (answer.admission === undefined || answer.ambiguous) return undefined;
+    const traces = new Set<string>();
+    for (const {record} of this.#state.logs.slice(answer.logsFrom)) {
+      if (record.event_name === answer.admission
+        && record.attributes['bunny.request.id'] === answer.requestId
+        && record.attributes['bunny.participant'] === sourceOf(answer.role)
+        && record.attributes['bunny.routing.key'] === answer.key
+        && record.trace_id !== undefined) traces.add(record.trace_id);
+    }
+    return traces.size === 1 ? traces.values().next().value : undefined;
+  }
+
+  /**
+   * Waits until `missing` answers nothing, looking again whenever real work changes, within `REAL_WORK_WITHIN_MS` of real
+   * time; past it, fails with `failure`'s fixed text, which names what is missing. Returns at once when nothing is.
+   */
+  async #until(missing: () => readonly string[], failure: (missing: readonly string[]) => string): Promise<void> {
+    let deadline: number | undefined;
+    for (;;) {
+      const now = missing();
+      if (now.length === 0) return;
+      deadline ??= this.#realWorkClock.now() + REAL_WORK_WITHIN_MS;
+      if (this.#realWorkClock.now() >= deadline) throw new RunFailure(failure(now));
+      await this.#change();
+    }
+  }
+
+  /** Resolves once real work changes, or after `RESYNC_POLL_MS` of real time when nothing said so sooner. */
+  #change(signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    return new Promise(resolve => {
+      const done = (): void => {
+        cancel();
+        this.#wakers.delete(done);
+        signal?.removeEventListener('abort', done);
+        resolve();
+      };
+      const cancel = this.#realWorkClock.scheduler.after(RESYNC_POLL_MS, done);
+      this.#wakers.add(done);
+      signal?.addEventListener('abort', done, {once: true});
+    });
+  }
+
+  #wake(): void {
+    for (const done of [...this.#wakers]) done();
   }
 
   /** Waits until the reader has resynced since `mark`, within the run's bound; past it, names what did not come back. */
@@ -609,10 +991,12 @@ class Run implements RunHarness {
     for (;;) {
       const missing = this.reader.behind(mark);
       if (missing.length === 0) return;
-      const virtualPassed = this.now() >= deadline;
-      if (virtualPassed && Date.now() >= realDeadline) throw new RunFailure(`the reader did not resync within ${withinMs} ms of the restart: ${missing.join('; ')}`);
-      if (v === undefined || virtualPassed) await sleep(RESYNC_POLL_MS);
-      // While the reader is behind, every piece reaches the run, so its reconnect over real I/O gets real time.
+      // Once its stream is back, the reader's resync is real I/O whose deadlines run on the parts' clock, which moving
+      // the run's time would run out under it: the run's time stands still until the resync or the real bound (Hub #1711).
+      const still = this.now() >= deadline || this.reader.gapNotices > mark.gaps;
+      if (still && Date.now() >= realDeadline) throw new RunFailure(`the reader did not resync within ${withinMs} ms of the restart: ${missing.join('; ')}`);
+      if (v === undefined || still) await this.#change();
+      // While the reader's stream is away, every piece reaches the run, so its reconnect over real I/O gets real time.
       else await this.#advance(v, RESYNC_POLL_MS, false);
     }
   }

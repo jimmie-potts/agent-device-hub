@@ -10,6 +10,8 @@
 // stream at the edge, which `runMain` hands over once it serves. On virtual time (Hub #1710) the clock argument is the
 // run's virtual time, at which the child's clock starts; the child then moves it only on the supervisor's `advance`.
 import http from 'node:http';
+import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {watchRemotePublications} from '@jimmie-potts/sdk/testing';
 import type {BunnyModule, RemoteEdge} from '@jimmie-potts/sdk';
 import {createWisprModule} from '@jimmie-potts/wispr';
 import {registrations, runMain, type CoreModule, type ModuleFactory} from '../src/index.js';
@@ -18,7 +20,7 @@ import {SCHEDULE_FIXTURE, ScheduledFixture} from '../tests/fixtures/scheduled.js
 import {createPresentationFixture} from '../tests/fixtures/presentation.js';
 import {createLampModule, lampSchemas, type Indicator, type LampTransport, type Power} from '../tests/fixtures/lamp.js';
 import {createSignModule, signSchemas, type SignTransport} from '../tests/fixtures/sign.js';
-import {SCENARIO_SCHEMAS} from '../tests/scenarios/parts.js';
+import {SCENARIO_SCHEMAS, sourceOf} from '../tests/scenarios/parts.js';
 import {childClockOf, fixtureCore as buildCore, type ChildClock} from './child-clock.js';
 import {ChildLinks} from './link.js';
 import type {ChildMessage, Control, SupervisorMessage} from './protocol.js';
@@ -36,6 +38,8 @@ const switches = new Map<number, {resolve: (power: Power) => void; reject: (erro
 const shows = new Map<number, {resolve: () => void; reject: (error: Error) => void}>();
 let next = 0;
 let edge: RemoteEdge | undefined;
+let readerStream: (() => number | undefined) | undefined;
+const readerPublications = new WeakMap<Message, number>();
 
 // The supervisor is this checkout's own code, so its messages are taken as typed.
 process.on('message', (value: unknown) => {
@@ -69,7 +73,10 @@ process.on('message', (value: unknown) => {
       return;
     case 'flush':
       // Every delivery already queued runs before the next turn of the event loop.
-      setImmediate(() => { send({type: 'flushed', id: message.id}); });
+      setImmediate(() => {
+        const stream = readerStream?.();
+        send({type: 'flushed', id: message.id, ...(stream === undefined ? {} : {readerStream: stream})});
+      });
       return;
     case 'device.answered':
     case 'device.failed':
@@ -171,7 +178,10 @@ const fixture = (name: string, simulate: () => BunnyModule, schemas?: Readonly<R
 const harness = fixture('harness', () => ({
   manifest: {name: 'harness', apiVersion: '1.0'},
   async start({sdk}) {
-    await sdk.subscribe('bunny.*.*.*', message => { send({type: 'published', message}); });
+    await sdk.subscribe('bunny.*.*.*', message => {
+      const stream = readerPublications.get(message);
+      send({type: 'published', message, ...(stream === undefined ? {} : {readerStream: stream})});
+    });
   },
   stop: () => {},
 }));
@@ -226,5 +236,12 @@ const factories = names.map(name => {
 // supervisor (Hub #1709); its monotonic clock is the one the fixture core's options above carry. On the real clock it
 // passes none.
 await runMain(runtimeArgs, factories.length === 0 ? [] : [harness, ...factories], {
-  schemas: SCENARIO_SCHEMAS, onEdge: served => { edge = served; }, ...(clock === undefined ? {} : {testClock: clock.testClock}),
+  schemas: SCENARIO_SCHEMAS,
+  onEdge: served => {
+    edge = served;
+    if (clock !== undefined) readerStream = watchRemotePublications(served, sourceOf('reader'), (message, stream) => {
+      readerPublications.set(message, stream);
+    });
+  },
+  ...(clock === undefined ? {} : {testClock: clock.testClock}),
 });
