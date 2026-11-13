@@ -3,12 +3,11 @@
 // home that stalls leaves the core and the runtime's stop untouched. No test reads a real Codex file.
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {constants} from 'node:fs';
-import {chmod, mkdir, mkdtemp, open, readdir, realpath, rm, writeFile, type FileHandle} from 'node:fs/promises';
+import {chmod, mkdir, mkdtemp, readdir, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
-import {DESKTOP_METADATA_SCHEMA, MARKER_DEVICE, MARKER_FILE, POLL_MS, READ_TIMEOUT_MS, SimulatedMarker, createCodexDesktopModule, folderReader, type MarkerTransport} from '@jimmie-potts/codex-desktop';
+import {DESKTOP_METADATA_SCHEMA, MARKER_DEVICE, MARKER_FILE, POLL_MS, SimulatedMarker, createCodexDesktopModule, folderReader, type MarkerTransport} from '@jimmie-potts/codex-desktop';
 import {desktopFeedId, sessionEntityId, type DesktopMetadataSnapshot, type Identity, type LifecycleEvent, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {prepareMessage, publishOnce, type Sdk, type SyncedCopy} from '@jimmie-potts/sdk';
 import {producerSource} from '../src/hook/index.js';
@@ -20,26 +19,13 @@ const SOURCE = {hostId: 'host-sim', sourceId: 'codex-desktop'} as const;
 const desktop = (sessionId: string, sourceId: string = SOURCE.sourceId): Identity => ({provider: 'codex', client: 'desktop', hostId: SOURCE.hostId, sourceId, sessionId});
 const marker = (ids: readonly string[]): string => JSON.stringify({'electron-thread-read-state-v1': {version: 1, unreadByIdentity: {host: {'local:a': ids}}}});
 
-/**
- * A Codex home in a new private folder. A stalled one's marker is a FIFO with no writer, whose blocking open does not
- * return, as on a stalled mount; at the test's end a writer's open releases any read still waiting on it.
- */
+/** A private Codex home. A stalled home's marker is a FIFO with no writer, so a blocking open waits indefinitely. */
 async function codexHome(context: TestContext, {stalled = false} = {}): Promise<string> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'codex-home-')));
   await chmod(dir, 0o700);
   const marker = join(dir, MARKER_FILE);
   if (stalled) execFileSync('mkfifo', ['-m', '600', marker]);
-  context.after(async () => {
-    if (stalled) {
-      try {
-        const writer = await open(marker, constants.O_WRONLY | constants.O_NONBLOCK);
-        await writer.close();
-      } catch {
-        // No read waits on it.
-      }
-    }
-    await rm(dir, {recursive: true, force: true});
-  });
+  context.after(() => rm(dir, {recursive: true, force: true}));
   return dir;
 }
 
@@ -122,15 +108,27 @@ it('Codex Desktop\'s marker becomes read evidence the core takes, for the config
 });
 
 it('a Codex home that stalls leaves the core taking observations, the module running, and the runtime\'s stop at once', async context => {
-  // A FIFO that never gives data: the stuck reader's read of it never returns, as on a stalled mount.
+  // A FIFO with no writer: the reader's blocking open waits as it would on a stalled mount.
   const home = await codexHome(context, {stalled: true});
-  // The test's writer of the marker, below. Closing it ends the stuck read, before the runtime's own stop at the test's end.
-  let writer: FileHandle | undefined;
-  context.after(async () => { await writer?.close(); });
-  // The stuck reader, counting the reads the module issues to it.
   const stuck = folderReader(new URL('./fixtures/stuck-marker-reader.js', import.meta.url));
+  // If an assertion fails, end the reader before the runtime's cleanup waits for its stop.
+  context.after(() => { stuck.close(); });
   let reads = 0;
-  const transport: MarkerTransport = {read: (...request) => { reads += 1; return stuck.read(...request); }, close: () => { stuck.close(); }};
+  let readOutcome: 'pending' | 'answered' | 'ended' | 'failed' = 'pending';
+  const transport: MarkerTransport = {
+    read: (...request) => {
+      reads += 1;
+      const reading = stuck.read(...request);
+      void reading.then(
+        () => { readOutcome = 'answered'; },
+        (error: unknown) => {
+          readOutcome = error instanceof Error && error.message === 'the marker reader ended' ? 'ended' : 'failed';
+        },
+      );
+      return reading;
+    },
+    close: () => { stuck.close(); },
+  };
   // The runtime runs on a clock the test moves, so the read's 5 s deadline passes only when the test advances it.
   const clock = manualClock();
   const probe = fixture('probe');
@@ -140,25 +138,18 @@ it('a Codex home that stalls leaves the core taking observations, the module run
   const {sdk} = contextOf(probe);
   const synced = await sdk.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
   if (synced.status !== 'synced') assert.fail('the core served its sessions');
-  await observe(sdk, desktop('one'), {kind: 'turn-ended'}, undefined, clock.now());
-  await until(synced.copy, desktop('one'), () => true, 'the session');
   // The module's first poll, due at its start, issues the read and sets its deadline on the module's clock.
   const unavailable = (): LogRecord[] => logs.filter(record => record.event_name === 'device.unavailable' && record.attributes['bunny.module'] === 'codex-desktop');
   clock.advance(0);
   assert.equal(reads, 1, 'the first poll issued the read');
-  // The reader process is at the marker once a writer can open it: a FIFO opens for writing without waiting only while a
-  // reader holds it. That writer stays open and silent until the test ends, so the read stays stuck, now in its first read.
-  await waitFor(async () => {
-    try {
-      writer = await open(join(home, MARKER_FILE), constants.O_WRONLY | constants.O_NONBLOCK);
-      return true;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENXIO') return false;
-      throw error;
-    }
-  }, 5000, 'the stuck reader at the marker');
-  // The read is overdue when its 5 s pass, and not before: the marker is unavailable, once, and the module still runs.
-  clock.advance(READ_TIMEOUT_MS - 1);
+  // The fixture signals after issuing the open, and the FIFO stays without a writer through stop.
+  await waitFor(async () => (await readdir(home)).includes(`${MARKER_FILE}.opening`), 5000, 'the reader to issue the blocking open');
+  assert.equal(readOutcome, 'pending');
+  await observe(sdk, desktop('one'), {kind: 'turn-ended'}, undefined, clock.now());
+  await until(synced.copy, desktop('one'), () => true, 'the session while the reader is stuck');
+  assert.equal(readOutcome, 'pending');
+  // The capability specifies 5 s, independently of the deadline the module schedules.
+  clock.advance(4999);
   assert.equal(unavailable().length, 0, 'the marker was unavailable before the read was overdue');
   clock.advance(1);
   assert.equal(unavailable().length, 1);
@@ -170,12 +161,20 @@ it('a Codex home that stalls leaves the core taking observations, the module run
   assert.deepEqual([entry((await health(runtime.url)).body, 'codex-desktop').state, entry((await health(runtime.url)).body, 'core').state], ['running', 'running']);
   assert.equal(readOf(synced.copy, desktop('one')), 'unknown', 'no evidence from a marker that was never read');
   await synced.copy.close();
-  // The stop's own deadlines run on the test's clock, which stays still: the stop ends at once in real time, or it fails.
-  let stopped = false;
-  const stopping = runtime.stop().then(() => { stopped = true; });
-  await waitFor(() => stopped, 3000, 'the runtime\'s stop');
-  await stopping;
+  assert.equal(readOutcome, 'pending');
+  // Bound the stop in real time while the host's manual clock stays still.
+  const stopLimitMs = 3000;
+  const started = performance.now();
+  const stopping = runtime.stop().then(() => performance.now() - started);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => { reject(new Error('timed out waiting for the runtime to stop')); }, Math.max(0, stopLimitMs - (performance.now() - started)));
+  });
+  const elapsed = await Promise.race([stopping, timedOut]).finally(() => { clearTimeout(timer); });
+  assert.ok(elapsed < stopLimitMs, `the runtime stopped in ${Math.round(elapsed)} ms`);
   assert.equal(logs.some(record => record.event_name === 'runtime.module.stop-timed-out'), false);
+  await waitFor(() => readOutcome !== 'pending', 2000, 'the reader to end');
+  assert.equal(readOutcome, 'ended');
 });
 
 
