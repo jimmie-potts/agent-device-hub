@@ -143,6 +143,14 @@ checks and SHALL perform no state write, publication or device work.
   without an overrides fact
 - **AND** a simultaneous change of the global mode remains in the settings page
 
+#### Scenario: Retained history disagrees with the snapshot
+
+- **WHEN** a fresh snapshot returns the owner's value and a later effective
+  owner edit matches an older retained history value
+- **THEN** catch-up returns the owner edit and can seal its transaction even
+  when ordinary compaction would omit it
+- **AND** operational changes and owner no-ops contribute no settings fact
+
 #### Scenario: Refuse a stale or protected read
 
 - **WHEN** a checkpoint names a changed origin, or its anchor is missing,

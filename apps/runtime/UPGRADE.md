@@ -166,14 +166,12 @@ forward.
 
 ## Core settings continuity
 
-Settings catch-up adds a nullable `continuity` column to `core_history` in
-its existing open transaction. It also adds a nullable marker that identifies
-mode override changes limited to selection time or order. The marker is
-recorded with the fact and applies only to the settings projection. A new
-local row receives a random identity in its original commit, including
-unrelated rows and rows with no message ID. Older rows keep their original
-contents. If the local tail has no identity, the migration marks it as a
-legacy barrier.
+Settings catch-up adds nullable `continuity` and `settings_patch` columns to
+`core_history` in its existing open transaction. A new local row receives a
+random identity in its original commit, including unrelated rows and rows
+with no message ID. When an owner supplies a settings patch, it commits in
+the same row. Existing rows retain their original contents. If the local
+tail has no identity, the migration marks it as a legacy barrier.
 A partial index over barrier rows lets the reader refuse a catch-up pass
 that would cross one. A fresh snapshot can start at the barrier.
 

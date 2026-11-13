@@ -441,12 +441,12 @@ it('migrating adds the empty span table and continuity metadata, and a second op
   const added = ['core_history_legacy_barrier', 'core_history_span', 'sqlite_autoindex_core_history_span_1'];
   assert.deepEqual(migrated.schema.filter(entry => !before.schema.some(prior => prior.name === entry.name)).map(entry => entry.name), added);
   assert.deepEqual(migrated.schema.filter(entry => !added.includes(entry.name)).map(entry =>
-    entry.name === 'core_history' ? {...entry, sql: entry.sql.replace(', continuity TEXT, same_mode_overrides INTEGER', '')} : entry), before.schema);
-  const [head] = migrated.tables.core_history as {continuity: string; same_mode_overrides: number | null}[];
-  assert.equal(head?.same_mode_overrides, null);
+    entry.name === 'core_history' ? {...entry, sql: entry.sql.replace(', continuity TEXT, settings_patch TEXT', '')} : entry), before.schema);
+  const [head] = migrated.tables.core_history as {continuity: string; settings_patch: string | null}[];
+  assert.equal(head?.settings_patch, null);
   assert.match(head?.continuity ?? '', /^legacy:[0-9a-f-]{36}$/);
-  assert.deepEqual({...migrated.tables, core_history: (migrated.tables.core_history as {continuity: string; same_mode_overrides: number | null}[])
-    .map(({continuity: _continuity, same_mode_overrides: _sameOverrides, ...row}) => row)}, before.tables);
+  assert.deepEqual({...migrated.tables, core_history: (migrated.tables.core_history as {continuity: string; settings_patch: string | null}[])
+    .map(({continuity: _continuity, settings_patch: _settingsPatch, ...row}) => row)}, before.tables);
   assert.equal(count(database, 'core_history_span'), 0);
   assert.deepEqual((database.prepare('PRAGMA table_info(core_history_latest)').all() as {name: string}[]).map(column => column.name), ['source', 'family', 'id', 'revision', 'record'],
     'the latest table keeps its five columns in order');

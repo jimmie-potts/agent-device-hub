@@ -39,13 +39,15 @@ fact log. Current owner settings remain authoritative under ADR 0012 and ADR 001
   ignores the owner write, fact insert or latest-record update. The existing
   Automation receipts and unrelated history handling still apply.
 
-Mode history compares retained target and mode choices at intake, while both
-states are available. It records a nullable marker with a row whose override
-changes have no settings effect. The page skips that member and can still
-return a simultaneous global mode change. Ordinary history and scan order
-use the original row. Released older writers leave unanchored rows behind
-the legacy barrier. A missing marker on an anchored row from an unmerged
-development build has only development compatibility.
+Each covered owner stages a private patch with the exact state or removal
+message after it verifies its write. The patch compares the owner's before
+and after settings. An empty patch records an unchanged projection even if
+ordinary history reports a difference. A patch for an effective edit stays
+with its ordinary row. If compaction would omit that row, retain one row
+with the true retained delta and previous revision, including an empty raw
+delta when the retained value already matches. The normal span transition
+applies. Only ordinary changes count toward the history-volume alarm.
+Released older writers leave unanchored rows behind the legacy barrier.
 
 ## Failure and recovery
 

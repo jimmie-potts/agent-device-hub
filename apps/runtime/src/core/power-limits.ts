@@ -1,3 +1,4 @@
+import {settingsPatch} from './settings-contract.js';
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import {childOf,type TraceContext, Outcome} from '@jimmie-potts/sdk';
@@ -38,20 +39,20 @@ export class PowerLimitStore {
       const saved = this.db.prepare('INSERT INTO automation_power_limits VALUES(?,?) ON CONFLICT(target) DO UPDATE SET payload=excluded.payload')
         .run(entry.target, JSON.stringify({...entry, record}));
       if (Number(saved.changes) !== 1) throw new Error('the power limit was not stored');
-      return record;
+      return {before: current?.record, record};
     };
     if (this.commit !== undefined) {
       entry.record = await this.commit(tx => {
-        const record = work(tx.revision());
+        const {before, record} = work(tx.revision());
         tx.add(`bunny.state.power-limit.${entry.target}`, {kind: 'state', type: 'org.bunny.power-limit.updated',
-          subject: entry.target, dataschema: LIMIT_SCHEMA, data: record}, {parent});
+          subject: entry.target, dataschema: LIMIT_SCHEMA, data: record}, {parent, settings: settingsPatch('power-limit', before, record)});
         return record;
       });
       return;
     }
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const record = work((this.get(entry.target)?.record?.revision ?? 0) + 1);
+      const {record} = work((this.get(entry.target)?.record?.revision ?? 0) + 1);
       this.db.exec('COMMIT');
       entry.record = record;
     } catch (error) {

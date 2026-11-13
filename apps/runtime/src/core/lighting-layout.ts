@@ -1,3 +1,4 @@
+import {settingsPatch} from './settings-contract.js';
 // Private presentation metadata; this part has no device dispatch path (Hub #1135).
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
@@ -59,7 +60,7 @@ export class LightingLayoutPart implements CorePart {
         if (current.revision !== command.data.expectedRevision) return errorBody('revision-conflict', {detail: 'the lighting layout changed; refresh before saving'});
         const record: LightingLayoutRecord = {id: ID, revision: tx.revision(), layout: command.data.layout};
         if (Number(this.#save.run(JSON.stringify(record), ID).changes) !== 1) throw new Error('the lighting layout was not stored');
-        tx.add('bunny.state.lighting-layout.lighting', {kind: 'state', ...stateDraft(record)}, {parent: command});
+        tx.add('bunny.state.lighting-layout.lighting', {kind: 'state', ...stateDraft(record)}, {parent: command, settings: settingsPatch('lighting-layout', current, record)});
         this.#admission.changed?.(tx, command, current.layout, record.layout);tx.take(command);
         committed = this.#admission.complete(tx, command, {result: Outcome.succeeded, evidence: Outcome.observed});
         return {status: 'accepted'} as const;

@@ -1,7 +1,7 @@
 # ADR 0012: One event and messaging platform for every component
 
 Status: accepted on 2026-10-05, amended on 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-10,
-2026-10-11, 2026-10-17, 2026-10-30, 2026-11-03, 2026-11-10, 2026-11-11 and 2026-11-12 (see
+2026-10-11, 2026-10-17, 2026-10-30, 2026-11-03, 2026-11-10, 2026-11-11, 2026-11-12 and 2026-11-13 (see
 [Amendments](#amendments); the [2026-11-11 amendment](#amendment-2026-11-11) adopts no event sourcing, makes
 history a fact log and says what a past fact may do; the
 [2026-11-12 amendment](#amendment-2026-11-12) keeps repeated readings in history as spans).
@@ -217,7 +217,8 @@ State events and telemetry are not tracked.
   silent for too long. These rules apply once
   [#1772](https://github.com/jimmie-potts/agent-device-hub/issues/1772) is
   merged and installed; until then history behaves as before. The no-time-limit
-  rule stays.
+  rule stays. See the [2026-11-13 amendment](#amendment-2026-11-13) for the
+  narrow core settings exception.
 - When the disk is full, the core refuses durable work before it reports
   anything accepted.
 
@@ -1031,3 +1032,22 @@ installs the change and measures history again, and #1778 adds the alarm. The
 trade-off is that history no longer says when each repeated reading arrived:
 between two rows it holds only the first and last confirmation and a count, and
 the count is of readings history took, not of readings a device answered.
+
+### Amendment, 2026-11-13
+
+**Keep an effective core settings edit through compaction.** At
+2026-11-13T14:05:40Z the owner answered the narrow settings-history exception
+in chat. [Decision record](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6855255596)
+
+> Yes
+
+The settings patch compares the authoritative owner values before and after
+the save. It commits privately with the ordinary history row and its
+continuity token. If ordinary compaction would omit the row for an effective
+owner edit, retain one change row in the existing sequence. Its previous
+revision and raw delta still describe the retained record. The raw delta may
+be empty. The row follows the ordinary change-row span transition and appears
+in ordinary history. A row retained solely for the settings patch does not
+count toward the history-volume alarm. Existing rows, ordinary device
+confirmations and selections with no effective settings change keep their
+existing treatment.

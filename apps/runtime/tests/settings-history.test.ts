@@ -12,11 +12,11 @@ import {deviceRecord} from './fixtures/device.js';
 import type {Action} from '../src/core/tracker.js';
 import {initialArtRecord} from '../src/core/art-schedule-model.js';
 import {openModuleDatabase} from '../src/state.js';
-import {History, type HistoryEntry} from '../src/core/history.js';
+import {History, type HistoryEntry, type WrittenChange} from '../src/core/history.js';
 import {readSettingsHistory} from '../src/core/settings-history.js';
 import {
-  checkpointText, parseSettingsCheckpoint, SETTINGS_SCAN_LIMIT, validSettingsMembers,
-  type SettingsPage, type SettingsRead, type SettingsSnapshot,
+  checkpointText, parseSettingsCheckpoint, SETTINGS_SCAN_LIMIT, settingsPatch, validSettingsMembers,
+  type SettingsFamily, type SettingsPage, type SettingsRead, type SettingsSnapshot,
 } from '../src/core/settings-contract.js';
 import {edgeConfig, it, manualClock, run, stateDir} from './support.js';
 
@@ -56,8 +56,12 @@ const step = (requestId: string): HistoryEntry => ({
 const fact = (draft: StateDraft, source = 'bunny/core'): HistoryEntry => ({
   kind: 'message', message: prepareMessage(source, {kind: 'state', ...draft}, {now: () => atMs}),
 });
+const ownerFact = (family: SettingsFamily, draft: StateDraft, before?: object): HistoryEntry => ({
+  kind: 'message', message: prepareMessage('bunny/core', {kind: 'state', ...draft}, {now: () => atMs}),
+  settings: settingsPatch(family, before, draft.data),
+});
 const removal = (family: string, id: string, entityId = id): HistoryEntry => ({
-  kind: 'message', message: prepareMessage('bunny/core', {kind: 'removal', type: `org.bunny.${family}.removed`, subject: id,
+  kind: 'message', settings: {kind: 'removal'}, message: prepareMessage('bunny/core', {kind: 'removal', type: `org.bunny.${family}.removed`, subject: id,
     dataschema: `${SCHEMA_BASE}removal/2.0`, data: {entity: {family, id: entityId}, revision: 9, reason: 'deleted'}}, {now: () => atMs}),
 });
 const zero = (history: History): string => checkpointText({origin: history.origin, seq: 0, anchor: '-'});
@@ -104,8 +108,8 @@ it('fixed pages advance over unrelated rows and seal a split Lighting and Home t
   const lighting = {rooms: [{id: 'synthetic-room', name: 'Synthetic room'}], assignments: [], groups: [], home: null};
   const home = {desktop: [{widget: 'light:room:synthetic-room', size: 'small', hidden: false, shape: 'tall'}], phone: []};
   commit(db, history, [
-    fact(state('lighting-layout', 'lighting', {id: 'lighting', revision: 15, layout: lighting})),
-    fact(state('home-layout', 'home', {id: 'home', revision: 15, version: 1, layouts: home}, '2.2')),
+    ownerFact('lighting-layout', state('lighting-layout', 'lighting', {id: 'lighting', revision: 15, layout: lighting})),
+    ownerFact('home-layout', state('home-layout', 'home', {id: 'home', revision: 15, version: 1, layouts: home}, '2.2')),
   ], 2);
   commit(db, history, [step('synthetic-after-layout')], 3);
   const first = page(history, initial);
@@ -325,17 +329,17 @@ it('art run state and power-limit observations leave only their committed settin
   const db = new DatabaseSync(':memory:');
   context.after(() => db.close());
   const history = new History(db), initial = zero(history), art = initialArtRecord();
-  commit(db, history, [fact(state('art-schedule', 'art', {...art, revision: 1, weather: 'unavailable'}))], 1);
+  commit(db, history, [ownerFact('art-schedule', state('art-schedule', 'art', {...art, revision: 1, weather: 'unavailable'}), art)], 1);
   const runOnly = page(history, initial);
   assert.deepEqual(runOnly.facts, []);
   const policy = {...art.policy, browser: false};
-  commit(db, history, [fact(state('art-schedule', 'art', {...art, revision: 2, settingsRevision: 1, policy}))], 2);
+  commit(db, history, [ownerFact('art-schedule', state('art-schedule', 'art', {...art, revision: 2, settingsRevision: 1, policy}), art)], 2);
   const power = {id: 'synthetic-lamp', revision: 3, settingsRevision: 1, enabled: true, durationMs: 1000,
     enforcement: 'hub-dependent', status: 'unavailable', startedAtMs: null, deadlineMs: null,
     observedAtMs: null, lastAttempt: null, updatedAtMs: atMs};
-  commit(db, history, [fact(state('power-limit', power.id, power))], 3);
-  commit(db, history, [fact(state('power-limit', power.id, {...power, revision: 4, status: 'off', observedAtMs: atMs}))], 4);
-  commit(db, history, [fact(state('art-schedule', 'art', {...art, revision: 5, settingsRevision: 1, policy, weather: 'unavailable'}))], 5);
+  commit(db, history, [ownerFact('power-limit', state('power-limit', power.id, power))], 3);
+  commit(db, history, [ownerFact('power-limit', state('power-limit', power.id, {...power, revision: 4, status: 'off', observedAtMs: atMs}), power)], 4);
+  commit(db, history, [ownerFact('art-schedule', state('art-schedule', 'art', {...art, revision: 5, settingsRevision: 1, policy, weather: 'unavailable'}), {policy})], 5);
   const changed = page(history, runOnly.next);
   assert.equal(cursor(changed.next).seq, 5);
   assert.deepEqual(changed.facts.map(fact => fact.kind === 'change' ? fact.changed : fact.kind), [
@@ -450,8 +454,13 @@ it('mode override timestamp and ordering changes advance the scan without an ine
   context.after(() => db.close());
   const history = new History(db), start = zero(history);
   const choices = [{target: 'left', mode: 'quiet', selectedAtMs: atMs}, {target: 'right', mode: 'work', selectedAtMs: atMs}];
-  const mode = (revision: number, overrides: typeof choices, global = 'free') =>
-    fact(state('mode', 'hub', {id: 'hub', revision, mode: global, selectedAtMs: atMs, overrides}, '2.1'));
+  let before: object | undefined;
+  const mode = (revision: number, overrides: typeof choices, global = 'free') => {
+    const value = {id: 'hub', revision, mode: global, selectedAtMs: atMs, overrides};
+    const entry = ownerFact('mode', state('mode', 'hub', value, '2.1'), before);
+    before = value;
+    return entry;
+  };
   commit(db, history, [mode(1, choices)], 1);
   const first = page(history, start);
   assert.equal(first.facts.length, 1);
@@ -524,7 +533,7 @@ it('ignored owner writes leave mode and layouts unchanged, including Home reconc
   };
   const cases = [
     {table: 'core_mode', family: 'mode', id: 'hub', data: {mode: 'quiet', expectedRevision: 0}},
-    {table: 'playback_layout', family: 'playback-layout', id: 'playback', data: {assignments: [], expectedRevision: 0}},
+    {table: 'playback_layout', family: 'playback-layout', id: 'playback', data: {assignments: [{playback: 'synthetic-player', rooms: ['synthetic-room']}], expectedRevision: 0}},
     {table: 'home_layout', family: 'home-layout', id: 'home', data: {layouts: {desktop: entries, phone: entries}, expectedRevision: 0}},
     {table: 'lighting_layout', family: 'lighting-layout', id: 'lighting', data: {layout, expectedRevision: 0}},
     {table: 'home_layout', family: 'lighting-layout', id: 'lighting', data: {layout, expectedRevision: 0}},
@@ -584,4 +593,92 @@ it('an ignored power-limit definition leaves its owner and settings checkpoint u
   assert.deepEqual(after.records.find(row => row.id === target)?.value, value);
   assert.deepEqual(result.facts.map(row => row.kind === 'change' ? row.changed : row.kind), [value]);
   assert.equal(result.next, after.checkpoint);
+});
+
+it('a first owner edit after a legacy snapshot survives compaction against a phantom policy', async context => {
+  const directory = await stateDir(context), db = openModuleDatabase(directory, 'core');
+  const policy = initialArtRecord().policy, phantom = {...policy, browser: false};
+  try {
+    const history = new History(db);
+    commit(db, history, [fact(state('art-schedule', 'art',
+      {...initialArtRecord(), revision: 1, settingsRevision: 1, policy: phantom}))], 1);
+    // The released writer kept this history even when its owner insert was ignored.
+    db.exec(`UPDATE core_history SET continuity = NULL;
+      CREATE TABLE core_revision (only INTEGER PRIMARY KEY CHECK (only = 1), value INTEGER NOT NULL, commits INTEGER NOT NULL) STRICT;
+      INSERT INTO core_revision VALUES (1,1,1)`);
+  } finally { db.close(); }
+
+  let handle: CoreHandle | undefined;
+  const core = createCoreModule({parts: [{start: given => { handle = given; return Promise.resolve(); }}]});
+  const clock = manualClock(atMs);
+  await run(context, {modules: [core], stateDir: directory, clock, scheduler: clock.scheduler});
+  const art = core.automation.artSchedule;
+  assert.ok(art);
+  const before = snapshot(core);
+  assert.deepEqual(before.records.find(item => item.family === 'art-schedule')?.value, {policy});
+  assert.equal(cursor(before.checkpoint).seq, 1);
+  const live = handle;
+  assert.ok(live);
+  await live.transaction(tx => {
+    tx.database.exec(`CREATE TRIGGER discard_settings_patch AFTER INSERT ON core_history
+      WHEN NEW.settings_patch IS NOT NULL BEGIN UPDATE core_history SET settings_patch = NULL WHERE seq = NEW.seq; END`);
+  });
+  await assert.rejects(art.save({expectedSettingsRevision: 0, policy: phantom}), /settings change was not retained/);
+  assert.deepEqual(snapshot(core), before);
+  assert.equal(art.get().settingsRevision, 0);
+  await live.transaction(tx => { tx.database.exec('DROP TRIGGER discard_settings_patch'); });
+  assert.equal((await art.save({expectedSettingsRevision: 0, policy: phantom})).settingsRevision, 1);
+  const current = snapshot(core), result = core.history.settings(pageRead(before.checkpoint));
+  assert.ok('settings' in result && result.settings === 'page');
+  assert.deepEqual(current.records.find(item => item.family === 'art-schedule')?.value, {policy: phantom});
+  assert.deepEqual(result.facts.map(row => row.kind === 'change' ? row.changed : row.kind), [{policy: phantom}]);
+  assert.equal(result.applyThrough, current.checkpoint);
+  const raw = core.history.read({kind: 'change'});
+  assert.ok(Array.isArray(raw));
+  assert.equal(raw.length, 2);
+  assert.deepEqual(raw[1]?.record.changed, {});
+  assert.deepEqual(raw[1]?.record.removed, []);
+  assert.equal(raw[1]?.record.previous, 1);
+  assert.equal(cursor(current.checkpoint).seq, 2);
+  const unchanged = await art.save({expectedSettingsRevision: 1, policy: phantom});
+  assert.equal(unchanged.settingsRevision, 2);
+  const empty = core.history.settings(pageRead(current.checkpoint));
+  assert.ok('settings' in empty && empty.settings === 'page');
+  assert.deepEqual(empty.facts, []);
+});
+
+
+it('the retained delta, span and alarm count stay accurate when an owner patch needs a row', context => {
+  const db = new DatabaseSync(':memory:');
+  context.after(() => db.close());
+  const history = new History(db), initial = initialArtRecord();
+  const policy = {...initial.policy, browser: false};
+  const recorded = {...initial, policy, settingsRevision: 1, revision: 1};
+  const draft = (value: typeof recorded) => state('art-schedule', 'art', value);
+  const counted: WrittenChange[] = [];
+  history.write([fact(draft(recorded))], atMs, 1, counted);
+  history.write([fact(draft({...recorded, revision: 2}))], atMs + 1, 2, counted);
+  assert.equal(counted.length, 1);
+  const before = page(history, zero(history));
+  history.write([ownerFact('art-schedule', draft({...recorded, revision: 3}), initial)], atMs + 2, 3, counted);
+  const raw = history.after(history.origin, 0);
+  assert.deepEqual(raw.map(row => row.originSeq), [1, 2]);
+  assert.deepEqual(raw[1]?.record, {family: 'art-schedule', id: 'art', revision: 3, previous: 1, changed: {}, removed: [],
+    span: {sinceAtMs: atMs, lastConfirmedAtMs: atMs + 1, confirmations: 2}});
+  assert.equal(counted.length, 1);
+  const forced = page(history, before.next);
+  assert.deepEqual(forced.facts, [{kind: 'change', family: 'art-schedule', id: 'art', seq: 2, revision: 3,
+    atMs: atMs + 2, changed: {policy}, removed: []}]);
+
+  // Generic history can differ from the owner's before value even when only run evidence changed.
+  history.write([ownerFact('art-schedule', draft({...initial, revision: 4, weather: 'unavailable'}), initial)], atMs + 3, 4, counted);
+  assert.deepEqual(page(history, forced.next).facts, []);
+  assert.equal(counted.length, 2);
+  assert.equal(history.read({limit: 1})[0]?.record.previous, 3);
+
+  const next = page(history, forced.next).next;
+  history.write([ownerFact('art-schedule', draft({...initial, revision: 5, weather: 'disabled'}), {policy})], atMs + 4, 5, counted);
+  assert.deepEqual(history.read({limit: 1})[0]?.record.changed, {weather: 'disabled'});
+  assert.deepEqual(page(history, next).facts.map(row => row.kind === 'change' ? row.changed : row.kind), [{policy: initial.policy}]);
+  assert.equal(counted.length, 3);
 });

@@ -2669,11 +2669,17 @@ transaction `revision` and `atMs`. A `kind: "change"` carries `changed` and
 `removed`. Each changed top-level member replaces that member in full.
 Mode overrides are ordered by target. Reselecting the same target and mode
 updates ordinary history and advances the scan. It contributes no settings
-change. Legacy removal of mode overrides becomes `overrides: []`. A
+change. Clearing mode overrides returns `overrides: []`. A
 `kind: "removal"` deletes a power-limit, rule or routine definition. A
 removal-close row or a row with only run state, confirmations or gap
 metadata contributes no settings fact. All values follow the existing
 family bounds, including the 256 KiB per-value and 16 MiB per-answer limits.
+
+The settings patch comes from the owner's before and after values in the
+save transaction. If ordinary history would omit an effective owner edit,
+the same sequence retains a change row with its true raw delta and previous
+revision. Ordinary readers see that row and its span. The history-volume
+alarm skips a row retained solely for the settings patch.
 
 Apply only through `applyThrough`. It can be behind `next` or `null` while
 the trailing revision is unsealed. Hold up to two projected settings facts

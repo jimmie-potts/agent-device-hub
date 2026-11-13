@@ -1,3 +1,4 @@
+import {sameState} from '@jimmie-potts/event-contracts/v2/bookkeeping';
 // Shared by the settings reader and consumers of history/2.0 settings values.
 import {Ajv2020} from 'ajv/dist/2020.js';
 import {MAX_MESSAGE_BYTES, schemas, type Message} from '@jimmie-potts/event-contracts/v2';
@@ -115,11 +116,6 @@ function modeChoices(value: unknown): unknown {
   });
 }
 
-/** Retained choices compare by target and mode. The first mode row still supplies all of its settings. */
-export function unchangedModeOverrides(before: Record<string, unknown> | null, after: Record<string, unknown>): boolean {
-  return before !== null && JSON.stringify(modeChoices(before.overrides ?? [])) === JSON.stringify(modeChoices(after.overrides ?? []));
-}
-
 /** Project the same top-level fields from owner state and history changes. */
 export function projectSettingsMembers(family: SettingsFamily, data: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = Object.fromEntries(fields[family].filter(key => Object.hasOwn(data, key)).map(key => [key, data[key]]));
@@ -213,15 +209,21 @@ export function validSettingsMembers(family: SettingsFamily, id: unknown, value:
   }
 }
 
-/** All current projected top-level fields are required. Legacy removal of mode overrides is normalized to an empty list. */
-export const settingsMember = (family: SettingsFamily, key: string): boolean => (fields[family] as readonly string[]).includes(key);
+/** Private transaction metadata. An empty change explicitly records that the owner settings did not change. */
+export type SettingsPatch = {kind: 'change'; changed: Record<string, unknown>} | {kind: 'removal'};
 
-/** Whether a compact state change carries an effective settings member. */
-export function isSettingsChange(family: SettingsFamily, change: {
-  previous: unknown; changed: Record<string, unknown>; removed: readonly string[];
-}, sameOverrides = false): boolean {
-  // The first operational art row can carry the default policy even though no policy was saved.
-  if (family === 'art-schedule' && change.previous === null && change.changed.settingsRevision === 0) return false;
-  return fields[family].some(key => !(family === 'mode' && key === 'overrides' && sameOverrides) &&
-    (Object.hasOwn(change.changed, key) || change.removed.includes(key)));
+/** Compare the authoritative owner values inside the transaction that saves the new value. */
+export function settingsPatch(family: SettingsFamily, before: object | undefined, after: object): SettingsPatch {
+  const prior = before === undefined ? {} : projectSettingsMembers(family, before as Record<string, unknown>);
+  const next = projectSettingsMembers(family, after as Record<string, unknown>);
+  if (family === 'mode') {
+    if (before !== undefined) prior.overrides ??= [];
+    next.overrides ??= [];
+  }
+  const changed = Object.fromEntries(Object.entries(next).filter(([key, value]) =>
+    !Object.hasOwn(prior, key) || !sameState({value: prior[key]}, {value}, [])));
+  return {kind: 'change', changed};
 }
+
+export const effectiveSettingsPatch = (patch: SettingsPatch | undefined): boolean =>
+  patch !== undefined && (patch.kind === 'removal' || Object.keys(patch.changed).length !== 0);

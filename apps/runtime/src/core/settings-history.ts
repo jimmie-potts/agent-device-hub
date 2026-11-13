@@ -3,8 +3,8 @@ import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {StateDraft} from '@jimmie-potts/sdk';
 import {familyOf, LEGACY_HISTORY_BARRIER, type History, type HistoryPosition, type SettingsHistoryRow} from './history.js';
 import {
-  checkpointText, isSettingsChange, isSettingsFamily, parseSettingsCheckpoint, projectSettingsMembers, removableSettingsFamily, settingsFactId, settingsId,
-  settingsInteger, settingsMember, settingsObject, validSettingsMembers, SETTINGS_ANSWER_BYTES, SETTINGS_SCAN_LIMIT,
+  checkpointText, isSettingsFamily, parseSettingsCheckpoint, projectSettingsMembers, removableSettingsFamily, settingsFactId, settingsId,
+  settingsInteger, settingsObject, validSettingsMembers, SETTINGS_ANSWER_BYTES, SETTINGS_SCAN_LIMIT,
   SETTINGS_SINGLETONS, SETTINGS_SNAPSHOT_LIMIT,
   type SettingsCheckpoint, type SettingsFact, type SettingsPage, type SettingsRead, type SettingsRecord, type SettingsSnapshot,
 } from './settings-contract.js';
@@ -57,30 +57,23 @@ function factOf(row: SettingsHistoryRow): SettingsFact | ErrorBody | undefined {
   if (!isSettingsFamily(family)) return undefined;
   const id = row.subject, {originSeq: seq, revision, atMs} = row;
   if (!settingsFactId(family, id) || !settingsInteger(revision) || !settingsInteger(atMs)) return invalid();
+  if (row.settings === null) return undefined;
+  const patch: unknown = JSON.parse(row.settings);
+  if (!settingsObject(patch)) return invalid();
   const record: unknown = JSON.parse(row.record);
   if (!settingsObject(record)) return invalid();
   if (row.kind === 'removal') {
     const {data} = record;
-    if (!removableSettingsFamily(family) || record.kind !== 'removal' || record.source !== row.source ||
+    if (patch.kind !== 'removal' || !removableSettingsFamily(family) || record.kind !== 'removal' || record.source !== row.source ||
         record.type !== row.type || record.subject !== id || record.dataschema !== `${SCHEMA_BASE}removal/2.0` ||
         !settingsObject(data) || !settingsObject(data.entity) || data.entity.family !== family || data.entity.id !== id ||
         !coreValidator().validate(record).ok) return invalid();
     return {family, id, seq, revision, atMs, kind: 'removal'};
   }
-  const {changed: raw, removed: absent} = record;
-  if (record.family !== family || record.id !== id || !settingsObject(raw) ||
-      !Array.isArray(absent) || !absent.every((key): key is string => typeof key === 'string')) return invalid();
-  const sameOverrides = family === 'mode' && row.sameOverrides === 1;
-  if (!isSettingsChange(family, {previous: record.previous, changed: raw, removed: absent}, sameOverrides)) return undefined;
-  const changed = projectSettingsMembers(family, raw);
-  if (sameOverrides) delete changed.overrides;
-  const removed = absent.filter(key => settingsMember(family, key) && !(sameOverrides && key === 'overrides'));
-  if (family === 'mode' && removed.includes('overrides') && !Object.hasOwn(changed, 'overrides')) {
-    changed.overrides = [];
-    removed.splice(removed.indexOf('overrides'), 1);
-  }
-  if (record.closedBy !== undefined || removed.length !== 0 || !validSettingsMembers(family, id, changed, false)) return invalid();
-  return {family, id, seq, revision, atMs, kind: 'change', changed, removed} as SettingsFact;
+  if (patch.kind !== 'change' || record.family !== family || record.id !== id || record.closedBy !== undefined ||
+      !validSettingsMembers(family, id, patch.changed, false)) return invalid();
+  if (Object.keys(patch.changed).length === 0) return undefined;
+  return {family, id, seq, revision, atMs, kind: 'change', changed: patch.changed, removed: []} as SettingsFact;
 }
 
 function matches(checkpoint: SettingsCheckpoint, row: HistoryPosition | undefined): boolean {
