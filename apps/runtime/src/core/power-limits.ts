@@ -12,6 +12,21 @@ const FRESH_MS=15000;
 type Entry={target:string;owner:string;configurationRevision:number;definitionId:string;settingsRevision:number;enabled:boolean;durationMs:number;lastPower:boolean|null;startedAtMs:number|null;observedAtMs:number|null;runId:string|null;attempt:PowerLimitRecord['lastAttempt'];record?:PowerLimitRecord};
 const invalid=(code='invalid-request',status=400):never=>{throw new AutomationError(code,status);};
 const object=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+/** Checks a write without resolving its target or reading retained state. */
+function powerLimitBody(value: unknown): {enabled: boolean; durationMs: number; expectedSettingsRevision: unknown} {
+  if (!object(value) || Object.keys(value).some(key => !['enabled', 'durationMs', 'expectedSettingsRevision'].includes(key))
+    || typeof value.enabled !== 'boolean' || typeof value.durationMs !== 'number' || !Number.isSafeInteger(value.durationMs)
+    || value.durationMs < 1000 || value.durationMs > 604800000) return invalid();
+  return {enabled: value.enabled, durationMs: value.durationMs, expectedSettingsRevision: value.expectedSettingsRevision};
+}
+function limitRevision(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return invalid();
+  return value;
+}
+export function checkPowerLimitWrite(value: unknown): void {
+  limitRevision(powerLimitBody(value).expectedSettingsRevision);
+}
 function decode(payload:string):Entry {
   const value:unknown=JSON.parse(payload);
   const integer=(v:unknown,min=0):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=min;
@@ -124,13 +139,13 @@ export function createPowerLimits(options:PowerLimitOptions){
     async save(target:string,value:unknown,parent?:TraceContext):Promise<PowerLimitRecord>{
       if(stopped())invalid('unavailable',503);
       if(!options.targets().includes(target))invalid('unknown-target');
-      if(!object(value)||Object.keys(value).some(k=>!['enabled','durationMs','expectedSettingsRevision'].includes(k))||typeof value.enabled!=='boolean'||typeof value.durationMs!=='number'||!Number.isSafeInteger(value.durationMs)||value.durationMs<1000||value.durationMs>604800000)return invalid();
+      const input = powerLimitBody(value);
       const previous=store.get(target),record=options.current(target),owner=options.owner(target);
       if(record===undefined||owner===undefined)return invalid('unavailable',503);
-      if(value.expectedSettingsRevision!==undefined&&(typeof value.expectedSettingsRevision!=='number'||!Number.isSafeInteger(value.expectedSettingsRevision)||value.expectedSettingsRevision<0))return invalid();
-      if(value.expectedSettingsRevision!==undefined&&value.expectedSettingsRevision!==(previous?.settingsRevision??0))invalid('revision-conflict',409);
+      const revision = limitRevision(input.expectedSettingsRevision);
+      if(revision!==undefined&&revision!==(previous?.settingsRevision??0))invalid('revision-conflict',409);
       const preserve=previous!==undefined&&bound(previous,record);
-      const entry:Entry={target,owner,configurationRevision:record.configurationRevision,definitionId:randomUUID(),settingsRevision:(previous?.settingsRevision??0)+1,enabled:value.enabled,durationMs:value.durationMs,
+      const entry:Entry={target,owner,configurationRevision:record.configurationRevision,definitionId:randomUUID(),settingsRevision:(previous?.settingsRevision??0)+1,enabled:input.enabled,durationMs:input.durationMs,
         lastPower:preserve?previous.lastPower:null,startedAtMs:preserve?previous.startedAtMs:null,observedAtMs:preserve?previous.observedAtMs:null,runId:preserve?previous.runId:null,attempt:preserve?previous.attempt:null};
       await store.save(entry,view(entry),previous?.definitionId??'none',parent??childOf(undefined),previous?.record?.revision??0);return structuredClone(entry.record as PowerLimitRecord);
     },tick,

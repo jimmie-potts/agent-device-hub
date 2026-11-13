@@ -221,7 +221,36 @@ export const isCoreModule = (module: BunnyModule): module is CoreModule => modul
 
 // Structural module names cannot convey early data ownership.
 const factoryStarts = new WeakMap<object, CoreModule>();
-const factoryCores = new WeakMap<CoreModule, {bind(token: RuntimeOwnership): void; ownership(): CoreOwnership | undefined}>();
+const factoryCores = new WeakMap<CoreModule, {
+  standby: boolean; start: BunnyModule['start']; bind(token: RuntimeOwnership): void; ownership(): CoreOwnership | undefined;
+}>();
+
+function registeredStandbyStart(module: object): BunnyModule['start'] | undefined {
+  const factory = factoryCores.get(module as CoreModule);
+  return factory?.standby === true ? factory.start : undefined;
+}
+
+/** Checks exact factory identity and start without accepting a structural copy. */
+export function isRegisteredStandbyCore(module: unknown): boolean {
+  if (typeof module !== 'object' || module === null) return false;
+  const start = registeredStandbyStart(module);
+  return start !== undefined && Reflect.get(module, 'start') === start;
+}
+
+/** Selects and pins standby only from the original registered core and its original start. */
+export function standbyCoreStart(modules: readonly BunnyModule[]): {module: BunnyModule; start: BunnyModule['start']} | undefined {
+  let selected: {module: BunnyModule; start: BunnyModule['start']} | undefined;
+  for (const module of modules) {
+    const start: unknown = Reflect.get(module, 'start');
+    const expected = registeredStandbyStart(module);
+    const original = typeof start === 'function' ? factoryStarts.get(start) : undefined;
+    if (original !== undefined && original !== module && factoryCores.get(original)?.standby === true) throw ownershipUnavailable();
+    if (expected === undefined) continue;
+    if (start !== expected || selected !== undefined) throw ownershipUnavailable();
+    selected = {module, start: expected};
+  }
+  return selected;
+}
 /** Internal future entrypoint bridge. The core must be the original, not a structural copy. */
 export function bindCoreRuntimeOwnership(core: CoreModule, token: RuntimeOwnership): void {
   const factory = factoryCores.get(core);
@@ -321,6 +350,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
   } satisfies CoreModule;
   factoryStarts.set(module.start, module);
   factoryCores.set(module, {
+    standby, start: module.start,
     bind: token => {
       if (started || ownership !== undefined) throw ownershipUnavailable();
       bindRuntimeOwnership(token, module);

@@ -93,25 +93,25 @@ function parseActionData(family:RoutineFamily,value:unknown):Record<string,unkno
  * what a mode admits is the owning module's decision, such as the Pixoo's refusal of playback starts in Work. A stored row
  * (`targets` null) may still carry the retired `requireMode`, read as the Hub mode it stood for, so it keeps opening.
  */
-function parseAction(value:unknown,targets:readonly string[]|null,kindOf:(target:string)=>string|undefined):RoutineAction {
+function parseAction(value:unknown,targets:readonly string[]|null|undefined,kindOf:(target:string)=>string|undefined):RoutineAction {
   const legacy=targets===null && object(value) && Object.hasOwn(value,'requireMode') && !Object.hasOwn(value,'runsOnlyIn');
   if(!object(value) || !['target','family','data'].every(key=>Object.hasOwn(value,key)) ||
       Object.keys(value).some(key=>!['target','family','data','runsOnlyIn',...(legacy?['requireMode']:[])].includes(key)) ||
       !routingId(value.target) || !isRoutineFamily(value.family) || (Object.hasOwn(value,'runsOnlyIn') && !isHubMode(value.runsOnlyIn)) ||
       (legacy && (!enumValue(value.requireMode) || !Object.hasOwn(LEGACY_MODE,value.requireMode)))) return invalid();
-  if(targets!==null && !targets.includes(value.target)) return invalid('unknown-target');
+  if(targets!=null && !targets.includes(value.target)) return invalid('unknown-target');
   const kind=kindOf(value.target),moduleKind=MODULE_FAMILIES[value.family];
   if(moduleKind!==undefined && kind!==undefined && kind!==moduleKind) return invalid('unknown-target');
-  if(targets!==null && CONTENT_FAMILIES.includes(value.family) && (kind===undefined || !CONTENT_KINDS.includes(kind))) return invalid();
+  if(targets!=null && CONTENT_FAMILIES.includes(value.family) && (kind===undefined || !CONTENT_KINDS.includes(kind))) return invalid();
   const data=parseActionData(value.family,value.data);
   const runsOnlyIn=legacy?LEGACY_MODE[value.requireMode as string]:value.runsOnlyIn as HubMode|undefined;
   return {target:value.target,family:value.family,data,...(runsOnlyIn===undefined?{}:{runsOnlyIn})};
 }
 /**
  * A create (`enabled` allowed) or update body. `targets` lists the configured identities a new definition may name;
- * stored rows pass null, because a target removed from configuration is logged when the routine fires.
+ * stored rows pass null, because a removed target is logged when the routine fires. Undefined checks write shape only.
  */
-export function parseRoutine(value:unknown,targets:readonly string[]|null,allowEnabled:boolean,kindOf:(target:string)=>string|undefined=()=>undefined):RoutineInput {
+export function parseRoutine(value:unknown,targets:readonly string[]|null|undefined,allowEnabled:boolean,kindOf:(target:string)=>string|undefined=()=>undefined):RoutineInput {
   const keys=['name','days','time','actions'];
   if(!object(value) || !keys.every(key=>Object.hasOwn(value,key)) ||
       Object.keys(value).some(key=>!keys.includes(key) && !(allowEnabled && key==='enabled')) ||

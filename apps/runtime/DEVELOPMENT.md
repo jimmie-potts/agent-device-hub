@@ -14,6 +14,16 @@ work refusal and retained state with a controlled clock and synthetic inputs.
 See [operator verification](../../docs/operator-verification.md) for its
 additional source checks.
 
+### Standby external admission
+
+After the root build, run `node --test apps/runtime/dist/tests/standby-admission.test.js
+apps/runtime/dist/tests/standby.test.js deploy/container/tests/entrypoint.test.mjs`
+and the SDK suite. Existing Runtime unit and Core admission jobs discover these
+checks. They use private synthetic files, loopback clients and a controlled
+clock to check startup, reload, bounded reads and refusal before effects.
+Run shared build, type, lint, event contract and workflow checks before
+publication.
+
 ### Codex read-receipt checks
 
 After `npm run build`, run

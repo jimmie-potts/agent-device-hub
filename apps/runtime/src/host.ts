@@ -34,6 +34,8 @@ export type ModuleHealth = {
 };
 
 export type HostOptions = {
+  /** The exact start verified for the runtime's standby core before async admission. */
+  standbyStart?: {module: BunnyModule; start: BunnyModule['start']};
   /**
    * Hears that the core failed. The core is the one owner of agent sessions (Hub #831), so the runtime cannot continue
    * without it: the service process ends with a failure exit, and the service manager restarts the whole runtime.
@@ -413,8 +415,9 @@ export class ModuleHost {
     slot.participant = participant;
     this.#bySource.set(participant.source, slot);
     const context = this.#context(slot, participant);
-    const {startTimeoutMs} = this.#options;
-    const outcome = await this.#within(running.run(slot.flow, () => attempt(() => slot.module.start(context))), startTimeoutMs);
+    const {startTimeoutMs, standbyStart} = this.#options;
+    const outcome = await this.#within(running.run(slot.flow, () => attempt(() => standbyStart?.module === slot.module
+      ? standbyStart.start.call(slot.module, context) : slot.module.start(context))), startTimeoutMs);
     // A handler may have failed the module meanwhile, or the runtime may be stopping.
     if (slot.state !== 'starting') return;
     switch (outcome.status) {

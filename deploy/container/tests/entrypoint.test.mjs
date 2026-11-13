@@ -31,6 +31,7 @@ test('standby entrypoint validates private inputs before state and runs only the
   const options = containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'standby'});
   const steps = [];
   const lease = {releaseBeforeStartup: () => steps.push('release')};
+  const credentialAdmission = {};
   let config = {modules: {}};
   let credentialsFail = false;
   let ownerFail = false;
@@ -43,9 +44,12 @@ test('standby entrypoint validates private inputs before state and runs only the
       return [core];
     }},
     checkConfiguration,
-    checkCredentials: async () => {
+    admitStandbyCredentials: (instance, file) => {
+      assert.equal(instance, core);
+      assert.equal(file, config.edge.credentials);
       steps.push('credentials');
       if (credentialsFail) throw new Error('synthetic-credentials-refused');
+      return credentialAdmission;
     },
     prepareOwnershipRoot: async () => { steps.push('prepare'); },
     acquireRuntimeOwnership: async () => {
@@ -65,7 +69,8 @@ test('standby entrypoint validates private inputs before state and runs only the
     parseArguments: () => ({}),
     runProcess: async (parsed, startup) => {
       assert.equal(parsed.edge, false);
-      assert.deepEqual(startup, {modules: [core], config, listener: 'container-host-local'});
+      assert.deepEqual(startup, {modules: [core], config, listener: 'container-host-local',
+        ...(config.edge === undefined ? {} : {standbyCredentialAdmission: credentialAdmission})});
       steps.push('process');
     },
   };
@@ -453,7 +458,12 @@ test('standby accepts an omitted edge and refuses missing, invalid and out-of-pr
     await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {code: 'edge-credentials-invalid'});
     const grant = {id: 'reader', source: 'bunny/parts/reader', digest: '2'.repeat(64), scopes: ['read']};
     const document = credential => JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: [credential]});
-    await writeFile(file, document({...grant, scopes: ['admin']}), {mode: 0o600});
+    for (const scopes of [['admin'], ['read', 'control'], ['ingest'], []]) {
+      await writeFile(file, document({...grant, scopes}), {mode: 0o600});
+      await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {message: 'container-browser-config-refused'});
+    }
+    const roleGrant = {id: 'music-worker', source: 'bunny/parts/music-producer', digest: '3'.repeat(64), scopes: [], role: 'music-producer'};
+    await writeFile(file, document(roleGrant), {mode: 0o600});
     await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {message: 'container-browser-config-refused'});
     await writeFile(file, document(grant), {mode: 0o600});
     assert.deepEqual(await entrypoint.checkConfiguredCredentials(config, options), {status: 'admitted', credentials: 1});
@@ -619,4 +629,90 @@ test('the production-selected core warns on state changes published during modul
       'bunny.participant': 'bunny/modules/volcano', 'bunny.history.family': 'device', 'bunny.history.entity_id': id,
       'bunny.history.row_count': 121, 'bunny.history.row_threshold': 120, 'bunny.history.hour_start_at_ms': clock.now()});
   } finally { await runtime.stop(); }
+});
+
+test('standby startup uses the credential snapshot admitted before bootstrap and reload sees later changes', async t => {
+  const [runtimeModules, {startRuntime}, {credentialsDocument}, {admitStandbyStartupCredentials}, {manualClock}] = await Promise.all([shippedRuntime(),
+    import('../../../apps/runtime/dist/src/runtime.js'), import('../../../apps/runtime/dist/src/credentials.js'),
+    import('../../../apps/runtime/dist/src/standby-credential-admission.js'), import('../../../apps/runtime/dist/tests/scenarios/virtual-time.js')]);
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-standby-admitted-')));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const file = join(root, 'edge.json'), stateDir = join(root, 'state');
+  const options = {...containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'standby'}), stateDir};
+  const config = {modules: {}, edge: productionEdge()};
+  const clock = manualClock(1_800_000_000_000);
+  const reader = {id: 'reader', source: 'bunny/parts/reader', digest: '2'.repeat(64), scopes: ['read']};
+  await writeFile(file, credentialsDocument([reader]), {mode: 0o600});
+  let started = false;
+  await entrypoint.startContainer(options, {
+    readRuntimeConfig: async () => config, runtime: runtimeModules, checkConfiguration,
+    admitStandbyCredentials: core => admitStandbyStartupCredentials(core, file),
+    prepareOwnershipRoot: async () => {
+      await writeFile(file, credentialsDocument([{...reader, scopes: ['control']}]), {mode: 0o600});
+    },
+    acquireRuntimeOwnership: () => ({}), refusePendingRestore: () => {}, bindCoreRuntimeOwnership: () => {},
+    parseArguments: () => ({}),
+    runProcess: async (parsed, startup) => {
+      assert.equal(parsed.edge, false);
+      const runtime = await startRuntime({...startup, stateDir, port: 0, clock, scheduler: clock.scheduler, log: () => {},
+        config: {...startup.config, edge: {...startup.config.edge, credentials: file}}});
+      try {
+        started = true;
+        assert.equal(runtime.health().status, 'ok');
+        assert.equal(runtime.gateway(), undefined);
+        await assert.rejects(runtime.reload(), {code: 'edge-credentials-invalid'});
+      } finally {await runtime.stop();}
+    },
+  });
+  assert.equal(started, true);
+});
+
+test('enabled and disabled production control retain their respective owner and grant behavior', async t => {
+  const [runtimeModules, {startRuntime}, {credentialsDocument, tokenDigest}, {manualClock}] = await Promise.all([shippedRuntime(),
+    import('../../../apps/runtime/dist/src/runtime.js'), import('../../../apps/runtime/dist/src/credentials.js'),
+    import('../../../apps/runtime/dist/tests/scenarios/virtual-time.js')]);
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-production-controls-')));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const file = join(root, 'edge.json');
+  const readToken = 'tok_SYNTHETIC835-production-read', controlToken = 'tok_SYNTHETIC835-production-control';
+  await writeFile(file, credentialsDocument([
+    {id: 'reader', source: 'bunny/parts/reader', digest: tokenDigest(readToken), scopes: ['read']},
+    {id: 'operator', source: 'bunny/parts/operator', digest: tokenDigest(controlToken), scopes: ['control']},
+  ]), {mode: 0o600});
+  const config = {modules: {lamp: {}}, edge: productionEdge()};
+  for (const control of ['enabled', 'disabled']) {
+    const clock = manualClock(1_800_000_000_000);
+    const seen = [];
+    const lamp = {name: 'lamp', create: () => ({
+      manifest: {name: 'lamp', apiVersion: '1.3', configure: section => ({config: section, devices: []})},
+      start: async ({sdk}) => {
+        await sdk.respond('bunny.cmd.power-set.fixture', command => {
+          seen.push(command.data.on);
+          return {status: 'accepted'};
+        });
+      },
+      stop: () => {},
+    })};
+    const production = {...runtimeModules, shippedModules: [runtimeModules.coreFactory, lamp]};
+    const options = containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: control});
+    const prepared = entrypoint.productionModules(config, production, checkConfiguration, options);
+    const runtime = await startRuntime({modules: prepared.modules, stateDir: join(root, control), port: 0, clock, scheduler: clock.scheduler,
+      config: {...config, edge: {...config.edge, credentials: file}}, log: () => {}, edge: {schemas: {}}});
+    const call = async (path, token, body) => {
+      const response = await fetch(new URL(path, runtime.url), {method: body === undefined ? 'GET' : 'POST',
+        headers: {authorization: 'Bearer ' + token, ...(body === undefined ? {} : {'content-type': 'application/json'})},
+        ...(body === undefined ? {} : {body: JSON.stringify(body)})});
+      return {status: response.status, body: await response.json()};
+    };
+    try {
+      const write = {target: 'fixture', requestId: 'fixture-on', data: {on: true}};
+      assert.equal((await call('/api/v2/history?settings=snapshot', readToken)).status, 200, control);
+      assert.equal((await call('/api/v2/history?settings=snapshot', controlToken)).status, 403, control);
+      assert.equal((await call('/api/v2/commands/power-set', readToken, write)).status, 403, control);
+      const permitted = await call('/api/v2/commands/power-set', controlToken, write);
+      assert.equal(permitted.status, 200, control);
+      assert.equal(permitted.body.status, 'accepted', control);
+      assert.deepEqual(seen, [true], control);
+    } finally {await runtime.stop();}
+  }
 });
