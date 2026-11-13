@@ -440,3 +440,61 @@ for (const drain of ['next commit', 'restart'] as const) {
     assert.equal(JSON.stringify(diagnostics).includes(escapedMarker), false);
   });
 }
+
+void test('a newly registered quoted value is refused by public definition and history reads', async context => {
+  const clock = manualClock(), core = createCoreModule(), redactions = new Redactions();
+  const reader = {source: 'bunny/parts/reader', token: 'synthetic-history-reader-token', scopes: ['read'] as const};
+  const owner = {manifest: {name: 'nanoleaf', apiVersion: '1.2', configure: () => ({config: {}, devices: ['wall']})},
+    start: () => {}, stop: () => {}};
+  const files = await edgeConfig(context, [reader], {modules: {nanoleaf: {}}, mcp: true});
+  const {runtime} = await run(context, {modules: [core, owner], configFile: files.config, edge: {schemas: {}},
+    redactions, clock: {now: clock.now}, scheduler: clock.scheduler});
+  const saved = await core.automation.create({...eventRule, name: escapedMarker}, true);
+  await core.automation.replaceSettings({...DEFAULT_SETTINGS, noFlourishes: true});
+  await flush();
+
+  const headers = {authorization: `Bearer ${reader.token}`};
+  const get = (path: string) => fetch(new URL(path, runtime.url), {headers});
+  assert.equal((await get('/api/v2/families/automation-rule')).status, 200, 'prime the kept family copy');
+  const before = await get('/api/v2/history');
+  assert.equal(before.status, 200);
+  const allRows = core.history.read({});
+  assert.ok(Array.isArray(allRows));
+  assert.equal(allRows.length, 2);
+
+  const accept = {...headers, accept: 'application/json, text/event-stream', 'content-type': 'application/json'};
+  const mcp = (request: object, given = accept) => fetch(new URL('/mcp', runtime.url), {
+    method: 'POST', headers: given, body: JSON.stringify({jsonrpc: '2.0', ...request}),
+  });
+  const initialized = await mcp({id: 1, method: 'initialize', params: {
+    protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'synthetic-history', version: '1.0.0'},
+  }});
+  assert.equal(initialized.status, 200);
+  const session = initialized.headers.get('mcp-session-id');
+  assert.ok(session);
+  const mcpHeaders = {...accept, 'mcp-session-id': session, 'mcp-protocol-version': '2025-11-25'};
+  await mcp({method: 'notifications/initialized'}, mcpHeaders);
+  const historyTool = async (filter: object) => {
+    const response = await mcp({id: 2, method: 'tools/call', params: {name: 'core_history', arguments: filter}}, mcpHeaders);
+    assert.equal(response.status, 200);
+    return (await response.json() as {result: {isError?: boolean; structuredContent: {data: unknown}}}).result;
+  };
+  assert.deepEqual((await historyTool({})).structuredContent.data, {result: {rows: allRows}});
+
+  redactions.add(escapedMarker);
+  for (const path of [`/api/v2/automation/rules/${saved.id}`, '/api/v2/families/automation-rule',
+    '/api/v2/snapshot?families=automation-rule,automation-settings', '/api/v2/history']) {
+    const response = await get(path);
+    assert.equal(response.status, 500, path);
+    const body = await response.text();
+    assert.equal(body.includes(JSON.stringify(escapedMarker).slice(1, -1)), false, path);
+  }
+  const refused = await historyTool({});
+  assert.equal(refused.isError, true);
+  assert.equal(JSON.stringify(refused).includes(JSON.stringify(escapedMarker).slice(1, -1)), false);
+  const filtered = await get('/api/v2/history?session=settings');
+  assert.equal(filtered.status, 200);
+  assert.deepEqual((await filtered.json() as {rows: unknown}).rows, allRows.slice(1));
+  assert.deepEqual((await historyTool({session: 'settings'})).structuredContent.data, {result: {rows: allRows.slice(1)}});
+  assert.deepEqual(core.history.read({}), allRows, 'private history is preserved');
+});

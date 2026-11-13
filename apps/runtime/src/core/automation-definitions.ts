@@ -13,6 +13,8 @@ export const AUTOMATION_FAMILIES = ['automation-rule', 'automation-routine', 'au
 type Family = typeof AUTOMATION_FAMILIES[number];
 export const isAutomationDefinitionSchema = (schema: string): boolean =>
   AUTOMATION_FAMILIES.some(family => schema === `${SCHEMA_BASE}${family}/2.0`);
+export const isAutomationDefinitionType = (type: string): boolean =>
+  AUTOMATION_FAMILIES.some(family => type === `org.bunny.${family}.updated` || type === `org.bunny.${family}.removed`);
 export const isAutomationDefinitionFamily = (family: string): family is Family => AUTOMATION_FAMILIES.some(name => name === family);
 
 export function holdsAutomationSecret(registry: Redactions, value: unknown): boolean {

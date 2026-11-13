@@ -354,7 +354,9 @@ export class Gateway {
         throw refuse(body.error.code, 'the automation request was refused');
       }
       if (method === 'GET') authorize();
-      if (this.#options.redactions.holds(JSON.stringify(answer.body))) throw refuse('internal', 'automation holds a secret');
+      if (this.#options.redactions.holds(JSON.stringify(answer.body)) || holdsAutomationSecret(this.#options.redactions, answer.body)) {
+        throw refuse('internal', 'automation holds a secret');
+      }
       return json(answer.status, answer.body);
     } catch (error) {
       if (error instanceof ModuleUnavailable) throw refuse('unavailable', 'the core is not running');

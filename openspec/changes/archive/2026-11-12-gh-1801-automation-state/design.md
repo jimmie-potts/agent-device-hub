@@ -18,7 +18,9 @@ send, including restart. The opt-in SDK policy settles a protected state as
 discarded and reports a fixed refusal. An ordinary send refusal would keep
 retrying the protected envelope and hold up later messages. A success return
 would count it as delivered. The discard preserves owner rows and history
-and lets admissible rows continue in order.
+and lets admissible rows continue in order. The HTTP and MCP history readers
+check the selected automation rows against the same registry before serving a
+page. Private history remains available to its owner.
 
 ## Migration and recovery
 

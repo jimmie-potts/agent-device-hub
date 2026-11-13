@@ -1965,3 +1965,9 @@ The core SHALL serve current saved event rules, weekly routines, automation sett
 - **WHEN** the live registry learns a protected value in that state before a later delivery
 - **THEN** the outbox SHALL discard the state in settlement, without delivering it or counting it as sent
 - **AND** later admissible messages SHALL retain their order and identities, and the owner definition and retained history SHALL stay intact
+
+#### Scenario: A public history read includes a newly protected definition
+
+- **WHEN** the selected history rows include an automation definition carrying a value now protected by the live registry
+- **THEN** HTTP and MCP SHALL refuse the read without exposing the value or changing retained history
+- **AND** a filter that excludes the protected rows SHALL still serve its result

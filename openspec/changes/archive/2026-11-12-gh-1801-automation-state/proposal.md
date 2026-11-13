@@ -14,6 +14,7 @@ The core owns automation definitions, but SDK sync and retained history do not e
 
 - `bunny-message-profile` defines the payload families and their bookkeeping declarations.
 - `bunny-runtime` owns the current records, atomic saves and retained history.
+- `bunny-sdk` defines opt-in disposal of state that becomes inadmissible before delivery.
 
 ## Impact
 

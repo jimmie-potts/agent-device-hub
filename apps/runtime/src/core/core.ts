@@ -33,7 +33,7 @@ import {ArtPart} from './art-part.js';
 import {ArtShowPart} from './art-show.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
-import {holdsAutomationSecret, isAutomationDefinitionSchema, type HoldsAutomationSecret} from './automation-definitions.js';
+import {holdsAutomationSecret, isAutomationDefinitionSchema, isAutomationDefinitionType, type HoldsAutomationSecret} from './automation-definitions.js';
 import type {Redactions} from '../log.js';
 import type {AutomationDevice} from './automation-devices.js';
 import type {ArtCatalogRead} from './art-catalog.js';
@@ -812,7 +812,13 @@ class Core {
   }
   /** History's rows with the open spans of the entities that have a change row among them (#1773): the gateway's read. */
   historyPage(filter: HistoryFilter): HistoryPage | ErrorBody {
-    return this.#store.open ? this.#store.history.page(filter) : errorBody('unavailable', {detail: 'the core history is unavailable'});
+    if (!this.#store.open) return errorBody('unavailable', {detail: 'the core history is unavailable'});
+    const page = this.#store.history.page(filter);
+    if (page.rows.some(row => row.source === this.#sdk.source &&
+      isAutomationDefinitionType(row.type) && this.holdsAutomationSecret(row.record))) {
+      return errorBody('internal', {detail: 'history holds a secret, which the gateway never serves'});
+    }
+    return page;
   }
 
   /** Sends one tracked action through the dispatcher (#782); see `CoreActions.dispatch`. */
