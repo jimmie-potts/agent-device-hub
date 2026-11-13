@@ -95,7 +95,7 @@ function readTool(host: McpHost, module: string, tool: ModuleTool, check: Valida
       const historyPage = module === CORE_MODULE && tool.name === 'history' &&
         typeof value === 'object' && value !== null && 'rows' in value && 'open' in value && value.open !== undefined ? value : undefined;
       const historyPageValid = historyPage === undefined ? undefined : check(historyPage);
-      const holdsSecret = historyPage !== undefined && historyPageValid
+      const holdsSecret = historyPage !== undefined && historyPageValid === true
         ? host.holdsSecret(JSON.stringify({rows: historyPage.rows})) || host.holdsSecret(JSON.stringify(historyPage.open))
         : host.holdsSecret(JSON.stringify(value) ?? '');
       if (holdsSecret) return refused(errorBody('internal', {detail: 'the module\'s answer holds a secret, which the gateway never serves'}));
