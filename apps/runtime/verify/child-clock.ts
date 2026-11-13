@@ -48,19 +48,30 @@ export class ChildClock {
     return this.#workers.wrap(module);
   }
 
-  /**
-   * Moves the clock to `toMs` once no worker call is held, which fires the timers due by then, and gives real work its
-   * turn. `waiting` says whether the child waits on the supervisor, such as for a device's answer.
-   */
+  /** Moves the clock after held worker calls finish, fires due timers and gives real work its turn. */
   async advance(toMs: number, waiting: () => boolean): Promise<Advanced> {
     await this.#workers.idle();
     const ms = toMs - this.#clock.now();
     if (ms > 0) this.#clock.advance(ms);
-    const busy = (): boolean => this.#work.busy() || waiting() || this.#workers.size > 0;
+    const busy = (): boolean => this.#busy(waiting);
     await settle(busy);
+    return this.#state(busy());
+  }
+
+  /** Gives ready callbacks their turn and samples work without moving the clock or waiting for workers. */
+  async observe(waiting: () => boolean): Promise<Advanced> {
+    await settle(() => false);
+    return this.#state(this.#busy(waiting));
+  }
+
+  #busy(waiting: () => boolean): boolean {
+    return this.#work.busy() || waiting() || this.#workers.size > 0;
+  }
+
+  #state(busy: boolean): Advanced {
     const next = this.#clock.next();
     // A timer due at NaN counts as due now, as the in-memory harness's stepping takes it.
-    return {nowMs: this.#clock.now(), nextDueMs: next === undefined ? null : Number.isFinite(next) ? next : this.#clock.now(), busy: busy()};
+    return {nowMs: this.#clock.now(), nextDueMs: next === undefined ? null : Number.isFinite(next) ? next : this.#clock.now(), busy};
   }
 }
 

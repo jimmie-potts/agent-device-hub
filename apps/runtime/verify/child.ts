@@ -84,19 +84,20 @@ process.on('message', (value: unknown) => {
       links.hear(message);
       return;
     case 'advance':
-      advance(message.id, message.toMs);
+      advance(message);
       return;
   }
 });
 
 /** Advances one after another, in the order the supervisor sent them. */
 let advancing: Promise<void> = Promise.resolve();
-function advance(id: number, toMs: number): void {
+function advance(message: Extract<SupervisorMessage, {type: 'advance'}>): void {
   advancing = advancing.then(async () => {
     if (clock === undefined) return;
     // The child waits on the supervisor while a device call or a fixture device's answer is outstanding.
-    const answer = await clock.advance(toMs, () => links.waiting > 0 || switches.size > 0 || shows.size > 0);
-    send({type: 'advanced', id, ...answer, lines});
+    const waiting = (): boolean => links.waiting > 0 || switches.size > 0 || shows.size > 0;
+    const answer = 'observe' in message ? await clock.observe(waiting) : await clock.advance(message.toMs, waiting);
+    send({type: 'advanced', id: message.id, ...answer, lines});
   });
 }
 

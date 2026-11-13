@@ -716,7 +716,7 @@ class Run implements RunHarness {
   /** Each part's wrapper, so that on virtual time `sdk` answers the same object for the same part, as on the real clock. */
   readonly #wrapped = new WeakMap<Participant, Participant>();
 
-  /** The participant, each of whose calls first sends the run the time it is owed, on virtual time. */
+  /** On virtual time, a part's calls follow prior actions and send the run any time it is owed. */
   #caughtUp(role: Role, participant: Participant): Participant {
     const known = this.#wrapped.get(participant);
     if (known !== undefined) return known;
@@ -724,6 +724,7 @@ class Run implements RunHarness {
       const value: unknown = Reflect.get(target, property);
       if (typeof value !== 'function') return value;
       return async (...args: unknown[]): Promise<unknown> => {
+        await this.#actions;
         await this.#catchUp();
         const invoke = () => Promise.resolve((value as (...args: unknown[]) => unknown).apply(target, args));
         if (property === 'request' && typeof args[0] === 'string' && args[0].startsWith('bunny.cmd.inbox-handle.')) {

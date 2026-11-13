@@ -32,7 +32,7 @@ export type ChildMessage =
   | {type: 'applied'; id: number}
   | {type: 'flushed'; id: number; readerStream?: number}
   /**
-   * A run on virtual time (Hub #1710): the child moved its clock to `nowMs` and gave real work its turn. `nextDueMs` is
+   * On virtual time the child moved its clock or observed work without moving it. `nowMs` is its current time. `nextDueMs` is
    * when its earliest pending timer is due (null with none), `busy` whether work is still in flight that may change
    * what the run shows without a timer, and `lines` how many lines it has written to stderr, which the supervisor reads
    * on a pipe of its own.
@@ -53,8 +53,9 @@ export type SupervisorMessage =
   /** Ends a remote part's stream at the edge, as a lost connection would; the part reconnects on its own. */
   | {type: 'disconnect'; id: number; source: string}
   | {type: 'flush'; id: number}
-  /** A run on virtual time: moves the child's clock to `toMs`, which the child answers with `advanced` (Hub #1710). */
-  | {type: 'advance'; id: number; toMs: number};
+  /** On virtual time, move to `toMs` or observe without moving. The child answers with `advanced`. */
+  | {type: 'advance'; id: number; toMs: number}
+  | {type: 'advance'; id: number; observe: true};
 
 /** The harness API's routes, under the supervisor's own loopback listener (the run's `harness` endpoint). */
 export const HARNESS_PATH = '/api/harness/v1';
@@ -98,7 +99,8 @@ export type BoundaryReport = {
 /**
  * `GET clock` and `POST clock/advance {ms}` in a run on virtual time (Hub #1710): the run's virtual time, when the next
  * timer of the runtime or its simulated devices is due (null with none), and whether work is still in flight that may
- * change what the run shows without a timer. A run on the real clock answers both with 409.
+ * change what the run shows without a timer. An advance of zero observes without moving either clock.
+ * A live child that cannot be observed returns 503. A run on the real clock answers both routes with 409.
  */
 export type ClockState = {clock: 'virtual'; nowMs: number; nextDueMs: number | null; busy: boolean};
 /** The most one `POST clock/advance` moves virtual time. */

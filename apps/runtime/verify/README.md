@@ -160,8 +160,10 @@ the run's time:
   due in the devices or the runtime. Each step moves the devices' clock, then the child's: the child waits for its
   modules' worker calls (at most 10 s real each), moves its clock, gives real work its turn (`apps/runtime/tests/scenarios/real-work.ts`)
   and answers on its IPC channel with its next due time, whether it is busy, and how many stderr lines it has written. The
-  supervisor answers once its journal has read those lines. An advance of `0` is a settle: everything the runtime did
-  since is in the state the harness reports next.
+  supervisor answers once its journal has read those lines. An advance of `0` observes the current child's work and
+  next timer after giving ready callbacks their turn. Both clocks stay still and the observation leaves held workers
+  running. If the child has ended, the response reports the devices alone. If a live child cannot provide a fresh
+  observation, the harness returns 503 with `unavailable`.
 - A restart's `holdMs` moves virtual time by the hold, without waiting in real time.
 - A restart with `{"untilReleased": true}` keeps the runtime stopped until `POST /api/harness/v1/release` with `{}`, or
   at most 10 s of real time, and only then runs its hold. The release answers `{"status": "released"}`, 409 with
@@ -185,6 +187,9 @@ time. A hook against a stopped runtime asks for a restart that waits for a relea
 refuses connections, then releases it; once the restart answers, the adapter's clock follows the time its hold moved the
 run on.
 
+On virtual time the adapter sends SDK calls after any queued actions, such as simulated device controls, and
+after passing on any time already owed to the run.
+
 Some waits hold for real work, which virtual time would outrun (#1711). Each holds only while that work is in flight,
 looks again whenever the reader, a call or a part's stream changes, and fails after 15 s of real time with fixed text
 naming what is missing:
@@ -198,9 +203,9 @@ naming what is missing:
   ID. Each active synced copy uses the SDK's held revisions, tombstones and snapshot floor to account for its owner's
   state and removals. A counted overflow keeps outstanding live publications under review. A snapshot may account for
   lost state or removal. A timeout lists every missing publication.
-- At a virtual expectation's bound, including zero, the adapter settles time already owed, advances by zero and
-  refreshes. It captures pending answers, reconnects, resyncs, eligible publications and child work before the first
-  check. Each captured completion can justify one recheck. A reconnect includes resync. A named action waits for
+- At a virtual expectation's bound, including zero, the adapter settles time already owed, asks the child for a fresh
+  work observation without advancing its clock, and refreshes. It captures pending answers, reconnects, resyncs,
+  eligible publications and child work before the first check. Each captured completion can justify one recheck. A reconnect includes resync. A named action waits for
   live publications linked by its existing command trace. SDK requests use their own reply or refusal trace. An HTTP
   action uses unique admission evidence, fixed when its answer refresh completes. A gateway refusal before admission
   carries no trace. A later request with the same ID cannot change established evidence. An HTTP refusal may replay an

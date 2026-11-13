@@ -103,9 +103,9 @@ let restarting = false;
 let next = 0;
 /** Starts and restarts run one after another, so two never race for the runtime's port. */
 let lifecycle: Promise<void> = Promise.resolve();
-function queue(task: () => Promise<void>): Promise<void> {
+function queue<T>(task: () => Promise<T>): Promise<T> {
   const done = lifecycle.then(task);
-  lifecycle = done.catch(() => {});
+  lifecycle = done.then(() => {}, () => {});
   return done;
 }
 
@@ -252,7 +252,7 @@ function spawnRuntime(): Promise<string> {
 async function start(): Promise<void> {
   runtimeUrl = await spawnRuntime();
   // On virtual time the new child says when its first timers are due before the run moves on.
-  if (virtual !== undefined) await advanceChild(virtual.now(), current).catch(() => {});
+  if (virtual !== undefined) await advanceChild({toMs: virtual.now()}, current).catch(() => {});
   runtimePort = Number(new URL(runtimeUrl).port);
   await childHome.settle();
   // The agent hooks' producer file names the runtime's port, which restarts keep (Hub #926).
@@ -357,12 +357,13 @@ const live = (child: ChildProcess | undefined): child is ChildProcess =>
  * restart holds the runtime stopped. Otherwise a runtime that has ended or been replaced, or that does not answer in
  * time, is `Unsettled`, which ends the advance, so the runtime's restart need not wait behind it.
  */
-async function advanceChild(toMs: number, child: ChildProcess | undefined): Promise<void> {
+async function advanceChild(move: {toMs: number} | {observe: true}, child: ChildProcess | undefined): Promise<void> {
   if (child === undefined) {
     if (restarting) return;
     throw new Unsettled();
   }
   if (!live(child)) throw new Unsettled();
+  const observing = 'observe' in move;
   const number = generation;
   next += 1;
   const id = next;
@@ -374,15 +375,36 @@ async function advanceChild(toMs: number, child: ChildProcess | undefined): Prom
       done(message);
     };
     const exited = (): void => { end(undefined); };
-    const timer = setTimeout(exited, ADVANCE_ANSWER_MS);
+    const timer = setTimeout(exited, observing ? ANSWER_MS : ADVANCE_ANSWER_MS);
     child.once('exit', exited);
     waiting.set(id, end);
-    tell(child, {type: 'advance', id, toMs});
+    tell(child, {type: 'advance', id, ...move});
   });
-  if (answer?.type !== 'advanced') throw new Unsettled();
+  if (answer?.type !== 'advanced' || (observing && !live(child))) throw new Unsettled();
+  if (observing) {
+    await linesRead(child, number, answer.lines);
+    if (!live(child) || (heardLines.get(number) ?? 0) < answer.lines) throw new Unsettled();
+  }
   childNext = answer.nextDueMs ?? undefined;
   childBusy = answer.busy;
-  await linesRead(child, number, answer.lines);
+  if (!observing) await linesRead(child, number, answer.lines);
+}
+
+/** Reads fresh work evidence without moving time. An absent child has no pending work or timers. */
+async function observeClock(clock: ReturnType<typeof manualClock>): Promise<ClockState | undefined> {
+  const child = current;
+  if (live(child)) {
+    try {
+      await advanceChild({observe: true}, child);
+      return clockState(clock);
+    } catch (error) {
+      if (!(error instanceof Unsettled)) throw error;
+      if (live(child)) return undefined;
+    }
+  }
+  childNext = undefined;
+  childBusy = false;
+  return clockState(clock);
 }
 
 /** Resolves once the journal has read `count` stderr lines of the runtime `number`, it ended, or `ANSWER_MS` passed. */
@@ -424,7 +446,7 @@ async function advanceBy(ms: number): Promise<void> {
   try {
     // A runtime that already ended when the advance begins ends it before any step, so its restart is next.
     if (child === undefined && !restarting) throw new Unsettled();
-    await stepThrough(stepped, ms, () => Promise.resolve(), () => advanceChild(clock.now(), child));
+    await stepThrough(stepped, ms, () => Promise.resolve(), () => advanceChild({toMs: clock.now()}, child));
   } catch (error) {
     if (!(error instanceof Unsettled)) throw error;
   }
@@ -677,8 +699,14 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       if (virtual === undefined) return answer(response, 409, refusal('invalid-state', 'this run is on the real clock'));
       const ms = advanceOf(await body(request));
       if (ms === undefined) return answer(response, 400, refusal('invalid-request', `an advance takes only ms, a whole number of milliseconds from 0 to ${MAX_ADVANCE_MS}`));
+      const clock = virtual;
+      if (ms === 0) {
+        const observed = await queue(() => observeClock(clock));
+        if (observed === undefined) return answer(response, 503, refusal('unavailable', 'the runtime did not settle its clock'));
+        return answer(response, 200, observed);
+      }
       await queue(() => advanceBy(ms));
-      return answer(response, 200, clockState(virtual));
+      return answer(response, 200, clockState(clock));
     }
     case 'POST /restart': {
       const hold = holdOf(await body(request));
