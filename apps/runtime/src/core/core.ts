@@ -567,8 +567,13 @@ class Core {
         this.#opened();
         return;
       }
-      this.#failed(error);
-      throw error;
+      // A decoder can include stored settings in its error. Classify capacity
+      // above, then give startup diagnostics only a fixed message.
+      const failure = this.#signal.aborted
+        ? new DOMException('the core start was aborted', 'AbortError')
+        : new Error('storage-unavailable');
+      this.#failed(failure);
+      throw failure;
     } finally {
       await lease?.release();
     }

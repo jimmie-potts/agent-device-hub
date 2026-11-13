@@ -9,7 +9,7 @@ import {LivePublication} from './live-publication.js';
 import {Backoff} from './backoff.js';
 import type {CoreHandle, CorePart} from './core.js';
 import {AutomationStore} from './automation-store.js';
-import {AutomationError, createAutomation, DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS, parseSettings, storedEventRules, storedInterruptKinds, type Automation, type AutomationSettings, type LogEntry, type Rule} from './automation.js';
+import {AutomationError, createAutomation, DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS, storedAutomationSettings, storedEventRules, storedInterruptKinds, type Automation, type AutomationSettings, type LogEntry, type Rule} from './automation.js';
 import type {ModeParticipant} from './mode-participants.js';
 import type {CoreChange} from './store.js';
 import type {Operation} from './operations.js';
@@ -86,7 +86,7 @@ export class AutomationPart implements CorePart {
       drafts.push(...saved.map(routine => definitions.current('automation-routine', routineDefinition(routine))));
     }
     if (families.includes('automation-settings')) {
-      const settings = retained === undefined ? engine?.settings() : parseSettings(retained.store.settings());
+      const settings = retained === undefined ? engine?.settings() : storedAutomationSettings(retained.store);
       if (settings !== undefined) drafts.push(definitions.current('automation-settings', settingsDefinition(settings)));
     }
     if (families.includes('automation-interrupt-set')) {

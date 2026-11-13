@@ -374,9 +374,10 @@ export class Tracker {
     // Capture before the first await: a caller retains its original objects while admission waits.
     const {sdk, clock, store, ready} = this.#options;
     const requestId = input.requestId ?? randomUUID();
+    const requestedBy = input.requestedBy;
     const refuse = (code: ErrorCode, detail: string, trace?: TraceContext): ErrorBody => {
       const body = errorBody(code, {...ID.test(requestId) ? {requestId} : {}, detail});
-      this.#record('command.rejected', {'bunny.participant': input.requestedBy, ...requestField(requestId), 'bunny.outcome': Outcome.rejected, ...refusedFields(code)}, trace);
+      this.#record('command.rejected', {'bunny.participant': requestedBy, ...requestField(requestId), 'bunny.outcome': Outcome.rejected, ...refusedFields(code)}, trace);
       return body;
     };
     if (this.#options.standby === true) return refuse('unavailable', 'the core is in standby', input.parent);

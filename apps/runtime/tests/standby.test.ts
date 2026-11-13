@@ -8,7 +8,7 @@ import {InProcessBus, prepareMessage} from '@jimmie-potts/sdk';
 import {bindCoreRuntimeOwnership, createCoreModule, DEFAULT_CONSUMERS, isCoreModule, type CoreModule} from '../src/core/core.js';
 import {AutomationError, DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS} from '../src/core/automation.js';
 import {AutomationStore} from '../src/core/automation-store.js';
-import {DEFAULT_ART_POLICY, initialArtRecord} from '../src/core/art-schedule-model.js';
+import {DEFAULT_ART_POLICY, initialArtRecord, wakingDay} from '../src/core/art-schedule-model.js';
 import {ArtScheduleStore} from '../src/core/art-schedule-store.js';
 import {CoreStore} from '../src/core/store.js';
 import type {ArtPlan} from '../src/core/art-plans.js';
@@ -209,6 +209,92 @@ void test('standby restarts keep session, tracker and outbox rows while holding 
   await restartedHarness.stop();
 });
 
+void test('the same due art slot and power evidence produce active work and no standby effects', async t => {
+  const root = await stateDir(t), clock = manualClock(at);
+  const bus = new InProcessBus({now: clock.now, scheduler: clock.scheduler});
+  const device = bus.connect('bunny/modules/nanoleaf');
+  const art = bus.connect('bunny/modules/art');
+  const received: Array<[string, unknown]> = [];
+  let reads = 0;
+  await device.serveSync(['device'], () => {
+    reads += 1;
+    const lamp = deviceRecord('wall', 1, 'nanoleaf', 'available');
+    lamp.capabilities.power = {supported: true};
+    lamp.observed = {status: 'known', observedAtMs: clock.now(), power: {status: 'known', value: true},
+      brightness: {status: 'unknown'}};
+    return {revision: 1, states: [deviceState(lamp)]};
+  });
+  await device.respond<{on: boolean}>('bunny.cmd.power-set.wall', command => {
+    received.push(['power', command.data.on]);
+    return {status: 'accepted'};
+  });
+  await art.respond<{action: string}>('bunny.cmd.art-auto.art', command => {
+    received.push(['art', command.data.action]);
+    return {status: 'accepted'};
+  });
+  t.after(async () => { await device.close(); await art.close(); });
+
+  async function start(standby: boolean) {
+    const core = createCoreModule({standby});
+    const harness = new CoreHarness(core, {bus, stateDir: root, clock, scheduler: clock.scheduler});
+    t.after(() => harness.stop());
+    await harness.start();
+    core.setModeParticipants([{id: 'wall', kind: 'nanoleaf'}]);
+    core.setAutomationDevices([{id: 'wall', owner: device.source}]);
+    await flush();
+    return {core, harness};
+  }
+
+  const initial = await start(false);
+  const limit = await initial.core.automation.limits?.save('wall', {enabled: true, durationMs: 1_000});
+  assert.ok(limit);
+  const db = initial.harness.moduleDatabase();
+  assert.ok(db);
+  const store = new ArtScheduleStore(db);
+  const slot = at + 300_500;
+  await store.change(state => {
+    state.record.policy = {...state.record.policy, enabled: true, ambient: false, generation: true};
+    const day = wakingDay(at, state.record.policy);
+    assert.ok(day);
+    state.day = {...day, settingsRevision: state.record.settingsRevision, starts: [slot], claimed: 0};
+  });
+  await initial.harness.stop();
+  assert.equal(received.length, 0);
+  const readCount = reads;
+
+  const state = new DatabaseSync(join(root, 'core.sqlite'));
+  let before: ReturnType<typeof rows>;
+  try { before = rows(state); } finally { state.close(); }
+  for (const attempt of [0, 1]) {
+    const standby = await start(true);
+    if (attempt === 0) clock.advance(1_000);
+    await flush();
+    assert.equal(clock.pending(), 0);
+    assert.equal(reads, readCount);
+    assert.equal(received.length, 0);
+    const settings = snapshot(standby.core);
+    assert.ok(settings.records.some(record => record.family === 'power-limit' && record.value.enabled));
+    assert.ok(settings.records.some(record => record.family === 'art-schedule' && record.value.policy.generation));
+    const current = standby.harness.moduleDatabase();
+    assert.ok(current);
+    assert.deepEqual(rows(current), before);
+    await standby.harness.stop();
+  }
+
+  const active = await start(false);
+  clock.advance(1_000);
+  await flush();
+  await active.core.automation.settled();
+  await flush();
+  assert.ok(received.some(([kind, value]) => kind === 'art' && value === 'start'));
+  assert.ok(received.some(([kind, value]) => kind === 'power' && value === false));
+  const activeDb = active.harness.moduleDatabase();
+  assert.ok(activeDb);
+  assert.equal(activeDb.prepare('SELECT COUNT(*) AS count FROM automation_art_claims').get()?.count, 1);
+  assert.equal(activeDb.prepare('SELECT COUNT(*) AS count FROM automation_moment_reservations').get()?.count, 1);
+  await active.harness.stop();
+});
+
 void test('standby validates retained settings and the existing ordered consumer list before becoming readable', async t => {
   for (const fault of ['settings', 'consumers'] as const) {
     await t.test(fault, async tt => {
@@ -230,6 +316,107 @@ void test('standby validates retained settings and the existing ordered consumer
       assert.ok('error' in standby.history.settings({mode: 'snapshot'}));
     });
   }
+});
+
+void test('malformed retained settings and layouts never enter standby startup diagnostics', async t => {
+  for (const [table, column, marker, activeStatus] of [
+    ['automation_settings', 'payload', 'synthetic ', 'degraded'],
+    ['lighting_layout', 'record', 'xsyntheticprivate', 'ok'],
+  ] as const) {
+    await t.test(table, async tt => {
+      const root = await stateDir(tt), clock = manualClock(at);
+      const initial = await run(tt, {stateDir: root, modules: [createCoreModule()], clock, scheduler: clock.scheduler});
+      await initial.runtime.stop();
+      const db = openModuleDatabase(root, 'core');
+      try { db.prepare(`UPDATE ${table} SET ${column} = ?`).run(marker); }
+      finally { db.close(); }
+      for (const standby of [false, true]) {
+        const core = createCoreModule({standby});
+        const failures: unknown[] = [];
+        const {runtime, logs} = await run(tt, {stateDir: root, modules: [core], clock, scheduler: clock.scheduler,
+          onCoreFailure: error => { failures.push(error); }});
+        assert.equal(runtime.health().status, standby ? 'degraded' : activeStatus);
+        await runtime.stop();
+        if (standby) {
+          assert.equal(failures.length, 1);
+          assert.ok(failures[0] instanceof Error && failures[0].message === 'storage-unavailable');
+          assert.equal(failures[0].cause, undefined);
+          assert.ok(logs.some(record => record.event_name === 'runtime.module.failed'));
+          assert.ok('error' in core.history.settings({mode: 'snapshot'}));
+        }
+        assert.equal(JSON.stringify({logs, health: runtime.health()}).includes(marker), false);
+      }
+    });
+  }
+});
+
+void test('active late dispatch refusal retains the requester captured at admission', async t => {
+  const root = await stateDir(t), clock = manualClock(at);
+  const core = createCoreModule();
+  const harness = new CoreHarness(core, {bus: new InProcessBus({now: clock.now, scheduler: clock.scheduler}),
+    stateDir: root, clock, scheduler: clock.scheduler});
+  t.after(() => harness.stop());
+  await harness.start();
+  const db = harness.moduleDatabase();
+  assert.ok(db);
+  db.exec("CREATE TRIGGER refuse_operation BEFORE INSERT ON core_operations BEGIN SELECT RAISE(ABORT, 'synthetic'); END");
+  const input = {...structuredClone(action), requestedBy: action.requestedBy};
+  const pending = core.actions.dispatch(input);
+  input.requestedBy = 'bunny/parts/synthetic-altered';
+  const result = await pending;
+  assert.ok('error' in result && result.error.code === 'internal');
+  const refusal = harness.logs.find(record => record.event === 'command.rejected');
+  assert.equal(refusal?.fields['bunny.participant'], action.requestedBy);
+  assert.deepEqual(harness.sent, []);
+});
+
+void test('a full disk during the legacy split preserves all definitions and keeps standby health available', async t => {
+  const root = await stateDir(t), clock = manualClock(at);
+  const initial = await run(t, {stateDir: root, modules: [createCoreModule({standby: true})], clock, scheduler: clock.scheduler});
+  await initial.runtime.stop();
+
+  const retained = (db: DatabaseSync) => ({
+    rules: db.prepare('SELECT * FROM rules ORDER BY id').all(),
+    guards: db.prepare('SELECT * FROM automation_power_guard ORDER BY rule_id').all(),
+    outbox: db.prepare('SELECT * FROM bunny_outbox ORDER BY seq').all(),
+    history: db.prepare('SELECT * FROM core_history ORDER BY seq').all(),
+  });
+  const seed = openModuleDatabase(root, 'core');
+  let before: ReturnType<typeof retained>;
+  try {
+    const store = new AutomationStore(seed, () => {}, {settings: DEFAULT_SETTINGS, interruptSet: [...DEFAULT_INTERRUPT_SET]});
+    for (let index = 0; index < 64; index += 1) {
+      const id = `legacy-${index}`;
+      assert.equal(store.insertRule({id, name: 'Synthetic power window'.repeat(3), enabled: true, kind: 'routine',
+        trigger: JSON.stringify({schema: 'power-window/1.0', days: [1], onTime: '17:00', offTime: '20:00'}),
+        action: JSON.stringify({target: 'synthetic-long-device-identifier-'.repeat(3) + 'wall', definitionId: id}),
+        createdAtMs: at, updatedAtMs: at}, 64), true);
+      assert.equal(store.claimPowerBoundary(id, id, at), true);
+    }
+    before = retained(seed);
+  } finally { seed.close(); }
+
+  const core = createCoreModule({standby: true});
+  const limited: CoreModule = {...core, start: context => {
+    const db = context.database();
+    const pages = db.prepare('PRAGMA page_count').get()?.page_count;
+    assert.equal(typeof pages, 'number');
+    assert.equal(db.prepare(`PRAGMA max_page_count=${String(pages)}`).get()?.max_page_count, pages);
+    return core.start(context);
+  }};
+  const failures: unknown[] = [];
+  const {runtime, logs} = await run(t, {stateDir: root, modules: [limited], clock, scheduler: clock.scheduler,
+    onCoreFailure: error => { failures.push(error); }});
+  assert.deepEqual(failures, []);
+  const local = await health(runtime.url);
+  assert.equal(local.status, 200);
+  assert.equal(local.body.status, 'ok');
+  assert.ok('error' in core.history.settings({mode: 'snapshot'}));
+  assert.ok(logs.some(record => record.event_name === 'operation.failed' && record.attributes['bunny.code'] === 'capacity'));
+  await runtime.stop();
+  const after = openModuleDatabase(root, 'core');
+  try { assert.deepEqual(retained(after), before); }
+  finally { after.close(); }
 });
 
 void test('standby adds only the settings history metadata to a pre-reader store', async t => {

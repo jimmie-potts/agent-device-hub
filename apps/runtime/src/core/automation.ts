@@ -148,6 +148,11 @@ function ruleFromRow(row:RuleRow): Rule {
   } catch { throw new Error('invalid-state'); }
 }
 
+export function storedAutomationSettings(store: AutomationStore): AutomationSettings {
+  try { return parseSettings(store.settings()); }
+  catch (error) { throw new Error('invalid-state', {cause: error}); }
+}
+
 export function storedEventRules(store: AutomationStore): Rule[] {
   return store.rules().filter(row => row.kind === 'event').map(ruleFromRow);
 }
@@ -206,8 +211,7 @@ export function createAutomation(options:AutomationOptions) {
   const {store} = options;
   let rules = storedEventRules(store);
   let interruptSet = new Set(storedInterruptKinds(store));
-  let settings: AutomationSettings;
-  try { settings = parseSettings(store.settings()); } catch { throw new Error('invalid-state'); }
+  let settings = storedAutomationSettings(store);
   const recent = new Set<string>();
   const queue: {event:HubEvent; matched:Rule[]; parent?:TraceContext}[] = [];
   let running: Promise<void> | undefined, closed = false;
