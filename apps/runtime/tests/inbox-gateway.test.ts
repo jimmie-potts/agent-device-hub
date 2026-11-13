@@ -126,7 +126,10 @@ it('gateway and MCP readers see the whole inbox/history; handling needs control 
   await internal('synthetic-history-reader_history', {}, 'holds a secret');
 
   historyAnswer = {rows: [], open: undefined};
-  assert.deepEqual((await tool('core_history', filter)).structuredContent.data.result, {rows: []});
+  const nonJson = await tool('core_history', filter);
+  assert.equal(nonJson.isError, true);
+  assert.deepEqual(nonJson.structuredContent, {kind: 'gateway-error', code: 'transport-failure', priorEffects: 'none', retry: 'never-automatically'},
+    'an explicit undefined value remains a non-JSON result and is refused by MCP');
   historyAnswer = {rows: [], open: 'malformed'};
   await internal('core_history', filter, 'holds a secret');
   historyAnswer = errorBody('unavailable', {detail: 'synthetic open refusal'});
