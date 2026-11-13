@@ -10,13 +10,13 @@ import {isReadReceipt, receiptQualification} from '../read-receipts/qualificatio
 // stories add, such as #923's inbox, join through `CorePart` and derive their rows from each tracked action's change.
 // Its own `operation` family (Hub #922, operation-records.ts) is the first such part: each tracked action's latest state.
 import type {DatabaseSync} from 'node:sqlite';
-import {createAgentState, type Consumer, type Outcome} from '@jimmie-potts/agent-state';
+import {createAgentState, type Consumer, type Outcome, type StorageLease} from '@jimmie-potts/agent-state';
 import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
   sessionEntityId, type ApprovalRecoverRequest, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
-  type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
+  fullDisk, type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
 import {DEFAULT_HISTORY_RULES, type HistoryFilter, type HistoryPage, type HistoryRow, type HistoryRules} from './history.js';
 import {SETTINGS_FAMILIES, type SettingsPage, type SettingsRead, type SettingsSnapshot} from './settings-contract.js';
@@ -115,6 +115,8 @@ export interface CorePart {
 }
 
 export type CoreOptions = {
+  /** Open retained settings without admitting runtime work. Selected once at construction. */
+  standby?: boolean;
   /** The parts that later stories add, and test stand-ins for them. */
   parts?: readonly CorePart[];
   /** The consumers acknowledgments are recorded for. Defaults to `DEFAULT_CONSUMERS`. */
@@ -243,6 +245,7 @@ export async function admitBoundCoreOwnership(modules: readonly BunnyModule[], s
 
 /** The core as a module of the runtime's fixed list. Its `create` and `simulate` are the same: it reaches no device. */
 export function createCoreModule(options: CoreOptions = {}): CoreModule {
+  const standby = options.standby === true;
   let core: Core | undefined;
   let contentContext: ModuleContext | undefined;
   let ownership: CoreOwnership | undefined;
@@ -275,7 +278,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
       }
       started = true;
       contentContext = context;
-      core = new Core(context, options, historyDevices, ownership, containsAutomationSecret);
+      core = new Core(context, options, historyDevices, ownership, containsAutomationSecret, standby);
       return core.start();
     },
     stop: () => core?.stop(),
@@ -333,10 +336,10 @@ class Core {
   readonly #settingsParts: readonly CorePart[];
   readonly #companions = new CompanionPart();
   readonly #art: ArtPart;
-  setMusicCaptureRetirement(retire: () => void): void {this.#music.setRetirement(retire);}
+  setMusicCaptureRetirement(retire: () => void): void {if (!this.standby) this.#music.setRetirement(retire);}
   get automation(): AutomationControls {return this.#automation.controls;}
-  setAutomationDevices(devices:readonly AutomationDevice[]):void {this.#automation.setDevices(devices);}
-  setArtCatalog(read: ArtCatalogRead): void {this.#automation.setArtCatalog(read);}
+  setAutomationDevices(devices:readonly AutomationDevice[]):void {if (!this.standby) this.#automation.setDevices(devices);}
+  setArtCatalog(read: ArtCatalogRead): void {if (!this.standby) this.#automation.setArtCatalog(read);}
   readonly #mode: ModePart;
   readonly #music: MusicCapturePart;
   readonly #lighting: MusicLightingPart;
@@ -355,6 +358,8 @@ class Core {
   #opened: () => void = () => {};
   #failed: (error: unknown) => void = () => {};
   #owner: AgentState | undefined;
+  #standbyLease: StorageLease | undefined;
+  readonly #signal: AbortSignal;
   /** Current positive Desktop archive evidence only; it expires when its module stops confirming it. */
   readonly #archived = new Map<string, {observedAtMs: number; untilMs: number}>();
   /** Why the owner is not open, while it is not, and when to try again. */
@@ -374,7 +379,8 @@ class Core {
   #starting: Promise<void> | undefined;
 
   constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic, history}: CoreOptions, historyDevices: readonly HistoryDevice[], ownership: CoreOwnership | undefined,
-    private readonly holdsAutomationSecret: HoldsAutomationSecret) {
+    private readonly holdsAutomationSecret: HoldsAutomationSecret, private readonly standby: boolean) {
+    this.#signal = context.signal;
     this.#sdk = context.sdk;
     this.#log = context.log;
     this.#clock = context.clock;
@@ -423,8 +429,8 @@ class Core {
       end: command => this.#tracker.endOperator(command),
     });
     const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, this.#art, this.#show, this.#music, this.#lighting, ...added];
-    this.#parts = parts;
     this.#settingsParts = [this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation];
+    this.#parts = standby ? this.#settingsParts : parts;
     this.#consumers = consumers;
     this.#ready = new Promise<void>((resolve, reject) => {
       this.#opened = resolve;
@@ -450,9 +456,12 @@ class Core {
         this.#companions.committed(change);
         return ()=>{this.#automation.publicationEnded(change);this.#companions.publicationEnded(change);};
       },
-      derivers: parts.flatMap(part => part.derive ?? []),
-      open: [
-        (database: DatabaseSync) => { this.#tracker.open(database); },
+      derivers: standby ? [] : parts.flatMap(part => part.derive ?? []),
+      open: standby ? [
+        ...this.#settingsParts.filter(part => part !== this.#automation).map(part => (database: DatabaseSync) => part.open?.(database)),
+        database => this.#automation.openSettings(database),
+      ] : [
+        database => this.#tracker.open(database),
         ...parts.flatMap(part => part.open === undefined ? [] : [(database: DatabaseSync) => { part.open?.(database); }]),
       ],
       ...(beforePublish === undefined ? {} : {beforePublish}),
@@ -464,12 +473,16 @@ class Core {
     this.#tracker = new Tracker({
       store: this.#store, sdk: context.sdk, log: context.log, trace: context.trace, clock: context.clock, scheduler: context.scheduler,
       files: context.files, currentDevice: id => this.#automation.currentDevice(id),
-      tracked: parts.flatMap(part => part.tracked ?? []), ready: this.#ready,
+      tracked: standby ? [] : parts.flatMap(part => part.tracked ?? []), ready: this.#ready, standby,
       storage: {failed: code => { this.#degraded(code); }, recovered: () => { this.#recovered(); }},
     });
   }
 
   start(): Promise<void> {
+    if (this.standby) {
+      this.#starting = this.#startStandby();
+      return this.#starting;
+    }
     // Everything registers before the first await: the runtime runs the next module's start once this one awaits.
     const handle: CoreHandle = {
       sdk: this.#sdk, log: this.#log, clock: this.#clock, ready: this.#ready,
@@ -529,8 +542,49 @@ class Core {
     return this.#starting;
   }
 
+  async #startStandby(): Promise<void> {
+    let lease: Awaited<ReturnType<CoreStore['acquire']>> | undefined;
+    try {
+      lease = await this.#store.acquire(OWNER_ID, this.#signal);
+      this.#signal.throwIfAborted();
+      const stored = await lease.load(this.#signal);
+      this.#signal.throwIfAborted();
+      if (stored !== null && JSON.stringify(stored.consumers) !== JSON.stringify(this.#consumers)) {
+        throw new Error('incompatible-state');
+      }
+      this.#automation.migrateRetainedRoutines(this.#clock);
+      const snapshot = this.#readSettings({mode: 'snapshot'});
+      if ('error' in snapshot) throw new Error('invalid-settings-state');
+      this.#signal.throwIfAborted();
+      if (!this.#stopped) {
+        this.#standbyLease = lease;
+        lease = undefined;
+      }
+      this.#opened();
+    } catch (error) {
+      if ((this.#store.takeFailure() === 'full' || fullDisk(error)) && !this.#signal.aborted) {
+        this.#ownerFailed('capacity');
+        this.#opened();
+        return;
+      }
+      this.#failed(error);
+      throw error;
+    } finally {
+      await lease?.release();
+    }
+  }
+
   async stop(): Promise<void> {
     this.#stopped = true;
+    if (this.standby) {
+      const lease = this.#standbyLease;
+      this.#standbyLease = undefined;
+      await this.#starting?.catch(() => {});
+      await lease?.release();
+      await this.#automation.close();
+      this.#store.close();
+      return;
+    }
     this.#timer?.();
     await this.#starting?.catch(() => {});
     this.#timer?.();
@@ -557,6 +611,7 @@ class Core {
   }
 
   async #open(): Promise<void> {
+    if (this.standby) throw new Error('session-owner-unavailable');
     this.#owner = await createAgentState({storage: this.#store, ownerId: OWNER_ID, consumers: this.#consumers.map(consumer => ({...consumer})), clock: () => this.#clock.now(),
       isArchived: (identity, _signal, ancestors) => Promise.resolve([identity, ...ancestors].some(item => {
         const key = sessionEntityId(item), evidence = this.#archived.get(key);
@@ -583,7 +638,7 @@ class Core {
   async #ensureOwner(): Promise<AgentState | Refusal> {
     if (this.#owner !== undefined) return this.#owner;
     const refusal = (): Refusal => ({code: this.#ownerDown, detail: this.#ownerDown === 'capacity' ? 'the core store is full' : 'the core is not taking changes now'});
-    if (!this.#reopen.ready(this.#clock.now())) return refusal();
+    if (this.standby || !this.#reopen.ready(this.#clock.now())) return refusal();
     try {
       await this.#open();
     } catch {
@@ -643,7 +698,7 @@ class Core {
    * (ADR 0012, "Repetition"), never a record per attempt above DEBUG.
    */
   #degraded(code: ErrorCode): void {
-    this.#music.storageFailed();
+    if (!this.standby) this.#music.storageFailed();
     const now = this.#clock.now();
     const fields = {'bunny.operation': 'storage', 'bunny.outcome': 'unavailable', 'bunny.code': code};
     const record = (extra: LogFields = {}): void => {
@@ -677,6 +732,7 @@ class Core {
    * is logged at DEBUG only. True when the records are up to date.
    */
   async #refresh(): Promise<boolean> {
+    if (this.standby) return false;
     try {
       if (await this.#store.refresh()) this.#recovered();
       this.#freshness.reset();
@@ -811,6 +867,7 @@ class Core {
 
   /** Assigns qualified mode participants once, without sending a command. */
   setModeParticipants(participants: readonly ModeParticipant[]): void {
+    if (this.standby) return;
     this.#mode.setParticipants(participants);
     this.#automation.setParticipants(participants);
     this.#lighting.setParticipants(participants);
@@ -834,9 +891,14 @@ class Core {
 
   /** Read only the covered owners. General sync can refresh and publish sessions. */
   settingsHistory(read: SettingsRead): SettingsSnapshot | SettingsPage | ErrorBody {
-    if (this.#stopped || this.#owner === undefined || !this.#store.open || !this.#automation.settingsAvailable()) {
+    const ready = this.standby ? this.#standbyLease !== undefined && !this.#signal.aborted : this.#owner !== undefined;
+    if (this.#stopped || !ready || !this.#store.open || !this.#automation.settingsAvailable()) {
       return errorBody('unavailable', {detail: 'the core settings are unavailable'});
     }
+    return this.#readSettings(read);
+  }
+
+  #readSettings(read: SettingsRead): SettingsSnapshot | SettingsPage | ErrorBody {
     return readSettingsHistory(this.#store.history, read, () =>
       this.#settingsParts.flatMap(part => part.states?.(SETTINGS_FAMILIES) ?? []));
   }
@@ -1003,6 +1065,7 @@ class Core {
    * changed, so each record's freshness holds at the sync's time.
    */
   async #serve(request: Message<SyncRequest>): Promise<Snapshot | ErrorBody> {
+    if (this.standby) return errorBody('unavailable', {detail: 'the core is in standby'});
     try {await this.#ready;} catch {
       // A sync during failed startup refuses; the startup owner reports the original store failure once.
       return errorBody('unavailable', {detail: 'the core could not open its store'});

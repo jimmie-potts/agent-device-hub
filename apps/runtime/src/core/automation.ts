@@ -148,6 +148,16 @@ function ruleFromRow(row:RuleRow): Rule {
   } catch { throw new Error('invalid-state'); }
 }
 
+export function storedEventRules(store: AutomationStore): Rule[] {
+  return store.rules().filter(row => row.kind === 'event').map(ruleFromRow);
+}
+
+export function storedInterruptKinds(store: AutomationStore): string[] {
+  const kinds = store.interruptSet();
+  if (!kinds.every(eventKind)) throw new Error('invalid-state');
+  return kinds;
+}
+
 /** Minutes past midnight of `atMs` in `timeZone` (the host zone when null). */
 function localMinutes(atMs:number, timeZone:string|null): number {
   const parts = new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',hourCycle:'h23',...(timeZone === null ? {} : {timeZone})}).formatToParts(atMs);
@@ -194,17 +204,15 @@ export type Automation = ReturnType<typeof createAutomation>;
 
 export function createAutomation(options:AutomationOptions) {
   const {store} = options;
-  let rules = store.rules().filter(row=>row.kind==='event').map(ruleFromRow);
-  const storedKinds = store.interruptSet();
-  if (!storedKinds.every(eventKind)) throw new Error('invalid-state');
-  let interruptSet = new Set(storedKinds);
+  let rules = storedEventRules(store);
+  let interruptSet = new Set(storedInterruptKinds(store));
   let settings: AutomationSettings;
   try { settings = parseSettings(store.settings()); } catch { throw new Error('invalid-state'); }
   const recent = new Set<string>();
   const queue: {event:HubEvent; matched:Rule[]; parent?:TraceContext}[] = [];
   let running: Promise<void> | undefined, closed = false;
   const reload = (commit: DefinitionCommit): void => {
-    const next = store.rules().filter(row => row.kind === 'event').map(ruleFromRow);
+    const next = storedEventRules(store);
     commit(() => { rules = next; });
   };
   const stopped = () => closed || !options.active();

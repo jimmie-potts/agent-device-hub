@@ -18,15 +18,18 @@ export function containerOptions(env) {
   const production = access === 'production';
   const loopback = access === 'host-local' || access === 'private-proxy' || production;
   const control = env.BUNNY_CONTROL ?? 'disabled';
+  const standby = control === 'standby';
+  const privateProxy = access === 'private-proxy';
   const stateDir = env.BUNNY_STATE_DIR ?? '/var/lib/bunny';
   const config = env.BUNNY_CONFIG ?? '/etc/bunny/runtime.json';
   const portText = env.BUNNY_PORT ?? (loopback ? '18788' : '8788');
   const ingestSource = env.BUNNY_INGEST_SOURCE;
   const pixooBind = env.BUNNY_PIXOO_BIND;
-  if (!['isolated', 'host-local', 'private-proxy', 'production'].includes(access) || !['disabled', 'enabled'].includes(control) || !isAbsolute(stateDir) || !isAbsolute(config)
+  if (!['isolated', 'host-local', 'private-proxy', 'production'].includes(access) || !['disabled', 'enabled', 'standby'].includes(control)
+    || (standby && ((!production && !privateProxy) || ingestSource !== undefined)) || !isAbsolute(stateDir) || !isAbsolute(config)
     || (ingestSource !== undefined && (!loopback || !producerSource.test(ingestSource)))
     || (pixooBind !== undefined && (!production || control !== 'enabled' || !privateIPv4(pixooBind)))
-    || (loopback && ((!production && control !== 'disabled') || portText !== '18788'
+    || (loopback && ((!production && !standby && control !== 'disabled') || portText !== '18788'
       || stateDir !== '/var/lib/bunny' || config !== '/etc/bunny/runtime.json'))
     || !/^[1-9][0-9]*$/.test(portText) || Number(portText) > 65535) throw new Error('container-options-refused');
   return {control, stateDir, config, port: Number(portText), access, ...(ingestSource === undefined ? {} : {ingestSource}),
@@ -135,46 +138,68 @@ export function refuseNamedDevices(modules, config, checkConfiguration) {
 async function start(options) {
   if (process.platform !== 'linux' || process.getuid?.() === 0) throw new Error('container-host-refused');
   process.umask(0o077);
-  const [{checkStateDirectory, prepareStateDirectory, readRuntimeConfig}, {acquireRuntimeOwnership},
-    {bindCoreRuntimeOwnership}, runtimeModules, {parseArguments, runProcess}] = await Promise.all([
+  const [state, {acquireRuntimeOwnership}, {bindCoreRuntimeOwnership}, runtime,
+    {parseArguments, runProcess}, {checkConfiguration}] = await Promise.all([
     import('../../apps/runtime/dist/src/state.js'),
     import('../../apps/runtime/dist/src/runtime-ownership.js'), import('../../apps/runtime/dist/src/core/core.js'),
     import('../../apps/runtime/dist/src/modules.js'), import('../../apps/runtime/dist/src/process.js'),
+    import('../../packages/sdk/dist/src/index.js'),
   ]);
-  // Read protected configuration before state effects. No default credential or remote listener is created.
+  await startContainer(options, {...state, acquireRuntimeOwnership, bindCoreRuntimeOwnership, runtime, parseArguments,
+    runProcess, checkConfiguration, checkCredentials: checkConfiguredCredentials, prepareOwnershipRoot, refusePendingRestore});
+}
+
+/** Starts the selected container with the dependencies supplied by the entrypoint. */
+export async function startContainer(options, dependencies) {
+  const {readRuntimeConfig, runtime, checkConfiguration, checkCredentials, prepareOwnershipRoot, acquireRuntimeOwnership,
+    refusePendingRestore, bindCoreRuntimeOwnership, parseArguments, runProcess} = dependencies;
   const config = await readRuntimeConfig(options.config);
-  const {coreFactory, shippedModules, buildModules} = runtimeModules;
+  const {coreFactory, shippedModules, standbyCoreFactory, buildModules} = runtime;
+  const standby = options.control === 'standby';
+  const local = ['host-local', 'private-proxy', 'production'].includes(options.access);
   let factories = options.control === 'disabled' ? [coreFactory] : shippedModules;
   let hosted;
-  if (['host-local', 'private-proxy', 'production'].includes(options.access)) {
-    const {checkConfiguration} = await import('../../packages/sdk/dist/src/index.js');
-    // Device control stays disabled; only configured modules that reach no device join the core.
+  if (standby) {
+    factories = [standbyCoreFactory];
+    hosted = buildModules(factories, false);
+    const core = checkConfiguration(hosted[0].manifest, config.modules.core);
+    if (Object.keys(config.modules).some(name => name !== 'core')
+      || Object.hasOwn(Object(config.modules.core), 'secrets') || core.status !== 'accepted'
+      || Object.keys(config.diagnostics?.modules ?? {}).some(name => name !== 'core')
+      || (config.edge !== undefined && !browserEdge(config.edge, 'private-proxy'))) {
+      throw new Error('container-browser-config-refused');
+    }
+    if (config.edge !== undefined) await checkCredentials(config, options);
+  } else if (local) {
     ({factories, modules: hosted} = options.access === 'production'
-      ? productionModules(config, runtimeModules, checkConfiguration, options)
-      : hostLocalModules(config, runtimeModules, checkConfiguration, options.access));
-    await checkConfiguredCredentials(config, options);
+      ? productionModules(config, runtime, checkConfiguration, options)
+      : hostLocalModules(config, runtime, checkConfiguration, options.access));
+    await checkCredentials(config, options);
   }
-  await checkStateDirectory(options.stateDir);
-  await refusePendingRestore(options.stateDir);
-  await prepareStateDirectory(options.stateDir);
-  // Only an empty, verified state root is fresh. Never run a creating SQLite helper on inherited coordination.
-  if ((await readdir(options.stateDir)).length === 0) {
-    const modules = join(options.stateDir, 'modules');
-    await mkdir(modules, {mode: 0o700}); // Exclusive creation: a competing bootstrap causes refusal.
-    await checkStateDirectory(modules);
-    const file = await open(join(modules, 'core.sqlite-owner'), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    await file.close();
-  }
+  await prepareOwnershipRoot(options.stateDir, dependencies);
   const ownership = await acquireRuntimeOwnership(options.stateDir);
   try {await refusePendingRestore(options.stateDir);}
   catch (error) {ownership.releaseBeforeStartup(); throw error;}
   const modules = hosted ?? buildModules(factories, false);
   bindCoreRuntimeOwnership(modules[0], ownership);
   const parsed = parseArguments(['--port', String(options.port), '--state-dir', options.stateDir, '--environment', 'production']);
-  // The real core consumes the held ownership capability; stopping its store cannot release process ownership.
-  await runProcess({...parsed, modules: factories, edge: config.edge !== undefined}, {
-    modules, config, ...(['host-local', 'private-proxy', 'production'].includes(options.access) ? {listener: 'container-host-local'} : {}),
+  await runProcess({...parsed, modules: factories, edge: !standby && config.edge !== undefined}, {
+    modules, config, ...(local ? {listener: 'container-host-local'} : {}),
   });
+}
+
+async function prepareOwnershipRoot(stateDir, {checkStateDirectory, prepareStateDirectory, refusePendingRestore}) {
+  await checkStateDirectory(stateDir);
+  await refusePendingRestore(stateDir);
+  await prepareStateDirectory(stateDir);
+  // Only an empty, verified state root is fresh. Never run a creating SQLite helper on inherited coordination.
+  if ((await readdir(stateDir)).length === 0) {
+    const modules = join(stateDir, 'modules');
+    await mkdir(modules, {mode: 0o700}); // Exclusive creation: a competing bootstrap causes refusal.
+    await checkStateDirectory(modules);
+    const file = await open(join(modules, 'core.sqlite-owner'), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    await file.close();
+  }
 }
 
 /**
@@ -184,6 +209,7 @@ async function start(options) {
  */
 export async function checkConfiguredCredentials(config, options) {
   if (!['host-local', 'private-proxy', 'production'].includes(options.access)) throw new Error('container-command-refused');
+  if (options.control === 'standby' && config.edge === undefined) return {status: 'admitted', credentials: 0};
   const {readEdgeCredentials} = await import('../../apps/runtime/dist/src/credentials.js');
   const credentials = await readEdgeCredentials(config.edge?.credentials);
   checkLocalBrowserCredentials(credentials, options.ingestSource, options.access === 'production' ? 'private-proxy' : options.access);

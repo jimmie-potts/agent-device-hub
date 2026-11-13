@@ -62,7 +62,7 @@ export class AutomationDefinitions {
   readonly #set: StatementSync;
   readonly #delete: StatementSync;
 
-  constructor(database: DatabaseSync, readonly core: CoreHandle, readonly holdsSecret: HoldsAutomationSecret) {
+  constructor(database: DatabaseSync, readonly core: CoreHandle | undefined, readonly holdsSecret: HoldsAutomationSecret) {
     database.exec(`CREATE TABLE IF NOT EXISTS automation_definition_revisions (
       family TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY (family, id)
     ) STRICT`);
@@ -78,11 +78,13 @@ export class AutomationDefinitions {
 
   async write<R>(family: Family, before: () => Definition | undefined, mutate: (commit: DefinitionCommit) => R,
     after: (result: R) => Definition | undefined, context?: AutomationWriteContext): Promise<R> {
+    const core = this.core;
+    if (core === undefined) throw new AutomationError('unavailable', 503);
     const parent = context?.parent;
     const options = parent === undefined ? {} : {parent};
     let authorizationFailed = false;
     try {
-      return await this.core.transaction(tx => {
+      return await core.transaction(tx => {
         try { context?.authorize?.(); }
         catch (error) { authorizationFailed = true; throw error; }
         const previous = before();
@@ -120,7 +122,7 @@ export class AutomationDefinitions {
     } catch (error) {
       if (authorizationFailed || error instanceof AutomationError) throw error;
       try {
-        recordLog(this.core.log, 'operation.failed',
+        recordLog(core.log, 'operation.failed',
           {'bunny.operation': 'storage', 'bunny.outcome': Outcome.failed, 'bunny.code': 'internal'}, parent);
       } catch { /* Diagnostic sinks do not decide the write result. */ }
       throw new AutomationError('internal', 500);

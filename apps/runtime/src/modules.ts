@@ -23,9 +23,8 @@ export type {ModuleFactory, ModuleRegistration} from '@jimmie-potts/sdk';
  * Its history keeps by every registration's bookkeeping members and polled families (#1772, #1795); a module that a
  * profile does not host publishes nothing, so its rules never apply. Throws as `historyRules` does.
  */
-function coreFactoryFor(registrations: readonly ModuleRegistration[]): ModuleFactory {
-  const history = historyRules(registrations);
-  const create = (): BunnyModule => createCoreModule({history});
+function coreFactoryFor(history: HistoryRules, standby = false): ModuleFactory {
+  const create = (): BunnyModule => createCoreModule({history, standby});
   return {name: CORE_MODULE, create, simulate: create};
 }
 
@@ -80,13 +79,15 @@ export function orderModules(registrations: readonly ModuleRegistration[]): Modu
  */
 export function shippedList(registrations: readonly ModuleRegistration[]): ModuleFactory[] {
   const ordered = orderModules(registrations);
-  return [coreFactoryFor(registrations), ...ordered];
+  return [coreFactoryFor(historyRules(registrations)), ...ordered];
 }
 
 /** Every module folder's registration, shipped or not, in folder order, as the build collected them. */
 export const registrations: readonly ModuleRegistration[] = REGISTRATIONS;
 
 export const shippedModules: readonly ModuleFactory[] = shippedList(registrations);
+/** Only the explicit container standby selection uses this core. */
+export const standbyCoreFactory: ModuleFactory = coreFactoryFor(historyRules(registrations), true);
 
 /**
  * The shipped list's own core factory, which every entry point that hosts a subset of the modules (the container's
