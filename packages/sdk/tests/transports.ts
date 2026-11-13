@@ -93,6 +93,7 @@ export type Edge = {
 
 export type EdgeSetup = {
   maxQueued?: number;
+  edgeSpans?: SpanRecorder;
   /** The bus's span recorder. */
   spans?: SpanRecorder;
   /** The edge's own scheduler, apart from the bus's. */
@@ -128,7 +129,7 @@ export type EdgeSetup = {
 
 /** A bus, its edge on 127.0.0.1 at a free port, and a fresh token for each source. */
 export async function startEdge({
-  maxQueued, spans, scheduler, busScheduler, bus: build = options => new InProcessBus(options), before, refuse, failingDiagnostics, permissions = {},
+  maxQueued, spans, edgeSpans, scheduler, busScheduler, bus: build = options => new InProcessBus(options), before, refuse, failingDiagnostics, permissions = {},
   heartbeatMs, stallMs, liveness, now, commandMemory, authenticate, onEndpointClosed, onStream,
 }: EdgeSetup = {}): Promise<Edge> {
   const errors: World['errors'] = [];
@@ -141,7 +142,7 @@ export async function startEdge({
   });
   const tokens = new Map(SOURCES.map(source => [source, randomBytes(32).toString('base64url')]));
   const edge = new RemoteEdge({
-    bus, validator, grants: [...tokens].map(([source, token]) => ({source, token, ...permissions[source]})), onDiagnostic: diagnose,
+    bus, validator, ...(edgeSpans === undefined ? {} : {spans: edgeSpans}), grants: [...tokens].map(([source, token]) => ({source, token, ...permissions[source]})), onDiagnostic: diagnose,
     ...(scheduler === undefined ? {} : {scheduler}), ...(heartbeatMs === undefined ? {} : {heartbeatMs}), ...(stallMs === undefined ? {} : {stallMs}),
     ...(liveness === undefined ? {} : {liveness}), ...(now === undefined ? {} : {now}), ...(commandMemory === undefined ? {} : {commandMemory}),
     ...(authenticate === undefined ? {} : {authenticate}),

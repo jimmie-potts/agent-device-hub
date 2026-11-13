@@ -1364,8 +1364,10 @@ For a remote reader that owns reconnect, pass `lifetime` with an abort
 `signal` and an `onLost` callback to `connectRemote`. In this mode a lost
 stream cancels outstanding registrations and reports loss once. The caller
 closes the participant and opens a new one when its recovery policy permits.
-Stream, registration and live cleanup fetches refuse redirects. Default
-clients continue to reconnect and restore registrations automatically.
+Stream, registration and live cleanup fetches refuse redirects and carry
+W3C trace context. An optional `parent` on the lifetime continues an existing
+trace. The edge correlates requests after authentication and ownership checks.
+Default clients continue to reconnect and restore registrations automatically.
 
 ### Connection-bound endpoints
 

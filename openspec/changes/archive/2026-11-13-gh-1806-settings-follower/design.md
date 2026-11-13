@@ -19,15 +19,19 @@ Pin the first history head, scan over skipped rows and apply sealed slices.
 Buffer up to two projected facts from an open revision. Verify origin, exact
 tokens, scan bounds and transaction order. Bound body size and the total read
 time. The caller owns one cancellable capped recovery loop. Steady-state
-transport schedules no history reads.
+transport schedules no history reads. Trace each stream admission, registration
+and live cleanup through the authenticated edge. A refusal summary carries no
+individual request trace.
 
 The receiver offers metadata, a guarded optional projection of the same
 committed owners, snapshot replacement and sealed apply. Exact expected
 state includes the source checkpoint and private replacement generation.
 Apply receipts give final touched projections or tombstones. A terminal
-commit or complete replacement records the local completion time. Incoming
-checkpoints, private replacement generations and local export epochs are
-distinct.
+commit or complete replacement records the local completion time. Verify the
+exact completed checkpoint and a completion timestamp from that call. Preserve
+prior completion on nonterminal commits. Require a fresh generation even for
+a same-token replacement. Incoming checkpoints, private replacement
+generations and local export epochs are distinct.
 
 ## Failure and recovery
 

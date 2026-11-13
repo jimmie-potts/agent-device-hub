@@ -15,7 +15,7 @@ import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-p
 import {
   sessionEntityId, type ApprovalRecoverRequest, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
+import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool, type TraceContext,
   fullDisk, type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
 import {DEFAULT_HISTORY_RULES, type HistoryFilter, type HistoryPage, type HistoryRow, type HistoryRules} from './history.js';
@@ -596,7 +596,7 @@ class Core {
   #startSettingsFollower(): void {
     const {peer, context} = this;
     if (peer === undefined) return;
-    const failed = (code: ErrorCode, trace = context.trace.span(undefined), count = 1): void => {
+    const failed = (code: ErrorCode, trace?: TraceContext, count = 1): void => {
       recordLog(context.log, 'operation.failed',
         {'bunny.operation': 'feed', 'bunny.outcome': OutcomeWord.failed, 'bunny.code': code, 'bunny.attempt_count': count}, trace);
     };

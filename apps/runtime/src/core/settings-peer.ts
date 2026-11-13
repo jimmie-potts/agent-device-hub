@@ -8,7 +8,7 @@ import {decodeSettingsPage, decodeSettingsSnapshot, settingsObject, settingsOrig
 export type SettingsPeerConfig = {origin: string; source: string; tokenFile: string; expectedOrigin?: string};
 export type SettingsReadRequest = {after: string; through?: string};
 export type SettingsPeer = {
-  connect(signal: AbortSignal, lost: () => void): Promise<Pick<RemoteParticipant, 'close' | 'subscribe'>>;
+  connect(signal: AbortSignal, lost: () => void, trace: TraceContext): Promise<Pick<RemoteParticipant, 'close' | 'subscribe'>>;
   snapshot(signal: AbortSignal, trace: TraceContext): Promise<SettingsSnapshot>;
   page(read: SettingsReadRequest, signal: AbortSignal, trace: TraceContext): Promise<SettingsPage>;
 };
@@ -75,9 +75,9 @@ export function createSettingsPeer(config: SettingsPeerConfig, token: string, sc
   }
 
   return {
-    connect: async (signal, onLost) => {
+    connect: async (signal, onLost, parent) => {
       const client = await connectRemote({url: config.origin, token, source: config.source, scheduler, liveness: scheduler,
-        lifetime: {signal, onLost}, onError: () => {}});
+        lifetime: {signal, onLost, parent}, onError: () => {}});
       return {subscribe: client.subscribe.bind(client), close: () => client.close()};
     },
     snapshot: (signal, trace) => read(new URLSearchParams({settings: 'snapshot'}), signal, trace, decodeSettingsSnapshot),

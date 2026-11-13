@@ -14,7 +14,7 @@ import {EventStreamParser, MAX_CALL_BYTES, REMOTE_PATH, REMOTE_SCHEMA, REQUEST_H
 import {parseKey} from './routing.js';
 import {
   SdkError, type Command, type CommandDraft, type Draft, type Handler, type Overflow, type Reply, type RequestOptions, type RequestResult,
-  MAX_TIMEOUT_MS, type Cancel, type Participant, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription,
+  MAX_TIMEOUT_MS, type Cancel, type Participant, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription, type TraceContext,
 } from './sdk.js';
 import {
   startSync, type OutgoingSync, type Snapshot, type SyncAnswer, type SyncHandler, type SyncInterrupted, type SyncOptions, type SyncProvider, type SyncRequest,
@@ -71,7 +71,7 @@ export type RemoteOptions = RemoteAuth & {
   /** Runs the idle limit. It concerns a real socket, so it defaults to the global `setTimeout`, whatever `scheduler` is. */
   liveness?: Scheduler;
   /** The caller retires and reconnects this participant. Stream and subscription fetches refuse redirects and stop with this signal. */
-  lifetime?: {signal: AbortSignal; onLost: () => void};
+  lifetime?: {signal: AbortSignal; onLost: () => void; parent?: TraceContext};
 };
 
 /** One explicitly opened handler whose calls and lifetime belong to its current stream. */
@@ -146,6 +146,7 @@ class RemoteClient {
   readonly #idleMs: number;
   readonly #liveness: Scheduler;
   readonly #lifetime: RemoteOptions['lifetime'];
+  readonly #lifetimeParent: TraceContext | undefined;
   #delayMs: number;
   #closed = false;
   #closing: Promise<void> | undefined;
@@ -182,6 +183,7 @@ class RemoteClient {
     this.#idleMs = options.idleMs ?? IDLE_MS;
     this.#liveness = options.liveness ?? realTimers;
     this.#lifetime = options.lifetime;
+    this.#lifetimeParent = options.lifetime === undefined ? undefined : childOf(options.lifetime.parent);
     if (!Number.isSafeInteger(this.#idleMs) || this.#idleMs < 1 || this.#idleMs > MAX_TIMEOUT_MS) throw new RangeError(`idleMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
   }
 
@@ -250,7 +252,7 @@ class RemoteClient {
           watch();
           if (lifetime !== undefined) opening = this.#scheduler.after(this.#idleMs, stop);
           controller.signal.throwIfAborted();
-          const response = await fetch(`${this.#base}/stream`, {headers: this.#headers(), credentials: 'same-origin', signal: controller.signal,
+          const response = await fetch(`${this.#base}/stream`, {headers: this.#headers(this.#lifetimeTrace()), credentials: 'same-origin', signal: controller.signal,
             ...(lifetime === undefined ? {} : {redirect: 'error'})});
           watch();
           if (lifetime !== undefined) controller.signal.throwIfAborted();
@@ -459,9 +461,9 @@ class RemoteClient {
       }
     } catch (error) {
       this.#subscriptions.delete(id);
+      if (this.#lifetime !== undefined) stream?.abort();
       await local.queue.close();
       if (this.#lifetime === undefined) this.#forget(id);
-      else stream?.abort();
       throw new SdkError(bodyOf(error));
     }
     return {close: () => this.#unregister(id, () => local.queue.close(), () => this.#subscriptions.delete(id))};
@@ -806,10 +808,15 @@ class RemoteClient {
   }
 
   /** Every call names the source the part acts as, so that the edge refuses a token used under another one at once. */
-  #headers(): Record<string, string> {
+  #headers(trace?: TraceContext): Record<string, string> {
     // A browser session's cookie goes with the call as the browser sends it, and a page marks its calls as its own.
     const proof = this.#token === undefined ? {[REQUEST_HEADER]: '1'} : {authorization: `Bearer ${this.#token}`};
-    return {...proof, 'content-type': 'application/json', [SOURCE_HEADER]: this.#source};
+    return {...proof, 'content-type': 'application/json', [SOURCE_HEADER]: this.#source,
+      ...(trace === undefined ? {} : {traceparent: trace.traceparent})};
+  }
+
+  #lifetimeTrace(): TraceContext | undefined {
+    return this.#lifetimeParent === undefined ? undefined : childOf(this.#lifetimeParent);
   }
 
   #liveStream(connection: string, stream: AbortController | undefined): boolean {
@@ -822,7 +829,7 @@ class RemoteClient {
     try {
       const signal = AbortSignal.any([stream.signal, timeout.signal]);
       signal.throwIfAborted();
-      const answer = await this.#post(call, payload, signal);
+      const answer = await this.#post(call, payload, signal, this.#lifetimeTrace());
       signal.throwIfAborted();
       return answer;
     } finally {
@@ -831,9 +838,9 @@ class RemoteClient {
   }
 
   /** One call to the edge. An edge refusal throws `SdkError` with its error body; a lost connection throws as fetch does. */
-  async #post(call: string, payload: Fields, signal?: AbortSignal): Promise<unknown> {
+  async #post(call: string, payload: Fields, signal?: AbortSignal, trace?: TraceContext): Promise<unknown> {
     const response = await fetch(`${this.#base}/${call}`, {
-      method: 'POST', headers: this.#headers(), credentials: 'same-origin', body: JSON.stringify({schema: REMOTE_SCHEMA, ...payload}), ...(signal === undefined ? {} : {signal}),
+      method: 'POST', headers: this.#headers(trace), credentials: 'same-origin', body: JSON.stringify({schema: REMOTE_SCHEMA, ...payload}), ...(signal === undefined ? {} : {signal}),
       ...(this.#lifetime === undefined ? {} : {redirect: 'error'}),
     });
     if (!response.ok) {

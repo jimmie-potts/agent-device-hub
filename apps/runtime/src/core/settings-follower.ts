@@ -39,7 +39,7 @@ type Options = {
   /** Recovery of a known unlogged older writer reasserts this choice after interruption. */
   replaceOnStart?: boolean;
   protectedValue?: (value: object) => boolean;
-  failed: (code: ErrorCode, trace: TraceContext, count: number) => void;
+  failed: (code: ErrorCode, trace: TraceContext | undefined, count: number) => void;
   trace?: (parent?: TraceContext) => TraceContext;
 };
 
@@ -200,7 +200,7 @@ export class SettingsFollower {
     }
     const count = last === undefined ? 1 : last.count + 1;
     this.#lastFailure.set(code, {at, count: 0});
-    try { this.options.failed(code, trace, count); } catch { /* Diagnostics cannot decide follower progress. */ }
+    try { this.options.failed(code, count === 1 ? trace : undefined, count); } catch { /* Diagnostics cannot decide follower progress. */ }
     return retryable;
   }
 
@@ -214,7 +214,7 @@ export class SettingsFollower {
       try {
         const peer = await this.options.openPeer(signal);
         signal.throwIfAborted();
-        connection = await peer.connect(signal, () => { abort.abort(); });
+        connection = await peer.connect(signal, () => { abort.abort(); }, trace);
         for (const family of SETTINGS_FAMILIES) {
           signal.throwIfAborted();
           await connection.subscribe(`bunny.state.${family}.*`, message => { this.#signal(work, family, message); },
@@ -342,13 +342,17 @@ export class SettingsFollower {
       const facts = pass.accept(page, state.checkpoint);
       const next = page.applyThrough;
       if (next !== null && (next !== state.checkpoint || page.done)) {
+        const startedAt = this.options.clock.now();
         const receipt = await this.options.receiver.apply({origin: state.origin, expected: state, next, facts, terminal: page.done},
           {signal: work.signal, trace});
         work.signal.throwIfAborted();
-        if (receipt.progress.origin !== state.origin || receipt.progress.checkpoint !== next || receipt.progress.generation !== state.generation) {
+        const progress = receipt.progress;
+        const completion = page.done ? this.#completed(progress, next, startedAt)
+          : progress.completedCheckpoint === state.completedCheckpoint && progress.completedAtMs === state.completedAtMs;
+        if (progress.origin !== state.origin || progress.checkpoint !== next || progress.generation !== state.generation || !completion) {
           throw settingsFailure('revision-conflict');
         }
-        state = receipt.progress;
+        state = progress;
         if (receipt.projection === undefined && facts.length > 0) {
           work.comparisons.clear();
           work.complete = false;
@@ -368,15 +372,25 @@ export class SettingsFollower {
     const origin = current?.origin ?? this.options.expectedOrigin;
     if (origin !== undefined && origin !== snapshot.origin) throw settingsFailure('invalid-state');
     if (this.options.protectedValue?.(snapshot) === true) throw settingsFailure('forbidden');
+    const startedAt = this.options.clock.now();
     const receipt = await this.options.receiver.replace(snapshot, current, {signal: work.signal, trace});
     work.signal.throwIfAborted();
-    if (receipt.progress.origin !== snapshot.origin || receipt.progress.checkpoint !== snapshot.checkpoint) throw settingsFailure('revision-conflict');
+    const progress = receipt.progress;
+    if (progress.origin !== snapshot.origin || progress.checkpoint !== snapshot.checkpoint
+      || progress.generation.length === 0 || progress.generation === current?.generation
+      || !this.#completed(progress, snapshot.checkpoint, startedAt)) throw settingsFailure('revision-conflict');
     this.#replace = false;
     if (receipt.projection !== undefined) this.#projection(work, receipt.projection, since);
     else {
       work.comparisons.clear();
       work.complete = false;
     }
-    return receipt.progress;
+    return progress;
+  }
+
+  #completed(progress: SettingsProgress, target: string, startedAt: number): boolean {
+    const endedAt = this.options.clock.now(), {completedAtMs} = progress;
+    return progress.completedCheckpoint === target && settingsInteger(completedAtMs)
+      && completedAtMs >= Math.min(startedAt, endedAt) && completedAtMs <= Math.max(startedAt, endedAt);
   }
 }

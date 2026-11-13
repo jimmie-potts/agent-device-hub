@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {SCHEMA_BASE} from '@jimmie-potts/event-contracts/v2';
-import {REMOTE_SCHEMA, childOf, prepareMessage, type Handler, type SubscribeOptions} from '@jimmie-potts/sdk';
+import {REMOTE_SCHEMA, childOf, prepareMessage, type Handler, type SubscribeOptions, type TraceContext} from '@jimmie-potts/sdk';
 import {createCoreModule, standbyFollowerState} from '../src/core/core.js';
 import {DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS} from '../src/core/automation.js';
 import {initialArtRecord} from '../src/core/art-schedule-model.js';
@@ -257,6 +257,102 @@ it('overflow, late old signals and equal signals during apply cannot hide a real
   await flush();
   assert.equal(receiver.value?.progress.checkpoint, cursor(4));
   assert.deepEqual(receiver.records.get('mode'), mode('free'));
+});
+
+it('an invalid terminal completion is retried from committed receiver progress', async t => {
+  const clock = manualClock(at), receiver = new Receiver(clock.now);
+  await receiver.replace(initial(), null, {signal: new AbortController().signal, trace: childOf(undefined)});
+  const apply = receiver.apply;
+  let stale = true;
+  receiver.apply = async (slice, context) => {
+    const receipt = await apply(slice, context);
+    if (!stale) return receipt;
+    stale = false;
+    return {progress: {...receipt.progress, completedCheckpoint: slice.expected.completedCheckpoint,
+      completedAtMs: slice.expected.completedAtMs}};
+  };
+  const {peer, fake} = fakePeer();
+  fake.readPage = ({after}) => after === cursor(0)
+    ? {...end(cursor(1)), after, facts: [modeEdit(1, 'work')]} : end(after);
+  clock.advance(1);
+  const {follower} = follow(peer, receiver, clock);
+  t.after(() => follower.stop());
+  await flush();
+  assert.equal(follower.state, 'unavailable');
+  assert.equal(receiver.value?.progress.checkpoint, cursor(1));
+  clock.advance(1000);
+  await flush();
+  assert.equal(follower.state, 'following');
+  assert.deepEqual(fake.requests, [{after: cursor(0)}, {after: cursor(1)}]);
+  assert.equal(receiver.projections, 2);
+});
+
+it('a nonterminal receipt cannot change completed-read evidence', async t => {
+  const clock = manualClock(at), receiver = new Receiver(clock.now);
+  await receiver.replace(initial(), null, {signal: new AbortController().signal, trace: childOf(undefined)});
+  const apply = receiver.apply;
+  receiver.apply = async (slice, context) => {
+    const receipt = await apply(slice, context);
+    return {...receipt, progress: {...receipt.progress, completedCheckpoint: slice.next, completedAtMs: clock.now()}};
+  };
+  const {peer, fake} = fakePeer();
+  const head = cursor(64);
+  fake.readPage = ({after}) => after === cursor(0)
+    ? {...end(head), after, done: false, next: cursor(63), applyThrough: cursor(62)}
+    : {...end(head), after};
+  const {follower} = follow(peer, receiver, clock);
+  t.after(() => follower.stop());
+  await flush();
+  assert.equal(follower.state, 'unavailable');
+  assert.deepEqual(fake.requests, [{after: cursor(0)}]);
+  assert.equal(receiver.value?.progress.completedCheckpoint, cursor(0));
+});
+
+it('a same-token reseed requires a new committed replacement generation', async t => {
+  const clock = manualClock(at), receiver = new Receiver(clock.now);
+  const old = await receiver.replace(initial(), null, {signal: new AbortController().signal, trace: childOf(undefined)});
+  const replace = receiver.replace;
+  let stale = true;
+  receiver.replace = (snapshot, expected, context) => {
+    if (!stale) return replace(snapshot, expected, context);
+    stale = false;
+    return Promise.resolve(old);
+  };
+  const {peer, fake} = fakePeer();
+  fake.readSnapshot = () => initial(cursor(0), origin, 'work');
+  const {follower} = follow(peer, receiver, clock, true);
+  t.after(() => follower.stop());
+  await flush();
+  assert.equal(follower.state, 'unavailable');
+  clock.advance(1000);
+  await flush();
+  assert.equal(follower.state, 'following');
+  assert.equal(fake.snapshots, 2);
+  assert.deepEqual(fake.requests, []);
+  assert.deepEqual(receiver.records.get('mode'), mode('work'));
+  assert.equal(receiver.projections, 2);
+});
+
+it('summarized read failures do not carry an individual request trace', async t => {
+  const clock = manualClock(at), receiver = new Receiver(clock.now);
+  await receiver.replace(initial(), null, {signal: new AbortController().signal, trace: childOf(undefined)});
+  const {peer} = fakePeer();
+  const reads: TraceContext[] = [], failures: {trace: TraceContext | undefined; count: number}[] = [];
+  const follower = new SettingsFollower({receiver, clock, scheduler: clock.scheduler, signal: new AbortController().signal,
+    openPeer: () => Promise.resolve({...peer, page: (_query, _signal, trace) => {
+      reads.push(trace);
+      return Promise.reject(settingsFailure('unavailable'));
+    }}),
+    failed: (_code, trace, count) => { failures.push({trace, count}); },
+  });
+  t.after(() => follower.stop());
+  await flush();
+  for (const delay of [1000, 2000, 4000, 8000, 16000, 30000]) {
+    clock.advance(delay);
+    await flush();
+  }
+  assert.equal(new Set(reads.map(trace => trace.traceparent)).size, 7);
+  assert.deepEqual(failures, [{trace: reads[0], count: 1}, {trace: undefined, count: 6}]);
 });
 
 it('a lost receipt resumes from the durable seal and rechecks a terminal metadata-only read', async t => {

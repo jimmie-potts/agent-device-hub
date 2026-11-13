@@ -2104,7 +2104,12 @@ An opt-in standby core SHALL follow the selected HTTPS peer using the existing
 read grant, SDK subscriptions and committed settings history. It SHALL read on
 startup, reconnect and eligible settings signals or overflow. One cancellable
 capped recovery loop MAY retry connection or read failure. Only verified
-receiver commits SHALL advance progress and completion evidence. A configured
+receiver commits SHALL advance progress and completion evidence. A terminal
+receipt SHALL prove completion for the exact accepted checkpoint. A nonterminal
+receipt SHALL preserve previous completion evidence. Replacement SHALL establish
+a fresh receiver generation even when the incoming checkpoint is identical.
+A receipt that cannot establish these facts SHALL cause a new committed read
+before retry. A configured
 standby without a receiver SHALL keep local health available and perform no
 peer or token-file I/O.
 
