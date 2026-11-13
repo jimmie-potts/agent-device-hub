@@ -36,25 +36,36 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
       point = {x: box.x + box.width / 2, y: box.y + box.height / 2};
       await target.evaluate(element => {if (element instanceof HTMLElement) {element.style.outline = '3px solid #fbbf24'; element.dataset.speechCaptureTarget = 'true';}});
     }
-    await page.evaluate(({label, point, step}) => {
+    await page.evaluate(({label, step}) => {
       let caption = document.getElementById('speech-test-caption');
       if (caption === null) {caption = document.createElement('div'); caption.id = 'speech-test-caption'; document.body.append(caption);}
       caption.textContent = `Synthetic demo ${step}: ${label}`;
       caption.style.cssText = 'pointer-events: none';
       Object.assign(caption.style, {position: 'fixed', top: '8px', left: '8px', zIndex: '9999', background: '#111827', color: '#fff', padding: '8px', fontSize: '14px', maxWidth: '90vw'});
       let cursor = document.getElementById('speech-test-cursor');
-      if (cursor === null) {cursor = document.createElement('div'); cursor.id = 'speech-test-cursor'; document.body.append(cursor);}
-      cursor.style.cssText = 'pointer-events: none';
-      Object.assign(cursor.style, {position: 'fixed', left: `${point.x - 9}px`, top: `${point.y - 9}px`, width: '18px', height: '18px', border: '3px solid #fbbf24', borderRadius: '50%', zIndex: '9998', });
-    }, {label, point, step: ++step});
-    await page.mouse.move(point.x, point.y, {steps: 8});
-    await page.waitForTimeout(180);
+      if (cursor === null) {
+        cursor = document.createElement('div'); cursor.id = 'speech-test-cursor'; document.body.append(cursor);
+        cursor.style.cssText = 'pointer-events:none;position:fixed;width:18px;height:18px;box-sizing:border-box;border:3px solid #fbbf24;border-radius:50%;z-index:9998;left:15px;top:55px';
+        const indicator = cursor;
+        document.addEventListener('pointermove', event => {
+          indicator.style.left = `${event.clientX - 9}px`;
+          indicator.style.top = `${event.clientY - 9}px`;
+        });
+      }
+    }, {label, step: ++step});
+    // Leave a frame for the highlight before moving the recorded pointer.
+    if (target !== undefined) await page.waitForTimeout(40);
+    await page.mouse.move(point.x, point.y);
+    await page.waitForTimeout(target === undefined ? 180 : 80);
   };
   const click = async (target: Locator, label: string, keyboard = false): Promise<void> => {
     await indicate(label, target);
-    await page.evaluate(() => {const cursor = document.getElementById('speech-test-cursor'); if (cursor !== null) cursor.style.background = '#fbbf24';});
+    await target.evaluate(element => element.addEventListener('click', () => {
+      const cursor = document.getElementById('speech-test-cursor');
+      if (cursor !== null) cursor.style.background = '#fbbf24';
+    }, {capture: true, once: true}));
     if (keyboard) {await target.focus(); await target.press('Enter');} else await target.click();
-    await page.waitForTimeout(240);
+    await page.waitForTimeout(160);
     await page.evaluate(() => {const cursor = document.getElementById('speech-test-cursor'); if (cursor !== null) cursor.style.background = 'transparent';});
     await page.evaluate(() => {
       for (const element of document.querySelectorAll('[data-speech-capture-target]')) {
