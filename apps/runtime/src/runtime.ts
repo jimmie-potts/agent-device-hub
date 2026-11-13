@@ -347,6 +347,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   // A record carries the listener's port, never its URL.
   recordLog(log, 'runtime.started', {'server.port': bound, 'bunny.module_count': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': credentials !== undefined});
   const core = modules.find(isCoreModule);
+  core?.setAutomationRedactions(logs.redactions);
   await host.start(admitted => core?.setHistoryDevices?.(historyDevices(admitted)));
   const wispr = modules.find(isWisprModule);
   const hosted = host.modules();

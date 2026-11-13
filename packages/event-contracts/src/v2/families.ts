@@ -307,6 +307,8 @@ const checkVolcanoObservation: PayloadCheck = message => {
   return snapshot.link !== 'connected' && snapshot.reading !== null ? 'payload /reading on a link that is not connected' : undefined;
 };
 const checkEntity: PayloadCheck = message => entity(message, message.data.id);
+const checkAutomationDefinition: PayloadCheck = message =>
+  message.source === CORE_SOURCE ? checkEntity(message) : 'envelope automation definitions belong to the core';
 // An operation's entity is its request's, and its command is its family's.
 const checkOperation: PayloadCheck = message => {
   const record = message.data as OperationRecord;
@@ -369,6 +371,10 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('session', 'state', 'org.bunny.session.updated', checkSession, '2.1'),
   define('mode', 'state', 'org.bunny.mode.updated', checkEntity),
   define('mode', 'state', 'org.bunny.mode.updated', message => checkEntity(message) ?? (normalizeModeState(message.data) === undefined ? 'payload mode choices are invalid' : undefined), '2.1'),
+  define('automation-rule', 'state', 'org.bunny.automation-rule.updated', checkAutomationDefinition),
+  define('automation-routine', 'state', 'org.bunny.automation-routine.updated', checkAutomationDefinition),
+  define('automation-settings', 'state', 'org.bunny.automation-settings.updated', checkAutomationDefinition),
+  define('automation-interrupt-set', 'state', 'org.bunny.automation-interrupt-set.updated', checkAutomationDefinition),
   define('power-limit', 'state', 'org.bunny.power-limit.updated', message=>{
     const issue=checkEntity(message);if(issue!==undefined)return issue;
     const record=message.data as PowerLimitRecord;

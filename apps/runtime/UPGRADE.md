@@ -62,6 +62,18 @@ readers once routines exist. Preserve definitions and occurrence guards. An
 unknown older reader does not block a reviewed forward upgrade, and cannot be
 selected for recovery. This delivery activates no installed routine.
 
+Automation definition publication adds `automation_definition_revisions` to the
+core store. It holds the last published revision for each current rule, routine,
+settings record and interrupt set. Earlier values start at revision zero until
+an effective edit, without a history backfill. Definition rows and occurrence
+guards retain their formats. An effective save or deletion commits the owner rows, revision metadata,
+retained history and pending outbox fact together. A pending automation state
+or rule or routine removal that becomes protected can be discarded without
+changing the committed owner rows or private history. Preserve those tables
+together. Assess return to an earlier reader with the selected release and its
+latest state, including any unpublished definition messages. The additive table
+alone does not establish recovery eligibility.
+
 Maximum-on definitions and run evidence add `automation_power_limits` to the core
 store. Preserve each target's owner/configuration binding, enable/duration,
 settings and definition revisions, original known/unknown start, observed run

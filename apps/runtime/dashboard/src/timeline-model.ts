@@ -150,9 +150,10 @@ const capital = (line: string): string => line.charAt(0).toUpperCase() + line.sl
  */
 export function historyFace(row: HistoryRow, open?: HistoryOpenSpan, at: (atMs: number) => string = recordedAt): HistoryFace {
   const data = object(row.record.data) ?? row.record, changed = object(row.record.changed) ?? {};
-  const family = text(row.record.family) ?? '';
+  const family = text(row.record.family) ?? (row.kind === 'removal' ? text(object(data.entity)?.family) : undefined) ?? '';
+  const automationDefinition = /^automation-(rule|routine|settings|interrupt-set)$/.test(family);
   const category: HistoryFace['category'] = family === 'session' || /^org\.bunny\.(attention|turn|session)\./.test(row.type) ? 'Agents'
-    : row.source === 'bunny/core/automation' || /^org\.bunny\.(automation|rule|routine|moment|mode)\./.test(row.type) || family === 'automation-rule' ? 'Automation'
+    : row.source === 'bunny/core/automation' || /^org\.bunny\.(automation|rule|routine|moment|mode)\./.test(row.type) || automationDefinition ? 'Automation'
       : row.source.startsWith('bunny/modules/') || family === 'device' || data.kind === 'device' ? 'Devices' : 'Hub';
   const context = `${text(object(changed.label)?.value) ?? text(changed.label) ?? row.subject} · ${row.source.startsWith('bunny/modules/') ? row.source.slice('bunny/modules/'.length) : category}`;
   let title = `${row.kind} · ${row.subject}`, detail = 'Retained record. No current state is inferred.', warning = false;

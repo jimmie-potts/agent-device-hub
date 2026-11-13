@@ -367,7 +367,7 @@ void test('next occurrence and parsing follow the host clock and the shared shap
 });
 
 import {InProcessBus} from '@jimmie-potts/sdk';
-import {ModuleHarness} from '@jimmie-potts/sdk/testing';
+import {CoreHarness} from './fixtures/core-harness.js';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {createCoreModule} from '../src/core/core.js';
 import {deviceState} from './fixtures/device.js';
@@ -383,13 +383,13 @@ void test('admitted generic devices use their SDK owner and the real tracked gua
   await owner.respond('bunny.cmd.power-set.lamp-a',command=>{commands.push(command);return {status:'accepted'};});
   await owner.respond('bunny.cmd.brightness-set.lamp-a',command=>{commands.push(command);return {status:'accepted'};});
   const directory=await stateDir(context);
-  const harness=new ModuleHarness(core,{bus,stateDir:directory,clock:{now:clock.now},scheduler:clock.scheduler});
+  const harness=new CoreHarness(core,{bus,stateDir:directory,clock:{now:clock.now},scheduler:clock.scheduler});
   context.after(async()=>{await harness.stop();await owner.close();});
   await harness.start();
   core.setAutomationDevices(automationDevices([{name:'test-power',admitted:true,devices:['lamp-a']} ],bus.syncOwners('device')));
   await flush();
   const routines=core.automation.routines;assert.ok(routines);
-  const saved=routines.create({...input,enabled:true,actions:[on,{target:'lamp-a',family:'brightness-set',data:{percent:40}}]});
+  const saved=await routines.create({...input,enabled:true,actions:[on,{target:'lamp-a',family:'brightness-set',data:{percent:40}}]});
   assert.deepEqual(core.automation.rules(),[]);
   clock.advance(60*60*1000);await flush();await routines.settled();
   assert.deepEqual(commands.map(command=>command.type),['org.bunny.power.set.requested','org.bunny.brightness.set.requested']);
@@ -405,7 +405,7 @@ void test('admitted generic devices use their SDK owner and the real tracked gua
   assert.equal(entries[1]?.operation?.family,'brightness-set');assert.equal(entries[1]?.index,1);
   assert.equal(record.observed.status,'unknown','acceptance creates no observed state');
   await harness.stop();
-  const restarted=new ModuleHarness(core,{bus,stateDir:directory,clock:{now:clock.now},scheduler:clock.scheduler});
+  const restarted=new CoreHarness(core,{bus,stateDir:directory,clock:{now:clock.now},scheduler:clock.scheduler});
   context.after(()=>restarted.stop());
   await restarted.start();core.setAutomationDevices([{id:'lamp-a',owner:owner.source}]);await flush();
   assert.equal(core.automation.routines?.get(saved.id).enabled,true);assert.equal(commands.length,2);
@@ -428,9 +428,13 @@ for(const table of ['automation_power_guard','automation_log'] as const) void te
     transaction:()=>Promise.reject(new Error('unexpected transaction')),operation:()=>undefined,
     log:{debug:()=>{},info:()=>{},warn:()=>{},error:(event,fields,trace)=>{errors.push({event,fields,trace});}},
     dispatch:action=>{actions.push(action);return Promise.resolve({requestId:action.requestId??'missing',status:'accepted'});}});
+  const store = new AutomationStore(db, () => {}, {settings: DEFAULT_SETTINGS, interruptSet: [...DEFAULT_INTERRUPT_SET]});
+  store.insertRule({id: 'routine-synthetic', name: input.name, enabled: true, kind: 'routine',
+    trigger: JSON.stringify({schema: 'routine/1.0', days: input.days, time: input.time}),
+    action: JSON.stringify({definitionId: 'synthetic-definition', actions: [on, off]}), createdAtMs: clock.now(), updatedAtMs: clock.now()}, 64);
   part.open(db);part.setDevices([{id:'lamp-a',owner:owner.source}]);await flush();
   try {
-    const routines=part.controls.routines;assert.ok(routines);routines.create({...input,enabled:true,actions:[on,off]});
+    const routines=part.controls.routines;assert.ok(routines);
     db.exec(`CREATE TRIGGER refuse_write BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT,'synthetic storage refusal'); END`);
     clock.advance(60*60*1000);await routines.settled();
     // A failed claim dispatches nothing; a failed log row after a dispatch is reported per action and does not stop the next action.

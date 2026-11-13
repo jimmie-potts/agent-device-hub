@@ -30,9 +30,11 @@ export async function automationRoute(controls: AutomationControls, request: Aut
   const path = url.pathname.slice(AUTOMATION_PREFIX.length);
   const rule = /^rules\/([A-Za-z0-9_.-]{1,128})(?:\/(enable|disable))?$/.exec(path);
   const noQuery = (): void => { if (url.searchParams.size > 0) invalid(); };
-  const write = (work: () => AutomationAnswer): AutomationAnswer => {
+  // Recheck in the transaction too, after any wait for the core's store.
+  const context = {authorize: () => request.authorize(), ...(request.parent === undefined ? {} : {parent: request.parent})};
+  const write = async (status: number, work: () => object | Promise<object>): Promise<AutomationAnswer> => {
     request.authorize();
-    return work();
+    return answer(status, await work());
   };
   try {
     // The configured art displays an owner show can name beside `browser` (Hub #1581). Records, not availability.
@@ -61,7 +63,7 @@ export async function automationRoute(controls: AutomationControls, request: Aut
       noQuery();
       if(path==='routines') {
         if(method==='GET') return answer(200,{routines:routines.list(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});
-        if(method==='POST') {const input=await request.body(8192);return write(()=>answer(201,routines.create(input,true)));}
+        if(method==='POST') {const input=await request.body(8192);return await write(201,()=>routines.create(input,true,context));}
         return undefined;
       }
       const match=/^routines\/([A-Za-z0-9_.-]{1,128})(?:\/(enable|disable|run|preview))?$/.exec(path),id=match?.[1];
@@ -74,11 +76,11 @@ export async function automationRoute(controls: AutomationControls, request: Aut
         const input=await request.body(16);
         if(typeof input!=='object' || input===null || Array.isArray(input) || Object.keys(input).length>0) invalid();
         if(action==='run') {request.authorize();const result=await routines.run(id,request.parent);return answer(200,{...result,ran:result.outcome==='ran'});}
-        return write(()=>answer(200,routines.setEnabled(id,action==='enable')));
+        return await write(200,()=>routines.setEnabled(id,action==='enable',context));
       }
       if(method==='GET') return answer(200,routines.get(id));
-      if(method==='PUT') {const input=await request.body(8192);return write(()=>answer(200,routines.update(id,input)));}
-      if(method==='DELETE') return write(()=>{routines.remove(id);return answer(200,{deleted:true,id});});
+      if(method==='PUT') {const input=await request.body(8192);return await write(200,()=>routines.update(id,input,context));}
+      if(method==='DELETE') return await write(200,async()=>{await routines.remove(id,context);return {deleted:true,id};});
       return undefined;
     }
     if (path === 'rules') {
@@ -86,7 +88,7 @@ export async function automationRoute(controls: AutomationControls, request: Aut
       if (method === 'GET') return answer(200, {rules: controls.rules()});
       if (method === 'POST') {
         const input = await request.body(8192);
-        return write(() => answer(201, controls.create(input, true)));
+        return await write(201, () => controls.create(input, true, undefined, context));
       }
       return undefined;
     }
@@ -99,14 +101,14 @@ export async function automationRoute(controls: AutomationControls, request: Aut
         if (method !== 'POST') return undefined;
         const input = await request.body(16);
         if (typeof input !== 'object' || input === null || Array.isArray(input) || Object.keys(input).length > 0) invalid();
-        return write(() => answer(200, controls.setEnabled(id, action === 'enable')));
+        return await write(200, () => controls.setEnabled(id, action === 'enable', context));
       }
       if (method === 'GET') return answer(200, controls.rule(id));
       if (method === 'PUT') {
         const input = await request.body(8192);
-        return write(() => answer(200, controls.update(id, input)));
+        return await write(200, () => controls.update(id, input, undefined, context));
       }
-      if (method === 'DELETE') return write(() => { controls.remove(id); return answer(200, {deleted: true, id}); });
+      if (method === 'DELETE') return await write(200, async () => { await controls.remove(id, context); return {deleted: true, id}; });
       return undefined;
     }
     if (path === 'interrupt-set') {
@@ -114,7 +116,7 @@ export async function automationRoute(controls: AutomationControls, request: Aut
       if (method === 'GET') return answer(200, {kinds: controls.interruptSet()});
       if (method === 'PUT') {
         const input = await request.body(8192);
-        return write(() => answer(200, {kinds: controls.replaceInterruptSet(input)}));
+        return await write(200, async () => ({kinds: await controls.replaceInterruptSet(input, context)}));
       }
       return undefined;
     }
@@ -123,7 +125,7 @@ export async function automationRoute(controls: AutomationControls, request: Aut
       if (method === 'GET') return answer(200, controls.settings());
       if (method === 'PUT') {
         const input = await request.body(1024);
-        return write(() => answer(200, controls.replaceSettings(input)));
+        return await write(200, () => controls.replaceSettings(input, context));
       }
       return undefined;
     }

@@ -22,6 +22,18 @@ checks before publication. Disposable native protocol checks and the actual
 operator-run Desktop check qualify different boundaries; neither alone establishes
 installed B.U.N.N.Y. read acceptance.
 
+Automation definition state uses the existing Runtime unit tests and Shared
+event contracts jobs. After the root build, run
+`node --test apps/runtime/dist/tests/automation-state.test.js apps/runtime/dist/tests/automation-gateway.test.js apps/runtime/dist/tests/automation-routes.test.js apps/runtime/dist/tests/power-schedules.test.js`
+and the shared event contract and bookkeeping checks. A manual clock and
+synthetic SQLite fixture cover populated-store sync, committed edits and
+removals, refused and ignored SQLite writes, registered-secret refusals and
+late registration before deferred delivery,
+request trace continuity and execution without definition history. Run
+`node --test apps/runtime/dashboard/tests/timeline-automation.test.ts` to check that the
+Automation filter includes the retained changes and removals. These checks
+need no standalone runtime or device.
+
 Automation device following (#1330) uses the existing runtime CI test discovery.
 After the root build, run `node --test apps/runtime/dist/tests/automation-device-follow.test.js`
 and the automation, power schedule and power limit suites. The disposable runtime

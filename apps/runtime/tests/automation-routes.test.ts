@@ -39,8 +39,16 @@ void test('the art targets read lists configured art displays and takes no write
 function world() {
   const database = new DatabaseSync(':memory:');
   const store = new AutomationStore(database, () => {}, {settings: DEFAULT_SETTINGS, interruptSet: [...DEFAULT_INTERRUPT_SET]});
-  const controls = createAutomation({store, routed: () => ['lines'], targets: () => Promise.resolve({presentation: 'quiet', alert: 'none'}),
+  const engine = createAutomation({store, routed: () => ['lines'], targets: () => Promise.resolve({presentation: 'quiet', alert: 'none'}),
     clock: () => 1700000000000, monotonic: () => 1700000000000, active: () => true});
+  const controls = {...engine,
+    create: (value: unknown, owner: boolean, authorize?: (targets: readonly string[]) => void) => engine.create(value, owner, authorize),
+    update: (id: string, value: unknown, authorize?: (targets: readonly string[]) => void) => engine.update(id, value, authorize),
+    setEnabled: (id: string, enabled: boolean) => engine.setEnabled(id, enabled),
+    remove: (id: string) => { engine.remove(id); },
+    replaceInterruptSet: (value: unknown) => engine.replaceInterruptSet(value),
+    replaceSettings: (value: unknown) => engine.replaceSettings(value),
+  };
   const bounds: number[] = [], sequence: string[] = [];
   const call = (method: string, path: string, input: unknown = {}, authorize: () => void = () => { sequence.push('authorize'); }) =>
     automationRoute(controls, {method, url: new URL(`/api/v2/automation/${path}`, 'http://runtime.invalid'),

@@ -9,11 +9,11 @@ import {LivePublication} from './live-publication.js';
 import {Backoff} from './backoff.js';
 import type {CoreHandle, CorePart} from './core.js';
 import {AutomationStore} from './automation-store.js';
-import {AutomationError, createAutomation, DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS, type Automation, type LogEntry} from './automation.js';
+import {AutomationError, createAutomation, DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS, type Automation, type AutomationSettings, type LogEntry, type Rule} from './automation.js';
 import type {ModeParticipant} from './mode-participants.js';
 import type {CoreChange} from './store.js';
 import type {Operation} from './operations.js';
-import {createRoutines, routineCommand, type Routines, type PowerDispatchOptions} from './power-schedules.js';
+import {createRoutines, routineCommand, type Routines, type Routine, type PowerDispatchOptions} from './power-schedules.js';
 import {createPowerLimits,PowerLimitStore,type PowerLimits} from './power-limits.js';
 import {checkAutomationDevices, type AutomationDevice} from './automation-devices.js';
 import {createArtSchedule,type ArtSchedule} from './art-schedule.js';
@@ -25,26 +25,62 @@ import type {TraceContext} from '@jimmie-potts/sdk';
 import {createArtPlans, type ArtPlans, type ArtPlanTarget} from './art-plans.js';
 import {createArtShow, type ArtShow} from './art-show.js';
 import type {ArtCatalogRead} from './art-catalog.js';
+import {
+  AUTOMATION_FAMILIES, AutomationDefinitions, interruptDefinition, routineDefinition, ruleDefinition, settingsDefinition, type AutomationWriteContext, type HoldsAutomationSecret,
+} from './automation-definitions.js';
 
 const KINDS = new Map([
   ['org.bunny.attention.raised','attention-raised'], ['org.bunny.attention.cleared','attention-cleared'],
   ['org.bunny.turn.ended','turn-ended'], ['org.bunny.session.ended','session-ended'],
 ]);
 const opaque = (value: string): string => createHash('sha256').update(value).digest('hex');
-export type AutomationControls = Omit<Automation,'submit'|'close'|'log'> & {artSchedule?:{get():ArtScheduleRecord;save(input:unknown,parent?:TraceContext):Promise<ArtScheduleRecord>};art?:Pick<ArtPlans,'targets'|'present'>;routines?:Omit<Routines,'close'>;limits?:Omit<PowerLimits,'close'|'tick'|'records'>;log(limit:number,before?:number):(LogEntry & {operation?:Operation})[]};
-
+type RoutineControls = Pick<Routines, 'list' | 'get' | 'run' | 'preview' | 'settled'> & {
+  create(value: unknown, owner?: boolean, context?: AutomationWriteContext): Routine | Promise<Routine>;
+  update(id: string, value: unknown, context?: AutomationWriteContext): Routine | Promise<Routine>;
+  setEnabled(id: string, enabled: boolean, context?: AutomationWriteContext): Routine | Promise<Routine>;
+  remove(id: string, context?: AutomationWriteContext): void | Promise<void>;
+};
+type AuthorizeTargets = (targets: readonly string[]) => void;
+export type AutomationControls = Pick<Automation, 'rules' | 'rule' | 'interruptSet' | 'settings' | 'settled'> & {
+  create(value: unknown, owner: boolean, authorize?: AuthorizeTargets, context?: AutomationWriteContext): Rule | Promise<Rule>;
+  update(id: string, value: unknown, authorize?: AuthorizeTargets, context?: AutomationWriteContext): Rule | Promise<Rule>;
+  setEnabled(id: string, enabled: boolean, context?: AutomationWriteContext): Rule | Promise<Rule>;
+  remove(id: string, context?: AutomationWriteContext): void | Promise<void>;
+  replaceInterruptSet(value: unknown, context?: AutomationWriteContext): string[] | Promise<string[]>;
+  replaceSettings(value: unknown, context?: AutomationWriteContext): AutomationSettings | Promise<AutomationSettings>;
+  artSchedule?: {get(): ArtScheduleRecord; save(input: unknown, parent?: TraceContext): Promise<ArtScheduleRecord>};
+  art?: Pick<ArtPlans, 'targets' | 'present'>;
+  routines?: RoutineControls;
+  limits?: Omit<PowerLimits, 'close' | 'tick' | 'records'>;
+  log(limit: number, before?: number): (LogEntry & {operation?: Operation})[];
+};
 type DeviceFollower = {copy?: SyncedCopy<DeviceRecord>; fresh:boolean; pending: Promise<void>; retry: Backoff; cancel?: Cancel};
 
 export class AutomationPart implements CorePart {
-  readonly families=['power-limit','art-schedule'];
-  readonly states=(families:readonly string[])=>[...(families.includes('power-limit')?(this.#limits?.records()??[]).map(record=>({type:'org.bunny.power-limit.updated',subject:record.id,dataschema:'https://bunny.invalid/events/power-limit/2.0',data:record})):[]),
-    ...(families.includes('art-schedule')&&this.#schedule!==undefined?[{type:'org.bunny.art-schedule.updated',subject:'art',dataschema:'https://bunny.invalid/events/art-schedule/2.0',data:this.#schedule.get()}]:[])];
+  readonly families = ['power-limit', 'art-schedule', ...AUTOMATION_FAMILIES];
+  readonly states = (families: readonly string[]) => {
+    const definitions = this.#definitions;
+    return [
+      ...(families.includes('power-limit') ? (this.#limits?.records() ?? []).map(record =>
+        ({type: 'org.bunny.power-limit.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/power-limit/2.0', data: record})) : []),
+      ...(families.includes('art-schedule') && this.#schedule !== undefined ?
+        [{type: 'org.bunny.art-schedule.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-schedule/2.0', data: this.#schedule.get()}] : []),
+      ...(definitions !== undefined && this.#automation !== undefined && this.#routines !== undefined ? [
+        ...(families.includes('automation-rule') ? this.#automation.rules().map(rule => definitions.current('automation-rule', ruleDefinition(rule))) : []),
+        ...(families.includes('automation-routine') ? this.#routines.definitions().map(routine => definitions.current('automation-routine', routineDefinition(routine))) : []),
+        ...(families.includes('automation-settings') ? [definitions.current('automation-settings', settingsDefinition(this.#automation.settings()))] : []),
+        ...(families.includes('automation-interrupt-set') ? [definitions.current('automation-interrupt-set', interruptDefinition(this.#automation.interruptSet()))] : []),
+      ] : []),
+    ];
+  };
+  #definitions: AutomationDefinitions | undefined;
   #schedule:ArtSchedule|undefined;
   #inputs:ArtScheduleInputs|undefined;
   #limits:PowerLimits|undefined;
   readonly #scheduler: ModuleScheduler;
   readonly #signal: AbortSignal;
-  constructor(scheduler: ModuleScheduler, signal: AbortSignal, readonly choice:()=>number=Math.random) {this.#scheduler=scheduler;this.#signal=signal;}
+  constructor(scheduler: ModuleScheduler, signal: AbortSignal, readonly choice:()=>number=Math.random,
+    readonly holdsSecret: HoldsAutomationSecret = () => false) {this.#scheduler=scheduler;this.#signal=signal;}
   #handle: CoreHandle | undefined;
   #automation: Automation | undefined;
   #routines:Routines|undefined;
@@ -125,6 +161,7 @@ export class AutomationPart implements CorePart {
     if (handle===undefined) throw new Error('automation-not-started');
     const store=new AutomationStore(database,()=>{if(this.#closed) throw new Error('automation-closed');},
       {settings:DEFAULT_SETTINGS,interruptSet:[...DEFAULT_INTERRUPT_SET]});
+    this.#definitions = new AutomationDefinitions(database, handle, this.holdsSecret);
     this.#art=createArtPlans({clock:()=>handle.clock.now(),scheduler:this.#scheduler,active:()=>!this.#closed && !this.#signal.aborted,
       targets:()=>this.#configured.flatMap((device):ArtPlanTarget[]=>device.owner==='bunny/modules/pixoo'?[{target:device.id,kind:'pixoo'}]
         :device.owner==='bunny/modules/tidbyt'?[{target:device.id,kind:'tidbyt'}]:[]),
@@ -209,7 +246,7 @@ export class AutomationPart implements CorePart {
   committed(change: CoreChange): void {
     for (const message of change.messages) {
       if (message.kind === 'state' && message.type === 'org.bunny.session.updated') this.#sessions.set(message.subject, message.data as SessionRecord);
-      if (message.kind === 'removal') this.#sessions.delete(message.subject);
+      if (message.kind === 'removal' && message.type === 'org.bunny.session.removed') this.#sessions.delete(message.subject);
     }
     this.#eligibility.committed(change.messages, new Set(KINDS.keys()));
   }
@@ -229,23 +266,58 @@ export class AutomationPart implements CorePart {
     ]);
   }
   get controls(): AutomationControls {
-    const engine=this.#automation;
-    if(engine===undefined || this.#closed) throw new AutomationError('unavailable',503);
+    const engine = this.#automation, definitions = this.#definitions, routines = this.#routines;
+    if (engine === undefined || definitions === undefined || this.#closed) throw new AutomationError('unavailable', 503);
+    const priorRule = (id: string) => () => {
+      const rule = engine.rules().find(rule => rule.id === id);
+      return rule === undefined ? undefined : ruleDefinition(rule);
+    };
+    const priorRoutine = (id: string) => () => {
+      const routine = routines?.definitions().find(routine => routine.id === id);
+      return routine === undefined ? undefined : routineDefinition(routine);
+    };
+    const noDefinition = () => undefined;
     return {
-      ...(this.#schedule===undefined?{}:{artSchedule:this.#schedule}),
-      ...(this.#art===undefined?{}:{art:{targets:this.#art.targets,present:this.#art.present}}),
-      ...(this.#routines===undefined?{}:{routines:this.#routines}),
-      ...(this.#limits===undefined?{}:{limits:this.#limits}),
-      rules:()=>engine.rules(),rule:id=>engine.rule(id),
-      create:(value,owner,authorize)=>engine.create(value,owner,authorize),
-      update:(id,value,authorize)=>engine.update(id,value,authorize),
-      setEnabled:(id,enabled)=>engine.setEnabled(id,enabled),remove:id=>engine.remove(id),
-      interruptSet:()=>engine.interruptSet(),replaceInterruptSet:value=>engine.replaceInterruptSet(value),
-      settings:()=>engine.settings(),replaceSettings:value=>{const result=engine.replaceSettings(value);this.#schedule?.changed();return result;},settled:async()=>{await Promise.all([engine.settled(),this.#routines?.settled(),this.#limits?.settled(),this.#schedule?.settled()]);},
-      log:(limit,before)=>engine.log(limit,before).map(entry=>{
-      const operation=entry.requestId===undefined?undefined:this.#handle?.operation(entry.requestId);
-      return {...entry,...(operation===undefined?{}:{operation})};
-    })};
+      ...(this.#schedule === undefined ? {} : {artSchedule: this.#schedule}),
+      ...(this.#art === undefined ? {} : {art: {targets: this.#art.targets, present: this.#art.present}}),
+      ...(routines === undefined ? {} : {routines: {
+        list: routines.list, get: routines.get, run: (id, parent) => routines.run(id, parent),
+        preview: id => routines.preview(id), settled: () => routines.settled(),
+        create: (value, owner, context) => definitions.write('automation-routine', noDefinition,
+          commit => routines.create(value, owner, commit), routineDefinition, context),
+        update: (id, value, context) => definitions.write('automation-routine', priorRoutine(id),
+          commit => routines.update(id, value, commit), routineDefinition, context),
+        setEnabled: (id, enabled, context) => definitions.write('automation-routine', priorRoutine(id),
+          commit => routines.setEnabled(id, enabled, commit), routineDefinition, context),
+        remove: (id, context) => definitions.write('automation-routine', priorRoutine(id),
+          commit => { routines.remove(id, commit); }, noDefinition, context),
+      }}),
+      ...(this.#limits === undefined ? {} : {limits: this.#limits}),
+      rules: engine.rules, rule: engine.rule,
+      create: (value, owner, authorize, context) => definitions.write('automation-rule', noDefinition,
+        commit => engine.create(value, owner, authorize, commit), ruleDefinition, context),
+      update: (id, value, authorize, context) => definitions.write('automation-rule', priorRule(id),
+        commit => engine.update(id, value, authorize, commit), ruleDefinition, context),
+      setEnabled: (id, enabled, context) => definitions.write('automation-rule', priorRule(id),
+        commit => engine.setEnabled(id, enabled, commit), ruleDefinition, context),
+      remove: (id, context) => definitions.write('automation-rule', priorRule(id),
+        commit => { engine.remove(id, commit); }, noDefinition, context),
+      interruptSet: engine.interruptSet,
+      replaceInterruptSet: (value, context) => definitions.write('automation-interrupt-set', () => interruptDefinition(engine.interruptSet()),
+        commit => engine.replaceInterruptSet(value, commit), interruptDefinition, context),
+      settings: engine.settings,
+      replaceSettings: (value, context) => definitions.write('automation-settings', () => settingsDefinition(engine.settings()),
+        commit => {
+          const settings = engine.replaceSettings(value, commit);
+          commit(() => { this.#schedule?.changed(); });
+          return settings;
+        }, settingsDefinition, context),
+      settled: async () => { await Promise.all([engine.settled(), routines?.settled(), this.#limits?.settled(), this.#schedule?.settled()]); },
+      log: (limit, before) => engine.log(limit, before).map(entry => {
+        const operation = entry.requestId === undefined ? undefined : this.#handle?.operation(entry.requestId);
+        return {...entry, ...(operation === undefined ? {} : {operation})};
+      }),
+    };
   }
   async close(): Promise<void> {
     this.#closed=true;this.#eligibility.clear();

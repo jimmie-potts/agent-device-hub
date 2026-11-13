@@ -30,6 +30,7 @@ import {
 import {
   fullDisk, Outbox, recordLog, SdkError, type AddMessage, type Clock, type Draft, type LogFields, type Logger, type OutboxOptions, type Sdk, type SpanRecorder,
 } from '@jimmie-potts/sdk';
+import {errorFields} from '../log.js';
 import {takeLock, type Lock} from './lock.js';
 import {borrowRuntimeOwnership, type CoreOwnership} from '../runtime-ownership.js';
 import {History, type HistoryEntry, type HistoryRules, type WrittenChange, type OperationStep} from './history.js';
@@ -65,11 +66,15 @@ export interface CoreTransaction {
   readonly atMs: number;
   /** The revision this transaction's changes carry: the core's next revision, the same for every call. */
   revision(): number;
+  /** Installs a part's in-memory state after a verified commit, before publication. */
+  afterCommit?(apply: () => void): void;
   /**
    * Stores a message in the core's outbox, in this transaction. It goes out after the commit, in order, and history
    * keeps it (#782): a state as a compact change event, anything else whole.
    */
   readonly add: AddMessage;
+  /** Requires the exact retained history fact for a message added by this transaction. */
+  requireRetained?(message: Message<unknown>): void;
   /** Records `message` as taken by its `(source, id)`, kept for `keepForMs` or for good, so a later copy is a duplicate. */
   take(message: Message<unknown>, keepForMs?: number): void;
   /** Keeps another participant's message in the core's history, as `add` keeps the core's own. */
@@ -97,6 +102,7 @@ export type StoreOptions = {
   trace?: SpanRecorder;
   /** Without a logger, hears that a publish was refused after its commit: committed, and awaiting publication. */
   onError?: OutboxOptions['onError'];
+  statePublication?: OutboxOptions['statePublication'];
   /** Parts' derivers, run in each core change's transaction. */
   derivers?: readonly Deriver[];
   /** Parts' tables, created once the lease is held. */
@@ -446,6 +452,7 @@ export class CoreStore implements Storage {
     const statements = prepare(db);
     const outbox = new Outbox({
       sdk: this.#options.sdk, database: db,
+      ...(this.#options.statePublication === undefined ? {} : {statePublication: this.#options.statePublication}),
       ...(this.#options.log === undefined ? {} : {log: this.#options.log}),
       ...(this.#options.trace === undefined ? {} : {trace: this.#options.trace}),
       ...(this.#options.onError === undefined ? {} : {onError: this.#options.onError}),
@@ -553,6 +560,7 @@ export class CoreStore implements Storage {
     const {history} = this;
     // What history keeps of this transaction, in the order it happened, written at its end with its revision.
     const entries: HistoryEntry[] = [];
+    const required = new Set<Message<unknown>>();
     const historyChanges: WrittenChange[] | undefined = this.#historyAlarm === undefined ? undefined : [];
     let revision = plan.revision;
     const commits = this.#commits + 1;
@@ -561,18 +569,21 @@ export class CoreStore implements Storage {
     const added: Message[] = [];
     let addTo: AddMessage = () => { throw new Error('add a message only inside the transaction'); };
     let adds = 0;
+    const afterCommit: (() => void)[] = [];
     const tx: CoreTransaction = {
       database: this.#db, atMs,
       revision: () => {
         revision ??= this.#revision + 1;
         return revision;
       },
+      afterCommit: apply => { afterCommit.push(apply); },
       add: (key, draft, options) => {
         adds += 1;
         const message = addTo(key, draft, options);
         entries.push({kind: 'message', message});
         return message;
       },
+      requireRetained: message => { required.add(message); },
       take: (message, keepForMs) => { statements.take.run(message.source, message.id, JSON.stringify(message), keepForMs === undefined ? null : atMs + keepForMs); },
       record: message => { entries.push({kind: 'message', message}); },
       step: step => { entries.push({kind: 'operation', step}); },
@@ -604,8 +615,10 @@ export class CoreStore implements Storage {
           const change: CoreChange = {revision: tx.revision(), messages: added};
           for (const derive of this.#options.derivers ?? []) derive(change, tx);
         }
-        history.write(entries, atMs, revision ?? this.#revision, historyChanges);
-        statements.writeRevision.run(revision ?? this.#revision, commits);
+        history.write(entries, atMs, revision ?? this.#revision, historyChanges, required);
+        if (Number(statements.writeRevision.run(revision ?? this.#revision, commits).changes) !== 1) {
+          throw new Error('the core commit revision was not stored');
+        }
       });
     } finally {
       this.#frozen = undefined;
@@ -649,6 +662,15 @@ export class CoreStore implements Storage {
     for (const id of plan.removed) this.#records.delete(id);
     this.#restarted = plan.restarted;
     this.#hostSessions = plan.hostSessions;
+    for (const apply of afterCommit) {
+      try { apply(); }
+      catch (error) {
+        try {
+          if (this.#options.log !== undefined) recordLog(this.#options.log, 'operation.failed',
+            {'bunny.operation': 'automation', 'bunny.code': 'internal', ...errorFields(error)});
+        } catch { /* A diagnostic failure cannot change a committed result. */ }
+      }
+    }
     if (historyChanges !== undefined) this.#historyAlarm?.committed(historyChanges, atMs);
     const publicationEnded=this.#options.committed?.({revision:this.#revision,messages:added});
     if (adds > 0) this.#options.beforePublish?.();
