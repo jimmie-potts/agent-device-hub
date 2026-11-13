@@ -198,6 +198,11 @@ export async function startSync<T extends object>(
   return new Copy(transport, requested, handler, timeoutMs, maxBuffered, owner, options.onRestarted).start(parent);
 }
 
+/** Verification access to the SDK copy's live-delivery rules. */
+export function copyCovers(copy: SyncedCopy<object>, message: Message): boolean {
+  return copy instanceof Copy && copy.covers(message);
+}
+
 type Held<T> = {entity: EntityRef; revision: number; message: Message<T>};
 /** An answer and the copy's generation when its request was sent. */
 type Answered = {answer: SyncAnswer | SyncInterrupted; generation: number};
@@ -498,6 +503,22 @@ class Copy<T extends object> implements SyncedCopy<T> {
     settle?.({status: 'synced', copy: this, message: answer.completed});
   }
 
+  covers(message: Message): boolean {
+    const entry = entryOf(message);
+    return entry !== undefined && this.#families.has(entry.entity.family) && !this.#foreign(message)
+      && this.#covered(entry, false);
+  }
+
+  /** A snapshot, held state or tombstone already accounts for this revision. */
+  #covered({entity, kind, revision}: Entry, snapshot: boolean): boolean {
+    if (!snapshot && revision <= this.#floor) return true;
+    const key = keyOf(entity);
+    const held = this.#held.get(key);
+    const removedAt = this.#removed.get(key);
+    if (kind === 'state') return (held !== undefined && held.revision >= revision) || (removedAt !== undefined && removedAt >= revision);
+    return held !== undefined ? held.revision > revision : removedAt !== undefined && removedAt >= revision;
+  }
+
   /**
    * Applies one state or removal and returns the change, or undefined when it changes nothing: a duplicate, a stale
    * revision or a removal of an entity the copy does not hold. Snapshot states skip the sync floor.
@@ -511,20 +532,17 @@ class Copy<T extends object> implements SyncedCopy<T> {
       return undefined;
     }
     const {entity, revision} = entry;
-    if (!snapshot && revision <= this.#floor) return undefined;
+    if (this.#covered(entry, snapshot)) return undefined;
     const key = keyOf(entity);
     const held = this.#held.get(key);
-    const removedAt = this.#removed.get(key);
     switch (entry.kind) {
       case 'state': {
-        if ((held !== undefined && held.revision >= revision) || (removedAt !== undefined && removedAt >= revision)) return undefined;
         const state = message as Message<T>;
         this.#held.set(key, {entity, revision, message: state});
         this.#removed.delete(key);
         return {type: 'updated', entity, message: state};
       }
       case 'removal': {
-        if (held !== undefined ? held.revision > revision : removedAt !== undefined && removedAt >= revision) return undefined;
         this.#held.delete(key);
         this.#removed.set(key, revision);
         return held === undefined ? undefined : {type: 'removed', entity, message: message as Message<Removal>};

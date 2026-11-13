@@ -28,9 +28,9 @@ export type ChildMessage =
   | {type: 'device.call'; id: number; device: string; method: string; args: unknown}
   /** The module stopped waiting for that call, so the device stops too. */
   | {type: 'device.abandon'; id: number}
-  | {type: 'published'; message: Message}
+  | {type: 'published'; message: Message; readerStream?: number}
   | {type: 'applied'; id: number}
-  | {type: 'flushed'; id: number}
+  | {type: 'flushed'; id: number; readerStream?: number}
   /**
    * A run on virtual time (Hub #1710): the child moved its clock to `nowMs` and gave real work its turn. `nextDueMs` is
    * when its earliest pending timer is due (null with none), `busy` whether work is still in flight that may change
@@ -59,13 +59,17 @@ export type SupervisorMessage =
 /** The harness API's routes, under the supervisor's own loopback listener (the run's `harness` endpoint). */
 export const HARNESS_PATH = '/api/harness/v1';
 
+export type Publication = Generational<{message: Message; readerStream?: number}>;
+
 /** `GET state?logs=<n>&published=<m>`: the run now, with the log records and messages after the first `n` and `m`. */
 export type HarnessState = {
   /** How many runtimes the run has started: 1 at first, one more after each crash or restart. */
   generation: number;
   devices: DeviceStates;
   logs: Generational<{record: LogRecord}>[];
-  published: Generational<{message: Message}>[];
+  published: Publication[];
+  /** The current generation's reader stream ordinal at the flush, when one is open on virtual time. */
+  readerStream?: number;
 };
 
 /** One outbound connection or datagram the guard refused. */

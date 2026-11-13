@@ -134,6 +134,14 @@ type Member = {
 };
 type Envelope<T> = {type: string; subject: string; dataschema: string; data: T};
 
+type PublicationObserver = {source: string; observe: (message: Message, subscribed: boolean) => void};
+const publicationObservers = new WeakMap<InProcessBus, PublicationObserver>();
+
+/** Internal to the fixture's remote publication observer. */
+export function observePublications(bus: InProcessBus, source: string, observe: PublicationObserver['observe']): void {
+  publicationObservers.set(bus, {source, observe});
+}
+
 export class InProcessBus {
   readonly #subscribers = new Set<Subscriber>();
   readonly #owners = new Set<Owner>();
@@ -314,11 +322,20 @@ export class InProcessBus {
   }
 
   #deliver(key: string, route: RoutingKey, message: Message<unknown>): void {
+    const observer = publicationObservers.get(this);
+    let subscribed = false;
     for (const subscriber of this.#subscribers) {
-      if (overlaps(subscriber.pattern, route) && !subscriber.queue.push(message)) {
+      if (!overlaps(subscriber.pattern, route)) continue;
+      subscribed ||= observer !== undefined && subscriber.scope.source === observer.source;
+      if (!subscriber.queue.push(message)) {
         subscriber.dropped += 1;
         this.#report(new SdkError(body('capacity', `dropped ${message.id} on ${key}: the delivery queue is full`)), subscriber.scope);
       }
+    }
+    try {
+      observer?.observe(message as Message, subscribed);
+    } catch {
+      // The fixture's observer must not affect publication.
     }
   }
 

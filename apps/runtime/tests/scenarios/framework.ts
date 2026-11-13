@@ -296,6 +296,7 @@ async function attempt(check: () => Outcome | Promise<Outcome>): Promise<Outcome
 async function poll(h: Harness, check: Check, withinMs: number): Promise<Outcome> {
   let overtime: Overtime | undefined;
   for (let waited = 0; ; waited += POLL_MS) {
+    if (waited >= withinMs) overtime ??= h.overtime?.();
     const outcome = await attempt(() => check(h));
     if (outcome === true) return outcome;
     if (waited < withinMs) {
@@ -303,7 +304,6 @@ async function poll(h: Harness, check: Check, withinMs: number): Promise<Outcome
       continue;
     }
     // The bound never passes on the harness's time alone while real work the check may wait on is still in flight.
-    overtime ??= h.overtime?.();
     const more = overtime === undefined ? false : await overtime.next();
     if (more !== true) return more === false ? outcome : `${outcome}; ${more}`;
   }

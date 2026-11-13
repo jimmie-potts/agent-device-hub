@@ -18,13 +18,12 @@ import {join, resolve} from 'node:path';
 import type {Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
-import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceAction, Scheduler} from '@jimmie-potts/sdk';
 import {HEALTH_PATH, readSpanFile, registrations, type LogRecord} from '../src/index.js';
 import {SimulatedChime} from '../tests/fixtures/chime.js';
 import {SimulatedLamps} from '../tests/fixtures/lamp.js';
 import {SimulatedSigns} from '../tests/fixtures/sign.js';
-import type {Generational} from '../tests/scenarios/framework.js';
 import {writeCollector, writeProducer} from '../tests/scenarios/parts.js';
 import {stepThrough} from '../tests/scenarios/stepping.js';
 import {WORKER_WAIT_MS, manualClock} from '../tests/scenarios/virtual-time.js';
@@ -35,7 +34,7 @@ import {FollowRefusal, follow, queryOf, type Evidence, type SpanEvidence} from '
 import {Journal} from './journal.js';
 import {SupervisorDevices} from './link.js';
 import {
-  HARNESS_PATH, MAX_ADVANCE_MS, type Attempt, type BoundaryReport, type ChildMessage, type ClockState, type Control, type DisconnectRequest, type FixtureSimulation,
+  HARNESS_PATH, MAX_ADVANCE_MS, type Attempt, type BoundaryReport, type ChildMessage, type Publication, type ClockState, type Control, type DisconnectRequest, type FixtureSimulation,
   type HarnessState, type SimulateRequest, type SupervisorMessage,
 } from './protocol.js';
 import {BurstLimit} from './restarts.js';
@@ -85,7 +84,7 @@ const lineWaiters = new Set<() => void>();
 /** Each show an offline sign still waits on, by the runtime's generation and the child's ID, so the child can abandon it. */
 const shows = new Map<string, AbortController>();
 const journal = new Journal();
-const published: Generational<{message: Message}>[] = [];
+const published: Publication[] = [];
 /** Where the guard of the runtime, its threads and its child processes writes each refused connection. */
 const guardReport = join(dataDir, 'guard-report.jsonl');
 const waiting = new Map<number, (message: ChildMessage) => void>();
@@ -179,7 +178,8 @@ function heard(child: ChildProcess, number: number, message: ChildMessage): void
       devices.abandon(number, message.id);
       return;
     case 'published':
-      published.push({generation: number, message: message.message});
+      published.push({generation: number, message: message.message,
+        ...(message.readerStream === undefined ? {} : {readerStream: message.readerStream})});
       return;
     case 'applied':
     case 'flushed':
@@ -332,14 +332,14 @@ function restart(holdMs = 0, untilReleased = false): Promise<void> {
 }
 
 /** Sends the child a control or a flush and waits for its answer. A run of the shipped runtime has neither. */
-function ask(build: (id: number) => SupervisorMessage): Promise<void> {
+function ask(build: (id: number) => SupervisorMessage): Promise<ChildMessage | undefined> {
   const child = current;
-  if (!fixtures || child?.connected !== true) return Promise.resolve();
+  if (!fixtures || child?.connected !== true) return Promise.resolve(undefined);
   next += 1;
   const id = next;
   return new Promise(done => {
-    const timer = setTimeout(() => { waiting.delete(id); done(); }, ANSWER_MS);
-    waiting.set(id, () => { clearTimeout(timer); done(); });
+    const timer = setTimeout(() => { waiting.delete(id); done(undefined); }, ANSWER_MS);
+    waiting.set(id, answer => { clearTimeout(timer); done(answer); });
     tell(child, build(id));
   });
 }
@@ -443,8 +443,14 @@ function advanceOf(value: unknown): number | undefined {
   if (Object.keys(rest).length > 0 || typeof ms !== 'number' || !Number.isSafeInteger(ms) || ms < 0 || ms > MAX_ADVANCE_MS) return undefined;
   return ms;
 }
-const control = (name: Control): Promise<void> => ask(id => ({type: 'control', id, control: name}));
-const flush = (): Promise<void> => ask(id => ({type: 'flush', id}));
+async function control(name: Control): Promise<void> {
+  await ask(id => ({type: 'control', id, control: name}));
+}
+async function flush(): Promise<number | undefined> {
+  const child = current;
+  const answer = await ask(id => ({type: 'flush', id}));
+  return child === current && answer?.type === 'flushed' ? answer.readerStream : undefined;
+}
 
 /** The SQLite files a process has open, from its file descriptors in /proc. */
 function openStateFiles(pid: number | undefined): string[] {
@@ -573,7 +579,9 @@ function simulationOf(value: unknown): SimulateRequest | undefined {
 }
 
 /** Hands a registered module's simulation to the current runtime's links, and waits for them to hear it. */
-const push = (device: string) => (simulation: DeviceAction): Promise<void> => ask(id => ({type: 'device.push', id, device, simulation}));
+const push = (device: string) => async (simulation: DeviceAction): Promise<void> => {
+  await ask(id => ({type: 'device.push', id, device, simulation}));
+};
 
 async function simulate(request: SimulateRequest): Promise<void> {
   switch (request.device) {
@@ -618,8 +626,9 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   if (request.method === 'POST' && request.headers['content-type'] !== 'application/json') return answer(response, 415, refusal('invalid-request', 'send JSON'));
   switch (route) {
     case 'GET /state': {
-      await flush();
+      const readerStream = await flush();
       const state: HarnessState = {
+        ...(readerStream === undefined ? {} : {readerStream}),
         generation, devices: {lamp: lamps.state(), chime: chime.state(), sign: signs.state(), ...devices.states()},
         logs: journal.entries.slice(Number(url.searchParams.get('logs') ?? '0')), published: published.slice(Number(url.searchParams.get('published') ?? '0')),
       };

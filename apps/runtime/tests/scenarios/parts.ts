@@ -10,6 +10,7 @@ import {MessageValidator, SCHEMA_BASE, type Message} from '@jimmie-potts/event-c
 import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {CommandDraft, DeviceSimulation, ModuleRegistration, Participant, RequestResult, SyncChange, SyncedCopy} from '@jimmie-potts/sdk';
+import {copyCovers, entryOf} from '@jimmie-potts/sdk/testing';
 import {producerCredentialId, producerSource} from '../../src/hook/index.js';
 import {CONFIG_SCHEMA, CREDENTIALS_SCHEMA, REQUEST_HEADER, SESSION_COOKIE, moduleSchemas, registrations, tokenDigest} from '../../src/index.js';
 import {lampSchemas} from '../fixtures/lamp.js';
@@ -278,20 +279,8 @@ const groupOf = (follow: Follow): Group => 'families' in follow ? follow : {fami
 /** A group as a problem names it: its families, and its owner when it names one. */
 const named = ({families, owner}: Group): string => `${families.join(',')}${owner === undefined ? '' : ` from ${owner}`}`;
 
-/** The entity and revision a state or removal message carries, as the SDK's copy reads them (Hub #842), or undefined. */
-function entryOf(message: Message): {entity: {family: string; id: string}; revision: number; removal: boolean} | undefined {
-  const data = typeof message.data === 'object' && message.data !== null ? message.data : undefined;
-  const revision = data?.revision;
-  if (data === undefined || typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) return undefined;
-  if (message.kind === 'state') {
-    const path = message.dataschema.startsWith(SCHEMA_BASE) ? message.dataschema.slice(SCHEMA_BASE.length) : '';
-    const family = path.slice(0, Math.max(0, path.lastIndexOf('/')));
-    return family !== '' && typeof data.id === 'string' ? {entity: {family, id: data.id}, revision, removal: false} : undefined;
-  }
-  if (message.kind !== 'removal') return undefined;
-  const entity = typeof data.entity === 'object' && data.entity !== null ? data.entity as Record<string, unknown> : undefined;
-  return typeof entity?.family === 'string' && typeof entity.id === 'string' ? {entity: {family: entity.family, id: entity.id}, revision, removal: true} : undefined;
-}
+// Profile 2.0 source and ID contain no spaces.
+const identityOf = ({source, id}: Message): string => `${source} ${id}`;
 
 /** The reader's copies, one per owner, how often each synced, every occurrence and outcome it heard and its gap notices. */
 export class Reader implements ReaderView {
@@ -300,6 +289,8 @@ export class Reader implements ReaderView {
   readonly counts: number[];
   readonly messages: Message[] = [];
   gapNotices = 0;
+  /** Counted drops, separate from a reconnect's uncounted notice. */
+  overflows = 0;
   /** Each copy's owner: the one its group names, or else the source of the `sync.completed` that first served it. */
   readonly owners: (string | undefined)[];
   /** The copies that stopped for good, because a later sync could not be served (Hub #1711). */
@@ -373,25 +364,26 @@ export class Reader implements ReaderView {
   undelivered(published: readonly Message[]): string[] {
     const missing: string[] = [];
     let heard: ReadonlySet<string> | undefined;
-    const latest = new Map<string, {index: number; entity: {family: string; id: string}; revision: number; removal: boolean}>();
+    const states = new Map<string, {index: number; entry: NonNullable<ReturnType<typeof entryOf>>}>();
     for (const message of published) {
       if (message.kind === 'occurrence' || message.kind === 'outcome') {
-        heard ??= new Set(this.messages.map(({id}) => id));
-        if (!heard.has(message.id)) missing.push(`it did not hear ${message.type} ${message.id}`);
+        heard ??= new Set(this.messages.map(identityOf));
+        if (!heard.has(identityOf(message))) missing.push(`it did not hear ${message.type} ${message.source} ${message.id}`);
         continue;
       }
       const entry = entryOf(message);
       if (entry === undefined) continue;
       for (const [index, group] of this.groups.entries()) {
-        if (this.copies[index] === undefined || this.stopped.has(index) || !group.families.includes(entry.entity.family)) continue;
-        if (this.owners[index] === message.source) latest.set(`${index} ${entry.entity.family}/${entry.entity.id}`, {index, ...entry});
+        const copy = this.copies[index];
+        if (copy === undefined || this.stopped.has(index) || this.owners[index] !== message.source
+          || !group.families.includes(entry.entity.family) || copyCovers(copy, message)) continue;
+        const key = `${index} ${entry.entity.family}/${entry.entity.id}`;
+        if ((states.get(key)?.entry.revision ?? -1) < entry.revision) states.set(key, {index, entry});
       }
     }
-    for (const {index, entity, revision, removal} of latest.values()) {
-      const held = (this.copies[index]?.get(entity)?.data as {revision?: unknown} | undefined)?.revision;
-      const shown = typeof held === 'number' ? (removal ? held > revision : held >= revision) : removal;
+    for (const {index, entry: {entity, revision}} of states.values()) {
       const group = this.groups[index];
-      if (!shown && group !== undefined) missing.push(`its copy of ${named(group)} does not show ${entity.family} ${entity.id} at revision ${revision}`);
+      if (group !== undefined) missing.push(`its copy of ${named(group)} does not show ${entity.family} ${entity.id} at revision ${revision}`);
     }
     return missing;
   }
@@ -412,7 +404,11 @@ export async function follow(participant: Participant, reader: Reader, follows: 
     observer.check(message, 'a message the reader heard');
     reader.messages.push(message);
     reader.onChange();
-  }, {onOverflow: () => { reader.gapNotices += 1; reader.onChange(); }});
+  }, {onOverflow: ({dropped}) => {
+    reader.gapNotices += 1;
+    if (dropped !== undefined) reader.overflows += 1;
+    reader.onChange();
+  }});
   for (const [index, group] of follows.map(groupOf).entries()) {
     const {families, owner} = group;
     const result = await participant.sync(families, change => { changed(reader, index, change, group, observer); }, {timeoutMs: 5000, ...owner === undefined ? {} : {owner}});

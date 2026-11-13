@@ -189,17 +189,18 @@ Some waits hold for real work, which virtual time would outrun (#1711). Each hol
 looks again whenever the reader, a call or a part's stream changes, and fails after 15 s of real time with fixed text
 naming what is missing:
 
-- A wait ends only once a reader whose lost stream is back has synced every copy again: on either clock after
-  `disconnect`, and on virtual time after any loss, such as a crash.
-- On virtual time a wait also ends only once the reader holds what the run published while its stream was open: every
-  occurrence and outcome, and in each copy that has synced, its owner's latest state or removal of each entity at that
-  revision or later. Nothing published before the stream's latest opening, loss, return or gap notice is waited for, and
-  nothing while it is away, since a lost stream replays nothing.
-- On virtual time an expectation whose bound has passed in the run's time keeps looking without moving the run's time
-  while real work is in flight: a call waiting for its answer, a part's stream reconnecting (not one the scenario
-  disconnected, which stays away until the next wait), the reader's resync or a delivery to it, or the run's own work,
-  which an advance of 0 reports. It fails once none is in flight, with its check's own text, or after 15 s with that text
-  and what is still in flight. The in-memory harness has no such overtime.
+- A wait ends only once a reader whose lost stream is back has synced every copy again. This applies on either clock
+  after `disconnect` and on virtual time after any loss, such as a crash. On virtual time an ordinary wait holds the
+  parts' clock during resync, then advances the rest of the requested interval.
+- On virtual time a wait checks publications eligible for delivery on the reader's current stream. The fixture records
+  which stream had a matching subscription when each message went out. A refresh after reconnect includes live
+  publications without asking the reader to replay what it missed while away. Occurrences and outcomes use source and
+  ID. Each active synced copy uses the SDK's held revisions, tombstones and snapshot floor to account for its owner's
+  state and removals. A counted overflow may drop a batch from the same stream. A timeout lists every missing publication.
+- On virtual time an expectation whose bound has passed keeps looking while an answer, reconnect, resync, delivery or the
+  run's own work remains in flight. Its time stays at the bound. A single 15 s deadline includes any already owed time,
+  a zero advance, state refreshes and waits for work to change. If work settles while the adapter is checking, the
+  expectation looks again before failing. The in-memory harness has no overtime.
 
 Before a capture's browser journey starts, the page's clock is set to the run's time, so the deadlines the page stamps
 on its requests mean what they say to the runtime. The run does not move while the journey runs, unless the capture

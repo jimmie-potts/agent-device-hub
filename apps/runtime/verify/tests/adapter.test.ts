@@ -5,12 +5,13 @@ import assert from 'node:assert/strict';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {test} from 'node:test';
 import {act, answered, expect, runScenario, scenario, type Harness} from '../../tests/scenarios/catalog.js';
-import {switchLamp} from '../../tests/fixtures/lamp.js';
+import {LAMP_SCHEMA, switchLamp} from '../../tests/fixtures/lamp.js';
+import {observation, sessionStarted} from '../../tests/fixtures/agents.js';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {SdkError} from '@jimmie-potts/sdk';
-import {RESYNC_WITHIN_MS, RunFailure, connectRun, failureOf} from '../adapter.js';
+import {InProcessBus, SdkError, prepareMessage, publishOnce, type Draft} from '@jimmie-potts/sdk';
+import {REAL_WORK_WITHIN_MS, RESYNC_WITHIN_MS, RunFailure, connectRun, failureOf, readGrants} from '../adapter.js';
 import {scenarioProof} from '../plugin.js';
-import {Reader, sourceOf} from '../../tests/scenarios/parts.js';
+import {Reader, follow, sourceOf} from '../../tests/scenarios/parts.js';
 import {base, startRun} from './support.js';
 
 void test('a dropped part stays away until the next wait, then the same part reconnects and resyncs', {timeout: 60_000}, async context => {
@@ -67,9 +68,9 @@ void test('a wait after a dropped reader is back ends only once each of its copi
 });
 
 /** A request's URL and the source header a remote part sends, as the test process's `fetch` sees them. */
-function requestOf(input: Parameters<typeof fetch>[0], init: RequestInit | undefined): {url: string; source: string | undefined; method: string} {
+function requestOf(input: Parameters<typeof fetch>[0], init: RequestInit | undefined): {url: string; source: string | undefined; method: string; body: RequestInit['body']} {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-  return {url, source: (init?.headers as Record<string, string> | undefined)?.['bunny-source'], method: init?.method ?? 'GET'};
+  return {url, source: (init?.headers as Record<string, string> | undefined)?.['bunny-source'], method: init?.method ?? 'GET', body: init?.body};
 }
 
 /** A promise the test opens itself, never on a timer. */
@@ -89,7 +90,7 @@ async function turns(count: number): Promise<void> {
  * sees each answer. The remote parts and the adapter call the global `fetch`, so this reaches both.
  */
 function intercept(context: {after: (fn: () => void) => void}, around: (request: ReturnType<typeof requestOf>) => Promise<void> | void,
-  after: (request: ReturnType<typeof requestOf>, response: Response) => Response = (_request, response) => response): void {
+  after: (request: ReturnType<typeof requestOf>, response: Response) => Response | Promise<Response> = (_request, response) => response): void {
   const real = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
     const request = requestOf(input, init);
@@ -153,6 +154,264 @@ void test('on virtual time a wait ends only once what the run published has reac
   assert.deepEqual(published.filter(id => !heard.has(id)), [], 'the wait ended with everything published heard');
   assert.equal(copiedPower(h), 'on', 'and the reader\'s copy of the lamp shows it on');
   assert.deepEqual(h.problems(), []);
+});
+
+
+void test('reader delivery matches occurrence source and ID', () => {
+  const reader = new Reader([]);
+  const event = prepareMessage(sourceOf('hook'), observation(sessionStarted, 0).draft);
+  reader.messages.push(event);
+  assert.deepEqual(reader.undelivered([event]), []);
+  assert.equal(reader.undelivered([{...event, source: 'bunny/core'}]).length, 1);
+});
+
+void test('reader delivery uses applied tombstones and snapshots', async () => {
+  const bus = new InProcessBus();
+  const owner = bus.connect('bunny/modules/lamp');
+  const participant = bus.connect(sourceOf('reader'));
+  await owner.serveSync(['lamp'], () => ({revision: 5, states: []}));
+  const reader = new Reader([['lamp']]);
+  await follow(participant, reader, [['lamp']], {check: () => {}, problem: assert.fail});
+  const removal: Draft<Record<string, unknown>> = {
+    kind: 'removal', type: 'org.bunny.lamp.removed', subject: 'lamp-1', dataschema: 'https://bunny.invalid/events/removal/2.0',
+    data: {entity: {family: 'lamp', id: 'lamp-1'}, revision: 8, reason: 'deleted'},
+  };
+  const state: Draft<Record<string, unknown>> = {
+    kind: 'state', type: 'org.bunny.lamp.updated', subject: 'lamp-1', dataschema: LAMP_SCHEMA,
+    data: {id: 'lamp-1', revision: 7, power: 'on'},
+  };
+  const missing = prepareMessage(owner.source, removal);
+  assert.deepEqual(reader.undelivered([prepareMessage(owner.source, {...removal, data: {...removal.data, revision: 5}})]), []);
+  const absent = reader.undelivered([missing]);
+  await owner.publishMessage('bunny.state.lamp.lamp-1', missing);
+  const stale = await owner.publish('bunny.state.lamp.lamp-1', state);
+  await turns(1);
+  assert.equal(reader.undelivered([missing, stale]).length, 0, 'the applied removal supersedes stale state');
+  assert.equal(absent.length, 1, 'plain absence does not cover a pending removal');
+  await participant.close();
+  await owner.close();
+});
+
+void test('the first refresh after reader reconnect waits for live frames and excludes the gap', {timeout: 60_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const source = sourceOf('hook'), token = (await readGrants(run.dataDir)).get(source);
+  assert.ok(token);
+  const held = gate(), published = gate();
+  let h: Awaited<ReturnType<typeof connectRun>> | undefined, liveId: string | undefined;
+  const publish = async (live = false): Promise<string> => {
+    const now = h?.now() ?? 0;
+    const {key, draft} = observation(sessionStarted, now);
+    const message = prepareMessage(source, draft, {now: () => now});
+    if (live) liveId = message.id;
+    assert.equal((await publishOnce({url: run.url, source, token, timeoutMs: 1000}, key, message)).status, 'published');
+    return message.id;
+  };
+  intercept(context, async request => {
+    if (request.url.includes('/api/harness/v1/state') && liveId === undefined && (h?.reader.gaps() ?? 0) > 0) {
+      await publish(true);
+      published.open();
+    }
+  }, (request, response) => {
+    if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        if (liveId !== undefined && new TextDecoder().decode(chunk).includes(liveId)) await held.opened;
+        controller.enqueue(chunk);
+      },
+    }));
+    return new Response(body, {status: response.status, headers: response.headers});
+  });
+  h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h?.close());
+  await h.disconnect('reader');
+  const lost = await publish();
+  let finished = false;
+  const waiting = (async () => {
+    for (let attempt = 0; attempt < 50 && liveId === undefined; attempt += 1) await h?.wait(100);
+  })().finally(() => { finished = true; });
+  try {
+    await Promise.race([published.opened, waiting]);
+    const id = liveId;
+    assert.ok(id);
+    const reader = h.reader;
+    while (!finished && !h.published().some(({message}) => message.id === id)) await turns(1);
+    await turns(1000);
+    const finishedBeforeFrame = finished;
+    held.open();
+    await waiting;
+    assert.equal(finishedBeforeFrame, false, 'the first refresh did not skip the held live frame');
+    assert.ok(reader.heard().some(message => message.id === id));
+    assert.ok(h.published().some(({message}) => message.id === lost));
+    assert.ok(!reader.heard().some(message => message.id === lost));
+  } finally {
+    held.open();
+    await waiting.catch(() => {});
+  }
+});
+
+void test('overtime rechecks an action that settles during its first advance', {timeout: 60_000}, async context => {
+  const seed = scenario('zero-modules')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'zero-modules');
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  const held = gate(), dispatched = gate();
+  let action: Promise<string> | undefined;
+  intercept(context, async request => {
+    if (request.url.endsWith('/clock/advance') && request.body === '{"ms":0}') {
+      held.open();
+      await action;
+    }
+  }, async (request, response) => {
+    if (!request.url.includes('/api/v2/commands/')) return response;
+    const text = await response.text();
+    dispatched.open();
+    await held.opened;
+    return new Response(text, {status: response.status, headers: response.headers});
+  });
+  try {
+    const result = await runScenario({id: 'quick-overtime', title: 'quick overtime', seed, steps: [
+      act('the command awaits the answer', async h => {
+        action = h.dispatch('operator', 'none', switchLamp('lamp-1', 'on'), 'req-none');
+        await dispatched.opened;
+      }),
+      expect('the command answer was unavailable', h => answered(h, 'none', 'unavailable'), 0),
+    ]}, h);
+    assert.equal(h.answer('none'), 'unavailable');
+    assert.equal(result.outcome, 'passed', JSON.stringify(result.steps));
+  } finally {
+    held.open();
+  }
+});
+
+void test('overtime counts a held advance against its real deadline', {timeout: 60_000}, async context => {
+  const seed = scenario('zero-modules')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'zero-modules');
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  const held = gate(), advancing = gate();
+  intercept(context, async request => {
+    if (!request.url.endsWith('/clock/advance')) return;
+    advancing.open();
+    await held.opened;
+  });
+  const started = h.now();
+  context.mock.timers.enable({apis: ['Date', 'setTimeout']});
+  context.mock.method(performance, 'now', () => Date.now());
+  const overtime = h.overtime?.();
+  assert.ok(overtime);
+  let detail: boolean | string | undefined;
+  const checked = overtime.next().then(result => { detail = result; });
+  try {
+    await advancing.opened;
+    context.mock.timers.tick(REAL_WORK_WITHIN_MS);
+    await turns(2);
+    assert.equal(typeof detail, 'string', 'overtime expired while its advance was still held');
+    assert.match(String(detail), /15000 ms.*advance/i);
+    assert.equal(h.now(), started);
+  } finally {
+    context.mock.timers.reset();
+    held.open();
+    await checked;
+  }
+});
+
+void test('a long ordinary wait holds virtual time during reconnect resync', {timeout: 60_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  const held = gate(), syncing = gate();
+  let heldAt: number | undefined, advanced = false, opening = false;
+  intercept(context, async request => {
+    if (request.source === sourceOf('reader') && request.url.endsWith('/stream')) opening = true;
+    if (request.source === sourceOf('reader') && request.url.endsWith('/sync')) {
+      heldAt ??= h.now();
+      syncing.open();
+      await held.opened;
+    }
+    if (heldAt !== undefined && request.url.endsWith('/clock/advance')) advanced = true;
+  }, async (request, response) => {
+    if (opening && request.url.includes('/api/harness/v1/state')) await syncing.opened;
+    return response;
+  });
+  await h.disconnect('reader');
+  const started = h.now();
+  const waiting = h.wait(8000);
+  try {
+    await Promise.race([syncing.opened, waiting]);
+    assert.notEqual(heldAt, undefined, 'the reader began its resync');
+    await turns(1000);
+    assert.equal(h.now(), heldAt, 'virtual time was frozen while the resync was held');
+    assert.equal(advanced, false, 'the wait did not advance the run during resync');
+  } finally {
+    held.open();
+    await waiting;
+  }
+  assert.equal(h.now(), started + 8000);
+  assert.deepEqual([h.reader.gaps(), h.reader.syncs('session'), h.reader.syncs('lamp')], [1, 2, 2]);
+  assert.deepEqual(h.problems(), []);
+});
+
+void test('a delivery timeout names every missing publication', {timeout: 60_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const held = gate();
+  let armed = false;
+  intercept(context, () => {}, (request, response) => {
+    if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        if (armed) await held.opened;
+        controller.enqueue(chunk);
+      },
+    }));
+    return new Response(body, {status: response.status, headers: response.headers});
+  });
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  const before = h.published().length;
+  armed = true;
+  try {
+    for (let i = 0; i < 7; i += 1) {
+      const {key, draft} = observation(sessionStarted, h.now());
+      await h.sdk('hook').publish(key, draft);
+    }
+    // Flush the journal without advancing the run, then control only the delivery wait's real timer.
+    await h.gateway({as: 'anonymous', method: 'GET', path: '/health'});
+    const ids = h.published().slice(before).filter(({message}) => message.kind === 'occurrence' && message.source === sourceOf('hook')).map(({message}) => message.id);
+    assert.equal(ids.length, 7);
+    const ticking = gate();
+    context.mock.timers.enable({apis: ['Date', 'setTimeout']});
+    context.mock.method(performance, 'now', () => Date.now());
+    const realTimer = globalThis.setTimeout;
+    context.mock.method(globalThis, 'setTimeout', (callback: () => void, delay: number) => {
+      if (delay === 25) ticking.open();
+      return realTimer(callback, delay);
+    });
+    const wait = h.wait(0);
+    const failed = assert.rejects(wait, (error: unknown) => {
+      assert.ok(error instanceof RunFailure);
+      for (const id of ids) assert.ok(error.message.includes(id), `missing diagnostic for ${id}`);
+      return true;
+    });
+    try {
+      await Promise.race([ticking.opened, wait]);
+      context.mock.timers.tick(REAL_WORK_WITHIN_MS);
+      await failed;
+    } finally {
+      context.mock.restoreAll();
+      context.mock.timers.reset();
+      await failed.catch(() => {});
+    }
+  } finally {
+    held.open();
+  }
 });
 
 const copiedPower = (h: Harness): unknown => h.reader.states<{id: string; power: unknown}>('lamp').find(state => state.data.id === 'lamp-1')?.data.power;
