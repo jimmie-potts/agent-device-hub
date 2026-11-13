@@ -496,6 +496,71 @@ void test('a predicate-owned frame cannot block a different completed read', {ti
   }
 });
 
+void test('a later duplicate preserves the captured trace of the original action', {timeout: 30_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const heldFrame = gate();
+  let armed = false;
+  intercept(context, () => {}, (request, response) => {
+    if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        if (armed) await heldFrame.opened;
+        controller.enqueue(chunk);
+      },
+    }));
+    return new Response(body, {status: response.status, headers: response.headers});
+  });
+  const clock = manualClock(0), awaitingDelivery = gate();
+  const scheduler = {after: (delay: number, callback: () => void) => {
+    if (delay === 25) awaitingDelivery.open();
+    return clock.scheduler.after(delay, callback);
+  }};
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed, realWorkClock: {now: clock.now, scheduler}});
+  context.after(() => h.close());
+  let original: Promise<string> | undefined, checks = 0;
+  const reachedBound = gate();
+  armed = true;
+  const result = runScenario({id: 'duplicate-admission', title: 'duplicate admission', seed, steps: [
+    act('an original named action waits for the reply', async h => {
+      h.simulate({device: 'lamp', action: 'hold'});
+      original = h.dispatch('operator', 'original', switchLamp('lamp-1', 'on'), 'req-shared');
+      for (let i = 0; h.devices().lamp.calls.length === 0 && i < 100; i++) {
+        await h.gateway({as: 'anonymous', method: 'GET', path: HEALTH_PATH});
+      }
+      assert.equal(h.devices().lamp.calls.length, 1, 'the original reached the simulated device');
+      assert.equal(h.answer('original'), 'pending');
+    }),
+    expect('the reader saw the original action\'s state', async h => {
+      checks += 1;
+      if (checks === 1) {
+        const records = h.logs().filter(({record}) => record.event_name.endsWith('command.queued')
+          && record.attributes['bunny.request.id'] === 'req-shared');
+        assert.equal(new Set(records.map(({record}) => record.trace_id).filter(trace => trace !== undefined)).size, 1,
+          'the original trace was known before the duplicate started');
+        assert.equal(await h.dispatch('operator', 'duplicate', switchLamp('lamp-1', 'on'), 'req-shared'), 'uncertain-result');
+        h.simulate({device: 'lamp', action: 'release'});
+        assert.equal(await original, 'accepted');
+        reachedBound.open();
+      }
+      return copiedPower(h) === 'on' || 'the reader still sees the lamp off';
+    }, 0),
+  ]}, h);
+  try {
+    await Promise.race([reachedBound.opened, result]);
+    await Promise.race([awaitingDelivery.opened, result]);
+    const checksBeforeFrame = checks;
+    heldFrame.open();
+    const verdict = await result;
+    assert.equal(checksBeforeFrame, 1, JSON.stringify(verdict));
+    assert.equal(verdict.outcome, 'passed', JSON.stringify(verdict));
+  } finally {
+    heldFrame.open();
+    await result;
+  }
+});
+
 void test('a zero-width check retries once when the child was already busy', {timeout: 60_000}, async context => {
   const seed = scenario('zero-modules')?.seed;
   assert.ok(seed);

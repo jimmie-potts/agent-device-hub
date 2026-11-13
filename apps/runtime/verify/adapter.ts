@@ -793,7 +793,11 @@ class Run implements RunHarness {
     const work: PendingWork[] = [];
     if (v.busy) work.push(() => v.busy ? ["the run's own work"] : []);
     for (const call of this.#calls) work.push(() => this.#calls.has(call) ? ['a call waiting for an answer'] : []);
-    for (const answer of this.#pendingAnswers) work.push(() => this.#answerWork(answer));
+    for (const answer of this.#pendingAnswers) {
+      // Preserve admission evidence that was already unique before the predicate can start a duplicate.
+      const admittedTrace = this.#admissionTrace(answer);
+      work.push(() => this.#answerWork(answer, admittedTrace));
+    }
     for (const [role, stream] of this.#away) {
       if (role !== 'reader' && !this.#held.some(part => part.role === role)) {
         work.push(() => this.#away.get(role) === stream ? [`the ${role}'s stream reconnecting`] : []);
@@ -812,11 +816,11 @@ class Run implements RunHarness {
     return work;
   }
 
-  #answerWork(answer: PendingAnswer): string[] {
+  #answerWork(answer: PendingAnswer, admittedTrace: string | undefined): string[] {
     if (this.#pendingAnswers.has(answer)) return [`the answer to ${answer.label}`];
     // The dispatcher's existing request record links its answer to the same trace as the resulting publications.
     // An SDK request can also give the trace in its reply or refusal.
-    const trace = answer.traceId ?? this.#admissionTrace(answer);
+    const trace = answer.traceId ?? admittedTrace ?? this.#admissionTrace(answer);
     if (trace === undefined) return [];
     return this.#missingDeliveries(this.#state.published.slice(answer.publishedFrom).filter(({message}) =>
       traceFields(message)?.traceId === trace));
