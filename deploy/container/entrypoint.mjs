@@ -143,7 +143,7 @@ async function start(options) {
     import('../../apps/runtime/dist/src/state.js'),
     import('../../apps/runtime/dist/src/runtime-ownership.js'), import('../../apps/runtime/dist/src/core/core.js'),
     import('../../apps/runtime/dist/src/modules.js'), import('../../apps/runtime/dist/src/process.js'),
-    import('../../packages/sdk/dist/src/index.js'), import('../../apps/runtime/dist/src/credentials.js'),
+    import('../../packages/sdk/dist/src/index.js'), import('../../apps/runtime/dist/src/standby-credential-admission.js'),
   ]);
   await startContainer(options, {...state, acquireRuntimeOwnership, bindCoreRuntimeOwnership, runtime, parseArguments,
     runProcess, checkConfiguration, checkCredentials: checkConfiguredCredentials,

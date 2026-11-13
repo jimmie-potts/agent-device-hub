@@ -7,12 +7,13 @@ import type {TestContext} from 'node:test';
 import {SCHEMA_BASE, errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, REMOTE_SCHEMA, SdkError, edgeValidator, prepareMessage} from '@jimmie-potts/sdk';
 import {RecordedSpans} from '@jimmie-potts/sdk/testing';
-import {admitStandbyStartupCredentials, credentialsDocument, tokenDigest, type EdgeCredential, type StandbyCredentialAdmission} from '../src/credentials.js';
+import {credentialsDocument, tokenDigest, type EdgeCredential} from '../src/credentials.js';
 import {Gateway, STANDBY_STATUS_PATH} from '../src/gateway/gateway.js';
 import type {ModuleHost} from '../src/host.js';
 import {LogWriter, type LogRecord} from '../src/log.js';
 import {observation, turnEnded} from './fixtures/agents.js';
 import {createCoreModule} from '../src/core/core.js';
+import {admitStandbyStartupCredentials, type StandbyCredentialAdmission} from '../src/standby-credential-admission.js';
 import {startRuntime} from '../src/runtime.js';
 import {deferred, edgeConfig, it, manualClock, run, stateDir} from './support.js';
 
@@ -54,6 +55,50 @@ it('a standby startup credential admission is one-use and bound to its core and 
   t.after(() => runtime.stop());
   await runtime.stop();
   await assert.rejects(startRuntime(options), {code: 'edge-credentials-invalid'});
+});
+
+it('a startup credential snapshot requires an exact standby core and cannot replace an ordinary file', async t => {
+  const files = await edgeConfig(t, [reader]);
+  const root = await stateDir(t), clock = manualClock();
+  const ordinary = createCoreModule();
+  const mintWithoutCore = (): Promise<StandbyCredentialAdmission> => Reflect.apply(admitStandbyStartupCredentials, undefined, [undefined, files.credentials]) as Promise<StandbyCredentialAdmission>;
+  await t.test('mint refuses missing, ordinary and copied core objects', async () => {
+    await assert.rejects(mintWithoutCore, {code: 'edge-credentials-invalid'});
+    const altered = createCoreModule({standby: true});
+    Object.assign(altered, {start: () => {}});
+    for (const core of [ordinary, {...createCoreModule({standby: true})}, altered]) {
+      await assert.rejects(admitStandbyStartupCredentials(core, files.credentials), {code: 'edge-credentials-invalid'});
+    }
+  });
+  await t.test('an omitted-core snapshot cannot supply an ordinary runtime after the file disappears', async () => {
+    const admission = await mintWithoutCore().catch((error: unknown) => {
+      assert.ok(error instanceof Error && 'code' in error && error.code === 'edge-credentials-invalid');
+      return undefined;
+    });
+    if (admission === undefined) return;
+    const state = join(root, 'omitted-core');
+    await rm(files.credentials);
+    try {
+      await assert.rejects(async () => {
+        const runtime = await startRuntime({modules: [ordinary], stateDir: state, port: 0, configFile: files.config,
+          clock, scheduler: clock.scheduler, log: () => {}, edge: {schemas: {}}, standbyCredentialAdmission: admission});
+        await runtime.stop();
+      }, {code: 'edge-credentials-invalid'});
+      await assert.rejects(stat(state), {code: 'ENOENT'});
+    } finally {await writeFile(files.credentials, credentialsDocument([grant]), {mode: 0o600});}
+  });
+  const standby = createCoreModule({standby: true});
+  const admission = await admitStandbyStartupCredentials(standby, files.credentials);
+  await rm(files.credentials);
+  const options = {modules: [ordinary], stateDir: join(root, 'ordinary'), port: 0,
+    configFile: files.config, clock, scheduler: clock.scheduler, log: () => {}, edge: {schemas: {}}};
+  await t.test('an ordinary runtime refuses even a genuine standby snapshot before creating state', async () => {
+    await assert.rejects(startRuntime({...options, standbyCredentialAdmission: admission}), {code: 'edge-credentials-invalid'});
+    await assert.rejects(stat(options.stateDir), {code: 'ENOENT'});
+  });
+  await t.test('ordinary startup still reads its missing credential file', async () => {
+    await assert.rejects(startRuntime(options), {code: 'edge-credentials-missing'});
+  });
 });
 
 it('an admitted standby HTTP mutation is refused before ordinary control permission', async t => {
@@ -250,6 +295,27 @@ it('standby SDK keeps source, method and structural refusals and never enters th
     ['unavailable', '0af7651916cd43dd8448eb211c80319c', undefined],
     ['unsupported-version', undefined, undefined],
     ['invalid-request', undefined, undefined],
+  ]);
+  assert.deepEqual(attempts, []);
+});
+
+it('standby SDK refusal summaries omit the first request trace', async t => {
+  const {gateway, start, clock, logs, attempts} = boundary(t);
+  await start();
+  const traceIds = ['1'.repeat(32), '2'.repeat(32), '3'.repeat(32)];
+  for (const traceId of traceIds) {
+    const command = {
+      ...prepareMessage(reader.source, {kind: 'occurrence', type: 'org.bunny.mode.set.requested', subject: 'hub',
+        dataschema: SCHEMA_BASE + 'mode-set/2.0', data: {...action.data, requestId: 'command-1'}}, {now: clock.now}),
+      kind: 'command', traceparent: `00-${traceId}-${'a'.repeat(16)}-01`, expiresat: new Date(clock.now() + 5000).toISOString(),
+    };
+    assert.deepEqual((await call(gateway, '/api/sdk/v1/request', {method: 'POST',
+      body: {schema: REMOTE_SCHEMA, key: 'bunny.cmd.mode-set.hub', command}})).body, fixed);
+  }
+  clock.advance(60_000);
+  const refusals = logs.filter(record => record.event_name === 'runtime.edge.refused');
+  assert.deepEqual(refusals.map(record => [record.trace_id, record.span_id, record.attributes['bunny.attempt_count']]), [
+    [traceIds[0], 'a'.repeat(16), undefined], [undefined, undefined, 2],
   ]);
   assert.deepEqual(attempts, []);
 });

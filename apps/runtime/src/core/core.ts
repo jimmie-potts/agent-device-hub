@@ -225,17 +225,29 @@ const factoryCores = new WeakMap<CoreModule, {
   standby: boolean; start: BunnyModule['start']; bind(token: RuntimeOwnership): void; ownership(): CoreOwnership | undefined;
 }>();
 
+function registeredStandbyStart(module: object): BunnyModule['start'] | undefined {
+  const factory = factoryCores.get(module as CoreModule);
+  return factory?.standby === true ? factory.start : undefined;
+}
+
+/** Checks exact factory identity and start without accepting a structural copy. */
+export function isRegisteredStandbyCore(module: unknown): boolean {
+  if (typeof module !== 'object' || module === null) return false;
+  const start = registeredStandbyStart(module);
+  return start !== undefined && Reflect.get(module, 'start') === start;
+}
+
 /** Selects and pins standby only from the original registered core and its original start. */
 export function standbyCoreStart(modules: readonly BunnyModule[]): {module: BunnyModule; start: BunnyModule['start']} | undefined {
   let selected: {module: BunnyModule; start: BunnyModule['start']} | undefined;
   for (const module of modules) {
     const start: unknown = Reflect.get(module, 'start');
-    const factory = factoryCores.get(module as CoreModule);
+    const expected = registeredStandbyStart(module);
     const original = typeof start === 'function' ? factoryStarts.get(start) : undefined;
     if (original !== undefined && original !== module && factoryCores.get(original)?.standby === true) throw ownershipUnavailable();
-    if (factory?.standby !== true) continue;
-    if (start !== factory.start || selected !== undefined) throw ownershipUnavailable();
-    selected = {module, start: factory.start};
+    if (expected === undefined) continue;
+    if (start !== expected || selected !== undefined) throw ownershipUnavailable();
+    selected = {module, start: expected};
   }
   return selected;
 }

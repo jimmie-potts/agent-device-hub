@@ -9,7 +9,7 @@ import {contain} from './host.js';
 import {INSTANCE_ID, LogWriter, Redactions, faultFields, stderrSink} from './log.js';
 import {buildModules, moduleSchemas, type ModuleFactory} from './modules.js';
 import {ENVIRONMENTS, LEVELS, RUNTIME_SCOPE, runtimeResource, type Environment, type LogLevel} from './record.js';
-import type {StandbyCredentialAdmission} from './credentials.js';
+import type {StandbyCredentialAdmission} from './standby-credential-admission.js';
 import {startRuntime, type Runtime} from './runtime.js';
 import {RuntimeError, type RuntimeConfig} from './state.js';
 

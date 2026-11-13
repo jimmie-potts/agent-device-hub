@@ -14,7 +14,8 @@ import {modeParticipants} from './core/mode-participants.js';
 import {historyDevices} from './core/history-alarm.js';
 import {automationDevices} from './core/automation-devices.js';
 import {hostedArtCatalog} from './core/art-catalog.js';
-import {readEdgeCredentials, readStandbyCredentials, takeStandbyStartupCredentials, type EdgeCredential, type StandbyCredentialAdmission} from './credentials.js';
+import {readEdgeCredentials, readStandbyCredentials, type EdgeCredential} from './credentials.js';
+import {takeStandbyStartupCredentials, type StandbyCredentialAdmission} from './standby-credential-admission.js';
 import {Gateway, readableFamilies} from './gateway/gateway.js';
 import {GatewayRefusals, methodOf} from './gateway/refusals.js';
 import {PRIVATE_PROXY_HEADER, WIFI_PROXY_HEADER, privateProxyOrigin, wifiProxyOrigin} from './gateway/wifi-proxy.js';
@@ -233,17 +234,24 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   // Capture verified values before admission yields; never reopen their source file.
   const suppliedConfig = options.config === undefined ? undefined : structuredClone(options.config);
   const standbyStart = standbyCoreStart(modules);
-  if (standbyStart === undefined && standbyCredentialAdmission === undefined) await admitBoundCoreOwnership(modules, requestedStateDir);
+  if (standbyStart === undefined) {
+    if (standbyCredentialAdmission !== undefined) throw new RuntimeError('edge-credentials-invalid', 'standby credentials need a registered standby core');
+    await admitBoundCoreOwnership(modules, requestedStateDir);
+  }
   const clock = options.clock ?? {now: () => Date.now()};
   const scheduler = options.scheduler ?? timers;
   // The configuration is read before the state directory is prepared, so a file the runtime refuses leaves no state effect.
   const config: RuntimeConfig | undefined = suppliedConfig ?? (options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile));
   const edgeConfig = config?.edge;
   const readCredentials = standbyStart === undefined ? readEdgeCredentials : readStandbyCredentials;
-  const standbyCredentials = standbyCredentialAdmission !== undefined
-    ? takeStandbyStartupCredentials(standbyCredentialAdmission, standbyStart?.module, edgeConfig?.credentials)
-    : standbyStart === undefined || edgeConfig === undefined ? undefined : await readStandbyCredentials(edgeConfig.credentials);
-  if (standbyStart !== undefined) await admitBoundCoreOwnership(modules, requestedStateDir);
+  let standbyCredentials: readonly EdgeCredential[] | undefined;
+  if (standbyStart !== undefined) {
+    if (standbyCredentialAdmission !== undefined) {
+      if (edgeConfig === undefined) throw new RuntimeError('edge-credentials-invalid', 'standby credentials need a configured file');
+      standbyCredentials = takeStandbyStartupCredentials(standbyCredentialAdmission, standbyStart.module, edgeConfig.credentials);
+    } else if (edgeConfig !== undefined) standbyCredentials = await readStandbyCredentials(edgeConfig.credentials);
+    await admitBoundCoreOwnership(modules, requestedStateDir);
+  }
   const stateDir = await prepareStateDirectory(requestedStateDir);
   // The log's floor (Hub #811): the configuration's level, else the process's `--log-level`, else INFO; a module's own
   // level applies to that module's records only, and may name only a module this runtime hosts.

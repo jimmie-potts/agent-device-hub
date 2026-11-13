@@ -632,9 +632,9 @@ test('the production-selected core warns on state changes published during modul
 });
 
 test('standby startup uses the credential snapshot admitted before bootstrap and reload sees later changes', async t => {
-  const [runtimeModules, {startRuntime}, {credentialsDocument, admitStandbyStartupCredentials}, {manualClock}] = await Promise.all([shippedRuntime(),
+  const [runtimeModules, {startRuntime}, {credentialsDocument}, {admitStandbyStartupCredentials}, {manualClock}] = await Promise.all([shippedRuntime(),
     import('../../../apps/runtime/dist/src/runtime.js'), import('../../../apps/runtime/dist/src/credentials.js'),
-    import('../../../apps/runtime/dist/tests/scenarios/virtual-time.js')]);
+    import('../../../apps/runtime/dist/src/standby-credential-admission.js'), import('../../../apps/runtime/dist/tests/scenarios/virtual-time.js')]);
   const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-standby-admitted-')));
   t.after(() => rm(root, {recursive: true, force: true}));
   const file = join(root, 'edge.json'), stateDir = join(root, 'state');

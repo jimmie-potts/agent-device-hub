@@ -176,29 +176,6 @@ export async function readStandbyCredentials(file: string): Promise<EdgeCredenti
   }
 }
 
-declare const standbyAdmissionBrand: unique symbol;
-export type StandbyCredentialAdmission = {readonly [standbyAdmissionBrand]: true};
-const standbyStartupGrants = new WeakMap<StandbyCredentialAdmission, {
-  core: object; file: string; credentials: readonly EdgeCredential[];
-}>();
-
-/** Reads a private file before bootstrap and binds its snapshot to the core instance about to start. */
-export async function admitStandbyStartupCredentials(core: object, file: string): Promise<StandbyCredentialAdmission> {
-  const credentials = standbyCredentialList(await readStandbyCredentials(file));
-  const admission = Object.freeze({}) as StandbyCredentialAdmission;
-  standbyStartupGrants.set(admission, {core, file, credentials});
-  return admission;
-}
-
-/** A snapshot is accepted once, for the original file and the runtime's exact registered standby core. */
-export function takeStandbyStartupCredentials(admission: StandbyCredentialAdmission, core: object | undefined,
-  file: string | undefined): readonly EdgeCredential[] {
-  const snapshot = standbyStartupGrants.get(admission);
-  if (snapshot === undefined || snapshot.core !== core || snapshot.file !== file) throw invalid('has no matching standby admission');
-  standbyStartupGrants.delete(admission);
-  return snapshot.credentials;
-}
-
 /** The credentials as the file holds them, one per line. */
 export const credentialsDocument = (credentials: readonly EdgeCredential[]): string =>
   `${JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: credentials.map(({id, source, digest, scopes, role, robotId}) => ({id, source, digest, scopes, ...(role === undefined ? {} : {role, robotId})}))}, null, 2)}\n`;

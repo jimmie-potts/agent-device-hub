@@ -578,9 +578,9 @@ export class RemoteEdge {
 
   /** Records the repeats counted since the last record as one summary, if there were any. */
   #summarize(repeats: Repeats): void {
-    const {first, count} = repeats;
+    const {first: {trace: _trace, ...summary}, count} = repeats;
     repeats.count = 0;
-    if (count > 0) this.#diagnose({...first, attempts: count});
+    if (count > 0) this.#diagnose({...summary, attempts: count});
   }
 
   /**
