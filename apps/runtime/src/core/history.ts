@@ -304,10 +304,10 @@ export class History {
     }
   }
 
-  /** One row of this origin, at the next place in its order. */
+  /** Whether the statement inserted a row at the next place in this origin's order. */
   #insert(atMs: number, revision: number, kind: string, source: string, messageId: string | null, type: string, subject: string,
-    requestId: string | null, record: string): void {
-    this.#statements.insert.run(atMs, revision, kind, source, messageId, type, subject, requestId, record, this.origin, this.origin);
+    requestId: string | null, record: string): boolean {
+    return Number(this.#statements.insert.run(atMs, revision, kind, source, messageId, type, subject, requestId, record, this.origin, this.origin).changes) === 1;
   }
 
   #operation(step: OperationStep, atMs: number, revision: number): void {
@@ -373,8 +373,8 @@ export class History {
     const closes = History.#closes(span);
     if (closes === undefined) return;
     const event: ChangeEvent = {family, id, revision: latest.revision, previous: latest.revision, changed: {}, removed: [], span: closes, closedBy: 'removal'};
-    this.#insert(atMs, revision, 'change', removal.source, null, span.seenType, removal.subject, null, JSON.stringify(event));
-    if (latest.record.id === id) changes?.push({source: removal.source, family, id, trace: {traceparent: removal.traceparent}});
+    const inserted = this.#insert(atMs, revision, 'change', removal.source, null, span.seenType, removal.subject, null, JSON.stringify(event));
+    if (inserted && latest.record.id === id) changes?.push({source: removal.source, family, id, trace: {traceparent: removal.traceparent}});
   }
 
   /**
@@ -434,8 +434,8 @@ export class History {
     const closes = span === undefined ? undefined : History.#closes(span);
     const event: ChangeEvent = {family, id, revision: entityRevision, previous: held === null ? null : latest?.revision ?? null, changed, removed,
       ...(closes === undefined ? {} : {span: closes}), ...(gapMs === undefined ? {} : {gapMs})};
-    this.#insert(atMs, revision, 'change', message.source, message.id, message.type, message.subject, null, JSON.stringify(event));
-    if (record.id === id) changes?.push({source: message.source, family, id, trace: {traceparent: message.traceparent}});
+    const inserted = this.#insert(atMs, revision, 'change', message.source, message.id, message.type, message.subject, null, JSON.stringify(event));
+    if (inserted && record.id === id) changes?.push({source: message.source, family, id, trace: {traceparent: message.traceparent}});
   }
 }
 

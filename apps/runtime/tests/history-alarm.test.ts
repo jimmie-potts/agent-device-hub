@@ -73,6 +73,45 @@ it('history alarms at 121 committed change rows per entity and leaves rows and t
   assert.equal(facts(world).length, 122);
 });
 
+for (const path of ['ordinary change', 'removal-closing change'] as const) {
+  it(`history does not count an ignored ${path} insert`, async context => {
+    const clock = manualClock(AT), {log, warnings} = diagnostics(clock);
+    const world = await World.open(context, {clock, watch: {log, historyDevices: HISTORY_DEVICES}});
+    const silent = await World.open(context, {clock});
+    const closing = path === 'removal-closing change';
+    const predicate = closing ? 'NEW.message_id IS NULL' : `NEW.message_id = '${state(121).id}'`;
+    const facts = (target: World) => target.store.history.after(target.store.history.origin, 0).map(({origin, ...row}) => row);
+    for (const target of [world, silent]) {
+      await writes(target, 1, 120);
+      target.db.exec(`CREATE TRIGGER ignore_test_change BEFORE INSERT ON core_history
+        WHEN NEW.kind = 'change' AND ${predicate} BEGIN SELECT RAISE(IGNORE); END`);
+      if (closing) {
+        await take(target, state(121, {power: true}));
+        const {data: _data, ...envelope} = state(122);
+        await take(target, {...envelope, id: 'fixture-ignored-closing', kind: 'removal', type: 'org.bunny.device.removed',
+          dataschema: `${SCHEMA_BASE}removal/2.0`, data: {entity: {id: ID, family: 'device'}, revision: 122, reason: 'deleted'}});
+      } else {
+        await writes(target, 121, 121);
+      }
+      assert.equal(target.store.history.read({kind: 'change'}).length, 120);
+      assert.equal(target.store.history.read({kind: 'removal'}).length, closing ? 1 : 0);
+    }
+    assert.deepEqual(facts(world), facts(silent));
+    assert.equal(warnings.length, 0, 'a commit that inserts zero change rows cannot cross the threshold');
+
+    for (const target of [world, silent]) {
+      await take(target, state(123, {power: true}));
+      assert.equal(target.store.history.read({kind: 'change'}).length, 121);
+    }
+    assert.deepEqual(warnings.map(record => record.attributes), [alarmOf()]);
+    for (const target of [world, silent]) await take(target, state(124, {power: false}));
+    assert.equal(warnings.length, 1);
+    assert.deepEqual(facts(world), facts(silent));
+    assert.deepEqual(facts(world).map(row => row.originSeq),
+      Array.from({length: closing ? 123 : 122}, (_, index) => index + 1));
+  });
+}
+
 it('history counts gaps and span-closing changes, with independent writer, family, entity and hour buckets', async context => {
   const clock = manualClock(AT), {log, warnings} = diagnostics(clock);
   const world = await World.open(context, {clock, watch: {log, historyDevices: HISTORY_DEVICES, history: {bookkeeping, polling: {[SOURCE]: {device: 5000}}}}});

@@ -43,7 +43,8 @@ const SINGLETONS: Readonly<Record<string, string>> = {
   'bunny/modules/weather:weather-state': 'local',
 };
 
-const GENERATED: Readonly<Record<string, RegExp>> = {
+// These families designate a derived digest or a catalog UUID as their entity ID.
+const ENTITY_ID_PATTERNS: Readonly<Record<string, RegExp>> = {
   'bunny/core:session': DIGEST_ID,
   'bunny/core:operation': DIGEST_ID,
   'bunny/core:inbox-item': DIGEST_ID,
@@ -80,7 +81,7 @@ export class HistoryAlarm {
     if (!NEUTRAL_ID.test(id)) return false;
     const key = `${source}:${family}`;
     if (Object.hasOwn(SINGLETONS, key)) return id === SINGLETONS[key];
-    if (Object.hasOwn(GENERATED, key)) return GENERATED[key]?.test(id) === true;
+    if (Object.hasOwn(ENTITY_ID_PATTERNS, key)) return ENTITY_ID_PATTERNS[key]?.test(id) === true;
     if (source === 'bunny/core') {
       return family === 'power-limit' ? this.#deviceIds.has(id)
         : family === 'music-lighting-state' && this.#devices.has(JSON.stringify(['bunny/modules/nanoleaf', id]));

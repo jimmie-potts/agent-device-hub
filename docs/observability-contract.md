@@ -390,10 +390,12 @@ The SDK assigns WARN. The required attributes are `bunny.module=core`,
   counted hour in milliseconds.
 
 The alarm uses a configured routing ID for a device or its qualified view,
-a fixed ID for a singleton, or an existing protocol-derived entity ID. It
-carries no labels, endpoint addresses, raw subject fallback, or record
-payload. The event's metadata is searchable on the existing private
-diagnostic path. Earlier profiles reject the event and new attributes.
+a fixed ID for a singleton, a protocol-derived entity ID, or a
+contract-designated catalog UUID. A catalog UUID can be caller-assigned,
+as with a Pixoo playlist. The warning carries no labels, endpoint addresses,
+raw subject fallback or record payload. The event's metadata is searchable
+on the existing private diagnostic path. Earlier profiles reject the event
+and new attributes.
 The default producer profile remains 1.1.
 
 ## Traces and context
