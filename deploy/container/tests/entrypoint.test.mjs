@@ -453,8 +453,10 @@ test('standby accepts an omitted edge and refuses missing, invalid and out-of-pr
     await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {code: 'edge-credentials-invalid'});
     const grant = {id: 'reader', source: 'bunny/parts/reader', digest: '2'.repeat(64), scopes: ['read']};
     const document = credential => JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: [credential]});
-    await writeFile(file, document({...grant, scopes: ['admin']}), {mode: 0o600});
-    await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {message: 'container-browser-config-refused'});
+    for (const scopes of [['admin'], ['read', 'control'], ['ingest'], []]) {
+      await writeFile(file, document({...grant, scopes}), {mode: 0o600});
+      await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {message: 'container-browser-config-refused'});
+    }
     await writeFile(file, document(grant), {mode: 0o600});
     assert.deepEqual(await entrypoint.checkConfiguredCredentials(config, options), {status: 'admitted', credentials: 1});
   }

@@ -1,6 +1,6 @@
 ## 1. Standby selection and credentials
 
-- [ ] 1.1 Record a failing startup and external admission probe against the unchanged source.
+- [x] 1.1 Record a failing startup and external admission probe against the unchanged source.
 - [ ] 1.2 Pin the registered standby start and validate inbound credentials before state work. Verify rejected startup, edge-off reload and container precheck.
 
 ## 2. Gateway and SDK
