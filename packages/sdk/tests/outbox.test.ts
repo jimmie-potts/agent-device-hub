@@ -835,6 +835,54 @@ it('settles a discarded state without sending or counting it, then sends the lat
   assert.deepEqual(rows(resumed.database), []);
 });
 
+it('a rejected async discard observer leaves the commit and following delivery intact', async context => {
+  const {core, start} = await world(context);
+  let notified = 0;
+  const run = await start({outbox: {statePublication: {
+    discard: message => message.subject === 'blocked',
+    discarded: () => {
+      notified++;
+      return Promise.reject(new Error('synthetic async observer rejection'));
+    },
+  }}});
+  const allowed = await run.outbox.transaction(add => {
+    add('bunny.state.session.blocked', session('blocked', 1));
+    return add('bunny.state.session.allowed', session('allowed', 1));
+  });
+  await flush();
+  assert.equal(notified, 1);
+  assert.deepEqual(core.raw, [allowed]);
+  assert.deepEqual(rows(run.database), []);
+  assert.equal(await run.outbox.republish(), 0);
+});
+
+it('a held discard observer does not delay the current or next drain', async context => {
+  const {core, start} = await world(context);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  context.after(release);
+  let notified = 0;
+  const run = await start({outbox: {statePublication: {
+    discard: message => message.subject === 'blocked',
+    discarded: () => {
+      assert.equal(run.database.isTransaction, false);
+      assert.deepEqual(rows(run.database), []);
+      notified++;
+      return held;
+    },
+  }}});
+  const first = await run.outbox.transaction(add => {
+    add('bunny.state.session.blocked', session('blocked', 1));
+    return add('bunny.state.session.first', session('first', 1));
+  });
+  const second = await run.outbox.transaction(add => add('bunny.state.session.second', session('second', 1)));
+  await flush();
+  assert.equal(notified, 1);
+  assert.deepEqual(core.raw, [first, second]);
+  assert.deepEqual(rows(run.database), []);
+  release();
+});
+
 it('a throwing state policy defers publication without calling the transport', async context => {
   const {core, start} = await world(context);
   let throws = true;

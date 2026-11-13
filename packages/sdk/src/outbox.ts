@@ -52,11 +52,11 @@ export type OutboxOptions = {
    * Optional owner policy for state and removal messages, checked immediately before each send, including replay.
    * A match is removed in batch settlement without sending or counting it as delivered. A thrown check is
    * a normal publish refusal. An opted-in drain refuses a caller-owned transaction. The observer runs
-   * best-effort after settlement commits and cannot affect delivery.
+   * best-effort after settlement commits. The outbox does not wait for it and ignores throws and rejections.
    */
   statePublication?: {
     discard: (message: Message, routingKey: string) => boolean;
-    discarded?: (trace: TraceContext) => void;
+    discarded?: (trace: TraceContext) => void | Promise<void>;
   };
   /**
    * Hears that a publish was refused after its transaction committed, when the outbox has no `log`: an `SdkError` with
@@ -386,8 +386,10 @@ export class Outbox {
         for (const {message} of sent) this.#inFlight.delete(message.id);
       }
       for (const {trace} of discarded) {
-        try { this.#statePublication?.discarded?.(trace); }
-        catch { /* A notification cannot change settled delivery. */ }
+        try {
+          const notification = this.#statePublication?.discarded?.(trace);
+          void Promise.resolve(notification).catch(() => {});
+        } catch { /* A notification cannot change settled delivery. */ }
       }
       // An outcome's first publication is recorded once its batch committed; a replay of one already published is not.
       for (const entry of sent) {

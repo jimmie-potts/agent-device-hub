@@ -814,9 +814,10 @@ async start({sdk, database, clock, log, trace}) {
   `invalid-state` before sending or settling. A drain without the policy can
   still join a caller's open transaction for settlement. If settlement fails,
   the next drain rechecks the same stored rows. The optional `discarded`
-  observer receives only the trace context after settlement commits. Its
-  failure has no effect. A crash between commit and notification can lose the
-  notification.
+  observer receives only the trace context after settlement commits. It may
+  return a promise. Delivery proceeds without waiting for it, and the outbox
+  handles both synchronous throws and rejected promises. A crash between
+  commit and notification can lose the notification.
 - Only state, removal, occurrence and outcome messages, on their own key class,
   go in. A command never does, so nothing ever sends a command again.
 - A state, removal or occurrence message is deleted once it has gone out. One
