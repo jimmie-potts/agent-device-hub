@@ -96,7 +96,8 @@ it('endpoint cleanup never adopts the ordinary subscription trace', async () => 
       return {context: childOf(options.parent), end: () => {}};
     }},
   });
-  const {connection, endpoint, cancel} = await rawStream(edge);
+  const stream = await rawStream(edge);
+  const {connection, endpoint} = stream;
   const id = `${connection}-1`;
   try {
     assert.equal((await call(edge, 'respond', {connection, endpoint, id, pattern: `bunny.cmd.test-mode.${id}`})).status, 200);
@@ -117,7 +118,7 @@ it('endpoint cleanup never adopts the ordinary subscription trace', async () => 
     const subscription = edge.diagnostics.find(record => record.event === 'edge.refused' && record.route === 'subscribe');
     assert.equal(traceFields(subscription?.trace ?? {traceparent: ''})?.traceId, traceFields(trace)?.traceId);
   } finally {
-    await cancel();
+    await stream.cancel();
     await edge.close();
   }
 });
