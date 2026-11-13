@@ -24,6 +24,75 @@ const storedSize = {square: 'small', tall: 'small', wide: 'medium', 'large-squar
 async function settle(page: Page): Promise<void> {
   await page.evaluate(async () => {await document.fonts.ready;await new Promise<void>(resolve => {requestAnimationFrame(() => {requestAnimationFrame(() => {resolve();});});});});
 }
+type PageWithAnswers = Window & {__homeShapesAnswers?: () => Promise<void>};
+
+/** Tracks finite reads and their body consumers in the page, where reply handlers run. */
+function trackPageRequests(): void {
+  const pending = new Set<Promise<unknown>>();
+  // The stream fetch resolves at its headers. The SDK reads its open body as a stream, outside these body methods.
+  const track = <T>(work: Promise<T>): Promise<T> => {
+    pending.add(work);
+    void work.then(() => pending.delete(work), () => pending.delete(work));
+    return work;
+  };
+  const fetchRequest = window.fetch.bind(window);
+  window.fetch = (input, options) => track(fetchRequest(input, options));
+  for (const method of ['arrayBuffer', 'blob', 'json', 'text'] as const) {
+    const descriptor = Object.getOwnPropertyDescriptor(Response.prototype, method);
+    if (typeof descriptor?.value !== 'function') throw new Error(`Home shapes could not track Response.${method}`);
+    const consume = descriptor.value as (this: Response) => Promise<unknown>;
+    Object.defineProperty(Response.prototype, method, {
+      ...descriptor,
+      value(this: Response) {return track(consume.call(this));},
+    });
+  }
+  const turn = (): Promise<void> => new Promise(resolve => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {channel.port1.close();channel.port2.close();resolve();};
+    channel.port2.postMessage(null);
+  });
+  (window as PageWithAnswers).__homeShapesAnswers = async () => {
+    // A browser task lets the promise handlers run, including body reads or new requests they start.
+    await turn();
+    while (pending.size > 0) {
+      await Promise.allSettled(pending);
+      await turn();
+    }
+  };
+}
+
+/** Advance by one millisecond, the clock's smallest positive timer step, between waits for real HTTP answers. */
+async function observePageTime(page: Page, ms: number, check: () => void): Promise<void> {
+  // Fix the wall clock so pauseAt can stop at the current time without skipping any scheduled callbacks.
+  const now = await page.evaluate(() => Date.now());
+  await page.clock.setFixedTime(now);
+  await page.clock.pauseAt(now);
+  await page.clock.setSystemTime(now);
+  try {
+    for (let elapsed = 0; elapsed <= ms; elapsed += 1) {
+      if (elapsed > 0) await page.clock.runFor(1);
+      const answered = await page.waitForFunction(async () => {
+        const answers = (window as PageWithAnswers).__homeShapesAnswers;
+        if (answers === undefined) throw new Error('Home shapes request tracking is missing');
+        await answers();
+        return true;
+      }, undefined, {timeout: 5000});
+      await answered.dispose();
+    }
+    check();
+  } finally {await page.clock.resume();}
+}
+/**
+ * `idleChanges` over `ms` of the page's clock: the recorder's own timer, and every page timer and animation frame due
+ * in that time, fire as the clock runs. The evaluate after it is a round trip that keeps the recorder's timer set
+ * before the clock runs; were it set later, it would fire on the clock's real-time flow, as at base. Only for churn a
+ * page's timers or frames drive: the browser's own rendering (a ResizeObserver loop) gets a few real milliseconds.
+ */
+async function idleFor(page: Page, ms: number, cards?: readonly string[]): Promise<string[]> {
+  const seen = idleChanges(page, ms, cards);
+  await page.evaluate(() => 0);await page.clock.runFor(ms);
+  return seen;
+}
 /** A private PNG of Home, cropped to stay under 8,000 pixels tall at twice the scale. */
 async function shot(page: Page, name: string): Promise<void> {
   if (receipts === undefined) return;
@@ -219,6 +288,18 @@ try {
   const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
   const page = await context.newPage();page.setDefaultTimeout(20_000);
   const errors: string[] = [];context.on('weberror', error => {errors.push(error.error().message);});
+  /**
+   * A page in a context of its own, on a clock the journey moves (#1712). It keeps real time until a check runs it on.
+   * Playwright's clock belongs to a context, and the journey's main context keeps the browser's own timers and frames:
+   * with a page clock there, the canvas cards' frame loops slowed its resizes past their bounds under CPU throttling.
+   */
+  const clocked = async (trackRequests = false): Promise<{page: Page; close: () => Promise<void>}> => {
+    const own = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
+    own.on('weberror', error => {errors.push(error.error().message);});
+    if (trackRequests) await own.addInitScript(trackPageRequests);
+    const opened = await own.newPage();opened.setDefaultTimeout(20_000);await opened.clock.install();
+    return {page: opened, close: () => own.close()};
+  };
   await page.goto(world.url);await feed(page, 'connected');
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   for (const prefix of ['device:bunny/modules/pixoo:', 'device:bunny/modules/tidbyt:', 'light:device:']) await page.locator(`[data-home-card^="${prefix}"]`).first().waitFor();
@@ -357,16 +438,21 @@ try {
     const old: HomePlacement[] = [{widget: 'hub-mode', size: 'medium', hidden: false}, {widget: 'inbox', size: 'small', hidden: false}, {widget: 'sessions', size: 'medium', hidden: false},
       {widget: lamps[0] ?? '', size: 'medium', hidden: false}, {widget: lamps[1] ?? '', size: 'large', hidden: false}, {widget: pixoo, size: 'medium', hidden: false},
       {widget: 'timeline', size: 'large', hidden: false}, {widget: 'art', size: 'medium', hidden: false, art: {format: 'banner', pinned: true}}];
-    // An empty save first, so the core carries no earlier shape onto these width-only placements.
-    await save(page, []);await save(page, old);
-    const sent = changes(page);
-    await page.reload();await feed(page, 'connected');
-    // Home shows the built-in layout until the saved record syncs, so wait for the saved order and shapes.
-    await expect.poll(order).toEqual(old.map(entry => entry.widget));
-    await expect.poll(async () => Object.fromEntries((await measure(page)).cards.map(card => [card.id, card.shape]))).toEqual({'hub-mode': 'wide', inbox: 'tall', sessions: 'large-square', [lamps[0] ?? '']: 'tall', [lamps[1] ?? '']: 'large-square', [pixoo]: 'square', timeline: 'large-square', art: 'wide'});
-    tiles(await measure(page));
-    await shot(page, 'final5-converted-old-layout-1440');
-    await page.waitForTimeout(500);assert.deepEqual(sent, [], 'loading an old-format layout writes nothing');
+    // The layout loads in a page of its own, on a clock the check moves.
+    const {page: loaded, close} = await clocked(true);
+    try {
+      await loaded.goto(world.url);await feed(loaded, 'connected');
+      // An empty save first, so the core carries no earlier shape onto these width-only placements.
+      await save(loaded, []);await save(loaded, old);
+      const sent = changes(loaded);
+      await loaded.reload();await feed(loaded, 'connected');
+      // Home shows the built-in layout until the saved record syncs, so wait for the saved order and shapes.
+      await expect.poll(() => loaded.locator('.home-layout-grid > [data-home-card]:not([data-art-placement=automatic])').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.homeCard ?? ''))).toEqual(old.map(entry => entry.widget));
+      await expect.poll(async () => Object.fromEntries((await measure(loaded)).cards.map(card => [card.id, card.shape]))).toEqual({'hub-mode': 'wide', inbox: 'tall', sessions: 'large-square', [lamps[0] ?? '']: 'tall', [lamps[1] ?? '']: 'large-square', [pixoo]: 'square', timeline: 'large-square', art: 'wide'});
+      tiles(await measure(loaded));
+      await shot(loaded, 'final5-converted-old-layout-1440');
+      await observePageTime(loaded, 500, () => {assert.deepEqual(sent, [], 'loading an old-format layout writes nothing');});
+    } finally {await close();}
   }
 
   if (part('paging')) {
@@ -514,11 +600,13 @@ try {
     // F25: the status line's height is reserved, so a refresh keeps the page size (rows a page) while it reads.
     const history = timeline.locator('[data-paged-list="Timeline"]'), shownRows = history.locator('[data-paged-key]:not([hidden])');
     const perPage = await shownRows.count();
-    // The read is held for a moment so the refreshing state is on screen long enough to check.
-    await page.route('**/api/v2/history**', async route => {await new Promise(resolve => setTimeout(resolve, 800));await route.continue();});
+    // The read is held until the refreshing state has been checked, then let go.
+    let release = (): void => {};const held = new Promise<void>(resolve => {release = resolve;}), reads: string[] = [];
+    await page.route('**/api/v2/history**', async route => {reads.push(route.request().url());await held;await route.continue();});
     await timeline.getByRole('button', {name: 'Refresh history', exact: true}).click();
+    await expect.poll(() => reads.length, {message: 'the refresh reads history'}).toBeGreaterThan(0);
     await expect(timeline.locator('.timeline-status')).toHaveText(/Refreshing/);assert.equal(await shownRows.count(), perPage, 'the page size holds while the refresh reads');
-    await expect(timeline.locator('.timeline-status')).not.toHaveText(/Refreshing/);assert.equal(await shownRows.count(), perPage, 'and after it');
+    release();await expect(timeline.locator('.timeline-status')).not.toHaveText(/Refreshing/);assert.equal(await shownRows.count(), perPage, 'and after it');
     await page.unroute('**/api/v2/history**');
   }
 
@@ -740,6 +828,7 @@ try {
         }
         const placed = value.cards.filter(card => modules.includes(card.id));
         failures.push(...misfits(placed).map(text => `${String(width)}: ${text}`), ...halfEmpty(placed).map(text => `${String(width)} half empty: ${text}`));
+        // Real time, as in the idle part below: a loop the browser's rendering drives runs only in real frames.
         let still = await idleChanges(page, 2000, modules);if (still.length > 0) still = await idleChanges(page, 2000, modules);
         failures.push(...still.slice(0, 3).map(text => `${String(width)} ${shape} idle: ${text}`));
       }
@@ -749,30 +838,33 @@ try {
     assert.deepEqual(failures, [], 'Pixoo, Tidbyt and Wispr fit every shape and stay still');
     for (const [id, list] of pictures) await sheet(`b2-${id === pixoo ? 'pixoo' : id === tidbyt ? 'tidbyt' : 'wispr'}-four-shapes-1440`, list);
     // A device-acting control shown in a shape behaves as in the full card, and its result shows on the card's face.
-    await save(page, [placement(pixoo, 'wide')]);
-    const wide = page.locator(`[data-home-card="${pixoo}"]`);
-    await page.waitForFunction(id => document.querySelector<HTMLButtonElement>(`[data-home-card="${id}"] .light-power button`)?.disabled === false, pixoo);
-    const sent = changes(page);
+    // Keep all device controls on one page, including the full card's reference request.
+    const {page: live, close: closeLive} = await clocked(true);
+    await live.goto(world.url);await feed(live, 'connected');
+    await save(live, [placement(pixoo, 'wide')]);
+    const wide = live.locator(`[data-home-card="${pixoo}"]`);
+    await live.waitForFunction(id => document.querySelector<HTMLButtonElement>(`[data-home-card="${id}"] .light-power button`)?.disabled === false, pixoo);
+    const sent = changes(live);
     await wide.getByRole('button', {name: 'Screen off', exact: true}).click();
     await expect.poll(() => sent.length).toBe(1);assert.deepEqual(sent, ['/api/v2/commands/power-set']);
     await expect(wide.locator('.pixoo-compact-result')).not.toHaveText('No command sent from this page.');
-    assert.deepEqual(misfits((await measure(page)).cards), [], 'the result line stays inside the Wide Pixoo card');
+    assert.deepEqual(misfits((await measure(live)).cards), [], 'the result line stays inside the Wide Pixoo card');
     // F3: with an active session, the playback row and the Large square brightness form each send one request whose
     // data is what the full card sends for the same control; moving the slider sends nothing and a double click one.
     const deviceId = pixoo.split(':').at(-1) ?? '';
     const bodies: {path: string; data: Record<string, unknown>}[] = [];
-    page.on('request', request => {
+    live.on('request', request => {
       if (request.method() !== 'POST' || !request.url().includes('/api/v2/commands/')) return;
       const body = JSON.parse(request.postData() ?? '{}') as {data?: Record<string, unknown>};
       bodies.push({path: new URL(request.url()).pathname, data: body.data ?? {}});
     });
     // An active session from the full card, as the owner starts one: a synthetic GIF, then Play selected media.
-    await page.goto(`${world.url}/#/module/pixoo/library`);await feed(page, 'connected');
-    await page.getByLabel('Media file', {exact: true}).setInputFiles({name: 'Shapes.gif', mimeType: 'image/gif', buffer: gifFixture(2, 2, [{width: 2, height: 2, pixels: [0, 1, 2, 3], delay: 50}, {width: 2, height: 2, pixels: [3, 2, 1, 0], delay: 50}])});
-    await page.getByRole('button', {name: 'Add media', exact: true}).click();
-    await page.getByRole('cell', {name: 'Shapes.gif', exact: true}).waitFor({timeout: 30_000});
-    await page.goto(`${world.url}/#/component/${encodeURIComponent(deviceId)}`);
-    const full = page.getByRole('article', {name: 'Pixoo display', exact: true});
+    await live.goto(`${world.url}/#/module/pixoo/library`);await feed(live, 'connected');
+    await live.getByLabel('Media file', {exact: true}).setInputFiles({name: 'Shapes.gif', mimeType: 'image/gif', buffer: gifFixture(2, 2, [{width: 2, height: 2, pixels: [0, 1, 2, 3], delay: 50}, {width: 2, height: 2, pixels: [3, 2, 1, 0], delay: 50}])});
+    await live.getByRole('button', {name: 'Add media', exact: true}).click();
+    await live.getByRole('cell', {name: 'Shapes.gif', exact: true}).waitFor({timeout: 30_000});
+    await live.goto(`${world.url}/#/component/${encodeURIComponent(deviceId)}`);
+    const full = live.getByRole('article', {name: 'Pixoo display', exact: true});
     await full.getByRole('tab', {name: 'Content', exact: true}).click();
     await full.getByRole('combobox', {name: 'Browse', exact: true}).selectOption('media');
     await full.locator('button.pixoo-media-tile').first().click();
@@ -784,9 +876,9 @@ try {
     await settled(full, 'Next');let mark = bodies.length;
     await full.getByRole('button', {name: 'Next', exact: true}).click();await expect.poll(() => bodies.length).toBe(mark + 1);
     const reference = bodies.at(-1);assert.ok(reference !== undefined);
-    await page.goto(`${world.url}/#/home`);await feed(page, 'connected');
-    await save(page, [placement(pixoo, 'wide')]);
-    const device = async (): Promise<{configurationRevision: number; generation: number}> => page.evaluate(async id => {
+    await live.goto(`${world.url}/#/home`);await feed(live, 'connected');
+    await save(live, [placement(pixoo, 'wide')]);
+    const device = async (): Promise<{configurationRevision: number; generation: number}> => live.evaluate(async id => {
       const data = await (await fetch('/api/v2/snapshot?families=device&owner=bunny/modules/pixoo')).json() as {records: {device: {id: string; configurationRevision: number; generation: number}[]}};
       const record = data.records.device.find(value => value.id === id);if (record === undefined) throw new Error('pixoo-record');
       return {configurationRevision: record.configurationRevision, generation: record.generation};
@@ -795,11 +887,15 @@ try {
       await settled(scope, name);const guard = await device();mark = bodies.length;
       const button = scope.getByRole('button', {name, exact: true});
       if (double) await button.dblclick();else await button.click();
-      await expect.poll(() => bodies.length).toBe(mark + 1);await page.waitForTimeout(300);
-      assert.equal(bodies.length, mark + 1, `${name} sends one request${double ? ' for a double click' : ''}`);
-      assert.deepEqual(bodies.at(-1), {path: `/api/v2/commands/${family}`, data: {...data, expectedConfigurationRevision: guard.configurationRevision, expectedGeneration: guard.generation}}, name);
+      // The screen controls unlock once no command for the device is unsettled.
+      await expect.poll(() => bodies.length).toBe(mark + 1);
+      await expect(scope.locator('.light-power button').first()).toBeEnabled();
+      await observePageTime(live, 300, () => {
+        assert.equal(bodies.length, mark + 1, `${name} sends one request${double ? ' for a double click' : ''}`);
+        assert.deepEqual(bodies.at(-1), {path: `/api/v2/commands/${family}`, data: {...data, expectedConfigurationRevision: guard.configurationRevision, expectedGeneration: guard.generation}}, name);
+      });
     };
-    const playing = page.locator(`[data-home-card="${pixoo}"]`);
+    const playing = live.locator(`[data-home-card="${pixoo}"]`);
     // The screen goes back on (Screen off above paused the player), with the same body the full card sends.
     await press(playing, 'Screen on', 'power-set', {on: true});
     await press(playing, 'Next', 'media-control', {action: 'next'});
@@ -812,21 +908,22 @@ try {
     await expect(playing.getByRole('button', {name: second, exact: true})).toBeVisible();
     await press(playing, second, 'media-control', {action: second.toLowerCase()});
     await press(playing, 'Next', 'media-control', {action: 'next'}, true);
-    await save(page, [placement(pixoo, 'large-square'), placement(tidbyt, 'large-square')]);
+    await save(live, [placement(pixoo, 'large-square'), placement(tidbyt, 'large-square')]);
     await settled(playing, 'Next');mark = bodies.length;
     const slider = playing.getByRole('slider', {name: 'Brightness'});
-    await slider.focus();for (let step = 0; step < 5; step += 1) await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(300);assert.equal(bodies.length, mark, 'moving the slider sends nothing');
+    await slider.focus();for (let step = 0; step < 5; step += 1) await live.keyboard.press('ArrowRight');
+    await observePageTime(live, 300, () => {assert.equal(bodies.length, mark, 'moving the slider sends nothing');});
     const draft = Number(await slider.inputValue());
     await press(playing, 'Apply brightness', 'brightness-set', {percent: draft});
-    assert.deepEqual(misfits((await measure(page)).cards), [], 'the Large square Pixoo with a session fits');
-    await shot(page, 'b2-pixoo-large-square-playing-1440');
+    assert.deepEqual(misfits((await measure(live)).cards), [], 'the Large square Pixoo with a session fits');
+    await shot(live, 'b2-pixoo-large-square-playing-1440');
     // F5: in Large square the media is a square on top, as large as the controls under it allow, and they follow it.
     const large = await playing.evaluate(card => {
       const art = card.querySelector('.pixoo-artwork')?.getBoundingClientRect(), body = card.querySelector('.pixoo-compact-body')?.getBoundingClientRect();
       return art === undefined || body === undefined ? undefined : {width: art.width, height: art.height, artTop: art.top, bodyTop: body.top, card: card.getBoundingClientRect().width};
     });
     assert.ok(large !== undefined && Math.abs(large.width - large.height) <= 1 && large.width >= large.card * 0.4 && large.bodyTop - large.artTop - large.height >= 0 && large.bodyTop - large.artTop - large.height <= 12, `Large square media and controls: ${JSON.stringify(large)}`);
+    await closeLive();
     // Home with the three cards in larger shapes, at each width and in Edit Home.
     const showcase = [placement('hub-mode', 'wide'), placement(pixoo, 'tall'), placement(tidbyt, 'wide'), placement('wispr', 'large-square'), placement('inbox', 'wide'), placement('timeline', 'tall'), placement(lamps[0] ?? '', 'square'), placement('sessions', 'large-square')];
     await save(page, showcase);
@@ -847,7 +944,7 @@ try {
     // F6 (#1672 PR B round 2): the idle recorder reports churn that ends where it began, as a render loop does. A static
     // page with one list card flips an attribute, a row's `hidden` and a class every frame and restores each; a write
     // of the value an attribute already has is not a change.
-    const probe = await context.newPage();
+    const {page: probe, close: closeProbe} = await clocked();
     try {
       await probe.setContent('<div class="home-layout-grid"><div data-home-card="inbox"><ul><li data-row="a">A</li><li>B</li></ul><input name="find" type="search"></div></div>');
       const churn = async (kind: string): Promise<string[]> => {
@@ -862,13 +959,13 @@ try {
           };
           step();
         }, kind);
-        const seen = await idleChanges(probe, 500);
+        const seen = await idleFor(probe, 500);
         await probe.evaluate(() => {cancelAnimationFrame((window as unknown as {churn?: number}).churn ?? 0);});
         return seen;
       };
       for (const kind of ['attribute', 'hidden', 'class']) assert.ok((await churn(kind)).length > 0, `a per-frame ${kind} flip and restore is reported`);
       assert.deepEqual(await churn('same-value'), [], 'a write of the value an attribute already has is not reported');
-    } finally {await probe.close();}
+    } finally {await closeProbe();}
   }
 
   if (part('idle')) {
@@ -877,7 +974,9 @@ try {
     await save(page, representative);
     const busy: string[] = [];
     for (const width of [1100, 1380, 1520, 1780, 2060, 2560]) {
-      await page.setViewportSize({width, height: 1000});await measure(page);await page.waitForTimeout(250);
+      // The windows are real time: a loop the browser's rendering drives runs only in real frames. measure() has waited
+      // for the repacked grid and two frames; a one-off change after that shows in the first window only.
+      await page.setViewportSize({width, height: 1000});await measure(page);
       // A second window tells a one-off record change (such as session evidence turning stale) from a render loop.
       let changes = await idleChanges(page);if (changes.length > 0) changes = await idleChanges(page);
       if (changes.length > 0) busy.push(`${String(width)}: ${String(changes.length)} changes, first ${changes.slice(0, 3).join(' | ')}`);
