@@ -24,7 +24,8 @@
         "1.5",
         "1.6",
         "1.7",
-        "1.8"
+        "1.8",
+        "1.9"
       ]
     },
     "timestamp": {
@@ -114,7 +115,8 @@
         "storage.cost.normal",
         "assistant.run.started",
         "assistant.run.settled",
-        "assistant.call.settled"
+        "assistant.call.settled",
+        "history.entity.noisy"
       ]
     },
     "body": {
@@ -176,7 +178,8 @@
         "Storage cost normal",
         "Assistant run started",
         "Assistant run settled",
-        "Assistant call settled"
+        "Assistant call settled",
+        "History entity exceeded its hourly change threshold"
       ]
     },
     "resource": {
@@ -669,6 +672,31 @@
         },
         "bunny.exception.truncated": {
           "type": "boolean"
+        },
+        "bunny.history.family": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])",
+          "maxLength": 128
+        },
+        "bunny.history.entity_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "bunny.history.row_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.history.row_threshold": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.history.hour_start_at_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709,
+          "multipleOf": 3600000
         }
       }
     },
@@ -1079,7 +1107,8 @@
               "storage.cost.normal",
               "assistant.run.started",
               "assistant.run.settled",
-              "assistant.call.settled"
+              "assistant.call.settled",
+              "history.entity.noisy"
             ]
           },
           "attributes": {
@@ -1373,6 +1402,103 @@
                 ]
               }
             ]
+          }
+        }
+      }
+    },
+    {
+      "$comment": "Profile 1.9 additions are closed to earlier profiles.",
+      "if": {
+        "properties": {
+          "schema_version": {
+            "not": {
+              "const": "1.9"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "event_name": {
+            "not": {
+              "const": "history.entity.noisy"
+            }
+          },
+          "attributes": {
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "bunny.history.family",
+                  "bunny.history.entity_id",
+                  "bunny.history.row_count",
+                  "bunny.history.row_threshold",
+                  "bunny.history.hour_start_at_ms"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "history.entity.noisy"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "scope": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "const": "bunny.module"
+              }
+            }
+          },
+          "severity_text": {
+            "const": "WARN"
+          },
+          "attributes": {
+            "type": "object",
+            "required": [
+              "bunny.participant",
+              "bunny.provenance",
+              "bunny.history.family",
+              "bunny.history.entity_id",
+              "bunny.history.row_count",
+              "bunny.history.row_threshold",
+              "bunny.history.hour_start_at_ms"
+            ],
+            "propertyNames": {
+              "enum": [
+                "bunny.module",
+                "bunny.participant",
+                "bunny.provenance",
+                "bunny.history.family",
+                "bunny.history.entity_id",
+                "bunny.history.row_count",
+                "bunny.history.row_threshold",
+                "bunny.history.hour_start_at_ms"
+              ]
+            },
+            "properties": {
+              "bunny.module": {
+                "const": "core"
+              },
+              "bunny.provenance": {
+                "const": "source"
+              },
+              "bunny.participant": {},
+              "bunny.history.family": {},
+              "bunny.history.entity_id": {},
+              "bunny.history.row_count": {},
+              "bunny.history.row_threshold": {},
+              "bunny.history.hour_start_at_ms": {}
+            }
           }
         }
       }

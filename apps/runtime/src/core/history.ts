@@ -23,7 +23,7 @@ import {randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {compareDelivery, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {bookkeeping as contractBookkeeping, sameState, type Bookkeeping} from '@jimmie-potts/event-contracts/v2/bookkeeping';
-import {OUTCOME_RECORDED_TYPE} from '@jimmie-potts/sdk';
+import {OUTCOME_RECORDED_TYPE, type TraceContext} from '@jimmie-potts/sdk';
 import type {ActionKind, Evidence, OperationResult, OperationStatus} from './operations.js';
 
 /** What a history row records. */
@@ -96,6 +96,9 @@ export type OperationStep = {
 
 /** What one transaction keeps in history, in the order it happened. */
 export type HistoryEntry = {kind: 'message'; message: Message<unknown>} | {kind: 'operation'; step: OperationStep};
+
+/** The designated identity of a change row inserted by the transaction. */
+export type WrittenChange = {source: string; family: string; id: string; trace: TraceContext};
 
 /** At most this many refused messages are kept for diagnosis; the oldest goes first. */
 export const MAX_REFUSED = 1000;
@@ -294,10 +297,10 @@ export class History {
   }
 
   /** Writes one transaction's entries, in order, inside that transaction. */
-  write(entries: readonly HistoryEntry[], atMs: number, revision: number): void {
+  write(entries: readonly HistoryEntry[], atMs: number, revision: number, changes?: WrittenChange[]): void {
     for (const entry of entries) {
       if (entry.kind === 'operation') this.#operation(entry.step, atMs, revision);
-      else this.#message(entry.message, atMs, revision);
+      else this.#message(entry.message, atMs, revision, changes);
     }
   }
 
@@ -311,11 +314,11 @@ export class History {
     this.#insert(atMs, revision, 'operation', step.requestedBy, null, step.command, step.target, step.requestId, JSON.stringify(step));
   }
 
-  #message(message: Message<unknown>, atMs: number, revision: number): void {
+  #message(message: Message<unknown>, atMs: number, revision: number, changes?: WrittenChange[]): void {
     // A message this origin's history already holds, as a crash's resend, adds nothing.
     if (!kept(message) || this.#statements.seen.get(this.origin, message.source, message.id) !== undefined) return;
     if (message.kind === 'state') {
-      this.#change(message, atMs, revision);
+      this.#change(message, atMs, revision, changes);
       return;
     }
     if (message.kind === 'removal') {
@@ -323,7 +326,7 @@ export class History {
       // brings nothing back, and a new entity under the same ID starts afresh. An open span is closed by a row first.
       const {entity, revision: removedAt} = message.data as {entity?: {family?: unknown; id?: unknown}; revision?: unknown};
       if (typeof entity?.family === 'string' && typeof entity.id === 'string') {
-        this.#closeBeforeRemoval(message, entity.family, entity.id, atMs, revision);
+        this.#closeBeforeRemoval(message, entity.family, entity.id, atMs, revision, changes);
         this.#statements.setLatest.run(message.source, entity.family, entity.id, typeof removedAt === 'number' ? removedAt : 0, 'null');
         this.#statements.dropSpan.run(message.source, entity.family, entity.id);
       }
@@ -363,7 +366,7 @@ export class History {
    * row changes no member, so it claims nothing newer than its values: it carries the last row's revision (equal to
    * `previous`) and no message ID, the last confirmation's type, and the confirmation's instant and count in `span`.
    */
-  #closeBeforeRemoval(removal: Message<unknown>, family: string, id: string, atMs: number, revision: number): void {
+  #closeBeforeRemoval(removal: Message<unknown>, family: string, id: string, atMs: number, revision: number, changes?: WrittenChange[]): void {
     const latest = this.#latest(removal.source, family, id);
     if (latest === undefined || latest.record === null) return;
     const span = this.#span(removal.source, family, id, latest.revision);
@@ -371,6 +374,7 @@ export class History {
     if (closes === undefined) return;
     const event: ChangeEvent = {family, id, revision: latest.revision, previous: latest.revision, changed: {}, removed: [], span: closes, closedBy: 'removal'};
     this.#insert(atMs, revision, 'change', removal.source, null, span.seenType, removal.subject, null, JSON.stringify(event));
+    if (latest.record.id === id) changes?.push({source: removal.source, family, id, trace: {traceparent: removal.traceparent}});
   }
 
   /**
@@ -378,7 +382,7 @@ export class History {
    * the last confirmation; a confirmation of the open span when it holds the same state; a gap row when that
    * confirmation of a polled family comes after a silence longer than the gap; and otherwise a change row.
    */
-  #change(message: Message<unknown>, atMs: number, revision: number): void {
+  #change(message: Message<unknown>, atMs: number, revision: number, changes?: WrittenChange[]): void {
     const family = familyOf(message.dataschema);
     const record = message.data as Record<string, unknown> | null;
     if (family === undefined || typeof record !== 'object' || record === null || Array.isArray(record)) return;
@@ -405,10 +409,10 @@ export class History {
           span.confirmations + 1);
         return;
       }
-      this.#row(message, family, id, record, latest, span, atMs, revision, silence);
+      this.#row(message, family, id, record, latest, span, atMs, revision, changes, silence);
       return;
     }
-    this.#row(message, family, id, record, latest, span, atMs, revision);
+    this.#row(message, family, id, record, latest, span, atMs, revision, changes);
   }
 
   /**
@@ -416,7 +420,7 @@ export class History {
    * gap row, the silence; the record becomes the last row's, and a new span opens with this reading.
    */
   #row(message: Message<unknown>, family: string, id: string, record: Record<string, unknown>, latest: {revision: number; record: Record<string, unknown> | null} | undefined,
-    span: SpanRow | undefined, atMs: number, revision: number, gapMs?: number): void {
+    span: SpanRow | undefined, atMs: number, revision: number, changes?: WrittenChange[], gapMs?: number): void {
     const entityRevision = typeof record.revision === 'number' ? record.revision : 0;
     const held = latest?.record ?? null;
     const before = held ?? {};
@@ -431,6 +435,7 @@ export class History {
     const event: ChangeEvent = {family, id, revision: entityRevision, previous: held === null ? null : latest?.revision ?? null, changed, removed,
       ...(closes === undefined ? {} : {span: closes}), ...(gapMs === undefined ? {} : {gapMs})};
     this.#insert(atMs, revision, 'change', message.source, message.id, message.type, message.subject, null, JSON.stringify(event));
+    if (record.id === id) changes?.push({source: message.source, family, id, trace: {traceparent: message.traceparent}});
   }
 }
 

@@ -7,9 +7,9 @@ current exclusions. Richer capture and durable retention require a versioned
 implementation with consumer and exporter checks; this policy decision does not
 widen an existing schema or export destination.
 
-The artifact `@jimmie-potts/bunny-observability` version 1.8.0 owns this contract,
+The artifact `@jimmie-potts/bunny-observability` version 1.9.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
-1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7 and 1.8 are independent of the pinned OpenTelemetry semantic
+1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8 and 1.9 are independent of the pinned OpenTelemetry semantic
 conventions 1.44.0. Profiles 1.0 and 1.1 were introduced together: 1.0 is the minimal
 compatibility profile; 1.1 adds optional `bunny.queue.depth`. This is not a
 claim that an older artifact was deployed. Profile 1.2 registers the B.U.N.N.Y.
@@ -28,9 +28,10 @@ registers a store's costly saves
 runtime's [private exception context](#private-exception-context-profile-17)
 ([#777](https://github.com/jimmie-potts/agent-device-hub/issues/777)). Profile 1.8
 adds the [art provider call](#art-provider-call-profile-18) span
-([#680](https://github.com/jimmie-potts/agent-device-hub/issues/680)). The default
+([#680](https://github.com/jimmie-potts/agent-device-hub/issues/680)). Profile 1.9 adds the
+[hourly history warning](#hourly-history-warning-profile-19). The default
 producer profile stays 1.1: existing producers keep it, and a producer selects 1.2
-to 1.8 explicitly.
+to 1.9 explicitly.
 
 The machine-readable dictionary is `src/record.schema.json` and the registered
 vocabulary is `src/catalog.json` in the artifact. These files and this document
@@ -49,7 +50,7 @@ serialization; the strict validator rejects them.
 
 | Local field | Requirement and type | OTLP JSON mapping |
 | --- | --- | --- |
-| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3`, `1.4`, `1.5`, `1.6`, `1.7` or `1.8` | Log attribute `bunny.schema.version`, string |
+| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3`, `1.4`, `1.5`, `1.6`, `1.7`, `1.8` or `1.9` | Log attribute `bunny.schema.version`, string |
 | `timestamp` | Source time if known | `timeUnixNano`, decimal integer string |
 | `observed_timestamp` | Receiver time if applicable; at least one time required | `observedTimeUnixNano`, decimal integer string |
 | `severity_number`, `severity_text` | Required, matching registered pair | `severityNumber`, `severityText` |
@@ -372,8 +373,28 @@ later activations to the prior run. Calls are children of the active run. It
 uses the SDK and host adapter; a diagnostic failure cannot decide task success.
 There is no LangSmith or second content exporter.
 
-This source revision writes runtime records and spans at profile 1.6. Source
+This source revision writes runtime records and spans at profile 1.9. Source
 fixtures and disposable runs do not establish installed adoption.
+
+## Hourly history warning (profile 1.9)
+
+Profile 1.9 adds `history.entity.noisy` under `bunny.module` for the core.
+The SDK assigns WARN. The required attributes are `bunny.module=core`,
+`bunny.provenance=source`, the writer's `bunny.participant`, and:
+
+- `bunny.history.family`, a registered family token of at most 128 characters.
+- `bunny.history.entity_id`, the designated neutral machine ID of at most
+  128 ASCII characters. The producer checks its provenance before recording it.
+- `bunny.history.row_count` and `bunny.history.row_threshold`, positive safe
+  integers, and `bunny.history.hour_start_at_ms`, the UTC start of the
+  counted hour in milliseconds.
+
+The alarm uses a configured routing ID for a device or its qualified view,
+a fixed ID for a singleton, or an existing protocol-derived entity ID. It
+carries no labels, endpoint addresses, raw subject fallback, or record
+payload. The event's metadata is searchable on the existing private
+diagnostic path. Earlier profiles reject the event and new attributes.
+The default producer profile remains 1.1.
 
 ## Traces and context
 

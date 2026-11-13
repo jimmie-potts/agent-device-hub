@@ -19,6 +19,7 @@ import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type C
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
 import {DEFAULT_HISTORY_RULES, type HistoryFilter, type HistoryPage, type HistoryRow, type HistoryRules} from './history.js';
+import type {HistoryDevice} from './history-alarm.js';
 import {inboxTool, historyTool} from './read-tools.js';
 import {InboxRecords} from './inbox.js';
 import {OperationRecords} from './operation-records.js';
@@ -196,6 +197,8 @@ export interface CoreModule extends BunnyModule {
   setArtCatalog(read: ArtCatalogRead): void;
   /** The host binds only the fixed Music producer connection lifetime. */
   setMusicCaptureRetirement(retire: () => void): void;
+  /** Host admission names the machine IDs available to the history alarm before start. */
+  setHistoryDevices?(devices: readonly HistoryDevice[]): void;
   /**
    * Retained history's filtered read, and the rules this core's history keeps by (#1772): each family's bookkeeping
    * members and the polled families, as the core was built with them, so an entry point's tests can show which (#1795).
@@ -237,6 +240,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
   let contentContext: ModuleContext | undefined;
   let ownership: CoreOwnership | undefined;
   let started = false;
+  let historyDevices: readonly HistoryDevice[] = [];
   const automation = (): AutomationControls => {
     if (core === undefined) throw new AutomationError('unavailable', 503);
     return core.automation;
@@ -262,7 +266,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
       }
       started = true;
       contentContext = context;
-      core = new Core(context, options, ownership);
+      core = new Core(context, options, historyDevices, ownership);
       return core.start();
     },
     stop: () => core?.stop(),
@@ -286,6 +290,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     },
     actions: {dispatch: action => core?.dispatch(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
     operatorActions: {dispatch: action => core?.dispatchOperator(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
+    setHistoryDevices: devices => { historyDevices = devices; },
     setAutomationDevices:devices=>{
       if(core===undefined) throw new Error('core-not-started');
       core.setAutomationDevices(devices);
@@ -356,7 +361,7 @@ class Core {
   /** The start under way, which a stop waits for so that an owner it opens late is shut down too. */
   #starting: Promise<void> | undefined;
 
-  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic, history}: CoreOptions, ownership?: CoreOwnership) {
+  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic, history}: CoreOptions, historyDevices: readonly HistoryDevice[], ownership?: CoreOwnership) {
     this.#sdk = context.sdk;
     this.#log = context.log;
     this.#clock = context.clock;
@@ -435,7 +440,7 @@ class Core {
       ...(history === undefined ? {} : {history}),
       // Committed is not published (ADR 0012): the change stands, its messages go out at the next commit or start, and
       // the outbox records the refusal as `outbox.deferred`, once per run of refusals.
-      log: context.log, trace: context.trace,
+      log: context.log, trace: context.trace, historyDevices,
     });
     this.#tracker = new Tracker({
       store: this.#store, sdk: context.sdk, log: context.log, trace: context.trace, clock: context.clock, scheduler: context.scheduler,

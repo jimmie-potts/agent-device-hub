@@ -11,6 +11,7 @@ import {recordLog, MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clo
 import {isWisprModule} from '@jimmie-potts/wispr';
 import {admitBoundCoreOwnership, isCoreModule} from './core/core.js';
 import {modeParticipants} from './core/mode-participants.js';
+import {historyDevices} from './core/history-alarm.js';
 import {automationDevices} from './core/automation-devices.js';
 import {hostedArtCatalog} from './core/art-catalog.js';
 import {readEdgeCredentials, type EdgeCredential} from './credentials.js';
@@ -345,8 +346,8 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   // `bunny.edge` says the edge is configured; `runtime.edge.serving` follows once it serves.
   // A record carries the listener's port, never its URL.
   recordLog(log, 'runtime.started', {'server.port': bound, 'bunny.module_count': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': credentials !== undefined});
-  await host.start();
   const core = modules.find(isCoreModule);
+  await host.start(admitted => core?.setHistoryDevices?.(historyDevices(admitted)));
   const wispr = modules.find(isWisprModule);
   const hosted = host.modules();
   if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) {
