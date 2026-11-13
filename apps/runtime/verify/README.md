@@ -199,10 +199,12 @@ naming what is missing:
   state and removals. A counted overflow keeps outstanding live publications under review. A snapshot may account for
   lost state or removal. A timeout lists every missing publication.
 - At a virtual expectation's bound, including zero, the adapter settles time already owed, advances by zero and
-  refreshes. It records pending answers, reconnects, resyncs, deliveries and work reported by the child before running
-  the check. A failed check repeats when recorded work finishes and the reader has caught up. The check's completed
-  requests and their logs cannot trigger a retry. One 15 s monotonic deadline includes settles, checks and waits. The
-  run stays at the virtual bound, and the in-memory harness uses regular polling.
+  refreshes. It captures pending answers, reconnects, resyncs, eligible publications and child work before the first
+  check. Each captured completion can justify one recheck. A reconnect includes resync. A named action waits for
+  live publications linked by its existing command trace when that trace is available. A generic gateway call
+  completes with its reply and refresh, so an unrelated frame does not hold a completed read. Ordinary waits still
+  check all eligible publications. The child's busy signal is aggregate, so its captured work clears when the child
+  reports idle. One 15 s monotonic deadline includes settles, checks and waits. The run stays at the virtual bound.
 
 Before a capture's browser journey starts, the page's clock is set to the run's time, so the deadlines the page stamps
 on its requests mean what they say to the runtime. The run does not move while the journey runs, unless the capture

@@ -382,6 +382,120 @@ void test('overtime waits for live delivery after an independent action answers'
   }
 });
 
+void test('a prior predicate action is not an independent obligation for a third check', {timeout: 30_000}, async context => {
+  const seed = scenario('zero-modules')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'zero-modules');
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  const previous = gate(), predicate = gate(), previousStarted = gate(), predicateStarted = gate();
+  intercept(context, () => {}, async (request, response) => {
+    if (typeof request.body !== 'string') return response;
+    if (request.body.includes('req-independent-first')) {
+      previousStarted.open();
+      await previous.opened;
+    } else if (request.body.includes('req-from-predicate')) {
+      predicateStarted.open();
+      await predicate.opened;
+    }
+    return response;
+  });
+  let checks = 0;
+  let preexisting: Promise<string> | undefined;
+  let own: Promise<string> | undefined;
+  try {
+    const result = await runScenario({id: 'predicate-provenance', title: 'predicate provenance', seed, steps: [
+      act('the independent action starts', async h => {
+        preexisting = h.dispatch('operator', 'independent', switchLamp('lamp-1', 'on'), 'req-independent-first');
+        await previousStarted.opened;
+      }),
+      expect('the check stays failed', async h => {
+        checks += 1;
+        if (checks === 1) {
+          own = h.dispatch('operator', 'predicate', switchLamp('lamp-1', 'on'), 'req-from-predicate');
+          await predicateStarted.opened;
+          previous.open();
+          assert.equal(await preexisting, 'unavailable');
+        } else if (checks === 2) {
+          predicate.open();
+          assert.equal(await own, 'unavailable');
+        }
+        return 'the original failed check';
+      }, 0),
+    ]}, h);
+    assert.equal(result.steps[1]?.detail, 'the original failed check');
+    assert.equal(checks, 2, 'only the independent answer can authorize one recheck');
+  } finally {
+    previous.open();
+    predicate.open();
+  }
+});
+
+void test('a predicate-owned frame cannot block a different completed read', {timeout: 30_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const clock = manualClock(0), waiting = gate();
+  const realWorkClock = {now: clock.now, scheduler: {after: (delay: number, callback: () => void) => {
+    if (delay === 25) waiting.open();
+    return clock.scheduler.after(delay, callback);
+  }}};
+  const read = gate(), readStarted = gate(), frame = gate(), frameStarted = gate();
+  let armed = false;
+  intercept(context, () => {}, async (request, response) => {
+    if (armed && request.url.endsWith(HEALTH_PATH)) {
+      readStarted.open();
+      await read.opened;
+    }
+    if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
+    const decoder = new TextDecoder();
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        if (armed && decoder.decode(chunk).includes('org.bunny.lifecycle.observed')) {
+          frameStarted.open();
+          await frame.opened;
+        }
+        controller.enqueue(chunk);
+      },
+    }));
+    return new Response(body, {status: response.status, headers: response.headers});
+  });
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed, realWorkClock});
+  context.after(() => h.close());
+  let checks = 0, independent: ReturnType<typeof h.gateway> | undefined;
+  let second: ReturnType<typeof runScenario> | undefined;
+  try {
+    armed = true;
+    second = runScenario({id: 'predicate-delivery', title: 'predicate delivery', seed, steps: [
+      act('the independent health read awaits an answer', async h => {
+        independent = h.gateway({as: 'anonymous', method: 'GET', path: HEALTH_PATH});
+        await readStarted.opened;
+      }),
+      expect('the second check observes the independent answer', async h => {
+        checks += 1;
+        if (checks === 2) return true;
+        const {key, draft} = observation(sessionStarted, h.now());
+        await h.sdk('hook').publish(key, draft);
+        await frameStarted.opened;
+        read.open();
+        assert.equal((await independent)?.status, 200);
+        return 'the first check observed the health read pending';
+      }, 0),
+    ]}, h);
+    await Promise.race([second, waiting.opened]);
+    clock.advance(REAL_WORK_WITHIN_MS);
+    const result = await second;
+    assert.equal(result.outcome, 'passed', JSON.stringify(result));
+    assert.equal(checks, 2);
+    assert.equal(h.reader.heard().filter(message => message.type === 'org.bunny.lifecycle.observed').length, 0,
+      'the independent check passed while the unrelated frame was still held');
+  } finally {
+    read.open();
+    frame.open();
+    await second;
+  }
+});
+
 void test('a zero-width check retries once when the child was already busy', {timeout: 60_000}, async context => {
   const seed = scenario('zero-modules')?.seed;
   assert.ok(seed);

@@ -11,7 +11,7 @@
 // fixed text, never by an exception's message (ADR 0012, "Safe errors"; Hub #954).
 import {readFile} from 'node:fs/promises';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {connectRemote, type CommandDraft, type Diagnostic, type Participant, type Scheduler} from '@jimmie-potts/sdk';
+import {connectRemote, traceFields, type CommandDraft, type Diagnostic, type Participant, type Scheduler} from '@jimmie-potts/sdk';
 import {HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
 import {
   ROLES, StepFailure, failureOf, type DeviceStates, type Outcome, type Overtime, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
@@ -21,7 +21,7 @@ import {
   GatewayClient, Reader, actionAnswerOf, actionCall, answerOf, follow, runHookScript, scenarioValidator, sourceOf, type ReaderMark,
 } from '../tests/scenarios/parts.js';
 import {manualClock} from '../tests/scenarios/virtual-time.js';
-import {HARNESS_PATH, type ClockState, type HarnessState} from './protocol.js';
+import {HARNESS_PATH, type ClockState, type HarnessState, type Publication} from './protocol.js';
 import {partTokensOf, producerOf} from './seed.js';
 
 /**
@@ -136,10 +136,10 @@ type Part = {role: Role; participant: Participant | undefined; closed: boolean; 
  */
 type Virtual = {clock: ReturnType<typeof manualClock>; owed: number; runNext: number | undefined; quiet: boolean; busy: boolean};
 
-type PendingWork = ReadonlyMap<object, readonly string[]>;
-const runWork = {};
-const readerWork = {};
-const deliveryWork = {};
+type PendingWork = () => readonly string[];
+type PendingAnswer = {
+  label: string; role: Role; requestId: string; key: string; logsFrom: number; publishedFrom: number; traceId?: string; ambiguous: boolean;
+};
 
 /** How many event-loop turns the adapter gives the parts' streams after each advance of the run, as the in-memory harness gives real I/O. */
 const TURNS = 4;
@@ -176,7 +176,7 @@ class Run implements RunHarness {
   #virtual: Virtual | undefined;
   /** Calls and action answers that the scenario cannot read yet, keyed per operation. */
   readonly #calls = new Set<object>();
-  readonly #pendingAnswers = new Map<object, string>();
+  readonly #pendingAnswers = new Set<PendingAnswer>();
   /** On virtual time, the parts whose stream is lost until they reconnect, which they do over real I/O. */
   readonly #away = new Map<Role, object>();
   /**
@@ -245,10 +245,14 @@ class Run implements RunHarness {
   }
 
   send(role: Role, label: string, {key, draft}: {key: string; draft: CommandDraft<object>}, options: {timeoutMs: number; requestId: string}): Promise<string> {
-    const pending = this.#startAnswer(label);
+    const pending = this.#startAnswer(role, label, options.requestId, key);
     // The request starts in its turn among the actions; its answer may come long after the next action began.
     const started = this.#act(() => Promise.resolve({request: this.#connected(role).request(key, draft, options)}));
-    return started.then(({request}) => request).then(answerOf, (error: unknown) => `threw ${failureOf(error)}`).then(async answer => {
+    return started.then(({request}) => request).then(result => {
+      const traceId = result.status === 'accepted' ? traceFields(result.reply)?.traceId : result.error.error.traceId;
+      if (traceId !== undefined) pending.traceId = traceId;
+      return answerOf(result);
+    }, (error: unknown) => `threw ${failureOf(error)}`).then(async answer => {
       // What the run published before the answer is in the copy before the scenario reads it.
       await this.#refresh();
       this.#answers.set(label, answer);
@@ -260,7 +264,7 @@ class Run implements RunHarness {
   }
 
   dispatch(role: Role, label: string, command: {key: string; draft: CommandDraft<object>}, requestId: string): Promise<string> {
-    const pending = this.#startAnswer(label);
+    const pending = this.#startAnswer(role, label, requestId, command.key);
     // The action starts in its turn among the actions; its answer may come long after the next action began. An HTTP
     // call whose connection a crash ended is `lost`: its fate is the tracker's to know.
     const started = this.#act(() => Promise.resolve({call: this.#client.call(actionCall(role, command, requestId))}));
@@ -274,10 +278,15 @@ class Run implements RunHarness {
     });
   }
 
-  #startAnswer(label: string): object {
+  #startAnswer(role: Role, label: string, requestId: string, key: string): PendingAnswer {
     this.#answers.set(label, 'pending');
-    const pending = {};
-    this.#pendingAnswers.set(pending, label);
+    const pending = {label, role, requestId, key, logsFrom: this.#state.logs.length, publishedFrom: this.#state.published.length, ambiguous: false};
+    for (const answer of this.#pendingAnswers) {
+      if (answer.role !== role || answer.requestId !== requestId || answer.key !== key) continue;
+      answer.ambiguous = true;
+      pending.ambiguous = true;
+    }
+    this.#pendingAnswers.add(pending);
     return pending;
   }
 
@@ -431,9 +440,9 @@ class Run implements RunHarness {
   async #overtime(v: Virtual, check: () => Promise<Outcome>): Promise<Outcome> {
     const deadline = this.#realWorkClock.now() + REAL_WORK_WITHIN_MS;
     let failure: string | undefined, stage = '';
+    let pending: readonly PendingWork[] = [];
     const expired = (): string => {
-      const pending = this.#pendingWork(v.busy);
-      const names = [...pending.values()].flat();
+      const names = pending.flatMap(work => work());
       if (stage !== '') names.unshift(stage);
       const detail = names.length === 0 ? '' : `: ${names.join('; ')}`;
       return `${failure === undefined ? '' : `${failure}; `}still in flight after ${REAL_WORK_WITHIN_MS} ms of real time past the bound${detail}`;
@@ -452,25 +461,26 @@ class Run implements RunHarness {
         };
         // The first bound check needs fresh child evidence even when no virtual wait preceded it.
         await settle();
-        let work = this.#pendingWork(v.busy);
+        pending = this.#pendingWork(v);
         for (;;) {
           signal.throwIfAborted();
           if (this.#realWorkClock.now() >= deadline) return expired();
-          // Capture the obligations before letting the predicate issue any requests.
-          const before = work;
           stage = 'the expectation check';
           const result = await check();
           signal.throwIfAborted();
           if (this.#realWorkClock.now() >= deadline) return expired();
           if (result === true) return result;
           failure = result;
-          if (before.size === 0) return failure;
+          if (pending.length === 0) return failure;
           for (;;) {
             await settle();
-            work = this.#pendingWork(before.has(runWork) && v.busy);
             stage = '';
-            // The action or reconnect can finish before its newly visible publications reach the reader.
-            if (!work.has(deliveryWork) && [...before.keys()].some(key => !work.has(key))) break;
+            const remaining = pending.filter(work => work().length > 0);
+            if (remaining.length < pending.length) {
+              // A completion can justify one recheck. Work started by a predicate is never added.
+              pending = remaining;
+              break;
+            }
             await this.#change(signal);
           }
         }
@@ -751,15 +761,25 @@ class Run implements RunHarness {
    * eligibility at publication, so a state refresh cannot discard a live frame that is still on its way.
    */
   #undelivered(): string[] {
-    const part = this.#part('reader');
-    const {generation, readerStream, published} = this.#state;
-    if (this.#virtual === undefined || readerStream === undefined || part.closed || part.participant === undefined
-      || this.#away.has('reader') || this.#held.includes(part)) return [];
-    const eligible = published.slice(this.#watchedFrom).flatMap(item =>
-      item.generation === generation && item.readerStream === readerStream ? [item.message] : []);
-    const missing = this.reader.undelivered(eligible);
+    const published = this.#state.published;
+    if (!this.#watchingReader()) return [];
+    const missing = this.#missingDeliveries(published.slice(this.#watchedFrom));
     if (missing.length === 0) this.#watchedFrom = published.length;
     return missing;
+  }
+
+  #watchingReader(): boolean {
+    const part = this.#part('reader');
+    return this.#virtual !== undefined && this.#state.readerStream !== undefined && !part.closed
+      && part.participant !== undefined && !this.#away.has('reader') && !this.#held.includes(part);
+  }
+
+  #missingDeliveries(publications: readonly Publication[]): string[] {
+    if (!this.#watchingReader()) return [];
+    const {generation, readerStream} = this.#state;
+    const eligible = publications.flatMap(item =>
+      item.generation === generation && item.readerStream === readerStream ? [item.message] : []);
+    return this.reader.undelivered(eligible);
   }
 
   /** Waits until the reader has received what the run published, within `REAL_WORK_WITHIN_MS` of real time (Hub #1711). */
@@ -768,24 +788,53 @@ class Run implements RunHarness {
       `the reader did not receive within ${REAL_WORK_WITHIN_MS} ms what the run published: ${missing.join('; ')}`);
   }
 
-  /** Work a bound check can be waiting for, with keys stable until its result is observable. */
-  #pendingWork(runBusy: boolean): PendingWork {
-    const active = new Map<object, readonly string[]>();
-    if (runBusy) active.set(runWork, ["the run's own work"]);
-    for (const call of this.#calls) active.set(call, ['a call waiting for an answer']);
-    for (const [answer, label] of this.#pendingAnswers) active.set(answer, [`the answer to ${label}`]);
+  /** Captures only work already pending before the first check. Each closure checks that operation's own result. */
+  #pendingWork(v: Virtual): PendingWork[] {
+    const work: PendingWork[] = [];
+    if (v.busy) work.push(() => v.busy ? ["the run's own work"] : []);
+    for (const call of this.#calls) work.push(() => this.#calls.has(call) ? ['a call waiting for an answer'] : []);
+    for (const answer of this.#pendingAnswers) work.push(() => this.#answerWork(answer));
     for (const [role, stream] of this.#away) {
-      if (role !== 'reader' && !this.#held.some(part => part.role === role)) active.set(stream, [`the ${role}'s stream reconnecting`]);
+      if (role !== 'reader' && !this.#held.some(part => part.role === role)) {
+        work.push(() => this.#away.get(role) === stream ? [`the ${role}'s stream reconnecting`] : []);
+      }
     }
     const mark = this.#readerLost;
     if (mark !== undefined && !this.#held.some(part => part.role === 'reader')) {
-      const behind = this.reader.behind(mark);
-      if (this.#away.has('reader')) active.set(readerWork, ["the reader's stream reconnecting"]);
-      else if (behind.length > 0) active.set(readerWork, behind.map(missing => `the reader: ${missing}`));
+      work.push(() => {
+        if (this.#part('reader').closed) return [];
+        if (this.#away.has('reader')) return ["the reader's stream reconnecting"];
+        return this.reader.behind(mark).map(missing => `the reader: ${missing}`);
+      });
     }
-    const delivery = this.#undelivered();
-    if (delivery.length > 0) active.set(deliveryWork, delivery.map(missing => `the reader: ${missing}`));
-    return active;
+    const published = this.#state.published.slice(this.#watchedFrom);
+    if (this.#missingDeliveries(published).length > 0) work.push(() => this.#missingDeliveries(published));
+    return work;
+  }
+
+  #answerWork(answer: PendingAnswer): string[] {
+    if (this.#pendingAnswers.has(answer)) return [`the answer to ${answer.label}`];
+    // The dispatcher's existing request record links its answer to the same trace as the resulting publications.
+    // An SDK request can also give the trace in its reply or refusal.
+    const trace = answer.traceId ?? this.#admissionTrace(answer);
+    if (trace === undefined) return [];
+    return this.#missingDeliveries(this.#state.published.slice(answer.publishedFrom).filter(({message}) =>
+      traceFields(message)?.traceId === trace));
+  }
+
+  #admissionTrace(answer: PendingAnswer): string | undefined {
+    // An HTTP duplicate can share its request ID with the original operation. Only fresh, unambiguous admission
+    // evidence can link this answer to new publications. Ordinary waits still check uncorrelated deliveries.
+    if (answer.ambiguous) return undefined;
+    const traces = new Set<string>();
+    for (const {record} of this.#state.logs.slice(answer.logsFrom)) {
+      if ((record.event_name === 'command.queued' || record.event_name === 'runtime.command.admitted')
+        && record.attributes['bunny.request.id'] === answer.requestId
+        && record.attributes['bunny.participant'] === sourceOf(answer.role)
+        && record.attributes['bunny.routing.key'] === answer.key
+        && record.trace_id !== undefined) traces.add(record.trace_id);
+    }
+    return traces.size === 1 ? traces.values().next().value : undefined;
   }
 
   /**
