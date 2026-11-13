@@ -104,12 +104,27 @@ export function settingsRead(params: URLSearchParams): SettingsRead | undefined 
   return through === undefined ? undefined : {mode, after, through};
 }
 
+function modeChoices(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  const choices = (value as unknown[]).map(choice =>
+    settingsObject(choice) ? {target: choice.target, mode: choice.mode} : choice);
+  return choices.sort((left, right) => {
+    const a = settingsObject(left) && typeof left.target === 'string' ? left.target : '';
+    const b = settingsObject(right) && typeof right.target === 'string' ? right.target : '';
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+}
+
+/** Retained choices compare by target and mode. The first mode row still supplies all of its settings. */
+export function unchangedModeOverrides(before: Record<string, unknown> | null, after: Record<string, unknown>): boolean {
+  return before !== null && JSON.stringify(modeChoices(before.overrides ?? [])) === JSON.stringify(modeChoices(after.overrides ?? []));
+}
+
 /** Project the same top-level fields from owner state and history changes. */
 export function projectSettingsMembers(family: SettingsFamily, data: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = Object.fromEntries(fields[family].filter(key => Object.hasOwn(data, key)).map(key => [key, data[key]]));
   if (family === 'mode' && Array.isArray(result.overrides)) {
-    result.overrides = (result.overrides as unknown[]).map(override =>
-      settingsObject(override) ? {target: override.target, mode: override.mode} : override);
+    result.overrides = modeChoices(result.overrides);
   }
   return result;
 }
@@ -204,8 +219,9 @@ export const settingsMember = (family: SettingsFamily, key: string): boolean => 
 /** Whether a compact state change carries an effective settings member. */
 export function isSettingsChange(family: SettingsFamily, change: {
   previous: unknown; changed: Record<string, unknown>; removed: readonly string[];
-}): boolean {
+}, sameOverrides = false): boolean {
   // The first operational art row can carry the default policy even though no policy was saved.
   if (family === 'art-schedule' && change.previous === null && change.changed.settingsRevision === 0) return false;
-  return fields[family].some(key => Object.hasOwn(change.changed, key) || change.removed.includes(key));
+  return fields[family].some(key => !(family === 'mode' && key === 'overrides' && sameOverrides) &&
+    (Object.hasOwn(change.changed, key) || change.removed.includes(key)));
 }

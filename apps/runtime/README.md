@@ -2667,7 +2667,9 @@ highest row scanned, including when `facts` is empty. `done` means the scan
 reached `through`. A fact includes `family`, `id`, `seq`, the outer source
 transaction `revision` and `atMs`. A `kind: "change"` carries `changed` and
 `removed`. Each changed top-level member replaces that member in full.
-Legacy removal of mode overrides becomes `overrides: []`. A
+Mode overrides are ordered by target. Reselecting the same target and mode
+updates ordinary history and advances the scan. It contributes no settings
+change. Legacy removal of mode overrides becomes `overrides: []`. A
 `kind: "removal"` deletes a power-limit, rule or routine definition. A
 removal-close row or a row with only run state, confirmations or gap
 metadata contributes no settings fact. All values follow the existing
@@ -2687,5 +2689,5 @@ replace from a new complete snapshot after verifying the pinned origin and
 expected durable checkpoint. See [Core settings continuity](UPGRADE.md#core-settings-continuity)
 for the older-writer recovery prerequisite. The gateway refuses a response
 containing any selected decoded secret, including IDs. Both modes are
-read-only and use the existing route trace. If a settings edit cannot retain
-its projected history fact, the owner transaction rolls back.
+read-only and use the existing route trace. If a settings edit cannot persist
+its owner record and projected history fact, the transaction rolls back.

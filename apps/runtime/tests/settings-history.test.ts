@@ -7,6 +7,9 @@ import {prepareMessage, type StateDraft} from '@jimmie-potts/sdk';
 import {createCoreModule, Redactions, type CoreHandle} from '../src/index.js';
 import {DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS} from '../src/core/automation.js';
 import {AutomationStore} from '../src/core/automation-store.js';
+import {PowerLimitStore, createPowerLimits} from '../src/core/power-limits.js';
+import {deviceRecord} from './fixtures/device.js';
+import type {Action} from '../src/core/tracker.js';
 import {initialArtRecord} from '../src/core/art-schedule-model.js';
 import {openModuleDatabase} from '../src/state.js';
 import {History, type HistoryEntry} from '../src/core/history.js';
@@ -407,4 +410,178 @@ it('an ignored core settings fact rolls back its owner save while ignored device
   const reverted = core.history.settings(pageRead(afterSuccess.checkpoint));
   assert.ok('settings' in reverted && reverted.settings === 'page');
   assert.deepEqual(reverted.facts.map(fact => fact.kind === 'change' ? fact.changed : fact.kind), [{policy: initialPolicy}]);
+});
+
+it('ignored Art owner inserts and updates leave its policy, revision and settings history unchanged', async context => {
+  let handle: CoreHandle | undefined;
+  const core = createCoreModule({parts: [{start: given => { handle = given; return Promise.resolve(); }}]});
+  const clock = manualClock(atMs);
+  await run(context, {modules: [core], clock, scheduler: clock.scheduler});
+  const live = handle, art = core.automation.artSchedule;
+  assert.ok(live && art);
+  const initial = art.get();
+  const policy = {...initial.policy, browser: false};
+  for (const operation of ['INSERT', 'UPDATE']) {
+    const before = snapshot(core), prior = art.get();
+    await live.transaction(tx => {
+      tx.database.exec(`CREATE TRIGGER ignore_art_owner BEFORE ${operation} ON automation_art_schedule BEGIN SELECT RAISE(IGNORE); END`);
+    });
+    const next = operation === 'INSERT' ? policy : initial.policy;
+    await assert.rejects(art.save({expectedSettingsRevision: prior.settingsRevision, policy: next}), /the art schedule was not stored/);
+    assert.deepEqual(art.get(), prior);
+    assert.deepEqual(snapshot(core), before);
+    const unchanged = core.history.settings(pageRead(before.checkpoint));
+    assert.ok('settings' in unchanged && unchanged.settings === 'page');
+    assert.deepEqual([unchanged.next, unchanged.facts], [before.checkpoint, []]);
+
+    await live.transaction(tx => { tx.database.exec('DROP TRIGGER ignore_art_owner'); });
+    const saved = await art.save({expectedSettingsRevision: prior.settingsRevision, policy: next});
+    assert.equal(saved.settingsRevision, prior.settingsRevision + 1);
+    const after = snapshot(core), changes = core.history.settings(pageRead(before.checkpoint));
+    assert.deepEqual(after.records.find(record => record.family === 'art-schedule')?.value, {policy: next});
+    assert.ok('settings' in changes && changes.settings === 'page');
+    assert.deepEqual(changes.facts.map(row => row.kind === 'change' ? row.changed : row.kind), [{policy: next}]);
+    assert.equal(changes.next, after.checkpoint);
+  }
+});
+
+it('mode override timestamp and ordering changes advance the scan without an ineffective settings fact', context => {
+  const db = new DatabaseSync(':memory:');
+  context.after(() => db.close());
+  const history = new History(db), start = zero(history);
+  const choices = [{target: 'left', mode: 'quiet', selectedAtMs: atMs}, {target: 'right', mode: 'work', selectedAtMs: atMs}];
+  const mode = (revision: number, overrides: typeof choices, global = 'free') =>
+    fact(state('mode', 'hub', {id: 'hub', revision, mode: global, selectedAtMs: atMs, overrides}, '2.1'));
+  commit(db, history, [mode(1, choices)], 1);
+  const first = page(history, start);
+  assert.equal(first.facts.length, 1);
+  const [left, right] = choices;
+  assert.ok(left && right);
+  commit(db, history, [mode(2, [right, {...left, selectedAtMs: atMs + 1}])], 2);
+  const repeated = page(history, first.next);
+  assert.deepEqual(repeated.facts, []);
+  assert.equal(cursor(repeated.next).seq, 2);
+  const ordinary = history.read({limit: 1})[0];
+  assert.deepEqual(ordinary?.record.changed, {overrides: [right, {...left, selectedAtMs: atMs + 1}]});
+
+  commit(db, history, [mode(3, [right, {...left, mode: 'work'}])], 3);
+  const changed = page(history, repeated.next).facts[0];
+  assert.ok(changed?.family === 'mode' && changed.kind === 'change');
+  assert.deepEqual(changed.changed, {overrides: [{target: 'left', mode: 'work'}, {target: 'right', mode: 'work'}]});
+  const changedHead = page(history, repeated.next).next;
+  commit(db, history, [mode(4, [right], 'quiet')], 4);
+  const single = page(history, changedHead);
+  commit(db, history, [mode(5, [{...right, selectedAtMs: atMs + 2}], 'quiet')], 5);
+  const repeatedSingle = page(history, single.next);
+  assert.deepEqual(repeatedSingle.facts, []);
+  assert.equal(cursor(repeatedSingle.applyThrough ?? '').seq, 5);
+  commit(db, history, [mode(6, [{...right, selectedAtMs: atMs + 3}])], 6);
+  const changedMode = page(history, repeatedSingle.next).facts[0];
+  assert.ok(changedMode?.family === 'mode' && changedMode.kind === 'change');
+  assert.deepEqual(changedMode.changed, {mode: 'free'});
+});
+
+it('competing art policy saves from the same revision retain only the winning settings fact', async context => {
+  const core = createCoreModule(), clock = manualClock(atMs);
+  await run(context, {modules: [core], clock, scheduler: clock.scheduler});
+  const art = core.automation.artSchedule;
+  assert.ok(art);
+  const initial = art.get(), before = snapshot(core);
+  const left = {...initial.policy, browser: false}, right = {...initial.policy, ambient: false};
+  const outcomes = await Promise.allSettled([left, right].map(policy => art.save({expectedSettingsRevision: initial.settingsRevision, policy})));
+  const winner = outcomes.find(result => result.status === 'fulfilled');
+  const loser = outcomes.find(result => result.status === 'rejected');
+  assert.ok(winner && loser);
+  assert.equal(winner.value.settingsRevision, initial.settingsRevision + 1);
+  assert.ok(loser.reason instanceof Error && 'code' in loser.reason);
+  assert.equal(loser.reason.code, 'revision-conflict');
+  const current = snapshot(core), changes = core.history.settings(pageRead(before.checkpoint));
+  assert.ok('settings' in changes && changes.settings === 'page');
+  assert.equal(changes.next, current.checkpoint);
+  assert.equal(changes.applyThrough, current.checkpoint);
+  assert.deepEqual(current.records.find(item => item.family === 'art-schedule')?.value, {policy: winner.value.policy});
+  assert.deepEqual(changes.facts.map(row => row.kind === 'change' ? row.changed : row.kind), [{policy: winner.value.policy}]);
+});
+
+it('ignored owner writes leave mode and layouts unchanged, including Home reconciliation in a Lighting save', async context => {
+  let handle: CoreHandle | undefined;
+  const core = createCoreModule({parts: [{start: given => { handle = given; return Promise.resolve(); }}]});
+  const clock = manualClock(atMs);
+  await run(context, {modules: [core], clock, scheduler: clock.scheduler});
+  const live = handle;
+  assert.ok(live);
+  const entries = ['light:device:lamp-a', 'light:device:lamp-b'].map(widget => ({widget, size: 'medium', hidden: false}));
+  const layout = {rooms: [], assignments: [], groups: [{id: 'pair', name: 'Pair', scope: 'home', devices: ['lamp-a', 'lamp-b']}],
+    home: [{kind: 'group', id: 'pair'}]};
+  const command = (family: string, id: string, requestId: string, data: object): Action => ({
+    key: `bunny.cmd.${family}-set.${id}`, requestedBy: 'bunny/parts/operator', requestId,
+    draft: {type: `org.bunny.${family}.set.requested`, subject: id, dataschema: `${SCHEMA_BASE}${family}-set/2.0`, data},
+  });
+  const currentPage = (after: string) => {
+    const result = core.history.settings(pageRead(after));
+    assert.ok('settings' in result && result.settings === 'page');
+    return result;
+  };
+  const cases = [
+    {table: 'core_mode', family: 'mode', id: 'hub', data: {mode: 'quiet', expectedRevision: 0}},
+    {table: 'playback_layout', family: 'playback-layout', id: 'playback', data: {assignments: [], expectedRevision: 0}},
+    {table: 'home_layout', family: 'home-layout', id: 'home', data: {layouts: {desktop: entries, phone: entries}, expectedRevision: 0}},
+    {table: 'lighting_layout', family: 'lighting-layout', id: 'lighting', data: {layout, expectedRevision: 0}},
+    {table: 'home_layout', family: 'lighting-layout', id: 'lighting', data: {layout, expectedRevision: 0}},
+  ];
+  for (const [index, {table, family, id, data}] of cases.entries()) {
+    const before = snapshot(core);
+    await live.transaction(tx => {
+      tx.database.exec(`CREATE TRIGGER ignore_layout_owner BEFORE UPDATE ON ${table} BEGIN SELECT RAISE(IGNORE); END`);
+    });
+    const dispatch = (action: Action) => family === 'mode'
+      ? core.actions.dispatch(action) : core.operatorActions.dispatch(action);
+    const denied = await dispatch(command(family, id, `ignore-owner-${index}`, data));
+    assert.ok('error' in denied, table);
+    assert.deepEqual(snapshot(core).records, before.records);
+    assert.deepEqual(currentPage(before.checkpoint).facts, []);
+    await live.transaction(tx => { tx.database.exec('DROP TRIGGER ignore_layout_owner'); });
+    // Leave Lighting at revision zero for the paired-write fault in the next case.
+    if (table === 'lighting_layout') continue;
+    const retry = await dispatch(command(family, id, `retry-owner-${index}`, data));
+    assert.ok('status' in retry, table);
+    const caughtUp = currentPage(before.checkpoint);
+    assert.equal(caughtUp.next, snapshot(core).checkpoint);
+    if (family === 'lighting-layout') {
+      assert.deepEqual(caughtUp.facts.map(row => row.family), ['lighting-layout', 'home-layout']);
+      assert.equal(new Set(caughtUp.facts.map(row => row.revision)).size, 1);
+    } else {
+      assert.deepEqual(caughtUp.facts.map(row => row.family), [family]);
+    }
+  }
+});
+
+it('an ignored power-limit definition leaves its owner and settings checkpoint unchanged', async context => {
+  let handle: CoreHandle | undefined;
+  const core = createCoreModule({parts: [{start: given => { handle = given; return Promise.resolve(); }}]});
+  const clock = manualClock(atMs), target = 'synthetic-plug';
+  await run(context, {modules: [core], clock, scheduler: clock.scheduler});
+  const live = handle;
+  assert.ok(live);
+  const store = await live.transaction(tx => {
+    tx.database.exec('CREATE TRIGGER ignore_limit_owner BEFORE INSERT ON automation_power_limits BEGIN SELECT RAISE(IGNORE); END');
+    return new PowerLimitStore(tx.database, work => live.transaction(work));
+  });
+  const device = deviceRecord(target, 1, 'wemo', 'available');
+  const limits = createPowerLimits({store, clock: clock.now, scheduler: clock.scheduler, active: () => true,
+    targets: () => [target], owner: () => 'bunny/modules/wemo', current: () => device, read: () => Promise.resolve(device),
+    send: () => Promise.reject(new Error('unexpected device command'))});
+  context.after(() => limits.close());
+  const before = snapshot(core);
+  const value = {enabled: false, durationMs: 2000};
+  await assert.rejects(limits.save(target, {...value, expectedSettingsRevision: 0}), /the power limit was not stored/);
+  assert.equal(limits.get(target), undefined);
+  assert.deepEqual(snapshot(core), before);
+  await live.transaction(tx => { tx.database.exec('DROP TRIGGER ignore_limit_owner'); });
+  assert.equal((await limits.save(target, {...value, expectedSettingsRevision: 0})).settingsRevision, 1);
+  const after = snapshot(core), result = core.history.settings(pageRead(before.checkpoint));
+  assert.ok('settings' in result && result.settings === 'page');
+  assert.deepEqual(after.records.find(row => row.id === target)?.value, value);
+  assert.deepEqual(result.facts.map(row => row.kind === 'change' ? row.changed : row.kind), [value]);
+  assert.equal(result.next, after.checkpoint);
 });

@@ -116,7 +116,7 @@ export class ModePart implements CorePart {
           if (overrides.length > MAX_MODE_OVERRIDES) return errorBody('capacity', {detail: 'the saved mode exception limit was reached'});
           const record: ModeState = {id: MODE_ID, revision: tx.revision(), mode: individual ? current.mode : command.data.mode,
             selectedAtMs: individual ? current.selectedAtMs : tx.atMs, overrides};
-          this.#save.run(JSON.stringify(record), MODE_ID);
+          if (Number(this.#save.run(JSON.stringify(record), MODE_ID).changes) !== 1) throw new Error('the Hub mode was not stored');
           tx.add(`bunny.state.mode.${MODE_ID}`, {kind: 'state', ...stateDraft(record)}, {parent: command});
           tx.take(command);
           committed = this.#admission.complete(tx, command, {result: Outcome.succeeded, evidence: Outcome.observed});

@@ -70,9 +70,11 @@ function factOf(row: SettingsHistoryRow): SettingsFact | ErrorBody | undefined {
   const {changed: raw, removed: absent} = record;
   if (record.family !== family || record.id !== id || !settingsObject(raw) ||
       !Array.isArray(absent) || !absent.every((key): key is string => typeof key === 'string')) return invalid();
-  if (!isSettingsChange(family, {previous: record.previous, changed: raw, removed: absent})) return undefined;
+  const sameOverrides = family === 'mode' && row.sameOverrides === 1;
+  if (!isSettingsChange(family, {previous: record.previous, changed: raw, removed: absent}, sameOverrides)) return undefined;
   const changed = projectSettingsMembers(family, raw);
-  const removed = absent.filter(key => settingsMember(family, key));
+  if (sameOverrides) delete changed.overrides;
+  const removed = absent.filter(key => settingsMember(family, key) && !(sameOverrides && key === 'overrides'));
   if (family === 'mode' && removed.includes('overrides') && !Object.hasOwn(changed, 'overrides')) {
     changed.overrides = [];
     removed.splice(removed.indexOf('overrides'), 1);

@@ -34,11 +34,30 @@ export class PowerLimitStore {
     const work=(revision:number)=>{
       const current=this.get(entry.target);if((current?.definitionId??'none')!==expected||(current?.record?.revision??0)!==expectedRevision)invalid('revision-conflict',409);
       if(current===undefined&&Number(this.db.prepare('SELECT count(*) AS n FROM automation_power_limits').get()?.n)>=64)invalid('capacity',429);
-      entry.record={...view,revision};
-      this.db.prepare('INSERT INTO automation_power_limits VALUES(?,?) ON CONFLICT(target) DO UPDATE SET payload=excluded.payload').run(entry.target,JSON.stringify(entry));
+      const record = {...view, revision};
+      const saved = this.db.prepare('INSERT INTO automation_power_limits VALUES(?,?) ON CONFLICT(target) DO UPDATE SET payload=excluded.payload')
+        .run(entry.target, JSON.stringify({...entry, record}));
+      if (Number(saved.changes) !== 1) throw new Error('the power limit was not stored');
+      return record;
     };
-    if(this.commit!==undefined){await this.commit(tx=>{work(tx.revision());tx.add(`bunny.state.power-limit.${entry.target}`,{kind:'state',type:'org.bunny.power-limit.updated',subject:entry.target,dataschema:LIMIT_SCHEMA,data:entry.record as PowerLimitRecord},{parent});});return;}
-    this.db.exec('BEGIN IMMEDIATE');try{work((this.get(entry.target)?.record?.revision??0)+1);this.db.exec('COMMIT');}catch(error){this.db.exec('ROLLBACK');throw error;}
+    if (this.commit !== undefined) {
+      entry.record = await this.commit(tx => {
+        const record = work(tx.revision());
+        tx.add(`bunny.state.power-limit.${entry.target}`, {kind: 'state', type: 'org.bunny.power-limit.updated',
+          subject: entry.target, dataschema: LIMIT_SCHEMA, data: record}, {parent});
+        return record;
+      });
+      return;
+    }
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const record = work((this.get(entry.target)?.record?.revision ?? 0) + 1);
+      this.db.exec('COMMIT');
+      entry.record = record;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 }
 export type PowerLimitOptions=Omit<PowerScheduleOptions,'store'>&{store:PowerLimitStore};

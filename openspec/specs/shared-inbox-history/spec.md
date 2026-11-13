@@ -135,6 +135,14 @@ checks and SHALL perform no state write, publication or device work.
 - **AND** rolled-back changes are invisible and unrelated rows can advance the
   scan cursor
 
+#### Scenario: Repeat a mode override
+
+- **WHEN** a mode selection leaves the same targets and their modes and changes
+  only override selection times or order
+- **THEN** the raw row stays in ordinary history and advances the settings scan
+  without an overrides fact
+- **AND** a simultaneous change of the global mode remains in the settings page
+
 #### Scenario: Refuse a stale or protected read
 
 - **WHEN** a checkpoint names a changed origin, or its anchor is missing,

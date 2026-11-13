@@ -27,8 +27,8 @@ fact log. Current owner settings remain authoritative under ADR 0012 and ADR 001
 - Checkpoints carry the local origin, sequence and random row token. The
   existing origin/sequence index verifies both bounds in the same read.
   Every new local row receives a token in its original transaction, even
-  when it has no message ID. The open migration adds one nullable column and
-  marks an unanchored local tail as a legacy barrier. A fresh snapshot can
+  when it has no message ID. The open migration adds a nullable continuity
+  column and marks an unanchored local tail as a legacy barrier. A fresh snapshot can
   begin there. Readers cannot advance across a barrier or unanchored row.
 - Reuse fixed errors and the gateway's authenticated read trace. Malformed
   inputs return `invalid-request`. An origin mismatch returns `invalid-state`.
@@ -36,8 +36,16 @@ fact log. Current owner settings remain authoritative under ADR 0012 and ADR 001
   The gateway checks the selected decoded payload with the live secret registry
   before returning it. Reads create no durable effects and have no retry loop.
 - A core edit that would contribute a settings fact rolls back when SQLite
-  ignores the fact insert or its latest-record update. Preserve the existing required Automation receipts
-  and the handling of ignored unrelated rows.
+  ignores the owner write, fact insert or latest-record update. The existing
+  Automation receipts and unrelated history handling still apply.
+
+Mode history compares retained target and mode choices at intake, while both
+states are available. It records a nullable marker with a row whose override
+changes have no settings effect. The page skips that member and can still
+return a simultaneous global mode change. Ordinary history and scan order
+use the original row. Released older writers leave unanchored rows behind
+the legacy barrier. A missing marker on an anchored row from an unmerged
+development build has only development compatibility.
 
 ## Failure and recovery
 

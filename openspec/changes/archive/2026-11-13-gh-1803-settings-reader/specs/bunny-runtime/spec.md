@@ -56,8 +56,9 @@ open migration SHALL add nullable continuity metadata and mark an unanchored
 local tail as a legacy barrier in the same transaction. An anchored tail
 SHALL keep its token when reopened. A migration failure SHALL roll back all
 of its changes. A local settings edit that contributes a settings fact SHALL
-roll back when its history insert or latest-record update is ignored. Other history consumers SHALL
-continue to receive the existing row shapes.
+roll back when its owner write, history insert or latest-record update is
+ignored. Ordinary history readers SHALL continue to receive the existing row
+shapes.
 
 
 #### Scenario: A store written by the previous release

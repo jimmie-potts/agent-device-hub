@@ -89,7 +89,8 @@ export class HomeLayoutPart implements CorePart {
     }
     if (JSON.stringify(layouts) === JSON.stringify(current.layouts)) return;
     const record: HomeLayoutRecord = {...current, revision: tx.revision(), layouts};
-    this.#save.run(JSON.stringify(record), ID);tx.add('bunny.state.home-layout.home', {kind: 'state', ...stateDraft(record)}, {parent: command});
+    if (Number(this.#save.run(JSON.stringify(record), ID).changes) !== 1) throw new Error('the Home layout was not stored');
+    tx.add('bunny.state.home-layout.home', {kind: 'state', ...stateDraft(record)}, {parent: command});
   }
   async #replace(command: Command<HomeLayoutSetRequest>): Promise<Reply> {
     const checked = this.#validator.validate(command);
@@ -115,7 +116,7 @@ export class HomeLayoutPart implements CorePart {
           settleShapes(layouts[breakpoint], current.layouts?.[breakpoint]);
         }
         const record: HomeLayoutRecord = {id: ID, revision: tx.revision(), version: 1, layouts};
-        this.#save.run(JSON.stringify(record), ID);
+        if (Number(this.#save.run(JSON.stringify(record), ID).changes) !== 1) throw new Error('the Home layout was not stored');
         tx.add('bunny.state.home-layout.home', {kind: 'state', ...stateDraft(record)}, {parent: command});tx.take(command);
         committed = this.#admission.complete(tx, command, {result: Outcome.succeeded, evidence: Outcome.observed});
         return {status: 'accepted'} as const;

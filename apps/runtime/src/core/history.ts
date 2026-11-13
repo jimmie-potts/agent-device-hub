@@ -24,7 +24,7 @@ import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {compareDelivery, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {bookkeeping as contractBookkeeping, sameState, type Bookkeeping} from '@jimmie-potts/event-contracts/v2/bookkeeping';
 import {OUTCOME_RECORDED_TYPE, type TraceContext} from '@jimmie-potts/sdk';
-import {isSettingsChange, isSettingsFamily, removableSettingsFamily} from './settings-contract.js';
+import {isSettingsChange, isSettingsFamily, removableSettingsFamily, unchangedModeOverrides} from './settings-contract.js';
 import type {ActionKind, Evidence, OperationResult, OperationStatus} from './operations.js';
 
 /** What a history row records. */
@@ -143,7 +143,7 @@ export type HistoryPage = {rows: HistoryRow[]; open?: HistoryOpenSpan[]};
 export type FactRow = HistoryRow & {origin: string; originSeq: number};
 /** Settings reads can anchor any local row, including rows without a message ID. */
 export type HistoryPosition = {originSeq: number; revision: number; continuity: string | null};
-export type SettingsHistoryRow = HistoryPosition & Pick<HistoryRow, 'atMs' | 'kind' | 'source' | 'type' | 'subject'> & {record: string};
+export type SettingsHistoryRow = HistoryPosition & Pick<HistoryRow, 'atMs' | 'kind' | 'source' | 'type' | 'subject'> & {record: string; sameOverrides: number | null};
 export const LEGACY_HISTORY_BARRIER = 'legacy:';
 /** At most this many rows one read after a sequence returns. */
 export const MAX_FACTS = 500;
@@ -197,8 +197,8 @@ export class History {
       throw error;
     }
     this.#statements = {
-      insert: database.prepare(`INSERT INTO core_history (at_ms, revision, kind, source, message_id, type, subject, request_id, record, origin, origin_seq, continuity)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(origin_seq), 0) + 1 FROM core_history WHERE origin = ?), ?)`),
+      insert: database.prepare(`INSERT INTO core_history (at_ms, revision, kind, source, message_id, type, subject, request_id, record, origin, origin_seq, continuity, same_mode_overrides)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(origin_seq), 0) + 1 FROM core_history WHERE origin = ?), ?, ?)`),
       stored: database.prepare('SELECT record FROM core_history WHERE origin = ? AND source = ? AND message_id = ? AND kind != \'change\''),
       seen: database.prepare('SELECT 1 FROM core_history WHERE origin = ? AND source = ? AND message_id = ?'),
       retained: database.prepare('SELECT kind, revision, type, subject, record FROM core_history WHERE origin = ? AND source = ? AND message_id = ?'),
@@ -215,7 +215,7 @@ export class History {
         FROM core_history WHERE origin = ? AND origin_seq = ?`),
       barrier: database.prepare(`SELECT 1 FROM core_history WHERE origin = ? AND origin_seq > ? AND origin_seq <= ?
         AND continuity GLOB 'legacy:*' LIMIT 1`),
-      settingsRows: database.prepare(`SELECT origin_seq AS originSeq, revision, continuity, at_ms AS atMs, kind, source, type, subject, record
+      settingsRows: database.prepare(`SELECT origin_seq AS originSeq, revision, continuity, at_ms AS atMs, kind, source, type, subject, record, same_mode_overrides AS sameOverrides
         FROM core_history WHERE origin = ? AND origin_seq > ? AND origin_seq <= ? ORDER BY origin_seq LIMIT ?`),
       span: database.prepare(`SELECT row_revision AS rowRevision, seen_revision AS seenRevision, seen_message_id AS seenMessageId, seen_type AS seenType, since_at_ms AS sinceAtMs,
         confirmed_at_ms AS confirmedAtMs, confirmations FROM core_history_span WHERE source = ? AND family = ? AND id = ?`),
@@ -372,9 +372,9 @@ export class History {
 
   /** Whether the statement inserted a row at the next place in this origin's order. */
   #insert(atMs: number, revision: number, kind: string, source: string, messageId: string | null, type: string, subject: string,
-    requestId: string | null, record: string): boolean {
+    requestId: string | null, record: string, sameOverrides = false): boolean {
     const continuity = randomUUID();
-    return Number(this.#statements.insert.run(atMs, revision, kind, source, messageId, type, subject, requestId, record, this.origin, this.origin, continuity).changes) === 1;
+    return Number(this.#statements.insert.run(atMs, revision, kind, source, messageId, type, subject, requestId, record, this.origin, this.origin, continuity, sameOverrides ? 1 : null).changes) === 1;
   }
 
   #operation(step: OperationStep, atMs: number, revision: number): void {
@@ -505,9 +505,11 @@ export class History {
     const closes = span === undefined ? undefined : History.#closes(span);
     const event: ChangeEvent = {family, id, revision: entityRevision, previous: held === null ? null : latest?.revision ?? null, changed, removed,
       ...(closes === undefined ? {} : {span: closes}), ...(gapMs === undefined ? {} : {gapMs})};
-    const inserted = this.#insert(atMs, revision, 'change', message.source, message.id, message.type, message.subject, null, JSON.stringify(event));
+    const sameOverrides = message.source === 'bunny/core' && family === 'mode' &&
+      (Object.hasOwn(changed, 'overrides') || removed.includes('overrides')) && unchangedModeOverrides(held, record);
+    const inserted = this.#insert(atMs, revision, 'change', message.source, message.id, message.type, message.subject, null, JSON.stringify(event), sameOverrides);
     if ((!inserted || Number(saved.changes) !== 1) &&
-        message.source === 'bunny/core' && isSettingsFamily(family) && isSettingsChange(family, event)) {
+        message.source === 'bunny/core' && isSettingsFamily(family) && isSettingsChange(family, event, sameOverrides)) {
       throw new Error('the core settings change was not retained');
     }
     if (inserted && record.id === id) changes?.push({source: message.source, family, id, trace: {traceparent: message.traceparent}});
@@ -525,7 +527,7 @@ export class History {
 function migrate(database: DatabaseSync): string {
   database.exec(`CREATE TABLE IF NOT EXISTS core_history (seq INTEGER PRIMARY KEY AUTOINCREMENT, at_ms INTEGER NOT NULL, revision INTEGER NOT NULL,
       kind TEXT NOT NULL, source TEXT NOT NULL, message_id TEXT, type TEXT NOT NULL, subject TEXT NOT NULL, request_id TEXT, record TEXT NOT NULL,
-      origin TEXT, origin_seq INTEGER, continuity TEXT) STRICT;
+      origin TEXT, origin_seq INTEGER, continuity TEXT, same_mode_overrides INTEGER) STRICT;
     CREATE INDEX IF NOT EXISTS core_history_request ON core_history (request_id) WHERE request_id IS NOT NULL;
     CREATE TABLE IF NOT EXISTS core_history_latest (source TEXT NOT NULL, family TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL,
       record TEXT NOT NULL, PRIMARY KEY (source, family, id)) STRICT;
@@ -555,6 +557,7 @@ function migrate(database: DatabaseSync): string {
     CREATE UNIQUE INDEX IF NOT EXISTS core_history_origin ON core_history (origin, origin_seq);
     CREATE UNIQUE INDEX IF NOT EXISTS core_history_origin_message ON core_history (origin, source, message_id) WHERE message_id IS NOT NULL`);
   if (!columns.includes('continuity')) database.exec('ALTER TABLE core_history ADD COLUMN continuity TEXT');
+  if (!columns.includes('same_mode_overrides')) database.exec('ALTER TABLE core_history ADD COLUMN same_mode_overrides INTEGER');
   database.exec("CREATE INDEX IF NOT EXISTS core_history_legacy_barrier ON core_history (origin, origin_seq) WHERE continuity GLOB 'legacy:*'");
   // This one barrier starts fresh snapshots after older rows without backfilling the log.
   const tail = database.prepare('SELECT origin_seq AS originSeq, continuity FROM core_history WHERE origin = ? ORDER BY origin_seq DESC LIMIT 1')

@@ -58,7 +58,7 @@ export class LightingLayoutPart implements CorePart {
         if (Date.parse(command.expiresat ?? '') <= tx.atMs) return errorBody('expired', {detail: 'the lighting layout command expired before saving'});
         if (current.revision !== command.data.expectedRevision) return errorBody('revision-conflict', {detail: 'the lighting layout changed; refresh before saving'});
         const record: LightingLayoutRecord = {id: ID, revision: tx.revision(), layout: command.data.layout};
-        this.#save.run(JSON.stringify(record), ID);
+        if (Number(this.#save.run(JSON.stringify(record), ID).changes) !== 1) throw new Error('the lighting layout was not stored');
         tx.add('bunny.state.lighting-layout.lighting', {kind: 'state', ...stateDraft(record)}, {parent: command});
         this.#admission.changed?.(tx, command, current.layout, record.layout);tx.take(command);
         committed = this.#admission.complete(tx, command, {result: Outcome.succeeded, evidence: Outcome.observed});
