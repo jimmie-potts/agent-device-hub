@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import type {BunnyModule} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/index.js';
+import {Redactions} from '../src/log.js';
 import {deviceRecord, deviceState} from './fixtures/device.js';
 import {Gadget, gadgetSchemas, setGadget} from './fixtures/gadget.js';
 import {contextOf, edgeConfig, fixture, flush, it, manualClock, run, waitFor} from './support.js';
@@ -12,8 +15,16 @@ it('gateway and MCP readers see the whole inbox/history; handling needs control 
   const core = createCoreModule({parts: [{start: given => { handle = given; return Promise.resolve(); }}]});
   const gadget = new Gadget(), files = await edgeConfig(context, [operator, reader, ingest], {mcp: true});
   const publisher = fixture('synthetic-history-device');
-  const clock = manualClock(1_800_000_000_000);
-  const {runtime} = await run(context, {modules: [core, gadget.module(), publisher], configFile: files.config, edge: {schemas: gadgetSchemas}, clock, scheduler: clock.scheduler});
+  const clock = manualClock(1_800_000_000_000), redactions = new Redactions();
+  let historyAnswer: object | undefined;
+  const tools = core.manifest.tools?.map(tool => tool.name === 'history' ? {...tool, read: (args: Parameters<typeof tool.read>[0]) => historyAnswer ?? tool.read(args)} : tool) ?? [];
+  const coreWithFixture = {...core, manifest: {...core.manifest, tools}};
+  const genericReader: BunnyModule = {...fixture('synthetic-history-reader'), manifest: {name: 'synthetic-history-reader', apiVersion: '1.2', tools: [{
+    name: 'history', description: 'Read a synthetic fixture.', input: {type: 'object', additionalProperties: false},
+    output: {type: 'object'}, read: () => ({open: []}),
+  }]}};
+  const {runtime} = await run(context, {modules: [coreWithFixture, gadget.module(), publisher, genericReader],
+    configFile: files.config, edge: {schemas: gadgetSchemas}, clock, scheduler: clock.scheduler, redactions});
   const call = async (path: string, token: string, body?: object, headers: Record<string, string> = {}) => {
     const response = await fetch(new URL(path, runtime.url), {method: body === undefined ? 'GET' : 'POST',
       headers: {authorization: `Bearer ${token}`, 'content-type': 'application/json', ...headers}, ...(body === undefined ? {} : {body: JSON.stringify(body)})});
@@ -97,6 +108,37 @@ it('gateway and MCP readers see the whole inbox/history; handling needs control 
   assert.equal((await call('/api/v2/commands/inbox-handle', operator.token, action)).status, 409);
   assert.ok(handle);
   assert.equal((await tool('core_inbox', {})).structuredContent.data.result.items?.length, 1, 'MCP observes shared handling');
+
+  const internal = async (name: string, args: object, detail: string) => {
+    const refused = await tool(name, args);
+    assert.equal(refused.isError, true);
+    assert.match(JSON.stringify(refused.structuredContent), /"code":"internal"/);
+    assert.match(JSON.stringify(refused.structuredContent), new RegExp(detail));
+  };
+  redactions.add('open');
+  const cleanHttp = await call(historyPath, reader.token);
+  assert.equal(cleanHttp.status, 200);
+  assert.deepEqual(cleanHttp.body, http.body);
+  const cleanMcp = await tool('core_history', filter);
+  assert.equal(cleanMcp.isError, false, 'the new fixed result key cannot cause a clean history page to be refused');
+  assert.deepEqual(cleanMcp.structuredContent.data.result, {rows: http.body.rows, open: http.body.open});
+  assert.deepEqual((await tool('core_history', {kind: 'operation'})).structuredContent.data.result, {rows: (await call('/api/v2/history?kind=operation', reader.token)).body.rows});
+  await internal('synthetic-history-reader_history', {}, 'holds a secret');
+
+  historyAnswer = {rows: [], open: 'malformed'};
+  await internal('core_history', filter, 'holds a secret');
+  historyAnswer = errorBody('unavailable', {detail: 'synthetic open refusal'});
+  await internal('core_history', filter, 'holds a secret');
+  historyAnswer = undefined;
+
+  const spanSecret = String(clock.now());
+  assert.ok(!JSON.stringify(http.body.rows).includes(spanSecret));
+  redactions.add(spanSecret);
+  await internal('core_history', filter, 'holds a secret');
+  assert.equal((await call(historyPath, reader.token)).status, 500);
+  redactions.add('rows');
+  await internal('core_history', {kind: 'operation'}, 'holds a secret');
+
 });
 
 
