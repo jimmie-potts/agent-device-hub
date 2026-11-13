@@ -12,7 +12,7 @@ import {DIRECT_COMMANDS} from '../core/tracker.js';
 import {MUSIC_PRODUCER_SOURCE} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {MUSIC_PLAYBACK_SOURCE} from '@jimmie-potts/event-contracts/v2/music-playback';
 import {CODING_WORKER_SOURCE} from '@jimmie-potts/event-contracts/v2/coding';
-import {DASHBOARD_SOURCE, tokenMatches, type EdgeCredential, type Scope} from '../credentials.js';
+import {standbyCredentialList, DASHBOARD_SOURCE, tokenMatches, type EdgeCredential, type Scope} from '../credentials.js';
 
 /** The source every browser session acts as: the dashboard's grant (Hub #835, #922), which no credential may take. */
 export const BROWSER_SOURCE = DASHBOARD_SOURCE;
@@ -150,18 +150,22 @@ export type AccessOptions = {
   scheduler: Scheduler;
   /** Told the ID of each browser session that ended without a logout, evicted or expired, so its streams end too. */
   ended: (id: string) => void;
+  /** Standby validates and keeps an immutable identity for each continuously admitted grant. */
+  standby?: boolean;
 };
 
 /** The gateway's callers: the configured credentials, the open browser sessions and the waiting launch codes. */
 export class Access {
   #credentials: readonly EdgeCredential[];
   readonly #options: AccessOptions;
+  readonly #standbyAdmissions: WeakMap<Principal, EdgeCredential> | undefined;
   readonly #sessions = new Map<string, Session>();
   readonly #launchCodes = new Map<string, number>();
 
   constructor(credentials: readonly EdgeCredential[], options: AccessOptions) {
-    this.#credentials = credentials;
     this.#options = options;
+    this.#standbyAdmissions = options.standby === true ? new WeakMap() : undefined;
+    this.#credentials = this.#standbyAdmissions === undefined ? credentials : standbyCredentialList(credentials);
   }
 
   /**
@@ -169,6 +173,16 @@ export class Access {
    * changed, whose streams the caller ends. A credential kept whole keeps its streams.
    */
   replace(credentials: readonly EdgeCredential[]): string[] {
+    if (this.#standbyAdmissions !== undefined) {
+      const next = standbyCredentialList(credentials);
+      const previous = new Map(this.#credentials.map(credential => [JSON.stringify(credential), credential]));
+      // Only a grant that persisted through this replacement retains its identity.
+      const admitted = next.map(credential => previous.get(JSON.stringify(credential)) ?? credential);
+      const kept = new Set(admitted);
+      const gone = this.#credentials.filter(credential => !kept.has(credential)).map(credential => credential.id);
+      this.#credentials = Object.freeze(admitted);
+      return gone;
+    }
     const kept = new Set(credentials.map(credential => JSON.stringify(credential)));
     const gone = this.#credentials.filter(credential => !kept.has(JSON.stringify(credential))).map(credential => credential.id);
     this.#credentials = credentials;
@@ -207,7 +221,9 @@ export class Access {
       const token = /^Bearer (\S+)$/.exec(header)?.[1];
       const credential = token === undefined ? undefined : this.credential(token);
       if (credential === undefined) return {refusal: {code: 'unauthenticated', detail: 'the token is not granted'}};
-      return {principal: principalOf(credential)};
+      const principal = principalOf(credential);
+      this.#standbyAdmissions?.set(principal, credential);
+      return {principal};
     }
     const tokens = sessionTokens(request);
     if (tokens.length === 0) return {refusal: {code: 'unauthenticated', detail: 'a granted bearer token or a browser session is required'}};
@@ -224,6 +240,7 @@ export class Access {
   live(principal: Principal): boolean {
     if (principal.kind === 'browser') return [...this.#sessions.values()].some(session => session.principal === principal && session.expiresAtMs > this.#options.clock.now());
     const credential = this.current(principal.id);
+    if (this.#standbyAdmissions !== undefined) return credential !== undefined && this.#standbyAdmissions.get(principal) === credential;
     return credential !== undefined && sameGrant(principalOf(credential), principal);
   }
 

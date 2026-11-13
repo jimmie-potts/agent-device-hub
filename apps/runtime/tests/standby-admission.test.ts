@@ -7,7 +7,7 @@ import type {TestContext} from 'node:test';
 import {SCHEMA_BASE, errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, REMOTE_SCHEMA, SdkError, edgeValidator, prepareMessage} from '@jimmie-potts/sdk';
 import {RecordedSpans} from '@jimmie-potts/sdk/testing';
-import {credentialsDocument, tokenDigest, type EdgeCredential} from '../src/credentials.js';
+import {admitStandbyStartupCredentials, credentialsDocument, tokenDigest, type EdgeCredential, type StandbyCredentialAdmission} from '../src/credentials.js';
 import {Gateway, STANDBY_STATUS_PATH} from '../src/gateway/gateway.js';
 import type {ModuleHost} from '../src/host.js';
 import {LogWriter, type LogRecord} from '../src/log.js';
@@ -34,6 +34,26 @@ it('standby checks inbound credentials before creating state with the edge off',
     port: 0, configFile: files.config, clock, scheduler: clock.scheduler, log: () => {}}),
   {code: 'edge-credentials-missing', message: 'the standby credentials could not be admitted'});
   await assert.rejects(stat(root), {code: 'ENOENT'});
+});
+
+it('a standby startup credential admission is one-use and bound to its core and private file', async t => {
+  const files = await edgeConfig(t, [reader]);
+  const root = await stateDir(t), clock = manualClock();
+  const core = createCoreModule({standby: true});
+  const admission = await admitStandbyStartupCredentials(core, files.credentials);
+  const options = {modules: [core], stateDir: join(root, 'original'), port: 0, configFile: files.config,
+    clock, scheduler: clock.scheduler, log: () => {}, standbyCredentialAdmission: admission};
+  for (const changed of [
+    {...options, modules: [createCoreModule({standby: true})]},
+    {...options, modules: [createCoreModule()]},
+    {...options, standbyCredentialAdmission: {} as StandbyCredentialAdmission},
+    {...options, configFile: (await edgeConfig(t, [reader])).config},
+  ]) await assert.rejects(startRuntime(changed), {code: 'edge-credentials-invalid'});
+  await assert.rejects(stat(options.stateDir), {code: 'ENOENT'});
+  const runtime = await startRuntime(options);
+  t.after(() => runtime.stop());
+  await runtime.stop();
+  await assert.rejects(startRuntime(options), {code: 'edge-credentials-invalid'});
 });
 
 it('an admitted standby HTTP mutation is refused before ordinary control permission', async t => {
@@ -174,8 +194,21 @@ it('standby keeps HTTP reads, browser, launcher and MCP closed and refuses struc
   assert.ok(b.logs.every(record => !JSON.stringify(record).includes(reader.token)));
 });
 
+it('standby preserves static command target and route refusals', async t => {
+  const {gateway, start, attempts} = boundary(t);
+  await start();
+  const mutations = [
+    ['art-show', {target: 'display', data: {artworkId: 'synthetic-art', targets: ['browser']}}, 'not-found'],
+    ['notice-acknowledge', {target: 'a'.repeat(64), data: {consumerId: 'pixoo', noticeId: 'b'.repeat(64)}}, 'invalid-request'],
+  ] as const;
+  for (const [family, body, expected] of mutations) {
+    assert.equal(codeOf(await call(gateway, '/api/v2/commands/' + family, {method: 'POST', body})), expected);
+  }
+  assert.deepEqual(attempts, []);
+});
+
 it('standby SDK keeps source, method and structural refusals and never enters the bus', async t => {
-  const {gateway, start, clock, attempts} = boundary(t);
+  const {gateway, start, clock, attempts, logs} = boundary(t);
   await start();
   const connection = {connection: 'stream-1'}, endpoint = {...connection, endpoint: 'a'.repeat(64)};
   const event = observation(turnEnded, clock.now());
@@ -183,7 +216,7 @@ it('standby SDK keeps source, method and structural refusals and never enters th
   const command = {
     ...prepareMessage(reader.source, {kind: 'occurrence', type: 'org.bunny.mode.set.requested', subject: 'hub',
       dataschema: SCHEMA_BASE + 'mode-set/2.0', data: {...action.data, requestId: 'command-1'}}, {now: clock.now}),
-    kind: 'command', expiresat: new Date(clock.now() + 5000).toISOString(),
+    kind: 'command', ...PARENT, expiresat: new Date(clock.now() + 5000).toISOString(),
   };
   const sync = {...command, kind: 'sync-request', type: 'org.bunny.sync.requested', subject: 'mode',
     dataschema: SCHEMA_BASE + 'sync-request/2.0', data: {requestId: 'sync-1', families: ['mode']}};
@@ -212,6 +245,12 @@ it('standby SDK keeps source, method and structural refusals and never enters th
   assert.equal(codeOf(await post('request', {key: 'bad', command})), 'invalid-request');
   assert.equal(codeOf(await post('publish', {key: event.key, message: {...message, source: 'bunny/parts/another'}})), 'forbidden');
   assert.equal(codeOf(await post('respond', {...calls.respond, endpoint: 'bad'})), 'forbidden');
+  const decisions = logs.filter(record => record.event_name === 'runtime.edge.refused' && record.attributes['bunny.route'] === 'request');
+  assert.deepEqual(decisions.map(record => [record.attributes['bunny.code'], record.trace_id, record.attributes['bunny.outcome']]), [
+    ['unavailable', '0af7651916cd43dd8448eb211c80319c', undefined],
+    ['unsupported-version', undefined, undefined],
+    ['invalid-request', undefined, undefined],
+  ]);
   assert.deepEqual(attempts, []);
 });
 
@@ -230,6 +269,7 @@ it('standby re-admits the original bearer before inspecting pending SDK operatio
     const pending = rawCall(gateway, '/api/sdk/v1/close', {method: 'POST', headers: bearer, chunks: chunks()});
     await entered.promise;
     gateway.reload(replacement);
+    gateway.reload([grant]);
     release.resolve();
     assert.equal(codeOf(await pending), 'unauthenticated');
   }
@@ -290,6 +330,45 @@ it('status checks the exact response bytes and re-admits after the handler retur
       gateway.reload([grant]);
     }
   }
+});
+
+it('a standby reload never revives a pending admission whose grant was removed or changed', async t => {
+  let status: () => object | Promise<object> = () => ({ok: true});
+  const {gateway, start} = boundary(t, () => status());
+  await start();
+  for (const [intermediate, expected] of [[null, 200], [[rotated], 401], [[], 401]] as const) {
+    const entered = deferred<void>(), release = deferred<object>();
+    status = () => {entered.resolve(); return release.promise;};
+    const pending = call(gateway, STANDBY_STATUS_PATH);
+    await entered.promise;
+    if (intermediate !== null) gateway.reload(intermediate);
+    gateway.reload([{...grant, scopes: ['read']}]);
+    release.resolve({ok: true});
+    assert.equal((await pending).status, expected);
+    assert.equal((await call(gateway, STANDBY_STATUS_PATH)).status, 200);
+  }
+});
+
+it('every standby Access replacement is validated and returned references cannot widen it', async t => {
+  const {gateway, start} = boundary(t, () => ({ok: true}));
+  await start();
+  const added = {id: 'extra', source: 'bunny/parts/extra', digest: tokenDigest(nextToken), scopes: ['read']} as const;
+  assert.throws(() => gateway.access.replace([{...grant, scopes: ['control']}, added]), {code: 'edge-credentials-invalid'});
+  const original = gateway.access.current(grant.id);
+  const found = gateway.access.credential(reader.token);
+  assert.ok(original && found);
+  const reserved = {...added, source: 'bunny/core'};
+  for (const attempt of [
+    () => (gateway.access.credentials as EdgeCredential[]).push(reserved),
+    () => Object.assign(original, reserved),
+    () => Object.assign(found, reserved),
+    () => (found.scopes as string[]).push('control'),
+  ]) {
+    try {attempt();} catch (error) {assert.ok(error instanceof TypeError);}
+  }
+  assert.deepEqual(gateway.access.credentials, [grant]);
+  assert.equal((await call(gateway, STANDBY_STATUS_PATH)).status, 200);
+  assert.equal((await call(gateway, STANDBY_STATUS_PATH, {headers: {authorization: 'Bearer ' + nextToken}})).status, 401);
 });
 
 it('standby revalidates configured edge-off reloads and leaves absent configuration dormant', async t => {

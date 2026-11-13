@@ -469,7 +469,8 @@ Standby opens the core's retained settings under the normal runtime lease.
 Only local status and health are served. A configured gateway stays off,
 including on credential reload. The configuration may omit `edge`; if
 supplied, it follows the private-proxy checks, including MCP off. Startup
-and reload validate the whole private credential list. Each grant must
+validates the whole private credential list before bootstrap and uses that
+snapshot. Reload validates the file as it exists then. Each grant must
 have exactly the read scope and no role or robot identifier. Use no non-core
 module sections, core secret references, producer source or Pixoo binding
 in standby.

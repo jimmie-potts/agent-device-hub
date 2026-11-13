@@ -14,9 +14,9 @@ import {keyClassOf, parseKey, parsePattern, type Pattern} from './routing.js';
 import {
   CALLS, MAX_ANSWER_BYTES, MAX_CALL_BYTES, REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, frame, statusOf, type Call, type StreamEventName,
 } from './remote-protocol.js';
-import {MAX_TIMEOUT_MS, SdkError, type Cancel, type Command, type Reply, type RequestResult, type Scheduler, type Sdk, type Subscription} from './sdk.js';
+import {MAX_TIMEOUT_MS, SdkError, type Cancel, type Command, type Reply, type RequestResult, type Scheduler, type Sdk, type Subscription, type TraceContext} from './sdk.js';
 import {checkFamilies, isSource, schemaFamily, type Snapshot, type SyncAnswer, type SyncRequest} from './sync.js';
-import {childOf} from './trace.js';
+import {childOf, traceFields} from './trace.js';
 
 /**
  * What a remote participant may do (Hub #835): the calls it may make and the routing-key patterns it may use. Either
@@ -491,6 +491,7 @@ export class RemoteEdge {
     const path = new URL(request.url ?? '/', 'http://edge').pathname;
     const route = path.startsWith(`${REMOTE_PATH}/`) ? path.slice(REMOTE_PATH.length + 1) : path;
     let source: string | undefined;
+    let refusalTrace: TraceContext | undefined;
     const progress: Progress = {};
     try {
       const principal = this.#authenticate(request);
@@ -511,7 +512,11 @@ export class RemoteEdge {
       if (standby !== undefined) {
         const refusal = standby.readAdmission(request);
         if (refusal !== undefined) throw new Refusal(refusal);
-        this.#checkStandbyCall(source, route, body);
+        const message = this.#checkStandbyCall(source, route, body);
+        if (message !== undefined) {
+          const trace = {traceparent: message.traceparent};
+          if (traceFields(trace) !== undefined) refusalTrace = trace;
+        }
         throw refuse('unavailable', standby.detail);
       }
       // A remote part that stops waiting, because its copy or participant closed, drops the call.
@@ -532,7 +537,7 @@ export class RemoteEdge {
       const {code} = refused.error;
       const who = source === undefined ? {} : {source};
       if (known) {
-        this.#refused({event: 'edge.refused', level: levelOf(code), route: routeOf(route), code, ...who});
+        this.#refused({event: 'edge.refused', level: levelOf(code), route: routeOf(route), code, ...who, ...(refusalTrace === undefined ? {} : {trace: refusalTrace})});
       } else {
         const about = dispatched === undefined ? {} : commandFacts(dispatched);
         this.#diagnose({event: 'edge.failed', level: levelOf('edge.failed'), route: routeOf(route), code, ...who, ...about, errorType: errorType(error)});
@@ -633,7 +638,7 @@ export class RemoteEdge {
   }
 
   /** Checks wire structure without acquiring a participant, connection, waiter or command slot. */
-  #checkStandbyCall(source: string, call: Call, body: Fields): void {
+  #checkStandbyCall(source: string, call: Call, body: Fields): Message | undefined {
     if (body.endpoint !== undefined) {
       identifier(body, 'connection');
       if (typeof body.endpoint !== 'string' || !/^[a-f0-9]{64}$/.test(body.endpoint)) {
@@ -650,7 +655,7 @@ export class RemoteEdge {
         if (route.category === 'cmd' || category !== route.category) {
           throw refuse('invalid-request', 'the message does not use a routing key for its kind');
         }
-        return;
+        return message;
       }
       case 'request': {
         const command = this.#inbound(source, body.command);
@@ -660,7 +665,7 @@ export class RemoteEdge {
         if (command.kind !== 'command' || !command.type.endsWith('.requested')) throw refuse('invalid-request', 'a command type ends in .requested');
         identifier(fields(command.data) ?? {}, 'requestId');
         if (command.expiresat === undefined) throw refuse('invalid-request', 'a command carries expiresat');
-        return;
+        return command;
       }
       case 'sync': {
         const request = this.#inbound(source, body.request);
@@ -669,7 +674,7 @@ export class RemoteEdge {
         if (!Array.isArray(families)) throw refuse('invalid-request', 'families is not a list of names');
         if (request.subject !== families.join(',')) throw refuse('invalid-message', "a sync request's subject names its families, joined by commas");
         ownerOf(body);
-        return;
+        return request;
       }
       case 'subscribe':
       case 'respond': {
@@ -706,6 +711,7 @@ export class RemoteEdge {
       case 'close':
         identifier(body, 'connection');
         identifier(body, 'id');
+        return undefined;
     }
   }
 

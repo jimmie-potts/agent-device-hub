@@ -14,7 +14,7 @@ import {modeParticipants} from './core/mode-participants.js';
 import {historyDevices} from './core/history-alarm.js';
 import {automationDevices} from './core/automation-devices.js';
 import {hostedArtCatalog} from './core/art-catalog.js';
-import {readEdgeCredentials, readStandbyCredentials, type EdgeCredential} from './credentials.js';
+import {readEdgeCredentials, readStandbyCredentials, takeStandbyStartupCredentials, type EdgeCredential, type StandbyCredentialAdmission} from './credentials.js';
 import {Gateway, readableFamilies} from './gateway/gateway.js';
 import {GatewayRefusals, methodOf} from './gateway/refusals.js';
 import {PRIVATE_PROXY_HEADER, WIFI_PROXY_HEADER, privateProxyOrigin, wifiProxyOrigin} from './gateway/wifi-proxy.js';
@@ -67,6 +67,8 @@ export type RuntimeOptions = {
   configFile?: string;
   /** Exact parsed configuration supplied by an admitting entrypoint; mutually exclusive with configFile. */
   config?: RuntimeConfig;
+  /** File-derived, one-use standby credential snapshot supplied by the admitting entrypoint. */
+  standbyCredentialAdmission?: StandbyCredentialAdmission;
   /** The loopback port for health. 0 picks a free port. */
   port: number;
   /** The clock for the bus, the modules and log records. Defaults to `Date.now()`. */
@@ -222,7 +224,7 @@ function close(server: Server): Promise<void> {
  * settled.
  */
 export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
-  const {port, stateDir: requestedStateDir, startTimeoutMs = 10_000, stopTimeoutMs = 5_000, edge: edgeOptions} = options;
+  const {port, stateDir: requestedStateDir, startTimeoutMs = 10_000, stopTimeoutMs = 5_000, edge: edgeOptions, standbyCredentialAdmission} = options;
   const modules = [...options.modules];
   const standbyStatus = edgeOptions?.standbyStatus;
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) throw new RuntimeError('port-invalid', 'port must be an integer from 0 to 65535');
@@ -231,14 +233,16 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   // Capture verified values before admission yields; never reopen their source file.
   const suppliedConfig = options.config === undefined ? undefined : structuredClone(options.config);
   const standbyStart = standbyCoreStart(modules);
-  if (standbyStart === undefined) await admitBoundCoreOwnership(modules, requestedStateDir);
+  if (standbyStart === undefined && standbyCredentialAdmission === undefined) await admitBoundCoreOwnership(modules, requestedStateDir);
   const clock = options.clock ?? {now: () => Date.now()};
   const scheduler = options.scheduler ?? timers;
   // The configuration is read before the state directory is prepared, so a file the runtime refuses leaves no state effect.
   const config: RuntimeConfig | undefined = suppliedConfig ?? (options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile));
   const edgeConfig = config?.edge;
   const readCredentials = standbyStart === undefined ? readEdgeCredentials : readStandbyCredentials;
-  const standbyCredentials = standbyStart === undefined || edgeConfig === undefined ? undefined : await readCredentials(edgeConfig.credentials);
+  const standbyCredentials = standbyCredentialAdmission !== undefined
+    ? takeStandbyStartupCredentials(standbyCredentialAdmission, standbyStart?.module, edgeConfig?.credentials)
+    : standbyStart === undefined || edgeConfig === undefined ? undefined : await readStandbyCredentials(edgeConfig.credentials);
   if (standbyStart !== undefined) await admitBoundCoreOwnership(modules, requestedStateDir);
   const stateDir = await prepareStateDirectory(requestedStateDir);
   // The log's floor (Hub #811): the configuration's level, else the process's `--log-level`, else INFO; a module's own
@@ -268,7 +272,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   if (edgeOptions !== undefined && edgeConfig === undefined) {
     throw new RuntimeError('edge-config-missing', 'the edge needs the configuration file\'s edge section, which names its credentials');
   }
-  const credentials: EdgeCredential[] | undefined = edgeOptions === undefined || edgeConfig === undefined ? undefined : standbyCredentials ?? await readCredentials(edgeConfig.credentials);
+  const credentials: readonly EdgeCredential[] | undefined = edgeOptions === undefined || edgeConfig === undefined ? undefined : standbyCredentials ?? await readCredentials(edgeConfig.credentials);
   const validator = edgeOptions === undefined ? undefined : edgeValidator(edgeOptions.schemas);
   if (validator !== undefined) registerReadReceiptFamily(validator);
   // Spans go to the given sink, or stay in memory: the oldest goes first, and is counted.

@@ -21,7 +21,9 @@ modules and applies the same external gateway policy.
 - Use the private credential parser and require exactly one read scope and
   no role. Validate before state setup and bound ownership reservation. A
   bound token remains process-owned. Store consumption is a later action.
-  Validate replacements in full before grants or connections change.
+  Pass the pre-bootstrap private snapshot as a one-use admission tied to
+  the exact core and file. Validate replacements in full before grants or
+  connections change. Only continuously present grants retain their identity.
 - Apply normal Host, origin, bearer and SDK source rules. Validate bounded
   request structure without an owner, bus, endpoint lookup or ordinary
   control grant. Re-admit the original bearer from in-memory grants after

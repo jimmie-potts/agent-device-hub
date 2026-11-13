@@ -2074,7 +2074,9 @@ keep existing authentication and structural errors. A well-formed request from
 an admitted reader SHALL receive the shared `unavailable` refusal with fixed
 detail before owner invocation, command tracking, upload staging or execution.
 After an awaited request or status read, the gateway SHALL re-admit the original
-bearer under its current grants while the gateway is still open.
+bearer under its current grants while the gateway is still open. A grant that
+changes or disappears SHALL end pending admission even if the same grant returns.
+An unchanged grant SHALL preserve pending admission.
 
 #### Scenario: Standby writes have no effects
 - **WHEN** a read-only bearer submits a structurally valid mutation

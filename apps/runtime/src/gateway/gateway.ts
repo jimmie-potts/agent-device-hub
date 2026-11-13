@@ -22,7 +22,7 @@ import {
   type Scheduler, type SpanRecorder, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
 import {DIRECT_COMMANDS, OPERATOR_ACTIONS, type ActionAnswer, type CoreActions, type CoreOperatorActions} from '../core/tracker.js';
-import {standbyCredentialList, type EdgeCredential, type Scope} from '../credentials.js';
+import type {EdgeCredential, Scope} from '../credentials.js';
 import {AutomationError} from '../core/automation.js';
 import {diagnosticWriter} from '../diagnostics.js';
 import {CORE_MODULE, ContributionFailed, ModuleUnavailable, sourceOf, type HostedModule, type ModuleHost} from '../host.js';
@@ -161,9 +161,9 @@ export class Gateway {
   constructor(options: GatewayOptions) {
     this.#options = options;
     this.#standby = options.standby === undefined ? undefined : {...options.standby};
-    const credentials = this.#standby === undefined ? options.credentials : standbyCredentialList(options.credentials);
     this.#refusals = new GatewayRefusals(options.log, options.scheduler);
-    this.access = new Access(credentials, {
+    this.access = new Access(options.credentials, {
+      standby: this.#standby !== undefined,
       clock: options.clock, scheduler: options.scheduler,
       // A browser session that ends without its logout, evicted or expired, takes its streams with it.
       ended: id => { this.edge.disconnectPrincipal(id); },
@@ -256,8 +256,7 @@ export class Gateway {
 
   /** Replaces the credentials, and ends the streams and MCP use of every credential that went or changed. */
   reload(credentials: readonly EdgeCredential[]): void {
-    const next = this.#standby === undefined ? credentials : standbyCredentialList(credentials);
-    for (const id of this.access.replace(next)) this.edge.disconnectPrincipal(id);
+    for (const id of this.access.replace(credentials)) this.edge.disconnectPrincipal(id);
   }
 
   /** Stops serving: the launcher, MCP, the edge's streams, the copies and every browser session. */
@@ -1100,9 +1099,9 @@ export class Gateway {
       if (family.startsWith('music-playback-')) return errorBody('forbidden', {detail: 'Music playback work belongs to the playback owner and its producer endpoint'});
       if (family.startsWith('music-lighting-') && family !== 'music-lighting-control') return errorBody('forbidden', {detail: 'Music lighting work belongs to the core\'s session owner and the light\'s module'});
       if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
-      if (family === 'art-show' && target !== 'hub') return errorBody('not-found', {detail: 'art shows belong to the Hub'});
-      if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
     }
+    if (family === 'art-show' && target !== 'hub') return errorBody('not-found', {detail: 'art shows belong to the Hub'});
+    if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
     const type = `org.bunny.${family.slice(0, verb)}.${family.slice(verb + 1)}.requested`;
     const version = family === 'music-capture-control' && typeof data.action === 'string' && ['calibrate', 'cancel-calibration', 'apply-tuning'].includes(data.action) ? '2.2' :
       family === 'music-capture-control' && data.action === 'start' && data.input === 'microphone' ? '2.1' : '2.0';
