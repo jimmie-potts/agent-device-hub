@@ -298,9 +298,10 @@ export class ModuleHost {
    * Admits each module whose manifest was accepted, in list order, so that the first module to name a device keeps it.
    * Then starts every admitted module at once, and resolves when each start has finished, failed or timed out.
    */
-  async start(): Promise<void> {
+  async start(admitted?: (modules: readonly HostedModule[]) => void): Promise<void> {
     const devices = new Set<string>();
     for (const slot of this.#slots) if (slot.state === 'starting') await this.#admit(slot, devices);
+    admitted?.(this.modules());
     await Promise.all(this.#slots.filter(slot => slot.state === 'starting').map(slot => this.#start(slot)));
   }
 

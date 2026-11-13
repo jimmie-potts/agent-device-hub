@@ -1002,10 +1002,10 @@
       }
     },
     {
-      "name": "unsupported-1.9",
+      "name": "unsupported-1.10",
       "valid": false,
       "record": {
-        "schema_version": "1.9",
+        "schema_version": "1.10",
         "timestamp": "2026-10-01T12:00:00.123Z",
         "severity_number": 9,
         "severity_text": "INFO",
@@ -5463,6 +5463,270 @@
         "trace_id": "0af7651916cd43dd8448eb211c80319c",
         "span_id": "b7ad6b7169203331",
         "trace_flags": "01"
+      }
+    },
+    {
+      "name": "history-alarm-1.9",
+      "valid": true,
+      "record": {
+        "schema_version": "1.9",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "history.entity.noisy",
+        "body": "History entity exceeded its hourly change threshold",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.module": "core",
+          "bunny.participant": "bunny/modules/wemo",
+          "bunny.provenance": "source",
+          "bunny.history.family": "device",
+          "bunny.history.entity_id": "fixture-plug",
+          "bunny.history.row_count": 121,
+          "bunny.history.row_threshold": 120,
+          "bunny.history.hour_start_at_ms": 1790856000000
+        }
+      }
+    },
+    {
+      "name": "history-alarm-previous-profile",
+      "valid": false,
+      "record": {
+        "schema_version": "1.8",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "history.entity.noisy",
+        "body": "History entity exceeded its hourly change threshold",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.module": "core",
+          "bunny.participant": "bunny/modules/wemo",
+          "bunny.provenance": "source",
+          "bunny.history.family": "device",
+          "bunny.history.entity_id": "fixture-plug",
+          "bunny.history.row_count": 121,
+          "bunny.history.row_threshold": 120,
+          "bunny.history.hour_start_at_ms": 1790856000000
+        }
+      }
+    },
+    {
+      "name": "history-alarm-wrong-scope",
+      "valid": false,
+      "record": {
+        "schema_version": "1.9",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "history.entity.noisy",
+        "body": "History entity exceeded its hourly change threshold",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.runtime",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.module": "core",
+          "bunny.participant": "bunny/modules/wemo",
+          "bunny.provenance": "source",
+          "bunny.history.family": "device",
+          "bunny.history.entity_id": "fixture-plug",
+          "bunny.history.row_count": 121,
+          "bunny.history.row_threshold": 120,
+          "bunny.history.hour_start_at_ms": 1790856000000
+        }
+      }
+    },
+    {
+      "name": "history-alarm-wrong-module",
+      "valid": false,
+      "record": {
+        "schema_version": "1.9",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "history.entity.noisy",
+        "body": "History entity exceeded its hourly change threshold",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.module": "lamp",
+          "bunny.participant": "bunny/modules/wemo",
+          "bunny.provenance": "source",
+          "bunny.history.family": "device",
+          "bunny.history.entity_id": "fixture-plug",
+          "bunny.history.row_count": 121,
+          "bunny.history.row_threshold": 120,
+          "bunny.history.hour_start_at_ms": 1790856000000
+        }
+      }
+    },
+    {
+      "name": "history-alarm-missing-count",
+      "valid": false,
+      "record": {
+        "schema_version": "1.9",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "history.entity.noisy",
+        "body": "History entity exceeded its hourly change threshold",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.module": "core",
+          "bunny.participant": "bunny/modules/wemo",
+          "bunny.provenance": "source",
+          "bunny.history.family": "device",
+          "bunny.history.entity_id": "fixture-plug",
+          "bunny.history.row_threshold": 120,
+          "bunny.history.hour_start_at_ms": 1790856000000
+        }
+      }
+    },
+    {
+      "name": "history-alarm-invalid-id",
+      "valid": false,
+      "record": {
+        "schema_version": "1.9",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "history.entity.noisy",
+        "body": "History entity exceeded its hourly change threshold",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.module": "core",
+          "bunny.participant": "bunny/modules/wemo",
+          "bunny.provenance": "source",
+          "bunny.history.family": "device",
+          "bunny.history.entity_id": "https://fixture.invalid/private",
+          "bunny.history.row_count": 121,
+          "bunny.history.row_threshold": 120,
+          "bunny.history.hour_start_at_ms": 1790856000000
+        }
+      }
+    },
+    {
+      "name": "history-alarm-unaligned-hour",
+      "valid": false,
+      "record": {
+        "schema_version": "1.9",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "history.entity.noisy",
+        "body": "History entity exceeded its hourly change threshold",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.module": "core",
+          "bunny.participant": "bunny/modules/wemo",
+          "bunny.provenance": "source",
+          "bunny.history.family": "device",
+          "bunny.history.entity_id": "fixture-plug",
+          "bunny.history.row_count": 121,
+          "bunny.history.row_threshold": 120,
+          "bunny.history.hour_start_at_ms": 1790856000001
+        }
+      }
+    },
+    {
+      "name": "history-alarm-payload",
+      "valid": false,
+      "record": {
+        "schema_version": "1.9",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "history.entity.noisy",
+        "body": "History entity exceeded its hourly change threshold",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.module": "core",
+          "bunny.participant": "bunny/modules/wemo",
+          "bunny.provenance": "source",
+          "bunny.history.family": "device",
+          "bunny.history.entity_id": "fixture-plug",
+          "bunny.history.row_count": 121,
+          "bunny.history.row_threshold": 120,
+          "bunny.history.hour_start_at_ms": 1790856000000,
+          "bunny.message.id": "fixture-message"
+        }
       }
     }
   ]

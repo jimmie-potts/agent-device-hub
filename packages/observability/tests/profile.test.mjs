@@ -88,18 +88,25 @@ const examples = {
   'exception.stacktrace': 'TypeError: Cannot read properties of undefined (reading \'power\')\n    at apply (/opt/bunny/modules/lifx/dist/src/module.js:496:21)',
   'bunny.exception.redacted_count': 1,
   'bunny.exception.truncated': false,
+  'bunny.history.family': 'device',
+  'bunny.history.entity_id': 'fixture-plug',
+  'bunny.history.row_count': 121,
+  'bunny.history.row_threshold': 120,
+  'bunny.history.hour_start_at_ms': 1_790_856_000_000,
 };
 /** Profile 1.7's exception fields travel together, under the runtime's scopes: a module failure record carries them all. */
 const EXCEPTION = Object.fromEntries(EXCEPTION_ATTRIBUTES.map(name => [name, examples[name]]));
 const failed = {...runtime, schema_version: '1.7', event_name: 'runtime.module.failed', body: catalog.events['runtime.module.failed'], severity_text: 'ERROR', severity_number: 17,
   attributes: {'bunny.provenance': 'source', 'bunny.module': 'lamp', 'bunny.code': 'internal', 'bunny.phase': 'handler', 'error.type': 'TypeError', ...EXCEPTION}};
+const noisy = JSON.parse(readFileSync(new URL('../fixtures/records.json', import.meta.url), 'utf8'))
+  .cases.find(({name}) => name === 'history-alarm-1.9').record;
 const valid = value => validateRecord(value).ok;
 const at = (value, version) => ({...value, schema_version: version});
 
-test('artifact 1.8.0 adds profile 1.8, and producers still default to profile 1.1', () => {
-  assert.equal(ARTIFACT_VERSION, '1.8.0');
-  assert.equal(catalog.artifact_version, '1.8.0');
-  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8']);
+test('artifact 1.9.0 adds profile 1.9, and producers still default to profile 1.1', () => {
+  assert.equal(ARTIFACT_VERSION, '1.9.0');
+  assert.equal(catalog.artifact_version, '1.9.0');
+  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9']);
   assert.equal(SCHEMA_VERSION, '1.1');
   assert.equal(catalog.default_schema_version, '1.1');
   const omitted = {...hub};
@@ -159,7 +166,7 @@ test('each profile\'s additions are registered, and every earlier profile reject
       assert.ok(uses, `${name} belongs to a scope`);
       const [scope] = uses;
       const base = scope === 'bunny.module' ? module : runtime;
-      const record = {...base, event_name: name, body: catalog.events[name]};
+      const record = name === noisy.event_name ? noisy : {...base, event_name: name, body: catalog.events[name]};
       assert.equal(valid(at(record, version)), true, `${name} in ${version}`);
       for (const old of earlier) assert.equal(valid(at(record, old)), false, `${name} in ${old}`);
     }
@@ -181,7 +188,7 @@ test('the runtime\'s scopes allow only their own service and events, and a modul
     if (name !== 'telemetry.dropped') assert.equal(valid({...record, scope: hub.scope}), false, `${name} under ${hub.scope.name}`);
   }
   for (const name of moduleEvents) {
-    const record = {...at(module, latest), event_name: name, body: catalog.events[name]};
+    const record = name === noisy.event_name ? noisy : {...at(module, latest), event_name: name, body: catalog.events[name]};
     assert.equal(valid(record), true, name);
     assert.equal(valid({...record, scope: runtime.scope}), false, `${name} under bunny.runtime`);
   }
@@ -199,7 +206,7 @@ test('a profile 1.2 record projects to 1.1 only without 1.2 vocabulary, and a 1.
   const raised = projectRecord(hub, '1.2');
   assert.equal(raised.ok, true);
   assert.equal(raised.value.schema_version, '1.2');
-  assert.equal(projectRecord(hub, '1.9').ok, false);
+  assert.equal(projectRecord(hub, '1.10').ok, false);
 });
 
 test('a profile 1.3 record projects to 1.2 only without 1.3 vocabulary, and a 1.2 record projects to 1.3', () => {
@@ -345,4 +352,9 @@ test('construction keeps an explicit profile 1.2 and discards what the catalog d
   assert.equal(validateRecord({...module, attributes: {...module.attributes, 'error.message': 'SECRET'}}).ok, false);
   assert.equal(createRecord({...module, attributes: {...module.attributes, 'bunny.participant': 'https://example.invalid/?token=SECRET'}}).ok, false,
     'a registered attribute never carries a URL or a token');
+});
+
+test('a history warning cannot project to profile 1.8, while ordinary records can', () => {
+  assert.equal(projectRecord(noisy, '1.8').ok, false);
+  assert.equal(projectRecord(at(module, '1.9'), '1.8').ok, true);
 });

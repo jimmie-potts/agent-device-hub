@@ -20,6 +20,7 @@ import {
 import {readEdgeCredentials, type EdgeCredential} from '../../src/credentials.js';
 import {Gateway, readableFamilies} from '../../src/gateway/gateway.js';
 import {ModuleHost} from '../../src/host.js';
+import {historyDevices} from '../../src/core/history-alarm.js';
 import {isCoreModule, registrations as REGISTERED, type LogRecord, type ModuleHealth} from '../../src/index.js';
 import {modeParticipants} from '../../src/core/mode-participants.js';
 import {automationDevices} from '../../src/core/automation-devices.js';
@@ -460,12 +461,12 @@ class Memory implements MemoryHarness {
       this.#check(message, 'a published message');
       this.#published.push({generation: number, message});
     });
-    await host.start();
+    const core = modules.find(isCoreModule);
+    await host.start(admitted => core?.setHistoryDevices?.(historyDevices(admitted)));
     const edge = this.#edge;
     if (edge === undefined) throw new StepFailure('the harness has no edge');
     // As the runtime does, the gateway serves once every module has started, and its edge's decisions become records.
     // Its action routes call the core's dispatcher (#782), when the seed has the core.
-    const core = modules.find(isCoreModule);
     const wispr = modules.find(isWisprModule);
     const hosted = host.modules();
     if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) {

@@ -10,7 +10,7 @@ import {registerCoreFamilies, sessionEntityId, type LifecycleEvent, type Lifecyc
 import {openModuleDatabaseFile, type Logger, type SdkError} from '@jimmie-potts/sdk';
 import {reducedKind, toEnvelope} from '../../src/core/mapping.js';
 import type {HistoryRules} from '../../src/core/history.js';
-import {CoreStore, type Deriver, type SaveCost} from '../../src/core/store.js';
+import {CoreStore, type Deriver, type SaveCost, type StoreOptions} from '../../src/core/store.js';
 import {DEFAULT_CONSUMERS, OWNER_ID} from '../../src/index.js';
 import {flush, manualClock, stateDir} from '../support.js';
 import {lifecycleOf, type ObservationOptions} from './agents.js';
@@ -36,7 +36,7 @@ export function lifecycleMessage(data: LifecycleObservation, atMs: number, id = 
  * What a world's store records with and measures its saves by (Hub #976), and the rules its history keeps by (#1772),
  * when a test sets them.
  */
-export type Watch = {log?: Logger; saveCost?: SaveCost; timer?: () => number; history?: HistoryRules};
+export type Watch = {log?: Logger; saveCost?: SaveCost; timer?: () => number; history?: HistoryRules; historyDevices?: NonNullable<StoreOptions['historyDevices']>};
 
 /** The core store on a database file, with an owner, a recording participant and a manual clock. */
 export class World {

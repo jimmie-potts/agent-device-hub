@@ -33,7 +33,8 @@ import {
 import {errorFields} from '../log.js';
 import {takeLock, type Lock} from './lock.js';
 import {borrowRuntimeOwnership, type CoreOwnership} from '../runtime-ownership.js';
-import {History, type HistoryEntry, type HistoryRules, type OperationStep} from './history.js';
+import {History, type HistoryEntry, type HistoryRules, type WrittenChange, type OperationStep} from './history.js';
+import {HistoryAlarm, type HistoryDevice} from './history-alarm.js';
 import {
   REMOVAL_SCHEMA, sessionSchema, attentionAdded, changed, entityOf, project, turnsUncertainAt,
 } from './mapping.js';
@@ -116,6 +117,8 @@ export type StoreOptions = {
   timer?: () => number;
   /** What history needs to know of the families it keeps (#1772): `DEFAULT_HISTORY_RULES` by default. */
   history?: HistoryRules;
+  /** Neutral routing IDs admitted by the module host before any producer starts. */
+  historyDevices?: readonly HistoryDevice[];
 };
 
 /** When a save of the state block is costly: past `stateBytes` of state, or past `saveMs` of work. */
@@ -213,6 +216,7 @@ export class CoreStore implements Storage {
   /** Publications still going out, so a stop can let them finish. */
   readonly #sending = new Set<Promise<unknown>>();
   readonly #timer: () => number;
+  readonly #historyAlarm: HistoryAlarm | undefined;
   /** Whether the last save's state block was past its limit, and whether the save took too long: each is recorded once a run. */
   #large = false;
   #slow = false;
@@ -221,6 +225,7 @@ export class CoreStore implements Storage {
     this.#db = options.database;
     this.#options = options;
     this.#timer = options.timer ?? (() => performance.now());
+    this.#historyAlarm = options.log === undefined ? undefined : new HistoryAlarm(options.log, options.historyDevices ?? []);
   }
 
   /** The core's current revision: every record it serves carries this one or an earlier one. */
@@ -556,6 +561,7 @@ export class CoreStore implements Storage {
     // What history keeps of this transaction, in the order it happened, written at its end with its revision.
     const entries: HistoryEntry[] = [];
     const required = new Set<Message<unknown>>();
+    const historyChanges: WrittenChange[] | undefined = this.#historyAlarm === undefined ? undefined : [];
     let revision = plan.revision;
     const commits = this.#commits + 1;
     // A failure names only the commit it came from.
@@ -609,7 +615,7 @@ export class CoreStore implements Storage {
           const change: CoreChange = {revision: tx.revision(), messages: added};
           for (const derive of this.#options.derivers ?? []) derive(change, tx);
         }
-        history.write(entries, atMs, revision ?? this.#revision, required);
+        history.write(entries, atMs, revision ?? this.#revision, historyChanges, required);
         if (Number(statements.writeRevision.run(revision ?? this.#revision, commits).changes) !== 1) {
           throw new Error('the core commit revision was not stored');
         }
@@ -665,6 +671,7 @@ export class CoreStore implements Storage {
         } catch { /* A diagnostic failure cannot change a committed result. */ }
       }
     }
+    if (historyChanges !== undefined) this.#historyAlarm?.committed(historyChanges, atMs);
     const publicationEnded=this.#options.committed?.({revision:this.#revision,messages:added});
     if (adds > 0) this.#options.beforePublish?.();
     const sending = sent.catch(() => {});
