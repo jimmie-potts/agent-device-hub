@@ -88,7 +88,8 @@ const publish = async (sdk: Sdk, ...args: Parameters<typeof observation>): Promi
 const traceOf = (message: Message | undefined): string | undefined => message?.traceparent.split('-')[1];
 /** The core's records of its store refusing durable work, and of its recovery. */
 const storage = (logs: readonly LogRecord[]): LogRecord[] =>
-  logs.filter(record => record.attributes['bunny.module'] === 'core' && record.attributes['bunny.operation'] === 'storage' && record.severity_text !== 'DEBUG');
+  logs.filter(record => record.attributes['bunny.module'] === 'core' && record.attributes['bunny.operation'] === 'storage' &&
+    (record.event_name === 'operation.failed' || record.event_name === 'operation.completed') && record.severity_text !== 'DEBUG');
 const received = (logs: readonly LogRecord[], outcome: string): LogRecord[] =>
   logs.filter(record => record.attributes['bunny.module'] === 'core' && record.event_name === 'message.received' && record.attributes['bunny.outcome'] === outcome);
 
