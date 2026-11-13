@@ -66,8 +66,10 @@ Automation definition publication adds `automation_definition_revisions` to the
 core store. It holds the last published revision for each current rule, routine,
 settings record and interrupt set. Earlier values start at revision zero until
 an effective edit, without a history backfill. Definition rows and occurrence
-guards retain their formats. A save or deletion changes the owner rows,
-revision metadata, history and outbox in one commit. Preserve those tables
+guards retain their formats. An effective save or deletion commits the owner rows, revision metadata,
+retained history and pending outbox fact together. A pending automation state
+or rule or routine removal that becomes protected can be discarded without
+changing the committed owner rows or private history. Preserve those tables
 together. Assess return to an earlier reader with the selected release and its
 latest state, including any unpublished definition messages. The additive table
 alone does not establish recovery eligibility.

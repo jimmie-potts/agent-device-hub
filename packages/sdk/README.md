@@ -802,15 +802,21 @@ async start({sdk, database, clock, log, trace}) {
   transaction back. A remote part passes the validator its edge uses,
   `edgeValidator(schemas)` (profile 2.0, the core and device families and the
   modules' schemas), so a message the edge would refuse never waits in the
-  outbox and never holds back the outcomes behind it (#782).
-- An owner may supply `statePublication.discard` for a state message that
-  becomes inadmissible after commit. The outbox checks it before each delivery,
-  including restart, and removes a match in batch settlement. A discarded
-  message never reaches transport or contributes to the number sent. Later
-  messages proceed in order. Throwing from the check defers the send through
-  the ordinary refusal path. If settlement fails, the next drain checks the
-  retained row again. The optional `discarded` observer receives only the
-  trace context after settlement, and its failure has no effect.
+  outbox and never holds back the outcomes behind it (#782). If SQLite does
+  not insert the pending row, `add` throws and rolls back the work.
+- An owner may supply `statePublication.discard(message, routingKey)` for
+  state and removal messages that become inadmissible after commit. Every drain
+  checks the stored envelope and routing key before delivery. A match skips
+  transport, contributes nothing to the sent count and is removed in the
+  outbox's settlement transaction. Later admissible messages proceed in order.
+  A thrown check defers the send through the ordinary refusal path.
+- A drain with this policy refuses a caller-owned transaction with
+  `invalid-state` before sending or settling. A drain without the policy can
+  still join a caller's open transaction for settlement. If settlement fails,
+  the next drain rechecks the same stored rows. The optional `discarded`
+  observer receives only the trace context after settlement commits. Its
+  failure has no effect. A crash between commit and notification can lose the
+  notification.
 - Only state, removal, occurrence and outcome messages, on their own key class,
   go in. A command never does, so nothing ever sends a command again.
 - A state, removal or occurrence message is deleted once it has gone out. One

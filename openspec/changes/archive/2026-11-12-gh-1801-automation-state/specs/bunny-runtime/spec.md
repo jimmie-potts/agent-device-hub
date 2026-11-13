@@ -2,7 +2,7 @@
 
 ### Requirement: Saved automation definitions in sync and history
 
-The core SHALL serve current saved event rules, weekly routines, automation settings and interrupt kinds through SDK sync, including definitions already present in its store and seeded defaults. The existing owner write paths SHALL commit an effective edit and its definition fact together through the core transaction and outbox. Rule and routine deletion SHALL retain a removal at the same ID. Failed writes SHALL leave the saved definition, evaluator, history and outbox unchanged. Repeated identical definitions, occurrence watermarks, budget use and automation log entries SHALL add no definition history.
+The core SHALL serve current saved event rules, weekly routines, automation settings and interrupt kinds through SDK sync, including definitions already present in its store and seeded defaults. The existing owner write paths SHALL commit an effective edit and its definition fact together through the core transaction and outbox. Rule and routine deletion SHALL retain a removal at the same ID. Before staging a definition fact, the owner SHALL verify the route, type, subject and entity identity agree and SHALL refuse protected data in the outgoing route, subject or payload. An effective edit SHALL require both its pending outbox row and its retained history fact and metadata before committing. Failed writes SHALL leave the saved definition, evaluator, history and outbox unchanged. Repeated identical definitions, occurrence watermarks, budget use and automation log entries SHALL add no definition history.
 
 #### Scenario: First sync on a populated store
 
@@ -19,10 +19,11 @@ The core SHALL serve current saved event rules, weekly routines, automation sett
 
 #### Scenario: A queued definition becomes protected
 
-- **GIVEN** a committed automation definition state awaits publication
-- **WHEN** the live registry learns a protected value in that state before a later delivery
-- **THEN** the outbox SHALL discard the state in settlement, without delivering it or counting it as sent
-- **AND** later admissible messages SHALL retain their order and identities, and the owner definition and retained history SHALL stay intact
+- **GIVEN** a committed automation definition state or rule or routine removal awaits publication
+- **WHEN** the live registry learns a protected value in the outgoing route, subject or payload before a later delivery
+- **THEN** the outbox SHALL discard the message in its own settlement transaction, without delivering it or counting it as sent
+- **AND** later admissible messages SHALL retain their order and identities, and the committed owner data and private history SHALL stay intact
+- **AND** after a discarded removal, a fresh sync SHALL omit the deleted entity and the gateway SHALL refuse a cached value that contains the protected identity
 
 #### Scenario: A public history read includes a newly protected definition
 

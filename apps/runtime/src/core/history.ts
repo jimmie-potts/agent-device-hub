@@ -162,7 +162,7 @@ export class History {
   readonly #database: DatabaseSync;
   readonly #rules: HistoryRules;
   readonly #statements: {
-    insert: StatementSync; stored: StatementSync; seen: StatementSync; latest: StatementSync; setLatest: StatementSync;
+    insert: StatementSync; stored: StatementSync; seen: StatementSync; retained: StatementSync; latest: StatementSync; setLatest: StatementSync;
     refuse: StatementSync; trimRefused: StatementSync; after: StatementSync; span: StatementSync; setSpan: StatementSync; dropSpan: StatementSync;
     open: StatementSync;
   };
@@ -193,6 +193,7 @@ export class History {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(origin_seq), 0) + 1 FROM core_history WHERE origin = ?))`),
       stored: database.prepare('SELECT record FROM core_history WHERE origin = ? AND source = ? AND message_id = ? AND kind != \'change\''),
       seen: database.prepare('SELECT 1 FROM core_history WHERE origin = ? AND source = ? AND message_id = ?'),
+      retained: database.prepare('SELECT kind, revision, type, subject, record FROM core_history WHERE origin = ? AND source = ? AND message_id = ?'),
       latest: database.prepare('SELECT revision, record FROM core_history_latest WHERE source = ? AND family = ? AND id = ?'),
       setLatest: database.prepare(`INSERT INTO core_history_latest VALUES (?, ?, ?, ?, ?)
         ON CONFLICT (source, family, id) DO UPDATE SET revision = excluded.revision, record = excluded.record`),
@@ -294,17 +295,42 @@ export class History {
   }
 
   /** Writes one transaction's entries, in order, inside that transaction. */
-  write(entries: readonly HistoryEntry[], atMs: number, revision: number): void {
+  write(entries: readonly HistoryEntry[], atMs: number, revision: number, required: ReadonlySet<Message<unknown>> = new Set()): void {
     for (const entry of entries) {
       if (entry.kind === 'operation') this.#operation(entry.step, atMs, revision);
       else this.#message(entry.message, atMs, revision);
     }
+    for (const message of required) this.#requireRetained(message, revision);
+  }
+
+  /** An effective owner definition edit needs both its exact fact and its current history metadata. */
+  #requireRetained(message: Message<unknown>, revision: number): void {
+    const removal = message.kind === 'removal';
+    const family = removal ? (message.data as {entity: {family: string}}).entity.family : familyOf(message.dataschema);
+    const id = message.subject;
+    const fact = this.#statements.retained.get(this.origin, message.source, message.id) as
+      {kind: string; revision: number; type: string; subject: string; record: string} | undefined;
+    if (family === undefined || fact?.kind !== (removal ? 'removal' : 'change') || fact.revision !== revision ||
+        fact.type !== message.type || fact.subject !== id) throw new Error('the required history fact was not retained');
+    const latest = this.#latest(message.source, family, id);
+    const span = this.#statements.span.get(message.source, family, id);
+    const record = JSON.parse(fact.record) as Record<string, unknown>;
+    if (removal) {
+      if (latest?.revision === revision && latest.record === null && span === undefined &&
+          JSON.stringify(record) === JSON.stringify(message)) return;
+    } else if (latest?.revision === revision && JSON.stringify(latest.record) === JSON.stringify(message.data) &&
+        record.family === family && record.id === id && record.revision === revision &&
+        span?.rowRevision === revision && span.seenRevision === revision &&
+        span.seenMessageId === message.id && span.seenType === message.type) return;
+    throw new Error('the required history metadata was not retained');
   }
 
   /** One row of this origin, at the next place in its order. */
   #insert(atMs: number, revision: number, kind: string, source: string, messageId: string | null, type: string, subject: string,
     requestId: string | null, record: string): void {
-    this.#statements.insert.run(atMs, revision, kind, source, messageId, type, subject, requestId, record, this.origin, this.origin);
+    if (Number(this.#statements.insert.run(atMs, revision, kind, source, messageId, type, subject, requestId, record, this.origin, this.origin).changes) !== 1) {
+      throw new Error('the history row was not stored');
+    }
   }
 
   #operation(step: OperationStep, atMs: number, revision: number): void {

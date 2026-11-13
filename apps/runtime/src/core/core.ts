@@ -33,7 +33,7 @@ import {ArtPart} from './art-part.js';
 import {ArtShowPart} from './art-show.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
-import {holdsAutomationSecret, isAutomationDefinitionSchema, isAutomationDefinitionType, type HoldsAutomationSecret} from './automation-definitions.js';
+import {definitionFactFields, holdsAutomationSecret, isAutomationDefinitionFact, isAutomationDefinitionSchema, isAutomationDefinitionType, type HoldsAutomationSecret} from './automation-definitions.js';
 import type {Redactions} from '../log.js';
 import type {AutomationDevice} from './automation-devices.js';
 import type {ArtCatalogRead} from './art-catalog.js';
@@ -430,7 +430,7 @@ class Core {
         try {return await context.sdk.publishMessage(key,message);} catch(error) {failed();companionFailed();throw error;}
       }},
       statePublication: {
-        discard: message => isAutomationDefinitionSchema(message.dataschema) && holdsAutomationSecret(message.data),
+        discard: (message, key) => isAutomationDefinitionFact(key, message) && holdsAutomationSecret(definitionFactFields(key, message)),
         discarded: trace => recordLog(context.log, 'operation.failed',
           {'bunny.operation': 'automation', 'bunny.outcome': OutcomeWord.rejected, 'bunny.code': 'forbidden'}, trace),
       },

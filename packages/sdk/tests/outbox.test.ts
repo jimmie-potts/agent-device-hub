@@ -876,3 +876,100 @@ it('a failed discard settlement leaves the batch for rechecking on reopen', asyn
   assert.equal(notifications, 1);
   assert.deepEqual(rows(reopened.database), []);
 });
+
+it('an opted-in replay refuses an ambient transaction before observing a discard', async context => {
+  const {core, start} = await world(context);
+  const waiting = await start({wrap: module => refusing(module, {refusing: true, attempts: 0}), outbox: {onError: () => {}}});
+  const added = await waiting.outbox.transaction(add => [
+    add('bunny.state.session.blocked', session('blocked', 1)),
+    add('bunny.state.session.allowed', session('allowed', 1)),
+  ]);
+  let notifications = 0;
+  const run = await start({outbox: {statePublication: {
+    discard: message => message.subject === 'blocked',
+    discarded: () => { notifications++; },
+  }}});
+  run.database.exec('BEGIN');
+  await assert.rejects(run.outbox.republish(), refused('invalid-state'));
+  assert.equal(run.database.isTransaction, true);
+  assert.equal(notifications, 0);
+  assert.deepEqual(core.raw, []);
+  assert.deepEqual(rows(run.database), added.map(({id}) => ({id, published: 0})));
+  run.database.exec('ROLLBACK');
+  assert.equal(await run.outbox.republish(), 1);
+  await flush();
+  assert.deepEqual(core.raw, added.slice(1));
+  assert.equal(notifications, 1);
+});
+
+for (const later of [false, true]) {
+  it(`an ambient transaction opened during an opted-in send blocks ${later ? 'the next send' : 'settlement'}`, async context => {
+    const {core, start} = await world(context);
+    const waiting = await start({wrap: module => refusing(module, {refusing: true, attempts: 0}), outbox: {onError: () => {}}});
+    const added = await waiting.outbox.transaction(add => [
+      add('bunny.state.session.blocked', session('blocked', 1)),
+      add('bunny.state.session.first', session('first', 1)),
+      ...(later ? [add('bunny.state.session.later', session('later', 1))] : []),
+    ]);
+    let enter!: () => void, release!: () => void, hold = true, notifications = 0;
+    const entered = new Promise<void>(resolve => { enter = resolve; });
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const attempts: string[] = [];
+    const run = await start({wrap: module => ({...module, publishMessage: async (key, message) => {
+      attempts.push(message.id);
+      const result = await module.publishMessage(key, message);
+      if (hold) { enter(); await held; }
+      return result;
+    }}), outbox: {statePublication: {
+      discard: message => message.subject === 'blocked',
+      discarded: () => { notifications++; },
+    }}});
+    const replay = run.outbox.republish();
+    await entered;
+    run.database.exec('BEGIN');
+    hold = false;
+    release();
+    await assert.rejects(replay, refused('invalid-state'));
+    assert.deepEqual(attempts, added.slice(1, 2).map(({id}) => id));
+    assert.equal(run.database.isTransaction, true);
+    assert.equal(notifications, 0);
+    assert.deepEqual(rows(run.database), added.map(({id}) => ({id, published: 0})));
+    run.database.exec('ROLLBACK');
+    assert.equal(await run.outbox.republish(), added.length - 1);
+    await flush();
+    assert.deepEqual(core.raw, [...added.slice(1, 2), ...added.slice(1)]);
+    assert.equal(notifications, 1);
+  });
+}
+
+it('a policy that opens an ambient transaction cannot enter transport', async context => {
+  const {core, start} = await world(context);
+  const waiting = await start({wrap: module => refusing(module, {refusing: true, attempts: 0}), outbox: {onError: () => {}}});
+  await waiting.outbox.transaction(add => add('bunny.state.session.s1', session('s1', 1)));
+  const run = await start({outbox: {statePublication: {discard: () => {
+    run.database.exec('BEGIN');
+    return false;
+  }}}});
+  await assert.rejects(run.outbox.republish(), refused('invalid-state'));
+  await flush();
+  assert.equal(run.database.isTransaction, true);
+  assert.deepEqual(core.raw, []);
+  run.database.exec('ROLLBACK');
+});
+
+it('an unconfigured replay still joins the caller transaction when settling a sent state', async context => {
+  const {core, start} = await world(context);
+  const waiting = await start({wrap: module => refusing(module, {refusing: true, attempts: 0}), outbox: {onError: () => {}}});
+  const message = await waiting.outbox.transaction(add => add('bunny.state.session.s1', session('s1', 1)));
+  const run = await start();
+  run.database.exec('BEGIN');
+  assert.equal(await run.outbox.republish(), 1);
+  assert.equal(run.database.isTransaction, true);
+  assert.deepEqual(rows(run.database), []);
+  run.database.exec('ROLLBACK');
+  assert.deepEqual(rows(run.database), [{id: message.id, published: 0}]);
+  assert.equal(await run.outbox.republish(), 1);
+  await flush();
+  assert.deepEqual(core.raw, [message, message]);
+  assert.deepEqual(rows(run.database), []);
+});

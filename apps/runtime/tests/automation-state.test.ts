@@ -3,8 +3,8 @@ import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {test, type TestContext} from 'node:test';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
-import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {InProcessBus, traceFields, type Keyed} from '@jimmie-potts/sdk';
+import {SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
+import {InProcessBus, prepareMessage, traceFields, type Keyed} from '@jimmie-potts/sdk';
 import {CoreHarness} from './fixtures/core-harness.js';
 import {DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS} from '../src/core/automation.js';
 import {AutomationStore} from '../src/core/automation-store.js';
@@ -36,9 +36,10 @@ async function world(context: TestContext, seed?: (store: AutomationStore, now: 
   const device = deviceRecord('wall', 1, 'nanoleaf', 'available');
   device.capabilities.power = {supported: true};
   await owner.serveSync(['device'], () => ({revision: device.revision, states: [deviceState(device)]}));
-  const messages: Message[] = [], attempted: Message<object>[] = [];
+  const messages: Message[] = [], attempted: Message<object>[] = [], otherRemovals: Message[] = [];
   await reader.subscribe('bunny.state.*.*', message => {
     if (message.type.startsWith('org.bunny.automation-')) messages.push(message);
+    else if (message.kind === 'removal') otherRemovals.push(message);
   });
   let refuse = false;
   const start = async () => {
@@ -74,7 +75,7 @@ async function world(context: TestContext, seed?: (store: AutomationStore, now: 
     assert.ok(Array.isArray(rows));
     return rows.filter(row => row.type.startsWith('org.bunny.automation-'));
   };
-  return {core, clock, db, hook, sync, history, restart, attempted, messages,
+  return {core, clock, db, hook, sync, history, restart, attempted, messages, otherRemovals,
     diagnostics: () => harness.logs, refusePublication: (value: boolean) => { refuse = value; }};
 
 }
@@ -497,4 +498,189 @@ void test('a newly registered quoted value is refused by public definition and h
   assert.deepEqual((await filtered.json() as {rows: unknown}).rows, allRows.slice(1));
   assert.deepEqual((await historyTool({session: 'settings'})).structuredContent.data, {result: {rows: allRows.slice(1)}});
   assert.deepEqual(core.history.read({}), allRows, 'private history is preserved');
+});
+
+function automationRows(db: DatabaseSync): unknown[] {
+  return ['rules', 'automation_power_guard', 'automation_definition_revisions', 'core_revision',
+    'core_history', 'core_history_latest', 'core_history_span', 'bunny_outbox'].map(table => db.prepare(`SELECT * FROM ${table}`).all());
+}
+
+function savedRule(id: string, name: string, now: number) {
+  return {id, name, enabled: true, kind: 'event' as const, trigger: JSON.stringify(eventRule.trigger),
+    action: JSON.stringify(eventRule.action), createdAtMs: now, updatedAtMs: now};
+}
+
+for (const family of ['rule', 'routine'] as const) {
+  void test(`a protected prior ${family} identity cannot enter a removal fact`, async context => {
+    const redactions = new Redactions(), id = 'prior-registered-marker', key = {family: `automation-${family}`, id};
+    const w = await world(context, (store, now) => {
+      store.insertRule(family === 'rule' ? savedRule(id, eventRule.name, now) : {
+        ...savedRule(id, routine.name, now), kind: 'routine',
+        trigger: JSON.stringify({schema: 'routine/1.0', days: routine.days, time: routine.time}),
+        action: JSON.stringify({definitionId: 'legacy-definition', actions: routine.actions}),
+      }, 64);
+    }, redactions);
+    const live = await w.sync(), prior = live.get(key), rows = automationRows(w.db);
+    assert.ok(prior);
+    redactions.add('registered-marker');
+    const result = await automationRoute(w.core.automation, {method: 'DELETE',
+      url: new URL(`http://runtime.invalid/api/v2/automation/${family}s/${id}`), authorize: () => {},
+      parent: requestParent, body: () => Promise.resolve({})});
+    assert.deepEqual(result, {status: 500, body: {error: {code: 'internal', retryable: false}}});
+    await flush();
+    assert.deepEqual(automationRows(w.db), rows);
+    assert.deepEqual(live.get(key), prior);
+    assert.deepEqual(w.attempted, []);
+    assert.equal(family === 'rule' ? w.core.automation.rule(id).enabled : w.core.automation.routines?.get(id).enabled, true);
+  });
+}
+
+void test('a safe removal identity can remove a prior definition with a protected name', async context => {
+  const redactions = new Redactions(), w = await world(context, (store, now) => {
+    store.insertRule(savedRule('safe-id', escapedMarker, now), 64);
+  }, redactions);
+  redactions.add(escapedMarker);
+  await w.core.automation.remove('safe-id');
+  await flush();
+  assert.deepEqual(w.messages.map(message => [message.kind, message.subject]), [['removal', 'safe-id']]);
+  assert.equal(JSON.stringify(w.messages).includes('registry marker'), false);
+});
+
+for (const [table, operation, condition, remove] of [
+  ['bunny_outbox', 'INSERT', "NEW.kind = 'state'", false],
+  ['bunny_outbox', 'INSERT', "NEW.kind = 'removal'", true],
+  ['core_history', 'INSERT', "NEW.kind = 'change'", false],
+  ['core_history', 'INSERT', "NEW.kind = 'removal'", true],
+  ['core_history_span', 'UPDATE', "NEW.family = 'automation-rule'", false],
+  ['core_revision', 'UPDATE', '1', false],
+] as const) {
+  void test(`ignored ${table} ${operation} rolls back an automation ${remove ? 'removal' : 'edit'}`, async context => {
+    const w = await world(context), rule = await w.core.automation.create(eventRule, true);
+    await flush();
+    const key = {family: 'automation-rule', id: rule.id}, live = await w.sync(), prior = live.get(key);
+    assert.ok(prior);
+    const rows = automationRows(w.db), messages = [...w.messages], attempts = [...w.attempted];
+    w.db.exec(`CREATE TEMP TRIGGER ignore_definition BEFORE ${operation} ON ${table}
+      WHEN ${condition} BEGIN SELECT RAISE(IGNORE); END`);
+    const result = await automationRoute(w.core.automation, {method: remove ? 'DELETE' : 'POST',
+      url: new URL(`http://runtime.invalid/api/v2/automation/rules/${rule.id}${remove ? '' : '/disable'}`),
+      authorize: () => {}, parent: requestParent, body: () => Promise.resolve({})});
+    assert.deepEqual(result, {status: 500, body: {error: {code: 'internal', retryable: false}}});
+    await flush();
+    assert.deepEqual(automationRows(w.db), rows);
+    assert.deepEqual(w.attempted, attempts);
+    assert.deepEqual(w.messages, messages);
+    assert.deepEqual(live.get(key), prior);
+    assert.deepEqual((await w.sync()).get(key)?.data, prior.data);
+    assert.deepEqual(w.core.automation.rule(rule.id), rule);
+    await live.close();
+    await w.restart();
+    assert.deepEqual((await w.sync()).get(key)?.data, prior.data);
+    assert.equal(w.core.automation.rule(rule.id).enabled, true);
+    for (const event of [sessionStarted, turnStarted, turnEnded]) {
+      w.clock.advance(10);
+      const {key, draft} = observation(event, w.clock.now());
+      await w.hook.publish(key, draft);
+      await flush();
+    }
+    await w.core.automation.settled();
+    assert.equal(w.core.automation.log(1)[0]?.ruleId, rule.id);
+    assert.equal(w.history().length, 1);
+  });
+}
+
+void test('a legacy routine with an unroutable identity cannot leave a removal fact', async context => {
+  const id = 'legacy.routine', w = await world(context, (store, now) => {
+    store.insertRule({...savedRule(id, routine.name, now), kind: 'routine',
+      trigger: JSON.stringify({schema: 'routine/1.0', days: routine.days, time: routine.time}),
+      action: JSON.stringify({definitionId: 'legacy-definition', actions: routine.actions}),
+    }, 64);
+  });
+  const rows = automationRows(w.db);
+  assert.equal(w.core.automation.routines?.get(id).enabled, true);
+  await assert.rejects(async () => w.core.automation.routines?.remove(id), /internal/);
+  assert.deepEqual(automationRows(w.db), rows);
+  assert.deepEqual(w.attempted, []);
+});
+
+for (const family of ['rule', 'routine'] as const) {
+  void test(`a queued ${family} removal is discarded when its identity becomes protected`, async context => {
+    const redactions = new Redactions(), id = 'prior-registered-marker', key = {family: `automation-${family}`, id};
+    const w = await world(context, (store, now) => {
+      store.insertRule(family === 'rule' ? savedRule(id, eventRule.name, now) : {
+        ...savedRule(id, routine.name, now), kind: 'routine',
+        trigger: JSON.stringify({schema: 'routine/1.0', days: routine.days, time: routine.time}),
+        action: JSON.stringify({definitionId: 'legacy-definition', actions: routine.actions}),
+      }, 64);
+    }, redactions);
+    const live = await w.sync(), prior = live.get(key);
+    assert.ok(prior);
+    w.refusePublication(true);
+    if (family === 'rule') await w.core.automation.remove(id);
+    else await w.core.automation.routines?.remove(id);
+    await w.core.automation.replaceInterruptSet({kinds: ['turn-ended']});
+    await flush();
+    const history = w.history(), removal = history.find(row => row.kind === 'removal');
+    assert.ok(removal);
+    const laterId = history.find(row => row.type === 'org.bunny.automation-interrupt-set.updated')?.messageId;
+    const attempts = w.attempted.length;
+    const unrelated = prepareMessage('bunny/core', {kind: 'removal', type: 'org.bunny.session.removed',
+      subject: id, dataschema: `${SCHEMA_BASE}removal/2.0`, data: {entity: {family: 'session', id}, revision: 1, reason: 'expired'}},
+    {now: w.clock.now});
+    w.db.prepare('INSERT INTO bunny_outbox (id, kind, routing_key, message) VALUES (?, ?, ?, ?)')
+      .run(unrelated.id, unrelated.kind, `bunny.state.session.${id}`, JSON.stringify(unrelated));
+    redactions.add('registered-marker');
+    w.refusePublication(false);
+    if (family === 'routine') {
+      await live.close();
+      await w.restart();
+    } else {
+      await w.core.automation.replaceSettings({...DEFAULT_SETTINGS, noFlourishes: true});
+      await flush();
+      assert.deepEqual(live.get(key), prior, 'a previously received value is not revoked');
+    }
+    assert.equal(w.attempted.slice(attempts).some(message => message.id === removal.messageId), false);
+    assert.equal(w.messages[0]?.id, laterId);
+    assert.deepEqual(w.otherRemovals, [unrelated], 'an unrelated removal is not subject to the policy');
+    assert.equal((await w.sync()).get(key), undefined);
+    assert.deepEqual(w.history().find(row => row.kind === 'removal'), removal);
+  });
+}
+
+void test('a discarded removal leaves a protected cached family value unavailable until the copy refreshes', async context => {
+  const core = createCoreModule(), clock = manualClock(), redactions = new Redactions();
+  const reader = {source: 'bunny/parts/reader', token: 'synthetic-removal-reader-token', scopes: ['read'] as const};
+  const owner = {manifest: {name: 'nanoleaf', apiVersion: '1.2', configure: () => ({config: {}, devices: ['wall']})},
+    start: () => {}, stop: () => {}};
+  const files = await edgeConfig(context, [reader], {modules: {nanoleaf: {}}});
+  const start = core.start.bind(core);
+  let refuse = false, attempts = 0;
+  core.start = context => start({...context, sdk: {...context.sdk, publishMessage: async (key, message) => {
+    if (message.type === 'org.bunny.automation-rule.removed') {
+      attempts++;
+      if (refuse) throw new Error('synthetic publish refusal');
+    }
+    return context.sdk.publishMessage(key, message);
+  }}});
+  const {runtime} = await run(context, {modules: [core, owner], configFile: files.config, edge: {schemas: {}},
+    redactions, clock: {now: clock.now}, scheduler: clock.scheduler});
+  const saved = await core.automation.create(eventRule, true);
+  await flush();
+  const getFamily = () => fetch(new URL('/api/v2/families/automation-rule', runtime.url),
+    {headers: {authorization: `Bearer ${reader.token}`}});
+  const before = await getFamily();
+  assert.equal(before.status, 200);
+  assert.ok((await before.text()).includes(saved.id), 'the gateway keeps this family copy');
+  refuse = true;
+  await core.automation.remove(saved.id);
+  await flush();
+  assert.equal(attempts, 1);
+  redactions.add(saved.id);
+  refuse = false;
+  await core.automation.replaceInterruptSet({kinds: ['turn-ended']});
+  await flush();
+  const after = await getFamily();
+  assert.equal(after.status, 500);
+  assert.equal((await after.text()).includes(saved.id), false);
+  assert.equal(attempts, 1);
 });

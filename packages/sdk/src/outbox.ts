@@ -49,12 +49,13 @@ export type OutboxOptions = {
    */
   validator?: Pick<MessageValidator, 'validate'>;
   /**
-   * Optional owner policy for state messages, checked immediately before each send, including replay.
+   * Optional owner policy for state and removal messages, checked immediately before each send, including replay.
    * A match is removed in batch settlement without sending or counting it as delivered. A thrown check is
-   * a normal publish refusal. The observer runs only after successful settlement and cannot affect delivery.
+   * a normal publish refusal. An opted-in drain refuses a caller-owned transaction. The observer runs
+   * best-effort after settlement commits and cannot affect delivery.
    */
   statePublication?: {
-    discard: (message: Message) => boolean;
+    discard: (message: Message, routingKey: string) => boolean;
     discarded?: (trace: TraceContext) => void;
   };
   /**
@@ -312,7 +313,9 @@ export class Outbox {
       const stored = JSON.parse(text) as Message<T>;
       const checked = this.#validator?.validate(stored);
       if (checked !== undefined && !checked.ok) throw new SdkError({error: checked.error});
-      this.#insert.run(message.id, draft.kind, key, text);
+      if (Number(this.#insert.run(message.id, draft.kind, key, text).changes) !== 1) {
+        throw refusal('internal', 'the outbox message was not stored');
+      }
       own.add(message.id);
       return stored;
     };
@@ -343,6 +346,7 @@ export class Outbox {
    */
   #send(query: StatementSync, own: ReadonlySet<string> = new Set()): Promise<number> {
     const sending = this.#sending.then(async () => {
+      this.#requireDrainOwnership();
       const sent: Sent[] = [];
       const discarded: {seq: number; trace: TraceContext}[] = [];
       let refusal: {error: unknown} | undefined;
@@ -354,7 +358,11 @@ export class Outbox {
           ...(own.has(message.id) ? {parent: stored} : {links: [stored]}),
         }) : undefined;
         try {
-          if (row.kind === 'state' && this.#statePublication?.discard(message) === true) {
+          this.#requireDrainOwnership();
+          const discard = (row.kind === 'state' || row.kind === 'removal') &&
+            this.#statePublication?.discard(message, row.routing_key) === true;
+          this.#requireDrainOwnership();
+          if (discard) {
             discarded.push({seq: row.seq, trace: stored});
             continue;
           }
@@ -395,14 +403,21 @@ export class Outbox {
     return sending;
   }
 
+  #requireDrainOwnership(): void {
+    if (this.#statePublication !== undefined && this.#database.isTransaction) {
+      throw refusal('invalid-state', 'outbox publication policy requires its own settlement transaction');
+    }
+  }
+
   /**
    * Commits one publication batch's bookkeeping: each state, removal or occurrence that went out is deleted, and each
-   * outcome that went out for the first time is marked published. A refused state selected by the owner policy
+   * outcome that went out for the first time is marked published. A state or removal selected by the owner policy
    * is removed here without being marked published. An outcome already marked needs no write, so a
-   * republish of outcomes the core has not acknowledged commits nothing. Inside a transaction someone else holds open,
-   * the rows join it, as a single statement would.
+   * republish of outcomes the core has not acknowledged commits nothing. Without a publication policy, settlement
+   * may join a caller's open transaction.
    */
   #settle(sent: readonly Sent[], discarded: readonly {seq: number}[]): void {
+    this.#requireDrainOwnership();
     const changed = sent.filter(({row}) => row.kind !== 'outcome' || row.published === 0);
     if (changed.length === 0 && discarded.length === 0) return;
     const database = this.#database;

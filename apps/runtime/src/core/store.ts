@@ -72,6 +72,8 @@ export interface CoreTransaction {
    * keeps it (#782): a state as a compact change event, anything else whole.
    */
   readonly add: AddMessage;
+  /** Requires the exact retained history fact for a message added by this transaction. */
+  requireRetained?(message: Message<unknown>): void;
   /** Records `message` as taken by its `(source, id)`, kept for `keepForMs` or for good, so a later copy is a duplicate. */
   take(message: Message<unknown>, keepForMs?: number): void;
   /** Keeps another participant's message in the core's history, as `add` keeps the core's own. */
@@ -553,6 +555,7 @@ export class CoreStore implements Storage {
     const {history} = this;
     // What history keeps of this transaction, in the order it happened, written at its end with its revision.
     const entries: HistoryEntry[] = [];
+    const required = new Set<Message<unknown>>();
     let revision = plan.revision;
     const commits = this.#commits + 1;
     // A failure names only the commit it came from.
@@ -574,6 +577,7 @@ export class CoreStore implements Storage {
         entries.push({kind: 'message', message});
         return message;
       },
+      requireRetained: message => { required.add(message); },
       take: (message, keepForMs) => { statements.take.run(message.source, message.id, JSON.stringify(message), keepForMs === undefined ? null : atMs + keepForMs); },
       record: message => { entries.push({kind: 'message', message}); },
       step: step => { entries.push({kind: 'operation', step}); },
@@ -605,8 +609,10 @@ export class CoreStore implements Storage {
           const change: CoreChange = {revision: tx.revision(), messages: added};
           for (const derive of this.#options.derivers ?? []) derive(change, tx);
         }
-        history.write(entries, atMs, revision ?? this.#revision);
-        statements.writeRevision.run(revision ?? this.#revision, commits);
+        history.write(entries, atMs, revision ?? this.#revision, required);
+        if (Number(statements.writeRevision.run(revision ?? this.#revision, commits).changes) !== 1) {
+          throw new Error('the core commit revision was not stored');
+        }
       });
     } finally {
       this.#frozen = undefined;
