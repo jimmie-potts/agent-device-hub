@@ -468,9 +468,11 @@ The production and private-proxy overlays accept explicit
 Standby opens the core's retained settings under the normal runtime lease.
 Only local status and health are served. A configured gateway stays off,
 including on credential reload. The configuration may omit `edge`; if
-supplied, it follows the private-proxy checks, including MCP off. Use no
-non-core module sections, core secret references, producer source or Pixoo
-binding in standby.
+supplied, it follows the private-proxy checks, including MCP off. Startup
+and reload validate the whole private credential list. Each grant must
+have exactly the read scope and no role or robot identifier. Use no non-core
+module sections, core secret references, producer source or Pixoo binding
+in standby.
 
 Restart keeps operational work and pending publications in the store and
 starts no device control. This is a source capability. Selecting a standby

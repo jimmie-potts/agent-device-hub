@@ -210,9 +210,12 @@ async function prepareOwnershipRoot(stateDir, {checkStateDirectory, prepareState
 export async function checkConfiguredCredentials(config, options) {
   if (!['host-local', 'private-proxy', 'production'].includes(options.access)) throw new Error('container-command-refused');
   if (options.control === 'standby' && config.edge === undefined) return {status: 'admitted', credentials: 0};
-  const {readEdgeCredentials} = await import('../../apps/runtime/dist/src/credentials.js');
+  const {readEdgeCredentials, checkStandbyCredentials} = await import('../../apps/runtime/dist/src/credentials.js');
   const credentials = await readEdgeCredentials(config.edge?.credentials);
-  checkLocalBrowserCredentials(credentials, options.ingestSource, options.access === 'production' ? 'private-proxy' : options.access);
+  if (options.control === 'standby') {
+    try {checkStandbyCredentials(credentials);}
+    catch {throw new Error('container-browser-config-refused');}
+  } else checkLocalBrowserCredentials(credentials, options.ingestSource, options.access === 'production' ? 'private-proxy' : options.access);
   return {status: 'admitted', credentials: credentials.length};
 }
 

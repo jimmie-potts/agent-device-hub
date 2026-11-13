@@ -457,6 +457,9 @@ test('standby accepts an omitted edge and refuses missing, invalid and out-of-pr
       await writeFile(file, document({...grant, scopes}), {mode: 0o600});
       await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {message: 'container-browser-config-refused'});
     }
+    const roleGrant = {id: 'music-worker', source: 'bunny/parts/music-producer', digest: '3'.repeat(64), scopes: [], role: 'music-producer'};
+    await writeFile(file, document(roleGrant), {mode: 0o600});
+    await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {message: 'container-browser-config-refused'});
     await writeFile(file, document(grant), {mode: 0o600});
     assert.deepEqual(await entrypoint.checkConfiguredCredentials(config, options), {status: 'admitted', credentials: 1});
   }

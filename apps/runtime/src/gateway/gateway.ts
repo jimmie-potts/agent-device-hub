@@ -2,7 +2,7 @@ import {historyFilter, type HistoryFilter, type HistoryPage} from '../core/histo
 import type {AutomationControls} from '../core/automation-part.js';
 import {settingsRead, type SettingsPage, type SettingsRead, type SettingsSnapshot} from '../core/settings-contract.js';
 import {holdsAutomationSecret, isAutomationDefinitionFamily} from '../core/automation-definitions.js';
-import {AUTOMATION_PREFIX, automationRoute} from './automation-routes.js';
+import {AUTOMATION_PREFIX, automationErrorCode, automationMutation, automationRoute} from './automation-routes.js';
 // The runtime's gateway (Hub #835): every route of its listener but health. It serves the SDK edge for remote parts,
 // the `/api/v2` read routes, the core's operator action and the action routes of its dispatcher (#782), MCP, the
 // modules' pages and content, the dashboard's page (#922) and browser sign-in,
@@ -17,12 +17,13 @@ import {MAX_DETAIL, SCHEMA_BASE, errorBody, isErrorCode, type ErrorBody, type Er
 import type {McpHandler} from '@jimmie-potts/device-mcp';
 import {MAX_RESPONSE_BYTES as WISPR_MAX_BYTES, type WisprModule} from '@jimmie-potts/wispr';
 import {
-  ASSETS_PATH, CALLS, CONTENT_PATH, MAX_ASSET_BYTES, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, noSpans, startSpan, statusOf, traceFields,
+  ASSETS_PATH, CALLS, CONTENT_PATH, MAX_ASSET_BYTES, MAX_UPLOAD_BYTES, MODULE_API_VERSION, REMOTE_PATH, RemoteEdge, noSpans, startSpan, statusOf, traceFields,
   type Clock, type Diagnostic, type EdgeRoute, type InProcessBus, type ModulePage, type OnDiagnostic, type Participant,
   type Scheduler, type SpanRecorder, type SyncedCopy, type TraceContext,
 } from '@jimmie-potts/sdk';
 import {DIRECT_COMMANDS, OPERATOR_ACTIONS, type ActionAnswer, type CoreActions, type CoreOperatorActions} from '../core/tracker.js';
-import type {EdgeCredential, Scope} from '../credentials.js';
+import {standbyCredentialList, type EdgeCredential, type Scope} from '../credentials.js';
+import {AutomationError} from '../core/automation.js';
 import {diagnosticWriter} from '../diagnostics.js';
 import {CORE_MODULE, ContributionFailed, ModuleUnavailable, sourceOf, type HostedModule, type ModuleHost} from '../host.js';
 import type {Redactions, RuntimeLogger} from '../log.js';
@@ -51,6 +52,11 @@ const MAX_COPIES = 32;
 const SOURCE = /^bunny(\/[a-z0-9][a-z0-9-]*)+$/;
 /** The largest JSON body a gateway route reads. */
 const MAX_BODY_BYTES = 16_384;
+const MAX_STANDBY_STATUS_BYTES = 4096;
+export const STANDBY_STATUS_PATH = '/api/v2/standby/status';
+const STANDBY_REFUSAL = 'the standby does not accept this request';
+const COMMAND_PATH = /^\/api\/v2\/commands\/([^/]+)$/;
+const UPLOAD_PATH = /^\/api\/v2\/modules\/([^/]+)\/upload$/;
 /** The largest settings document a module may show, and the largest content it may serve. */
 const MAX_SETTINGS_BYTES = 65_536;
 const MAX_CONTENT_BYTES = 16 * 1024 * 1024;
@@ -102,6 +108,7 @@ export type GatewayOptions = {
   families: ReadonlySet<string>;
   edge: EdgeConfig;
   credentials: readonly EdgeCredential[];
+  standby?: {status: (() => object | Promise<object>) | undefined};
   /** The runtime's own log, where the gateway's and the edge's refusals are recorded. */
   log: RuntimeLogger;
   /** The secrets the modules read, which no answer may carry. */
@@ -134,6 +141,7 @@ export class Gateway {
   readonly edge: RemoteEdge;
   readonly access: Access;
   readonly #options: GatewayOptions;
+  readonly #standby: GatewayOptions['standby'];
   readonly #refusals: GatewayRefusals;
   /** The principal each SDK request was admitted as, which the edge's `authenticate` reads. */
   readonly #admitted = new WeakMap<IncomingMessage, Principal>();
@@ -152,14 +160,29 @@ export class Gateway {
 
   constructor(options: GatewayOptions) {
     this.#options = options;
+    this.#standby = options.standby === undefined ? undefined : {...options.standby};
+    const credentials = this.#standby === undefined ? options.credentials : standbyCredentialList(options.credentials);
     this.#refusals = new GatewayRefusals(options.log, options.scheduler);
-    this.access = new Access(options.credentials, {
+    this.access = new Access(credentials, {
       clock: options.clock, scheduler: options.scheduler,
       // A browser session that ends without its logout, evicted or expired, takes its streams with it.
       ended: id => { this.edge.disconnectPrincipal(id); },
     });
     this.edge = new RemoteEdge({
       bus: options.bus, validator: options.validator, now: () => options.clock.now(), scheduler: options.scheduler,
+      ...(this.#standby === undefined ? {} : {standby: {
+        detail: STANDBY_REFUSAL, readAdmission: request => {
+          try {
+            const original = this.#admitted.get(request);
+            if (original === undefined) throw refuse('unauthenticated', 'the caller has ended');
+            this.#standbyAdmit(request, original);
+            return undefined;
+          } catch (error) {
+            if (error instanceof Refused) return error.body;
+            throw error;
+          }
+        },
+      }}),
       onDiagnostic: options.onDiagnostic === undefined ? diagnosticWriter(options.log) : (writer => (diagnostic: Diagnostic) => {
         writer(diagnostic);
         options.onDiagnostic?.(diagnostic);
@@ -167,6 +190,7 @@ export class Gateway {
       authenticate: request => {
         const principal = this.#admitted.get(request);
         if (principal === undefined) return undefined;
+        if (this.#standby !== undefined) return {source: principal.source, id: principal.id};
         // On every entry a lifecycle observation, Desktop snapshot or Volcano observation travels on its own family's key,
         // and a snapshot is bound to its feed's collector credential; a lifecycle observation is bound to its producer's identity on the
         // private entry only, so released local producer configuration stays admitted.
@@ -203,6 +227,7 @@ export class Gateway {
   async start(origin: string, hosts: readonly string[]): Promise<void> {
     this.#origin = origin;
     this.#hosts = hosts.map(host => host.toLowerCase());
+    if (this.#standby !== undefined) return;
     this.#own = this.#options.bus.connect(GATEWAY_SOURCE);
     // MCP serves only when the edge section turns it on, as the old Hub's `mcp` did.
     if (this.#options.edge.mcp) {
@@ -231,7 +256,8 @@ export class Gateway {
 
   /** Replaces the credentials, and ends the streams and MCP use of every credential that went or changed. */
   reload(credentials: readonly EdgeCredential[]): void {
-    for (const id of this.access.replace(credentials)) this.edge.disconnectPrincipal(id);
+    const next = this.#standby === undefined ? credentials : standbyCredentialList(credentials);
+    for (const id of this.access.replace(next)) this.edge.disconnectPrincipal(id);
   }
 
   /** Stops serving: the launcher, MCP, the edge's streams, the copies and every browser session. */
@@ -260,9 +286,26 @@ export class Gateway {
       this.#remote(request, response, path.slice(REMOTE_PATH.length + 1));
       return;
     }
-    const route = templateOf(path);
+    const route = this.#standby?.status !== undefined && path === STANDBY_STATUS_PATH ? path : templateOf(path);
     let principal: Principal | undefined;
     try {
+      if (this.#standby !== undefined) {
+        const mutation = path.startsWith(AUTOMATION_PREFIX) ? automationMutation(method, path) : undefined;
+        const status = path === STANDBY_STATUS_PATH && method === 'GET' ? this.#standby.status : undefined;
+        const command = method === 'POST' ? COMMAND_PATH.exec(path)?.[1] : undefined;
+        const upload = method === 'POST' && UPLOAD_PATH.test(path);
+        if (status === undefined && command === undefined && !upload && mutation === undefined) this.#standbyClosed(request, url);
+        principal = this.#standbyAdmit(request);
+        if (status !== undefined) {
+          if (url.searchParams.size !== 0) throw refuse('invalid-request', 'this route takes no query');
+          const value = await status();
+          this.#standbyAdmit(request, principal);
+          const answer = this.#dashboardRequest(request, STANDBY_STATUS_PATH, () => this.#standbyStatus(value));
+          this.#standbyAdmit(request, principal);
+          this.#write(response, answer);
+        } else await this.#standbyWrite(request, url, principal, route, command, mutation);
+        return;
+      }
       if (path === '/mcp') {
         if (privateProxyOrigin(request, this.#options.edge.privateProxy) !== undefined) throw refuse('forbidden', 'MCP serves only local clients');
         if (!this.#options.edge.mcp) throw refuse('not-found', 'MCP is off');
@@ -318,6 +361,89 @@ export class Gateway {
     return principal;
   }
 
+  #standbyStatus(value: object): Answer {
+    const body = JSON.stringify(value);
+    if (body === undefined || Buffer.byteLength(body) > MAX_STANDBY_STATUS_BYTES) {
+      throw refuse('internal', 'the standby status could not be served');
+    }
+    const redactions = this.#options.redactions;
+    const rejected = (): Refused => refuse('internal', 'the standby status could not be served');
+    if (redactions.holds(body) || holdsAutomationSecret(redactions, value)) throw rejected();
+    // Inspect the actual wire value, including escaped property names and values produced by serialization.
+    JSON.parse(body, (key: string, item: unknown): unknown => {
+      if (redactions.holds(key) || ((typeof item === 'string' || typeof item === 'number') && redactions.holds(item))) throw rejected();
+      return item;
+    });
+    return {status: 200, headers: JSON_HEADERS, body};
+  }
+
+  async #standbyWrite(request: IncomingMessage, url: URL, principal: Principal, route: string | undefined,
+    command: string | undefined, mutation: ReturnType<typeof automationMutation>): Promise<void> {
+    const bodyRead = async (maximum?: number): Promise<Record<string, unknown>> => {
+      const body = await readBody(request, maximum);
+      this.#standbyAdmit(request, principal);
+      return body;
+    };
+    if (command !== undefined) {
+      if (url.searchParams.size !== 0) throw refuse('invalid-request', 'this route takes no query');
+      const input = await bodyRead();
+      if (command === 'approval-recover') recoveryInput(input);
+      else {
+        const result = this.#command(principal.source, command, actionInput(input), true);
+        if ('error' in result) throw refuse(result.error.code, result.error.detail ?? 'the command was refused');
+      }
+    } else if (mutation !== undefined) {
+      if (request.headers[REQUEST_HEADER] !== '1') throw refuse('forbidden', 'a change carries bunny-request: 1');
+      if (url.searchParams.size !== 0) throw refuse('invalid-request', 'the automation request was refused');
+      if (mutation.maximum !== 0) {
+        const input = await bodyRead(mutation.maximum);
+        try {mutation.check(input);}
+        catch (error) {
+          if (!(error instanceof AutomationError)) throw error;
+          throw refuse(automationErrorCode(error.code), 'the automation request was refused');
+        }
+      }
+    } else {
+      uploadInput(url.searchParams);
+      await readUpload(request, MAX_UPLOAD_BYTES, false);
+    }
+    this.#standbyAdmit(request, principal);
+    this.#dashboardRequest(request, route ?? '/api/v2/automation', () => {throw refuse('unavailable', STANDBY_REFUSAL);});
+  }
+
+  #standbyAdmit(request: IncomingMessage, original?: Principal): Principal {
+    if (this.#closed) throw refuse('unavailable', 'the runtime is stopping');
+    const current = this.#admit(request, {credential: true});
+    if (current.scopes.size !== 1 || !current.scopes.has('read') || current.role !== undefined || current.robotId !== undefined) {
+      throw refuse('forbidden', 'standby requires an ordinary read credential');
+    }
+    if (original !== undefined && (!this.access.live(original) || current.kind !== original.kind || current.id !== original.id || current.source !== original.source)) {
+      throw refuse('unauthenticated', 'the caller has ended');
+    }
+    return current;
+  }
+
+  /** Closed surfaces retain their pure proxy and browser-origin checks. */
+  #standbyClosed(request: IncomingMessage, url: URL): never {
+    const {pathname: path} = url;
+    const origin = this.#originOf(request);
+    const privateEntry = privateProxyOrigin(request, this.#options.edge.privateProxy) !== undefined;
+    if (path === '/mcp' && privateEntry) throw refuse('forbidden', 'MCP serves only local clients');
+    if (Object.hasOwn(DASHBOARD_FILES, path) && request.method === 'GET') {
+      if (url.search !== '') throw refuse('invalid-request', 'this route takes no query');
+      if (!dashboardAllowed(request, origin, path)) throw refuse('forbidden', 'the dashboard opens from this origin');
+    }
+    if (request.method === 'POST' && /^\/api\/v2\/browser\/(launch|session|check|logout)$/.test(path)) {
+      const secure = privateEntry || wifiProxyOrigin(request, this.#options.edge.wifiProxy) !== undefined;
+      if (privateEntry && request.headers.authorization !== undefined) throw refuse('forbidden', 'a client credential cannot open a browser session');
+      if (path.endsWith('/launch') && secure) throw refuse('forbidden', 'the launcher serves only local browsers');
+      if (contextOf(request, origin) === 'cross' || request.headers.origin !== origin || request.headers[REQUEST_HEADER] !== '1') {
+        throw refuse('forbidden', `sign-in takes a request from this origin's own page with ${REQUEST_HEADER}: 1`);
+      }
+    }
+    throw refuse('not-found', 'no such route');
+  }
+
   /** Bounded rule CRUD runs in the existing core flow; request errors never fail that owner. */
   async #automation(request: IncomingMessage, url: URL, principal: Principal): Promise<Answer> {
     const method = request.method ?? 'GET', controls = this.#options.automation;
@@ -371,7 +497,7 @@ export class Gateway {
   #remote(request: IncomingMessage, response: ServerResponse, call: string): void {
     const route: EdgeRoute = (CALLS as readonly string[]).includes(call) || call === 'stream' ? call as EdgeRoute : 'other';
     let principal: Principal;
-    try { principal = this.#admit(request); }
+    try { principal = this.#standby === undefined ? this.#admit(request) : this.#standbyAdmit(request); }
     catch (error) {
       if (!(error instanceof Refused)) throw error;
       const {code} = error.body.error;
@@ -393,7 +519,7 @@ export class Gateway {
       needs(method === 'GET' ? 'read' : 'control');
       return this.#automation(request, url, principal);
     }
-    const uploadModule = /^\/api\/v2\/modules\/([^/]+)\/upload$/.exec(path)?.[1];
+    const uploadModule = UPLOAD_PATH.exec(path)?.[1];
     if (method === 'POST' && uploadModule !== undefined) {
       needs('control');
       return this.#upload(request, uploadModule, url.searchParams, principal);
@@ -411,7 +537,7 @@ export class Gateway {
       const answer = await this.#recover(principal, recoveryInput(input));
       return 'error' in answer ? json(statusOf(answer.error.code), answer) : json(200, {schema: 'command-reply/2.0', ...answer});
     }
-    const commandFamily = /^\/api\/v2\/commands\/([^/]+)$/.exec(path)?.[1];
+    const commandFamily = COMMAND_PATH.exec(path)?.[1];
     if (method === 'POST' && commandFamily !== undefined) {
       noQuery();
       needs('control');
@@ -748,15 +874,7 @@ export class Gateway {
   async #upload(request: IncomingMessage, name: string, params: URLSearchParams, principal: Principal): Promise<Answer> {
     const {upload} = this.#module(name).manifest;
     if (upload === undefined) throw refuse('not-found', 'the module accepts no upload');
-    const keys = [...params.keys()];
-    const label = params.get('name');
-    const family = params.get('family');
-    const requestId = params.get('requestId');
-    if (keys.length !== 4 || new Set(keys).size !== 4 || keys.some(key => !['name', 'family', 'requestId', 'target'].includes(key))
-      || label === null || label.trim().length === 0 || label.length > 120 || family !== upload.family || requestId === null) {
-      throw refuse('invalid-request', 'an upload names its declared family, target, requestId and display name');
-    }
-    const input = actionInput({target: params.get('target'), requestId, data: {}});
+    const {label, family, requestId, input} = uploadInput(params, upload.family);
     const bytes = await readUpload(request, upload.maxBytes);
     this.#admit(request);
     const incoming = request.headers.traceparent;
@@ -970,19 +1088,21 @@ export class Gateway {
    * whose schema the runtime does not know is `not-found`. A known family that no running module answers passes here: the
    * dispatcher tracks it, and the bus refuses it with `unavailable`.
    */
-  #command(source: string, family: string, {target, data, requestId}: ActionInput): {key: string; draft: {type: string; subject: string; dataschema: string; data: object}} | ErrorBody {
+  #command(source: string, family: string, {target, data, requestId}: ActionInput, standby = false): {key: string; draft: {type: string; subject: string; dataschema: string; data: object}} | ErrorBody {
     const verb = family.lastIndexOf('-');
     if (!FAMILY.test(family) || family.length > 64 || verb < 0) return errorBody('invalid-request', {detail: 'a command family is lowercase words joined by hyphens, its verb last'});
-    if (family.startsWith('companion-speech-')) return errorBody('forbidden', {detail: 'speech requires its current browser endpoint and companions owner'});
-    if (family === 'reachy-auto' || family === 'reachy-dispatch') return errorBody('forbidden', {detail: 'automatic Reachy dispatch belongs to its module'});
-    if (family === 'microduck-auto' || family === 'microduck-dispatch') return errorBody('forbidden', {detail: 'automatic MicroDuck dispatch belongs to its module'});
-    if (family === 'art-auto' || family === 'art-dispatch' || family === 'art-stage' || family === 'art-ambient-set') return errorBody('forbidden', {detail: 'automatic art and its forwarded commands belong to the core and the art module'});
-    if (family.startsWith('coding-')) return errorBody('forbidden', {detail: 'coding delegation goes through the companions owner and its worker endpoint'});
-    if (family.startsWith('music-playback-')) return errorBody('forbidden', {detail: 'Music playback work belongs to the playback owner and its producer endpoint'});
-    if (family.startsWith('music-lighting-') && family !== 'music-lighting-control') return errorBody('forbidden', {detail: 'Music lighting work belongs to the core\'s session owner and the light\'s module'});
-    if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
-    if (family === 'art-show' && target !== 'hub') return errorBody('not-found', {detail: 'art shows belong to the Hub'});
-    if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
+    if (!standby) {
+      if (family.startsWith('companion-speech-')) return errorBody('forbidden', {detail: 'speech requires its current browser endpoint and companions owner'});
+      if (family === 'reachy-auto' || family === 'reachy-dispatch') return errorBody('forbidden', {detail: 'automatic Reachy dispatch belongs to its module'});
+      if (family === 'microduck-auto' || family === 'microduck-dispatch') return errorBody('forbidden', {detail: 'automatic MicroDuck dispatch belongs to its module'});
+      if (family === 'art-auto' || family === 'art-dispatch' || family === 'art-stage' || family === 'art-ambient-set') return errorBody('forbidden', {detail: 'automatic art and its forwarded commands belong to the core and the art module'});
+      if (family.startsWith('coding-')) return errorBody('forbidden', {detail: 'coding delegation goes through the companions owner and its worker endpoint'});
+      if (family.startsWith('music-playback-')) return errorBody('forbidden', {detail: 'Music playback work belongs to the playback owner and its producer endpoint'});
+      if (family.startsWith('music-lighting-') && family !== 'music-lighting-control') return errorBody('forbidden', {detail: 'Music lighting work belongs to the core\'s session owner and the light\'s module'});
+      if (family.startsWith('bb8-link-')) return errorBody('forbidden', {detail: 'internal BB-8 commands belong to its module'});
+      if (family === 'art-show' && target !== 'hub') return errorBody('not-found', {detail: 'art shows belong to the Hub'});
+      if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
+    }
     const type = `org.bunny.${family.slice(0, verb)}.${family.slice(verb + 1)}.requested`;
     const version = family === 'music-capture-control' && typeof data.action === 'string' && ['calibrate', 'cancel-calibration', 'apply-tuning'].includes(data.action) ? '2.2' :
       family === 'music-capture-control' && data.action === 'start' && data.input === 'microphone' ? '2.1' : '2.0';
@@ -1153,15 +1273,26 @@ function actionInput(input: Record<string, unknown>): ActionInput {
   return {target, data: data as Record<string, unknown>, ...(typeof requestId === 'string' ? {requestId} : {})};
 }
 
+function uploadInput(params: URLSearchParams, declaredFamily?: string) {
+  const keys = [...params.keys()];
+  const label = params.get('name'), family = params.get('family'), requestId = params.get('requestId');
+  if (keys.length !== 4 || new Set(keys).size !== 4 || keys.some(key => !['name', 'family', 'requestId', 'target'].includes(key))
+    || label === null || label.trim().length === 0 || label.length > 120 || requestId === null || family === null
+    || (declaredFamily === undefined ? family.length > 64 || !FAMILY.test(family) || !family.includes('-') : family !== declaredFamily)) {
+    throw refuse('invalid-request', 'an upload names its declared family, target, requestId and display name');
+  }
+  return {label, family, requestId, input: actionInput({target: params.get('target'), requestId, data: {}})};
+}
+
 /** Reads bounded binary media without raising the JSON command limit or accepting multipart paths. */
-async function readUpload(request: IncomingMessage, maxBytes: number): Promise<Uint8Array> {
+async function readUpload(request: IncomingMessage, maxBytes: number, keepBytes = true): Promise<Uint8Array> {
   if (request.headers['content-type']?.split(';')[0]?.trim() !== 'application/octet-stream') throw refuse('invalid-request', 'the upload body is application/octet-stream');
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request.iterator({destroyOnReturn: false}) as AsyncIterable<Buffer>) {
     size += chunk.length;
     if (size > maxBytes) {request.resume(); throw refuse('too-large', 'the upload exceeds the declared byte limit');}
-    chunks.push(chunk);
+    if (keepBytes) chunks.push(chunk);
   }
   if (size === 0) throw refuse('invalid-request', 'the upload is empty');
   return Buffer.concat(chunks);

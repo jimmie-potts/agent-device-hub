@@ -20,7 +20,7 @@ import {openModuleDatabase} from '../src/state.js';
 import {CoreHarness} from './fixtures/core-harness.js';
 import {deviceRecord, deviceState} from './fixtures/device.js';
 import {observation, OTHER, runtimeEnded, sessionStarted, turnEnded, turnStarted} from './fixtures/agents.js';
-import {deferred, flush, health, manualClock, run, stateDir} from './support.js';
+import {deferred, edgeConfig, flush, health, manualClock, run, stateDir} from './support.js';
 
 function snapshot(core: CoreModule) {
   const result = core.history.settings({mode: 'snapshot'});
@@ -50,9 +50,10 @@ void test('shipped standby holds the process lease, serves local health and keep
   assert.ok(isCoreModule(standby) && isCoreModule(active));
   assert.deepEqual(standby.history.rules, active.history.rules);
   bindCoreRuntimeOwnership(standby, owner);
+  const {credentials} = await edgeConfig(t, []);
   const proof = 'synthetic-standby-private-proxy-proof';
   const {runtime} = await run(t, {stateDir: root, modules: [standby], clock, scheduler: clock.scheduler,
-    config: {modules: {}, edge: {credentials: '/unused/synthetic-standby.json', launcher: false, mcp: false,
+    config: {modules: {}, edge: {credentials, launcher: false, mcp: false,
       editorLinks: {}, placeLinks: {}, privateProxy: {origin: 'https://synthetic.ts.net', tokenDigest: tokenDigest(proof)}}}});
   const local = await health(runtime.url);
   assert.equal(local.status, 200);
@@ -370,7 +371,7 @@ void test('active late dispatch refusal retains the requester captured at admiss
   assert.deepEqual(harness.sent, []);
 });
 
-void test('a full disk during the legacy split preserves all definitions and keeps standby health available', async t => {
+void test('a full disk during the legacy split preserves all definitions and keeps the standby core running', async t => {
   const root = await stateDir(t), clock = manualClock(at);
   const initial = await run(t, {stateDir: root, modules: [createCoreModule({standby: true})], clock, scheduler: clock.scheduler});
   await initial.runtime.stop();
@@ -404,16 +405,15 @@ void test('a full disk during the legacy split preserves all definitions and kee
     assert.equal(db.prepare(`PRAGMA max_page_count=${String(pages)}`).get()?.max_page_count, pages);
     return core.start(context);
   }};
-  const failures: unknown[] = [];
-  const {runtime, logs} = await run(t, {stateDir: root, modules: [limited], clock, scheduler: clock.scheduler,
-    onCoreFailure: error => { failures.push(error); }});
-  assert.deepEqual(failures, []);
-  const local = await health(runtime.url);
-  assert.equal(local.status, 200);
-  assert.equal(local.body.status, 'ok');
+  // Inject a full disk inside the core harness, without supplying the wrapped start to runtime admission.
+  const harness = new CoreHarness(limited, {bus: new InProcessBus({scheduler: clock.scheduler}), stateDir: join(root, 'modules'),
+    clock, scheduler: clock.scheduler});
+  t.after(() => harness.stop());
+  await harness.start();
   assert.ok('error' in core.history.settings({mode: 'snapshot'}));
-  assert.ok(logs.some(record => record.event_name === 'operation.failed' && record.attributes['bunny.code'] === 'capacity'));
-  await runtime.stop();
+  assert.ok(harness.logs.some(record => record.event === 'operation.failed' && record.fields['bunny.code'] === 'capacity'));
+  await harness.stop();
+  assert.deepEqual(harness.failures, []);
   const after = openModuleDatabase(root, 'core');
   try { assert.deepEqual(retained(after), before); }
   finally { after.close(); }

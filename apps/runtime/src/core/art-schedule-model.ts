@@ -32,9 +32,9 @@ export const GENERATION_MS = 300_000;
  */
 export const START_TOLERANCE_MS = 5000;
 
-export function artPolicyWrite(value: unknown, targets: readonly string[]): ArtScheduleWrite {
+export function artPolicyWrite(value: unknown, targets?: readonly string[]): ArtScheduleWrite {
   if (!writeValid(value) || value.policy.wakingStartMinute === value.policy.wakingEndMinute
-    || value.policy.targets.some(target => !targets.includes(target))) throw new AutomationError('invalid-request',400);
+    || (targets !== undefined && value.policy.targets.some(target => !targets.includes(target)))) throw new AutomationError('invalid-request',400);
   return structuredClone(value);
 }
 export function initialArtRecord(): ArtScheduleRecord {

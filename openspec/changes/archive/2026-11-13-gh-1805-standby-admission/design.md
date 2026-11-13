@@ -9,7 +9,9 @@ change adds a refusal at each external entry before any owner call.
 
 Keep the ordinary runtime and SDK call order. Refuse standby requests with
 shared registry errors under ADR 0012. The runtime ships with the standby
-gateway off. In-process tests provide the bounded status reader.
+gateway off. In-process tests provide the bounded status reader. The shipped profile
+hosts the core only. A trusted in-process composition retains its chosen
+modules and applies the same external gateway policy.
 
 ## Decisions
 

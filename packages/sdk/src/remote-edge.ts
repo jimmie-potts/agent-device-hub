@@ -10,12 +10,12 @@ import {errorType, levelOf, reporter, type Diagnostic, type EdgeRoute, type OnDi
 import {buildMessage, type Content} from './envelope.js';
 import {failed, observePublications, unanswered, undelivered, type InProcessBus} from './in-process.js';
 import {refusalOf, replyOf} from './refusal.js';
-import {parseKey, parsePattern, type Pattern} from './routing.js';
+import {keyClassOf, parseKey, parsePattern, type Pattern} from './routing.js';
 import {
   CALLS, MAX_ANSWER_BYTES, MAX_CALL_BYTES, REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, frame, statusOf, type Call, type StreamEventName,
 } from './remote-protocol.js';
 import {MAX_TIMEOUT_MS, SdkError, type Cancel, type Command, type Reply, type RequestResult, type Scheduler, type Sdk, type Subscription} from './sdk.js';
-import {isSource, schemaFamily, type Snapshot, type SyncAnswer, type SyncRequest} from './sync.js';
+import {checkFamilies, isSource, schemaFamily, type Snapshot, type SyncAnswer, type SyncRequest} from './sync.js';
 import {childOf} from './trace.js';
 
 /**
@@ -64,6 +64,8 @@ export type EdgeOptions = {
    * sessions (Hub #835).
    */
   authenticate?: (request: IncomingMessage) => EdgePrincipal | undefined;
+  /** A host standby refuses all calls. Recheck the original host grant after body decoding. */
+  standby?: {detail: string; readAdmission: (request: IncomingMessage) => ErrorBody | undefined};
   /** The host can invalidate an output reservation when its handler or stream closes. No capability is exposed. */
   onEndpointClosed?: (endpoint: {source: string; id: string}) => void;
   /** How often an open stream gets a comment line, so that its reader can tell a live stream from a lost one. Defaults to 15 s. */
@@ -282,6 +284,14 @@ function identifier(body: Fields, name: string): string {
   return value;
 }
 
+function familiesOf(body: Fields): string[] {
+  const {families} = body;
+  if (!Array.isArray(families) || !families.every(family => typeof family === 'string')) {
+    throw refuse('invalid-request', 'families is not a list of names');
+  }
+  return families;
+}
+
 /** A sync call's `owner`: absent, or a participant source. */
 function ownerOf(body: Fields): string | undefined {
   const {owner} = body;
@@ -330,6 +340,7 @@ export let watchRemotePublications: (edge: RemoteEdge, source: string, observe: 
 
 export class RemoteEdge {
   readonly #bus: InProcessBus;
+  readonly #standby: EdgeOptions['standby'];
   readonly #validator: MessageValidator;
   readonly #grants: {principal: EdgePrincipal; digest: Buffer}[];
   readonly #authenticateHost: ((request: IncomingMessage) => EdgePrincipal | undefined) | undefined;
@@ -366,6 +377,7 @@ export class RemoteEdge {
 
   constructor(options: EdgeOptions) {
     this.#bus = options.bus;
+    this.#standby = options.standby === undefined ? undefined : {...options.standby};
     this.#validator = options.validator;
     this.#authenticateHost = options.authenticate;
     this.#onEndpointClosed = options.onEndpointClosed;
@@ -487,13 +499,21 @@ export class RemoteEdge {
       const declared = request.headers[SOURCE_HEADER];
       if (declared !== undefined && declared !== source) throw refuse('forbidden', 'this token acts as another source');
       if (request.method === 'GET' && route === 'stream') {
+        if (this.#standby !== undefined) throw refuse('unavailable', this.#standby.detail);
         allowCall(principal, 'stream');
         this.#open(principal, response);
         return;
       }
       if (request.method !== 'POST' || !isCall(route)) throw refuse('not-found', 'no such route');
-      allowCall(principal, route, true);
+      const standby = this.#standby;
+      if (standby === undefined) allowCall(principal, route, true);
       const body = await this.#read(request, route === 'answer' ? MAX_ANSWER_BYTES : MAX_CALL_BYTES);
+      if (standby !== undefined) {
+        const refusal = standby.readAdmission(request);
+        if (refusal !== undefined) throw new Refusal(refusal);
+        this.#checkStandbyCall(source, route, body);
+        throw refuse('unavailable', standby.detail);
+      }
       // A remote part that stops waiting, because its copy or participant closed, drops the call.
       const dropped = new AbortController();
       response.once('close', () => { if (!response.writableEnded) dropped.abort(); });
@@ -612,6 +632,83 @@ export class RemoteEdge {
     return body;
   }
 
+  /** Checks wire structure without acquiring a participant, connection, waiter or command slot. */
+  #checkStandbyCall(source: string, call: Call, body: Fields): void {
+    if (body.endpoint !== undefined) {
+      identifier(body, 'connection');
+      if (typeof body.endpoint !== 'string' || !/^[a-f0-9]{64}$/.test(body.endpoint)) {
+        throw refuse('forbidden', 'this call has no current endpoint capability');
+      }
+    }
+    switch (call) {
+      case 'publish': {
+        const route = parseKey(text(body, 'key'));
+        const message = this.#inbound(source, body.message);
+        if (route === undefined) throw refuse('invalid-request', 'a routing key is malformed');
+        if (message.subject !== route.id) throw refuse('invalid-message', "a message's subject is the last token of its routing key");
+        const category = keyClassOf(message.kind);
+        if (route.category === 'cmd' || category !== route.category) {
+          throw refuse('invalid-request', 'the message does not use a routing key for its kind');
+        }
+        return;
+      }
+      case 'request': {
+        const command = this.#inbound(source, body.command);
+        const route = parseKey(text(body, 'key'));
+        if (route?.category !== 'cmd') throw refuse('invalid-request', 'a request needs a bunny.cmd routing key');
+        if (command.subject !== route.id) throw refuse('invalid-message', "a command's subject is the last token of its routing key");
+        if (command.kind !== 'command' || !command.type.endsWith('.requested')) throw refuse('invalid-request', 'a command type ends in .requested');
+        identifier(fields(command.data) ?? {}, 'requestId');
+        if (command.expiresat === undefined) throw refuse('invalid-request', 'a command carries expiresat');
+        return;
+      }
+      case 'sync': {
+        const request = this.#inbound(source, body.request);
+        const families = fields(request.data)?.families;
+        if (request.kind !== 'sync-request') throw refuse('invalid-request', 'a sync request has kind sync-request');
+        if (!Array.isArray(families)) throw refuse('invalid-request', 'families is not a list of names');
+        if (request.subject !== families.join(',')) throw refuse('invalid-message', "a sync request's subject names its families, joined by commas");
+        ownerOf(body);
+        return;
+      }
+      case 'subscribe':
+      case 'respond': {
+        identifier(body, 'connection');
+        identifier(body, 'id');
+        const pattern = parsePattern(text(body, 'pattern'));
+        if (call === 'respond' && pattern?.category !== 'cmd') throw refuse('invalid-request', 'respond needs a bunny.cmd pattern');
+        if (pattern === undefined) throw refuse('invalid-request', 'a pattern is malformed');
+        if (call === 'subscribe' && pattern.category === 'cmd') throw refuse('invalid-request', 'commands go to their one responder; use respond');
+        return;
+      }
+      case 'serve': {
+        identifier(body, 'connection');
+        identifier(body, 'id');
+        const names = familiesOf(body);
+        if (names.some(name => name.length > 64 || !FAMILY.test(name))) throw refuse('invalid-request', 'a family name is malformed');
+        checkFamilies(names);
+        return;
+      }
+      case 'reply': {
+        identifier(body, 'connection');
+        const requestId = identifier(body, 'requestId');
+        if (fields(body.reply)?.status !== 'uncertain') this.#reply(source, requestId, body.reply);
+        identifier(body, 'responder');
+        identifier(body, 'command');
+        return;
+      }
+      case 'answer':
+        identifier(body, 'connection');
+        if (refusalOf(body.answer) === undefined) this.#snapshot(source, body.answer);
+        identifier(body, 'server');
+        identifier(body, 'request');
+        return;
+      case 'close':
+        identifier(body, 'connection');
+        identifier(body, 'id');
+    }
+  }
+
   async #call(principal: EdgePrincipal, call: Call, body: Fields, signal: AbortSignal, progress: Progress): Promise<object> {
     const {source} = principal;
     const endpoint = body.endpoint === undefined ? undefined : this.#endpointCall(principal, call, body);
@@ -711,9 +808,7 @@ export class RemoteEdge {
       case 'serve': {
         const connection = this.#connection(principal, body);
         const id = this.#fresh(connection, body);
-        const families: unknown = body.families;
-        const isNames = (value: unknown): value is string[] => Array.isArray(value) && value.every(family => typeof family === 'string');
-        if (!isNames(families)) throw refuse('invalid-request', 'families is not a list of names');
+        const families = familiesOf(body);
         allowFamilies(principal, families);
         connection.opened.set(id, await connection.participant.serveSync(families, request =>
           this.#forward(connection, 'sync', id, request, 'sync-request', {server: id, request}) as Promise<Snapshot | ErrorBody>));

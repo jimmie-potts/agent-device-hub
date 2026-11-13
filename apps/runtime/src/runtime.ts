@@ -9,12 +9,12 @@ import {MUSIC_PRODUCER_SOURCE} from '@jimmie-potts/event-contracts/v2/music-capt
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {recordLog, MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler, Outcome} from '@jimmie-potts/sdk';
 import {isWisprModule} from '@jimmie-potts/wispr';
-import {admitBoundCoreOwnership, isCoreModule} from './core/core.js';
+import {admitBoundCoreOwnership, isCoreModule, standbyCoreStart} from './core/core.js';
 import {modeParticipants} from './core/mode-participants.js';
 import {historyDevices} from './core/history-alarm.js';
 import {automationDevices} from './core/automation-devices.js';
 import {hostedArtCatalog} from './core/art-catalog.js';
-import {readEdgeCredentials, type EdgeCredential} from './credentials.js';
+import {readEdgeCredentials, readStandbyCredentials, type EdgeCredential} from './credentials.js';
 import {Gateway, readableFamilies} from './gateway/gateway.js';
 import {GatewayRefusals, methodOf} from './gateway/refusals.js';
 import {PRIVATE_PROXY_HEADER, WIFI_PROXY_HEADER, privateProxyOrigin, wifiProxyOrigin} from './gateway/wifi-proxy.js';
@@ -111,6 +111,8 @@ export type RuntimeOptions = {
     liveness?: {heartbeatMs?: number; stallMs?: number; scheduler?: Scheduler};
     /** The built dashboard's folder (#922), the build's `dist/dashboard/` by default; tests give their own. */
     dashboard?: URL;
+    /** Internal bounded status reader. The shipped standby entrypoint leaves the edge off. */
+    standbyStatus?: () => object | Promise<object>;
   };
 };
 
@@ -125,7 +127,8 @@ export interface Runtime {
   /**
    * Reads the edge's credentials file again (#835), as SIGHUP asks the service process to: a credential granted since
    * is taken, and one revoked or changed has its streams ended and its next call refused. A file the runtime refuses
-   * keeps the credentials it had, and rejects with its `RuntimeError`. Without an edge, it does nothing.
+   * keeps the credentials it had, and rejects with its `RuntimeError`. A configured standby validates even with
+   * the edge off. Other runtimes with no edge do nothing.
    */
   reload(): Promise<void>;
   /** The gateway, while it serves: its edge and its callers, for verification runs and tests. */
@@ -219,18 +222,25 @@ function close(server: Server): Promise<void> {
  * settled.
  */
 export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
-  const {modules, port, startTimeoutMs = 10_000, stopTimeoutMs = 5_000} = options;
+  const {port, stateDir: requestedStateDir, startTimeoutMs = 10_000, stopTimeoutMs = 5_000, edge: edgeOptions} = options;
+  const modules = [...options.modules];
+  const standbyStatus = edgeOptions?.standbyStatus;
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) throw new RuntimeError('port-invalid', 'port must be an integer from 0 to 65535');
   if (options.listener !== undefined && options.listener !== 'container-host-local') throw new RuntimeError('config-invalid', 'listener profile is invalid');
   if (options.config !== undefined && options.configFile !== undefined) throw new RuntimeError('config-invalid', 'configuration inputs conflict');
   // Capture verified values before admission yields; never reopen their source file.
   const suppliedConfig = options.config === undefined ? undefined : structuredClone(options.config);
-  await admitBoundCoreOwnership(modules, options.stateDir);
+  const standbyStart = standbyCoreStart(modules);
+  if (standbyStart === undefined) await admitBoundCoreOwnership(modules, requestedStateDir);
   const clock = options.clock ?? {now: () => Date.now()};
   const scheduler = options.scheduler ?? timers;
   // The configuration is read before the state directory is prepared, so a file the runtime refuses leaves no state effect.
   const config: RuntimeConfig | undefined = suppliedConfig ?? (options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile));
-  const stateDir = await prepareStateDirectory(options.stateDir);
+  const edgeConfig = config?.edge;
+  const readCredentials = standbyStart === undefined ? readEdgeCredentials : readStandbyCredentials;
+  const standbyCredentials = standbyStart === undefined || edgeConfig === undefined ? undefined : await readCredentials(edgeConfig.credentials);
+  if (standbyStart !== undefined) await admitBoundCoreOwnership(modules, requestedStateDir);
+  const stateDir = await prepareStateDirectory(requestedStateDir);
   // The log's floor (Hub #811): the configuration's level, else the process's `--log-level`, else INFO; a module's own
   // level applies to that module's records only, and may name only a module this runtime hosts.
   const levels = config?.diagnostics?.modules ?? {};
@@ -255,12 +265,11 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     runtimeResource(options.environment ?? 'development', INSTANCE_ID), options.redactions,
   );
   const log = logs.logger(RUNTIME_SCOPE);
-  const edgeConfig = config?.edge;
-  if (options.edge !== undefined && edgeConfig === undefined) {
+  if (edgeOptions !== undefined && edgeConfig === undefined) {
     throw new RuntimeError('edge-config-missing', 'the edge needs the configuration file\'s edge section, which names its credentials');
   }
-  const credentials: EdgeCredential[] | undefined = options.edge === undefined || edgeConfig === undefined ? undefined : await readEdgeCredentials(edgeConfig.credentials);
-  const validator = options.edge === undefined ? undefined : edgeValidator(options.edge.schemas);
+  const credentials: EdgeCredential[] | undefined = edgeOptions === undefined || edgeConfig === undefined ? undefined : standbyCredentials ?? await readCredentials(edgeConfig.credentials);
+  const validator = edgeOptions === undefined ? undefined : edgeValidator(edgeOptions.schemas);
   if (validator !== undefined) registerReadReceiptFamily(validator);
   // Spans go to the given sink, or stay in memory: the oldest goes first, and is counted.
   const recent: string[] = [];
@@ -302,6 +311,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     }
   };
   const host = new ModuleHost(modules, {
+    ...(standbyStart === undefined ? {} : {standbyStart}),
     clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs, ...(tracing === undefined ? {} : {tracing}), ...(config === undefined ? {} : {config}),
     ...(Object.keys(levels).length === 0 ? {} : {levels}),
     ...(options.onCoreFailure === undefined ? {} : {onCoreFailure: options.onCoreFailure}),
@@ -323,7 +333,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   let edge: GatewayRoute = {state: credentials === undefined ? 'off' : 'starting'};
   let server: Server;
   try {
-    server = await serve(port, health, () => edge, options.edge === undefined ? undefined : edgeConfig, new GatewayRefusals(log, scheduler), options.listener === 'container-host-local' ? '0.0.0.0' : HOST);
+    server = await serve(port, health, () => edge, edgeOptions === undefined ? undefined : edgeConfig, new GatewayRefusals(log, scheduler), options.listener === 'container-host-local' ? '0.0.0.0' : HOST);
   } catch (error) {
     await endTracing();
     throw error;
@@ -356,15 +366,16 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     core?.setAutomationDevices(automationDevices(hosted,host.bus.syncOwners('device')));
     core?.setArtCatalog(hostedArtCatalog(host, scheduler));
   }
-  if (credentials !== undefined && validator !== undefined && edgeConfig !== undefined && options.edge !== undefined) {
+  if (credentials !== undefined && validator !== undefined && edgeConfig !== undefined && edgeOptions !== undefined) {
     // The gateway's action routes call the core's dispatcher (#782), when the runtime hosts the core.
     const actions = core?.actions, operatorActions = core?.operatorActions;
     const gateway = new Gateway({
-      bus: host.bus, host, validator, families: readableFamilies(options.edge.schemas), edge: edgeConfig, credentials, log, redactions: logs.redactions,
-      clock, scheduler, stateDir, ...(options.edge.liveness === undefined ? {} : {liveness: options.edge.liveness}), ...(actions === undefined ? {} : {actions}),
+      bus: host.bus, host, validator, families: readableFamilies(edgeOptions.schemas), edge: edgeConfig, credentials, log, redactions: logs.redactions,
+      clock, scheduler, stateDir, ...(standbyStart === undefined ? {} : {standby: {status: standbyStatus}}),
+      ...(edgeOptions.liveness === undefined ? {} : {liveness: edgeOptions.liveness}), ...(actions === undefined ? {} : {actions}),
       ...(operatorActions === undefined ? {} : {operatorActions}), ...(core === undefined ? {} : {history: core.history, automation: core.automation}),
       ...(wispr === undefined ? {} : {wispr}),
-      ...(options.edge.dashboard === undefined ? {} : {dashboard: options.edge.dashboard}),
+      ...(edgeOptions.dashboard === undefined ? {} : {dashboard: edgeOptions.dashboard}),
       ...(tracing === undefined ? {} : {trace: tracing.recorder(RUNTIME_SCOPE)}),
     });
     try {
@@ -376,10 +387,10 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
       await endTracing();
       throw error;
     }
-    core?.setMusicCaptureRetirement(() => gateway.edge.disconnect(MUSIC_PRODUCER_SOURCE));
+    if (standbyStart === undefined) core?.setMusicCaptureRetirement(() => gateway.edge.disconnect(MUSIC_PRODUCER_SOURCE));
     edge = {state: 'serving', gateway};
     recordLog(log, 'runtime.edge.serving', {'server.port': bound, 'bunny.grant_count': credentials.length});
-    options.edge.onServing?.(gateway.edge);
+    edgeOptions.onServing?.(gateway.edge);
   }
   let stopping: Promise<void> | undefined;
   let reloading: Promise<void> = Promise.resolve();
@@ -391,11 +402,12 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     reload: () => {
       // One reload at a time, each reading the file as it is then.
       reloading = reloading.catch(() => {}).then(async () => {
-        if (edge.state !== 'serving' || edgeConfig === undefined) return;
-        const {gateway} = edge;
+        const current = edge;
+        if (stopping !== undefined || edgeConfig === undefined || (current.state !== 'serving' && (current.state !== 'off' || standbyStart === undefined))) return;
         try {
-          const next = await readEdgeCredentials(edgeConfig.credentials);
-          gateway.reload(next);
+          const next = await readCredentials(edgeConfig.credentials);
+          if (edge !== current || stopping !== undefined) return;
+          if (current.state === 'serving') current.gateway.reload(next);
           recordLog(log, 'runtime.edge.reloaded', {'bunny.outcome': Outcome.succeeded, 'bunny.grant_count': next.length});
         } catch (error) {
           recordLog(log, 'runtime.edge.reloaded', {'bunny.outcome': Outcome.failed, 'bunny.code': 'internal', ...errorFields(error)});

@@ -146,6 +146,32 @@ export async function readEdgeCredentials(file: string): Promise<EdgeCredential[
   return parseCredentials(parsed);
 }
 
+/** A standby can authenticate an ordinary reader, with no producer or operator authority. */
+export function checkStandbyCredentials(credentials: readonly EdgeCredential[]): void {
+  if (credentials.some(({scopes, role, robotId}) => scopes.length !== 1 || scopes[0] !== 'read' || role !== undefined || robotId !== undefined)) {
+    throw invalid('must grant only ordinary read access in standby');
+  }
+}
+
+/** Checks and snapshots a complete in-memory replacement before the gateway can admit it. */
+export function standbyCredentialList(credentials: readonly EdgeCredential[]): EdgeCredential[] {
+  const parsed = parseCredentials({schema: CREDENTIALS_SCHEMA, credentials});
+  checkStandbyCredentials(parsed);
+  return parsed;
+}
+
+export async function readStandbyCredentials(file: string): Promise<EdgeCredential[]> {
+  try {
+    const credentials = await readEdgeCredentials(file);
+    checkStandbyCredentials(credentials);
+    return credentials;
+  } catch (error) {
+    // Standby also reads the file with the edge off. Its startup fault must carry no path or grant fields.
+    const code = error instanceof RuntimeError ? error.code : 'edge-credentials-invalid';
+    throw new RuntimeError(code, 'the standby credentials could not be admitted');
+  }
+}
+
 /** The credentials as the file holds them, one per line. */
 export const credentialsDocument = (credentials: readonly EdgeCredential[]): string =>
   `${JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: credentials.map(({id, source, digest, scopes, role, robotId}) => ({id, source, digest, scopes, ...(role === undefined ? {} : {role, robotId})}))}, null, 2)}\n`;
