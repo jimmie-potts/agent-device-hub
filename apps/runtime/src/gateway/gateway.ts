@@ -1,5 +1,6 @@
 import {historyFilter, type HistoryFilter, type HistoryPage} from '../core/history.js';
 import type {AutomationControls} from '../core/automation-part.js';
+import {settingsRead, type SettingsPage, type SettingsRead, type SettingsSnapshot} from '../core/settings-contract.js';
 import {holdsAutomationSecret, isAutomationDefinitionFamily} from '../core/automation-definitions.js';
 import {AUTOMATION_PREFIX, automationRoute} from './automation-routes.js';
 // The runtime's gateway (Hub #835): every route of its listener but health. It serves the SDK edge for remote parts,
@@ -115,7 +116,8 @@ export type GatewayOptions = {
   /** The core's dispatcher, which the action routes call (#782); without it, every action is `unavailable`. */
   actions?: CoreActions;
   /** The core's history page: rows and the open spans of the entities in them (#1773). */
-  history?: {page: (filter: HistoryFilter) => HistoryPage | ErrorBody};
+  history?: {page: (filter: HistoryFilter) => HistoryPage | ErrorBody;
+    settings?: (read: SettingsRead) => SettingsSnapshot | SettingsPage | ErrorBody};
   /** Fresh rules/settings owned by the runtime core; no legacy store is opened. */
   automation?: AutomationControls;
   /** Closed file-reader exception: analytics never become SDK families or MCP tools. */
@@ -138,7 +140,7 @@ export class Gateway {
   /** Only validated dashboard handoffs receive a context; a later refusal keeps that request's trace. */
   readonly #dashboardTraces = new WeakMap<IncomingMessage, TraceContext>();
   /** Rechecked synchronously after all route awaits, immediately before HTTP emission. */
-  readonly #wisprDelivery = new WeakMap<IncomingMessage, () => void>();
+  readonly #readDelivery = new WeakMap<IncomingMessage, () => void>();
   readonly #participants = new Map<string, Participant>();
   readonly #copies = new Map<string, Promise<SyncedCopy<Record<string, unknown>>>>();
   #own: Participant | undefined;
@@ -282,7 +284,7 @@ export class Gateway {
         principal = this.#admit(request);
         answer = await this.#route(request, url, principal);
       }
-      this.#wisprDelivery.get(request)?.();
+      this.#readDelivery.get(request)?.();
       this.#write(response, answer);
     } catch (error) {
       const body = error instanceof Refused ? error.body : errorBody('internal', {detail: 'the gateway failed'});
@@ -420,6 +422,22 @@ export class Gateway {
     if (method !== 'GET') throw refuse('not-found', 'no such route');
     needs('read');
     if (path === '/api/v2/history') {
+      if (url.searchParams.has('settings')) {
+        const read = settingsRead(url.searchParams);
+        if (read === undefined) throw refuse('invalid-request', 'invalid settings history parameters');
+        return this.#dashboardRequest(request, path, () => {
+          const answer = this.#options.history?.settings?.(read) ?? errorBody('unavailable', {detail: 'no core settings are available'});
+          if ('error' in answer) throw refuse(answer.error.code, answer.error.detail ?? 'the core settings could not be read');
+          this.#readDelivery.set(request, () => {
+            const admitted = this.#admit(request);
+            if (!this.access.live(principal) || admitted.id !== principal.id || admitted.kind !== principal.kind || admitted.source !== principal.source)
+              throw refuse('unauthenticated', 'the settings reader is no longer admitted');
+            if (!admitted.scopes.has('read')) throw refuse('forbidden', 'the route needs the read scope');
+            if (holdsAutomationSecret(this.#options.redactions, answer)) throw refuse('internal', 'the core settings could not be served');
+          });
+          return json(200, answer);
+        });
+      }
       if (query.some(key => url.searchParams.getAll(key).length !== 1)) throw refuse('invalid-request', 'history filters appear once');
       const values = Object.fromEntries(url.searchParams);
       const filter = historyFilter(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, key === 'fromAtMs' || key === 'toAtMs' || key === 'limit' ? (/^[0-9]+$/.test(value) ? Number(value) : NaN) : value])));
@@ -691,7 +709,7 @@ export class Gateway {
       if (request.aborted) throw refuse('cancelled', 'the Wispr read was cancelled');
       if (this.#closed || !current()) throw refuse('unavailable', 'the Wispr read is no longer current');
     };
-    this.#wisprDelivery.set(request, deliver);
+    this.#readDelivery.set(request, deliver);
     const controller = new AbortController(), aborted = (): void => {controller.abort();};
     request.once('aborted', aborted);
     if (request.aborted) controller.abort();

@@ -89,8 +89,8 @@ void it('a store written by the release before #1740 migrates every row to this 
   const newSchema = (after.schema as {name: string}[]);
   for (const entry of oldSchema) assert.ok(newSchema.some(item => JSON.stringify(item) === JSON.stringify(entry)), `${entry.name} is unchanged`);
   assert.deepEqual(newSchema.map(entry => entry.name).filter(name => !oldSchema.some(item => item.name === name)).sort(),
-    ['core_history', 'core_history_origin', 'core_history_origin_message', 'core_history_span', 'core_origin', 'sqlite_autoindex_core_history_span_1'],
-    'history gains its columns and indexes, the old message index goes, and the span table (#1772) comes');
+    ['core_history', 'core_history_legacy_barrier', 'core_history_origin', 'core_history_origin_message', 'core_history_span', 'core_origin', 'sqlite_autoindex_core_history_span_1'],
+    'history gains its origin and continuity columns and indexes, the old message index goes, and the span table (#1772) comes');
   assert.equal(database.isTransaction, false, 'the migration committed');
 
   // Opened again, as at the next start, it changes nothing at all.

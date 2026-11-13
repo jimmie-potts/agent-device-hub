@@ -34,6 +34,17 @@ request trace continuity and execution without definition history. Run
 Automation filter includes the retained changes and removals. These checks
 need no standalone runtime or device.
 
+Core settings reads use the existing Runtime unit tests CI job. After the root
+build, run `node --test apps/runtime/dist/tests/settings-history.test.js
+apps/runtime/dist/tests/history-fact-log.test.js apps/runtime/dist/tests/history-spans.test.js
+apps/runtime/dist/tests/history-open.test.js apps/runtime/dist/tests/history-alarm.test.js
+apps/runtime/dist/tests/inbox-gateway.test.js apps/runtime/dist/tests/automation-state.test.js`.
+The synthetic stores and manual clock exercise committed snapshots, bounded
+pages, rollback and restore, ordinary read authorization and protected values.
+Run the root type, lint, shared event contract and workflow checks, and the
+Timeline unit tests that consume the existing history response. These checks
+need no standalone runtime or device.
+
 Automation device following (#1330) uses the existing runtime CI test discovery.
 After the root build, run `node --test apps/runtime/dist/tests/automation-device-follow.test.js`
 and the automation, power schedule and power limit suites. The disposable runtime

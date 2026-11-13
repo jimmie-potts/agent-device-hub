@@ -428,7 +428,7 @@ it('a previous release that wrote a row at the span\'s last revision resets the 
   assert.equal(rowsOf(history).length, 2);
 });
 
-it('migrating adds only the empty span table, changes no other table or schema entry, and a second open changes nothing', context => {
+it('migrating adds the empty span table and continuity metadata, and a second open changes nothing', context => {
   const database = new DatabaseSync(':memory:');
   context.after(() => database.close());
   previousRelease(database)(state(plug(1, T0)), T0);
@@ -437,14 +437,20 @@ it('migrating adds only the empty span table, changes no other table or schema e
     .map(table => [table, database.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all().map(row => ({...row}))]));
   const before = {schema: schema(), tables: tables()};
   void new History(database, RULES);
-  assert.deepEqual(schema().filter(entry => entry.name !== 'core_history_span' && !entry.name.startsWith('sqlite_autoindex_core_history_span')), before.schema);
-  assert.deepEqual(tables(), before.tables);
+  const migrated = {schema: schema(), tables: tables()};
+  const added = ['core_history_legacy_barrier', 'core_history_span', 'sqlite_autoindex_core_history_span_1'];
+  assert.deepEqual(migrated.schema.filter(entry => !before.schema.some(prior => prior.name === entry.name)).map(entry => entry.name), added);
+  assert.deepEqual(migrated.schema.filter(entry => !added.includes(entry.name)).map(entry =>
+    entry.name === 'core_history' ? {...entry, sql: entry.sql.replace(', continuity TEXT', '')} : entry), before.schema);
+  const [head] = migrated.tables.core_history as {continuity: string}[];
+  assert.match(head?.continuity ?? '', /^legacy:[0-9a-f-]{36}$/);
+  assert.deepEqual({...migrated.tables, core_history: (migrated.tables.core_history as {continuity: string}[])
+    .map(({continuity: _continuity, ...row}) => row)}, before.tables);
   assert.equal(count(database, 'core_history_span'), 0);
   assert.deepEqual((database.prepare('PRAGMA table_info(core_history_latest)').all() as {name: string}[]).map(column => column.name), ['source', 'family', 'id', 'revision', 'record'],
     'the latest table keeps its five columns in order');
-  const migrated = schema();
   void new History(database, RULES);
-  assert.deepEqual(schema(), migrated);
+  assert.deepEqual({schema: schema(), tables: tables()}, migrated);
 });
 
 it('the polling declaration of every registration matches the checked-in classification', () => {
