@@ -137,8 +137,11 @@ type Part = {role: Role; participant: Participant | undefined; closed: boolean; 
 type Virtual = {clock: ReturnType<typeof manualClock>; owed: number; runNext: number | undefined; quiet: boolean; busy: boolean};
 
 type PendingWork = () => readonly string[];
+type CompletedAnswer = Readonly<{text: string; traceId: string | undefined}>;
 type PendingAnswer = {
-  label: string; role: Role; requestId: string; key: string; logsFrom: number; publishedFrom: number; traceId?: string; ambiguous: boolean;
+  label: string; role: Role; requestId: string; key: string; logsFrom: number; publishedFrom: number; ambiguous: boolean;
+  admittedTrace?: string;
+  completed?: CompletedAnswer;
 };
 
 /** How many event-loop turns the adapter gives the parts' streams after each advance of the run, as the in-memory harness gives real I/O. */
@@ -250,17 +253,8 @@ class Run implements RunHarness {
     const started = this.#act(() => Promise.resolve({request: this.#connected(role).request(key, draft, options)}));
     return started.then(({request}) => request).then(result => {
       const traceId = result.status === 'accepted' ? traceFields(result.reply)?.traceId : result.error.error.traceId;
-      if (traceId !== undefined) pending.traceId = traceId;
-      return answerOf(result);
-    }, (error: unknown) => `threw ${failureOf(error)}`).then(async answer => {
-      // What the run published before the answer is in the copy before the scenario reads it.
-      await this.#refresh();
-      this.#answers.set(label, answer);
-      return answer;
-    }).finally(() => {
-      this.#pendingAnswers.delete(pending);
-      this.#wake();
-    });
+      return this.#finishAnswer(pending, answerOf(result), traceId);
+    }, (error: unknown) => this.#finishAnswer(pending, `threw ${failureOf(error)}`));
   }
 
   dispatch(role: Role, label: string, command: {key: string; draft: CommandDraft<object>}, requestId: string): Promise<string> {
@@ -268,14 +262,22 @@ class Run implements RunHarness {
     // The action starts in its turn among the actions; its answer may come long after the next action began. An HTTP
     // call whose connection a crash ended is `lost`: its fate is the tracker's to know.
     const started = this.#act(() => Promise.resolve({call: this.#client.call(actionCall(role, command, requestId))}));
-    return started.then(({call}) => call).then(actionAnswerOf, () => 'lost').then(async answer => {
+    return started.then(({call}) => call).then(actionAnswerOf, () => 'lost')
+      .then(answer => this.#finishAnswer(pending, answer));
+  }
+
+  async #finishAnswer(pending: PendingAnswer, text: string, traceId?: string): Promise<string> {
+    try {
+      // Refresh before exposing the answer, and resolve its trace here while this attempt is still pending.
       await this.#refresh();
-      this.#answers.set(label, answer);
-      return answer;
-    }).finally(() => {
+      const completed: CompletedAnswer = {text, traceId: traceId ?? pending.admittedTrace ?? this.#admissionTrace(pending)};
+      pending.completed = completed;
+      this.#answers.set(pending.label, completed.text);
+      return completed.text;
+    } finally {
       this.#pendingAnswers.delete(pending);
       this.#wake();
-    });
+    }
   }
 
   #startAnswer(role: Role, label: string, requestId: string, key: string): PendingAnswer {
@@ -796,7 +798,8 @@ class Run implements RunHarness {
     for (const answer of this.#pendingAnswers) {
       // Preserve admission evidence that was already unique before the predicate can start a duplicate.
       const admittedTrace = this.#admissionTrace(answer);
-      work.push(() => this.#answerWork(answer, admittedTrace));
+      if (admittedTrace !== undefined) answer.admittedTrace ??= admittedTrace;
+      work.push(() => this.#answerWork(answer));
     }
     for (const [role, stream] of this.#away) {
       if (role !== 'reader' && !this.#held.some(part => part.role === role)) {
@@ -816,11 +819,11 @@ class Run implements RunHarness {
     return work;
   }
 
-  #answerWork(answer: PendingAnswer, admittedTrace: string | undefined): string[] {
+  #answerWork(answer: PendingAnswer): string[] {
     if (this.#pendingAnswers.has(answer)) return [`the answer to ${answer.label}`];
     // The dispatcher's existing request record links its answer to the same trace as the resulting publications.
     // An SDK request can also give the trace in its reply or refusal.
-    const trace = answer.traceId ?? admittedTrace ?? this.#admissionTrace(answer);
+    const trace = answer.completed?.traceId;
     if (trace === undefined) return [];
     return this.#missingDeliveries(this.#state.published.slice(answer.publishedFrom).filter(({message}) =>
       traceFields(message)?.traceId === trace));

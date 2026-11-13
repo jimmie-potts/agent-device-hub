@@ -331,15 +331,21 @@ void test('overtime waits for live delivery after an independent action answers'
   const seed = scenario('reconnect-and-sync')?.seed;
   assert.ok(seed);
   const run = await startRun(context, await base(context), 'reconnect-and-sync');
-  const reply = gate(), dispatched = gate(), frame = gate();
+  const send = gate(), dispatched = gate(), frame = gate(), awaitingDelivery = gate();
+  const clock = manualClock(0);
   let armed = false, advances = 0, checks = 0;
   let action: Promise<string> | undefined;
   intercept(context, async request => {
-    if (armed && request.url.endsWith('/clock/advance') && ++advances === 2) {
-      reply.open();
+    if (!armed) return;
+    if (request.url.includes('/api/v2/commands/')) {
+      dispatched.open();
+      await send.opened;
+    }
+    if (request.url.endsWith('/clock/advance') && ++advances === 2) {
+      send.open();
       await action;
     }
-  }, async (request, response) => {
+  }, (request, response) => {
     if (request.url.endsWith('/stream') && request.source === sourceOf('reader') && response.body !== null) {
       const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
         async transform(chunk, controller) {
@@ -349,12 +355,13 @@ void test('overtime waits for live delivery after an independent action answers'
       }));
       return new Response(body, {status: response.status, headers: response.headers});
     }
-    if (!armed || !request.url.includes('/api/v2/commands/')) return response;
-    dispatched.open();
-    await reply.opened;
     return response;
   });
-  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed,
+    realWorkClock: {now: clock.now, scheduler: {after: (delay, callback) => {
+      if (delay === 25) awaitingDelivery.open();
+      return clock.scheduler.after(delay, callback);
+    }}}});
   context.after(() => h.close());
   armed = true;
   const result = runScenario({id: 'action-delivery', title: 'action delivery', seed, steps: [
@@ -364,19 +371,22 @@ void test('overtime waits for live delivery after an independent action answers'
     }),
     expect('the reader saw the resulting state', h => {
       checks += 1;
+      if (checks === 1) {
+        assert.ok(!h.logs().some(({record}) => record.event_name === 'command.queued'
+          && record.attributes['bunny.request.id'] === 'req-held'), 'the action had no trace before the first check');
+      }
       return copiedPower(h) === 'on' || 'the reader still sees the lamp off';
     }, 0),
   ]}, h);
   try {
-    await Promise.race([reply.opened, result]);
+    await Promise.race([awaitingDelivery.opened, result]);
     assert.equal(await action, 'accepted');
-    await turns(1000);
     assert.equal(checks, 1, 'the reply alone did not permit another check');
     frame.open();
     assert.equal((await result).outcome, 'passed');
     assert.equal(checks, 2);
   } finally {
-    reply.open();
+    send.open();
     frame.open();
     await result;
   }
@@ -557,6 +567,80 @@ void test('a later duplicate preserves the captured trace of the original action
     assert.equal(verdict.outcome, 'passed', JSON.stringify(verdict));
   } finally {
     heldFrame.open();
+    await result;
+  }
+});
+
+void test('a later admission does not attach to a completed refusal using the same ID', {timeout: 30_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const refused = gate(), releaseReply = gate(), releaseFrame = gate(), frameStarted = gate(), waited = gate();
+  const clock = manualClock(0);
+  let armed = false, posts = 0;
+  intercept(context, () => {}, async (request, response) => {
+    if (armed && request.url.endsWith('/api/v2/commands/lamp-switch') && ++posts === 1) {
+      assert.equal(response.status, 400, 'the real gateway refuses the first call');
+      refused.open();
+      await releaseReply.opened;
+    }
+    if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        if (armed) {
+          frameStarted.open();
+          await releaseFrame.opened;
+        }
+        controller.enqueue(chunk);
+      },
+    }));
+    return new Response(body, {status: response.status, headers: response.headers});
+  });
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed,
+    realWorkClock: {now: clock.now, scheduler: {after: (delay, callback) => {
+      if (delay === 25) waited.open();
+      return clock.scheduler.after(delay, callback);
+    }}}});
+  context.after(() => h.close());
+  const command = switchLamp('lamp-1', 'on');
+  const invalid = {...command, draft: {...command.draft, data: {power: 'invalid-power'}}};
+  let original: Promise<string> | undefined, originalAnswer: string | undefined, checks = 0;
+  armed = true;
+  const result = runScenario({id: 'late-attribution', title: 'late attribution', seed, steps: [
+    act('a definitely refused action has its HTTP answer held', async h => {
+      original = h.dispatch('operator', 'original', invalid, 'req-sequential');
+      await refused.opened;
+    }),
+    expect('the original refusal becomes visible independently', async h => {
+      checks += 1;
+      const observed = h.answer('original');
+      if (checks === 1) {
+        assert.equal(observed, 'pending');
+        assert.equal(h.logs().filter(({record}) => record.event_name === 'command.queued'
+          && record.attributes['bunny.request.id'] === 'req-sequential').length, 0);
+        releaseReply.open();
+        originalAnswer = await original;
+        assert.ok(originalAnswer === 'invalid-message' || originalAnswer === 'invalid-request');
+        assert.equal(h.answer('original'), originalAnswer);
+        assert.equal(await h.dispatch('operator', 'corrected', command, 'req-sequential'), 'accepted');
+        await frameStarted.opened;
+      }
+      return (originalAnswer !== undefined && observed === originalAnswer) || 'the original refusal was pending';
+    }, 0),
+  ]}, h);
+  try {
+    await Promise.race([waited.opened, result]);
+    clock.advance(REAL_WORK_WITHIN_MS);
+    const verdict = await result;
+    assert.equal(checks, 2, JSON.stringify(verdict));
+    assert.equal(verdict.outcome, 'passed', JSON.stringify(verdict));
+    assert.equal(h.answer('original'), originalAnswer);
+    assert.equal(h.answer('corrected'), 'accepted');
+    assert.equal(posts, 2);
+    assert.equal(copiedPower(h), 'off', 'the corrected action frame is still held');
+  } finally {
+    releaseReply.open();
+    releaseFrame.open();
     await result;
   }
 });

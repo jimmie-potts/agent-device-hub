@@ -201,11 +201,11 @@ naming what is missing:
 - At a virtual expectation's bound, including zero, the adapter settles time already owed, advances by zero and
   refreshes. It captures pending answers, reconnects, resyncs, eligible publications and child work before the first
   check. Each captured completion can justify one recheck. A reconnect includes resync. A named action waits for
-  live publications linked by its existing command trace. A trace captured before the check stays attached to the
-  original action if a duplicate arrives. Without a unique trace, the adapter waits for the answer and leaves the
-  publication check to ordinary waits. A generic gateway call
-  completes with its reply and refresh, so an unrelated frame does not hold a completed read. Ordinary waits still
-  check all eligible publications. The child's busy signal is aggregate, so its captured work clears when the child
+  live publications linked by its existing command trace. The adapter preserves a trace captured before the check
+  and fixes the action's trace evidence when its answer refresh completes. A later request with the same ID cannot
+  change that evidence. Without a unique trace, the adapter waits for the answer and leaves the publication check to
+  ordinary waits. A generic gateway call completes with its reply and refresh, so an unrelated frame does not hold
+  a completed read. Ordinary waits check all eligible publications. The child's busy signal is aggregate, so its captured work clears when the child
   reports idle. One 15 s monotonic deadline includes settles, checks and waits. The run stays at the virtual bound.
 
 Before a capture's browser journey starts, the page's clock is set to the run's time, so the deadlines the page stamps
