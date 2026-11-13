@@ -3,6 +3,7 @@ import {mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
+import {setImmediate as nextTurn} from 'node:timers/promises';
 import {checkConfiguration} from '../../../packages/sdk/dist/src/index.js';
 import {checkLocalBrowserConfig, checkLocalBrowserCredentials, containerOptions, hostLocalModules, refuseNamedDevices} from '../entrypoint.mjs';
 import * as entrypoint from '../entrypoint.mjs';
@@ -467,4 +468,48 @@ test('in the production profile on a controlled clock, a page turn writes no row
   const plugRows = await settle('bunny/modules/wemo', 2);
   assert.equal(plugRows.length, 2, 'one gap row when readings resume');
   assert.equal(plugRows[1].record.gapMs, 5 * 60_000);
+});
+
+test('the production-selected core warns on state changes published during module start', async t => {
+  const [runtimeModules, {startRuntime}, {manualClock}] = await Promise.all([
+    import('../../../apps/runtime/dist/src/modules.js'),
+    import('../../../apps/runtime/dist/src/runtime.js'), import('../../../apps/runtime/dist/tests/scenarios/virtual-time.js'),
+  ]);
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'gh1778-')));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const id = 'fixture-device';
+  const module = {
+    manifest: {name: 'volcano', apiVersion: '1.3',
+      configure: () => ({config: {id, label: 'Synthetic private label'}, devices: []})},
+    async start({sdk}) {
+      for (let revision = 1; revision <= 121; revision++) {
+        await sdk.publish(`bunny.state.device.${id}`, {
+          kind: 'state', type: 'org.bunny.device.updated', subject: id, dataschema: 'https://bunny.invalid/events/device/2.4',
+          data: {id, revision, available: revision % 2 === 0, label: 'Synthetic private label'},
+        });
+      }
+    },
+  };
+  const config = {modules: {volcano: {}}, edge: productionEdge()};
+  const prepared = entrypoint.productionModules(config, {
+    ...runtimeModules, shippedModules: [runtimeModules.coreFactory, {name: 'volcano', create: () => module}],
+  }, checkConfiguration, entrypoint.containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled'}));
+  const warnings = [];
+  const clock = manualClock();
+  const runtime = await startRuntime({modules: prepared.modules, stateDir: join(root, 'state'), port: 0, config, clock, scheduler: clock.scheduler,
+    log: record => { if (record.event_name === 'history.entity.noisy') warnings.push(record); }});
+  try {
+    assert.equal(runtime.health().status, 'ok');
+    const core = prepared.modules[0];
+    // Intake yields between groups. Let it run until the last startup row
+    // commits, then check the warning from that same commit.
+    for (let turn = 0; turn < 30 && core.history.read({source: 'bunny/modules/volcano'}).length < 121; turn++) await nextTurn();
+    assert.equal(core.history.read({source: 'bunny/modules/volcano'}).length, 121);
+    assert.equal(warnings.length, 1);
+    assert.equal(warnings[0].severity_text, 'WARN');
+    assert.equal(warnings[0].schema_version, '1.9');
+    assert.deepEqual(warnings[0].attributes, {'bunny.module': 'core', 'bunny.provenance': 'source',
+      'bunny.participant': 'bunny/modules/volcano', 'bunny.history.family': 'device', 'bunny.history.entity_id': id,
+      'bunny.history.row_count': 121, 'bunny.history.row_threshold': 120, 'bunny.history.hour_start_at_ms': clock.now()});
+  } finally { await runtime.stop(); }
 });

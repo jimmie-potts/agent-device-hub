@@ -2009,7 +2009,7 @@ without it, from `scripts/measure-memory.mjs`, measured before the core shipped.
 
 Each record is one JSON line on stderr and a
 [diagnostic-contract](../../docs/observability-contract.md#the-runtimes-records-profile-12)
-record of profile 1.7, built by the contract's `createRecord`: `schema_version`,
+record of profile 1.9, built by the contract's `createRecord`: `schema_version`,
 `timestamp`, the severity pair, a registered `event_name` with its static
 `body`, the resource, the scope and its version (`1.0.0`), and registered
 `attributes` with `bunny.provenance` `source`, plus `trace_id`, `span_id` and
@@ -2537,6 +2537,22 @@ Every other failed, uncertain or conflicting result opens an item. That
 includes uncertain writes that may set a hold, failures after acceptance,
 expired commands and refusals the dashboard can send again. Items still have no
 time limit, and a later success clears nothing.
+
+The core emits one `history.entity.noisy` warning when a writer, family
+and entity commits its 121st `change` row in a UTC clock hour. The threshold
+of 120 comes from the history replay in [#1778](https://github.com/jimmie-potts/agent-device-hub/issues/1778).
+Initial, gap and span-closing change rows count. Separate removals,
+outcomes, operations and occurrences are outside this count. Music capture
+features, for example, are expected occurrences with 100 ms windows.
+The alarm leaves all history rows in place.
+
+The two in-memory buckets cover the latest observed hour and its predecessor.
+An older backward clock step starts a fresh window at the corrected hour.
+A discarded hour can warn again after another 121 counted rows if revisited.
+Restart begins with empty counts. The warning identifies an entity by its
+approved neutral machine ID. Records without an approved ID remain in history.
+See the [private Grafana query](../../docs/bunny-container.md#hourly-history-warnings)
+for received warnings.
 
 `GET /api/v2/history` reads committed `core_history`, oldest first, with optional
 inclusive `fromAtMs`, `toAtMs`, `kind`, `source` and qualified `session` filters.

@@ -1,5 +1,5 @@
 {
-  "artifact_version": "1.8.0",
+  "artifact_version": "1.9.0",
   "schema_versions": [
     "1.0",
     "1.1",
@@ -9,7 +9,8 @@
     "1.5",
     "1.6",
     "1.7",
-    "1.8"
+    "1.8",
+    "1.9"
   ],
   "default_schema_version": "1.1",
   "semantic_conventions": "1.44.0",
@@ -157,6 +158,18 @@
       "span_names": [
         "bunny.art.call"
       ]
+    },
+    "1.9": {
+      "events": [
+        "history.entity.noisy"
+      ],
+      "attributes": [
+        "bunny.history.family",
+        "bunny.history.entity_id",
+        "bunny.history.row_count",
+        "bunny.history.row_threshold",
+        "bunny.history.hour_start_at_ms"
+      ]
     }
   },
   "events": {
@@ -217,7 +230,8 @@
     "storage.cost.normal": "Storage cost normal",
     "assistant.run.started": "Assistant run started",
     "assistant.run.settled": "Assistant run settled",
-    "assistant.call.settled": "Assistant call settled"
+    "assistant.call.settled": "Assistant call settled",
+    "history.entity.noisy": "History entity exceeded its hourly change threshold"
   },
   "services": [
     "hub",
@@ -690,6 +704,31 @@
     },
     "bunny.exception.truncated": {
       "type": "boolean"
+    },
+    "bunny.history.family": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])",
+      "maxLength": 128
+    },
+    "bunny.history.entity_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+    },
+    "bunny.history.row_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.history.row_threshold": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.history.hour_start_at_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709,
+      "multipleOf": 3600000
     }
   },
   "scope_rules": {
@@ -759,7 +798,8 @@
         "storage.cost.normal",
         "assistant.run.started",
         "assistant.run.settled",
-        "assistant.call.settled"
+        "assistant.call.settled",
+        "history.entity.noisy"
       ],
       "required_attributes": [
         "bunny.module"
