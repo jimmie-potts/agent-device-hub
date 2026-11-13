@@ -12,7 +12,9 @@ import {createCoreModule} from '../src/core/core.js';
 import {observation, sessionStarted, turnEnded, turnStarted} from './fixtures/agents.js';
 import {deviceRecord, deviceState} from './fixtures/device.js';
 import {automationRoute} from '../src/gateway/automation-routes.js';
-import {flush, manualClock, stateDir} from './support.js';
+import {contextOf, edgeConfig, fixture, flush, manualClock, run, stateDir} from './support.js';
+import {Redactions} from '../src/log.js';
+import {openModuleDatabase} from '../src/state.js';
 
 const families = ['automation-rule', 'automation-routine', 'automation-settings', 'automation-interrupt-set'];
 const eventRule = {name: 'Synthetic event rule', kind: 'event', enabled: true,
@@ -227,4 +229,128 @@ void test('a refused publication leaves a committed definition and retries its o
   assert.equal(copy.get({family: 'automation-rule', id: created.id})?.data.enabled, false);
   assert.equal(w.history().length, 2);
   assert.equal(w.db.prepare('SELECT id FROM bunny_outbox').all().length, 0);
+});
+
+const registeredMarker = 'Arbitrary synthetic registry marker';
+const escapedMarker = 'Synthetic "quoted" registry marker';
+const routine = {name: 'Synthetic routine', days: [1], time: '17:00',
+  actions: [{target: 'wall', family: 'power-set', data: {on: true}}]};
+
+void test('registered secrets refuse automation writes before owner data or definition facts commit', async context => {
+  const clock = manualClock(), core = createCoreModule(), redactions = new Redactions();
+  const control = {source: 'bunny/parts/control', token: 'synthetic-automation-owner-token'};
+  const owner = {manifest: {name: 'nanoleaf', apiVersion: '1.2', configure: () => ({config: {}, devices: ['wall']})},
+    start: () => {}, stop: () => {}};
+  const files = await edgeConfig(context, [control], {modules: {nanoleaf: {}}});
+  let opened: DatabaseSync | undefined;
+  const hosted = {...core, start: async (context: Parameters<typeof core.start>[0]) => {
+    opened = context.database();
+    await core.start(context);
+  }};
+  const {runtime, logs} = await run(context, {modules: [hosted, owner], configFile: files.config, edge: {schemas: {}},
+    redactions, clock: {now: clock.now}, scheduler: clock.scheduler});
+  redactions.add(registeredMarker);
+  redactions.add(escapedMarker);
+  const headers = {authorization: `Bearer ${control.token}`, 'bunny-request': '1', 'content-type': 'application/json'};
+  for (const marker of [registeredMarker, escapedMarker]) {
+    const write = await fetch(new URL('/api/v2/automation/rules', runtime.url), {
+      method: 'POST', headers, body: JSON.stringify({...eventRule, name: marker}),
+    });
+    assert.equal(write.status, 500);
+    assert.equal((await write.text()).includes(marker), false);
+  }
+  assert.deepEqual(core.automation.rules(), []);
+  assert.ok(opened);
+  for (const table of ['rules', 'automation_definition_revisions', 'bunny_outbox']) {
+    assert.deepEqual(opened.prepare(`SELECT * FROM ${table}`).all(), [], table);
+  }
+  const rows = core.history.read({});
+  assert.ok(Array.isArray(rows));
+  assert.equal(rows.some(row => row.type === 'org.bunny.automation-rule.updated'), false);
+  for (const path of ['/api/v2/families/automation-rule', '/api/v2/snapshot?families=automation-rule', '/api/v2/history']) {
+    const response = await fetch(new URL(path, runtime.url), {headers});
+    assert.equal(response.status, 200, path);
+    assert.equal((await response.text()).includes(registeredMarker), false, path);
+  }
+  assert.equal(JSON.stringify(logs).includes(registeredMarker), false);
+});
+
+void test('a populated secret-bearing rule keeps private evaluation and refuses new state reads', async context => {
+  const clock = manualClock(), core = createCoreModule(), redactions = new Redactions();
+  const control = {source: 'bunny/parts/control', token: 'synthetic-automation-reader-token'};
+  const files = await edgeConfig(context, [control]), directory = await stateDir(context);
+  const db = openModuleDatabase(directory, 'core');
+  try {
+    const store = new AutomationStore(db, () => {}, {settings: DEFAULT_SETTINGS, interruptSet: [...DEFAULT_INTERRUPT_SET]});
+    assert.equal(store.insertRule({id: 'rule-private', name: registeredMarker, enabled: true, kind: 'event',
+      trigger: JSON.stringify(eventRule.trigger), action: JSON.stringify(eventRule.action),
+      createdAtMs: clock.now(), updatedAtMs: clock.now()}, 64), true);
+  } finally { db.close(); }
+  const hook = fixture('synthetic-hook');
+  const {runtime} = await run(context, {modules: [core, hook], stateDir: directory, configFile: files.config, edge: {schemas: {}},
+    redactions, clock: {now: clock.now}, scheduler: clock.scheduler});
+  redactions.add(registeredMarker);
+  assert.equal(core.automation.rule('rule-private').enabled, true);
+  const headers = {authorization: `Bearer ${control.token}`};
+  for (const path of ['/api/v2/families/automation-rule', '/api/v2/snapshot?families=automation-rule,automation-settings']) {
+    const response = await fetch(new URL(path, runtime.url), {headers});
+    assert.equal(response.status, 500, path);
+    assert.equal((await response.text()).includes(registeredMarker), false, path);
+  }
+  assert.equal((await fetch(new URL('/api/v2/families/automation-settings', runtime.url), {headers})).status, 200);
+  assert.equal(core.automation.rule('rule-private').name, registeredMarker);
+  assert.deepEqual(core.history.read({}), []);
+  for (const event of [sessionStarted, turnStarted, turnEnded]) {
+    clock.advance(10);
+    const {key, draft} = observation(event, clock.now());
+    await contextOf(hook).sdk.publish(key, draft);
+    await flush();
+  }
+  await core.automation.settled();
+  assert.equal(core.automation.log(1)[0]?.ruleId, 'rule-private');
+});
+
+void test('an ignored routine insertion rolls back without a definition after reopen', async context => {
+  const w = await world(context), routines = w.core.automation.routines;
+  assert.ok(routines);
+  const live = await w.sync();
+  w.db.exec("CREATE TEMP TRIGGER ignore_rule BEFORE INSERT ON rules BEGIN SELECT RAISE(IGNORE); END");
+  await assert.rejects(async () => routines.create({...routine, enabled: true}), /internal/);
+  await flush();
+  assert.deepEqual(routines.list(), []);
+  assert.equal(live.states().some(message => message.type === 'org.bunny.automation-routine.updated'), false);
+  for (const table of ['rules', 'automation_definition_revisions', 'automation_power_guard', 'bunny_outbox']) {
+    assert.deepEqual(w.db.prepare(`SELECT * FROM ${table}`).all(), [], table);
+  }
+  assert.deepEqual(w.history(), []);
+  assert.deepEqual(w.messages, []);
+  await live.close();
+  await w.restart();
+  assert.deepEqual(w.core.automation.routines?.list(), []);
+  assert.equal((await w.sync()).states().some(message => message.type === 'org.bunny.automation-routine.updated'), false);
+});
+
+void test('an ignored routine deletion keeps its definition, occurrence guard and revision after reopen', async context => {
+  const w = await world(context), routines = w.core.automation.routines;
+  assert.ok(routines);
+  const saved = await routines.create({...routine, enabled: true});
+  await flush();
+  const key = {family: 'automation-routine', id: saved.id}, live = await w.sync(), before = live.get(key);
+  assert.ok(before);
+  w.db.prepare('INSERT INTO automation_power_guard VALUES (?, ?)').run(saved.id, w.clock.now());
+  const history = w.history(), messages = [...w.messages], outbox = w.db.prepare('SELECT * FROM bunny_outbox').all();
+  w.db.exec("CREATE TEMP TRIGGER ignore_rule BEFORE DELETE ON rules BEGIN SELECT RAISE(IGNORE); END");
+  await assert.rejects(async () => routines.remove(saved.id), /internal/);
+  await flush();
+  assert.equal(routines.get(saved.id).enabled, true);
+  assert.equal(w.db.prepare('SELECT at_ms FROM automation_power_guard WHERE rule_id = ?').get(saved.id)?.at_ms, w.clock.now());
+  assert.equal(w.db.prepare('SELECT revision FROM automation_definition_revisions WHERE id = ?').get(saved.id)?.revision, before.data.revision);
+  assert.deepEqual(w.history(), history);
+  assert.deepEqual(w.messages, messages);
+  assert.deepEqual(w.db.prepare('SELECT * FROM bunny_outbox').all(), outbox);
+  assert.deepEqual(live.get(key), before);
+  await live.close();
+  await w.restart();
+  assert.deepEqual((await w.sync()).get(key)?.data, before.data);
+  assert.deepEqual(w.history(), history);
 });

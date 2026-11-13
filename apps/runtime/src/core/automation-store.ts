@@ -107,7 +107,8 @@ export class AutomationStore {
   insertRule(rule: RuleRow, limit: number): boolean {
     return this.transaction(() => {
       if (Number((this.statements.countRules.get()?.count ?? 0)) >= limit) return false;
-      this.statements.insertRule.run(rule.id,rule.name,rule.enabled ? 1 : 0,rule.kind,rule.trigger,rule.action,rule.createdAtMs,rule.updatedAtMs);
+      const result = this.statements.insertRule.run(rule.id,rule.name,rule.enabled ? 1 : 0,rule.kind,rule.trigger,rule.action,rule.createdAtMs,rule.updatedAtMs);
+      if (Number(result.changes) !== 1) throw new Error('automation definition was not inserted');
       return true;
     });
   }
@@ -116,7 +117,11 @@ export class AutomationStore {
     return Number(this.statements.updateRule.run(rule.name,rule.enabled ? 1 : 0,rule.kind,rule.trigger,rule.action,rule.updatedAtMs,rule.id).changes) === 1;
   }
   deleteRule(id: string): boolean {
-    return this.transaction(()=>{this.statements.deletePowerGuard.run(id);return Number(this.statements.deleteRule.run(id).changes)===1;});
+    return this.transaction(() => {
+      if (Number(this.statements.deleteRule.run(id).changes) !== 1) return false;
+      this.statements.deletePowerGuard.run(id);
+      return true;
+    });
   }
   /**
    * The one forward migration of `power-window/1.0` rows (#1297), in one transaction: each `replacement` takes its row's

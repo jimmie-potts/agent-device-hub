@@ -11,7 +11,7 @@ import {isReadReceipt, receiptQualification} from '../read-receipts/qualificatio
 // Its own `operation` family (Hub #922, operation-records.ts) is the first such part: each tracked action's latest state.
 import type {DatabaseSync} from 'node:sqlite';
 import {createAgentState, type Consumer, type Outcome} from '@jimmie-potts/agent-state';
-import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
   sessionEntityId, type ApprovalRecoverRequest, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
@@ -33,6 +33,8 @@ import {ArtPart} from './art-part.js';
 import {ArtShowPart} from './art-show.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
+import {AUTOMATION_FAMILIES, holdsAutomationSecret, type HoldsAutomationSecret} from './automation-definitions.js';
+import type {Redactions} from '../log.js';
 import type {AutomationDevice} from './automation-devices.js';
 import type {ArtCatalogRead} from './art-catalog.js';
 import type {ModeParticipant} from './mode-participants.js';
@@ -192,6 +194,8 @@ export interface CoreModule extends BunnyModule {
   /** Internal qualified host admission bridge; assignment sends nothing. */
   setModeParticipants(participants: readonly ModeParticipant[]): void;
   setAutomationDevices(devices:readonly AutomationDevice[]):void;
+  /** Binds the runtime's live secret registry before opening the owner store. */
+  setAutomationRedactions(redactions: Redactions): void;
   /** The host binds its reader of the art owner's retained catalog for owner shows (Hub #1584); binding sends nothing. */
   setArtCatalog(read: ArtCatalogRead): void;
   /** The host binds only the fixed Music producer connection lifetime. */
@@ -236,6 +240,8 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
   let contentContext: ModuleContext | undefined;
   let ownership: CoreOwnership | undefined;
   let started = false;
+  let redactions: Redactions | undefined;
+  const containsAutomationSecret: HoldsAutomationSecret = data => redactions !== undefined && holdsAutomationSecret(redactions, data);
   const automation = (): AutomationControls => {
     if (core === undefined) throw new AutomationError('unavailable', 503);
     return core.automation;
@@ -261,7 +267,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
       }
       started = true;
       contentContext = context;
-      core = new Core(context, options, ownership);
+      core = new Core(context, options, ownership, containsAutomationSecret);
       return core.start();
     },
     stop: () => core?.stop(),
@@ -284,6 +290,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     },
     actions: {dispatch: action => core?.dispatch(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
     operatorActions: {dispatch: action => core?.dispatchOperator(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
+    setAutomationRedactions: registry => { redactions = registry; },
     setAutomationDevices:devices=>{
       if(core===undefined) throw new Error('core-not-started');
       core.setAutomationDevices(devices);
@@ -354,12 +361,13 @@ class Core {
   /** The start under way, which a stop waits for so that an owner it opens late is shut down too. */
   #starting: Promise<void> | undefined;
 
-  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic, history}: CoreOptions, ownership?: CoreOwnership) {
+  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic, history}: CoreOptions, ownership: CoreOwnership | undefined,
+    private readonly holdsAutomationSecret: HoldsAutomationSecret) {
     this.#sdk = context.sdk;
     this.#log = context.log;
     this.#clock = context.clock;
     this.#scheduler = context.scheduler;
-    this.#automation = new AutomationPart(context.scheduler,context.signal,artScheduleChoice);
+    this.#automation = new AutomationPart(context.scheduler, context.signal, artScheduleChoice, holdsAutomationSecret);
     this.#art = new ArtPart((authorization,target,compositionId)=>this.#automation.authorizeAmbient(authorization,target,compositionId));
     // The core's own `operation` family (Hub #922) comes first, then the parts later stories add.
     this.#inbox = new InboxRecords((action, handle) => this.#tracker.dispatchFromInbox(action, handle));
@@ -975,7 +983,14 @@ class Core {
         type: 'org.bunny.session.updated', subject: record.id, dataschema: sessionSchema(record), data: record,
       })) : [];
       for (const part of this.#parts) {
-        if ((part.families ?? []).some(family => families.includes(family))) states.push(...part.states?.(families) ?? []);
+        if (!(part.families ?? []).some(family => families.includes(family))) continue;
+        const current = part.states?.(families) ?? [];
+        if (part === this.#automation && current.some(state =>
+          AUTOMATION_FAMILIES.some(family => state.dataschema === `${SCHEMA_BASE}${family}/2.0`) &&
+          this.holdsAutomationSecret(state.data))) {
+          return errorBody('internal', {detail: 'an automation definition could not be served'});
+        }
+        states.push(...current);
       }
       return {revision: this.#store.revision, states};
     });

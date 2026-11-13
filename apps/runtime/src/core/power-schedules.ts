@@ -376,7 +376,11 @@ export function createRoutines(options:RoutineOptions) {
       return save({...saved,...input,definitionId:randomUUID(),updatedAtMs:options.clock()},commit);
     },
     setEnabled(id:string,enabled:boolean,commit=applyDefinition) {return save({...find(id),enabled,definitionId:randomUUID(),updatedAtMs:options.clock()},commit);},
-    remove(id:string,commit=applyDefinition) {find(id);store.deleteRule(id);commit(()=>{routines=routines.filter(saved=>saved.id!==id);rearm();});},
+    remove(id:string,commit=applyDefinition) {
+      find(id);
+      if (!store.deleteRule(id)) throw new Error('automation routine was not deleted');
+      commit(() => { routines = routines.filter(saved => saved.id !== id); rearm(); });
+    },
     /** Runs one occurrence now, enabled or not, and settles once each action's dispatch has answered. Nothing is claimed or scheduled. */
     async run(id:string,parent?:TraceContext):Promise<RunResult> {
       const saved=find(id),atMs=options.clock();

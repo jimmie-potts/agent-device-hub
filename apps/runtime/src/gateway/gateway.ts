@@ -1,5 +1,6 @@
 import {historyFilter, type HistoryFilter, type HistoryRow} from '../core/history.js';
 import type {AutomationControls} from '../core/automation-part.js';
+import {holdsAutomationSecret, isAutomationDefinitionFamily} from '../core/automation-definitions.js';
 import {AUTOMATION_PREFIX, automationRoute} from './automation-routes.js';
 // The runtime's gateway (Hub #835): every route of its listener but health. It serves the SDK edge for remote parts,
 // the `/api/v2` read routes, the core's operator action and the action routes of its dispatcher (#782), MCP, the
@@ -522,6 +523,9 @@ export class Gateway {
       if (only?.status === 'rejected' && serving.length === 1 && down.length === 0) throw only.reason;
       throw refuse('unavailable', serving.length === 0 ? 'the module that serves this family is not running' : 'no owner of this family could be read');
     }
+    if (isAutomationDefinitionFamily(family) && holdsAutomationSecret(this.#options.redactions, records)) {
+      throw refuse('internal', 'an automation definition could not be served');
+    }
     return json(200, {schema: 'family-read/2.0', family, records, unavailable: [...unavailable, ...down]});
   }
 
@@ -598,6 +602,9 @@ export class Gateway {
     // A record belongs to the family its schema names, at whatever version.
     const records = Object.fromEntries(families.map(family => [family, result.copy.states().filter(state => familyOf(state.dataschema) === family).map(state => state.data)]));
     await result.copy.close();
+    if (families.some(family => isAutomationDefinitionFamily(family) && holdsAutomationSecret(this.#options.redactions, records[family]))) {
+      throw refuse('internal', 'an automation definition could not be served');
+    }
     return json(200, {schema: 'snapshot-read/2.0', families, revision: result.message.data.revision, records});
   }
 

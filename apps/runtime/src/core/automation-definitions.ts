@@ -7,10 +7,19 @@ import {AutomationError, type AutomationSettings, type Rule} from './automation.
 import type {DefinitionCommit} from './automation-store.js';
 import type {CoreHandle} from './core.js';
 import type {Routine} from './power-schedules.js';
+import type {Redactions} from '../log.js';
 
 export const AUTOMATION_FAMILIES = ['automation-rule', 'automation-routine', 'automation-settings', 'automation-interrupt-set'] as const;
 type Family = typeof AUTOMATION_FAMILIES[number];
+export const isAutomationDefinitionFamily = (family: string): family is Family => AUTOMATION_FAMILIES.some(name => name === family);
+
+export function holdsAutomationSecret(registry: Redactions, value: unknown): boolean {
+  if (typeof value === 'string' || typeof value === 'number') return registry.holds(value);
+  if (value === null || typeof value !== 'object') return false;
+  return Object.values(value).some(member => holdsAutomationSecret(registry, member));
+}
 type Definition = {id: string};
+export type HoldsAutomationSecret = (data: object) => boolean;
 export type AutomationWriteContext = {parent?: TraceContext; authorize?(): void};
 
 export const ruleDefinition = ({id, name, enabled, trigger, action}: Rule) => ({id, name, enabled, trigger, action});
@@ -30,7 +39,7 @@ export class AutomationDefinitions {
   readonly #set: StatementSync;
   readonly #delete: StatementSync;
 
-  constructor(database: DatabaseSync, readonly core: CoreHandle) {
+  constructor(database: DatabaseSync, readonly core: CoreHandle, readonly holdsSecret: HoldsAutomationSecret) {
     database.exec(`CREATE TABLE IF NOT EXISTS automation_definition_revisions (
       family TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY (family, id)
     ) STRICT`);
@@ -56,6 +65,8 @@ export class AutomationDefinitions {
         const previous = before();
         if (tx.afterCommit === undefined) throw new Error('automation definitions require core commit confirmation');
         const result = mutate(apply => { tx.afterCommit?.(apply); }), next = after(result);
+        // The owner's write is still uncommitted, and no revision, history row or outbox message has been added.
+        if (next !== undefined && this.holdsSecret(next)) throw new AutomationError('internal', 500);
         if (sameState(previous, next, [])) return result;
         const id = next?.id ?? previous?.id;
         if (id === undefined) return result;

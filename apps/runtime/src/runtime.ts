@@ -345,8 +345,9 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   // `bunny.edge` says the edge is configured; `runtime.edge.serving` follows once it serves.
   // A record carries the listener's port, never its URL.
   recordLog(log, 'runtime.started', {'server.port': bound, 'bunny.module_count': modules.length, 'bunny.simulate': options.simulate === true, 'bunny.edge': credentials !== undefined});
-  await host.start();
   const core = modules.find(isCoreModule);
+  core?.setAutomationRedactions(logs.redactions);
+  await host.start();
   const wispr = modules.find(isWisprModule);
   const hosted = host.modules();
   if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) {

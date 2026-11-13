@@ -26,7 +26,7 @@ import {createArtPlans, type ArtPlans, type ArtPlanTarget} from './art-plans.js'
 import {createArtShow, type ArtShow} from './art-show.js';
 import type {ArtCatalogRead} from './art-catalog.js';
 import {
-  AUTOMATION_FAMILIES, AutomationDefinitions, interruptDefinition, routineDefinition, ruleDefinition, settingsDefinition, type AutomationWriteContext,
+  AUTOMATION_FAMILIES, AutomationDefinitions, interruptDefinition, routineDefinition, ruleDefinition, settingsDefinition, type AutomationWriteContext, type HoldsAutomationSecret,
 } from './automation-definitions.js';
 
 const KINDS = new Map([
@@ -79,7 +79,8 @@ export class AutomationPart implements CorePart {
   #limits:PowerLimits|undefined;
   readonly #scheduler: ModuleScheduler;
   readonly #signal: AbortSignal;
-  constructor(scheduler: ModuleScheduler, signal: AbortSignal, readonly choice:()=>number=Math.random) {this.#scheduler=scheduler;this.#signal=signal;}
+  constructor(scheduler: ModuleScheduler, signal: AbortSignal, readonly choice:()=>number=Math.random,
+    readonly holdsSecret: HoldsAutomationSecret = () => false) {this.#scheduler=scheduler;this.#signal=signal;}
   #handle: CoreHandle | undefined;
   #automation: Automation | undefined;
   #routines:Routines|undefined;
@@ -160,7 +161,7 @@ export class AutomationPart implements CorePart {
     if (handle===undefined) throw new Error('automation-not-started');
     const store=new AutomationStore(database,()=>{if(this.#closed) throw new Error('automation-closed');},
       {settings:DEFAULT_SETTINGS,interruptSet:[...DEFAULT_INTERRUPT_SET]});
-    this.#definitions = new AutomationDefinitions(database, handle);
+    this.#definitions = new AutomationDefinitions(database, handle, this.holdsSecret);
     this.#art=createArtPlans({clock:()=>handle.clock.now(),scheduler:this.#scheduler,active:()=>!this.#closed && !this.#signal.aborted,
       targets:()=>this.#configured.flatMap((device):ArtPlanTarget[]=>device.owner==='bunny/modules/pixoo'?[{target:device.id,kind:'pixoo'}]
         :device.owner==='bunny/modules/tidbyt'?[{target:device.id,kind:'tidbyt'}]:[]),
