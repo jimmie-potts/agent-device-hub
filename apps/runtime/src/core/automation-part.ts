@@ -4,16 +4,16 @@ import type {DatabaseSync} from 'node:sqlite';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {AgentOccurrence, OperationRecord, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog,type Cancel,type ModuleScheduler,type SyncedCopy, Outcome} from '@jimmie-potts/sdk';
+import {recordLog,type Cancel,type Clock,type ModuleScheduler,type StateDraft,type SyncedCopy, Outcome} from '@jimmie-potts/sdk';
 import {LivePublication} from './live-publication.js';
 import {Backoff} from './backoff.js';
 import type {CoreHandle, CorePart} from './core.js';
 import {AutomationStore} from './automation-store.js';
-import {AutomationError, createAutomation, DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS, type Automation, type AutomationSettings, type LogEntry, type Rule} from './automation.js';
+import {AutomationError, createAutomation, DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS, storedAutomationSettings, storedEventRules, storedInterruptKinds, type Automation, type AutomationSettings, type LogEntry, type Rule} from './automation.js';
 import type {ModeParticipant} from './mode-participants.js';
 import type {CoreChange} from './store.js';
 import type {Operation} from './operations.js';
-import {createRoutines, routineCommand, type Routines, type Routine, type PowerDispatchOptions} from './power-schedules.js';
+import {createRoutines, migratePowerWindows, routineCommand, storedRoutines, type Routines, type Routine, type PowerDispatchOptions} from './power-schedules.js';
 import {createPowerLimits,PowerLimitStore,type PowerLimits} from './power-limits.js';
 import {checkAutomationDevices, type AutomationDevice} from './automation-devices.js';
 import {createArtSchedule,type ArtSchedule} from './art-schedule.js';
@@ -60,26 +60,49 @@ export class AutomationPart implements CorePart {
   readonly families = ['power-limit', 'art-schedule', ...AUTOMATION_FAMILIES];
   readonly states = (families: readonly string[]) => {
     const definitions = this.#definitions;
-    return [
-      ...(families.includes('power-limit') ? (this.#limits?.records() ?? []).map(record =>
-        ({type: 'org.bunny.power-limit.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/power-limit/2.0', data: record})) : []),
-      ...(families.includes('art-schedule') && this.#schedule !== undefined ?
-        [{type: 'org.bunny.art-schedule.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-schedule/2.0', data: this.#schedule.get()}] : []),
-      ...(definitions !== undefined && this.#automation !== undefined && this.#routines !== undefined ? [
-        ...(families.includes('automation-rule') ? this.#automation.rules().map(rule => definitions.current('automation-rule', ruleDefinition(rule))) : []),
-        ...(families.includes('automation-routine') ? this.#routines.definitions().map(routine => definitions.current('automation-routine', routineDefinition(routine))) : []),
-        ...(families.includes('automation-settings') ? [definitions.current('automation-settings', settingsDefinition(this.#automation.settings()))] : []),
-        ...(families.includes('automation-interrupt-set') ? [definitions.current('automation-interrupt-set', interruptDefinition(this.#automation.interruptSet()))] : []),
-      ] : []),
-    ];
+    const retained = this.#retained;
+    const engine = this.#automation;
+    const routines = this.#routines;
+    const drafts: StateDraft[] = [];
+    if (families.includes('power-limit')) {
+      const records = this.#limits?.records() ?? retained?.limits.all().flatMap(entry => entry.record === undefined ? [] : [entry.record]) ?? [];
+      drafts.push(...records.map(record =>
+        ({type: 'org.bunny.power-limit.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/power-limit/2.0', data: record})));
+    }
+    if (families.includes('art-schedule')) {
+      const record = this.#schedule?.get() ?? retained?.art.get().record;
+      if (record !== undefined) {
+        drafts.push({type: 'org.bunny.art-schedule.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-schedule/2.0', data: record});
+      }
+    }
+    if (definitions === undefined || (retained === undefined && (engine === undefined || routines === undefined))) return drafts;
+
+    if (families.includes('automation-rule')) {
+      const rules = retained === undefined ? engine?.rules() ?? [] : storedEventRules(retained.store);
+      drafts.push(...rules.map(rule => definitions.current('automation-rule', ruleDefinition(rule))));
+    }
+    if (families.includes('automation-routine')) {
+      const saved = retained === undefined ? routines?.definitions() ?? [] : storedRoutines(retained.store);
+      drafts.push(...saved.map(routine => definitions.current('automation-routine', routineDefinition(routine))));
+    }
+    if (families.includes('automation-settings')) {
+      const settings = retained === undefined ? engine?.settings() : storedAutomationSettings(retained.store);
+      if (settings !== undefined) drafts.push(definitions.current('automation-settings', settingsDefinition(settings)));
+    }
+    if (families.includes('automation-interrupt-set')) {
+      const kinds = retained === undefined ? engine?.interruptSet() : storedInterruptKinds(retained.store);
+      if (kinds !== undefined) drafts.push(definitions.current('automation-interrupt-set', interruptDefinition(kinds)));
+    }
+    return drafts;
   };
   /** An empty settings collection is authoritative only after every covered owner has opened. */
   settingsAvailable(): boolean {
-    return !this.#closed && this.#definitions !== undefined && this.#automation !== undefined &&
-      this.#routines !== undefined && this.#limits !== undefined && this.#schedule !== undefined;
+    return !this.#closed && this.#definitions !== undefined && (this.#retained !== undefined ||
+      (this.#automation !== undefined && this.#routines !== undefined && this.#limits !== undefined && this.#schedule !== undefined));
   }
 
   #definitions: AutomationDefinitions | undefined;
+  #retained: {store: AutomationStore; limits: PowerLimitStore; art: ArtScheduleStore} | undefined;
   #schedule:ArtSchedule|undefined;
   #inputs:ArtScheduleInputs|undefined;
   #limits:PowerLimits|undefined;
@@ -162,11 +185,30 @@ export class AutomationPart implements CorePart {
     });
   }
 
+  #store(database: DatabaseSync): AutomationStore {
+    return new AutomationStore(database, () => {
+      if (this.#closed) throw new Error('automation-closed');
+    }, {settings: DEFAULT_SETTINGS, interruptSet: [...DEFAULT_INTERRUPT_SET]});
+  }
+
+  openSettings(database: DatabaseSync): void {
+    const store = this.#store(database);
+    const definitions = new AutomationDefinitions(database, undefined, this.holdsSecret);
+    const limits = new PowerLimitStore(database);
+    const art = new ArtScheduleStore(database);
+    this.#definitions = definitions;
+    this.#retained = {store, limits, art};
+  }
+
+  migrateRetainedRoutines(clock: Clock): void {
+    if (this.#retained === undefined) throw new Error('automation-settings-unavailable');
+    migratePowerWindows(this.#retained.store, clock.now());
+  }
+
   open(database: DatabaseSync): void {
     const handle=this.#handle;
     if (handle===undefined) throw new Error('automation-not-started');
-    const store=new AutomationStore(database,()=>{if(this.#closed) throw new Error('automation-closed');},
-      {settings:DEFAULT_SETTINGS,interruptSet:[...DEFAULT_INTERRUPT_SET]});
+    const store = this.#store(database);
     this.#definitions = new AutomationDefinitions(database, handle, this.holdsSecret);
     this.#art=createArtPlans({clock:()=>handle.clock.now(),scheduler:this.#scheduler,active:()=>!this.#closed && !this.#signal.aborted,
       targets:()=>this.#configured.flatMap((device):ArtPlanTarget[]=>device.owner==='bunny/modules/pixoo'?[{target:device.id,kind:'pixoo'}]

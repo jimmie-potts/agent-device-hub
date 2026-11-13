@@ -230,6 +230,10 @@ export function migratePowerWindows(store:AutomationStore,nowMs:number):number {
   if(pairs.length>0) store.splitRules(pairs);
   return pairs.length;
 }
+export function storedRoutines(store: AutomationStore): Routine[] {
+  return store.rules().filter(saved => saved.kind === 'routine').map(fromRow);
+}
+
 /** Native host-local clock behavior; strict future selection, including after restart or enabling right at the minute. */
 export function nextOccurrence(routine:Pick<Routine,'days'|'time'>,afterMs:number):RoutineOccurrence {
   for(let offset=0;offset<=7;offset++) {
@@ -249,7 +253,7 @@ type FireOutcome=RunResult['outcome']|'skipped';
 export function createRoutines(options:RoutineOptions) {
   const {store}=options;
   migratePowerWindows(store,options.clock());
-  let routines=store.rules().filter(saved=>saved.kind==='routine').map(fromRow),closed=false;
+  let routines=storedRoutines(store),closed=false;
   let cancel:Cancel|undefined;
   const pending=new Set<Promise<void>>(),inFlight=new Set<string>();
   const find=(id:string)=>routines.find(saved=>saved.id===id)??invalid('unknown-rule',404);
@@ -356,7 +360,7 @@ export function createRoutines(options:RoutineOptions) {
   };
   const save=(saved:Routine,commit:DefinitionCommit):Routine=>{
     if(!store.replaceRule(row(saved))) return invalid('unknown-rule',404);
-    const next = store.rules().filter(item => item.kind === 'routine').map(fromRow);
+    const next = storedRoutines(store);
     commit(() => { routines = next; rearm(); });
     return view(saved);
   };

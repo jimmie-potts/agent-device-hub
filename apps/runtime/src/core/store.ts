@@ -357,7 +357,7 @@ export class CoreStore implements Storage {
    * store's revision, commit count and records from the file, and the store's tables are written only once the file is
    * known to be this owner's or empty.
    */
-  async acquire(ownerId: string, signal: AbortSignal): Promise<StorageLease> {
+  async acquire(ownerId: string, signal: AbortSignal): Promise<Omit<StorageLease, 'load'> & {load(signal: AbortSignal): Promise<DurableState | null>}> {
     if (!ID.test(ownerId)) throw new Error('storage-unavailable');
     // One lease at a time: an attempt still under way, or a lease not yet released, is waited for.
     while (this.#leased) {

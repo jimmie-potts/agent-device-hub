@@ -461,6 +461,22 @@ host-local profile still refuse them. Images from before Hub #1594 admit only th
 coding worker's role and refuse the whole file at start.
 Host-local and private-proxy profiles still refuse device control and named devices.
 
+### Settings-only standby
+
+The production and private-proxy overlays accept explicit
+`BUNNY_CONTROL=standby` when rendered. The default stays `disabled`.
+Standby opens the core's retained settings under the normal runtime lease.
+Only local status and health are served. A configured gateway stays off,
+including on credential reload. The configuration may omit `edge`; if
+supplied, it follows the private-proxy checks, including MCP off. Use no
+non-core module sections, core secret references, producer source or Pixoo
+binding in standby.
+
+Restart keeps operational work and pending publications in the store and
+starts no device control. This is a source capability. Selecting a standby
+host, running a trial and transferring device control require the separate
+decisions in [ADR 0015](decisions/0015-two-machine-runtime.md).
+
 ### Grant a credential to the running core
 
 The running core reads `edge.json` again on SIGHUP, but the entrypoint checks it

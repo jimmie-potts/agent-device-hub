@@ -45,6 +45,30 @@ function localFixture(profile = 'host-local') {
   return {...f,network,run};
 }
 
+test('operator verifies explicit standby in production and private-proxy and refuses it in other profiles', async () => {
+  for (const profile of ['production', 'private-proxy']) {
+    const allowed = localFixture(profile);
+    allowed.info.Config.Env[1] = 'BUNNY_CONTROL=standby';
+    assert.equal((await operate(plan('start'), allowed.run)).status, 'running');
+    assert.ok(allowed.calls.some(args => args[0] === 'start'));
+    for (const change of ['BUNNY_PORT=8788', 'BUNNY_INGEST_SOURCE=bunny/parts/hub-' + '1'.repeat(32)]) {
+      const refused = localFixture(profile);
+      refused.info.Config.Env[1] = 'BUNNY_CONTROL=standby';
+      const key = change.split('=')[0] + '=';
+      refused.info.Config.Env = [...refused.info.Config.Env.filter(entry => !entry.startsWith(key)), change];
+      await assert.rejects(operate(plan('start'), refused.run));
+      assert.ok(!refused.calls.some(args => args[0] === 'start'));
+    }
+  }
+  const isolated = fixture(), local = localFixture();
+  isolated.info.Config.Env = ['BUNNY_CONTROL=standby'];
+  local.info.Config.Env[1] = 'BUNNY_CONTROL=standby';
+  for (const refused of [isolated, local]) {
+    await assert.rejects(operate(plan('start'), refused.run));
+    assert.ok(!refused.calls.some(args => args[0] === 'start'));
+  }
+});
+
 test('production operator accepts explicit control and refuses unsafe mounts and extra listeners before start', async () => {
   const allowed = localFixture('production');
   allowed.info.Config.Env[1] = 'BUNNY_CONTROL=enabled';

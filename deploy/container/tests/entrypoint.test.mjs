@@ -11,6 +11,92 @@ import * as entrypoint from '../entrypoint.mjs';
 const productionEdge = () => ({credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback',
   launcher: false, mcp: false, privateProxy: {origin: 'https://synthetic.ts.net', tokenDigest: '1'.repeat(64)}});
 
+test('explicit standby admits only production and private-proxy options without producers or devices', () => {
+  for (const access of ['production', 'private-proxy']) {
+    const env = {BUNNY_ACCESS: access, BUNNY_CONTROL: 'standby'};
+    assert.equal(containerOptions(env).control, 'standby');
+    for (const change of [{BUNNY_PORT: '8788'}, {BUNNY_STATE_DIR: '/other'}, {BUNNY_CONFIG: '/other'},
+      {BUNNY_INGEST_SOURCE: 'bunny/parts/hub-' + '1'.repeat(32)}, {BUNNY_PIXOO_BIND: '192.168.1.10'}]) {
+      assert.throws(() => containerOptions({...env, ...change}), {message: 'container-options-refused'});
+    }
+  }
+  for (const access of ['host-local', 'isolated']) {
+    assert.throws(() => containerOptions({BUNNY_ACCESS: access, BUNNY_CONTROL: 'standby'}), {message: 'container-options-refused'});
+  }
+});
+
+test('standby entrypoint validates private inputs before state and runs only the bound core with edge off', async () => {
+  const core = {manifest: {name: 'core', apiVersion: '1.3'}};
+  const coreFactory = {name: 'core'};
+  const options = containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'standby'});
+  const steps = [];
+  const lease = {releaseBeforeStartup: () => steps.push('release')};
+  let config = {modules: {}};
+  let credentialsFail = false;
+  let ownerFail = false;
+  let restoreFail = false;
+  const dependencies = {
+    readRuntimeConfig: async () => config,
+    runtime: {standbyCoreFactory: coreFactory, buildModules: (factories, simulate) => {
+      assert.deepEqual(factories, [coreFactory]);
+      assert.equal(simulate, false);
+      return [core];
+    }},
+    checkConfiguration,
+    checkCredentials: async () => {
+      steps.push('credentials');
+      if (credentialsFail) throw new Error('synthetic-credentials-refused');
+    },
+    prepareOwnershipRoot: async () => { steps.push('prepare'); },
+    acquireRuntimeOwnership: async () => {
+      steps.push('lease');
+      if (ownerFail) throw new Error('synthetic-owner-refused');
+      return lease;
+    },
+    refusePendingRestore: async () => {
+      steps.push('restore-check');
+      if (restoreFail) throw new Error('restore-pending');
+    },
+    bindCoreRuntimeOwnership: (instance, acquired) => {
+      assert.equal(instance, core);
+      assert.equal(acquired, lease);
+      steps.push('bind');
+    },
+    parseArguments: () => ({}),
+    runProcess: async (parsed, startup) => {
+      assert.equal(parsed.edge, false);
+      assert.deepEqual(startup, {modules: [core], config, listener: 'container-host-local'});
+      steps.push('process');
+    },
+  };
+  await entrypoint.startContainer(options, dependencies);
+  assert.deepEqual(steps.splice(0), ['prepare', 'lease', 'restore-check', 'bind', 'process']);
+  config = {modules: {core: {}}, edge: productionEdge()};
+  await entrypoint.startContainer(options, dependencies);
+  assert.deepEqual(steps.splice(0), ['credentials', 'prepare', 'lease', 'restore-check', 'bind', 'process']);
+  for (const invalid of [
+    {modules: {art: {}}}, {modules: {core: null}}, {modules: {core: {secrets: {}}}},
+    {modules: {}, diagnostics: {modules: {art: 'debug'}}}, {modules: {}, edge: {}},
+    {modules: {}, edge: {...productionEdge(), mcp: true}},
+  ]) {
+    config = invalid;
+    await assert.rejects(entrypoint.startContainer(options, dependencies), {message: 'container-browser-config-refused'});
+    assert.deepEqual(steps.splice(0), []);
+  }
+  config = {modules: {}, edge: productionEdge()};
+  credentialsFail = true;
+  await assert.rejects(entrypoint.startContainer(options, dependencies), {message: 'synthetic-credentials-refused'});
+  assert.deepEqual(steps.splice(0), ['credentials']);
+  credentialsFail = false;
+  ownerFail = true;
+  await assert.rejects(entrypoint.startContainer(options, dependencies), {message: 'synthetic-owner-refused'});
+  assert.deepEqual(steps.splice(0), ['credentials', 'prepare', 'lease']);
+  ownerFail = false;
+  restoreFail = true;
+  await assert.rejects(entrypoint.startContainer(options, dependencies), {message: 'restore-pending'});
+  assert.deepEqual(steps.splice(0), ['credentials', 'prepare', 'lease', 'restore-check', 'release']);
+});
+
 test('production selection defaults disabled, admits explicit control and bounds the optional Pixoo address', () => {
   assert.equal(containerOptions({BUNNY_ACCESS: 'production'}).control, 'disabled');
   assert.equal(containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled'}).port, 18788);
@@ -351,6 +437,27 @@ test('check-credentials runs the start-time credential check on the installed fi
   await assert.rejects(entrypoint.checkConfiguredCredentials(config, {access: 'isolated'}), {message: 'container-command-refused'});
   await assert.rejects(entrypoint.main(['check-credentials'], {}), {message: 'container-command-refused'});
   await assert.rejects(entrypoint.main(['check-credentials', 'extra'], {}), {message: 'container-command-refused'});
+});
+
+test('standby accepts an omitted edge and refuses missing, invalid and out-of-profile grants', async t => {
+  const {CREDENTIALS_SCHEMA} = await import('../../../apps/runtime/dist/src/credentials.js');
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-standby-credentials-')));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const file = join(root, 'edge.json'), config = {edge: {credentials: file}};
+  for (const access of ['private-proxy', 'production']) {
+    const options = {access, control: 'standby'};
+    assert.deepEqual(await entrypoint.checkConfiguredCredentials({}, options), {status: 'admitted', credentials: 0});
+    await rm(file, {force: true});
+    await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {code: 'edge-credentials-missing'});
+    await writeFile(file, '{', {mode: 0o600});
+    await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {code: 'edge-credentials-invalid'});
+    const grant = {id: 'reader', source: 'bunny/parts/reader', digest: '2'.repeat(64), scopes: ['read']};
+    const document = credential => JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: [credential]});
+    await writeFile(file, document({...grant, scopes: ['admin']}), {mode: 0o600});
+    await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {message: 'container-browser-config-refused'});
+    await writeFile(file, document(grant), {mode: 0o600});
+    assert.deepEqual(await entrypoint.checkConfiguredCredentials(config, options), {status: 'admitted', credentials: 1});
+  }
 });
 
 // The history rules each profile's core is built with (#1795). Every profile must keep history by the bookkeeping

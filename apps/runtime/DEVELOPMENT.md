@@ -6,6 +6,14 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
+Standby startup uses the existing Runtime unit tests and Core admission jobs.
+After the root build, run `node --test apps/runtime/dist/tests/standby.test.js
+deploy/container/tests/entrypoint.test.mjs scripts/tests/bunny.test.mjs`.
+The fixtures exercise profile admission, settings readiness, local health,
+work refusal and retained state with a controlled clock and synthetic inputs.
+See [operator verification](../../docs/operator-verification.md) for its
+additional source checks.
+
 ### Codex read-receipt checks
 
 After `npm run build`, run

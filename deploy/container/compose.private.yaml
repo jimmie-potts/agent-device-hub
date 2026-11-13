@@ -5,3 +5,4 @@ services:
       io.bunny.access: private-proxy
     environment:
       BUNNY_ACCESS: private-proxy
+      BUNNY_CONTROL: ${BUNNY_CONTROL:-disabled}

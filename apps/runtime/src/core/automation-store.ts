@@ -88,7 +88,11 @@ export class AutomationStore {
     if(this.db.isTransaction)return work();
     this.db.exec('BEGIN IMMEDIATE');
     try { const result = work(); this.db.exec('COMMIT'); return result; }
-    catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    catch (error) {
+      // SQLite can roll back the transaction itself on SQLITE_FULL.
+      if (this.db.isTransaction) this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
   private static rule(row: Record<string,unknown>): RuleRow {
     return {id:String(row.id),name:String(row.name),enabled:row.enabled === 1,kind:String(row.kind),trigger:String(row.trigger),action:String(row.action),

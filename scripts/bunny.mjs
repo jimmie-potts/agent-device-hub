@@ -75,6 +75,11 @@ export async function access(info, project, run) {
   const profile = value('BUNNY_ACCESS') ?? 'isolated';
   const ingestSource = value('BUNNY_INGEST_SOURCE');
   const pixooBind = value('BUNNY_PIXOO_BIND');
+  const control = value('BUNNY_CONTROL');
+  if (profile === 'production' || control === 'standby') {
+    containerOptions(Object.fromEntries(['BUNNY_ACCESS', 'BUNNY_CONTROL', 'BUNNY_PORT', 'BUNNY_STATE_DIR', 'BUNNY_CONFIG',
+      'BUNNY_INGEST_SOURCE', 'BUNNY_PIXOO_BIND'].flatMap(key => value(key) === undefined ? [] : [[key, value(key)]])));
+  }
   if (pixooBind !== undefined && profile !== 'production') refuse();
   // A Docker network-mode identifier, not an evidence outcome.
   const isolatedNetwork = 'none';
@@ -87,8 +92,6 @@ export async function access(info, project, run) {
   const name = project + '_local';
   const networks = info.NetworkSettings?.Networks;
   if (profile === 'production') {
-    containerOptions(Object.fromEntries(['BUNNY_ACCESS', 'BUNNY_CONTROL', 'BUNNY_PORT', 'BUNNY_STATE_DIR', 'BUNNY_CONFIG',
-      'BUNNY_INGEST_SOURCE', 'BUNNY_PIXOO_BIND'].flatMap(key => value(key) === undefined ? [] : [[key, value(key)]])));
     if (info.HostConfig?.Privileged === true || info.HostConfig?.ReadonlyRootfs !== true
       || JSON.stringify(info.HostConfig?.CapDrop) !== JSON.stringify(['ALL'])
       || JSON.stringify(info.HostConfig?.SecurityOpt) !== JSON.stringify(['no-new-privileges:true'])
@@ -100,7 +103,7 @@ export async function access(info, project, run) {
   }
   if (!['host-local', 'private-proxy', 'production'].includes(profile) || info.Config?.Labels?.['io.bunny.access'] !== profile
     || (ingestSource !== undefined && !/^bunny\/parts\/hub-[0-9a-f]{32}(?![\s\S])/.test(ingestSource))
-    || (profile !== 'production' && value('BUNNY_CONTROL') !== 'disabled') || value('BUNNY_PORT') !== '18788'
+    || (profile !== 'production' && control !== 'disabled' && control !== 'standby') || value('BUNNY_PORT') !== '18788'
     || ![undefined, '/var/lib/bunny'].includes(value('BUNNY_STATE_DIR'))
     || ![undefined, '/etc/bunny/runtime.json'].includes(value('BUNNY_CONFIG'))
     || !localBinding(ports, pixooBind)
