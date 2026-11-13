@@ -30,6 +30,7 @@ import {
 import {
   fullDisk, Outbox, recordLog, SdkError, type AddMessage, type Clock, type Draft, type LogFields, type Logger, type OutboxOptions, type Sdk, type SpanRecorder,
 } from '@jimmie-potts/sdk';
+import {errorFields} from '../log.js';
 import {takeLock, type Lock} from './lock.js';
 import {borrowRuntimeOwnership, type CoreOwnership} from '../runtime-ownership.js';
 import {History, type HistoryEntry, type HistoryRules, type OperationStep} from './history.js';
@@ -64,6 +65,8 @@ export interface CoreTransaction {
   readonly atMs: number;
   /** The revision this transaction's changes carry: the core's next revision, the same for every call. */
   revision(): number;
+  /** Installs a part's in-memory state after a verified commit, before publication. */
+  afterCommit?(apply: () => void): void;
   /**
    * Stores a message in the core's outbox, in this transaction. It goes out after the commit, in order, and history
    * keeps it (#782): a state as a compact change event, anything else whole.
@@ -555,12 +558,14 @@ export class CoreStore implements Storage {
     const added: Message[] = [];
     let addTo: AddMessage = () => { throw new Error('add a message only inside the transaction'); };
     let adds = 0;
+    const afterCommit: (() => void)[] = [];
     const tx: CoreTransaction = {
       database: this.#db, atMs,
       revision: () => {
         revision ??= this.#revision + 1;
         return revision;
       },
+      afterCommit: apply => { afterCommit.push(apply); },
       add: (key, draft, options) => {
         adds += 1;
         const message = addTo(key, draft, options);
@@ -643,6 +648,15 @@ export class CoreStore implements Storage {
     for (const id of plan.removed) this.#records.delete(id);
     this.#restarted = plan.restarted;
     this.#hostSessions = plan.hostSessions;
+    for (const apply of afterCommit) {
+      try { apply(); }
+      catch (error) {
+        try {
+          if (this.#options.log !== undefined) recordLog(this.#options.log, 'operation.failed',
+            {'bunny.operation': 'automation', 'bunny.code': 'internal', ...errorFields(error)});
+        } catch { /* A diagnostic failure cannot change a committed result. */ }
+      }
+    }
     const publicationEnded=this.#options.committed?.({revision:this.#revision,messages:added});
     if (adds > 0) this.#options.beforePublish?.();
     const sending = sent.catch(() => {});

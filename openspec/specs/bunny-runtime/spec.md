@@ -1941,3 +1941,20 @@ A disposable run of the fixture runtime SHALL run on virtual time when its run f
 #### Scenario: A reader held past the run's bound
 - **WHEN** after a restart on virtual time the reader's re-registration is held until the run's time has passed the 15 s bound and stopped moving, then let through
 - **THEN** the restart resolves with the reader resynced, rather than failing at the bound of the run's time
+
+### Requirement: Saved automation definitions in sync and history
+
+The core SHALL serve current saved event rules, weekly routines, automation settings and interrupt kinds through SDK sync, including definitions already present in its store and seeded defaults. The existing owner write paths SHALL commit an effective edit and its definition fact together through the core transaction and outbox. Rule and routine deletion SHALL retain a removal at the same ID. Failed writes SHALL leave the saved definition, evaluator, history and outbox unchanged. Repeated identical definitions, occurrence watermarks, budget use and automation log entries SHALL add no definition history.
+
+#### Scenario: First sync on a populated store
+
+- **WHEN** the core opens a store with rules, routines or legacy power windows, and edited settings
+- **THEN** SDK sync serves the current owner values, including routines produced by the existing split
+- **AND** the open and sync add no definition history
+
+#### Scenario: Effective owner edits and refused saves
+
+- **WHEN** an authorized owner creates, edits, enables, disables or deletes a rule or routine, or changes settings or interrupt kinds
+- **THEN** history and sync reflect the committed definition edit or removal
+- **WHEN** the transaction is refused
+- **THEN** the previous definition is still current and governs evaluation, and there is no new fact or outbox message

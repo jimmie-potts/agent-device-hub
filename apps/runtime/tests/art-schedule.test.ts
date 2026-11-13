@@ -93,19 +93,19 @@ void test('rain facts require a future qualifying hour and cover the complete al
 
 import {InProcessBus,childOf,type TraceContext} from '@jimmie-potts/sdk';
 import {ArtScheduleInputs} from '../src/core/art-schedule-inputs.js';
-import {ModuleHarness} from '@jimmie-potts/sdk/testing';
+import {CoreHarness} from './fixtures/core-harness.js';
 import {createCoreModule} from '../src/core/core.js';
 import {manualClock,stateDir,flush} from './support.js';
 void test('actual core exposes revisioned policy, publishes it, and reopens without resetting saved authority',async context=>{
   const directory=await stateDir(context),clock=manualClock(local(8)),bus=new InProcessBus();
   const make=()=>createCoreModule({artScheduleChoice:()=>0.5});let core=make();
-  let harness=new ModuleHarness(core,{stateDir:directory,bus,clock:{now:clock.now},scheduler:clock.scheduler});context.after(()=>harness.stop());
+  let harness=new CoreHarness(core,{stateDir:directory,bus,clock:{now:clock.now},scheduler:clock.scheduler});context.after(()=>harness.stop());
   await harness.start();assert.ok(core.automation.artSchedule);const first=core.automation.artSchedule.get();assert.equal(first.settingsRevision,0);assert.equal(first.policy.enabled,false);
   const saved=await core.automation.artSchedule.save({expectedSettingsRevision:0,policy:{...policy,ambient:false}});await flush();
   assert.equal(saved.settingsRevision,1);assert.ok(saved.nextOpportunity);assert.equal(saved.weather,'disabled');
   await assert.rejects(core.automation.artSchedule.save({expectedSettingsRevision:0,policy}),error=>error instanceof Error&&error.message==='revision-conflict');
-  core.automation.replaceSettings({...DEFAULT_SETTINGS,noFlourishes:true});assert.equal(core.automation.artSchedule.get().settingsRevision,1);
-  await harness.stop();assert.deepEqual(harness.failures,[]);core=make();harness=new ModuleHarness(core,{stateDir:directory,bus,clock:{now:clock.now},scheduler:clock.scheduler});
+  await core.automation.replaceSettings({...DEFAULT_SETTINGS,noFlourishes:true});assert.equal(core.automation.artSchedule.get().settingsRevision,1);
+  await harness.stop();assert.deepEqual(harness.failures,[]);core=make();harness=new CoreHarness(core,{stateDir:directory,bus,clock:{now:clock.now},scheduler:clock.scheduler});
   await harness.start();await flush();assert.ok(core.automation.artSchedule);assert.equal(core.automation.artSchedule.get().settingsRevision,1);assert.equal(core.automation.artSchedule.get().policy.enabled,true);
 });
 

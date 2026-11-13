@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/automation-rule/2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "name",
+    "enabled",
+    "trigger",
+    "action"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "\\S",
+      "$ref": "https://bunny.invalid/events/session/2.0#/$defs/displayText"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "kind"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*){0,3}$"
+        },
+        "alias": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id",
+          "type": "string",
+          "pattern": "^(?!.*(?:^|[^A-Za-z0-9])(?:sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,}|.*AKIA[A-Z0-9]{16})"
+        }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mood",
+        "priorityClass",
+        "durationMs",
+        "targets"
+      ],
+      "properties": {
+        "mood": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id",
+          "type": "string",
+          "pattern": "^(?!.*(?:^|[^A-Za-z0-9])(?:sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,}|.*AKIA[A-Z0-9]{16})"
+        },
+        "priorityClass": {
+          "enum": [
+            "event",
+            "flourish"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 300000
+        },
+        "palette": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$"
+          }
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+          }
+        }
+      }
+    }
+  }
+}

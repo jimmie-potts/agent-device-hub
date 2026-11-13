@@ -38,7 +38,20 @@ async function boundary(context: TestContext) {
   let revision=0;
   const limits=createPowerLimits({store:new PowerLimitStore(database,work=>Promise.resolve(work({database,atMs:clock.now(),revision:()=>++revision,take:()=>{},record:()=>{},step:()=>{},add:(_key,draft,options)=>{if(options?.parent!==undefined)published.push(options.parent);return {...draft,specversion:'1.0',bunnyprofile:'2.0',id:'synthetic-publication',source:'bunny/core',time:new Date(clock.now()).toISOString(),datacontenttype:'application/json',...parent};}}))),
     clock:clock.now,scheduler,active:()=>true,targets:()=>['desk-lamp'],owner:()=> 'bunny/modules/wemo',current:()=>record,read:()=>Promise.resolve(record),send:()=>Promise.reject(new Error('unexpected dispatch'))});
-  const controls={...automation,routines,limits};
+  const controls = {...automation, limits,
+    create: (value: unknown, owner: boolean, authorize?: (targets: readonly string[]) => void) => automation.create(value, owner, authorize),
+    update: (id: string, value: unknown, authorize?: (targets: readonly string[]) => void) => automation.update(id, value, authorize),
+    setEnabled: (id: string, enabled: boolean) => automation.setEnabled(id, enabled),
+    remove: (id: string) => { automation.remove(id); },
+    replaceInterruptSet: (value: unknown) => automation.replaceInterruptSet(value),
+    replaceSettings: (value: unknown) => automation.replaceSettings(value),
+    routines: {...routines,
+      create: (value: unknown, owner?: boolean) => routines.create(value, owner),
+      update: (id: string, value: unknown) => routines.update(id, value),
+      setEnabled: (id: string, enabled: boolean) => routines.setEnabled(id, enabled),
+      remove: (id: string) => { routines.remove(id); },
+    },
+  };
   const logs: LogRecord[] = [], writer = new LogWriter(record => { logs.push(record); }, 'debug', clock), spans = new RecordedSpans();
   let ownerFailures = 0;
   const host = {modules: () => [], invoke: async <T>(_name: string, work: () => T | Promise<T>): Promise<T> => {

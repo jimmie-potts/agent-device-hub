@@ -575,6 +575,23 @@ subject that is not a routing ID, checks the Hub-mode table for each
 participating device kind, and checks that `device/2.1` is `device/2.0` plus
 `held`, with every 2.0 record valid under both versions.
 
+### Automation definitions
+
+The core owns `automation-rule/2.0`, `automation-routine/2.0`,
+`automation-settings/2.0` and `automation-interrupt-set/2.0`. Each state
+carries an entity ID and core revision. Rule and routine IDs match the saved
+definitions. Settings and the interrupt set use singleton IDs `settings` and
+`interrupt-set`. Rule and routine deletions use the standard `removal/2.0`
+payload and the same family and ID on the state routing key.
+
+Rule state carries the name, enable flag, event trigger and moment action.
+Routine state carries the name, enable flag, weekdays, local time and ordered
+actions with their optional Hub-mode conditions. Settings state carries
+`noFlourishes`, quiet hours and budget limits. Interrupt-set state carries the
+sorted kinds. The schemas omit save timestamps, internal definition identities,
+next occurrences, watermarks, budget consumption and automation logs. All four
+families declare empty bookkeeping lists.
+
 ### Bookkeeping members of state families
 
 `@jimmie-potts/event-contracts/v2/bookkeeping` declares, for every state family

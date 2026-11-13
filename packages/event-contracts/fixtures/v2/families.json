@@ -1,6 +1,163 @@
 {
  "description": "Core payload families of profile 2.0 (Hub #842 and #918). `valid` holds at least one message for every family and every message kind they use. Each invalid case copies a valid message and sets the JSON pointers in `set`; null removes the member. `detail` pins where it fails. Each scenario applies valid messages in order to the reference consumer copy in tests/consumer.mjs and names the messages whose payloads remain. The root session's state, occurrence and removal messages are what the real owner published in one reference history, which apps/runtime/tests/reference-history.test.ts replays (Hub #831). Only those messages come from it: the Claude session, inbox item and sync fixtures keep revisions of their own, chosen for the consumer rules they show, so `sync-completed` at revisions 14 and 15 still lists the root session that the reference history retires at 12. A finished turn is never an inbox item (Hub #782 removed the turn-ended item), so the inbox items are operations only.",
  "valid": {
+ "automation-rule": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "automation-rule-fixture",
+  "source": "bunny/core",
+  "type": "org.bunny.automation-rule.updated",
+  "subject": "rule-synthetic",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/automation-rule/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "rule-synthetic",
+   "revision": 1,
+   "name": "Synthetic rule",
+   "enabled": true,
+   "trigger": {
+    "source": "core",
+    "kind": "turn-ended"
+   },
+   "action": {
+    "mood": "celebrate",
+    "priorityClass": "event",
+    "durationMs": 1000,
+    "targets": [
+     "wall"
+    ]
+   }
+  }
+ },
+ "automation-routine": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "automation-routine-fixture",
+  "source": "bunny/core",
+  "type": "org.bunny.automation-routine.updated",
+  "subject": "routine-synthetic",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/automation-routine/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "routine-synthetic",
+   "revision": 2,
+   "name": "Synthetic routine",
+   "enabled": false,
+   "days": [
+    1,
+    2
+   ],
+   "time": "18:00",
+   "actions": [
+    {
+     "target": "wall",
+     "family": "power-set",
+     "data": {
+      "on": true
+     },
+     "runsOnlyIn": "free"
+    }
+   ]
+  }
+ },
+ "automation-settings": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "automation-settings-fixture",
+  "source": "bunny/core",
+  "type": "org.bunny.automation-settings.updated",
+  "subject": "settings",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/automation-settings/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "settings",
+   "revision": 3,
+   "noFlourishes": false,
+   "quietHours": {
+    "enabled": false,
+    "start": "22:00",
+    "end": "07:00",
+    "timeZone": null
+   },
+   "budgets": {
+    "perAgentTask": 1,
+    "perAgentHour": 2,
+    "globalHour": 6,
+    "deviceSpacingMs": 300000
+   }
+  }
+ },
+ "automation-interrupt-set": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "automation-interrupt-set-fixture",
+  "source": "bunny/core",
+  "type": "org.bunny.automation-interrupt-set.updated",
+  "subject": "interrupt-set",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "state",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/automation-interrupt-set/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "id": "interrupt-set",
+   "revision": 4,
+   "kinds": [
+    "turn-ended"
+   ]
+  }
+ },
+ "automation-rule-removed": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "automation-rule-removed-fixture",
+  "source": "bunny/core",
+  "type": "org.bunny.automation-rule.removed",
+  "subject": "rule-synthetic",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "removal",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/removal/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "entity": {
+    "family": "automation-rule",
+    "id": "rule-synthetic"
+   },
+   "revision": 5,
+   "reason": "deleted"
+  }
+ },
+ "automation-routine-removed": {
+  "specversion": "1.0",
+  "bunnyprofile": "2.0",
+  "id": "automation-routine-removed-fixture",
+  "source": "bunny/core",
+  "type": "org.bunny.automation-routine.removed",
+  "subject": "routine-synthetic",
+  "time": "2026-11-05T00:00:00.000Z",
+  "kind": "removal",
+  "datacontenttype": "application/json",
+  "dataschema": "https://bunny.invalid/events/removal/2.0",
+  "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+  "data": {
+   "entity": {
+    "family": "automation-routine",
+    "id": "routine-synthetic"
+   },
+   "revision": 5,
+   "reason": "deleted"
+  }
+ },
  "art-schedule": {
   "specversion": "1.0",
   "bunnyprofile": "2.0",
@@ -4564,6 +4721,18 @@
   }
  ],
  "scenarios": [
+  {
+   "name": "automation removals keep the saved definition identities",
+   "steps": [
+    "automation-rule",
+    "automation-routine",
+    "automation-rule-removed",
+    "automation-routine-removed",
+    "automation-rule",
+    "automation-routine"
+   ],
+   "expect": []
+  },
   {
    "name": "an expired session is removed",
    "steps": [

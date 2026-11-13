@@ -120,7 +120,7 @@ void test('policy retains no-flourishes precedence, zoned overnight windows, hou
 });
 
 import {InProcessBus, traceFields} from '@jimmie-potts/sdk';
-import {ModuleHarness} from '@jimmie-potts/sdk/testing';
+import {CoreHarness} from './fixtures/core-harness.js';
 import {createCoreModule,type CoreHandle} from '../src/core/core.js';
 import {AutomationPart} from '../src/core/automation-part.js';
 import {deviceRecord,deviceState} from './fixtures/device.js';
@@ -149,9 +149,13 @@ void test('owner-qualified device copies sync initially and recover a dropped av
     log:{debug:()=>{},info:()=>{},warn:()=>{},error:()=>{}},transaction:()=>Promise.reject(new Error('unexpected test transaction')),
     dispatch:action=>{assert.ok(action.requestId!==undefined);sent.push(action);return Promise.resolve({requestId:action.requestId,status:'accepted'});},
     operation:()=>undefined});
+  const store = new AutomationStore(db, () => {}, {settings: DEFAULT_SETTINGS, interruptSet: [...DEFAULT_INTERRUPT_SET]});
+  store.insertRule({id: 'rule-synthetic', name: rule.name, enabled: true, kind: 'event',
+    trigger: JSON.stringify(rule.trigger), action: JSON.stringify({...rule.action, priorityClass: 'event', targets: ['wall']}),
+    createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000}, 64);
   part.open(db);part.setParticipants([{id:'wall',kind:'nanoleaf'}]);
   context.after(async()=>{release();await part.close();await core.close();await owner.close();await foreign.close();db.close();});
-  part.controls.create({...rule,action:{...rule.action,priorityClass:'event',targets:['wall']}},true);
+
   const fire=async(id:string)=>{
     const message:Message={specversion:'1.0',bunnyprofile:'2.0',id,source:core.source,kind:'occurrence',type:'org.bunny.turn.ended',subject:SESSION_ID,
       time:'2023-11-14T22:13:20.000Z',datacontenttype:'application/json',dataschema:'https://bunny.invalid/events/turn-ended/2.0',
@@ -200,9 +204,13 @@ for (const failedAt of ['initial', 'gap'] as const) void test(`device sync recov
     log:{debug:()=>{},info:()=>{},warn:()=>{},error:()=>{}},transaction:()=>Promise.reject(new Error('unexpected test transaction')),
     dispatch:action=>{assert.ok(action.requestId!==undefined);sent.push(action);return Promise.resolve({requestId:action.requestId,status:'accepted'});},
     operation:()=>undefined});
+  const store = new AutomationStore(db, () => {}, {settings: DEFAULT_SETTINGS, interruptSet: [...DEFAULT_INTERRUPT_SET]});
+  store.insertRule({id: 'rule-synthetic', name: rule.name, enabled: true, kind: 'event',
+    trigger: JSON.stringify(rule.trigger), action: JSON.stringify({...rule.action, priorityClass: 'event', targets: ['wall']}),
+    createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000}, 64);
   part.open(db);part.setParticipants([{id:'wall',kind:'nanoleaf'}]);
   context.after(async()=>{await part.close();await core.close();await owner.close();db.close();});
-  part.controls.create({...rule,action:{...rule.action,priorityClass:'event',targets:['wall']}},true);
+
   const fire=async(id:string)=>{
     const message:Message={specversion:'1.0',bunnyprofile:'2.0',id,source:core.source,kind:'occurrence',type:'org.bunny.turn.ended',subject:SESSION_ID,
       time:'2023-11-14T22:13:20.000Z',datacontenttype:'application/json',dataschema:'https://bunny.invalid/events/turn-ended/2.0',
@@ -241,24 +249,24 @@ void test('automation controls can be captured before start and follow the curre
   const unavailable=(error:unknown):boolean=>error instanceof AutomationError && error.code==='unavailable' && error.status===503;
   assert.throws(()=>controls.rules(),unavailable);
   assert.throws(()=>controls.create(rule,true),unavailable);
-  let harness=new ModuleHarness(hosted,{stateDir:directory,bus:new InProcessBus()});
+  let harness=new CoreHarness(hosted,{stateDir:directory,bus:new InProcessBus()});
   context.after(()=>harness.stop());
   await harness.start();
   hosted.setModeParticipants([{id:'lines',kind:'nanoleaf'}]);
-  const created=controls.create(rule,true);
-  controls.replaceSettings({...DEFAULT_SETTINGS,noFlourishes:true});
+  const created=await controls.create(rule,true);
+  await controls.replaceSettings({...DEFAULT_SETTINGS,noFlourishes:true});
   assert.equal(controls.rule(created.id)?.name,rule.name);
   assert.equal(controls.settings().noFlourishes,true);
   await harness.stop();
   assert.deepEqual(harness.failures,[],'module stop must release the owner even when device sync is pending');
   assert.throws(()=>controls.rules(),unavailable);
   assert.throws(()=>controls.replaceSettings(DEFAULT_SETTINGS),unavailable);
-  harness=new ModuleHarness(hosted,{stateDir:directory,bus:new InProcessBus()});
+  harness=new CoreHarness(hosted,{stateDir:directory,bus:new InProcessBus()});
   await harness.start();
   hosted.setModeParticipants([{id:'lines',kind:'nanoleaf'}]);
   assert.equal(controls.rule(created.id)?.name,rule.name);
   assert.equal(controls.settings().noFlourishes,true);
-  controls.remove(created.id);
+  await controls.remove(created.id);
   assert.deepEqual(controls.rules(),[]);
 });
 
@@ -272,7 +280,7 @@ void test('actual core commit and bus intake dispatch once; old publication, syn
   let core=createCoreModule({parts:[{start:value=>{handle=value;return Promise.resolve();}}]});
   let refuseOccurrence=false;
   const initialCore=core;
-  let harness=new ModuleHarness({manifest:core.manifest,stop:()=>initialCore.stop(),start:context=>initialCore.start({...context,sdk:{...context.sdk,
+  let harness=new CoreHarness({manifest:core.manifest,stop:()=>initialCore.stop(),start:context=>initialCore.start({...context,sdk:{...context.sdk,
     publishMessage:async(key,message)=>{if(refuseOccurrence && message.type==='org.bunny.turn.ended') {refuseOccurrence=false;throw new Error('synthetic publish refusal');}return context.sdk.publishMessage(key,message);}}})},
     {bus,stateDir:directory,clock:{now:clock.now}});
   context.after(async()=>{await harness.stop();await hook.close();await nano.close();await watch.close();});
@@ -282,8 +290,8 @@ void test('actual core commit and bus intake dispatch once; old publication, syn
   await nano.serveSync(['device'],()=>({revision:device.revision,states:[deviceState(device)]}));
   await harness.start();core.setModeParticipants([{id:'wall',kind:'nanoleaf'}]);
   await nano.publish('bunny.state.device.wall',{kind:'state',...deviceState(device)});await flush();
-  core.automation.replaceInterruptSet({kinds:['turn-ended']});
-  core.automation.create({...rule,action:{...rule.action,priorityClass:'event',targets:['wall']}},true);
+  await core.automation.replaceInterruptSet({kinds:['turn-ended']});
+  await core.automation.create({...rule,action:{...rule.action,priorityClass:'event',targets:['wall']}},true);
   for(const event of [sessionStarted,turnStarted,approvalPrompt('approval-925'),turnEnded]) {
     clock.advance(10);const {key,draft}=observation(event,clock.now());await hook.publish(key,draft);await flush();
   }
@@ -304,7 +312,7 @@ void test('actual core commit and bus intake dispatch once; old publication, syn
   const synced=await watch.sync(['session'],()=>{}, {owner:harness.source,timeoutMs:1000});
   if(synced.status==='synced') await synced.copy.close();
   await core.automation.settled();assert.equal(moments.length,1);
-  core.automation.replaceSettings({...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,deviceSpacingMs:0}});
+  await core.automation.replaceSettings({...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,deviceSpacingMs:0}});
   for(const event of [turnStarted,turnEnded]) {
     clock.advance(10);refuseOccurrence=event.kind==='turn-ended';const {key,draft}=observation(event,clock.now(),{turn:'turn-3'});await hook.publish(key,draft);await flush();
   }
@@ -312,7 +320,7 @@ void test('actual core commit and bus intake dispatch once; old publication, syn
   clock.advance(10);const fresh=observation(turnStarted,clock.now(),{turn:'turn-4'});await hook.publish(fresh.key,fresh.draft);await flush();
   await core.automation.settled();assert.equal(moments.length,1,'deferred republication cannot acquire live eligibility');
   await harness.stop();
-  core=createCoreModule();harness=new ModuleHarness(core,{bus,stateDir:directory,clock:{now:clock.now}});
+  core=createCoreModule();harness=new CoreHarness(core,{bus,stateDir:directory,clock:{now:clock.now}});
   await harness.start();core.setModeParticipants([{id:'wall',kind:'nanoleaf'}]);await flush();await core.automation.settled();
   assert.equal(moments.length,1);
 });

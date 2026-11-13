@@ -7,7 +7,7 @@ import {SCHEMA_BASE} from '@jimmie-potts/event-contracts/v2';
 import {commandSupported, type DeviceCommand, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {childOf,type TraceContext,type Cancel,type ModuleScheduler, Outcome} from '@jimmie-potts/sdk';
 import {AutomationError, RULE_LIMIT} from './automation.js';
-import type {AutomationStore, NewLogRow, RuleRow} from './automation-store.js';
+import {applyDefinition, type DefinitionCommit, type AutomationStore, type NewLogRow, type RuleRow} from './automation-store.js';
 
 /** The tracked command families a routine action may use: the general device families, and the module families a target's module declares. */
 export const ROUTINE_FAMILIES = ['power-set','brightness-set','scene-activate','media-start','media-control','device-mode-set','pixoo-media-show','lifx-color-set'] as const;
@@ -328,7 +328,8 @@ export function createRoutines(options:RoutineOptions) {
     return 'ran';
   }
   const rearm=():void=>{
-    cancel?.();cancel=undefined;const identity=++timerIdentity;
+    const identity=++timerIdentity, previousCancel=cancel;
+    cancel=undefined;previousCancel?.();
     if(closed) return;
     for(const id of planned.keys()) if(!routines.some(saved=>saved.id===id && saved.enabled)) planned.delete(id);
     const now=options.clock(),next=routines.filter(saved=>saved.enabled).map(saved=>{
@@ -353,26 +354,29 @@ export function createRoutines(options:RoutineOptions) {
       }
     });
   };
-  const save=(saved:Routine):Routine=>{
+  const save=(saved:Routine,commit:DefinitionCommit):Routine=>{
     if(!store.replaceRule(row(saved))) return invalid('unknown-rule',404);
-    routines=store.rules().filter(item=>item.kind==='routine').map(fromRow);rearm();return view(saved);
+    const next = store.rules().filter(item => item.kind === 'routine').map(fromRow);
+    commit(() => { routines = next; rearm(); });
+    return view(saved);
   };
   rearm();
   return {
     list:()=>routines.map(view),
+    definitions:()=>structuredClone(routines),
     get:(id:string)=>view(find(id)),
-    create(value:unknown,owner=true) {
+    create(value:unknown,owner=true,commit=applyDefinition) {
       const input=parseRoutine(value,options.targets(),true,kindOf),now=options.clock();
       const saved:Routine={...input,id:`routine-${randomUUID()}`,definitionId:randomUUID(),enabled:owner && (input.enabled??false),createdAtMs:now,updatedAtMs:now};
       if(!store.insertRule(row(saved),RULE_LIMIT)) return invalid('capacity',429);
-      routines.push(saved);rearm();return view(saved);
+      commit(()=>{routines.push(saved);rearm();});return view(saved);
     },
-    update(id:string,value:unknown) {
+    update(id:string,value:unknown,commit=applyDefinition) {
       const input=parseRoutine(value,options.targets(),false,kindOf),saved=find(id);
-      return save({...saved,...input,definitionId:randomUUID(),updatedAtMs:options.clock()});
+      return save({...saved,...input,definitionId:randomUUID(),updatedAtMs:options.clock()},commit);
     },
-    setEnabled(id:string,enabled:boolean) {return save({...find(id),enabled,definitionId:randomUUID(),updatedAtMs:options.clock()});},
-    remove(id:string) {find(id);store.deleteRule(id);routines=routines.filter(saved=>saved.id!==id);rearm();},
+    setEnabled(id:string,enabled:boolean,commit=applyDefinition) {return save({...find(id),enabled,definitionId:randomUUID(),updatedAtMs:options.clock()},commit);},
+    remove(id:string,commit=applyDefinition) {find(id);store.deleteRule(id);commit(()=>{routines=routines.filter(saved=>saved.id!==id);rearm();});},
     /** Runs one occurrence now, enabled or not, and settles once each action's dispatch has answered. Nothing is claimed or scheduled. */
     async run(id:string,parent?:TraceContext):Promise<RunResult> {
       const saved=find(id),atMs=options.clock();

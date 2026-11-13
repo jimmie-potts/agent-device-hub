@@ -46,6 +46,10 @@ export const bookkeeping: Bookkeeping = freeze({
   'music-lighting-device': [],
   'playback-position': [],
   'art-schedule': [],
+  'automation-rule': [],
+  'automation-routine': [],
+  'automation-settings': [],
+  'automation-interrupt-set': [],
   'assistant-state': [],
   'lighting-layout': [],
   'playback-layout': [],
@@ -59,6 +63,7 @@ export const bookkeeping: Bookkeeping = freeze({
  */
 export const SETTINGS_FAMILIES: readonly string[] = Object.freeze([
   'mode', 'lighting-layout', 'playback-layout', 'home-layout', 'art-schedule', 'preference-state',
+  'automation-rule', 'automation-routine', 'automation-settings', 'automation-interrupt-set',
   'pixoo-playlist', 'nanoleaf-animations', 'nanoleaf-reactive-presets', 'nanoleaf-shows',
 ]);
 

@@ -14,6 +14,10 @@ const DEVICE = ['/observed/observedAtMs', '/lastTransmission/transmittedAtMs', '
 export const STATE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
   // The contracts package's families, published by the core or by modules.
   'device/2.0': DEVICE, 'device/2.1': DEVICE, 'device/2.2': DEVICE, 'device/2.3': DEVICE, 'device/2.4': DEVICE,
+  'automation-rule/2.0': [],
+  'automation-routine/2.0': [],
+  'automation-settings/2.0': [],
+  'automation-interrupt-set/2.0': [],
   'power-limit/2.0': ['/observedAtMs', '/updatedAtMs'],
   'playback/2.0': ['/observedAtMs'], 'playback/2.1': ['/observedAtMs'],
   'session/2.0': [], 'session/2.1': [],

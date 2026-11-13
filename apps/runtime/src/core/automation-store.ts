@@ -13,6 +13,10 @@ export type NewLogRow = Omit<LogRow,'seq'>;
 export const LOG_LIMIT = 5000;
 export const EVENT_LIMIT = 10000;
 
+/** The engine applies a committed definition immediately when used without the core outbox. */
+export type DefinitionCommit = (apply: () => void) => void;
+export const applyDefinition: DefinitionCommit = apply => { apply(); };
+
 /**
  * Fresh automation tables in the core's private database, under the same exclusive lease as agent state.
  * Every call is synchronous and no transaction spans an await, so it never interleaves with agent-state commits on the
