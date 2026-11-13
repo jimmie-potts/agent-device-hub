@@ -21,7 +21,7 @@ const eventRule = {name: 'Synthetic event rule', kind: 'event', enabled: true,
   trigger: {source: 'core', kind: 'turn-ended'},
   action: {mood: 'celebrate', priorityClass: 'flourish', durationMs: 1_000, targets: ['wall']}};
 
-async function world(context: TestContext, seed?: (store: AutomationStore, now: number) => void) {
+async function world(context: TestContext, seed?: (store: AutomationStore, now: number) => void, redactions?: Redactions) {
   const directory = await stateDir(context), clock = manualClock();
   if (seed !== undefined) {
     const database = new DatabaseSync(join(directory, 'core.sqlite'));
@@ -30,6 +30,7 @@ async function world(context: TestContext, seed?: (store: AutomationStore, now: 
   }
   const bus = new InProcessBus({now: clock.now, scheduler: clock.scheduler});
   const core = createCoreModule();
+  if (redactions !== undefined) core.setAutomationRedactions(redactions);
   const reader = bus.connect('bunny/test/reader'), hook = bus.connect('bunny/parts/hook');
   const owner = bus.connect('bunny/modules/nanoleaf');
   const device = deviceRecord('wall', 1, 'nanoleaf', 'available');
@@ -354,3 +355,88 @@ void test('an ignored routine deletion keeps its definition, occurrence guard an
   assert.deepEqual((await w.sync()).get(key)?.data, before.data);
   assert.deepEqual(w.history(), history);
 });
+
+for (const fault of ['settings update', 'interrupt insert', 'interrupt delete', 'interrupt clear'] as const) {
+  void test(`an ignored ${fault} preserves the prior singleton definition through reopen`, async context => {
+    const w = await world(context);
+    const rule = await w.core.automation.create(eventRule, true);
+    const settings = {...DEFAULT_SETTINGS, noFlourishes: true};
+    const initialKinds = {kinds: ['attention-raised', 'turn-ended']};
+    await w.core.automation.replaceSettings(settings);
+    await w.core.automation.replaceInterruptSet(initialKinds);
+    await flush();
+    const live = await w.sync(), history = w.history(), messages = [...w.messages];
+    const current = live.states().map(message => message.data);
+    const tables = ['automation_settings', 'interrupt_set', 'automation_definition_revisions', 'bunny_outbox'];
+    const rows = () => tables.map(table => w.db.prepare(`SELECT * FROM ${table}`).all());
+    const before = rows();
+    const [operation, table, condition] = fault === 'settings update'
+      ? ['UPDATE', 'automation_settings', ''] : fault === 'interrupt insert'
+        ? ['INSERT', 'interrupt_set', "WHEN NEW.kind = 'turn-ended'"] : ['DELETE', 'interrupt_set', "WHEN OLD.kind = 'turn-ended'"];
+    w.db.exec(`CREATE TEMP TRIGGER ignore_singleton BEFORE ${operation} ON ${table} ${condition} BEGIN SELECT RAISE(IGNORE); END`);
+    if (fault === 'settings update') {
+      await assert.rejects(async () => w.core.automation.replaceSettings(DEFAULT_SETTINGS), /internal/);
+    } else {
+      const kinds = fault === 'interrupt insert' ? ['session-ended', 'turn-ended'] : fault === 'interrupt delete' ? ['session-ended'] : [];
+      await assert.rejects(async () => w.core.automation.replaceInterruptSet({kinds}), /internal/);
+    }
+    await flush();
+    assert.deepEqual(rows(), before);
+    assert.deepEqual(w.core.automation.settings(), settings);
+    assert.deepEqual(w.core.automation.interruptSet(), initialKinds.kinds);
+    assert.deepEqual(w.history(), history);
+    assert.deepEqual(w.messages, messages);
+    assert.deepEqual(live.states().map(message => message.data), current);
+    for (const event of [sessionStarted, turnStarted, turnEnded]) {
+      w.clock.advance(10);
+      const {key, draft} = observation(event, w.clock.now());
+      await w.hook.publish(key, draft);
+      await flush();
+    }
+    await w.core.automation.settled();
+    assert.deepEqual(w.core.automation.log(1).map(entry => [entry.ruleId, entry.reason]), [[rule.id, 'no-flourishes']]);
+    assert.deepEqual(w.history(), history);
+    await live.close();
+    await w.restart();
+    assert.deepEqual((await w.sync()).states().map(message => message.data), current);
+    assert.deepEqual(w.history(), history);
+  });
+}
+
+for (const drain of ['next commit', 'restart'] as const) {
+  void test(`a deferred definition with a newly registered secret stays off the bus on ${drain}`, async context => {
+    const redactions = new Redactions(), w = await world(context, undefined, redactions);
+    const live = await w.sync();
+    w.refusePublication(true);
+    const rule = await w.core.automation.create({...eventRule, name: escapedMarker}, true);
+    await flush();
+    assert.equal(w.attempted.length, 1);
+    assert.equal(w.messages.length, 0);
+    const first = w.history()[0];
+    assert.ok(first);
+    const ruleAttempts = () => w.attempted.filter(message => message.type === 'org.bunny.automation-rule.updated').length;
+    if (drain === 'restart') {
+      await w.core.automation.replaceInterruptSet({kinds: ['turn-ended']});
+      await flush();
+      const attempts = ruleAttempts();
+      redactions.add(escapedMarker);
+      w.refusePublication(false);
+      await live.close();
+      await w.restart();
+      assert.equal(ruleAttempts(), attempts);
+    } else {
+      redactions.add(escapedMarker);
+      w.refusePublication(false);
+      await w.core.automation.replaceInterruptSet({kinds: ['turn-ended']});
+      await flush();
+      assert.equal(ruleAttempts(), 1);
+      assert.equal(live.get({family: 'automation-rule', id: rule.id}), undefined);
+    }
+    assert.deepEqual(w.messages.map(message => message.type), ['org.bunny.automation-interrupt-set.updated']);
+    assert.equal(w.core.automation.rule(rule.id).name, escapedMarker);
+    assert.deepEqual(w.history()[0], first, 'the committed history is kept');
+    const diagnostics = w.diagnostics().filter(record => record.event === 'operation.failed' && record.fields['bunny.code'] === 'forbidden');
+    assert.equal(diagnostics.length, 1);
+    assert.equal(JSON.stringify(diagnostics).includes(escapedMarker), false);
+  });
+}

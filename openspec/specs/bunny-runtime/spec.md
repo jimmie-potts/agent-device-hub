@@ -1958,3 +1958,10 @@ The core SHALL serve current saved event rules, weekly routines, automation sett
 - **THEN** history and sync reflect the committed definition edit or removal
 - **WHEN** the transaction is refused
 - **THEN** the previous definition is still current and governs evaluation, and there is no new fact or outbox message
+
+#### Scenario: A queued definition becomes protected
+
+- **GIVEN** a committed automation definition state awaits publication
+- **WHEN** the live registry learns a protected value in that state before a later delivery
+- **THEN** the outbox SHALL discard the state in settlement, without delivering it or counting it as sent
+- **AND** later admissible messages SHALL retain their order and identities, and the owner definition and retained history SHALL stay intact

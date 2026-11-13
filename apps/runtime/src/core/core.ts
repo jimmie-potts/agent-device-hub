@@ -11,7 +11,7 @@ import {isReadReceipt, receiptQualification} from '../read-receipts/qualificatio
 // Its own `operation` family (Hub #922, operation-records.ts) is the first such part: each tracked action's latest state.
 import type {DatabaseSync} from 'node:sqlite';
 import {createAgentState, type Consumer, type Outcome} from '@jimmie-potts/agent-state';
-import {SCHEMA_BASE, errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
   sessionEntityId, type ApprovalRecoverRequest, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
@@ -33,7 +33,7 @@ import {ArtPart} from './art-part.js';
 import {ArtShowPart} from './art-show.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
-import {AUTOMATION_FAMILIES, holdsAutomationSecret, type HoldsAutomationSecret} from './automation-definitions.js';
+import {holdsAutomationSecret, isAutomationDefinitionSchema, type HoldsAutomationSecret} from './automation-definitions.js';
 import type {Redactions} from '../log.js';
 import type {AutomationDevice} from './automation-devices.js';
 import type {ArtCatalogRead} from './art-catalog.js';
@@ -427,6 +427,11 @@ class Core {
         const companionFailed=this.#companions.publishing(message);
         try {return await context.sdk.publishMessage(key,message);} catch(error) {failed();companionFailed();throw error;}
       }},
+      statePublication: {
+        discard: message => isAutomationDefinitionSchema(message.dataschema) && holdsAutomationSecret(message.data),
+        discarded: trace => recordLog(context.log, 'operation.failed',
+          {'bunny.operation': 'automation', 'bunny.outcome': OutcomeWord.rejected, 'bunny.code': 'forbidden'}, trace),
+      },
       committed: change => {
         this.#automation.committed(change);
         this.#companions.committed(change);
@@ -986,7 +991,7 @@ class Core {
         if (!(part.families ?? []).some(family => families.includes(family))) continue;
         const current = part.states?.(families) ?? [];
         if (part === this.#automation && current.some(state =>
-          AUTOMATION_FAMILIES.some(family => state.dataschema === `${SCHEMA_BASE}${family}/2.0`) &&
+          isAutomationDefinitionSchema(state.dataschema) &&
           this.holdsAutomationSecret(state.data))) {
           return errorBody('internal', {detail: 'an automation definition could not be served'});
         }

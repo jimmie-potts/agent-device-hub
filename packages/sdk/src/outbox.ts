@@ -49,6 +49,15 @@ export type OutboxOptions = {
    */
   validator?: Pick<MessageValidator, 'validate'>;
   /**
+   * Optional owner policy for state messages, checked immediately before each send, including replay.
+   * A match is removed in batch settlement without sending or counting it as delivered. A thrown check is
+   * a normal publish refusal. The observer runs only after successful settlement and cannot affect delivery.
+   */
+  statePublication?: {
+    discard: (message: Message) => boolean;
+    discarded?: (trace: TraceContext) => void;
+  };
+  /**
    * Hears that a publish was refused after its transaction committed, when the outbox has no `log`: an `SdkError` with
    * the refusal's registry code (`internal` for an error without one) and the fixed detail
    * `committed, awaiting publication`, with the refusal as its `cause`, and the scope `{source, pattern: 'outbox'}`. It
@@ -100,6 +109,7 @@ export class Outbox {
   readonly #database: DatabaseSync;
   readonly #clock: Clock;
   readonly #validator: Pick<MessageValidator, 'validate'> | undefined;
+  readonly #statePublication: OutboxOptions['statePublication'];
   readonly #onError: (error: unknown, scope: ErrorScope) => void;
   readonly #log: Logger | undefined;
   readonly #trace: SpanRecorder;
@@ -124,11 +134,12 @@ export class Outbox {
   /** The core's acknowledgments heard in this turn of the event loop, which its end forgets together. */
   #heardThisTurn: {id: string; message: Message}[] = [];
 
-  constructor({sdk, database, clock, validator, onError, log, trace}: OutboxOptions) {
+  constructor({sdk, database, clock, validator, statePublication, onError, log, trace}: OutboxOptions) {
     this.#sdk = sdk;
     this.#database = database;
     this.#clock = clock;
     this.#validator = validator;
+    this.#statePublication = statePublication;
     this.#onError = onError ?? warn;
     this.#log = log;
     this.#trace = trace ?? noSpans;
@@ -333,6 +344,7 @@ export class Outbox {
   #send(query: StatementSync, own: ReadonlySet<string> = new Set()): Promise<number> {
     const sending = this.#sending.then(async () => {
       const sent: Sent[] = [];
+      const discarded: {seq: number; trace: TraceContext}[] = [];
       let refusal: {error: unknown} | undefined;
       for (const row of query.all() as Row[]) {
         const message = JSON.parse(row.message) as Message;
@@ -342,6 +354,10 @@ export class Outbox {
           ...(own.has(message.id) ? {parent: stored} : {links: [stored]}),
         }) : undefined;
         try {
+          if (row.kind === 'state' && this.#statePublication?.discard(message) === true) {
+            discarded.push({seq: row.seq, trace: stored});
+            continue;
+          }
           await this.#sdk.publishMessage(row.routing_key, message);
         } catch (error) {
           span?.end('error');
@@ -354,12 +370,16 @@ export class Outbox {
         this.#inFlight.set(message.id, entry);
       }
       try {
-        this.#settle(sent);
+        this.#settle(sent, discarded);
       } catch (error) {
         // Nothing was marked: what went out goes out again with the next send or start, with the same ids.
         throw refusal === undefined ? error : refusal.error;
       } finally {
         for (const {message} of sent) this.#inFlight.delete(message.id);
+      }
+      for (const {trace} of discarded) {
+        try { this.#statePublication?.discarded?.(trace); }
+        catch { /* A notification cannot change settled delivery. */ }
       }
       // An outcome's first publication is recorded once its batch committed; a replay of one already published is not.
       for (const entry of sent) {
@@ -377,18 +397,22 @@ export class Outbox {
 
   /**
    * Commits one publication batch's bookkeeping: each state, removal or occurrence that went out is deleted, and each
-   * outcome that went out for the first time is marked published. An outcome already marked needs no write, so a
+   * outcome that went out for the first time is marked published. A refused state selected by the owner policy
+   * is removed here without being marked published. An outcome already marked needs no write, so a
    * republish of outcomes the core has not acknowledged commits nothing. Inside a transaction someone else holds open,
    * the rows join it, as a single statement would.
    */
-  #settle(sent: readonly Sent[]): void {
+  #settle(sent: readonly Sent[], discarded: readonly {seq: number}[]): void {
     const changed = sent.filter(({row}) => row.kind !== 'outcome' || row.published === 0);
-    if (changed.length === 0) return;
+    if (changed.length === 0 && discarded.length === 0) return;
     const database = this.#database;
     const ownTransaction = !database.isTransaction;
     if (ownTransaction) database.exec('BEGIN IMMEDIATE');
     try {
       for (const {row} of changed) (row.kind === 'outcome' ? this.#published : this.#forget).run(row.seq);
+      for (const {seq} of discarded) {
+        if (Number(this.#forget.run(seq).changes) !== 1) throw new Error('outbox discard did not settle');
+      }
       if (ownTransaction) database.exec('COMMIT');
     } catch (error) {
       if (ownTransaction && database.isTransaction) {

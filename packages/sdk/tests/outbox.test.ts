@@ -65,7 +65,7 @@ type StartOptions = {
   /** The module's participant does not check what it receives against profile 2.0, as when a test forges a message. */
   unchecked?: boolean;
   /** The outbox's own options. */
-  outbox?: Pick<OutboxOptions, 'onError' | 'validator'>;
+  outbox?: Pick<OutboxOptions, 'onError' | 'validator' | 'statePublication'>;
   /** The module's log and span recorder, which the outbox records through. */
   log?: Logger;
   spans?: RecordedSpans;
@@ -811,4 +811,68 @@ it('killed after the core acknowledged an outcome mid-batch and before the bookk
   assert.deepEqual(sentKinds(all.slice(killed.length)), ['state', 'occurrence'], 'the acknowledged outcome never goes out again; the rest of the batch does, once');
   assert.equal(takenOnce(all).size, 3);
   assert.equal(all.filter(line => line.record === 'outcome.published').length, 1, 'at most once, and here once');
+});
+
+it('settles a discarded state without sending or counting it, then sends the later rows in order', async context => {
+  const {core, start} = await world(context);
+  const publishing = {refusing: true, attempts: 0};
+  const first = await start({wrap: module => refusing(module, publishing), outbox: {onError: () => {}}});
+  const added = await first.outbox.transaction(add => [
+    add('bunny.state.session.blocked', session('blocked', 1)),
+    add('bunny.state.session.allowed', session('allowed', 2)),
+    add('bunny.event.session.allowed', turnEnded('allowed')),
+  ]);
+  const checked: string[] = [], discarded: string[] = [];
+  const resumed = await start({outbox: {statePublication: {
+    discard: message => { checked.push(message.subject); return message.subject === 'blocked'; },
+    discarded: trace => { discarded.push(trace.traceparent); throw new Error('synthetic observer failure'); },
+  }}});
+  assert.equal(await resumed.outbox.republish(), 2);
+  await flush();
+  assert.deepEqual(checked, ['blocked', 'allowed'], 'the policy only sees states');
+  assert.deepEqual(core.raw, added.slice(1));
+  assert.deepEqual(discarded, [added[0]?.traceparent]);
+  assert.deepEqual(rows(resumed.database), []);
+});
+
+it('a throwing state policy defers publication without calling the transport', async context => {
+  const {core, start} = await world(context);
+  let throws = true;
+  const run = await start({outbox: {onError: () => {}, statePublication: {
+    discard: () => { if (throws) throw new Error('synthetic guard error'); return false; },
+  }}});
+  const added = await run.outbox.transaction(add => [add('bunny.state.session.s1', session('s1', 1))]);
+  assert.equal(core.raw.length, 0);
+  assert.deepEqual(rows(run.database), added.map(({id}) => ({id, published: 0})));
+  throws = false;
+  assert.equal(await run.outbox.republish(), 1);
+  await flush();
+  assert.deepEqual(core.raw, added);
+});
+
+it('a failed discard settlement leaves the batch for rechecking on reopen', async context => {
+  const {core, start} = await world(context);
+  let notifications = 0;
+  const statePublication: NonNullable<OutboxOptions['statePublication']> = {
+    discard: message => message.subject === 'blocked',
+    discarded: () => { notifications++; },
+  };
+  const run = await start({outbox: {onError: () => {}, statePublication}});
+  run.database.exec(`CREATE TEMP TRIGGER ignore_discard BEFORE DELETE ON bunny_outbox
+    WHEN OLD.routing_key = 'bunny.state.session.blocked' BEGIN SELECT RAISE(IGNORE); END`);
+  const added = await run.outbox.transaction(add => [
+    add('bunny.state.session.blocked', session('blocked', 1)),
+    add('bunny.state.session.allowed', session('allowed', 2)),
+  ]);
+  await flush();
+  assert.deepEqual(core.raw, added.slice(1));
+  assert.equal(notifications, 0);
+  assert.deepEqual(rows(run.database), added.map(({id}) => ({id, published: 0})));
+  run.database.close();
+  const reopened = await start({outbox: {statePublication}});
+  assert.equal(await reopened.outbox.republish(), 1);
+  await flush();
+  assert.deepEqual(core.raw, [added[1], added[1]]);
+  assert.equal(notifications, 1);
+  assert.deepEqual(rows(reopened.database), []);
 });

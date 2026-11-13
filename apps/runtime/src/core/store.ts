@@ -99,6 +99,7 @@ export type StoreOptions = {
   trace?: SpanRecorder;
   /** Without a logger, hears that a publish was refused after its commit: committed, and awaiting publication. */
   onError?: OutboxOptions['onError'];
+  statePublication?: OutboxOptions['statePublication'];
   /** Parts' derivers, run in each core change's transaction. */
   derivers?: readonly Deriver[];
   /** Parts' tables, created once the lease is held. */
@@ -444,6 +445,7 @@ export class CoreStore implements Storage {
     const statements = prepare(db);
     const outbox = new Outbox({
       sdk: this.#options.sdk, database: db,
+      ...(this.#options.statePublication === undefined ? {} : {statePublication: this.#options.statePublication}),
       ...(this.#options.log === undefined ? {} : {log: this.#options.log}),
       ...(this.#options.trace === undefined ? {} : {trace: this.#options.trace}),
       ...(this.#options.onError === undefined ? {} : {onError: this.#options.onError}),

@@ -11,6 +11,8 @@ import type {Redactions} from '../log.js';
 
 export const AUTOMATION_FAMILIES = ['automation-rule', 'automation-routine', 'automation-settings', 'automation-interrupt-set'] as const;
 type Family = typeof AUTOMATION_FAMILIES[number];
+export const isAutomationDefinitionSchema = (schema: string): boolean =>
+  AUTOMATION_FAMILIES.some(family => schema === `${SCHEMA_BASE}${family}/2.0`);
 export const isAutomationDefinitionFamily = (family: string): family is Family => AUTOMATION_FAMILIES.some(name => name === family);
 
 export function holdsAutomationSecret(registry: Redactions, value: unknown): boolean {
@@ -72,7 +74,10 @@ export class AutomationDefinitions {
         if (id === undefined) return result;
         const revision = tx.revision(), key = `bunny.state.${family}.${id}`;
         const message: Draft<object> = next === undefined ? this.#remove(family, id, revision) : {kind: 'state' as const, ...state(family, next, revision)};
-        if (next !== undefined) this.#set.run(family, id, revision);
+        if (next !== undefined) {
+          this.#set.run(family, id, revision);
+          if (this.#get.get(family, id)?.revision !== revision) throw new Error('automation definition revision was not saved');
+        }
         if (!coreValidator().validate(tx.add(key, message, options)).ok) throw new Error('invalid automation definition message');
         return result;
       });
@@ -88,6 +93,7 @@ export class AutomationDefinitions {
 
   #remove(family: Family, id: string, revision: number) {
     this.#delete.run(family, id);
+    if (this.#get.get(family, id) !== undefined) throw new Error('automation definition revision was not removed');
     return {kind: 'removal' as const, type: `org.bunny.${family}.removed`, subject: id,
       dataschema: `${SCHEMA_BASE}removal/2.0`, data: {entity: {family, id}, revision, reason: 'deleted'}};
   }

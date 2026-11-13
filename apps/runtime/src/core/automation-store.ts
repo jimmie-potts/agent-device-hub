@@ -1,6 +1,7 @@
 // Hub #925. Provenance: copied from apps/hub/src/automation-store.ts at bf11587c1a2c575c0da155725a386a209836eed9.
 // Fresh core tables only; no legacy data transfer. Arbitration stays here; execution uses the tracked dispatcher.
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
+import {isDeepStrictEqual} from 'node:util';
 
 /** One stored rule row. Trigger and action hold validated JSON; `automation.ts` owns their meaning. */
 export type RuleRow = {id:string; name:string; enabled:boolean; kind:string; trigger:string; action:string; createdAtMs:number; updatedAtMs:number};
@@ -77,9 +78,9 @@ export class AutomationStore {
     // Seed the owner-approved defaults exactly once. A later owner edit, including an empty set, is never re-seeded.
     this.transaction(() => {
       if (this.statements.meta.get('seeded')) return;
-      for (const kind of seed.interruptSet) this.statements.insertKind.run(kind);
-      this.statements.writeSettings.run(JSON.stringify(seed.settings));
-      this.statements.writeMeta.run('seeded','1');
+      this.replaceInterruptSet(seed.interruptSet);
+      this.replaceSettings(seed.settings);
+      if (Number(this.statements.writeMeta.run('seeded','1').changes) !== 1) throw new Error('automation defaults were not recorded');
     });
   }
   private transaction<T>(work: () => T): T {
@@ -107,19 +108,27 @@ export class AutomationStore {
   insertRule(rule: RuleRow, limit: number): boolean {
     return this.transaction(() => {
       if (Number((this.statements.countRules.get()?.count ?? 0)) >= limit) return false;
-      const result = this.statements.insertRule.run(rule.id,rule.name,rule.enabled ? 1 : 0,rule.kind,rule.trigger,rule.action,rule.createdAtMs,rule.updatedAtMs);
-      if (Number(result.changes) !== 1) throw new Error('automation definition was not inserted');
+      this.insertDefinition(rule);
       return true;
     });
   }
+  private insertDefinition(rule: RuleRow): void {
+    const result = this.statements.insertRule.run(rule.id,rule.name,rule.enabled ? 1 : 0,rule.kind,rule.trigger,rule.action,rule.createdAtMs,rule.updatedAtMs);
+    if (Number(result.changes) !== 1 || !isDeepStrictEqual(this.rule(rule.id), rule)) throw new Error('automation definition was not inserted');
+  }
   replaceRule(rule: RuleRow): boolean {
-    this.check();
-    return Number(this.statements.updateRule.run(rule.name,rule.enabled ? 1 : 0,rule.kind,rule.trigger,rule.action,rule.updatedAtMs,rule.id).changes) === 1;
+    return this.transaction(() => {
+      const result = this.statements.updateRule.run(rule.name,rule.enabled ? 1 : 0,rule.kind,rule.trigger,rule.action,rule.updatedAtMs,rule.id);
+      if (Number(result.changes) !== 1) return false;
+      if (!isDeepStrictEqual(this.rule(rule.id), rule)) throw new Error('automation definition was not updated');
+      return true;
+    });
   }
   deleteRule(id: string): boolean {
     return this.transaction(() => {
       if (Number(this.statements.deleteRule.run(id).changes) !== 1) return false;
       this.statements.deletePowerGuard.run(id);
+      if (this.rule(id) !== undefined || this.powerBoundary(id) !== undefined) throw new Error('automation definition was not removed');
       return true;
     });
   }
@@ -131,10 +140,13 @@ export class AutomationStore {
   splitRules(pairs: readonly {replacement: RuleRow; added: RuleRow}[]): void {
     this.transaction(() => {
       for (const {replacement, added} of pairs) {
-        if (Number(this.statements.updateRule.run(replacement.name,replacement.enabled ? 1 : 0,replacement.kind,replacement.trigger,replacement.action,replacement.updatedAtMs,replacement.id).changes) !== 1) throw new Error('invalid-state');
-        this.statements.insertRule.run(added.id,added.name,added.enabled ? 1 : 0,added.kind,added.trigger,added.action,added.createdAtMs,added.updatedAtMs);
-        const guard = this.statements.powerGuard.get(replacement.id);
-        if (guard !== undefined) this.statements.claimPower.run(added.id, Number(guard.at_ms));
+        if (!this.replaceRule(replacement)) throw new Error('invalid-state');
+        this.insertDefinition(added);
+        const guard = this.powerBoundary(replacement.id);
+        if (guard !== undefined) {
+          const result = this.statements.claimPower.run(added.id, guard);
+          if (Number(result.changes) !== 1 || this.powerBoundary(added.id) !== guard) throw new Error('invalid-state');
+        }
       }
     });
   }
@@ -152,10 +164,23 @@ export class AutomationStore {
   }
   interruptSet(): string[] { this.check(); return this.statements.interruptSet.all().map(row => String(row.kind)); }
   replaceInterruptSet(kinds: readonly string[]): void {
-    this.transaction(() => { this.statements.clearInterruptSet.run(); for (const kind of kinds) this.statements.insertKind.run(kind); });
+    this.transaction(() => {
+      this.statements.clearInterruptSet.run();
+      if (this.interruptSet().length !== 0) throw new Error('automation interrupt set was not cleared');
+      for (const kind of kinds) {
+        if (Number(this.statements.insertKind.run(kind).changes) !== 1) throw new Error('automation interrupt kind was not inserted');
+      }
+      if (!isDeepStrictEqual(this.interruptSet(), [...kinds].sort())) throw new Error('automation interrupt set was not replaced');
+    });
   }
   settings(): unknown { this.check(); const row = this.statements.settings.get(); return row ? JSON.parse(String(row.payload)) : undefined; }
-  replaceSettings(value: unknown): void { this.check(); this.statements.writeSettings.run(JSON.stringify(value)); }
+  replaceSettings(value: unknown): void {
+    this.transaction(() => {
+      const payload = JSON.stringify(value);
+      const result = this.statements.writeSettings.run(payload);
+      if (Number(result.changes) !== 1 || this.statements.settings.get()?.payload !== payload) throw new Error('automation settings were not saved');
+    });
+  }
   /** Persists an event key before evaluation; returns false when the key was already recorded. */
   recordEvent(key: string): boolean {
     return this.transaction(() => {
