@@ -1,5 +1,6 @@
-import {historyFilter, type HistoryFilter, type HistoryRow} from '../core/history.js';
+import {historyFilter, type HistoryFilter, type HistoryPage} from '../core/history.js';
 import type {AutomationControls} from '../core/automation-part.js';
+import {holdsAutomationSecret, isAutomationDefinitionFamily} from '../core/automation-definitions.js';
 import {AUTOMATION_PREFIX, automationRoute} from './automation-routes.js';
 // The runtime's gateway (Hub #835): every route of its listener but health. It serves the SDK edge for remote parts,
 // the `/api/v2` read routes, the core's operator action and the action routes of its dispatcher (#782), MCP, the
@@ -113,7 +114,8 @@ export type GatewayOptions = {
   onDiagnostic?: OnDiagnostic;
   /** The core's dispatcher, which the action routes call (#782); without it, every action is `unavailable`. */
   actions?: CoreActions;
-  history?: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody};
+  /** The core's history page: rows and the open spans of the entities in them (#1773). */
+  history?: {page: (filter: HistoryFilter) => HistoryPage | ErrorBody};
   /** Fresh rules/settings owned by the runtime core; no legacy store is opened. */
   automation?: AutomationControls;
   /** Closed file-reader exception: analytics never become SDK families or MCP tools. */
@@ -352,7 +354,9 @@ export class Gateway {
         throw refuse(body.error.code, 'the automation request was refused');
       }
       if (method === 'GET') authorize();
-      if (this.#options.redactions.holds(JSON.stringify(answer.body))) throw refuse('internal', 'automation holds a secret');
+      if (this.#options.redactions.holds(JSON.stringify(answer.body)) || holdsAutomationSecret(this.#options.redactions, answer.body)) {
+        throw refuse('internal', 'automation holds a secret');
+      }
       return json(answer.status, answer.body);
     } catch (error) {
       if (error instanceof ModuleUnavailable) throw refuse('unavailable', 'the core is not running');
@@ -420,9 +424,15 @@ export class Gateway {
       const values = Object.fromEntries(url.searchParams);
       const filter = historyFilter(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, key === 'fromAtMs' || key === 'toAtMs' || key === 'limit' ? (/^[0-9]+$/.test(value) ? Number(value) : NaN) : value])));
       if (filter === undefined) throw refuse('invalid-request', 'invalid history filters');
-      const rows = this.#options.history?.read(filter) ?? errorBody('unavailable', {detail: 'no core history is available'});
-      if (this.#options.redactions.holds(JSON.stringify(rows))) throw refuse('internal', 'history holds a secret, which the gateway never serves');
-      return this.#dashboardRequest(request, path, () => Array.isArray(rows) ? json(200, {schema: 'history/2.0', rows}) : json(statusOf(rows.error.code), rows));
+      const page = this.#options.history?.page(filter) ?? errorBody('unavailable', {detail: 'no core history is available'});
+      const rowsOrError = 'rows' in page ? page.rows : page;
+      const open = 'rows' in page ? page.open : undefined;
+      if (this.#options.redactions.holds(JSON.stringify(rowsOrError)) ||
+        (open !== undefined && this.#options.redactions.holds(JSON.stringify(open)))) {
+        throw refuse('internal', 'history holds a secret, which the gateway never serves');
+      }
+      // Check the payloads separately so the response's wrapper keys cannot cause a refusal.
+      return this.#dashboardRequest(request, path, () => 'rows' in page ? json(200, {schema: 'history/2.0', ...page}) : json(statusOf(page.error.code), page));
     }
     if (path === '/api/v2/build') {
       noQuery();
@@ -522,6 +532,9 @@ export class Gateway {
       if (only?.status === 'rejected' && serving.length === 1 && down.length === 0) throw only.reason;
       throw refuse('unavailable', serving.length === 0 ? 'the module that serves this family is not running' : 'no owner of this family could be read');
     }
+    if (isAutomationDefinitionFamily(family) && holdsAutomationSecret(this.#options.redactions, records)) {
+      throw refuse('internal', 'an automation definition could not be served');
+    }
     return json(200, {schema: 'family-read/2.0', family, records, unavailable: [...unavailable, ...down]});
   }
 
@@ -598,6 +611,9 @@ export class Gateway {
     // A record belongs to the family its schema names, at whatever version.
     const records = Object.fromEntries(families.map(family => [family, result.copy.states().filter(state => familyOf(state.dataschema) === family).map(state => state.data)]));
     await result.copy.close();
+    if (families.some(family => isAutomationDefinitionFamily(family) && holdsAutomationSecret(this.#options.redactions, records[family]))) {
+      throw refuse('internal', 'an automation definition could not be served');
+    }
     return json(200, {schema: 'snapshot-read/2.0', families, revision: result.message.data.revision, records});
   }
 

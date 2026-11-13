@@ -56,16 +56,16 @@ for (const refused of [false, true]) it(`automation follows several device owner
   }
   const routines = core.automation.routines; assert.ok(routines);
   for (const owner of owners) {
-    const routine = routines.create({name: owner.record.id, days: [1], time: '17:00',
+    const routine = await routines.create({name: owner.record.id, days: [1], time: '17:00',
       actions: [{target: owner.record.id, family: 'power-set', data: {on: true}}]});
     assert.equal(routine.enabled, false, 'the copied device is eligible without dispatching a command');
     await owner.remove();
   }
   await flush();
-  for (const owner of owners) assert.throws(() => routines.create({name: 'Removed device', days: [1], time: '17:00',
+  for (const owner of owners) await assert.rejects(async () => routines.create({name: 'Removed device', days: [1], time: '17:00',
     actions: [{target: owner.record.id, family: 'power-set', data: {on: true}}]}),
   (error: unknown) => error instanceof AutomationError && error.code === 'unknown-target', 'the live removal reaches its own copy');
-  assert.throws(() => routines.create({name: 'Playback is separate', days: [1], time: '17:00',
+  await assert.rejects(async () => routines.create({name: 'Playback is separate', days: [1], time: '17:00',
     actions: [{target: 'speaker', family: 'power-set', data: {on: true}}]}),
   (error: unknown) => error instanceof AutomationError && error.code === 'unknown-target');
   clock.advance(60000); await flush();

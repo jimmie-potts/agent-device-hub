@@ -93,6 +93,26 @@ it('classifies a wrapped ENOSPC on a core transaction as full without taking or 
   assert.equal(world.published.length, published, 'nothing from the failed transaction was published');
 });
 
+it('a verified commit installs part state before publication and preserves the result if a callback throws', async context => {
+  const world = await World.open(context);
+  const installed: string[] = [];
+  world.publishing = () => { assert.deepEqual(installed, ['committed']); };
+  const outcome = await world.store.transaction(tx => {
+    tx.afterCommit?.(() => { throw new Error('synthetic callback failure'); });
+    tx.afterCommit?.(() => { installed.push('committed'); });
+    tx.add('bunny.state.session.synthetic', {
+      kind: 'removal', type: 'org.bunny.session.removed', subject: 'synthetic',
+      dataschema: 'https://bunny.invalid/events/removal/2.0',
+      data: {entity: {family: 'session', id: 'synthetic'}, revision: tx.revision(), reason: 'deleted'},
+    });
+    return 'saved';
+  });
+  assert.equal(outcome, 'saved');
+  await flush();
+  assert.equal(world.published.length, 1);
+  assert.deepEqual(installed, ['committed']);
+});
+
 it('a committed observation publishes its session state and occurrence after the commit, with history and the intake in the same transaction', async context => {
   const world = await World.open(context);
   assert.deepEqual(await world.observe(sessionStarted), {ok: true, revision: 1, outcome: 'applied'});

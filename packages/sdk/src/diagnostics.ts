@@ -122,6 +122,7 @@ const EVENT_LEVELS = {
   'command.queued': 'info',
   'command.rejected': 'info',
   'feed.changed': 'info',
+  'history.entity.noisy': 'warn',
   'message.received': 'info',
   'operation.completed': 'info',
   'operation.failed': 'warn',

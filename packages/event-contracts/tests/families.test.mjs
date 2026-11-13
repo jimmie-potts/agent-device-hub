@@ -234,3 +234,18 @@ test('preference sync exposes only its identity and revision, never private libr
   const wrongSubject = {...base, subject: 'assistant'};
   assert.equal(v.validate(wrongSubject).ok, false);
 });
+
+test('core automation definitions admit only their owner, entity and declared fields', () => {
+  const v = validator();
+  for (const family of ['automation-rule', 'automation-routine', 'automation-settings', 'automation-interrupt-set']) {
+    const message = fixtures.valid[family];
+    for (const altered of [
+      {...message, subject: 'another-entity'},
+      {...message, source: 'bunny/modules/synthetic'},
+      {...message, data: {...message.data, next: {atMs: 1}}},
+    ]) assert.equal(v.validate(altered).ok, false, family);
+  }
+  const message = structuredClone(fixtures.valid['automation-routine']);
+  message.data.actions[0].data.expectedGeneration = {epoch: 'synthetic', sequence: 1};
+  assert.equal(v.validate(message).ok, false, 'a stored routine action has no runtime guard');
+});

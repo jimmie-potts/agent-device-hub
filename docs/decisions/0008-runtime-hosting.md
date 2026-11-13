@@ -60,9 +60,11 @@ It changes no installed runtime, settings, hooks or device authority.
 Accepted by the owner in [hub #44](https://github.com/jimmie-potts/agent-device-hub/issues/44):
 the Mac Mini is the primary, self-sufficient host. Its runtime, private state,
 startup, dashboard access and selected portable device integrations must work
-with the PC off. The PC is an optional activity producer, client and host for
-explicitly PC-attached hardware. It is not a relay or startup dependency for
-the Mac's normal operation.
+while the PC sleeps, restarts or is off. The PC is an optional activity
+producer, client, worker and host for explicitly PC-attached hardware.
+[ADR 0015](0015-two-machine-runtime.md) accepts the stage 1 core settings design
+and source work. The PC remains a worker host and requires separate owner
+authorization to run a standby. Normal Mac operation never depends on the PC.
 
 This replaces the September hosting direction below: the host is selected and
 available; there is no hardware-purchase trigger, x86 default, OrbStack requirement
@@ -80,8 +82,13 @@ fails qualification on this baseline.
 
 Keep the reviewed immutable image, matching operator scripts and private
 configuration separate from development checkouts and disposable previews.
-The Mac owns persistent state and the serving endpoint. Never depend on a PC
-login, mounted PC database or PC process to serve the hub. Host-local producers
+The Mac owns persistent state and the serving endpoint while it leads.
+Once separately authorized, a PC standby keeps the replicated core settings in
+its own private store. Before manual handoff, client access is limited to the
+bounded authenticated settings freshness read in ADR 0015, under existing
+access rules. General client service begins only after the owner completes
+the manual handoff. Never depend on a PC login, mounted PC database or PC
+process to serve the Mac hub. Host-local producers
 read only their selected local inputs and use the existing authenticated SDK
 HTTP/SSE edge; they do not share SQLite files. A missing PC source or PC-attached
 device reports its actual unavailable/stale state without preventing the Mac's
@@ -93,7 +100,7 @@ The delivered [Mac-local browser profile](../bunny-container.md#mac-local-browse
 is a limited profile at host loopback. It runs the core and only the modules that
 reach no device, and supplies neither remote access nor device activation. The
 production target needs separately qualified private ingress, host-local
-producers and selected devices. Its client endpoint
+producers and selected devices. The Mac's production client endpoint
 must terminate on the Mac without the Windows HTTPS forwarder. Preserve existing
 authentication, credentials and Host/Origin checks; do not widen the local profile
 or treat a listening port as qualification. Choose the private ingress route and

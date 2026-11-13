@@ -11,7 +11,7 @@ export type MomentResult = {kind:'receipt'; momentId:string; requestId:string; s
 const object = (value:unknown):value is Record<string,unknown> => value!==null && typeof value==='object' && !Array.isArray(value);
 const exact = (value:Record<string,unknown>,keys:string[]) => Object.keys(value).length===keys.length && keys.every(key=>Object.hasOwn(value,key));
 const id = (value:unknown):value is string => typeof value==='string' && /^[A-Za-z0-9_.-]{1,128}$/.test(value);
-import type {AutomationStore, LogRow, NewLogRow, RuleRow} from './automation-store.js';
+import {applyDefinition, type DefinitionCommit, type AutomationStore, type LogRow, type NewLogRow, type RuleRow} from './automation-store.js';
 
 // Hub #358: owner-approved event rules, the interrupt set, event intake, arbitration and hand-off (ADR 0006).
 
@@ -203,7 +203,10 @@ export function createAutomation(options:AutomationOptions) {
   const recent = new Set<string>();
   const queue: {event:HubEvent; matched:Rule[]; parent?:TraceContext}[] = [];
   let running: Promise<void> | undefined, closed = false;
-  const reload = () => { rules = store.rules().filter(row=>row.kind==='event').map(ruleFromRow); };
+  const reload = (commit: DefinitionCommit): void => {
+    const next = store.rules().filter(row => row.kind === 'event').map(ruleFromRow);
+    commit(() => { rules = next; });
+  };
   const stopped = () => closed || !options.active();
   const matching = (event:HubEvent) => rules.filter(rule => rule.trigger.source === event.source &&
     rule.trigger.kind === event.kind && (rule.trigger.alias === undefined || rule.trigger.alias === event.alias));
@@ -313,15 +316,15 @@ export function createAutomation(options:AutomationOptions) {
   }
   const schedule = () => { running ??= drain().finally(() => { running = undefined; if (queue.length > 0 && !closed) schedule(); }); };
 
-  function create(input:RuleInput, owner:boolean): Rule {
+  function create(input:RuleInput, owner:boolean, commit:DefinitionCommit): Rule {
     const now = options.clock();
     const rule: Rule = {id:'rule-' + randomUUID(),name:input.name,enabled:owner ? input.enabled ?? false : false,kind:'event',
       trigger:input.trigger,action:input.action,createdAtMs:now,updatedAtMs:now};
     if (!store.insertRule({...rule,trigger:JSON.stringify(rule.trigger),action:JSON.stringify(rule.action)},RULE_LIMIT)) fail('capacity',429);
-    reload();return rule;
+    reload(commit);return rule;
   }
   const find = (ruleId:string) => rules.find(rule => rule.id === ruleId) ?? fail('unknown-rule',404);
-  const save = (rule:Rule) => { if (!store.replaceRule({...rule,trigger:JSON.stringify(rule.trigger),action:JSON.stringify(rule.action)})) fail('unknown-rule',404); reload(); return rule; };
+  const save = (rule:Rule, commit:DefinitionCommit) => { if (!store.replaceRule({...rule,trigger:JSON.stringify(rule.trigger),action:JSON.stringify(rule.action)})) fail('unknown-rule',404); reload(commit); return rule; };
 
   return {
     /** The intake called by the live core occurrence adapter. Synchronous: sources never wait for arbitration or devices. */
@@ -358,22 +361,32 @@ export function createAutomation(options:AutomationOptions) {
      * `owner` is true only for the owner's explicit route call; every other creator stores the rule disabled. `authorize`
      * sees the validated targets before anything is stored.
      */
-    create(value:unknown, owner:boolean, authorize?:(targets:readonly string[])=>void) {
+    create(value:unknown, owner:boolean, authorize?:(targets:readonly string[])=>void, commit=applyDefinition) {
       const input = parseRuleInput(value,options.routed(),true);
       authorize?.(input.action.targets);
-      return structuredClone(create(input,owner));
+      return structuredClone(create(input,owner,commit));
     },
-    update(ruleId:string, value:unknown, authorize?:(targets:readonly string[])=>void) {
+    update(ruleId:string, value:unknown, authorize?:(targets:readonly string[])=>void, commit=applyDefinition) {
       const input = parseRuleInput(value,options.routed(),false), current = find(ruleId);
       authorize?.(input.action.targets);
-      return structuredClone(save({...current,name:input.name,trigger:input.trigger,action:input.action,updatedAtMs:options.clock()}));
+      return structuredClone(save({...current,name:input.name,trigger:input.trigger,action:input.action,updatedAtMs:options.clock()},commit));
     },
-    setEnabled: (ruleId:string, enabled:boolean) => structuredClone(save({...find(ruleId),enabled,updatedAtMs:options.clock()})),
-    remove(ruleId:string) { find(ruleId); if (!store.deleteRule(ruleId)) fail('unknown-rule',404); reload(); },
+    setEnabled: (ruleId:string, enabled:boolean, commit=applyDefinition) => structuredClone(save({...find(ruleId),enabled,updatedAtMs:options.clock()},commit)),
+    remove(ruleId:string, commit=applyDefinition) { find(ruleId); if (!store.deleteRule(ruleId)) fail('unknown-rule',404); reload(commit); },
     interruptSet: () => [...interruptSet].sort(),
-    replaceInterruptSet(value:unknown) { const kinds = parseInterruptSet(value); store.replaceInterruptSet(kinds); interruptSet = new Set(kinds); return kinds; },
+    replaceInterruptSet(value:unknown, commit=applyDefinition) {
+      const kinds = parseInterruptSet(value);
+      store.replaceInterruptSet(kinds);
+      commit(() => { interruptSet = new Set(kinds); });
+      return kinds;
+    },
     settings: () => structuredClone(settings),
-    replaceSettings(value:unknown) { const next = parseSettings(value); store.replaceSettings(next); settings = next; return structuredClone(next); },
+    replaceSettings(value:unknown, commit=applyDefinition) {
+      const next = parseSettings(value);
+      store.replaceSettings(next);
+      commit(() => { settings = next; });
+      return structuredClone(next);
+    },
     log: (limit:number, before?:number) => store.readLog(limit,before).map(entry),
     /**
      * Stops intake, drops waiting events and waits for the current evaluation, at most `CLOSE_WAIT_MS`: the sender's own caps

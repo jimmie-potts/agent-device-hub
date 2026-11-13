@@ -670,6 +670,27 @@ relay. Grafana 12 warns that a later release will support only Viewer for
 anonymous access; a future image pin may then need a signed-in Editor. Another
 program trusted on this Mac may open Grafana, so keep the port on loopback.
 
+#### Hourly history warnings
+
+Open **Connections → Diagnostics → Open Grafana**, then **Explore → Loki**.
+Set the time range to include the current and previous UTC hours. Replace the
+lower bound below with the previous hour's start in epoch milliseconds and
+the upper bound with the current hour's start. The bounds are one hour
+(3,600,000 milliseconds) apart.
+The example covers 11:00 and 12:00 UTC on October 1, 2026.
+
+```logql
+{service_namespace="bunny", service_name="runtime"}
+  | bunny_module="core"
+  | event_name="history.entity.noisy"
+  | bunny_history_hour_start_at_ms >= 1790852400000
+  | bunny_history_hour_start_at_ms <= 1790856000000
+```
+
+Open a record's details for the writer, family, entity ID, hour, count and
+threshold. Each received record reports the threshold crossing. Filtering,
+disabled export or lost telemetry can leave gaps in the view.
+
 To discard every diagnostic record and start again, which the owner accepts:
 
 ```bash

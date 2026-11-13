@@ -18,7 +18,8 @@ import {
 import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
-import type {HistoryFilter, HistoryRow, HistoryRules} from './history.js';
+import {DEFAULT_HISTORY_RULES, type HistoryFilter, type HistoryPage, type HistoryRow, type HistoryRules} from './history.js';
+import type {HistoryDevice} from './history-alarm.js';
 import {inboxTool, historyTool} from './read-tools.js';
 import {InboxRecords} from './inbox.js';
 import {OperationRecords} from './operation-records.js';
@@ -33,6 +34,8 @@ import {ArtPart} from './art-part.js';
 import {ArtShowPart} from './art-show.js';
 import {CompanionPart} from './companion-part.js';
 import {AutomationPart, type AutomationControls} from './automation-part.js';
+import {definitionFactFields, holdsAutomationSecret, isAutomationDefinitionFact, isAutomationDefinitionSchema, isAutomationDefinitionType, type HoldsAutomationSecret} from './automation-definitions.js';
+import type {Redactions} from '../log.js';
 import type {AutomationDevice} from './automation-devices.js';
 import type {ArtCatalogRead} from './art-catalog.js';
 import type {ModeParticipant} from './mode-participants.js';
@@ -192,11 +195,20 @@ export interface CoreModule extends BunnyModule {
   /** Internal qualified host admission bridge; assignment sends nothing. */
   setModeParticipants(participants: readonly ModeParticipant[]): void;
   setAutomationDevices(devices:readonly AutomationDevice[]):void;
+  /** Binds the runtime's live secret registry before opening the owner store. */
+  setAutomationRedactions(redactions: Redactions): void;
   /** The host binds its reader of the art owner's retained catalog for owner shows (Hub #1584); binding sends nothing. */
   setArtCatalog(read: ArtCatalogRead): void;
   /** The host binds only the fixed Music producer connection lifetime. */
   setMusicCaptureRetirement(retire: () => void): void;
-  readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody};
+  /** Host admission names the machine IDs available to the history alarm before start. */
+  setHistoryDevices?(devices: readonly HistoryDevice[]): void;
+  /**
+   * Retained history's filtered read, and the rules this core's history keeps by (#1772): each family's bookkeeping
+   * members and the polled families, as the core was built with them, so an entry point's tests can show which (#1795).
+   * `page` is the gateway's read: the rows with the open spans of the entities that have a change row among them (#1773).
+   */
+  readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody; page: (filter: HistoryFilter) => HistoryPage | ErrorBody; readonly rules: HistoryRules};
 }
 
 /** Whether a hosted module is the core, whose dispatcher the gateway's action routes call. */
@@ -232,6 +244,9 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
   let contentContext: ModuleContext | undefined;
   let ownership: CoreOwnership | undefined;
   let started = false;
+  let redactions: Redactions | undefined;
+  const containsAutomationSecret: HoldsAutomationSecret = data => redactions !== undefined && holdsAutomationSecret(redactions, data);
+  let historyDevices: readonly HistoryDevice[] = [];
   const automation = (): AutomationControls => {
     if (core === undefined) throw new AutomationError('unavailable', 503);
     return core.automation;
@@ -249,7 +264,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
       content: (ref, request) => contentContext === undefined || contentContext.signal.aborted
         ? errorBody('unavailable') : readRoomContent(() => { if (contentContext === undefined) throw new Error('core-content-unavailable'); return contentContext.files(); }, ref, contentContext.signal, request),
       tools: [sessionsTool(() => core?.sessions()),
-      inboxTool(() => core?.inbox()), historyTool(filter => core?.history(filter))]},
+      inboxTool(() => core?.inbox()), historyTool(filter => core?.historyPage(filter))]},
     start: context => {
       if (ownership !== undefined) {
         if (started) throw ownershipUnavailable();
@@ -257,29 +272,32 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
       }
       started = true;
       contentContext = context;
-      core = new Core(context, options, ownership);
+      core = new Core(context, options, historyDevices, ownership, containsAutomationSecret);
       return core.start();
     },
     stop: () => core?.stop(),
-    history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'})},
+    history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'}),
+      page: filter => core?.historyPage(filter) ?? errorBody('unavailable', {detail: 'the core has not started'}), rules: options.history ?? DEFAULT_HISTORY_RULES},
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
       artSchedule:{get:()=>artSchedule().get(),save:(value,parent)=>artSchedule().save(value,parent)},
       art:{targets:()=>art().targets(),present:(plan,permit,parent)=>art().present(plan,permit,parent)},
       limits:{list:()=>limits().list(),get:id=>limits().get(id),save:(id,value,parent)=>limits().save(id,value,parent),settled:()=>limits().settled()},
-      routines:{list:()=>routines().list(),get:id=>routines().get(id),create:(value,owner)=>routines().create(value,owner),
-        update:(id,value)=>routines().update(id,value),setEnabled:(id,enabled)=>routines().setEnabled(id,enabled),
-        remove:id=>routines().remove(id),run:(id,parent)=>routines().run(id,parent),preview:id=>routines().preview(id),settled:()=>routines().settled()},
+      routines:{list:()=>routines().list(),get:id=>routines().get(id),create:(value,owner,context)=>routines().create(value,owner,context),
+        update:(id,value,context)=>routines().update(id,value,context),setEnabled:(id,enabled,context)=>routines().setEnabled(id,enabled,context),
+        remove:(id,context)=>routines().remove(id,context),run:(id,parent)=>routines().run(id,parent),preview:id=>routines().preview(id),settled:()=>routines().settled()},
       rules: () => automation().rules(), rule: id => automation().rule(id),
-      create: (value, owner, authorize) => automation().create(value, owner, authorize),
-      update: (id, value, authorize) => automation().update(id, value, authorize),
-      setEnabled: (id, enabled) => automation().setEnabled(id, enabled), remove: id => automation().remove(id),
-      interruptSet: () => automation().interruptSet(), replaceInterruptSet: value => automation().replaceInterruptSet(value),
-      settings: () => automation().settings(), replaceSettings: value => automation().replaceSettings(value),
+      create: (value, owner, authorize, context) => automation().create(value, owner, authorize, context),
+      update: (id, value, authorize, context) => automation().update(id, value, authorize, context),
+      setEnabled: (id, enabled, context) => automation().setEnabled(id, enabled, context), remove: (id, context) => automation().remove(id, context),
+      interruptSet: () => automation().interruptSet(), replaceInterruptSet: (value, context) => automation().replaceInterruptSet(value, context),
+      settings: () => automation().settings(), replaceSettings: (value, context) => automation().replaceSettings(value, context),
       settled: () => automation().settled(), log: (limit, before) => automation().log(limit, before),
     },
     actions: {dispatch: action => core?.dispatch(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
     operatorActions: {dispatch: action => core?.dispatchOperator(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
+    setAutomationRedactions: registry => { redactions = registry; },
+    setHistoryDevices: devices => { historyDevices = devices; },
     setAutomationDevices:devices=>{
       if(core===undefined) throw new Error('core-not-started');
       core.setAutomationDevices(devices);
@@ -350,12 +368,13 @@ class Core {
   /** The start under way, which a stop waits for so that an owner it opens late is shut down too. */
   #starting: Promise<void> | undefined;
 
-  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic, history}: CoreOptions, ownership?: CoreOwnership) {
+  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic, history}: CoreOptions, historyDevices: readonly HistoryDevice[], ownership: CoreOwnership | undefined,
+    private readonly holdsAutomationSecret: HoldsAutomationSecret) {
     this.#sdk = context.sdk;
     this.#log = context.log;
     this.#clock = context.clock;
     this.#scheduler = context.scheduler;
-    this.#automation = new AutomationPart(context.scheduler,context.signal,artScheduleChoice);
+    this.#automation = new AutomationPart(context.scheduler, context.signal, artScheduleChoice, holdsAutomationSecret);
     this.#art = new ArtPart((authorization,target,compositionId)=>this.#automation.authorizeAmbient(authorization,target,compositionId));
     // The core's own `operation` family (Hub #922) comes first, then the parts later stories add.
     this.#inbox = new InboxRecords((action, handle) => this.#tracker.dispatchFromInbox(action, handle));
@@ -415,6 +434,11 @@ class Core {
         const companionFailed=this.#companions.publishing(message);
         try {return await context.sdk.publishMessage(key,message);} catch(error) {failed();companionFailed();throw error;}
       }},
+      statePublication: {
+        discard: (message, key) => isAutomationDefinitionFact(key, message) && holdsAutomationSecret(definitionFactFields(key, message)),
+        discarded: trace => recordLog(context.log, 'operation.failed',
+          {'bunny.operation': 'automation', 'bunny.outcome': OutcomeWord.rejected, 'bunny.code': 'forbidden'}, trace),
+      },
       committed: change => {
         this.#automation.committed(change);
         this.#companions.committed(change);
@@ -429,7 +453,7 @@ class Core {
       ...(history === undefined ? {} : {history}),
       // Committed is not published (ADR 0012): the change stands, its messages go out at the next commit or start, and
       // the outbox records the refusal as `outbox.deferred`, once per run of refusals.
-      log: context.log, trace: context.trace,
+      log: context.log, trace: context.trace, historyDevices,
     });
     this.#tracker = new Tracker({
       store: this.#store, sdk: context.sdk, log: context.log, trace: context.trace, clock: context.clock, scheduler: context.scheduler,
@@ -787,8 +811,19 @@ class Core {
   }
 
   inbox(): ReturnType<InboxRecords['records']> { return this.#inbox.records(); }
+  /** In-process history rows without span lookups. */
   history(filter: HistoryFilter): HistoryRow[] | ErrorBody {
     return this.#store.open ? this.#store.history.read(filter) : errorBody('unavailable', {detail: 'the core history is unavailable'});
+  }
+  /** History's rows with the open spans of the entities that have a change row among them (#1773): the gateway's read. */
+  historyPage(filter: HistoryFilter): HistoryPage | ErrorBody {
+    if (!this.#store.open) return errorBody('unavailable', {detail: 'the core history is unavailable'});
+    const page = this.#store.history.page(filter);
+    if (page.rows.some(row => row.source === this.#sdk.source &&
+      isAutomationDefinitionType(row.type) && this.holdsAutomationSecret(row.record))) {
+      return errorBody('internal', {detail: 'history holds a secret, which the gateway never serves'});
+    }
+    return page;
   }
 
   /** Sends one tracked action through the dispatcher (#782); see `CoreActions.dispatch`. */
@@ -971,7 +1006,14 @@ class Core {
         type: 'org.bunny.session.updated', subject: record.id, dataschema: sessionSchema(record), data: record,
       })) : [];
       for (const part of this.#parts) {
-        if ((part.families ?? []).some(family => families.includes(family))) states.push(...part.states?.(families) ?? []);
+        if (!(part.families ?? []).some(family => families.includes(family))) continue;
+        const current = part.states?.(families) ?? [];
+        if (part === this.#automation && current.some(state =>
+          isAutomationDefinitionSchema(state.dataschema) &&
+          this.holdsAutomationSecret(state.data))) {
+          return errorBody('internal', {detail: 'an automation definition could not be served'});
+        }
+        states.push(...current);
       }
       return {revision: this.#store.revision, states};
     });

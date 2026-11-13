@@ -95,7 +95,7 @@ async function stopped(runtime: Child, environment: 'development' | 'production'
   });
   assert.ok(records.filter(costly).every((record, index) => record.event_name === COSTS[index % 2]), 'one WARN and one INFO per run of slow saves');
   for (const record of records) {
-    assert.equal(record.schema_version, '1.8');
+    assert.equal(record.schema_version, '1.9');
     assert.deepEqual(record.scope, {name: costly(record) ? 'bunny.module' : 'bunny.runtime', version: '1.0.0'});
     assert.equal(record.resource['service.name'], 'runtime');
     assert.equal(record.resource['service.version'], RUNTIME_PACKAGE_VERSION);

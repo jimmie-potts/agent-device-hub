@@ -48,7 +48,7 @@ class Profiles(unittest.TestCase):
         self.assertEqual(newest['value']['attributes'], record['attributes'])
 
     def test_profile_1_5_attributes_stay_in_profile_1_5(self):
-        self.assertEqual(ARTIFACT_VERSION, '1.8.0')
+        self.assertEqual(ARTIFACT_VERSION, '1.9.0')
         record = hub_record()
         record['attributes'].update({'bunny.state.bytes': 8388609, 'bunny.save.duration_ms': 150, 'error.type': 'TypeError'})
         earlier = create_record({**record, 'schema_version': '1.4'})

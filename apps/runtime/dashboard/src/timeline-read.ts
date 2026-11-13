@@ -1,8 +1,9 @@
-import {historyRows, type HistoryRow} from './timeline-model.ts';
+import {historyOpen, historyRows, type HistoryOpenSpan, type HistoryRow} from './timeline-model.ts';
 
 const refusalCodes = ['invalid-request', 'unauthenticated', 'forbidden', 'unavailable', 'internal', 'too-large'] as const;
 export type HistoryRefusal = typeof refusalCodes[number];
-export type HistorySnapshot = {rows: readonly HistoryRow[]; phase: 'loading' | 'ready' | 'unavailable'; readAt: number | undefined; errorCode?: HistoryRefusal | undefined};
+/** `open` holds the reply's open spans (#1773), present only when the reply had some. */
+export type HistorySnapshot = {rows: readonly HistoryRow[]; open?: readonly HistoryOpenSpan[]; phase: 'loading' | 'ready' | 'unavailable'; readAt: number | undefined; errorCode?: HistoryRefusal | undefined};
 type FetchHistory = (query: string, signal: AbortSignal) => Promise<{ok: boolean; json: () => Promise<unknown>}>;
 
 function refusal(value: unknown): HistoryRefusal | undefined {
@@ -25,9 +26,10 @@ export function createHistoryReader(fetchHistory: FetchHistory, changed: (snapsh
       try {
         const response = await fetchHistory(query, request.signal);
         const answer: unknown = await response.json();
-        const rows = response.ok ? historyRows(answer) : undefined;
+        const rows = response.ok ? historyRows(answer) : undefined, open = rows === undefined ? [] : historyOpen(answer);
         if (disposed || request !== active) return;
-        publish(rows === undefined ? {...snapshot, phase: 'unavailable', errorCode: response.ok ? undefined : refusal(answer)} : {rows, phase: 'ready', readAt: Date.now()});
+        publish(rows === undefined ? {...snapshot, phase: 'unavailable', errorCode: response.ok ? undefined : refusal(answer)}
+          : {rows, ...(open.length === 0 ? {} : {open}), phase: 'ready', readAt: Date.now()});
       } catch {if (!disposed && request === active) publish({...snapshot, phase: 'unavailable', errorCode: undefined});}
     },
     dispose: () => {disposed = true;active?.abort();active = undefined;},

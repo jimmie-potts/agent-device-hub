@@ -1,6 +1,7 @@
 // Synthetic contract evidence only: this fixture does not claim backend ingestion.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {createRecord,projectRecord,queryRecords,toOtlp,catalog} from '../dist/index.js';
 import {record} from './sample.mjs';
@@ -31,4 +32,19 @@ for(const record of records){
  assert.ok(spans.some(span=>span.traceId===log.traceId&&span.spanId===log.spanId));
  assert.equal(log.attributes.find(attr=>attr.key==='bunny.ticket.sequence').value.intValue,'7');
 }
-console.log(JSON.stringify({synthetic:true,languages:['typescript','python'],versions:['1.1','1.0'],matchedRecords:2,matchedSpans:2,ingested:false}));
+// The private Grafana query selects received warnings by the recorded UTC hour,
+// independent of the time the diagnostic writer stamped after commit.
+const fixtures=JSON.parse(readFileSync(new URL('../fixtures/records.json',import.meta.url),'utf8')).cases;
+const warning=fixtures.find(({name})=>name==='history-alarm-1.9').record;
+const hourKey='bunny.history.hour_start_at_ms';
+const currentHour=warning.attributes[hourKey], previousHour=currentHour-3_600_000;
+const alarms=[currentHour-7_200_000,previousHour,currentHour,currentHour+3_600_000].map(hour=>({
+ ...warning,attributes:{...warning.attributes,[hourKey]:hour},
+}));
+const alarmRecords=queryRecords([...records,...alarms],{'service.name':'runtime',event_name:'history.entity.noisy','bunny.module':'core'});
+assert.deepEqual(alarmRecords.filter(({attributes})=>attributes[hourKey]>=previousHour&&attributes[hourKey]<=currentHour)
+ .map(({attributes})=>attributes[hourKey]),[previousHour,currentHour]);
+const warningLog=toOtlp(warning).resourceLogs[0].scopeLogs[0].logRecords[0];
+assert.equal(warningLog.eventName,'history.entity.noisy');
+assert.equal(warningLog.attributes.find(({key})=>key===hourKey).value.intValue,String(currentHour));
+console.log(JSON.stringify({synthetic:true,languages:['typescript','python'],versions:['1.1','1.0'],matchedRecords:2,matchedSpans:2,historyWarnings:2,ingested:false}));

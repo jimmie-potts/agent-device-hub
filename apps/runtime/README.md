@@ -433,9 +433,12 @@ and exits 1, and the service manager restarts it whole.
   readings history took, not of readings a device answered, and history no
   longer keeps each repeated reading's time. `core_history_latest` keeps its
   five columns and holds the record of each entity's last row. Spans are never
-  in the fact log, and rows are never updated. The shipped list gives the core
-  every registration's bookkeeping members and polled families; a core built
-  without them uses the contracts package's members and no polled family. See
+  in the fact log, and rows are never updated. The shipped list's core
+  factory, `coreFactory`, gives history every registration's bookkeeping
+  members and polled families, and every entry point builds its core with it:
+  the installed runtime and each profile of the container (#1795). Only a core
+  created directly with `createCoreModule()` and no `history` option, as some
+  tests do, uses the contracts package's members and no polled family. See
   [Core history spans](UPGRADE.md#core-history-spans) for the store change.
 - **Fact log** (#1740). Each history row also names its origin and its place
   in that origin's order, `origin_seq`, counting from 1 with no gaps. The
@@ -2006,7 +2009,7 @@ without it, from `scripts/measure-memory.mjs`, measured before the core shipped.
 
 Each record is one JSON line on stderr and a
 [diagnostic-contract](../../docs/observability-contract.md#the-runtimes-records-profile-12)
-record of profile 1.7, built by the contract's `createRecord`: `schema_version`,
+record of profile 1.9, built by the contract's `createRecord`: `schema_version`,
 `timestamp`, the severity pair, a registered `event_name` with its static
 `body`, the resource, the scope and its version (`1.0.0`), and registered
 `attributes` with `bunny.provenance` `source`, plus `trace_id`, `span_id` and
@@ -2535,6 +2538,22 @@ includes uncertain writes that may set a hold, failures after acceptance,
 expired commands and refusals the dashboard can send again. Items still have no
 time limit, and a later success clears nothing.
 
+The core emits one `history.entity.noisy` warning when a writer, family
+and entity commits its 121st `change` row in a UTC clock hour. The threshold
+of 120 comes from the history replay in [#1778](https://github.com/jimmie-potts/agent-device-hub/issues/1778).
+Initial, gap and span-closing change rows count. Separate removals,
+outcomes, operations and occurrences are outside this count. Music capture
+features, for example, are expected occurrences with 100 ms windows.
+The alarm leaves all history rows in place.
+
+The two in-memory buckets cover the latest observed hour and its predecessor.
+An older backward clock step starts a fresh window at the corrected hour.
+A discarded hour can warn again after another 121 counted rows if revisited.
+Restart begins with empty counts. The warning identifies an entity by its
+approved neutral machine ID. Records without an approved ID remain in history.
+See the [private Grafana query](../../docs/bunny-container.md#hourly-history-warnings)
+for received warnings.
+
 `GET /api/v2/history` reads committed `core_history`, oldest first, with optional
 inclusive `fromAtMs`, `toAtMs`, `kind`, `source` and qualified `session` filters.
 Optional `limit` is an integer from 1 to 500: filters combine first, then the
@@ -2544,6 +2563,36 @@ complete matching result and existing order. It bounds row count, not bytes or
 filtered scan time. Unknown, repeated or invalid fields are refused. Every caller
 with read scope sees the whole history and inbox. The MCP tools `core_inbox`
 and `core_history` read the same owner without triggering actions.
+
+The answer is `{schema: 'history/2.0', rows}` and, since #1773, the optional
+`open`: for each entity with a change row in `rows`, the span its next row
+would close if it came now (see Changes and spans), when that span holds more
+than its row's reading. Each entry gives `source`, `family`, `id`, the
+`revision` of the entity's last row, `sinceAtMs` (null when the start is
+unknown), `lastConfirmedAtMs` and `confirmations`, as history holds them. The
+core reads them with one keyed lookup per distinct entity with a change row in
+the page (`History.page`, `History.open`); other rows add none. A span the
+intake would reset, or of an entity whose last row is a removal, is left out.
+`open` is present only when it has an entry, so any other answer is exactly the
+answer before #1773, and a reader that reads only `rows` is unaffected. Open
+spans are not facts: a read after a sequence (`History.after`) returns rows
+only. The MCP tool `core_history` reads the same page. Its published result
+schema stays closed with required `rows` and optional `open`. A client that
+cached the previous schema may need to list the tools again after upgrading.
+
+The Timeline (`dashboard/src/timeline-model.ts`) reads `open` and adds plain
+lines under a row's context: "After 4 h 29 min unchanged, 3,300 readings" on a
+change row with a span; "Readings resumed" with "No reading for 1 h 12 min,
+then the same state" and the preceding span's "After …" line on a gap row
+that closes a span; and "Last readings before removal" with the stretch it
+closes on a closing row. A known open span appears on an entity's newest
+change row in the page when its revision and start instant match the row.
+It reads "Unchanged since …, last reading at …, N readings". When the clock
+runs backward, the line gives both instants and says the recorded times run
+backward. It shows no duration. The dedicated Timeline lists open spans with
+unknown starts separately for the entities in the loaded entries, with their
+family, last recorded reading time and count. That list follows the local category
+filter. In a Home shape the row notes show only when the entry is open.
 
 `POST /api/v2/commands/inbox-handle` takes `{target, requestId, data:
 {expectedRevision, action}}`, where action is `dismiss` or `send-again`.

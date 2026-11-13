@@ -452,7 +452,9 @@ reactions stay on the home network.
 Profile 2.0 drops profile 1.0's privacy-based field exclusions.
 [ADR 0011](0011-private-personal-data-retention.md), as amended on 2026-10-05
 and 2026-11-11, governs personal data:
-- It is stored only in private owner-controlled storage on the runtime host.
+- It is stored only in private owner-controlled storage on runtime hosts the
+  owner has selected. [ADR 0015](0015-two-machine-runtime.md) defines the core
+  settings that can replicate once the owner separately authorizes a standby.
 - It may be sent to Claude and Codex in prompts.
 - Only the classes its [2026-11-11 amendment](0011-private-personal-data-retention.md#amendment-2026-11-11)
   lists as may be sent, outside its not-for-now list, may also go to OpenAI's
@@ -1004,9 +1006,9 @@ design in #1768, which the owner's answers settle but do not word; #1771 and
 - A silence longer than the gap is recorded by one row when readings resume. A
   removal closes an open span with one row first.
 - The open span is kept outside the history rows. Rows are never updated, so
-  the fact log stays append-only and numbered without gaps. A peer installation,
-  proposed in [ADR 0015](0015-two-machine-runtime.md), would read rows only:
-  open spans and freshness are never replicated.
+  the fact log stays append-only and numbered without gaps. Under stage 1 of
+  ADR 0015, a peer starts with a settings snapshot, then reads committed
+  settings facts after its cursor. Open spans and live device freshness stay local.
 
 **What stays:**
 - Devices keep polling and publishing as they do. Every live reader, the safety

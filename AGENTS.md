@@ -210,10 +210,18 @@ Do not infer success, readership, parentage or connectivity from missing evidenc
 Device evidence claims use `sdk/evidence`; the `bunny/no-raw-outcome-literal`
 lint checks their outcome words.
 
-Maintain one active agent-state owner and one designated writer per physical
-device. The hub calls existing controllers; it does not bypass their queues.
+Maintain one active agent-state owner per running host and one designated
+writer per physical device. Before planning or changing two-host settings
+replication or a standby handoff, read
+[ADR 0015](docs/decisions/0015-two-machine-runtime.md) for accepted scope and
+host authorization. The PC's current authorization is worker-only. A separately
+authorized standby keeps device control off. Before transferring control to it,
+the owner verifies that the Mac core is stopped and its start hold is set.
+The hub calls existing controllers and preserves their queues.
 Keep controller databases private, especially across Windows and WSL. Use
 explicit API/ownership handoffs, not concurrent access to a mounted SQLite file.
+Replicate settings between hosts only through ADR 0015's snapshot and fact-log
+reads. Never copy or mount a live SQLite file for replication.
 
 Preserve existing Nanoleaf device behavior. The shared-input cutover is complete,
 and the runtime port keeps shared input only (#26, owner decision 2026-10-06).

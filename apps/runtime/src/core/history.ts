@@ -23,7 +23,7 @@ import {randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {compareDelivery, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {bookkeeping as contractBookkeeping, sameState, type Bookkeeping} from '@jimmie-potts/event-contracts/v2/bookkeeping';
-import {OUTCOME_RECORDED_TYPE} from '@jimmie-potts/sdk';
+import {OUTCOME_RECORDED_TYPE, type TraceContext} from '@jimmie-potts/sdk';
 import type {ActionKind, Evidence, OperationResult, OperationStatus} from './operations.js';
 
 /** What a history row records. */
@@ -97,6 +97,9 @@ export type OperationStep = {
 /** What one transaction keeps in history, in the order it happened. */
 export type HistoryEntry = {kind: 'message'; message: Message<unknown>} | {kind: 'operation'; step: OperationStep};
 
+/** The designated identity of a change row inserted by the transaction. */
+export type WrittenChange = {source: string; family: string; id: string; trace: TraceContext};
+
 /** At most this many refused messages are kept for diagnosis; the oldest goes first. */
 export const MAX_REFUSED = 1000;
 const SCHEMA_BASE = 'https://bunny.invalid/events/';
@@ -126,6 +129,15 @@ export const kept = (message: Pick<Message<unknown>, 'kind' | 'type'>): boolean 
 export type HistoryFilter = {fromAtMs?: number; toAtMs?: number; kind?: HistoryKind; source?: string; session?: string; limit?: number};
 export type HistoryRow = {seq: number; atMs: number; revision: number; kind: HistoryKind; source: string; messageId: string | null;
   type: string; subject: string; requestId: string | null; record: Record<string, unknown>};
+/**
+ * An entity's open span as a reader sees it (#1773): the stretch the entity's next row would close if it came now. It
+ * names the entity, the revision of the entity's last row, which wrote or, after a reset, preceded it, and the span's
+ * start (null when unknown), last confirmation and count of readings history took in it. It is not a fact: the fact log
+ * never carries it.
+ */
+export type HistoryOpenSpan = {source: string; family: string; id: string; revision: number; sinceAtMs: number | null; lastConfirmedAtMs: number; confirmations: number};
+/** A page of history: its rows and, when any entity with a change row in the page has one, the open spans of those entities. */
+export type HistoryPage = {rows: HistoryRow[]; open?: HistoryOpenSpan[]};
 /** A history row as the fact log reads it: a history row with its origin and its place in that origin's order. */
 export type FactRow = HistoryRow & {origin: string; originSeq: number};
 /** At most this many rows one read after a sequence returns. */
@@ -153,8 +165,9 @@ export class History {
   readonly #database: DatabaseSync;
   readonly #rules: HistoryRules;
   readonly #statements: {
-    insert: StatementSync; stored: StatementSync; seen: StatementSync; latest: StatementSync; setLatest: StatementSync;
+    insert: StatementSync; stored: StatementSync; seen: StatementSync; retained: StatementSync; latest: StatementSync; setLatest: StatementSync;
     refuse: StatementSync; trimRefused: StatementSync; after: StatementSync; span: StatementSync; setSpan: StatementSync; dropSpan: StatementSync;
+    open: StatementSync;
   };
 
   /** This installation's origin: a random UUID, created once and kept in the core store. */
@@ -183,6 +196,7 @@ export class History {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(origin_seq), 0) + 1 FROM core_history WHERE origin = ?))`),
       stored: database.prepare('SELECT record FROM core_history WHERE origin = ? AND source = ? AND message_id = ? AND kind != \'change\''),
       seen: database.prepare('SELECT 1 FROM core_history WHERE origin = ? AND source = ? AND message_id = ?'),
+      retained: database.prepare('SELECT kind, revision, type, subject, record FROM core_history WHERE origin = ? AND source = ? AND message_id = ?'),
       latest: database.prepare('SELECT revision, record FROM core_history_latest WHERE source = ? AND family = ? AND id = ?'),
       setLatest: database.prepare(`INSERT INTO core_history_latest VALUES (?, ?, ?, ?, ?)
         ON CONFLICT (source, family, id) DO UPDATE SET revision = excluded.revision, record = excluded.record`),
@@ -198,6 +212,11 @@ export class History {
         seen_message_id = excluded.seen_message_id, seen_type = excluded.seen_type, since_at_ms = excluded.since_at_ms, confirmed_at_ms = excluded.confirmed_at_ms,
         confirmations = excluded.confirmations`),
       dropSpan: database.prepare('DELETE FROM core_history_span WHERE source = ? AND family = ? AND id = ?'),
+      // One statement per entity, two primary-key probes: the span and the latest record it must still match.
+      open: database.prepare(`SELECT span.row_revision AS rowRevision, span.seen_revision AS seenRevision, span.since_at_ms AS sinceAtMs,
+        span.confirmed_at_ms AS confirmedAtMs, span.confirmations AS confirmations, latest.revision AS latestRevision, latest.record = 'null' AS tombstone
+        FROM core_history_span AS span JOIN core_history_latest AS latest ON latest.source = span.source AND latest.family = span.family AND latest.id = span.id
+        WHERE span.source = ? AND span.family = ? AND span.id = ?`),
     };
   }
 
@@ -231,6 +250,39 @@ export class History {
   }
 
   /**
+   * The open spans of the entities that have a change row in `rows` (#1773), one keyed lookup per distinct entity: for
+   * each, the span the entity's next row would close if it came now, when it holds more than its row's reading, as
+   * `#closes` decides for a row. A span the write path would reset, because another release took a reading of its
+   * entity since, holds no confirmation yet and is left out, as is any entity whose last row is a removal. Rows other
+   * than changes add no lookup. Reading writes nothing and publishes nothing; `after` never returns these.
+   */
+  open(rows: readonly HistoryRow[]): HistoryOpenSpan[] {
+    const entities = new Map<string, {source: string; family: string; id: string}>();
+    for (const row of rows) {
+      if (row.kind !== 'change') continue;
+      const {family, id} = row.record;
+      if (typeof family !== 'string' || typeof id !== 'string') continue;
+      entities.set(JSON.stringify([row.source, family, id]), {source: row.source, family, id});
+    }
+    const open: HistoryOpenSpan[] = [];
+    for (const {source, family, id} of entities.values()) {
+      const found = this.#statements.open.get(source, family, id) as (Pick<SpanRow, 'rowRevision' | 'seenRevision' | 'sinceAtMs' | 'confirmedAtMs' | 'confirmations'>
+        & {latestRevision: number; tombstone: number}) | undefined;
+      if (found === undefined || found.tombstone === 1 || found.rowRevision !== found.latestRevision || found.seenRevision < found.latestRevision) continue;
+      const closes = History.#closes(found);
+      if (closes !== undefined) open.push({source, family, id, revision: found.latestRevision, ...closes});
+    }
+    return open;
+  }
+
+  /** A page of `filter`'s rows with the open spans of the entities that have a change row in it, `open` only when there is one. */
+  page(filter: HistoryFilter = {}): HistoryPage {
+    const rows = this.read(filter);
+    const open = this.open(rows);
+    return open.length === 0 ? {rows} : {rows, open};
+  }
+
+  /**
    * How history took a removal, occurrence or outcome with this `(source, id)` before, among this origin's rows only:
    * `new`, an exact `duplicate`, or a `conflict`, the same `(source, id)` with other content.
    */
@@ -246,28 +298,51 @@ export class History {
   }
 
   /** Writes one transaction's entries, in order, inside that transaction. */
-  write(entries: readonly HistoryEntry[], atMs: number, revision: number): void {
+  write(entries: readonly HistoryEntry[], atMs: number, revision: number, changes?: WrittenChange[], required?: ReadonlySet<Message<unknown>>): void {
     for (const entry of entries) {
       if (entry.kind === 'operation') this.#operation(entry.step, atMs, revision);
-      else this.#message(entry.message, atMs, revision);
+      else this.#message(entry.message, atMs, revision, changes);
     }
+    for (const message of required ?? []) this.#requireRetained(message, revision);
   }
 
-  /** One row of this origin, at the next place in its order. */
+  /** An effective owner definition edit needs both its exact fact and its current history metadata. */
+  #requireRetained(message: Message<unknown>, revision: number): void {
+    const removal = message.kind === 'removal';
+    const family = removal ? (message.data as {entity: {family: string}}).entity.family : familyOf(message.dataschema);
+    const id = message.subject;
+    const fact = this.#statements.retained.get(this.origin, message.source, message.id) as
+      {kind: string; revision: number; type: string; subject: string; record: string} | undefined;
+    if (family === undefined || fact?.kind !== (removal ? 'removal' : 'change') || fact.revision !== revision ||
+        fact.type !== message.type || fact.subject !== id) throw new Error('the required history fact was not retained');
+    const latest = this.#latest(message.source, family, id);
+    const span = this.#statements.span.get(message.source, family, id);
+    const record = JSON.parse(fact.record) as Record<string, unknown>;
+    if (removal) {
+      if (latest?.revision === revision && latest.record === null && span === undefined &&
+          JSON.stringify(record) === JSON.stringify(message)) return;
+    } else if (latest?.revision === revision && JSON.stringify(latest.record) === JSON.stringify(message.data) &&
+        record.family === family && record.id === id && record.revision === revision &&
+        span?.rowRevision === revision && span.seenRevision === revision &&
+        span.seenMessageId === message.id && span.seenType === message.type) return;
+    throw new Error('the required history metadata was not retained');
+  }
+
+  /** Whether the statement inserted a row at the next place in this origin's order. */
   #insert(atMs: number, revision: number, kind: string, source: string, messageId: string | null, type: string, subject: string,
-    requestId: string | null, record: string): void {
-    this.#statements.insert.run(atMs, revision, kind, source, messageId, type, subject, requestId, record, this.origin, this.origin);
+    requestId: string | null, record: string): boolean {
+    return Number(this.#statements.insert.run(atMs, revision, kind, source, messageId, type, subject, requestId, record, this.origin, this.origin).changes) === 1;
   }
 
   #operation(step: OperationStep, atMs: number, revision: number): void {
     this.#insert(atMs, revision, 'operation', step.requestedBy, null, step.command, step.target, step.requestId, JSON.stringify(step));
   }
 
-  #message(message: Message<unknown>, atMs: number, revision: number): void {
+  #message(message: Message<unknown>, atMs: number, revision: number, changes?: WrittenChange[]): void {
     // A message this origin's history already holds, as a crash's resend, adds nothing.
     if (!kept(message) || this.#statements.seen.get(this.origin, message.source, message.id) !== undefined) return;
     if (message.kind === 'state') {
-      this.#change(message, atMs, revision);
+      this.#change(message, atMs, revision, changes);
       return;
     }
     if (message.kind === 'removal') {
@@ -275,7 +350,7 @@ export class History {
       // brings nothing back, and a new entity under the same ID starts afresh. An open span is closed by a row first.
       const {entity, revision: removedAt} = message.data as {entity?: {family?: unknown; id?: unknown}; revision?: unknown};
       if (typeof entity?.family === 'string' && typeof entity.id === 'string') {
-        this.#closeBeforeRemoval(message, entity.family, entity.id, atMs, revision);
+        this.#closeBeforeRemoval(message, entity.family, entity.id, atMs, revision, changes);
         this.#statements.setLatest.run(message.source, entity.family, entity.id, typeof removedAt === 'number' ? removedAt : 0, 'null');
         this.#statements.dropSpan.run(message.source, entity.family, entity.id);
       }
@@ -305,7 +380,7 @@ export class History {
   }
 
   /** The stretch a row closes, when history took more readings in it than the row that opened it, or undefined. */
-  static #closes(span: SpanRow): HistorySpan | undefined {
+  static #closes(span: Pick<SpanRow, 'sinceAtMs' | 'confirmedAtMs' | 'confirmations'>): HistorySpan | undefined {
     if (span.confirmedAtMs === null || span.confirmations <= (span.sinceAtMs === null ? 0 : 1)) return undefined;
     return {sinceAtMs: span.sinceAtMs, lastConfirmedAtMs: span.confirmedAtMs, confirmations: span.confirmations};
   }
@@ -315,14 +390,15 @@ export class History {
    * row changes no member, so it claims nothing newer than its values: it carries the last row's revision (equal to
    * `previous`) and no message ID, the last confirmation's type, and the confirmation's instant and count in `span`.
    */
-  #closeBeforeRemoval(removal: Message<unknown>, family: string, id: string, atMs: number, revision: number): void {
+  #closeBeforeRemoval(removal: Message<unknown>, family: string, id: string, atMs: number, revision: number, changes?: WrittenChange[]): void {
     const latest = this.#latest(removal.source, family, id);
     if (latest === undefined || latest.record === null) return;
     const span = this.#span(removal.source, family, id, latest.revision);
     const closes = History.#closes(span);
     if (closes === undefined) return;
     const event: ChangeEvent = {family, id, revision: latest.revision, previous: latest.revision, changed: {}, removed: [], span: closes, closedBy: 'removal'};
-    this.#insert(atMs, revision, 'change', removal.source, null, span.seenType, removal.subject, null, JSON.stringify(event));
+    const inserted = this.#insert(atMs, revision, 'change', removal.source, null, span.seenType, removal.subject, null, JSON.stringify(event));
+    if (inserted && latest.record.id === id) changes?.push({source: removal.source, family, id, trace: {traceparent: removal.traceparent}});
   }
 
   /**
@@ -330,7 +406,7 @@ export class History {
    * the last confirmation; a confirmation of the open span when it holds the same state; a gap row when that
    * confirmation of a polled family comes after a silence longer than the gap; and otherwise a change row.
    */
-  #change(message: Message<unknown>, atMs: number, revision: number): void {
+  #change(message: Message<unknown>, atMs: number, revision: number, changes?: WrittenChange[]): void {
     const family = familyOf(message.dataschema);
     const record = message.data as Record<string, unknown> | null;
     if (family === undefined || typeof record !== 'object' || record === null || Array.isArray(record)) return;
@@ -357,10 +433,10 @@ export class History {
           span.confirmations + 1);
         return;
       }
-      this.#row(message, family, id, record, latest, span, atMs, revision, silence);
+      this.#row(message, family, id, record, latest, span, atMs, revision, changes, silence);
       return;
     }
-    this.#row(message, family, id, record, latest, span, atMs, revision);
+    this.#row(message, family, id, record, latest, span, atMs, revision, changes);
   }
 
   /**
@@ -368,7 +444,7 @@ export class History {
    * gap row, the silence; the record becomes the last row's, and a new span opens with this reading.
    */
   #row(message: Message<unknown>, family: string, id: string, record: Record<string, unknown>, latest: {revision: number; record: Record<string, unknown> | null} | undefined,
-    span: SpanRow | undefined, atMs: number, revision: number, gapMs?: number): void {
+    span: SpanRow | undefined, atMs: number, revision: number, changes?: WrittenChange[], gapMs?: number): void {
     const entityRevision = typeof record.revision === 'number' ? record.revision : 0;
     const held = latest?.record ?? null;
     const before = held ?? {};
@@ -382,7 +458,8 @@ export class History {
     const closes = span === undefined ? undefined : History.#closes(span);
     const event: ChangeEvent = {family, id, revision: entityRevision, previous: held === null ? null : latest?.revision ?? null, changed, removed,
       ...(closes === undefined ? {} : {span: closes}), ...(gapMs === undefined ? {} : {gapMs})};
-    this.#insert(atMs, revision, 'change', message.source, message.id, message.type, message.subject, null, JSON.stringify(event));
+    const inserted = this.#insert(atMs, revision, 'change', message.source, message.id, message.type, message.subject, null, JSON.stringify(event));
+    if (inserted && record.id === id) changes?.push({source: message.source, family, id, trace: {traceparent: message.traceparent}});
   }
 }
 

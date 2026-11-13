@@ -3,6 +3,7 @@ import {mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
+import {setImmediate as nextTurn} from 'node:timers/promises';
 import {checkConfiguration} from '../../../packages/sdk/dist/src/index.js';
 import {checkLocalBrowserConfig, checkLocalBrowserCredentials, containerOptions, hostLocalModules, refuseNamedDevices} from '../entrypoint.mjs';
 import * as entrypoint from '../entrypoint.mjs';
@@ -350,4 +351,165 @@ test('check-credentials runs the start-time credential check on the installed fi
   await assert.rejects(entrypoint.checkConfiguredCredentials(config, {access: 'isolated'}), {message: 'container-command-refused'});
   await assert.rejects(entrypoint.main(['check-credentials'], {}), {message: 'container-command-refused'});
   await assert.rejects(entrypoint.main(['check-credentials', 'extra'], {}), {message: 'container-command-refused'});
+});
+
+// The history rules each profile's core is built with (#1795). Every profile must keep history by the bookkeeping
+// members and polled families of the modules it hosts, as #1771 and #1772 declare them; before #1795 the container's
+// profiles took a core factory that kept only the contracts package's members and polled nothing.
+const shippedRuntime = () => import('../../../apps/runtime/dist/src/modules.js');
+
+/** Asserts that `rules` holds every hosted factory's declared bookkeeping members and polled families. */
+function assertHostedRules(rules, hosted) {
+  for (const {name, bookkeeping = {}, polling = {}} of hosted) {
+    for (const [family, pointers] of Object.entries(bookkeeping)) assert.deepEqual(rules.bookkeeping[family], pointers, `${name} ${family}`);
+    for (const [family, interval] of Object.entries(polling)) assert.equal(rules.polling[`bunny/modules/${name}`]?.[family], interval, `${name} polls ${family}`);
+  }
+  assert.deepEqual(rules.bookkeeping.device, ['/observed/observedAtMs', '/lastTransmission/transmittedAtMs', '/externalControl/observedAtMs'], 'the contracts package\'s members stay');
+}
+
+const TYPICAL = ['playback', 'lifx', 'tidbyt', 'pixoo', 'nanoleaf', 'roborock', 'wemo', 'companions', 'weather'];
+
+test('the production profile builds its core with the history rules of the modules it hosts (#1795)', async () => {
+  const runtimeModules = await shippedRuntime();
+  const selected = runtimeModules.shippedModules.slice(1).filter(({name}) => TYPICAL.includes(name));
+  assert.deepEqual(selected.map(({name}) => name).sort(), [...TYPICAL].sort(), 'every typical module ships');
+  // Only the hosted modules' transports are simulated; the core factory is the one the entrypoint takes.
+  const factories = [runtimeModules.shippedModules[0], ...selected.map(factory => ({...factory, create: () => factory.simulate()}))];
+  const prepared = entrypoint.productionModules({modules: Object.fromEntries(TYPICAL.map(name => [name, {}])), edge: productionEdge()},
+    {...runtimeModules, shippedModules: factories}, checkConfiguration, containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled'}));
+  const core = prepared.modules[0];
+  assert.equal(core.manifest.name, 'core');
+  const {rules} = core.history;
+  assertHostedRules(rules, selected);
+  assert.deepEqual(rules.bookkeeping['pixoo-display'], ['/monitor/page']);
+  assert.deepEqual(rules.bookkeeping['roborock-vacuum'], ['/observedAtMs/value']);
+  assert.deepEqual(rules.bookkeeping['lifx-light'], ['/observed/observedAtMs']);
+  assert.deepEqual(rules.polling, {
+    'bunny/modules/pixoo': {device: 30_000}, 'bunny/modules/roborock': {'roborock-vacuum': 60_000, device: 60_000},
+    'bunny/modules/weather': {'weather-state': 900_000}, 'bunny/modules/wemo': {device: 5000},
+  });
+});
+
+test('the host-local, disabled-control and isolated profiles build their core with the history rules (#1795)', async () => {
+  const runtimeModules = await shippedRuntime();
+  const sections = {companions: {}, weather: {}};
+  const local = hostLocalModules({modules: sections, edge: {credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback', launcher: false, mcp: false}},
+    runtimeModules, checkConfiguration);
+  assert.deepEqual(local.factories.map(({name}) => name), ['core', 'companions', 'weather']);
+  assertHostedRules(local.modules[0].history.rules, local.factories.slice(1));
+  assert.deepEqual(local.modules[0].history.rules.polling['bunny/modules/weather'], {'weather-state': 900_000});
+  const disabled = entrypoint.productionModules({modules: sections, edge: productionEdge()}, runtimeModules, checkConfiguration,
+    containerOptions({BUNNY_ACCESS: 'production'}));
+  assert.deepEqual(disabled.factories.map(({name}) => name), ['core', 'companions', 'weather']);
+  assertHostedRules(disabled.modules[0].history.rules, disabled.factories.slice(1));
+  // The isolated profile starts `[coreFactory]` with control disabled and the shipped list otherwise: one core factory.
+  assert.equal(runtimeModules.coreFactory, runtimeModules.shippedModules[0]);
+  const [alone] = runtimeModules.buildModules([runtimeModules.coreFactory], false);
+  assertHostedRules(alone.history.rules, runtimeModules.registrations);
+  assert.deepEqual(alone.history.rules, runtimeModules.historyRules(runtimeModules.registrations));
+});
+
+test('in the production profile on a controlled clock, a page turn writes no row and a silent polled device gets one gap row (#1795)', async t => {
+  const [runtimeModules, {startRuntime}, {manualClock}, {RECORDS}] = await Promise.all([shippedRuntime(),
+    import('../../../apps/runtime/dist/src/runtime.js'), import('../../../apps/runtime/dist/tests/scenarios/virtual-time.js'),
+    import('../../../apps/runtime/dist/tests/fixtures/module-state-records.js')]);
+  const clock = manualClock(1_800_000_000_000);
+  // Stand-ins under the shipped names, so the core hears their states from the sources it keeps rules for.
+  const publishers = {};
+  const standIn = name => ({name, create: () => ({manifest: {name, apiVersion: '1.2', configure: section => ({config: section, devices: []})},
+    start: context => {publishers[name] = context.sdk;}, stop: () => {}})});
+  const prepared = entrypoint.productionModules({modules: {pixoo: {}, wemo: {}}, edge: productionEdge()},
+    {...runtimeModules, shippedModules: [runtimeModules.shippedModules[0], standIn('pixoo'), standIn('wemo')]}, checkConfiguration,
+    containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled'}));
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-history-rules-')));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const runtime = await startRuntime({modules: prepared.modules, stateDir: join(root, 'state'), port: 0, clock: {now: clock.now}, scheduler: clock.scheduler,
+    config: {modules: {pixoo: {}, wemo: {}}}, log: () => {}});
+  t.after(() => runtime.stop());
+  const core = prepared.modules[0];
+  const rows = source => core.history.read({kind: 'change', source});
+  // Turns of the event loop, never a wait on real time, until the intake has committed `count` rows of `source`.
+  const settle = async (source, count) => {
+    for (let turn = 0; turn < 500 && rows(source).length < count; turn++) await new Promise(resolve => {setImmediate(resolve);});
+    return rows(source);
+  };
+  let revision = 0;
+  const display = RECORDS['pixoo-display/2.1'].data;
+  const show = data => publishers.pixoo.publish('bunny.state.pixoo-display.pixoo', {kind: 'state', type: 'org.bunny.pixoo-display.updated', subject: 'pixoo',
+    dataschema: 'https://bunny.invalid/events/pixoo-display/2.1', data: {...data, revision: ++revision}});
+  await show({...display, monitor: {...display.monitor, page: 0}});
+  assert.equal((await settle('bunny/modules/pixoo', 1)).length, 1, 'the first display record writes its row');
+  for (const page of [1, 0, 1]) await show({...display, monitor: {...display.monitor, page}});
+  // A later real change shows that the page turns were taken and wrote nothing.
+  await show({...display, monitor: {...display.monitor, page: 1}, showing: 'none'});
+  const shown = await settle('bunny/modules/pixoo', 2);
+  assert.equal(shown.length, 2, 'only the real change writes a row');
+  assert.deepEqual(Object.keys(shown[1].record.changed).sort(), ['monitor', 'showing']);
+  assert.equal(shown[1].record.span.confirmations, 4, 'the three page turns confirmed the span');
+  // A Wemo plug read every 5 s, then silent for longer than its 2-minute gap.
+  const unsupported = {supported: false}, unknown = {status: 'unknown'};
+  const plug = atMs => ({id: 'desk-lamp', revision: ++revision, kind: 'wemo', availability: 'available', configurationRevision: 1, generation: {epoch: 'wemo', sequence: 1},
+    capabilities: {power: {supported: true}, brightness: unsupported, modes: unsupported, moments: unsupported, media: unsupported, scenes: unsupported, zones: unsupported,
+      preview: unsupported},
+    desired: {power: unknown, brightness: unknown, mode: unknown}, observed: {status: 'known', observedAtMs: atMs, power: {status: 'known', value: true}, brightness: unknown},
+    pending: 0, pendingKinds: [], lastOutcome: unknown, lastTransmission: unknown, externalControl: unknown});
+  const read = () => publishers.wemo.publish('bunny.state.device.desk-lamp', {kind: 'state', type: 'org.bunny.device.updated', subject: 'desk-lamp',
+    dataschema: 'https://bunny.invalid/events/device/2.4', data: plug(clock.now())});
+  await read();
+  assert.equal((await settle('bunny/modules/wemo', 1)).length, 1);
+  clock.advance(5000);
+  await read();
+  // The confirmation writes no row to wait for; the intake takes messages in order, so a display change published after
+  // it is a row that shows it was taken before the clock moves on.
+  await show({...display, monitor: {...display.monitor, page: 1}, showing: 'dashboard'});
+  assert.equal((await settle('bunny/modules/pixoo', 3)).length, 3);
+  clock.advance(5 * 60_000);
+  await read();
+  const plugRows = await settle('bunny/modules/wemo', 2);
+  assert.equal(plugRows.length, 2, 'one gap row when readings resume');
+  assert.equal(plugRows[1].record.gapMs, 5 * 60_000);
+});
+
+test('the production-selected core warns on state changes published during module start', async t => {
+  const [runtimeModules, {startRuntime}, {manualClock}] = await Promise.all([
+    import('../../../apps/runtime/dist/src/modules.js'),
+    import('../../../apps/runtime/dist/src/runtime.js'), import('../../../apps/runtime/dist/tests/scenarios/virtual-time.js'),
+  ]);
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'gh1778-')));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const id = 'fixture-device';
+  const module = {
+    manifest: {name: 'volcano', apiVersion: '1.3',
+      configure: () => ({config: {id, label: 'Synthetic private label'}, devices: []})},
+    async start({sdk}) {
+      for (let revision = 1; revision <= 121; revision++) {
+        await sdk.publish(`bunny.state.device.${id}`, {
+          kind: 'state', type: 'org.bunny.device.updated', subject: id, dataschema: 'https://bunny.invalid/events/device/2.4',
+          data: {id, revision, available: revision % 2 === 0, label: 'Synthetic private label'},
+        });
+      }
+    },
+  };
+  const config = {modules: {volcano: {}}, edge: productionEdge()};
+  const prepared = entrypoint.productionModules(config, {
+    ...runtimeModules, shippedModules: [runtimeModules.coreFactory, {name: 'volcano', create: () => module}],
+  }, checkConfiguration, entrypoint.containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'enabled'}));
+  const warnings = [];
+  const clock = manualClock();
+  const runtime = await startRuntime({modules: prepared.modules, stateDir: join(root, 'state'), port: 0, config, clock, scheduler: clock.scheduler,
+    log: record => { if (record.event_name === 'history.entity.noisy') warnings.push(record); }});
+  try {
+    assert.equal(runtime.health().status, 'ok');
+    const core = prepared.modules[0];
+    // Intake yields between groups. Let it run until the last startup row
+    // commits, then check the warning from that same commit.
+    for (let turn = 0; turn < 30 && core.history.read({source: 'bunny/modules/volcano'}).length < 121; turn++) await nextTurn();
+    assert.equal(core.history.read({source: 'bunny/modules/volcano'}).length, 121);
+    assert.equal(warnings.length, 1);
+    assert.equal(warnings[0].severity_text, 'WARN');
+    assert.equal(warnings[0].schema_version, '1.9');
+    assert.deepEqual(warnings[0].attributes, {'bunny.module': 'core', 'bunny.provenance': 'source',
+      'bunny.participant': 'bunny/modules/volcano', 'bunny.history.family': 'device', 'bunny.history.entity_id': id,
+      'bunny.history.row_count': 121, 'bunny.history.row_threshold': 120, 'bunny.history.hour_start_at_ms': clock.now()});
+  } finally { await runtime.stop(); }
 });
