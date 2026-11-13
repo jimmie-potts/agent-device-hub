@@ -471,7 +471,7 @@ void test('a newly registered quoted value is refused by public definition and h
   }});
   assert.equal(initialized.status, 200);
   const session = initialized.headers.get('mcp-session-id');
-  assert.ok(session);
+  assert.notEqual(session, null);
   const mcpHeaders = {...accept, 'mcp-session-id': session, 'mcp-protocol-version': '2025-11-25'};
   await mcp({method: 'notifications/initialized'}, mcpHeaders);
   const historyTool = async (filter: object) => {
