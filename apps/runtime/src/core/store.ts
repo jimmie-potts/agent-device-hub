@@ -1,3 +1,4 @@
+import type {SettingsPatch} from './settings-contract.js';
 import {decideReadReceipt, type ReadReceiptObservation, type ReadReceiptQualification} from '@jimmie-potts/event-contracts/v2/read-receipts';
 import {viewRevision} from '../read-receipts/qualification.js';
 // The core's store (Hub #831): agent-state's storage adapter, with the core's outbox, history and published records in
@@ -72,7 +73,9 @@ export interface CoreTransaction {
    * Stores a message in the core's outbox, in this transaction. It goes out after the commit, in order, and history
    * keeps it (#782): a state as a compact change event, anything else whole.
    */
-  readonly add: AddMessage;
+  // Settings metadata follows this exact staged message into history and stays outside its envelope.
+  readonly add: <T extends object>(key: string, draft: Draft<T>,
+    options?: Parameters<AddMessage>[2] & {settings?: SettingsPatch}) => Message<T>;
   /** Requires the exact retained history fact for a message added by this transaction. */
   requireRetained?(message: Message<unknown>): void;
   /** Records `message` as taken by its `(source, id)`, kept for `keepForMs` or for good, so a later copy is a duplicate. */
@@ -579,8 +582,9 @@ export class CoreStore implements Storage {
       afterCommit: apply => { afterCommit.push(apply); },
       add: (key, draft, options) => {
         adds += 1;
-        const message = addTo(key, draft, options);
-        entries.push({kind: 'message', message});
+        const {settings, ...publication} = options ?? {};
+        const message = addTo(key, draft, publication);
+        entries.push({kind: 'message', message, ...(settings === undefined ? {} : {settings: structuredClone(settings)})});
         return message;
       },
       requireRetained: message => { required.add(message); },

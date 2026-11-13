@@ -164,6 +164,33 @@ sequences. This follows from the code and focused tests, not from a qualified
 recovery, so recovery stays unknown unless separately qualified; prefer fixing
 forward.
 
+## Core settings continuity
+
+Settings catch-up adds nullable `continuity` and `settings_patch` columns to
+`core_history` in its existing open transaction. A new local row receives a
+random identity in its original commit, including unrelated rows and rows
+with no message ID. When an owner supplies a settings patch, it commits in
+the same row. Existing rows retain their original contents. If the local
+tail has no identity, the migration marks it as a legacy barrier.
+A partial index over barrier rows lets the reader refuse a catch-up pass
+that would cross one. A fresh snapshot can start at the barrier.
+
+A migration failure rolls back the schema and row changes together. An
+anchored tail keeps its identity on reopen. An older compatible writer
+can still append rows with null identities. On return, an unanchored local
+tail becomes another barrier. A restore keeps the origin but can remove
+anchored rows. If a later row reuses the sequence, it has a different
+identity and a saved checkpoint for the old row is refused.
+
+Before resuming settings catch-up after a return from an older writer that
+could save settings without leaving a detectable fact, require a fresh
+validated snapshot and replace the receiver's covered settings and
+checkpoint together. This also applies to a sequence-zero checkpoint,
+which proves only origin. A matching anchor cannot detect an unlogged edit.
+Recovery that cannot enforce replacement does not qualify for incremental
+settings continuity. The source tests use disposable stores and do not
+qualify an installed return.
+
 ## Core history spans
 
 The #1772 release adds the table `core_history_span` to the core store

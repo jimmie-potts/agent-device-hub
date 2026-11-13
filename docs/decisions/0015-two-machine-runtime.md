@@ -485,6 +485,15 @@ the standby host is separately authorized and the required work is qualified.
   because their items refer to renditions in the Pixoo library.
 - **Amendments.** 1.1 to 1.7 record the accepted design and its boundaries.
 
+#### Settings catch-up after recovery
+
+The settings reader uses the authoritative owner's before and after values
+for each committed edit. A fresh snapshot and later catch-up therefore agree
+even if older ordinary history retained a different value. The private
+settings patch and narrow compaction exception follow
+[ADR 0012](0012-bunny-event-platform.md#amendment-2026-11-13). Catch-up uses
+the existing origin order and the same checkpoint and transaction seals.
+
 ### Stage 2: facts in both directions
 
 - **Adds:** each installation reads the other's facts after N per origin and
