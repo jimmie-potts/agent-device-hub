@@ -29,7 +29,7 @@ and the shared event contract and bookkeeping checks. A manual clock and
 synthetic SQLite fixture cover populated-store sync, committed edits and
 removals, refused and ignored SQLite writes, registered-secret refusals,
 request trace continuity and execution without definition history. Run
-`node --test apps/runtime/dashboard/tests/timeline.test.ts` to check that the
+`node --test apps/runtime/dashboard/tests/timeline-automation.test.ts` to check that the
 Automation filter includes the retained changes and removals. These checks
 need no standalone runtime or device.
 

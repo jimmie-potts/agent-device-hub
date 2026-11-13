@@ -1,9 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {DatabaseSync} from 'node:sqlite';
-import {History} from '../../dist/src/core/history.js';
-import {readFileSync} from 'node:fs';
-import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {emptyHistoryFilters, historyFace, historyQuery, historyRows, selectedHistory, type HistoryRow} from '../src/timeline-model.ts';
 import {createHistoryReader, type HistorySnapshot} from '../src/timeline-read.ts';
 const row = (record: Record<string, unknown>, other: Partial<HistoryRow> = {}): HistoryRow => ({seq: 1, atMs: 1000, kind: 'operation', source: 'bunny/parts/dashboard', subject: 'lamp', type: 'org.bunny.power.set.requested', requestId: 'r1', record, ...other});
@@ -39,24 +35,6 @@ void test('categories and stable newest-first ordering preserve unknown Hub reco
   assert.deepEqual(selectedHistory(rows, 'Devices').map(value => value.seq), [3]);
   assert.deepEqual(selectedHistory(rows, 'Automation').map(value => value.seq), [4]);
   assert.deepEqual(rows.map(value => value.seq), [2, 3, 4, 1]);
-});
-
-void test('Automation includes all retained definition changes and removals', () => {
-  const fixture = JSON.parse(readFileSync(new URL('../../../../packages/event-contracts/fixtures/v2/families.json', import.meta.url), 'utf8')) as {valid: Record<string, Message>};
-  const names = ['automation-rule', 'automation-routine', 'automation-settings', 'automation-interrupt-set',
-    'automation-rule-removed', 'automation-routine-removed'];
-  const db = new DatabaseSync(':memory:');
-  try {
-    const history = new History(db);
-    for (const [index, name] of names.entries()) {
-      const message = fixture.valid[name];
-      assert.ok(message);
-      history.write([{kind: 'message', message}], index + 1, index + 1);
-    }
-    const rows = history.read({});
-    assert.equal(rows.length, names.length);
-    assert.deepEqual(selectedHistory(rows, 'Automation').map(entry => entry.type), rows.toReversed().map(entry => entry.type));
-  } finally { db.close(); }
 });
 
 void test('whole-reply validation refuses malformed records and duplicate identities', () => {
