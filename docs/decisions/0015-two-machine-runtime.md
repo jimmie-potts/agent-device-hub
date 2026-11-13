@@ -1,17 +1,13 @@
 # ADR 0015: Run B.U.N.N.Y. on the Mac and the PC with a Mac-preferred lead
 
-Status: Stage 0 accepted on 2026-11-12; stages 1 to 4 proposed, for
+Stage 0 was accepted on 2026-11-12 and is complete on the PC. The owner
+accepted stage 1 on 2026-11-13 with core settings first and authorized source
+delivery and amendments 1.1–1.7. The PC remains a worker host. A disposable
+runtime trial and standby host authorization each require a separate owner
+decision. Stages 2–4 remain proposals. One designated writer per device and
+manual handoff still apply.
+See [Acceptance](#acceptance) and
 [Hub #1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723).
-The owner accepted stage 1's design on 2026-11-12, but not stage 1 itself.
-The owner accepts it one stage at a time ([Acceptance](#acceptance)). Stage 0
-changes no rule in an accepted document. Each later stage would amend the
-sentences listed under it in [Amendments by stage](#amendments-by-stage). Until
-that stage is accepted, nothing it lists changes in [ADR 0008](0008-runtime-hosting.md),
-[ADR 0012](0012-bunny-event-platform.md), `docs/architecture.md`,
-`docs/bunny-container.md` or `AGENTS.md`, and the rules there stay in force: one
-designated writer per device and no automatic failover. This record installs
-nothing, authorizes no new host and sends no device command. Items marked
-*proposed* are the author's, and the owner can change them.
 
 ## Acceptance
 
@@ -22,17 +18,15 @@ session at 2026-11-11T17:56:35Z: "We can do stage by stage."
 | Stage | Adds | Status |
 | --- | --- | --- |
 | [0](#stage-0-prerequisites) | The PC checked as a host; the fact log on the Mac (in source; not installed when stage 0 was accepted, see [#1750](https://github.com/jimmie-potts/agent-device-hub/issues/1750)) | accepted 2026-11-12: "your recommendation is good for all 7" (owner decision 6) |
-| [1](#stage-1-one-way-settings-to-a-pc-copy-that-runs-with-device-control-off) | Settings read one way from the Mac by a PC copy that runs with device control off; takeover by hand | not accepted; its design accepted 2026-11-12 (owner decision 10) |
+| [1](#stage-1-one-way-settings-to-a-pc-copy-that-runs-with-device-control-off) | Core settings read one way from the Mac by a PC copy with device control off; takeover by hand | core settings scope accepted 2026-11-13; source delivery authorized (owner decision 12). The trial and standby each need separate authorization. |
 | [2](#stage-2-facts-in-both-directions) | Facts merged in both directions; media copied | not accepted |
 | [3](#stage-3-the-mac-preferred-lead-and-automatic-takeover) | The Mac-preferred lead and automatic takeover | not accepted |
 | [4](#stage-4-either-copy-writes-for-qualified-devices) | Either-copy writes for qualified devices | not accepted |
 
-Accepting a stage adopts its section and needs a follow-up commit that applies
-its amendments; stage 0 has none. A stage's "Before it starts" list names the
-earlier stages it needs. Accepting one stage does not accept a later one. The
-owner was to decide stage 1 after the device reach probe's result. That result
-came in on 2026-11-12. The owner then accepted stage 1's design, not stage 1,
-and decides stage 1 after a read-only sizing pass (owner decision 10).
+The [amendments by stage](#amendments-by-stage) record which rules each stage
+changes. Stage 0 has none. This update applies stage 1's amendments with the
+authorization boundary in owner decision 12. Each stage's "Before it starts"
+lists its prerequisites. GitHub issues track implementation and qualification.
 
 ## Context
 
@@ -40,13 +34,13 @@ The owner wants either machine to run B.U.N.N.Y. with full function. If one
 goes down, the other continues with the same sessions, inbox, preferences and
 device behavior (#1723, 2026-11-11 15:22:19Z).
 
-The accepted rules say otherwise. ADR 0008 makes the Mac the primary,
-self-sufficient host and the PC "an optional activity producer, client and host
-for explicitly PC-attached hardware". `docs/architecture.md` "Hosting and
-access" states that "Local leases do not fence other computers. There is no
-automatic failover or snapshot rollback." ADR 0012 and `AGENTS.md` keep one
-designated writer per physical device. The only supported move of state is a
-stopped backup restored into an empty instance.
+The Mac is the primary, self-sufficient runtime host under
+[ADR 0008](0008-runtime-hosting.md). The PC is an optional producer, client,
+worker and host for explicitly PC-attached hardware. Local leases do not
+fence other computers. There is no automatic failover or snapshot rollback.
+[ADR 0012](0012-bunny-event-platform.md) and [AGENTS.md](../../AGENTS.md) keep
+one designated writer per physical device. A stopped backup restored into an
+empty instance remains the supported way to transfer an installed store.
 
 Two read-only studies on #1723 set out the facts: the
 [store audit](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6801028960)
@@ -90,8 +84,8 @@ In short:
 - **The release is ARM64 only.** Release qualification builds and verifies only
   ARM64, and the operator refuses other architectures. The PC would need an
   AMD64 image (plan, B4).
-- **A worker on the PC cannot reach the Mac core today.** The private entry
-  refuses any credential with a role, and the core accepts one worker endpoint
+- **The qualification plan found limits on PC worker access.** The private
+  entry refused credentials with a role, and the core accepted one worker endpoint
   (plan, "The network path"). This matters to #1722, which shares the PC worker.
   The owner has since authorized the PC as a worker host, and #1722's
   orchestrator runs alongside today's way of working (owner decision 6).
@@ -101,9 +95,10 @@ In short:
 
 ## Owner decisions
 
-These are the owner's own decisions, recorded on #1722, #1723, #1729 and #1725
-from chat on 2026-11-11 and 2026-11-12. Decisions 1 to 5 and 8 take effect
-here only with the stage that uses them.
+These decisions were recorded on #1722, #1723, #1729 and #1725 from chat on
+2026-11-11 through 2026-11-13. The operating rules apply only when their
+stage is accepted and the owner has authorized the host. Decision 8 applies
+to every stage that puts a copy on the PC.
 
 1. **Shared state is held locally on both machines with eventual consistency,
    not in a cloud service.** At 15:45:13Z the owner asked whether "a cloud
@@ -195,7 +190,7 @@ here only with the stage that uses them.
    ([recorded on #1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6830103422)).
    The address is set for that clone only. The PC's global git settings stay
    as they are, and the older local-only commits stay unpushed.
-10. **Stage 1's design is accepted; stage 1 is not.** The owner answered four
+10. **Stage 1's design was accepted before the sizing pass.** The owner answered four
     numbered decisions, each put with a recommendation, in chat to the
     orchestrator session, read at 2026-11-12T17:05:44Z: "For the four blocked
     by me decisions, let's go with a recommendation for all four." The
@@ -224,21 +219,37 @@ here only with the stage that uses them.
     The name is set for that clone only, and unpushed local commits that
     carried the other name are re-authored before their branch is pushed. The
     PC's global git settings stay as they are.
+12. **Stage 1 is accepted with core settings first.** In chat to the
+    coordinating session, read at 2026-11-13T02:19:11Z, the owner answered:
+
+    > Let's go with your recommendations for these. Except for 3, we can go with the broader recredential.
+
+    The [recorded decision on #1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6841874355)
+    authorizes source work for sizing-pass stories 1–7 and amendments 1.1–1.7.
+    It settles decision A (use the existing ordinary read credential, which
+    can read other read-scoped data), decision B (read at startup, on reconnect
+    and on a settings-change signal from the Mac, with no polling timer), and
+    decision C (defer each device-module settings seed). The PC remains a
+    worker host. A disposable trial requires the merged source slice and
+    separate owner authorization. The owner decides on standby host
+    authorization after the trial. Real credential placement, other secrets,
+    the standby image, PC spending ceilings and self-start remain open.
 
 ## Rules every stage keeps
 
-Everything in this section is *proposed* and open to the owner's change, except
-the owner's own requirement that comes first. Stage 0 adopts none of them. Each
-rule takes effect only with an accepted stage that uses it.
+The rules apply only in the accepted stage that uses them. Stage 1 keeps one
+writer per device and applies core settings one way. Either-copy writes,
+automatic takeover and later-stage replication remain proposals.
 
 ### The PC may sleep, restart or be off
 
-This is the owner's requirement (owner decision 8), not a proposal. The PC may
-sleep, restart or be off at any time, and that must not affect B.U.N.N.Y. on
-the Mac. It binds every stage that puts a copy on the PC. Stage 1, stage 2 and
-"Spending, delivery claims and secrets" state what it means for each.
+The PC may sleep, restart or be off at any time without affecting B.U.N.N.Y.
+on the Mac (owner decision 8). It binds every stage that puts a copy on the
+PC. The Mac runs and serves clients independently of the PC.
 
 ### Two classes of behavior
+
+These classes describe proposed stages 3 and 4.
 
 - **Either copy may write** to a device only after that device has been shown
   to tolerate a second writer. On today's evidence Nanoleaf and Pixoo are the
@@ -257,18 +268,17 @@ device may read and show.
 
 ### Replicate through the fact log, not commands
 
-Commands stay live-only and are never replicated. One installation reads the
-other's facts from its fact log after N per origin and stores them.
+Commands stay live-only and are never replicated. A peer reads a current
+settings snapshot to start, then reads committed settings facts after its
+cursor. Stage 1 reads from the Mac only. Later stages propose additional
+records and a second direction.
 
 - **The origin** is #1740's: an identifier created once per installation and
   kept in the core store, never a host name. Revisions stay per origin and are
   never compared across origins.
-- **Settings** (mode, layouts, rules and routine definitions, the art schedule
-  policy, power limit definitions, device preferences, scenes and playlists)
-  are records in the fact log. The reader applies the latest edit, comparing a
-  timestamp that is comparable across machines: a hybrid logical clock, or wall
-  time with the origin as a tie-break. A delete travels as a record of its own
-  (a tombstone).
+- **Settings** in stage 1 follow the Mac's per-origin sequence. A delete
+  travels as a removal record. The proposed stage 3 allows edits on either
+  host and would compare their timestamps (open decision 7).
 - **Append-only facts** (history, and the archives once they are facts) merge
   as a union: read after N per origin and add. Once
   [#1772](https://github.com/jimmie-potts/agent-device-hub/issues/1772) is
@@ -292,9 +302,10 @@ other's facts from its fact log after N per origin and stores them.
 
 ### Spending, delivery claims and secrets
 
-- **Spending is split.** Each machine has its own share of each ceiling (art,
-  companions, assistant). Together the shares never exceed the owner's ceiling,
-  even when both lead.
+- **Spending ceilings are per host** (*proposed*, open decision 4). In stage 1
+  the standby never spends. A later authorized takeover would use its own
+  ceiling for art, companions and assistant work. The proposed split-lead
+  design aims to keep the total within the owner's ceiling.
 - **A split ceiling must not shrink what the Mac can spend while the PC is
   idle** (*proposed*, with open decision 4). This follows from the owner's
   requirement that the PC may sleep or be off (owner decision 8). In stages 1
@@ -306,7 +317,8 @@ other's facts from its fact log after N per origin and stores them.
   either copy. This keeps #1722's orchestrator safe from a split lead.
 - **Credentials and secrets are placed on the second machine only by the owner,
   one by one.** Nothing replicates a secret. Each producer that reports to both
-  machines needs its own grant on each, and so does the peer read.
+  machines needs its own grant on each. The stage 1 peer read uses an ordinary
+  read credential under owner decision 12.
 
 ## Stages
 
@@ -380,9 +392,9 @@ Accepted on 2026-11-12 (owner decision 6).
     [complete readback](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6830452987)).
     Nothing was pushed from the PC before those checks passed. Older
     local-only commits keep the earlier identity and stay unpushed.
-- **Next decisions:** the owner has since accepted stage 1's design, not stage
-  1, and authorized a read-only sizing pass. Accepting stage 1 and authorizing
-  the PC as a standby runtime host are decided after it (owner decision 10).
+- **Next decisions:** after the sizing pass, the owner accepted stage 1 with
+  core settings first. The disposable trial and standby host each still
+  require the owner's authorization (owner decision 12).
 - **Takeover:** none.
 - **Amendments:** none. Accepting stage 0 changes no rule in an accepted
   document. The PC's roles under ADR 0008 and `docs/architecture.md` stay as
@@ -396,37 +408,37 @@ Accepted on 2026-11-12 (owner decision 6).
 
 ### Stage 1: one-way settings to a PC copy that runs with device control off
 
-The owner was asked on 2026-11-12 about an earlier version of this stage, a
-standby started by hand. On 2026-11-12, during review of this record, it was
-changed to the version below. Later that day the owner accepted this version as
-the design of stage 1, with the owner's rule of decision 8 written in (owner
-decision 10). That accepts the design only. Stage 1 itself is not accepted, and
-the PC is not authorized as a standby runtime host.
+The owner accepted the design on 2026-11-12 (decision 10) and the core-settings
+scope on 2026-11-13 (decision 12). The
+[read-only sizing pass](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6830783763)
+defines the authorized source slice. The operating design below applies once
+the standby host is separately authorized and the required work is qualified.
 
-- **Adds:** owner-entered settings become records in the Mac's fact log. The PC
-  reads them after N and applies the latest edit (audit, answer 5; owner
-  decision 5). The PC has its own spending share. There is one device writer at
-  a time and no automatic takeover.
-- **The PC copy's mode** (accepted as design, owner decision 10; it does not
-  exist today, see "Before it starts"):
-  - The PC must read the Mac's settings while the Mac runs, so the PC copy runs
-    alongside the Mac all the time, with device control off.
-  - It reads the Mac's settings facts and applies them. No producer reports to
-    it, so it holds no sessions.
-  - It serves no client, sends no device command, runs no lead-only work
-    (routines, schedules, spending, claims) and accepts no settings edits.
-  - When the Mac is down, the owner confirms the Mac core is stopped with its
-    start hold set, as `docs/bunny-container.md` already requires before device
-    control moves to another host, and then turns device control on in the PC
-    copy. Before the Mac core starts again, the owner turns it off.
-  - The PC may sleep, restart or be off at any time without effect on the Mac
-    (owner decision 8). The PC pulls the Mac's settings after N, so the Mac
-    sends nothing to the PC and waits for nothing from it.
-  - After a restart, the PC copy starts by itself with device control off.
-    After a sleep, it catches up by reading the Mac's settings after N from
-    where it stopped.
-  - A takeover shows how old the PC's settings are.
-- **Today's product** (read on `main` at `eebb5923`):
+- **Settings in scope.** Mode, the home, lighting and playback layouts, power
+  limit definitions, the art schedule policy, rules and routine definitions,
+  and core automation settings. Each device-module settings seed is separate.
+- **Reading and applying settings.** The standby starts from a current settings
+  snapshot and its cursor from the same committed read. It then reads committed
+  settings facts after that cursor and applies them in the Mac origin's sequence.
+  It resumes from its saved cursor after a restart. Reads happen at startup, on
+  reconnect and on a settings-change signal from the Mac's SDK stream. The
+  signal only prompts the read. There is no polling timer. The peer uses the
+  existing ordinary read credential on the private route. Placement needs
+  a separate owner decision. Applying settings issues no commands, replays no
+  effects and leaves run state, budgets, claims and watermarks local.
+- **Standby operation.** The PC copy runs alongside the Mac with device control
+  off. It accepts no producer observations or settings edits and runs no
+  routines, schedules, spending or claims. It serves only status reads. The
+  Mac does not wait for it. A reconnect after sleep catches up from the saved
+  cursor. How the standby starts after a PC restart remains open. Any
+  standby start keeps device control off.
+- **Manual handoff.** The owner verifies that the Mac core is stopped and its
+  [start hold](../bunny-container.md#hold-the-core-stopped) is set before enabling
+  device control on the PC. Before releasing that hold and restarting the Mac,
+  the owner verifies the PC's device writer is stopped. There is one designated
+  writer per device and no automatic takeover. Follow the existing
+  [cross-host handoff rules](../bunny-container.md#start-stop-and-inspect-1).
+- **Implementation baseline** (read on `main` at `eebb5923`):
   - Device control is fixed when the container is created.
     `deploy/container/compose.production.yaml` sets
     `BUNNY_CONTROL: ${BUNNY_CONTROL:-disabled}` in the private Compose file the
@@ -450,36 +462,25 @@ the PC is not authorized as a standby runtime host.
     (`apps/runtime/src/core/automation.ts`, `art-schedule.ts`,
     `power-schedules.ts`). A search of `apps/runtime/src` found no standby or
     lead setting, and nothing refuses settings edits.
-- **Before it starts:** stage 0 and the probe's result. The owner authorizes
-  the PC as a standby runtime host, since `AGENTS.md` withholds new hosts from
-  standing authority. The PC runs an image fit for a standby: the local build
-  of stage 0 qualifies nothing. Settings that are not published families today
-  become facts. Most module settings are not, and each needs a change record
-  (audit, answer 6). A read route for "after N" with its own grant, reachable
-  from the PC; the private entry refuses role credentials today (plan,
-  "The network path"). Apply code on the PC for each settings family. New build
-  and qualification work, because none of it exists today:
-  - a standby mode in which the runtime applies settings facts, including
-    device modules' settings, without device writes, lead-only work, spending
-    or claims;
-  - refusal of settings edits on the standby;
-  - a qualified way to turn device control on and off for a takeover, and back,
-    with the Mac's start hold in place.
-- **Takeover has:** settings, preferences, layouts, rules, scenes and playlists,
-  and device control from the PC.
-- **Takeover lacks:** history and inbox handling, sessions until hooks report to
-  the PC, the art catalog and ledger, the Pixoo media library, remembered
-  Nanoleaf scenes, gaps in the Volcano and Roborock archives, and every
-  Mac-only input. Settings changed on the PC while it leads are not carried
-  back. If the Mac stops while the PC is asleep or off, the PC's settings are
-  stale: they lack every edit made on the Mac after the PC's last read.
-- **Amendments:** 1.1 to 1.7. Amendment 1.7 covers the second running core.
-- **Effort:** medium for settings, plus low for configuration templating on the
-  PC. The standby mode, the refusal of edits and the control switch are not
-  sized in this record. The read-only sizing pass the owner authorized (owner
-  decision 10) is on
-  [#1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6830783763),
-  as a planning input on which the owner has decided nothing.
+- **Before it starts.** Stage 0 and the probe are complete on the PC. The
+  disposable trial needs the merged source slice and separate authorization.
+  A persistent standby needs its own host authorization, a qualified
+  image, a working private read route and the credential the owner places.
+  Takeover and return need a qualified control switch and separate operating
+  decisions about secrets, spending ceilings and startup. The local stage 0
+  build qualifies none of these.
+- **Eventual takeover has.** Device control from the PC and the core settings
+  through its last successful read. Show the age of that read using the PC's
+  clock, or say that no read has succeeded. If the Mac stops before catch-up,
+  any later Mac edits are missing. The owner selects the mode again to apply
+  it to devices. Settings edits made while the PC leads stay on the PC.
+- **Eventual takeover lacks.** History and inbox handling, sessions until hooks
+  report to the PC, the art catalog and ledger, the Volcano and Roborock
+  archives, and Mac-only inputs. Nanoleaf and Pixoo preferences need setting
+  again until their module seeds are delivered. Remembered Nanoleaf scenes
+  stay outside the copy. Pixoo playlists also need the later media-copy work
+  because their items refer to renditions in the Pixoo library.
+- **Amendments.** 1.1 to 1.7 record the accepted design and its boundaries.
 
 ### Stage 2: facts in both directions
 
@@ -554,62 +555,45 @@ the PC is not authorized as a standby runtime host.
 
 ## Amendments by stage
 
-None of these is made now. Stage 0, the only accepted stage, has none.
-Accepting a later stage needs a follow-up commit that applies that stage's
-amendments, linking the first mention of ADR 0015 in each file. ADR 0012's
+Stage 0 has no amendments. This update applies 1.1–1.7. Amendments 2.1–4.5
+remain proposed. Applying a later stage's amendments requires its own
+acceptance and a follow-up commit. ADR 0012's
 2026-11-11 amendment
 ([PR #1742](https://github.com/jimmie-potts/agent-device-hub/pull/1742),
 merged) already changed ADR 0012's no-replay wording, its log and event
 sourcing alternatives and `docs/architecture.md`'s "No replay" bullet. This
-record does not propose those again. Each quoted sentence below was checked
-against `main` on 2026-11-12.
+record does not propose those again.
 
 ### Stage 1
 
-1.1. ADR 0008, "Current decision": "The PC is an optional activity producer,
-client and host for explicitly PC-attached hardware. It is not a relay or
-startup dependency for the Mac's normal operation."
-Replace with: "The PC is an optional activity producer, client and host for
-explicitly PC-attached hardware, and a second B.U.N.N.Y. host at the stages of
-ADR 0015 the owner has accepted. It is not a relay or startup dependency for
-the Mac's normal operation."
+1.1. [ADR 0008, "Current decision"](0008-runtime-hosting.md#current-decision--2026-10-22)
+keeps the PC optional to the Mac and describes the second runtime host as
+conditional on separate owner authorization.
 
-1.2. ADR 0008, "Runtime and access": "The Mac owns persistent state and the
-serving endpoint."
-Replace with: "The Mac owns persistent state and the serving endpoint while it
-leads. The PC keeps the records ADR 0015 replicates and serves while it leads."
+1.2. [ADR 0008, "Runtime and access"](0008-runtime-hosting.md#runtime-and-access)
+keeps persistent state and service on the Mac while it leads. An authorized
+standby keeps the replicated core settings privately and serves clients only
+after manual handoff.
 
-1.3. ADR 0012, "Personal data": "It is stored only in private owner-controlled
-storage on the runtime host."
-Replace with: "It is stored only in private owner-controlled storage on the
-runtime hosts the owner has selected."
+1.3. [ADR 0012, "Personal data"](0012-bunny-event-platform.md#personal-data)
+limits personal data to private owner-controlled storage on the runtime hosts
+the owner has selected.
 
-1.4. `docs/architecture.md`, "Hosting and access": "One runtime owns its core,
-fixed modules, private stores and serving endpoint."
-Replace with: "Each running host's runtime owns its core, fixed modules,
-private stores and serving endpoint. ADR 0015 sets which records replicate
-between hosts and which host leads."
+1.4. [Architecture, "Hosting and access"](../architecture.md#hosting-and-access)
+assigns each host its own core, modules, private stores and serving endpoint.
+Stage 1 defines the settings read and requires manual handoff.
 
-1.5. `docs/architecture.md`, "Hosting and access": "The PC is an optional
-producer/client and host for explicitly PC-attached hardware; normal hub
-startup, storage, dashboard access and selected portable device integrations
-must work with it off."
-Replace with: "The PC is an optional producer/client, host for explicitly
-PC-attached hardware and, under ADR 0015, a second host. Normal hub startup,
-storage, dashboard access and selected portable device integrations must work
-on the Mac with the PC off."
+1.5. The same section makes a second host conditional on separate authorization
+and keeps Mac startup, storage, dashboard access and selected portable device
+integrations independent of the PC.
 
-1.6. `AGENTS.md`, "Runtime and migration boundaries": keep "Keep controller
-databases private, especially across Windows and WSL. Use explicit
-API/ownership handoffs, not concurrent access to a mounted SQLite file." and
-add: "Replicate between hosts only through ADR 0015's fact-log replication,
-never by copying or mounting a live SQLite file."
+1.6. [AGENTS.md, "Runtime and migration boundaries"](../../AGENTS.md#runtime-and-migration-boundaries)
+limits replication to the authorized snapshot and fact-log reads. It forbids
+copying or mounting a live SQLite file.
 
-1.7. `AGENTS.md`, "Runtime and migration boundaries": "Maintain one active
-agent-state owner and one designated writer per physical device."
-Replace with: "Maintain one active agent-state owner per running host and one
-designated writer per physical device. Under ADR 0015 a second host's copy runs
-with device control off until the owner turns it on for a takeover."
+1.7. The same instructions require one active agent-state owner per running
+host and one designated writer per physical device. A separately authorized
+standby keeps device control off until the owner completes a manual handoff.
 
 ### Stage 2
 
@@ -698,10 +682,10 @@ writes from both."
 
 ## Consequences and risks
 
-- **Split lead.** If only the link between the machines fails, both lead. The
-  takeover interval delays the PC's lead-only work. Per-machine spending shares
-  cap the total spend. GitHub claims keep delivery jobs single. Nothing
-  protects routines, Wemo switching or playback controls from running on both
+- **Split lead (proposed stage 3).** If only the link between the machines
+  fails, both lead. The takeover interval delays the PC's lead-only work.
+  Per-machine spending shares cap the total spend. GitHub claims keep delivery
+  jobs single. Routines, Wemo switching and playback controls can run on both
   machines once the interval passes. Lead-only devices may receive two writers,
   and each copy's tracker resolves its own deadlines without seeing the other's.
 - **Inputs on one machine only.** On the Mac: the Volcano Bluetooth collector,
@@ -711,14 +695,14 @@ writes from both."
   also loses its display server, which lives on the Mac. The owner decided that
   the Mac-only inputs stay on the Mac and are revisited with automatic takeover
   in stage 3, the Tronbyt server first (owner decision 10).
-- **Clock agreement.** Latest-edit-wins needs comparable clocks, and a merged
-  row's time comes from the peer's clock. WSL 2 clocks can drift after the host
-  sleeps (inferred). Clock skew is a qualification check on the PC (plan, B9),
-  and a hybrid logical clock bounds its effect.
-- **Doubled polling.** Two copies poll the Wemo plugs, speakers, weather and
-  Roborock, and call vendor accounts twice. Roborock and the Volcano link may
-  not tolerate a second client. Under this proposal their collection stays
-  with the lead.
+- **Clock agreement (proposed stage 3).** Latest-edit-wins needs comparable
+  clocks, and a merged row's time comes from the peer's clock. WSL 2 clocks can
+  drift after the host sleeps (inferred). Clock skew is a qualification check
+  on the PC (plan, B9), and a hybrid logical clock bounds its effect.
+- **Doubled polling (later stages).** If both copies ran the same polling
+  modules, they would poll the Wemo plugs, speakers, weather and Roborock and
+  call vendor accounts twice. Roborock and the Volcano link may not tolerate
+  a second client. The proposed design keeps their collection with the lead.
 - **Exposure.** Every secret copied to the PC doubles its exposure (inferred).
   Personal data also lives on a second machine. ADR 0011 allows that in
   owner-controlled storage.
@@ -728,8 +712,8 @@ writes from both."
   both machines is then held twice on each machine, once per origin (A8), so
   for facts from producers that report to both, history grows about twice as
   fast on each machine (inferred).
-- **Work per stage**, from the audit's effort marks unless stated: settings
-  medium, lead-only high, local configuration low, media low to medium. The
+- **Work after the core settings slice.** The audit sizes lead-only work as
+  high, local configuration as low, and media copying as low to medium. The
   history exchange is small now that #1740 is delivered in source. Turning the
   archives and handling into facts, a qualified image for a PC standby and
   stage 4's per-device qualification are not sized in this record.
@@ -757,18 +741,16 @@ writes from both."
   answer 5). Exclusive locking means the snapshot must come from inside the
   runtime, and no such code exists. Restore refuses a different source revision
   and is qualified only on Mac ARM64. A copied volume is not a device handoff.
-- **Keep ADR 0008 unchanged.** The Mac stays the only host, and an outage lasts
-  until the Mac returns. This is the cheapest option and remains in force for
-  every stage the owner has not accepted.
+- **Keep the Mac as the sole runtime host.** This remains the operating setup
+  until the owner separately authorizes the PC as a standby host.
 
 ## Open decisions for the owner
 
 Each item names the first stage that needs it.
 
-1. **Stage 1 changed after the owner was asked.** Answered on 2026-11-12
-   (owner decision 10): the owner accepted this version as the design of stage
-   1, with the owner's rule of decision 8 written in. This accepts the design
-   only, not stage 1.
+1. **Stage 1 shape.** Answered on 2026-11-12 (owner decision 10): the owner
+   accepted the design with the rule in decision 8. The owner accepted the
+   core settings scope after sizing (owner decision 12).
    - **What changed:** on 2026-11-12 the owner was asked about a standby
      started by hand when the Mac is down. Later that day, during review of
      this record, it was replaced with a PC copy that runs all the time
@@ -776,19 +758,16 @@ Each item names the first stage that needs it.
    - **Why:** the PC must read the Mac's settings while the Mac runs, and a
      takeover cannot read from a Mac that is down.
    - **Cost:** the continuous copy needs a standby mode, refusal of settings
-     edits and a qualified control switch, none of which exists today (stage
-     1, "Before it starts").
+     edits and a qualified control switch (stage 1, "Before it starts").
    - **Alternative:** a hand-started standby that copies settings at takeover
      from the last backup, or not at all.
      - From the backup: settings are only as fresh as that backup. Today's
        restore refuses a different source revision and is qualified only on
        Mac ARM64 (audit, answer 5).
      - Not at all: the owner re-enters settings by hand during a takeover.
-2. Now that the probe has passed: whether to accept stage 1, and whether to
-   authorize the PC as a standby runtime host (stage 1). The result authorizes
-   neither by itself. Size first, then decide (owner decision 10): stage 1 is
-   not accepted and the PC is not authorized as a standby runtime host. A
-   read-only sizing pass is authorized, and both decisions follow it.
+2. **Stage 1 scope and standby host.** The scope is answered by decision 12.
+   Standby authorization remains open until after the merged source slice
+   and a separately authorized disposable trial.
 3. Which image a PC standby runs. The local build qualifies nothing, so a
    standby needs a qualified image for the PC's processor, through a release
    qualification lane (a gate change) or another route the owner chooses
@@ -800,9 +779,13 @@ Each item names the first stage that needs it.
    Mac, and a takeover by hand on the PC runs without them. They are revisited
    with automatic takeover in stage 3, the Tronbyt server first.
 7. The clock for latest-edit-wins: a hybrid logical clock, or wall time with an
-   origin tie-break (stage 1).
+   origin tie-break (stage 3). Stage 1 uses the Mac's per-origin sequence.
 8. The takeover interval's length, and how the PC checks that it can reach the
    Mac and the home router (stage 3).
 9. How each installation knows which peer is the preferred lead (stage 3).
 10. Which devices to qualify for either-copy writes, starting with Nanoleaf and
    Pixoo (stage 4).
+
+The sizing pass's decisions A–C are answered by owner decision 12. Decision D
+(how the standby starts after a PC restart) and the decision to run the
+disposable trial remain open.
