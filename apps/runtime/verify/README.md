@@ -201,12 +201,16 @@ naming what is missing:
 - At a virtual expectation's bound, including zero, the adapter settles time already owed, advances by zero and
   refreshes. It captures pending answers, reconnects, resyncs, eligible publications and child work before the first
   check. Each captured completion can justify one recheck. A reconnect includes resync. A named action waits for
-  live publications linked by its existing command trace. The adapter preserves a trace captured before the check
-  and fixes the action's trace evidence when its answer refresh completes. A later request with the same ID cannot
-  change that evidence. Without a unique trace, the adapter waits for the answer and leaves the publication check to
-  ordinary waits. A generic gateway call completes with its reply and refresh, so an unrelated frame does not hold
-  a completed read. Ordinary waits check all eligible publications. The child's busy signal is aggregate, so its captured work clears when the child
-  reports idle. One 15 s monotonic deadline includes settles, checks and waits. The run stays at the virtual bound.
+  live publications linked by its existing command trace. SDK requests use their own reply or refusal trace. An HTTP
+  action uses unique admission evidence, fixed when its answer refresh completes. A gateway refusal before admission
+  carries no trace. A later request with the same ID cannot change established evidence. An HTTP refusal may replay an
+  earlier error body, so its trace must agree with the action's own admission. A generic write that uses the same
+  explicit request ID can make an HTTP admission ambiguous. The adapter reads the ID from the sent URL and body without
+  assuming which credential or route the runtime will admit. Without unique evidence, the adapter waits for the answer.
+  Ordinary waits still check all eligible publications. A generic gateway call completes with its reply and refresh,
+  so an unrelated frame does not hold a completed read. The child's busy signal is aggregate, so its captured work
+  clears when the child reports idle. One 15 s monotonic deadline includes settles, checks and waits. The run stays at
+  the virtual bound.
 
 Before a capture's browser journey starts, the page's clock is set to the run's time, so the deadlines the page stamps
 on its requests mean what they say to the runtime. The run does not move while the journey runs, unless the capture

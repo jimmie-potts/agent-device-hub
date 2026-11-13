@@ -200,7 +200,8 @@ export class GatewayClient {
     this.#producer = producer;
   }
 
-  async call({as, method, path, body, headers = {}, origin}: GatewayCall): Promise<GatewayAnswer> {
+  async call({as, method, path, body, headers = {}, origin}: GatewayCall,
+    beforeSend?: (url: URL, payload: string | Uint8Array | undefined) => void): Promise<GatewayAnswer> {
     const own = this.#origin();
     const sent: Record<string, string> = {...headers};
     if (body !== undefined && sent['content-type'] === undefined) sent['content-type'] = body instanceof Uint8Array ? 'application/octet-stream' : 'application/json';
@@ -223,7 +224,9 @@ export class GatewayClient {
       sent['sec-fetch-site'] = 'cross-site';
     }
     const payload = body instanceof Uint8Array ? Uint8Array.from(body) : JSON.stringify(body);
-    const response = await fetch(new URL(path, own), {method, headers: sent, ...(payload === undefined ? {} : {body: payload})});
+    const url = new URL(path, own);
+    beforeSend?.(url, payload);
+    const response = await fetch(url, {method, headers: sent, ...(payload === undefined ? {} : {body: payload})});
     const answered: Record<string, string> = {};
     response.headers.forEach((value, name) => { answered[name.toLowerCase()] = value; });
     return {status: response.status, headers: answered, text: await response.text()};

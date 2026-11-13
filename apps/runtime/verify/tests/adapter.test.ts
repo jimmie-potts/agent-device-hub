@@ -645,6 +645,370 @@ void test('a later admission does not attach to a completed refusal using the sa
   }
 });
 
+void test('a generic admission cannot attach to a refusal whose reply is still in transit', {timeout: 30_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const refused = gate(), releaseReply = gate(), releaseFrame = gate(), frameStarted = gate(), waited = gate();
+  const clock = manualClock(0);
+  let armed = false, posts = 0;
+  intercept(context, () => {}, async (request, response) => {
+    if (armed && request.url.endsWith('/api/v2/commands/lamp-switch') && ++posts === 1) {
+      assert.equal(response.status, 400, 'the real gateway refuses the first call');
+      refused.open();
+      await releaseReply.opened;
+    }
+    if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        if (armed) {
+          frameStarted.open();
+          await releaseFrame.opened;
+        }
+        controller.enqueue(chunk);
+      },
+    }));
+    return new Response(body, {status: response.status, headers: response.headers});
+  });
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed,
+    realWorkClock: {now: clock.now, scheduler: {after: (delay, callback) => {
+      if (delay === 25) waited.open();
+      return clock.scheduler.after(delay, callback);
+    }}}});
+  context.after(() => h.close());
+  const command = switchLamp('lamp-1', 'on');
+  const invalid = {...command, draft: {...command.draft, data: {power: 'invalid-power'}}};
+  let original: Promise<string> | undefined, originalAnswer: string | undefined, checks = 0;
+  armed = true;
+  const result = runScenario({id: 'overlapping-gateway-action', title: 'overlapping gateway action', seed, steps: [
+    act('a definitely refused action has its HTTP answer held', async h => {
+      original = h.dispatch('operator', 'original', invalid, 'req-sequential');
+      await refused.opened;
+    }),
+    expect('the original refusal becomes visible independently', async h => {
+      checks += 1;
+      const observed = h.answer('original');
+      if (checks === 1) {
+        assert.equal(observed, 'pending');
+        assert.equal(h.logs().filter(({record}) => record.event_name === 'command.queued'
+          && record.attributes['bunny.request.id'] === 'req-sequential').length, 0);
+        const corrected = await h.gateway(actionCall('operator', command, 'req-sequential'));
+        assert.equal(corrected.status, 200);
+        assert.equal(h.answer('original'), 'pending', 'the original refusal reply is still held');
+        assert.ok(h.logs().some(({record}) => record.event_name === 'command.queued'
+          && record.attributes['bunny.request.id'] === 'req-sequential'), 'the corrected call reached tracker admission');
+        await frameStarted.opened;
+        releaseReply.open();
+        originalAnswer = await original;
+        assert.equal(originalAnswer, 'invalid-request');
+        assert.equal(h.answer('original'), originalAnswer);
+      }
+      return (originalAnswer !== undefined && observed === originalAnswer) || 'the original refusal was pending';
+    }, 0),
+  ]}, h);
+  try {
+    await Promise.race([waited.opened, result]);
+    clock.advance(REAL_WORK_WITHIN_MS);
+    const verdict = await result;
+    assert.equal(checks, 2, JSON.stringify(verdict));
+    assert.equal(verdict.outcome, 'passed', JSON.stringify(verdict));
+    assert.equal(h.answer('original'), originalAnswer);
+    assert.equal(posts, 2);
+    assert.equal(copiedPower(h), 'off', 'the corrected action frame is still held');
+  } finally {
+    releaseReply.open();
+    releaseFrame.open();
+    await result;
+  }
+});
+
+
+void test('a named duplicate does not wait for an earlier generic action\'s delivery', {timeout: 30_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const command = switchLamp('lamp-1', 'on'), requestId = 'req-generic-first';
+  const arrived = gate(), releaseGeneric = gate(), releaseNamed = gate(), releaseFrame = gate(), checked = gate();
+  const clock = manualClock(0);
+  let armed = false, posts = 0;
+  intercept(context, () => {}, async (request, response) => {
+    if (armed && request.url.endsWith('/api/v2/commands/lamp-switch')) {
+      posts += 1;
+      assert.equal(response.status, 200);
+      if (posts === 1) {
+        arrived.open();
+        await releaseGeneric.opened;
+      } else {
+        await releaseNamed.opened;
+      }
+    }
+    if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        if (armed) await releaseFrame.opened;
+        controller.enqueue(chunk);
+      },
+    }));
+    return new Response(body, {status: response.status, headers: response.headers});
+  });
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed,
+    realWorkClock: {now: clock.now, scheduler: {after: (delay, callback) => {
+      if (delay === 25) checked.open();
+      return clock.scheduler.after(delay, callback);
+    }}}});
+  context.after(() => h.close());
+  armed = true;
+  const generic = h.gateway(actionCall('operator', command, requestId));
+  await arrived.opened;
+  let named: Promise<string> | undefined, checks = 0;
+  const result = runScenario({id: 'generic-first', title: 'generic first', seed, steps: [
+    act('the named action repeats the completed generic command', h => { named = h.dispatch('operator', 'named', command, requestId); }),
+    expect('the named answer is visible while the original frame stays held', async h => {
+      checks += 1;
+      const observed = h.answer('named');
+      if (checks === 1) {
+        assert.equal(observed, 'pending');
+        releaseNamed.open();
+        assert.equal(await named, 'accepted');
+      }
+      return observed === 'accepted' || 'the named answer was pending';
+    }, 0),
+  ]}, h);
+  try {
+    await Promise.race([checked.opened, result]);
+    clock.advance(REAL_WORK_WITHIN_MS);
+    const verdict = await result;
+    assert.equal(checks, 2, JSON.stringify(verdict));
+    assert.equal(verdict.outcome, 'passed', JSON.stringify(verdict));
+    assert.equal(posts, 2);
+    assert.equal(copiedPower(h), 'off');
+  } finally {
+    releaseNamed.open();
+    releaseGeneric.open();
+    releaseFrame.open();
+    await Promise.all([generic, result]);
+  }
+});
+
+
+for (const shape of ['MCP body', 'upload query'] as const) {
+  void test(`generic ${shape} request IDs make an overlapping HTTP admission ambiguous`, {timeout: 30_000}, async context => {
+    const seed = scenario('reconnect-and-sync')?.seed;
+    assert.ok(seed);
+    const run = await startRun(context, await base(context), 'reconnect-and-sync');
+    const requestId = 'req-explicit-overlap';
+    const generic = shape === 'MCP body' ? {
+      as: 'operator', method: 'POST', path: '/mcp',
+      body: {jsonrpc: '2.0', id: 2, method: 'tools/call', params: {
+        name: 'core_send_command', arguments: {family: 'lamp-switch', target: 'lamp-1', data: {power: 'on'}, requestId},
+      }},
+    } as const : {as: 'operator', method: 'POST', path: '/api/v2/modules/pixoo/upload?request%49d=req%2Dexplicit%2Doverlap',
+      body: new Uint8Array([0])} as const;
+    const genericStarted = gate(), releaseGeneric = gate(), releaseNamed = gate(), releaseFrame = gate(), waiting = gate();
+    const clock = manualClock(0);
+    let armed = false;
+    intercept(context, async request => {
+      if (request.url.endsWith(generic.path)) {
+        genericStarted.open();
+        await releaseGeneric.opened;
+      }
+      if (request.url.endsWith('/api/v2/commands/lamp-switch')) await releaseNamed.opened;
+    }, (request, response) => {
+      if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
+      const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+        async transform(chunk, controller) {
+          if (armed) await releaseFrame.opened;
+          controller.enqueue(chunk);
+        },
+      }));
+      return new Response(body, {status: response.status, headers: response.headers});
+    });
+    const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed,
+      realWorkClock: {now: clock.now, scheduler: {after: (delay, callback) => {
+        if (delay === 25) waiting.open();
+        return clock.scheduler.after(delay, callback);
+      }}}});
+    context.after(() => h.close());
+    armed = true;
+    let pending: Promise<string> | undefined, calls = 0;
+    const competing = h.gateway(generic);
+    await genericStarted.opened;
+    const result = runScenario({id: 'gateway-id', title: 'gateway request ID', seed, steps: [
+      act('a named command overlaps the generic request', h => {
+        pending = h.dispatch('operator', 'named', switchLamp('lamp-1', 'on'), requestId);
+      }),
+      expect('the named answer is visible before either the generic reply or reader delivery', async h => {
+        calls += 1;
+        const observed = h.answer('named');
+        if (calls === 1) {
+          assert.equal(observed, 'pending');
+          releaseNamed.open();
+          assert.equal(await pending, 'accepted');
+          assert.ok(h.logs().some(({record}) => record.event_name === 'command.queued'
+            && record.attributes['bunny.request.id'] === requestId));
+        }
+        return observed === 'accepted' || 'the named answer was pending';
+      }, 0),
+    ]}, h);
+    try {
+      await Promise.race([waiting.opened, result]);
+      clock.advance(REAL_WORK_WITHIN_MS);
+      const verdict = await result;
+      assert.equal(calls, 2, JSON.stringify(verdict));
+      assert.equal(verdict.outcome, 'passed', JSON.stringify(verdict));
+      assert.equal(copiedPower(h), 'off');
+    } finally {
+      releaseNamed.open();
+      releaseFrame.open();
+      releaseGeneric.open();
+      await Promise.all([result, competing]);
+    }
+  });
+}
+
+
+void test('a raw inbox request cannot supply trace evidence for a pending HTTP refusal', {timeout: 30_000}, async context => {
+  const seed = scenario('shared-inbox-history')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'shared-inbox-history');
+  const refused = gate(), releaseReply = gate(), releaseFrame = gate(), waiting = gate();
+  const clock = manualClock(0);
+  let armed = false;
+  intercept(context, () => {}, async (request, response) => {
+    if (request.url.endsWith('/api/v2/commands/inbox-handle')) {
+      assert.equal(response.status, 400);
+      refused.open();
+      await releaseReply.opened;
+    }
+    if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        if (armed) await releaseFrame.opened;
+        controller.enqueue(chunk);
+      },
+    }));
+    return new Response(body, {status: response.status, headers: response.headers});
+  });
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed,
+    realWorkClock: {now: clock.now, scheduler: {after: (delay, callback) => {
+      if (delay === 25) waiting.open();
+      return clock.scheduler.after(delay, callback);
+    }}}});
+  context.after(() => h.close());
+  h.simulate({device: 'lamp', action: 'fail-next'});
+  assert.equal(await h.dispatch('operator', 'failed', switchLamp('lamp-1', 'on'), 'req-failed-for-inbox'), 'accepted');
+  await h.wait(100);
+  const [item] = h.reader.states<{id: string; revision: number}>('inbox-item');
+  assert.ok(item);
+  const {id, revision} = item.data;
+  const key = 'bunny.cmd.inbox-handle.' + id;
+  const draft = {type: 'org.bunny.inbox.handle.requested', subject: id,
+    dataschema: 'https://bunny.invalid/events/inbox-handle/2.0', data: {action: 'dismiss', expectedRevision: revision}};
+  const requestId = 'req-shared-inbox';
+  let original: Promise<string> | undefined, checks = 0;
+  armed = true;
+  const result = runScenario({id: 'raw-inbox', title: 'raw inbox overlap', seed, steps: [
+    act('the invalid HTTP handling is refused before reaching the inbox', async h => {
+      original = h.dispatch('operator', 'invalid', {key, draft: {...draft, data: {action: 'invalid', expectedRevision: revision}}}, requestId);
+      await refused.opened;
+    }),
+    expect('the HTTP refusal is readable while the SDK removal is held', async h => {
+      checks += 1;
+      const answer = h.answer('invalid');
+      if (checks === 1) {
+        assert.equal(answer, 'pending');
+        const raw = await h.sdk('operator').request(key, draft, {timeoutMs: 3000, requestId});
+        assert.equal(raw.status, 'accepted');
+        assert.ok(h.logs().some(({record}) => record.event_name === 'runtime.command.admitted'
+          && record.attributes['bunny.request.id'] === requestId && record.attributes['bunny.routing.key'] === key));
+        releaseReply.open();
+        assert.equal(await original, 'invalid-request');
+      }
+      return answer === 'invalid-request' || 'the HTTP refusal was pending';
+    }, 0),
+  ]}, h);
+  try {
+    await Promise.race([waiting.opened, result]);
+    clock.advance(REAL_WORK_WITHIN_MS);
+    const verdict = await result;
+    assert.equal(checks, 2, JSON.stringify(verdict));
+    assert.equal(verdict.outcome, 'passed', JSON.stringify(verdict));
+    assert.equal(h.reader.states<{id: string}>('inbox-item').some(({data}) => data.id === id), true);
+  } finally {
+    releaseReply.open();
+    releaseFrame.open();
+    await result;
+  }
+});
+
+void test('a traced HTTP refusal waits for the operation it actually admitted', {timeout: 30_000}, async context => {
+  const seed = scenario('operation-records')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'operation-records');
+  const releaseCall = gate(), releaseFrame = gate(), waiting = gate();
+  const clock = manualClock(0);
+  const requestId = 'req-traced-refusal';
+  let armed = false, replyTrace: string | undefined, checks = 0;
+  intercept(context, async request => {
+    if (armed && request.url.endsWith('/api/v2/commands/lamp-switch') && String(request.body).includes(requestId)) await releaseCall.opened;
+  }, async (request, response) => {
+    if (armed && request.url.endsWith('/api/v2/commands/lamp-switch') && String(request.body).includes(requestId)) {
+      assert.equal(response.status, 404);
+      const body = await response.clone().json() as {error: {traceId?: string; requestId?: string}};
+      assert.equal(body.error.requestId, requestId);
+      replyTrace = body.error.traceId;
+      assert.ok(replyTrace !== undefined && replyTrace !== '');
+    }
+    if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        if (armed) await releaseFrame.opened;
+        controller.enqueue(chunk);
+      },
+    }));
+    return new Response(body, {status: response.status, headers: response.headers});
+  });
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed,
+    realWorkClock: {now: clock.now, scheduler: {after: (delay, callback) => {
+      if (delay === 25) waiting.open();
+      return clock.scheduler.after(delay, callback);
+    }}}});
+  context.after(() => h.close());
+  armed = true;
+  let named: Promise<string> | undefined;
+  const result = runScenario({id: 'admitted-refusal', title: 'admitted refusal', seed, steps: [
+    act('the operator sends a valid command to a missing lamp', h => {
+      named = h.dispatch('operator', 'named', switchLamp('lamp-9', 'on'), requestId);
+    }),
+    expect('the tracked refusal reaches the reader', async h => {
+      checks += 1;
+      if (checks === 1) {
+        assert.equal(h.answer('named'), 'pending');
+        assert.equal(h.logs().some(({record}) => record.attributes['bunny.request.id'] === requestId), false);
+        const unrelated = await h.gateway(actionCall('operator', switchLamp('lamp-9', 'on'), 'req-other-action'));
+        assert.equal(unrelated.status, 404);
+        releaseCall.open();
+        assert.equal(await named, 'not-found');
+        assert.ok(h.logs().some(({record}) => record.event_name === 'command.queued' && record.trace_id === replyTrace));
+      }
+      return h.reader.states<{requestId: string}>('operation').some(({data}) => data.requestId === requestId) || 'the refused operation is missing';
+    }, 0),
+  ]}, h);
+  try {
+    await Promise.race([waiting.opened, result]);
+    const checksBeforeFrame = checks;
+    releaseFrame.open();
+    const verdict = await result;
+    assert.equal(checksBeforeFrame, 1, JSON.stringify(verdict));
+    assert.equal(checks, 2, JSON.stringify(verdict));
+    assert.equal(verdict.outcome, 'passed', JSON.stringify(verdict));
+  } finally {
+    releaseCall.open();
+    releaseFrame.open();
+    await result;
+  }
+});
+
 void test('a zero-width check retries once when the child was already busy', {timeout: 60_000}, async context => {
   const seed = scenario('zero-modules')?.seed;
   assert.ok(seed);

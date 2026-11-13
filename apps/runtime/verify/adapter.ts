@@ -10,11 +10,11 @@
 // What it reports goes into a capture's proof, so a failure is named by its registry code, its type or the adapter's own
 // fixed text, never by an exception's message (ADR 0012, "Safe errors"; Hub #954).
 import {readFile} from 'node:fs/promises';
-import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {connectRemote, traceFields, type CommandDraft, type Diagnostic, type Participant, type Scheduler} from '@jimmie-potts/sdk';
+import {RETRYABLE, isErrorCode, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import {connectRemote, statusOf, traceFields, type CommandDraft, type Diagnostic, type Participant, type Scheduler} from '@jimmie-potts/sdk';
 import {HEALTH_PATH, type LogRecord, type ModuleHealth, type RuntimeHealth} from '../src/index.js';
 import {
-  ROLES, StepFailure, failureOf, type DeviceStates, type Outcome, type Overtime, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
+  ROLES, StepFailure, bodyOf, failureOf, type DeviceStates, type Outcome, type Overtime, type GatewayAnswer, type GatewayCall, type Generational, type Harness, type HookPayload, type HookRun, type Role, type Seed,
   type Simulation,
 } from '../tests/scenarios/framework.js';
 import {
@@ -138,11 +138,50 @@ type Virtual = {clock: ReturnType<typeof manualClock>; owed: number; runNext: nu
 
 type PendingWork = () => readonly string[];
 type CompletedAnswer = Readonly<{text: string; traceId: string | undefined}>;
-type PendingAnswer = {
-  label: string; role: Role; requestId: string; key: string; logsFrom: number; publishedFrom: number; ambiguous: boolean;
+type Answer = {text: string} & (
+  {trace: 'sdk'; traceId: string | undefined} | {trace: 'refusal'; traceId: string} | {trace: 'admission' | 'lost' | 'none'}
+);
+type ActionIdentity = {role: Role; requestId: string; key: string};
+type PendingAnswer = ActionIdentity & {
+  label: string; admission: 'command.queued' | 'runtime.command.admitted' | undefined;
+  logsFrom: number; publishedFrom: number; ambiguous: boolean;
   admittedTrace?: string;
   completed?: CompletedAnswer;
 };
+
+/** The tracker's request IDs are global. Check the outgoing generic call without inferring its authority or route. */
+function gatewayRequestIds(url: URL, payload: string | Uint8Array | undefined): Set<string> {
+  const ids = new Set(url.searchParams.getAll('requestId'));
+  if (payload === undefined) return ids;
+  const remaining: unknown[] = [];
+  try {
+    remaining.push(JSON.parse(typeof payload === 'string' ? payload : new TextDecoder().decode(payload)));
+  } catch {
+    return ids;
+  }
+  while (remaining.length > 0) {
+    const value = remaining.pop();
+    if (typeof value !== 'object' || value === null) continue;
+    for (const [key, field] of Object.entries(value)) {
+      if (key === 'requestId' && typeof field === 'string') ids.add(field);
+      else if (typeof field === 'object' && field !== null) remaining.push(field);
+    }
+  }
+  return ids;
+}
+
+function dispatchAnswer(response: GatewayAnswer): Answer {
+  const text = actionAnswerOf(response);
+  if (response.status === 200) return {text, trace: 'admission'};
+  const refusal = bodyOf<ErrorBody>(response)?.error;
+  if (refusal === undefined || !isErrorCode(refusal.code) || RETRYABLE[refusal.code] !== refusal.retryable
+    || statusOf(refusal.code) !== response.status) {
+    return {text, trace: 'none'};
+  }
+  // Gateway and tracker refusals before admission have no trace. A tracked duplicate can return an earlier SDK
+  // refusal verbatim, so a trace in the HTTP body must still agree with fresh evidence of this attempt's admission.
+  return typeof refusal.traceId !== 'string' ? {text, trace: 'none'} : {text, trace: 'refusal', traceId: refusal.traceId};
+}
 
 /** How many event-loop turns the adapter gives the parts' streams after each advance of the run, as the in-memory harness gives real I/O. */
 const TURNS = 4;
@@ -180,6 +219,9 @@ class Run implements RunHarness {
   /** Calls and action answers that the scenario cannot read yet, keyed per operation. */
   readonly #calls = new Set<object>();
   readonly #pendingAnswers = new Set<PendingAnswer>();
+  readonly #gatewayActions = new Set<Set<string>>();
+  readonly #uncertainActionIds = new Set<string>();
+  readonly #directRequests = new Set<ActionIdentity>();
   /** On virtual time, the parts whose stream is lost until they reconnect, which they do over real I/O. */
   readonly #away = new Map<Role, object>();
   /**
@@ -238,7 +280,7 @@ class Run implements RunHarness {
 
   sdk(role: Role): Participant {
     const participant = this.#connected(role);
-    return this.#virtual === undefined ? participant : this.#caughtUp(participant);
+    return this.#virtual === undefined ? participant : this.#caughtUp(role, participant);
   }
 
   #connected(role: Role): Participant {
@@ -253,43 +295,63 @@ class Run implements RunHarness {
     const started = this.#act(() => Promise.resolve({request: this.#connected(role).request(key, draft, options)}));
     return started.then(({request}) => request).then(result => {
       const traceId = result.status === 'accepted' ? traceFields(result.reply)?.traceId : result.error.error.traceId;
-      return this.#finishAnswer(pending, answerOf(result), traceId);
-    }, (error: unknown) => this.#finishAnswer(pending, `threw ${failureOf(error)}`));
+      return this.#finishAnswer(pending, {text: answerOf(result), trace: 'sdk', traceId});
+    }, (error: unknown) => this.#finishAnswer(pending, {text: `threw ${failureOf(error)}`, trace: 'none'}));
   }
 
   dispatch(role: Role, label: string, command: {key: string; draft: CommandDraft<object>}, requestId: string): Promise<string> {
-    const pending = this.#startAnswer(role, label, requestId, command.key);
+    const call = actionCall(role, command, requestId);
+    const admission = command.key.startsWith('bunny.cmd.inbox-handle.') ? 'runtime.command.admitted' : 'command.queued';
+    const pending = this.#startAnswer(role, label, requestId, command.key, admission);
     // The action starts in its turn among the actions; its answer may come long after the next action began. An HTTP
     // call whose connection a crash ended is `lost`: its fate is the tracker's to know.
-    const started = this.#act(() => Promise.resolve({call: this.#client.call(actionCall(role, command, requestId))}));
-    return started.then(({call}) => call).then(actionAnswerOf, () => 'lost')
+    const started = this.#act(() => Promise.resolve({answer: this.#client.call(call)}));
+    return started.then(({answer}) => answer).then(dispatchAnswer, (): Answer => ({text: 'lost', trace: 'lost'}))
       .then(answer => this.#finishAnswer(pending, answer));
   }
 
-  async #finishAnswer(pending: PendingAnswer, text: string, traceId?: string): Promise<string> {
+  async #finishAnswer(pending: PendingAnswer, answer: Answer): Promise<string> {
     try {
       // Refresh before exposing the answer, and resolve its trace here while this attempt is still pending.
       await this.#refresh();
-      const completed: CompletedAnswer = {text, traceId: traceId ?? pending.admittedTrace ?? this.#admissionTrace(pending)};
+      const completed: CompletedAnswer = {text: answer.text, traceId: this.#answerTrace(pending, answer)};
       pending.completed = completed;
       this.#answers.set(pending.label, completed.text);
       return completed.text;
     } finally {
+      if (pending.admission !== undefined && (answer.trace === 'lost' || pending.completed === undefined)) {
+        this.#uncertainActionIds.add(pending.requestId);
+      }
       this.#pendingAnswers.delete(pending);
       this.#wake();
     }
   }
 
-  #startAnswer(role: Role, label: string, requestId: string, key: string): PendingAnswer {
+  #answerTrace(pending: PendingAnswer, answer: Answer): string | undefined {
+    if (answer.trace === 'sdk') return answer.traceId;
+    if (answer.trace === 'none') return undefined;
+    const admission = pending.admittedTrace ?? this.#admissionTrace(pending);
+    return answer.trace === 'refusal' && answer.traceId !== admission ? undefined : admission;
+  }
+
+  #startAnswer(role: Role, label: string, requestId: string, key: string, admission?: PendingAnswer['admission']): PendingAnswer {
     this.#answers.set(label, 'pending');
-    const pending = {label, role, requestId, key, logsFrom: this.#state.logs.length, publishedFrom: this.#state.published.length, ambiguous: false};
+    const pending = {label, role, requestId, key, admission, logsFrom: this.#state.logs.length, publishedFrom: this.#state.published.length,
+      ambiguous: this.#uncertainActionIds.has(requestId) || [...this.#gatewayActions].some(ids => ids.has(requestId))};
     for (const answer of this.#pendingAnswers) {
-      if (answer.role !== role || answer.requestId !== requestId || answer.key !== key) continue;
+      if (!this.#sharesAdmission(answer, pending)) continue;
       answer.ambiguous = true;
+      pending.ambiguous = true;
+    }
+    if (admission === 'runtime.command.admitted' && [...this.#directRequests].some(request => this.#sharesAdmission(pending, request))) {
       pending.ambiguous = true;
     }
     this.#pendingAnswers.add(pending);
     return pending;
+  }
+
+  #sharesAdmission(answer: ActionIdentity, other: ActionIdentity): boolean {
+    return answer.role === other.role && answer.requestId === other.requestId && answer.key === other.key;
   }
 
   answer(label: string): string {
@@ -382,10 +444,26 @@ class Run implements RunHarness {
   async gateway(call: GatewayCall): Promise<GatewayAnswer> {
     await this.#actions;
     await this.#catchUp();
-    return this.#tracked(this.#client.call(call).then(async answer => {
+    let competing: Set<string> | undefined;
+    const response = this.#client.call(call, (url, payload) => {
+      if (call.method === 'GET') return;
+      const ids = gatewayRequestIds(url, payload);
+      if (ids.size === 0) return;
+      competing = ids;
+      this.#gatewayActions.add(ids);
+      for (const answer of this.#pendingAnswers) {
+        if (ids.has(answer.requestId)) answer.ambiguous = true;
+      }
+    });
+    return this.#tracked(response.then(async answer => {
       // What the call made the runtime log or publish is in the copy before the scenario reads it.
       await this.#refresh();
       return answer;
+    }).catch((error: unknown) => {
+      for (const id of competing ?? []) this.#uncertainActionIds.add(id);
+      throw error;
+    }).finally(() => {
+      if (competing !== undefined) this.#gatewayActions.delete(competing);
     }));
   }
 
@@ -639,7 +717,7 @@ class Run implements RunHarness {
   readonly #wrapped = new WeakMap<Participant, Participant>();
 
   /** The participant, each of whose calls first sends the run the time it is owed, on virtual time. */
-  #caughtUp(participant: Participant): Participant {
+  #caughtUp(role: Role, participant: Participant): Participant {
     const known = this.#wrapped.get(participant);
     if (known !== undefined) return known;
     const wrapped = new Proxy(participant, {get: (target, property) => {
@@ -647,11 +725,34 @@ class Run implements RunHarness {
       if (typeof value !== 'function') return value;
       return async (...args: unknown[]): Promise<unknown> => {
         await this.#catchUp();
-        return this.#tracked(Promise.resolve((value as (...args: unknown[]) => unknown).apply(target, args)));
+        const invoke = () => Promise.resolve((value as (...args: unknown[]) => unknown).apply(target, args));
+        if (property === 'request' && typeof args[0] === 'string' && args[0].startsWith('bunny.cmd.inbox-handle.')) {
+          const requestId = (args[2] as {requestId?: unknown} | undefined)?.requestId;
+          if (typeof requestId === 'string') return this.#tracked(this.#directRequest({role, key: args[0], requestId}, invoke));
+        }
+        return this.#tracked(invoke());
       };
     }});
     this.#wrapped.set(participant, wrapped);
     return wrapped;
+  }
+
+  /** A raw inbox command can emit the same SDK admission evidence as the direct inbox gateway route. */
+  async #directRequest(request: ActionIdentity, invoke: () => Promise<unknown>): Promise<unknown> {
+    this.#directRequests.add(request);
+    for (const answer of this.#pendingAnswers) {
+      if (answer.admission === 'runtime.command.admitted' && this.#sharesAdmission(answer, request)) answer.ambiguous = true;
+    }
+    try {
+      const answer = await invoke();
+      await this.#refresh();
+      return answer;
+    } catch (error) {
+      this.#uncertainActionIds.add(request.requestId);
+      throw error;
+    } finally {
+      this.#directRequests.delete(request);
+    }
   }
 
   async #fetchState(signal?: AbortSignal): Promise<boolean> {
@@ -832,10 +933,10 @@ class Run implements RunHarness {
   #admissionTrace(answer: PendingAnswer): string | undefined {
     // An HTTP duplicate can share its request ID with the original operation. Only fresh, unambiguous admission
     // evidence can link this answer to new publications. Ordinary waits still check uncorrelated deliveries.
-    if (answer.ambiguous) return undefined;
+    if (answer.admission === undefined || answer.ambiguous) return undefined;
     const traces = new Set<string>();
     for (const {record} of this.#state.logs.slice(answer.logsFrom)) {
-      if ((record.event_name === 'command.queued' || record.event_name === 'runtime.command.admitted')
+      if (record.event_name === answer.admission
         && record.attributes['bunny.request.id'] === answer.requestId
         && record.attributes['bunny.participant'] === sourceOf(answer.role)
         && record.attributes['bunny.routing.key'] === answer.key
