@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
-import {chromium, expect, type Locator, type Page} from 'playwright/test';
+import {chromium, expect, type Locator, type Page, type Request} from 'playwright/test';
 import type {HomeLayoutRecord, HomePlacement, HomeShape} from '@jimmie-potts/event-contracts/v2/families';
 import {changes, feed, startWorld} from './harness.ts';
 import {approvalPrompt, IDENTITY} from '../../dist/tests/fixtures/agents.js';
@@ -23,6 +23,43 @@ const storedSize = {square: 'small', tall: 'small', wide: 'medium', 'large-squar
 
 async function settle(page: Page): Promise<void> {
   await page.evaluate(async () => {await document.fonts.ready;await new Promise<void>(resolve => {requestAnimationFrame(() => {requestAnimationFrame(() => {resolve();});});});});
+}
+/**
+ * Moves the page's clock on by `ms` (#1712): every page timer and animation frame due in that time fires, in order,
+ * then two frames, a round trip after them, so a request one of them started has been seen.
+ */
+async function pageTime(page: Page, ms: number): Promise<void> {
+  await page.clock.runFor(ms);await settle(page);
+}
+/**
+ * `idleChanges` over `ms` of the page's clock: the recorder's own timer, and every page timer and animation frame due
+ * in that time, fire as the clock runs. The evaluate after it is a round trip that keeps the recorder's timer set
+ * before the clock runs; were it set later, it would fire on the clock's real-time flow, as at base. Only for churn a
+ * page's timers or frames drive: the browser's own rendering (a ResizeObserver loop) gets a few real milliseconds.
+ */
+async function idleFor(page: Page, ms: number, cards?: readonly string[]): Promise<string[]> {
+  const seen = idleChanges(page, ms, cards);
+  await page.evaluate(() => 0);await page.clock.runFor(ms);
+  return seen;
+}
+/**
+ * The page's requests in order and whether each has its answer; `answered(mark)` waits until every one started since
+ * `mark` (a `length` read earlier) has one. Event streams stay open, so they are left out, and so are the requests of
+ * a document the page has navigated away from: they ended with it, and Playwright may report no answer for them.
+ */
+function answers(page: Page): {readonly length: number; answered: (mark: number) => Promise<void>} {
+  const started: Request[] = [], done = new WeakSet<Request>();
+  let navigating = false, current = 0;
+  page.on('request', request => {
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) navigating = true;
+    else if (!new URL(request.url()).pathname.endsWith('/stream')) started.push(request);
+  });
+  // A new document has replaced the old one; a change of the hash alone makes no navigation request.
+  page.on('framenavigated', frame => {if (frame === page.mainFrame() && navigating) {navigating = false;current = started.length;}});
+  page.on('requestfinished', request => {done.add(request);});page.on('requestfailed', request => {done.add(request);});
+  return {get length() {return started.length;}, answered: async mark => {
+    await expect.poll(() => started.slice(Math.max(mark, current)).filter(request => !done.has(request)).map(request => request.url())).toEqual([]);
+  }};
 }
 /** A private PNG of Home, cropped to stay under 8,000 pixels tall at twice the scale. */
 async function shot(page: Page, name: string): Promise<void> {
@@ -219,6 +256,17 @@ try {
   const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
   const page = await context.newPage();page.setDefaultTimeout(20_000);
   const errors: string[] = [];context.on('weberror', error => {errors.push(error.error().message);});
+  /**
+   * A page in a context of its own, on a clock the journey moves (#1712). It keeps real time until a check runs it on.
+   * Playwright's clock belongs to a context, and the journey's main context keeps the browser's own timers and frames:
+   * with a page clock there, the canvas cards' frame loops slowed its resizes past their bounds under CPU throttling.
+   */
+  const clocked = async (): Promise<{page: Page; close: () => Promise<void>}> => {
+    const own = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce', deviceScaleFactor: receipts === undefined ? 1 : 2});
+    own.on('weberror', error => {errors.push(error.error().message);});
+    const opened = await own.newPage();opened.setDefaultTimeout(20_000);await opened.clock.install();
+    return {page: opened, close: () => own.close()};
+  };
   await page.goto(world.url);await feed(page, 'connected');
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   for (const prefix of ['device:bunny/modules/pixoo:', 'device:bunny/modules/tidbyt:', 'light:device:']) await page.locator(`[data-home-card^="${prefix}"]`).first().waitFor();
@@ -359,14 +407,20 @@ try {
       {widget: 'timeline', size: 'large', hidden: false}, {widget: 'art', size: 'medium', hidden: false, art: {format: 'banner', pinned: true}}];
     // An empty save first, so the core carries no earlier shape onto these width-only placements.
     await save(page, []);await save(page, old);
-    const sent = changes(page);
-    await page.reload();await feed(page, 'connected');
-    // Home shows the built-in layout until the saved record syncs, so wait for the saved order and shapes.
-    await expect.poll(order).toEqual(old.map(entry => entry.widget));
-    await expect.poll(async () => Object.fromEntries((await measure(page)).cards.map(card => [card.id, card.shape]))).toEqual({'hub-mode': 'wide', inbox: 'tall', sessions: 'large-square', [lamps[0] ?? '']: 'tall', [lamps[1] ?? '']: 'large-square', [pixoo]: 'square', timeline: 'large-square', art: 'wide'});
-    tiles(await measure(page));
-    await shot(page, 'final5-converted-old-layout-1440');
-    await page.waitForTimeout(500);assert.deepEqual(sent, [], 'loading an old-format layout writes nothing');
+    // The layout loads in a page of its own, on a clock the check moves.
+    const {page: loaded, close} = await clocked();
+    try {
+      const sent = changes(loaded), requests = answers(loaded);
+      await loaded.goto(world.url);await feed(loaded, 'connected');
+      // Home shows the built-in layout until the saved record syncs, so wait for the saved order and shapes.
+      await expect.poll(() => loaded.locator('.home-layout-grid > [data-home-card]:not([data-art-placement=automatic])').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.homeCard ?? ''))).toEqual(old.map(entry => entry.widget));
+      await expect.poll(async () => Object.fromEntries((await measure(loaded)).cards.map(card => [card.id, card.shape]))).toEqual({'hub-mode': 'wide', inbox: 'tall', sessions: 'large-square', [lamps[0] ?? '']: 'tall', [lamps[1] ?? '']: 'large-square', [pixoo]: 'square', timeline: 'large-square', art: 'wide'});
+      tiles(await measure(loaded));
+      await shot(loaded, 'final5-converted-old-layout-1440');
+      // Every answer the load asked for has arrived, then 0.5 s of the page's timers and frames and their answers.
+      await requests.answered(0);await pageTime(loaded, 500);await requests.answered(0);await settle(loaded);
+      assert.deepEqual(sent, [], 'loading an old-format layout writes nothing');
+    } finally {await close();}
   }
 
   if (part('paging')) {
@@ -514,11 +568,13 @@ try {
     // F25: the status line's height is reserved, so a refresh keeps the page size (rows a page) while it reads.
     const history = timeline.locator('[data-paged-list="Timeline"]'), shownRows = history.locator('[data-paged-key]:not([hidden])');
     const perPage = await shownRows.count();
-    // The read is held for a moment so the refreshing state is on screen long enough to check.
-    await page.route('**/api/v2/history**', async route => {await new Promise(resolve => setTimeout(resolve, 800));await route.continue();});
+    // The read is held until the refreshing state has been checked, then let go.
+    let release = (): void => {};const held = new Promise<void>(resolve => {release = resolve;}), reads: string[] = [];
+    await page.route('**/api/v2/history**', async route => {reads.push(route.request().url());await held;await route.continue();});
     await timeline.getByRole('button', {name: 'Refresh history', exact: true}).click();
+    await expect.poll(() => reads.length, {message: 'the refresh reads history'}).toBeGreaterThan(0);
     await expect(timeline.locator('.timeline-status')).toHaveText(/Refreshing/);assert.equal(await shownRows.count(), perPage, 'the page size holds while the refresh reads');
-    await expect(timeline.locator('.timeline-status')).not.toHaveText(/Refreshing/);assert.equal(await shownRows.count(), perPage, 'and after it');
+    release();await expect(timeline.locator('.timeline-status')).not.toHaveText(/Refreshing/);assert.equal(await shownRows.count(), perPage, 'and after it');
     await page.unroute('**/api/v2/history**');
   }
 
@@ -740,6 +796,7 @@ try {
         }
         const placed = value.cards.filter(card => modules.includes(card.id));
         failures.push(...misfits(placed).map(text => `${String(width)}: ${text}`), ...halfEmpty(placed).map(text => `${String(width)} half empty: ${text}`));
+        // Real time, as in the idle part below: a loop the browser's rendering drives runs only in real frames.
         let still = await idleChanges(page, 2000, modules);if (still.length > 0) still = await idleChanges(page, 2000, modules);
         failures.push(...still.slice(0, 3).map(text => `${String(width)} ${shape} idle: ${text}`));
       }
@@ -785,21 +842,33 @@ try {
     await full.getByRole('button', {name: 'Next', exact: true}).click();await expect.poll(() => bodies.length).toBe(mark + 1);
     const reference = bodies.at(-1);assert.ok(reference !== undefined);
     await page.goto(`${world.url}/#/home`);await feed(page, 'connected');
-    await save(page, [placement(pixoo, 'wide')]);
+    // The compact card's controls are driven in a page of its own, on a clock the checks below move.
+    const {page: live, close: closeLive} = await clocked(), requests = answers(live);
+    live.on('request', request => {
+      if (request.method() !== 'POST' || !request.url().includes('/api/v2/commands/')) return;
+      const body = JSON.parse(request.postData() ?? '{}') as {data?: Record<string, unknown>};
+      bodies.push({path: new URL(request.url()).pathname, data: body.data ?? {}});
+    });
+    await live.goto(world.url);await feed(live, 'connected');
+    await save(live, [placement(pixoo, 'wide')]);
     const device = async (): Promise<{configurationRevision: number; generation: number}> => page.evaluate(async id => {
       const data = await (await fetch('/api/v2/snapshot?families=device&owner=bunny/modules/pixoo')).json() as {records: {device: {id: string; configurationRevision: number; generation: number}[]}};
       const record = data.records.device.find(value => value.id === id);if (record === undefined) throw new Error('pixoo-record');
       return {configurationRevision: record.configurationRevision, generation: record.generation};
     }, deviceId);
     const press = async (scope: Locator, name: string, family: string, data: Record<string, unknown>, double = false): Promise<void> => {
-      await settled(scope, name);const guard = await device();mark = bodies.length;
+      await settled(scope, name);const guard = await device();mark = bodies.length;const since = requests.length;
       const button = scope.getByRole('button', {name, exact: true});
       if (double) await button.dblclick();else await button.click();
-      await expect.poll(() => bodies.length).toBe(mark + 1);await page.waitForTimeout(300);
+      // The request's reply and every other answer since, then its end on the card: the screen controls unlock only
+      // once no command for the device is unsettled. Then 0.3 s of the page's timers and frames and their answers.
+      await expect.poll(() => bodies.length).toBe(mark + 1);await requests.answered(since);
+      await expect(scope.locator('.light-power button').first()).toBeEnabled();
+      await pageTime(live, 300);await requests.answered(since);await settle(live);
       assert.equal(bodies.length, mark + 1, `${name} sends one request${double ? ' for a double click' : ''}`);
       assert.deepEqual(bodies.at(-1), {path: `/api/v2/commands/${family}`, data: {...data, expectedConfigurationRevision: guard.configurationRevision, expectedGeneration: guard.generation}}, name);
     };
-    const playing = page.locator(`[data-home-card="${pixoo}"]`);
+    const playing = live.locator(`[data-home-card="${pixoo}"]`);
     // The screen goes back on (Screen off above paused the player), with the same body the full card sends.
     await press(playing, 'Screen on', 'power-set', {on: true});
     await press(playing, 'Next', 'media-control', {action: 'next'});
@@ -812,21 +881,23 @@ try {
     await expect(playing.getByRole('button', {name: second, exact: true})).toBeVisible();
     await press(playing, second, 'media-control', {action: second.toLowerCase()});
     await press(playing, 'Next', 'media-control', {action: 'next'}, true);
-    await save(page, [placement(pixoo, 'large-square'), placement(tidbyt, 'large-square')]);
-    await settled(playing, 'Next');mark = bodies.length;
+    await save(live, [placement(pixoo, 'large-square'), placement(tidbyt, 'large-square')]);
+    await settled(playing, 'Next');mark = bodies.length;const moved = requests.length;
     const slider = playing.getByRole('slider', {name: 'Brightness'});
-    await slider.focus();for (let step = 0; step < 5; step += 1) await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(300);assert.equal(bodies.length, mark, 'moving the slider sends nothing');
+    await slider.focus();for (let step = 0; step < 5; step += 1) await live.keyboard.press('ArrowRight');
+    // 0.3 s of the page's timers and frames, and the answers to anything the page asked for meanwhile.
+    await requests.answered(moved);await pageTime(live, 300);await requests.answered(moved);await settle(live);assert.equal(bodies.length, mark, 'moving the slider sends nothing');
     const draft = Number(await slider.inputValue());
     await press(playing, 'Apply brightness', 'brightness-set', {percent: draft});
-    assert.deepEqual(misfits((await measure(page)).cards), [], 'the Large square Pixoo with a session fits');
-    await shot(page, 'b2-pixoo-large-square-playing-1440');
+    assert.deepEqual(misfits((await measure(live)).cards), [], 'the Large square Pixoo with a session fits');
+    await shot(live, 'b2-pixoo-large-square-playing-1440');
     // F5: in Large square the media is a square on top, as large as the controls under it allow, and they follow it.
     const large = await playing.evaluate(card => {
       const art = card.querySelector('.pixoo-artwork')?.getBoundingClientRect(), body = card.querySelector('.pixoo-compact-body')?.getBoundingClientRect();
       return art === undefined || body === undefined ? undefined : {width: art.width, height: art.height, artTop: art.top, bodyTop: body.top, card: card.getBoundingClientRect().width};
     });
     assert.ok(large !== undefined && Math.abs(large.width - large.height) <= 1 && large.width >= large.card * 0.4 && large.bodyTop - large.artTop - large.height >= 0 && large.bodyTop - large.artTop - large.height <= 12, `Large square media and controls: ${JSON.stringify(large)}`);
+    await closeLive();
     // Home with the three cards in larger shapes, at each width and in Edit Home.
     const showcase = [placement('hub-mode', 'wide'), placement(pixoo, 'tall'), placement(tidbyt, 'wide'), placement('wispr', 'large-square'), placement('inbox', 'wide'), placement('timeline', 'tall'), placement(lamps[0] ?? '', 'square'), placement('sessions', 'large-square')];
     await save(page, showcase);
@@ -847,7 +918,7 @@ try {
     // F6 (#1672 PR B round 2): the idle recorder reports churn that ends where it began, as a render loop does. A static
     // page with one list card flips an attribute, a row's `hidden` and a class every frame and restores each; a write
     // of the value an attribute already has is not a change.
-    const probe = await context.newPage();
+    const {page: probe, close: closeProbe} = await clocked();
     try {
       await probe.setContent('<div class="home-layout-grid"><div data-home-card="inbox"><ul><li data-row="a">A</li><li>B</li></ul><input name="find" type="search"></div></div>');
       const churn = async (kind: string): Promise<string[]> => {
@@ -862,13 +933,13 @@ try {
           };
           step();
         }, kind);
-        const seen = await idleChanges(probe, 500);
+        const seen = await idleFor(probe, 500);
         await probe.evaluate(() => {cancelAnimationFrame((window as unknown as {churn?: number}).churn ?? 0);});
         return seen;
       };
       for (const kind of ['attribute', 'hidden', 'class']) assert.ok((await churn(kind)).length > 0, `a per-frame ${kind} flip and restore is reported`);
       assert.deepEqual(await churn('same-value'), [], 'a write of the value an attribute already has is not reported');
-    } finally {await probe.close();}
+    } finally {await closeProbe();}
   }
 
   if (part('idle')) {
@@ -877,7 +948,9 @@ try {
     await save(page, representative);
     const busy: string[] = [];
     for (const width of [1100, 1380, 1520, 1780, 2060, 2560]) {
-      await page.setViewportSize({width, height: 1000});await measure(page);await page.waitForTimeout(250);
+      // The windows are real time: a loop the browser's rendering drives runs only in real frames. measure() has waited
+      // for the repacked grid and two frames; a one-off change after that shows in the first window only.
+      await page.setViewportSize({width, height: 1000});await measure(page);
       // A second window tells a one-off record change (such as session evidence turning stale) from a render loop.
       let changes = await idleChanges(page);if (changes.length > 0) changes = await idleChanges(page);
       if (changes.length > 0) busy.push(`${String(width)}: ${String(changes.length)} changes, first ${changes.slice(0, 3).join(' | ')}`);
