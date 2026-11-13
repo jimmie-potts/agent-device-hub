@@ -12,7 +12,7 @@ import {InProcessBus, SdkError, prepareMessage, publishOnce, type Draft} from '@
 import {REAL_WORK_WITHIN_MS, RESYNC_WITHIN_MS, RunFailure, connectRun, failureOf, readGrants} from '../adapter.js';
 import {scenarioProof} from '../plugin.js';
 import {HEALTH_PATH} from '../../src/index.js';
-import {Reader, follow, sourceOf} from '../../tests/scenarios/parts.js';
+import {Reader, actionCall, follow, sourceOf} from '../../tests/scenarios/parts.js';
 import {manualClock} from '../../tests/scenarios/virtual-time.js';
 import {base, startRun} from './support.js';
 
@@ -199,7 +199,7 @@ void test('the first refresh after reader reconnect waits for live frames and ex
   assert.ok(seed);
   const run = await startRun(context, await base(context), 'reconnect-and-sync');
   const source = sourceOf('hook'), token = (await readGrants(run.dataDir)).get(source);
-  assert.ok(token);
+  assert.ok(token !== undefined && token !== '');
   const held = gate(), published = gate();
   let h: Awaited<ReturnType<typeof connectRun>> | undefined, liveId: string | undefined;
   const publish = async (live = false): Promise<string> => {
@@ -236,7 +236,7 @@ void test('the first refresh after reader reconnect waits for live frames and ex
   try {
     await Promise.race([published.opened, waiting]);
     const id = liveId;
-    assert.ok(id);
+    assert.ok(id !== undefined && id !== '');
     const reader = h.reader;
     while (!finished && !h.published().some(({message}) => message.id === id)) await turns(1);
     await turns(1000);
@@ -260,9 +260,9 @@ void test('overtime rechecks an action that settles during its first advance', {
   const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
   context.after(() => h.close());
   const held = gate(), dispatched = gate();
-  let action: Promise<string> | undefined;
+  let action: Promise<string> | undefined, advances = 0, checks = 0;
   intercept(context, async request => {
-    if (request.url.endsWith('/clock/advance') && request.body === '{"ms":0}') {
+    if (request.url.endsWith('/clock/advance') && request.body === '{"ms":0}' && ++advances === 2) {
       held.open();
       await action;
     }
@@ -279,12 +279,167 @@ void test('overtime rechecks an action that settles during its first advance', {
         action = h.dispatch('operator', 'none', switchLamp('lamp-1', 'on'), 'req-none');
         await dispatched.opened;
       }),
-      expect('the command answer was unavailable', h => answered(h, 'none', 'unavailable'), 0),
+      expect('the command answer was unavailable', h => {
+        checks += 1;
+        return answered(h, 'none', 'unavailable');
+      }, 0),
     ]}, h);
     assert.equal(h.answer('none'), 'unavailable');
     assert.equal(result.outcome, 'passed', JSON.stringify(result.steps));
+    assert.equal(checks, 2);
   } finally {
     held.open();
+  }
+});
+
+void test('overtime remembers an independent answer that settles inside the bound check', {timeout: 60_000}, async context => {
+  const seed = scenario('zero-modules')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'zero-modules');
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  const held = gate(), dispatched = gate();
+  let action: Promise<string> | undefined, checks = 0;
+  intercept(context, () => {}, async (request, response) => {
+    if (!request.url.includes('/api/v2/commands/')) return response;
+    dispatched.open();
+    await held.opened;
+    return response;
+  });
+  try {
+    const result = await runScenario({id: 'check-with-pending-answer', title: 'check with pending answer', seed, steps: [
+      act('the command awaits the answer', async h => {
+        action = h.dispatch('operator', 'none', switchLamp('lamp-1', 'on'), 'req-none');
+        await dispatched.opened;
+      }),
+      expect('the command answer was unavailable', async h => {
+        checks += 1;
+        const outcome = answered(h, 'none', 'unavailable');
+        held.open();
+        await action;
+        return outcome;
+      }, 0),
+    ]}, h);
+    assert.equal(result.outcome, 'passed', JSON.stringify(result.steps));
+    assert.equal(checks, 2);
+  } finally {
+    held.open();
+  }
+});
+
+void test('overtime waits for live delivery after an independent action answers', {timeout: 60_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const reply = gate(), dispatched = gate(), frame = gate();
+  let armed = false, advances = 0, checks = 0;
+  let action: Promise<string> | undefined;
+  intercept(context, async request => {
+    if (armed && request.url.endsWith('/clock/advance') && ++advances === 2) {
+      reply.open();
+      await action;
+    }
+  }, async (request, response) => {
+    if (request.url.endsWith('/stream') && request.source === sourceOf('reader') && response.body !== null) {
+      const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+        async transform(chunk, controller) {
+          if (armed) await frame.opened;
+          controller.enqueue(chunk);
+        },
+      }));
+      return new Response(body, {status: response.status, headers: response.headers});
+    }
+    if (!armed || !request.url.includes('/api/v2/commands/')) return response;
+    dispatched.open();
+    await reply.opened;
+    return response;
+  });
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  armed = true;
+  const result = runScenario({id: 'action-delivery', title: 'action delivery', seed, steps: [
+    act('the command waits for its reply', async h => {
+      action = h.dispatch('operator', 'held', switchLamp('lamp-1', 'on'), 'req-held');
+      await dispatched.opened;
+    }),
+    expect('the reader saw the resulting state', h => {
+      checks += 1;
+      return copiedPower(h) === 'on' || 'the reader still sees the lamp off';
+    }, 0),
+  ]}, h);
+  try {
+    await Promise.race([reply.opened, result]);
+    assert.equal(await action, 'accepted');
+    await turns(1000);
+    assert.equal(checks, 1, 'the reply alone did not permit another check');
+    frame.open();
+    assert.equal((await result).outcome, 'passed');
+    assert.equal(checks, 2);
+  } finally {
+    reply.open();
+    frame.open();
+    await result;
+  }
+});
+
+void test('a zero-width check retries once when the child was already busy', {timeout: 60_000}, async context => {
+  const seed = scenario('zero-modules')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'zero-modules');
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  let advances = 0, checks = 0;
+  intercept(context, () => {}, async (request, response) => {
+    if (!request.url.endsWith('/clock/advance')) return response;
+    assert.equal(request.body, '{"ms":0}');
+    const state = await response.json() as object;
+    advances += 1;
+    return Response.json({...state, busy: advances === 1});
+  });
+  const result = await runScenario({id: 'child-busy', title: 'child busy', seed, steps: [
+    expect('the child had one busy interval', () => {
+      checks += 1;
+      assert.equal(advances, checks);
+      return 'the original failed check';
+    }, 0),
+  ]}, h);
+  assert.equal(result.steps[0]?.detail, 'the original failed check');
+  assert.deepEqual([checks, advances], [2, 2]);
+});
+
+void test('the first bound check shares the settle deadline', {timeout: 60_000}, async context => {
+  const seed = scenario('zero-modules')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'zero-modules');
+  const clock = manualClock(0);
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed, realWorkClock: clock});
+  context.after(() => h.close());
+  const held = gate(), checking = gate(), finished = gate();
+  let evaluations = 0, settled = false;
+  intercept(context, request => {
+    if (request.url.endsWith('/clock/advance')) clock.advance(REAL_WORK_WITHIN_MS - 1);
+  });
+  const result = runScenario({id: 'check-deadline', title: 'check deadline', seed, steps: [
+    expect('the held predicate', async () => {
+      evaluations += 1;
+      checking.open();
+      await held.opened;
+      finished.open();
+      throw new Error('late predicate rejection');
+    }, 0),
+  ]}, h).finally(() => { settled = true; });
+  try {
+    await Promise.race([checking.opened, result]);
+    assert.equal(evaluations, 1);
+    assert.equal(settled, false);
+    clock.advance(1);
+    await turns(2);
+    assert.equal(settled, true, 'the same deadline expired while the predicate was held');
+    assert.match((await result).steps[0]?.detail ?? '', /15000 ms.*expectation check/);
+  } finally {
+    held.open();
+    if (evaluations > 0) await finished.opened;
+    await result;
   }
 });
 
@@ -305,7 +460,7 @@ void test('overtime counts a held advance against its real deadline', {timeout: 
   const overtime = h.overtime?.();
   assert.ok(overtime);
   let detail: boolean | string | undefined;
-  const checked = overtime.next().then(result => { detail = result; });
+  const checked = overtime.run(() => Promise.resolve('the check failed')).then(result => { detail = result; });
   try {
     await advancing.opened;
     clock.advance(REAL_WORK_WITHIN_MS);
@@ -416,7 +571,7 @@ void test('a counted overflow does not waive a later live occurrence', {timeout:
   const run = await startRun(context, await base(context), 'reconnect-and-sync');
   const source = sourceOf('hook');
   const token = (await readGrants(run.dataDir)).get(source);
-  assert.ok(token);
+  assert.ok(token !== undefined && token !== '');
   const held = gate();
   let overflowId: string | undefined, liveId: string | undefined;
   intercept(context, () => {}, (request, response) => {
@@ -429,7 +584,7 @@ void test('a counted overflow does not waive a later live occurrence', {timeout:
         if (liveId !== undefined && frame.includes(liveId)) await held.opened;
         if (overflowId !== undefined && frame.includes(overflowId)) {
           const subscription = /"subscription":"([^"]+)"/.exec(frame)?.[1];
-          assert.ok(subscription);
+          assert.ok(subscription !== undefined && subscription !== '');
           controller.enqueue(bytes.encode('event: overflow\ndata: ' + JSON.stringify({schema: 'sdk-remote/1.0', subscription, dropped: 1}) + '\n\n'));
         }
         controller.enqueue(chunk);
@@ -473,22 +628,56 @@ void test('a counted overflow does not waive a later live occurrence', {timeout:
   }
 });
 
-void test('an async check does not manufacture overtime with its own read', {timeout: 60_000}, async context => {
+void test('a completed gateway read cannot trigger overtime through its refusal log', {timeout: 60_000}, async context => {
   const seed = scenario('zero-modules')?.seed;
   assert.ok(seed);
   const run = await startRun(context, await base(context), 'zero-modules');
   const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
   context.after(() => h.close());
-  let checks = 0;
+  let checks = 0, requests = 0;
+  intercept(context, request => { if (request.url.endsWith('/unknown-route')) requests += 1; });
+
   const result = await runScenario({id: 'no-overtime', title: 'no overtime', seed, steps: [
-    expect('the read still fails', async h => {
+    expect('the completed read still fails the check', async h => {
       checks += 1;
-      await h.gateway({as: 'anonymous', method: 'GET', path: HEALTH_PATH});
+      const response = await h.gateway({as: 'anonymous', method: 'GET', path: '/unknown-route'});
+      assert.equal(response.status, 404);
       return 'the original failed check';
     }, 0),
   ]}, h);
-  assert.equal(checks, 1);
+  assert.ok(h.logs().some(({record}) => record.event_name === 'runtime.edge.refused'));
   assert.equal(result.steps[0]?.detail, 'the original failed check');
+  assert.deepEqual([checks, requests], [1, 1]);
+});
+
+void test('a completed check command cannot trigger another command from its own logs', {timeout: 60_000}, async context => {
+  const seed = scenario('reconnect-and-sync')?.seed;
+  assert.ok(seed);
+  const run = await startRun(context, await base(context), 'reconnect-and-sync');
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
+  let checks = 0, requests = 0, advances = 0;
+  const command = actionCall('operator', switchLamp('lamp-1', 'on'), 'req-check-command');
+  intercept(context, request => {
+    if (request.method === 'POST' && request.url.endsWith(command.path)) requests += 1;
+  }, async (request, response) => {
+    if (!request.url.endsWith('/clock/advance')) return response;
+    const state = await response.json() as object;
+    advances += 1;
+    // If a probe followed the command, the fixture would report work the check started.
+    return Response.json({...state, busy: requests > 0});
+  });
+
+  const result = await runScenario({id: 'effectful-check', title: 'effectful check', seed, steps: [
+    expect('the completed command still fails the check', async h => {
+      checks += 1;
+      assert.equal((await h.gateway(command)).status, 200);
+      return 'the original failed check';
+    }, 0),
+  ]}, h);
+  assert.ok(h.logs().some(({record}) => record.event_name === 'runtime.command.replied'));
+  assert.equal(result.steps[0]?.detail, 'the original failed check');
+  assert.deepEqual([checks, requests, advances], [1, 1, 1]);
 });
 
 void test('resync refreshes delivery eligibility when the preceding state response is stale', {timeout: 60_000}, async context => {
@@ -496,9 +685,8 @@ void test('resync refreshes delivery eligibility when the preceding state respon
   assert.ok(seed);
   const run = await startRun(context, await base(context), 'reconnect-and-sync');
   const source = sourceOf('hook'), token = (await readGrants(run.dataDir)).get(source);
-  assert.ok(token);
+  assert.ok(token !== undefined && token !== '');
   const subscribe = gate(), staleState = gate(), live = gate(), releaseFrame = gate();
-  let h: Awaited<ReturnType<typeof connectRun>> | undefined;
   let armed = false, captured = false, reconnecting = false, liveId: string | undefined;
   intercept(context, async request => {
     if (!armed || request.source !== sourceOf('reader')) return;
@@ -524,8 +712,8 @@ void test('resync refreshes delivery eligibility when the preceding state respon
     }));
     return new Response(body, {status: response.status, headers: response.headers});
   });
-  h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
-  context.after(() => h?.close());
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed});
+  context.after(() => h.close());
   const reader = h.reader;
   assert.ok(reader instanceof Reader);
   const synced = gate();
@@ -547,7 +735,7 @@ void test('resync refreshes delivery eligibility when the preceding state respon
     assert.equal(context.signal.aborted, false);
     assert.equal(captured, true, 'a state response preceded re-registration');
     const {key, draft} = observation(sessionStarted, h.now());
-    const message = prepareMessage(source, draft, {now: () => h?.now() ?? 0});
+    const message = prepareMessage(source, draft, {now: () => h.now()});
     liveId = message.id;
     assert.equal((await publishOnce({url: run.url, source, token, timeoutMs: 1000}, key, message)).status, 'published');
     await Promise.race([live.opened, stop.opened]);

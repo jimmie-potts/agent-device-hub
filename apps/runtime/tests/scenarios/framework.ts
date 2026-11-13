@@ -216,12 +216,8 @@ export interface Harness {
 
 /** An expectation's time past its bound, in which the harness's time stands still while real work is in flight (Hub #1711). */
 export interface Overtime {
-  /**
-   * Waits, without moving the harness's time, until some of the real work in flight ends, and resolves `true` to have
-   * the check look again; `false` when no such work is in flight; or, once the work has stayed in flight for the bound of
-   * real time, fixed text naming what is still in flight.
-   */
-  next(): Promise<true | false | string>;
+  /** Evaluates the bound check, then repeats it only when independently pending work has completed. */
+  run(check: () => Promise<Outcome>): Promise<Outcome>;
 }
 
 // Steps
@@ -294,19 +290,14 @@ async function attempt(check: () => Outcome | Promise<Outcome>): Promise<Outcome
 }
 
 async function poll(h: Harness, check: Check, withinMs: number): Promise<Outcome> {
-  let overtime: Overtime | undefined;
-  for (let waited = 0; ; waited += POLL_MS) {
-    if (waited >= withinMs) overtime ??= h.overtime?.();
-    const outcome = await attempt(() => check(h));
+  const evaluate = (): Promise<Outcome> => attempt(() => check(h));
+  for (let waited = 0; waited < withinMs; waited += POLL_MS) {
+    const outcome = await evaluate();
     if (outcome === true) return outcome;
-    if (waited < withinMs) {
-      await h.wait(POLL_MS);
-      continue;
-    }
-    // The bound never passes on the harness's time alone while real work the check may wait on is still in flight.
-    const more = overtime === undefined ? false : await overtime.next();
-    if (more !== true) return more === false ? outcome : `${outcome}; ${more}`;
+    await h.wait(POLL_MS);
   }
+  const overtime = h.overtime?.();
+  return overtime === undefined ? evaluate() : overtime.run(evaluate);
 }
 
 /** Runs a scenario's steps in order. A failed step names what it observed and stops the scenario. */
