@@ -2,7 +2,10 @@
 import {errorBody, isErrorCode, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {statusOf,type TraceContext} from '@jimmie-potts/sdk';
 import type {AutomationControls} from '../core/automation-part.js';
-import {AutomationError} from '../core/automation.js';
+import {AutomationError, parseInterruptSet, parseRuleInput, parseSettings} from '../core/automation.js';
+import {artPolicyWrite} from '../core/art-schedule-model.js';
+import {checkPowerLimitWrite} from '../core/power-limits.js';
+import {parseRoutine} from '../core/power-schedules.js';
 
 export const AUTOMATION_PREFIX = '/api/v2/automation/';
 export type AutomationRequest = {
@@ -18,17 +21,50 @@ export type AutomationRequest = {
 export type AutomationAnswer = {status: number; body: object};
 
 const answer = (status: number, body: object): AutomationAnswer => ({status, body: {schema: 'automation/2.0', ...body}});
+const RULE_BODY_BYTES = 8192;
+const SETTINGS_BODY_BYTES = 1024;
+const ART_BODY_BYTES = 4096;
+const EMPTY_BODY_BYTES = 16;
+const RULE = /^rules\/([A-Za-z0-9_.-]{1,128})(?:\/(enable|disable))?$/;
+const ROUTINE = /^routines\/([A-Za-z0-9_.-]{1,128})(?:\/(enable|disable|run|preview))?$/;
+const POWER_LIMIT = /^power-limits\/([a-z0-9]+(?:-[a-z0-9]+)*)$/;
+const emptyBody = (input: unknown): void => {
+  if (typeof input !== 'object' || input === null || Array.isArray(input) || Object.keys(input).length > 0) invalid();
+};
 const invalid = (): never => { throw new AutomationError('invalid-request', 400); };
-const safeCode = (code: string): ErrorCode => code === 'unknown-rule' ? 'not-found'
+export const automationErrorCode = (code: string): ErrorCode => code === 'unknown-rule' ? 'not-found'
   : code === 'unknown-target' || (code.startsWith('invalid-') && !isErrorCode(code)) ? 'invalid-request'
   : isErrorCode(code) ? code : 'internal';
+
+type MutationBody = {maximum: number; check: (input: unknown) => unknown};
+const NO_BODY: MutationBody = {maximum: 0, check: () => undefined};
+const EMPTY_BODY: MutationBody = {maximum: EMPTY_BODY_BYTES, check: emptyBody};
+
+/** The structural checks for a known write, without resolving configured targets or calling controls. */
+export function automationMutation(method: string, path: string): MutationBody | undefined {
+  const route = path.slice(AUTOMATION_PREFIX.length);
+  if (route === 'rules' && method === 'POST') return {maximum: RULE_BODY_BYTES, check: input => parseRuleInput(input, null, true)};
+  if (route === 'routines' && method === 'POST') return {maximum: RULE_BODY_BYTES, check: input => parseRoutine(input, undefined, true)};
+  if (route === 'art' && method === 'PUT') return {maximum: ART_BODY_BYTES, check: artPolicyWrite};
+  if (route === 'interrupt-set' && method === 'PUT') return {maximum: RULE_BODY_BYTES, check: parseInterruptSet};
+  if (route === 'settings' && method === 'PUT') return {maximum: SETTINGS_BODY_BYTES, check: parseSettings};
+  const limit = POWER_LIMIT.exec(route)?.[1];
+  if (limit !== undefined && limit.length <= 128 && method === 'PUT') return {maximum: SETTINGS_BODY_BYTES, check: checkPowerLimitWrite};
+  const rule = RULE.exec(route), routine = ROUTINE.exec(route);
+  const match = rule ?? routine;
+  if (match === null || match[2] === 'preview') return undefined;
+  if (match[2] !== undefined) return method === 'POST' ? EMPTY_BODY : undefined;
+  if (method === 'DELETE') return NO_BODY;
+  if (method !== 'PUT') return undefined;
+  return {maximum: RULE_BODY_BYTES, check: rule === null ? input => parseRoutine(input, undefined, false) : input => parseRuleInput(input, null, false)};
+}
 
 /** Authentication belongs to the gateway. Unknown routes are left to its normal not-found handling. */
 export async function automationRoute(controls: AutomationControls, request: AutomationRequest): Promise<AutomationAnswer | undefined> {
   if (!request.url.pathname.startsWith(AUTOMATION_PREFIX)) return undefined;
   const {method, url} = request;
   const path = url.pathname.slice(AUTOMATION_PREFIX.length);
-  const rule = /^rules\/([A-Za-z0-9_.-]{1,128})(?:\/(enable|disable))?$/.exec(path);
+  const rule = RULE.exec(path);
   const noQuery = (): void => { if (url.searchParams.size > 0) invalid(); };
   // Recheck in the transaction too, after any wait for the core's store.
   const context = {authorize: () => request.authorize(), ...(request.parent === undefined ? {} : {parent: request.parent})};
@@ -45,16 +81,16 @@ export async function automationRoute(controls: AutomationControls, request: Aut
     if(path==='art') {
       noQuery();const schedule=controls.artSchedule;if(schedule===undefined)throw new AutomationError('unavailable',503);
       if(method==='GET')return {status:200,body:{schema:'art-schedule/2.0',...schedule.get()}};
-      if(method==='PUT'){const input=await request.body(4096);request.authorize();return {status:200,body:{schema:'art-schedule/2.0',...await schedule.save(input,request.parent)}};}
+      if(method==='PUT'){const input=await request.body(ART_BODY_BYTES);request.authorize();return {status:200,body:{schema:'art-schedule/2.0',...await schedule.save(input,request.parent)}};}
       return undefined;
     }
     if(path==='power-limits'||path.startsWith('power-limits/')) {
       const limits=controls.limits;if(limits===undefined)throw new AutomationError('unavailable',503);
       noQuery();
       if(path==='power-limits')return method==='GET'?answer(200,{limits:limits.list()}):undefined;
-      const id=/^power-limits\/([a-z0-9]+(?:-[a-z0-9]+)*)$/.exec(path)?.[1];if(id===undefined||id.length>128)return undefined;
+      const id=POWER_LIMIT.exec(path)?.[1];if(id===undefined||id.length>128)return undefined;
       if(method==='GET'){const record=limits.get(id);return record===undefined?{status:404,body:errorBody('not-found')}:answer(200,record);}
-      if(method==='PUT'){const input=await request.body(1024);request.authorize();return answer(200,await limits.save(id,input,request.parent));}
+      if(method==='PUT'){const input=await request.body(SETTINGS_BODY_BYTES);request.authorize();return answer(200,await limits.save(id,input,request.parent));}
       return undefined;
     }
     if(path==='routines' || path.startsWith('routines/')) {
@@ -63,23 +99,23 @@ export async function automationRoute(controls: AutomationControls, request: Aut
       noQuery();
       if(path==='routines') {
         if(method==='GET') return answer(200,{routines:routines.list(),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});
-        if(method==='POST') {const input=await request.body(8192);return await write(201,()=>routines.create(input,true,context));}
+        if(method==='POST') {const input=await request.body(RULE_BODY_BYTES);return await write(201,()=>routines.create(input,true,context));}
         return undefined;
       }
-      const match=/^routines\/([A-Za-z0-9_.-]{1,128})(?:\/(enable|disable|run|preview))?$/.exec(path),id=match?.[1];
+      const match=ROUTINE.exec(path),id=match?.[1];
       if(id===undefined) return undefined;
       const action=match?.[2];
       // #1586: a reply read from the current records under read scope; nothing is sent, logged, claimed or scheduled.
       if(action==='preview') return method==='GET'?answer(200,await routines.preview(id)):undefined;
       if(action!==undefined) {
         if(method!=='POST') return undefined;
-        const input=await request.body(16);
-        if(typeof input!=='object' || input===null || Array.isArray(input) || Object.keys(input).length>0) invalid();
+        const input=await request.body(EMPTY_BODY_BYTES);
+        emptyBody(input);
         if(action==='run') {request.authorize();const result=await routines.run(id,request.parent);return answer(200,{...result,ran:result.outcome==='ran'});}
         return await write(200,()=>routines.setEnabled(id,action==='enable',context));
       }
       if(method==='GET') return answer(200,routines.get(id));
-      if(method==='PUT') {const input=await request.body(8192);return await write(200,()=>routines.update(id,input,context));}
+      if(method==='PUT') {const input=await request.body(RULE_BODY_BYTES);return await write(200,()=>routines.update(id,input,context));}
       if(method==='DELETE') return await write(200,async()=>{await routines.remove(id,context);return {deleted:true,id};});
       return undefined;
     }
@@ -87,7 +123,7 @@ export async function automationRoute(controls: AutomationControls, request: Aut
       noQuery();
       if (method === 'GET') return answer(200, {rules: controls.rules()});
       if (method === 'POST') {
-        const input = await request.body(8192);
+        const input = await request.body(RULE_BODY_BYTES);
         return await write(201, () => controls.create(input, true, undefined, context));
       }
       return undefined;
@@ -99,13 +135,13 @@ export async function automationRoute(controls: AutomationControls, request: Aut
       const action = rule[2];
       if (action !== undefined) {
         if (method !== 'POST') return undefined;
-        const input = await request.body(16);
-        if (typeof input !== 'object' || input === null || Array.isArray(input) || Object.keys(input).length > 0) invalid();
+        const input = await request.body(EMPTY_BODY_BYTES);
+        emptyBody(input);
         return await write(200, () => controls.setEnabled(id, action === 'enable', context));
       }
       if (method === 'GET') return answer(200, controls.rule(id));
       if (method === 'PUT') {
-        const input = await request.body(8192);
+        const input = await request.body(RULE_BODY_BYTES);
         return await write(200, () => controls.update(id, input, undefined, context));
       }
       if (method === 'DELETE') return await write(200, async () => { await controls.remove(id, context); return {deleted: true, id}; });
@@ -115,7 +151,7 @@ export async function automationRoute(controls: AutomationControls, request: Aut
       noQuery();
       if (method === 'GET') return answer(200, {kinds: controls.interruptSet()});
       if (method === 'PUT') {
-        const input = await request.body(8192);
+        const input = await request.body(RULE_BODY_BYTES);
         return await write(200, async () => ({kinds: await controls.replaceInterruptSet(input, context)}));
       }
       return undefined;
@@ -124,7 +160,7 @@ export async function automationRoute(controls: AutomationControls, request: Aut
       noQuery();
       if (method === 'GET') return answer(200, controls.settings());
       if (method === 'PUT') {
-        const input = await request.body(1024);
+        const input = await request.body(SETTINGS_BODY_BYTES);
         return await write(200, () => controls.replaceSettings(input, context));
       }
       return undefined;
@@ -144,7 +180,7 @@ export async function automationRoute(controls: AutomationControls, request: Aut
     return undefined;
   } catch (error) {
     if (!(error instanceof AutomationError)) throw error;
-    const code = safeCode(error.code);
+    const code = automationErrorCode(error.code);
     return {status: statusOf(code), body: errorBody(code)};
   }
 }
