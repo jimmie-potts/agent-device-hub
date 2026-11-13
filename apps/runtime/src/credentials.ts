@@ -64,6 +64,11 @@ export const DASHBOARD_SOURCE = 'bunny/parts/dashboard';
 export const reservedSource = (source: string): boolean =>
   source === 'bunny/core' || source === DASHBOARD_SOURCE || source.startsWith('bunny/modules/') || source.startsWith('bunny/runtime/');
 
+export function ordinaryReaderSource(source: unknown): source is string {
+  return typeof source === 'string' && source.length <= 256 && SOURCE.test(source) && !reservedSource(source)
+    && ![MUSIC_PRODUCER_SOURCE, MUSIC_PLAYBACK_SOURCE, CODING_WORKER_SOURCE, 'bunny/parts/bb8-windows'].includes(source);
+}
+
 /**
  * Checks a credentials document, `{"schema": "edge-credentials/1.0", "credentials": [...]}`, and returns its
  * credentials. At most 32; each with a distinct ID, digest and source, a well-formed source that is not the core's, a

@@ -33,9 +33,9 @@ distinct.
 
 After a lost receipt, discard the volatile pass and reread committed state.
 Repeat a validated terminal read when its metadata-only receipt was lost.
-Reject a foreign origin. A typed continuity refusal prompts a validated
-same-origin replacement under exact expected state, including when the
-sequence is reused. Known older-writer recovery explicitly requests replacement
+Reject a foreign origin. A typed continuity refusal retires the old stream.
+After resubscribing, validate a same-origin replacement against exact expected
+state, including when the sequence is reused. Older-writer recovery explicitly requests replacement
 even at sequence zero. Retain that intent until verification and reassert
 it after interruption. A matching anchor does not reveal an unlogged edit.
 

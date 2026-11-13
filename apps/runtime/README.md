@@ -2619,6 +2619,20 @@ The private credentials file accepts an explicit `role: "bb8-link"`, `robotId: "
 
 The [module](../../modules/bb8/README.md) owns public LED/status controls; the [Windows component](../bb8-windows/README.md) owns BLE and private transport receipts. Generic MCP execution, including inbox resend of BB-8 commands, is refused. Internal helper commands cannot use public HTTP action routes. No source delivery activates a helper or changes the installed runtime.
 
+### Standby peer settings
+
+Only a standby core accepts the optional `modules.core.peer` config block.
+It names an HTTPS `origin`, the read credential's SDK `source`, and an absolute
+`tokenFile` path. An optional `expectedOrigin` pins the peer's history origin
+before first enrollment. Use a private token file outside Git checkouts and
+Windows mounts. This credential is outbound and separate from inbound edge
+credentials.
+
+A configured standby without a receiver keeps local health available and
+reports the follower unavailable. Peer requests and token reads begin only
+when the durable receiver is integrated. The follower reads at startup, on
+reconnect and on eligible settings signals or overflow.
+
 ### Core settings snapshot and catch-up
 
 An ordinary read credential can use these modes of the same

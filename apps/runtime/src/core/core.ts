@@ -21,6 +21,8 @@ import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type C
 import {DEFAULT_HISTORY_RULES, type HistoryFilter, type HistoryPage, type HistoryRow, type HistoryRules} from './history.js';
 import {SETTINGS_FAMILIES, type SettingsPage, type SettingsRead, type SettingsSnapshot} from './settings-contract.js';
 import {readSettingsHistory} from './settings-history.js';
+import {SettingsFollower, type SettingsReceiver} from './settings-follower.js';
+import {createSettingsPeer, settingsFailure, type SettingsPeerConfig} from './settings-peer.js';
 import type {HistoryDevice} from './history-alarm.js';
 import {inboxTool, historyTool} from './read-tools.js';
 import {InboxRecords} from './inbox.js';
@@ -43,7 +45,7 @@ import type {ArtCatalogRead} from './art-catalog.js';
 import type {ModeParticipant} from './mode-participants.js';
 import type {Operation} from './operations.js';
 import {Tracker, type Action, type ActionAnswer, type CoreActions, type CoreOperatorActions, type Tracked} from './tracker.js';
-import {CORE_MODULE} from '../host.js';
+import {CORE_MODULE, loadSecret} from '../host.js';
 import {Backoff} from './backoff.js';
 import {LIFECYCLE_TYPE, sessionSchema, reducedKind, toEnvelope} from './mapping.js';
 import {CoreStore, type CoreTransaction, type Deriver} from './store.js';
@@ -117,6 +119,8 @@ export interface CorePart {
 export type CoreOptions = {
   /** Open retained settings without admitting runtime work. Selected once at construction. */
   standby?: boolean;
+  /** Internal receiver seam. The shipped factory supplies no receiver before durable apply is integrated. */
+  settingsReceiver?: () => SettingsReceiver;
   /** The parts that later stories add, and test stand-ins for them. */
   parts?: readonly CorePart[];
   /** The consumers acknowledgments are recorded for. Defaults to `DEFAULT_CONSUMERS`. */
@@ -219,13 +223,16 @@ export interface CoreModule extends BunnyModule {
 /** Whether a hosted module is the core, whose dispatcher the gateway's action routes call. */
 export const isCoreModule = (module: BunnyModule): module is CoreModule => module.manifest.name === CORE_MODULE && 'actions' in module;
 
+type StandbyStart = (context: ModuleContext, peer?: SettingsPeerConfig) => void | Promise<void>;
+
 // Structural module names cannot convey early data ownership.
 const factoryStarts = new WeakMap<object, CoreModule>();
 const factoryCores = new WeakMap<CoreModule, {
-  standby: boolean; start: BunnyModule['start']; bind(token: RuntimeOwnership): void; ownership(): CoreOwnership | undefined;
+  standby: boolean; start: StandbyStart; bind(token: RuntimeOwnership): void; ownership(): CoreOwnership | undefined;
+  followerState(): 'unconfigured' | 'connecting' | 'following' | 'unavailable';
 }>();
 
-function registeredStandbyStart(module: object): BunnyModule['start'] | undefined {
+function registeredStandbyStart(module: object): StandbyStart | undefined {
   const factory = factoryCores.get(module as CoreModule);
   return factory?.standby === true ? factory.start : undefined;
 }
@@ -238,8 +245,8 @@ export function isRegisteredStandbyCore(module: unknown): boolean {
 }
 
 /** Selects and pins standby only from the original registered core and its original start. */
-export function standbyCoreStart(modules: readonly BunnyModule[]): {module: BunnyModule; start: BunnyModule['start']} | undefined {
-  let selected: {module: BunnyModule; start: BunnyModule['start']} | undefined;
+export function standbyCoreStart(modules: readonly BunnyModule[]): {module: BunnyModule; start: StandbyStart} | undefined {
+  let selected: {module: BunnyModule; start: StandbyStart} | undefined;
   for (const module of modules) {
     const start: unknown = Reflect.get(module, 'start');
     const expected = registeredStandbyStart(module);
@@ -251,6 +258,11 @@ export function standbyCoreStart(modules: readonly BunnyModule[]): {module: Bunn
   }
   return selected;
 }
+/** Internal availability only. Durable freshness belongs to the receiver. */
+export function standbyFollowerState(module: CoreModule): 'unconfigured' | 'connecting' | 'following' | 'unavailable' {
+  return factoryCores.get(module)?.followerState() ?? 'unconfigured';
+}
+
 /** Internal future entrypoint bridge. The core must be the original, not a structural copy. */
 export function bindCoreRuntimeOwnership(core: CoreModule, token: RuntimeOwnership): void {
   const factory = factoryCores.get(core);
@@ -300,14 +312,14 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
         ? errorBody('unavailable') : readRoomContent(() => { if (contentContext === undefined) throw new Error('core-content-unavailable'); return contentContext.files(); }, ref, contentContext.signal, request),
       tools: [sessionsTool(() => core?.sessions()),
       inboxTool(() => core?.inbox()), historyTool(filter => core?.historyPage(filter))]},
-    start: context => {
+    start: (context: ModuleContext, peer?: SettingsPeerConfig) => {
       if (ownership !== undefined) {
         if (started) throw ownershipUnavailable();
         assertRuntimeOwnership(ownership);
       }
       started = true;
       contentContext = context;
-      core = new Core(context, options, historyDevices, ownership, containsAutomationSecret, standby);
+      core = new Core(context, options, historyDevices, ownership, containsAutomationSecret, standby, standby ? peer : undefined, redactions);
       return core.start();
     },
     stop: () => core?.stop(),
@@ -351,6 +363,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
   factoryStarts.set(module.start, module);
   factoryCores.set(module, {
     standby, start: module.start,
+    followerState: () => core?.followerState ?? 'unconfigured',
     bind: token => {
       if (started || ownership !== undefined) throw ownershipUnavailable();
       bindRuntimeOwnership(token, module);
@@ -389,6 +402,8 @@ class Core {
   #failed: (error: unknown) => void = () => {};
   #owner: AgentState | undefined;
   #standbyLease: StorageLease | undefined;
+  #follower: SettingsFollower | undefined;
+  readonly #settingsReceiver: CoreOptions['settingsReceiver'];
   readonly #signal: AbortSignal;
   /** Current positive Desktop archive evidence only; it expires when its module stops confirming it. */
   readonly #archived = new Map<string, {observedAtMs: number; untilMs: number}>();
@@ -408,8 +423,10 @@ class Core {
   /** The start under way, which a stop waits for so that an owner it opens late is shut down too. */
   #starting: Promise<void> | undefined;
 
-  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic, history}: CoreOptions, historyDevices: readonly HistoryDevice[], ownership: CoreOwnership | undefined,
-    private readonly holdsAutomationSecret: HoldsAutomationSecret, private readonly standby: boolean) {
+  constructor(private readonly context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic, history, settingsReceiver}: CoreOptions, historyDevices: readonly HistoryDevice[], ownership: CoreOwnership | undefined,
+    private readonly holdsAutomationSecret: HoldsAutomationSecret, private readonly standby: boolean, private readonly peer?: SettingsPeerConfig,
+    private readonly redactions?: Redactions) {
+    this.#settingsReceiver = settingsReceiver;
     this.#signal = context.signal;
     this.#sdk = context.sdk;
     this.#log = context.log;
@@ -572,6 +589,37 @@ class Core {
     return this.#starting;
   }
 
+  get followerState(): 'unconfigured' | 'connecting' | 'following' | 'unavailable' {
+    return this.peer === undefined ? 'unconfigured' : this.#follower?.state ?? 'unavailable';
+  }
+
+  #startSettingsFollower(): void {
+    const {peer, context} = this;
+    if (peer === undefined) return;
+    const failed = (code: ErrorCode, trace = context.trace.span(undefined), count = 1): void => {
+      recordLog(context.log, 'operation.failed',
+        {'bunny.operation': 'feed', 'bunny.outcome': OutcomeWord.failed, 'bunny.code': code, 'bunny.attempt_count': count}, trace);
+    };
+    if (this.#settingsReceiver === undefined) {
+      failed('unavailable');
+      return;
+    }
+    const receiver = this.#settingsReceiver();
+    this.#follower = new SettingsFollower({
+      signal: context.signal, clock: context.clock, scheduler: context.scheduler, receiver, failed,
+      trace: parent => context.trace.span(parent),
+      ...(peer.expectedOrigin === undefined ? {} : {expectedOrigin: peer.expectedOrigin}),
+      protectedValue: this.holdsAutomationSecret,
+      openPeer: async signal => {
+        const token = await loadSecret('settings-peer', peer.tokenFile);
+        signal.throwIfAborted();
+        if (token.length > 8192 || !/^[!-~]+$/.test(token)) throw settingsFailure('invalid-request');
+        this.redactions?.add(token);
+        return createSettingsPeer(peer, token, context.scheduler, context.trace);
+      },
+    });
+  }
+
   async #startStandby(): Promise<void> {
     let lease: Awaited<ReturnType<CoreStore['acquire']>> | undefined;
     try {
@@ -589,6 +637,7 @@ class Core {
       if (!this.#stopped) {
         this.#standbyLease = lease;
         lease = undefined;
+        this.#startSettingsFollower();
       }
       this.#opened();
     } catch (error) {
@@ -612,9 +661,11 @@ class Core {
   async stop(): Promise<void> {
     this.#stopped = true;
     if (this.standby) {
+      const stopping = this.#follower?.stop();
+      await this.#starting?.catch(() => {});
+      await stopping;
       const lease = this.#standbyLease;
       this.#standbyLease = undefined;
-      await this.#starting?.catch(() => {});
       await lease?.release();
       await this.#automation.close();
       this.#store.close();

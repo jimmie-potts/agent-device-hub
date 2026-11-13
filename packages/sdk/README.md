@@ -1358,6 +1358,15 @@ copies: a first sync still under way resolves `cancelled`, and its request is
 withdrawn from the owner's queue. Last it ends the stream, and every later call
 is refused with `invalid-state`.
 
+### Caller-owned subscription lifetime
+
+For a remote reader that owns reconnect, pass `lifetime` with an abort
+`signal` and an `onLost` callback to `connectRemote`. In this mode a lost
+stream cancels outstanding registrations and reports loss once. The caller
+closes the participant and opens a new one when its recovery policy permits.
+Stream, registration and live cleanup fetches refuse redirects. Default
+clients continue to reconnect and restore registrations automatically.
+
 ### Connection-bound endpoints
 
 `openEndpoint({family, respond, onClosed?})` opens one handler on the current

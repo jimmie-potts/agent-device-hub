@@ -639,15 +639,18 @@ test('standby startup uses the credential snapshot admitted before bootstrap and
   t.after(() => rm(root, {recursive: true, force: true}));
   const file = join(root, 'edge.json'), stateDir = join(root, 'state');
   const options = {...containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'standby'}), stateDir};
-  const config = {modules: {}, edge: productionEdge()};
+  const peer = {origin: 'https://settings-peer.invalid', source: 'bunny/parts/settings-reader', tokenFile: join(root, 'missing-peer-token')};
+  const config = {modules: {core: {peer}}, edge: productionEdge()};
   const clock = manualClock(1_800_000_000_000);
   const reader = {id: 'reader', source: 'bunny/parts/reader', digest: '2'.repeat(64), scopes: ['read']};
   await writeFile(file, credentialsDocument([reader]), {mode: 0o600});
-  let started = false;
-  await entrypoint.startContainer(options, {
+  let started = false, bootstraps = 0;
+  const {standbyFollowerState} = await import('../../../apps/runtime/dist/src/core/core.js');
+  const dependencies = {
     readRuntimeConfig: async () => config, runtime: runtimeModules, checkConfiguration,
     admitStandbyCredentials: core => admitStandbyStartupCredentials(core, file),
     prepareOwnershipRoot: async () => {
+      bootstraps += 1;
       await writeFile(file, credentialsDocument([{...reader, scopes: ['control']}]), {mode: 0o600});
     },
     acquireRuntimeOwnership: () => ({}), refusePendingRestore: () => {}, bindCoreRuntimeOwnership: () => {},
@@ -660,10 +663,18 @@ test('standby startup uses the credential snapshot admitted before bootstrap and
         started = true;
         assert.equal(runtime.health().status, 'ok');
         assert.equal(runtime.gateway(), undefined);
+        assert.equal(standbyFollowerState(startup.modules[0]), 'unavailable');
         await assert.rejects(runtime.reload(), {code: 'edge-credentials-invalid'});
       } finally {await runtime.stop();}
     },
-  });
+  };
+  await assert.rejects(entrypoint.startContainer(options, {...dependencies,
+    readRuntimeConfig: async () => ({...config, modules: {core: {peer: {...peer, origin: 'https://settings-peer.invalid/path'}}}}),
+    admitStandbyCredentials: () => { assert.fail('structural peer refusal precedes credential admission'); },
+  }), {code: 'config-invalid'});
+  assert.equal(bootstraps, 0);
+  await entrypoint.startContainer(options, dependencies);
+  assert.equal(bootstraps, 1);
   assert.equal(started, true);
 });
 

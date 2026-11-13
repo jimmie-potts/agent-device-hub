@@ -157,6 +157,10 @@ export async function startContainer(options, dependencies) {
   const config = await readRuntimeConfig(options.config);
   const {coreFactory, shippedModules, standbyCoreFactory, buildModules} = runtime;
   const standby = options.control === 'standby';
+  if (Object.hasOwn(Object(config.modules.core), 'peer')) {
+    const {settingsPeerConfig} = await import('../../apps/runtime/dist/src/core/settings-peer.js');
+    settingsPeerConfig(config.modules.core, standby);
+  }
   const local = ['host-local', 'private-proxy', 'production'].includes(options.access);
   let factories = options.control === 'disabled' ? [coreFactory] : shippedModules;
   let hosted, standbyCredentialAdmission;

@@ -24,6 +24,16 @@ clock to check startup, reload, bounded reads and refusal before effects.
 Run shared build, type, lint, event contract and workflow checks before
 publication.
 
+### Standby settings follower
+
+After the root build, run `node --test apps/runtime/dist/tests/settings-follower.test.js
+apps/runtime/dist/tests/settings-history.test.js apps/runtime/dist/tests/standby.test.js
+packages/sdk/dist/tests/remote-lifetime.test.js deploy/container/tests/entrypoint.test.mjs`.
+Existing Runtime unit, SDK and Core admission jobs discover these tests. The
+fixtures use synthetic peers, a controlled clock and an injected receiver.
+They cover committed pagination, transport cancellation, source restoration,
+signal ordering, and local health while the follower is unavailable.
+
 ### Codex read-receipt checks
 
 After `npm run build`, run
