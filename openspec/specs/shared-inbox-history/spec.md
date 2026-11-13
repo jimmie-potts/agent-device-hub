@@ -68,7 +68,7 @@ The bounded core handling command, gateway, MCP and dashboard SHALL use one hand
 
 Every authorized reader SHALL see the whole inbox and history. Gateway and MCP history reads SHALL validate and combine inclusive time, kind, source and qualified-session filters without triggering actions. An optional `limit` SHALL accept only integers 1..500 and select the latest matching records by committed sequence before materializing or decoding the result, then return those records oldest first. Omitted limits SHALL preserve the complete matching result and existing ordering. Invalid or duplicate HTTP filters SHALL retain the existing invalid-request refusal and read authorization. The dashboard SHALL present the synced inbox and a keyboard-accessible filtered timeline, hide write controls from readers and disable stale writes.
 
-The gateway's history read SHALL also return, as the optional member `open` of `history/2.0`, the open span of each entity that has a change row in the returned rows (#1773): the span the entity's next row would close if it came now, when it holds more than its row's reading. Each entry SHALL give the entity's source, family and ID, the revision of the entity's last row, the span's start (`sinceAtMs`, null when unknown), its last confirmation (`lastConfirmedAtMs`) and the number of readings history took in it (`confirmations`), as history holds them. The core SHALL find them with one keyed lookup per distinct entity with a change row in the page and none for other rows. A span the history intake would reset, and the span of an entity whose last row is a removal, SHALL not be returned. A page with no such span SHALL answer exactly as before, without `open`. Open spans SHALL not be facts: a read after a sequence SHALL never return them. The MCP history tool SHALL return rows only, and its published output schema SHALL stay closed with `rows` as its only member.
+The gateway's history read SHALL also return, as the optional member `open` of `history/2.0`, the open span of each entity that has a change row in the returned rows (#1773): the span the entity's next row would close if it came now, when it holds more than its row's reading. Each entry SHALL give the entity's source, family and ID, the revision of the entity's last row, the span's start (`sinceAtMs`, null when unknown), its last confirmation (`lastConfirmedAtMs`) and the number of readings history took in it (`confirmations`), as history holds them. The core SHALL find them with one keyed lookup per distinct entity with a change row in the page and none for other rows. A span the history intake would reset, and the span of an entity whose last row is a removal, SHALL not be returned. A page with no such span SHALL answer exactly as before, without `open`. Open spans SHALL not be facts: a read after a sequence SHALL never return them. The MCP history tool SHALL return the same page with required `rows` and optional `open`, as declared in its closed published result schema.
 
 #### Scenario: Shared handling and private retained reads
 - **WHEN** an operator handles an item in the dashboard
@@ -97,9 +97,10 @@ The gateway's history read SHALL also return, as the optional member `open` of `
 - **WHEN** a peer reads history after a sequence
 - **THEN** it receives rows only, never an open span
 
-#### Scenario: The MCP tool reads rows only
+#### Scenario: The MCP tool reads the history page
 - **WHEN** an MCP client lists the tools and calls `core_history`
-- **THEN** the published output schema is closed with `rows` as its only member and the answer holds rows only
+- **THEN** the published result schema is closed with required `rows` and optional `open`
+- **AND** the result contains the same rows and optional spans as the matching HTTP read
 
 ### Requirement: Existing sync message bound
 

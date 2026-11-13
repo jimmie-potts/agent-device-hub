@@ -48,12 +48,11 @@ export function historyOpen(value: unknown): HistoryOpenSpan[] {
   return valid ? open as HistoryOpenSpan[] : [];
 }
 
-/**
- * Which row each open span belongs to, by the row's `seq`: the entity's newest change row in `rows`, when it is the row
- * the span was written against, at its revision and, for a known start, at its instant. Otherwise the span is shown on
- * no row, since the page does not hold the row it continues.
- */
-export function openSpans(rows: readonly HistoryRow[], open: readonly HistoryOpenSpan[]): Map<number, HistoryOpenSpan> {
+/** Match known starts to rows. Unknown starts use a change row only for the entity's label and category. */
+export function openSpans(rows: readonly HistoryRow[], open: readonly HistoryOpenSpan[], category: HistoryCategory = 'All'): {
+  byRow: Map<number, HistoryOpenSpan>;
+  unknownStarts: {key: string; context: string; note: string}[];
+} {
   const newest = new Map<string, HistoryRow>();
   for (const row of rows) {
     const family = text(row.record.family), id = text(row.record.id);
@@ -61,12 +60,22 @@ export function openSpans(rows: readonly HistoryRow[], open: readonly HistoryOpe
     const key = JSON.stringify([row.source, family, id]), held = newest.get(key);
     if (held === undefined || held.seq < row.seq) newest.set(key, row);
   }
-  const shown = new Map<number, HistoryOpenSpan>();
+  const byRow = new Map<number, HistoryOpenSpan>();
+  const unknownStarts: {key: string; context: string; note: string}[] = [];
   for (const span of open) {
-    const row = newest.get(JSON.stringify([span.source, span.family, span.id]));
-    if (row !== undefined && row.record.revision === span.revision && (span.sinceAtMs === null || span.sinceAtMs === row.atMs)) shown.set(row.seq, span);
+    const key = JSON.stringify([span.source, span.family, span.id]);
+    const row = newest.get(key);
+    if (row === undefined) continue;
+    if (span.sinceAtMs === null) {
+      const face = historyFace(row);
+      if (category === 'All' || face.category === category) {
+        unknownStarts.push({key, context: `${face.context} · ${span.family}`, note: openSpanNote(span, recordedAt)});
+      }
+    } else if (row.record.revision === span.revision && span.sinceAtMs === row.atMs) {
+      byRow.set(row.seq, span);
+    }
   }
-  return shown;
+  return {byRow, unknownStarts};
 }
 
 /** A length of time in the Timeline's short form: `45 s`, `12 min`, `4 h 29 min`, `3 d 2 h`; under a second is `less than 1 s`. */
@@ -89,6 +98,14 @@ function closed(span: Record<string, unknown>, at: (atMs: number) => string): st
   if (sinceAtMs === null) return `${readings(confirmations)} unchanged from an unknown start, the last at ${at(lastConfirmedAtMs)}`;
   if (lastConfirmedAtMs < sinceAtMs) return `${readings(confirmations)} unchanged; the recorded times run backward, so no length is shown`;
   return `${lengthOf(lastConfirmedAtMs - sinceAtMs)} unchanged, ${readings(confirmations)}`;
+}
+
+function openSpanNote(span: HistoryOpenSpan, at: (atMs: number) => string): string {
+  const {sinceAtMs, lastConfirmedAtMs, confirmations} = span;
+  const last = `last reading at ${at(lastConfirmedAtMs)}, ${readings(confirmations)}`;
+  if (sinceAtMs === null) return `Unchanged from an unknown start, ${last}`;
+  if (lastConfirmedAtMs < sinceAtMs) return `First reading at ${at(sinceAtMs)}, ${last}. The recorded times run backward.`;
+  return `Unchanged since ${at(sinceAtMs)}, ${last}`;
 }
 
 /** Local midnight boundaries account for 23/25-hour daylight-saving days. */
@@ -165,14 +182,15 @@ export function historyFace(row: HistoryRow, open?: HistoryOpenSpan, at: (atMs: 
       title = 'Last readings before removal';
       detail = 'This entry closes the readings that held the same state before the record was removed. It changes nothing.';
       if (stretch !== undefined) notes.push(capital(stretch));
-    } else if (typeof gapMs === 'number' && Number.isSafeInteger(gapMs) && gapMs > 0) {
-      title = 'Readings resumed';
-      detail = 'The recorded times show readings stopped and resumed. This entry does not say why.';
-      notes.push(`No reading for ${lengthOf(gapMs)}, then the same state`);
-    } else if (stretch !== undefined) notes.push(`After ${stretch}`);
-    if (open !== undefined) {
-      notes.push(`${open.sinceAtMs === null ? 'Unchanged from an unknown start' : `Unchanged since ${at(open.sinceAtMs)}`}, last reading at ${at(open.lastConfirmedAtMs)}, ${readings(open.confirmations)}`);
+    } else {
+      if (stretch !== undefined) notes.push(`After ${stretch}`);
+      if (typeof gapMs === 'number' && Number.isSafeInteger(gapMs) && gapMs > 0) {
+        title = 'Readings resumed';
+        detail = 'The recorded times show readings stopped and resumed. This entry does not say why.';
+        notes.push(`No reading for ${lengthOf(gapMs)}, then the same state`);
+      }
     }
+    if (open !== undefined) notes.push(openSpanNote(open, at));
   } else if (row.kind === 'occurrence') {
     const names: Readonly<Record<string, string>> = {'org.bunny.attention.raised': 'Attention requested', 'org.bunny.attention.cleared': 'Attention cleared', 'org.bunny.turn.ended': 'Turn finished', 'org.bunny.session.ended': 'Session ended', 'org.bunny.moment.ended': 'Moment ended'};
     title = names[row.type] ?? 'Event recorded';

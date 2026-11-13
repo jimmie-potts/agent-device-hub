@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {emptyHistoryFilters, historyFace, historyOpen, historyQuery, historyRows, lengthOf, openSpans, selectedHistory, type HistoryOpenSpan, type HistoryRow} from '../src/timeline-model.ts';
+import {emptyHistoryFilters, historyFace, historyOpen, historyQuery, historyRows, lengthOf, openSpans, recordedAt, selectedHistory, type HistoryOpenSpan, type HistoryRow} from '../src/timeline-model.ts';
 import {createHistoryReader, type HistorySnapshot} from '../src/timeline-read.ts';
 const row = (record: Record<string, unknown>, other: Partial<HistoryRow> = {}): HistoryRow => ({seq: 1, atMs: 1000, kind: 'operation', source: 'bunny/parts/dashboard', subject: 'lamp', type: 'org.bunny.power.set.requested', requestId: 'r1', record, ...other});
 
@@ -146,7 +146,7 @@ void test('a change row says how long the previous state held and how many readi
 void test('a gap row says readings stopped and resumed by the recorded times, and not why', () => {
   const face = historyFace(change({changed: {observed: {observedAtMs: T}}, gapMs: H + 12 * M, span: {sinceAtMs: T - 3 * H, lastConfirmedAtMs: T - H - 12 * M, confirmations: 40}}), undefined, at);
   assert.equal(face.title, 'Readings resumed');
-  assert.deepEqual(face.notes, ['No reading for 1 h 12 min, then the same state']);
+  assert.deepEqual(face.notes, ['After 1 h 48 min unchanged, 40 readings', 'No reading for 1 h 12 min, then the same state']);
   assert.equal(face.detail, 'The recorded times show readings stopped and resumed. This entry does not say why.');
   assert.equal(face.category, 'Devices');
   assert.deepEqual(historyFace(change({gapMs: 121_000}), undefined, at).notes, ['No reading for 2 min, then the same state'], 'a gap row without a span');
@@ -161,25 +161,52 @@ void test('a closing row says it closes the readings before a removal and change
   assert.equal(face.detail, 'This entry closes the readings that held the same state before the record was removed. It changes nothing.');
   const removed = row({data: {entity: {family: 'device', id: 'desk-lamp'}, revision: 8}}, {seq: 3, kind: 'removal', atMs: T, type: 'org.bunny.device.removed'});
   assert.equal(historyFace(removed).title, 'Record removed');
-  assert.equal(openSpans([closing, removed], []).size, 0);
+  assert.equal(openSpans([closing, removed], []).byRow.size, 0);
   assert.deepEqual(historyFace(change({closedBy: 'removal', span: {sinceAtMs: null, lastConfirmedAtMs: T - M, confirmations: 4}}), undefined, at).notes, ['4 readings unchanged from an unknown start, the last at @-1m']);
 });
 
 void test('the newest row of an entity with an open span says since when it is unchanged and its last reading time, never now', () => {
   const newest = change({span: {sinceAtMs: T - H, lastConfirmedAtMs: T - M, confirmations: 720}}, {seq: 5}), older = change({revision: 5}, {seq: 4, atMs: T - H});
-  const shown = openSpans([older, newest], [lampSpan()]);
+  const shown = openSpans([older, newest], [lampSpan()]).byRow;
   assert.deepEqual([...shown.keys()], [5]);
   const face = historyFace(newest, shown.get(5), at);
   assert.deepEqual(face.notes, ['After 59 min unchanged, 720 readings', 'Unchanged since @0m, last reading at @120m, 12 readings']);
   assert.ok(face.notes?.every(note => !/\bnow\b/i.test(note)));
-  assert.deepEqual(historyFace(newest, lampSpan({sinceAtMs: null, confirmations: 1}), at).notes?.at(-1), 'Unchanged from an unknown start, last reading at @120m, 1 reading');
   assert.match(historyFace(newest, lampSpan()).notes?.at(-1) ?? '', /^Unchanged since .+, last reading at .+, 12 readings$/, 'the default writes recorded instants');
   // The span continues only the row it was written against.
-  assert.equal(openSpans([older], [lampSpan()]).size, 0, 'not on an older row at another revision');
-  assert.equal(openSpans([newest], [lampSpan({sinceAtMs: T + 1})]).size, 0, 'not on a row at the same revision but another instant, as a later gap row');
-  assert.deepEqual([...openSpans([newest], [lampSpan({sinceAtMs: null})]).keys()], [5], 'an unknown start matches by revision');
-  assert.equal(openSpans([newest], [lampSpan({id: 'fan'})]).size, 0, 'not on another entity');
-  assert.equal(openSpans([newest, change({revision: 9}, {seq: 6, atMs: T + H})], [lampSpan()]).size, 0, 'not when a newer row of the entity is in the page');
+  assert.equal(openSpans([older], [lampSpan()]).byRow.size, 0, 'not on an older row at another revision');
+  assert.equal(openSpans([newest], [lampSpan({sinceAtMs: T + 1})]).byRow.size, 0, 'not on a row at the same revision but another instant, as a later gap row');
+  assert.equal(openSpans([newest], [lampSpan({id: 'fan'})]).byRow.size, 0, 'not on another entity');
+  assert.equal(openSpans([newest, change({revision: 9}, {seq: 6, atMs: T + H})], [lampSpan()]).byRow.size, 0, 'not when a newer row of the entity is in the page');
+});
+
+void test('an open span with backward recorded times keeps both instants and reports no duration', () => {
+  const face = historyFace(change({}), lampSpan({lastConfirmedAtMs: T - M, confirmations: 2}), at);
+  assert.deepEqual(face.notes, ['First reading at @0m, last reading at @-1m, 2 readings. The recorded times run backward.']);
+});
+
+void test('an unknown-start span cannot be attached to either legacy row at the same revision', () => {
+  const older = change({}, {seq: 4, atMs: T - H});
+  const newer = change({}, {seq: 5});
+  const open = [lampSpan({sinceAtMs: null})];
+  const full = openSpans([older, newer], open);
+  const filtered = openSpans([older], open, 'Devices');
+  assert.equal(full.byRow.size, 0, 'the full page does not identify its starting row');
+  assert.equal(filtered.byRow.size, 0, 'a date filter cannot attach it to the older row');
+  assert.deepEqual(filtered.unknownStarts, full.unknownStarts);
+  assert.deepEqual(filtered.unknownStarts.map(({context, note}) => ({context, note})), [{
+    context: 'Desk lamp · wemo · device', note: `Unchanged from an unknown start, last reading at ${recordedAt(T + 2 * H)}, 12 readings`,
+  }]);
+  assert.deepEqual(openSpans([older], open, 'Agents').unknownStarts, []);
+  assert.deepEqual(openSpans([], open).unknownStarts, []);
+});
+
+void test('unknown starts identify separate families with the same source, ID and label', () => {
+  const device = change({});
+  const display = change({family: 'display'}, {seq: device.seq + 1});
+  const spans = [lampSpan({sinceAtMs: null}), lampSpan({family: 'display', sinceAtMs: null})];
+  const {unknownStarts} = openSpans([device, display], spans, 'Devices');
+  assert.deepEqual(unknownStarts.map(entry => entry.context), ['Desk lamp · wemo · device', 'Desk lamp · wemo · display']);
 });
 
 void test('lengths and counts use short units and plural forms', () => {

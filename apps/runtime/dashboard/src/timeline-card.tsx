@@ -44,10 +44,10 @@ export type TimelineCardProps = {
   pageSize?: number;
 };
 
-/** Read-only presentation, identical in a Home placement or the dedicated page. */
+/** Shared history entries for Home and the dedicated Timeline. */
 export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, headingId, connected = true, pageSize = listPageSize.timeline}: TimelineCardProps): React.JSX.Element {
   const uid = useId(), [category, setCategory] = useState<HistoryCategory>('All');
-  const rows = selectedHistory(snapshot.rows, category), open = openSpans(snapshot.rows, snapshot.open ?? []);
+  const rows = selectedHistory(snapshot.rows, category), open = openSpans(snapshot.rows, snapshot.open ?? [], category);
   const failure = snapshot.errorCode === 'invalid-request' ? 'Check filters (invalid-request)'
     : snapshot.errorCode === 'unauthenticated' ? 'Sign in again (unauthenticated)'
       : snapshot.errorCode === 'forbidden' ? 'Access denied (forbidden)'
@@ -80,8 +80,15 @@ export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, h
     <p className={status === '' && box === undefined ? 'vh' : 'timeline-status'} role="status">{status !== '' ? status : box === undefined ? `${rows.length} history entries.` : <span className="vh">{rows.length} history entries.</span>}</p>
     {snapshot.readAt !== undefined && status === '' && shape === undefined && <p className="timeline-read-at">Latest {snapshot.rows.length} · Read {new Date(snapshot.readAt).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}</p>}
     <PagedList keys={rows.map(row => String(row.seq))} pageSize={size} pager={!oneRow} label="Timeline" resetKey={`${category}:${period}`}>{shown =>
-      <ol className="timeline-entries" aria-label="Activity entries">{rows.map(row => <HistoryEntry key={row.seq} row={row} open={open.get(row.seq)} hidden={!shown(String(row.seq))}/>)}</ol>}</PagedList>
+      <ol className="timeline-entries" aria-label="Activity entries">{rows.map(row => <HistoryEntry key={row.seq} row={row} open={open.byRow.get(row.seq)} hidden={!shown(String(row.seq))}/>)}</ol>}</PagedList>
     {rows.length === 0 && snapshot.phase === 'ready' && <p className="timeline-empty">No matches in these entries</p>}
+    {shape === undefined && open.unknownStarts.length > 0 && <section className="timeline-unknown-spans" aria-labelledby={`${uid}-unknown-starts`}>
+      <h3 id={`${uid}-unknown-starts`}>Open spans with unknown starts</h3>
+      <p className="timeline-context">For entities in the loaded entries. The last reading may be outside the selected period.</p>
+      <ul className="timeline-entries">{open.unknownStarts.map(({key, context, note}) => <li className="timeline-face" key={key}>
+        <span className="timeline-title">{context}</span><span className="timeline-note">{note}</span>
+      </li>)}</ul>
+    </section>}
     {shape === undefined && advanced}
   </div>;
 }

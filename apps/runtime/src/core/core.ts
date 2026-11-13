@@ -254,9 +254,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
       content: (ref, request) => contentContext === undefined || contentContext.signal.aborted
         ? errorBody('unavailable') : readRoomContent(() => { if (contentContext === undefined) throw new Error('core-content-unavailable'); return contentContext.files(); }, ref, contentContext.signal, request),
       tools: [sessionsTool(() => core?.sessions()),
-      // `core_history` reads rows only (#1773): whether it also returns `open` is an open contract decision, because its
-      // published output schema is closed. Returning spans would read `core?.historyPage(filter)` here instead.
-      inboxTool(() => core?.inbox()), historyTool(filter => core?.history(filter))]},
+      inboxTool(() => core?.inbox()), historyTool(filter => core?.historyPage(filter))]},
     start: context => {
       if (ownership !== undefined) {
         if (started) throw ownershipUnavailable();
@@ -795,7 +793,7 @@ class Core {
   }
 
   inbox(): ReturnType<InboxRecords['records']> { return this.#inbox.records(); }
-  /** History's rows only: what the MCP tool `core_history` reads, so it does no span lookup and its output is unchanged (#1773). */
+  /** In-process history rows without span lookups. */
   history(filter: HistoryFilter): HistoryRow[] | ErrorBody {
     return this.#store.open ? this.#store.history.read(filter) : errorBody('unavailable', {detail: 'the core history is unavailable'});
   }

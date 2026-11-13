@@ -6,8 +6,8 @@ Since #1772, history keeps repeated readings as spans: a change row carries the 
 
 - **History read** (`apps/runtime/src/core/history.ts`): `History.open(rows)` returns the open spans of the entities that have a change row in `rows`, one keyed lookup per distinct entity, and `History.page(filter)` returns the rows of `read` with them as the optional `open`. `read` and `after` are unchanged; open spans are not facts.
 - **Gateway:** `GET /api/v2/history` answers `{schema: 'history/2.0', rows, open?}`. `open` is present only when an entity in the page has an open span, so other answers are byte for byte as before. Nothing validates the members of this answer; the dashboard's reader reads `rows` and now `open`.
-- **MCP:** `core_history` stays rows only, with its published output schema unchanged, pending the owner's decision on whether its closed output schema gains `open`. The core's read for the tool does no span lookup.
-- **Timeline** (`apps/runtime/dashboard/src/timeline-model.ts`, `timeline-read.ts`, `timeline-card.tsx`): change rows with a span, gap rows, closing rows and the newest row of an entity with an open span get one or two plain lines under their context; everything else reads as before.
+- **MCP:** `core_history` reads the same page. Its closed published result schema requires `rows` and allows optional `open`.
+- **Timeline** (`apps/runtime/dashboard/src/timeline-model.ts`, `timeline-read.ts`, `timeline-card.tsx`): change rows with a span, gap rows, closing rows and the newest row of an entity with a matching open span get plain lines under their context. The dedicated Timeline lists open spans with unknown starts by entity.
 - **Unchanged:** filters, limits, refusals, the response's existing members, the history intake, the fact log, the read path's scan time (#1760).
 
 ## Capabilities
@@ -18,9 +18,9 @@ None.
 
 ### Modified Capabilities
 
-- `shared-inbox-history`: "Read-only filtered history surfaces" gains the optional `open` member of the HTTP read and states that the MCP tool stays rows only.
+- `shared-inbox-history`: "Read-only filtered history surfaces" gains the optional `open` member of the HTTP and MCP reads.
 - `timeline-card`: "Concise truthful history" says what span, gap, closing and open-span rows show.
 
 ## Impact
 
-`apps/runtime/src/core/history.ts`, `core.ts` and `gateway/gateway.ts`; the Timeline model, reader, card and CSS; runtime and dashboard tests and the Timeline browser journey; `apps/runtime/README.md`. No storage, contract-file or write-path change. Source only; installation is with #1774 or the batch after it.
+`apps/runtime/src/core/history.ts`, `core.ts` and `gateway/gateway.ts`; the Timeline model, reader, card and CSS; runtime and dashboard tests and the Timeline browser journey; `apps/runtime/README.md`. The published MCP result schema changes. Storage and intake stay as before. Source only; installation is with #1774 or the batch after it.

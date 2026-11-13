@@ -2560,18 +2560,23 @@ intake would reset, or of an entity whose last row is a removal, is left out.
 `open` is present only when it has an entry, so any other answer is exactly the
 answer before #1773, and a reader that reads only `rows` is unaffected. Open
 spans are not facts: a read after a sequence (`History.after`) returns rows
-only. `core_history` returns rows only, with its closed output schema
-unchanged, and its read does no span lookup.
+only. The MCP tool `core_history` reads the same page. Its published result
+schema stays closed with required `rows` and optional `open`. A client that
+cached the previous schema may need to list the tools again after upgrading.
 
 The Timeline (`dashboard/src/timeline-model.ts`) reads `open` and adds plain
 lines under a row's context: "After 4 h 29 min unchanged, 3,300 readings" on a
 change row with a span; "Readings resumed" with "No reading for 1 h 12 min,
-then the same state" on a gap row; "Last readings before removal" with the
-stretch it closes on a closing row; and, on the newest change row of an entity
-whose open span continues it, "Unchanged since …, last reading at …, N
-readings". An unknown start is said to be unknown, and when the recorded times
-run backward no length is shown. In a Home shape the lines show only when the
-entry is open.
+then the same state" and the preceding span's "After …" line on a gap row
+that closes a span; and "Last readings before removal" with the stretch it
+closes on a closing row. A known open span appears on an entity's newest
+change row in the page when its revision and start instant match the row.
+It reads "Unchanged since …, last reading at …, N readings". When the clock
+runs backward, the line gives both instants and says the recorded times run
+backward. It shows no duration. The dedicated Timeline lists open spans with
+unknown starts separately for the entities in the loaded entries, with their
+family, last recorded reading time and count. That list follows the local category
+filter. In a Home shape the row notes show only when the entry is open.
 
 `POST /api/v2/commands/inbox-handle` takes `{target, requestId, data:
 {expectedRevision, action}}`, where action is `dismiss` or `send-again`.

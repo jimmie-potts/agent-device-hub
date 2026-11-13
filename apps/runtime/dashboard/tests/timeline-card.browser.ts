@@ -148,21 +148,41 @@ try {
       span: {sinceAtMs: fixed - 8 * H - 29 * M, lastConfirmedAtMs: fixed - 4 * H - M, confirmations: 3300}}),
     {seq: 3, atMs: fixed - 4 * H, kind: 'removal', source: 'bunny/modules/wemo', subject: 'synthetic-heater', type: 'org.bunny.device.removed', requestId: null, record: {data: {entity: {family: 'device', id: 'synthetic-heater'}, revision: 3}}},
     device(4, 'synthetic-fan', fixed - 2 * H, {changed: {label: 'Synthetic fan'}, gapMs: H + 12 * M, span: {sinceAtMs: fixed - 6 * H, lastConfirmedAtMs: fixed - 3 * H - 12 * M, confirmations: 40}}),
+    device(6, 'synthetic-clock', fixed - 30 * M, {revision: 1, changed: {label: 'Synthetic clock'}}),
     device(5, 'synthetic-lamp', fixed - H, {changed: {label: 'Synthetic lamp', observed: {power: {status: 'known', value: false}}},
       span: {sinceAtMs: fixed - 5 * H - 29 * M, lastConfirmedAtMs: fixed - H - M, confirmations: 3300}}),
   ];
-  const spanOpen = [{source: 'bunny/modules/wemo', family: 'device', id: 'synthetic-lamp', revision: 5, sinceAtMs: fixed - H, lastConfirmedAtMs: fixed - 5 * M, confirmations: 660}];
-  await spanPage.route('**/api/v2/history*', route => route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify({schema: 'history/2.0', rows: spanRows, open: spanOpen})}));
+  const spanOpen = [
+    {source: 'bunny/modules/wemo', family: 'device', id: 'synthetic-lamp', revision: 5, sinceAtMs: fixed - H, lastConfirmedAtMs: fixed - 5 * M, confirmations: 660},
+    {source: 'bunny/modules/wemo', family: 'device', id: 'synthetic-fan', revision: 4, sinceAtMs: fixed - 2 * H, lastConfirmedAtMs: fixed - 2 * H - M, confirmations: 2},
+    {source: 'bunny/modules/wemo', family: 'device', id: 'synthetic-clock', revision: 1, sinceAtMs: null, lastConfirmedAtMs: fixed - 20 * M, confirmations: 2},
+  ];
+  let spanFault = false;
+  await spanPage.route('**/api/v2/history*', route => {
+    const query = new URL(route.request().url()).searchParams;
+    const rows = spanRows.filter(row => (query.get('fromAtMs') === null || row.atMs >= Number(query.get('fromAtMs'))) &&
+      (query.get('toAtMs') === null || row.atMs <= Number(query.get('toAtMs'))));
+    const open = spanOpen.filter(span => rows.some(row => row.kind === 'change' && row.source === span.source && row.record.family === span.family && row.record.id === span.id));
+    return route.fulfill({status: spanFault ? 503 : 200, contentType: 'application/json',
+      body: JSON.stringify(spanFault ? {error: {code: 'unavailable'}} : {schema: 'history/2.0', rows, open})});
+  });
   await spanPage.goto(`${world.url}/#/timeline`);await feed(spanPage, 'connected');
-  await expect(spanCard.getByRole('status')).toContainText('5 history entries.');
+  await expect(spanCard.getByRole('status')).toContainText('6 history entries.');
   const notes = (seq: number) => spanCard.locator(`[data-history-row="${seq}"] .timeline-note`).allTextContents();
   const title = (seq: number) => spanCard.locator(`[data-history-row="${seq}"] .timeline-title`).innerText();
   assert.deepEqual(await notes(5), ['After 4 h 28 min unchanged, 3,300 readings', 'Unchanged since Nov 12, 2:00 PM, last reading at Nov 12, 2:55 PM, 660 readings']);
   assert.equal(await title(5), 'Device updated');
-  assert.deepEqual(await notes(4), ['No reading for 1 h 12 min, then the same state']);assert.equal(await title(4), 'Readings resumed');
+  assert.deepEqual(await notes(4), ['After 2 h 48 min unchanged, 40 readings', 'No reading for 1 h 12 min, then the same state',
+    'First reading at Nov 12, 1:00 PM, last reading at Nov 12, 12:59 PM, 2 readings. The recorded times run backward.']);
+  assert.equal(await title(4), 'Readings resumed');
   assert.deepEqual(await notes(2), ['4 h 28 min unchanged, 3,300 readings']);assert.equal(await title(2), 'Last readings before removal');
   assert.equal(await title(3), 'Record removed');assert.deepEqual(await notes(3), []);
   assert.equal(await title(1), 'Device updated');assert.deepEqual(await notes(1), [], 'a row without a span reads as before');
+  assert.deepEqual(await notes(6), [], 'same-revision legacy rows do not anchor an unknown start');
+  const unknown = spanCard.getByRole('region', {name: 'Open spans with unknown starts'});
+  await expect(unknown.getByRole('listitem')).toHaveCount(1);
+  await expect(unknown).toContainText('Synthetic clock · wemo · device');
+  await expect(unknown).toContainText('Unchanged from an unknown start, last reading at Nov 12, 2:40 PM, 2 readings');
   assert.equal(await spanCard.locator('.timeline-note').filter({hasText: /\bnow\b/i}).count(), 0);
   const gap = spanCard.locator('[data-history-row="4"]>details>summary');
   await gap.focus();await spanPage.keyboard.press('Enter');
@@ -176,9 +196,29 @@ try {
       for (const [seq, shape] of [[5, 'span-and-open'], [4, 'gap'], [2, 'closing'], [3, 'removal'], [1, 'plain']] as const) {
         await spanCard.locator(`[data-history-row="${seq}"]`).screenshot({path: `${process.env.DASHBOARD_RECEIPTS}/timeline-${shape}-${width}.png`});
       }
+      await unknown.screenshot({path: `${process.env.DASHBOARD_RECEIPTS}/timeline-unknown-start-${width}.png`});
       await spanCard.screenshot({path: `${process.env.DASHBOARD_RECEIPTS}/timeline-spans-${width}.png`});
     }
   }
+  await spanCard.getByRole('button', {name: 'Automation', exact: true}).click();
+  await expect(unknown).toHaveCount(0);
+  await spanCard.getByRole('button', {name: 'Devices', exact: true}).click();
+  await expect(unknown).toBeVisible();
+  await spanCard.locator('.timeline-advanced>summary').click();
+  await spanCard.getByLabel('To', {exact: true}).fill('2026-11-12T10:00');
+  await spanCard.getByRole('button', {name: 'Apply filters'}).click();
+  await expect(spanCard.getByRole('status')).toHaveText('1 history entries.');
+  await expect(unknown).toBeVisible();
+  assert.deepEqual(await notes(1), [], 'a filtered page cannot lend its only legacy row the unknown-start span');
+  spanFault = true;
+  await spanCard.getByRole('button', {name: 'Refresh history'}).click();
+  await expect(spanCard.getByRole('status')).toHaveText('History unavailable · previous results');
+  await expect(unknown).toBeVisible();
+  spanFault = false;
+  await spanCard.getByLabel('To', {exact: true}).fill('2026-11-12T09:59');
+  await spanCard.getByRole('button', {name: 'Apply filters'}).click();
+  await expect(spanCard.getByText('No matches in these entries', {exact: true})).toBeVisible();
+  await expect(unknown).toHaveCount(0);
   assert.equal(spanSent.length, 0, 'reading spans sends nothing');
   assert.deepEqual(spanErrors, []);
   await spanContext.close();

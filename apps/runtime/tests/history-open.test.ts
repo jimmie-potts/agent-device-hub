@@ -1,7 +1,7 @@
 // The history read's open spans (#1773, design #1768): a page of history carries, for each entity with a change row in
 // it, the span the entity's next row would close, from a keyed lookup per entity; the fact log never carries them; the
-// HTTP read adds them as an optional member of `history/2.0`, and a page with none answers exactly as before; the MCP
-// tool `core_history` keeps its rows-only answer and its published output schema. Synthetic in-memory stores; every
+// HTTP read and MCP tool `core_history` both add optional `open`. A page with none answers as before.
+// Synthetic in-memory stores; every
 // instant is given explicitly and nothing waits on real time.
 import assert from 'node:assert/strict';
 import type {IncomingHttpHeaders, IncomingMessage, ServerResponse} from 'node:http';
@@ -149,10 +149,11 @@ void test('an unknown start, a backward clock and a removal read as history hold
 });
 
 type Answer = {status: number; body: string};
-async function gateway(context: TestContext, read: (filter: HistoryFilter) => HistoryPage): Promise<(path: string) => Promise<Answer>> {
+async function gateway(context: TestContext, read: (filter: HistoryFilter) => HistoryPage, secret?: string): Promise<(path: string) => Promise<Answer>> {
   const clock = {now: () => T0};
   const scheduler: Scheduler = {after: () => () => {}};
   const writer = new LogWriter(() => {}, 'debug', clock);
+  if (secret !== undefined) writer.redactions.add(secret);
   const served = new Gateway({
     bus: new InProcessBus({scheduler}), host: {modules: () => []} as unknown as ModuleHost, validator: edgeValidator(),
     families: new Set<string>(), credentials: [], clock, scheduler, log: writer.logger('bunny.runtime'), redactions: writer.redactions,
@@ -192,10 +193,31 @@ void test('the HTTP read adds open as an optional member of history/2.0; a page 
   for (const query of ['?kind=unknown', '?limit=0', '?other=value']) assert.equal((await call(`/api/v2/history${query}`)).status, 400, query);
 });
 
-void test('the MCP tool core_history keeps its rows-only answer and its published output schema', () => {
+void test('the HTTP history wrapper does not cause a clean empty page to be refused', async context => {
+  const call = await gateway(context, () => ({rows: []}), 'rows');
+  assert.deepEqual(await call('/api/v2/history'), {status: 200, body: JSON.stringify({schema: 'history/2.0', rows: []})});
+});
+
+void test('the HTTP history read refuses a secret in either rows or the added span payload', async context => {
+  const {history, take} = open(context);
+  take(state(plug('lamp', 1, T0)), T0);
+  take(state(plug('lamp', 2, T0 + 5000)), T0 + 5000);
+  const spanSecret = String(T0 + 5000);
+  assert.ok(!JSON.stringify(history.read()).includes(spanSecret));
+  assert.ok(JSON.stringify(history.page().open).includes(spanSecret));
+  for (const secret of ['lamp', spanSecret]) {
+    const call = await gateway(context, filter => history.page(filter), secret);
+    const response = await call('/api/v2/history');
+    assert.equal(response.status, 500);
+    assert.match(response.body, /"code":"internal"/);
+    assert.ok(!response.body.includes(secret));
+  }
+});
+
+void test('the MCP tool core_history publishes a closed output schema with optional open spans', () => {
   const page: HistoryPage = {rows: [], open: [{source: WEMO, family: 'device', id: 'lamp', revision: 1, sinceAtMs: T0, lastConfirmedAtMs: T0 + 5000, confirmations: 2}]};
-  const tool: ModuleTool = historyTool(() => page.rows);
-  // The output schema as on main. Whether `open` joins it is the owner's decision on #1773; this pins either answer.
-  assert.deepEqual(tool.output, {type: 'object', additionalProperties: false, required: ['rows'], properties: {rows: {type: 'array'}}});
-  assert.deepEqual(tool.read({}), {rows: []});
+  const tool: ModuleTool = historyTool(filter => filter.kind === 'operation' ? {rows: []} : page);
+  assert.deepEqual(tool.output, {type: 'object', additionalProperties: false, required: ['rows'], properties: {rows: {type: 'array'}, open: {type: 'array'}}});
+  assert.deepEqual(tool.read({}), page);
+  assert.deepEqual(tool.read({kind: 'operation'}), {rows: []});
 });

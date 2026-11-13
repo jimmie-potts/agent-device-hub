@@ -422,8 +422,13 @@ export class Gateway {
       const filter = historyFilter(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, key === 'fromAtMs' || key === 'toAtMs' || key === 'limit' ? (/^[0-9]+$/.test(value) ? Number(value) : NaN) : value])));
       if (filter === undefined) throw refuse('invalid-request', 'invalid history filters');
       const page = this.#options.history?.page(filter) ?? errorBody('unavailable', {detail: 'no core history is available'});
-      if (this.#options.redactions.holds(JSON.stringify(page))) throw refuse('internal', 'history holds a secret, which the gateway never serves');
-      // `open` is an optional member of `history/2.0` (#1773), present only when an entity in the page has an open span.
+      const rowsOrError = 'rows' in page ? page.rows : page;
+      const open = 'rows' in page ? page.open : undefined;
+      if (this.#options.redactions.holds(JSON.stringify(rowsOrError)) ||
+        (open !== undefined && this.#options.redactions.holds(JSON.stringify(open)))) {
+        throw refuse('internal', 'history holds a secret, which the gateway never serves');
+      }
+      // Check the payloads separately so the response's wrapper keys cannot cause a refusal.
       return this.#dashboardRequest(request, path, () => 'rows' in page ? json(200, {schema: 'history/2.0', ...page}) : json(statusOf(page.error.code), page));
     }
     if (path === '/api/v2/build') {
