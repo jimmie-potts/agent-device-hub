@@ -125,6 +125,8 @@ it('gateway and MCP readers see the whole inbox/history; handling needs control 
   assert.deepEqual((await tool('core_history', {kind: 'operation'})).structuredContent.data.result, {rows: (await call('/api/v2/history?kind=operation', reader.token)).body.rows});
   await internal('synthetic-history-reader_history', {}, 'holds a secret');
 
+  historyAnswer = {rows: [], open: undefined};
+  assert.deepEqual((await tool('core_history', filter)).structuredContent.data.result, {rows: []});
   historyAnswer = {rows: [], open: 'malformed'};
   await internal('core_history', filter, 'holds a secret');
   historyAnswer = errorBody('unavailable', {detail: 'synthetic open refusal'});

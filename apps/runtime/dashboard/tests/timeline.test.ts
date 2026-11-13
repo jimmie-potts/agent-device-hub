@@ -209,6 +209,17 @@ void test('unknown starts identify separate families with the same source, ID an
   assert.deepEqual(unknownStarts.map(entry => entry.context), ['Desk lamp · wemo · device', 'Desk lamp · wemo · display']);
 });
 
+void test('unknown starts distinguish entities with the same visible label and family', () => {
+  const first = change({});
+  const second = change({id: 'shelf-lamp'}, {seq: first.seq + 1, subject: 'shelf-lamp'});
+  const spans = [lampSpan({sinceAtMs: null}), lampSpan({id: 'shelf-lamp', sinceAtMs: null})];
+  const {unknownStarts} = openSpans([first, second], spans, 'Devices');
+  assert.deepEqual(unknownStarts.map(entry => entry.context), [
+    'Desk lamp · wemo · device (bunny/modules/wemo, desk-lamp)',
+    'Desk lamp · wemo · device (bunny/modules/wemo, shelf-lamp)',
+  ]);
+});
+
 void test('lengths and counts use short units and plural forms', () => {
   for (const [ms, expected] of [[0, 'less than 1 s'], [999, 'less than 1 s'], [1000, '1 s'], [59_999, '59 s'], [60_000, '1 min'], [H - 1, '59 min'], [H, '1 h'], [H + M, '1 h 1 min'],
     [24 * H - 1, '23 h 59 min'], [24 * H, '1 d'], [26 * H, '1 d 2 h'], [400 * 24 * H + 2 * H + 59 * M, '400 d 2 h']] as const) assert.equal(lengthOf(ms), expected, String(ms));

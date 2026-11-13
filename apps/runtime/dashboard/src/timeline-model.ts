@@ -61,7 +61,8 @@ export function openSpans(rows: readonly HistoryRow[], open: readonly HistoryOpe
     if (held === undefined || held.seq < row.seq) newest.set(key, row);
   }
   const byRow = new Map<number, HistoryOpenSpan>();
-  const unknownStarts: {key: string; context: string; note: string}[] = [];
+  const unknown: {key: string; context: string; span: HistoryOpenSpan}[] = [];
+  const contextCounts = new Map<string, number>();
   for (const span of open) {
     const key = JSON.stringify([span.source, span.family, span.id]);
     const row = newest.get(key);
@@ -69,12 +70,17 @@ export function openSpans(rows: readonly HistoryRow[], open: readonly HistoryOpe
     if (span.sinceAtMs === null) {
       const face = historyFace(row);
       if (category === 'All' || face.category === category) {
-        unknownStarts.push({key, context: `${face.context} · ${span.family}`, note: openSpanNote(span, recordedAt)});
+        const context = `${face.context} · ${span.family}`;
+        unknown.push({key, context, span});
+        contextCounts.set(context, (contextCounts.get(context) ?? 0) + 1);
       }
     } else if (row.record.revision === span.revision && span.sinceAtMs === row.atMs) {
       byRow.set(row.seq, span);
     }
   }
+  const unknownStarts = unknown.map(({key, context, span}) => ({
+    key, context: contextCounts.get(context) === 1 ? context : `${context} (${span.source}, ${span.id})`, note: openSpanNote(span, recordedAt),
+  }));
   return {byRow, unknownStarts};
 }
 

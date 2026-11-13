@@ -93,7 +93,7 @@ function readTool(host: McpHost, module: string, tool: ModuleTool, check: Valida
       const value: unknown = answered.value;
       // Core history's new fixed open key is outside the payload. Only a schema-valid page gets separate scans.
       const historyPage = module === CORE_MODULE && tool.name === 'history' &&
-        typeof value === 'object' && value !== null && 'rows' in value && 'open' in value ? value : undefined;
+        typeof value === 'object' && value !== null && 'rows' in value && 'open' in value && value.open !== undefined ? value : undefined;
       const historyPageValid = historyPage === undefined ? undefined : check(historyPage);
       const holdsSecret = historyPage !== undefined && historyPageValid
         ? host.holdsSecret(JSON.stringify({rows: historyPage.rows})) || host.holdsSecret(JSON.stringify(historyPage.open))

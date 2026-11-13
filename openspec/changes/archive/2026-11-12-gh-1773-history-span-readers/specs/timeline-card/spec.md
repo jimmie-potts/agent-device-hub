@@ -23,7 +23,8 @@ the line SHALL give both recorded instants and explain the clock step without
 a duration. An open span with an unknown start SHALL have no row annotation.
 The dedicated Timeline SHALL show it with the entity's label and family,
 unknown start, last recorded reading and count, using the loaded entries and
-selected category. A row without a span, a gap, a closing mark or a matching open span
+selected category. When visible labels collide, it SHALL show each entity's
+source and ID. A row without a span, a gap, a closing mark or a matching open span
 SHALL read exactly as before. A missing or malformed `open` member SHALL
 produce no open span presentation. A closed Home entry SHALL retain its height.
 Recorded times SHALL never be described as now or as current device state.
