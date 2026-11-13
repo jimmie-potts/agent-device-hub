@@ -208,7 +208,7 @@ it('a catalog scenario fails at the step whose behavior breaks', async () => {
   // The lamp's device fails its next switch, so the first command's outcome is failed rather than succeeded.
   const h = await startMemoryHarness(named('command-tracked-outcome').seed, 'in-process');
   try {
-    h.simulate({device: 'lamp', action: 'fail-next'});
+    void h.simulate({device: 'lamp', action: 'fail-next'});
     const result = await runScenario(named('command-tracked-outcome'), h);
     assert.equal(result.outcome, 'failed');
     assert.equal(result.steps.at(-1)?.name, 'the lamp is on');

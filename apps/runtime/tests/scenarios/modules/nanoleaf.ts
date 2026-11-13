@@ -133,11 +133,11 @@ const nanoleafWall: Scenario = {
         dataschema: `https://bunny.invalid/events/${NANOLEAF_FAMILIES.animationPlay.family}/2.0`, data: {animation: {preset: 'ocean'}}},
     }, 'req-play')),
     expect('the animation is refused: Work presents agent status', h => answered(h, 'play', 'unsupported-capability')),
-    act('the wall is switched off from the Nanoleaf app', h => { h.simulate({device: 'nanoleaf', action: 'power-off'}); }),
+    act('the wall is switched off from the Nanoleaf app', h => { void h.simulate({device: 'nanoleaf', action: 'power-off'}); }),
     expect('the reader\'s copy shows the power the wall reports: off', h => observedPower(h, false), 15_000),
     act('the wall is switched on again and then stops answering', h => {
-      h.simulate({device: 'nanoleaf', action: 'power-on'});
-      h.simulate({device: 'nanoleaf', action: 'offline'});
+      void h.simulate({device: 'nanoleaf', action: 'power-on'});
+      void h.simulate({device: 'nanoleaf', action: 'offline'});
     }),
     expect('the reader\'s copy shows the wall unavailable, and the module runs on', h =>
       wallAvailability(h, 'unavailable') === true ? running(h, ['core', 'nanoleaf']) : wallAvailability(h, 'unavailable'), 10_000),
@@ -145,7 +145,7 @@ const nanoleafWall: Scenario = {
       dispatchOnce(h, 'operator', 'offline', wallMode('req-offline', 'quiet'), 'req-offline')),
     expect('history holds req-offline succeeded as observed: the mode commits whether or not the wall answers', async h =>
       (await recorded(h, 'req-offline', 'succeeded', 'observed')), 5000),
-    act('the wall answers again', h => { h.simulate({device: 'nanoleaf', action: 'online'}); }),
+    act('the wall answers again', h => { void h.simulate({device: 'nanoleaf', action: 'online'}); }),
     expect('the reader\'s copy shows the wall available', h => wallAvailability(h, 'available'), 40_000),
     expect('nothing is held, and the wall shows Quiet once it answers', h => {
       const shown = wallHeld(h, undefined, 'available') === true ? desiredMode(h, 'quiet') : wallHeld(h, undefined, 'available');
@@ -161,7 +161,7 @@ const nanoleafWall: Scenario = {
         ['device.unavailable', 'device.available'].includes(record.event_name) && record.severity_text !== 'DEBUG').map(({record}) => record.event_name);
       return show(events) === show(['device.unavailable', 'device.available']) || `logged ${show(events)}`;
     }),
-    act('the wall will lose its answer to the next brightness write', h => { h.simulate({device: 'nanoleaf', action: 'lose-next-answer'}); }),
+    act('the wall will lose its answer to the next brightness write', h => { void h.simulate({device: 'nanoleaf', action: 'lose-next-answer'}); }),
     act('the operator sets the Lines to 20% as req-lost', h => dispatchOnce(h, 'operator', 'lost', wallBrightness('req-lost', 20), 'req-lost')),
     expect('history holds req-lost uncertain: the write may have reached the wall', async h => (await recorded(h, 'req-lost', 'uncertain', 'none')), 10_000),
     expect('the reader\'s copy shows the wall held and degraded, not unavailable, and its device record names req-lost as held', h =>
@@ -265,9 +265,9 @@ const nanoleafEditor: Scenario = {
     }),
     expect('the owner record contains the selected rotation', h => editorRecord(h)?.settings.rotation === 90 || 'the owner has not selected 90 degrees'),
     expect('the command completes with observed owner-state evidence', h => recorded(h, 'req-editor-rotate', 'succeeded', 'observed'), 5000),
-    act('the simulator power switch turns the wall off', h => { h.simulate({device: 'nanoleaf', action: 'power-off'}); }),
+    act('the simulator power switch turns the wall off', h => { void h.simulate({device: 'nanoleaf', action: 'power-off'}); }),
     expect('the owner reports the observed off state', h => observedPower(h, false), 15_000),
-    act('the simulator power switch turns the wall on', h => { h.simulate({device: 'nanoleaf', action: 'power-on'}); }),
+    act('the simulator power switch turns the wall on', h => { void h.simulate({device: 'nanoleaf', action: 'power-on'}); }),
     expect('the owner reports the observed on state', h => observedPower(h, true), 15_000),
     expect('synthetic credentials appear in no record or message', noToken),
   ],

@@ -250,7 +250,7 @@ const pixooNowPlaying: Scenario = {
     act('the operator selects Free', h => dispatchOnce(h, 'operator', 'pixoo-monitor', pixooMode('free'), 'pixoo-monitor-2')),
     act('the hook observes a session start', h => publish(h, sessionStarted)),
     expect('the Pixoo shows the session\'s dashboard', h => (pixooState(h).shown !== null && pixooDisplay(h)?.showing === 'dashboard') || `display ${show(pixooDisplay(h))}`, 5000),
-    act('the phone plays a song to the HT-A9', h => { h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: PIXOO_SONG}); }),
+    act('the phone plays a song to the HT-A9', h => { void h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: PIXOO_SONG}); }),
     expect('the Pixoo shows the song\'s card', h => showsCard(h), 6000),
     expect('the reader\'s copy shows the card as a pop-up over the status base', h => {
       const display = pixooDisplay(h);
@@ -273,7 +273,7 @@ const pixooNowPlaying: Scenario = {
       const card = currentCard(h), shown = showsCard(h);
       return (card === true && shown === true && pixooDisplay(h)?.nowPlaying.takeover === 'whole') || `${show(card)}, ${show(shown)}, takeover ${show(pixooDisplay(h)?.nowPlaying.takeover)}`;
     }, 31_000),
-    act('the phone stops the song', h => { h.simulate({device: 'playback', speaker: 'sony', action: 'stop'}); }),
+    act('the phone stops the song', h => { void h.simulate({device: 'playback', speaker: 'sony', action: 'stop'}); }),
     expect('the takeover ends and the playlist shows its picture again', h => {
       const display = pixooDisplay(h);
       return (display?.nowPlaying.takeover === null && display.nowPlaying.card === false && pixooState(h).shown?.digests[0] !== playingCard()) || `display ${show(display)}`;
@@ -418,14 +418,14 @@ const pixooOffline: Scenario = {
   steps: [
     expect('the core, the playback module and the Pixoo are running', h => running(h, PIXOO_MODULES)),
     act('the Pixoo goes offline, and the runtime restarts', async h => {
-      h.simulate({device: 'pixoo', action: 'offline'});
+      void h.simulate({device: 'pixoo', action: 'offline'});
       await h.restart();
     }),
     expect('the Pixoo module runs, though its device does not answer', h => running(h, ['core', 'pixoo'])),
     expect('the reader\'s copy shows the Pixoo unavailable', h => pixooAvailability(h, 'unavailable'), 5000),
     holds('it stays unavailable, and the module keeps running', async h => (pixooAvailability(h, 'unavailable') === true && await running(h, ['pixoo']) === true) || 'changed', 4000),
     expect('the module logged one degradation, not a warning per probe', h => pixooLogged(h, 'device.unavailable', 'WARN', 2) === 1 || `${pixooLogged(h, 'device.unavailable', 'WARN', 2)} warnings`),
-    act('the Pixoo comes back online', h => { h.simulate({device: 'pixoo', action: 'online'}); }),
+    act('the Pixoo comes back online', h => { void h.simulate({device: 'pixoo', action: 'online'}); }),
     expect('the reader\'s copy shows the Pixoo available', h => pixooAvailability(h, 'available'), 35_000),
     expect('the module logged one recovery', h => pixooLogged(h, 'device.available', 'INFO', 2) === 1 || `${pixooLogged(h, 'device.available', 'INFO', 2)} recoveries`),
     followsItsOwners(),

@@ -102,8 +102,8 @@ it('a module written only under its own folder is collected, shipped by its orde
     try {
       const result = await runScenario(scenario, h);
       assert.equal(result.outcome, 'passed', `${transport}: ${JSON.stringify(result.steps)}`);
-      assert.throws(() => { h.simulate({device: 'zz-probe', action: 'explode'}); }, /unknown device, action or field/, 'an action it does not take is refused');
-      assert.throws(() => { h.simulate({device: 'zz-probe', action: 'reset', extra: true}); }, /unknown device, action or field/, 'as is a field it does not take');
+      assert.throws(() => { void h.simulate({device: 'zz-probe', action: 'explode'}); }, /unknown device, action or field/, 'an action it does not take is refused');
+      assert.throws(() => { void h.simulate({device: 'zz-probe', action: 'reset', extra: true}); }, /unknown device, action or field/, 'as is a field it does not take');
       assert.deepEqual(h.problems(), []);
     } finally {
       await h.close();

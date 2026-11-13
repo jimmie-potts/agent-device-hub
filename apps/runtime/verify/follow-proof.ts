@@ -89,10 +89,10 @@ export async function followProof(t: CaptureContext, harness: string): Promise<v
     });
 
     // An uncertain effect: the device holds the switch past the command's deadline, so the requester cannot know its fate.
-    run.simulate({device: 'lamp', action: 'hold'});
+    void run.simulate({device: 'lamp', action: 'hold'});
     answer = await send('held', 'follow-held', 'lamp-1');
     const uncertain = await until(harness, 'request=follow-held', followed => followed.decision.endings.length > 0);
-    run.simulate({device: 'lamp', action: 'release'});
+    void run.simulate({device: 'lamp', action: 'release'});
     const released = await until(harness, 'request=follow-held', followed => count(followed, 'outcome.published') > 0);
     await keep(t, 'uncertain', 'an uncertain effect', released);
     await t.expect('an uncertain effect: the requester was told uncertain-result at WARN, and the device\'s late outcome is in the records, so the run tells the story the answer could not', () => {

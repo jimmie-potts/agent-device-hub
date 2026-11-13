@@ -63,32 +63,32 @@ const speakerPlayback: Scenario = {
       `bunny.cmd.playback-control.${PLAYBACK_SECTION.id}`, rawCommand(h, 'bunny/parts/operator', playbackCommand('pause'), 'req-pb-direct', 'msg-pb-direct')))), 403, 'forbidden')),
     expect('the reader, whose grant may only read, may not command them', async h => refusedWith(keep(h, await h.gateway(rawRequest('reader',
       `bunny.cmd.playback-control.${PLAYBACK_SECTION.id}`, rawCommand(h, 'bunny/parts/reader', playbackCommand('pause'), 'req-pb-reader', 'msg-pb-reader')))), 403, 'forbidden')),
-    act('the phone plays a song to the HT-A9', h => { h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'HT-A9 Song'}); }),
+    act('the phone plays a song to the HT-A9', h => { void h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'HT-A9 Song'}); }),
     expect('the reader sees the HT-A9\'s song playing, with pause, next and previous', h => playbackShows(h, 'available playing "HT-A9 Song" [pause,next,previous]'), 5000),
     act('the operator pauses it as req-pb-pause, through the core\'s dispatcher', h => dispatchOnce(h, 'operator', 'pb-pause', playbackCommand('pause'), 'req-pb-pause')),
     expect('the pause went to the HT-A9 only, once', h => speakersGot(h, 'move [] ht-a9 [pause]')),
     expect('history holds req-pb-pause as succeeded, transmitted', async h => (await recorded(h, 'req-pb-pause', 'succeeded', 'transmitted'))),
     expect('the reader sees the HT-A9 paused, offering next and previous only', h => playbackShows(h, 'available paused "HT-A9 Song" [next,previous]'), 5000),
     act('the phone switches AirPlay to the Move: the HT-A9 leaves AirPlay and the Move plays another song', h => {
-      h.simulate({device: 'playback', speaker: 'sony', action: 'other-input'});
-      h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'Move Song'});
+      void h.simulate({device: 'playback', speaker: 'sony', action: 'other-input'});
+      void h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'Move Song'});
     }),
     expect('the reader sees the Move\'s song', h => playbackShows(h, 'available playing "Move Song" [pause,next,previous]'), 5000),
     act('the operator pauses again as req-pb-move', h => dispatchOnce(h, 'operator', 'pb-move', playbackCommand('pause'), 'req-pb-move')),
     expect('the pause went to the Move only', h => speakersGot(h, 'move [pause] ht-a9 [pause]')),
     expect('the reader sees the Move paused, offering play, next and previous', h => playbackShows(h, 'available paused "Move Song" [play,next,previous]'), 5000),
-    act('the Move stops answering mid-song', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'silent'}); }),
+    act('the Move stops answering mid-song', h => { void h.simulate({device: 'playback', speaker: 'sonos', action: 'silent'}); }),
     expect('the reader sees the record stale, still showing the Move\'s song', h => playbackShows(h, 'stale paused "Move Song" [play,next,previous]'), 9000),
     act('the operator asks the Move to play as req-pb-stale', h => h.dispatch('operator', 'pb-stale', playbackCommand('play'), 'req-pb-stale')),
     expect('req-pb-stale is refused unavailable, and no speaker heard it', h => answered(h, 'pb-stale', 'unavailable') === true ? speakersGot(h, 'move [pause] ht-a9 [pause]') : answered(h, 'pb-stale', 'unavailable')),
     expect('the playback module logged one degradation for the Move', h => show(playbackRecords(h, 'device.unavailable')) === show(['WARN living-room.sonos']) || show(playbackRecords(h, 'device.unavailable'))),
-    act('the Move answers again', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'answer'}); }),
+    act('the Move answers again', h => { void h.simulate({device: 'playback', speaker: 'sonos', action: 'answer'}); }),
     expect('the reader sees the Move available again', h => playbackShows(h, 'available paused "Move Song" [play,next,previous]'), 6000),
     expect('the playback module logged one recovery, and no other degradation', h => {
       const [down, up] = [playbackRecords(h, 'device.unavailable'), playbackRecords(h, 'device.available')];
       return (show(down) === show(['WARN living-room.sonos']) && show(up) === show(['INFO living-room.sonos'])) || `${show(down)} then ${show(up)}`;
     }),
-    act('the Move will never answer its next command', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'hang-next'}); }),
+    act('the Move will never answer its next command', h => { void h.simulate({device: 'playback', speaker: 'sonos', action: 'hang-next'}); }),
     // The module answers once the Move's call reaches its deadline, so the step does not wait for the answer.
     act('the operator asks the Move to play as req-pb-hang', h => { void h.dispatch('operator', 'pb-hang', playbackCommand('play'), 'req-pb-hang'); }),
     expect('req-pb-hang is accepted once the Move\'s call reaches its deadline', h => answered(h, 'pb-hang', 'accepted'), 5000),
@@ -154,12 +154,12 @@ const speakerArtwork: Scenario = {
       return display?.mode === 'work' && display.participating && display.showing === 'dashboard' || 'the status base has not become active';
     }, 5000),
     act('the phone plays the synthetic same-title track to Sony without artwork', h => {
-      h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'A'});
+      void h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'A'});
     }),
     expect('the reader has playing metadata, controls and missing artwork', h =>
       playbackShows(h, 'available playing "A" [pause,next,previous]') === true ? hasArtwork(h, 'missing') : playbackShows(h, 'available playing "A" [pause,next,previous]'), 5000),
     act('the operator explicitly selects the synthetic Sony PNG fixture', h => {
-      h.simulate({device: 'playback', speaker: 'sony', action: 'artwork'});
+      void h.simulate({device: 'playback', speaker: 'sony', action: 'artwork'});
     }),
     expect('the real decoder makes the shared SDK artwork ready', h => hasArtwork(h, 'ready'), 8000),
     expect('Pixoo sends the real worker RGB card with the fixture image', h => displayArtwork(h, true, 'pixoo'), 5000),
@@ -176,18 +176,18 @@ const speakerArtwork: Scenario = {
       return text === true ? artworkRecord(h)?.artwork?.generation === firstReadyGeneration(h) || 'pause changed the artwork generation' : text;
     }, 5000),
     act('Sony stops reporting metadata while the ready thumbnail is retained', h => {
-      h.simulate({device: 'playback', speaker: 'sony', action: 'silent'});
+      void h.simulate({device: 'playback', speaker: 'sony', action: 'silent'});
     }),
     expect('metadata freshness still turns stale without changing the ready generation', h => {
       const text = playbackShows(h, 'stale paused "A" [next,previous]');
       return text === true ? artworkRecord(h)?.artwork?.status === 'ready' && artworkRecord(h)?.artwork?.generation === firstReadyGeneration(h) || 'freshness changed the image association' : text;
     }, 9000),
-    act('Sony answers metadata polls again', h => { h.simulate({device: 'playback', speaker: 'sony', action: 'answer'}); }),
+    act('Sony answers metadata polls again', h => { void h.simulate({device: 'playback', speaker: 'sony', action: 'answer'}); }),
     expect('playback returns to available with its existing ready image', h =>
       playbackShows(h, 'available paused "A" [next,previous]') === true ? hasArtwork(h, 'ready') : playbackShows(h, 'available paused "A" [next,previous]'), 6000),
     act('the phone hands the same reported title to Sonos', h => {
-      h.simulate({device: 'playback', speaker: 'sony', action: 'other-input'});
-      h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'A'});
+      void h.simulate({device: 'playback', speaker: 'sony', action: 'other-input'});
+      void h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'A'});
     }),
     expect('Sonos has the same title with missing artwork and a different generation', h => {
       const text = playbackShows(h, 'available playing "A" [pause,next,previous]');
@@ -199,12 +199,12 @@ const speakerArtwork: Scenario = {
     expect('Tidbyt clears Sony artwork while preserving identical Sonos text', h => displayArtwork(h, false, 'tidbyt'), 18_000),
     holds('pause, freshness changes and handoff caused no extra fixture acquisition', acquiredOnce, 100),
     act('the phone stops the text-only Sonos session', h => {
-      h.simulate({device: 'playback', speaker: 'sonos', action: 'stop'});
+      void h.simulate({device: 'playback', speaker: 'sonos', action: 'stop'});
     }),
     expect('the stopped Sonos session retires the previous popup', h => playbackShows(h, 'available stopped "A" []'), 5000),
     act('the operator selects the synthetic Sonos PNG and the phone starts a new session', h => {
-      h.simulate({device: 'playback', speaker: 'sonos', action: 'artwork'});
-      h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'A'});
+      void h.simulate({device: 'playback', speaker: 'sonos', action: 'artwork'});
+      void h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'A'});
     }),
     expect('the Sonos image becomes ready through the real decoder', h => hasArtwork(h, 'ready'), 8000),
     expect('Pixoo sends the Sonos image through its existing card renderer', h => displayArtwork(h, true, 'pixoo'), 5000),

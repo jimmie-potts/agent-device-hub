@@ -25,14 +25,14 @@ const operationRecords: Scenario = {
   title: 'each tracked action\'s latest state reaches the reader as its operation record',
   seed: {modules: ['core', 'lamp'], follows: [['session', 'operation'], ['lamp']]},
   steps: [
-    act('the lamp holds its next switch', h => { h.simulate({device: 'lamp', action: 'hold'}); }),
+    act('the lamp holds its next switch', h => { void h.simulate({device: 'lamp', action: 'hold'}); }),
     act('the operator switches lamp-1 on as req-op through the core\'s dispatcher', h => { void h.dispatch('operator', 'op', switchLamp('lamp-1', 'on'), 'req-op'); }),
     expect('the reader\'s copy shows req-op sent, with no result yet', h => {
       const record = operationOf(h, 'req-op');
       return (record?.status === 'sent' && record.result === undefined && record.family === 'lamp-switch' && record.target === 'lamp-1' &&
         record.requestedBy === 'bunny/parts/operator') || `the record is ${show(record?.status)}`;
     }),
-    act('the lamp lets the switch go', h => { h.simulate({device: 'lamp', action: 'release'}); }),
+    act('the lamp lets the switch go', h => { void h.simulate({device: 'lamp', action: 'release'}); }),
     expect('the action was accepted', h => answered(h, 'op', 'accepted')),
     expect('the record completed, succeeded, with the lamp\'s observation as its evidence', h => {
       const record = operationOf(h, 'req-op');
@@ -42,7 +42,7 @@ const operationRecords: Scenario = {
       const published = operationSteps(h, 'req-op');
       return (published[0] === 'sent' && published.at(-1) === 'completed succeeded observed') || show(published);
     }),
-    act('the lamp cannot be reached for its next switch', h => { h.simulate({device: 'lamp', action: 'fail-next'}); }),
+    act('the lamp cannot be reached for its next switch', h => { void h.simulate({device: 'lamp', action: 'fail-next'}); }),
     act('the operator switches lamp-1 off as req-op-off', h => dispatchOnce(h, 'operator', 'off', switchLamp('lamp-1', 'off'), 'req-op-off')),
     expect('its record says it failed, with no evidence that anything reached the lamp', h => {
       const record = operationOf(h, 'req-op-off');

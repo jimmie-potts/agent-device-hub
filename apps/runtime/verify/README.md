@@ -187,8 +187,9 @@ time. A hook against a stopped runtime asks for a restart that waits for a relea
 refuses connections, then releases it; once the restart answers, the adapter's clock follows the time its hold moved the
 run on.
 
-On virtual time the adapter sends SDK calls after any queued actions, such as simulated device controls, and
-after passing on any time already owed to the run.
+On virtual time the adapter passes on any time already owed to the run before sending a raw SDK call. A scenario
+that needs a simulation control to finish before a raw SDK call awaits the control. The chime fault scenario returns
+its setup operation from the action step so the runner waits before publishing the approval.
 
 Some waits hold for real work, which virtual time would outrun (#1711). Each holds only while that work is in flight,
 looks again whenever the reader, a call or a part's stream changes, and fails after 15 s of real time with fixed text

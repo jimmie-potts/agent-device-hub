@@ -169,13 +169,13 @@ for (const transport of TRANSPORTS) {
     const h = await startMemoryHarness(seed, transport, {registrations: fixture.registrations});
     try {
       await monitor(h);
-      h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'A'});
+      void h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'A'});
       await within(h, 'Sony reports A before artwork selection', () => text(h, 'A', 'playing'));
-      h.simulate({device: 'playback', speaker: 'sony', action: 'artwork'});
+      void h.simulate({device: 'playback', speaker: 'sony', action: 'artwork'});
       await within(h, 'fixture acquisition A started and is held', () => attempts === 1 || 'A has not started');
       const generationA = record(h)?.artwork?.generation;
       assert.ok(generationA !== undefined);
-      h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'B'});
+      void h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'B'});
       await within(h, 'metadata reaches B while acquisition A remains held', () => text(h, 'B', 'playing'), 1500);
       const handoffAt = h.now();
       assert.notEqual(record(h)?.artwork?.generation, generationA);
@@ -214,9 +214,9 @@ for (const transport of TRANSPORTS) {
       const h = await startMemoryHarness(seed, transport, {registrations: fixture.registrations});
       try {
         await monitor(h);
-        h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'A'});
+        void h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'A'});
         await within(h, 'Sony reports playing A', () => text(h, 'A', 'playing'));
-        h.simulate({device: 'playback', speaker: 'sony', action: 'artwork'});
+        void h.simulate({device: 'playback', speaker: 'sony', action: 'artwork'});
         await within(h, 'fixture refusal reached acquisition', () => attempts >= 1 || 'no acquisition');
         await within(h, 'Pixoo shows complete text fallback through the real worker', () =>
           shown(h).shown?.digests[0] === digest(oracle('pixoo', 'A', false)) || 'Pixoo text fallback is wrong');
@@ -260,14 +260,14 @@ for (const transport of TRANSPORTS) for (const failingRenderer of ['tidbyt', 'pi
       entry.attributes['bunny.operation'] === (failingRenderer === 'tidbyt' ? 'playback' : 'feed'));
     try {
       // Warm the cloud gate while Pixoo remains passive. No fixture image has been selected.
-      h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'A'});
+      void h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'A'});
       await within(h, 'Sony reports current A metadata before renderer fault selection', () => text(h, 'A', 'playing'));
       await within(h, 'real Tidbyt text worker uploaded the baseline before artwork selection', () =>
         fixture.uploads.some(upload => Buffer.from(upload.rgb).equals(Buffer.from(oracle('tidbyt', 'A', false)))) || 'no baseline Tidbyt text', 18_000);
-      h.simulate({device: 'playback', speaker: 'sony', action: 'pause'});
+      void h.simulate({device: 'playback', speaker: 'sony', action: 'pause'});
       await within(h, 'metadata pauses before Monitor starts', () => text(h, 'A', 'paused'));
       await monitor(h);
-      h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'A'});
+      void h.simulate({device: 'playback', speaker: 'sony', action: 'play', title: 'A'});
       await within(h, 'fresh playing transition opens Monitor popup', () => text(h, 'A', 'playing'));
       await within(h, 'real Pixoo text worker shows the baseline before artwork selection', () =>
         shown(h).shown?.digests[0] === digest(oracle('pixoo', 'A', false)) || 'no baseline Pixoo text');
@@ -282,7 +282,7 @@ for (const transport of TRANSPORTS) for (const failingRenderer of ['tidbyt', 'pi
       assert.ok(Buffer.from(fixture.uploads[fixture.uploads.length - 1]?.rgb ?? []).equals(Buffer.from(oracle('tidbyt', 'A', false))),
         'Tidbyt still shows the current playing text before artwork selection');
       assert.equal(failures().length, 0, 'normal text/dashboard delegation did not fail');
-      h.simulate({device: 'playback', speaker: 'sony', action: 'artwork'});
+      void h.simulate({device: 'playback', speaker: 'sony', action: 'artwork'});
       await within(h, 'real producer independently completes its ready artwork', () =>
         record(h)?.artwork?.status === 'ready' && text(h, 'A', 'playing') === true || 'producer artwork is not ready', 8000);
       if (failingRenderer === 'pixoo') {

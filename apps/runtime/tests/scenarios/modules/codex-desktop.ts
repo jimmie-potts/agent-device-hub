@@ -12,7 +12,7 @@ const desktopRead = (h: Harness, sessionId: string): string => session(h, sessio
 /** A Codex Desktop session's turn ends, as its hook reports it; a subagent names its parent. */
 const desktopTurnEnds = (h: Harness, sessionId: string, parent?: string): Promise<void> =>
   publish(h, turnEnded, {identity: desktopIdentity(sessionId), ...(parent === undefined ? {} : {parent: {status: 'known', identity: desktopIdentity(parent)}})});
-const marker = (simulation: Simulation) => (h: Harness): void => { h.simulate(simulation); };
+const marker = (simulation: Simulation) => (h: Harness): void => { void h.simulate(simulation); };
 
 /**
  * Codex Desktop's read marker as read evidence (Hub #926), with a simulated marker: a top-level Desktop session reads

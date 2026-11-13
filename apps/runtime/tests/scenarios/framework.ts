@@ -169,7 +169,8 @@ export interface Harness {
   answer(label: string): string;
   readonly reader: ReaderView;
   devices(): DeviceStates;
-  simulate(simulation: Simulation): void;
+  /** Applies a device control synchronously in memory. In a run, returns its queued completion. */
+  simulate(simulation: Simulation): void | Promise<void>;
   health(): Promise<readonly ModuleHealth[]>;
   /** The runtime's log records so far, each with the generation that wrote it. */
   logs(): readonly Generational<{record: LogRecord}>[];
