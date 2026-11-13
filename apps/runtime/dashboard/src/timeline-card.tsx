@@ -1,5 +1,5 @@
 import React, {useId, useState} from 'react';
-import {historyFace, selectedHistory, type HistoryCategory, type HistoryPeriod, type HistoryRow} from './timeline-model.ts';
+import {historyFace, openSpans, selectedHistory, type HistoryCategory, type HistoryOpenSpan, type HistoryPeriod, type HistoryRow} from './timeline-model.ts';
 import type {HistorySnapshot} from './timeline-read.ts';
 import {PagedList} from './paged-list.tsx';
 import {fitRows, listFit, listPageSize} from './paging.ts';
@@ -16,8 +16,8 @@ function HistoryIcon({category, warning = false}: {category: ReturnType<typeof h
   </svg>;
 }
 
-function HistoryEntry({row, hidden}: {row: HistoryRow; hidden: boolean}): React.JSX.Element {
-  const face = historyFace(row), at = new Date(row.atMs);
+function HistoryEntry({row, open, hidden}: {row: HistoryRow; open: HistoryOpenSpan | undefined; hidden: boolean}): React.JSX.Element {
+  const face = historyFace(row, open), at = new Date(row.atMs);
   const close = (host: HTMLElement): void => {
     const entry = host.closest('details');if (entry === null) return;
     entry.open = false;entry.querySelector('summary')?.focus();
@@ -25,7 +25,7 @@ function HistoryEntry({row, hidden}: {row: HistoryRow; hidden: boolean}): React.
   return <li data-history-row={row.seq} data-history-kind={row.kind} data-paged-key={String(row.seq)} hidden={hidden}>
     <details className="timeline-entry" onKeyDown={event => {if (event.key === 'Escape') {event.stopPropagation();close(event.currentTarget);}}}>
       <summary><span className="timeline-mark" data-warning={face.warning}><HistoryIcon category={face.category} warning={face.warning}/></span>
-        <span className="timeline-face"><span className="timeline-title">{face.title}</span><span className="timeline-context">{face.context}</span></span>
+        <span className="timeline-face"><span className="timeline-title">{face.title}</span><span className="timeline-context">{face.context}</span>{face.notes?.map(note => <span className="timeline-note" key={note}>{note}</span>)}</span>
         <time dateTime={at.toISOString()} title={at.toLocaleString()}>{at.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}<span>{at.toLocaleDateString([], {month: 'short', day: 'numeric'})}</span></time>
         <span className="timeline-caret" aria-hidden="true">›</span>
       </summary>
@@ -44,10 +44,10 @@ export type TimelineCardProps = {
   pageSize?: number;
 };
 
-/** Read-only presentation, identical in a Home placement or the dedicated page. */
+/** Shared history entries for Home and the dedicated Timeline. */
 export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, headingId, connected = true, pageSize = listPageSize.timeline}: TimelineCardProps): React.JSX.Element {
   const uid = useId(), [category, setCategory] = useState<HistoryCategory>('All');
-  const rows = selectedHistory(snapshot.rows, category);
+  const rows = selectedHistory(snapshot.rows, category), open = openSpans(snapshot.rows, snapshot.open ?? [], category);
   const failure = snapshot.errorCode === 'invalid-request' ? 'Check filters (invalid-request)'
     : snapshot.errorCode === 'unauthenticated' ? 'Sign in again (unauthenticated)'
       : snapshot.errorCode === 'forbidden' ? 'Access denied (forbidden)'
@@ -80,8 +80,15 @@ export function TimelineCard({snapshot, period, onPeriod, onRefresh, advanced, h
     <p className={status === '' && box === undefined ? 'vh' : 'timeline-status'} role="status">{status !== '' ? status : box === undefined ? `${rows.length} history entries.` : <span className="vh">{rows.length} history entries.</span>}</p>
     {snapshot.readAt !== undefined && status === '' && shape === undefined && <p className="timeline-read-at">Latest {snapshot.rows.length} · Read {new Date(snapshot.readAt).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}</p>}
     <PagedList keys={rows.map(row => String(row.seq))} pageSize={size} pager={!oneRow} label="Timeline" resetKey={`${category}:${period}`}>{shown =>
-      <ol className="timeline-entries" aria-label="Activity entries">{rows.map(row => <HistoryEntry key={row.seq} row={row} hidden={!shown(String(row.seq))}/>)}</ol>}</PagedList>
+      <ol className="timeline-entries" aria-label="Activity entries">{rows.map(row => <HistoryEntry key={row.seq} row={row} open={open.byRow.get(row.seq)} hidden={!shown(String(row.seq))}/>)}</ol>}</PagedList>
     {rows.length === 0 && snapshot.phase === 'ready' && <p className="timeline-empty">No matches in these entries</p>}
+    {shape === undefined && open.unknownStarts.length > 0 && <section className="timeline-unknown-spans" aria-labelledby={`${uid}-unknown-starts`}>
+      <h3 id={`${uid}-unknown-starts`}>Open spans with unknown starts</h3>
+      <p className="timeline-context">For entities in the loaded entries. The last reading may be outside the selected period.</p>
+      <ul className="timeline-entries">{open.unknownStarts.map(({key, context, note}) => <li className="timeline-face" key={key}>
+        <span className="timeline-title">{context}</span><span className="timeline-note">{note}</span>
+      </li>)}</ul>
+    </section>}
     {shape === undefined && advanced}
   </div>;
 }

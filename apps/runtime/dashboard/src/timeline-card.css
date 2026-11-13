@@ -18,7 +18,11 @@
 .timeline-mark svg{width:20px;height:20px}
 .timeline-face{display:grid;gap:var(--space-xs);flex:1;min-width:0;overflow-wrap:anywhere}
 .timeline-title{font-weight:500}
-.timeline-context{color:var(--muted-dense);font-size:var(--type-label)}
+.timeline-context,.timeline-note{color:var(--muted-dense);font-size:var(--type-label)}
+.timeline-unknown-spans{margin:var(--space-m) 0;padding:var(--space-m);background:var(--inset);border-radius:var(--radius)}
+.timeline-unknown-spans h3{font-size:var(--type-small);margin:0 0 var(--space-xs)}
+.timeline-unknown-spans p{margin:0 0 var(--space-xs)}
+.timeline-unknown-spans li{padding:var(--space-s) 0}
 .timeline-entry time{font-size:var(--type-label);color:var(--muted-dense);text-align:right;font-variant-numeric:tabular-nums;flex-shrink:0}
 .timeline-entry time span{display:block;margin-top:var(--space-xs)}
 .timeline-caret{color:var(--muted-dense);font-size:var(--type-heading)}
