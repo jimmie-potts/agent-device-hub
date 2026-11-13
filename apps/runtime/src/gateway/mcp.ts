@@ -13,7 +13,7 @@ import {RETRYABLE, errorBody, type ErrorBody} from '@jimmie-potts/event-contract
 import {noSpans, startSpan, type ModuleTool, type SpanRecorder} from '@jimmie-potts/sdk';
 import {Ajv2020, type ValidateFunction} from 'ajv/dist/2020.js';
 import type {ActionAnswer} from '../core/tracker.js';
-import {ContributionFailed, ModuleUnavailable, type HostedModule} from '../host.js';
+import {CORE_MODULE, ContributionFailed, ModuleUnavailable, type HostedModule} from '../host.js';
 import type {Access} from './access.js';
 import {modeTool} from './mode-tool.js';
 import {artShowTool} from './art-show-tool.js';
@@ -91,11 +91,17 @@ function readTool(host: McpHost, module: string, tool: ModuleTool, check: Valida
       const answered = await bounded(host, module, () => tool.read(args));
       if ('refused' in answered) return refused(answered.refused);
       const value: unknown = answered.value;
-      // Nothing the module answers is served before the secret check, a refusal's detail included.
-      if (host.holdsSecret(JSON.stringify(value) ?? '')) return refused(errorBody('internal', {detail: 'the module\'s answer holds a secret, which the gateway never serves'}));
+      // Core history's new fixed open key is outside the payload. Only a schema-valid page gets separate scans.
+      const historyPage = module === CORE_MODULE && tool.name === 'history' &&
+        typeof value === 'object' && value !== null && 'rows' in value && 'open' in value && value.open !== undefined ? value : undefined;
+      const historyPageValid = historyPage === undefined ? undefined : check(historyPage);
+      const holdsSecret = historyPage !== undefined && historyPageValid === true
+        ? host.holdsSecret(JSON.stringify({rows: historyPage.rows})) || host.holdsSecret(JSON.stringify(historyPage.open))
+        : host.holdsSecret(JSON.stringify(value) ?? '');
+      if (holdsSecret) return refused(errorBody('internal', {detail: 'the module\'s answer holds a secret, which the gateway never serves'}));
       const refusal = refusedBody(value);
       if (refusal !== undefined) return refused(refusal);
-      if (!check(value)) return refused(errorBody('internal', {detail: 'the module answered outside its tool\'s schema'}));
+      if (!(historyPageValid ?? check(value))) return refused(errorBody('internal', {detail: 'the module answered outside its tool\'s schema'}));
       span.end();
       return {data: {result: value}};
     },

@@ -24,6 +24,96 @@ export function historyRows(value: unknown): HistoryRow[] | undefined {
   return rows as HistoryRow[];
 }
 
+/**
+ * An entity's open span, as the history read's optional `open` member gives it (#1773): the stretch its next row would
+ * close, from the reading that wrote the row at `revision` (or an unknown start) to its last confirmation. It is a past
+ * reading, never current state.
+ */
+export type HistoryOpenSpan = {source: string; family: string; id: string; revision: number; sinceAtMs: number | null; lastConfirmedAtMs: number; confirmations: number};
+const instant = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 8.64e15;
+const count = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
+
+/**
+ * The reply's open spans, or none: the member is optional, and one that does not hold exactly that shape is left out as
+ * a whole, so the rows read as they would without it.
+ */
+export function historyOpen(value: unknown): HistoryOpenSpan[] {
+  const open = object(value)?.open;
+  if (!Array.isArray(open)) return [];
+  const valid = (open as unknown[]).every(item => {
+    const span = object(item);
+    return span !== undefined && ['source', 'family', 'id'].every(key => typeof span[key] === 'string') && typeof span.revision === 'number' &&
+      Number.isSafeInteger(span.revision) && (span.sinceAtMs === null || instant(span.sinceAtMs)) && instant(span.lastConfirmedAtMs) && count(span.confirmations);
+  });
+  return valid ? open as HistoryOpenSpan[] : [];
+}
+
+/** Match known starts to rows. Unknown starts use a change row only for the entity's label and category. */
+export function openSpans(rows: readonly HistoryRow[], open: readonly HistoryOpenSpan[], category: HistoryCategory = 'All'): {
+  byRow: Map<number, HistoryOpenSpan>;
+  unknownStarts: {key: string; context: string; note: string}[];
+} {
+  const newest = new Map<string, HistoryRow>();
+  for (const row of rows) {
+    const family = text(row.record.family), id = text(row.record.id);
+    if (row.kind !== 'change' || family === undefined || id === undefined) continue;
+    const key = JSON.stringify([row.source, family, id]), held = newest.get(key);
+    if (held === undefined || held.seq < row.seq) newest.set(key, row);
+  }
+  const byRow = new Map<number, HistoryOpenSpan>();
+  const unknown: {key: string; context: string; span: HistoryOpenSpan}[] = [];
+  const contextCounts = new Map<string, number>();
+  for (const span of open) {
+    const key = JSON.stringify([span.source, span.family, span.id]);
+    const row = newest.get(key);
+    if (row === undefined) continue;
+    if (span.sinceAtMs === null) {
+      const face = historyFace(row);
+      if (category === 'All' || face.category === category) {
+        const context = `${face.context} · ${span.family}`;
+        unknown.push({key, context, span});
+        contextCounts.set(context, (contextCounts.get(context) ?? 0) + 1);
+      }
+    } else if (row.record.revision === span.revision && span.sinceAtMs === row.atMs) {
+      byRow.set(row.seq, span);
+    }
+  }
+  const unknownStarts = unknown.map(({key, context, span}) => ({
+    key, context: contextCounts.get(context) === 1 ? context : `${context} (${span.source}, ${span.id})`, note: openSpanNote(span, recordedAt),
+  }));
+  return {byRow, unknownStarts};
+}
+
+/** A length of time in the Timeline's short form: `45 s`, `12 min`, `4 h 29 min`, `3 d 2 h`; under a second is `less than 1 s`. */
+export function lengthOf(ms: number): string {
+  if (ms < 1000) return 'less than 1 s';
+  const seconds = Math.floor(ms / 1000), minutes = Math.floor(seconds / 60), hours = Math.floor(minutes / 60), days = Math.floor(hours / 24);
+  if (minutes === 0) return `${seconds} s`;
+  if (hours === 0) return `${minutes} min`;
+  if (days === 0) return minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`;
+  return hours % 24 === 0 ? `${days} d` : `${days} d ${hours % 24} h`;
+}
+const readings = (n: number): string => `${n.toLocaleString('en-US')} reading${n === 1 ? '' : 's'}`;
+/** A recorded instant as the Timeline writes it in a sentence: the date and the time of day, in the viewer's zone. */
+export const recordedAt = (atMs: number): string => new Date(atMs).toLocaleString([], {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
+
+/** The stretch a row closes: how long it held and how many readings history took in it, never a negative length. */
+function closed(span: Record<string, unknown>, at: (atMs: number) => string): string | undefined {
+  const {sinceAtMs, lastConfirmedAtMs, confirmations} = span;
+  if (!(sinceAtMs === null || instant(sinceAtMs)) || !instant(lastConfirmedAtMs) || !count(confirmations)) return undefined;
+  if (sinceAtMs === null) return `${readings(confirmations)} unchanged from an unknown start, the last at ${at(lastConfirmedAtMs)}`;
+  if (lastConfirmedAtMs < sinceAtMs) return `${readings(confirmations)} unchanged; the recorded times run backward, so no length is shown`;
+  return `${lengthOf(lastConfirmedAtMs - sinceAtMs)} unchanged, ${readings(confirmations)}`;
+}
+
+function openSpanNote(span: HistoryOpenSpan, at: (atMs: number) => string): string {
+  const {sinceAtMs, lastConfirmedAtMs, confirmations} = span;
+  const last = `last reading at ${at(lastConfirmedAtMs)}, ${readings(confirmations)}`;
+  if (sinceAtMs === null) return `Unchanged from an unknown start, ${last}`;
+  if (lastConfirmedAtMs < sinceAtMs) return `First reading at ${at(sinceAtMs)}, ${last}. The recorded times run backward.`;
+  return `Unchanged since ${at(sinceAtMs)}, ${last}`;
+}
+
 /** Local midnight boundaries account for 23/25-hour daylight-saving days. */
 export function historyQuery(period: HistoryPeriod, filters: HistoryFilters, now = new Date()): string {
   const query = new URLSearchParams({limit: '200'});
@@ -51,8 +141,14 @@ const commandNames: Readonly<Record<string, string>> = {
   'org.bunny.media.control.requested': 'Media control', 'org.bunny.playback.control.requested': 'Playback',
   'org.bunny.moment.play.requested': 'Moment', 'org.bunny.home-layout.set.requested': 'Home layout',
 };
-export type HistoryFace = {title: string; context: string; detail: string; category: Exclude<HistoryCategory, 'All'> | 'Hub'; warning: boolean};
-export function historyFace(row: HistoryRow): HistoryFace {
+/** How a row reads. `notes`, present only for a change row with a span, a gap, a closing row or an open span, are lines under the context. */
+export type HistoryFace = {title: string; context: string; detail: string; category: Exclude<HistoryCategory, 'All'> | 'Hub'; warning: boolean; notes?: string[]};
+const capital = (line: string): string => line.charAt(0).toUpperCase() + line.slice(1);
+/**
+ * `open` is the entity's open span when this row is the one it continues (`openSpans`); `at` writes a recorded instant.
+ * A row without a span, a gap, a closing mark or an open span reads exactly as before #1773.
+ */
+export function historyFace(row: HistoryRow, open?: HistoryOpenSpan, at: (atMs: number) => string = recordedAt): HistoryFace {
   const data = object(row.record.data) ?? row.record, changed = object(row.record.changed) ?? {};
   const family = text(row.record.family) ?? (row.kind === 'removal' ? text(object(data.entity)?.family) : undefined) ?? '';
   const automationDefinition = /^automation-(rule|routine|settings|interrupt-set)$/.test(family);
@@ -61,6 +157,7 @@ export function historyFace(row: HistoryRow): HistoryFace {
       : row.source.startsWith('bunny/modules/') || family === 'device' || data.kind === 'device' ? 'Devices' : 'Hub';
   const context = `${text(object(changed.label)?.value) ?? text(changed.label) ?? row.subject} · ${row.source.startsWith('bunny/modules/') ? row.source.slice('bunny/modules/'.length) : category}`;
   let title = `${row.kind} · ${row.subject}`, detail = 'Retained record. No current state is inferred.', warning = false;
+  const notes: string[] = [];
   if (row.kind === 'operation' || row.kind === 'outcome') {
     const action = commandNames[row.type] ?? (row.kind === 'operation' ? 'Command' : 'Result');
     const result = data.result, status = data.status;
@@ -87,12 +184,26 @@ export function historyFace(row: HistoryRow): HistoryFace {
     else if (family === 'device') title = 'Device updated';
     else title = `${family !== '' ? family : 'Record'} updated`;
     detail = 'This entry contains changed fields only; missing fields have no new evidence.';
+    const span = object(row.record.span), stretch = span === undefined ? undefined : closed(span, at), gapMs = row.record.gapMs;
+    if (row.record.closedBy === 'removal') {
+      title = 'Last readings before removal';
+      detail = 'This entry closes the readings that held the same state before the record was removed. It changes nothing.';
+      if (stretch !== undefined) notes.push(capital(stretch));
+    } else {
+      if (stretch !== undefined) notes.push(`After ${stretch}`);
+      if (typeof gapMs === 'number' && Number.isSafeInteger(gapMs) && gapMs > 0) {
+        title = 'Readings resumed';
+        detail = 'The recorded times show readings stopped and resumed. This entry does not say why.';
+        notes.push(`No reading for ${lengthOf(gapMs)}, then the same state`);
+      }
+    }
+    if (open !== undefined) notes.push(openSpanNote(open, at));
   } else if (row.kind === 'occurrence') {
     const names: Readonly<Record<string, string>> = {'org.bunny.attention.raised': 'Attention requested', 'org.bunny.attention.cleared': 'Attention cleared', 'org.bunny.turn.ended': 'Turn finished', 'org.bunny.session.ended': 'Session ended', 'org.bunny.moment.ended': 'Moment ended'};
     title = names[row.type] ?? 'Event recorded';
     detail = 'The source recorded this event at this time. It does not establish current state.';
   } else if (row.kind === 'removal') {title = 'Record removed';detail = 'This record was removed. No physical effect is implied.';}
-  return {title, context, detail, category, warning};
+  return notes.length === 0 ? {title, context, detail, category, warning} : {title, context, detail, category, warning, notes};
 }
 
 export function selectedHistory(rows: readonly HistoryRow[], category: HistoryCategory): HistoryRow[] {

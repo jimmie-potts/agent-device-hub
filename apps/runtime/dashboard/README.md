@@ -963,6 +963,13 @@ filters read the existing authenticated gateway, without polling or commands.
 Only the latest read can update results/status; superseded and unmounted reads
 are canceled. A failed refresh retains earlier rows with an unavailable label.
 Historical evidence never establishes current device state.
+Rows that close a stretch of unchanged readings (#1773) say how long the
+state held and how many readings history took. A gap row also describes the
+silence that followed. A matching open span on an entity's newest row shows
+its start and last reading as recorded instants. The dedicated Timeline lists
+open spans with unknown starts separately by entity and family, using the
+loaded entries and selected category. A Home-shape entry shows its row notes only when opened.
+See [the runtime README](../README.md) for the exact wording.
 After a build, `node apps/runtime/dashboard/tests/timeline-card.browser.ts`
 checks saved Home placement, passive browsing, evidence, failed reads, keyboard
 and light/dark desktop/phone layout. Unit checks cover malformed replies,

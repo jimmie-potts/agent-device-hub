@@ -137,11 +137,15 @@ selects no robot writer, verification or automatic resumption.
 
 [ADR 0008](decisions/0008-runtime-hosting.md) selects the Mac Mini as the primary,
 self-sufficient host, using the existing Linux ARM64 container on Docker Desktop.
-One runtime owns its core, fixed modules, private stores and serving endpoint.
-Keep its reviewed release and private persistent volumes separate from development
-checkouts and previews. The PC is an optional producer/client and host for
-explicitly PC-attached hardware; normal hub startup, storage, dashboard access and
-selected portable device integrations must work with it off.
+Each running host's runtime owns its core, fixed modules, private stores and
+serving endpoint. Keep its reviewed release and private persistent volumes
+separate from development checkouts and previews.
+[ADR 0015](decisions/0015-two-machine-runtime.md) defines which settings a
+standby can copy and how the owner transfers device control by hand. The PC is
+an optional producer, client, worker and host for explicitly PC-attached
+hardware. The owner must separately authorize a PC standby. Normal Mac
+startup, storage, dashboard access and selected portable device integrations
+must work while the PC sleeps, restarts or is off.
 
 Producers read their selected inputs on their own host and use the authenticated
 SDK HTTP/SSE edge. Do not mount a PC database into the Mac runtime or require a
@@ -153,8 +157,8 @@ The [Mac-local profile](bunny-container.md#mac-local-browser-profile) publishes
 only host loopback and keeps device control disabled. It does not establish remote
 access or production device operation. Those need qualification of the selected
 private route, credentials, Host/Origin policy, host-local producers and actual
-device targets. A production client route terminates on the Mac; it cannot depend
-on the WSL profile's Windows forwarder. Windows Docker Desktop remains an alternate
+device targets. The Mac's production client route terminates on the Mac without
+the WSL profile's Windows forwarder. Windows Docker Desktop remains an alternate
 host for the portable core, not a required intermediate production deployment.
 
 The [operating procedure](bunny-container.md#manual-operation-after-mac-sign-in)
@@ -168,7 +172,11 @@ the existing stop, backup, image replacement and separate restore operations.
 Cross-host cutover separately qualifies actual state/assets
 and native dependencies, retains the source, and stops/disables old writers and
 restart actors before transferring device ownership. Local leases do not fence
-other computers. There is no automatic failover or snapshot rollback.
+other computers. There is no automatic failover or snapshot rollback. For an
+authorized standby, the owner verifies the Mac core is stopped and its
+[start hold](bunny-container.md#hold-the-core-stopped) is set before enabling
+PC device control. On return, the owner verifies the PC writer is stopped
+before releasing the hold and restarting the Mac.
 
 Hosting review, October 22, 2026: the source diagram's core/module, SDK and gateway
 owners and edges are unchanged. Placement is specified here and in ADR 0008;
@@ -415,10 +423,9 @@ runs without device modules. The 1.x field mapping is in
   ([ADR 0012 amendment of 2026-11-11](decisions/0012-bunny-event-platform.md#amendment-2026-11-11)).
   The core's history is a fact log that a reader inside the core may read after
   a cursor it keeps ([#1740](https://github.com/jimmie-potts/agent-device-hub/issues/1740));
-  the read API and MCP tool return the same rows as before. A peer installation
-  reading it the same way is proposed in
-  [ADR 0015](decisions/0015-two-machine-runtime.md)
-  ([#1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723)).
+  the read API and MCP tool return the same rows as before. Under the accepted
+  stage 1 design in ADR 0015, a standby starts from a current settings
+  snapshot and reads committed settings facts after its cursor.
 - **History.** History keeps changes. Once
   [#1772](https://github.com/jimmie-potts/agent-device-hub/issues/1772) is
   merged and installed, it keeps a stretch of repeated readings that differ only

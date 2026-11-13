@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import type {BunnyModule} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/index.js';
+import {Redactions} from '../src/log.js';
+import {deviceRecord, deviceState} from './fixtures/device.js';
 import {Gadget, gadgetSchemas, setGadget} from './fixtures/gadget.js';
-import {edgeConfig, it, run, waitFor} from './support.js';
+import {contextOf, edgeConfig, fixture, flush, it, manualClock, run, waitFor} from './support.js';
 const operator = {source: 'bunny/parts/operator', token: 'synthetic-inbox-control', scopes: ['read', 'control'] as const};
 const reader = {source: 'bunny/parts/reader', token: 'synthetic-inbox-read', scopes: ['read'] as const};
 const ingest = {source: 'bunny/parts/ingest', token: 'synthetic-inbox-ingest', scopes: ['ingest'] as const};
@@ -10,7 +14,17 @@ it('gateway and MCP readers see the whole inbox/history; handling needs control 
   let handle: CoreHandle | undefined;
   const core = createCoreModule({parts: [{start: given => { handle = given; return Promise.resolve(); }}]});
   const gadget = new Gadget(), files = await edgeConfig(context, [operator, reader, ingest], {mcp: true});
-  const {runtime} = await run(context, {modules: [core, gadget.module()], configFile: files.config, edge: {schemas: gadgetSchemas}});
+  const publisher = fixture('synthetic-history-device');
+  const clock = manualClock(1_800_000_000_000), redactions = new Redactions();
+  let historyAnswer: object | undefined;
+  const tools = core.manifest.tools?.map(tool => tool.name === 'history' ? {...tool, read: (args: Parameters<typeof tool.read>[0]) => historyAnswer ?? tool.read(args)} : tool) ?? [];
+  const coreWithFixture = {...core, manifest: {...core.manifest, tools}};
+  const genericReader: BunnyModule = {...fixture('synthetic-history-reader'), manifest: {name: 'synthetic-history-reader', apiVersion: '1.2', tools: [{
+    name: 'history', description: 'Read a synthetic fixture.', input: {type: 'object', additionalProperties: false},
+    output: {type: 'object'}, read: () => ({open: []}),
+  }]}};
+  const {runtime} = await run(context, {modules: [coreWithFixture, gadget.module(), publisher, genericReader],
+    configFile: files.config, edge: {schemas: gadgetSchemas}, clock, scheduler: clock.scheduler, redactions});
   const call = async (path: string, token: string, body?: object, headers: Record<string, string> = {}) => {
     const response = await fetch(new URL(path, runtime.url), {method: body === undefined ? 'GET' : 'POST',
       headers: {authorization: `Bearer ${token}`, 'content-type': 'application/json', ...headers}, ...(body === undefined ? {} : {body: JSON.stringify(body)})});
@@ -47,9 +61,41 @@ it('gateway and MCP readers see the whole inbox/history; handling needs control 
   await call('/mcp', operator.token, {jsonrpc: '2.0', method: 'notifications/initialized'}, mcpHeaders);
   const tool = async (name: string, args: object) => (await call('/mcp', operator.token, {jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name, arguments: args}}, mcpHeaders)).body.result as {isError: boolean; structuredContent: {data: {result: {items?: unknown[]; rows?: unknown[]}}}};
   assert.equal((await tool('core_inbox', {})).structuredContent.data.result.items?.length, 2);
-  assert.equal((await tool('core_history', {kind: 'operation'})).structuredContent.data.result.rows?.length, 4);
-  const listed = (await call('/mcp', operator.token, {jsonrpc: '2.0', id: 3, method: 'tools/list'}, mcpHeaders)).body.result as {tools: {name: string; inputSchema: {properties: Record<string, unknown>}}[]};
+  const operationPage = (await tool('core_history', {kind: 'operation'})).structuredContent.data.result;
+  assert.deepEqual(operationPage, {rows: history});
+
+  const {sdk} = contextOf(publisher);
+  const device = deviceRecord('synthetic-lamp', 1, 'wemo', 'available');
+  const filter = {kind: 'change', source: sdk.source, limit: 1};
+  const historyPath = `/api/v2/history?${new URLSearchParams({...filter, limit: String(filter.limit)})}`;
+  const openingAt = clock.now();
+  await sdk.publish('bunny.state.device.synthetic-lamp', {kind: 'state', ...deviceState(device)});
+  await flush();
+  await flush();
+  const opening = await call(historyPath, reader.token);
+  assert.deepEqual(Object.keys(opening.body), ['schema', 'rows']);
+  assert.ok(Array.isArray(opening.body.rows));
+  assert.equal(opening.body.rows.length, 1, 'the opening row commits before the clock advances');
+  clock.advance(5000);
+  await sdk.publish('bunny.state.device.synthetic-lamp', {kind: 'state', ...deviceState({...device, revision: 2})});
+  await flush();
+  await flush();
+  const http = await call(historyPath, reader.token);
+  assert.equal(http.status, 200);
+  assert.ok(Array.isArray(http.body.rows));
+  assert.equal(http.body.rows.length, 1);
+  assert.deepEqual(http.body.open, [{source: sdk.source, family: 'device', id: device.id, revision: 1,
+    sinceAtMs: openingAt, lastConfirmedAtMs: clock.now(), confirmations: 2}]);
+  const mcp = await tool('core_history', filter);
+  assert.equal(mcp.isError, false);
+  assert.deepEqual(mcp.structuredContent.data.result, {rows: http.body.rows, open: http.body.open});
+  const listed = (await call('/mcp', operator.token, {jsonrpc: '2.0', id: 3, method: 'tools/list'}, mcpHeaders)).body.result as
+    {tools: {name: string; inputSchema: {properties: Record<string, unknown>}; outputSchema?: {additionalProperties?: unknown; properties?: Record<string, unknown>}}[]};
   assert.deepEqual(listed.tools.find(item => item.name === 'core_history')?.inputSchema.properties.limit, {type: 'integer', minimum: 1, maximum: 500});
+  // The MCP package embeds the gateway's closed `{result}|{error}` schema as `data`.
+  const published = listed.tools.find(item => item.name === 'core_history')?.outputSchema?.properties?.data as {additionalProperties?: unknown; properties?: Record<string, unknown>} | undefined;
+  assert.equal(published?.additionalProperties, false);
+  assert.deepEqual(published?.properties?.result, {type: 'object', additionalProperties: false, required: ['rows'], properties: {rows: {type: 'array'}, open: {type: 'array'}}, $id: 'urn:bunny:tool:core:history:output'});
   for (const limit of [1, 200, 500]) assert.deepEqual((await tool('core_history', {kind: 'operation', source: operator.source, limit})).structuredContent.data.result.rows, history.slice(-limit));
   for (const limit of [0, -1, 1.5, 501, '200', null, true]) {
     const refused = await tool('core_history', {limit});
@@ -62,6 +108,42 @@ it('gateway and MCP readers see the whole inbox/history; handling needs control 
   assert.equal((await call('/api/v2/commands/inbox-handle', operator.token, action)).status, 409);
   assert.ok(handle);
   assert.equal((await tool('core_inbox', {})).structuredContent.data.result.items?.length, 1, 'MCP observes shared handling');
+
+  const internal = async (name: string, args: object, detail: string) => {
+    const refused = await tool(name, args);
+    assert.equal(refused.isError, true);
+    assert.match(JSON.stringify(refused.structuredContent), /"code":"internal"/);
+    assert.match(JSON.stringify(refused.structuredContent), new RegExp(detail));
+  };
+  redactions.add('open');
+  const cleanHttp = await call(historyPath, reader.token);
+  assert.equal(cleanHttp.status, 200);
+  assert.deepEqual(cleanHttp.body, http.body);
+  const cleanMcp = await tool('core_history', filter);
+  assert.equal(cleanMcp.isError, false, 'the new fixed result key cannot cause a clean history page to be refused');
+  assert.deepEqual(cleanMcp.structuredContent.data.result, {rows: http.body.rows, open: http.body.open});
+  assert.deepEqual((await tool('core_history', {kind: 'operation'})).structuredContent.data.result, {rows: (await call('/api/v2/history?kind=operation', reader.token)).body.rows});
+  await internal('synthetic-history-reader_history', {}, 'holds a secret');
+
+  historyAnswer = {rows: [], open: undefined};
+  const nonJson = await tool('core_history', filter);
+  assert.equal(nonJson.isError, true);
+  assert.deepEqual(nonJson.structuredContent, {kind: 'gateway-error', code: 'transport-failure', priorEffects: 'none', retry: 'never-automatically'},
+    'an explicit undefined value remains a non-JSON result and is refused by MCP');
+  historyAnswer = {rows: [], open: 'malformed'};
+  await internal('core_history', filter, 'holds a secret');
+  historyAnswer = errorBody('unavailable', {detail: 'synthetic open refusal'});
+  await internal('core_history', filter, 'holds a secret');
+  historyAnswer = undefined;
+
+  const spanSecret = String(clock.now());
+  assert.ok(!JSON.stringify(http.body.rows).includes(spanSecret));
+  redactions.add(spanSecret);
+  await internal('core_history', filter, 'holds a secret');
+  assert.equal((await call(historyPath, reader.token)).status, 500);
+  redactions.add('rows');
+  await internal('core_history', {kind: 'operation'}, 'holds a secret');
+
 });
 
 
