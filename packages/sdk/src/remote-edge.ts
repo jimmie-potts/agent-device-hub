@@ -528,11 +528,13 @@ export class RemoteEdge {
         throw refuse('unavailable', standby.detail);
       }
       const parent = this.#requestTrace(request);
-      if ((route === 'subscribe' || route === 'close') && parent !== undefined) {
-        // Authenticate the connection before accepting a caller's context.
-        this.#connection(principal, body);
-        span = this.#subscriptionSpan(parent, route);
-        refusalTrace = span?.context;
+      if ((route === 'subscribe' || route === 'close') && parent !== undefined && body.endpoint === undefined) {
+        const connection = this.#connection(principal, body);
+        // Endpoint cleanup requires its capability. These spans cover ordinary subscriptions only.
+        if (route === 'subscribe' || connection.endpointId === undefined || body.id !== connection.endpointId) {
+          span = this.#subscriptionSpan(parent, route);
+          refusalTrace = span?.context;
+        }
       }
       // A remote part that stops waiting, because its copy or participant closed, drops the call.
       const dropped = new AbortController();

@@ -355,6 +355,34 @@ it('summarized read failures do not carry an individual request trace', async t 
   assert.deepEqual(failures, [{trace: reads[0], count: 1}, {trace: undefined, count: 6}]);
 });
 
+it('idle disconnect is untraced and a failed read keeps its own trace', async t => {
+  const clock = manualClock(at), receiver = new Receiver(clock.now);
+  await receiver.replace(initial(), null, {signal: new AbortController().signal, trace: childOf(undefined)});
+  const {peer, fake} = fakePeer();
+  const reads: TraceContext[] = [], failures: {code: string; trace: TraceContext | undefined}[] = [];
+  const follower = new SettingsFollower({receiver, clock, scheduler: clock.scheduler, signal: new AbortController().signal,
+    openPeer: () => Promise.resolve({...peer, page: (query, _signal, trace) => {
+      reads.push(trace);
+      return peer.page(query, _signal, trace);
+    }}),
+    failed: (code, trace) => { failures.push({code, trace}); },
+  });
+  t.after(() => follower.stop());
+  await flush();
+  assert.equal(follower.state, 'following');
+  assert.equal(reads.length, 1);
+  clock.advance(120_000);
+  fake.lose();
+  await flush();
+  assert.deepEqual(failures, [{code: 'unavailable', trace: undefined}]);
+
+  fake.readPage = () => { throw settingsFailure('forbidden'); };
+  clock.advance(1000);
+  await flush();
+  assert.equal(reads.length, 2);
+  assert.deepEqual(failures[1], {code: 'forbidden', trace: reads[1]});
+});
+
 it('a lost receipt resumes from the durable seal and rechecks a terminal metadata-only read', async t => {
   const clock = manualClock(at), receiver = new Receiver(clock.now);
   await receiver.replace(initial(), null, {signal: new AbortController().signal, trace: childOf(undefined)});

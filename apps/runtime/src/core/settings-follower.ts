@@ -188,7 +188,7 @@ export class SettingsFollower {
     return this.#task;
   }
 
-  #report(error: unknown, trace: TraceContext): boolean {
+  #report(error: unknown, trace: TraceContext | undefined): boolean {
     const refusal = error instanceof SdkError ? error.body.error : settingsFailure('unavailable').body.error;
     const {code, retryable} = refusal;
     const at = this.options.clock.now();
@@ -210,16 +210,18 @@ export class SettingsFollower {
       const signal = AbortSignal.any([stop, abort.signal]);
       const work: Work = {signal, observations: new Map(), comparisons: new Map(), complete: false, order: 0, busy: true, dirty: true, parent: undefined, wake: empty};
       let connection: Awaited<ReturnType<SettingsPeer['connect']>> | undefined;
-      let trace = this.#trace();
+      const connectionTrace = this.#trace();
+      let failureTrace: TraceContext | undefined = connectionTrace;
       try {
         const peer = await this.options.openPeer(signal);
         signal.throwIfAborted();
-        connection = await peer.connect(signal, () => { abort.abort(); }, trace);
+        connection = await peer.connect(signal, () => { abort.abort(); }, connectionTrace);
         for (const family of SETTINGS_FAMILIES) {
           signal.throwIfAborted();
           await connection.subscribe(`bunny.state.${family}.*`, message => { this.#signal(work, family, message); },
             {onOverflow: () => { this.#prompt(work); }});
         }
+        failureTrace = undefined;
         let state: SettingsProgress | null | undefined;
         while (!signal.aborted) {
           await wait(signal, wake => {
@@ -230,7 +232,8 @@ export class SettingsFollower {
           signal.throwIfAborted();
           work.dirty = false;
           work.busy = true;
-          trace = this.#trace(work.parent);
+          const trace = this.#trace(work.parent);
+          failureTrace = trace;
           work.parent = undefined;
           try {
             if (state === undefined || !work.complete) state = await this.#readCurrent(work, trace);
@@ -249,12 +252,13 @@ export class SettingsFollower {
           } finally {
             work.busy = false;
           }
+          failureTrace = undefined;
         }
         if (!stop.aborted) throw settingsFailure('unavailable');
       } catch (error) {
         if (stop.aborted) return;
         const failure = error instanceof SdkError && error.body.error.code !== 'cancelled' ? error : settingsFailure('unavailable');
-        if (!this.#report(failure, trace)) return;
+        if (!this.#report(failure, failureTrace)) return;
       } finally {
         abort.abort();
         await connection?.close().catch(() => {});

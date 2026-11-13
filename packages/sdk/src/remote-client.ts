@@ -460,10 +460,18 @@ class RemoteClient {
         if (result.schema !== REMOTE_SCHEMA || result.status !== 'subscribed') throw new SdkError(body('invalid-message', 'invalid subscription acknowledgment'));
       }
     } catch (error) {
-      this.#subscriptions.delete(id);
-      if (this.#lifetime !== undefined) stream?.abort();
-      await local.queue.close();
-      if (this.#lifetime === undefined) this.#forget(id);
+      if (this.#lifetime === undefined) {
+        this.#subscriptions.delete(id);
+        await local.queue.close();
+        this.#forget(id);
+      } else {
+        // The loss observer can close the participant before this handler finishes.
+        // Keep the retiring queue visible to shutdown until it drains.
+        const drained = local.queue.close();
+        stream?.abort();
+        await drained;
+        this.#subscriptions.delete(id);
+      }
       throw new SdkError(bodyOf(error));
     }
     return {close: () => this.#unregister(id, () => local.queue.close(), () => this.#subscriptions.delete(id))};

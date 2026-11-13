@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {childOf, connectRemote, REMOTE_PATH, REMOTE_SCHEMA, traceFields, type RemoteOptions, type SpanOptions} from '../src/index.js';
 import {frame} from '../src/remote-protocol.js';
-import {deferred, flush, it, manualClock} from './support.js';
+import {deferred, flush, it, manualClock, peek} from './support.js';
 import {startEdge} from './transports.js';
 
 it('the caller-owned subscription lifetime aborts an unfinished registration on loss', async context => {
@@ -177,11 +177,12 @@ it('the authenticated edge correlates stream, subscribe and close without tracin
   assert.equal(spans.length, 3);
 });
 
-it('a rejected registration retires transport before a pre-ack handler settles', async t => {
+it('a rejected registration retires transport and participant close waits for the pre-ack handler', async t => {
   const clock = manualClock(), ready = deferred<ReadableStreamDefaultController<Uint8Array>>();
   const acknowledgment = deferred<Response>(), entered = deferred<void>(), finish = deferred<void>();
   const encoder = new TextEncoder();
   let streamSignal: AbortSignal | null | undefined, lost = 0;
+  let closing: Promise<string> | undefined;
   t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
     if (url.endsWith('/stream')) {
       streamSignal = init.signal;
@@ -200,7 +201,10 @@ it('a rejected registration retires transport before a pre-ack handler settles',
   });
   const client = await connectRemote({url: 'https://peer.invalid', source: 'bunny/parts/reader', token: 'synthetic',
     scheduler: clock.scheduler, liveness: clock.scheduler,
-    lifetime: {signal: new AbortController().signal, onLost: () => { lost += 1; }}});
+    lifetime: {signal: new AbortController().signal, onLost: () => {
+      lost += 1;
+      closing = client.close().then(() => 'closed');
+    }}});
   t.after(async () => { finish.resolve(); await client.close(); });
   const result = assert.rejects(client.subscribe('bunny.state.mode.*', async () => {
     entered.resolve();
@@ -210,8 +214,14 @@ it('a rejected registration retires transport before a pre-ack handler settles',
   acknowledgment.resolve(Response.json({schema: REMOTE_SCHEMA, status: 'wrong'}));
   await flush();
   const abortedWhileEntered = streamSignal?.aborted, lossWhileEntered = lost;
+  const closedWhileEntered = closing === undefined ? undefined : await peek(closing);
+  const refusedWhileEntered = await peek(result.then(() => 'refused'));
   finish.resolve();
   await result;
   assert.equal(abortedWhileEntered, true);
   assert.equal(lossWhileEntered, 1);
+  assert.equal(closedWhileEntered, undefined);
+  assert.equal(refusedWhileEntered, undefined);
+  assert.equal(await closing, 'closed');
+  assert.equal(lost, 1);
 });
