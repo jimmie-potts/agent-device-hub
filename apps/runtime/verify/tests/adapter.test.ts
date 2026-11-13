@@ -102,6 +102,101 @@ function intercept(context: {after: (fn: () => void) => void}, around: (request:
   context.after(() => { globalThis.fetch = real; });
 }
 
+void test('the chime scenario completes its fault setup before publishing the approval', {timeout: 30_000}, async context => {
+  const selected = scenario('module-fails-others-continue');
+  assert.ok(selected);
+  const run = await startRun(context, await base(context), selected.id);
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed: selected.seed});
+  context.after(() => h.close());
+  const control = gate(), release = gate();
+  let applied = false, setupFinished = false, setupFinishedBeforeControl = false;
+  const approvalAfterControl: boolean[] = [];
+  intercept(context, async request => {
+    if (request.url.endsWith('/simulate')) {
+      control.open();
+      await release.opened;
+    }
+    if (request.source === sourceOf('hook') && request.url.endsWith('/publish')
+      && typeof request.body === 'string' && request.body.includes('attention-approval')) {
+      approvalAfterControl.push(applied);
+    }
+  }, (request, response) => {
+    if (request.url.endsWith('/simulate')) applied = response.ok;
+    return response;
+  });
+  const result = runScenario(selected, h, ({name}) => {
+    if (name === selected.steps[0]?.name) {
+      setupFinished = true;
+      setupFinishedBeforeControl = !applied;
+    }
+  });
+  let finishedWhileHeld: boolean;
+  try {
+    await Promise.race([control.opened, result]);
+    // A step that returns without awaiting the control finishes in the current turn, even if the SDK edge is busy.
+    await turns(1);
+    finishedWhileHeld = setupFinished;
+  } finally {
+    release.open();
+  }
+  const verdict = await result;
+  assert.equal(finishedWhileHeld, false, 'the setup step is still waiting while the real control is held');
+  assert.equal(setupFinishedBeforeControl, false);
+  assert.deepEqual(approvalAfterControl, [true], JSON.stringify(verdict));
+  assert.equal(verdict.outcome, 'passed', JSON.stringify(verdict));
+  assert.equal(h.devices().chime.rings.length, 0);
+  assert.ok(h.logs().some(({generation, record}) => generation === 1 && record.event_name === 'runtime.module.failed'
+    && record.attributes['bunny.module'] === 'chime' && record.attributes['bunny.phase'] === 'handler'));
+});
+
+void test('closing one part lets its active handler finish an SDK publish from a different part', {timeout: 25_000}, async context => {
+  const selected = scenario('reconnect-and-sync');
+  assert.ok(selected);
+  const run = await startRun(context, await base(context), selected.id);
+  const h = await connectRun({url: run.url, harness: run.harness, dataDir: run.dataDir, seed: selected.seed});
+  assert.equal(h.clock, 'virtual');
+
+  const entered = gate(), resume = gate();
+  let closing: Promise<void> | undefined, closed = false, published = false;
+  const {key} = observation(sessionStarted, h.now());
+  const publish = async (): Promise<void> => {
+    const {draft} = observation(sessionStarted, h.now());
+    await h.sdk('hook').publish(key, draft);
+  };
+  try {
+    await h.sdk('reader').subscribe(key, async () => {
+      entered.open();
+      await resume.opened;
+      await publish();
+      published = true;
+    });
+    await publish();
+    await entered.opened;
+
+    closing = h.closePart('reader').then(() => { closed = true; });
+    await turns(1);
+    assert.throws(() => h.sdk('reader'), {message: 'the reader is not connected'});
+    assert.equal(closed, false, 'the close is waiting for the handler');
+    resume.open();
+
+    const deadline = AbortSignal.timeout(4000);
+    const expired = gate();
+    deadline.addEventListener('abort', expired.open, {once: true});
+    try {
+      await Promise.race([closing, expired.opened]);
+      assert.equal(closed, true, 'the handler publish and reader close both finish');
+      assert.equal(published, true, 'the hook SDK publication answered');
+    } finally {
+      deadline.removeEventListener('abort', expired.open);
+    }
+  } finally {
+    resume.open();
+    // A failed close can leave Run.close waiting on that same action.
+    if (closing === undefined || closed) await h.close();
+    assert.deepEqual(await run.stop(), {code: 0, signal: null});
+  }
+});
+
 /**
  * Turns of the event loop until the run's time has passed `bound` and then stood still for a thousand turns, which an
  * expectation in overtime gives it, or `stop()` says so.
@@ -511,8 +606,13 @@ void test('a later duplicate preserves the captured trace of the original action
   assert.ok(seed);
   const run = await startRun(context, await base(context), 'reconnect-and-sync');
   const heldFrame = gate();
-  let armed = false;
-  intercept(context, () => {}, (request, response) => {
+  const observations: boolean[] = [];
+  let armed = false, frameReleased = false;
+  intercept(context, () => {}, async (request, response) => {
+    if (request.url.endsWith('/clock/advance') && request.body === '{"ms":0}') {
+      const state = await response.clone().json() as {busy: boolean};
+      observations.push(state.busy);
+    }
     if (!request.url.endsWith('/stream') || request.source !== sourceOf('reader') || response.body === null) return response;
     const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
       async transform(chunk, controller) {
@@ -531,10 +631,11 @@ void test('a later duplicate preserves the captured trace of the original action
   context.after(() => h.close());
   let original: Promise<string> | undefined, checks = 0;
   const reachedBound = gate();
+  let settled = false;
   armed = true;
   const result = runScenario({id: 'duplicate-admission', title: 'duplicate admission', seed, steps: [
     act('an original named action waits for the reply', async h => {
-      h.simulate({device: 'lamp', action: 'hold'});
+      void h.simulate({device: 'lamp', action: 'hold'});
       original = h.dispatch('operator', 'original', switchLamp('lamp-1', 'on'), 'req-shared');
       for (let i = 0; h.devices().lamp.calls.length === 0 && i < 100; i++) {
         await h.gateway({as: 'anonymous', method: 'GET', path: HEALTH_PATH});
@@ -545,25 +646,42 @@ void test('a later duplicate preserves the captured trace of the original action
     expect('the reader saw the original action\'s state', async h => {
       checks += 1;
       if (checks === 1) {
+        assert.equal(observations.at(-1), true, 'the child was waiting for the lamp at the bound');
+        assert.equal(h.published().some(({message}) => message.type === 'org.bunny.lamp.switched'), false,
+          'the bound check captured no publication of the original switch');
         const records = h.logs().filter(({record}) => record.event_name.endsWith('command.queued')
           && record.attributes['bunny.request.id'] === 'req-shared');
         assert.equal(new Set(records.map(({record}) => record.trace_id).filter(trace => trace !== undefined)).size, 1,
           'the original trace was known before the duplicate started');
         assert.equal(await h.dispatch('operator', 'duplicate', switchLamp('lamp-1', 'on'), 'req-shared'), 'uncertain-result');
-        h.simulate({device: 'lamp', action: 'release'});
+        void h.simulate({device: 'lamp', action: 'release'});
         assert.equal(await original, 'accepted');
+        assert.ok(h.published().some(({message}) => message.type === 'org.bunny.lamp.switched'),
+          'the switch was published only after the first check began');
         reachedBound.open();
+      } else if (checks === 2) {
+        assert.equal(observations.at(-1), false, 'the child finished while the reader frame was held');
+        assert.equal(frameReleased, false);
+        assert.equal(copiedPower(h), 'off');
+      } else {
+        assert.equal(checks, 3);
+        assert.equal(frameReleased, true);
       }
       return copiedPower(h) === 'on' || 'the reader still sees the lamp off';
     }, 0),
-  ]}, h);
+  ]}, h).then(verdict => {
+    settled = true;
+    return verdict;
+  });
   try {
     await Promise.race([reachedBound.opened, result]);
     await Promise.race([awaitingDelivery.opened, result]);
-    const checksBeforeFrame = checks;
+    assert.equal(checks, 2, 'only the child-idle recheck happened while the reader frame was held');
+    assert.equal(settled, false, 'the original admission still requires delivery');
+    frameReleased = true;
     heldFrame.open();
     const verdict = await result;
-    assert.equal(checksBeforeFrame, 1, JSON.stringify(verdict));
+    assert.equal(checks, 3, JSON.stringify(verdict));
     assert.equal(verdict.outcome, 'passed', JSON.stringify(verdict));
   } finally {
     heldFrame.open();
@@ -895,7 +1013,7 @@ void test('a raw inbox request cannot supply trace evidence for a pending HTTP r
       return clock.scheduler.after(delay, callback);
     }}}});
   context.after(() => h.close());
-  h.simulate({device: 'lamp', action: 'fail-next'});
+  void h.simulate({device: 'lamp', action: 'fail-next'});
   assert.equal(await h.dispatch('operator', 'failed', switchLamp('lamp-1', 'on'), 'req-failed-for-inbox'), 'accepted');
   await h.wait(100);
   const [item] = h.reader.states<{id: string; revision: number}>('inbox-item');

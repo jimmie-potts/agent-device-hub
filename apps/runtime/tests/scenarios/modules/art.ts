@@ -60,7 +60,7 @@ export const scenarios: readonly Scenario[] = [{
     }, 4000),
     act('an explicit favorite edit asks the synthetic caller to submit the identical pending plan again', h => command(h, 'art-catalog-edit', 'shared-art-duplicate', {action: 'favorite', artworkId: created(h, 'shared-art-seed'), favorite: true})),
     expect('duplicate intent is observed without another moment operation', async h => (await fixture(h))?.duplicates === 1 && moments(h).length === 2 || 'duplicate intent changed the operation count'),
-    act('the synthetic Pixoo disconnects before the planned start', h => {h.simulate({device: 'pixoo', action: 'offline'});}),
+    act('the synthetic Pixoo disconnects before the planned start', h => {void h.simulate({device: 'pixoo', action: 'offline'});}),
     expect('the browser commits the original exact composition at the common start', async h => {
       const proof = await fixture(h), current = sharedState(h);
       if (proof?.failure !== undefined) return proof.failure;
@@ -154,7 +154,7 @@ export const scenarios: readonly Scenario[] = [{
   steps: [
     expect('core and art are running', h => running(h, ['core', 'art'])),
     ...(['warm', 'cool'] as const).flatMap(colors => [
-      act(`prepare a synthetic ${colors} browser composition`, async h => {h.simulate({device: 'art', action: `${colors}-colors`});await request(h, `art-theme-${colors}`);}),
+      act(`prepare a synthetic ${colors} browser composition`, async h => {void h.simulate({device: 'art', action: `${colors}-colors`});await request(h, `art-theme-${colors}`);}),
       ended(`art-theme-${colors}`, 'succeeded'),
     ]),
     expect('two decoded compositions have distinct pixel-derived palettes', h => {
@@ -209,7 +209,7 @@ export const scenarios: readonly Scenario[] = [{
     act('the owner requests a variation of the saved idea', h => request(h, 'art-variation', ['ui'], {purpose: 'variation', variationOf: created(h, 'art-original'), text: 'Make the moon red'})),
     ended('art-variation', 'succeeded'),
     expect('variation retains the source artwork identity', h => artwork(h, 'art-variation')?.variationOf === created(h, 'art-original') || 'variation identity missing'),
-    act('the synthetic provider returns an invalid image for a new request', async h => {h.simulate({device: 'art', action: 'invalid-next'}); await request(h, 'art-invalid');}),
+    act('the synthetic provider returns an invalid image for a new request', async h => {void h.simulate({device: 'art', action: 'invalid-next'}); await request(h, 'art-invalid');}),
     ended('art-invalid', 'failed'),
     expect('invalid bytes are refused and their reported usage remains spent', h => job(h, 'art-invalid')?.targets[0]?.reason === 'invalid-output' && calls(h).imageCalls === 5 &&
       state(h)?.providers.find(provider => provider.provider === 'openai')?.spentMicros === 17_500 || 'invalid output was accepted, retried or refunded'),
@@ -225,12 +225,12 @@ export const scenarios: readonly Scenario[] = [{
       const response = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/art-request', body: {target: 'art', requestId: 'art-deleted-variation', data: {action: 'start', purpose: 'variation', origin: {kind: 'owner'}, targets: ['ui'], variationOf: created(h, 'art-newest')}}});
       return artwork(h, 'art-newest') === undefined ? refusedWith(response, 404, 'not-found') : 'deleted artwork remains visible';
     }),
-    act('an image response is lost', async h => {h.simulate({device: 'art', action: 'lose-next'}); await request(h, 'art-lost');}),
+    act('an image response is lost', async h => {void h.simulate({device: 'art', action: 'lose-next'}); await request(h, 'art-lost');}),
     ended('art-lost', 'uncertain'),
     expect('the lost response keeps uncertain spend', h => (state(h)?.providers.find(provider => provider.provider === 'openai')?.uncertainMicros ?? 0) > 0 || 'lost usage was refunded'),
-    act('a provider holds the next image while the runtime stops', async h => {h.simulate({device: 'art', action: 'hold'}); await request(h, 'art-interrupted');}),
+    act('a provider holds the next image while the runtime stops', async h => {void h.simulate({device: 'art', action: 'hold'}); await request(h, 'art-interrupted');}),
     expect('one synthetic image call is in flight', h => calls(h).pending === 1 || 'no held image'),
-    act('the runtime restarts on the same private art store', async h => {initialCalls.set(h, calls(h).imageCalls); await h.restart(); h.simulate({device: 'art', action: 'release'});}),
+    act('the runtime restarts on the same private art store', async h => {initialCalls.set(h, calls(h).imageCalls); await h.restart(); void h.simulate({device: 'art', action: 'release'});}),
     ended('art-interrupted', 'uncertain'),
     expect('the favorite survives restart with readable original renditions', async h => {
       const original = artwork(h, 'art-original'), ref = original?.compositions.find(value => value.target === 'ui')?.renditions[0]?.ref;

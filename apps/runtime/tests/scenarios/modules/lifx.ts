@@ -99,7 +99,7 @@ const lifxBulbs: Scenario = {
       dispatchOnce(h, 'operator', 'color', bulbCommand('lifx-color-set', 'org.bunny.lifx-color.set.requested', 'pendant-1', {hue: 120, saturation: 100}), 'req-color')),
     expect('pendant-1 shows green, and history holds req-color succeeded', async h =>
       pendantShows(h, {hue: 120, saturation: 100}) === true ? (await recorded(h, 'req-color', 'succeeded', 'transmitted')) : pendantShows(h, {hue: 120, saturation: 100})),
-    act('pendant-1 is switched off at the wall', h => { h.simulate({device: 'lifx', action: 'offline', address: PENDANT_AT}); }),
+    act('pendant-1 is switched off at the wall', h => { void h.simulate({device: 'lifx', action: 'offline', address: PENDANT_AT}); }),
     act('the operator switches pendant-1 off as req-off; the module accepts it', h =>
       dispatchOnce(h, 'operator', 'off', bulbCommand('power-set', 'org.bunny.power.set.requested', 'pendant-1', {on: false}), 'req-off')),
     expect('history holds req-off uncertain, with no evidence it reached the bulb, and the inbox holds it', async h => {

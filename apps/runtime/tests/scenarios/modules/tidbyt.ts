@@ -100,21 +100,21 @@ const tidbytTiles: Scenario = {
     holds('the burst pushes nothing more inside the gate', h => tile(h, STATUS_TILE)?.pushes === 1 || `${String(tile(h, STATUS_TILE)?.pushes)} pushes`, 9000),
     expect('once the gate opens, one push shows the latest state: the session asking', h => statusShown(h, 2), 9000),
     expect('the two pushes are at least 15 seconds apart', h => gaps(h, STATUS_TILE).every(gap => gap >= TILE_GATE_MS) || show(gaps(h, STATUS_TILE))),
-    act('the phone plays a song to the Move', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'Move Song'}); }),
+    act('the phone plays a song to the Move', h => { void h.simulate({device: 'playback', speaker: 'sonos', action: 'play', title: 'Move Song'}); }),
     expect('the now-playing tile shows the song, behind its own gate', h => cardShown(h, 1), 8000),
     holds('the song plays on past the card\'s 15-second gate, and nothing more is written to it', h => cardStood(h), TILE_GATE_MS + 1000),
     // A restart while the song plays, with the Move answering late: the HT-A9, on another input, answers first. The
     // playback record waits for the Move's first read, so nothing tells the Tidbyt module the song stopped.
-    act('the Move answers each call 400 ms late', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'slow'}); }),
+    act('the Move answers each call 400 ms late', h => { void h.simulate({device: 'playback', speaker: 'sonos', action: 'slow'}); }),
     act('the runtime restarts cleanly while the song plays', h => h.restart()),
     holds('through the restart and the Move\'s slow first read, the card is never removed or pushed again', h => cardStood(h), 3000),
     expect('the reader\'s playback record shows the song playing on the Move', h => playbackShows(h, 'available playing "Move Song" [pause,next,previous]')),
-    act('the Move answers at once again', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'answer'}); }),
+    act('the Move answers at once again', h => { void h.simulate({device: 'playback', speaker: 'sonos', action: 'answer'}); }),
     expect('once its gate opens, the status tile shows the session dimmed as uncertain after the restart', h => statusShown(h, 3), 18_000),
-    act('the phone pauses the Move', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'pause'}); }),
+    act('the phone pauses the Move', h => { void h.simulate({device: 'playback', speaker: 'sonos', action: 'pause'}); }),
     expect('the reader\'s playback record shows the song paused', h => playbackShows(h, 'available paused "Move Song" [play,next,previous]'), 6000),
     expect('once its gate opens, the now-playing tile shows the pause marker', h => cardShown(h, 2), 18_000),
-    act('the phone stops the Move', h => { h.simulate({device: 'playback', speaker: 'sonos', action: 'stop'}); }),
+    act('the phone stops the Move', h => { void h.simulate({device: 'playback', speaker: 'sonos', action: 'stop'}); }),
     expect('the now-playing tile leaves the rotation, and the status tile stays', h =>
       (tile(h, CARD_TILE) === undefined && tile(h, STATUS_TILE) !== undefined) || `installations ${show(Object.keys(cloudState(h).installations))}`, 18_000),
     expect('every push of each tile was at least 15 seconds after the one before', h =>

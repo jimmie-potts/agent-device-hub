@@ -7,7 +7,7 @@ import {act, answers, bodyOf, dispatchOnce, expect, holds, recorded, running, ty
 const OWNER = 'bunny/modules/volcano';
 const status = (h: Harness): VolcanoStatus | undefined => h.reader.states<VolcanoStatus>('volcano-status', OWNER).find(value => value.subject === 'volcano')?.data;
 const device = (h: Harness): DeviceRecord | undefined => h.reader.states<DeviceRecord>('device', OWNER).find(value => value.subject === 'volcano')?.data;
-const button = (action: string, fields: Record<string, unknown> = {}) => (h: Harness): void => { h.simulate({device: 'volcano', action, ...fields}); };
+const button = (action: string, fields: Record<string, unknown> = {}) => (h: Harness): void => { void h.simulate({device: 'volcano', action, ...fields}); };
 const sessions = (check: (found: readonly Session[], gapMinutes: number) => true | string, query = '') =>
   answers({as: 'reader', method: 'GET', path: `/modules/volcano/content/sessions${query}`}, answer => {
     if (answer.status !== 200) return `sessions read ${String(answer.status)}`;

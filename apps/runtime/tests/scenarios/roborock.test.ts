@@ -92,7 +92,7 @@ for (const transport of TRANSPORTS) {
       h.restart = async () => {restarted = true; await restart();};
       h.simulate = value => {
         if (value.device === 'roborock' && value.action === 'empty-history') recoveryAt = h.now();
-        simulate(value);
+        void simulate(value);
       };
       h.reader.states = <T>(family: string, owner?: string): Message<T>[] => {
         const records = states<T>(family, owner);
@@ -222,7 +222,7 @@ for (const transport of TRANSPORTS) {
         offlineActions += 1;
       }
       if (value.device === 'roborock' && value.action === 'empty-history') recovered = true;
-      simulate(value);
+      void simulate(value);
     };
     h.reader.states = <T>(family: string, owner?: string): Message<T>[] => {
       const records = states<T>(family, owner);
@@ -255,7 +255,7 @@ for (const transport of TRANSPORTS) {
       h.simulate = value => {
         if (value.device === 'roborock' && value.action === 'offline') unavailableAt = h.now();
         if (value.device === 'roborock' && value.action === 'empty-history') recovered = true;
-        simulate(value);
+        void simulate(value);
       };
       h.reader.states = <T>(family: string, owner?: string): Message<T>[] => {
         const records = states<T>(family, owner);

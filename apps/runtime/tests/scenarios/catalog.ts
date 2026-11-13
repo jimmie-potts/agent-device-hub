@@ -147,7 +147,7 @@ const commandWithTrackedOutcome: Scenario = {
       show(tracked(h, 'req-on')) === show(['command.queued INFO queued', 'command.admitted INFO accepted', 'command.completed INFO succeeded']) || show(tracked(h, 'req-on'))),
     expect('the reader\'s copy shows lamp-1 on', h => copied(h, 'on')),
     expect('the core acknowledged the outcome, and the lamp forgot it', h => acknowledgments(h) === 1 || `${acknowledgments(h)} acknowledgments`),
-    act('the lamp cannot be reached for its next switch', h => { h.simulate({device: 'lamp', action: 'fail-next'}); }),
+    act('the lamp cannot be reached for its next switch', h => { void h.simulate({device: 'lamp', action: 'fail-next'}); }),
     act('the operator switches lamp-1 off as req-off; the lamp accepts it', h => dispatchOnce(h, 'operator', 'off', switchLamp('lamp-1', 'off'), 'req-off')),
     expect('history holds a failed outcome for req-off, with no evidence it reached the device', async h => (await recorded(h, 'req-off', 'failed', 'none'))),
     expect('the inbox holds the failed operation', h => failedOperation(h, 'req-off')),
@@ -161,7 +161,7 @@ const moduleFailsOthersContinue: Scenario = {
   title: 'a module fails while the others continue',
   seed: {modules: ['core', 'lamp', 'chime'], follows: FOLLOW_ALL},
   steps: [
-    act('the chime\'s next ring hits a fault it does not handle', h => { h.simulate({device: 'chime', action: 'fault-next'}); }),
+    act('the chime\'s next ring hits a fault it does not handle', h => h.simulate({device: 'chime', action: 'fault-next'})),
     ...theApproval,
     expect('the chime failed, and health says so', async h => {
       const chime = (await h.health()).find(module => module.name === 'chime');
@@ -324,13 +324,13 @@ const endToEnd: Scenario = {
       return (duplicate === 1 && received(h, 'req-1') === 1) || `${duplicate} duplicate records, the lamp received req-1 ${received(h, 'req-1')} times`;
     }),
 
-    act('the lamp cannot be reached for its next switch', h => { h.simulate({device: 'lamp', action: 'fail-next'}); }),
+    act('the lamp cannot be reached for its next switch', h => { void h.simulate({device: 'lamp', action: 'fail-next'}); }),
     act('the operator switches lamp-1 off as req-fail; the lamp accepts it', h => dispatchOnce(h, 'operator', 'fail', switchLamp('lamp-1', 'off'), 'req-fail')),
     expect('history holds a failed outcome for req-fail, with no evidence it reached the device', async h => (await recorded(h, 'req-fail', 'failed', 'none'))),
     expect('the inbox holds req-fail as a failed operation, and the reader reads it', h => failedOperation(h, 'req-fail')),
     holds('lamp-1 stays on, and the device got no switch for req-fail', h => (lampPower(h, 'on') === true && switches(h) === 1) || `${switches(h)} switches`, 300),
 
-    act('the lamp\'s device holds every switch until released', h => { h.simulate({device: 'lamp', action: 'hold'}); }),
+    act('the lamp\'s device holds every switch until released', h => { void h.simulate({device: 'lamp', action: 'hold'}); }),
     act('the operator switches lamp-1 off as req-held', h => { void h.dispatch('operator', 'held', switchLamp('lamp-1', 'off'), 'req-held'); }),
     expect('the device has req-held and holds it', h => (h.devices().lamp.held && switches(h) === 2) || `held ${String(h.devices().lamp.held)}, ${switches(h)} switches`),
     act('the operator sends req-queued behind it', h => { void h.dispatch('operator', 'queued', switchLamp('lamp-1', 'on'), 'req-queued'); }),
@@ -343,7 +343,7 @@ const endToEnd: Scenario = {
       const items = [...inboxOf(h, 'req-queued'), ...inboxOf(h, 'req-held')].map(item => `${item.result} ${String(item.error?.code)}`);
       return queued !== true ? queued : held !== true ? held : show(items) === show(['failed expired', 'uncertain uncertain-result']) || `inbox ${show(items)}`;
     }),
-    act('the device answers', h => { h.simulate({device: 'lamp', action: 'release'}); }),
+    act('the device answers', h => { void h.simulate({device: 'lamp', action: 'release'}); }),
     expect('lamp-1 turns off, and history records req-held\'s late outcome beside its uncertain end', async h =>
       lampPower(h, 'off') === true ? (await recorded(h, 'req-held', 'succeeded', 'observed')) : lampPower(h, 'off')),
     expect('the late outcome completes req-held\'s record, and nothing was sent again', h => {
@@ -445,7 +445,7 @@ const configuredModule: Scenario = {
     expect('the core and the sign are running, though the sign is offline', h => running(h, ['core', 'sign'])),
     expect('the reader\'s copy shows sign-1 unavailable once the sign\'s deadline passed', h => signShows(h, 'unavailable'), 5000),
     holds('the sign shows nothing while it is offline', h => Object.keys(h.devices().sign.shown).length === 0 || `shown ${show(h.devices().sign.shown)}`, 300),
-    act('the sign comes online', h => { h.simulate({device: 'sign', action: 'online'}); }),
+    act('the sign comes online', h => { void h.simulate({device: 'sign', action: 'online'}); }),
     expect('the reader\'s copy shows sign-1 available', h => signShows(h, 'available'), 10_000),
     expect('the sign shows the configured greeting, rendered in a worker thread and sent with the token from the secret file', h => {
       const {shown, refused} = h.devices().sign;
@@ -531,7 +531,7 @@ const deviceOwners: Scenario = {
     }),
     expect('the reader\'s copy from the lamp holds lamp-1 only', h => holdsDevices(h, LAMP_OWNER, ['lamp-1 unknown'])),
     expect('the reader\'s copy from the sign holds sign-1 only, unavailable once the sign\'s deadline passed', h => holdsDevices(h, SIGN_OWNER, ['sign-1 unavailable']), 5000),
-    act('the sign comes online', h => { h.simulate({device: 'sign', action: 'online'}); }),
+    act('the sign comes online', h => { void h.simulate({device: 'sign', action: 'online'}); }),
     expect('the copy from the sign shows sign-1 available', h => holdsDevices(h, SIGN_OWNER, ['sign-1 available']), 10_000),
     holds('the copy from the lamp still holds lamp-1 only, and each copy synced once', h => {
       const lamp = holdsDevices(h, LAMP_OWNER, ['lamp-1 unknown']);

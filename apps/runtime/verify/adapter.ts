@@ -362,8 +362,8 @@ class Run implements RunHarness {
     return this.#state.devices;
   }
 
-  simulate(simulation: Simulation): void {
-    void this.#act(() => this.#post('simulate', simulation));
+  simulate(simulation: Simulation): Promise<void> {
+    return this.#act(() => this.#post('simulate', simulation));
   }
 
   async health(): Promise<readonly ModuleHealth[]> {
@@ -716,7 +716,7 @@ class Run implements RunHarness {
   /** Each part's wrapper, so that on virtual time `sdk` answers the same object for the same part, as on the real clock. */
   readonly #wrapped = new WeakMap<Participant, Participant>();
 
-  /** The participant, each of whose calls first sends the run the time it is owed, on virtual time. */
+  /** On virtual time, a part's calls first send the run any time it is owed. */
   #caughtUp(role: Role, participant: Participant): Participant {
     const known = this.#wrapped.get(participant);
     if (known !== undefined) return known;

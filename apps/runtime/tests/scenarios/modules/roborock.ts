@@ -48,7 +48,7 @@ export const scenarios: readonly Scenario[] = [{
                     && value.collection.clock === 'unqualified' || 'initial observation differs';
             }),
             ...Array.from({ length: 7 }, (_, index) => [
-                act('host requests another synthetic reconciliation cycle', h => { h.simulate({ device: 'roborock', action: 'online' }); }),
+                act('host requests another synthetic reconciliation cycle', h => { void h.simulate({ device: 'roborock', action: 'online' }); }),
                 expect('bounded reconciliation eventually retains all requested records', h => (status(h)?.collection.retainedRuns ?? 0) >= Math.min(30, (index + 2) * 4)
                     || 'record queue did not advance'),
             ]).flat(),
@@ -82,7 +82,7 @@ export const scenarios: readonly Scenario[] = [{
                 const before = status(h)?.revision;
                 if (before === undefined || !Number.isSafeInteger(before))
                     throw new StepFailure('the prior Roborock revision is missing');
-                h.simulate({ device: 'roborock', action: 'offline' });
+                void h.simulate({ device: 'roborock', action: 'offline' });
                 // A read already in flight may publish after the action. Give that revision its own finite
                 // preparation phase; a newer revision does not prove an offline read or collector completion.
                 for (let waited = 0; waited <= 10_000; waited += POLL_MS) {
@@ -111,9 +111,9 @@ export const scenarios: readonly Scenario[] = [{
                     && value.observedAtMs.value === previous.value && value.collection.gaps > 0 || 'unavailable state erased evidence';
             }),
             act('vendor recovers with an empty history summary', async (h) => {
-                h.simulate({ device: 'roborock', action: 'empty-history' });
+                void h.simulate({ device: 'roborock', action: 'empty-history' });
                 await h.wait(10);
-                h.simulate({ device: 'roborock', action: 'online' });
+                void h.simulate({ device: 'roborock', action: 'online' });
             }),
             // Recovery uses the same bounded reader as the unavailable transition. A pending read does not
             // establish history loss; wait for availability before judging the retained archive.

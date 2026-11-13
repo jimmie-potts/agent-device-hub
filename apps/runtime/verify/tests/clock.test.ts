@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import type {ModuleContext, Workers} from '@jimmie-potts/sdk';
 import {switchLamp} from '../../tests/fixtures/lamp.js';
 import {scenario} from '../../tests/scenarios/catalog.js';
 import {childClockOf, fixtureCoreOptions} from '../child-clock.js';
@@ -152,6 +153,30 @@ void test('a run on virtual time moves its runtime\'s clock only on an advance, 
   assert.equal((await stopOf(run)), 0);
 });
 
+void test('a zero advance observes child work without moving virtual time', {timeout: 60_000}, async context => {
+  const run = await startRun(context, await base(context), 'shared-inbox-history');
+  const simulate = new URL(`${HARNESS_PATH}/simulate`, run.harness);
+  const before = await advance(run, 10);
+  assert.equal(before.busy, false, 'the last positive advance saw an idle child');
+  assert.equal((await post(simulate, {device: 'lamp', action: 'hold'})).status, 200);
+  let answered = false;
+  const switching = switchOn(run, 'req-zero-advance').finally(() => { answered = true; });
+  try {
+    while (!answered && (await state(run)).devices.lamp.calls.length === 0) { /* wait for the simulated device to receive the call */ }
+    assert.equal(answered, false, 'the lamp still holds the command reply');
+    const held = await advance(run, 0);
+    assert.equal(held.nowMs, before.nowMs);
+    assert.equal(held.busy, true, 'the child is waiting for the lamp');
+  } finally {
+    assert.equal((await post(simulate, {device: 'lamp', action: 'release'})).status, 200);
+    assert.equal(await switching, 'accepted');
+  }
+  const idle = await advance(run, 0);
+  assert.equal(idle.nowMs, before.nowMs);
+  assert.equal(idle.busy, false, 'the child received the lamp answer');
+  assert.equal((await stopOf(run)), 0);
+});
+
 void test('the verification child gives the fixture core the monotonic clock its test clock carries, which moves with its wall clock', async () => {
   assert.equal(childClockOf('real'), undefined, 'on the real clock the child passes no test clock');
   for (const argument of ['', 'virtual', '-1', '1.5', '01', '12345678901234567']) assert.throws(() => childClockOf(argument), {message: /clock argument/}, argument);
@@ -170,6 +195,33 @@ void test('the verification child gives the fixture core the monotonic clock its
   assert.match(child, /fixtureCore = buildCore\(clock, scheduled\.coreOptions\(names\)\)\)/, 'the child builds its core through fixtureCore with its clock and nothing else');
   assert.doesNotMatch(child, /createCoreModule|tests\/fixtures\/core\.js/, 'the child builds no core of its own');
   assert.match(child, /testClock: clock\.testClock/, 'the child gives runMain the same clock');
+});
+
+void test('a child clock samples held workers without firing timers', async () => {
+  const clock = childClockOf('1000');
+  assert.ok(clock !== undefined);
+  let release = (): void => {};
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const workerCall: Workers['call'] = async <T>() => await held as T;
+  const context = {workers: {call: workerCall}} as ModuleContext;
+  const file = new URL(import.meta.url);
+  const started = clock.wrap({manifest: {name: 'held-worker', apiVersion: '1.0'}, stop: () => {},
+    start: async ({workers}) => { await workers.call(file, null, {timeoutMs: 100}); },
+  }).start(context);
+  let fired = false;
+  const cancel = clock.testClock.scheduler.after(10, () => { fired = true; });
+  try {
+    assert.deepEqual(await clock.observe(() => false), {nowMs: 1000, nextDueMs: 1010, busy: true});
+    assert.equal(clock.testClock.clock.now(), 1000);
+    assert.equal(fired, false);
+    release();
+    await started;
+    assert.deepEqual(await clock.advance(1010, () => false), {nowMs: 1010, nextDueMs: null, busy: false});
+    assert.equal(fired, true);
+  } finally {
+    release();
+    cancel();
+  }
 });
 
 void test('an advance that meets an ended runtime ends at once, so the runtime\'s restart does not wait behind it', {timeout: 60_000}, async context => {

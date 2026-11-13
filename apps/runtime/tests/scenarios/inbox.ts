@@ -15,7 +15,7 @@ export const inboxScenarios: readonly Scenario[] = [{
   id: 'shared-inbox-history', title: 'failed and uncertain operations require explicit handling; history reads send nothing',
   seed: {modules: ['core', 'lamp'], follows: [[...CORE_FAMILIES, 'operation'], ['lamp']]},
   steps: [
-    act('the simulated lamp fails its next command', h => { h.simulate({device: 'lamp', action: 'fail-next'}); }),
+    act('the simulated lamp fails its next command', h => { void h.simulate({device: 'lamp', action: 'fail-next'}); }),
     act('the operator switches the lamp on', h => dispatchOnce(h, 'operator', 'fail-inbox', switchLamp('lamp-1', 'on'), 'inbox-failed')),
     expect('the reader sees one failed item', h => inboxOf(h, 'inbox-failed').length === 1 || 'no failed item'),
     act('send again explicitly creates a new tracked operation', async h => {
