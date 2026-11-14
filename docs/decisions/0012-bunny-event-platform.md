@@ -433,9 +433,9 @@ evidence say what may have happened. Every boundary keeps the two apart.
 
 ### Portability
 
-Services use only the TypeScript SDK: publish, subscribe, sync, request and
-respond. They never depend on a transport directly, which keeps a later move to
-AWS cheap. To support that:
+Services use the TypeScript SDK to publish, subscribe, sync, request and
+respond. They remain independent of the transport.
+
 - Everything a consumer needs lives in the message body.
 - Duplicate handling, ordering and expiry live in the envelope and the consumer,
   not in transport features.
@@ -443,10 +443,11 @@ AWS cheap. To support that:
   API as a second implementation.
 - The outboxes and the history API do not depend on the transport.
 
-A later move would replace the SDK's remote transport, for example with SNS and
-SQS and a DynamoDB latest-record table. Only data stores and services that never
-touch local devices are candidates for cloud hosting. Device modules and fast
-reactions stay on the home network.
+[ADR 0016](0016-brain-and-local-edges.md) sets the target placement. The brain
+owns state and services that can run away from the devices. Device drivers,
+fast device reactions and host input helpers stay local. The Mac still runs the
+brain and device modules in one process. Cloud provider, transport and storage
+choices remain open.
 
 ### Personal data
 
@@ -454,8 +455,8 @@ Profile 2.0 drops profile 1.0's privacy-based field exclusions.
 [ADR 0011](0011-private-personal-data-retention.md), as amended on 2026-10-05
 and 2026-11-11, governs personal data:
 - It is stored only in private owner-controlled storage on runtime hosts the
-  owner has selected. [ADR 0015](0015-two-machine-runtime.md) defines the core
-  settings that can replicate once the owner separately authorizes a standby.
+  owner has selected. Under ADR 0016, authoritative brain data stays on the Mac
+  without replication.
 - It may be sent to Claude and Codex in prompts.
 - Only the classes its [2026-11-11 amendment](0011-private-personal-data-retention.md#amendment-2026-11-11)
   lists as may be sent, outside its not-for-now list, may also go to OpenAI's
@@ -1007,9 +1008,10 @@ design in #1768, which the owner's answers settle but do not word; #1771 and
 - A silence longer than the gap is recorded by one row when readings resume. A
   removal closes an open span with one row first.
 - The open span is kept outside the history rows. Rows are never updated, so
-  the fact log stays append-only and numbered without gaps. Under stage 1 of
-  ADR 0015, a peer starts with a settings snapshot, then reads committed
-  settings facts after its cursor. Open spans and live device freshness stay local.
+  the fact log stays append-only and numbered without gaps. The existing
+  [settings reader](../../apps/runtime/README.md#core-settings-snapshot-and-catch-up)
+  serves a snapshot and committed settings facts after a cursor. Open spans and
+  live device freshness stay local. ADR 0016 supersedes standby replication.
 
 **What stays:**
 - Devices keep polling and publishing as they do. Every live reader, the safety

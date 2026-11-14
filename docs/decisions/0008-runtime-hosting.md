@@ -62,9 +62,9 @@ the Mac Mini is the primary, self-sufficient host. Its runtime, private state,
 startup, dashboard access and selected portable device integrations must work
 while the PC sleeps, restarts or is off. The PC is an optional activity
 producer, client, worker and host for explicitly PC-attached hardware.
-[ADR 0015](0015-two-machine-runtime.md) accepts the stage 1 core settings design
-and source work. The PC remains a worker host and requires separate owner
-authorization to run a standby. Normal Mac operation never depends on the PC.
+[ADR 0016](0016-brain-and-local-edges.md) sets the long-term direction of one
+cloud-hosted brain and local edges. For now the Mac hosts the brain and device
+runtime together. Normal Mac operation never depends on the PC.
 
 This replaces the September hosting direction below: the host is selected and
 available; there is no hardware-purchase trigger, x86 default, OrbStack requirement
@@ -82,18 +82,14 @@ fails qualification on this baseline.
 
 Keep the reviewed immutable image, matching operator scripts and private
 configuration separate from development checkouts and disposable previews.
-The Mac owns persistent state and the serving endpoint while it leads.
-Once separately authorized, a PC standby keeps the replicated core settings in
-its own private store. Before manual handoff, client access is limited to the
-bounded authenticated settings freshness read in ADR 0015, under existing
-access rules. General client service begins only after the owner completes
-the manual handoff. Never depend on a PC login, mounted PC database or PC
-process to serve the Mac hub. Host-local producers
-read only their selected local inputs and use the existing authenticated SDK
-HTTP/SSE edge; they do not share SQLite files. A missing PC source or PC-attached
-device reports its actual unavailable/stale state without preventing the Mac's
-core or other qualified integrations from running. Source identity, reconnect,
-refusal, retry and outcome rules remain those of ADR 0012 and the
+The Mac holds the single authoritative copy of brain data and serves PC and
+phone clients through the [existing private route](../../apps/runtime/PRIVATE-ACCESS.md).
+Never depend on a PC login, mounted PC database or PC process to serve the Mac
+hub. Host-local producers read only their selected local inputs and use the
+existing authenticated SDK HTTP/SSE edge. They keep their SQLite files private.
+A missing PC source or PC-attached device reports its unavailable or stale
+state. The Mac core and other qualified integrations keep running. Source
+identity, reconnect, refusal, retry and outcome rules follow ADR 0012 and the
 [diagnostic contract](../observability-contract.md).
 
 The delivered [Mac-local browser profile](../bunny-container.md#mac-local-browser-profile)
