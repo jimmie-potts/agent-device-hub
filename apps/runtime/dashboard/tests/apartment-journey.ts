@@ -34,18 +34,17 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
       const gl=WebGLRenderingContext.prototype;
       const buffers=new Set<WebGLBuffer>(),textures=new Set<WebGLTexture>(),programs=new Set<WebGLProgram>();
       let pending=0,aborted=0,closedBitmaps=0;
-      function track<T>(key:string,live:Set<T>,type:{new():T}):(this:WebGLRenderingContext)=>T|null {
-        const original:unknown=Object.getOwnPropertyDescriptor(gl,key)?.value;
+      function track<T>(key:string,live:Set<T>,type:{new():T}):(this:WebGLRenderingContext)=>T {
+        const original:unknown=Reflect.get(gl,key);
         if(typeof original!=='function')throw new Error('WebGL creation method is unavailable');
         return function(){
           const value:unknown=Reflect.apply(original,this,[]);
-          if(value===null)return null;
           if(!(value instanceof type))throw new Error('Unexpected WebGL resource');
           live.add(value);return value;
         };
       }
       function release<T>(key:string,live:Set<T>):(this:WebGLRenderingContext,value:T|null)=>void {
-        const original:unknown=Object.getOwnPropertyDescriptor(gl,key)?.value;
+        const original:unknown=Reflect.get(gl,key);
         if(typeof original!=='function')throw new Error('WebGL cleanup method is unavailable');
         return function(value){if(value!==null)live.delete(value);Reflect.apply(original,this,[value]);};
       }
