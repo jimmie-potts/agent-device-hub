@@ -44,7 +44,7 @@ import {presented} from '../shared-input.js';
 import {execute, first, rows, text, type Db, type Synchronous} from '../sqlite.js';
 import {controlState} from '../store.js';
 import type {LightDatagram} from '../stream.js';
-import {HttpError, type LightRequest} from '../transport.js';
+import {HttpError, type classifiedRead, type LightRequest} from '../transport.js';
 import {superviseWorker, type SupervisorEnd} from '../worker.js';
 import {registryFile, type DeviceSection, type NanoleafConfig} from './config.js';
 import {
@@ -196,7 +196,7 @@ export class NanoleafRuntime {
    * the core's sessions, which the core serves before it awaits anything.
    */
   static async start(context: ModuleContext<NanoleafConfig>, config: NanoleafConfig, transport: LightRequest,
-    datagram: LightDatagram): Promise<NanoleafRuntime> {
+    datagram: LightDatagram, readWithDiagnostics?: typeof classifiedRead): Promise<NanoleafRuntime> {
     const db = context.database();
     const directory = context.files();
     initialize(db, () => context.clock.now() / 1000);
@@ -212,15 +212,15 @@ export class NanoleafRuntime {
       const saved = savedTransmission(db, device.id);
       if (saved !== undefined) runtime.#written.set(device.id, {latest: saved, commandWritten: false});
     }
-    for (const device of config.devices) runtime.#link(device, tokens.get(device.secret) ?? '', transport, datagram);
+    for (const device of config.devices) runtime.#link(device, tokens.get(device.secret) ?? '', transport, datagram, readWithDiagnostics);
     await runtime.#begin();
     return runtime;
   }
 
-  #link(device: DeviceSection, token: string, transport: LightRequest, datagram: LightDatagram): void {
+  #link(device: DeviceSection, token: string, transport: LightRequest, datagram: LightDatagram, readWithDiagnostics?: typeof classifiedRead): void {
     const {clock, scheduler, signal, log, trace} = this.#context;
     this.#links.set(device.id, new DeviceLink({device: device.id, address: device.address, token, transport, datagram, clock, scheduler, signal, log, trace,
-      readTiming: this.#readTiming, availability: this.#availability, commandWrite: id => this.#commandWrite(id), onWrite: (id, write) => { this.#wrote(id, write); },
+      ...(readWithDiagnostics === undefined ? {} : {readWithDiagnostics}), readTiming: this.#readTiming, availability: this.#availability, commandWrite: id => this.#commandWrite(id), onWrite: (id, write) => { this.#wrote(id, write); },
       onSettled: id => { this.#answered(id); this.#changed(id); }}));
   }
 

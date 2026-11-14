@@ -583,7 +583,7 @@ test('the production-selected core warns on state changes published during modul
     assert.equal(core.history.read({source: 'bunny/modules/volcano'}).length, 121);
     assert.equal(warnings.length, 1);
     assert.equal(warnings[0].severity_text, 'WARN');
-    assert.equal(warnings[0].schema_version, '1.10');
+    assert.equal(warnings[0].schema_version, '1.11');
     assert.deepEqual(warnings[0].attributes, {'bunny.module': 'core', 'bunny.provenance': 'source',
       'bunny.participant': 'bunny/modules/volcano', 'bunny.history.family': 'device', 'bunny.history.entity_id': id,
       'bunny.history.row_count': 121, 'bunny.history.row_threshold': 120, 'bunny.history.hour_start_at_ms': clock.now()});

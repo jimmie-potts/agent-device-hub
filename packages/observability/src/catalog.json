@@ -1,5 +1,5 @@
 {
-  "artifact_version": "1.10.0",
+  "artifact_version": "1.11.0",
   "schema_versions": [
     "1.0",
     "1.1",
@@ -11,7 +11,8 @@
     "1.7",
     "1.8",
     "1.9",
-    "1.10"
+    "1.10",
+    "1.11"
   ],
   "default_schema_version": "1.1",
   "semantic_conventions": "1.44.0",
@@ -190,6 +191,26 @@
         "bunny.nanoleaf.failure.link_deadline_count",
         "bunny.nanoleaf.failure.probe_max_observed_ms",
         "bunny.nanoleaf.failure.probe_max_pending_ms"
+      ]
+    },
+    "1.11": {
+      "attributes": [
+        "bunny.nanoleaf.rejection.stage",
+        "bunny.nanoleaf.rejection.category",
+        "bunny.nanoleaf.rejection.count.setup.invalid-input",
+        "bunny.nanoleaf.rejection.count.setup.other",
+        "bunny.nanoleaf.rejection.count.request.http-protocol",
+        "bunny.nanoleaf.rejection.count.request.timeout",
+        "bunny.nanoleaf.rejection.count.request.connection-refused",
+        "bunny.nanoleaf.rejection.count.request.connection-reset",
+        "bunny.nanoleaf.rejection.count.request.host-unreachable",
+        "bunny.nanoleaf.rejection.count.request.network-unreachable",
+        "bunny.nanoleaf.rejection.count.request.other",
+        "bunny.nanoleaf.rejection.count.response-body.interrupted",
+        "bunny.nanoleaf.rejection.count.response-body.other",
+        "bunny.nanoleaf.rejection.count.decode.invalid-json",
+        "bunny.nanoleaf.rejection.count.decode.other",
+        "bunny.nanoleaf.rejection.count.unknown.other"
       ]
     }
   },
@@ -810,6 +831,99 @@
       "type": "number",
       "exclusiveMinimum": 0,
       "maximum": 86400000
+    },
+    "bunny.nanoleaf.rejection.stage": {
+      "enum": [
+        "setup",
+        "request",
+        "response-body",
+        "decode",
+        "unknown"
+      ]
+    },
+    "bunny.nanoleaf.rejection.category": {
+      "enum": [
+        "invalid-input",
+        "other",
+        "http-protocol",
+        "timeout",
+        "connection-refused",
+        "connection-reset",
+        "host-unreachable",
+        "network-unreachable",
+        "interrupted",
+        "invalid-json"
+      ]
+    },
+    "bunny.nanoleaf.rejection.count.setup.invalid-input": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.rejection.count.setup.other": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.rejection.count.request.http-protocol": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.rejection.count.request.timeout": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.rejection.count.request.connection-refused": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.rejection.count.request.connection-reset": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.rejection.count.request.host-unreachable": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.rejection.count.request.network-unreachable": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.rejection.count.request.other": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.rejection.count.response-body.interrupted": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.rejection.count.response-body.other": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.rejection.count.decode.invalid-json": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.rejection.count.decode.other": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.rejection.count.unknown.other": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
     }
   },
   "scope_rules": {

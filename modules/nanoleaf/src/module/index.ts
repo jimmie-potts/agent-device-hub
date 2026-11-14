@@ -6,7 +6,7 @@ import {deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {BunnyModule} from '@jimmie-potts/sdk';
 import {lightDatagram, type LightDatagram} from '../stream.js';
-import {lightRequest, type LightRequest} from '../transport.js';
+import {classifiedRead, lightRequest, type LightRequest} from '../transport.js';
 import {LINES_ADDRESS, SimulatedNanoleaf} from './simulated.js';
 import {configureNanoleaf, type NanoleafConfig} from './config.js';
 import {NanoleafRuntime} from './runtime.js';
@@ -40,6 +40,7 @@ export const SIMULATED_SECTION = Object.freeze({
 export type NanoleafModuleOptions = {
   /** How the module reaches each controller: `lightRequest` for real devices, or a simulated controller's `request`. */
   transport: LightRequest;
+  readWithDiagnostics?: typeof classifiedRead;
   /** How the module sends live Music frame datagrams (#1598): `lightDatagram` for real devices, or a simulated controller's `datagram`. */
   datagram: LightDatagram;
 };
@@ -54,7 +55,7 @@ export const nanoleafMessageSchemas: Readonly<Record<string, object>> = {
 };
 
 /** The Nanoleaf module with the given controller transport. */
-export function createNanoleafModule({transport, datagram}: NanoleafModuleOptions): BunnyModule<NanoleafConfig> {
+export function createNanoleafModule({transport, datagram, readWithDiagnostics}: NanoleafModuleOptions): BunnyModule<NanoleafConfig> {
   let running: NanoleafRuntime | undefined;
   return {
     manifest: {
@@ -65,7 +66,7 @@ export function createNanoleafModule({transport, datagram}: NanoleafModuleOption
     },
     async start(context) {
       if (context.config === undefined) throw new Error('the Nanoleaf module started without its configuration');
-      running = await NanoleafRuntime.start({...context, config: context.config}, context.config, transport, datagram);
+      running = await NanoleafRuntime.start({...context, config: context.config}, context.config, transport, datagram, readWithDiagnostics);
     },
     async stop() {
       const current = running;
@@ -76,7 +77,7 @@ export function createNanoleafModule({transport, datagram}: NanoleafModuleOption
 }
 
 /** The module with the real Nanoleaf HTTP client. */
-export const createRealNanoleafModule = (): BunnyModule<NanoleafConfig> => createNanoleafModule({transport: lightRequest, datagram: lightDatagram});
+export const createRealNanoleafModule = (): BunnyModule<NanoleafConfig> => createNanoleafModule({transport: lightRequest, datagram: lightDatagram, readWithDiagnostics: classifiedRead});
 
 /**
  * The shipped list's factory: the real controllers over the Nanoleaf HTTP client, or, under `--simulate`, a simulated

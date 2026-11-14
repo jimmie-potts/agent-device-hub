@@ -28,7 +28,9 @@ profile 1.7 fixtures the runtime's filtered exception fields, their scope,
 combination and length rules and the runtime's telemetry-loss summary (#777).
 Profile 1.9 fixtures cover the history warning and its required metadata.
 Profile 1.10 fixtures cover Nanoleaf HTTP read timing, earlier-profile rejection,
-field exclusions and compatibility with the 1.9 history warning. In addition,
+field exclusions and compatibility with the 1.9 history warning. Profile 1.11
+fixtures cover closed rejection pairs, bounded counters and explicit projection
+from a validated source record to 1.10. In addition,
 `tests/profile.test.mjs` checks that the schema and catalog agree, that every
 earlier profile rejects each profile's additions, and the runtime scopes'
 rules. `tests/host.test.mjs` checks that a host records only its profile's span

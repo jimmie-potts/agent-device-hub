@@ -1,3 +1,4 @@
+import type {ReadRejection} from '../read-rejection.js';
 import {recordLog, type Cancel, type Logger, type ModuleScheduler} from '@jimmie-potts/sdk';
 
 export type ReadSource = 'sampler' | 'music-admission' | 'music-session';
@@ -81,15 +82,38 @@ type FailureRun = {
   lastReport: number;
   attempts: number;
   counts: Partial<Record<FailureCountField, number>>;
+  rejections: Partial<Record<RejectionCountField, number>>;
   maxObserved: number | undefined;
   maxPending: number | undefined;
 };
+const REJECTION_COUNT_FIELDS = [
+  ['setup.invalid-input', 'bunny.nanoleaf.rejection.count.setup.invalid-input'],
+  ['setup.other', 'bunny.nanoleaf.rejection.count.setup.other'],
+  ['request.http-protocol', 'bunny.nanoleaf.rejection.count.request.http-protocol'],
+  ['request.timeout', 'bunny.nanoleaf.rejection.count.request.timeout'],
+  ['request.connection-refused', 'bunny.nanoleaf.rejection.count.request.connection-refused'],
+  ['request.connection-reset', 'bunny.nanoleaf.rejection.count.request.connection-reset'],
+  ['request.host-unreachable', 'bunny.nanoleaf.rejection.count.request.host-unreachable'],
+  ['request.network-unreachable', 'bunny.nanoleaf.rejection.count.request.network-unreachable'],
+  ['request.other', 'bunny.nanoleaf.rejection.count.request.other'],
+  ['response-body.interrupted', 'bunny.nanoleaf.rejection.count.response-body.interrupted'],
+  ['response-body.other', 'bunny.nanoleaf.rejection.count.response-body.other'],
+  ['decode.invalid-json', 'bunny.nanoleaf.rejection.count.decode.invalid-json'],
+  ['decode.other', 'bunny.nanoleaf.rejection.count.decode.other'],
+  ['unknown.other', 'bunny.nanoleaf.rejection.count.unknown.other'],
+] as const;
+type RejectionCountField = typeof REJECTION_COUNT_FIELDS[number][1];
+const rejectionCountFields: ReadonlyMap<string, RejectionCountField> = new Map(REJECTION_COUNT_FIELDS);
+
+const UNKNOWN_REJECTION: ReadRejection = {stage: 'unknown', category: 'other'};
+
 type ReadSeries = {lastBaseline: number; run?: FailureRun};
 const increment = (count: number): number => Math.min(Number.MAX_SAFE_INTEGER, count + 1);
 const maximum = (old: number | undefined, next: number | undefined): number | undefined =>
   next === undefined ? old : Math.max(old ?? 0, next);
-const failureFields = ({counts, attempts, maxObserved, maxPending}: FailureRun) => ({
+const failureFields = ({counts, rejections, attempts, maxObserved, maxPending}: FailureRun) => ({
   ...counts,
+  ...rejections,
   'bunny.attempt_count': attempts,
   ...(maxObserved === undefined ? {} : {'bunny.nanoleaf.failure.probe_max_observed_ms': maxObserved}),
   ...(maxPending === undefined ? {} : {'bunny.nanoleaf.failure.probe_max_pending_ms': maxPending}),
@@ -101,7 +125,7 @@ export class ReadTimingRecords {
 
   constructor(private readonly log: Logger, private readonly device: string) {}
 
-  record(source: ReadSource, end: ReadEnd, deadline: number, timing: Timing): void {
+  record(source: ReadSource, end: ReadEnd, deadline: number, timing: Timing, rejection = UNKNOWN_REJECTION): void {
     const {endedAt, elapsed, count, pending, observed} = timing;
     let series = this.#series.get(source);
     if (series === undefined) {
@@ -110,13 +134,18 @@ export class ReadTimingRecords {
     }
     const fields = {'bunny.device.id': this.device, 'bunny.nanoleaf.read.source': source, 'bunny.nanoleaf.read.end': end,
       'bunny.duration_ms': elapsed, 'bunny.timeout_ms': deadline, 'bunny.nanoleaf.probe.sample_count': count,
+      ...(end === 'transport-rejection' ? {'bunny.nanoleaf.rejection.stage': rejection.stage, 'bunny.nanoleaf.rejection.category': rejection.category} : {}),
       ...(observed === undefined ? {} : {'bunny.lag.duration_ms': observed}),
       ...(pending === undefined ? {} : {'bunny.nanoleaf.probe.pending_ms': pending})};
     if (end !== 'reply') {
-      const run = series.run ??= {lastReport: -Infinity, attempts: 0, counts: {}, maxObserved: undefined, maxPending: undefined};
+      const run = series.run ??= {lastReport: -Infinity, attempts: 0, counts: {}, rejections: {}, maxObserved: undefined, maxPending: undefined};
       run.attempts = increment(run.attempts);
       const count = FAILURE_COUNT_FIELDS[end];
       run.counts[count] = increment(run.counts[count] ?? 0);
+      if (end === 'transport-rejection') {
+        const field = rejectionCountFields.get(`${rejection.stage}.${rejection.category}`);
+        if (field !== undefined) run.rejections[field] = increment(run.rejections[field] ?? 0);
+      }
       run.maxObserved = maximum(run.maxObserved, observed);
       run.maxPending = maximum(run.maxPending, pending);
       if (endedAt - run.lastReport < EMIT_INTERVAL_MS) return;

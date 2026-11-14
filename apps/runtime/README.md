@@ -2009,7 +2009,7 @@ without it, from `scripts/measure-memory.mjs`, measured before the core shipped.
 
 Each record is one JSON line on stderr and a
 [diagnostic-contract](../../docs/observability-contract.md#the-runtimes-records-profile-12)
-record of profile 1.10, built by the contract's `createRecord`: `schema_version`,
+record of profile 1.11, built by the contract's `createRecord`: `schema_version`,
 `timestamp`, the severity pair, a registered `event_name` with its static
 `body`, the resource, the scope and its version (`1.0.0`), and registered
 `attributes` with `bunny.provenance` `source`, plus `trace_id`, `span_id` and

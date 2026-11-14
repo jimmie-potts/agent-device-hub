@@ -8,7 +8,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {ARTIFACT_VERSION, EXCEPTION_ATTRIBUTES, SCHEMA_VERSION, catalog, createRecord, projectRecord, validateRecord} from '../dist/index.js';
+import {ARTIFACT_VERSION, MAX_RECORD_BYTES, toOtlp, parseRecord, EXCEPTION_ATTRIBUTES, SCHEMA_VERSION, catalog, createRecord, projectRecord, validateRecord} from '../dist/index.js';
+import {createPinoEmitter} from '../dist/node.js';
 import {record as hub} from './sample.mjs';
 
 const schema = JSON.parse(readFileSync(new URL('../src/record.schema.json', import.meta.url), 'utf8'));
@@ -116,10 +117,10 @@ const at = (value, version) => ({...value, schema_version: version});
 const nanoleaf = new Map(JSON.parse(readFileSync(new URL('../fixtures/records.json', import.meta.url), 'utf8'))
   .cases.filter(({name}) => name.startsWith('nanoleaf-http-timing-')).map(({record}) => [record.event_name, record]));
 
-test('artifact 1.10.0 adds profile 1.10, and producers still default to profile 1.1', () => {
-  assert.equal(ARTIFACT_VERSION, '1.10.0');
-  assert.equal(catalog.artifact_version, '1.10.0');
-  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10']);
+test('artifact 1.11.0 adds profile 1.11, and producers still default to profile 1.1', () => {
+  assert.equal(ARTIFACT_VERSION, '1.11.0');
+  assert.equal(catalog.artifact_version, '1.11.0');
+  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11']);
   assert.equal(SCHEMA_VERSION, '1.1');
   assert.equal(catalog.default_schema_version, '1.1');
   const omitted = {...hub};
@@ -153,10 +154,10 @@ test('the catalog registers exactly profile 1.0\'s vocabulary plus each later pr
 test('each profile\'s additions are registered, and every earlier profile rejects them', () => {
   const added = Object.entries(catalog.additions);
   assert.deepEqual(added.map(([version]) => version), versions.slice(1));
-  assert.deepEqual(Object.keys(examples).sort(), added.flatMap(([, addition]) => addition.attributes ?? []).sort());
+  assert.deepEqual(Object.keys(examples).sort(), added.filter(([version]) => version !== '1.11').flatMap(([, addition]) => addition.attributes ?? []).sort());
   for (const [version, addition] of added) {
     const earlier = versions.slice(0, versions.indexOf(version));
-    for (const name of addition.attributes ?? []) {
+    for (const name of version === '1.11' ? [] : addition.attributes ?? []) {
       assert.ok(catalog.attributes[name], name);
       // The exception fields are admitted only together, under the runtime's scopes, so their example is a module failure.
       const uses = EXCEPTION_ATTRIBUTES.includes(name) ? failed : {...hub, attributes: {...hub.attributes, [name]: examples[name]}};
@@ -219,7 +220,7 @@ test('a profile 1.2 record projects to 1.1 only without 1.2 vocabulary, and a 1.
   const raised = projectRecord(hub, '1.2');
   assert.equal(raised.ok, true);
   assert.equal(raised.value.schema_version, '1.2');
-  assert.equal(projectRecord(hub, '1.11').ok, false);
+  assert.equal(projectRecord(hub, '1.12').ok, false);
 });
 
 test('a profile 1.3 record projects to 1.2 only without 1.3 vocabulary, and a 1.2 record projects to 1.3', () => {
@@ -376,7 +377,7 @@ test('Nanoleaf HTTP timing is closed to profile 1.10 and keeps history compatibi
   const timing = nanoleaf.get('nanoleaf.http.read.failed');
   assert.equal(valid(timing), true);
   assert.equal(valid(at(noisy, '1.10')), true);
-  for (const version of versions.slice(0, -1)) assert.equal(valid(at(timing, version)), false);
+  for (const version of versions.slice(0, versions.indexOf('1.10'))) assert.equal(valid(at(timing, version)), false);
   assert.equal(projectRecord(timing, '1.9').ok, false);
   assert.equal(valid({...timing, attributes: {...timing.attributes, 'bunny.nanoleaf.read.end': 'ETIMEDOUT'}}), false);
   assert.equal(valid({...timing, attributes: {...timing.attributes, 'error.type': 'TypeError'}}), false);
@@ -394,4 +395,51 @@ test('failure-run evidence is optional per branch and belongs only to a summary 
   const attributes = Object.fromEntries(Object.entries(recovery.attributes).filter(([key]) => !key.endsWith('_count') || !key.startsWith('bunny.nanoleaf.failure.')));
   assert.equal(valid({...recovery, attributes}), false, 'a failure run names at least one terminal branch');
   assert.equal(valid({...recovery, attributes: {...recovery.attributes, 'bunny.nanoleaf.failure.link_deadline_count': 0}}), false);
+});
+
+test('profile 1.11 classifies generic Nanoleaf rejection and explicitly projects to 1.10', () => {
+  const prior = nanoleaf.get('nanoleaf.http.read.failed');
+  const record = {...at(prior, '1.11'), attributes: {...prior.attributes, 'bunny.nanoleaf.read.end': 'transport-rejection',
+    'bunny.nanoleaf.rejection.stage': 'request', 'bunny.nanoleaf.rejection.category': 'connection-reset'}};
+  assert.equal(valid(record), true);
+  assert.equal(valid(at(record, '1.10')), false);
+  assert.equal(projectRecord(record, '1.9').ok, false);
+  const {'bunny.nanoleaf.rejection.category': _category, ...incomplete} = record.attributes;
+  assert.equal(valid({...record, attributes: incomplete}), false);
+  assert.equal(projectRecord(record, '1.10').value.attributes['bunny.nanoleaf.rejection.stage'], undefined);
+  assert.equal(projectRecord(record, '1.10').value.attributes['bunny.nanoleaf.read.end'], 'transport-rejection');
+  const malformed = {...record, attributes: {...record.attributes, 'bunny.nanoleaf.rejection.stage': 'decode'}};
+  assert.equal(valid(malformed), false);
+  assert.equal(projectRecord(malformed, '1.10').ok, false);
+  assert.equal(valid({...record, attributes: {...record.attributes, 'bunny.nanoleaf.read.end': 'transport-deadline'}}), false);
+});
+
+test('maximal supported classification counts fit normalization, JSON, OTLP and queue budgets', async () => {
+  const prior = nanoleaf.get('nanoleaf.http.read.summary');
+  const additions = catalog.additions['1.11'].attributes;
+  const names = additions.filter(name => name.startsWith('bunny.nanoleaf.rejection.count.'));
+  assert.equal(names.length, 14);
+  const counts = Object.fromEntries(names.map(name => [name, Number.MAX_SAFE_INTEGER]));
+  const record = {...at(prior, '1.11'), attributes: {...prior.attributes, ...counts,
+    'bunny.nanoleaf.read.end': 'transport-rejection', 'bunny.nanoleaf.rejection.stage': 'request',
+    'bunny.nanoleaf.rejection.category': 'network-unreachable'}};
+  const built = createRecord(record);
+  assert.equal(built.ok, true);
+  const line = JSON.stringify(built.value) + '\n';
+  assert.ok(Buffer.byteLength(line) < MAX_RECORD_BYTES);
+  assert.equal(parseRecord(line).ok, true);
+  const lines = [];
+  const sink = createPinoEmitter(value => lines.push(value), {minimumSeverity: 5, maxBytes: MAX_RECORD_BYTES, maxRecords: 1});
+  assert.equal(sink.emit(built.value), true);
+  await sink.close();
+  assert.equal(lines.length, 1);
+  assert.deepEqual(JSON.parse(lines[0]), built.value);
+  const otlp = toOtlp(built.value);
+  assert.ok(Buffer.byteLength(JSON.stringify(otlp)) < MAX_RECORD_BYTES);
+  assert.equal(otlp.resourceLogs[0].scopeLogs[0].logRecords[0].attributes.filter(item => names.includes(item.key)).length, names.length);
+  const older = projectRecord(built.value, '1.10');
+  assert.equal(older.ok, true);
+  assert.deepEqual(older.value, prior);
+  for (const version of versions.slice(0, versions.indexOf('1.11'))) assert.equal(valid(at(record, version)), false);
+  assert.equal(valid({...record, attributes: {...record.attributes, [names[0]]: 0}}), false);
 });
