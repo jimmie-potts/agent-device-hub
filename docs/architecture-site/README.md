@@ -18,8 +18,8 @@ python3 docs/architecture-site/export.py /path/to/public-checkout --check
 The exporter replaces the public root with a link/redirect to the current
 architecture at its established URL, `architecture/arch-shared-system.html`.
 It first preserves that URL's original diagram and the retired root Work Guide.
-Existing archives remain untouched on subsequent exports. The Work Guide receives
-a base URL to preserve its relative links. Other historical URLs and atlas files
+Existing archives remain untouched on subsequent exports. The Work Guide’s relative document links are relocated while its fragment
+links continue navigating inside the archive. Other historical URLs and atlas files
 remain available; they are not promoted into the current view. The atlas’s two
 pinned-map links follow the archived viewer, and their manifest hashes are
 updated without changing the historical source baseline. If the historical atlas

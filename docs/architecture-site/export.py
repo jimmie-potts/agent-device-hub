@@ -4,6 +4,7 @@ import argparse
 import hashlib
 from html.parser import HTMLParser
 import json
+import re
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -14,6 +15,18 @@ PUBLIC = 'https://jimmie-potts.github.io/agent-device-guide/'
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def archive_guide(data):
+    # Keep fragment links within the archive. A base URL would send them to
+    # the new site root instead. Only relocate document-relative assets/links.
+    def relocate(match):
+        value = match.group(2)
+        url = urlsplit(value)
+        if value and not value.startswith(('#', '/')) and not url.scheme and not url.netloc:
+            value = '../' + value
+        return match.group(1) + '="' + value + '"'
+    return re.sub(r'(href|src)="([^"]*)"', relocate, data.decode()).encode()
 
 
 def outputs(root):
@@ -101,9 +114,8 @@ def main():
                 if marker.encode() not in old:
                     raise ValueError(f'Original historical input missing: {source}')
                 target.parent.mkdir(parents=True, exist_ok=True)
-                # The work guide's relative links still resolve from the old site root.
                 if source == 'index.html':
-                    old = old.replace(b'<head>', b'<head><base href="../">', 1)
+                    old = archive_guide(old)
                 target.write_bytes(old)
         for name, data in expected.items():
             target = root / name
