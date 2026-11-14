@@ -47,6 +47,7 @@ import {LIFECYCLE_TYPE, sessionSchema, reducedKind, toEnvelope} from './mapping.
 import {CoreStore, type CoreTransaction, type Deriver} from './store.js';
 import {admitRuntimeOwnership, assertRuntimeOwnership, bindRuntimeOwnership, ownershipUnavailable, type CoreOwnership, type RuntimeOwnership} from '../runtime-ownership.js';
 import {readRoomContent} from './room-models.js';
+import {readApartmentContent} from '../apartment/content.js';
 
 export {CORE_MODULE};
 /** The agent-state owner ID the core persists with its store. */
@@ -264,8 +265,12 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
   const art=()=>{const value=automation().art;if(value===undefined)throw new AutomationError('unavailable',503);return value;};
   const module = {
     manifest: {name: CORE_MODULE, apiVersion: '1.3',
-      content: (ref, request) => contentContext === undefined || contentContext.signal.aborted
-        ? errorBody('unavailable') : readRoomContent(() => { if (contentContext === undefined) throw new Error('core-content-unavailable'); return contentContext.files(); }, ref, contentContext.signal, request),
+      content: async (ref, request) => {
+        const context = contentContext;
+        if (context === undefined || context.signal.aborted) return errorBody('unavailable');
+        const files = () => context.files();
+        return await readApartmentContent(files, ref, context.signal, request) ?? readRoomContent(files, ref, context.signal, request);
+      },
       tools: [sessionsTool(() => core?.sessions()),
       inboxTool(() => core?.inbox()), historyTool(filter => core?.historyPage(filter))]},
     start: (context: ModuleContext) => {

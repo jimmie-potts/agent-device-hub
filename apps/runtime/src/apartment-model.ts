@@ -123,6 +123,35 @@ export function apartmentContains(footprint: readonly ApartmentPoint[], p: Apart
   return inside;
 }
 
+function containsSegment(footprint: readonly ApartmentPoint[], start: ApartmentPoint, end: ApartmentPoint): boolean {
+  if (!apartmentContains(footprint,start) || !apartmentContains(footprint,end)) return false;
+  const dx = end[0]-start[0], dz = end[1]-start[1];
+  const squaredLength = dx*dx + dz*dz;
+  if (squaredLength <= EPSILON*EPSILON) return true;
+  const intersections = [0,1];
+  for (let index = 0; index < footprint.length; index++) {
+    const a = footprint[index], b = footprint[(index+1)%footprint.length];
+    if (a === undefined || b === undefined || !intersects(start,end,a,b)) continue;
+    const edgeX = b[0]-a[0], edgeZ = b[1]-a[1];
+    const determinant = dx*edgeZ-dz*edgeX;
+    if (Math.abs(determinant) > EPSILON) {
+      const t = ((a[0]-start[0])*edgeZ-(a[1]-start[1])*edgeX)/determinant;
+      intersections.push(Math.max(0,Math.min(1,t)));
+    } else {
+      for (const p of [a,b]) {
+        if (onSegment(start,end,p)) intersections.push(((p[0]-start[0])*dx+(p[1]-start[1])*dz)/squaredLength);
+      }
+    }
+  }
+  intersections.sort((a,b) => a-b);
+  return intersections.every((t,index) => {
+    const next = intersections[index+1];
+    if (next===undefined) return true;
+    const midpoint = (t+next)/2;
+    return apartmentContains(footprint,[start[0]+dx*midpoint,start[1]+dz*midpoint]);
+  });
+}
+
 function simpleFootprint(points: ApartmentPoint[]): boolean {
   let area = 0;
   for (let index = 0; index < points.length; index++) {
@@ -176,9 +205,7 @@ export function isApartmentRoom(value: unknown): value is ApartmentRoom {
   if (!value.footprint.every(point) || !simpleFootprint(value.footprint) || !value.walls.every(wall)) return false;
   const footprint = value.footprint;
   const structureIds = value.walls.flatMap(w => [w.id,...w.openings.map(o => o.id)]);
-  return unique(structureIds) && value.walls.every(({start,end}) =>
-    apartmentContains(footprint,start) && apartmentContains(footprint,end)
-      && apartmentContains(footprint,[(start[0]+end[0])/2,(start[1]+end[1])/2]));
+  return unique(structureIds) && value.walls.every(({start,end}) => containsSegment(footprint,start,end));
 }
 
 const furnitureForms = new Set<unknown>(['sofa','chair','table','bed','cabinet','shelf','desk','rug','other']);
@@ -207,8 +234,12 @@ export function apartmentPlacementFits(object: ApartmentObject, room: ApartmentR
   const [width,height,depth] = object.size;
   if (y-height/2<room.floorY-EPSILON || y+height/2>ceiling+EPSILON) return false;
   const cos = Math.cos(object.yaw), sin = Math.sin(object.yaw);
-  return [-width/2,width/2].every(dx => [-depth/2,depth/2].every(dz =>
-    apartmentContains(room.footprint,[x+dx*cos+dz*sin,z-dx*sin+dz*cos])));
+  const halfWidth = width/2, halfDepth = depth/2;
+  const corners: ApartmentPoint[] = [[-halfWidth,-halfDepth],[halfWidth,-halfDepth],[halfWidth,halfDepth],[-halfWidth,halfDepth]];
+  const [a,b,c,d] = corners.map(([dx,dz]): ApartmentPoint => [x+dx*cos+dz*sin,z-dx*sin+dz*cos]);
+  return a!==undefined && b!==undefined && c!==undefined && d!==undefined
+    && containsSegment(room.footprint,a,b) && containsSegment(room.footprint,b,c)
+    && containsSegment(room.footprint,c,d) && containsSegment(room.footprint,d,a);
 }
 
 function image(value: unknown): value is ApartmentImage {
