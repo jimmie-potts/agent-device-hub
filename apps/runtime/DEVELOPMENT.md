@@ -6,33 +6,17 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
-Standby startup uses the existing Runtime unit tests and Core admission jobs.
-After the root build, run `node --test apps/runtime/dist/tests/standby.test.js
-deploy/container/tests/entrypoint.test.mjs scripts/tests/bunny.test.mjs`.
-The fixtures exercise profile admission, settings readiness, local health,
-work refusal and retained state with a controlled clock and synthetic inputs.
-See [operator verification](../../docs/operator-verification.md) for its
-additional source checks.
+For retired standby options and settings history modes, use the focused
+refusal cases in `deploy/container/tests/entrypoint.test.mjs`,
+`scripts/tests/bunny.test.mjs` and `apps/runtime/tests/runtime-ownership.test.ts`.
+The entrypoint and operator fixtures verify refusal before state creation
+or Docker start. See [operator verification](../../docs/operator-verification.md).
 
-### Standby external admission
-
-After the root build, run `node --test apps/runtime/dist/tests/standby-admission.test.js
-apps/runtime/dist/tests/standby.test.js deploy/container/tests/entrypoint.test.mjs`
-and the SDK suite. Existing Runtime unit and Core admission jobs discover these
-checks. They use private synthetic files, loopback clients and a controlled
-clock to check startup, reload, bounded reads and refusal before effects.
-Run shared build, type, lint, event contract and workflow checks before
-publication.
-
-### Standby settings follower
-
-After the root build, run `node --test apps/runtime/dist/tests/settings-follower.test.js
-apps/runtime/dist/tests/settings-history.test.js apps/runtime/dist/tests/standby.test.js
-packages/sdk/dist/tests/remote-lifetime.test.js deploy/container/tests/entrypoint.test.mjs`.
-Existing Runtime unit, SDK and Core admission jobs discover these tests. The
-fixtures use synthetic peers, a controlled clock and an injected receiver.
-They cover committed pagination, transport cancellation, source restoration,
-signal ordering, and local health while the follower is unavailable.
+For ordinary history and old-store compatibility, run the built
+`history-fact-log`, `history-spans`, `history-open`, `history-alarm`
+and `inbox-gateway` suites after the root build. They exercise existing
+history filters, old row retention and per-origin sequencing using
+synthetic stores and controlled clocks.
 
 ### Codex read-receipt checks
 
@@ -60,17 +44,6 @@ late registration before deferred delivery,
 request trace continuity and execution without definition history. Run
 `node --test apps/runtime/dashboard/tests/timeline-automation.test.ts` to check that the
 Automation filter includes the retained changes and removals. These checks
-need no standalone runtime or device.
-
-Core settings reads use the existing Runtime unit tests CI job. After the root
-build, run `node --test apps/runtime/dist/tests/settings-history.test.js
-apps/runtime/dist/tests/history-fact-log.test.js apps/runtime/dist/tests/history-spans.test.js
-apps/runtime/dist/tests/history-open.test.js apps/runtime/dist/tests/history-alarm.test.js
-apps/runtime/dist/tests/inbox-gateway.test.js apps/runtime/dist/tests/automation-state.test.js`.
-The synthetic stores and manual clock exercise committed snapshots, bounded
-pages, rollback and restore, ordinary read authorization and protected values.
-Run the root type, lint, shared event contract and workflow checks, and the
-Timeline unit tests that consume the existing history response. These checks
 need no standalone runtime or device.
 
 Automation device following (#1330) uses the existing runtime CI test discovery.

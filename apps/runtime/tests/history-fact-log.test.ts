@@ -89,8 +89,8 @@ void it('a store written by the release before #1740 migrates every row to this 
   const newSchema = (after.schema as {name: string}[]);
   for (const entry of oldSchema) assert.ok(newSchema.some(item => JSON.stringify(item) === JSON.stringify(entry)), `${entry.name} is unchanged`);
   assert.deepEqual(newSchema.map(entry => entry.name).filter(name => !oldSchema.some(item => item.name === name)).sort(),
-    ['core_history', 'core_history_legacy_barrier', 'core_history_origin', 'core_history_origin_message', 'core_history_span', 'core_origin', 'sqlite_autoindex_core_history_span_1'],
-    'history gains its origin and continuity columns and indexes, the old message index goes, and the span table (#1772) comes');
+    ['core_history', 'core_history_origin', 'core_history_origin_message', 'core_history_span', 'core_origin', 'sqlite_autoindex_core_history_span_1'],
+    'history gains its origin columns and indexes, the old message index goes, and the span table (#1772) comes');
   assert.equal(database.isTransaction, false, 'the migration committed');
 
   // Opened again, as at the next start, it changes nothing at all.
@@ -103,6 +103,42 @@ void it('a store written by the release before #1740 migrates every row to this 
   again.write([{kind: 'operation', step: step(3)}], 9000, 5);
   assert.deepEqual(again.after(history.origin, 6).map(row => [row.seq, row.originSeq]), [[10, 7]]);
   database.close();
+});
+
+void it('opening an existing history store keeps retired metadata on old rows and leaves it empty on new rows', context => {
+  const database = new DatabaseSync(':memory:');
+  context.after(() => database.close());
+  const first = new History(database);
+  const columns = (): unknown[] => database.prepare('PRAGMA table_info(core_history)').all().map(row => row.name);
+  assert.deepEqual(columns(), [...OLD_COLUMNS.split(', '), 'origin', 'origin_seq']);
+  first.write([{kind: 'operation', step: step(1)}], 1000, 1);
+  database.exec(`ALTER TABLE core_history ADD COLUMN continuity TEXT;
+    ALTER TABLE core_history ADD COLUMN settings_patch TEXT;
+    CREATE INDEX core_history_legacy_barrier ON core_history (origin, origin_seq) WHERE continuity GLOB 'legacy:*';
+    UPDATE core_history SET continuity = 'legacy:synthetic', settings_patch = '{"kind":"change"}' WHERE seq = 1`);
+  const before = dump(database);
+  const reopened = new History(database);
+  assert.deepEqual(dump(database), before);
+  reopened.write([{kind: 'operation', step: step(2)}], 2000, 2);
+  assert.deepEqual(dump(database).schema, before.schema);
+  assert.deepEqual(database.prepare('SELECT * FROM core_history WHERE seq = 1').all().map(row => ({...row})), before.core_history);
+  assert.deepEqual({...database.prepare('SELECT continuity, settings_patch FROM core_history WHERE seq = 2').get()},
+    {continuity: null, settings_patch: null});
+  const rows = reopened.after(first.origin, 0);
+  assert.deepEqual(rows.map(row => [row.originSeq, row.record]), [[1, step(1)], [2, step(2)]]);
+  assert.ok(rows.every(row => !('continuity' in row) && !('settings_patch' in row)));
+});
+
+void it('an ignored origin backfill rolls back without adding history metadata', context => {
+  const database = new DatabaseSync(':memory:');
+  context.after(() => database.close());
+  database.exec(RELEASED_SCHEMA);
+  database.prepare(`INSERT INTO core_history (at_ms, revision, kind, source, type, subject, record)
+    VALUES (1, 1, 'operation', 'bunny/core', 'power-set', 'lamp', ?)`).run(JSON.stringify(step(1)));
+  database.exec("CREATE TRIGGER ignore_origin BEFORE UPDATE ON core_history BEGIN SELECT RAISE(IGNORE); END");
+  const before = dump(database);
+  assert.throws(() => new History(database), /the local history origin was not stored/);
+  assert.deepEqual(dump(database), before);
 });
 
 void it('a migration that fails at its last step leaves the store exactly as it was', async context => {

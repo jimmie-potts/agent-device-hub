@@ -45,28 +45,17 @@ function localFixture(profile = 'host-local') {
   return {...f,network,run};
 }
 
-test('operator verifies explicit standby in production and private-proxy and refuses it in other profiles', async () => {
-  for (const profile of ['production', 'private-proxy']) {
-    const allowed = localFixture(profile);
-    allowed.info.Config.Env[1] = 'BUNNY_CONTROL=standby';
-    assert.equal((await operate(plan('start'), allowed.run)).status, 'running');
-    assert.ok(allowed.calls.some(args => args[0] === 'start'));
-    for (const change of ['BUNNY_PORT=8788', 'BUNNY_INGEST_SOURCE=bunny/parts/hub-' + '1'.repeat(32)]) {
-      const refused = localFixture(profile);
-      refused.info.Config.Env[1] = 'BUNNY_CONTROL=standby';
-      const key = change.split('=')[0] + '=';
-      refused.info.Config.Env = [...refused.info.Config.Env.filter(entry => !entry.startsWith(key)), change];
-      await assert.rejects(operate(plan('start'), refused.run));
-      assert.ok(!refused.calls.some(args => args[0] === 'start'));
-    }
-  }
-  const isolated = fixture(), local = localFixture();
+test('operator refuses retired standby control before starting Docker', async () => {
+  const isolated = fixture();
   isolated.info.Config.Env = ['BUNNY_CONTROL=standby'];
-  local.info.Config.Env[1] = 'BUNNY_CONTROL=standby';
-  for (const refused of [isolated, local]) {
-    await assert.rejects(operate(plan('start'), refused.run));
-    assert.ok(!refused.calls.some(args => args[0] === 'start'));
+  for (const profile of ['host-local', 'private-proxy', 'production']) {
+    const candidate = localFixture(profile);
+    candidate.info.Config.Env[1] = 'BUNNY_CONTROL=standby';
+    await assert.rejects(operate(plan('start'), candidate.run));
+    assert.ok(!candidate.calls.some(args => args[0] === 'start'));
   }
+  await assert.rejects(operate(plan('start'), isolated.run));
+  assert.ok(!isolated.calls.some(args => args[0] === 'start'));
 });
 
 test('production operator accepts explicit control and refuses unsafe mounts and extra listeners before start', async () => {

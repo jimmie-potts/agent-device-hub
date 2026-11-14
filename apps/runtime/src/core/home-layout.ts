@@ -1,4 +1,3 @@
-import {settingsPatch} from './settings-contract.js';
 // Private presentation metadata; this part has no device dispatch path (Hub #366).
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
@@ -91,7 +90,7 @@ export class HomeLayoutPart implements CorePart {
     if (JSON.stringify(layouts) === JSON.stringify(current.layouts)) return;
     const record: HomeLayoutRecord = {...current, revision: tx.revision(), layouts};
     if (Number(this.#save.run(JSON.stringify(record), ID).changes) !== 1) throw new Error('the Home layout was not stored');
-    tx.add('bunny.state.home-layout.home', {kind: 'state', ...stateDraft(record)}, {parent: command, settings: settingsPatch('home-layout', current, record)});
+    tx.add('bunny.state.home-layout.home', {kind: 'state', ...stateDraft(record)}, {parent: command});
   }
   async #replace(command: Command<HomeLayoutSetRequest>): Promise<Reply> {
     const checked = this.#validator.validate(command);
@@ -118,7 +117,7 @@ export class HomeLayoutPart implements CorePart {
         }
         const record: HomeLayoutRecord = {id: ID, revision: tx.revision(), version: 1, layouts};
         if (Number(this.#save.run(JSON.stringify(record), ID).changes) !== 1) throw new Error('the Home layout was not stored');
-        tx.add('bunny.state.home-layout.home', {kind: 'state', ...stateDraft(record)}, {parent: command, settings: settingsPatch('home-layout', current, record)});tx.take(command);
+        tx.add('bunny.state.home-layout.home', {kind: 'state', ...stateDraft(record)}, {parent: command});tx.take(command);
         committed = this.#admission.complete(tx, command, {result: Outcome.succeeded, evidence: Outcome.observed});
         return {status: 'accepted'} as const;
       });

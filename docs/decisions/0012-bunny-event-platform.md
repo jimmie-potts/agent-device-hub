@@ -164,10 +164,9 @@ Existing formats move in one offline cutover:
   Syncing current state is not replay. Neither is reporting a module's
   unreported outcome again after a restart. Since the
   [2026-11-11 amendment](#amendment-2026-11-11), neither is reading past facts:
-  any view, display or device may read and show them, and any reader, the
-  decision maker and a peer installation among them, may read the facts from an
-  origin after a cursor it keeps. A past fact never triggers a command by
-  itself. A decision made now may use past facts as input, as the amendment
+  any view, display or device may read and show them. A reader inside the core
+  may read facts from an origin after a cursor it keeps. A past fact never
+  triggers a command by itself. A decision made now may use past facts as input, as the amendment
   describes.
 - History and the tracker live in the core and record durably. A slow consumer
   lags only itself and cannot block the bus.
@@ -217,8 +216,7 @@ State events and telemetry are not tracked.
   silent for too long. These rules apply once
   [#1772](https://github.com/jimmie-potts/agent-device-hub/issues/1772) is
   merged and installed; until then history behaves as before. The no-time-limit
-  rule stays. See the [2026-11-13 amendment](#amendment-2026-11-13) for the
-  narrow core settings exception.
+  rule stays.
 - When the disk is full, the core refuses durable work before it reports
   anything accepted.
 
@@ -876,8 +874,8 @@ belongs to [#1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723)
 and is not recorded here.
 
 **"No replay" is narrowed, not removed.** After this amendment:
-- Any reader, such as the decision maker or a peer installation, may read the
-  facts from an origin after a cursor it keeps. Such a read is not replay.
+- A reader inside the core, such as the decision maker, may read the facts from
+  an origin after a cursor it keeps. Such a read is not replay.
 - Any view, display or device may read and show past facts.
 - A decision made now may use past facts as input. A past fact never triggers
   a command by itself.
@@ -1008,10 +1006,8 @@ design in #1768, which the owner's answers settle but do not word; #1771 and
 - A silence longer than the gap is recorded by one row when readings resume. A
   removal closes an open span with one row first.
 - The open span is kept outside the history rows. Rows are never updated, so
-  the fact log stays append-only and numbered without gaps. The existing
-  [settings reader](../../apps/runtime/README.md#core-settings-snapshot-and-catch-up)
-  serves a snapshot and committed settings facts after a cursor. Open spans and
-  live device freshness stay local. ADR 0016 supersedes standby replication.
+  the fact log stays append-only and numbered without gaps. Live device
+  freshness comes from the current owner through sync.
 
 **What stays:**
 - Devices keep polling and publishing as they do. Every live reader, the safety
@@ -1036,6 +1032,11 @@ between two rows it holds only the first and last confirmation and a count, and
 the count is of readings history took, not of readings a device answered.
 
 ### Amendment, 2026-11-13
+
+**Historical.** [ADR 0016](0016-brain-and-local-edges.md) superseded the
+replication design. The source removal retires the private settings patch,
+its continuity token and its compaction exception. Ordinary Automation
+definition changes keep their existing transaction and history guarantees.
 
 **Keep an effective core settings edit through compaction.** At
 2026-11-13T14:05:40Z the owner answered the narrow settings-history exception

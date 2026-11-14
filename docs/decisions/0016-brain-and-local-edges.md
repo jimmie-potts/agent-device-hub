@@ -47,8 +47,6 @@ the device drivers into a separate local process only after a cloud host is
 selected. This decision leaves the cloud provider, protocol, store, runtime and
 migration open.
 
-The [container standby profile](../bunny-container.md#settings-only-standby) and
-[runtime settings reader and follower](../../apps/runtime/README.md#standby-peer-settings)
-describe source that still exists. Their removal is separate work. The
-[owner's follow-up decision](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6869841142)
-calls for preserving useful automation-edit history.
+The [owner's follow-up decision](https://github.com/jimmie-potts/agent-device-hub/issues/1723#issuecomment-6869841142)
+retires standby and settings replication and retains ordinary automation-edit
+history.

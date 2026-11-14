@@ -11,95 +11,80 @@ import * as entrypoint from '../entrypoint.mjs';
 const productionEdge = () => ({credentials: '/run/secrets/bunny/edge.json', browserAccess: 'trusted-loopback',
   launcher: false, mcp: false, privateProxy: {origin: 'https://synthetic.ts.net', tokenDigest: '1'.repeat(64)}});
 
-test('explicit standby admits only production and private-proxy options without producers or devices', () => {
-  for (const access of ['production', 'private-proxy']) {
-    const env = {BUNNY_ACCESS: access, BUNNY_CONTROL: 'standby'};
-    assert.equal(containerOptions(env).control, 'standby');
-    for (const change of [{BUNNY_PORT: '8788'}, {BUNNY_STATE_DIR: '/other'}, {BUNNY_CONFIG: '/other'},
-      {BUNNY_INGEST_SOURCE: 'bunny/parts/hub-' + '1'.repeat(32)}, {BUNNY_PIXOO_BIND: '192.168.1.10'}]) {
-      assert.throws(() => containerOptions({...env, ...change}), {message: 'container-options-refused'});
-    }
-  }
-  for (const access of ['host-local', 'isolated']) {
+test('the retired standby control is refused by every container profile', () => {
+  for (const access of ['isolated', 'host-local', 'private-proxy', 'production']) {
     assert.throws(() => containerOptions({BUNNY_ACCESS: access, BUNNY_CONTROL: 'standby'}), {message: 'container-options-refused'});
   }
 });
 
-test('standby entrypoint validates private inputs before state and runs only the bound core with edge off', async () => {
-  const core = {manifest: {name: 'core', apiVersion: '1.3'}};
-  const coreFactory = {name: 'core'};
-  const options = containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'standby'});
-  const steps = [];
-  const lease = {releaseBeforeStartup: () => steps.push('release')};
-  const credentialAdmission = {};
-  let config = {modules: {}};
-  let credentialsFail = false;
-  let ownerFail = false;
-  let restoreFail = false;
-  const dependencies = {
-    readRuntimeConfig: async () => config,
-    runtime: {standbyCoreFactory: coreFactory, buildModules: (factories, simulate) => {
-      assert.deepEqual(factories, [coreFactory]);
-      assert.equal(simulate, false);
-      return [core];
-    }},
-    checkConfiguration,
-    admitStandbyCredentials: (instance, file) => {
-      assert.equal(instance, core);
-      assert.equal(file, config.edge.credentials);
-      steps.push('credentials');
-      if (credentialsFail) throw new Error('synthetic-credentials-refused');
-      return credentialAdmission;
-    },
-    prepareOwnershipRoot: async () => { steps.push('prepare'); },
-    acquireRuntimeOwnership: async () => {
-      steps.push('lease');
-      if (ownerFail) throw new Error('synthetic-owner-refused');
-      return lease;
-    },
-    refusePendingRestore: async () => {
-      steps.push('restore-check');
-      if (restoreFail) throw new Error('restore-pending');
-    },
-    bindCoreRuntimeOwnership: (instance, acquired) => {
-      assert.equal(instance, core);
-      assert.equal(acquired, lease);
-      steps.push('bind');
-    },
-    parseArguments: () => ({}),
-    runProcess: async (parsed, startup) => {
-      assert.equal(parsed.edge, false);
-      assert.deepEqual(startup, {modules: [core], config, listener: 'container-host-local',
-        ...(config.edge === undefined ? {} : {standbyCredentialAdmission: credentialAdmission})});
-      steps.push('process');
-    },
-  };
-  await entrypoint.startContainer(options, dependencies);
-  assert.deepEqual(steps.splice(0), ['prepare', 'lease', 'restore-check', 'bind', 'process']);
-  config = {modules: {core: {}}, edge: productionEdge()};
-  await entrypoint.startContainer(options, dependencies);
-  assert.deepEqual(steps.splice(0), ['credentials', 'prepare', 'lease', 'restore-check', 'bind', 'process']);
-  for (const invalid of [
-    {modules: {art: {}}}, {modules: {core: null}}, {modules: {core: {secrets: {}}}},
-    {modules: {}, diagnostics: {modules: {art: 'debug'}}}, {modules: {}, edge: {}},
-    {modules: {}, edge: {...productionEdge(), mcp: true}},
-  ]) {
-    config = invalid;
-    await assert.rejects(entrypoint.startContainer(options, dependencies), {message: 'container-browser-config-refused'});
-    assert.deepEqual(steps.splice(0), []);
+test('the startup seam refuses stale control before reading configuration', async () => {
+  await assert.rejects(entrypoint.startContainer({access: 'production', control: 'standby'}, {
+    readRuntimeConfig: () => assert.fail('retired control must refuse before config read'),
+  }), {message: 'container-options-refused'});
+});
+
+test('the container refuses stale peer configuration before credential or state effects', async () => {
+  const {refuseRetiredCorePeer} = await import('../../../apps/runtime/dist/src/state.js');
+  const unexpected = () => assert.fail('configuration refusal must precede startup effects');
+  for (const peer of [null, {origin: 'https://synthetic.invalid', source: 'bunny/parts/reader', tokenFile: '/synthetic/token'}]) {
+    const options = containerOptions({BUNNY_ACCESS: 'production'});
+    await assert.rejects(entrypoint.startContainer(options, {
+      readRuntimeConfig: async () => ({modules: {core: {peer}}}), refuseRetiredCorePeer,
+      runtime: {buildModules: unexpected}, checkCredentials: unexpected, prepareOwnershipRoot: unexpected,
+      acquireRuntimeOwnership: unexpected, runProcess: unexpected,
+    }), {code: 'config-invalid'});
   }
-  config = {modules: {}, edge: productionEdge()};
-  credentialsFail = true;
-  await assert.rejects(entrypoint.startContainer(options, dependencies), {message: 'synthetic-credentials-refused'});
-  assert.deepEqual(steps.splice(0), ['credentials']);
-  credentialsFail = false;
-  ownerFail = true;
-  await assert.rejects(entrypoint.startContainer(options, dependencies), {message: 'synthetic-owner-refused'});
-  assert.deepEqual(steps.splice(0), ['credentials', 'prepare', 'lease']);
-  ownerFail = false;
-  restoreFail = true;
-  await assert.rejects(entrypoint.startContainer(options, dependencies), {message: 'restore-pending'});
-  assert.deepEqual(steps.splice(0), ['credentials', 'prepare', 'lease', 'restore-check', 'release']);
+});
+
+test('supported control profiles keep credential precheck, ownership and process arguments', async () => {
+  const {refuseRetiredCorePeer} = await import('../../../apps/runtime/dist/src/state.js');
+  const core = {manifest: {name: 'core', apiVersion: '1.3'}};
+  const coreFactory = {name: 'core'}, steps = [];
+  const lease = {releaseBeforeStartup: () => steps.push('release')};
+  const config = {modules: {}, edge: productionEdge()};
+  for (const [access, control] of [['private-proxy', 'disabled'], ['production', 'disabled'], ['production', 'enabled']]) {
+    const options = containerOptions({BUNNY_ACCESS: access, BUNNY_CONTROL: control});
+    let failed;
+    const dependencies = {
+      readRuntimeConfig: async () => config, refuseRetiredCorePeer, checkConfiguration,
+      runtime: {coreFactory, shippedModules: [coreFactory], buildModules: factories => {
+        assert.deepEqual(factories, [coreFactory]);
+        return [core];
+      }},
+      checkCredentials: async () => {
+        steps.push('credentials');
+        if (failed === 'credentials') throw new Error('synthetic-credentials-refused');
+      },
+      prepareOwnershipRoot: async () => {steps.push('prepare');},
+      acquireRuntimeOwnership: async () => {steps.push('lease'); return lease;},
+      refusePendingRestore: async () => {
+        steps.push('restore-check');
+        if (failed === 'restore') throw new Error('restore-pending');
+      },
+      bindCoreRuntimeOwnership: (instance, acquired) => {
+        assert.equal(instance, core);
+        assert.equal(acquired, lease);
+        steps.push('bind');
+      },
+      parseArguments: args => {
+        assert.deepEqual(args, ['--port', '18788', '--state-dir', '/var/lib/bunny', '--environment', 'production']);
+        return {};
+      },
+      runProcess: async (parsed, startup) => {
+        assert.deepEqual(parsed, {modules: [coreFactory], edge: true});
+        assert.deepEqual(startup, {modules: [core], config, listener: 'container-host-local'});
+        steps.push('process');
+      },
+    };
+    await entrypoint.startContainer(options, dependencies);
+    assert.deepEqual(steps.splice(0), ['credentials', 'prepare', 'lease', 'restore-check', 'bind', 'process']);
+    failed = 'credentials';
+    await assert.rejects(entrypoint.startContainer(options, dependencies), {message: 'synthetic-credentials-refused'});
+    assert.deepEqual(steps.splice(0), ['credentials']);
+    failed = 'restore';
+    await assert.rejects(entrypoint.startContainer(options, dependencies), {message: 'restore-pending'});
+    assert.deepEqual(steps.splice(0), ['credentials', 'prepare', 'lease', 'restore-check', 'release']);
+  }
 });
 
 test('production selection defaults disabled, admits explicit control and bounds the optional Pixoo address', () => {
@@ -444,32 +429,6 @@ test('check-credentials runs the start-time credential check on the installed fi
   await assert.rejects(entrypoint.main(['check-credentials', 'extra'], {}), {message: 'container-command-refused'});
 });
 
-test('standby accepts an omitted edge and refuses missing, invalid and out-of-profile grants', async t => {
-  const {CREDENTIALS_SCHEMA} = await import('../../../apps/runtime/dist/src/credentials.js');
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-standby-credentials-')));
-  t.after(() => rm(root, {recursive: true, force: true}));
-  const file = join(root, 'edge.json'), config = {edge: {credentials: file}};
-  for (const access of ['private-proxy', 'production']) {
-    const options = {access, control: 'standby'};
-    assert.deepEqual(await entrypoint.checkConfiguredCredentials({}, options), {status: 'admitted', credentials: 0});
-    await rm(file, {force: true});
-    await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {code: 'edge-credentials-missing'});
-    await writeFile(file, '{', {mode: 0o600});
-    await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {code: 'edge-credentials-invalid'});
-    const grant = {id: 'reader', source: 'bunny/parts/reader', digest: '2'.repeat(64), scopes: ['read']};
-    const document = credential => JSON.stringify({schema: CREDENTIALS_SCHEMA, credentials: [credential]});
-    for (const scopes of [['admin'], ['read', 'control'], ['ingest'], []]) {
-      await writeFile(file, document({...grant, scopes}), {mode: 0o600});
-      await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {message: 'container-browser-config-refused'});
-    }
-    const roleGrant = {id: 'music-worker', source: 'bunny/parts/music-producer', digest: '3'.repeat(64), scopes: [], role: 'music-producer'};
-    await writeFile(file, document(roleGrant), {mode: 0o600});
-    await assert.rejects(entrypoint.checkConfiguredCredentials(config, options), {message: 'container-browser-config-refused'});
-    await writeFile(file, document(grant), {mode: 0o600});
-    assert.deepEqual(await entrypoint.checkConfiguredCredentials(config, options), {status: 'admitted', credentials: 1});
-  }
-});
-
 // The history rules each profile's core is built with (#1795). Every profile must keep history by the bookkeeping
 // members and polled families of the modules it hosts, as #1771 and #1772 declare them; before #1795 the container's
 // profiles took a core factory that kept only the contracts package's members and polled nothing.
@@ -631,53 +590,6 @@ test('the production-selected core warns on state changes published during modul
   } finally { await runtime.stop(); }
 });
 
-test('standby startup uses the credential snapshot admitted before bootstrap and reload sees later changes', async t => {
-  const [runtimeModules, {startRuntime}, {credentialsDocument}, {admitStandbyStartupCredentials}, {manualClock}] = await Promise.all([shippedRuntime(),
-    import('../../../apps/runtime/dist/src/runtime.js'), import('../../../apps/runtime/dist/src/credentials.js'),
-    import('../../../apps/runtime/dist/src/standby-credential-admission.js'), import('../../../apps/runtime/dist/tests/scenarios/virtual-time.js')]);
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-standby-admitted-')));
-  t.after(() => rm(root, {recursive: true, force: true}));
-  const file = join(root, 'edge.json'), stateDir = join(root, 'state');
-  const options = {...containerOptions({BUNNY_ACCESS: 'production', BUNNY_CONTROL: 'standby'}), stateDir};
-  const peer = {origin: 'https://settings-peer.invalid', source: 'bunny/parts/settings-reader', tokenFile: join(root, 'missing-peer-token')};
-  const config = {modules: {core: {peer}}, edge: productionEdge()};
-  const clock = manualClock(1_800_000_000_000);
-  const reader = {id: 'reader', source: 'bunny/parts/reader', digest: '2'.repeat(64), scopes: ['read']};
-  await writeFile(file, credentialsDocument([reader]), {mode: 0o600});
-  let started = false, bootstraps = 0;
-  const {standbyFollowerState} = await import('../../../apps/runtime/dist/src/core/core.js');
-  const dependencies = {
-    readRuntimeConfig: async () => config, runtime: runtimeModules, checkConfiguration,
-    admitStandbyCredentials: core => admitStandbyStartupCredentials(core, file),
-    prepareOwnershipRoot: async () => {
-      bootstraps += 1;
-      await writeFile(file, credentialsDocument([{...reader, scopes: ['control']}]), {mode: 0o600});
-    },
-    acquireRuntimeOwnership: () => ({}), refusePendingRestore: () => {}, bindCoreRuntimeOwnership: () => {},
-    parseArguments: () => ({}),
-    runProcess: async (parsed, startup) => {
-      assert.equal(parsed.edge, false);
-      const runtime = await startRuntime({...startup, stateDir, port: 0, clock, scheduler: clock.scheduler, log: () => {},
-        config: {...startup.config, edge: {...startup.config.edge, credentials: file}}});
-      try {
-        started = true;
-        assert.equal(runtime.health().status, 'ok');
-        assert.equal(runtime.gateway(), undefined);
-        assert.equal(standbyFollowerState(startup.modules[0]), 'unavailable');
-        await assert.rejects(runtime.reload(), {code: 'edge-credentials-invalid'});
-      } finally {await runtime.stop();}
-    },
-  };
-  await assert.rejects(entrypoint.startContainer(options, {...dependencies,
-    readRuntimeConfig: async () => ({...config, modules: {core: {peer: {...peer, origin: 'https://settings-peer.invalid/path'}}}}),
-    admitStandbyCredentials: () => { assert.fail('structural peer refusal precedes credential admission'); },
-  }), {code: 'config-invalid'});
-  assert.equal(bootstraps, 0);
-  await entrypoint.startContainer(options, dependencies);
-  assert.equal(bootstraps, 1);
-  assert.equal(started, true);
-});
-
 test('enabled and disabled production control retain their respective owner and grant behavior', async t => {
   const [runtimeModules, {startRuntime}, {credentialsDocument, tokenDigest}, {manualClock}] = await Promise.all([shippedRuntime(),
     import('../../../apps/runtime/dist/src/runtime.js'), import('../../../apps/runtime/dist/src/credentials.js'),
@@ -717,8 +629,17 @@ test('enabled and disabled production control retain their respective owner and 
     };
     try {
       const write = {target: 'fixture', requestId: 'fixture-on', data: {on: true}};
-      assert.equal((await call('/api/v2/history?settings=snapshot', readToken)).status, 200, control);
-      assert.equal((await call('/api/v2/history?settings=snapshot', controlToken)).status, 403, control);
+      const ordinary = await call('/api/v2/history', readToken);
+      assert.equal(ordinary.status, 200, control);
+      assert.equal(ordinary.body.schema, 'history/2.0');
+      for (const query of ['settings=snapshot', 'settings=page&after=synthetic']) {
+        const refused = await call('/api/v2/history?' + query, readToken);
+        assert.equal(refused.status, 400, control);
+        assert.equal(refused.body.error.code, 'invalid-request');
+      }
+      const standby = await call('/api/v2/standby/status', readToken);
+      assert.equal(standby.status, 404, control);
+      assert.equal(standby.body.error.code, 'not-found');
       assert.equal((await call('/api/v2/commands/power-set', readToken, write)).status, 403, control);
       const permitted = await call('/api/v2/commands/power-set', controlToken, write);
       assert.equal(permitted.status, 200, control);

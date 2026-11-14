@@ -137,7 +137,6 @@ export type TrackerOptions = {
   currentDevice?: (id: string) => Message<DeviceRecord> | undefined;
   /** The parts' derivers of tracked actions' changes. */
   tracked?: readonly Tracked[];
-  standby?: boolean;
   /** Resolves once the core's store is open. */
   ready: Promise<void>;
   /** Hears that the store refused durable work, and that a change committed again, as the core summarizes both. */
@@ -375,12 +374,11 @@ export class Tracker {
     const {sdk, clock, store, ready} = this.#options;
     const requestId = input.requestId ?? randomUUID();
     const requestedBy = input.requestedBy;
-    const refuse = (code: ErrorCode, detail: string, trace?: TraceContext): ErrorBody => {
+    const refuse = (code: ErrorCode, detail: string): ErrorBody => {
       const body = errorBody(code, {...ID.test(requestId) ? {requestId} : {}, detail});
-      this.#record('command.rejected', {'bunny.participant': requestedBy, ...requestField(requestId), 'bunny.outcome': Outcome.rejected, ...refusedFields(code)}, trace);
+      this.#record('command.rejected', {'bunny.participant': requestedBy, ...requestField(requestId), 'bunny.outcome': Outcome.rejected, ...refusedFields(code)});
       return body;
     };
-    if (this.#options.standby === true) return refuse('unavailable', 'the core is in standby', input.parent);
     const action: Action = {...input, draft: {...input.draft, data: structuredClone(input.draft.data)},
       ...(input.parent === undefined ? {} : {parent: {...input.parent}})};
     const parsed = KEY.exec(action.key);

@@ -105,6 +105,17 @@ void test('forged, released, copied and cross-core capabilities cannot confer ow
   assert.throws(() => borrowRuntimeOwnership({token: owner, core}, join(root, 'modules', 'core.sqlite')), safe);
   assert.equal(await competitor(root), 1);
 });
+void test('retired peer configuration leaves startup state untouched', async t => {
+  const root = await fixture(t), stateDir = join(root, 'absent');
+  let starts = 0;
+  const modules = [{manifest: {name: 'probe', apiVersion: '1.3'}, start: () => {starts++;}, stop: () => {}}];
+  for (const peer of [null, {origin: 'https://synthetic.invalid', source: 'bunny/parts/reader', tokenFile: '/synthetic/token'}]) {
+    const config = {modules: {core: {peer}}};
+    await assert.rejects(startRuntime({stateDir, port: 0, modules, config, log: () => {}}), {code: 'config-invalid'});
+    await assert.rejects(lstat(stateDir), {code: 'ENOENT'});
+    assert.equal(starts, 0);
+  }
+});
 void test('wrong state path and changed identity refuse before preparation, spans, logs or modules', async t => {
   for (const kind of ['wrong-path', 'lease-replaced', 'modules-replaced', 'root-mode']) await t.test(kind, async tt => {
     const root = await fixture(tt), core = createCoreModule(), owner = await acquireRuntimeOwnership(root);

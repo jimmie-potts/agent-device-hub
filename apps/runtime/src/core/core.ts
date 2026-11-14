@@ -10,19 +10,15 @@ import {isReadReceipt, receiptQualification} from '../read-receipts/qualificatio
 // stories add, such as #923's inbox, join through `CorePart` and derive their rows from each tracked action's change.
 // Its own `operation` family (Hub #922, operation-records.ts) is the first such part: each tracked action's latest state.
 import type {DatabaseSync} from 'node:sqlite';
-import {createAgentState, type Consumer, type Outcome, type StorageLease} from '@jimmie-potts/agent-state';
+import {createAgentState, type Consumer, type Outcome} from '@jimmie-potts/agent-state';
 import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
   sessionEntityId, type ApprovalRecoverRequest, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
 } from '@jimmie-potts/event-contracts/v2/families';
-import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool, type TraceContext,
-  fullDisk, type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
+import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
+  type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
 } from '@jimmie-potts/sdk';
 import {DEFAULT_HISTORY_RULES, type HistoryFilter, type HistoryPage, type HistoryRow, type HistoryRules} from './history.js';
-import {SETTINGS_FAMILIES, type SettingsPage, type SettingsRead, type SettingsSnapshot} from './settings-contract.js';
-import {readSettingsHistory} from './settings-history.js';
-import {SettingsFollower, type SettingsReceiver} from './settings-follower.js';
-import {createSettingsPeer, settingsFailure, type SettingsPeerConfig} from './settings-peer.js';
 import type {HistoryDevice} from './history-alarm.js';
 import {inboxTool, historyTool} from './read-tools.js';
 import {InboxRecords} from './inbox.js';
@@ -45,7 +41,7 @@ import type {ArtCatalogRead} from './art-catalog.js';
 import type {ModeParticipant} from './mode-participants.js';
 import type {Operation} from './operations.js';
 import {Tracker, type Action, type ActionAnswer, type CoreActions, type CoreOperatorActions, type Tracked} from './tracker.js';
-import {CORE_MODULE, loadSecret} from '../host.js';
+import {CORE_MODULE} from '../host.js';
 import {Backoff} from './backoff.js';
 import {LIFECYCLE_TYPE, sessionSchema, reducedKind, toEnvelope} from './mapping.js';
 import {CoreStore, type CoreTransaction, type Deriver} from './store.js';
@@ -117,10 +113,6 @@ export interface CorePart {
 }
 
 export type CoreOptions = {
-  /** Open retained settings without admitting runtime work. Selected once at construction. */
-  standby?: boolean;
-  /** Internal receiver seam. The shipped factory supplies no receiver before durable apply is integrated. */
-  settingsReceiver?: () => SettingsReceiver;
   /** The parts that later stories add, and test stand-ins for them. */
   parts?: readonly CorePart[];
   /** The consumers acknowledgments are recorded for. Defaults to `DEFAULT_CONSUMERS`. */
@@ -216,52 +208,17 @@ export interface CoreModule extends BunnyModule {
    * members and the polled families, as the core was built with them, so an entry point's tests can show which (#1795).
    * `page` is the gateway's read: the rows with the open spans of the entities that have a change row among them (#1773).
    */
-  readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody; page: (filter: HistoryFilter) => HistoryPage | ErrorBody;
-    settings: (read: SettingsRead) => SettingsSnapshot | SettingsPage | ErrorBody; readonly rules: HistoryRules};
+  readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody; page: (filter: HistoryFilter) => HistoryPage | ErrorBody; readonly rules: HistoryRules};
 }
 
 /** Whether a hosted module is the core, whose dispatcher the gateway's action routes call. */
 export const isCoreModule = (module: BunnyModule): module is CoreModule => module.manifest.name === CORE_MODULE && 'actions' in module;
 
-type StandbyStart = (context: ModuleContext, peer?: SettingsPeerConfig) => void | Promise<void>;
-
 // Structural module names cannot convey early data ownership.
 const factoryStarts = new WeakMap<object, CoreModule>();
 const factoryCores = new WeakMap<CoreModule, {
-  standby: boolean; start: StandbyStart; bind(token: RuntimeOwnership): void; ownership(): CoreOwnership | undefined;
-  followerState(): 'unconfigured' | 'connecting' | 'following' | 'unavailable';
+  bind(token: RuntimeOwnership): void; ownership(): CoreOwnership | undefined;
 }>();
-
-function registeredStandbyStart(module: object): StandbyStart | undefined {
-  const factory = factoryCores.get(module as CoreModule);
-  return factory?.standby === true ? factory.start : undefined;
-}
-
-/** Checks exact factory identity and start without accepting a structural copy. */
-export function isRegisteredStandbyCore(module: unknown): boolean {
-  if (typeof module !== 'object' || module === null) return false;
-  const start = registeredStandbyStart(module);
-  return start !== undefined && Reflect.get(module, 'start') === start;
-}
-
-/** Selects and pins standby only from the original registered core and its original start. */
-export function standbyCoreStart(modules: readonly BunnyModule[]): {module: BunnyModule; start: StandbyStart} | undefined {
-  let selected: {module: BunnyModule; start: StandbyStart} | undefined;
-  for (const module of modules) {
-    const start: unknown = Reflect.get(module, 'start');
-    const expected = registeredStandbyStart(module);
-    const original = typeof start === 'function' ? factoryStarts.get(start) : undefined;
-    if (original !== undefined && original !== module && factoryCores.get(original)?.standby === true) throw ownershipUnavailable();
-    if (expected === undefined) continue;
-    if (start !== expected || selected !== undefined) throw ownershipUnavailable();
-    selected = {module, start: expected};
-  }
-  return selected;
-}
-/** Internal availability only. Durable freshness belongs to the receiver. */
-export function standbyFollowerState(module: CoreModule): 'unconfigured' | 'connecting' | 'following' | 'unavailable' {
-  return factoryCores.get(module)?.followerState() ?? 'unconfigured';
-}
 
 /** Internal future entrypoint bridge. The core must be the original, not a structural copy. */
 export function bindCoreRuntimeOwnership(core: CoreModule, token: RuntimeOwnership): void {
@@ -286,7 +243,6 @@ export async function admitBoundCoreOwnership(modules: readonly BunnyModule[], s
 
 /** The core as a module of the runtime's fixed list. Its `create` and `simulate` are the same: it reaches no device. */
 export function createCoreModule(options: CoreOptions = {}): CoreModule {
-  const standby = options.standby === true;
   let core: Core | undefined;
   let contentContext: ModuleContext | undefined;
   let ownership: CoreOwnership | undefined;
@@ -312,20 +268,19 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
         ? errorBody('unavailable') : readRoomContent(() => { if (contentContext === undefined) throw new Error('core-content-unavailable'); return contentContext.files(); }, ref, contentContext.signal, request),
       tools: [sessionsTool(() => core?.sessions()),
       inboxTool(() => core?.inbox()), historyTool(filter => core?.historyPage(filter))]},
-    start: (context: ModuleContext, peer?: SettingsPeerConfig) => {
+    start: (context: ModuleContext) => {
       if (ownership !== undefined) {
         if (started) throw ownershipUnavailable();
         assertRuntimeOwnership(ownership);
       }
       started = true;
       contentContext = context;
-      core = new Core(context, options, historyDevices, ownership, containsAutomationSecret, standby, standby ? peer : undefined, redactions);
+      core = new Core(context, options, historyDevices, ownership, containsAutomationSecret);
       return core.start();
     },
     stop: () => core?.stop(),
     history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'}),
-      page: filter => core?.historyPage(filter) ?? errorBody('unavailable', {detail: 'the core has not started'}),
-      settings: read => core?.settingsHistory(read) ?? errorBody('unavailable', {detail: 'the core has not started'}), rules: options.history ?? DEFAULT_HISTORY_RULES},
+      page: filter => core?.historyPage(filter) ?? errorBody('unavailable', {detail: 'the core has not started'}), rules: options.history ?? DEFAULT_HISTORY_RULES},
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
       artSchedule:{get:()=>artSchedule().get(),save:(value,parent)=>artSchedule().save(value,parent)},
@@ -362,8 +317,6 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
   } satisfies CoreModule;
   factoryStarts.set(module.start, module);
   factoryCores.set(module, {
-    standby, start: module.start,
-    followerState: () => core?.followerState ?? 'unconfigured',
     bind: token => {
       if (started || ownership !== undefined) throw ownershipUnavailable();
       bindRuntimeOwnership(token, module);
@@ -376,13 +329,12 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
 
 class Core {
   readonly #automation: AutomationPart;
-  readonly #settingsParts: readonly CorePart[];
   readonly #companions = new CompanionPart();
   readonly #art: ArtPart;
-  setMusicCaptureRetirement(retire: () => void): void {if (!this.standby) this.#music.setRetirement(retire);}
+  setMusicCaptureRetirement(retire: () => void): void {this.#music.setRetirement(retire);}
   get automation(): AutomationControls {return this.#automation.controls;}
-  setAutomationDevices(devices:readonly AutomationDevice[]):void {if (!this.standby) this.#automation.setDevices(devices);}
-  setArtCatalog(read: ArtCatalogRead): void {if (!this.standby) this.#automation.setArtCatalog(read);}
+  setAutomationDevices(devices:readonly AutomationDevice[]):void {this.#automation.setDevices(devices);}
+  setArtCatalog(read: ArtCatalogRead): void {this.#automation.setArtCatalog(read);}
   readonly #mode: ModePart;
   readonly #music: MusicCapturePart;
   readonly #lighting: MusicLightingPart;
@@ -401,10 +353,6 @@ class Core {
   #opened: () => void = () => {};
   #failed: (error: unknown) => void = () => {};
   #owner: AgentState | undefined;
-  #standbyLease: StorageLease | undefined;
-  #follower: SettingsFollower | undefined;
-  readonly #settingsReceiver: CoreOptions['settingsReceiver'];
-  readonly #signal: AbortSignal;
   /** Current positive Desktop archive evidence only; it expires when its module stops confirming it. */
   readonly #archived = new Map<string, {observedAtMs: number; untilMs: number}>();
   /** Why the owner is not open, while it is not, and when to try again. */
@@ -423,11 +371,8 @@ class Core {
   /** The start under way, which a stop waits for so that an owner it opens late is shut down too. */
   #starting: Promise<void> | undefined;
 
-  constructor(private readonly context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic, history, settingsReceiver}: CoreOptions, historyDevices: readonly HistoryDevice[], ownership: CoreOwnership | undefined,
-    private readonly holdsAutomationSecret: HoldsAutomationSecret, private readonly standby: boolean, private readonly peer?: SettingsPeerConfig,
-    private readonly redactions?: Redactions) {
-    this.#settingsReceiver = settingsReceiver;
-    this.#signal = context.signal;
+  constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic, history}: CoreOptions, historyDevices: readonly HistoryDevice[], ownership: CoreOwnership | undefined,
+    private readonly holdsAutomationSecret: HoldsAutomationSecret) {
     this.#sdk = context.sdk;
     this.#log = context.log;
     this.#clock = context.clock;
@@ -476,8 +421,7 @@ class Core {
       end: command => this.#tracker.endOperator(command),
     });
     const parts: readonly CorePart[] = [new OperationRecords(operationLimit), this.#inbox, this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation, this.#companions, this.#art, this.#show, this.#music, this.#lighting, ...added];
-    this.#settingsParts = [this.#mode, lightingLayout, playbackLayout, homeLayout, this.#automation];
-    this.#parts = standby ? this.#settingsParts : parts;
+    this.#parts = parts;
     this.#consumers = consumers;
     this.#ready = new Promise<void>((resolve, reject) => {
       this.#opened = resolve;
@@ -503,11 +447,8 @@ class Core {
         this.#companions.committed(change);
         return ()=>{this.#automation.publicationEnded(change);this.#companions.publicationEnded(change);};
       },
-      derivers: standby ? [] : parts.flatMap(part => part.derive ?? []),
-      open: standby ? [
-        ...this.#settingsParts.filter(part => part !== this.#automation).map(part => (database: DatabaseSync) => part.open?.(database)),
-        database => this.#automation.openSettings(database),
-      ] : [
+      derivers: parts.flatMap(part => part.derive ?? []),
+      open: [
         database => this.#tracker.open(database),
         ...parts.flatMap(part => part.open === undefined ? [] : [(database: DatabaseSync) => { part.open?.(database); }]),
       ],
@@ -520,16 +461,12 @@ class Core {
     this.#tracker = new Tracker({
       store: this.#store, sdk: context.sdk, log: context.log, trace: context.trace, clock: context.clock, scheduler: context.scheduler,
       files: context.files, currentDevice: id => this.#automation.currentDevice(id),
-      tracked: standby ? [] : parts.flatMap(part => part.tracked ?? []), ready: this.#ready, standby,
+      tracked: parts.flatMap(part => part.tracked ?? []), ready: this.#ready,
       storage: {failed: code => { this.#degraded(code); }, recovered: () => { this.#recovered(); }},
     });
   }
 
   start(): Promise<void> {
-    if (this.standby) {
-      this.#starting = this.#startStandby();
-      return this.#starting;
-    }
     // Everything registers before the first await: the runtime runs the next module's start once this one awaits.
     const handle: CoreHandle = {
       sdk: this.#sdk, log: this.#log, clock: this.#clock, ready: this.#ready,
@@ -589,88 +526,8 @@ class Core {
     return this.#starting;
   }
 
-  get followerState(): 'unconfigured' | 'connecting' | 'following' | 'unavailable' {
-    return this.peer === undefined ? 'unconfigured' : this.#follower?.state ?? 'unavailable';
-  }
-
-  #startSettingsFollower(): void {
-    const {peer, context} = this;
-    if (peer === undefined) return;
-    const failed = (code: ErrorCode, trace?: TraceContext, count = 1): void => {
-      recordLog(context.log, 'operation.failed',
-        {'bunny.operation': 'feed', 'bunny.outcome': OutcomeWord.failed, 'bunny.code': code, 'bunny.attempt_count': count}, trace);
-    };
-    if (this.#settingsReceiver === undefined) {
-      failed('unavailable');
-      return;
-    }
-    const receiver = this.#settingsReceiver();
-    this.#follower = new SettingsFollower({
-      signal: context.signal, clock: context.clock, scheduler: context.scheduler, receiver, failed,
-      trace: parent => context.trace.span(parent),
-      ...(peer.expectedOrigin === undefined ? {} : {expectedOrigin: peer.expectedOrigin}),
-      protectedValue: this.holdsAutomationSecret,
-      openPeer: async signal => {
-        const token = await loadSecret('settings-peer', peer.tokenFile);
-        signal.throwIfAborted();
-        if (token.length > 8192 || !/^[!-~]+$/.test(token)) throw settingsFailure('invalid-request');
-        this.redactions?.add(token);
-        return createSettingsPeer(peer, token, context.scheduler, context.trace);
-      },
-    });
-  }
-
-  async #startStandby(): Promise<void> {
-    let lease: Awaited<ReturnType<CoreStore['acquire']>> | undefined;
-    try {
-      lease = await this.#store.acquire(OWNER_ID, this.#signal);
-      this.#signal.throwIfAborted();
-      const stored = await lease.load(this.#signal);
-      this.#signal.throwIfAborted();
-      if (stored !== null && JSON.stringify(stored.consumers) !== JSON.stringify(this.#consumers)) {
-        throw new Error('incompatible-state');
-      }
-      this.#automation.migrateRetainedRoutines(this.#clock);
-      const snapshot = this.#readSettings({mode: 'snapshot'});
-      if ('error' in snapshot) throw new Error('invalid-settings-state');
-      this.#signal.throwIfAborted();
-      if (!this.#stopped) {
-        this.#standbyLease = lease;
-        lease = undefined;
-        this.#startSettingsFollower();
-      }
-      this.#opened();
-    } catch (error) {
-      if ((this.#store.takeFailure() === 'full' || fullDisk(error)) && !this.#signal.aborted) {
-        this.#ownerFailed('capacity');
-        this.#opened();
-        return;
-      }
-      // A decoder can include stored settings in its error. Classify capacity
-      // above, then give startup diagnostics only a fixed message.
-      const failure = this.#signal.aborted
-        ? new DOMException('the core start was aborted', 'AbortError')
-        : new Error('storage-unavailable');
-      this.#failed(failure);
-      throw failure;
-    } finally {
-      await lease?.release();
-    }
-  }
-
   async stop(): Promise<void> {
     this.#stopped = true;
-    if (this.standby) {
-      const stopping = this.#follower?.stop();
-      await this.#starting?.catch(() => {});
-      await stopping;
-      const lease = this.#standbyLease;
-      this.#standbyLease = undefined;
-      await lease?.release();
-      await this.#automation.close();
-      this.#store.close();
-      return;
-    }
     this.#timer?.();
     await this.#starting?.catch(() => {});
     this.#timer?.();
@@ -697,7 +554,6 @@ class Core {
   }
 
   async #open(): Promise<void> {
-    if (this.standby) throw new Error('session-owner-unavailable');
     this.#owner = await createAgentState({storage: this.#store, ownerId: OWNER_ID, consumers: this.#consumers.map(consumer => ({...consumer})), clock: () => this.#clock.now(),
       isArchived: (identity, _signal, ancestors) => Promise.resolve([identity, ...ancestors].some(item => {
         const key = sessionEntityId(item), evidence = this.#archived.get(key);
@@ -724,7 +580,7 @@ class Core {
   async #ensureOwner(): Promise<AgentState | Refusal> {
     if (this.#owner !== undefined) return this.#owner;
     const refusal = (): Refusal => ({code: this.#ownerDown, detail: this.#ownerDown === 'capacity' ? 'the core store is full' : 'the core is not taking changes now'});
-    if (this.standby || !this.#reopen.ready(this.#clock.now())) return refusal();
+    if (!this.#reopen.ready(this.#clock.now())) return refusal();
     try {
       await this.#open();
     } catch {
@@ -784,7 +640,7 @@ class Core {
    * (ADR 0012, "Repetition"), never a record per attempt above DEBUG.
    */
   #degraded(code: ErrorCode): void {
-    if (!this.standby) this.#music.storageFailed();
+    this.#music.storageFailed();
     const now = this.#clock.now();
     const fields = {'bunny.operation': 'storage', 'bunny.outcome': 'unavailable', 'bunny.code': code};
     const record = (extra: LogFields = {}): void => {
@@ -818,7 +674,6 @@ class Core {
    * is logged at DEBUG only. True when the records are up to date.
    */
   async #refresh(): Promise<boolean> {
-    if (this.standby) return false;
     try {
       if (await this.#store.refresh()) this.#recovered();
       this.#freshness.reset();
@@ -953,7 +808,6 @@ class Core {
 
   /** Assigns qualified mode participants once, without sending a command. */
   setModeParticipants(participants: readonly ModeParticipant[]): void {
-    if (this.standby) return;
     this.#mode.setParticipants(participants);
     this.#automation.setParticipants(participants);
     this.#lighting.setParticipants(participants);
@@ -973,20 +827,6 @@ class Core {
       return errorBody('internal', {detail: 'history holds a secret, which the gateway never serves'});
     }
     return page;
-  }
-
-  /** Read only the covered owners. General sync can refresh and publish sessions. */
-  settingsHistory(read: SettingsRead): SettingsSnapshot | SettingsPage | ErrorBody {
-    const ready = this.standby ? this.#standbyLease !== undefined && !this.#signal.aborted : this.#owner !== undefined;
-    if (this.#stopped || !ready || !this.#store.open || !this.#automation.settingsAvailable()) {
-      return errorBody('unavailable', {detail: 'the core settings are unavailable'});
-    }
-    return this.#readSettings(read);
-  }
-
-  #readSettings(read: SettingsRead): SettingsSnapshot | SettingsPage | ErrorBody {
-    return readSettingsHistory(this.#store.history, read, () =>
-      this.#settingsParts.flatMap(part => part.states?.(SETTINGS_FAMILIES) ?? []));
   }
 
   /** Sends one tracked action through the dispatcher (#782); see `CoreActions.dispatch`. */
@@ -1151,7 +991,6 @@ class Core {
    * changed, so each record's freshness holds at the sync's time.
    */
   async #serve(request: Message<SyncRequest>): Promise<Snapshot | ErrorBody> {
-    if (this.standby) return errorBody('unavailable', {detail: 'the core is in standby'});
     try {await this.#ready;} catch {
       // A sync during failed startup refuses; the startup owner reports the original store failure once.
       return errorBody('unavailable', {detail: 'the core could not open its store'});

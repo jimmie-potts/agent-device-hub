@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type {PlaybackLayoutRecord, PlaybackPlacement, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {createCoreModule} from '../src/core/core.js';
 import type {Action} from '../src/core/tracker.js';
-import {contextOf, edgeConfig, fixture, it, run, stateDir} from './support.js';
+import {contextOf, edgeConfig, fixture, it, manualClock, run, stateDir} from './support.js';
 
 const placements = (): PlaybackPlacement[] => [{playback: 'shared-music', rooms: ['studio', 'kitchen']}];
 const action = (requestId: string, expectedRevision: number, assignments = placements()): Action => ({key: 'bunny.cmd.playback-layout-set.playback', requestedBy: 'bunny/parts/operator', requestId,
@@ -37,6 +37,32 @@ it('music placement is guarded core metadata and survives restart without playba
   }
   await runtime.stop();const restarted = createCoreModule(), next = fixture('placement-after-restart');
   await run(context, {modules: [restarted, next], configFile: files.config, stateDir: dir});assert.deepEqual(await read(next), saved);
+});
+
+it('an ignored Playback owner update keeps the previously saved placement', async context => {
+  const clock = manualClock();
+  let database: import('node:sqlite').DatabaseSync | undefined;
+  const core = createCoreModule({parts: [{open: db => {database = db;}}]});
+  await run(context, {modules: [core], clock, scheduler: clock.scheduler});
+  const db = database;
+  assert.ok(db);
+  db.exec('CREATE TRIGGER ignore_playback BEFORE UPDATE ON playback_layout BEGIN SELECT RAISE(IGNORE); END');
+  const saved = () => db.prepare('SELECT record FROM playback_layout').get()?.record;
+  const changes = () => {
+    const rows = core.history.read({kind: 'change'});
+    assert.ok(Array.isArray(rows));
+    return rows.filter(row => row.record.family === 'playback-layout');
+  };
+  const prior = saved(), history = changes();
+  assert.ok('error' in await core.operatorActions.dispatch(action('ignored-playback', 0)));
+  assert.equal(saved(), prior);
+  assert.deepEqual(changes(), history);
+  const operations = core.history.read({kind: 'operation'});
+  assert.ok(Array.isArray(operations));
+  assert.ok(operations.some(row => row.requestId === 'ignored-playback' && row.record.status === 'rejected'));
+  db.exec('DROP TRIGGER ignore_playback');
+  assert.ok('status' in await core.operatorActions.dispatch(action('retry-playback', 0)));
+  assert.notEqual(saved(), prior);
 });
 
 it('authenticated placement saves require a browser session and preserve trace context', async context => {

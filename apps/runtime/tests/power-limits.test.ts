@@ -75,3 +75,15 @@ void test('a failed attempt write preserves its request and trace identity and s
  const original=store.save.bind(store);store.save=async(entry,view,expected,parent,revision)=>{if(entry.attempt!==null){attempt=entry.attempt.requestId;attemptTrace=parent.traceparent;throw new Error('synthetic storage failure');}await original(entry,view,expected,parent,revision);};
  await limits.tick();assert.equal(sends,0);assert.equal(reports[0]?.id,attempt);assert.equal(reports[0]?.trace,attemptTrace);assert.match(reports[0]?.trace??'',/^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/);
 });
+
+void test('an ignored power limit definition never becomes active', async t => {
+  const w = world(t);
+  w.store.db.exec('CREATE TRIGGER ignore_limit BEFORE INSERT ON automation_power_limits BEGIN SELECT RAISE(IGNORE); END');
+  const value = {enabled: false, durationMs: 2000, expectedSettingsRevision: 0};
+  await assert.rejects(w.limits.save('desk-lamp', value), /the power limit was not stored/);
+  assert.equal(w.limits.get('desk-lamp'), undefined);
+  assert.deepEqual(w.sent, []);
+  w.store.db.exec('DROP TRIGGER ignore_limit');
+  assert.equal((await w.limits.save('desk-lamp', value)).settingsRevision, 1);
+  assert.deepEqual(w.sent, []);
+});

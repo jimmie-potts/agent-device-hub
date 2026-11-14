@@ -76,7 +76,8 @@ export async function access(info, project, run) {
   const ingestSource = value('BUNNY_INGEST_SOURCE');
   const pixooBind = value('BUNNY_PIXOO_BIND');
   const control = value('BUNNY_CONTROL');
-  if (profile === 'production' || control === 'standby') {
+  if (control === 'standby') refuse();
+  if (profile === 'production') {
     containerOptions(Object.fromEntries(['BUNNY_ACCESS', 'BUNNY_CONTROL', 'BUNNY_PORT', 'BUNNY_STATE_DIR', 'BUNNY_CONFIG',
       'BUNNY_INGEST_SOURCE', 'BUNNY_PIXOO_BIND'].flatMap(key => value(key) === undefined ? [] : [[key, value(key)]])));
   }
@@ -103,7 +104,7 @@ export async function access(info, project, run) {
   }
   if (!['host-local', 'private-proxy', 'production'].includes(profile) || info.Config?.Labels?.['io.bunny.access'] !== profile
     || (ingestSource !== undefined && !/^bunny\/parts\/hub-[0-9a-f]{32}(?![\s\S])/.test(ingestSource))
-    || (profile !== 'production' && control !== 'disabled' && control !== 'standby') || value('BUNNY_PORT') !== '18788'
+    || (profile !== 'production' && control !== 'disabled') || value('BUNNY_PORT') !== '18788'
     || ![undefined, '/var/lib/bunny'].includes(value('BUNNY_STATE_DIR'))
     || ![undefined, '/etc/bunny/runtime.json'].includes(value('BUNNY_CONFIG'))
     || !localBinding(ports, pixooBind)

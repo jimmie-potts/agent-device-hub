@@ -117,7 +117,7 @@ export function parseRuleInput(value:unknown, routed:readonly string[]|null, all
   return {name:input.name as string,kind:'event',...(input.enabled === undefined ? {} : {enabled:input.enabled as boolean}),
     trigger:parseTrigger(input.trigger),action:parseAction(input.action,routed)};
 }
-export function parseInterruptSet(value:unknown): string[] {
+function parseInterruptSet(value:unknown): string[] {
   if (!object(value) || !exact(value,['kinds']) || !Array.isArray(value.kinds) || value.kinds.length > 64 || !value.kinds.every(eventKind) ||
       new Set(value.kinds).size !== value.kinds.length) fail('invalid-interrupt-set');
   return [...(value as {kinds:string[]}).kinds].sort();
@@ -129,7 +129,7 @@ const zone = (value:unknown) => {
   try { new Intl.DateTimeFormat('en-US',{timeZone:value}); return true; } catch { return false; }
 };
 const count = (value:unknown, maximum:number) => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= maximum;
-export function parseSettings(value:unknown, code = 'invalid-settings'): AutomationSettings {
+function parseSettings(value:unknown, code = 'invalid-settings'): AutomationSettings {
   if (!object(value) || !exact(value,['noFlourishes','quietHours','budgets']) || typeof value.noFlourishes !== 'boolean' ||
       !object(value.quietHours) || !exact(value.quietHours,['enabled','start','end','timeZone']) || typeof value.quietHours.enabled !== 'boolean' ||
       !clockTime(value.quietHours.start) || !clockTime(value.quietHours.end) || !zone(value.quietHours.timeZone) ||
@@ -148,16 +148,16 @@ function ruleFromRow(row:RuleRow): Rule {
   } catch { throw new Error('invalid-state'); }
 }
 
-export function storedAutomationSettings(store: AutomationStore): AutomationSettings {
+function storedAutomationSettings(store: AutomationStore): AutomationSettings {
   try { return parseSettings(store.settings()); }
   catch (error) { throw new Error('invalid-state', {cause: error}); }
 }
 
-export function storedEventRules(store: AutomationStore): Rule[] {
+function storedEventRules(store: AutomationStore): Rule[] {
   return store.rules().filter(row => row.kind === 'event').map(ruleFromRow);
 }
 
-export function storedInterruptKinds(store: AutomationStore): string[] {
+function storedInterruptKinds(store: AutomationStore): string[] {
   const kinds = store.interruptSet();
   if (!kinds.every(eventKind)) throw new Error('invalid-state');
   return kinds;

@@ -1,4 +1,3 @@
-import {settingsPatch} from './settings-contract.js';
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import {childOf,type TraceContext, Outcome} from '@jimmie-potts/sdk';
@@ -12,7 +11,6 @@ const FRESH_MS=15000;
 type Entry={target:string;owner:string;configurationRevision:number;definitionId:string;settingsRevision:number;enabled:boolean;durationMs:number;lastPower:boolean|null;startedAtMs:number|null;observedAtMs:number|null;runId:string|null;attempt:PowerLimitRecord['lastAttempt'];record?:PowerLimitRecord};
 const invalid=(code='invalid-request',status=400):never=>{throw new AutomationError(code,status);};
 const object=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
-/** Checks a write without resolving its target or reading retained state. */
 function powerLimitBody(value: unknown): {enabled: boolean; durationMs: number; expectedSettingsRevision: unknown} {
   if (!object(value) || Object.keys(value).some(key => !['enabled', 'durationMs', 'expectedSettingsRevision'].includes(key))
     || typeof value.enabled !== 'boolean' || typeof value.durationMs !== 'number' || !Number.isSafeInteger(value.durationMs)
@@ -23,9 +21,6 @@ function limitRevision(value: unknown): number | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return invalid();
   return value;
-}
-export function checkPowerLimitWrite(value: unknown): void {
-  limitRevision(powerLimitBody(value).expectedSettingsRevision);
 }
 function decode(payload:string):Entry {
   const value:unknown=JSON.parse(payload);
@@ -54,20 +49,20 @@ export class PowerLimitStore {
       const saved = this.db.prepare('INSERT INTO automation_power_limits VALUES(?,?) ON CONFLICT(target) DO UPDATE SET payload=excluded.payload')
         .run(entry.target, JSON.stringify({...entry, record}));
       if (Number(saved.changes) !== 1) throw new Error('the power limit was not stored');
-      return {before: current?.record, record};
+      return record;
     };
     if (this.commit !== undefined) {
       entry.record = await this.commit(tx => {
-        const {before, record} = work(tx.revision());
+        const record = work(tx.revision());
         tx.add(`bunny.state.power-limit.${entry.target}`, {kind: 'state', type: 'org.bunny.power-limit.updated',
-          subject: entry.target, dataschema: LIMIT_SCHEMA, data: record}, {parent, settings: settingsPatch('power-limit', before, record)});
+          subject: entry.target, dataschema: LIMIT_SCHEMA, data: record}, {parent});
         return record;
       });
       return;
     }
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const {record} = work((this.get(entry.target)?.record?.revision ?? 0) + 1);
+      const record = work((this.get(entry.target)?.record?.revision ?? 0) + 1);
       this.db.exec('COMMIT');
       entry.record = record;
     } catch (error) {
