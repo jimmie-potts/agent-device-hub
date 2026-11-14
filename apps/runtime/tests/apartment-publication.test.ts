@@ -9,7 +9,7 @@ import {activeApartmentDigest,publishApartment} from '../src/apartment/publish.j
 import {syncApartmentDirectory} from '../src/apartment/files.js';
 import {holdRuntimeLease} from '../src/lease.js';
 import {createCoreModule} from '../src/core/core.js';
-import {apartmentActiveFile,apartmentAssetFile,apartmentDirectory} from '../src/apartment/content.js';
+import {apartmentActiveFile,apartmentAssetFile,apartmentDirectory,readApartmentDocument} from '../src/apartment/content.js';
 import {edgeConfig,it,run,stateDir} from './support.js';
 import {syntheticApartment,syntheticApartmentArtwork} from './fixtures/apartment.js';
 
@@ -37,7 +37,7 @@ it('publishes under the existing lease, preserves prior usable versions and fenc
     await assert.rejects(publishApartment({stateDir:state,candidate:originalPath,expected:null}),{code:'unavailable'});
     await assert.rejects(invoke(process.execPath,[helper,'publish',state,'none',originalPath]),error =>
       typeof error === 'object' && error !== null && 'stderr' in error && typeof error.stderr === 'string'
-        && JSON.parse(error.stderr).error.code === 'unavailable' && !error.stderr.includes(state));
+        && !error.stderr.includes(state) && error.stderr.includes('"code":"unavailable"'));
     await assert.rejects(readFile(join(state,'modules','core','apartment','active.json')),{code:'ENOENT'});
   } finally { lease.release(); }
   assert.equal(await activeApartmentDigest(state),null);
@@ -88,7 +88,8 @@ it('publishes under the existing lease, preserves prior usable versions and fenc
   await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:originalDigest,signal:interrupted.signal},{
     confirmDirectory:confirm,
     beforeActivate:() => {
-      assert.ok(confirmed.includes(join(directory,'assets')), 'reused image name synced before activation');
+      assert.equal(confirmed.filter(path => path===join(directory,'assets')).length,2,
+        'old-artwork validation and the reused new image name both sync before activation');
       assert.ok(confirmed.includes(join(directory,'versions')), 'prior model name synced before activation');
       assert.ok(confirmed.includes(join(state,'modules')), 'core folder name synced before activation');
       interrupted.abort();
@@ -98,11 +99,16 @@ it('publishes under the existing lease, preserves prior usable versions and fenc
   assert.equal(await readFile(apartmentActiveFile(directory),'utf8'),original);
   assert.equal(await readFile(join(directory,'versions',originalDigest+'.json'),'utf8'),original);
 
+  confirmed.length = 0;
   await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:originalDigest},{
+    confirmDirectory:confirm,
+    beforeActivate:() => {
+      assert.ok(confirmed.includes(join(directory,'versions')), 'reused prior-model name synced before activation');
+    },
     afterActivate:() => { throw new Error('stopped before receipt'); },
   }),{code:'uncertain-result'});
   assert.equal(await activeApartmentDigest(state),correctedDigest);
-  assert.equal(JSON.parse((await invoke(process.execPath,[helper,'status',state])).stdout).digest,correctedDigest);
+  assert.deepEqual(JSON.parse((await invoke(process.execPath,[helper,'status',state])).stdout),{digest:correctedDigest});
   await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:originalDigest}),{code:'revision-conflict'});
   await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:correctedDigest},{
     confirmDirectory:async path => {
@@ -143,22 +149,45 @@ it('calibrates plan units and prepares an aligned correction without overwriting
   const input = join(directory,'draft.json'), base = join(directory,'scaled.candidate.json');
   const original = JSON.stringify(draft);
   await writeFile(input,original,{mode:0o600});
-  const preparedReceipt = JSON.parse((await invoke(process.execPath,[helper,'calibrate',input,base])).stdout);
-  const preparedBytes = await readFile(base);
-  assert.equal(preparedReceipt.digest,apartmentSha256(preparedBytes));
-  const prepared = JSON.parse(preparedBytes.toString());
-  assert.deepEqual(prepared.rooms[0].footprint,[[0,0],[2,0],[2,1.5],[0,1.5]]);
+  const preparedReceipt = (await invoke(process.execPath,[helper,'calibrate',input,base])).stdout;
+  const {bytes:preparedBytes,model:prepared} = await readApartmentDocument(base);
+  assert.deepEqual(JSON.parse(preparedReceipt),{digest:apartmentSha256(preparedBytes)});
+  assert.deepEqual(prepared.rooms[0]?.footprint,[[0,0],[2,0],[2,1.5],[0,1.5]]);
   await assert.rejects(invoke(process.execPath,[helper,'calibrate',base,join(directory,'double.candidate.json')]));
   await assert.rejects(invoke(process.execPath,[helper,'calibrate',input,base]));
-  const room = {...prepared.rooms[0],scan:{id:'new-survey',yaw:0,translation:[0,0,0]},source:'measured'};
+  const studio = prepared.rooms[0];
+  assert.ok(studio !== undefined);
+  const before = studio.walls[0];
+  assert.ok(before !== undefined);
+  const room = {...studio,walls:[{...before,height:before.height+.1,source:'measured'},...studio.walls.slice(1)],
+    scan:{id:'new-survey',yaw:0,translation:[0,0,0]},source:'measured'};
   const scan = join(directory,'scan.json'), candidate = join(directory,'refined.candidate.json');
   const scanText = JSON.stringify({schema:'apartment-scan/1.0',room});
   await writeFile(scan,scanText,{mode:0o600});
   await invoke(process.execPath,[helper,'replace-scan',base,scan,candidate]);
-  const corrected = JSON.parse(await readFile(candidate,'utf8'));
+  const {model:corrected} = await readApartmentDocument(candidate);
   assert.deepEqual(corrected.rooms,[room,prepared.rooms[1]]);
   assert.deepEqual(corrected.objects,prepared.objects);
   assert.equal(await readFile(input,'utf8'),original);
   assert.equal(await readFile(scan,'utf8'),scanText);
   assert.deepEqual(await readFile(base),preparedBytes);
+
+  const {bytes,image} = syntheticApartmentArtwork();
+  await mkdir(join(directory,'assets'),{mode:0o700});
+  await writeFile(join(directory,'assets',image.id+'.png'),bytes,{mode:0o600});
+  const state = await stateDir(context);
+  const initialized = await holdRuntimeLease(state);
+  initialized.release();
+  const installed = await publishApartment({stateDir:state,candidate:base,expected:null});
+  await publishApartment({stateDir:state,candidate,expected:installed.digest});
+  const reader = {id:'apartment-scan-reader',source:'bunny/parts/apartment-scan-reader',token:'synthetic-scan-reader-token',scopes:['read' as const]};
+  const files = await edgeConfig(context,[reader]);
+  for (let start = 0; start < 2; start++) {
+    const {runtime} = await run(context,{modules:[createCoreModule()],stateDir:state,configFile:files.config,edge:{schemas:{}}});
+    const response = await fetch(runtime.url+'/modules/core/content/apartment-model',{headers:{authorization:'Bearer '+reader.token}});
+    assert.equal(response.status,200);
+    assert.deepEqual(await response.json(),corrected);
+    await runtime.stop();
+  }
+
 });

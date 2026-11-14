@@ -13,7 +13,6 @@ declare global {
   }
 }
 
-const powerWrites=(sent:readonly string[]):number=>sent.filter(item=>item.endsWith('/power-set')).length;
 const panel=(page:Page)=>page.getByRole('region',{name:'Apartment 3D model',exact:true});
 const selectLight=(page:Page,name:string)=>panel(page).getByRole('button',{name:`Select ${name}`,exact:true}).click();
 
@@ -98,7 +97,7 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await selectLight(page,'Unpaired reading lamp');await view.locator('.apartment-selection').getByText('No device is bound to this fixture.').waitFor();
     await view.getByRole('button',{name:'Select Reading wall light in apartment model',exact:true}).click();
     const card=view.getByRole('article',{name:'Reading wall light',exact:true});await card.waitFor();
-    assert.equal(powerWrites(sent),0,'camera, framing, artwork and selecting a fixture send no command');
+    assert.equal(sent.length,0,'camera, framing, artwork and selecting a fixture send no command');
     const untouched=world.lifxState().bulbs['192.0.2.42']?.power;
     const nextPower=world.lifxState().bulbs['192.0.2.43']?.power!==true;
     await card.getByRole('button',{name:nextPower?'On':'Off',exact:true}).click();
@@ -106,11 +105,11 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await card.locator(`.light-power button[aria-pressed=true]:not(:disabled):text-is("${nextPower?'On':'Off'}")`).waitFor();
     assert.equal(world.lifxState().bulbs['192.0.2.43']?.power,nextPower);
     assert.equal(world.lifxState().bulbs['192.0.2.42']?.power,untouched);
-    assert.equal(powerWrites(sent),1,'one deliberate action targeted the existing owner and exact room member');
+    assert.equal(sent.length,1,'one deliberate action targeted the existing owner and exact room member');
     assert.match(await report.innerText(),nextPower?/Off · reported/:/On · reported/,'a write acknowledgement is not a fresh observation');
     await world.restart();await page.reload();await feed(page,'connected');await selectLight(page,'Reading wall light');
     await report.filter({hasText:nextPower?'On · reported':'Off · reported'}).waitFor();
-    assert.equal(powerWrites(sent),1,'reconnect shows the latest reading and does not repeat the command');
+    assert.equal(sent.length,1,'reconnect shows the latest reading and does not repeat the command');
     await page.route('**/api/sdk/v1/stream',route=>route.abort());world.dropDashboardStreams();
     await view.locator('.apartment-selection').getByText('Room assignments are stale.').waitFor();
     await page.unroute('**/api/sdk/v1/stream');await feed(page,'connected');await card.waitFor();
@@ -123,7 +122,7 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await page.reload();await feed(page,'connected');await selectLight(page,'Reading wall light');
     await card.getByRole('status').filter({hasText:/Uncertain/}).waitFor();
     assert.equal(await card.getByRole('button',{name:'Off',exact:true}).isDisabled(),true);
-    assert.equal(powerWrites(sent),2,'reload never retries a retained request with an uncertain result');
+    assert.equal(sent.length,2,'reload never retries a retained request with an uncertain result');
     await page.waitForFunction(()=>window.apartmentTestResources.textures===1);
     await page.getByRole('link',{name:'Devices',exact:true}).click();
     await page.waitForFunction(()=>{const r=window.apartmentTestResources;return r.buffers===0&&r.textures===0&&r.programs===0;});
@@ -142,7 +141,7 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await view.getByText('Artwork unavailable: Abstract sun print, Reading room print.',{exact:true}).waitFor();
     await selectLight(page,'Reading wall light');await card.waitFor();
     if(process.env.DASHBOARD_RECEIPTS!==undefined)await view.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/apartment-missing-art.png'});
-    assert.equal(powerWrites(sent),2,'missing artwork and departure send no light command');
+    assert.equal(sent.length,2,'missing artwork and departure send no light command');
     assert.deepEqual(errors,[]);
     const fallback=await desktop.newPage();
     await fallback.addInitScript(()=>{HTMLCanvasElement.prototype.getContext=()=>null;});

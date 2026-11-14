@@ -22,7 +22,7 @@ function correction(): ApartmentScan {
   return required(scan);
 }
 
-test('the plan reference scales adjacent rooms, walls, openings and furniture consistently', () => {
+void test('the plan reference scales adjacent rooms, walls, openings and furniture consistently', () => {
   const geometry = syntheticApartment();
   const draft = {...geometry,schema:'apartment-plan/1.0',calibration:{...geometry.calibration,planUnits:400},
     rooms:geometry.rooms.map(room => ({...room,footprint:room.footprint.map(p => p.map(n => n*100)),
@@ -39,7 +39,7 @@ test('the plan reference scales adjacent rooms, walls, openings and furniture co
   assert.throws(() => calibrateApartmentPlan(prepared),/uncalibrated apartment-plan/);
 });
 
-test('normalized scan alignment replaces only one room and preserves IDs and curated placements', () => {
+void test('normalized scan alignment replaces only one room and preserves IDs and curated placements', () => {
   const model = syntheticApartment();
   const original = structuredClone(model);
   const scan = correction();
@@ -66,7 +66,7 @@ test('normalized scan alignment replaces only one room and preserves IDs and cur
   assert.equal(replaceApartmentScan(refined,replacement).rooms[0]?.walls[2]?.height,2.72);
 });
 
-test('mismatched scan identity, wall identifiers, mirrors and placement conflicts are refused', () => {
+void test('mismatched scan identity, wall identifiers, mirrors and placement conflicts are refused', () => {
   const model = syntheticApartment(), scan = correction();
   const wrongRoom = structuredClone(scan); wrongRoom.room.id = 'missing';
   const lostWall = structuredClone(scan); lostWall.room.walls.splice(0,1);
@@ -77,7 +77,7 @@ test('mismatched scan identity, wall identifiers, mirrors and placement conflict
   assert.equal(parseApartmentScan({...scan,room:{...scan.room,scan:{...scan.room.scan,mirror:true}}}),undefined);
 });
 
-test('semantic model rejects unsafe, ambiguous and excessive data', () => {
+void test('semantic model rejects unsafe, ambiguous and excessive data', () => {
   const model = syntheticApartment();
   assert.deepEqual(parseApartmentModel(model),model);
   const changes: ((model: ApartmentModel, room: Room, wall: ApartmentWall) => void)[] = [
@@ -110,7 +110,44 @@ test('semantic model rejects unsafe, ambiguous and excessive data', () => {
   assert.equal(parseApartmentModel({...model,rooms:[concave],objects:[],artwork:[]}),undefined);
 });
 
-test('PNG must have declared dimensions, CRCs, exact compressed data and a stripped static rendition', () => {
+void test('coplanar overlaps are rejected in either room order and during scan replacement', () => {
+  const model = syntheticApartment();
+  const outer = required(model.rooms[0]);
+  const strip: Room = {
+    id:'strip',footprint:[[.5,0],[1.5,0],[1.5,3],[.5,3]],floorY:0,scan:null,source:'measured',
+    walls:[{id:'edge',start:[.5,0],end:[1.5,0],height:2.5,thickness:.15,source:'measured',openings:[]}],
+  };
+  for (const rooms of [[outer,strip],[strip,outer]]) {
+    assert.equal(parseApartmentModel({...model,rooms,artwork:[],objects:[]}),undefined);
+  }
+  const other = required(model.rooms[1]);
+  const scan = parseApartmentScan({schema:'apartment-scan/1.0',room:{...other,scan:{id:'overlapping-scan',yaw:0,translation:[-1,0,0]}}});
+  assert.throws(() => replaceApartmentScan(model,required(scan)),/conflicts with the apartment model/);
+  assert.ok(parseApartmentModel(model),'adjacent rooms on the same floor may share a wall');
+});
+
+void test('shared partitions normalize reversed openings and refuse conflicting surveys', () => {
+  const model = syntheticApartment();
+  const first = required(model.rooms[0]), other = required(model.rooms[1]);
+  const partition = required(first.walls[1]), door = required(partition.openings[0]);
+  const back: ApartmentWall = {...partition,id:'reverse-partition',start:partition.end,end:partition.start,
+    openings:[{...door,id:'reverse-door',offset:3-door.offset-door.width}]};
+  other.walls.push(back);
+  assert.ok(parseApartmentModel(model),'matching door across reversed wall direction');
+  const reversed = required(back.openings[0]);
+  reversed.offset += .2;
+  assert.equal(parseApartmentModel(model),undefined,'overlapping but shifted doors');
+  back.openings = [];
+  assert.ok(parseApartmentModel(model),'one-sided door');
+  const next = structuredClone(other);
+  required(next.walls[1]).openings = [reversed];
+  const scan = parseApartmentScan({schema:'apartment-scan/1.0',room:{...next,scan:{id:'conflicting-door',yaw:0,translation:[0,0,0]}}});
+  assert.throws(() => replaceApartmentScan(model,required(scan)),/conflicts with the apartment model/);
+  back.openings = [{...reversed,offset:0,width:.5}];
+  assert.ok(parseApartmentModel(model),'disjoint declared opening');
+});
+
+void test('PNG must have declared dimensions, CRCs, exact compressed data and a stripped static rendition', () => {
   const {bytes,image} = syntheticApartmentArtwork();
   assert.deepEqual(apartmentPngSize(bytes),{width:image.width,height:image.height});
   assert.equal(validApartmentArtwork(bytes,image),true);

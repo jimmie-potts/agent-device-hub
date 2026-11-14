@@ -107,7 +107,7 @@ export async function publishApartment(
   };
   const confirm = checks?.confirmDirectory ?? syncApartmentDirectory;
   let activationAttempted = false;
-  try {
+  const publish = async (): Promise<{digest: string; previous: string | null}> => {
     cancelled();
     const core = join(state,'modules','core');
     if (await ifMissing(lstat(core)) !== undefined) await requireApartmentDirectory(core);
@@ -157,11 +157,20 @@ export async function publishApartment(
       if (activationAttempted) throw new ApartmentRefusal('uncertain-result','Read the active digest before trying again.');
       throw error;
     } finally { await rm(temporary,{force:true}).catch(() => {}); }
-  } finally {
+  };
+  const release = (): void => {
     try { lease.release(); }
     catch (error) {
       if (activationAttempted) throw new ApartmentRefusal('uncertain-result','Read the active digest before trying again.');
       throw error;
     }
+  };
+  let published;
+  try { published = await publish(); }
+  catch (error) {
+    release();
+    throw error;
   }
+  release();
+  return published;
 }

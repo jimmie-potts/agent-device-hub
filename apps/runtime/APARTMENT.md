@@ -99,7 +99,9 @@ The top-level fields are `schema`, `calibration`, `rooms`, `objects` and
   pixels in total.
 
 The model is capped at 512 KiB, 16 rooms, 128 walls, 128 openings and 160
-objects. Material and mesh decisions belong to the dashboard. The
+objects. The dashboard limits prepared rendering to 120,000 vertices
+and caps its canvas at about 2 million pixels. It decodes one artwork
+at a time within the model's total image budget. The
 [synthetic fixture](tests/fixtures/apartment.ts) demonstrates the document.
 The existing room-model/1.0 files continue to work alongside the apartment.
 
