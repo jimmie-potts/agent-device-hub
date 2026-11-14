@@ -58,6 +58,57 @@ test('operator refuses retired standby control before starting Docker', async ()
   assert.ok(!isolated.calls.some(args => args[0] === 'start'));
 });
 
+test('a retired standby start leaves running and stopped containers alone', async () => {
+  for (const profile of ['production', 'private-proxy']) {
+    for (const running of [false, true]) {
+      const candidate = localFixture(profile);
+      candidate.info.Config.Env[1] = 'BUNNY_CONTROL=standby';
+      if (running) {
+        Object.assign(candidate.info.State, {Status: 'running', Running: true, Pid: 101});
+        candidate.info.NetworkSettings.Ports = candidate.info.HostConfig.PortBindings;
+      }
+      await assert.rejects(operate(plan('start'), candidate.run), /operator-refused/);
+      assert.equal(candidate.info.State.Running, running);
+      assert.deepEqual(candidate.calls.map(([command]) => command), ['ps', 'inspect']);
+    }
+  }
+});
+
+test('stopped legacy standby metadata permits only the existing isolated maintenance worker', async () => {
+  for (const profile of ['production', 'private-proxy']) {
+    for (const command of ['backup', 'restore']) {
+      const ordinary = localFixture(profile), legacy = localFixture(profile);
+      legacy.info.Config.Env[1] = 'BUNNY_CONTROL=standby';
+      const checkPrivate = async () => {};
+      const expected = await operate(plan(command), ordinary.run, checkPrivate);
+      assert.deepEqual(await operate(plan(command), legacy.run, checkPrivate), expected);
+      assert.deepEqual(legacy.calls, ordinary.calls);
+      const worker = legacy.calls.find(([verb]) => verb === 'run');
+      assert.ok(worker?.includes('--network=none') && worker.includes('worker-' + command));
+      assert.equal(legacy.info.State.Running, false);
+    }
+  }
+});
+
+test('legacy standby maintenance still refuses unsafe metadata and a running container', async () => {
+  for (const profile of ['production', 'private-proxy', 'host-local', 'isolated']) {
+    for (const mutate of [
+      f => {f.info.Config.Env.push('BUNNY_INGEST_SOURCE=bunny/parts/hub-' + '5'.repeat(32));},
+      f => {f.info.Config.Env.push('BUNNY_PIXOO_BIND=192.168.1.10');},
+      f => {f.info.Config.Env[2] = 'BUNNY_PORT=8788';},
+      f => {f.info.Config.Env.push('BUNNY_CONTROL=disabled');},
+      f => {Object.assign(f.info.State, {Status: 'running', Running: true, Pid: 101});},
+      f => {f.network.Internal = true;},
+    ]) {
+      const candidate = localFixture(profile);
+      candidate.info.Config.Env[1] = 'BUNNY_CONTROL=standby';
+      mutate(candidate);
+      await assert.rejects(operate(plan('backup'), candidate.run, async () => {}));
+      assert.ok(!candidate.calls.some(([verb]) => ['start', 'stop', 'run'].includes(verb)));
+    }
+  }
+});
+
 test('production operator accepts explicit control and refuses unsafe mounts and extra listeners before start', async () => {
   const allowed = localFixture('production');
   allowed.info.Config.Env[1] = 'BUNNY_CONTROL=enabled';

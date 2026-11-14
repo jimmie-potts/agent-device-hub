@@ -460,8 +460,11 @@ to its fixed source with no scopes. The BB-8 role, any robot ID and the
 host-local profile still refuse them. Images from before Hub #1594 admit only the
 coding worker's role and refuse the whole file at start.
 Host-local and private-proxy profiles keep device control disabled and refuse
-named devices. The operator and entrypoint refuse a retained
-`BUNNY_CONTROL=standby` selection before startup.
+named devices. The operator and entrypoint refuse startup with a retained
+`BUNNY_CONTROL=standby` selection. If the container is already running, a
+start request leaves it alone. A stopped container with valid legacy production
+or private-proxy metadata still supports backup and restore through the existing
+isolated worker.
 
 ### Grant a credential to the running core
 

@@ -164,9 +164,10 @@ Existing formats move in one offline cutover:
   Syncing current state is not replay. Neither is reporting a module's
   unreported outcome again after a restart. Since the
   [2026-11-11 amendment](#amendment-2026-11-11), neither is reading past facts:
-  any view, display or device may read and show them. A reader inside the core
-  may read facts from an origin after a cursor it keeps. A past fact never
-  triggers a command by itself. A decision made now may use past facts as input, as the amendment
+  any view, display or device may read and show them, and any reader, the
+  decision maker and a peer installation among them, may read the facts from an
+  origin after a cursor it keeps. A past fact never triggers a command by
+  itself. A decision made now may use past facts as input, as the amendment
   describes.
 - History and the tracker live in the core and record durably. A slow consumer
   lags only itself and cannot block the bus.
@@ -874,8 +875,8 @@ belongs to [#1723](https://github.com/jimmie-potts/agent-device-hub/issues/1723)
 and is not recorded here.
 
 **"No replay" is narrowed, not removed.** After this amendment:
-- A reader inside the core, such as the decision maker, may read the facts from
-  an origin after a cursor it keeps. Such a read is not replay.
+- Any reader, such as the decision maker or a peer installation, may read the
+  facts from an origin after a cursor it keeps. Such a read is not replay.
 - Any view, display or device may read and show past facts.
 - A decision made now may use past facts as input. A past fact never triggers
   a command by itself.
@@ -883,6 +884,9 @@ and is not recorded here.
   sent again.
 - A consumer that catches up on facts does not make past moments or device
   actions happen again. It still starts from a sync of current state.
+
+[ADR 0016](0016-brain-and-local-edges.md) retires the settings snapshot and
+catch-up API used for standby replication.
 
 Everything else in this record stands: no broker, each owner keeps and
 publishes its own state, consumers sync current state, and nothing is retried

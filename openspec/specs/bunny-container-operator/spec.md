@@ -251,7 +251,12 @@ The entrypoint and operator SHALL refuse `BUNNY_CONTROL=standby` before
 starting a runtime. Normal production and private access retain their existing
 control admission.
 
-#### Scenario: A stopped container has stale standby control
+#### Scenario: A container has stale standby control
 
-- **WHEN** an operator requests a start for a container configured for standby
-- **THEN** the operator refuses before Docker starts the container
+- **WHEN** an operator requests a start for a running or stopped container configured for standby
+- **THEN** the operator refuses without starting or stopping the container
+
+#### Scenario: Stopped maintenance on a legacy container
+
+- **WHEN** an operator requests backup or restore for a stopped container with valid legacy production or private-proxy standby metadata
+- **THEN** the operator uses the existing stopped maintenance checks and isolated worker
