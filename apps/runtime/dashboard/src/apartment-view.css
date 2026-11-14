@@ -1,7 +1,4 @@
 .apartment-panel {
-  --apartment-ink: #f3ebdc;
-  --apartment-quiet: #c5bdb0;
-  --apartment-rule: #666054;
   margin-bottom: var(--space-l);
   border: 1px solid var(--light-edge);
   border-radius: 18px;
@@ -28,7 +25,7 @@
 .apartment-stage {
   position: relative;
   color: var(--apartment-ink);
-  background: radial-gradient(ellipse at 48% 48%, #524c43 0%, #383631 52%, #272723 100%);
+  background: var(--apartment-stage);
   border-block: 1px solid var(--light-edge);
 }
 .apartment-view-controls {padding: 12px clamp(10px, 2vw, 22px) 0;}
@@ -43,7 +40,7 @@
   width: 44px;
   padding: 0;
   border: 0;
-  color: #342620;
+  color: var(--apartment-marker-ink);
   background: transparent;
   pointer-events: auto;
   transform: translate(-50%, -50%);
@@ -57,15 +54,15 @@
   inset: 11px;
   z-index: -1;
   border-radius: 50%;
-  border: 1px solid #fff6e6;
-  background: #f2d7b0;
-  box-shadow: 0 1px 5px #100d09bf;
+  border: 1px solid var(--apartment-marker-edge);
+  background: var(--apartment-marker-fill);
+  box-shadow: 0 1px 5px var(--apartment-marker-shadow);
 }
-.apartment-markers button[data-apartment-marker]:is(:hover,:focus-visible,[aria-pressed=true])::before {background: #f4ae71;border-color: #ffedd6;}
+.apartment-markers button[data-apartment-marker]:is(:hover,:focus-visible,[aria-pressed=true])::before {background: var(--apartment-marker-active);border-color: var(--apartment-marker-active-edge);}
 .apartment-stage-footer {padding: 0 clamp(10px, 2vw, 22px) 6px;color: var(--apartment-quiet);font-size: var(--type-small);}
 .apartment-stage-footer p, .apartment-caption p {margin: 0;}
 .apartment-stage-footer label {min-height: 44px;display: inline-flex;align-items: center;gap: 7px;color: var(--apartment-ink);}
-.apartment-stage-footer input[type=checkbox] {flex: 0 0 auto;width: 17px;height: 17px;margin: 0;accent-color: #f1d7b1;}
+.apartment-stage-footer input[type=checkbox] {flex: 0 0 auto;width: 17px;height: 17px;margin: 0;accent-color: var(--apartment-control-active);}
 .apartment-segment {display: inline-flex;border: 1px solid var(--apartment-rule);border-radius: 10px;overflow: hidden;}
 .apartment-stage .apartment-segment button {
   min-height: 44px;
@@ -73,14 +70,14 @@
   border: 0;
   border-radius: 0;
   padding: 0 10px;
-  background: #2b2a26;
+  background: var(--apartment-control);
   color: var(--apartment-ink);
   font-size: var(--type-small);
 }
 .apartment-stage .apartment-segment button + button {border-inline-start: 1px solid var(--apartment-rule);}
 .apartment-stage .apartment-segment button[aria-pressed=true], .apartment-stage .apartment-segment button:hover:not(:disabled) {
-  color: #29221c;
-  background: #f1d7b1;
+  color: var(--apartment-control-ink);
+  background: var(--apartment-control-active);
 }
 .apartment-stage .apartment-segment button:focus-visible {outline-offset: -3px;}
 .apartment-stage .apartment-segment button:disabled {opacity: .55;}
@@ -115,7 +112,7 @@
 }
 .apartment-fixture-list li button:hover:not(:disabled) {color: var(--text);background: var(--light-selected);}
 .apartment-fixture-list li button[aria-pressed=true] {background: var(--light-selected);color: var(--text);}
-.apartment-number {flex: 0 0 24px;line-height: 24px;border-radius: 50%;background: #f1d7b1;color: #342620;text-align: center;font-weight: 700;font-size: 12px;}
+.apartment-number {flex: 0 0 24px;line-height: 24px;border-radius: 50%;background: var(--apartment-control-active);color: var(--apartment-marker-ink);text-align: center;font-weight: 700;font-size: 12px;}
 .apartment-fixture-list small {display: block;margin-top: 2px;font-size: var(--type-small);font-weight: normal;color: var(--muted-dense);}
 .apartment-selection {flex: 1 1 270px;min-width: 0;}
 .apartment-note {margin-block: var(--space-m);display: flex;align-items: center;flex-wrap: wrap;gap: var(--space-s);}

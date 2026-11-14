@@ -149,7 +149,7 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await fallback.goto(world.url+'/#/rooms');await feed(fallback,'connected');
     await panel(fallback).getByText('3D rendering is unavailable. The fixture list and lighting controls remain available.',{exact:true}).waitFor();
     await selectLight(fallback,'Reading wall light');await panel(fallback).getByRole('article',{name:'Reading wall light',exact:true}).waitFor();
-    assert.equal(powerWrites(fallbackSent),0);
+    assert.equal(fallbackSent.length,0);
     await fallback.close();
   }finally{await desktop.close();}
   await writeFile(file,bytes,{mode:0o600});
@@ -175,7 +175,7 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await phone.waitForFunction(before=>Number(document.querySelector('.apartment-viewport canvas')?.getAttribute('data-distance'))<before,distance);
     await view.getByRole('combobox').selectOption({label:'Studio'});await view.locator('canvas[data-frame=studio]').waitFor();
     await view.getByRole('button',{name:'Overhead',exact:true}).tap();await view.locator('canvas[data-camera=overhead]').waitFor();
-    assert.equal(powerWrites(mobileSent),0,'phone inspection sends no light command');
+    assert.equal(mobileSent.length,0,'phone inspection sends no light command');
   }finally{await mobile.close();}
   console.log(JSON.stringify({journey:'furnished-apartment',rooms:2,artwork:true,roomFrame:true,webglFallback:true,unmountReleasesResources:true,readCancelled:true,
     touchOrbit:true,touchPinch:true,guardedFixture:true,stale:true,reassignment:true,uncertainNoReplay:true,physical:false}));

@@ -88,3 +88,20 @@
   --wemo-bulb:light-dark(#ffe8b7,#f6dfb0);
   --wemo-led-on:#21734f;
 }
+
+/* Fixed warm palette for the furnished apartment diagram and its controls. */
+:root {
+  --apartment-ink: #f3ebdc;
+  --apartment-quiet: #c5bdb0;
+  --apartment-rule: #666054;
+  --apartment-stage: radial-gradient(ellipse at 48% 48%, #524c43 0%, #383631 52%, #272723 100%);
+  --apartment-marker-ink: #342620;
+  --apartment-marker-edge: #fff6e6;
+  --apartment-marker-fill: #f2d7b0;
+  --apartment-marker-shadow: #100d09bf;
+  --apartment-marker-active: #f4ae71;
+  --apartment-marker-active-edge: #ffedd6;
+  --apartment-control-active: #f1d7b1;
+  --apartment-control: #2b2a26;
+  --apartment-control-ink: #29221c;
+}
