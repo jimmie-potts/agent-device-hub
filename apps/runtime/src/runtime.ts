@@ -10,6 +10,7 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {recordLog, MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler, Outcome} from '@jimmie-potts/sdk';
 import {isWisprModule} from '@jimmie-potts/wispr';
 import {admitBoundCoreOwnership, isCoreModule, standbyCoreStart} from './core/core.js';
+import {settingsPeerConfig} from './core/settings-peer.js';
 import {modeParticipants} from './core/mode-participants.js';
 import {historyDevices} from './core/history-alarm.js';
 import {automationDevices} from './core/automation-devices.js';
@@ -23,7 +24,7 @@ import {ModuleHost, type ModuleHealth} from './host.js';
 import {INSTANCE_ID, LogWriter, errorFields, stderrSink, type LogLevel, type LogRecord, type LogSink, type Redactions} from './log.js';
 import {RUNTIME_SCOPE, runtimeResource, type Environment} from './record.js';
 import {openSpanFile} from './span-file.js';
-import {RuntimeError, prepareStateDirectory, readRuntimeConfig, type RuntimeConfig} from './state.js';
+import {RuntimeError, prepareStateDirectory, readRuntimeConfig, sectionOf, type RuntimeConfig} from './state.js';
 import {startTracing, type SpanSink} from './tracing.js';
 import {startWatchdog, type Watchdog} from './watchdog.js';
 
@@ -242,6 +243,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const scheduler = options.scheduler ?? timers;
   // The configuration is read before the state directory is prepared, so a file the runtime refuses leaves no state effect.
   const config: RuntimeConfig | undefined = suppliedConfig ?? (options.configFile === undefined ? undefined : await readRuntimeConfig(options.configFile));
+  const peer = settingsPeerConfig(sectionOf(config, 'core'), standbyStart !== undefined);
   const edgeConfig = config?.edge;
   const readCredentials = standbyStart === undefined ? readEdgeCredentials : readStandbyCredentials;
   let standbyCredentials: readonly EdgeCredential[] | undefined;
@@ -323,7 +325,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     }
   };
   const host = new ModuleHost(modules, {
-    ...(standbyStart === undefined ? {} : {standbyStart}),
+    ...(standbyStart === undefined ? {} : {standbyStart: {module: standbyStart.module, start: context => standbyStart.start(context, peer)}}),
     clock, scheduler, stateDir, logs, startTimeoutMs, stopTimeoutMs, ...(tracing === undefined ? {} : {tracing}), ...(config === undefined ? {} : {config}),
     ...(Object.keys(levels).length === 0 ? {} : {levels}),
     ...(options.onCoreFailure === undefined ? {} : {onCoreFailure: options.onCoreFailure}),

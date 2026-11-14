@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {SdkError, REMOTE_PATH, REMOTE_SCHEMA, type EdgePermissions, type Reply, type Command} from '../src/index.js';
+import {SdkError, childOf, traceFields, REMOTE_PATH, REMOTE_SCHEMA, type SpanOptions, type EdgePermissions, type Reply, type Command} from '../src/index.js';
 import {buildMessage} from '../src/envelope.js';
 import {EventStreamParser} from '../src/remote-protocol.js';
 import {it, session, setMode, turnEnded, until, deferred, manualClock, type Mode} from './support.js';
@@ -27,9 +27,10 @@ async function rawStream(edge: Edge): Promise<{connection: string; endpoint: str
   }
 }
 
-async function call(edge: Edge, route: string, body: object): Promise<{status: number; body: unknown}> {
+async function call(edge: Edge, route: string, body: object, traceparent?: string): Promise<{status: number; body: unknown}> {
   const response = await fetch(`${edge.url}${REMOTE_PATH}/${route}`, {
-    method: 'POST', headers: {'content-type': 'application/json', authorization: `Bearer ${edge.tokens.get('bunny/wall') ?? ''}`},
+    method: 'POST', headers: {'content-type': 'application/json', authorization: `Bearer ${edge.tokens.get('bunny/wall') ?? ''}`,
+      ...(traceparent === undefined ? {} : {traceparent})},
     body: JSON.stringify({schema: REMOTE_SCHEMA, ...body}),
   });
   return {status: response.status, body: await response.json() as unknown};
@@ -84,6 +85,42 @@ it('raw endpoint calls require the current capability, own routing identity and 
     await second.cancel(); await until(() => retired.length === 2, 'stream loss retirement');
     assert.equal((await call(edge, 'close', {...second, id: other})).status, 404);
   } finally {await first.cancel(); await second.cancel(); await edge.close();}
+});
+
+it('endpoint cleanup never adopts the ordinary subscription trace', async () => {
+  const clock = manualClock(), spans: SpanOptions[] = [], retired: string[] = [];
+  const edge = await startEdge({scheduler: clock.scheduler, liveness: clock.scheduler,
+    permissions: {'bunny/wall': permissions}, onEndpointClosed: item => { retired.push(item.id); },
+    edgeSpans: {start: (_name, options = {}) => {
+      spans.push(options);
+      return {context: childOf(options.parent), end: () => {}};
+    }},
+  });
+  const stream = await rawStream(edge);
+  const {connection, endpoint} = stream;
+  const id = `${connection}-1`;
+  try {
+    assert.equal((await call(edge, 'respond', {connection, endpoint, id, pattern: `bunny.cmd.test-mode.${id}`})).status, 200);
+    for (const capability of [{}, {endpoint: '0'.repeat(64)}]) {
+      assert.equal((await call(edge, 'close', {connection, id, ...capability}, trace.traceparent)).status, 403);
+    }
+    assert.deepEqual(retired, []);
+    assert.equal((await call(edge, 'close', {connection, endpoint, id}, trace.traceparent)).status, 200);
+    assert.deepEqual(retired, [id]);
+    assert.equal(spans.length, 0);
+    const refusal = edge.diagnostics.find(record => record.event === 'edge.refused' && record.route === 'close');
+    assert.equal(refusal?.code, 'forbidden');
+    assert.equal(refusal.trace, undefined);
+
+    const ordinary = await call(edge, 'subscribe', {connection, id: 'synthetic', pattern: 'bunny.state.mode.**'}, trace.traceparent);
+    assert.equal(ordinary.status, 400);
+    assert.deepEqual(spans.map(span => span.attributes?.['http.route']), ['/api/sdk/v1/subscribe']);
+    const subscription = edge.diagnostics.find(record => record.event === 'edge.refused' && record.route === 'subscribe');
+    assert.equal(traceFields(subscription?.trace ?? {traceparent: ''})?.traceId, traceFields(trace)?.traceId);
+  } finally {
+    await stream.cancel();
+    await edge.close();
+  }
 });
 
 it('closing during a running handler retires its command as uncertain and discards the late reply', async () => {

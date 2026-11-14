@@ -170,6 +170,7 @@ export class Gateway {
     });
     this.edge = new RemoteEdge({
       bus: options.bus, validator: options.validator, now: () => options.clock.now(), scheduler: options.scheduler,
+      ...(options.trace === undefined ? {} : {spans: options.trace}),
       ...(this.#standby === undefined ? {} : {standby: {
         detail: STANDBY_REFUSAL, readAdmission: request => {
           try {

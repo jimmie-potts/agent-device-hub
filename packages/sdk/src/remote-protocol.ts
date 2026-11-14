@@ -1,7 +1,8 @@
 // The SSE/HTTP protocol between a remote part and its edge (Hub #883, ADR 0012 "Runtime and transport"). Messages flow
 // down one event stream per connection; calls go up as HTTP POSTs. Every frame carries `schema: sdk-remote/1.0`, the
 // route carries only the major version, and every refusal is the shared error body.
-import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
+import {SdkError} from './sdk.js';
 
 export const REMOTE_SCHEMA = 'sdk-remote/1.0';
 export const REMOTE_PATH = '/api/sdk/v1';
@@ -36,19 +37,91 @@ export const frame = (event: StreamEventName, data: object): string => `event: $
 export class EventStreamParser {
   #buffer = '';
 
+  constructor(private readonly maxFrame?: number) {}
+
   push(text: string): {event: string; data: string}[] {
-    this.#buffer += text;
     const events: {event: string; data: string}[] = [];
-    for (let end = this.#buffer.indexOf('\n\n'); end >= 0; end = this.#buffer.indexOf('\n\n')) {
-      const block = this.#buffer.slice(0, end);
-      this.#buffer = this.#buffer.slice(end + 2);
-      let event = 'message', data = '';
-      for (const line of block.split('\n')) {
-        if (line.startsWith('event: ')) event = line.slice(7);
-        else if (line.startsWith('data: ')) data = line.slice(6);
+    if (this.maxFrame === undefined) {
+      this.#buffer += text;
+      for (let end = this.#buffer.indexOf('\n\n'); end >= 0; end = this.#buffer.indexOf('\n\n')) {
+        this.#appendEvent(events, this.#buffer.slice(0, end));
+        this.#buffer = this.#buffer.slice(end + 2);
       }
-      if (data !== '') events.push({event, data});
+      return events;
     }
+
+    // Check before adding to the retained frame, even when the transport delivers one large chunk.
+    let offset = 0;
+    if (this.#buffer.endsWith('\n') && text.startsWith('\n')) {
+      this.#appendEvent(events, this.#buffer.slice(0, -1));
+      this.#buffer = '';
+      offset = 1;
+    }
+    for (let end = text.indexOf('\n\n', offset); end >= 0; end = text.indexOf('\n\n', offset)) {
+      this.#append(text.slice(offset, end));
+      this.#appendEvent(events, this.#buffer);
+      this.#buffer = '';
+      offset = end + 2;
+    }
+    this.#append(text.slice(offset));
     return events;
+  }
+
+  #append(text: string): void {
+    if (this.maxFrame === undefined) return;
+    if (this.#buffer.length + text.length > this.maxFrame + 1) throw tooLarge();
+    const next = this.#buffer + text;
+    if (new TextEncoder().encode(next).byteLength > this.maxFrame + (next.endsWith('\n') ? 1 : 0)) throw tooLarge();
+    this.#buffer = next;
+  }
+
+  #appendEvent(events: {event: string; data: string}[], block: string): void {
+    if (this.maxFrame !== undefined && new TextEncoder().encode(block).byteLength > this.maxFrame) throw tooLarge();
+    let event = 'message', data = '';
+    for (const line of block.split('\n')) {
+      if (line.startsWith('event: ')) event = line.slice(7);
+      else if (line.startsWith('data: ')) data = line.slice(6);
+    }
+    if (data !== '') events.push({event, data});
+  }
+}
+
+const malformedJson = (): SdkError => new SdkError(errorBody('invalid-message', {detail: 'the response is not valid UTF-8 JSON'}));
+const tooLarge = (): SdkError => new SdkError(errorBody('too-large', {detail: 'the response exceeds its byte limit'}));
+
+/** Read one response within the caller's fetch lifetime and actual byte budget. */
+export async function readBoundedJson(response: Response, limit: number, signal: AbortSignal): Promise<unknown> {
+  const reader = response.body?.getReader();
+  if (reader === undefined) throw new SdkError(errorBody('invalid-message', {detail: 'the response has no body'}));
+  const cancel = (): void => { void reader.cancel().catch(() => {}); };
+  let buffer = new Uint8Array(Math.min(limit, 4096));
+  let bytes = 0;
+  signal.addEventListener('abort', cancel, {once: true});
+  try {
+    for (;;) {
+      signal.throwIfAborted();
+      const {value, done} = await reader.read();
+      signal.throwIfAborted();
+      if (done) break;
+      const next = bytes + value.byteLength;
+      if (next > limit) throw tooLarge();
+      if (next > buffer.byteLength) {
+        const grown = new Uint8Array(Math.min(limit, Math.max(next, buffer.byteLength * 2)));
+        grown.set(buffer.subarray(0, bytes));
+        buffer = grown;
+      }
+      buffer.set(value, bytes);
+      bytes = next;
+    }
+    try {
+      const text = new TextDecoder('utf-8', {fatal: true}).decode(buffer.subarray(0, bytes));
+      return JSON.parse(text) as unknown;
+    } catch { throw malformedJson(); }
+  } catch (error) {
+    cancel();
+    throw error;
+  } finally {
+    signal.removeEventListener('abort', cancel);
+    reader.releaseLock();
   }
 }

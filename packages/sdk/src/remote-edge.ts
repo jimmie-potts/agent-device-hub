@@ -17,6 +17,7 @@ import {
 import {MAX_TIMEOUT_MS, SdkError, type Cancel, type Command, type Reply, type RequestResult, type Scheduler, type Sdk, type Subscription, type TraceContext} from './sdk.js';
 import {checkFamilies, isSource, schemaFamily, type Snapshot, type SyncAnswer, type SyncRequest} from './sync.js';
 import {childOf, traceFields} from './trace.js';
+import {noSpans, startSpan, type Span, type SpanRecorder} from './spans.js';
 
 /**
  * What a remote participant may do (Hub #835): the calls it may make and the routing-key patterns it may use. Either
@@ -93,6 +94,8 @@ export type EdgeOptions = {
    * follow the repetition rule (`REFUSAL_WINDOW_MS`). A no-op by default; a throw is ignored.
    */
   onDiagnostic?: OnDiagnostic;
+  /** Records bounded admission spans for authenticated, traced subscription operations. */
+  spans?: SpanRecorder;
   now?: () => number;
   /**
    * Runs the edge's own waits for forwarded commands and sync requests, and its windows for repeated refusals. Defaults
@@ -345,6 +348,7 @@ export class RemoteEdge {
   readonly #grants: {principal: EdgePrincipal; digest: Buffer}[];
   readonly #authenticateHost: ((request: IncomingMessage) => EdgePrincipal | undefined) | undefined;
   readonly #diagnose: OnDiagnostic;
+  readonly #spans: SpanRecorder;
   readonly #now: () => number;
   readonly #scheduler: Scheduler;
   readonly #heartbeatMs: number;
@@ -398,6 +402,7 @@ export class RemoteEdge {
     }
     this.#grants = grants;
     this.#diagnose = reporter(options.onDiagnostic);
+    this.#spans = options.spans ?? noSpans;
     this.#now = options.now ?? (() => Date.now());
     this.#scheduler = options.scheduler ?? timers;
     const limit = (value: number | undefined, fallback: number, name: string): number => {
@@ -492,6 +497,7 @@ export class RemoteEdge {
     const route = path.startsWith(`${REMOTE_PATH}/`) ? path.slice(REMOTE_PATH.length + 1) : path;
     let source: string | undefined;
     let refusalTrace: TraceContext | undefined;
+    let span: Span | undefined;
     const progress: Progress = {};
     try {
       const principal = this.#authenticate(request);
@@ -502,7 +508,9 @@ export class RemoteEdge {
       if (request.method === 'GET' && route === 'stream') {
         if (this.#standby !== undefined) throw refuse('unavailable', this.#standby.detail);
         allowCall(principal, 'stream');
-        this.#open(principal, response);
+        span = this.#subscriptionSpan(this.#requestTrace(request), 'stream');
+        refusalTrace = span?.context;
+        this.#open(principal, response, refusalTrace);
         return;
       }
       if (request.method !== 'POST' || !isCall(route)) throw refuse('not-found', 'no such route');
@@ -518,6 +526,15 @@ export class RemoteEdge {
           if (traceFields(trace) !== undefined) refusalTrace = trace;
         }
         throw refuse('unavailable', standby.detail);
+      }
+      const parent = this.#requestTrace(request);
+      if ((route === 'subscribe' || route === 'close') && parent !== undefined && body.endpoint === undefined) {
+        const connection = this.#connection(principal, body);
+        // Endpoint cleanup requires its capability. These spans cover ordinary subscriptions only.
+        if (route === 'subscribe' || connection.endpointId === undefined || body.id !== connection.endpointId) {
+          span = this.#subscriptionSpan(parent, route);
+          refusalTrace = span?.context;
+        }
       }
       // A remote part that stops waiting, because its copy or participant closed, drops the call.
       const dropped = new AbortController();
@@ -540,11 +557,28 @@ export class RemoteEdge {
         this.#refused({event: 'edge.refused', level: levelOf(code), route: routeOf(route), code, ...who, ...(refusalTrace === undefined ? {} : {trace: refusalTrace})});
       } else {
         const about = dispatched === undefined ? {} : commandFacts(dispatched);
-        this.#diagnose({event: 'edge.failed', level: levelOf('edge.failed'), route: routeOf(route), code, ...who, ...about, errorType: errorType(error)});
+        span?.end('error');
+        this.#diagnose({event: 'edge.failed', level: levelOf('edge.failed'), route: routeOf(route), code, ...who,
+          ...(refusalTrace === undefined ? {} : {trace: refusalTrace}), ...about, errorType: errorType(error)});
       }
       // A body over its limit is left unread, so the connection closes after the refusal.
       this.#write(response, statusOf(code), refused, code === 'too-large');
+    } finally {
+      span?.end();
     }
+  }
+
+  #requestTrace(request: IncomingMessage): TraceContext | undefined {
+    const traceparent = request.headers.traceparent;
+    if (typeof traceparent !== 'string') return undefined;
+    const parent = {traceparent};
+    return traceFields(parent) === undefined ? undefined : parent;
+  }
+
+  #subscriptionSpan(parent: TraceContext | undefined, route: 'stream' | 'subscribe' | 'close'): Span | undefined {
+    if (parent === undefined) return undefined;
+    return startSpan(this.#spans, 'bunny.feed.read', {parent, kind: 'server',
+      attributes: {'http.route': `${REMOTE_PATH}/${route}`, 'http.request.method': route === 'stream' ? 'GET' : 'POST'}});
   }
 
   /**
@@ -1038,7 +1072,7 @@ export class RemoteEdge {
     return `${source}\n${id}\n${messageId}`;
   }
 
-  #open({source, id: principal, endpoint}: EdgePrincipal, response: ServerResponse): void {
+  #open({source, id: principal, endpoint}: EdgePrincipal, response: ServerResponse, trace?: TraceContext): void {
     let markClosed = (): void => {};
     const closed = new Promise<void>(resolve => { markClosed = resolve; });
     const endpointAbort = new AbortController();
@@ -1054,7 +1088,7 @@ export class RemoteEdge {
     response.on('close', () => { this.#drop(connection); });
     this.#send(connection, frame('ready', {connection: connection.id, ...(endpointCapability === undefined ? {} : {endpointCapability})}));
     this.#beat(connection);
-    this.#diagnose({event: 'edge.connected', level: levelOf('edge.connected'), route: 'stream', source});
+    this.#diagnose({event: 'edge.connected', level: levelOf('edge.connected'), route: 'stream', source, ...(trace === undefined ? {} : {trace})});
   }
 
   /**

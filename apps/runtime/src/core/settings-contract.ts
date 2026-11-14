@@ -227,3 +227,57 @@ export function settingsPatch(family: SettingsFamily, before: object | undefined
 
 export const effectiveSettingsPatch = (patch: SettingsPatch | undefined): boolean =>
   patch !== undefined && (patch.kind === 'removal' || Object.keys(patch.changed).length !== 0);
+
+export function settingsOrigin(value: unknown): value is string {
+  return typeof value === 'string' && new RegExp(`^${UUID}$`).test(value);
+}
+
+function exactFields(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  return Object.keys(value).length === expected.length && expected.every(key => Object.hasOwn(value, key));
+}
+
+function checkpointOf(value: unknown, origin: string): value is string {
+  return parseSettingsCheckpoint(value)?.origin === origin;
+}
+
+function validSettingsFact(value: unknown): value is SettingsFact {
+  if (!settingsObject(value) || !isSettingsFamily(value.family) || !settingsFactId(value.family, value.id)
+    || !settingsInteger(value.seq) || !settingsInteger(value.revision) || !settingsInteger(value.atMs)) return false;
+  const fields = ['family', 'id', 'seq', 'revision', 'atMs', 'kind'];
+  if (value.kind === 'removal') return removableSettingsFamily(value.family) && exactFields(value, fields);
+  return value.kind === 'change' && exactFields(value, [...fields, 'changed', 'removed'])
+    && validSettingsMembers(value.family, value.id, value.changed, false) && Object.keys(value.changed).length > 0
+    && Array.isArray(value.removed) && value.removed.length === 0;
+}
+
+/** A decoded response follows the shared projection and wire shape. A pass separately validates the requested bounds. */
+export function decodeSettingsPage(value: unknown): SettingsPage | undefined {
+  if (!settingsObject(value) || value.schema !== 'history/2.0' || value.settings !== 'page'
+    || !exactFields(value, ['schema', 'settings', 'origin', 'after', 'through', 'next', 'applyThrough', 'done', 'facts'])
+    || !settingsOrigin(value.origin) || typeof value.done !== 'boolean'
+    || !checkpointOf(value.after, value.origin) || !checkpointOf(value.through, value.origin) || !checkpointOf(value.next, value.origin)
+    || (value.applyThrough !== null && !checkpointOf(value.applyThrough, value.origin))
+    || !Array.isArray(value.facts) || value.facts.length > SETTINGS_SCAN_LIMIT || !value.facts.every(validSettingsFact)) return undefined;
+  return value as SettingsPage;
+}
+
+export function decodeSettingsSnapshot(value: unknown): SettingsSnapshot | undefined {
+  if (!settingsObject(value) || value.schema !== 'history/2.0' || value.settings !== 'snapshot'
+    || !exactFields(value, ['schema', 'settings', 'origin', 'checkpoint', 'records'])
+    || !settingsOrigin(value.origin) || !checkpointOf(value.checkpoint, value.origin) || !Array.isArray(value.records)
+    || value.records.length > SETTINGS_SNAPSHOT_LIMIT) return undefined;
+  const seen = new Map<SettingsFamily, Set<string>>();
+  for (const record of value.records as unknown[]) {
+    if (!settingsObject(record) || !exactFields(record, ['family', 'id', 'value'])
+      || !isSettingsFamily(record.family) || !settingsId(record.family, record.id)
+      || !validSettingsMembers(record.family, record.id, record.value, true)) return undefined;
+    const ids = seen.get(record.family) ?? new Set<string>();
+    if (ids.has(record.id)) return undefined;
+    ids.add(record.id);
+    seen.set(record.family, ids);
+  }
+  if (Object.entries(SETTINGS_SINGLETONS).some(([family, id]) => seen.get(family as SettingsFamily)?.has(id) !== true)
+    || (seen.get('power-limit')?.size ?? 0) > 64
+    || (seen.get('automation-rule')?.size ?? 0) + (seen.get('automation-routine')?.size ?? 0) > 128) return undefined;
+  return value as SettingsSnapshot;
+}

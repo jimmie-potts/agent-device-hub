@@ -10,11 +10,11 @@ import {buildMessage} from './envelope.js';
 import type {ErrorScope} from './in-process.js';
 import {DeliveryQueue} from './queue.js';
 import {refusalOf, replyOf} from './refusal.js';
-import {EventStreamParser, REMOTE_PATH, REMOTE_SCHEMA, REQUEST_HEADER, SOURCE_HEADER} from './remote-protocol.js';
+import {EventStreamParser, MAX_CALL_BYTES, REMOTE_PATH, REMOTE_SCHEMA, REQUEST_HEADER, SOURCE_HEADER, readBoundedJson} from './remote-protocol.js';
 import {parseKey} from './routing.js';
 import {
   SdkError, type Command, type CommandDraft, type Draft, type Handler, type Overflow, type Reply, type RequestOptions, type RequestResult,
-  MAX_TIMEOUT_MS, type Cancel, type Participant, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription,
+  MAX_TIMEOUT_MS, type Cancel, type Participant, type Responder, type Scheduler, type SendOptions, type SubscribeOptions, type Subscription, type TraceContext,
 } from './sdk.js';
 import {
   startSync, type OutgoingSync, type Snapshot, type SyncAnswer, type SyncHandler, type SyncInterrupted, type SyncOptions, type SyncProvider, type SyncRequest,
@@ -70,6 +70,8 @@ export type RemoteOptions = RemoteAuth & {
   idleMs?: number;
   /** Runs the idle limit. It concerns a real socket, so it defaults to the global `setTimeout`, whatever `scheduler` is. */
   liveness?: Scheduler;
+  /** The caller retires and reconnects this participant. Stream and subscription fetches refuse redirects and stop with this signal. */
+  lifetime?: {signal: AbortSignal; onLost: () => void; parent?: TraceContext};
 };
 
 /** One explicitly opened handler whose calls and lifetime belong to its current stream. */
@@ -143,10 +145,13 @@ class RemoteClient {
   readonly #firstDelayMs: number;
   readonly #idleMs: number;
   readonly #liveness: Scheduler;
+  readonly #lifetime: RemoteOptions['lifetime'];
+  readonly #lifetimeParent: TraceContext | undefined;
   #delayMs: number;
   #closed = false;
   #closing: Promise<void> | undefined;
   #stream: AbortController | undefined;
+  #streamSettled: Promise<void> | undefined;
   /** Cancels the reconnect backoff, and wakes its wait, when the participant closes. */
   #backoff: {cancel: Cancel; wake: () => void} | undefined;
   /** Abandons each request still waiting for the edge's answer. */
@@ -177,11 +182,15 @@ class RemoteClient {
     this.#delayMs = this.#firstDelayMs;
     this.#idleMs = options.idleMs ?? IDLE_MS;
     this.#liveness = options.liveness ?? realTimers;
+    this.#lifetime = options.lifetime;
+    this.#lifetimeParent = options.lifetime === undefined ? undefined : childOf(options.lifetime.parent);
     if (!Number.isSafeInteger(this.#idleMs) || this.#idleMs < 1 || this.#idleMs > MAX_TIMEOUT_MS) throw new RangeError(`idleMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
   }
 
   async start(): Promise<RemoteParticipant> {
-    this.#connected = Promise.resolve(await this.#open());
+    const connection = await this.#open();
+    if (this.#lifetime !== undefined && this.#current?.connection !== connection) throw new SdkError(body('unavailable', 'the stream ended'));
+    this.#connected = Promise.resolve(connection);
     const source = this.#source;
     return {
       source,
@@ -219,38 +228,56 @@ class RemoteClient {
   #open(): Promise<string> {
     const controller = new AbortController();
     this.#stream = controller;
+    const lifetime = this.#lifetime;
+    const stop = (): void => { controller.abort(); };
+    if (lifetime?.signal.aborted === true) stop();
+    else lifetime?.signal.addEventListener('abort', stop, {once: true});
     return new Promise<string>((resolve, reject) => {
       let ready = false;
       // A stream that stays silent past `idleMs`, heartbeats included, is lost without a close, as when the runtime's
       // host slept: the client ends it and reconnects.
       let idle: Cancel = () => {};
+      let opening: Cancel = () => {};
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      const cancelRead = (): void => { void reader?.cancel().catch(() => {}); };
       const watch = (): void => {
         idle();
         idle = this.#liveness.after(this.#idleMs, () => { controller.abort(); });
       };
-      void (async () => {
+      this.#streamSettled = (async () => {
         try {
           // The limit runs from the request, so an edge, or a proxy before it, that takes the request and never answers
           // fails the open, which the reconnect retries with its backoff (Hub #1690). A refusal's body gets a full limit
           // of its own from its headers; a stream's limit restarts at each read below.
           watch();
-          const response = await fetch(`${this.#base}/stream`, {headers: this.#headers(), credentials: 'same-origin', signal: controller.signal});
+          if (lifetime !== undefined) opening = this.#scheduler.after(this.#idleMs, stop);
+          controller.signal.throwIfAborted();
+          const response = await fetch(`${this.#base}/stream`, {headers: this.#headers(this.#lifetimeTrace()), credentials: 'same-origin', signal: controller.signal,
+            ...(lifetime === undefined ? {} : {redirect: 'error'})});
           watch();
+          if (lifetime !== undefined) controller.signal.throwIfAborted();
           if (!response.ok || response.body === null) {
-            reject(new SdkError(await this.#refusal(response)));
+            reject(new SdkError(await this.#refusal(response, lifetime === undefined ? undefined : controller.signal)));
             return;
           }
-          const reader = response.body.getReader();
+          reader = response.body.getReader();
+          if (lifetime !== undefined) controller.signal.addEventListener('abort', cancelRead, {once: true});
           const decoder = new TextDecoder();
-          const parser = new EventStreamParser();
+          const parser = new EventStreamParser(lifetime === undefined ? undefined : MAX_CALL_BYTES);
           for (;;) {
             watch();
             const {value, done} = await reader.read();
             if (done) break;
+            if (lifetime !== undefined) controller.signal.throwIfAborted();
             for (const {event, data} of parser.push(decoder.decode(value, {stream: true}))) {
               const frame = fields(JSON.parse(data));
+              if (lifetime !== undefined && (frame.schema !== REMOTE_SCHEMA ||
+                  (event === 'ready' && (ready || typeof frame.connection !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(frame.connection))))) {
+                throw new SdkError(body('invalid-message', 'invalid remote stream frame'));
+              }
               if (event === 'ready' && typeof frame.connection === 'string') {
                 ready = true;
+                opening();
                 this.#current = {connection: frame.connection, endpointCapability: typeof frame.endpointCapability === 'string' ? frame.endpointCapability : undefined, endpointSequence: 0};
                 resolve(frame.connection);
               } else {
@@ -263,6 +290,14 @@ class RemoteClient {
         } finally {
           // Every way out, a refusal included, leaves no limit running.
           idle();
+          opening();
+          lifetime?.signal.removeEventListener('abort', stop);
+          if (lifetime !== undefined) {
+            controller.signal.removeEventListener('abort', cancelRead);
+            controller.abort();
+            cancelRead();
+            reader?.releaseLock();
+          }
         }
         if (!ready) reject(new SdkError(body('unavailable', 'the stream ended before it was ready')));
         else this.#lost(controller);
@@ -309,6 +344,13 @@ class RemoteClient {
   #lost(controller: AbortController): void {
     if (this.#closed || controller !== this.#stream) return;
     this.#current = undefined;
+    if (this.#lifetime !== undefined) {
+      controller.abort();
+      if (!this.#lifetime.signal.aborted) {
+        try { this.#lifetime.onLost(); } catch { /* The caller's observer cannot reopen this participant. */ }
+      }
+      return;
+    }
     for (const wake of [...this.#losing]) wake();
     void this.#endpoint?.close(false);
     this.#diagnose({event: 'remote.disconnected', level: levelOf('remote.disconnected'), source: this.#source});
@@ -382,6 +424,8 @@ class RemoteClient {
   async #subscribe(pattern: string, handler: Handler<Record<string, unknown>>, {onOverflow}: SubscribeOptions): Promise<Subscription> {
     this.#live();
     const connection = await this.#connected;
+    const stream = this.#stream;
+    if (this.#lifetime !== undefined && !this.#liveStream(connection, stream)) throw new SdkError(body('unavailable', 'the stream ended'));
     const id = crypto.randomUUID();
     const run = async (call: () => void | Promise<void>): Promise<void> => {
       try {
@@ -408,11 +452,26 @@ class RemoteClient {
     // Registered before the call, so a message that the stream carries before the reply still finds its handler.
     this.#subscriptions.set(id, local);
     try {
-      await this.#post('subscribe', {connection, id, pattern});
+      if (this.#lifetime === undefined) {
+        await this.#post('subscribe', {connection, id, pattern});
+      } else if (stream !== undefined) {
+        const result = fields(await this.#lifetimePost('subscribe', {connection, id, pattern}, stream));
+        if (!this.#liveStream(connection, stream)) throw new SdkError(body('unavailable', 'the stream ended'));
+        if (result.schema !== REMOTE_SCHEMA || result.status !== 'subscribed') throw new SdkError(body('invalid-message', 'invalid subscription acknowledgment'));
+      }
     } catch (error) {
-      this.#subscriptions.delete(id);
-      await local.queue.close();
-      this.#forget(id);
+      if (this.#lifetime === undefined) {
+        this.#subscriptions.delete(id);
+        await local.queue.close();
+        this.#forget(id);
+      } else {
+        // The loss observer can close the participant before this handler finishes.
+        // Keep the retiring queue visible to shutdown until it drains.
+        const drained = local.queue.close();
+        stream?.abort();
+        await drained;
+        this.#subscriptions.delete(id);
+      }
       throw new SdkError(bodyOf(error));
     }
     return {close: () => this.#unregister(id, () => local.queue.close(), () => this.#subscriptions.delete(id))};
@@ -716,7 +775,10 @@ class RemoteClient {
     forget();
     const closing = close();
     const connection = await this.#connected.catch(() => '');
-    if (!this.#closed && connection !== '') await this.#post('close', {connection, id}).catch(() => {});
+    if (this.#lifetime !== undefined) {
+      const stream = this.#stream;
+      if (stream !== undefined && this.#liveStream(connection, stream)) await this.#lifetimePost('close', {connection, id}, stream).catch(() => {});
+    } else if (!this.#closed && connection !== '') await this.#post('close', {connection, id}).catch(() => {});
     await closing;
   }
 
@@ -745,7 +807,8 @@ class RemoteClient {
     const queues = [...[...this.#subscriptions.values()].map(local => local.queue), ...[...this.#answering.values()].map(answering => answering.queue)];
     this.#subscriptions.clear();
     this.#answering.clear();
-    await Promise.all([...queues.map(queue => queue.close()), endpointClosing]);
+    await Promise.all([...queues.map(queue => queue.close()), endpointClosing,
+      this.#lifetime === undefined ? undefined : this.#streamSettled]);
   }
 
   #live(): void {
@@ -753,31 +816,57 @@ class RemoteClient {
   }
 
   /** Every call names the source the part acts as, so that the edge refuses a token used under another one at once. */
-  #headers(): Record<string, string> {
+  #headers(trace?: TraceContext): Record<string, string> {
     // A browser session's cookie goes with the call as the browser sends it, and a page marks its calls as its own.
     const proof = this.#token === undefined ? {[REQUEST_HEADER]: '1'} : {authorization: `Bearer ${this.#token}`};
-    return {...proof, 'content-type': 'application/json', [SOURCE_HEADER]: this.#source};
+    return {...proof, 'content-type': 'application/json', [SOURCE_HEADER]: this.#source,
+      ...(trace === undefined ? {} : {traceparent: trace.traceparent})};
+  }
+
+  #lifetimeTrace(): TraceContext | undefined {
+    return this.#lifetimeParent === undefined ? undefined : childOf(this.#lifetimeParent);
+  }
+
+  #liveStream(connection: string, stream: AbortController | undefined): boolean {
+    return !this.#closed && this.#current?.connection === connection && stream === this.#stream && stream?.signal.aborted === false;
+  }
+
+  async #lifetimePost(call: string, payload: Fields, stream: AbortController): Promise<unknown> {
+    const timeout = new AbortController();
+    const cancel = this.#scheduler.after(this.#idleMs, () => { timeout.abort(); });
+    try {
+      const signal = AbortSignal.any([stream.signal, timeout.signal]);
+      signal.throwIfAborted();
+      const answer = await this.#post(call, payload, signal, this.#lifetimeTrace());
+      signal.throwIfAborted();
+      return answer;
+    } finally {
+      cancel();
+    }
   }
 
   /** One call to the edge. An edge refusal throws `SdkError` with its error body; a lost connection throws as fetch does. */
-  async #post(call: string, payload: Fields, signal?: AbortSignal): Promise<unknown> {
+  async #post(call: string, payload: Fields, signal?: AbortSignal, trace?: TraceContext): Promise<unknown> {
     const response = await fetch(`${this.#base}/${call}`, {
-      method: 'POST', headers: this.#headers(), credentials: 'same-origin', body: JSON.stringify({schema: REMOTE_SCHEMA, ...payload}), ...(signal === undefined ? {} : {signal}),
+      method: 'POST', headers: this.#headers(trace), credentials: 'same-origin', body: JSON.stringify({schema: REMOTE_SCHEMA, ...payload}), ...(signal === undefined ? {} : {signal}),
+      ...(this.#lifetime === undefined ? {} : {redirect: 'error'}),
     });
     if (!response.ok) {
-      const refused = await this.#refusal(response);
+      const refused = await this.#refusal(response, this.#lifetime === undefined ? undefined : signal);
       // The edge no longer knows a connection that was lost meanwhile. Asking again on the next one is safe.
       if (payload.connection !== undefined && refused.error.code === 'not-found') {
         throw new SdkError(body('unavailable', 'the stream was lost; try again once it reconnects'));
       }
       throw new SdkError(refused);
     }
-    return await response.json() as unknown;
+    return this.#lifetime === undefined || signal === undefined ? await response.json() as unknown
+      : await readBoundedJson(response, MAX_CALL_BYTES, signal);
   }
 
   /** The edge's refusal, rebuilt; a body with an unregistered code or the wrong flag is not one, and becomes `internal`. */
-  async #refusal(response: Response): Promise<ErrorBody> {
-    return refusalOf(await response.json().catch(() => ({}))) ?? body('internal', `the edge answered ${response.status}`);
+  async #refusal(response: Response, signal?: AbortSignal): Promise<ErrorBody> {
+    const value = signal === undefined ? await response.json().catch(() => ({})) as unknown : await readBoundedJson(response, MAX_CALL_BYTES, signal);
+    return refusalOf(value) ?? body('internal', `the edge answered ${response.status}`);
   }
 
   #report(error: unknown, pattern: string): void {

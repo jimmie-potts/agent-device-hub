@@ -45,7 +45,7 @@ export {IDLE_MS, connectRemote, type RemoteAuth, type RemoteOptions, type Remote
 export {
   FIRST_READ_RETRY_MS, MAX_READ_RETRY_MS, followCopy, readRefusal, type CopyHandlers, type CopyRead, type ReadRefusal,
 } from './follow.js';
-export {CALLS, REMOTE_PATH, REMOTE_SCHEMA, REQUEST_HEADER, SOURCE_HEADER, statusOf, type Call} from './remote-protocol.js';
+export {CALLS, REMOTE_PATH, REMOTE_SCHEMA, REQUEST_HEADER, SOURCE_HEADER, readBoundedJson, statusOf, type Call} from './remote-protocol.js';
 export {prepareMessage, publishOnce, type PublishOnceOptions, type PublishOnceResult} from './remote-publish.js';
 export {HeldEvidence, Outcome, absent, hold, merge, observed, transmitted, uncertain, type Evidence, type EvidenceLevel, type Merged, type OutcomeLiteral} from './evidence.js';
 export {serializedAdmission, type Fresh, type SerializedAdmission} from './admission.js';
