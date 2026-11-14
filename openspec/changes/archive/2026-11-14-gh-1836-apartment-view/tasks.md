@@ -10,10 +10,10 @@
 
 ## 3. Rooms
 
-- [ ] 3.1 Show the semantic model with furnished apartment and room inspection, camera controls, private artwork and rendering fallback on desktop and phone.
-- [ ] 3.2 Exercise exact fixture resolution through the existing LightCards and verify no command is sent by passive actions, stale state or reload.
+- [x] 3.1 Show the semantic model with furnished apartment and room inspection, camera controls, private artwork and rendering fallback on desktop and phone.
+- [x] 3.2 Exercise exact fixture resolution through the existing LightCards and verify no command is sent by passive actions, stale state or reload.
 
 ## 4. Delivery
 
-- [ ] 4.1 Check the private preparation and publication instructions against the helper and synthetic fixture.
-- [ ] 4.2 Run the scoped runtime, contract and browser checks and the shared build, type, lint and workflow checks before synchronizing and archiving this change.
+- [x] 4.1 Check the private preparation and publication instructions against the helper and synthetic fixture.
+- [x] 4.2 Run the scoped runtime, contract and browser checks and the shared build, type, lint and workflow checks before synchronizing and archiving this change.
