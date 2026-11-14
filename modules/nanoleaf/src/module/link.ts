@@ -11,7 +11,8 @@ import type {Clock, DeviceAvailability, Logger, ModuleScheduler, TraceContext, T
 import {recordLog} from '@jimmie-potts/sdk';
 import {isObject} from '../compat.js';
 import {MIN_STREAM_PORT, type LightDatagram} from '../stream.js';
-import {HttpError, LIGHT_TIMEOUT_SECONDS, type LightAddress, type LightRequest} from '../transport.js';
+import {HttpError, isTransportDeadline, LIGHT_TIMEOUT_SECONDS, type LightAddress, type LightRequest} from '../transport.js';
+import {ReadTimingRecords, type ReadEnd, type ReadSource, type ReadTimingProbe} from './read-timing.js';
 
 /** How long one request to a device may take: the Python client's light request timeout. */
 export const REQUEST_MS = Math.round(LIGHT_TIMEOUT_SECONDS * 1000);
@@ -50,6 +51,7 @@ export type LinkOptions = {
   /** The token the module read with `secrets.read`. It stays in memory, in this link only. */
   token: string;
   transport: LightRequest;
+  readTiming?: ReadTimingProbe;
   /** Sends a live Music frame datagram (#1598). */
   datagram: LightDatagram;
   clock: Clock;
@@ -84,6 +86,7 @@ export class DeviceLink {
   status: 'unknown' | 'reached' | 'refusing' | 'failing' = 'unknown';
   observation: Observation | undefined;
   readonly #options: LinkOptions;
+  readonly #readRecords: ReadTimingRecords;
   /** Requests in the order they were sent, and the newest one that reached the device. */
   #sent = 0;
   #reachedBy = 0;
@@ -91,6 +94,7 @@ export class DeviceLink {
   constructor(options: LinkOptions) {
     this.device = options.device;
     this.#options = options;
+    this.#readRecords = new ReadTimingRecords(options.log, options.device);
   }
 
   /**
@@ -98,6 +102,14 @@ export class DeviceLink {
    * passes is ignored: the device's configured address and token are used, so no credential lives in a saved file.
    */
   readonly request: LightRequest = (_address: LightAddress, method: string, endpoint = '', payload: unknown = null): Promise<unknown> => {
+    return this.#request(method, endpoint, payload);
+  };
+
+  read(source: ReadSource, endpoint: string): Promise<unknown> {
+    return this.#request('GET', endpoint, null, source);
+  }
+
+  #request(method: string, endpoint: string, payload: unknown, source?: ReadSource): Promise<unknown> {
     const {address, token, transport, scheduler, signal, availability, onSettled} = this.#options;
     if (signal.aborted) return Promise.reject(new LinkStopped());
     this.#sent += 1;
@@ -108,17 +120,29 @@ export class DeviceLink {
     return new Promise<unknown>((resolve, reject) => {
       let settled = false;
       let cancel = (): void => {};
-      const finish = (outcome: () => void, failedCall: boolean): void => {
+      let completeTiming: ReturnType<ReadTimingProbe['start']>;
+      const finish = (outcome: () => void, failedCall: boolean, end: ReadEnd | 'stopped'): void => {
         if (settled) return;
         settled = true;
         cancel();
         signal.removeEventListener('abort', stopped);
+        let timing: ReturnType<NonNullable<typeof completeTiming>> = undefined;
+        try {
+          timing = completeTiming?.(end === 'stopped' ? 'stopped' : 'settled');
+        } catch {
+          // Timing loss cannot affect settlement.
+        }
         call?.end(failedCall ? 'error' : 'unset');
         outcome();
+        try {
+          if (timing !== undefined && source !== undefined && end !== 'stopped') this.#readRecords.record(source, end, REQUEST_MS, timing);
+        } catch {
+          // The diagnostic sink cannot affect settlement.
+        }
         onSettled(this.device);
       };
-      const stopped = (): void => { finish(() => { reject(new LinkStopped()); }, true); };
-      const failed = (cause?: unknown): void => {
+      const stopped = (): void => { finish(() => { reject(new LinkStopped()); }, true, 'stopped'); };
+      const failed = (end: ReadEnd, cause?: unknown): void => {
         finish(() => {
           // A request sent before one that reached the device says nothing newer about it.
           if (!signal.aborted && order > this.#reachedBy) {
@@ -126,7 +150,7 @@ export class DeviceLink {
             availability.unreachable(this.device, 'unavailable');
           }
           reject(new DeviceUnreachable(cause));
-        }, true);
+        }, true, end);
       };
       const reached = (status: number | undefined): void => {
         this.#reachedBy = Math.max(this.#reachedBy, order);
@@ -134,7 +158,14 @@ export class DeviceLink {
         this.#answered(status !== undefined && refusesToken(status) ? status : undefined);
       };
       signal.addEventListener('abort', stopped, {once: true});
-      cancel = scheduler.after(REQUEST_MS, () => { failed(); });
+      cancel = scheduler.after(REQUEST_MS, () => { failed('link-deadline'); });
+      if (source !== undefined) {
+        try {
+          completeTiming = this.#options.readTiming?.start();
+        } catch {
+          // A diagnostic clock or timer failure cannot stop the request.
+        }
+      }
       let sent: Promise<unknown>;
       try {
         sent = transport({ip: address, token}, method, endpoint, payload);
@@ -147,7 +178,7 @@ export class DeviceLink {
           if (method === 'GET' && endpoint === '/state' && isObject(reply)) this.#observed(reply);
           if (method !== 'GET') this.#wrote(command);
           resolve(reply);
-        }, false);
+        }, false, 'reply');
       }, (error: unknown) => {
         // The device answered with an error status: it was reached, and heard the request.
         if (error instanceof HttpError) {
@@ -155,13 +186,13 @@ export class DeviceLink {
             reached(error.status);
             if (method !== 'GET') this.#wrote(command);
             reject(error);
-          }, true);
+          }, true, 'http-error');
           return;
         }
-        failed(error);
+        failed(isTransportDeadline(error) ? 'transport-deadline' : 'transport-rejection', error);
       });
     });
-  };
+  }
 
   /**
    * Sends one live Music frame datagram to `port` at the device's configured address (#1598, #1272): the address is

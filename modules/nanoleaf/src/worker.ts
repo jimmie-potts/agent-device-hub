@@ -5,6 +5,7 @@
 // restarts the worker (PORTING.md).
 import {join} from 'node:path';
 import {MOMENT, playMoment} from './moments.js';
+import type {DeviceRead} from './moments.js';
 import {endInterruptedMusic, MUSIC_PLAY, playMusic, type MusicFeeds, type MusicStart} from './music-session.js';
 import {pyJsonAllowNan, pyJsonCompact} from './compat.js';
 import {currentComet, pruneComets} from './comets.js';
@@ -56,6 +57,8 @@ export interface WorkerOptions {
   transact: Transact;
   /** The runtime's current Music features, for a live session (#1272); without it a session ends as source loss. */
   music?: MusicFeeds;
+  /** The same link read, attributed to a live Music session. */
+  musicRead?: DeviceRead;
 }
 
 /** The worker's stop signal ended a wait. */
@@ -425,6 +428,7 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
             // A live Music session runs in this locked pass until it ends, as a moment does (#1272).
             active=null;
             await playMusic({db,device,row,config,transact,request,now:()=>clock.now(),sleep,current,taken,
+              ...(options.musicRead === undefined ? {} : {read: options.musicRead}),
               stream:options.stream ?? (()=>Promise.reject(new Error('No streaming transport.'))),
               input:options.music?.input(device,(row.command as MusicStart).generation),
               clock:options.music?.clock ?? (()=>({wallMs:clock.now(),monotonicMs:clock.now()})),stopping:()=>signal.aborted});

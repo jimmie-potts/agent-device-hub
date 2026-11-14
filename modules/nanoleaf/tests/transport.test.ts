@@ -12,7 +12,7 @@ import {pyJson} from '../src/compat.js';
 import {loadConfig} from '../src/configuration.js';
 import {writeJson} from '../src/jsonfile.js';
 import {render, type RenderConfig} from '../src/renderer.js';
-import {HttpError, LIGHT_TIMEOUT_SECONDS, lightRequest, nodeTransport, type HttpRequest, type HttpResponse} from '../src/transport.js';
+import {HttpError, isTransportDeadline, LIGHT_TIMEOUT_SECONDS, lightRequest, nodeTransport, type HttpRequest, type HttpResponse} from '../src/transport.js';
 import {suite, temporary, test} from './support.js';
 
 /** A fake transport that records each request and answers with `reply`. */
@@ -120,6 +120,8 @@ suite('nodeTransport', () => {
     clearTimeout(watchdog);
     const elapsed = (performance.now() - started) / 1000;
     assert.ok(outcome instanceof Error && 'code' in outcome && outcome.code === 'ETIMEDOUT', String(outcome));
+    assert.equal(isTransportDeadline(outcome), true);
+    assert.equal(isTransportDeadline(Object.assign(new Error('socket timeout'), {code: 'ETIMEDOUT'})), false);
     assert.ok(elapsed >= 0.19 && elapsed < 1.5, `gave up after ${elapsed} seconds`);
   });
 

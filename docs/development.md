@@ -2496,6 +2496,16 @@ for the acceptance exercise.
 
 ## Nanoleaf port
 
+For Nanoleaf local HTTP read timing (#1663), run the root build, typecheck and
+lint, the Nanoleaf and runtime built suites, and the shared observability
+contract checks, including Python and packaged consumers. The focused
+`read-timing.test.ts` and `transport.test.ts` cases cover overlapping reads,
+callback delay, deadline identity, shutdown and a failing sink using a fake
+clock and a loopback HTTP stub. The existing Build, lint and core tests and
+App verification jobs run the affected checks. This evidence covers source
+behavior. Installed diagnosis remains in #1663.
+
+
 Reactive presets (#722) use the existing Nanoleaf built-test discovery. After
 `npm run build`, run
 `node --test modules/nanoleaf/dist/tests/music-presets.test.js modules/nanoleaf/dist/tests/module-presets.test.js modules/nanoleaf/dist/tests/reactive-preset-model.test.js`,

@@ -25,7 +25,8 @@
         "1.6",
         "1.7",
         "1.8",
-        "1.9"
+        "1.9",
+        "1.10"
       ]
     },
     "timestamp": {
@@ -116,7 +117,11 @@
         "assistant.run.started",
         "assistant.run.settled",
         "assistant.call.settled",
-        "history.entity.noisy"
+        "history.entity.noisy",
+        "nanoleaf.http.read.failed",
+        "nanoleaf.http.read.recovered",
+        "nanoleaf.http.read.sampled",
+        "nanoleaf.http.read.summary"
       ]
     },
     "body": {
@@ -179,7 +184,11 @@
         "Assistant run started",
         "Assistant run settled",
         "Assistant call settled",
-        "History entity exceeded its hourly change threshold"
+        "History entity exceeded its hourly change threshold",
+        "Nanoleaf HTTP read failed",
+        "Nanoleaf HTTP read recovered",
+        "Nanoleaf HTTP read sampled",
+        "Nanoleaf HTTP read failures summarized"
       ]
     },
     "resource": {
@@ -697,6 +706,62 @@
           "minimum": 0,
           "maximum": 18446744073709,
           "multipleOf": 3600000
+        },
+        "bunny.nanoleaf.read.source": {
+          "enum": [
+            "sampler",
+            "music-admission",
+            "music-session"
+          ]
+        },
+        "bunny.nanoleaf.read.end": {
+          "enum": [
+            "reply",
+            "http-error",
+            "transport-deadline",
+            "transport-rejection",
+            "link-deadline"
+          ]
+        },
+        "bunny.nanoleaf.probe.sample_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.probe.pending_ms": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.nanoleaf.failure.http_error_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.failure.transport_deadline_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.failure.transport_rejection_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.failure.link_deadline_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.failure.probe_max_observed_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.nanoleaf.failure.probe_max_pending_ms": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 86400000
         }
       }
     },
@@ -1108,7 +1173,11 @@
               "assistant.run.started",
               "assistant.run.settled",
               "assistant.call.settled",
-              "history.entity.noisy"
+              "history.entity.noisy",
+              "nanoleaf.http.read.failed",
+              "nanoleaf.http.read.recovered",
+              "nanoleaf.http.read.sampled",
+              "nanoleaf.http.read.summary"
             ]
           },
           "attributes": {
@@ -1412,7 +1481,10 @@
         "properties": {
           "schema_version": {
             "not": {
-              "const": "1.9"
+              "enum": [
+                "1.9",
+                "1.10"
+              ]
             }
           }
         }
@@ -1499,6 +1571,347 @@
               "bunny.history.row_threshold": {},
               "bunny.history.hour_start_at_ms": {}
             }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "Profile 1.10 additions are closed to earlier profiles.",
+      "if": {
+        "properties": {
+          "schema_version": {
+            "not": {
+              "const": "1.10"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "event_name": {
+            "not": {
+              "enum": [
+                "nanoleaf.http.read.failed",
+                "nanoleaf.http.read.recovered",
+                "nanoleaf.http.read.sampled",
+                "nanoleaf.http.read.summary"
+              ]
+            }
+          },
+          "attributes": {
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "bunny.nanoleaf.read.source",
+                  "bunny.nanoleaf.read.end",
+                  "bunny.nanoleaf.probe.sample_count",
+                  "bunny.nanoleaf.probe.pending_ms",
+                  "bunny.nanoleaf.failure.http_error_count",
+                  "bunny.nanoleaf.failure.transport_deadline_count",
+                  "bunny.nanoleaf.failure.transport_rejection_count",
+                  "bunny.nanoleaf.failure.link_deadline_count",
+                  "bunny.nanoleaf.failure.probe_max_observed_ms",
+                  "bunny.nanoleaf.failure.probe_max_pending_ms"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "enum": [
+              "nanoleaf.http.read.failed",
+              "nanoleaf.http.read.recovered",
+              "nanoleaf.http.read.sampled",
+              "nanoleaf.http.read.summary"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "required": [
+              "bunny.provenance",
+              "bunny.module",
+              "bunny.device.id",
+              "bunny.nanoleaf.read.source",
+              "bunny.nanoleaf.read.end",
+              "bunny.duration_ms",
+              "bunny.timeout_ms",
+              "bunny.nanoleaf.probe.sample_count"
+            ],
+            "propertyNames": {
+              "enum": [
+                "bunny.provenance",
+                "bunny.module",
+                "bunny.device.id",
+                "bunny.nanoleaf.read.source",
+                "bunny.nanoleaf.read.end",
+                "bunny.duration_ms",
+                "bunny.timeout_ms",
+                "bunny.nanoleaf.probe.sample_count",
+                "bunny.attempt_count",
+                "bunny.lag.duration_ms",
+                "bunny.nanoleaf.probe.pending_ms",
+                "bunny.nanoleaf.failure.http_error_count",
+                "bunny.nanoleaf.failure.transport_deadline_count",
+                "bunny.nanoleaf.failure.transport_rejection_count",
+                "bunny.nanoleaf.failure.link_deadline_count",
+                "bunny.nanoleaf.failure.probe_max_observed_ms",
+                "bunny.nanoleaf.failure.probe_max_pending_ms"
+              ]
+            },
+            "properties": {
+              "bunny.module": {
+                "const": "nanoleaf"
+              },
+              "bunny.attempt_count": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "bunny.lag.duration_ms": {},
+              "bunny.provenance": {},
+              "bunny.device.id": {},
+              "bunny.nanoleaf.read.source": {},
+              "bunny.nanoleaf.read.end": {},
+              "bunny.duration_ms": {},
+              "bunny.timeout_ms": {},
+              "bunny.nanoleaf.probe.sample_count": {}
+            },
+            "if": {
+              "properties": {
+                "bunny.nanoleaf.probe.sample_count": {
+                  "const": 0
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "bunny.lag.duration_ms"
+                ],
+                "properties": {
+                  "bunny.lag.duration_ms": {}
+                }
+              }
+            },
+            "else": {
+              "required": [
+                "bunny.lag.duration_ms"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "nanoleaf.http.read.failed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "severity_text": {
+            "const": "WARN"
+          },
+          "attributes": {
+            "required": [
+              "bunny.attempt_count"
+            ],
+            "properties": {
+              "bunny.nanoleaf.read.end": {
+                "not": {
+                  "const": "reply"
+                }
+              },
+              "bunny.attempt_count": {}
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "nanoleaf.http.read.recovered"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "severity_text": {
+            "const": "INFO"
+          },
+          "attributes": {
+            "required": [
+              "bunny.attempt_count"
+            ],
+            "properties": {
+              "bunny.nanoleaf.read.end": {
+                "const": "reply"
+              },
+              "bunny.attempt_count": {}
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "nanoleaf.http.read.sampled"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "severity_text": {
+            "const": "DEBUG"
+          },
+          "attributes": {
+            "not": {
+              "required": [
+                "bunny.attempt_count"
+              ],
+              "properties": {
+                "bunny.attempt_count": {}
+              }
+            },
+            "properties": {
+              "bunny.nanoleaf.read.end": {
+                "const": "reply"
+              },
+              "bunny.attempt_count": {}
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "nanoleaf.http.read.summary"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "severity_text": {
+            "const": "DEBUG"
+          },
+          "attributes": {
+            "required": [
+              "bunny.attempt_count"
+            ],
+            "properties": {
+              "bunny.nanoleaf.read.end": {
+                "not": {
+                  "const": "reply"
+                }
+              },
+              "bunny.attempt_count": {}
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "enum": [
+              "nanoleaf.http.read.failed",
+              "nanoleaf.http.read.sampled"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "bunny.nanoleaf.failure.http_error_count",
+                  "bunny.nanoleaf.failure.transport_deadline_count",
+                  "bunny.nanoleaf.failure.transport_rejection_count",
+                  "bunny.nanoleaf.failure.link_deadline_count",
+                  "bunny.nanoleaf.failure.probe_max_observed_ms",
+                  "bunny.nanoleaf.failure.probe_max_pending_ms"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "enum": [
+              "nanoleaf.http.read.recovered",
+              "nanoleaf.http.read.summary"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "anyOf": [
+              {
+                "required": [
+                  "bunny.nanoleaf.failure.http_error_count"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.failure.http_error_count": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.failure.transport_deadline_count"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.failure.transport_deadline_count": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.failure.transport_rejection_count"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.failure.transport_rejection_count": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.failure.link_deadline_count"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.failure.link_deadline_count": {}
+                }
+              }
+            ]
           }
         }
       }

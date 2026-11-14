@@ -182,6 +182,8 @@ export function endInterruptedMusic(db: Db, device: string, nowMs: number, repor
 
 export type MusicPlayback = {
   db: Db; device: string; row: JournalRow; config: RenderConfig; transact: Transact; request: LightRequest;
+  /** The same link read with diagnostic attribution, if provided by the module. */
+  read?: DeviceRead;
   /** Sends one frame datagram to `port` at the device's configured address. */
   stream: (packet: Uint8Array, port: number) => Promise<void>;
   /** The runtime's clock in epoch milliseconds, and the input's clock readings. */
@@ -209,7 +211,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     deviceFailed = true;
     throw error;
   });
-  const read: DeviceRead = endpoint => flagged(request(target, 'GET', endpoint));
+  const read: DeviceRead = endpoint => flagged(options.read === undefined ? request(target, 'GET', endpoint) : options.read(endpoint));
   const send = (endpoint: string, payload: unknown): Promise<unknown> => flagged(request(target, 'PUT', endpoint, payload));
   const since: Admitted = {seq: row.seq, revision: row.revision, configurationRevision: command.configurationRevision, overrides: command.overrides};
   const stale = (): boolean => !liveSession(db, device, generation) || held(db, row.revision, device) || newerChoice(db, device, since, NEWER_THAN_MUSIC);

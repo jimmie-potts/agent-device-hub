@@ -1002,10 +1002,10 @@
       }
     },
     {
-      "name": "unsupported-1.10",
+      "name": "unsupported-1.11",
       "valid": false,
       "record": {
-        "schema_version": "1.10",
+        "schema_version": "1.11",
         "timestamp": "2026-10-01T12:00:00.123Z",
         "severity_number": 9,
         "severity_text": "INFO",
@@ -5726,6 +5726,330 @@
           "bunny.history.row_threshold": 120,
           "bunny.history.hour_start_at_ms": 1790856000000,
           "bunny.message.id": "fixture-message"
+        }
+      }
+    },
+    {
+      "name": "history-alarm-1.10",
+      "valid": true,
+      "record": {
+        "schema_version": "1.10",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "history.entity.noisy",
+        "body": "History entity exceeded its hourly change threshold",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.module": "core",
+          "bunny.participant": "bunny/modules/wemo",
+          "bunny.provenance": "source",
+          "bunny.history.family": "device",
+          "bunny.history.entity_id": "fixture-plug",
+          "bunny.history.row_count": 121,
+          "bunny.history.row_threshold": 120,
+          "bunny.history.hour_start_at_ms": 1790856000000
+        }
+      }
+    },
+    {
+      "name": "nanoleaf-http-timing-failed",
+      "valid": true,
+      "record": {
+        "schema_version": "1.10",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "nanoleaf.http.read.failed",
+        "body": "Nanoleaf HTTP read failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "nanoleaf",
+          "bunny.device.id": "lines",
+          "bunny.nanoleaf.read.source": "music-session",
+          "bunny.nanoleaf.read.end": "link-deadline",
+          "bunny.duration_ms": 1300,
+          "bunny.timeout_ms": 1200,
+          "bunny.nanoleaf.probe.sample_count": 1,
+          "bunny.lag.duration_ms": 7,
+          "bunny.nanoleaf.probe.pending_ms": 300,
+          "bunny.attempt_count": 1
+        }
+      }
+    },
+    {
+      "name": "nanoleaf-timing-previous-profile",
+      "valid": false,
+      "record": {
+        "schema_version": "1.9",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "nanoleaf.http.read.failed",
+        "body": "Nanoleaf HTTP read failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "nanoleaf",
+          "bunny.device.id": "lines",
+          "bunny.nanoleaf.read.source": "music-session",
+          "bunny.nanoleaf.read.end": "link-deadline",
+          "bunny.duration_ms": 1300,
+          "bunny.timeout_ms": 1200,
+          "bunny.nanoleaf.probe.sample_count": 1,
+          "bunny.lag.duration_ms": 7,
+          "bunny.nanoleaf.probe.pending_ms": 300,
+          "bunny.attempt_count": 1
+        }
+      }
+    },
+    {
+      "name": "nanoleaf-timing-unrelated-attribute",
+      "valid": false,
+      "record": {
+        "schema_version": "1.10",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "nanoleaf.http.read.failed",
+        "body": "Nanoleaf HTTP read failed",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "nanoleaf",
+          "bunny.device.id": "lines",
+          "bunny.nanoleaf.read.source": "music-session",
+          "bunny.nanoleaf.read.end": "link-deadline",
+          "bunny.duration_ms": 1300,
+          "bunny.timeout_ms": 1200,
+          "bunny.nanoleaf.probe.sample_count": 1,
+          "bunny.lag.duration_ms": 7,
+          "bunny.nanoleaf.probe.pending_ms": 300,
+          "bunny.attempt_count": 1,
+          "error.type": "TypeError"
+        }
+      }
+    },
+    {
+      "name": "nanoleaf-http-timing-summary",
+      "valid": true,
+      "record": {
+        "schema_version": "1.10",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 5,
+        "severity_text": "DEBUG",
+        "event_name": "nanoleaf.http.read.summary",
+        "body": "Nanoleaf HTTP read failures summarized",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "nanoleaf",
+          "bunny.device.id": "lines",
+          "bunny.nanoleaf.read.source": "sampler",
+          "bunny.nanoleaf.read.end": "transport-rejection",
+          "bunny.duration_ms": 12,
+          "bunny.timeout_ms": 1200,
+          "bunny.nanoleaf.probe.sample_count": 0,
+          "bunny.attempt_count": 2,
+          "bunny.nanoleaf.failure.transport_rejection_count": 2
+        }
+      }
+    },
+    {
+      "name": "nanoleaf-http-timing-recovered",
+      "valid": true,
+      "record": {
+        "schema_version": "1.10",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "nanoleaf.http.read.recovered",
+        "body": "Nanoleaf HTTP read recovered",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "nanoleaf",
+          "bunny.device.id": "lines",
+          "bunny.nanoleaf.read.source": "sampler",
+          "bunny.nanoleaf.read.end": "reply",
+          "bunny.duration_ms": 12,
+          "bunny.timeout_ms": 1200,
+          "bunny.nanoleaf.probe.sample_count": 0,
+          "bunny.attempt_count": 2,
+          "bunny.nanoleaf.failure.transport_rejection_count": 1,
+          "bunny.nanoleaf.failure.link_deadline_count": 1,
+          "bunny.nanoleaf.failure.probe_max_observed_ms": 25,
+          "bunny.nanoleaf.failure.probe_max_pending_ms": 1075
+        }
+      }
+    },
+    {
+      "name": "nanoleaf-http-timing-sampled",
+      "valid": true,
+      "record": {
+        "schema_version": "1.10",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 5,
+        "severity_text": "DEBUG",
+        "event_name": "nanoleaf.http.read.sampled",
+        "body": "Nanoleaf HTTP read sampled",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "nanoleaf",
+          "bunny.device.id": "lines",
+          "bunny.nanoleaf.read.source": "music-admission",
+          "bunny.nanoleaf.read.end": "reply",
+          "bunny.duration_ms": 12,
+          "bunny.timeout_ms": 1200,
+          "bunny.nanoleaf.probe.sample_count": 0
+        }
+      }
+    },
+    {
+      "name": "nanoleaf-failure-count-zero",
+      "valid": false,
+      "record": {
+        "schema_version": "1.10",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "nanoleaf.http.read.recovered",
+        "body": "Nanoleaf HTTP read recovered",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "nanoleaf",
+          "bunny.device.id": "lines",
+          "bunny.nanoleaf.read.source": "sampler",
+          "bunny.nanoleaf.read.end": "reply",
+          "bunny.duration_ms": 12,
+          "bunny.timeout_ms": 1200,
+          "bunny.nanoleaf.probe.sample_count": 0,
+          "bunny.attempt_count": 2,
+          "bunny.nanoleaf.failure.transport_rejection_count": 1,
+          "bunny.nanoleaf.failure.link_deadline_count": 0,
+          "bunny.nanoleaf.failure.probe_max_observed_ms": 25,
+          "bunny.nanoleaf.failure.probe_max_pending_ms": 1075
+        }
+      }
+    },
+    {
+      "name": "nanoleaf-failure-pending-negative",
+      "valid": false,
+      "record": {
+        "schema_version": "1.10",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "nanoleaf.http.read.recovered",
+        "body": "Nanoleaf HTTP read recovered",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "nanoleaf",
+          "bunny.device.id": "lines",
+          "bunny.nanoleaf.read.source": "sampler",
+          "bunny.nanoleaf.read.end": "reply",
+          "bunny.duration_ms": 12,
+          "bunny.timeout_ms": 1200,
+          "bunny.nanoleaf.probe.sample_count": 0,
+          "bunny.attempt_count": 2,
+          "bunny.nanoleaf.failure.transport_rejection_count": 1,
+          "bunny.nanoleaf.failure.link_deadline_count": 1,
+          "bunny.nanoleaf.failure.probe_max_observed_ms": 25,
+          "bunny.nanoleaf.failure.probe_max_pending_ms": -1
         }
       }
     }

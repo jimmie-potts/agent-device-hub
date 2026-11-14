@@ -92,6 +92,16 @@ const examples = {
   'bunny.history.entity_id': 'fixture-plug',
   'bunny.history.row_count': 121,
   'bunny.history.row_threshold': 120,
+  'bunny.nanoleaf.read.source': 'music-session',
+  'bunny.nanoleaf.read.end': 'link-deadline',
+  'bunny.nanoleaf.probe.sample_count': 1,
+  'bunny.nanoleaf.probe.pending_ms': 300,
+  'bunny.nanoleaf.failure.http_error_count': 1,
+  'bunny.nanoleaf.failure.transport_deadline_count': 1,
+  'bunny.nanoleaf.failure.transport_rejection_count': 1,
+  'bunny.nanoleaf.failure.link_deadline_count': 1,
+  'bunny.nanoleaf.failure.probe_max_observed_ms': 25,
+  'bunny.nanoleaf.failure.probe_max_pending_ms': 1075,
   'bunny.history.hour_start_at_ms': 1_790_856_000_000,
 };
 /** Profile 1.7's exception fields travel together, under the runtime's scopes: a module failure record carries them all. */
@@ -103,10 +113,13 @@ const noisy = JSON.parse(readFileSync(new URL('../fixtures/records.json', import
 const valid = value => validateRecord(value).ok;
 const at = (value, version) => ({...value, schema_version: version});
 
-test('artifact 1.9.0 adds profile 1.9, and producers still default to profile 1.1', () => {
-  assert.equal(ARTIFACT_VERSION, '1.9.0');
-  assert.equal(catalog.artifact_version, '1.9.0');
-  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9']);
+const nanoleaf = new Map(JSON.parse(readFileSync(new URL('../fixtures/records.json', import.meta.url), 'utf8'))
+  .cases.filter(({name}) => name.startsWith('nanoleaf-http-timing-')).map(({record}) => [record.event_name, record]));
+
+test('artifact 1.10.0 adds profile 1.10, and producers still default to profile 1.1', () => {
+  assert.equal(ARTIFACT_VERSION, '1.10.0');
+  assert.equal(catalog.artifact_version, '1.10.0');
+  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10']);
   assert.equal(SCHEMA_VERSION, '1.1');
   assert.equal(catalog.default_schema_version, '1.1');
   const omitted = {...hub};
@@ -166,7 +179,7 @@ test('each profile\'s additions are registered, and every earlier profile reject
       assert.ok(uses, `${name} belongs to a scope`);
       const [scope] = uses;
       const base = scope === 'bunny.module' ? module : runtime;
-      const record = name === noisy.event_name ? noisy : {...base, event_name: name, body: catalog.events[name]};
+      const record = name === noisy.event_name ? noisy : nanoleaf.get(name) ?? {...base, event_name: name, body: catalog.events[name]};
       assert.equal(valid(at(record, version)), true, `${name} in ${version}`);
       for (const old of earlier) assert.equal(valid(at(record, old)), false, `${name} in ${old}`);
     }
@@ -188,7 +201,7 @@ test('the runtime\'s scopes allow only their own service and events, and a modul
     if (name !== 'telemetry.dropped') assert.equal(valid({...record, scope: hub.scope}), false, `${name} under ${hub.scope.name}`);
   }
   for (const name of moduleEvents) {
-    const record = name === noisy.event_name ? noisy : {...at(module, latest), event_name: name, body: catalog.events[name]};
+    const record = name === noisy.event_name ? noisy : nanoleaf.get(name) ?? {...at(module, latest), event_name: name, body: catalog.events[name]};
     assert.equal(valid(record), true, name);
     assert.equal(valid({...record, scope: runtime.scope}), false, `${name} under bunny.runtime`);
   }
@@ -206,7 +219,7 @@ test('a profile 1.2 record projects to 1.1 only without 1.2 vocabulary, and a 1.
   const raised = projectRecord(hub, '1.2');
   assert.equal(raised.ok, true);
   assert.equal(raised.value.schema_version, '1.2');
-  assert.equal(projectRecord(hub, '1.10').ok, false);
+  assert.equal(projectRecord(hub, '1.11').ok, false);
 });
 
 test('a profile 1.3 record projects to 1.2 only without 1.3 vocabulary, and a 1.2 record projects to 1.3', () => {
@@ -357,4 +370,28 @@ test('construction keeps an explicit profile 1.2 and discards what the catalog d
 test('a history warning cannot project to profile 1.8, while ordinary records can', () => {
   assert.equal(projectRecord(noisy, '1.8').ok, false);
   assert.equal(projectRecord(at(module, '1.9'), '1.8').ok, true);
+});
+
+test('Nanoleaf HTTP timing is closed to profile 1.10 and keeps history compatibility', () => {
+  const timing = nanoleaf.get('nanoleaf.http.read.failed');
+  assert.equal(valid(timing), true);
+  assert.equal(valid(at(noisy, '1.10')), true);
+  for (const version of versions.slice(0, -1)) assert.equal(valid(at(timing, version)), false);
+  assert.equal(projectRecord(timing, '1.9').ok, false);
+  assert.equal(valid({...timing, attributes: {...timing.attributes, 'bunny.nanoleaf.read.end': 'ETIMEDOUT'}}), false);
+  assert.equal(valid({...timing, attributes: {...timing.attributes, 'error.type': 'TypeError'}}), false);
+  assert.equal(valid({...timing, attributes: {...timing.attributes, 'bunny.module': 'lamp'}}), false);
+  assert.equal(valid({...timing, attributes: {...timing.attributes, 'bunny.nanoleaf.probe.sample_count': 0}}), false);
+});
+
+test('failure-run evidence is optional per branch and belongs only to a summary or recovery', () => {
+  const recovery = nanoleaf.get('nanoleaf.http.read.recovered');
+  assert.equal(valid(recovery), true);
+  const timing = nanoleaf.get('nanoleaf.http.read.sampled');
+  for (const [name, value] of Object.entries(recovery.attributes).filter(([key]) => key.startsWith('bunny.nanoleaf.failure.'))) {
+    assert.equal(valid({...timing, attributes: {...timing.attributes, [name]: value}}), false, name);
+  }
+  const attributes = Object.fromEntries(Object.entries(recovery.attributes).filter(([key]) => !key.endsWith('_count') || !key.startsWith('bunny.nanoleaf.failure.')));
+  assert.equal(valid({...recovery, attributes}), false, 'a failure run names at least one terminal branch');
+  assert.equal(valid({...recovery, attributes: {...recovery.attributes, 'bunny.nanoleaf.failure.link_deadline_count': 0}}), false);
 });

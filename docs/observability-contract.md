@@ -7,9 +7,9 @@ current exclusions. Richer capture and durable retention require a versioned
 implementation with consumer and exporter checks; this policy decision does not
 widen an existing schema or export destination.
 
-The artifact `@jimmie-potts/bunny-observability` version 1.9.0 owns this contract,
+The artifact `@jimmie-potts/bunny-observability` version 1.10.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
-1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8 and 1.9 are independent of the pinned OpenTelemetry semantic
+1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9 and 1.10 are independent of the pinned OpenTelemetry semantic
 conventions 1.44.0. Profiles 1.0 and 1.1 were introduced together: 1.0 is the minimal
 compatibility profile; 1.1 adds optional `bunny.queue.depth`. This is not a
 claim that an older artifact was deployed. Profile 1.2 registers the B.U.N.N.Y.
@@ -29,9 +29,10 @@ runtime's [private exception context](#private-exception-context-profile-17)
 ([#777](https://github.com/jimmie-potts/agent-device-hub/issues/777)). Profile 1.8
 adds the [art provider call](#art-provider-call-profile-18) span
 ([#680](https://github.com/jimmie-potts/agent-device-hub/issues/680)). Profile 1.9 adds the
-[hourly history warning](#hourly-history-warning-profile-19). The default
+[hourly history warning](#hourly-history-warning-profile-19). Profile 1.10 adds
+[Nanoleaf HTTP read timing](#nanoleaf-http-read-timing-profile-110). The default
 producer profile stays 1.1: existing producers keep it, and a producer selects 1.2
-to 1.9 explicitly.
+to 1.10 explicitly.
 
 The machine-readable dictionary is `src/record.schema.json` and the registered
 vocabulary is `src/catalog.json` in the artifact. These files and this document
@@ -50,7 +51,7 @@ serialization; the strict validator rejects them.
 
 | Local field | Requirement and type | OTLP JSON mapping |
 | --- | --- | --- |
-| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3`, `1.4`, `1.5`, `1.6`, `1.7`, `1.8` or `1.9` | Log attribute `bunny.schema.version`, string |
+| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3`, `1.4`, `1.5`, `1.6`, `1.7`, `1.8`, `1.9` or `1.10` | Log attribute `bunny.schema.version`, string |
 | `timestamp` | Source time if known | `timeUnixNano`, decimal integer string |
 | `observed_timestamp` | Receiver time if applicable; at least one time required | `observedTimeUnixNano`, decimal integer string |
 | `severity_number`, `severity_text` | Required, matching registered pair | `severityNumber`, `severityText` |
@@ -373,8 +374,59 @@ later activations to the prior run. Calls are children of the active run. It
 uses the SDK and host adapter; a diagnostic failure cannot decide task success.
 There is no LangSmith or second content exporter.
 
-This source revision writes runtime records and spans at profile 1.9. Source
+This source revision writes runtime records and spans at profile 1.10. Source
 fixtures and disposable runs do not establish installed adoption.
+
+## Nanoleaf HTTP read timing (profile 1.10)
+
+The Nanoleaf module reports elapsed monotonic time on three existing local HTTP
+read paths. `bunny.nanoleaf.read.source` identifies the status `sampler`, the
+`music-admission` base read or a `music-session` read, including its entry
+guard, playing check and restoration guard. `bunny.nanoleaf.read.end` names
+the branch that settled the link. `reply` means the transport fulfilled.
+`http-error` means a non-2xx response, which still reached the device.
+`transport-deadline` names the Node client's own timer,
+`transport-rejection` any other rejection, and `link-deadline` the link's
+timer. `bunny.timeout_ms` is the link's configured deadline. These labels
+describe local observations. A link deadline does not identify why the
+response was late or missing.
+
+One module timer runs every 100 ms while monitored reads are active. It tracks
+up to 16 concurrent reads and stops when none remain. The timer does bounded
+work per callback. An excess read follows the same request path without timing.
+`bunny.nanoleaf.probe.sample_count` counts callbacks during the read.
+`bunny.lag.duration_ms` is the largest observed callback lateness during
+the read and is omitted when the count is zero. If an overdue probe is still
+pending at settlement, `bunny.nanoleaf.probe.pending_ms` records a separate
+lower bound. Both begin counting at the later of the probe's due time and the
+read's start. A timer measures local scheduling delay on the runtime thread.
+It cannot observe a stall that falls between samples or separate controller,
+network and local processing time.
+
+For each device and source, `nanoleaf.http.read.failed` marks the first
+failure at WARN, `nanoleaf.http.read.summary` marks continued failure at DEBUG
+at most once a minute, and `nanoleaf.http.read.recovered` marks the next
+successful read at INFO. A summary carries the latest failed read's timing
+and recovery carries the reply's timing. Both also carry the whole failure
+run's attempt count and positive counts for each terminal branch observed.
+The registered `bunny.nanoleaf.failure.*_count` fields count `http_error`,
+`transport_deadline`, `transport_rejection` and `link_deadline` separately.
+Each count saturates independently. The optional
+`bunny.nanoleaf.failure.probe_max_observed_ms` and
+`bunny.nanoleaf.failure.probe_max_pending_ms` are separate maxima across
+failed reads in that run, each omitted when it has no evidence. They cannot
+attribute a delay to a particular request or branch. Recovery retains those
+counts and maxima even when the default log filter omits a DEBUG summary.
+`nanoleaf.http.read.sampled` records a successful baseline at
+DEBUG at most once a minute when there is no failure run. A stopped read
+emits no record. Filters and bounded queues can omit evidence.
+
+Records use the existing private local sink and configured owned exporter.
+They carry a neutral device ID, fixed labels, counts and durations. They
+exclude addresses, tokens, paths, payloads, audio and exception text. Earlier
+profiles reject the new events. Strict readers need profile 1.10 support or an
+explicit projection of compatible records to their supported profile. A
+Nanoleaf timing event itself cannot project to an earlier profile.
 
 ## Hourly history warning (profile 1.9)
 
