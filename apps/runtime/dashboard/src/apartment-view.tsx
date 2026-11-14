@@ -13,7 +13,7 @@ type Content = {kind:'missing'|'loading'|'unavailable'|'invalid'}|{kind:'ready';
 type ArtStatus = 'ready' | 'missing';
 type FixtureView = {fixture:ApartmentFixture;roomName:string;observation:ReturnType<typeof roomObservation>;number:number};
 type Props = {connection:DashboardConnection;connected:boolean;layout:LightingLayout;layoutLive:boolean;devices:readonly LightingDevice[];
-  renderLight:(item:ApartmentFixture,roomId:string)=>React.ReactNode;refresh:number};
+  renderLight:(item:ApartmentFixture,roomId:string,currentObservationsOnly:true)=>React.ReactNode;refresh:number};
 
 /** A private content read on entry and explicit refresh. Live device evidence comes from Rooms. */
 export function ApartmentView({connection,connected,layout,layoutLive,devices,renderLight,refresh}:Props):React.JSX.Element|null {
@@ -156,7 +156,7 @@ function ApartmentInspection({connection,model,layout,layoutLive,devices,renderL
           </button>
         </li>)}</ul>}
       </div>
-      {chosen!==undefined&&<div className="room-selected apartment-selection" aria-live="polite">{renderLight(chosen,chosen.roomId)}</div>}
+      {chosen!==undefined&&<div className="room-selected apartment-selection" aria-live="polite">{renderLight(chosen,chosen.roomId,true)}</div>}
     </div>
   </section>;
 }

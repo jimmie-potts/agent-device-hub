@@ -6,7 +6,7 @@ const tabs: Tab[] = ['Power', 'Color', 'Scenes', 'Timer'];
 export type LightCardProps = {
   card: LightingCard; devices: readonly LightingDevice[]; capabilities: ReturnType<typeof lightCapabilities>;
   artwork: React.ReactNode; modeChoice?: React.ReactNode; options: React.ReactNode; status: readonly {name: string; text: string; locked: boolean}[];
-  act: (intent: LightingIntent) => void; drag?: React.DragEventHandler<HTMLElement>; drop?: React.DragEventHandler<HTMLElement>;
+  act: (intent: LightingIntent) => void; currentObservationsOnly?: boolean; drag?: React.DragEventHandler<HTMLElement>; drop?: React.DragEventHandler<HTMLElement>;
 };
 function Slider({label, value, min = 0, max = 100, unit = '%', disabled, commit}: {
   label: string; value: number | undefined; min?: number; max?: number; unit?: string; disabled: boolean; commit: (value: number) => void;
@@ -22,7 +22,7 @@ function Slider({label, value, min = 0, max = 100, unit = '%', disabled, commit}
 }
 function common<T>(values: readonly (T | undefined)[]): T | undefined { return values.length > 0 && values.every(value => value !== undefined && value === values[0]) ? values[0] : undefined; }
 /** Artwork and the menu remain mounted. Only the labelled control face changes on a tab switch. */
-export function LightCard({card, devices, capabilities: cap, artwork, modeChoice, options, status, act, drag, drop}: LightCardProps): React.JSX.Element {
+export function LightCard({card, devices, capabilities: cap, artwork, modeChoice, options, status, act, currentObservationsOnly = false, drag, drop}: LightCardProps): React.JSX.Element {
   const id = useId(), shape = useHomeShape();
   // In a one-row Home shape (#1672) the card keeps its artwork, state and power; color, scenes and the rest stay one
   // step away in the card's options menu and on its own page.
@@ -32,13 +32,17 @@ export function LightCard({card, devices, capabilities: cap, artwork, modeChoice
   const [paletteDirty, setPaletteDirty] = useState(false);
   const members = card.members.map(member => devices.find(device => device.record.id === member));
   const requestedBrightness = common(members.map(member => member?.record.desired.brightness.status === 'known' ? member.record.desired.brightness.value : undefined));
-  const observedBrightness = common(members.map(member => member?.record.observed.status === 'known' && member.record.observed.brightness.status === 'known' ? member.record.observed.brightness.value : undefined));
+  const observedMembers = currentObservationsOnly
+    ? members.map(member => member?.live === true && member.record.availability === 'available' ? member : undefined)
+    : members;
+  const colors = currentObservationsOnly ? observedMembers.map(member => member?.colorLive === true ? member : undefined) : members;
+  const observedBrightness = common(observedMembers.map(member => member?.record.observed.status === 'known' && member.record.observed.brightness.status === 'known' ? member.record.observed.brightness.value : undefined));
   const brightness = observedBrightness ?? requestedBrightness;
   const power = common(members.map(member => member?.record.desired.power.status === 'known' ? member.record.desired.power.value : undefined));
-  const observedPower = common(members.map(member => member?.record.observed.status === 'known' && member.record.observed.power.status === 'known' ? member.record.observed.power.value : undefined));
-  const kelvin = common(members.map(member => member?.color?.observed.status === 'known' ? member.color.observed.kelvin : undefined));
-  const colorHue = common(members.map(member => member?.color?.observed.status === 'known' ? member.color.observed.hue : undefined));
-  const colorSaturation = common(members.map(member => member?.color?.observed.status === 'known' ? member.color.observed.saturation : undefined));
+  const observedPower = common(observedMembers.map(member => member?.record.observed.status === 'known' && member.record.observed.power.status === 'known' ? member.record.observed.power.value : undefined));
+  const kelvin = common(colors.map(member => member?.color?.observed.status === 'known' ? member.color.observed.kelvin : undefined));
+  const colorHue = common(colors.map(member => member?.color?.observed.status === 'known' ? member.color.observed.hue : undefined));
+  const colorSaturation = common(colors.map(member => member?.color?.observed.status === 'known' ? member.color.observed.saturation : undefined));
   useEffect(() => { if (!paletteDirty) { setHue(colorHue ?? 210); setSaturation(colorSaturation ?? 75); } }, [colorHue, colorSaturation, paletteDirty]);
   const attention = status.filter(item => item.locked || /Refused|Not sent|failed|uncertain|Conflicting/i.test(item.text));
   const statusText = cap.blocked ?? (observedPower === undefined ? power === undefined ? 'Mixed / unknown' : `Requested ${power ? 'on' : 'off'}` : observedPower ? 'On · observed' : 'Off · observed');

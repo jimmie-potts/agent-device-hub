@@ -46,7 +46,7 @@ function RoomCanvas({model,selected,powers,onSelect}:{model:RoomModel;selected:R
 }
 
 type Props={connection:DashboardConnection;connected:boolean;layout:LightingLayout;layoutLive:boolean;devices:readonly LightingDevice[];
-  renderLight:(anchor:RoomFixtureAlias,roomId:string)=>React.ReactNode};
+  renderLight:(anchor:RoomFixtureAlias,roomId:string,currentObservationsOnly?:boolean)=>React.ReactNode};
 /** Private model content is read on entry/selection/explicit refresh, never polled. Live evidence uses existing copies. */
 export function RoomModels({connection,connected,layout,layoutLive,devices,renderLight}:Props):React.JSX.Element {
   const scope=useMemo(()=>connection.openModule('core'),[connection]);

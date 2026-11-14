@@ -73,7 +73,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
     save(next);
   };
   const group = (first: LightingSelection, second: LightingSelection): void => { save(groupCards(layout, viewScope, first, second, devices, crypto.randomUUID(), homeSelections)); };
-  const options = (card: LightingCard): React.ReactNode => <details className="light-options"><summary aria-label={`Options for ${card.name}`}>⋯</summary><div className="light-options-body">
+  const options = (card: LightingCard, currentObservationsOnly = false): React.ReactNode => <details className="light-options"><summary aria-label={`Options for ${card.name}`}>⋯</summary><div className="light-options-body">
     {card.selection.kind !== 'room' && <label>Group with<select aria-label={`Group ${card.name} with`} value="" disabled={!editable} onChange={event => {
       const target = cards.find(item => selectionKey(item.selection) === event.target.value); if (target !== undefined) group(card.selection, target.selection);
       event.currentTarget.closest('details')?.removeAttribute('open');
@@ -88,6 +88,8 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
     {home && homeSelection === undefined && card.selection.kind === 'device' && <button type="button" disabled={!editable} onClick={() => { toggleHome(card.selection, false); }}>Remove from Home</button>}
     <h4>Details</h4>{card.members.map(id => {
       const device = devices.find(item => item.record.id === id), command = bindings.current.get(id);
+      const current = !currentObservationsOnly || device?.live === true && device.record.availability === 'available';
+
       return <div key={id}><a href={`#/component/${encodeURIComponent(id)}`}>{device?.record.label ?? id} · advanced controls</a>
         <label>Room<select aria-label={`Room for ${device?.record.label ?? id}`} value={layout.assignments.find(item => item.device === id)?.room ?? ''} disabled={!editable} onChange={event => {
           const next = structuredClone(layout); next.assignments = next.assignments.filter(item => item.device !== id);
@@ -95,7 +97,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
         }}><option value="">Unassigned</option>{layout.rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label>
         <p>{device === undefined ? 'Light unavailable' : `${device.owner} · ${device.record.availability}${device.live ? '' : ' · stale'}`}</p>
         <p>{device?.wall === undefined ? 'Artwork is a placeholder.' : 'Artwork uses the module’s saved geometry.'}</p>
-        {device !== undefined && <p>Requested power: {device.record.desired.power.status === 'known' ? String(device.record.desired.power.value) : 'unknown'}. Observed power: {device.record.observed.status === 'known' && device.record.observed.power.status === 'known' ? String(device.record.observed.power.value) : 'unknown'}.</p>}
+        {device !== undefined && <p>Requested power: {device.record.desired.power.status === 'known' ? String(device.record.desired.power.value) : 'unknown'}. Observed power: {current && device.record.observed.status === 'known' && device.record.observed.power.status === 'known' ? String(device.record.observed.power.value) : 'unknown'}.</p>}
         <p>{command?.text ?? 'No command sent from this page.'}</p>
       </div>;
     })}
@@ -121,17 +123,17 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
       {(layoutCommand.locked || /Refused|Not sent/i.test(layoutCommand.text)) && <p role="status">Layout: {layoutCommand.text.replace('The module observed the result.', 'The layout was saved.')} <button type="button" onClick={() => { void connection.refreshDevices(); }}>Refresh records</button></p>}
       {message !== '' && <p role="status">{message}</p>}
       {roomView && <RoomModels connection={connection} connected={connected && runtime.modules?.some(module => module.name === 'core' && module.state === 'running') === true} layout={layout} layoutLive={layoutLive} devices={devices}
-        renderLight={(anchor, roomId) => {
+        renderLight={(anchor, roomId, currentObservationsOnly = false) => {
           const bound = roomBinding(anchor, roomId, layout, devices, layoutLive);
           if ('reason' in bound) return <p>{bound.reason}</p>;
           const {card, device} = bound;
-          return <LightCard key={card.selection.id} card={card} devices={devices}
+          return <LightCard key={card.selection.id} card={card} devices={devices} currentObservationsOnly={currentObservationsOnly}
             capabilities={lightCapabilities(card.members, devices, runtime.control, operationsLive, locks())}
             act={intent => {
               const current = roomBinding(anchor, roomId, layout, devices, layoutLive);
               if ('reason' in current) { setMessage(current.reason); return; }
               act(current.card, intent);
-            }} options={options(card)} modeChoice={card.selection.kind === 'device' ? <DeviceModeChoice target={card.selection.id}/> : undefined}
+            }} options={options(card,currentObservationsOnly)} modeChoice={card.selection.kind === 'device' ? <DeviceModeChoice target={card.selection.id}/> : undefined}
             status={card.members.map(id => ({name: card.name, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}
             artwork={<div className="lighting-image-group"><div>{device.wall === undefined ? <Placeholder device={device}/> : <NanoleafLightVisual wall={device.wall} read={readWall}/>}</div></div>}/>;
         }}/>}

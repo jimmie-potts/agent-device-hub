@@ -140,6 +140,9 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await page.getByRole('link',{name:'Rooms',exact:true}).click();await canvas.waitFor();
     await view.getByText('Artwork unavailable: Abstract sun print, Reading room print.',{exact:true}).waitFor();
     await selectLight(page,'Reading wall light');await card.waitFor();
+    await report.filter({hasText:'Device unavailable; current light state is unknown.'}).waitFor();
+    assert.equal(await card.getByText('Brightness · observed',{exact:false}).count(),0);
+    await card.getByText('Brightness · requested',{exact:false}).waitFor();
     if(process.env.DASHBOARD_RECEIPTS!==undefined)await view.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/apartment-missing-art.png'});
     assert.equal(sent.length,2,'missing artwork and departure send no light command');
     assert.deepEqual(errors,[]);
