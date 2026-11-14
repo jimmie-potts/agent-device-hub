@@ -11,7 +11,8 @@ import type {Clock, DeviceAvailability, Logger, ModuleScheduler, TraceContext, T
 import {recordLog} from '@jimmie-potts/sdk';
 import {isObject} from '../compat.js';
 import {MIN_STREAM_PORT, type LightDatagram} from '../stream.js';
-import {HttpError, isTransportDeadline, LIGHT_TIMEOUT_SECONDS, type LightAddress, type LightRequest} from '../transport.js';
+import {HttpError, isTransportDeadline, LIGHT_TIMEOUT_SECONDS, type classifiedRead, type LightAddress, type LightRequest} from '../transport.js';
+import type {ReadRejection} from '../read-rejection.js';
 import {ReadTimingRecords, type ReadEnd, type ReadSource, type ReadTimingProbe} from './read-timing.js';
 
 /** How long one request to a device may take: the Python client's light request timeout. */
@@ -52,6 +53,7 @@ export type LinkOptions = {
   token: string;
   transport: LightRequest;
   readTiming?: ReadTimingProbe;
+  readWithDiagnostics?: typeof classifiedRead;
   /** Sends a live Music frame datagram (#1598). */
   datagram: LightDatagram;
   clock: Clock;
@@ -121,6 +123,7 @@ export class DeviceLink {
       let settled = false;
       let cancel = (): void => {};
       let completeTiming: ReturnType<ReadTimingProbe['start']>;
+      let rejection: ReadRejection | undefined;
       const finish = (outcome: () => void, failedCall: boolean, end: ReadEnd | 'stopped'): void => {
         if (settled) return;
         settled = true;
@@ -135,7 +138,7 @@ export class DeviceLink {
         call?.end(failedCall ? 'error' : 'unset');
         outcome();
         try {
-          if (timing !== undefined && source !== undefined && end !== 'stopped') this.#readRecords.record(source, end, REQUEST_MS, timing);
+          if (timing !== undefined && source !== undefined && end !== 'stopped') this.#readRecords.record(source, end, REQUEST_MS, timing, rejection);
         } catch {
           // The diagnostic sink cannot affect settlement.
         }
@@ -168,7 +171,10 @@ export class DeviceLink {
       }
       let sent: Promise<unknown>;
       try {
-        sent = transport({ip: address, token}, method, endpoint, payload);
+        const read = this.#options.readWithDiagnostics;
+        sent = completeTiming !== undefined && read !== undefined
+          ? read({ip: address, token}, endpoint, classification => { rejection = classification; })
+          : transport({ip: address, token}, method, endpoint, payload);
       } catch (error) {
         sent = Promise.reject(error);
       }

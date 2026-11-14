@@ -26,7 +26,8 @@
         "1.7",
         "1.8",
         "1.9",
-        "1.10"
+        "1.10",
+        "1.11"
       ]
     },
     "timestamp": {
@@ -762,6 +763,99 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 86400000
+        },
+        "bunny.nanoleaf.rejection.stage": {
+          "enum": [
+            "setup",
+            "request",
+            "response-body",
+            "decode",
+            "unknown"
+          ]
+        },
+        "bunny.nanoleaf.rejection.category": {
+          "enum": [
+            "invalid-input",
+            "other",
+            "http-protocol",
+            "timeout",
+            "connection-refused",
+            "connection-reset",
+            "host-unreachable",
+            "network-unreachable",
+            "interrupted",
+            "invalid-json"
+          ]
+        },
+        "bunny.nanoleaf.rejection.count.setup.invalid-input": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.rejection.count.setup.other": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.rejection.count.request.http-protocol": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.rejection.count.request.timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.rejection.count.request.connection-refused": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.rejection.count.request.connection-reset": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.rejection.count.request.host-unreachable": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.rejection.count.request.network-unreachable": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.rejection.count.request.other": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.rejection.count.response-body.interrupted": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.rejection.count.response-body.other": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.rejection.count.decode.invalid-json": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.rejection.count.decode.other": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.nanoleaf.rejection.count.unknown.other": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
         }
       }
     },
@@ -1483,7 +1577,8 @@
             "not": {
               "enum": [
                 "1.9",
-                "1.10"
+                "1.10",
+                "1.11"
               ]
             }
           }
@@ -1581,7 +1676,10 @@
         "properties": {
           "schema_version": {
             "not": {
-              "const": "1.10"
+              "enum": [
+                "1.10",
+                "1.11"
+              ]
             }
           }
         }
@@ -1665,7 +1763,23 @@
                 "bunny.nanoleaf.failure.transport_rejection_count",
                 "bunny.nanoleaf.failure.link_deadline_count",
                 "bunny.nanoleaf.failure.probe_max_observed_ms",
-                "bunny.nanoleaf.failure.probe_max_pending_ms"
+                "bunny.nanoleaf.failure.probe_max_pending_ms",
+                "bunny.nanoleaf.rejection.stage",
+                "bunny.nanoleaf.rejection.category",
+                "bunny.nanoleaf.rejection.count.setup.invalid-input",
+                "bunny.nanoleaf.rejection.count.setup.other",
+                "bunny.nanoleaf.rejection.count.request.http-protocol",
+                "bunny.nanoleaf.rejection.count.request.timeout",
+                "bunny.nanoleaf.rejection.count.request.connection-refused",
+                "bunny.nanoleaf.rejection.count.request.connection-reset",
+                "bunny.nanoleaf.rejection.count.request.host-unreachable",
+                "bunny.nanoleaf.rejection.count.request.network-unreachable",
+                "bunny.nanoleaf.rejection.count.request.other",
+                "bunny.nanoleaf.rejection.count.response-body.interrupted",
+                "bunny.nanoleaf.rejection.count.response-body.other",
+                "bunny.nanoleaf.rejection.count.decode.invalid-json",
+                "bunny.nanoleaf.rejection.count.decode.other",
+                "bunny.nanoleaf.rejection.count.unknown.other"
               ]
             },
             "properties": {
@@ -1911,6 +2025,401 @@
                   "bunny.nanoleaf.failure.link_deadline_count": {}
                 }
               }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "$comment": "Profile 1.11 classification is closed to earlier profiles and Nanoleaf timing events.",
+      "if": {
+        "not": {
+          "properties": {
+            "schema_version": {
+              "const": "1.11"
+            },
+            "event_name": {
+              "enum": [
+                "nanoleaf.http.read.failed",
+                "nanoleaf.http.read.sampled",
+                "nanoleaf.http.read.summary",
+                "nanoleaf.http.read.recovered"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "bunny.nanoleaf.rejection.stage",
+                  "bunny.nanoleaf.rejection.category",
+                  "bunny.nanoleaf.rejection.count.setup.invalid-input",
+                  "bunny.nanoleaf.rejection.count.setup.other",
+                  "bunny.nanoleaf.rejection.count.request.http-protocol",
+                  "bunny.nanoleaf.rejection.count.request.timeout",
+                  "bunny.nanoleaf.rejection.count.request.connection-refused",
+                  "bunny.nanoleaf.rejection.count.request.connection-reset",
+                  "bunny.nanoleaf.rejection.count.request.host-unreachable",
+                  "bunny.nanoleaf.rejection.count.request.network-unreachable",
+                  "bunny.nanoleaf.rejection.count.request.other",
+                  "bunny.nanoleaf.rejection.count.response-body.interrupted",
+                  "bunny.nanoleaf.rejection.count.response-body.other",
+                  "bunny.nanoleaf.rejection.count.decode.invalid-json",
+                  "bunny.nanoleaf.rejection.count.decode.other",
+                  "bunny.nanoleaf.rejection.count.unknown.other"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "event_name": {
+              "enum": [
+                "nanoleaf.http.read.failed",
+                "nanoleaf.http.read.summary"
+              ]
+            },
+            "attributes": {
+              "type": "object",
+              "properties": {
+                "bunny.nanoleaf.read.end": {
+                  "const": "transport-rejection"
+                }
+              },
+              "required": [
+                "bunny.nanoleaf.read.end"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "bunny.nanoleaf.rejection.stage",
+                  "bunny.nanoleaf.rejection.category"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "event_name": {
+              "enum": [
+                "nanoleaf.http.read.summary",
+                "nanoleaf.http.read.recovered"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "propertyNames": {
+              "not": {
+                "enum": [
+                  "bunny.nanoleaf.rejection.count.setup.invalid-input",
+                  "bunny.nanoleaf.rejection.count.setup.other",
+                  "bunny.nanoleaf.rejection.count.request.http-protocol",
+                  "bunny.nanoleaf.rejection.count.request.timeout",
+                  "bunny.nanoleaf.rejection.count.request.connection-refused",
+                  "bunny.nanoleaf.rejection.count.request.connection-reset",
+                  "bunny.nanoleaf.rejection.count.request.host-unreachable",
+                  "bunny.nanoleaf.rejection.count.request.network-unreachable",
+                  "bunny.nanoleaf.rejection.count.request.other",
+                  "bunny.nanoleaf.rejection.count.response-body.interrupted",
+                  "bunny.nanoleaf.rejection.count.response-body.other",
+                  "bunny.nanoleaf.rejection.count.decode.invalid-json",
+                  "bunny.nanoleaf.rejection.count.decode.other",
+                  "bunny.nanoleaf.rejection.count.unknown.other"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "properties": {
+              "bunny.nanoleaf.rejection.stage": {},
+              "bunny.nanoleaf.rejection.category": {}
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.stage"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.stage": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.category"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.category": {}
+                }
+              }
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "oneOf": [
+              {
+                "properties": {
+                  "bunny.nanoleaf.rejection.stage": {
+                    "const": "setup"
+                  },
+                  "bunny.nanoleaf.rejection.category": {
+                    "enum": [
+                      "invalid-input",
+                      "other"
+                    ]
+                  }
+                },
+                "required": [
+                  "bunny.nanoleaf.rejection.stage",
+                  "bunny.nanoleaf.rejection.category"
+                ]
+              },
+              {
+                "properties": {
+                  "bunny.nanoleaf.rejection.stage": {
+                    "const": "request"
+                  },
+                  "bunny.nanoleaf.rejection.category": {
+                    "enum": [
+                      "http-protocol",
+                      "timeout",
+                      "connection-refused",
+                      "connection-reset",
+                      "host-unreachable",
+                      "network-unreachable",
+                      "other"
+                    ]
+                  }
+                },
+                "required": [
+                  "bunny.nanoleaf.rejection.stage",
+                  "bunny.nanoleaf.rejection.category"
+                ]
+              },
+              {
+                "properties": {
+                  "bunny.nanoleaf.rejection.stage": {
+                    "const": "response-body"
+                  },
+                  "bunny.nanoleaf.rejection.category": {
+                    "enum": [
+                      "interrupted",
+                      "other"
+                    ]
+                  }
+                },
+                "required": [
+                  "bunny.nanoleaf.rejection.stage",
+                  "bunny.nanoleaf.rejection.category"
+                ]
+              },
+              {
+                "properties": {
+                  "bunny.nanoleaf.rejection.stage": {
+                    "const": "decode"
+                  },
+                  "bunny.nanoleaf.rejection.category": {
+                    "enum": [
+                      "invalid-json",
+                      "other"
+                    ]
+                  }
+                },
+                "required": [
+                  "bunny.nanoleaf.rejection.stage",
+                  "bunny.nanoleaf.rejection.category"
+                ]
+              },
+              {
+                "properties": {
+                  "bunny.nanoleaf.rejection.stage": {
+                    "const": "unknown"
+                  },
+                  "bunny.nanoleaf.rejection.category": {
+                    "enum": [
+                      "other"
+                    ]
+                  }
+                },
+                "required": [
+                  "bunny.nanoleaf.rejection.stage",
+                  "bunny.nanoleaf.rejection.category"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "anyOf": [
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.setup.invalid-input"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.setup.invalid-input": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.setup.other"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.setup.other": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.request.http-protocol"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.request.http-protocol": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.request.timeout"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.request.timeout": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.request.connection-refused"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.request.connection-refused": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.request.connection-reset"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.request.connection-reset": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.request.host-unreachable"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.request.host-unreachable": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.request.network-unreachable"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.request.network-unreachable": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.request.other"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.request.other": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.response-body.interrupted"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.response-body.interrupted": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.response-body.other"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.response-body.other": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.decode.invalid-json"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.decode.invalid-json": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.decode.other"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.decode.other": {}
+                }
+              },
+              {
+                "required": [
+                  "bunny.nanoleaf.rejection.count.unknown.other"
+                ],
+                "properties": {
+                  "bunny.nanoleaf.rejection.count.unknown.other": {}
+                }
+              }
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "properties": {
+              "bunny.nanoleaf.failure.transport_rejection_count": {}
+            },
+            "required": [
+              "bunny.nanoleaf.failure.transport_rejection_count"
             ]
           }
         }

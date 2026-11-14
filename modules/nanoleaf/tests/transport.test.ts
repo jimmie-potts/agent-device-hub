@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
-import type {AddressInfo} from 'node:net';
+import {createServer as tcpServer, type AddressInfo} from 'node:net';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {promisify} from 'node:util';
@@ -12,7 +12,8 @@ import {pyJson} from '../src/compat.js';
 import {loadConfig} from '../src/configuration.js';
 import {writeJson} from '../src/jsonfile.js';
 import {render, type RenderConfig} from '../src/renderer.js';
-import {HttpError, isTransportDeadline, LIGHT_TIMEOUT_SECONDS, lightRequest, nodeTransport, type HttpRequest, type HttpResponse} from '../src/transport.js';
+import {classifyHttpError, type ReadRejection} from '../src/read-rejection.js';
+import {classifiedRead, requestHttp, requestLight, HttpError, isTransportDeadline, LIGHT_TIMEOUT_SECONDS, lightRequest, nodeTransport, type HttpRequest, type HttpResponse} from '../src/transport.js';
 import {suite, temporary, test} from './support.js';
 
 /** A fake transport that records each request and answers with `reply`. */
@@ -155,4 +156,61 @@ process.stdout.write(JSON.stringify(reply));`;
     assert.deepEqual(seen, ['/api/v1/new']);
     assert.deepEqual(proxied, []);
   });
+});
+
+test('classification allowlists own string values without invoking accessors or coercion', () => {
+  let accessed = false;
+  const error = {get code(): string { accessed = true; return 'ECONNREFUSED'; }};
+  assert.deepEqual(classifyHttpError('request', error), {stage: 'request', category: 'other'});
+  assert.equal(accessed, false);
+  const inherited: unknown = Object.create({code:'ETIMEDOUT'});
+  assert.deepEqual(classifyHttpError('request', inherited), {stage:'request', category:'other'});
+  assert.deepEqual(classifyHttpError('request', new Proxy({}, {getOwnPropertyDescriptor() { throw new Error('synthetic'); }})),
+    {stage:'request', category:'other'});
+  assert.deepEqual(classifyHttpError('request', 42), {stage:'request', category:'other'});
+  const codes = [
+    ['ECONNREFUSED', 'connection-refused'], ['ECONNRESET', 'connection-reset'],
+    ['EHOSTUNREACH', 'host-unreachable'], ['ENETUNREACH', 'network-unreachable'],
+    ['ETIMEDOUT', 'timeout'], ['HPE_INVALID_HEADER_TOKEN', 'http-protocol'],
+    ['HPE_FUTURE_UNKNOWN', 'other'],
+  ];
+  for (const [code, category] of codes) assert.deepEqual(classifyHttpError('request', {code}), {stage:'request', category});
+});
+
+test('a throwing diagnostic sink preserves the setup failure and custom transport preserves rejection identity', async () => {
+  await assert.rejects(classifiedRead({ip:'::1',token:'Synthetic'}, '/state', () => {throw new Error('synthetic sink');}),
+    {name:'ValueError', message:'Use a private IPv4 address for the lights.'});
+  const error = new Error('synthetic connection error');
+  await assert.rejects(lightRequest({ip:'127.0.0.1',token:'Synthetic'}, 'GET', '/state', null, () => Promise.reject(error)),
+    (cause: unknown) => cause === error);
+});
+
+test('malformed HTTP framing is attributed to the request error callback', async context => {
+  const server = tcpServer(socket => { socket.once('data', () => socket.end('INVALID/1.1 200 OK\r\n\r\n')); });
+  context.after(() => server.close());
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  const address = server.address();
+  assert.ok(address !== null && typeof address === 'object');
+  const seen: ReadRejection[] = [];
+  await assert.rejects(requestHttp({url:`http://127.0.0.1:${address.port}/`,method:'GET',headers:{},body:null,timeoutSeconds:0.5},
+    entry => seen.push(entry)));
+  assert.deepEqual(seen,[{stage:'request',category:'http-protocol'}]);
+});
+
+test('a truncated response is attributed to the response body callback', async context => {
+  const url = await stub(context, (request, _body, response) => {
+    response.writeHead(200, {'Content-Length':'99'});
+    response.write('{');
+    setTimeout(() => request.socket.destroy(), 25);
+  });
+  const seen: ReadRejection[] = [];
+  await assert.rejects(requestHttp({url,method:'GET',headers:{},body:null,timeoutSeconds:0.5}, entry => seen.push(entry)));
+  assert.deepEqual(seen,[{stage:'response-body',category:'interrupted'}]);
+});
+
+test('a completed 2xx response with malformed JSON is attributed to decoding', async () => {
+  const seen: ReadRejection[] = [];
+  await assert.rejects(requestLight({ip:'127.0.0.1',token:'Synthetic'},'GET','/state',null,
+    () => Promise.resolve({status:200,body:'{'}), entry => seen.push(entry)), {name:'ValueError',message:'Malformed JSON.'});
+  assert.deepEqual(seen,[{stage:'decode',category:'invalid-json'}]);
 });

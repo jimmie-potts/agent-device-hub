@@ -1002,10 +1002,10 @@
       }
     },
     {
-      "name": "unsupported-1.11",
+      "name": "unsupported-1.12",
       "valid": false,
       "record": {
-        "schema_version": "1.11",
+        "schema_version": "1.12",
         "timestamp": "2026-10-01T12:00:00.123Z",
         "severity_number": 9,
         "severity_text": "INFO",
@@ -6050,6 +6050,123 @@
           "bunny.nanoleaf.failure.link_deadline_count": 1,
           "bunny.nanoleaf.failure.probe_max_observed_ms": 25,
           "bunny.nanoleaf.failure.probe_max_pending_ms": -1
+        }
+      }
+    },
+    {
+      "name": "nanoleaf-classified-summary",
+      "valid": true,
+      "record": {
+        "schema_version": "1.11",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 5,
+        "severity_text": "DEBUG",
+        "event_name": "nanoleaf.http.read.summary",
+        "body": "Nanoleaf HTTP read failures summarized",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "nanoleaf",
+          "bunny.device.id": "lines",
+          "bunny.nanoleaf.read.source": "sampler",
+          "bunny.nanoleaf.read.end": "transport-rejection",
+          "bunny.duration_ms": 12,
+          "bunny.timeout_ms": 1200,
+          "bunny.nanoleaf.probe.sample_count": 0,
+          "bunny.attempt_count": 2,
+          "bunny.nanoleaf.failure.transport_rejection_count": 2,
+          "bunny.nanoleaf.rejection.stage": "request",
+          "bunny.nanoleaf.rejection.category": "connection-refused",
+          "bunny.nanoleaf.rejection.count.request.connection-refused": 1,
+          "bunny.nanoleaf.rejection.count.request.connection-reset": 1
+        }
+      }
+    },
+    {
+      "name": "nanoleaf-classified-summary-old-profile",
+      "valid": false,
+      "record": {
+        "schema_version": "1.10",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 5,
+        "severity_text": "DEBUG",
+        "event_name": "nanoleaf.http.read.summary",
+        "body": "Nanoleaf HTTP read failures summarized",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "nanoleaf",
+          "bunny.device.id": "lines",
+          "bunny.nanoleaf.read.source": "sampler",
+          "bunny.nanoleaf.read.end": "transport-rejection",
+          "bunny.duration_ms": 12,
+          "bunny.timeout_ms": 1200,
+          "bunny.nanoleaf.probe.sample_count": 0,
+          "bunny.attempt_count": 2,
+          "bunny.nanoleaf.failure.transport_rejection_count": 2,
+          "bunny.nanoleaf.rejection.stage": "request",
+          "bunny.nanoleaf.rejection.category": "connection-refused",
+          "bunny.nanoleaf.rejection.count.request.connection-refused": 1,
+          "bunny.nanoleaf.rejection.count.request.connection-reset": 1
+        }
+      }
+    },
+    {
+      "name": "nanoleaf-classified-summary-invalid-pair",
+      "valid": false,
+      "record": {
+        "schema_version": "1.11",
+        "timestamp": "2026-10-01T12:15:00.123Z",
+        "severity_number": 5,
+        "severity_text": "DEBUG",
+        "event_name": "nanoleaf.http.read.summary",
+        "body": "Nanoleaf HTTP read failures summarized",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "0.1.0",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.module": "nanoleaf",
+          "bunny.device.id": "lines",
+          "bunny.nanoleaf.read.source": "sampler",
+          "bunny.nanoleaf.read.end": "transport-rejection",
+          "bunny.duration_ms": 12,
+          "bunny.timeout_ms": 1200,
+          "bunny.nanoleaf.probe.sample_count": 0,
+          "bunny.attempt_count": 2,
+          "bunny.nanoleaf.failure.transport_rejection_count": 2,
+          "bunny.nanoleaf.rejection.stage": "setup",
+          "bunny.nanoleaf.rejection.category": "connection-refused",
+          "bunny.nanoleaf.rejection.count.request.connection-refused": 1,
+          "bunny.nanoleaf.rejection.count.request.connection-reset": 1
         }
       }
     }

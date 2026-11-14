@@ -48,7 +48,7 @@ class Profiles(unittest.TestCase):
         self.assertEqual(newest['value']['attributes'], record['attributes'])
 
     def test_profile_1_5_attributes_stay_in_profile_1_5(self):
-        self.assertEqual(ARTIFACT_VERSION, '1.10.0')
+        self.assertEqual(ARTIFACT_VERSION, '1.11.0')
         record = hub_record()
         record['attributes'].update({'bunny.state.bytes': 8388609, 'bunny.save.duration_ms': 150, 'error.type': 'TypeError'})
         earlier = create_record({**record, 'schema_version': '1.4'})
@@ -130,6 +130,16 @@ class Profiles(unittest.TestCase):
         queued = hub_record()
         queued['schema_version'] = '1.7'
         self.assertEqual(project_record(queued, '1.1')['value']['schema_version'], '1.1')
+
+
+    def test_classified_nanoleaf_read_projects_only_to_timing_profile(self):
+        cases = json.loads((ROOT / 'fixtures/records.json').read_text())['cases']
+        record = next(case['record'] for case in cases if case['name'] == 'nanoleaf-classified-summary')
+        prior = next(case['record'] for case in cases if case['name'] == 'nanoleaf-http-timing-summary')
+        self.assertEqual(project_record(record, '1.10'), {'ok': True, 'value': prior})
+        self.assertFalse(project_record(record, '1.9')['ok'])
+        bad = next(case['record'] for case in cases if case['name'] == 'nanoleaf-classified-summary-invalid-pair')
+        self.assertFalse(project_record(bad, '1.10')['ok'])
 
 
 if __name__ == '__main__':

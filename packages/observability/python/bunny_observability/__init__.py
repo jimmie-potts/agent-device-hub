@@ -16,7 +16,7 @@ class TraceContext(TypedDict):
 
 
 class DiagnosticRecord(TypedDict):
-    schema_version: Literal['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10']
+    schema_version: Literal['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11']
     timestamp: NotRequired[str]
     observed_timestamp: NotRequired[str]
     severity_number: int
@@ -30,7 +30,7 @@ class DiagnosticRecord(TypedDict):
     span_id: NotRequired[str]
     trace_flags: NotRequired[str]
 
-ARTIFACT_VERSION = '1.10.0'
+ARTIFACT_VERSION = '1.11.0'
 SCHEMA_VERSION = '1.1'
 SEMANTIC_CONVENTIONS_VERSION = '1.44.0'
 MAX_RECORD_BYTES = 8192
@@ -168,13 +168,17 @@ def create_record(value):
 
 def project_record(value, version):
     """The record at `version`, as the TypeScript helper projects it: 1.0 loses queue depth, and every profile before
-    1.7 loses the private exception fields; any other later-profile vocabulary fails the target's validation."""
+    1.7 loses the private exception fields, and 1.10 loses the new Nanoleaf classifications. The input is
+    validated before removal and the target still refuses unsupported vocabulary."""
     result = validate_record(value)
     catalog = _definitions()[0]
     versions = catalog['schema_versions']
     if not result['ok'] or version not in versions:
         return _failure()
     result['value']['schema_version'] = version
+    if version == '1.10':
+        for name in catalog['additions']['1.11']['attributes']:
+            result['value']['attributes'].pop(name, None)
     if version == '1.0':
         result['value']['attributes'].pop('bunny.queue.depth', None)
     if versions.index(version) < versions.index('1.7'):

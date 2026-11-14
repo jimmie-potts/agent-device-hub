@@ -2500,11 +2500,11 @@ for the acceptance exercise.
 
 ## Nanoleaf port
 
-For Nanoleaf local HTTP read timing (#1663), run the root build, typecheck and
+For Nanoleaf local HTTP read timing and rejection classification (#1663), run the root build, typecheck and
 lint, the Nanoleaf and runtime built suites, and the shared observability
 contract checks, including Python and packaged consumers. The focused
 `read-timing.test.ts` and `transport.test.ts` cases cover overlapping reads,
-callback delay, deadline identity, shutdown and a failing sink using a fake
+callback delay, deadline identity, malformed or interrupted responses, mixed rejection classes, shutdown and a failing sink using a fake
 clock and a loopback HTTP stub. The existing Build, lint and core tests and
 App verification jobs run the affected checks. This evidence covers source
 behavior. Installed diagnosis remains in #1663.

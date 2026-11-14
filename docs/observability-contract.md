@@ -7,9 +7,9 @@ current exclusions. Richer capture and durable retention require a versioned
 implementation with consumer and exporter checks; this policy decision does not
 widen an existing schema or export destination.
 
-The artifact `@jimmie-potts/bunny-observability` version 1.10.0 owns this contract,
+The artifact `@jimmie-potts/bunny-observability` version 1.11.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
-1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9 and 1.10 are independent of the pinned OpenTelemetry semantic
+1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 1.10 and 1.11 are independent of the pinned OpenTelemetry semantic
 conventions 1.44.0. Profiles 1.0 and 1.1 were introduced together: 1.0 is the minimal
 compatibility profile; 1.1 adds optional `bunny.queue.depth`. This is not a
 claim that an older artifact was deployed. Profile 1.2 registers the B.U.N.N.Y.
@@ -30,9 +30,10 @@ runtime's [private exception context](#private-exception-context-profile-17)
 adds the [art provider call](#art-provider-call-profile-18) span
 ([#680](https://github.com/jimmie-potts/agent-device-hub/issues/680)). Profile 1.9 adds the
 [hourly history warning](#hourly-history-warning-profile-19). Profile 1.10 adds
-[Nanoleaf HTTP read timing](#nanoleaf-http-read-timing-profile-110). The default
+[Nanoleaf HTTP read timing](#nanoleaf-http-read-timing-profile-110). Profile 1.11 adds
+[Nanoleaf read rejection classification](#nanoleaf-read-rejection-classification-profile-111). The default
 producer profile stays 1.1: existing producers keep it, and a producer selects 1.2
-to 1.10 explicitly.
+to 1.11 explicitly.
 
 The machine-readable dictionary is `src/record.schema.json` and the registered
 vocabulary is `src/catalog.json` in the artifact. These files and this document
@@ -51,7 +52,7 @@ serialization; the strict validator rejects them.
 
 | Local field | Requirement and type | OTLP JSON mapping |
 | --- | --- | --- |
-| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3`, `1.4`, `1.5`, `1.6`, `1.7`, `1.8`, `1.9` or `1.10` | Log attribute `bunny.schema.version`, string |
+| `schema_version` | Required, `1.0`, `1.1`, `1.2`, `1.3`, `1.4`, `1.5`, `1.6`, `1.7`, `1.8`, `1.9`, `1.10` or `1.11` | Log attribute `bunny.schema.version`, string |
 | `timestamp` | Source time if known | `timeUnixNano`, decimal integer string |
 | `observed_timestamp` | Receiver time if applicable; at least one time required | `observedTimeUnixNano`, decimal integer string |
 | `severity_number`, `severity_text` | Required, matching registered pair | `severityNumber`, `severityText` |
@@ -374,7 +375,7 @@ later activations to the prior run. Calls are children of the active run. It
 uses the SDK and host adapter; a diagnostic failure cannot decide task success.
 There is no LangSmith or second content exporter.
 
-This source revision writes runtime records and spans at profile 1.10. Source
+This source revision writes runtime records and spans at profile 1.11. Source
 fixtures and disposable runs do not establish installed adoption.
 
 ## Nanoleaf HTTP read timing (profile 1.10)
@@ -424,9 +425,45 @@ emits no record. Filters and bounded queues can omit evidence.
 Records use the existing private local sink and configured owned exporter.
 They carry a neutral device ID, fixed labels, counts and durations. They
 exclude addresses, tokens, paths, payloads, audio and exception text. Earlier
-profiles reject the new events. Strict readers need profile 1.10 support or an
+profiles reject the timing events. Strict readers need support for the producer's profile or an
 explicit projection of compatible records to their supported profile. A
-Nanoleaf timing event itself cannot project to an earlier profile.
+Nanoleaf timing event itself cannot project below profile 1.10.
+
+## Nanoleaf read rejection classification (profile 1.11)
+
+A generic transport rejection carries `bunny.nanoleaf.rejection.stage` and
+`bunny.nanoleaf.rejection.category` when the producer classifies it. Valid pairs
+are listed below.
+
+| Stage | Categories |
+| --- | --- |
+| `setup` | `invalid-input`, `other` |
+| `request` | `http-protocol`, `timeout`, `connection-refused`, `connection-reset`, `host-unreachable`, `network-unreachable`, `other` |
+| `response-body` | `interrupted`, `other` |
+| `decode` | `invalid-json`, `other` |
+| `unknown` | `other` |
+
+A request category describes the code received through the local Node callback.
+Exact handler codes are `HPE_INVALID_CONSTANT` and `HPE_INVALID_HEADER_TOKEN`
+for HTTP protocol, `ETIMEDOUT` for timeout, `ECONNREFUSED` and `ECONNRESET`
+for connection refusal and reset, and `EHOSTUNREACH` and `ENETUNREACH` for
+host and network unreachable. In the response body handler, `ECONNRESET`
+means interrupted. Other codes use `other`.
+It does not identify the peer, device, network cause or whether the device
+received the request. The request callback's timeout category is separate from
+the adapter's own exchange timer. An adapter that supplies no per-call
+classification reports `unknown` and `other`. Records exclude raw errors, codes,
+addresses, URLs, credentials and content.
+
+Summaries and recoveries can carry up to 14 positive counters, each named
+`bunny.nanoleaf.rejection.count.<stage>.<category>`. They count the preceding
+whole run for the same device and source, saturate independently and omit
+unseen classes. Recovery's successful read does not itself have a rejection
+stage. Existing timing, availability and deadlines stay independent.
+
+On explicit projection to 1.10, the helpers first validate the source record,
+then remove the optional 1.11 classification and counters. Target validation
+keeps the original timing and rejects this event below profile 1.10.
 
 ## Hourly history warning (profile 1.9)
 

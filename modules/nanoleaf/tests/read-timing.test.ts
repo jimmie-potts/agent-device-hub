@@ -3,7 +3,7 @@ import {createServer} from 'node:http';
 import {DeviceAvailability, type LogFields, type Logger, type ModuleScheduler, type Tracing} from '@jimmie-potts/sdk';
 import {DeviceLink, DeviceUnreachable, LinkStopped, REQUEST_MS} from '../src/module/link.js';
 import {ReadTimingProbe} from '../src/module/read-timing.js';
-import {HttpError, nodeTransport, type LightRequest} from '../src/transport.js';
+import {HttpError, nodeTransport, type classifiedRead, type LightRequest} from '../src/transport.js';
 import {test} from './support.js';
 
 class FakeTime {
@@ -30,7 +30,7 @@ function pendingReply() {
   return {promise, resolve, reject};
 }
 
-function fixture(throwFromLogger = false, transportOverride?: LightRequest) {
+function fixture(throwFromLogger = false, transportOverride?: LightRequest, readWithDiagnostics?: typeof classifiedRead) {
   const time = new FakeTime();
   const signal = new AbortController();
   const records: {level: string; event: string; fields: LogFields}[] = [];
@@ -51,6 +51,7 @@ function fixture(throwFromLogger = false, transportOverride?: LightRequest) {
   const clock = {now: () => time.now};
   const trace: Tracing = {span: () => { throw new Error('GET cannot open a span'); }, start: () => { throw new Error('GET cannot open a span'); }};
   const link = new DeviceLink({device: 'lines', address: '127.0.0.1', token: 'SyntheticOnly', transport: transportOverride ?? transport,
+    ...(readWithDiagnostics === undefined ? {} : {readWithDiagnostics}),
     datagram: () => { throw new Error('GET cannot stream'); }, clock, scheduler: time.scheduler, signal: signal.signal,
     availability: new DeviceAvailability({log, clock}), log, trace, readTiming: new ReadTimingProbe(time.scheduler, clock.now),
     commandWrite: () => { throw new Error('GET cannot look for a write'); }, onWrite: () => { throw new Error('GET cannot write'); },
@@ -97,6 +98,7 @@ test('a transport ETIMEDOUT is a rejection and an overdue callback without a sam
   assert.deepEqual(records[0]?.fields, {
     'bunny.device.id': 'lines', 'bunny.nanoleaf.read.source': 'music-admission', 'bunny.nanoleaf.read.end': 'transport-rejection',
     'bunny.duration_ms': 135, 'bunny.timeout_ms': 1200, 'bunny.nanoleaf.probe.sample_count': 0, 'bunny.nanoleaf.probe.pending_ms': 35,
+    'bunny.nanoleaf.rejection.stage': 'unknown', 'bunny.nanoleaf.rejection.category': 'other',
     'bunny.attempt_count': 1,
   });
   assert.equal(time.queued.size, 0);
@@ -156,7 +158,7 @@ test('a failure run emits one warning, a bounded debug summary and one recovery'
   ]);
 });
 
-test('the link reports the transport deadline when its HTTP timer wins', async context => {
+test('only the first link or transport deadline provides evidence', async context => {
   const server = createServer(() => {});
   context.after(() => { server.closeAllConnections(); server.close(); });
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
@@ -166,7 +168,23 @@ test('the link reports the transport deadline when its HTTP timer wins', async c
   const {link, records, time} = fixture(false, () => nodeTransport({url, method: 'GET', headers: {}, body: null, timeoutSeconds: 0.01}));
   await assert.rejects(link.read('sampler', '/state'), DeviceUnreachable);
   assert.equal(records[0]?.fields['bunny.nanoleaf.read.end'], 'transport-deadline');
+  assert.equal(records[0]?.fields['bunny.nanoleaf.rejection.stage'], undefined);
   assert.equal(time.queued.size, 0);
+
+  const later = pendingReply();
+  const second = fixture(false, () => {
+    const sent = nodeTransport({url, method: 'GET', headers: {}, body: null, timeoutSeconds: 0.01});
+    void sent.then(later.resolve, later.resolve);
+    return sent;
+  });
+  const first = assert.rejects(second.link.read('sampler', '/state'), DeviceUnreachable);
+  second.time.now = REQUEST_MS;
+  second.time.run(REQUEST_MS);
+  await first;
+  await later.promise;
+  assert.equal(second.records.length, 1);
+  assert.equal(second.records[0]?.fields['bunny.nanoleaf.read.end'], 'link-deadline');
+  assert.equal(second.records[0]?.fields['bunny.nanoleaf.rejection.stage'], undefined);
 });
 
 test('recovery preserves mixed failures and local delay even before a minute passes', async () => {
@@ -192,6 +210,67 @@ test('recovery preserves mixed failures and local delay even before a minute pas
     'bunny.device.id': 'lines', 'bunny.nanoleaf.read.source': 'sampler', 'bunny.nanoleaf.read.end': 'reply',
     'bunny.duration_ms': 0, 'bunny.timeout_ms': 1200, 'bunny.nanoleaf.probe.sample_count': 0, 'bunny.attempt_count': 2,
     'bunny.nanoleaf.failure.transport_rejection_count': 1, 'bunny.nanoleaf.failure.link_deadline_count': 1,
+    'bunny.nanoleaf.rejection.count.unknown.other': 1,
     'bunny.nanoleaf.failure.probe_max_observed_ms': 25, 'bunny.nanoleaf.failure.probe_max_pending_ms': 1075,
   });
+});
+
+test('overlapping invocations do not share classification for a reused rejection value', async () => {
+  const error = new Error('synthetic');
+  const plain = pendingReply();
+  const attributed = pendingReply();
+  const {link, records} = fixture(false, undefined, (_target, endpoint, report) => {
+    if (endpoint === '/state') {
+      report({stage: 'request', category: 'connection-reset'});
+      return attributed.promise;
+    }
+    return plain.promise;
+  });
+  const unchanged = (outcome: unknown): boolean => outcome instanceof DeviceUnreachable && outcome.cause === error;
+  const a = assert.rejects(link.read('sampler', '/state'), unchanged);
+  const b = assert.rejects(link.read('music-session', '/effects'), unchanged);
+  plain.reject(error);
+  attributed.reject(error);
+  await Promise.all([a,b]);
+  assert.deepEqual(records.map(({fields}) => fields['bunny.nanoleaf.rejection.stage']), ['unknown','request']);
+});
+
+test('recovery preserves both categories within the same request stage', async () => {
+  const failures = ['connection-reset', 'connection-refused'] as const;
+  let attempt = 0;
+  const {link, records} = fixture(false, undefined, (_target, _endpoint, report) => {
+    const category = failures[attempt++];
+    if (category === undefined) return Promise.resolve({});
+    report({stage: 'request', category});
+    const pending = pendingReply();
+    pending.reject(19);
+    return pending.promise;
+  });
+  for (const _ of failures) {
+    await assert.rejects(link.read('sampler', '/state'), (error: unknown) => error instanceof DeviceUnreachable && error.cause === 19);
+  }
+  await link.read('sampler','/state');
+  assert.equal(records[1]?.level, 'info');
+  assert.equal(records[1]?.fields['bunny.nanoleaf.rejection.count.request.connection-reset'], 1);
+  assert.equal(records[1]?.fields['bunny.nanoleaf.rejection.count.request.connection-refused'], 1);
+  assert.equal(records[1]?.fields['bunny.nanoleaf.rejection.stage'], undefined);
+});
+
+test('a link deadline wins over a late classified rejection and retains only deadline evidence', async () => {
+  const pending = pendingReply();
+  let classify: Parameters<typeof classifiedRead>[2] = () => {};
+  const {link, records, time} = fixture(false, undefined, (_target, _endpoint, report) => {
+    classify = report;
+    return pending.promise;
+  });
+  const result = assert.rejects(link.read('sampler', '/state'), (cause: unknown) => cause instanceof DeviceUnreachable && cause.cause === undefined);
+  time.now = REQUEST_MS;
+  time.run(REQUEST_MS);
+  await result;
+  classify({stage: 'request', category: 'connection-reset'});
+  pending.reject(new Error('synthetic late rejection'));
+  await Promise.resolve();
+  assert.equal(records.length, 1);
+  assert.equal(records[0]?.fields['bunny.nanoleaf.read.end'], 'link-deadline');
+  assert.equal(records[0]?.fields['bunny.nanoleaf.rejection.stage'], undefined);
 });
