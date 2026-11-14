@@ -989,3 +989,14 @@ simulator checks, not physical-display acceptance.
 ### Shared habitat checks
 
 The permanent `#/habitat` page is covered by `test:runtime-dashboard:built`, the full dashboard browser suite and the hosted smoke entry. For a focused run after `npm run build`, use `node apps/runtime/dashboard/tests/habitat.browser.ts` with a private outside-checkout `TMPDIR` as required by the runtime state contract. This exercises synthetic session lifecycle events through the disposable core and existing shell connection, not an installed runtime or physical device. The browser check includes dark/light desktop and 390 px layout, local settings transfer, reconnection and renderer cleanup. Allocation and preference failure cases live in `dashboard/tests/habitat.test.ts`.
+
+### Furnished apartment checks
+
+After `npm run build`, run `node --test apps/runtime/dist/tests/apartment*.test.js`
+and the existing `node apps/runtime/dashboard/tests/room-models.browser.ts` journey.
+The Runtime unit tests glob and the existing App verification room-model step
+discover this coverage. The checks use a synthetic calibrated plan, normalized
+room scans, prepared PNGs and the real core lease, authenticated content API and
+simulated light queues. They check previous-version retention, bounded content,
+desktop and phone interaction, and zero device commands on passive actions.
+Use the private temporary-directory instructions under Native runs on macOS.

@@ -152,19 +152,51 @@ function containsSegment(footprint: readonly ApartmentPoint[], start: ApartmentP
   });
 }
 
+function polygonArea(points: readonly ApartmentPoint[]): number {
+  return points.reduce((area,a,index) => {
+    const b = points[(index+1)%points.length];
+    return b === undefined ? area : area + a[0]*b[1] - b[0]*a[1];
+  },0);
+}
+
+function interiorContains(footprint: readonly ApartmentPoint[], point: ApartmentPoint): boolean {
+  return apartmentContains(footprint,point) && !footprint.some((start,index) => {
+    const end = footprint[(index+1)%footprint.length];
+    return end !== undefined && onSegment(start,end,point);
+  });
+}
+
+function interiorsOverlap(a: ApartmentRoom, b: ApartmentRoom): boolean {
+  if (Math.abs(a.floorY-b.floorY)>.02) return false;
+  const first = a.footprint, second = b.footprint;
+  if (first.some(p => interiorContains(second,p)) || second.some(p => interiorContains(first,p))) return true;
+  const winding = Math.sign(polygonArea(first));
+  return first.some((start,index) => {
+    const end = first[(index+1)%first.length];
+    if (end===undefined) return false;
+    const dx = end[0]-start[0], dz = end[1]-start[1], length = Math.hypot(dx,dz);
+    const middle: ApartmentPoint = [(start[0]+end[0])/2-dz*winding*.001/length,(start[1]+end[1])/2+dx*winding*.001/length];
+    if (interiorContains(first,middle) && interiorContains(second,middle)) return true;
+    return second.some((c,j) => {
+      const d = second[(j+1)%second.length];
+      return d!==undefined
+        && orientation(start,end,c)*orientation(start,end,d)<-EPSILON*EPSILON
+        && orientation(c,d,start)*orientation(c,d,end)<-EPSILON*EPSILON;
+    });
+  });
+}
+
 function simpleFootprint(points: ApartmentPoint[]): boolean {
-  let area = 0;
   for (let index = 0; index < points.length; index++) {
     const a = points[index], b = points[(index+1)%points.length];
     if (a === undefined || b === undefined || Math.hypot(b[0]-a[0],b[1]-a[1])<.02) return false;
-    area += a[0]*b[1] - b[0]*a[1];
     for (let later = index+2; later < points.length; later++) {
       if (index === 0 && later === points.length-1) continue;
       const c = points[later], d = points[(later+1)%points.length];
       if (c === undefined || d === undefined || intersects(a,b,c,d)) return false;
     }
   }
-  return Math.abs(area) >= .02;
+  return Math.abs(polygonArea(points)) >= .02;
 }
 
 function opening(value: unknown, length: number, height: number): value is ApartmentOpening {
@@ -263,6 +295,7 @@ export function parseApartmentModel(value: unknown): ApartmentModel | undefined 
   const roomIndex = new Map(rooms.map(item => [item.id,item]));
   const assets = new Set(artwork.map(item => item.id));
   if (roomIndex.size!==rooms.length || assets.size!==artwork.length || !unique(objects.map(item => item.id))
+    || rooms.some((room,index) => rooms.slice(index+1).some(other => interiorsOverlap(room,other)))
     || rooms.reduce((n,item) => n+item.walls.length,0)>128
     || rooms.reduce((n,item) => n+item.walls.reduce((total,w) => total+w.openings.length,0),0)>128
     || artwork.reduce((n,item) => n+item.width*item.height,0)>MAX_ARTWORK_PIXELS

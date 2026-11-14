@@ -214,6 +214,10 @@ its registration. A real-service check belongs to installed acceptance in #687.
 
 ## Current architecture diagram
 
+The furnished apartment reuses the Runtime unit tests and existing App
+verification room-model journey. See [Furnished apartment checks](../apps/runtime/DEVELOPMENT.md#furnished-apartment-checks)
+for the focused preparation, content, publication and browser commands.
+
 The current runtime view is authored in `docs/runtime-architecture.json` and
 rendered to `docs/runtime-architecture.html`, independently of Work Guide.
 Read [architecture](architecture.md#current-runtime-and-evidence) for its source

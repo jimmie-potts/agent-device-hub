@@ -483,6 +483,10 @@ light command. Reported power is shown schematically; neutral materials do not
 mirror per-zone animations, scene colors or physical illumination. WebGL failure
 retains the fixture list and existing controls.
 
+For the whole-apartment view, see [Prepare and publish the private
+apartment](../APARTMENT.md). It uses shared meter coordinates, placed
+furnishings, prepared artwork and the same current room and light evidence.
+
 ### Prepare a private model
 
 Under the runtime state directory, the core owns
