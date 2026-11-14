@@ -96,6 +96,12 @@ const examples = {
   'bunny.nanoleaf.read.end': 'link-deadline',
   'bunny.nanoleaf.probe.sample_count': 1,
   'bunny.nanoleaf.probe.pending_ms': 300,
+  'bunny.nanoleaf.failure.http_error_count': 1,
+  'bunny.nanoleaf.failure.transport_deadline_count': 1,
+  'bunny.nanoleaf.failure.transport_rejection_count': 1,
+  'bunny.nanoleaf.failure.link_deadline_count': 1,
+  'bunny.nanoleaf.failure.probe_max_observed_ms': 25,
+  'bunny.nanoleaf.failure.probe_max_pending_ms': 1075,
   'bunny.history.hour_start_at_ms': 1_790_856_000_000,
 };
 /** Profile 1.7's exception fields travel together, under the runtime's scopes: a module failure record carries them all. */
@@ -376,4 +382,16 @@ test('Nanoleaf HTTP timing is closed to profile 1.10 and keeps history compatibi
   assert.equal(valid({...timing, attributes: {...timing.attributes, 'error.type': 'TypeError'}}), false);
   assert.equal(valid({...timing, attributes: {...timing.attributes, 'bunny.module': 'lamp'}}), false);
   assert.equal(valid({...timing, attributes: {...timing.attributes, 'bunny.nanoleaf.probe.sample_count': 0}}), false);
+});
+
+test('failure-run evidence is optional per branch and belongs only to a summary or recovery', () => {
+  const recovery = nanoleaf.get('nanoleaf.http.read.recovered');
+  assert.equal(valid(recovery), true);
+  const timing = nanoleaf.get('nanoleaf.http.read.sampled');
+  for (const [name, value] of Object.entries(recovery.attributes).filter(([key]) => key.startsWith('bunny.nanoleaf.failure.'))) {
+    assert.equal(valid({...timing, attributes: {...timing.attributes, [name]: value}}), false, name);
+  }
+  const attributes = Object.fromEntries(Object.entries(recovery.attributes).filter(([key]) => !key.endsWith('_count') || !key.startsWith('bunny.nanoleaf.failure.')));
+  assert.equal(valid({...recovery, attributes}), false, 'a failure run names at least one terminal branch');
+  assert.equal(valid({...recovery, attributes: {...recovery.attributes, 'bunny.nanoleaf.failure.link_deadline_count': 0}}), false);
 });

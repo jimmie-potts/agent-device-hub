@@ -69,7 +69,31 @@ export class ReadTimingProbe {
   }
 }
 
-type ReadSeries = {lastBaseline: number; lastFailure: number; failures: number; unreported: number};
+const FAILURE_COUNT_FIELDS = {
+  'http-error': 'bunny.nanoleaf.failure.http_error_count',
+  'transport-deadline': 'bunny.nanoleaf.failure.transport_deadline_count',
+  'transport-rejection': 'bunny.nanoleaf.failure.transport_rejection_count',
+  'link-deadline': 'bunny.nanoleaf.failure.link_deadline_count',
+} as const satisfies Record<Exclude<ReadEnd, 'reply'>, string>;
+
+type FailureCountField = typeof FAILURE_COUNT_FIELDS[keyof typeof FAILURE_COUNT_FIELDS];
+type FailureRun = {
+  lastReport: number;
+  attempts: number;
+  counts: Partial<Record<FailureCountField, number>>;
+  maxObserved: number | undefined;
+  maxPending: number | undefined;
+};
+type ReadSeries = {lastBaseline: number; run?: FailureRun};
+const increment = (count: number): number => Math.min(Number.MAX_SAFE_INTEGER, count + 1);
+const maximum = (old: number | undefined, next: number | undefined): number | undefined =>
+  next === undefined ? old : Math.max(old ?? 0, next);
+const failureFields = ({counts, attempts, maxObserved, maxPending}: FailureRun) => ({
+  ...counts,
+  'bunny.attempt_count': attempts,
+  ...(maxObserved === undefined ? {} : {'bunny.nanoleaf.failure.probe_max_observed_ms': maxObserved}),
+  ...(maxPending === undefined ? {} : {'bunny.nanoleaf.failure.probe_max_pending_ms': maxPending}),
+});
 
 /** One bounded series per read source on a link. */
 export class ReadTimingRecords {
@@ -81,7 +105,7 @@ export class ReadTimingRecords {
     const {endedAt, elapsed, count, pending, observed} = timing;
     let series = this.#series.get(source);
     if (series === undefined) {
-      series = {lastBaseline: -Infinity, lastFailure: -Infinity, failures: 0, unreported: 0};
+      series = {lastBaseline: -Infinity};
       this.#series.set(source, series);
     }
     const fields = {'bunny.device.id': this.device, 'bunny.nanoleaf.read.source': source, 'bunny.nanoleaf.read.end': end,
@@ -89,20 +113,21 @@ export class ReadTimingRecords {
       ...(observed === undefined ? {} : {'bunny.lag.duration_ms': observed}),
       ...(pending === undefined ? {} : {'bunny.nanoleaf.probe.pending_ms': pending})};
     if (end !== 'reply') {
-      series.failures = Math.min(Number.MAX_SAFE_INTEGER, series.failures + 1);
-      series.unreported = Math.min(Number.MAX_SAFE_INTEGER, series.unreported + 1);
-      if (series.failures > 1 && endedAt - series.lastFailure < EMIT_INTERVAL_MS) return;
-      const attempts = series.unreported;
-      series.lastFailure = endedAt;
-      series.unreported = 0;
-      const event = series.failures === 1 ? 'nanoleaf.http.read.failed' : 'nanoleaf.http.read.summary';
-      recordLog(this.log, event, {...fields, 'bunny.attempt_count': attempts});
-    } else if (series.failures > 0) {
-      const attempts = series.failures;
-      series.failures = 0;
-      series.unreported = 0;
+      const run = series.run ??= {lastReport: -Infinity, attempts: 0, counts: {}, maxObserved: undefined, maxPending: undefined};
+      run.attempts = increment(run.attempts);
+      const count = FAILURE_COUNT_FIELDS[end];
+      run.counts[count] = increment(run.counts[count] ?? 0);
+      run.maxObserved = maximum(run.maxObserved, observed);
+      run.maxPending = maximum(run.maxPending, pending);
+      if (endedAt - run.lastReport < EMIT_INTERVAL_MS) return;
+      run.lastReport = endedAt;
+      if (run.attempts === 1) recordLog(this.log, 'nanoleaf.http.read.failed', {...fields, 'bunny.attempt_count': 1});
+      else recordLog(this.log, 'nanoleaf.http.read.summary', {...fields, ...failureFields(run)});
+    } else if (series.run !== undefined) {
+      const run = series.run;
+      delete series.run;
       series.lastBaseline = endedAt;
-      recordLog(this.log, 'nanoleaf.http.read.recovered', {...fields, 'bunny.attempt_count': attempts});
+      recordLog(this.log, 'nanoleaf.http.read.recovered', {...fields, ...failureFields(run)});
     } else if (endedAt - series.lastBaseline >= EMIT_INTERVAL_MS) {
       series.lastBaseline = endedAt;
       recordLog(this.log, 'nanoleaf.http.read.sampled', fields);

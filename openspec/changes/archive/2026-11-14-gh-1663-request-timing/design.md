@@ -12,7 +12,7 @@ The sampler, Music admission and session supply explicit source labels. The link
 
 One module timer probes callback delay while monitored reads are active. Each read tracks completed probes and records the longest observed delay. If a read settles before an overdue probe runs, it records the pending delay separately as a lower bound. Neither measure is physical device time or network latency.
 
-Use the runtime's existing diagnostic writer and sinks. Emit a first failure, a bounded summary during sustained failure and a recovery for each device and read source. Sample successful baselines at DEBUG. The private runtime sinks receive only the approved identifiers, timing and counts. Any configured diagnostic retention or access applies. The new event carries no addresses, credentials, endpoints, request or reply content, exception text or audio. Bounded queues may drop evidence.
+Use the runtime's existing diagnostic writer and sinks. Emit a first failure, a bounded summary during sustained failure and a recovery for each device and read source. The summary and recovery preserve the whole failed run's terminal branch counts and separate observed and pending delay maxima. A recovery keeps short mixed failures visible at INFO even if DEBUG is filtered. Sample successful baselines at DEBUG. The private runtime sinks receive only the approved identifiers, timing and counts. Any configured diagnostic retention or access applies. The new event carries no addresses, credentials, endpoints, request or reply content, exception text or audio. Bounded queues may drop evidence.
 
 ## Risks / Trade-offs
 

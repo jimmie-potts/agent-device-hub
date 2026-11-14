@@ -183,7 +183,13 @@
         "bunny.nanoleaf.read.source",
         "bunny.nanoleaf.read.end",
         "bunny.nanoleaf.probe.sample_count",
-        "bunny.nanoleaf.probe.pending_ms"
+        "bunny.nanoleaf.probe.pending_ms",
+        "bunny.nanoleaf.failure.http_error_count",
+        "bunny.nanoleaf.failure.transport_deadline_count",
+        "bunny.nanoleaf.failure.transport_rejection_count",
+        "bunny.nanoleaf.failure.link_deadline_count",
+        "bunny.nanoleaf.failure.probe_max_observed_ms",
+        "bunny.nanoleaf.failure.probe_max_pending_ms"
       ]
     }
   },
@@ -771,6 +777,36 @@
       "maximum": 9007199254740991
     },
     "bunny.nanoleaf.probe.pending_ms": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 86400000
+    },
+    "bunny.nanoleaf.failure.http_error_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.failure.transport_deadline_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.failure.transport_rejection_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.failure.link_deadline_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.nanoleaf.failure.probe_max_observed_ms": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "bunny.nanoleaf.failure.probe_max_pending_ms": {
       "type": "number",
       "exclusiveMinimum": 0,
       "maximum": 86400000

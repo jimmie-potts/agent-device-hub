@@ -151,7 +151,7 @@ test('a failure run emits one warning, a bounded debug summary and one recovery'
   await reading;
   assert.deepEqual(records.map(({level, event, fields}) => [level, event, fields['bunny.attempt_count']]), [
     ['warn', 'nanoleaf.http.read.failed', 1],
-    ['debug', 'nanoleaf.http.read.summary', 3],
+    ['debug', 'nanoleaf.http.read.summary', 4],
     ['info', 'nanoleaf.http.read.recovered', 4],
   ]);
 });
@@ -167,4 +167,31 @@ test('the link reports the transport deadline when its HTTP timer wins', async c
   await assert.rejects(link.read('sampler', '/state'), DeviceUnreachable);
   assert.equal(records[0]?.fields['bunny.nanoleaf.read.end'], 'transport-deadline');
   assert.equal(time.queued.size, 0);
+});
+
+test('recovery preserves mixed failures and local delay even before a minute passes', async () => {
+  const {time, link, replies, records} = fixture();
+  const direct = assert.rejects(link.read('sampler', '/state'), DeviceUnreachable);
+  replies[0]?.reject(new Error('synthetic transport failure'));
+  await direct;
+
+  const deadline = assert.rejects(link.read('sampler', '/state'), DeviceUnreachable);
+  time.now = 125;
+  time.run(100);
+  time.now = 1300;
+  time.run(REQUEST_MS);
+  await deadline;
+
+  const recovered = link.read('sampler', '/state');
+  replies[2]?.resolve({});
+  await recovered;
+  assert.deepEqual(records.map(({level, event}) => [level, event]), [
+    ['warn', 'nanoleaf.http.read.failed'], ['info', 'nanoleaf.http.read.recovered'],
+  ]);
+  assert.deepEqual(records[1]?.fields, {
+    'bunny.device.id': 'lines', 'bunny.nanoleaf.read.source': 'sampler', 'bunny.nanoleaf.read.end': 'reply',
+    'bunny.duration_ms': 0, 'bunny.timeout_ms': 1200, 'bunny.nanoleaf.probe.sample_count': 0, 'bunny.attempt_count': 2,
+    'bunny.nanoleaf.failure.transport_rejection_count': 1, 'bunny.nanoleaf.failure.link_deadline_count': 1,
+    'bunny.nanoleaf.failure.probe_max_observed_ms': 25, 'bunny.nanoleaf.failure.probe_max_pending_ms': 1075,
+  });
 });

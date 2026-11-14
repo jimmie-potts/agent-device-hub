@@ -406,9 +406,18 @@ network and local processing time.
 For each device and source, `nanoleaf.http.read.failed` marks the first
 failure at WARN, `nanoleaf.http.read.summary` marks continued failure at DEBUG
 at most once a minute, and `nanoleaf.http.read.recovered` marks the next
-successful read at INFO. A summary carries the newest recorded read's timing
-and the number of failures since the last report. Recovery counts the whole
-failure run. `nanoleaf.http.read.sampled` records a successful baseline at
+successful read at INFO. A summary carries the latest failed read's timing
+and recovery carries the reply's timing. Both also carry the whole failure
+run's attempt count and positive counts for each terminal branch observed.
+The registered `bunny.nanoleaf.failure.*_count` fields count `http_error`,
+`transport_deadline`, `transport_rejection` and `link_deadline` separately.
+Each count saturates independently. The optional
+`bunny.nanoleaf.failure.probe_max_observed_ms` and
+`bunny.nanoleaf.failure.probe_max_pending_ms` are separate maxima across
+failed reads in that run, each omitted when it has no evidence. They cannot
+attribute a delay to a particular request or branch. Recovery retains those
+counts and maxima even when the default log filter omits a DEBUG summary.
+`nanoleaf.http.read.sampled` records a successful baseline at
 DEBUG at most once a minute when there is no failure run. A stopped read
 emits no record. Filters and bounded queues can omit evidence.
 
