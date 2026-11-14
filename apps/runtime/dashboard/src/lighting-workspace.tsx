@@ -121,14 +121,14 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
       {(layoutCommand.locked || /Refused|Not sent/i.test(layoutCommand.text)) && <p role="status">Layout: {layoutCommand.text.replace('The module observed the result.', 'The layout was saved.')} <button type="button" onClick={() => { void connection.refreshDevices(); }}>Refresh records</button></p>}
       {message !== '' && <p role="status">{message}</p>}
       {roomView && <RoomModels connection={connection} connected={connected && runtime.modules?.some(module => module.name === 'core' && module.state === 'running') === true} layout={layout} layoutLive={layoutLive} devices={devices}
-        renderLight={(anchor, model) => {
-          const bound = roomBinding(anchor, model.roomId, layout, devices, layoutLive);
+        renderLight={(anchor, roomId) => {
+          const bound = roomBinding(anchor, roomId, layout, devices, layoutLive);
           if ('reason' in bound) return <p>{bound.reason}</p>;
           const {card, device} = bound;
           return <LightCard key={card.selection.id} card={card} devices={devices}
             capabilities={lightCapabilities(card.members, devices, runtime.control, operationsLive, locks())}
             act={intent => {
-              const current = roomBinding(anchor, model.roomId, layout, devices, layoutLive);
+              const current = roomBinding(anchor, roomId, layout, devices, layoutLive);
               if ('reason' in current) { setMessage(current.reason); return; }
               act(current.card, intent);
             }} options={options(card)} modeChoice={card.selection.kind === 'device' ? <DeviceModeChoice target={card.selection.id}/> : undefined}
