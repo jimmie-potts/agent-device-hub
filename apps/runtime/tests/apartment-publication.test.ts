@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {apartmentSha256} from '../src/apartment/artwork.js';
 import {activeApartmentDigest,publishApartment} from '../src/apartment/publish.js';
+import {syncApartmentDirectory} from '../src/apartment/files.js';
 import {holdRuntimeLease} from '../src/lease.js';
 import {createCoreModule} from '../src/core/core.js';
 import {apartmentActiveFile,apartmentAssetFile,apartmentDirectory} from '../src/apartment/content.js';
@@ -52,22 +53,46 @@ it('publishes under the existing lease, preserves prior usable versions and fenc
   assert.ok(studio);
   studio.scan = {id:'corrected-survey',yaw:0,translation:[0,0,0]};
   studio.source = 'measured';
+  const updatedArtwork = syntheticApartmentArtwork([58,111,90]);
+  corrected.artwork = [updatedArtwork.image];
+  const print = corrected.objects.find(object => object.kind === 'artwork');
+  assert.ok(print?.kind === 'artwork');
+  print.asset = updatedArtwork.image.id;
+  const updatedAsset = join(workspace,'assets',updatedArtwork.image.id+'.png');
+  await writeFile(updatedAsset,updatedArtwork.bytes,{mode:0o600});
   const correctedFile = join(workspace,'corrected.candidate.json');
   const correctedBytes = Buffer.from(JSON.stringify(corrected)+'\n');
   await writeFile(correctedFile,correctedBytes,{mode:0o600});
   const correctedDigest = apartmentSha256(correctedBytes);
 
-  await writeFile(asset,Buffer.from('invalid prepared artwork'));
+  await writeFile(updatedAsset,Buffer.from('invalid prepared artwork'));
   await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:originalDigest}),{code:'invalid-request'});
   assert.equal(await activeApartmentDigest(state),originalDigest);
-  await writeFile(asset,bytes);
+  await writeFile(updatedAsset,updatedArtwork.bytes);
   await rm(apartmentAssetFile(directory,image.id));
   await assert.rejects(publishApartment({stateDir:state,candidate:originalPath,expected:originalDigest}),{problem:'missing'});
   await writeFile(apartmentAssetFile(directory,image.id),bytes,{mode:0o600});
 
+  await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:originalDigest},{
+    afterAssetRename:() => { throw new Error('interrupted before immutable name sync'); },
+  }),/before immutable name sync/);
+  assert.deepEqual(await readFile(apartmentAssetFile(directory,updatedArtwork.image.id)),updatedArtwork.bytes);
+  assert.equal(await activeApartmentDigest(state),originalDigest);
+
+  const confirmed: string[] = [];
+  const confirm = async (path: string): Promise<void> => {
+    await syncApartmentDirectory(path);
+    confirmed.push(path);
+  };
   const interrupted = new AbortController();
   await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:originalDigest,signal:interrupted.signal},{
-    beforeActivate:() => interrupted.abort(),
+    confirmDirectory:confirm,
+    beforeActivate:() => {
+      assert.ok(confirmed.includes(join(directory,'assets')), 'reused image name synced before activation');
+      assert.ok(confirmed.includes(join(directory,'versions')), 'prior model name synced before activation');
+      assert.ok(confirmed.includes(join(state,'modules')), 'core folder name synced before activation');
+      interrupted.abort();
+    },
   }),{code:'cancelled'});
   assert.equal(await activeApartmentDigest(state),originalDigest);
   assert.equal(await readFile(apartmentActiveFile(directory),'utf8'),original);
@@ -79,8 +104,18 @@ it('publishes under the existing lease, preserves prior usable versions and fenc
   assert.equal(await activeApartmentDigest(state),correctedDigest);
   assert.equal(JSON.parse((await invoke(process.execPath,[helper,'status',state])).stdout).digest,correctedDigest);
   await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:originalDigest}),{code:'revision-conflict'});
-  assert.deepEqual(await publishApartment({stateDir:state,candidate:correctedFile,expected:correctedDigest}),{digest:correctedDigest,previous:correctedDigest});
+  await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:correctedDigest},{
+    confirmDirectory:async path => {
+      if (path===directory) throw new Error('active directory cannot sync');
+      await syncApartmentDirectory(path);
+    },
+  }),{code:'uncertain-result'});
+  confirmed.length = 0;
+  assert.deepEqual(await publishApartment({stateDir:state,candidate:correctedFile,expected:correctedDigest},{confirmDirectory:confirm}),
+    {digest:correctedDigest,previous:correctedDigest});
+  assert.ok(confirmed.includes(directory),'same-digest confirmation syncs the active filename');
   assert.deepEqual(await readFile(asset),bytes);
+  assert.deepEqual(await readFile(apartmentAssetFile(directory,image.id)),bytes);
   assert.equal(await readFile(originalPath,'utf8'),original);
   assert.deepEqual(await readFile(correctedFile),correctedBytes);
 
@@ -94,9 +129,11 @@ it('publishes under the existing lease, preserves prior usable versions and fenc
   await first.stop();
   const {runtime:second} = await run(context,{modules:[module()],stateDir:state,configFile:files.config,edge:{schemas:{}}});
   assert.deepEqual(await (await fetch(second.url+endpoint,authorization)).json(),corrected);
-  const servedArtwork = await fetch(second.url+'/modules/core/content/apartment-art-'+image.id,authorization);
+  const artPath = second.url+'/modules/core/content/apartment-art-';
+  assert.equal((await fetch(artPath+image.id,authorization)).status,404,'previous artwork remains private and unserved');
+  const servedArtwork = await fetch(artPath+updatedArtwork.image.id,authorization);
   assert.equal(servedArtwork.status,200);
-  assert.deepEqual(Buffer.from(await servedArtwork.arrayBuffer()),bytes);
+  assert.deepEqual(Buffer.from(await servedArtwork.arrayBuffer()),updatedArtwork.bytes);
 });
 
 it('calibrates plan units and prepares an aligned correction without overwriting private inputs', async context => {

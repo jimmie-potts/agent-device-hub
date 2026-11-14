@@ -2,14 +2,14 @@ import {createHash} from 'node:crypto';
 import {crc32, deflateSync} from 'node:zlib';
 import type {ApartmentImage, ApartmentModel} from '../../src/apartment-model.js';
 
-export function syntheticApartmentArtwork(): {bytes: Buffer; image: ApartmentImage} {
+export function syntheticApartmentArtwork(background = [31,97,106]): {bytes: Buffer; image: ApartmentImage} {
   const width = 24, height = 32;
   const pixels = Buffer.alloc((1 + width*3) * height);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const index = (1 + width*3)*y + 1 + x*3;
       const arc = (x-11)**2 + (y-14)**2 < 47;
-      pixels.set(arc ? [239,134,81] : y+x/3<23 ? [31,97,106] : [234,198,136], index);
+      pixels.set(arc ? [239,134,81] : y+x/3<23 ? background : [234,198,136], index);
     }
   }
   const chunk = (type: string, data: Buffer): Buffer => {

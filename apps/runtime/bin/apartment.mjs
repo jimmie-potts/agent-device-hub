@@ -1,10 +1,10 @@
-import {open, rm} from 'node:fs/promises';
 import {basename, dirname, isAbsolute, resolve} from 'node:path';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {MAX_APARTMENT_BYTES} from '../dist/src/apartment-model.js';
 import {apartmentSha256} from '../dist/src/apartment/artwork.js';
 import {ApartmentRefusal, apartmentErrorCode, readApartmentDocument, readApartmentJson, requireApartmentDirectory} from '../dist/src/apartment/content.js';
 import {calibrateApartmentPlan, parseApartmentScan, replaceApartmentScan} from '../dist/src/apartment/prepare.js';
+import {writeApartmentCandidate} from '../dist/src/apartment/files.js';
 import {activeApartmentDigest, publishApartment} from '../dist/src/apartment/publish.js';
 import {abortOnSignals} from '../dist/src/signals.js';
 import {checkStateDirectory, readPrivateFile} from '../dist/src/state.js';
@@ -25,17 +25,9 @@ async function writeCandidate(file, model) {
   await requireApartmentDirectory(parent);
   const bytes = Buffer.from(JSON.stringify(model) + '\n');
   if (bytes.length > MAX_APARTMENT_BYTES) throw new ApartmentRefusal('too-large');
-  const handle = await open(path,'wx',0o600).catch(error => {
+  try { await writeApartmentCandidate(path,bytes); }
+  catch (error) {
     if (error?.code === 'EEXIST') throw new ApartmentRefusal('revision-conflict','Select a new output file.');
-    throw error;
-  });
-  try {
-    try {
-      await handle.writeFile(bytes);
-      await handle.sync();
-    } finally { await handle.close(); }
-  } catch (error) {
-    await rm(path,{force:true}).catch(() => {});
     throw error;
   }
   return {digest:apartmentSha256(bytes)};

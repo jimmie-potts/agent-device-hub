@@ -1,11 +1,10 @@
-import {randomUUID} from 'node:crypto';
-import {constants} from 'node:fs';
-import {lstat, mkdir, open, rename, rm} from 'node:fs/promises';
+import {lstat, mkdir, rename, rm} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
 import {MAX_APARTMENT_BYTES, MAX_APARTMENT_IMAGE_BYTES, apartmentDigest, type ApartmentImage} from '../apartment-model.js';
 import {takeExistingLock} from '../core/lock.js';
 import {checkStateDirectory, PrivateFileError, readPrivateFile} from '../state.js';
 import {apartmentSha256, validApartmentArtwork} from './artwork.js';
+import {stageApartmentFile, syncApartmentDirectory} from './files.js';
 import {
   ApartmentRefusal, apartmentActiveFile, apartmentAssetFile, apartmentDirectory, readApartmentDocument, requireApartmentDirectory,
 } from './content.js';
@@ -18,46 +17,28 @@ async function ifMissing<T>(task: Promise<T>): Promise<T | undefined> {
   }
 }
 
-async function syncDirectory(path: string): Promise<void> {
-  const directory = await open(path,constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-  try { await directory.sync(); } finally { await directory.close(); }
-}
-
-async function createDirectory(path: string): Promise<void> {
-  if (await ifMissing(lstat(path)) === undefined) {
-    await mkdir(path, {mode:0o700});
-    await syncDirectory(dirname(path));
-  }
+async function createDirectory(path: string, sync: typeof syncApartmentDirectory): Promise<void> {
+  if (await ifMissing(lstat(path)) === undefined) await mkdir(path,{mode:0o700});
   await requireApartmentDirectory(path);
+  // A previous helper may have created the directory before it could sync its parent.
+  await sync(dirname(path));
 }
 
-/** Staged in the target directory so publication is an atomic rename on one filesystem. */
-async function stage(file: string, bytes: Uint8Array): Promise<string> {
-  const temporary = join(dirname(file),'.apartment-' + randomUUID() + '.tmp');
-  const handle = await open(temporary,'wx',0o600);
-  try {
-    try {
-      await handle.writeFile(bytes);
-      await handle.sync();
-    } finally { await handle.close(); }
-  } catch (error) {
-    await rm(temporary,{force:true});
-    throw error;
-  }
-  return temporary;
-}
-
-async function writeVersion(file: string, bytes: Buffer): Promise<void> {
+async function writeVersion(
+  file: string, bytes: Buffer, sync: typeof syncApartmentDirectory, afterAssetRename?: () => void | Promise<void>,
+): Promise<void> {
   const existing = await ifMissing(readPrivateFile(file,bytes.length));
   if (existing !== undefined) {
     if (!existing.equals(bytes)) throw new ApartmentRefusal('invalid-state', 'An immutable apartment file differs from its expected digest.');
-    return;
+  } else {
+    const temporary = await stageApartmentFile(file,bytes);
+    try {
+      await rename(temporary,file);
+      await afterAssetRename?.();
+    } finally { await rm(temporary,{force:true}).catch(() => {}); }
   }
-  const temporary = await stage(file,bytes);
-  try {
-    await rename(temporary,file);
-    await syncDirectory(dirname(file));
-  } finally { await rm(temporary,{force:true}); }
+  // A matching visible name is insufficient if the previous writer stopped before syncing.
+  await sync(dirname(file));
 }
 
 async function checkedAsset(file: string, image: ApartmentImage): Promise<Buffer> {
@@ -92,7 +73,12 @@ export async function activeApartmentDigest(stateDir: string): Promise<string | 
 
 type PublishRequest = {stateDir: string; candidate: string; expected: string | null; signal?: AbortSignal};
 /** Fault checkpoints are injected only in disposable tests of the real file/lease path. */
-type PublicationChecks = {beforeActivate?: () => void | Promise<void>; afterActivate?: () => void | Promise<void>};
+type PublicationChecks = {
+  afterAssetRename?: () => void | Promise<void>;
+  beforeActivate?: () => void | Promise<void>;
+  afterActivate?: () => void | Promise<void>;
+  confirmDirectory?: (directory: string) => Promise<void>;
+};
 
 export async function publishApartment(
   {stateDir,candidate,expected,signal}: PublishRequest, checks?: PublicationChecks,
@@ -119,6 +105,7 @@ export async function publishApartment(
   const cancelled = (): void => {
     if (signal?.aborted === true) throw new ApartmentRefusal('cancelled','Publication stopped before activation.');
   };
+  const confirm = checks?.confirmDirectory ?? syncApartmentDirectory;
   let activationAttempted = false;
   try {
     cancelled();
@@ -131,30 +118,38 @@ export async function publishApartment(
     const previous = active === undefined ? null : apartmentSha256(active.bytes);
     if (previous !== expected) throw new ApartmentRefusal('revision-conflict','Read the active digest and review the candidate before publishing.');
     if (active !== undefined && active.model.artwork.length > 0) {
-      await requireApartmentDirectory(join(directory,'assets'));
+      const assets = join(directory,'assets');
+      await requireApartmentDirectory(assets);
       for (const image of active.model.artwork) await checkedAsset(apartmentAssetFile(directory,image.id),image);
+      await confirm(assets);
     }
-    if (previous === digest) return {digest,previous};
-    await createDirectory(core);
-    await createDirectory(directory);
-    if (preparedAssets.size > 0) await createDirectory(join(directory,'assets'));
+    await createDirectory(core,confirm);
+    await createDirectory(directory,confirm);
+    if (previous === digest) {
+      // A retry after an interrupted activation can see the digest before it is durable.
+      activationAttempted = true;
+      try { await confirm(directory); }
+      catch { throw new ApartmentRefusal('uncertain-result','Read the active digest before trying again.'); }
+      return {digest,previous};
+    }
+    if (preparedAssets.size > 0) await createDirectory(join(directory,'assets'),confirm);
     for (const [id,data] of preparedAssets) {
       cancelled();
-      await writeVersion(apartmentAssetFile(directory,id),data);
+      await writeVersion(apartmentAssetFile(directory,id),data,confirm,checks?.afterAssetRename);
     }
     if (active !== undefined && previous !== null) {
       const versions = join(directory,'versions');
-      await createDirectory(versions);
-      await writeVersion(join(versions,previous+'.json'),active.bytes);
+      await createDirectory(versions,confirm);
+      await writeVersion(join(versions,previous+'.json'),active.bytes,confirm);
     }
-    const temporary = await stage(activeFile,bytes);
+    const temporary = await stageApartmentFile(activeFile,bytes);
     try {
       await checks?.beforeActivate?.();
       cancelled();
       activationAttempted = true;
       await rename(temporary,activeFile);
-      await syncDirectory(directory);
       await checks?.afterActivate?.();
+      await confirm(directory);
       const stored = await readPrivateFile(activeFile,MAX_APARTMENT_BYTES);
       if (!stored.equals(bytes)) throw new Error('apartment readback mismatch');
       return {digest,previous};

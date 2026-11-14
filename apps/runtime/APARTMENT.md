@@ -137,10 +137,12 @@ permissions before the window. The helper validates all geometry and artwork
 before activating it, retains the old usable JSON by digest and retains its
 artwork. A failed validation or cancellation before activation keeps the
 previous active model. An interrupted or uncertain result after activation
-requires status readback before another attempt. Compare the observed digest
-with the candidate digest and the previous active digest. If they disagree,
-keep the working files and inspect the selected state before choosing a next
-action. Keep these operational records private.
+requires status readback before another attempt. Status reports the visible
+digest. Compare it with the candidate and the previous digest. If it matches
+the candidate, an explicit publication of the same candidate with that digest
+confirms the active file's durability under the lease. If the observed digest
+matches neither, keep the working files and inspect the selected state before
+choosing a next action. Keep these operational records private.
 
 The dashboard reads `/modules/core/content/apartment-model` and
 `/modules/core/content/apartment-art-<digest>` using the authenticated SDK
