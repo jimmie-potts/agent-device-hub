@@ -7,20 +7,28 @@ B.U.N.N.Y. runs as one [TypeScript runtime](apps/runtime/README.md). Its core an
 fixed device modules communicate through the [SDK](packages/sdk/README.md) using
 [message profile 2.0](packages/event-contracts/README.md). The runtime serves the
 [React dashboard](apps/runtime/dashboard/README.md), authenticated remote clients
-and MCP. The [Mac Mini is the selected primary host](docs/decisions/0008-runtime-hosting.md),
-using the Linux ARM64 container on Docker Desktop, with the PC optional to hub
-operation. That target is distinct from the established WSL installation and the
-limited Mac-local profile; it does not claim a completed production migration.
-Start with [architecture](docs/architecture.md) for boundaries and the
-[container operator guide](docs/bunny-container.md) for Mac operation.
-[Runtime setup](apps/runtime/SETUP.md) retains the WSL fresh setup and manual return
-procedure.
+and MCP. The [Mac Mini is the primary host](docs/decisions/0008-runtime-hosting.md),
+using the Linux ARM64 container on Docker Desktop. The
+[October 31 household cutover](https://github.com/jimmie-potts/agent-device-hub/issues/568)
+accepted the selected device integrations on the Mac with fresh module state,
+preserving its existing core data. The WSL device runtime is stopped and disabled;
+PC hooks and the selected Desktop collector remain host-local producers.
+The cutover record owns its device-specific evidence and deferrals.
 
-The [accepted cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585) records installed and representative physical
-evidence separately from source checks. Old services are stopped and disabled;
-their code, releases and stores remain for manual return. Legacy Hub/controller
-packages and 1.x contracts stay available until separately authorized retirement.
-Do not use the old Hub installer to update the new runtime.
+Start with the [architecture overview](docs/architecture-site/overview.html),
+[architecture boundaries](docs/architecture.md) and
+[container operator guide](docs/bunny-container.md).
+[ADR 0016](docs/decisions/0016-brain-and-local-edges.md) sets the future direction:
+one cloud brain with local device and input edges. Today the brain and device
+modules run together on the Mac, with one authoritative copy of brain data and
+no replication or standby.
+
+The [October 9 runtime rebuild cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585)
+preceded the Mac handoff. Old services, releases and stores remain for manual
+return. Legacy Hub/controller packages and 1.x contracts stay available until
+separately authorized retirement. [Runtime setup](apps/runtime/SETUP.md) retains
+the WSL fresh setup and manual-return procedure. Do not use the old Hub installer
+to update the current runtime.
 
 BB-8 is hibernated indefinitely after the owner's battery blocker. Its code and
 private state are retained, with no active development, robot tests or default
@@ -62,7 +70,7 @@ shared presets follow the Codex-first milestone and general-control definition.
 | Question or category | Canonical owner |
 | --- | --- |
 | Delivery status, acceptance and dependencies | GitHub issues and their evidence; source or CI alone does not establish installed acceptance |
-| Current architecture and flows | [Architecture](docs/architecture.md), the [current runtime diagram](docs/runtime-architecture.html) and owning code |
+| Current architecture and flows | [Overview](docs/architecture-site/overview.html), [architecture](docs/architecture.md), the [current runtime diagram](docs/runtime-architecture.html) and owning code |
 | Lasting decisions and amendments | [ADRs](docs/decisions/); retain original rationale and explicit supersession notes |
 | Capability requirements and scenarios | [Current OpenSpec specs](openspec/specs/); archived changes retain historical intent |
 | Runtime setup, API and module operations | [Runtime](apps/runtime/README.md), [setup](apps/runtime/SETUP.md) and module READMEs |
@@ -77,7 +85,14 @@ The Work Guide source was retired under [#892](https://github.com/jimmie-potts/a
 independent. GitHub issues own delivery state. The separately hosted public site
 is not changed by this source retirement.
 
-## System design documents
+<a id="system-design-documents"></a>
+
+<details>
+<summary>Architecture history and retained system design documents</summary>
+
+The [legacy system map](docs/diagrams/legacy/rendered/arch-shared-system.html)
+shows the earlier Hub with separate Nanoleaf and Pixoo services. It is retained
+for comparison with the current runtime, outside the main architecture view.
 
 Open the [B.U.N.N.Y. system design atlas](docs/system-design/index.html) locally. It
 starts with a system map and an agent observation walkthrough pinned to source
@@ -86,6 +101,8 @@ component documents and a combined reading/print view. Implementation labels
 describe their pinned dates, not current status. GitHub shows HTML source. Revise the snapshot only for an intentional
 design-document change, following the
 [documentation checks](docs/development.md#system-design-documents).
+
+</details>
 
 ## Validate the contracts
 

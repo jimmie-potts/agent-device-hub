@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="B.U.N.N.Y. today: one Mac runtime, an authoritative core and device modules connected through the SDK. Current deployment and future direction, with historical views kept separately.">
+<title>B.U.N.N.Y. · Architecture</title>
+<style>
+:root{color-scheme:dark;--bg:#0b111b;--panel:#121e2d;--ink:#edf3fc;--muted:#a9bbd0;--line:#34465d;--accent:#75dfcc;--future:#c9b4ff;font:16px/1.6 system-ui,sans-serif}
+@media(prefers-color-scheme:light){:root{color-scheme:light;--bg:#f4f7fa;--panel:#fff;--ink:#142234;--muted:#475c73;--line:#b5c5d6;--accent:#006b5b;--future:#6740aa}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}a{color:var(--accent);text-underline-offset:4px}a:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:5px}main,header,footer{max-width:1240px;margin:auto;padding:24px}header{padding-top:52px;padding-bottom:14px}.eyebrow{font-size:.78rem;letter-spacing:.15em;text-transform:uppercase;color:var(--accent);font-weight:700}h1{font-size:clamp(2.1rem,5vw,3.6rem);line-height:1.12;letter-spacing:-.045em;margin:14px 0}h2{font-size:1.65rem;line-height:1.25;margin:0 0 12px}h3{font-size:1.05rem;margin:0 0 8px}p{max-width:82ch;margin:10px 0}.intro{font-size:1.15rem;color:var(--muted);max-width:72ch}.meta,small{font-size:.85rem;color:var(--muted)}nav{display:flex;gap:10px;flex-wrap:wrap;margin-top:28px}nav a{padding:8px 15px;border:1px solid var(--line);border-radius:30px;text-decoration:none}section{scroll-margin-top:20px;margin-bottom:48px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px}.diagram{padding:0;overflow:hidden;margin:20px 0}iframe{display:block;width:100%;height:600px;border:0;background:var(--bg)}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.grid p{font-size:.95rem;color:var(--muted)}.flow{display:grid;grid-template-columns:1fr auto 1.7fr auto 1fr;align-items:center;gap:16px;margin:24px 0}.node{border:1px solid var(--line);border-radius:12px;padding:20px;background:var(--panel)}.node strong{display:block}.node p{font-size:.9rem;color:var(--muted)}.host{border:2px solid var(--accent)}.arrow{color:var(--accent);font-size:1.7rem}.tag{display:inline-block;font-size:.75rem;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}.future{border-left:4px solid var(--future)}.future .tag{color:var(--future)}ul{padding-left:23px}li{margin:8px 0}.sources{display:flex;flex-wrap:wrap;gap:10px 22px;margin:20px 0}footer{border-top:1px solid var(--line);font-size:.85rem;color:var(--muted);padding-bottom:40px}footer a{color:var(--muted)}details{margin-top:18px}summary{cursor:pointer}code{overflow-wrap:anywhere} .skip{position:absolute;top:-80px}.skip:focus{top:8px;left:12px;background:var(--panel);padding:8px;z-index:2}
+@media(max-width:760px){header,main,footer{padding:20px}header{padding-top:32px}.grid,.flow{grid-template-columns:1fr}.arrow{text-align:center;transform:rotate(90deg);line-height:1}.panel{padding:18px}.diagram{padding:0;overflow-x:auto}iframe{width:900px;height:450px}h2{font-size:1.4rem}}
+@media print{nav,.skip,iframe{display:none}.grid,.flow{display:block}.node{margin:10px 0}section{break-inside:avoid}a{color:inherit}}
+</style>
+</head>
+<body>
+<a class="skip" href="#runtime">Skip to architecture</a>
+<header>
+<div class="eyebrow">B.U.N.N.Y. / System architecture</div>
+<h1>One brain.<br>One owner for every device.</h1>
+<p class="intro">Today, B.U.N.N.Y. runs on the Mac Mini as one TypeScript process. The core owns shared state and decisions; device modules own their local I/O. A common SDK connects them.</p>
+<p class="meta">Reviewed November 14, 2026 · Source baseline <a href="https://github.com/jimmie-potts/agent-device-hub/tree/1d21bd2e3891cf3c7481920a3f73a949952c1d51">1d21bd2e</a> · Installation evidence is linked separately.</p>
+<nav aria-label="Architecture sections"><a href="#runtime">Runtime</a><a href="#deployment">Deployment</a><a href="#direction">Future direction</a><a href="#sources">Source documents</a></nav>
+</header>
+<main>
+<section id="runtime" aria-labelledby="runtime-title">
+<h2 id="runtime-title">The current runtime</h2>
+<p>Dashboard, agent hooks and MCP clients enter through the authenticated gateway. Inside <code>apps/runtime</code>, the core and statically shipped modules communicate through the SDK bus using message profile 2.0. There is no external message broker.</p>
+<div class="panel diagram" role="region" aria-label="Runtime diagram; scroll horizontally on a narrow screen" tabindex="0"><iframe title="Current runtime architecture: clients, gateway, SDK bus, core, modules and private stores" src="../runtime-architecture.html?embed=1" loading="eager"></iframe></div>
+<p class="meta"><a href="../runtime-architecture.html">Open the interactive runtime diagram</a>. Its October 9 rendering is retained: the owners and connections still match this source review.</p>
+<div class="grid">
+<article class="panel"><h3>Authoritative core</h3><p>Sessions, inbox, history, action tracking and automations. Core state and related tracking records commit together in private SQLite storage.</p></article>
+<article class="panel"><h3>Device modules</h3><p>Each device has one designated writer. Its module owns transport, queues, private state and durable outcome reporting. Other components use SDK calls.</p></article>
+<article class="panel"><h3>Remote clients</h3><p>HTTP requests go up; SSE events come down. Clients sync current membership, then follow live changes. Reconnection never replays old commands.</p></article>
+</div>
+<div class="sources"><a href="../diagrams/current/runtime-sync.html">Connect and reconnect sequence</a><a href="../diagrams/current/runtime-outcomes.html">Command and outcome sequence</a></div>
+<details><summary>How commands complete</summary><p>An accepted request means an owner has taken responsibility, not that a device has acted. The core tracks the eventual succeeded, failed or uncertain outcome. Modules persist outcomes before reporting them; the core deduplicates and acknowledges them. Retrying a report never resends the device command. Transmitted evidence remains distinct from physical observation.</p></details>
+</section>
+<section id="deployment" aria-labelledby="deployment-title">
+<h2 id="deployment-title">Where it runs today</h2>
+<p>The Mac Mini hosts the Linux ARM64 container on Docker Desktop. PC and phone interfaces use the Mac’s private HTTPS route. Input helpers stay on the computer that can read their selected source.</p>
+<div class="flow" aria-label="Clients connect through private HTTPS to the Mac runtime, whose modules control configured devices">
+<div class="node"><strong>Clients &amp; inputs</strong><p>PC, Mac and phone interfaces<br>Host-local agent and input helpers</p></div>
+<div class="arrow" aria-hidden="true">→</div>
+<div class="node host"><span class="tag">Mac Mini · current host</span><strong>Private HTTPS → runtime gateway</strong><p>Tailscale Serve → loopback Caddy → authenticated gateway</p><strong>Core ↔ SDK ↔ device modules</strong><p>One process · private persistent stores<br>Linux ARM64 / Docker Desktop</p></div>
+<div class="arrow" aria-hidden="true">↔</div>
+<div class="node"><strong>Configured devices</strong><p>Lights, displays, plugs and playback<br>Module-owned LAN or vendor transport</p></div>
+</div>
+<p>Normal Mac operation does not depend on the PC being on. PC-local observations can become stale or unavailable while the Mac continues serving its other capabilities. The old WSL device runtime is stopped and retained for a separately authorized manual return.</p>
+<p>The <a href="https://github.com/jimmie-potts/agent-device-hub/issues/568">October 31 Mac cutover</a> records the accepted integrations and their limits. Module source or healthy transport does not establish every device’s physical qualification. Startup follows manual FileVault unlock and sign-in; there is no automatic failover.</p>
+</section>
+<section id="direction" class="panel future" aria-labelledby="direction-title">
+<span class="tag">Accepted direction · not deployed</span><h2 id="direction-title">A cloud brain with local device edges</h2>
+<p><a href="https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/decisions/0016-brain-and-local-edges.md">ADR 0016</a> moves toward a single cloud-hosted brain owning state, history, inbox, automations, APIs and MCP. Local edges keep device drivers and host input helpers near their hardware and sources.</p>
+<p><strong>Target flow:</strong> interfaces and input helpers ↔ one cloud brain ↔ local device edges ↔ devices.</p>
+<p>Today, the brain and device modules still share the Mac process. A cloud host must be selected before separating device drivers into a local process. Cloud provider, protocol, store, runtime and migration choices remain open. There is no brain-data replication or standby system.</p>
+</section>
+<section id="sources" aria-labelledby="sources-title"><h2 id="sources-title">Read the owning documents</h2><p>These documents explain the boundaries; GitHub acceptance records describe what was installed and observed.</p>
+<div class="sources"><a href="https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/architecture.md">Architecture</a><a href="https://github.com/jimmie-potts/agent-device-hub/blob/main/apps/runtime/README.md">Runtime and API</a><a href="https://github.com/jimmie-potts/agent-device-hub/blob/main/packages/sdk/README.md">SDK</a><a href="https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/decisions/0012-bunny-event-platform.md">Event platform decision</a><a href="https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/bunny-container.md">Mac operations</a></div>
+</section>
+</main>
+<footer>Architecture documentation · <a href="https://jimmie-potts.github.io/agent-device-guide/architecture/history/">Architecture history</a></footer>
+</body>
+</html>
