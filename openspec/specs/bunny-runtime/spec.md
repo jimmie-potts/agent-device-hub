@@ -1850,21 +1850,8 @@ The gateway SHALL contribute the control-scope MCP tool `core_art_show`, which s
 
 Each core history row SHALL name its origin, the installation that wrote it, and its place in that origin's order (#1740, owner decisions on #1729). The origin SHALL be a random UUID that the core store creates once, in the transaction that opens history, and keeps in the store; it SHALL need no configuration and SHALL never be derived from a host name, user name, address or path. A new row SHALL take the store's origin and the next sequence of that origin, counting from 1 with no gaps or repeats. A store written before this change SHALL gain the origin and both columns at its first open, with every existing row given the store's origin and a sequence in the order the rows were written, in one transaction that preserves all existing fact contents; a failure SHALL change nothing, and opening a migrated store again SHALL change nothing. A row without an origin, as a release before this change writes one, SHALL be given the store's origin and the next sequences at the next open. The core SHALL return, for an origin and a sequence N, that origin's rows after N in order, at most 500 a call; the reader SHALL keep its own cursor and the core SHALL store no reader position. An origin the store does not hold SHALL return nothing. Reading SHALL write nothing, publish nothing and trigger nothing. History's duplicate check SHALL look only at the store's own origin's rows. The message envelope and every message contract SHALL stay unchanged: the origin lives in the history row only.
 
-Each new local row SHALL receive a random continuity token in its original
-commit, including unrelated rows and rows with no message ID. The history
-open migration SHALL add nullable continuity metadata and mark an unanchored
-local tail as a legacy barrier in the same transaction. An anchored tail
-SHALL keep its token when reopened. A migration failure SHALL roll back all
-of its changes. A local settings edit that contributes a settings fact SHALL
-roll back when its owner write, history insert or latest-record update is
-ignored. The private settings patch SHALL reflect the authoritative owner
-values before and after the save. An effective edit omitted by ordinary
-compaction SHALL retain one ordinary-visible row with its true retained
-delta, genuine previous revision and normal change-row span transition.
-That row SHALL use the existing origin sequence and SHALL count toward the
-history-volume alarm only if ordinary compaction would have written it.
-Ordinary history readers SHALL continue to receive the existing row shapes.
-
+On stores with historical replication metadata, the runtime SHALL preserve
+existing history rows and metadata and stop writing replication metadata.
 
 #### Scenario: A store written by the previous release
 - **WHEN** a store whose history the release before this change wrote, with every kind of row, an operation step without a message ID and a gap in `seq`, opens
@@ -1882,19 +1869,11 @@ Ordinary history readers SHALL continue to receive the existing row shapes.
 - **WHEN** history holds another origin's row for an outcome's `(source, id)` and the same outcome arrives locally
 - **THEN** the local check answers `new`, history keeps the local copy, and a resend of it is a duplicate that adds nothing
 
-#### Scenario: A sequence is reused after restore
+#### Scenario: Opening a store written by the settings reader release
 
-- **WHEN** a restored store retains its origin but a local write reuses the
-  sequence of a removed row
-- **THEN** the new row has a different token even if it has no message ID,
-  and a settings read cannot use the old row's checkpoint
-
-#### Scenario: An older writer leaves unanchored rows
-
-- **WHEN** history opens a store whose local tail has no continuity token
-- **THEN** the tail gains one stable barrier and older rows are left intact
-- **AND** a settings page cannot cross the barrier and a fresh snapshot can
-  begin there
+- **WHEN** a store with retained settings replication metadata opens and writes a new history row
+- **THEN** previous rows and metadata retain their values and the new row records only ordinary history
+- **AND** a fresh store opens without the retired metadata columns
 
 ### Requirement: A test clock only in a disposable verification run
 
@@ -2042,97 +2021,12 @@ The core SHALL serve current saved event rules, weekly routines, automation sett
 - **THEN** HTTP and MCP SHALL refuse the read without exposing the value or changing retained history
 - **AND** a filter that excludes the protected rows SHALL still serve its result
 
-### Requirement: Standby settings-only core
+### Requirement: Retired settings peer configuration is refused
 
-Standby SHALL open and validate the authoritative core settings under the
-normal runtime lease. It SHALL keep session ownership, general sync and
-effect-capable work inactive and retain pending operational publication.
+A startup input that supplies a core settings peer SHALL be refused before it
+opens a store, starts a module or contacts the peer.
 
-#### Scenario: Eligible work remains inactive
-- **WHEN** a standby opens valid settings and an occurrence, routine, art plan or power limit could produce work on an active core
-- **THEN** the core serves committed internal settings without accepting, scheduling, tracking, spending on or dispatching the work
+#### Scenario: A former peer configuration is present
 
-#### Scenario: Standby restarts on existing state
-- **WHEN** standby starts, reads settings and stops on a current store with pending operational work
-- **THEN** session, operation, history, revision, guard and outbox records remain unchanged and no work is replayed
-
-#### Scenario: Settings cannot become ready
-- **WHEN** lease acquisition, export validation, consumer compatibility, settings projection or startup cancellation prevents a successful open
-- **THEN** settings remain unavailable and any logical lease is released without releasing process ownership
-
-### Requirement: Standby external admission
-
-An exact standby core selection SHALL keep the external gateway closed by default.
-If a bounded status capability is supplied, the gateway SHALL admit it only with
-an ordinary read-only bearer and the existing listener, origin and proxy checks.
-Status input and the delivered JSON SHALL be bounded, and the response SHALL
-exclude protected data. General reads, dashboard assets, browser sessions,
-launcher and MCP SHALL stay closed. Local health SHALL keep its existing behavior.
-
-Recognized command, approval recovery, Automation write and upload requests SHALL
-keep existing authentication and structural errors. A well-formed request from
-an admitted reader SHALL receive the shared `unavailable` refusal with fixed
-detail before owner invocation, command tracking, upload staging or execution.
-After an awaited request or status read, the gateway SHALL re-admit the original
-bearer under its current grants while the gateway is still open. A grant that
-changes or disappears SHALL end pending admission even if the same grant returns.
-An unchanged grant SHALL preserve pending admission.
-
-#### Scenario: Standby writes have no effects
-- **WHEN** a read-only bearer submits a structurally valid mutation
-- **THEN** the gateway refuses before it invokes an owner, stages content or tracks work
-
-#### Scenario: Pending admission changes
-- **WHEN** a bearer is revoked or rotated during a body or status read, or the gateway closes
-- **THEN** the old request cannot receive the status payload or proceed to mutation handling
-
-### Requirement: Standby inbound credentials
-
-A configured standby SHALL validate the private credential list before preparing
-state, even with the edge off. Each credential SHALL have exactly the read
-scope and no role or robot identifier. Reload SHALL apply the same whole-list
-validation before changing effective grants or disconnecting clients. An
-unconfigured standby SHALL read no credential file at startup or reload.
-
-#### Scenario: Replacement contains write authority
-- **WHEN** a standby credential list contains a control, ingest, admin or role grant
-- **THEN** startup refuses before state preparation or reload refuses with its prior grants intact
-
-### Requirement: Standby core follows committed settings
-
-An opt-in standby core SHALL follow the selected HTTPS peer using the existing
-read grant, SDK subscriptions and committed settings history. It SHALL read on
-startup, reconnect and eligible settings signals or overflow. One cancellable
-capped recovery loop MAY retry connection or read failure. Only verified
-receiver commits SHALL advance progress and completion evidence. A terminal
-receipt SHALL prove completion for the exact accepted checkpoint. A nonterminal
-receipt SHALL preserve previous completion evidence. Replacement SHALL establish
-a fresh receiver generation even when the incoming checkpoint is identical.
-A receipt that cannot establish these facts SHALL cause a new committed read
-before retry. A configured
-standby without a receiver SHALL keep local health available and perform no
-peer or token-file I/O.
-
-#### Scenario: Settings change while registration or a read is pending
-
-- **WHEN** a peer commits settings before the last registration completes or during a held read
-- **THEN** the startup read or a serialized dirty follow-up catches the edit
-- **AND** a healthy idle stream causes no periodic settings read
-
-#### Scenario: A page scans rows outside the settings projection
-
-- **WHEN** the pass returns skipped rows or an unsealed settings tail
-- **THEN** the follower scans onward without advancing beyond the last durable seal
-- **AND** the receiver applies the complete sealed transaction before progress advances
-
-#### Scenario: Checkpoint continuity is lost
-
-- **WHEN** the peer refuses a same-origin checkpoint after restore
-- **THEN** the follower validates and replaces from a complete snapshot using exact durable expected state
-- **AND** a foreign origin cannot replace the enrollment
-
-#### Scenario: Stop interrupts a read or apply
-
-- **WHEN** standby stops during catch-up
-- **THEN** pending reads and queued applies are fenced and entered commits settle before lease release
-- **AND** a restart resumes from the verified durable state
+- **WHEN** startup is given a configuration with `modules.core.peer`
+- **THEN** startup returns `config-invalid` before those effects

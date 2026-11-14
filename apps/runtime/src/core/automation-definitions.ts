@@ -1,4 +1,3 @@
-import {settingsPatch} from './settings-contract.js';
 import type {StatementSync, DatabaseSync} from 'node:sqlite';
 import {SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
@@ -114,7 +113,7 @@ export class AutomationDefinitions {
           this.#set.run(family, id, revision);
           if (this.#get.get(family, id)?.revision !== revision) throw new Error('automation definition revision was not saved');
         }
-        const stored = tx.add(key, message, {...options, settings: next === undefined ? {kind: 'removal'} : settingsPatch(family, previous, next)});
+        const stored = tx.add(key, message, options);
         if (!coreValidator().validate(stored).ok) throw new Error('invalid automation definition message');
         tx.requireRetained(stored);
         return result;

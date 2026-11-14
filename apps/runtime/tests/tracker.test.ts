@@ -86,6 +86,19 @@ const records = (logs: readonly LogRecord[], requestId: string): string[] => log
   .filter(record => record.attributes['bunny.module'] === 'core' && record.attributes['bunny.request.id'] === requestId && record.event_name.startsWith('command.'))
   .map(record => `${record.event_name} ${record.severity_text} ${String(record.attributes['bunny.outcome'])}`);
 
+it('a late dispatch refusal retains the requester copied at admission', async context => {
+  const t = await trackerRun(context, {manual: true});
+  t.database().exec("CREATE TRIGGER refuse_operation BEFORE INSERT ON core_operations BEGIN SELECT RAISE(ABORT, 'synthetic'); END");
+  const request = {...setGadget(50, 'g1'), requestedBy: OPERATOR, requestId: 'synthetic-refusal'};
+  const pending = t.core.actions.dispatch(request);
+  request.requestedBy = 'bunny/parts/synthetic-altered';
+  const result = await pending;
+  assert.ok('error' in result && result.error.code === 'internal');
+  const refusal = t.logs.find(record => record.event_name === 'command.rejected');
+  assert.equal(refusal?.attributes['bunny.participant'], OPERATOR);
+  assert.deepEqual(t.gadget.commands, []);
+});
+
 it('an action is recorded sent before it goes out, then accepted, then completed by its outcome, each step with its history rows', async context => {
   const t = await trackerRun(context);
   assert.deepEqual(await t.dispatch('req-on'), {status: 'accepted', requestId: 'req-on'});

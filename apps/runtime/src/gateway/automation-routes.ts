@@ -2,10 +2,7 @@
 import {errorBody, isErrorCode, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {statusOf,type TraceContext} from '@jimmie-potts/sdk';
 import type {AutomationControls} from '../core/automation-part.js';
-import {AutomationError, parseInterruptSet, parseRuleInput, parseSettings} from '../core/automation.js';
-import {artPolicyWrite} from '../core/art-schedule-model.js';
-import {checkPowerLimitWrite} from '../core/power-limits.js';
-import {parseRoutine} from '../core/power-schedules.js';
+import {AutomationError} from '../core/automation.js';
 
 export const AUTOMATION_PREFIX = '/api/v2/automation/';
 export type AutomationRequest = {
@@ -32,32 +29,9 @@ const emptyBody = (input: unknown): void => {
   if (typeof input !== 'object' || input === null || Array.isArray(input) || Object.keys(input).length > 0) invalid();
 };
 const invalid = (): never => { throw new AutomationError('invalid-request', 400); };
-export const automationErrorCode = (code: string): ErrorCode => code === 'unknown-rule' ? 'not-found'
+const automationErrorCode = (code: string): ErrorCode => code === 'unknown-rule' ? 'not-found'
   : code === 'unknown-target' || (code.startsWith('invalid-') && !isErrorCode(code)) ? 'invalid-request'
   : isErrorCode(code) ? code : 'internal';
-
-type MutationBody = {maximum: number; check: (input: unknown) => unknown};
-const NO_BODY: MutationBody = {maximum: 0, check: () => undefined};
-const EMPTY_BODY: MutationBody = {maximum: EMPTY_BODY_BYTES, check: emptyBody};
-
-/** The structural checks for a known write, without resolving configured targets or calling controls. */
-export function automationMutation(method: string, path: string): MutationBody | undefined {
-  const route = path.slice(AUTOMATION_PREFIX.length);
-  if (route === 'rules' && method === 'POST') return {maximum: RULE_BODY_BYTES, check: input => parseRuleInput(input, null, true)};
-  if (route === 'routines' && method === 'POST') return {maximum: RULE_BODY_BYTES, check: input => parseRoutine(input, undefined, true)};
-  if (route === 'art' && method === 'PUT') return {maximum: ART_BODY_BYTES, check: artPolicyWrite};
-  if (route === 'interrupt-set' && method === 'PUT') return {maximum: RULE_BODY_BYTES, check: parseInterruptSet};
-  if (route === 'settings' && method === 'PUT') return {maximum: SETTINGS_BODY_BYTES, check: parseSettings};
-  const limit = POWER_LIMIT.exec(route)?.[1];
-  if (limit !== undefined && limit.length <= 128 && method === 'PUT') return {maximum: SETTINGS_BODY_BYTES, check: checkPowerLimitWrite};
-  const rule = RULE.exec(route), routine = ROUTINE.exec(route);
-  const match = rule ?? routine;
-  if (match === null || match[2] === 'preview') return undefined;
-  if (match[2] !== undefined) return method === 'POST' ? EMPTY_BODY : undefined;
-  if (method === 'DELETE') return NO_BODY;
-  if (method !== 'PUT') return undefined;
-  return {maximum: RULE_BODY_BYTES, check: rule === null ? input => parseRoutine(input, undefined, false) : input => parseRuleInput(input, null, false)};
-}
 
 /** Authentication belongs to the gateway. Unknown routes are left to its normal not-found handling. */
 export async function automationRoute(controls: AutomationControls, request: AutomationRequest): Promise<AutomationAnswer | undefined> {

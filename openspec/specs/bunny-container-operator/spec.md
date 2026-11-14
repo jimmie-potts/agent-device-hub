@@ -245,29 +245,18 @@ The Mac host SHALL offer launchd agents, installed by one command and holding no
 - **WHEN** the core or the engine stops after the agent has run
 - **THEN** the core stays stopped until the next sign-in or a manual start
 
-### Requirement: Explicit core standby container
+### Requirement: Retired standby control is refused
 
-Production and private-proxy containers SHALL admit explicit standby under
-their existing profile checks. Standby SHALL start only the core and serve
-local health with the general gateway off. The defaults and behavior of
-enabled and disabled control SHALL remain unchanged.
+The entrypoint and operator SHALL refuse `BUNNY_CONTROL=standby` before
+starting a runtime. Normal production and private access retain their existing
+control admission.
 
-#### Scenario: Settings-only startup
-- **WHEN** an operator selects standby with valid private configuration and an available runtime lease
-- **THEN** local status can read core health and the gateway stays off through startup and reload, including with a valid edge block
+#### Scenario: A container has stale standby control
 
-#### Scenario: Unsupported standby options
-- **WHEN** standby selects an unsupported profile, producer or device option, or supplies an invalid core, diagnostic or edge configuration
-- **THEN** startup refuses before state preparation or work intake
+- **WHEN** an operator requests a start for a running or stopped container configured for standby
+- **THEN** the operator refuses without starting or stopping the container
 
-### Requirement: Standby credential precheck
+#### Scenario: Stopped maintenance on a legacy container
 
-The shipped standby container entrypoint SHALL validate any configured inbound
-credential file before bootstrap. It SHALL admit only ordinary credentials with
-exactly read scope and no role or robot identifier. Startup SHALL use the
-validated snapshot through bootstrap. Subsequent file changes SHALL be checked
-on reload. The shipped standby SHALL keep its external gateway off.
-
-#### Scenario: Standby credential file requests authority
-- **WHEN** a configured standby file is missing, malformed or contains a grant beyond ordinary read
-- **THEN** the entrypoint refuses before bootstrap or runtime startup
+- **WHEN** an operator requests backup or restore for a stopped container with valid legacy production or private-proxy standby metadata
+- **THEN** the operator uses the existing stopped maintenance checks and isolated worker

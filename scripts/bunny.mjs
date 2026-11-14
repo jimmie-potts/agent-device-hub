@@ -65,7 +65,7 @@ function localBinding(ports, pixooBind) {
     && (pixooBind === undefined || (Array.isArray(pixoo) && pixoo.length === 1
       && pixoo[0].HostIp === pixooBind && pixoo[0].HostPort === '41240'));
 }
-export async function access(info, project, run) {
+export async function access(info, project, run, {stoppedMaintenance = false} = {}) {
   const ports = info.HostConfig?.PortBindings ?? {};
   const value = name => {
     const entries = (info.Config?.Env ?? []).filter(entry => entry.startsWith(name + '='));
@@ -76,9 +76,17 @@ export async function access(info, project, run) {
   const ingestSource = value('BUNNY_INGEST_SOURCE');
   const pixooBind = value('BUNNY_PIXOO_BIND');
   const control = value('BUNNY_CONTROL');
-  if (profile === 'production' || control === 'standby') {
-    containerOptions(Object.fromEntries(['BUNNY_ACCESS', 'BUNNY_CONTROL', 'BUNNY_PORT', 'BUNNY_STATE_DIR', 'BUNNY_CONFIG',
-      'BUNNY_INGEST_SOURCE', 'BUNNY_PIXOO_BIND'].flatMap(key => value(key) === undefined ? [] : [[key, value(key)]])));
+  const legacyStandby = control === 'standby';
+  if (legacyStandby) {
+    if (!stoppedMaintenance || !['production', 'private-proxy'].includes(profile)
+      || ingestSource !== undefined || pixooBind !== undefined) refuse();
+    stopped(info);
+  }
+  if (profile === 'production' || legacyStandby) {
+    const env = Object.fromEntries(['BUNNY_ACCESS', 'BUNNY_CONTROL', 'BUNNY_PORT', 'BUNNY_STATE_DIR', 'BUNNY_CONFIG',
+      'BUNNY_INGEST_SOURCE', 'BUNNY_PIXOO_BIND'].flatMap(key => value(key) === undefined ? [] : [[key, value(key)]]));
+    // Validate only the selected container's metadata. The maintenance worker runs in isolation.
+    containerOptions(legacyStandby ? {...env, BUNNY_CONTROL: 'disabled'} : env);
   }
   if (pixooBind !== undefined && profile !== 'production') refuse();
   // A Docker network-mode identifier, not an evidence outcome.
@@ -103,7 +111,7 @@ export async function access(info, project, run) {
   }
   if (!['host-local', 'private-proxy', 'production'].includes(profile) || info.Config?.Labels?.['io.bunny.access'] !== profile
     || (ingestSource !== undefined && !/^bunny\/parts\/hub-[0-9a-f]{32}(?![\s\S])/.test(ingestSource))
-    || (profile !== 'production' && control !== 'disabled' && control !== 'standby') || value('BUNNY_PORT') !== '18788'
+    || (profile !== 'production' && control !== 'disabled' && !legacyStandby) || value('BUNNY_PORT') !== '18788'
     || ![undefined, '/var/lib/bunny'].includes(value('BUNNY_STATE_DIR'))
     || ![undefined, '/etc/bunny/runtime.json'].includes(value('BUNNY_CONFIG'))
     || !localBinding(ports, pixooBind)
@@ -162,6 +170,8 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
       await run(['compose', '-f', plan.compose, '-p', plan.project, 'create', '--no-build', '--pull', 'never', 'core']);
       info = await selected(plan, run); if (info === undefined) refuse();
     }
+    // Refusing retired control must leave an already running container alone.
+    if (info.Config?.Env?.includes('BUNNY_CONTROL=standby')) refuse();
     try {await access(info, plan.project, run);}
     catch (error) {
       if (info.State.Running && ['host-local', 'private-proxy', 'production'].includes(info.Config.Labels['io.bunny.access'])) await run(['stop', '--timeout', '30', info.Id]);
@@ -184,7 +194,7 @@ export async function operate(plan, run = docker, checkPrivate = privateHostDire
   }
   stopped(info);
   const mounts = container(info, plan.project);
-  await access(info, plan.project, run);
+  await access(info, plan.project, run, {stoppedMaintenance: true});
   for (const mount of mounts) await ordinaryVolume(mount.Name, run);
   const images = JSON.parse(await run(['image', 'inspect', info.Image]));
   const revision = images[0]?.Config?.Labels?.['org.opencontainers.image.revision'];

@@ -109,6 +109,65 @@ void test('actual core exposes revisioned policy, publishes it, and reopens with
   await harness.start();await flush();assert.ok(core.automation.artSchedule);assert.equal(core.automation.artSchedule.get().settingsRevision,1);assert.equal(core.automation.artSchedule.get().policy.enabled,true);
 });
 
+void test('an ignored Art owner write rolls back the policy save and competing saves retain only the winner', async context => {
+  const clock = manualClock(local(8)), core = createCoreModule();
+  const harness = new CoreHarness(core, {stateDir: await stateDir(context),
+    bus: new InProcessBus({now: clock.now, scheduler: clock.scheduler}), clock, scheduler: clock.scheduler});
+  context.after(() => harness.stop());
+  await harness.start();
+  const db = harness.moduleDatabase(), art = core.automation.artSchedule;
+  assert.ok(db && art);
+  const rows = () => core.history.read({kind: 'change'});
+  const first = art.get();
+  const hidden = {...first.policy, browser: false};
+  const save = async (revision: number, policy: typeof first.policy) => art.save({expectedSettingsRevision: revision, policy});
+  const refuse = async (operation: 'INSERT' | 'UPDATE', policy: typeof first.policy): Promise<void> => {
+    const before = art.get(), history = rows();
+    db.exec(`CREATE TRIGGER ignore_art BEFORE ${operation} ON automation_art_schedule BEGIN SELECT RAISE(IGNORE); END`);
+    await assert.rejects(save(before.settingsRevision, policy), /the art schedule was not stored/);
+    assert.deepEqual(art.get(), before);
+    assert.deepEqual(rows(), history);
+    db.exec('DROP TRIGGER ignore_art');
+  };
+  await refuse('INSERT', hidden);
+  const saved = await save(first.settingsRevision, hidden);
+  assert.equal(saved.settingsRevision, first.settingsRevision + 1);
+  await refuse('UPDATE', first.policy);
+  const changed = [first.policy, {...saved.policy, ambient: false}];
+  const results = await Promise.allSettled(changed.map(policy => art.save({expectedSettingsRevision: saved.settingsRevision, policy})));
+  const winner = results.find(result => result.status === 'fulfilled');
+  const loser = results.find(result => result.status === 'rejected');
+  assert.ok(winner && loser);
+  assert.equal(winner.value.settingsRevision, saved.settingsRevision + 1);
+  assert.match(String(loser.reason), /revision-conflict/);
+  assert.deepEqual(art.get().policy, winner.value.policy);
+  const history = rows();
+  assert.ok(Array.isArray(history));
+  assert.deepEqual(history.at(-1)?.record.changed, {settingsRevision: saved.settingsRevision + 1, policy: winner.value.policy});
+});
+
+void test('an Art policy save succeeds when ordinary history already shows the same record', async context => {
+  const clock = manualClock(local(8)), core = createCoreModule();
+  const harness = new CoreHarness(core, {stateDir: await stateDir(context),
+    bus: new InProcessBus({now: clock.now, scheduler: clock.scheduler}), clock, scheduler: clock.scheduler});
+  context.after(() => harness.stop());
+  await harness.start();
+  const db = harness.moduleDatabase(), art = core.automation.artSchedule;
+  assert.ok(db && art);
+  const previous = art.get(), policy = {...previous.policy, browser: false};
+  const first = await art.save({expectedSettingsRevision: previous.settingsRevision, policy});
+  // An older writer could keep the history row even if SQLite ignored the owner insert.
+  db.exec('DELETE FROM automation_art_schedule');
+  assert.deepEqual(art.get(), previous);
+  const before = core.history.read({kind: 'change'});
+  assert.ok(Array.isArray(before));
+  assert.equal(before.length, 1);
+  const saved = await art.save({expectedSettingsRevision: previous.settingsRevision, policy});
+  assert.deepEqual(saved.policy, first.policy);
+  assert.equal(saved.settingsRevision, first.settingsRevision);
+  assert.deepEqual(core.history.read({kind: 'change'}), before);
+});
+
 import {createArtPlans,type ArtPlan} from '../src/core/art-plans.js';
 import {createArtSchedule} from '../src/core/art-schedule.js';
 import type {Action} from '../src/core/tracker.js';

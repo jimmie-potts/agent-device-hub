@@ -5,6 +5,7 @@ import {isAbsolute, join, resolve} from 'node:path';
 import {isIP} from 'node:net';
 import {fileURLToPath} from 'node:url';
 
+const controlModes = ['disabled', 'enabled'];
 const producerSource = /^bunny\/parts\/hub-[0-9a-f]{32}(?![\s\S])/;
 
 export function privateIPv4(value) {
@@ -18,18 +19,16 @@ export function containerOptions(env) {
   const production = access === 'production';
   const loopback = access === 'host-local' || access === 'private-proxy' || production;
   const control = env.BUNNY_CONTROL ?? 'disabled';
-  const standby = control === 'standby';
-  const privateProxy = access === 'private-proxy';
   const stateDir = env.BUNNY_STATE_DIR ?? '/var/lib/bunny';
   const config = env.BUNNY_CONFIG ?? '/etc/bunny/runtime.json';
   const portText = env.BUNNY_PORT ?? (loopback ? '18788' : '8788');
   const ingestSource = env.BUNNY_INGEST_SOURCE;
   const pixooBind = env.BUNNY_PIXOO_BIND;
-  if (!['isolated', 'host-local', 'private-proxy', 'production'].includes(access) || !['disabled', 'enabled', 'standby'].includes(control)
-    || (standby && ((!production && !privateProxy) || ingestSource !== undefined)) || !isAbsolute(stateDir) || !isAbsolute(config)
+  if (!['isolated', 'host-local', 'private-proxy', 'production'].includes(access) || !controlModes.includes(control)
+    || !isAbsolute(stateDir) || !isAbsolute(config)
     || (ingestSource !== undefined && (!loopback || !producerSource.test(ingestSource)))
     || (pixooBind !== undefined && (!production || control !== 'enabled' || !privateIPv4(pixooBind)))
-    || (loopback && ((!production && !standby && control !== 'disabled') || portText !== '18788'
+    || (loopback && ((!production && control !== 'disabled') || portText !== '18788'
       || stateDir !== '/var/lib/bunny' || config !== '/etc/bunny/runtime.json'))
     || !/^[1-9][0-9]*$/.test(portText) || Number(portText) > 65535) throw new Error('container-options-refused');
   return {control, stateDir, config, port: Number(portText), access, ...(ingestSource === undefined ? {} : {ingestSource}),
@@ -139,43 +138,29 @@ async function start(options) {
   if (process.platform !== 'linux' || process.getuid?.() === 0) throw new Error('container-host-refused');
   process.umask(0o077);
   const [state, {acquireRuntimeOwnership}, {bindCoreRuntimeOwnership}, runtime,
-    {parseArguments, runProcess}, {checkConfiguration}, {admitStandbyStartupCredentials}] = await Promise.all([
+    {parseArguments, runProcess}, {checkConfiguration}] = await Promise.all([
     import('../../apps/runtime/dist/src/state.js'),
     import('../../apps/runtime/dist/src/runtime-ownership.js'), import('../../apps/runtime/dist/src/core/core.js'),
     import('../../apps/runtime/dist/src/modules.js'), import('../../apps/runtime/dist/src/process.js'),
-    import('../../packages/sdk/dist/src/index.js'), import('../../apps/runtime/dist/src/standby-credential-admission.js'),
+    import('../../packages/sdk/dist/src/index.js'),
   ]);
   await startContainer(options, {...state, acquireRuntimeOwnership, bindCoreRuntimeOwnership, runtime, parseArguments,
     runProcess, checkConfiguration, checkCredentials: checkConfiguredCredentials,
-    admitStandbyCredentials: admitStandbyStartupCredentials, prepareOwnershipRoot, refusePendingRestore});
+    prepareOwnershipRoot, refusePendingRestore});
 }
 
 /** Starts the selected container with the dependencies supplied by the entrypoint. */
 export async function startContainer(options, dependencies) {
-  const {readRuntimeConfig, runtime, checkConfiguration, checkCredentials, admitStandbyCredentials, prepareOwnershipRoot, acquireRuntimeOwnership,
+  if (!controlModes.includes(options.control)) throw new Error('container-options-refused');
+  const {readRuntimeConfig, runtime, checkConfiguration, checkCredentials, refuseRetiredCorePeer, prepareOwnershipRoot, acquireRuntimeOwnership,
     refusePendingRestore, bindCoreRuntimeOwnership, parseArguments, runProcess} = dependencies;
   const config = await readRuntimeConfig(options.config);
-  const {coreFactory, shippedModules, standbyCoreFactory, buildModules} = runtime;
-  const standby = options.control === 'standby';
-  if (Object.hasOwn(Object(config.modules.core), 'peer')) {
-    const {settingsPeerConfig} = await import('../../apps/runtime/dist/src/core/settings-peer.js');
-    settingsPeerConfig(config.modules.core, standby);
-  }
+  refuseRetiredCorePeer(config);
+  const {coreFactory, shippedModules, buildModules} = runtime;
   const local = ['host-local', 'private-proxy', 'production'].includes(options.access);
   let factories = options.control === 'disabled' ? [coreFactory] : shippedModules;
-  let hosted, standbyCredentialAdmission;
-  if (standby) {
-    factories = [standbyCoreFactory];
-    hosted = buildModules(factories, false);
-    const core = checkConfiguration(hosted[0].manifest, config.modules.core);
-    if (Object.keys(config.modules).some(name => name !== 'core')
-      || Object.hasOwn(Object(config.modules.core), 'secrets') || core.status !== 'accepted'
-      || Object.keys(config.diagnostics?.modules ?? {}).some(name => name !== 'core')
-      || (config.edge !== undefined && !browserEdge(config.edge, 'private-proxy'))) {
-      throw new Error('container-browser-config-refused');
-    }
-    if (config.edge !== undefined) standbyCredentialAdmission = await admitStandbyCredentials(hosted[0], config.edge.credentials);
-  } else if (local) {
+  let hosted;
+  if (local) {
     ({factories, modules: hosted} = options.access === 'production'
       ? productionModules(config, runtime, checkConfiguration, options)
       : hostLocalModules(config, runtime, checkConfiguration, options.access));
@@ -188,9 +173,8 @@ export async function startContainer(options, dependencies) {
   const modules = hosted ?? buildModules(factories, false);
   bindCoreRuntimeOwnership(modules[0], ownership);
   const parsed = parseArguments(['--port', String(options.port), '--state-dir', options.stateDir, '--environment', 'production']);
-  await runProcess({...parsed, modules: factories, edge: !standby && config.edge !== undefined}, {
+  await runProcess({...parsed, modules: factories, edge: config.edge !== undefined}, {
     modules, config, ...(local ? {listener: 'container-host-local'} : {}),
-    ...(standbyCredentialAdmission === undefined ? {} : {standbyCredentialAdmission}),
   });
 }
 
@@ -215,13 +199,9 @@ async function prepareOwnershipRoot(stateDir, {checkStateDirectory, prepareState
  */
 export async function checkConfiguredCredentials(config, options) {
   if (!['host-local', 'private-proxy', 'production'].includes(options.access)) throw new Error('container-command-refused');
-  if (options.control === 'standby' && config.edge === undefined) return {status: 'admitted', credentials: 0};
-  const {readEdgeCredentials, checkStandbyCredentials} = await import('../../apps/runtime/dist/src/credentials.js');
+  const {readEdgeCredentials} = await import('../../apps/runtime/dist/src/credentials.js');
   const credentials = await readEdgeCredentials(config.edge?.credentials);
-  if (options.control === 'standby') {
-    try {checkStandbyCredentials(credentials);}
-    catch {throw new Error('container-browser-config-refused');}
-  } else checkLocalBrowserCredentials(credentials, options.ingestSource, options.access === 'production' ? 'private-proxy' : options.access);
+  checkLocalBrowserCredentials(credentials, options.ingestSource, options.access === 'production' ? 'private-proxy' : options.access);
   return {status: 'admitted', credentials: credentials.length};
 }
 

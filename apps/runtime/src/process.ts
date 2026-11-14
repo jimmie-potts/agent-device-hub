@@ -9,7 +9,6 @@ import {contain} from './host.js';
 import {INSTANCE_ID, LogWriter, Redactions, faultFields, stderrSink} from './log.js';
 import {buildModules, moduleSchemas, type ModuleFactory} from './modules.js';
 import {ENVIRONMENTS, LEVELS, RUNTIME_SCOPE, runtimeResource, type Environment, type LogLevel} from './record.js';
-import type {StandbyCredentialAdmission} from './standby-credential-admission.js';
 import {startRuntime, type Runtime} from './runtime.js';
 import {RuntimeError, type RuntimeConfig} from './state.js';
 
@@ -122,7 +121,6 @@ function testClockRefusal({simulate, environment, edge, stateDir}: ProcessOption
 /** Already built inputs from an admitting entrypoint; these values do not themselves grant ownership. */
 export type ProcessStartup = {
   modules: readonly BunnyModule[]; config: RuntimeConfig; listener?: 'container-host-local';
-  standbyCredentialAdmission?: StandbyCredentialAdmission;
 };
 
 /**
@@ -181,7 +179,6 @@ export async function runProcess(options: ProcessOptions & ProcessInputs, startu
   try {
     runtime = await startRuntime({
       ...(startup?.listener === undefined ? {} : {listener: startup.listener}),
-      ...(startup?.standbyCredentialAdmission === undefined ? {} : {standbyCredentialAdmission: startup.standbyCredentialAdmission}),
       modules: startup?.modules ?? buildModules(options.modules, options.simulate), port: options.port, stateDir: options.stateDir,
       ...(startup === undefined ? (options.config === undefined ? {} : {configFile: options.config}) : {config: startup.config}),
       logLevel: options.logLevel, environment: options.environment, lagCheck: {limitMs: options.lagLimitMs}, simulate: options.simulate, redactions,

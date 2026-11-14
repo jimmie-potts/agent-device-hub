@@ -422,9 +422,7 @@ runs without device modules. The 1.x field mapping is in
   ([ADR 0012 amendment of 2026-11-11](decisions/0012-bunny-event-platform.md#amendment-2026-11-11)).
   The core's history is a fact log that a reader inside the core may read after
   a cursor it keeps ([#1740](https://github.com/jimmie-potts/agent-device-hub/issues/1740));
-  the read API and MCP tool return the same rows as before. The
-  [settings snapshot and catch-up reader](../apps/runtime/README.md#core-settings-snapshot-and-catch-up)
-  remains in source. ADR 0016 supersedes its former use for standby replication.
+  the read API and MCP tool return ordinary history rows.
 - **History.** History keeps changes. Once
   [#1772](https://github.com/jimmie-potts/agent-device-hub/issues/1772) is
   merged and installed, it keeps a stretch of repeated readings that differ only

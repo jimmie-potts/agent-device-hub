@@ -217,8 +217,7 @@ State events and telemetry are not tracked.
   silent for too long. These rules apply once
   [#1772](https://github.com/jimmie-potts/agent-device-hub/issues/1772) is
   merged and installed; until then history behaves as before. The no-time-limit
-  rule stays. See the [2026-11-13 amendment](#amendment-2026-11-13) for the
-  narrow core settings exception.
+  rule stays.
 - When the disk is full, the core refuses durable work before it reports
   anything accepted.
 
@@ -886,6 +885,9 @@ and is not recorded here.
 - A consumer that catches up on facts does not make past moments or device
   actions happen again. It still starts from a sync of current state.
 
+[ADR 0016](0016-brain-and-local-edges.md) retires the settings snapshot and
+catch-up API used for standby replication.
+
 Everything else in this record stands: no broker, each owner keeps and
 publishes its own state, consumers sync current state, and nothing is retried
 automatically. "Consumers and recovery", "Alternatives and consequences" and
@@ -1008,10 +1010,8 @@ design in #1768, which the owner's answers settle but do not word; #1771 and
 - A silence longer than the gap is recorded by one row when readings resume. A
   removal closes an open span with one row first.
 - The open span is kept outside the history rows. Rows are never updated, so
-  the fact log stays append-only and numbered without gaps. The existing
-  [settings reader](../../apps/runtime/README.md#core-settings-snapshot-and-catch-up)
-  serves a snapshot and committed settings facts after a cursor. Open spans and
-  live device freshness stay local. ADR 0016 supersedes standby replication.
+  the fact log stays append-only and numbered without gaps. Live device
+  freshness comes from the current owner through sync.
 
 **What stays:**
 - Devices keep polling and publishing as they do. Every live reader, the safety
@@ -1036,6 +1036,11 @@ between two rows it holds only the first and last confirmation and a count, and
 the count is of readings history took, not of readings a device answered.
 
 ### Amendment, 2026-11-13
+
+**Historical.** [ADR 0016](0016-brain-and-local-edges.md) superseded the
+replication design. The source removal retires the private settings patch,
+its continuity token and its compaction exception. Ordinary Automation
+definition changes keep their existing transaction and history guarantees.
 
 **Keep an effective core settings edit through compaction.** At
 2026-11-13T14:05:40Z the owner answered the narrow settings-history exception

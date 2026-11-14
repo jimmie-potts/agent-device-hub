@@ -189,3 +189,19 @@ void test('invalid, unauthorized, stale and unsaved selections preserve prior st
     assert.equal(w.flags.postcommit, 0);
   } finally {w.db.close();}
 });
+
+void test('an ignored mode owner update publishes and dispatches nothing', async () => {
+  const w = await unit();
+  try {
+    w.db.exec('CREATE TRIGGER ignore_mode BEFORE UPDATE ON core_mode BEGIN SELECT RAISE(IGNORE); END');
+    const before = w.state();
+    const refused = await w.select(command('work', 'ignored-mode', before.revision));
+    assert.ok('error' in refused);
+    assert.deepEqual(w.state(), before);
+    assert.deepEqual(w.published, []);
+    assert.deepEqual(w.sent, []);
+    w.db.exec('DROP TRIGGER ignore_mode');
+    assert.deepEqual(await w.select(command('work', 'retry-mode', before.revision)), {status: 'accepted'});
+    assert.equal(w.state().mode, 'work');
+  } finally {w.db.close();}
+});

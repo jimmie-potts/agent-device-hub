@@ -286,10 +286,6 @@ records the rule and the other decisions. The rule applies once
 [#1772](https://github.com/jimmie-potts/agent-device-hub/issues/1772) is merged
 and installed; until then history keeps what it keeps today.
 
-[ADR 0012's amendment of 2026-11-13](0012-bunny-event-platform.md#amendment-2026-11-13)
-defines the narrow exception for an effective core settings edit. Ordinary
-repeated readings still follow the span rule above.
-
 What does not change:
 
 - History keeps no time limit. Time limits and purge are held by the owner

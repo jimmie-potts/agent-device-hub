@@ -64,11 +64,6 @@ export const DASHBOARD_SOURCE = 'bunny/parts/dashboard';
 export const reservedSource = (source: string): boolean =>
   source === 'bunny/core' || source === DASHBOARD_SOURCE || source.startsWith('bunny/modules/') || source.startsWith('bunny/runtime/');
 
-export function ordinaryReaderSource(source: unknown): source is string {
-  return typeof source === 'string' && source.length <= 256 && SOURCE.test(source) && !reservedSource(source)
-    && ![MUSIC_PRODUCER_SOURCE, MUSIC_PLAYBACK_SOURCE, CODING_WORKER_SOURCE, 'bunny/parts/bb8-windows'].includes(source);
-}
-
 /**
  * Checks a credentials document, `{"schema": "edge-credentials/1.0", "credentials": [...]}`, and returns its
  * credentials. At most 32; each with a distinct ID, digest and source, a well-formed source that is not the core's, a
@@ -149,36 +144,6 @@ export async function readEdgeCredentials(file: string): Promise<EdgeCredential[
     throw invalid('is not JSON');
   }
   return parseCredentials(parsed);
-}
-
-/** A standby can authenticate an ordinary reader, with no producer or operator authority. */
-export function checkStandbyCredentials(credentials: readonly EdgeCredential[]): void {
-  if (credentials.some(({scopes, role, robotId}) => scopes.length !== 1 || scopes[0] !== 'read' || role !== undefined || robotId !== undefined)) {
-    throw invalid('must grant only ordinary read access in standby');
-  }
-}
-
-/** Checks and snapshots a complete in-memory replacement before the gateway can admit it. */
-export function standbyCredentialList(credentials: readonly EdgeCredential[]): readonly EdgeCredential[] {
-  const parsed = parseCredentials({schema: CREDENTIALS_SCHEMA, credentials});
-  checkStandbyCredentials(parsed);
-  for (const credential of parsed) {
-    Object.freeze(credential.scopes);
-    Object.freeze(credential);
-  }
-  return Object.freeze(parsed);
-}
-
-export async function readStandbyCredentials(file: string): Promise<EdgeCredential[]> {
-  try {
-    const credentials = await readEdgeCredentials(file);
-    checkStandbyCredentials(credentials);
-    return credentials;
-  } catch (error) {
-    // Standby also reads the file with the edge off. Its startup fault must carry no path or grant fields.
-    const code = error instanceof RuntimeError ? error.code : 'edge-credentials-invalid';
-    throw new RuntimeError(code, 'the standby credentials could not be admitted');
-  }
 }
 
 /** The credentials as the file holds them, one per line. */

@@ -365,6 +365,14 @@ export function sectionOf(config: RuntimeConfig | undefined, name: string): unkn
   return config !== undefined && Object.hasOwn(config.modules, name) ? config.modules[name] : undefined;
 }
 
+/** Refuses the retired peer configuration before startup acquires state or starts modules. */
+export function refuseRetiredCorePeer(config: RuntimeConfig | undefined): void {
+  const core = sectionOf(config, 'core');
+  if (typeof core === 'object' && core !== null && Object.hasOwn(core, 'peer')) {
+    throw new RuntimeError('config-invalid', 'the core settings peer was retired');
+  }
+}
+
 /** The configuration file's refusal codes. One the runtime's user may not read is `config-not-private`. */
 const CONFIG_CODES: Readonly<Record<FileProblem, string>> = {
   relative: 'config-relative', mount: 'config-mount', missing: 'config-missing', link: 'config-link', checkout: 'config-checkout',

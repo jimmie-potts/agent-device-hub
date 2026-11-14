@@ -1,4 +1,3 @@
-import {settingsPatch} from './settings-contract.js';
 import type {DatabaseSync} from 'node:sqlite';
 import {Ajv2020} from 'ajv/dist/2020.js';
 import {compileOnFirstUse} from './compile-on-first-use.js';
@@ -38,21 +37,20 @@ export class ArtScheduleStore {
   async change(work:(data:ArtScheduleData)=>void,parent:TraceContext=childOf(undefined)):Promise<ArtScheduleData> {
     const save = (revision: number) => {
       const data = this.get();
-      const before = {policy: structuredClone(data.record.policy)};
       work(data);
       data.record.revision = revision;
       const saved = this.db.prepare('INSERT INTO automation_art_schedule VALUES(1,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload')
         .run(JSON.stringify(data));
       if (Number(saved.changes) !== 1) throw new Error('the art schedule was not stored');
-      return {before, data};
+      return data;
     };
     if (this.commit !== undefined) return this.commit(tx => {
-      const {before, data} = save(tx.revision());
+      const data = save(tx.revision());
       tx.add('bunny.state.art-schedule.art', {kind: 'state', type: 'org.bunny.art-schedule.updated', subject: 'art',
-        dataschema: ART_SCHEDULE_SCHEMA, data: data.record}, {parent, settings: settingsPatch('art-schedule', before, data.record)});
+        dataschema: ART_SCHEDULE_SCHEMA, data: data.record}, {parent});
       return data;
     });
-    this.db.exec('BEGIN IMMEDIATE');try{const {data}=save(this.get().record.revision+1);this.db.exec('COMMIT');return data;}
+    this.db.exec('BEGIN IMMEDIATE');try{const data=save(this.get().record.revision+1);this.db.exec('COMMIT');return data;}
     catch(error){this.db.exec('ROLLBACK');throw error;}
   }
   handoff(opportunity:ArtOpportunity,surface:string):boolean {

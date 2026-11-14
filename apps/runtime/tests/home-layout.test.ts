@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type {HomeArrangements, HomeLayoutRecord, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
 import {createCoreModule} from '../src/core/core.js';
 import type {Action} from '../src/core/tracker.js';
-import {contextOf, edgeConfig, fixture, it, run, stateDir, waitFor} from './support.js';
+import {contextOf, edgeConfig, fixture, it, run, stateDir, waitFor, manualClock} from './support.js';
 import {World} from './fixtures/store-world.js';
 
 type Saved = {id: string; revision: number; version: number; layouts: object | null};
@@ -35,6 +35,51 @@ it('Home layouts and independent art options persist with guarded operator admis
   const operations = await contextOf(watcher).sdk.sync<{family: string}>(['operation'], () => {}, {timeoutMs: 2000, owner: 'bunny/core'});
   assert.equal(operations.status, 'synced');if (operations.status === 'synced') {assert.ok(operations.copy.states().every(state => state.data.family === 'home-layout-set'));await operations.copy.close();}
   await runtime.stop();const next = fixture('home-after-restart');await run(context, {modules: [createCoreModule(), next], configFile: files.config, stateDir: dir});assert.deepEqual(await read(next), saved);
+});
+
+it('ignored Home or Lighting owner updates roll back the paired placement edit', async context => {
+  const clock = manualClock(), watcher = fixture('placement-watcher');
+  let database: import('node:sqlite').DatabaseSync | undefined;
+  const core = createCoreModule({parts: [{open: db => {database = db;}}]});
+  await run(context, {modules: [core, watcher], clock, scheduler: clock.scheduler});
+  const db = database;
+  assert.ok(db);
+  const entries = ['light:device:lamp-a', 'light:device:lamp-b'].map(widget => ({widget, size: 'medium', hidden: false}));
+  const home = action('paired-home', 0, {desktop: entries, phone: entries});
+  const save = (input: Action) => core.operatorActions.dispatch(input);
+  const changes = () => {
+    const rows = core.history.read({kind: 'change'});
+    assert.ok(Array.isArray(rows));
+    return rows.filter(row => row.record.family === 'lighting-layout' || row.record.family === 'home-layout');
+  };
+  db.exec('CREATE TRIGGER ignore_owner BEFORE UPDATE ON home_layout BEGIN SELECT RAISE(IGNORE); END');
+  assert.ok('error' in await save(home));
+  const initial = changes();
+  assert.deepEqual(initial, []);
+  db.exec('DROP TRIGGER ignore_owner');
+  assert.ok('status' in await save({...home, requestId: 'paired-home-retry'}));
+  const layout = {rooms: [], assignments: [], groups: [{id: 'pair', name: 'Pair', scope: 'home', devices: ['lamp-a', 'lamp-b']}],
+    home: [{kind: 'group', id: 'pair'}]};
+  const lighting: Action = {key: 'bunny.cmd.lighting-layout-set.lighting', requestedBy: 'bunny/parts/operator', requestId: 'paired-lighting',
+    draft: {type: 'org.bunny.lighting-layout.set.requested', subject: 'lighting',
+      dataschema: 'https://bunny.invalid/events/lighting-layout-set/2.0', data: {expectedRevision: 0, layout}}};
+  const placements = () => ['home_layout', 'lighting_layout'].map(table => db.prepare(`SELECT record FROM ${table}`).get()?.record);
+  const before = changes(), saved = placements();
+  for (const [i, table] of ['lighting_layout', 'home_layout'].entries()) {
+    db.exec(`CREATE TRIGGER ignore_owner BEFORE UPDATE ON ${table} BEGIN SELECT RAISE(IGNORE); END`);
+    const requestId = `paired-refusal-${i}`;
+    assert.ok('error' in await save({...lighting, requestId}));
+    assert.deepEqual(placements(), saved);
+    assert.deepEqual(changes(), before);
+    const operations = core.history.read({kind: 'operation'});
+    assert.ok(Array.isArray(operations));
+    assert.ok(operations.some(row => row.requestId === requestId && row.record.status === 'rejected' && row.record.result === 'failed'));
+    db.exec('DROP TRIGGER ignore_owner');
+  }
+  assert.ok('status' in await save(lighting));
+  const [lightingChange, homeChange] = changes().slice(-2);
+  assert.deepEqual([lightingChange?.record.family, homeChange?.record.family], ['lighting-layout', 'home-layout']);
+  assert.equal(lightingChange?.revision, homeChange?.revision);
 });
 
 it('lighting grouping and ungrouping preserve saved Home placement in the same metadata transaction', async context => {
