@@ -1,18 +1,25 @@
-# Shared architecture
+# B.U.N.N.Y. architecture
 
-ONN is hibernated after device retirement. Preserve retained ONN state and compatibility readers without activating its writer or requiring dormant-device qualification. Its historical setup references do not select active ONN use.
+[Open the architecture overview](architecture-site/overview.html) for the current
+runtime, its Mac deployment and the separately labeled future direction.
 
 ## Current runtime and evidence
 
 B.U.N.N.Y. uses one TypeScript process under `apps/runtime`, with a fixed shipped
-module list, an authoritative core and the SDK's in-process bus. The
-[accepted fresh cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585) records the established installation;
-it transferred no old data. Old writers are stopped and disabled, with their
-units, code, releases and stores retained for manual return. Retention does not
-mean both systems run. The [WSL runtime setup](../apps/runtime/SETUP.md) and
-[upgrade/recovery procedure](../apps/runtime/UPGRADE.md) belong to that established
-installation. The [container operator guide](bunny-container.md) owns the Mac
-profile. None is a generic cross-host migration procedure or the legacy Hub installer.
+module list, an authoritative core and the SDK's in-process bus. The Mac Mini
+hosts that process in the Linux ARM64 container on Docker Desktop. The
+[October 31 Mac cutover](https://github.com/jimmie-potts/agent-device-hub/issues/568)
+accepted selected household integrations with fresh module state while preserving
+the existing Mac core data. The PC device runtime is stopped and disabled;
+PC hooks and the selected Desktop collector remain host-local producers.
+The [container operator guide](bunny-container.md) owns current Mac operations.
+
+The [October 9 fresh runtime cutover](https://github.com/jimmie-potts/agent-device-hub/issues/840#issuecomment-6086298585)
+replaced the earlier Hub and separate controllers on WSL before the Mac handoff.
+Old units, code, releases and stores remain for manual return, with no concurrent
+writers. The [WSL setup](../apps/runtime/SETUP.md) and
+[upgrade/recovery procedure](../apps/runtime/UPGRADE.md) retain that installation's
+procedures; they are not the Mac operator or a generic cross-host migration.
 
 [Open the current architecture diagram](runtime-architecture.html), authored in
 [runtime-architecture.json](runtime-architecture.json). It maps these source owners:
@@ -66,7 +73,7 @@ the existing individual light controls. Geometry adds no event family, device
 writer, state polling or database format; its neutral materials are separate
 from reported device evidence. The runtime dashboard guide owns preparation.
 
-The established WSL installation's optional
+The retained WSL installation's optional
 [home-Wi-Fi entry](../apps/runtime/WIFI.md) places an owner-authenticated Windows
 HTTPS forwarder before that same loopback gateway. The runtime admits its one
 configured origin with private proxy proof and uses ordinary browser sessions;
@@ -74,7 +81,7 @@ no state, SDK protocol or device ownership moves into the forwarder. This is a
 PC-dependent access profile; it cannot serve as the Mac primary host's normal
 client endpoint.
 
-The optional [Mac private entry](../apps/runtime/PRIVATE-ACCESS.md) terminates
+The [Mac private entry](../apps/runtime/PRIVATE-ACCESS.md) terminates
 Tailscale Serve HTTPS on the Mac and forwards through a password-authenticated
 loopback Caddy process. Its distinct configured proof admits the selected origin;
 machine Bearer credentials still require ordinary gateway source/scopes. Browser
@@ -83,8 +90,9 @@ profile retains host-loopback publication and disabled device control. The expli
 [production profile](bunny-container.md#production-device-profile) uses that same
 private entry and fixed runtime to admit configured shipped modules after
 explicit control enablement. Its optional Pixoo hosted-GIF binding is separate
-from the loopback gateway. #568 owns the fresh-state handoff after the PC device
-runtime stops, retaining the existing Mac core. This changes profile admission,
+from the loopback gateway. The accepted [#568 handoff](https://github.com/jimmie-potts/agent-device-hub/issues/568)
+stopped the PC device runtime before Mac activation and retained the existing
+Mac core. This changed profile admission,
 not the core/module/SDK topology in the current diagram. No PC relay,
 public ingress or additional core is introduced.
 
@@ -101,12 +109,16 @@ again after restart; the core deduplicates it by source and ID. This reporting
 retry never sends the command again. Failed and uncertain outcomes remain distinct
 from succeeded, and transmitted evidence is distinct from a physical observation.
 
-The diagram's source baseline is `36fb7b99f11b47c2f95be3f892a13d7ca72c0b0d`,
-reviewed October 9, 2026. The installed evidence is the linked #840 record, not
-this render. That release accepted Wispr as unconfigured and CHOMPI integration
-as deferred; module inclusion or a health HTTP response does not prove every
-feature is installed or every device physically qualified. GitHub owns subsequent
-status and exact acceptance scope.
+The diagram's original source baseline remains
+`36fb7b99f11b47c2f95be3f892a13d7ca72c0b0d` (October 9, 2026).
+Semantic review on November 14, 2026 against
+`1d21bd2e3891cf3c7481920a3f73a949952c1d51` confirmed the same gateway, SDK bus,
+core, module and store boundaries. The render and its original provenance are
+unchanged; hosting and future direction are described separately below.
+Installed and representative physical evidence belongs to #840 and #568, within
+each record's accepted scope and deferrals. Module inclusion or an HTTP health
+response does not prove every feature is installed or every device physically
+qualified. GitHub owns subsequent status and exact acceptance scope.
 
 Review this view when gateway transport, module registration, state ownership,
 sync/recovery, outcome persistence, device writers or hosting changes. A semantic
@@ -114,19 +126,30 @@ review may conclude "reviewed; no architecture change" without regeneration.
 When it changes, validate and deliver the JSON with the installed archify skill,
 then inspect the exact HTML in a browser. Keep deterministic receipts, browser
 measurements and visual review separate. The new files have no Work Guide imports.
-The [flow sequences and retained diagram guide](diagrams/README.md) explain reconnect,
-command outcomes and PROMPTI input routing. The dated atlas and its nine shared
-legacy diagrams retain their pinned baselines under `docs/diagrams/legacy/`,
-independently of Work Guide.
+The [flow sequence guide](diagrams/README.md) explains reconnect, command
+outcomes and PROMPTI input routing.
 
 This document records current and retained legacy ownership, state and command
 boundaries. The [runtime](../apps/runtime/README.md), its [dashboard](../apps/runtime/dashboard/README.md)
 and module guides own current implementation details. Sections labeled Legacy
 refer to the retained 1.x system. GitHub issues hold delivery and acceptance status.
 
-The [B.U.N.N.Y. HTML system design](system-design/index.html) preserves a dated
-September 19, 2026 design snapshot. Its labels and open decisions reflect that
-baseline, not the current implementation.
+<details>
+<summary>Architecture history</summary>
+
+The [legacy system map](diagrams/legacy/rendered/arch-shared-system.html) preserves
+the previous Hub, separate Nanoleaf controller and Pixoo backend topology.
+The [system design atlas](system-design/index.html) retains the September 19,
+2026 component snapshot and September 23 system map. These dated views support
+comparison; their implementation labels and open decisions belong to those
+baselines. They remain outside the main architecture display, with original
+provenance under `docs/diagrams/legacy/`.
+
+</details>
+
+ONN is hibernated after device retirement. Preserve retained state and
+compatibility readers without activating its writer or requiring dormant-device
+qualification. Historical setup references do not select active ONN use.
 
 BB-8 is retained but hibernated. Its package declares `bunny.hibernated: true`;
 the build omits its runtime and browser registration. Its private stores and
@@ -177,15 +200,27 @@ separately authorized manual return, verify the Mac writer is stopped and its
 the other writer. Verify that writer is stopped before releasing the hold and
 restarting the Mac.
 
-Hosting review, October 22, 2026: the source diagram's core/module, SDK and gateway
-owners and edges are unchanged. Placement is specified here and in ADR 0008;
-the pinned source diagram and dated September atlas are not installation evidence.
+### Future direction: one cloud brain and local edges
+
+[ADR 0016](decisions/0016-brain-and-local-edges.md) separates the intended future
+placement from today's deployment. The target brain owns state, history, inbox,
+automations, APIs and MCP in the cloud. Device drivers and input helpers stay
+local to the hardware or source they use. There is one authoritative brain;
+standby and settings replication are retired directions.
+
+Today those brain and device responsibilities remain in one Mac process. The
+cloud provider, protocol, store, runtime and migration remain open decisions.
+Separate sign-in for externally hosted interfaces is a backlog step; drivers
+split into a separate local process only after a cloud host is selected.
+Interfaces use documented APIs, device modules use SDK calls and new input
+handoffs use messages. Existing supported file handoffs remain supported.
+This direction does not claim cloud deployment or authorize a host migration.
 
 ## Manual maintenance
 
 The owner selected explicit downtime and manual inspection after interrupted
 maintenance. The [container operator](bunny-container.md) implements the reduced
-operating path for the Mac profile; the established WSL installation retains its
+operating path for the Mac profile; the stopped WSL installation retains its
 own upgrade procedure. The [packaged maintenance design](runtime-manual-maintenance.md)
 is retained as an optional future design. Its persistent gate and release binding
 are not requirements for the personal Mac setup. The owner also deferred
@@ -250,14 +285,14 @@ that dashboard draws ([ADR 0007](decisions/0007-bunny-shell.md)).
 Pixoo owns its media library, renditions, player, 64x64 status renderer,
 Work/Free/Quiet policy over its status and playback bases
 ([ADR 0014](decisions/0014-pixoo-follows-the-hub-mode.md)) and serialized
-device writer. Nanoleaf owns its Python
-light-writing worker, geometry, Line allocation, spatial effects,
-Work/Quiet/Free policy, scene restoration and advanced wall editor. The retained legacy Nanoleaf implementation uses separate Python services in WSL;
-the earlier Windows installation and Linux transition are historical boundaries.
-The current TypeScript module owns the runtime's Nanoleaf writer and private state.
-[Nanoleaf #55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55) holds
-the installed acceptance record. Common code must not import a device
-application's internal modules.
+device writer. The current TypeScript Nanoleaf module owns its device writer,
+private state, geometry, Line allocation, spatial effects, Work/Quiet/Free policy
+and scene restoration. The retained legacy implementation uses a Python worker
+and separate services in WSL, with its advanced wall editor. The earlier Windows
+installation and Linux transition are historical boundaries.
+[Nanoleaf #55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55) records
+legacy Linux acceptance; #840 and #568 own the runtime and Mac cutover evidence.
+Common code must not import a device application's internal modules.
 
 Tidbyt owns its 64×32 renderer, backend connection and serialized display writer.
 LIFX owns bulb capability mapping, LAN transport, lighting policy and per-device
