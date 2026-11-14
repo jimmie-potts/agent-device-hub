@@ -6,12 +6,13 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
 import {expect} from 'playwright/test';
 import {connectRemote} from '@jimmie-potts/sdk';
-import type {CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture-data';
+import {CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_VALIDITY_MS, CAPTURE_WINDOW_MS, type CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture-data';
 import {startWorld, changes, feed} from './harness.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
+import {worldClock} from './world-clock.ts';
 
-type Shown = {feed: string | null; card: string[] | null; level: string | null; response: string[] | null; suggestion: string; waitingForInput: boolean | null};
+type Shown = {preview: string | null; feed: string | null; card: string[] | null; level: string | null; response: string[] | null; suggestion: string; waitingForInput: boolean | null};
 /**
  * Runs in each microphone page before its own scripts (#1698): keeps every change in what the capture card shows, with
  * its wall time, so a failure can tell a measurement the core retired from a page that stopped counting its frames
@@ -25,7 +26,8 @@ function recordCaptureCard(): void {
     const card = document.querySelector('article[aria-label="Music input measurement"]');
     const region = card?.querySelector('section[aria-label="Microphone response settings"]') ?? null;
     const use = region === null ? undefined : [...region.querySelectorAll('button')].find(button => text(button) === 'Use suggested gate in draft');
-    return {feed: document.querySelector('main#main')?.getAttribute('data-feed') ?? null, card: statuses(card, region),
+    return {preview: region?.querySelector('meter')?.getAttribute('value') ?? null,
+      feed: document.querySelector('main#main')?.getAttribute('data-feed') ?? null, card: statuses(card, region),
       level: card?.querySelector('.music-input-level meter')?.getAttribute('value') ?? null, response: statuses(region, null),
       suggestion: use === undefined ? 'absent' : use.disabled ? 'disabled' : 'enabled',
       waitingForInput: region === null ? null : [...region.querySelectorAll('.music-note')].some(item => text(item).startsWith('Start the selected microphone'))};
@@ -43,6 +45,8 @@ function recordCaptureCard(): void {
 }
 
 const world = await startWorld({musicCapture: true});
+let microphoneClock: ReturnType<typeof worldClock> | undefined;
+let microphoneWorld: Awaited<ReturnType<typeof startWorld>> | undefined;
 let producer: Awaited<ReturnType<typeof musicCaptureProducer>> | undefined;
 const browser = await chromium.launch({headless: true});
 const artifacts = await browserArtifactDirectory();
@@ -50,6 +54,7 @@ const artifacts = await browserArtifactDirectory();
 // process's event-loop delay. The producer fixture and the core run in this process, so a long stall here stops frames.
 // Each stall of 200 ms or more is kept with the wall time it began.
 const marks: Record<string, number> = {};
+let measuredOnHost: number | undefined;
 const loopDelay = monitorEventLoopDelay({resolution: 10}); loopDelay.enable();
 const stalls: {at: number; blockedMs: number}[] = [];
 let lastTick = performance.now();
@@ -76,7 +81,10 @@ try {
   // A loaded runner delays the producer's timer (#1511). Like a capture helper, the fixture then delivers the windows
   // that ended meanwhile, so measurements stay fresh instead of falling permanently behind the core's clock.
   const stalled = Date.now(); while (Date.now() - stalled < 1000) {/* hold this process's event loop */}
-  await delay(1000); await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.25');
+  producer.level(0.3);
+  await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.3');
+  producer.level(0.25);
+  await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.25');
   await page.screenshot({path: join(artifacts, 'music-capture-active-desktop.png'), fullPage: true});
   // A capture-state sync slower than the clock bound (100 ms) leaves measurement timing unqualified. The feed syncs again
   // on its own with backoff, so one slow reply, as on a loaded page load, recovers without Refresh (#1580).
@@ -152,12 +160,20 @@ try {
   await expect(replacementCard.getByRole('button', {name: 'Stop measuring', exact: true})).toBeDisabled();
   await replacementCard.getByText('Music input is unavailable.', {exact: true}).waitFor();
   await replacement.close();
-  producer = await musicCaptureProducer(world.url, world.musicCaptureToken, 'studio-mic');
+  await context.close();
+
+  // The microphone response assertions need contiguous, fresh windows across actual browser and core work.
+  const clock = worldClock(Date.now(), {paused: true});
+  microphoneClock = clock;
+  const micWorld = await startWorld({musicCapture: true, clock});
+  microphoneWorld = micWorld;
+  producer = await musicCaptureProducer(micWorld.url, micWorld.musicCaptureToken, 'studio-mic', clock);
   const micContext = await browser.newContext({viewport: {width: 390, height: 900}, reducedMotion: 'reduce'});
   await micContext.addInitScript(recordCaptureCard);
   const micPage = await micContext.newPage();micPage.setDefaultTimeout(10_000);
+  await clock.install(micPage);
   micPage.on('pageerror', error => errors.push(error.message));
-  await micPage.goto(world.url + '/#/audio');await feed(micPage, 'connected');
+  await micPage.goto(micWorld.url + '/#/audio');await feed(micPage, 'connected');
   const micCard = micPage.getByRole('article', {name: 'Music input measurement', exact: true});
   const input = micCard.getByRole('combobox', {name: 'Audio input'});
   await expect(input).toBeEnabled();await input.selectOption('microphone');
@@ -168,48 +184,69 @@ try {
   await micCard.getByText(/Selected microphone is unavailable. Check its connection and microphone permission/).waitFor();
   await expect(micCard.getByRole('meter', {name: 'Input level', exact: true})).toHaveCount(0);
   await expect(micStart).toBeEnabled();producer.refuse(false);await micStart.click();
-  await expect(micCard.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.25');
+  const micLevel = micCard.getByRole('meter', {name: 'Input level', exact: true});
+  const started = micCard.getByText(/Start: Completed: succeeded/);
+  await started.waitFor();
+  await clock.advance(CAPTURE_WINDOW_MS);
+  await expect(micLevel).toHaveAttribute('value', '0.25');
   await micCard.getByText('Receiving studio-mic measurements.', {exact: true}).waitFor();
   const micCommand = producer.commands[1];assert.ok(micCommand?.data.action === 'start' && micCommand.data.input === 'microphone');
   assert.equal(micCommand.data.microphoneId, 'studio-mic');assert.ok(micCommand.dataschema.endsWith('/2.1'));
   await micPage.reload();await feed(micPage, 'connected');await expect(input).toHaveValue('microphone');
-  await expect(micCard.getByRole('meter', {name: 'Input level', exact: true})).toHaveCount(1);assert.equal(producer.commands.length, 2);
+  await micCard.getByText('Waiting for fresh measurements.', {exact: true}).waitFor();
+  await clock.advance(CAPTURE_WINDOW_MS);
+  await expect(micLevel).toHaveCount(1);assert.equal(producer.commands.length, 2);
   const responseControls = micCard.getByRole('region', {name: 'Microphone response settings'});
   const preview = responseControls.getByRole('meter', {name: 'Response preview', exact: true});
   const measureQuiet = responseControls.getByRole('button', {name: 'Measure quiet input', exact: true});
   const applyResponse = responseControls.getByRole('button', {name: 'Apply response settings', exact: true});
-  producer.level(0.01);await expect(micCard.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.01');
+  producer.level(0.01);await clock.advance(CAPTURE_WINDOW_MS);
+  await expect(micLevel).toHaveAttribute('value', '0.01');
   await measureQuiet.focus();await micPage.keyboard.press('Enter');
   await responseControls.getByText(/Measuring five seconds/).waitFor();
   await expect(micCard.getByRole('button', {name: 'Stop measuring', exact: true})).toBeEnabled();
   await responseControls.getByRole('button', {name: 'Cancel quiet measurement', exact: true}).click();
   await responseControls.getByText(/Quiet measurement is inactive: cancelled/).waitFor();
   assert.equal(producer.commands.length, 2, 'calibration cancellation changes no source work');
-  await measureQuiet.click();await responseControls.getByText(/Suggested gate: 0.0200 RMS/).waitFor({timeout: 15000});
-  marks.measured = Date.now(); loopDelay.reset();
+  await measureQuiet.click();
+  await responseControls.getByText(/Measuring five seconds/).waitFor();
+  // Only windows beyond the admission and skew bound count toward the 50-window baseline.
+  await clock.advance(49 * CAPTURE_WINDOW_MS + CAPTURE_MAX_CLOCK_SKEW_MS);
+  await expect(responseControls.getByText(/Measuring five seconds/)).toBeVisible();
+  await clock.advance(CAPTURE_WINDOW_MS);
+  await responseControls.getByText(/Suggested gate: 0.0200 RMS/).waitFor({timeout: 15000});
+  await expect(responseControls.getByText(/over 50 windows/)).toBeVisible();
+  marks.measured = clock.clock.now(); measuredOnHost = Date.now(); loopDelay.reset();
   await expect(responseControls.getByRole('combobox', {name: 'Noise gate', exact: true})).toHaveValue('off');
   await responseControls.getByRole('button', {name: 'Use suggested gate in draft', exact: true}).click();
   await responseControls.getByRole('spinbutton', {name: 'Sensitivity', exact: true}).fill('2');
   await responseControls.getByRole('spinbutton', {name: 'Smoothing (ms)', exact: true}).fill('0');
-  await applyResponse.click();await responseControls.getByText(/Apply: Completed: succeeded/).waitFor();marks.applied = Date.now();
+  await applyResponse.click();await responseControls.getByText(/Apply: Completed: succeeded/).waitFor();marks.applied = clock.clock.now();
+  await clock.advance(CAPTURE_WINDOW_MS);
   await expect(preview).toHaveAttribute('value', '0');
-  await expect(micCard.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.01');
-  producer.level(0.25);await expect(preview).toHaveAttribute('value', '0.5');
+  await expect(micLevel).toHaveAttribute('value', '0.01');
+  producer.level(0.25);await clock.advance(CAPTURE_WINDOW_MS);await expect(preview).toHaveAttribute('value', '0.5');
   assert.equal(producer.commands.length, 2, 'response settings do not dispatch source or light work');
 
-  const otherPage = await micContext.newPage();await otherPage.goto(world.url + '/#/audio');await feed(otherPage, 'connected');marks.otherOpened = Date.now();
+  const otherPage = await micContext.newPage();await otherPage.goto(micWorld.url + '/#/audio');await feed(otherPage, 'connected');marks.otherOpened = clock.clock.now();
+  await otherPage.getByText('Waiting for fresh measurements.', {exact: true}).waitFor();
+  await clock.advance(CAPTURE_WINDOW_MS);
   const otherResponse = otherPage.getByRole('region', {name: 'Microphone response settings'});
   await micPage.getByRole('spinbutton', {name: 'Sensitivity', exact: true}).fill('3');
   await otherResponse.getByRole('spinbutton', {name: 'Sensitivity', exact: true}).fill('4');
   await otherResponse.getByRole('button', {name: 'Apply response settings', exact: true}).click();
-  await otherResponse.getByText(/Apply: Completed: succeeded/).waitFor();marks.otherApplied = Date.now();
+  await otherResponse.getByText(/Apply: Completed: succeeded/).waitFor();marks.otherApplied = clock.clock.now();
+  // Keep the candidate usable through more than one validity interval of genuinely new frames.
+  await clock.advance(CAPTURE_VALIDITY_MS);
   await responseControls.getByText(/Saved settings changed/).waitFor();
   await expect(micPage.getByRole('spinbutton', {name: 'Sensitivity', exact: true})).toHaveValue('3');
-  marks.useSuggested = Date.now();
+  marks.useSuggested = clock.clock.now();
   await responseControls.getByRole('button', {name: 'Use suggested gate in draft', exact: true}).click();
   await responseControls.getByText(/Saved settings changed/).waitFor();
   await expect(applyResponse).toBeDisabled();await responseControls.getByRole('button', {name: 'Keep my draft', exact: true}).click();
-  await applyResponse.click();await expect(preview).toHaveAttribute('value', '0.75');await otherPage.close();
+  await applyResponse.click();await responseControls.getByText(/Apply: Completed: succeeded/).waitFor();
+  await clock.advance(CAPTURE_WINDOW_MS);
+  await expect(preview).toHaveAttribute('value', '0.75');await otherPage.close();
 
   let lostApply = 0;
   await responseControls.getByRole('spinbutton', {name: 'Sensitivity', exact: true}).fill('2.5');
@@ -219,41 +256,68 @@ try {
     const reply = await route.fetch();assert.equal(reply.status(), 200);lostApply += 1;await reply.dispose();await route.abort();
   }, {times: 1});
   await applyResponse.click();await expect(preview).toHaveAttribute('value', '0.625');
-  await micPage.reload();await feed(micPage, 'connected');await expect(preview).toHaveAttribute('value', '0.625');
+  await expect.poll(() => lostApply).toBe(1);
+  await clock.advance(CAPTURE_WINDOW_MS);
+  await micPage.reload();await feed(micPage, 'connected');
+  await micCard.getByText('Waiting for fresh measurements.', {exact: true}).waitFor();
+  await clock.advance(CAPTURE_WINDOW_MS);
+  await expect(preview).toHaveAttribute('value', '0.625');
   assert.equal(lostApply, 1);assert.equal(producer.commands.length, 2);
+
+  // A real gap in the source still retires a saved gate. Raw input can recover without reviving the gate or suggestion.
+  producer.pause();
+  await clock.advance(CAPTURE_VALIDITY_MS - CAPTURE_WINDOW_MS);
+  await expect(preview).toHaveAttribute('value', '0.625');
+  await clock.advance(CAPTURE_WINDOW_MS);
+  await responseControls.getByText(/Quiet measurement is inactive: stale/).waitFor();
+  const useSuggested = responseControls.getByRole('button', {name: 'Use suggested gate in draft', exact: true});
+  await expect(useSuggested).toHaveCount(0);
+  await expect(preview).toHaveCount(0);
+  await feed(micPage, 'connected');
+  await producer.start();
+  await clock.advance(CAPTURE_WINDOW_MS);
+  await expect(micLevel).toHaveAttribute('value', '0.25');
+  await expect(useSuggested).toHaveCount(0);
+  await expect(preview).toHaveCount(0);
+  assert.equal(producer.commands.length, 2);
   await micCard.getByRole('button', {name: 'Stop measuring', exact: true}).click();await expect(input).toBeEnabled();
   await input.selectOption('microphone');await expect(micStart).toBeEnabled();
-  await micStart.click();await expect(micCard.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.25');
+  await micStart.click();await started.waitFor();await clock.advance(CAPTURE_WINDOW_MS);
+  await expect(micLevel).toHaveAttribute('value', '0.25');
   await responseControls.getByText(/Saved gate is inactive for this capture/).waitFor();await expect(preview).toHaveCount(0);await expect(applyResponse).toBeDisabled();
   await responseControls.getByRole('combobox', {name: 'Noise gate', exact: true}).selectOption('manual');
   await applyResponse.click();await expect(preview).toHaveAttribute('value', '0.625');
   await responseControls.getByText(/Manual threshold, uncalibrated/).waitFor();
   producer.pause();
-  const incoherentAt = Date.now() - 200;
-  await producer.emit({observedAtMs: incoherentAt, validUntilMs: incoherentAt + 400});
+  await clock.advance(CAPTURE_WINDOW_MS);
+  const incoherentAt = clock.clock.now() - 200;
+  await producer.emit({observedAtMs: incoherentAt, validUntilMs: incoherentAt + CAPTURE_VALIDITY_MS});
   await responseControls.getByText(/Saved gate is inactive for this capture/).waitFor();
-  producer.level(0.3);await producer.start();
-  await expect(micCard.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.3');
-  producer.level(0.25);
-  await expect(micCard.getByRole('meter', {name: 'Input level', exact: true})).toHaveAttribute('value', '0.25');
-  await new Promise(resolve => setTimeout(resolve, 250));
+  producer.level(0.3);await clock.advance(CAPTURE_WINDOW_MS);await producer.start();
+  await expect(micLevel).toHaveAttribute('value', '0.3');
+  producer.level(0.25);await clock.advance(CAPTURE_WINDOW_MS);
+  await expect(micLevel).toHaveAttribute('value', '0.25');
+  await clock.advance(250);
   await expect(preview).toHaveCount(0);
   await applyResponse.click();await expect(preview).toHaveAttribute('value', '0.625');
-  await new Promise(resolve => setTimeout(resolve, 350));
+  await clock.advance(350);
   await expect(preview).toHaveAttribute('value', '0.625');
   assert.equal(producer.commands.length, 4, 'clock retirement and manual reapplication leave raw capture running');
   for (const colorScheme of ['light', 'dark'] as const) for (const width of [1280, 390, 320]) {
     await micPage.emulateMedia({colorScheme});await micPage.setViewportSize({width, height: 900});
     await micCard.getByRole('button', {name: 'Refresh capture status'}).focus();
-    assert.equal(await micPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await expect.poll(() => micPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await expect(preview).toHaveAttribute('value', '0.625');
     await micPage.screenshot({path: join(artifacts, `selected-microphone-${colorScheme}-${width}.png`), fullPage: true});
   }
   await micCard.getByRole('button', {name: 'Stop measuring', exact: true}).click();await expect(input).toBeEnabled();
   await input.selectOption('music');await micCard.getByRole('button', {name: 'Start measuring Music', exact: true}).click();
-  await expect(micCard.getByRole('meter', {name: 'Input level', exact: true})).toHaveCount(1);
+  await started.waitFor();await clock.advance(CAPTURE_WINDOW_MS);
+  await expect(micLevel).toHaveCount(1);
   assert.equal(producer.commands.at(-1)?.dataschema, 'https://bunny.invalid/events/music-capture-work/2.0');
-  await micContext.close();await producer.close();
+  await micContext.close();await producer.close();await micWorld.close();
+  microphoneWorld = undefined;
+  microphoneClock = undefined;
   const longAlias = 'm'.repeat(64);
   producer = await musicCaptureProducer(world.url, world.musicCaptureToken, longAlias);
   const boundedContext = await browser.newContext({viewport: {width: 320, height: 900}, reducedMotion: 'reduce'});
@@ -268,20 +332,25 @@ try {
   assert.equal(await boundedPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'maximum alias fits during capture');
   await boundedPage.screenshot({path: join(artifacts, 'selected-microphone-max-alias-320.png'), fullPage: true});
   await boundedContext.close();assert.deepEqual(errors, []);
-  await context.close();
 } catch (error) {
   // Hosted runs keep no screenshot, so a failure prints, before the browser closes, what each page showed and how its
   // capture card changed, the core's capture state and this process's stalls (#1698), as the Music lighting journey
-  // prints its pages (#1664). Times are milliseconds from the completed quiet measurement, or from this dump without one.
+  // prints its pages (#1664). Browser and core use the selected world's clock. Event-loop stalls use host time.
   // Each read has its own limit, since `evaluate` ignores the default timeout, and the original error always follows.
-  const journey = 'music-capture', dumped = Date.now(), origin = marks.measured ?? dumped, since = (at: number): number => at - origin;
+  const journey = 'music-capture', diagnosticWorld = microphoneWorld ?? world;
+  const diagnosticClock = microphoneClock;
+  const hostDumped = Date.now(), dumped = diagnosticClock?.clock.now() ?? hostDumped;
+  const measured = diagnosticClock === undefined ? undefined : marks.measured;
+  const origin = measured ?? dumped, since = (at: number): number => at - origin;
+  const hostOrigin = measured === undefined ? hostDumped : measuredOnHost ?? hostDumped;
   const bounded = async <T>(read: Promise<T>, ms: number): Promise<T | string> => {
     const limit = new AbortController();
     try {return await Promise.race([read.catch((failure: unknown) => String(failure)), delay(ms, 'timed out', {signal: limit.signal})]);} finally {limit.abort();}
   };
   try {
-    console.error(JSON.stringify({journey, from: marks.measured === undefined ? 'dump' : 'measured', dumpedAt: since(dumped),
-      marks: Object.fromEntries(Object.entries(marks).map(([name, at]) => [name, since(at)]))}));
+    console.error(JSON.stringify({journey, from: measured === undefined ? 'dump' : 'measured', dumpedAt: since(dumped),
+      clock: diagnosticClock === undefined ? 'real' : 'virtual',
+      marks: measured === undefined ? {} : Object.fromEntries(Object.entries(marks).map(([name, at]) => [name, since(at)]))}));
     for (const [contextIndex, context] of browser.contexts().entries()) for (const [pageIndex, open] of context.pages().entries()) {
       const page = `${contextIndex}.${pageIndex} ${new URL(open.url()).hash}`;
       const read = await bounded(open.evaluate(() => {
@@ -297,7 +366,8 @@ try {
       if (timeline !== undefined) console.error(JSON.stringify({journey, page, timeline}));
     }
     const core = await bounded((async () => {
-      const reader = await connectRemote({url: world.url, source: 'bunny/parts/reader', token: world.readerToken});
+      const reader = await connectRemote({url: diagnosticWorld.url, source: 'bunny/parts/reader', token: diagnosticWorld.readerToken,
+        ...(diagnosticClock === undefined ? {} : {now: () => diagnosticClock.clock.now()})});
       try {
         const answer = await reader.sync<CaptureState>(['music-capture-state'], () => {}, {owner: 'bunny/core', timeoutMs: 3000});
         const state = answer.status === 'synced' ? answer.copy.states()[0]?.data : undefined;
@@ -312,11 +382,12 @@ try {
     })(), 5000);
     console.error(JSON.stringify({journey, core}));
     console.error(JSON.stringify({journey, maxLoopDelayMs: Math.round(loopDelay.max / 1e6), p99LoopDelayMs: Math.round(loopDelay.percentile(99) / 1e6),
-      stalls: stalls.map(stall => ({t: since(stall.at), blockedMs: stall.blockedMs})), producerCommands: producer?.commands.length ?? null}));
+      hostFrom: measured === undefined ? 'dump' : 'measured', hostDumpedAt: hostDumped - hostOrigin,
+      stalls: stalls.map(stall => ({t: stall.at - hostOrigin, blockedMs: stall.blockedMs})), producerCommands: producer?.commands.length ?? null}));
     // Refused syncs of other families recur through the whole journey and would push out the records that matter here.
-    console.error(JSON.stringify({journey, warnings: world.logs.filter(record => record.severity_text !== 'INFO' &&
+    console.error(JSON.stringify({journey, warnings: diagnosticWorld.logs.filter(record => record.severity_text !== 'INFO' &&
       (record.event_name !== 'runtime.sync.refused' || String(record.attributes['bunny.pattern']).includes('music-capture'))).slice(-20)
       .map(record => [record.timestamp === undefined ? null : since(Date.parse(record.timestamp)), record.event_name, record.attributes])}));
   } catch (failure) {console.error(JSON.stringify({journey, dumpFailed: String(failure)}));}
   throw error;
-} finally {clearInterval(stallWatch); loopDelay.disable(); await browser.close(); await producer?.close(); await world.close();}
+} finally {clearInterval(stallWatch); loopDelay.disable(); await browser.close(); await producer?.close(); await microphoneWorld?.close(); await world.close();}
