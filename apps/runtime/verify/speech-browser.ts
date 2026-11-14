@@ -28,6 +28,8 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
     await tab('Voice', p);
   };
   let step = 0, sequence = 0;
+  // Keep key results and their captions on screen before the next action.
+  const holdForReading = () => page.waitForTimeout(700);
   const indicate = async (label: string, target?: Locator): Promise<void> => {
     let point = {x: 24, y: 64};
     if (target !== undefined) {
@@ -36,25 +38,36 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
       point = {x: box.x + box.width / 2, y: box.y + box.height / 2};
       await target.evaluate(element => {if (element instanceof HTMLElement) {element.style.outline = '3px solid #fbbf24'; element.dataset.speechCaptureTarget = 'true';}});
     }
-    await page.evaluate(({label, point, step}) => {
+    await page.evaluate(({label, step}) => {
       let caption = document.getElementById('speech-test-caption');
       if (caption === null) {caption = document.createElement('div'); caption.id = 'speech-test-caption'; document.body.append(caption);}
       caption.textContent = `Synthetic demo ${step}: ${label}`;
       caption.style.cssText = 'pointer-events: none';
       Object.assign(caption.style, {position: 'fixed', top: '8px', left: '8px', zIndex: '9999', background: '#111827', color: '#fff', padding: '8px', fontSize: '14px', maxWidth: '90vw'});
       let cursor = document.getElementById('speech-test-cursor');
-      if (cursor === null) {cursor = document.createElement('div'); cursor.id = 'speech-test-cursor'; document.body.append(cursor);}
-      cursor.style.cssText = 'pointer-events: none';
-      Object.assign(cursor.style, {position: 'fixed', left: `${point.x - 9}px`, top: `${point.y - 9}px`, width: '18px', height: '18px', border: '3px solid #fbbf24', borderRadius: '50%', zIndex: '9998', });
-    }, {label, point, step: ++step});
-    await page.mouse.move(point.x, point.y, {steps: 8});
-    await page.waitForTimeout(180);
+      if (cursor === null) {
+        cursor = document.createElement('div'); cursor.id = 'speech-test-cursor'; document.body.append(cursor);
+        cursor.style.cssText = 'pointer-events:none;position:fixed;width:18px;height:18px;box-sizing:border-box;border:3px solid #fbbf24;border-radius:50%;z-index:9998;left:15px;top:55px';
+        const indicator = cursor;
+        document.addEventListener('pointermove', event => {
+          indicator.style.left = `${event.clientX - 9}px`;
+          indicator.style.top = `${event.clientY - 9}px`;
+        });
+      }
+    }, {label, step: ++step});
+    // Leave a frame for the highlight before moving the recorded pointer.
+    if (target !== undefined) await page.waitForTimeout(40);
+    await page.mouse.move(point.x, point.y);
+    await page.waitForTimeout(target === undefined ? 180 : 80);
   };
   const click = async (target: Locator, label: string, keyboard = false): Promise<void> => {
     await indicate(label, target);
-    await page.evaluate(() => {const cursor = document.getElementById('speech-test-cursor'); if (cursor !== null) cursor.style.background = '#fbbf24';});
+    await target.evaluate(element => element.addEventListener('click', () => {
+      const cursor = document.getElementById('speech-test-cursor');
+      if (cursor !== null) cursor.style.background = '#fbbf24';
+    }, {capture: true, once: true}));
     if (keyboard) {await target.focus(); await target.press('Enter');} else await target.click();
-    await page.waitForTimeout(240);
+    await page.waitForTimeout(160);
     await page.evaluate(() => {const cursor = document.getElementById('speech-test-cursor'); if (cursor !== null) cursor.style.background = 'transparent';});
     await page.evaluate(() => {
       for (const element of document.querySelectorAll('[data-speech-capture-target]')) {
@@ -107,13 +120,14 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
       await mode(selected); await question(`${selected}-complete`);
       const expected = selected === 'work' ? 1 : 2;
       await page.waitForFunction(expected => window.speechFixture.calls === expected, expected);
-      await indicate('Synthetic browser reports playback completed');
+      await indicate(`${selected === 'work' ? 'Work' : 'Free'}: report playback complete`);
       await page.evaluate(() => window.speechFixture.finish());
       await t.expect(`${selected}: fresh question reaches only the selected tab with separate playback and operation receipts`, async () => {
         await region().getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
         await region().getByText('Tracked operation: succeeded.', {exact: true}).waitFor();
         assert.equal(await count(other), 0);
       });
+      await holdForReading();
     }
     await question('stop'); await page.waitForFunction(() => window.speechFixture.calls === 3);
     await click(region().getByRole('button', {name: 'Stop speaking', exact: true}), 'Stop speaking with Enter', true);
@@ -121,9 +135,11 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
       await region().getByText('Playback: Playback stopped. The sentence may be incomplete.', {exact: true}).waitFor();
       assert.equal(await page.evaluate(() => window.speechFixture.cancelled), 1);
     });
+    await holdForReading();
     await question('mute'); await page.waitForFunction(() => window.speechFixture.calls === 4);
     await click(region().getByRole('button', {name: 'Mute spoken alerts', exact: true}), 'Mute spoken alerts');
     await region().getByText('Spoken alerts are off in this tab.', {exact: true}).waitFor();
+    await holdForReading();
     await question('muted');
     await t.expect('Mute cancels active speech and suppresses a later question', async () => {
       assert.equal(await count(), 4); assert.equal(await page.evaluate(() => window.speechFixture.cancelled), 2);
@@ -134,46 +150,55 @@ export async function speechBrowserCapture(t: CaptureContext): Promise<void> {
     await t.expect('category mute suppresses new speech without catch-up', async () => assert.equal(await count(), 4));
     await category('Unmute Coding attention', 'Unmute Coding attention');
     await mode('quiet'); await region().getByText('Quiet mode suppresses new spoken alerts.', {exact: true}).waitFor();
+    await holdForReading();
     await question('quiet');
     await t.expect('Quiet mode suppresses new speech', async () => assert.equal(await count(), 4));
     await mode('work'); await region().getByText('Quiet mode suppresses new spoken alerts.', {exact: true}).waitFor({state: 'detached'});
     await page.evaluate(() => {window.speechFixture.voices = false;});
     await question('delayed-voices');
     await category('Mute Coding attention', 'Mute category while voice discovery waits');
-    await indicate('Synthetic voice discovery completes after mute'); await page.evaluate(() => window.speechFixture.releaseVoices());
+    await indicate('Release voices after mute'); await page.evaluate(() => window.speechFixture.releaseVoices());
     await t.expect('delayed voice discovery rechecks current policy and stays silent', async () => {
       await region().getByText('Playback: Speech did not start.', {exact: true}).waitFor(); assert.equal(await count(), 4);
     });
+    await holdForReading();
     await category('Unmute Coding attention', 'Unmute category');
     await t.expect('desktop controls have no overlapping speech', async () => {
       assert.equal(await page.evaluate(() => window.speechFixture.overlap), 0);
     });
-    await indicate('Reload this synthetic tab; speech availability must be renewed'); await page.reload();
+    await indicate('Reload the tab');
+    await page.waitForTimeout(520);
+    await page.reload();
     await page.locator('main#main[data-feed="connected"]').waitFor();
-    await tab('Voice');
+    await click(page.getByRole('tab', {name: 'Voice', exact: true}), 'Reload: check Voice');
     await t.expect('reload loses availability and does not replay', async () => {await enable().waitFor(); assert.equal(await count(), 0);});
+    await holdForReading();
     await click(enable(), 'Enable speech after reload'); await enabled().waitFor();
     await question('callback-error'); await page.waitForFunction(() => window.speechFixture.calls === 1);
-    await indicate('Synthetic browser reports synthesis failure'); await page.evaluate(() => window.speechFixture.fail());
+    await indicate('Report synthesis failure'); await page.evaluate(() => window.speechFixture.fail());
     await t.expect('uncertain playback is explicit and does not disable independent text controls', async () => {
       await region().getByText('Playback: Playback is uncertain. It will not be replayed automatically.', {exact: true}).waitFor();
       assert.equal(await count(), 1);
+      await holdForReading();
       await tab('Controls');
       assert.equal(await page.getByRole('button', {name: 'Disable Reachy text cards', exact: true}).isEnabled(), true);
       await tab('Voice');
     });
-    await indicate('Restart only this synthetic runtime'); await run.restart(); await page.reload();
+    await indicate('Restart the synthetic runtime'); await run.restart(); await page.reload();
     await page.locator('main#main[data-feed="connected"]').waitFor();
-    await tab('Voice');
+    await click(page.getByRole('tab', {name: 'Voice', exact: true}), 'Restart: check Voice');
     await t.expect('runtime restart does not restore availability or replay output', async () => {await enable().waitFor(); assert.equal(await count(), 0);});
-    await indicate('Inspect the same controls at a phone viewport'); await page.setViewportSize({width: 390, height: 844});
+    await holdForReading();
+    await indicate('Show phone layout'); await page.setViewportSize({width: 390, height: 844});
     await region().scrollIntoViewIfNeeded(); await page.waitForTimeout(240);
     await t.expect('narrow controls fit', async () => {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
     });
-    await indicate('Return to the desktop viewport');
+    await holdForReading();
+    await indicate('Return to desktop');
     await page.setViewportSize({width: 1280, height: 1000}); await region().scrollIntoViewIfNeeded();
-    await indicate('Synthetic speech check complete; availability remains off');
+    await holdForReading();
+    await indicate('Speech check complete');
     await t.expect('the real dashboard reports no browser errors or invalid messages', () => {assert.deepEqual(errors, []); assert.deepEqual(run.problems(), []);});
     t.note('Actual core, companions, SDK, gateway and dashboard; synthetic browser identity, voice and callbacks; no native audio or installed resources.');
   } finally {await other.close(); await run.close();}
