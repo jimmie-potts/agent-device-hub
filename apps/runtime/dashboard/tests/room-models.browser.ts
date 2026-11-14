@@ -3,6 +3,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium} from 'playwright';
 import {changes,feed,startWorld} from './harness.ts';
+import {apartmentJourney} from './apartment-journey.ts';
 import {roomModelFixture} from '../../dist/tests/fixtures/room-model.js';
 
 const world=await startWorld({lighting:true});
@@ -80,4 +81,6 @@ try{
   console.log(JSON.stringify({journey:'private-room-model',selections:true,reportedPower:true,unbound:true,stale:true,restartNoReplay:true,uncertainNoReplay:true,webglFallback:true,touchPinch:true,physical:false}));
   await context.close();
   assert.deepEqual(errors,[]);
+  const apartmentWorld=await startWorld({lighting:true});
+  try{await apartmentJourney(browser,apartmentWorld);}finally{await apartmentWorld.close();}
 }finally{await browser.close();await world.close();}

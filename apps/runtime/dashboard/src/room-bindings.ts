@@ -2,9 +2,10 @@ import type {LightingLayout} from '@jimmie-potts/event-contracts/v2/families';
 import type {RoomAnchor} from '../../src/room-model.ts';
 import type {LightingCard,LightingDevice} from './lighting.ts';
 
+export type RoomFixtureAlias=Pick<RoomAnchor,'label'|'deviceId'|'owner'>;
 export type RoomBinding={reason:string}|{device:LightingDevice;card:LightingCard};
 /** An anchor is only an alias. Current room membership and unique owner evidence select authority. */
-export function roomBinding(anchor:RoomAnchor,roomId:string,layout:LightingLayout,devices:readonly LightingDevice[],layoutLive:boolean):RoomBinding {
+export function roomBinding(anchor:RoomFixtureAlias,roomId:string,layout:LightingLayout,devices:readonly LightingDevice[],layoutLive:boolean):RoomBinding {
   if(!layoutLive)return {reason:'Room assignments are stale.'};
   if(anchor.deviceId===null||anchor.owner===null)return {reason:'No device is bound to this fixture.'};
   if(!layout.rooms.some(room=>room.id===roomId)||!layout.assignments.some(a=>a.room===roomId&&a.device===anchor.deviceId))return {reason:'This device is not assigned to this room.'};

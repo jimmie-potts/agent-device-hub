@@ -1,0 +1,193 @@
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,readFile,rm,writeFile} from 'node:fs/promises';
+import {dirname,join} from 'node:path';
+import {execFile} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+import {promisify} from 'node:util';
+import {apartmentSha256} from '../src/apartment/artwork.js';
+import {activeApartmentDigest,publishApartment} from '../src/apartment/publish.js';
+import {syncApartmentDirectory} from '../src/apartment/files.js';
+import {holdRuntimeLease} from '../src/lease.js';
+import {createCoreModule} from '../src/core/core.js';
+import {apartmentActiveFile,apartmentAssetFile,apartmentDirectory,readApartmentDocument} from '../src/apartment/content.js';
+import {edgeConfig,it,run,stateDir} from './support.js';
+import {syntheticApartment,syntheticApartmentArtwork} from './fixtures/apartment.js';
+
+const invoke = promisify(execFile);
+const helper = fileURLToPath(new URL('../../bin/apartment.mjs',import.meta.url));
+
+it('publishes under the existing lease, preserves prior usable versions and fences uncertain results', async context => {
+  const state = await stateDir(context);
+  const workspace = await mkdtemp(join(dirname(state),'bunny-apartment-input-'));
+  context.after(() => rm(workspace,{recursive:true,force:true}));
+  await mkdir(join(workspace,'assets'),{mode:0o700});
+  const {bytes,image} = syntheticApartmentArtwork();
+  const asset = join(workspace,'assets',image.id+'.png');
+  await writeFile(asset,bytes,{mode:0o600});
+  const model = syntheticApartment(image);
+  const originalPath = join(workspace,'original.candidate.json');
+  const original = JSON.stringify(model)+'\n';
+  await writeFile(originalPath,original,{mode:0o600});
+  const originalDigest = apartmentSha256(Buffer.from(original));
+  await mkdir(join(state,'modules'),{mode:0o700});
+  await assert.rejects(publishApartment({stateDir:state, candidate:originalPath, expected:null}),{code:'forbidden'});
+
+  const lease = await holdRuntimeLease(state);
+  try {
+    await assert.rejects(publishApartment({stateDir:state,candidate:originalPath,expected:null}),{code:'unavailable'});
+    await assert.rejects(invoke(process.execPath,[helper,'publish',state,'none',originalPath]),error =>
+      typeof error === 'object' && error !== null && 'stderr' in error && typeof error.stderr === 'string'
+        && !error.stderr.includes(state) && error.stderr.includes('"code":"unavailable"'));
+    await assert.rejects(readFile(join(state,'modules','core','apartment','active.json')),{code:'ENOENT'});
+  } finally { lease.release(); }
+  assert.equal(await activeApartmentDigest(state),null);
+  assert.deepEqual(await publishApartment({stateDir:state,candidate:originalPath,expected:null}),{digest:originalDigest,previous:null});
+
+  const directory = apartmentDirectory(join(state,'modules','core'));
+  assert.equal(await activeApartmentDigest(state),originalDigest);
+  assert.deepEqual(await readFile(apartmentAssetFile(directory,image.id)),bytes);
+  await assert.rejects(publishApartment({stateDir:state,candidate:originalPath,expected:null}),{code:'revision-conflict'});
+
+  const corrected = structuredClone(model);
+  const studio = corrected.rooms.find(room => room.id === 'studio');
+  assert.ok(studio);
+  studio.scan = {id:'corrected-survey',yaw:0,translation:[0,0,0]};
+  studio.source = 'measured';
+  const updatedArtwork = syntheticApartmentArtwork([58,111,90]);
+  corrected.artwork = [updatedArtwork.image];
+  const print = corrected.objects.find(object => object.kind === 'artwork');
+  assert.ok(print?.kind === 'artwork');
+  print.asset = updatedArtwork.image.id;
+  const updatedAsset = join(workspace,'assets',updatedArtwork.image.id+'.png');
+  await writeFile(updatedAsset,updatedArtwork.bytes,{mode:0o600});
+  const correctedFile = join(workspace,'corrected.candidate.json');
+  const correctedBytes = Buffer.from(JSON.stringify(corrected)+'\n');
+  await writeFile(correctedFile,correctedBytes,{mode:0o600});
+  const correctedDigest = apartmentSha256(correctedBytes);
+
+  await writeFile(updatedAsset,Buffer.from('invalid prepared artwork'));
+  await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:originalDigest}),{code:'invalid-request'});
+  assert.equal(await activeApartmentDigest(state),originalDigest);
+  await writeFile(updatedAsset,updatedArtwork.bytes);
+  await rm(apartmentAssetFile(directory,image.id));
+  await assert.rejects(publishApartment({stateDir:state,candidate:originalPath,expected:originalDigest}),{problem:'missing'});
+  await writeFile(apartmentAssetFile(directory,image.id),bytes,{mode:0o600});
+
+  await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:originalDigest},{
+    afterAssetRename:() => { throw new Error('interrupted before immutable name sync'); },
+  }),/before immutable name sync/);
+  assert.deepEqual(await readFile(apartmentAssetFile(directory,updatedArtwork.image.id)),updatedArtwork.bytes);
+  assert.equal(await activeApartmentDigest(state),originalDigest);
+
+  const confirmed: string[] = [];
+  const confirm = async (path: string): Promise<void> => {
+    await syncApartmentDirectory(path);
+    confirmed.push(path);
+  };
+  const interrupted = new AbortController();
+  await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:originalDigest,signal:interrupted.signal},{
+    confirmDirectory:confirm,
+    beforeActivate:() => {
+      assert.equal(confirmed.filter(path => path===join(directory,'assets')).length,2,
+        'old-artwork validation and the reused new image name both sync before activation');
+      assert.ok(confirmed.includes(join(directory,'versions')), 'prior model name synced before activation');
+      assert.ok(confirmed.includes(join(state,'modules')), 'core folder name synced before activation');
+      interrupted.abort();
+    },
+  }),{code:'cancelled'});
+  assert.equal(await activeApartmentDigest(state),originalDigest);
+  assert.equal(await readFile(apartmentActiveFile(directory),'utf8'),original);
+  assert.equal(await readFile(join(directory,'versions',originalDigest+'.json'),'utf8'),original);
+
+  confirmed.length = 0;
+  await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:originalDigest},{
+    confirmDirectory:confirm,
+    beforeActivate:() => {
+      assert.ok(confirmed.includes(join(directory,'versions')), 'reused prior-model name synced before activation');
+    },
+    afterActivate:() => { throw new Error('stopped before receipt'); },
+  }),{code:'uncertain-result'});
+  assert.equal(await activeApartmentDigest(state),correctedDigest);
+  assert.deepEqual(JSON.parse((await invoke(process.execPath,[helper,'status',state])).stdout),{digest:correctedDigest});
+  await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:originalDigest}),{code:'revision-conflict'});
+  await assert.rejects(publishApartment({stateDir:state,candidate:correctedFile,expected:correctedDigest},{
+    confirmDirectory:async path => {
+      if (path===directory) throw new Error('active directory cannot sync');
+      await syncApartmentDirectory(path);
+    },
+  }),{code:'uncertain-result'});
+  confirmed.length = 0;
+  assert.deepEqual(await publishApartment({stateDir:state,candidate:correctedFile,expected:correctedDigest},{confirmDirectory:confirm}),
+    {digest:correctedDigest,previous:correctedDigest});
+  assert.ok(confirmed.includes(directory),'same-digest confirmation syncs the active filename');
+  assert.deepEqual(await readFile(asset),bytes);
+  assert.deepEqual(await readFile(apartmentAssetFile(directory,image.id)),bytes);
+  assert.equal(await readFile(originalPath,'utf8'),original);
+  assert.deepEqual(await readFile(correctedFile),correctedBytes);
+
+  const reader = {id:'apartment-publish-reader',source:'bunny/parts/apartment-publish-reader',token:'synthetic-reader-token',scopes:['read' as const]};
+  const files = await edgeConfig(context,[reader]);
+  const authorization = {headers:{authorization:'Bearer '+reader.token}};
+  const module = () => createCoreModule();
+  const {runtime:first} = await run(context,{modules:[module()],stateDir:state,configFile:files.config,edge:{schemas:{}}});
+  const endpoint = '/modules/core/content/apartment-model';
+  assert.deepEqual(await (await fetch(first.url+endpoint,authorization)).json(),corrected);
+  await first.stop();
+  const {runtime:second} = await run(context,{modules:[module()],stateDir:state,configFile:files.config,edge:{schemas:{}}});
+  assert.deepEqual(await (await fetch(second.url+endpoint,authorization)).json(),corrected);
+  const artPath = second.url+'/modules/core/content/apartment-art-';
+  assert.equal((await fetch(artPath+image.id,authorization)).status,404,'previous artwork remains private and unserved');
+  const servedArtwork = await fetch(artPath+updatedArtwork.image.id,authorization);
+  assert.equal(servedArtwork.status,200);
+  assert.deepEqual(Buffer.from(await servedArtwork.arrayBuffer()),updatedArtwork.bytes);
+});
+
+it('calibrates plan units and prepares an aligned correction without overwriting private inputs', async context => {
+  const directory = await stateDir(context);
+  const model = syntheticApartment();
+  const draft = {...model,schema:'apartment-plan/1.0',calibration:{...model.calibration,planUnits:8}};
+  const input = join(directory,'draft.json'), base = join(directory,'scaled.candidate.json');
+  const original = JSON.stringify(draft);
+  await writeFile(input,original,{mode:0o600});
+  const preparedReceipt = (await invoke(process.execPath,[helper,'calibrate',input,base])).stdout;
+  const {bytes:preparedBytes,model:prepared} = await readApartmentDocument(base);
+  assert.deepEqual(JSON.parse(preparedReceipt),{digest:apartmentSha256(preparedBytes)});
+  assert.deepEqual(prepared.rooms[0]?.footprint,[[0,0],[2,0],[2,1.5],[0,1.5]]);
+  await assert.rejects(invoke(process.execPath,[helper,'calibrate',base,join(directory,'double.candidate.json')]));
+  await assert.rejects(invoke(process.execPath,[helper,'calibrate',input,base]));
+  const studio = prepared.rooms[0];
+  assert.ok(studio !== undefined);
+  const before = studio.walls[0];
+  assert.ok(before !== undefined);
+  const room = {...studio,walls:[{...before,height:before.height+.1,source:'measured'},...studio.walls.slice(1)],
+    scan:{id:'new-survey',yaw:0,translation:[0,0,0]},source:'measured'};
+  const scan = join(directory,'scan.json'), candidate = join(directory,'refined.candidate.json');
+  const scanText = JSON.stringify({schema:'apartment-scan/1.0',room});
+  await writeFile(scan,scanText,{mode:0o600});
+  await invoke(process.execPath,[helper,'replace-scan',base,scan,candidate]);
+  const {model:corrected} = await readApartmentDocument(candidate);
+  assert.deepEqual(corrected.rooms,[room,prepared.rooms[1]]);
+  assert.deepEqual(corrected.objects,prepared.objects);
+  assert.equal(await readFile(input,'utf8'),original);
+  assert.equal(await readFile(scan,'utf8'),scanText);
+  assert.deepEqual(await readFile(base),preparedBytes);
+
+  const {bytes,image} = syntheticApartmentArtwork();
+  await mkdir(join(directory,'assets'),{mode:0o700});
+  await writeFile(join(directory,'assets',image.id+'.png'),bytes,{mode:0o600});
+  const state = await stateDir(context);
+  const initialized = await holdRuntimeLease(state);
+  initialized.release();
+  const installed = await publishApartment({stateDir:state,candidate:base,expected:null});
+  await publishApartment({stateDir:state,candidate,expected:installed.digest});
+  const reader = {id:'apartment-scan-reader',source:'bunny/parts/apartment-scan-reader',token:'synthetic-scan-reader-token',scopes:['read' as const]};
+  const files = await edgeConfig(context,[reader]);
+  for (let start = 0; start < 2; start++) {
+    const {runtime} = await run(context,{modules:[createCoreModule()],stateDir:state,configFile:files.config,edge:{schemas:{}}});
+    const response = await fetch(runtime.url+'/modules/core/content/apartment-model',{headers:{authorization:'Bearer '+reader.token}});
+    assert.equal(response.status,200);
+    assert.deepEqual(await response.json(),corrected);
+    await runtime.stop();
+  }
+
+});

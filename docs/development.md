@@ -1898,6 +1898,10 @@ network access.
 
 ## Runtime dashboard checks
 
+The furnished apartment reuses the Runtime unit tests and existing App
+verification room-model journey. See [Furnished apartment checks](../apps/runtime/DEVELOPMENT.md#furnished-apartment-checks)
+for the focused preparation, content, publication and browser commands.
+
 The disposable browser world selects an ephemeral loopback port. If the port is
 in its installed-service denylist, the harness stops that candidate before
 trying another, for at most ten allocations. Exhaustion removes the private

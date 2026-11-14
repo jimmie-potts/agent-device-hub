@@ -1,0 +1,123 @@
+.apartment-panel {
+  margin-bottom: var(--space-l);
+  border: 1px solid var(--light-edge);
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--light-surface);
+  min-width: 0;
+}
+.apartment-heading, .apartment-stage-footer, .apartment-view-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.apartment-heading {
+  padding: clamp(13px, 2.4vw, 28px);
+}
+.apartment-heading h3, .apartment-kicker {margin: 0;}
+.apartment-heading h3 {font-size: clamp(27px, 3vw, 40px);line-height: 1.08;font-weight: 640;letter-spacing: -.035em;}
+.apartment-kicker {color: var(--muted-dense);text-transform: uppercase;font-size: 10px;font-weight: 700;letter-spacing: .18em;margin-bottom: 7px;}
+.apartment-framing label {display: flex;align-items: center;gap: var(--space-s);color: var(--muted-dense);font-size: var(--type-small);}
+.apartment-framing {max-width: 100%;}
+.apartment-framing select {min-height: 44px;max-width: min(245px, 70vw);}
+.apartment-stage {
+  position: relative;
+  color: var(--apartment-ink);
+  background: var(--apartment-stage);
+  border-block: 1px solid var(--light-edge);
+}
+.apartment-view-controls {padding: 12px clamp(10px, 2vw, 22px) 0;}
+.apartment-viewport {position: relative;}
+.apartment-viewport[hidden] {display: none;}
+.apartment-viewport canvas {display: block;width: 100%;height: clamp(340px, 53vw, 560px);touch-action: none;cursor: grab;}
+.apartment-viewport canvas:active {cursor: grabbing;}
+.apartment-markers {position: absolute;inset: 0;pointer-events: none;}
+.apartment-markers button[data-apartment-marker] {
+  position: absolute;
+  min-height: 44px;
+  width: 44px;
+  padding: 0;
+  border: 0;
+  color: var(--apartment-marker-ink);
+  background: transparent;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  font-size: 12px;
+  font-weight: 800;
+  isolation: isolate;
+}
+.apartment-markers button[data-apartment-marker]::before {
+  content: '';
+  position: absolute;
+  inset: 11px;
+  z-index: -1;
+  border-radius: 50%;
+  border: 1px solid var(--apartment-marker-edge);
+  background: var(--apartment-marker-fill);
+  box-shadow: 0 1px 5px var(--apartment-marker-shadow);
+}
+.apartment-markers button[data-apartment-marker]:is(:hover,:focus-visible,[aria-pressed=true])::before {background: var(--apartment-marker-active);border-color: var(--apartment-marker-active-edge);}
+.apartment-stage-footer {padding: 0 clamp(10px, 2vw, 22px) 6px;color: var(--apartment-quiet);font-size: var(--type-small);}
+.apartment-stage-footer p, .apartment-caption p {margin: 0;}
+.apartment-stage-footer label {min-height: 44px;display: inline-flex;align-items: center;gap: 7px;color: var(--apartment-ink);}
+.apartment-stage-footer input[type=checkbox] {flex: 0 0 auto;width: 17px;height: 17px;margin: 0;accent-color: var(--apartment-control-active);}
+.apartment-segment {display: inline-flex;border: 1px solid var(--apartment-rule);border-radius: 10px;overflow: hidden;}
+.apartment-stage .apartment-segment button {
+  min-height: 44px;
+  min-width: 44px;
+  border: 0;
+  border-radius: 0;
+  padding: 0 10px;
+  background: var(--apartment-control);
+  color: var(--apartment-ink);
+  font-size: var(--type-small);
+}
+.apartment-stage .apartment-segment button + button {border-inline-start: 1px solid var(--apartment-rule);}
+.apartment-stage .apartment-segment button[aria-pressed=true], .apartment-stage .apartment-segment button:hover:not(:disabled) {
+  color: var(--apartment-control-ink);
+  background: var(--apartment-control-active);
+}
+.apartment-stage .apartment-segment button:focus-visible {outline-offset: -3px;}
+.apartment-stage .apartment-segment button:disabled {opacity: .55;}
+.apartment-fallback {margin: 44px 22px;text-align: center;}
+.apartment-caption, .apartment-lights {padding: clamp(12px, 2vw, 22px);}
+.apartment-caption {display: grid;gap: 4px;font-size: var(--type-small);line-height: 1.45;color: var(--muted-dense);border-bottom: 1px solid var(--light-edge);}
+.apartment-lights {display: flex;gap: var(--space-l);flex-wrap: wrap;align-items: flex-start;}
+.apartment-fixture-list {display: grid;gap: 7px;flex: 1 1 265px;min-width: 0;}
+.apartment-fixture-list h4, .apartment-fixture-note {margin: 0;}
+.apartment-fixture-note {max-width: 43ch;color: var(--muted-dense);font-size: var(--type-small);line-height: 1.45;}
+.apartment-fixture-list ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit,minmax(min(100%,210px),1fr));
+  gap: 7px;
+  padding: 0;
+  margin: 3px 0 0;
+  list-style: none;
+}
+.apartment-fixture-list li {min-width: 0;}
+.apartment-fixture-list li button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  min-height: 50px;
+  text-align: start;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  background: var(--light-inset);
+  border: 1px solid var(--light-edge);
+}
+.apartment-fixture-list li button:hover:not(:disabled) {color: var(--text);background: var(--light-selected);}
+.apartment-fixture-list li button[aria-pressed=true] {background: var(--light-selected);color: var(--text);}
+.apartment-number {flex: 0 0 24px;line-height: 24px;border-radius: 50%;background: var(--apartment-control-active);color: var(--apartment-marker-ink);text-align: center;font-weight: 700;font-size: 12px;}
+.apartment-fixture-list small {display: block;margin-top: 2px;font-size: var(--type-small);font-weight: normal;color: var(--muted-dense);}
+.apartment-selection {flex: 1 1 270px;min-width: 0;}
+.apartment-note {margin-block: var(--space-m);display: flex;align-items: center;flex-wrap: wrap;gap: var(--space-s);}
+@media(max-width: 600px) {
+  .apartment-viewport canvas {height: 320px;}
+  .apartment-stage-footer {column-gap: 3px;}
+  .apartment-stage-footer p span {display: block;}
+}
