@@ -223,11 +223,11 @@ Apply these rules to new work:
 - Use messages for new input handoffs. Preserve existing supported behavior
   until its own authorized change.
 
-Keep one designated writer per physical device. The PC's runtime-host
-authorization remains worker-only. The hub calls existing controllers and
-preserves their queues. Keep controller databases private, especially across
-Windows and WSL. Use explicit API and ownership handoffs. Never copy or mount
-a live SQLite file for use by another host.
+Keep one active agent-state owner and one designated writer per physical device.
+The PC's runtime-host authorization remains worker-only. The hub calls existing
+controllers and preserves their queues. Keep controller databases private,
+especially across Windows and WSL. Use explicit API and ownership handoffs.
+Never copy or mount a live SQLite file for use by another host.
 
 Preserve existing Nanoleaf device behavior. The shared-input cutover is complete,
 and the runtime port keeps shared input only (#26, owner decision 2026-10-06).
