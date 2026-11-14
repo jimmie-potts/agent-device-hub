@@ -137,15 +137,14 @@ selects no robot writer, verification or automatic resumption.
 
 [ADR 0008](decisions/0008-runtime-hosting.md) selects the Mac Mini as the primary,
 self-sufficient host, using the existing Linux ARM64 container on Docker Desktop.
-Each running host's runtime owns its core, fixed modules, private stores and
-serving endpoint. Keep its reviewed release and private persistent volumes
-separate from development checkouts and previews.
-[ADR 0015](decisions/0015-two-machine-runtime.md) defines which settings a
-standby can copy and how the owner transfers device control by hand. The PC is
-an optional producer, client, worker and host for explicitly PC-attached
-hardware. The owner must separately authorize a PC standby. Normal Mac
-startup, storage, dashboard access and selected portable device integrations
-must work while the PC sleeps, restarts or is off.
+[ADR 0016](decisions/0016-brain-and-local-edges.md) sets the target of one cloud
+brain and local edges. Today the Mac runs the brain and device modules in one
+process and holds the single authoritative copy of brain data. The PC and phone
+use the Mac's existing private API route. Keep the reviewed release and private
+persistent volumes separate from development checkouts and previews. The PC
+remains an optional producer, client, worker and host for explicitly PC-attached
+hardware. Normal Mac startup, storage, dashboard access and selected portable
+device integrations must work while the PC sleeps, restarts or is off.
 
 Producers read their selected inputs on their own host and use the authenticated
 SDK HTTP/SSE edge. Do not mount a PC database into the Mac runtime or require a
@@ -172,11 +171,11 @@ the existing stop, backup, image replacement and separate restore operations.
 Cross-host cutover separately qualifies actual state/assets
 and native dependencies, retains the source, and stops/disables old writers and
 restart actors before transferring device ownership. Local leases do not fence
-other computers. There is no automatic failover or snapshot rollback. For an
-authorized standby, the owner verifies the Mac core is stopped and its
+other computers. There is no automatic failover or snapshot rollback. For a
+separately authorized manual return, verify the Mac writer is stopped and its
 [start hold](bunny-container.md#hold-the-core-stopped) is set before enabling
-PC device control. On return, the owner verifies the PC writer is stopped
-before releasing the hold and restarting the Mac.
+the other writer. Verify that writer is stopped before releasing the hold and
+restarting the Mac.
 
 Hosting review, October 22, 2026: the source diagram's core/module, SDK and gateway
 owners and edges are unchanged. Placement is specified here and in ADR 0008;
@@ -423,9 +422,9 @@ runs without device modules. The 1.x field mapping is in
   ([ADR 0012 amendment of 2026-11-11](decisions/0012-bunny-event-platform.md#amendment-2026-11-11)).
   The core's history is a fact log that a reader inside the core may read after
   a cursor it keeps ([#1740](https://github.com/jimmie-potts/agent-device-hub/issues/1740));
-  the read API and MCP tool return the same rows as before. Under the accepted
-  stage 1 design in ADR 0015, a standby starts from a current settings
-  snapshot and reads committed settings facts after its cursor.
+  the read API and MCP tool return the same rows as before. The
+  [settings snapshot and catch-up reader](../apps/runtime/README.md#core-settings-snapshot-and-catch-up)
+  remains in source. ADR 0016 supersedes its former use for standby replication.
 - **History.** History keeps changes. Once
   [#1772](https://github.com/jimmie-potts/agent-device-hub/issues/1772) is
   merged and installed, it keeps a stretch of repeated readings that differ only

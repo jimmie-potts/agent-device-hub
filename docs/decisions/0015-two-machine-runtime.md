@@ -1,5 +1,8 @@
 # ADR 0015: Run B.U.N.N.Y. on the Mac and the PC with a Mac-preferred lead
 
+**Superseded by [ADR 0016](0016-brain-and-local-edges.md).** The text below
+records the former direction and its decisions. Use ADR 0016 for new work.
+
 Stage 0 was accepted on 2026-11-12 and is complete on the PC. The owner
 accepted stage 1 on 2026-11-13 with core settings first and authorized source
 delivery and amendments 1.1–1.7. The PC remains a worker host. A disposable
