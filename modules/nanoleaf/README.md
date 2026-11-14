@@ -778,6 +778,10 @@ test kit run (`module-kit.test.ts`), the journal's outcome errors and the migrat
 and its disposable run cover the module under the runtime. See
 [Nanoleaf port](../../docs/development.md#nanoleaf-port).
 
+[Nanoleaf HTTP read timing](../../docs/observability-contract.md#nanoleaf-http-read-timing-profile-110)
+records the terminal branch of existing sampler and Music reads and local
+callback delay. It runs through the runtime diagnostic sink (#1663).
+
 The public `./frontend` entry also exports `NanoleafLightVisual` and its
 `WallRecord` input for shared lighting cards (#1135). The read-only visual takes
 the shell's authenticated read function, reuses the retained Prism renderer for

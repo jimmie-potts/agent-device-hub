@@ -52,6 +52,7 @@ import {
 } from './edits.js';
 import {CONSUMER, LINES, SessionFeed, sharedConfig, waitsForComet} from './feed.js';
 import {DeviceLink, DeviceUnreachable, LinkStopped, refusesToken, type CommandWrite, type Transmission} from './link.js';
+import {ReadTimingProbe} from './read-timing.js';
 import {NANOLEAF_FAMILIES, OUTCOME_SCHEMA, schemaOf} from './schemas.js';
 import {editorContent} from './editor-content.js';
 import {showContent} from './show-content.js';
@@ -166,6 +167,7 @@ export class NanoleafRuntime {
   readonly #backoffs = new Map<string, {atMs: number; cancel: Cancel}>();
   /** The current Music features of each light's admitted session, in memory only (#1272). */
   readonly #feeds: MusicFeeds;
+  readonly #readTiming: ReadTimingProbe;
 
   private constructor(context: ModuleContext<NanoleafConfig>, config: NanoleafConfig, directory: string, db: Db) {
     this.#context = context;
@@ -179,6 +181,7 @@ export class NanoleafRuntime {
     this.#ids = config.devices.map(device => device.id);
     const {sdk, clock, log, trace} = context;
     this.#outbox = new Outbox({sdk, database: db, clock, log, trace});
+    this.#readTiming = new ReadTimingProbe(context.scheduler);
     this.#availability = new DeviceAvailability({log, clock});
     const metadata = config.codexMetadata === undefined ? null
       : new Metadata({metadata_path: config.codexMetadata.path, ...(config.codexMetadata.titleIndexPath === undefined ? {} : {title_index_path: config.codexMetadata.titleIndexPath})});
@@ -217,7 +220,7 @@ export class NanoleafRuntime {
   #link(device: DeviceSection, token: string, transport: LightRequest, datagram: LightDatagram): void {
     const {clock, scheduler, signal, log, trace} = this.#context;
     this.#links.set(device.id, new DeviceLink({device: device.id, address: device.address, token, transport, datagram, clock, scheduler, signal, log, trace,
-      availability: this.#availability, commandWrite: id => this.#commandWrite(id), onWrite: (id, write) => { this.#wrote(id, write); },
+      readTiming: this.#readTiming, availability: this.#availability, commandWrite: id => this.#commandWrite(id), onWrite: (id, write) => { this.#wrote(id, write); },
       onSettled: id => { this.#answered(id); this.#changed(id); }}));
   }
 
@@ -610,6 +613,7 @@ export class NanoleafRuntime {
     const whole = {after: (delayMs: number, callback: () => void): Cancel => scheduler.after(Math.max(0, Math.ceil(delayMs)), callback)};
     const running: Promise<void> = superviseWorker({
       directory: this.#directory, database: this.#context.database, device, clock, scheduler: whole, signal, request: link.request, stream: link.stream,
+      musicRead: endpoint => link.read('music-session', endpoint),
       transact: this.#transact, music: this.#feeds, onFailure: (error, failed) => { this.#passFailed(failed, error); },
     }).then((end: SupervisorEnd) => {
       this.#supervisors.delete(device);
@@ -705,7 +709,7 @@ export class NanoleafRuntime {
     if (signal.aborted || link === undefined) return;
     let next = OBSERVE_MS;
     try {
-      await link.request({ip: '', token: ''}, 'GET', '/state');
+      await link.read('sampler', '/state');
       failures = 0;
       this.#recovered(device);
     } catch {
@@ -943,7 +947,7 @@ export class NanoleafRuntime {
     let stateAnswer: {value: unknown} | undefined;
     try {
       read = await readMusicBase(async endpoint => {
-        const answer = await link.request({ip: '', token: ''}, 'GET', endpoint);
+        const answer = await link.read('music-admission', endpoint);
         if (endpoint === '/state') stateAnswer = {value: answer};
         return answer;
       });

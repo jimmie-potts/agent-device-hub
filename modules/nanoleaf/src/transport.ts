@@ -83,6 +83,13 @@ export function privateAddress(ip: string): string {
   return ip;
 }
 
+const transportDeadlines = new WeakSet<object>();
+
+/** Only the deadline this transport scheduled, even if another error has the same code. */
+export function isTransportDeadline(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && transportDeadlines.has(error);
+}
+
 const METHODS_WITH_BODY: ReadonlySet<string> = new Set(['PATCH', 'POST', 'PUT']);
 
 /**
@@ -110,6 +117,7 @@ export const nodeTransport: HttpTransport = request => new Promise((resolve, rej
   });
   const timer = setTimeout(() => {
     const error = Object.assign(new Error(`The device did not answer within ${request.timeoutSeconds} seconds.`), {code: 'ETIMEDOUT'});
+    transportDeadlines.add(error);
     finish(() => reject(error));
     exchange.destroy(error);
   }, request.timeoutSeconds * 1000);

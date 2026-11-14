@@ -485,6 +485,9 @@ test('the first frame completes Start as transmitted and Stop restores the named
   await play(session, 1000);
   assert.deepEqual({writes: lines(world)?.writes, streamed: lines(world)?.streamed, ignored: lines(world)?.ignored}, after, 'nothing renders after the session ended');
   assert.deepEqual(await stop(session, 'stop-again'), {status: 'rejected', code: 'invalid-state'});
+  const timedSources = world.logs().filter(record => record.event === 'nanoleaf.http.read.sampled')
+    .map(record => record.fields['bunny.nanoleaf.read.source']);
+  assert.deepEqual([...new Set(timedSources)].sort(), ['music-admission', 'music-session', 'sampler']);
   world.verify();
 });
 
