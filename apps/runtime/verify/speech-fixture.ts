@@ -2,8 +2,8 @@ type SpeechFixture = {calls: number; cancelled: number; overlap: number; voices:
 declare global {interface Window {speechFixture: SpeechFixture}}
 
 /** Installs only synthetic browser identity and speech; it never submits native audio. */
-export function installSyntheticSpeech(): void {
-  Object.defineProperty(navigator, 'userAgentData', {value: {platform: 'macOS', getHighEntropyValues: () => Promise.resolve({fullVersionList: [{brand: 'Google Chrome', version: '150.0.0.1'}]})}});
+export function installSyntheticSpeech(browserVersion = '150.0.0.1'): void {
+  Object.defineProperty(navigator, 'userAgentData', {value: {platform: 'macOS', getHighEntropyValues: () => Promise.resolve({fullVersionList: [{brand: 'Google Chrome', version: browserVersion}]})}});
   const NativeUtterance = SpeechSynthesisUtterance;
   Object.defineProperty(window, 'SpeechSynthesisUtterance', {value: class extends NativeUtterance {
     constructor(text: string) {super(text); Object.defineProperty(this, 'voice', {value: null, writable: true});}

@@ -159,7 +159,7 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
   const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().message);});
   try {
-    await context.addInitScript(installSyntheticSpeech);
+    await context.addInitScript(installSyntheticSpeech, '151.0.0.1');
     const page = await context.newPage(), other = await context.newPage(); page.setDefaultTimeout(12_000); other.setDefaultTimeout(12_000);
     await page.goto(`${world.url}/#/module/companions/assistant`); await feed(page, 'connected');
     const assistant = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
