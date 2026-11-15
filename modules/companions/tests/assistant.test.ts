@@ -720,3 +720,100 @@ void test('a worker result that comes back before the hand-off is recorded still
   assert.match(JSON.stringify((await page(w)).messages), /failed \(refused\)/);
   assert.equal(task(w)?.questions, 1, 'the delegation counts no owner question');
 });
+
+void test('recent conversation reads page backwards without changing saved state', async context => {
+  const w = await world(context);
+  const store = w.store();
+  const thread = store.newTask('bunny', 'Synthetic prompt');
+  thread.question = {id: 'fixture-question', text: 'Synthetic question', answer: null, kind: 'clarification', call: 'private-call', proposal: null};
+  store.save(thread);
+  for (let index = 1; index <= 40; index += 1) store.message(thread, `m-${String(index)}`, 'owner', 'Synthetic history', index);
+  const other = store.newTask('reachy', 'Separate');
+  store.message(other, 'other-message', 'owner', 'Separate synthetic history', 1);
+  const snapshot = store.meta();
+  const changes = store.database.prepare('SELECT total_changes() AS count').get();
+  const read = async (query: Record<string, string>, signal = new AbortController().signal) => {
+    const result = await w.module().manifest.content?.('conversation', {query, signal});
+    assert.ok(result !== undefined);
+    return result;
+  };
+  const page = async (query: Record<string, string>) => {
+    const result = await read(query);
+    assert.ok(!('error' in result), JSON.stringify(result));
+    assert.ok(result.bytes.byteLength <= LIMITS.pageBytes);
+    return JSON.parse(Buffer.from(result.bytes).toString()) as {
+      version: number; profile: string; conversationId: string | null; messages: {seq: number; text: string}[];
+      currentTask: {taskId: string; question: {kind: string}} | null; older: string | null; next?: number;
+    };
+  };
+  const recent = {profile: 'bunny', view: 'recent'};
+  const newest = await page(recent);
+  assert.equal(newest.version, 2);
+  assert.equal(newest.profile, 'bunny');
+  assert.equal(newest.conversationId, thread.conversationId);
+  assert.deepEqual(newest.messages.map(message => message.seq), Array.from({length: 16}, (_, index) => 25 + index));
+  assert.deepEqual(newest.currentTask, {taskId: thread.id, question: {id: 'fixture-question', text: 'Synthetic question', answer: null, kind: 'clarification', proposal: null}});
+  const middle = await page({...recent, before: newest.older ?? assert.fail('first cursor')});
+  assert.equal(middle.currentTask, null);
+  const oldest = await page({...recent, before: middle.older ?? assert.fail('second cursor')});
+  assert.equal(oldest.older, null);
+  assert.deepEqual([...oldest.messages, ...middle.messages, ...newest.messages].map(message => message.seq),
+    Array.from({length: 40}, (_, index) => index + 1));
+  assert.deepEqual(await page({profile: 'microduck', view: 'recent'}), {version: 2, profile: 'microduck', conversationId: null, messages: [], currentTask: null, older: null});
+  const legacy = await page({profile: 'bunny', after: '0'});
+  assert.equal(legacy.version, 1);
+  assert.equal(legacy.next, 16);
+  assert.equal(legacy.messages[0]?.seq, 1);
+  assert.equal((await page({profile: 'bunny', after: '16'})).currentTask, null);
+  const token = (profile: string, id: string, seq: number): string => Buffer.from(JSON.stringify([profile, id, seq])).toString('base64url');
+  for (const query of [
+    {...recent, before: newest.older ?? '', profile: 'reachy'}, {...recent, before: token('bunny', 'stale-id', 25)},
+    {...recent, before: token('bunny', thread.conversationId, Number.MAX_SAFE_INTEGER + 1)}, {...recent, before: 'invalid'},
+    {...recent, after: '0'}, {profile: 'bunny', before: newest.older ?? ''}, {...recent, view: 'unknown'},
+  ]) assert.deepEqual(await read(query), errorBody('invalid-request'));
+  assert.deepEqual(await read(recent, AbortSignal.abort()), errorBody('invalid-request'));
+  assert.deepEqual(store.meta(), snapshot);
+  assert.deepEqual(store.database.prepare('SELECT total_changes() AS count').get(), changes);
+
+  const escaped = '\u0001'.repeat(6000);
+  for (let index = 0; index < 2; index += 1) store.message(thread, `escaped-${String(index)}`, 'tool', escaped, 100);
+  const limited = await page(recent);
+  assert.equal(limited.messages.length, 1);
+  assert.equal(limited.messages[0]?.text, escaped);
+  assert.equal((await page({...recent, before: limited.older ?? assert.fail('byte limit cursor')})).messages.at(-1)?.text, escaped);
+  store.message(thread, 'oversized', 'tool', '\u0001'.repeat(11_000), 100);
+  assert.deepEqual(await read(recent), errorBody('capacity'));
+
+  for (let index = 1; index < 16; index += 1) store.message(other, `reachy-${String(index)}`, 'assistant', 'Other synthetic history', index);
+  const exactCount = await page({...recent, profile: 'reachy'});
+  assert.equal(exactCount.messages.length, 16);
+  assert.equal(exactCount.older, null);
+
+  const finalThread = store.newTask('microduck', 'Metadata fixture');
+  finalThread.question = {id: 'question-limit', text: '\u0001'.repeat(1024), answer: '\u0001'.repeat(LIMITS.inputBytes), kind: 'clarification', call: 'internal', proposal: null};
+  store.save(finalThread);
+  const metadata = await page({...recent, profile: 'microduck'});
+  assert.equal(metadata.currentTask?.question.kind, 'clarification');
+  assert.equal(metadata.messages.length, 0);
+
+  const approval = {id: 'approval-fixture', text: '\u0001'.repeat(1024), answer: null, kind: 'approval' as const, call: 'internal',
+    proposal: {family: 'coding-dispatch' as const, target: 'assistant' as const, data: {repository: 'synthetic-repository', brief: '\u0001'.repeat(4096)}, expectedRevision: 12}};
+  finalThread.question = approval;
+  store.save(finalThread);
+  const approved = await page({...recent, profile: 'microduck'});
+  assert.deepEqual(approved.currentTask, {taskId: finalThread.id, question: {id: approval.id, text: approval.text,
+    answer: approval.answer, kind: approval.kind, proposal: approval.proposal}});
+  finalThread.question = {id: 'delegation-fixture', text: 'Synthetic worker pending', answer: null, kind: 'delegation', call: 'internal', proposal: approval.proposal};
+  store.save(finalThread);
+  assert.equal((await page({...recent, profile: 'microduck'})).currentTask?.question.kind, 'delegation');
+
+  store.message(finalThread, 'exact-byte-row', 'tool', '', 100);
+  const exactQuery = {...recent, profile: 'microduck'};
+  const emptyRow = await read(exactQuery);
+  assert.ok(!('error' in emptyRow));
+  store.database.prepare('UPDATE assistant_messages SET text=? WHERE id=?').run('x'.repeat(LIMITS.pageBytes - emptyRow.bytes.byteLength), 'exact-byte-row');
+  const exactBytes = await read(exactQuery);
+  assert.ok(!('error' in exactBytes));
+  assert.equal(exactBytes.bytes.byteLength, LIMITS.pageBytes);
+  assert.equal((await page(exactQuery)).older, null);
+});
